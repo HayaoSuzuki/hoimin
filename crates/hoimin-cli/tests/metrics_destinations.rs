@@ -547,7 +547,7 @@ async fn metrics_withholds_prospective_windows_short_alias_without_overwriting_s
         .query_row("PRAGMA integrity_check", [], |row| row.get(0))
         .unwrap();
     assert_eq!(integrity, "ok");
-    let count: u64 = connection
+    let count: i64 = connection
         .query_row("SELECT COUNT(*) FROM runs", [], |row| row.get(0))
         .unwrap();
     assert_eq!(count, 1);
