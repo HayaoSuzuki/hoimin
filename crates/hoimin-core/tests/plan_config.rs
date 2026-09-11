@@ -372,3 +372,38 @@ fn fixture_run_config() -> RunConfig {
     }];
     config
 }
+
+#[test]
+fn import_roots_round_trip_and_missing_historical_run_field_defaults_empty() {
+    let mut config = fixture_run_config();
+    config.import_roots = vec!["vendor".into(), "src".into(), ".".into()];
+    let plan: PlanConfig =
+        serde_json::from_value(serde_json::to_value(config.clone().into_plan_config()).unwrap())
+            .unwrap();
+    plan.validate().unwrap();
+    assert_eq!(
+        plan.into_run_config(config.output.clone()).import_roots,
+        config.import_roots
+    );
+    let mut old = serde_json::to_value(config).unwrap();
+    old.as_object_mut().unwrap().remove("import_roots");
+    let old: RunConfig = serde_json::from_value(old).unwrap();
+    assert!(old.import_roots.is_empty());
+}
+
+#[test]
+fn normalized_run_and_plan_import_roots_cannot_bypass_validation() {
+    for roots in [
+        vec!["../outside"],
+        vec!["/absolute"],
+        vec!["src", "src"],
+        vec!["src/./pkg"],
+        vec![""],
+        vec!["src/../src"],
+    ] {
+        let mut config = fixture_run_config();
+        config.import_roots = roots.iter().map(|root| (*root).into()).collect();
+        assert!(config.validate().is_err(), "{roots:?}");
+        assert!(config.into_plan_config().validate().is_err(), "{roots:?}");
+    }
+}

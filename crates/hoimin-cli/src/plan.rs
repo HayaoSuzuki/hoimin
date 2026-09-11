@@ -32,7 +32,7 @@ mod selection_tests;
 use ranking::{RANKING_RULE_VERSION, rank_candidates, validate_ranking, validate_ranking_against};
 pub use ranking::{RankedPlanCandidate, RankingReason, RankingReasonCode};
 
-pub const PLAN_SCHEMA_VERSION: u32 = 3;
+pub const PLAN_SCHEMA_VERSION: u32 = 4;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -382,6 +382,7 @@ async fn prepare_verify_selection_inner(
     let copy_options = crate::workspace::CopyOptions {
         includes: config.selection.includes.clone(),
         excludes: config.selection.excludes.clone(),
+        literal_exclusions: Vec::new(),
     };
     let copy_manifest = crate::workspace::build_validation_manifest(&config.root, &copy_options)
         .map_err(|error| PlanError::Workspace(error.to_string()))?;
@@ -524,7 +525,7 @@ fn validate_header(manifest: &PlanManifest) -> Result<(), PlanError> {
     }
     if manifest.ranking_rule_version != RANKING_RULE_VERSION {
         return Err(PlanError::ManifestInvalid(format!(
-            "unsupported ranking rule version {}",
+            "unsupported ranking rule version {}; regenerate the plan with this hoimin version",
             manifest.ranking_rule_version
         )));
     }
@@ -569,6 +570,12 @@ fn validate_header(manifest: &PlanManifest) -> Result<(), PlanError> {
                 candidate.path
             )));
         }
+        crate::analyzer::CandidateStore::record_size(&candidate.candidate).map_err(|error| {
+            PlanError::CandidateInvalid(format!(
+                "{}:{} ({}): {error}",
+                candidate.path, candidate.line, candidate.operator
+            ))
+        })?;
     }
     Ok(())
 }
