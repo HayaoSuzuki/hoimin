@@ -82,6 +82,12 @@ pub enum ProgressError {
         path: PathBuf,
         message: &'static str,
     },
+    #[error("invalid structure in progress report {path}: {source}")]
+    InvalidResult {
+        path: PathBuf,
+        #[source]
+        source: hoimin_core::ReportSequenceError,
+    },
     #[error("could not serialize progress output: {source}")]
     Serialize {
         #[source]
@@ -388,7 +394,11 @@ fn validate_legacy_structure(
         }
         previous = sequence;
     }
-    validate_summary_coherence(path, &summary.counts, summary.complete, summary.exit_code)
+    validate_summary_coherence(path, &summary.counts, summary.complete, summary.exit_code)?;
+    for mutant in mutants {
+        validate_mutant_result(path, mutant)?;
+    }
+    Ok(())
 }
 
 fn validate_schema_versions(
@@ -501,7 +511,22 @@ fn validate_structure(path: &Path, document: &RunReportDocument) -> Result<(), P
         }
         previous_sequence = Some(event.sequence());
     }
+    for event in &document.mutants {
+        let OutputEvent::MutantFinished(mutant) = event else {
+            unreachable!("mutant event kinds were validated above");
+        };
+        validate_mutant_result(path, mutant)?;
+    }
     Ok(())
+}
+
+fn validate_mutant_result(path: &Path, mutant: &MutantFinished) -> Result<(), ProgressError> {
+    mutant
+        .validate_result()
+        .map_err(|source| ProgressError::InvalidResult {
+            path: path.to_path_buf(),
+            source,
+        })
 }
 
 fn validate_summary_coherence(

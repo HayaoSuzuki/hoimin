@@ -1000,3 +1000,88 @@ fn run_finished_event(sequence: u64) -> OutputEvent {
 fn disk_json() -> serde_json::Value {
     serde_json::to_value(hoimin_core::DiskRunSummary::unmeasured(8, 10)).unwrap()
 }
+
+#[test]
+fn standalone_result_validation_preserves_error_precedence() {
+    use hoimin_core::{ProcessOutputState, ReportSequenceError};
+    let OutputEvent::MutantFinished(mut result) =
+        output_close_timeout_event(vec![close_timeout_diagnostic()])
+    else {
+        unreachable!()
+    };
+    result.output = None;
+    result.diagnostics.clear();
+    result.status = MutationStatus::Killed;
+    assert!(matches!(
+        result.validate_result(),
+        Err(ReportSequenceError::MutantOutputStateMismatch { .. })
+    ));
+    result.output_state = ProcessOutputState::Complete;
+    result.diagnostics.push(close_timeout_diagnostic());
+    assert!(matches!(
+        result.validate_result(),
+        Err(ReportSequenceError::MutantOutputDiagnosticMismatch { .. })
+    ));
+    result.diagnostics.clear();
+    assert!(matches!(
+        result.validate_result(),
+        Err(ReportSequenceError::MutantStatusTerminationMismatch { .. })
+    ));
+    result.termination = None;
+    assert_eq!(result.validate_result(), Ok(()));
+}
+
+#[test]
+fn standalone_result_allows_unrelated_diagnostics_but_not_duplicate_close_timeout() {
+    let OutputEvent::MutantFinished(mut result) =
+        output_close_timeout_event(vec![close_timeout_diagnostic()])
+    else {
+        unreachable!()
+    };
+    let mut unrelated = close_timeout_diagnostic();
+    unrelated.code = "other".into();
+    result.diagnostics.insert(0, unrelated.clone());
+    result.diagnostics.push(unrelated);
+    result.termination = Some(ProcessTermination::Exit(0));
+    assert_eq!(result.validate_result(), Ok(()));
+    result.diagnostics.push(close_timeout_diagnostic());
+    assert!(matches!(
+        result.validate_result(),
+        Err(hoimin_core::ReportSequenceError::MutantOutputDiagnosticMismatch { .. })
+    ));
+}
+
+#[cfg(not(feature = "contracts"))]
+#[test]
+fn sequence_checks_lifecycle_before_result_and_rejection_preserves_active_mutant() {
+    use hoimin_core::ReportSequenceError;
+    let mut event = finished_event_with(
+        3,
+        candidate("m1", 7),
+        MutationStatus::Killed,
+        Some(ProcessTermination::Exit(0)),
+    );
+    let mut sequence = ReportSequence::new();
+    sequence
+        .observe(&OutputEvent::RunStarted(RunStarted::minimal("run-1", 1)))
+        .unwrap();
+    assert!(matches!(
+        sequence.observe(&event),
+        Err(ReportSequenceError::MutantNotStarted { .. })
+    ));
+    sequence
+        .observe(&OutputEvent::MutantStarted(MutantStarted::new(
+            "run-1", 2, "m1", 7,
+        )))
+        .unwrap();
+    assert!(matches!(
+        sequence.observe(&event),
+        Err(ReportSequenceError::MutantStatusTerminationMismatch { .. })
+    ));
+    let OutputEvent::MutantFinished(result) = &mut event else {
+        unreachable!()
+    };
+    result.status = MutationStatus::Survived;
+    // Same event sequence proves rejection did not advance sequence or consume the active mutant.
+    sequence.observe(&event).unwrap();
+}
