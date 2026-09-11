@@ -27,6 +27,8 @@ use super::{AnalyzerCandidate, AnalyzerDiagnostic, AnalyzerDiagnosticCode};
 mod depth;
 #[path = "rust/fact_index.rs"]
 mod fact_index;
+#[path = "rust/mapping_keys.rs"]
+mod mapping_keys;
 #[path = "rust/operator_functions.rs"]
 mod operator_functions;
 #[cfg(test)]
@@ -246,7 +248,7 @@ pub(crate) fn analyze_source_cancellable(
         let start = usize::from(range.start());
         let end = usize::from(range.end());
         let text = &source[start..end];
-        if !facts.is_operator_token(start) {
+        if !facts.is_operator_token(start) || facts.colliding_mapping_key_starts.contains(&start) {
             continue;
         }
         if facts.contains_annotation_span(range) {
@@ -1443,6 +1445,7 @@ impl<'ast> Visitor<'ast> for NameResolutionBuilder {
 
 #[derive(Default)]
 struct AstFacts<'tokens> {
+    colliding_mapping_key_starts: HashSet<usize>,
     operator_token_starts: HashSet<usize>,
     unary_sign_starts: HashSet<usize>,
     not_operands: Vec<(usize, usize, usize)>,
@@ -1797,6 +1800,19 @@ impl<'ast> Visitor<'ast> for AstFacts<'_> {
     }
 
     fn visit_pattern(&mut self, pattern: &'ast Pattern) {
+        if let Pattern::MatchMapping(mapping) = pattern {
+            for range in mapping_keys::colliding_edits(&mapping.keys) {
+                for token in self.tokens.expect("parser tokens are set").in_range(range) {
+                    if matches!(
+                        token.kind(),
+                        TokenKind::True | TokenKind::False | TokenKind::Plus | TokenKind::Minus
+                    ) {
+                        self.colliding_mapping_key_starts
+                            .insert(usize::from(token.start()));
+                    }
+                }
+            }
+        }
         if let Pattern::MatchSingleton(singleton) = pattern
             && matches!(singleton.value, Singleton::True | Singleton::False)
         {

@@ -7500,3 +7500,29 @@ fn comprehension_named_binding_execution_facts_and_rhs_order() {
         assert_eq!(snapshot.resolution, expected, "{source}");
     }
 }
+
+#[test]
+fn wide_mapping_keys_reject_conjugates_and_preserve_other_candidates() {
+    use std::fmt::Write;
+    let mut source = String::from("def classify(value):\n    match value:\n        case {");
+    for index in 1..=1000 {
+        write!(source, "{index}+2j: _, {index}-2j: _, ").unwrap();
+    }
+    source.push_str("False: _}: return True\n");
+    let output = analyze(&source);
+    let candidates: Vec<_> = output
+        .candidates
+        .iter()
+        .filter(|candidate| {
+            matches!(
+                candidate.operator.as_str(),
+                "boolean_literal" | "binary_add_sub"
+            )
+        })
+        .map(|candidate| (candidate.original.as_str(), candidate.replacement.as_str()))
+        .collect();
+    assert_eq!(candidates, [("False", "True"), ("True", "False")]);
+    // The mapping pass normalizes each key a bounded number of times and uses
+    // HashSet membership, regardless of whether the collision is far away.
+    assert!(!output.truncated);
+}

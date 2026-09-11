@@ -261,6 +261,20 @@ wildcard and capture patterns, and string values. A token with an ambiguous
 grammatical role does not produce a candidate: matching text alone never grants
 eligibility.
 
+Mapping-pattern boolean flips and complex separator flips are excluded when
+only that edit would duplicate another literal key in the same mapping. A
+per-mapping hash index models Python equality for the replacement domain:
+boolean targets are exactly 0/1, while nonzero imaginary parts only compare
+against complex keys. Zero-imaginary separator edits preserve equality and
+remain eligible. Ordinary integer keys are never rounded for comparison;
+integer real parts of complex literals use `num-bigint` conversion to match
+Python construction, including radix spelling and ties-to-even rounding.
+Float infinity and signed zero are handled separately from integer conversion
+overflow, which cannot form a valid original complex pattern literal.
+Nested mappings, value patterns, and dictionary expressions retain their own
+eligibility. Integration tests compile public plan mutants with CPython and
+check that import-only runs do not count invalid duplicate-key edits as kills.
+
 Native Python operator syntax uses these token-local mappings:
 
 - `**` becomes `*` (`binary_power`) and `@` becomes `*` (`binary_matmul`).
