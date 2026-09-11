@@ -1615,12 +1615,13 @@ mod job_object {
         if !memory {
             descendants.push(&extra_guard);
         }
+        let cleanup_deadline = tokio::time::Instant::now() + Duration::from_secs(2);
         for guard in descendants {
             let pid = guard
                 .pid()
                 .expect("descendant published before limit violation");
             assert!(
-                wait_until_process_stops(pid).await,
+                wait_until_process_stops_before(pid, cleanup_deadline).await,
                 "descendant {pid} survived root cleanup"
             );
         }
