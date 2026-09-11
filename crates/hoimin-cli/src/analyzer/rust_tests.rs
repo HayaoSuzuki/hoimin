@@ -7253,3 +7253,52 @@ fn truncates_after_selected_candidates_and_emits_limit_diagnostic() {
         AnalyzerDiagnosticCode::CandidateLimitExceeded
     );
 }
+
+#[test]
+fn comprehension_named_binding_execution_facts_and_rhs_order() {
+    for (source, marker, expected) in [
+        (
+            "[(list := 0) for _ in []]\nlist(values)\n",
+            "list(values)",
+            "unknown",
+        ),
+        (
+            "((list := 0) for _ in [0])\nlist(values)\n",
+            "list(values)",
+            "unknown",
+        ),
+        (
+            "def f():\n    list(values)\n    [(list := 0) for _ in []]\n",
+            "list(values)",
+            "shadowed",
+        ),
+        (
+            "list(values)\n[(list := 0) for _ in [0]]\n",
+            "list(values)",
+            "definitely-builtin",
+        ),
+        (
+            "(list := list(values))\n",
+            "list(values)",
+            "definitely-builtin",
+        ),
+        (
+            "[list(values) for list in [custom]]\n",
+            "list(values)",
+            "shadowed",
+        ),
+        (
+            "[(unused := list(values)) for list in [custom]]\n",
+            "list(values)",
+            "shadowed",
+        ),
+        (
+            "for _ in [0, 1]:\n    list(values)\n    [(list := custom) for _ in [0]]\n",
+            "list(values)",
+            "unknown",
+        ),
+    ] {
+        let snapshot = name_resolution_test_snapshot(source, marker, "list").unwrap();
+        assert_eq!(snapshot.resolution, expected, "{source}");
+    }
+}

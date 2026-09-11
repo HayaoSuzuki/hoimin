@@ -964,6 +964,22 @@ impl NameResolutionBuilder {
         }
     }
 
+    fn record_named_target(&mut self, target: &Expr, offset: usize) {
+        let mut destination = self.current;
+        while self.index.scopes[destination.0].kind == NameScopeKind::Comprehension {
+            destination = self.index.scopes[destination.0]
+                .parent
+                .expect("comprehensions have a containing scope");
+        }
+        // Comprehension bodies can run zero times, or later for generators.
+        // Function locals are still static; record_binding handles that and
+        // the containing scope's global/nonlocal declarations.
+        let conditional = destination != self.current;
+        self.conditional_depth += usize::from(conditional);
+        self.in_scope(destination, |this| this.record_target(target, offset));
+        self.conditional_depth -= usize::from(conditional);
+    }
+
     fn record_binding(&mut self, name: &str, offset: usize) {
         if !tracked_resolution_name(name) {
             return;
@@ -1313,7 +1329,10 @@ impl<'ast> Visitor<'ast> for NameResolutionBuilder {
         match expression {
             Expr::Name(name) => self.record_occurrence(name),
             Expr::Named(named) => {
-                self.record_target(&named.target, usize::from(named.range.end()));
+                self.visit_expr(&named.value);
+                self.record_named_target(&named.target, usize::from(named.range.end()));
+                self.visit_expr(&named.target);
+                return;
             }
             Expr::Lambda(lambda) => {
                 let scope = self.new_scope(NameScopeKind::Function);
