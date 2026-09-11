@@ -5,6 +5,10 @@ description: 保存・復旧の権限、スキーマ移行、結果の生成側�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-477
+  resource: ../../superpowers/specs/2026-09-11-issue-477-import-roots-design.md
+  working_tree: untracked
+  sha256: a30ed5f129c635e75431212d590171ab03e5973640a4d6624775ee43fd81dcdd
 - id: ownership
   resource: ../../superpowers/specs/2026-09-07-issue-363-session-ownership-design.md
   revision: a7daea0b557cd435c1e55b540392fbdd116348e1
@@ -55,9 +59,15 @@ JSON Schemaは結果の構造を定める元資料として保持する。ただ
 
 run所有権、再利用条件、結果置換、DBスキーマ、集計値と終了コードの規則、JSON読取り処理を変更したら更新する。保存・読取り・比較の各処理で同じ前提が維持されるかを調べる。旧報告にある未解決という記述は、その報告の時点として扱う。
 
+# Issue 477: import順序と再利用条件
+
+明示import rootの順序は実行されるモジュールを変え得るため、正規化した順序付きリストをfingerprintへ加える。fingerprint schemaはv6からv7へ進め、旧sessionは既存の版不一致診断に従う。rootの値や順序が異なる結果を再利用せず、同じ順序の重複は除く。過去のrunレポートでフィールドがない場合の読取りと、旧plan・旧sessionの実行互換性は別に扱う。[^issue-477]
+
 [^ownership]: [2026-09-07-issue-363-session-ownership-design.md](../../superpowers/specs/2026-09-07-issue-363-session-ownership-design.md)。
 [^session]: [mod.rs](../../../crates/hoimin-cli/src/session/mod.rs)。
 [^ownership-report]: [2026-09-07-issue-363-session-ownership.md](../../superpowers/reports/2026-09-07-issue-363-session-ownership.md)。
 [^migration]: [2026-08-11-lean-schema-migration-concurrency-audit.md](../../superpowers/reports/2026-08-11-lean-schema-migration-concurrency-audit.md)。
 [^reader]: [input.rs](../../../crates/hoimin-cli/src/progress/input.rs)。
 [^schema]: [run-result.schema.json](../../json-schema/run-result.schema.json)。
+
+[^issue-477]: [2026-09-11-issue-477-import-roots-design.md](../../superpowers/specs/2026-09-11-issue-477-import-roots-design.md)。

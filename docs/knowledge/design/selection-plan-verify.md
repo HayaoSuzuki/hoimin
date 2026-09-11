@@ -5,6 +5,10 @@ description: 候補発見と実行の分離、ランキング、部分集合、�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-477
+  resource: ../../superpowers/specs/2026-09-11-issue-477-import-roots-design.md
+  working_tree: untracked
+  sha256: a30ed5f129c635e75431212d590171ab03e5973640a4d6624775ee43fd81dcdd
 - id: initial
   resource: ../../superpowers/specs/2026-07-21-agent-plan-verify-design.md
   revision: a7daea0b557cd435c1e55b540392fbdd116348e1
@@ -64,9 +68,15 @@ sources:
 
 複数の対象指定や打切り条件は[境界監査](../audits/boundary-2026-09.md)、候補順序と保持上限は[解析器](analyzer.md)を参照する。保存形式、順位規則、候補集合、変更検知用入力、verifyの準備段階を変更したら、設計・実装・公開説明を再照合する。
 
+# Issue 477: import設定の保存
+
+`--import-root` を対象選択から独立した順序付き設定としてplanに保存し、verifyへ引き継ぐ。import rootだけでは変異対象を指定したことにならない。plan schemaは実装のv3からv4へ進め、旧planはbaseline前に拒否して再生成を案内する。この独立ブランチのranking規則はv3を維持する。以前の資料の版表記はその時点の記録として扱う。[^issue-477]
+
 [^initial]: [2026-07-21-agent-plan-verify-design.md](../../superpowers/specs/2026-07-21-agent-plan-verify-design.md)。
 [^ranked]: [2026-07-27-ranked-plan-top-verify-design.md](../../superpowers/specs/2026-07-27-ranked-plan-top-verify-design.md)。
 [^diverse]: [2026-09-08-issue-433-diverse-selection-design.md](../../superpowers/specs/2026-09-08-issue-433-diverse-selection-design.md)。
 [^readme]: [README.md](../../../README.md)。
 [^development]: [development.md](../../development.md)。
 [^plan]: [plan.rs](../../../crates/hoimin-cli/src/plan.rs)。
+
+[^issue-477]: [2026-09-11-issue-477-import-roots-design.md](../../superpowers/specs/2026-09-11-issue-477-import-roots-design.md)。
