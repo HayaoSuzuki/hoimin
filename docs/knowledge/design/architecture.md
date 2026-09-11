@@ -5,6 +5,10 @@ description: 元ソースへの変異適用を避け、状態遷移と入出力�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-465
+  resource: ../../superpowers/specs/2026-09-11-issue-465-retired-discovery-design.md
+  working_tree: untracked
+  sha256: a11949aa005aae662fe28fcf04fe560ad0a2d5b2574a2eb947c7e3677be13144
 - id: initial
   resource: ../../superpowers/specs/2026-07-18-python-mutation-tool-design.md
   revision: a7daea0b557cd435c1e55b540392fbdd116348e1
@@ -54,6 +58,10 @@ hoiminの初期設計では、一時領域に作ったテスト実行用のコ�
 
 したがって、初期設計にあるヘルパー起動や版取得は現行手順として使えない。利用者が指定するテストコマンドでPythonを起動することと、hoiminの解析器がPythonに依存することも区別する。[^migration]
 
+# 廃止したRust関数探索
+
+Issue #465 の関数取りこぼしは、Rustの関数を正規表現で列挙してcargo-mutantsの候補を絞るPython製開発ツールの問題だった。コミット `2f27e2a` で探索処理と候補フィルタを含む連携全体が削除されている。今回、その削除が作業対象に含まれること、現行の呼出し元が残っていないこと、開発スキルの契約テスト3件の成功を確認した。既存の機能削除による解消であり、新しいRust構文解析器を実装したものではない。Pythonソースを解析する現行hoiminのRust実装とは対象が異なる。[^issue-465]
+
 # コピー方式で防げる変更の範囲
 
 コピー方式で避けるのは、元ソースへ変異を適用する操作である。任意の出力先や子プロセスによる変更まで防ぐ設計とは読み取れない。[境界監査](../audits/boundary-2026-09.md)では、metrics出力先と元ソースが重なる場合を別の問題として記録している。
@@ -65,3 +73,5 @@ crateの依存、実行要求と完了通知、コピーへの変異適用、解
 [^core]: [Cargo.toml](../../../crates/hoimin-core/Cargo.toml)。
 [^machine]: [machine.rs](../../../crates/hoimin-core/src/machine.rs)。
 [^analyzer]: [rust.rs](../../../crates/hoimin-cli/src/analyzer/rust.rs)。
+
+[^issue-465]: [2026-09-11-issue-465-retired-discovery-design.md](../../superpowers/specs/2026-09-11-issue-465-retired-discovery-design.md)。
