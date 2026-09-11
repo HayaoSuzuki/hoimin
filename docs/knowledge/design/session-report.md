@@ -51,7 +51,7 @@ sources:
   resource: ../../superpowers/plans/2026-09-11-issue-484-metrics-destinations.md
   revision: 6f6cc91a2a190a4fba8d94a3b1e66caa1f761d5d
   working_tree: modified
-  sha256: 9df5475a2de1ab0e7ed78eaa197096657671252ee362c886dd94c1f21a824959
+  sha256: ce5817e497a56145ac4957519c2f591303e8691a2d347eb6c73c8bcf34866146
 ---
 
 # 実行単位ごとの所有権
