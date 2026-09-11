@@ -364,7 +364,7 @@ fn discover_targets_blocking(work: DiscoveryWork) -> Result<Discovery, EffectFai
             &module,
             || cancellation.is_cancelled(),
         )
-        .map_err(|_| discovery_cancelled())?;
+        .map_err(|error| analysis_failure(EffectId(0), &target.path, error))?;
         let validation = CandidateValidationContext::new(&source).map_err(|error| {
             EffectFailed::other(EffectId(0), "analyzer.source", error.to_string())
         })?;
@@ -586,7 +586,7 @@ fn analyze_and_store(
         &module,
         || cancellation.is_cancelled(),
     )
-    .map_err(|_| cancelled(id))?;
+    .map_err(|error| analysis_failure(id, &request.target.path, error))?;
     let validation = CandidateValidationContext::new(&source)
         .map_err(|error| EffectFailed::other(id, "analyzer.source", error.to_string()))?;
     for candidate in output.candidates {
@@ -684,6 +684,19 @@ fn map_analyzer_diagnostic(diagnostic: AnalyzerDiagnostic) -> RunAnalysisDiagnos
     RunAnalysisDiagnostic {
         code: code.to_owned(),
         message,
+    }
+}
+
+fn analysis_failure(
+    id: EffectId,
+    path: &camino::Utf8Path,
+    error: rust::AnalysisError,
+) -> EffectFailed {
+    match error {
+        rust::AnalysisError::Cancelled => cancelled(id),
+        rust::AnalysisError::DepthExceeded { .. } => {
+            EffectFailed::other(id, "analyzer.depth", format!("{path}: {error}"))
+        }
     }
 }
 
@@ -1150,6 +1163,42 @@ mod tests {
 
         assert_eq!(spool.records, 1);
         assert!(handler.store.is_none());
+    }
+
+    #[tokio::test]
+    async fn depth_failure_releases_candidate_store_and_preserves_handler_reuse() {
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::create_dir(directory.path().join("src")).unwrap();
+        let source_path = directory.path().join("src/calc.py");
+        let source = format!("value = {}\n", vec!["1"; 25_000].join("+"));
+        std::fs::write(&source_path, &source).unwrap();
+        let root = Utf8PathBuf::from_path_buf(directory.path().to_owned()).unwrap();
+        let owner = Arc::new(tempfile::tempdir().unwrap());
+        let spool_path = owner.path().to_owned();
+        let mut handler = AnalyzerHandler::new(root)
+            .unwrap()
+            .with_candidate_spool_owner(owner.clone());
+        let operators = MutationOperatorSelection::default();
+        for id in 100..103 {
+            let error = handler
+                .handle(request(id), &operators, MutationProfile::Full)
+                .await
+                .unwrap_err();
+            assert_eq!(error.id, EffectId(id));
+            assert_eq!(error.failure.code(), "analyzer.depth");
+            assert!(handler.store.is_none());
+            assert_eq!(std::fs::read_dir(&spool_path).unwrap().count(), 0);
+            assert_eq!(std::fs::read_to_string(&source_path).unwrap(), source);
+        }
+        std::fs::write(&source_path, "value = 1 + 2\n").unwrap();
+        let output = handler
+            .handle(request(103), &operators, MutationProfile::Full)
+            .await
+            .unwrap();
+        assert!(output.spool.unwrap().records > 0);
+        drop(handler);
+        drop(owner);
+        assert!(!spool_path.exists());
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

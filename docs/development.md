@@ -337,6 +337,33 @@ parser tokens, AST facts, and small per-node replacement lists remain
 proportional to source size. `--max-memory` controls descendants rather than
 the Hoimin CLI, so it does not bound these analyzer structures.
 
+Before facts, name resolution, or annotation analysis, `rust/depth.rs` checks
+AST depth using a borrowed `AnyNodeRef` worklist. The module has depth 1; every
+child exposed by Ruff's source-order visitor adds one, including auxiliary
+nodes. The supported limit is 128. For `value = 1+...+1`, 126 terms reach depth
+128 and 127 terms exceed it. Rejection is a typed `AnalysisError::DepthExceeded`,
+mapped by both analyzer callers to `analyzer.depth` with the target path.
+Cancellation remains a separate error. Plan creation fails without a manifest;
+run reports incomplete analysis after its normal baseline stage.
+
+The parser's retained/unchecked module API preserves partial invalid trees so
+Hoimin can dispose of them safely while keeping existing invalid-syntax
+behavior. Rejected, invalid, and preflight-cancelled trees use an owned worklist:
+Ruff's `Transformer` detaches statements, expressions, patterns, and interpolated
+string elements before their shallow shells drop. These four callbacks cut every
+recursive cycle in the pinned Transformer's traversal, including nested format
+specifications. Accepted trees use ordinary drop after passing the depth check.
+Both worklists can allocate in proportion to input size; they are stack-depth
+controls, not general memory bounds.
+
+Regression coverage includes exact accepted/rejected boundaries with actual
+binary and annotation candidates on a 2 MiB thread, auxiliary AST kinds,
+repeated 25,000-term rejections with retained-allocation checks, and debug/release
+public plan/run subprocesses at 2,000, 20,000, and 25,000 terms. The 20,000-term
+fixture previously overflowed during ordinary AST drop alone. These observations
+validate the selected limit on tested stacks; they do not prove arbitrary parser
+inputs or every platform stack safe. In particular, the guard runs after parsing.
+
 Candidate-local punctuation queries must use
 `AstFacts::candidate_tokens_in_range` with the smallest relevant AST range.
 Do not scan `Tokens::iter()` for each call, literal, or exception tuple: that

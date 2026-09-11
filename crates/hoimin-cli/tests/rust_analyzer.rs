@@ -82,3 +82,79 @@ fn typing_import_rebinding_inventory_is_site_aware() {
         assert!(parse_module(&mutated).is_ok());
     }
 }
+
+mod heap {
+    include!("support/heap_tracking.rs");
+    pub fn live() -> usize {
+        LIVE.load(Ordering::Relaxed)
+    }
+}
+#[global_allocator]
+static ALLOCATOR: heap::TrackingAllocator = heap::TrackingAllocator;
+
+#[test]
+fn repeated_depth_rejections_reclaim_ast_allocations() {
+    // Isolate allocator accounting from the harness's parallel tests, and keep an
+    // accidental recursive drop in a bounded child rather than the main runner.
+    if std::env::var_os("HOIMIN_DEPTH_CLEANUP_CHILD").is_none() {
+        let log = tempfile::NamedTempFile::new().unwrap();
+        let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "repeated_depth_rejections_reclaim_ast_allocations",
+            ])
+            .env("HOIMIN_DEPTH_CLEANUP_CHILD", "1")
+            .env_remove("RUST_MIN_STACK")
+            .stdout(log.reopen().unwrap())
+            .stderr(log.reopen().unwrap())
+            .spawn()
+            .unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        loop {
+            if let Some(status) = child.try_wait().unwrap() {
+                assert!(
+                    status.success(),
+                    "{}",
+                    std::fs::read_to_string(log.path()).unwrap()
+                );
+                return;
+            }
+            if std::time::Instant::now() > deadline {
+                child.kill().unwrap();
+                child.wait().unwrap();
+                panic!("cleanup timed out");
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+    }
+    std::thread::Builder::new()
+        .stack_size(2 * 1024 * 1024)
+        .spawn(|| {
+            let operators = hoimin_core::MutationOperatorSelection::default();
+            let request = rust::AnalyzeRequest {
+                path: camino::Utf8Path::new("calc.py"),
+                lines: &[],
+                symbols: &[],
+                operators: &operators,
+                profile: hoimin_core::MutationProfile::Full,
+                max_candidates: 1,
+            };
+            let source = format!("value = {}\n", vec!["1"; 25_000].join("+"));
+            // Warm parser thread-local state before checking retained allocations.
+            assert!(rust::analyze_source_cancellable(&request, &source, || false).is_err());
+            let baseline = heap::live();
+            for _ in 0..20 {
+                assert!(matches!(
+                    rust::analyze_source_cancellable(&request, &source, || false),
+                    Err(rust::AnalysisError::DepthExceeded { limit: 128 })
+                ));
+                assert!(
+                    heap::live() <= baseline + 1024,
+                    "rejection retained AST memory"
+                );
+            }
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}
