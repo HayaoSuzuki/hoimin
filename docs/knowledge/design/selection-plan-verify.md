@@ -5,6 +5,10 @@ description: 候補発見と実行の分離、ランキング、部分集合、�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-473
+  resource: ../../superpowers/specs/2026-09-11-issue-473-symbol-ranking-design.md
+  working_tree: untracked
+  sha256: d1748256ef730d871a2158c57e8c5601145d78e32288c269cac720f60ad10618
 - id: initial
   resource: ../../superpowers/specs/2026-07-21-agent-plan-verify-design.md
   revision: a7daea0b557cd435c1e55b540392fbdd116348e1
@@ -50,15 +54,21 @@ sources:
 
 `diverse` では、同点の候補をファイルごとの待ち行列（queue）に分ける。後続設計は、空になった待ち行列を巡回から外し、偏った分布で候補のないファイルを繰り返し調べる操作を減らす。総候補数をN、選ぶ件数をKとすると、待ち行列の作成はO(N)、選択時のqueue操作はO(K)を目標とする。選択順序を保つことが条件であり、この性能上の議論は同点の候補が特定ファイルに偏る場合を扱っている。[^diverse]
 
-# manifest版の記述と実装の不一致
+# 明示symbolの子要素とランキング
+
+Issue #473 の設計では、明示symbolと同じファイルにある子symbolにも `explicit_symbol` の250点を一度だけ加える。`Box` は `Box.check` や `Box.Inner.check` に一致し、`BoxOther` には一致しない。親子のselectorが複数一致しても加点を重ねず、別ファイルの同名symbolには適用しない。[^issue-473]
+
+順位の意味が変わるため、ランキング規則の版を3から4へ進める。保存形式のschema版は実装の3を維持する。旧ランキング版のplanはbaseline前に拒否して再生成を案内し、保存済みの順位を暗黙に変更しない。公開planの順位とverify --topの実行候補を照合する。既存Lean oracleの明示symbol入力は真偽値であり、今回の名前階層の解決自体を証明しているわけではない。[^issue-473]
+
+# カタログ作成時のmanifest版の不一致
 
 | 出典 | 記載・静的に観測した値 |
 | --- | --- |
 | 7月21日初期設計 | plan manifest v1 |
 | README・開発資料 | plan v2の記述。開発資料ではランキング規則の版をv3として区別 |
-| 現在の `plan.rs` | `PLAN_SCHEMA_VERSION = 3`。読込み時にこの値との一致を要求 |
+| カタログ対象の `plan.rs` | `PLAN_SCHEMA_VERSION = 3`。読込み時にこの値との一致を要求 |
 
-初期設計から版が変わったことに加え、現在の公開文書と実装にも不一致がある。上表はコードを読んだ結果であり、CLIで旧版を入力する試験は行っていない。したがって、v2を現行の受理形式として案内できない。保存形式の版とランキング規則の版も別々に確認する。[^initial][^readme][^development][^plan]
+初期設計から版が変わったことに加え、カタログ作成時の公開文書と実装にも不一致があった。上表はコードを読んだ結果であり、CLIで旧版を入力する試験は行っていない。この表は当時の不一致の記録であり、Issue #473 の設計では現行資料をschema3・ranking4へ揃える。保存形式の版とランキング規則の版も別々に確認する。[^initial][^readme][^development][^plan]
 
 # 関連する監査と再確認条件
 
@@ -70,3 +80,5 @@ sources:
 [^readme]: [README.md](../../../README.md)。
 [^development]: [development.md](../../development.md)。
 [^plan]: [plan.rs](../../../crates/hoimin-cli/src/plan.rs)。
+
+[^issue-473]: [2026-09-11-issue-473-symbol-ranking-design.md](../../superpowers/specs/2026-09-11-issue-473-symbol-ranking-design.md)。
