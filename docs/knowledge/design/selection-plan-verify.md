@@ -5,6 +5,10 @@ description: 候補発見と実行の分離、ランキング、部分集合、�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-459
+  resource: ../../superpowers/specs/2026-09-11-issue-459-record-size-design.md
+  working_tree: untracked
+  sha256: ced8501765b2babcd15bac56139f575c00cdb779a5149bb4a6e231ea75e0af7f
 - id: initial
   resource: ../../superpowers/specs/2026-07-21-agent-plan-verify-design.md
   revision: a7daea0b557cd435c1e55b540392fbdd116348e1
@@ -70,3 +74,9 @@ sources:
 [^readme]: [README.md](../../../README.md)。
 [^development]: [development.md](../../development.md)。
 [^plan]: [plan.rs](../../../crates/hoimin-cli/src/plan.rs)。
+
+# 候補の保存サイズ上限（Issue #459）
+
+planの候補にも実行用spoolと同じ2 MiBのレコード上限を適用する設計とした。JSONのエスケープとUTF-8、および末尾の改行1バイトを含むサイズで判定する。plan生成とverifyの事前検証で超過を拒否し、直接runする場合は既存のbaseline後の解析段階で不完全な実行として報告する。[^issue-459]
+
+[^issue-459]: [Issue #459: Executable candidate record limits](../../superpowers/specs/2026-09-11-issue-459-record-size-design.md)。
