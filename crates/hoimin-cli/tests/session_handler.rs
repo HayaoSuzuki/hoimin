@@ -995,7 +995,7 @@ fn explicit_resume_rejects_the_previous_fingerprint_schema() {
     handler.begin(begin_request(1, "legacy")).unwrap();
     let connection = Connection::open(&path).unwrap();
     connection
-        .execute("UPDATE fingerprints SET schema_version=5", [])
+        .execute("UPDATE fingerprints SET schema_version=6", [])
         .unwrap();
     drop(connection);
 

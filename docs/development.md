@@ -490,7 +490,7 @@ cargo test -p hoimin-cli --lib analyzer::rust::rust_tests::comprehension_excepti
 
 ## Extending plan ranking
 
-Plan manifests use schema version 3 and ranking rule version 4. The schema
+Plan manifests use schema version 4 and ranking rule version 4. The schema
 version describes the manifest's serialized shape; the ranking rule version
 describes the category and scoring semantics used to order its candidates.
 Change the ranking rule version whenever those semantics change, even when the
@@ -579,3 +579,32 @@ implementation plans describe historical runs and are not current instructions.
 Hoimin's Python mutation testing remains available through `hoimin plan` and
 `hoimin verify`; see the repository's Python mutation-testing skills for target
 selection and resource limits.
+
+## Worker import roots
+
+`RawRunConfig.import_roots` normalizes to an ordered, duplicate-free list in
+`RunConfig` and `PlanConfig`, separate from `Selection.sources`. The normalized
+config validators reject escaped or non-normalized paths from persisted data.
+Historical run configs decode a missing list as empty. Plan schema 4 requires
+regeneration of earlier manifests before any baseline runs; fingerprint schema
+7 frames the ordered roots under field tag 9, preventing old-session reuse.
+Users must start a new session and pay the baseline and mutant execution cost.
+
+`WorkspaceHandler::with_import_roots` preserves the existing constructor and
+copy lifecycle. The owned blocking worker-materialization task checks that explicit roots
+exist as directories in the copied worker before publishing `WorkerCreated`.
+Failed validation retains cleanup ownership through the existing pending-worker
+path; command environment construction performs no filesystem reads. The error
+identifies `--import-root` and suggests checking exclusions. Import roots do
+not bypass copying policy or select additional targets. Environment order is
+worker root, explicit roots, selected source roots, then rewritten inherited
+PYTHONPATH, using the existing OS split/join and deduplication.
+
+`tests/import_roots.rs` creates a network-free `venv --without-pip` and a
+regular package exposed by a path-only `.pth`. It records actual module paths
+and results for baseline and mutant, checks narrow file/line selection and
+plan-to-verify inheritance, and retains an inherited-PYTHONPATH control. This
+observes Python import behavior directly; Lean session/workspace oracles do not
+prove how Python loaders resolve imports. The setting covers path-only `.pth`
+regular packages when Python honors PYTHONPATH, not arbitrary editable finders,
+custom loaders, or invocations with `-E`/`-I`.

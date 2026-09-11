@@ -5,6 +5,11 @@ description: 元ソースへの変異適用を避け、状態遷移と入出力�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-477
+  resource: ../../superpowers/specs/2026-09-11-issue-477-import-roots-design.md
+  working_tree: untracked
+  sha256: a30ed5f129c635e75431212d590171ab03e5973640a4d6624775ee43fd81dcdd
+
 - id: issue-465
   resource: ../../superpowers/specs/2026-09-11-issue-465-retired-discovery-design.md
   working_tree: untracked
@@ -77,11 +82,17 @@ Issue #462 のFIFO読取り停止は、Pythonで実装されていたRust mutati
 
 crateの依存、実行要求と完了通知、コピーへの変異適用、解析器の起動方法を変更したら、このページを見直す。終了処理の条件は[状態・終了処理](runtime-lifecycle.md)、検証の根拠は[Leanの証拠範囲](../audits/lean-evidence.md)で確認できる。
 
+# 変異対象とimport rootの分離
+
+Issue 477では、path-only `.pth` に登録した元のsrcディレクトリがworkerより先にimportされる問題を扱う。`--import-root src` はworkerのimport探索先を明示し、`--file`・`--line` の候補範囲を広げない。worker root、明示したimport root、source root、継承PYTHONPATHの順序を保つ。指定ディレクトリがコピーに存在しない場合はbaseline前に拒否する。正規パッケージのpath-only `.pth` を検証対象とし、独自finderや環境変数を無視するPython起動まで保証しない。[^issue-477]
+
 [^initial]: [2026-07-18-python-mutation-tool-design.md](../../superpowers/specs/2026-07-18-python-mutation-tool-design.md)。
 [^migration]: [2026-07-19-remove-python-libcst-design.md](../../superpowers/specs/2026-07-19-remove-python-libcst-design.md)。
 [^core]: [Cargo.toml](../../../crates/hoimin-core/Cargo.toml)。
 [^machine]: [machine.rs](../../../crates/hoimin-core/src/machine.rs)。
 [^analyzer]: [rust.rs](../../../crates/hoimin-cli/src/analyzer/rust.rs)。
+
+[^issue-477]: [2026-09-11-issue-477-import-roots-design.md](../../superpowers/specs/2026-09-11-issue-477-import-roots-design.md)。
 
 [^issue-465]: [2026-09-11-issue-465-retired-discovery-design.md](../../superpowers/specs/2026-09-11-issue-465-retired-discovery-design.md)。
 

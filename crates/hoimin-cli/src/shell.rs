@@ -1321,6 +1321,7 @@ fn prepare_shell_setup_sync_in(
             literal_exclusions: Vec::new(),
         },
     )
+    .with_import_roots(config.import_roots.clone())
     .with_managed_root(Arc::clone(&execution_root))
     .with_max_owned_bytes(config.limits.max_workspace_size.get());
     boundary(ShellSetupBoundary::WorkspaceCreated);

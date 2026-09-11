@@ -82,7 +82,7 @@ async fn create_plan_emits_versioned_manifest_without_runtime_side_effects() {
     let stdout = String::from_utf8(stdout).unwrap();
     assert_eq!(stdout.matches('\n').count(), 1);
     let manifest: serde_json::Value = serde_json::from_str(&stdout).unwrap();
-    assert_eq!(manifest["schema_version"], 3);
+    assert_eq!(manifest["schema_version"], 4);
     assert_eq!(manifest["ranking_rule_version"], 4);
     assert_eq!(manifest["kind"], "plan");
     assert!(
@@ -246,7 +246,7 @@ async fn explicit_class_symbol_ranks_and_verifies_its_method_before_an_unrelated
             ("a.py", Some("other"), 2, 100),
         ]
     );
-    assert_eq!(manifest.schema_version, 3);
+    assert_eq!(manifest.schema_version, 4);
     assert_eq!(manifest.ranking_rule_version, 4);
     let planned = &manifest.candidates[0];
     let planned_id = planned.id.clone();
@@ -1298,7 +1298,7 @@ async fn verify_rejects_a_ranking_version_three_plan_before_baseline_with_regene
     let (path, manifest, marker) = write_plan_manifest(&project, &[]).await;
     let requested = vec![manifest.candidates[0].id.clone()];
     let mut value = serde_json::to_value(manifest).unwrap();
-    assert_eq!(value["schema_version"], 3);
+    assert_eq!(value["schema_version"], 4);
     value["ranking_rule_version"] = serde_json::json!(3);
     write_json(&path, &value);
 

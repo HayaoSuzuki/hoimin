@@ -122,6 +122,10 @@ pub enum WorkspaceDiagnostic {
 pub enum WorkspaceError {
     #[error("workspace root is not a directory: {0}")]
     RootNotDirectory(Utf8PathBuf),
+    #[error(
+        "--import-root {path} is unavailable in the copied worker: expected a directory; check workspace copy exclusions"
+    )]
+    ImportRootUnavailable { path: Utf8PathBuf },
     #[error("workspace worker count must be non-zero")]
     ZeroWorkers,
     #[error("workspace copy size overflow")]
@@ -218,6 +222,7 @@ impl WorkspaceError {
             | Self::MutationHashMismatch { .. }
             | Self::MutationSpanInvalid { .. }
             | Self::MutationOriginalMismatch { .. } => "workspace.mutation.invalid",
+            Self::ImportRootUnavailable { .. } => "workspace.import_root.unavailable",
             Self::InvalidGlob(_) => "workspace.glob.invalid",
             Self::InvalidPath { .. } => "workspace.path.invalid",
             Self::SnapshotPathCollision { .. } => "workspace.path.collision",
@@ -604,6 +609,26 @@ pub fn build_command_environment(
     source_roots: &[Utf8PathBuf],
     inherited: &BTreeMap<OsString, OsString>,
 ) -> Result<CommandEnvironment, WorkspaceError> {
+    build_command_environment_with_import_roots(
+        original_root,
+        worker_root,
+        &[],
+        source_roots,
+        inherited,
+    )
+}
+
+/// Builds worker PYTHONPATH in explicit import-root, source-root, inherited-path order.
+///
+/// # Errors
+/// Returns `PythonPath` if the OS cannot represent the joined paths.
+pub fn build_command_environment_with_import_roots(
+    original_root: &Utf8Path,
+    worker_root: &Utf8Path,
+    import_roots: &[Utf8PathBuf],
+    source_roots: &[Utf8PathBuf],
+    inherited: &BTreeMap<OsString, OsString>,
+) -> Result<CommandEnvironment, WorkspaceError> {
     let mut env = inherited.clone();
     let inherited_pythonpath = take_pythonpath(&mut env);
     let mut paths = Vec::<PathBuf>::new();
@@ -614,6 +639,14 @@ pub fn build_command_environment(
         &mut paths,
         &mut seen,
     );
+    for root in import_roots {
+        let path = if root == "." {
+            worker_root.to_owned()
+        } else {
+            worker_root.join(root)
+        };
+        push_unique(path.into_std_path_buf(), &mut paths, &mut seen);
+    }
     for source in source_roots {
         let path = rewrite_project_path(original_root, worker_root, source.as_std_path());
         push_unique(path, &mut paths, &mut seen);
@@ -742,6 +775,7 @@ fn path_key(path: &Path) -> OsString {
 pub struct WorkspaceHandler {
     original_root: Utf8PathBuf,
     source_roots: Vec<Utf8PathBuf>,
+    import_roots: Vec<Utf8PathBuf>,
     requested_workers: u32,
     options: CopyOptions,
     plan: Option<Arc<WorkspacePlan>>,
@@ -804,6 +838,7 @@ pub(crate) enum WorkspaceTask {
     Create {
         request: CreateWorker,
         plan: Arc<WorkspacePlan>,
+        import_roots: Vec<Utf8PathBuf>,
         pending: Option<Box<WorkerWorkspace>>,
     },
     Apply {
@@ -853,6 +888,7 @@ impl WorkspaceTask {
             Self::Create {
                 request,
                 plan,
+                import_roots,
                 mut pending,
             } => {
                 let id = request.id();
@@ -877,16 +913,27 @@ impl WorkspaceTask {
                     drop(pending.take());
                 }
                 match plan.create_worker(&request) {
-                    Ok(workspace) => WorkspaceTaskCompletion {
-                        id,
-                        event: RunEvent::WorkerCreated(WorkerCreated {
+                    Ok(workspace) => {
+                        if let Err(error) = validate_copied_import_roots(&workspace, &import_roots)
+                        {
+                            return WorkspaceTaskCompletion {
+                                id,
+                                event: RunEvent::EffectFailed(effect_failed(id, error)),
+                                active: None,
+                                pending: Some((worker, Box::new(workspace))),
+                            };
+                        }
+                        WorkspaceTaskCompletion {
                             id,
-                            worker,
-                            reservation_id: request.reservation_id(),
-                        }),
-                        active: Some((worker, Box::new(workspace))),
-                        pending: None,
-                    },
+                            event: RunEvent::WorkerCreated(WorkerCreated {
+                                id,
+                                worker,
+                                reservation_id: request.reservation_id(),
+                            }),
+                            active: Some((worker, Box::new(workspace))),
+                            pending: None,
+                        }
+                    }
                     Err(error) => WorkspaceTaskCompletion {
                         id,
                         event: RunEvent::EffectFailed(effect_failed(id, error)),
@@ -991,6 +1038,7 @@ impl WorkspaceHandler {
         Self {
             original_root,
             source_roots,
+            import_roots: Vec::new(),
             requested_workers,
             options,
             plan: None,
@@ -1003,6 +1051,12 @@ impl WorkspaceHandler {
             #[cfg(test)]
             preflight_pause: None,
         }
+    }
+
+    #[must_use]
+    pub fn with_import_roots(mut self, roots: Vec<Utf8PathBuf>) -> Self {
+        self.import_roots = roots;
+        self
     }
 
     #[must_use]
@@ -1121,6 +1175,7 @@ impl WorkspaceHandler {
         Ok(WorkspaceTask::Create {
             request,
             plan,
+            import_roots: self.import_roots.clone(),
             pending,
         })
     }
@@ -1243,13 +1298,17 @@ impl WorkspaceHandler {
             .ok_or(WorkspaceError::WorkerMissing { worker })
             .and_then(|plan| plan.create_worker(&request));
         result
-            .map(|workspace| {
+            .and_then(|workspace| {
+                if let Err(error) = validate_copied_import_roots(&workspace, &self.import_roots) {
+                    self.pending_cleanup.insert(worker, workspace);
+                    return Err(error);
+                }
                 self.workers.insert(worker, workspace);
-                WorkerCreated {
+                Ok(WorkerCreated {
                     id,
                     worker,
                     reservation_id,
-                }
+                })
             })
             .map_err(|error| effect_failed(id, error))
     }
@@ -1479,13 +1538,27 @@ impl WorkspaceHandler {
             .workers
             .get(&worker)
             .ok_or(WorkspaceError::WorkerMissing { worker })?;
-        build_command_environment(
+        build_command_environment_with_import_roots(
             &self.original_root,
             workspace.root(),
+            &self.import_roots,
             &self.source_roots,
             inherited,
         )
     }
+}
+
+// Called while worker materialization is owned by the blocking workspace task.
+fn validate_copied_import_roots(
+    workspace: &WorkerWorkspace,
+    roots: &[Utf8PathBuf],
+) -> Result<(), WorkspaceError> {
+    for root in roots {
+        if !workspace.root().join(root).is_dir() {
+            return Err(WorkspaceError::ImportRootUnavailable { path: root.clone() });
+        }
+    }
+    Ok(())
 }
 
 /// # Errors
@@ -1619,6 +1692,48 @@ mod task_tests {
     };
 
     use super::{CopyOptions, WorkspaceHandler};
+
+    #[test]
+    fn unavailable_import_root_retains_cleanup_without_publishing_worker() {
+        for blocking in [false, true] {
+            let project = tempfile::tempdir().unwrap();
+            std::fs::write(project.path().join("a.py"), "value = 1\n").unwrap();
+            let root = Utf8Path::from_path(project.path()).unwrap().to_owned();
+            let mut handler = WorkspaceHandler::new(root, Vec::new(), 1, CopyOptions::default())
+                .with_import_roots(vec!["missing".into()]);
+            let completed = handler
+                .handle_preflight(Preflight { id: EffectId(1) })
+                .unwrap();
+            let mut ledger = BudgetLedger::new(RunBudgets {
+                memory: 1,
+                copy: completed.aggregate_logical_bytes,
+                processes: 1,
+            });
+            let grant = reserve_workspace_copy(&mut ledger, &completed).unwrap();
+            let request = grant.create_worker(EffectId(2), 0).unwrap();
+            let failed = if blocking {
+                let completion = handler.prepare_create_task(request).unwrap().execute();
+                match handler.accept_task_completion(completion).unwrap() {
+                    RunEvent::EffectFailed(failed) => failed,
+                    event => panic!("unexpected publication: {event:?}"),
+                }
+            } else {
+                handler.handle_create_worker(request).unwrap_err()
+            };
+            assert_eq!(failed.failure.code(), "workspace.import_root.unavailable");
+            assert_eq!(handler.worker_count(), 0);
+            assert_eq!(handler.pending_cleanup_count(), 1);
+            let copied_root = handler.pending_cleanup.get(&0).unwrap().root().to_owned();
+            assert!(copied_root.is_dir());
+            handler.close().unwrap();
+            assert_eq!(handler.pending_cleanup_count(), 0);
+            assert!(!copied_root.exists());
+            assert_eq!(
+                std::fs::read_to_string(project.path().join("a.py")).unwrap(),
+                "value = 1\n"
+            );
+        }
+    }
 
     fn prepared_handler() -> (
         tempfile::TempDir,
