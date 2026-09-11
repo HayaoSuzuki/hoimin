@@ -13,12 +13,21 @@ struct LeanOracleCase {
     mode: String,
     statuses: Vec<String>,
     baseline: String,
+    #[serde(default)]
+    result_fields: Option<ResultFields>,
     complete: bool,
     exit_code: i32,
     counts: Value,
     score: Option<Score>,
     expected_disposition: String,
     expected_history: Option<History>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ResultFields {
+    termination: Value,
+    output_state: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -48,7 +57,21 @@ fn parse_lean_oracle_cases() -> Vec<LeanOracleCase> {
         .map(|line| serde_json::from_str(line).unwrap())
         .collect();
     let mut ids = BTreeSet::new();
-    assert_eq!(cases.len(), 184, "closed boundary matrix changed");
+    assert_eq!(cases.len(), 282, "closed boundary matrix changed");
+    assert_eq!(
+        cases
+            .iter()
+            .filter(|case| case.result_fields.is_none())
+            .count(),
+        184
+    );
+    assert_eq!(
+        cases
+            .iter()
+            .filter(|case| case.result_fields.is_some())
+            .count(),
+        98
+    );
     for case in &cases {
         assert_eq!(case.schema, 1);
         assert_eq!(case.mode, "strict");
@@ -102,6 +125,19 @@ fn report_json_from_lean_case(case: &LeanOracleCase, schema: u32) -> Value {
                 };
                 if matches!(status.as_str(), "error" | "not_run") {
                     event["output"] = Value::Null;
+                }
+                if let Some(fields) = &case.result_fields {
+                    event["termination"] = fields.termination.clone();
+                    event["output_state"] = json!(fields.output_state);
+                    event["output"] = template["output"].clone();
+                    if fields.output_state == "close_timed_out" {
+                        event["diagnostics"] = json!([{
+                            "code": hoimin_core::PROCESS_OUTPUT_CLOSE_TIMEOUT_CODE,
+                            "mutant_id": format!("mutant-{index}"),
+                            "level": "error",
+                            "message": "output stream did not close"
+                        }]);
+                    }
                 }
                 event
             })
@@ -224,4 +260,19 @@ async fn raw_v2_and_v3_summaries_follow_lean_before_entering_stall_history() {
         mismatches.len(),
         mismatches.join("\n")
     );
+}
+
+#[tokio::test]
+async fn killed_exit_zero_minimal_regression_follows_lean() {
+    let case = parse_lean_oracle_cases()
+        .into_iter()
+        .find(|case| case.id == "result_killed_exit_zero_complete")
+        .expect("retain the minimal result-validation witness");
+    for schema in [2, 3] {
+        let observed = observe_cli_self_comparison(&case, schema)
+            .await
+            .unwrap_or_else(|error| panic!("v{schema} infrastructure-error: {error}"));
+        assert_eq!(observed.disposition, case.expected_disposition, "v{schema}");
+        assert_eq!(observed.history, case.expected_history, "v{schema}");
+    }
 }

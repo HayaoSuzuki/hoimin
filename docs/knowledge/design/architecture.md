@@ -5,6 +5,20 @@ description: 元ソースへの変異適用を避け、状態遷移と入出力�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-477
+  resource: ../../superpowers/specs/2026-09-11-issue-477-import-roots-design.md
+  working_tree: untracked
+  sha256: a30ed5f129c635e75431212d590171ab03e5973640a4d6624775ee43fd81dcdd
+
+- id: issue-465
+  resource: ../../superpowers/specs/2026-09-11-issue-465-retired-discovery-design.md
+  working_tree: untracked
+  sha256: 7efd3035a37d38c95404f12774387450f94dc0be0a69af1da905056df54cedf6
+
+- id: issue-462
+  resource: ../../superpowers/specs/2026-09-11-issue-462-retired-reader-design.md
+  working_tree: untracked
+  sha256: d60d84425e841eeca29a40a71a9b73a18be18a43e0a306b149add1f7c029b2b0
 - id: initial
   resource: ../../superpowers/specs/2026-07-18-python-mutation-tool-design.md
   revision: a7daea0b557cd435c1e55b540392fbdd116348e1
@@ -25,6 +39,10 @@ sources:
   resource: ../../../crates/hoimin-cli/src/analyzer/rust.rs
   revision: a7daea0b557cd435c1e55b540392fbdd116348e1
   working_tree: clean
+- id: issue-484
+  resource: ../../superpowers/specs/2026-09-11-issue-484-metrics-destinations-design.md
+  working_tree: untracked
+  sha256: b146daf296d69374ad01ac86d5a5becd30b721b1983d5a54507cd0f1750ef3e7
 ---
 
 # 作業コピーへの変異適用
@@ -54,14 +72,38 @@ hoiminの初期設計では、一時領域に作ったテスト実行用のコ�
 
 したがって、初期設計にあるヘルパー起動や版取得は現行手順として使えない。利用者が指定するテストコマンドでPythonを起動することと、hoiminの解析器がPythonに依存することも区別する。[^migration]
 
+# 廃止したRust関数探索
+
+Issue #465 の関数取りこぼしは、Rustの関数を正規表現で列挙してcargo-mutantsの候補を絞るPython製開発ツールの問題だった。コミット `2f27e2a` で探索処理と候補フィルタを含む連携全体が削除されている。今回、その削除が作業対象に含まれること、現行の呼出し元が残っていないこと、開発スキルの契約テスト3件の成功を確認した。既存の機能削除による解消であり、新しいRust構文解析器を実装したものではない。Pythonソースを解析する現行hoiminのRust実装とは対象が異なる。[^issue-465]
+
+# 廃止した開発ツールの不具合
+
+Issue #462 のFIFO読取り停止は、Pythonで実装されていたRust mutation testing用の開発ツールに関するものだった。コミット `2f27e2a` で読み取り関数・探索処理・コマンド入口が削除されており、現在の開発手順もcargo-mutantsを実行しない方針である。今回、削除コミットが作業対象に含まれること、現行ツリーに呼出し元が残っていないこと、現行スキルの契約テスト3件の成功を確認した。これは既存の機能削除による解消であり、現行Rust実装全体のFIFO安全性を示す検証ではない。[^issue-462]
+
 # コピー方式で防げる変更の範囲
 
 コピー方式で避けるのは、元ソースへ変異を適用する操作である。任意の出力先や子プロセスによる変更まで防ぐ設計とは読み取れない。[境界監査](../audits/boundary-2026-09.md)では、metrics出力先と元ソースが重なる場合を別の問題として記録している。
 
+Issue484の設計では、選択済みソースや明示fingerprint入力、使用中のsessionとmetrics出力先が衝突する場合をbaseline前に拒否する。renameで置き換えるディレクトリエントリを比較し、別のhardlinkやsymlinkの参照先を同一視しない。衝突を拒否した後の最終出力も保護の対象とする。[^issue-484]
+
+保存先の同一性を確定できない場合は、実行結果を維持してmetricsの保存を見送り、終了時に `metrics.write` で通知する。未作成の親ディレクトリや対応範囲外の別名もこの扱いとし、既知の衝突をbaseline前に拒否する場合と区別する。[^issue-484]
+
 crateの依存、実行要求と完了通知、コピーへの変異適用、解析器の起動方法を変更したら、このページを見直す。終了処理の条件は[状態・終了処理](runtime-lifecycle.md)、検証の根拠は[Leanの証拠範囲](../audits/lean-evidence.md)で確認できる。
+
+# 変異対象とimport rootの分離
+
+Issue 477では、path-only `.pth` に登録した元のsrcディレクトリがworkerより先にimportされる問題を扱う。`--import-root src` はworkerのimport探索先を明示し、`--file`・`--line` の候補範囲を広げない。worker root、明示したimport root、source root、継承PYTHONPATHの順序を保つ。指定ディレクトリがコピーに存在しない場合はbaseline前に拒否する。正規パッケージのpath-only `.pth` を検証対象とし、独自finderや環境変数を無視するPython起動まで保証しない。[^issue-477]
 
 [^initial]: [2026-07-18-python-mutation-tool-design.md](../../superpowers/specs/2026-07-18-python-mutation-tool-design.md)。
 [^migration]: [2026-07-19-remove-python-libcst-design.md](../../superpowers/specs/2026-07-19-remove-python-libcst-design.md)。
 [^core]: [Cargo.toml](../../../crates/hoimin-core/Cargo.toml)。
 [^machine]: [machine.rs](../../../crates/hoimin-core/src/machine.rs)。
 [^analyzer]: [rust.rs](../../../crates/hoimin-cli/src/analyzer/rust.rs)。
+
+[^issue-484]: [2026-09-11-issue-484-metrics-destinations-design.md](../../superpowers/specs/2026-09-11-issue-484-metrics-destinations-design.md)。
+
+[^issue-477]: [2026-09-11-issue-477-import-roots-design.md](../../superpowers/specs/2026-09-11-issue-477-import-roots-design.md)。
+
+[^issue-465]: [2026-09-11-issue-465-retired-discovery-design.md](../../superpowers/specs/2026-09-11-issue-465-retired-discovery-design.md)。
+
+[^issue-462]: [2026-09-11-issue-462-retired-reader-design.md](../../superpowers/specs/2026-09-11-issue-462-retired-reader-design.md)。

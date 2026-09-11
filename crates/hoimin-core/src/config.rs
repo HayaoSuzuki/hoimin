@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 use std::num::{NonZeroU64, NonZeroUsize};
 use std::time::Duration;
 
-use camino::Utf8PathBuf;
+use camino::{Utf8Component, Utf8PathBuf};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -431,6 +431,8 @@ impl MutationProfile {
 pub struct RawRunConfig {
     pub root: Utf8PathBuf,
     pub sources: Vec<Utf8PathBuf>,
+    #[serde(default)]
+    pub import_roots: Vec<Utf8PathBuf>,
     pub files: Vec<Utf8PathBuf>,
     pub lines: Vec<LineSelection>,
     pub symbols: Vec<crate::SymbolSelection>,
@@ -528,6 +530,8 @@ pub struct RunLimits {
 pub struct RunConfig {
     pub root: Utf8PathBuf,
     pub selection: Selection,
+    #[serde(default)]
+    pub import_roots: Vec<Utf8PathBuf>,
     pub fingerprint_includes: Vec<String>,
     pub fingerprint_files: Vec<String>,
     pub fingerprint_inputs: Vec<FingerprintInputFile>,
@@ -546,6 +550,7 @@ pub struct RunConfig {
 pub struct PlanConfig {
     pub root: Utf8PathBuf,
     pub selection: Selection,
+    pub import_roots: Vec<Utf8PathBuf>,
     pub limits: RunLimits,
     pub test_argv: Vec<CommandArg>,
     pub output: OutputConfig,
@@ -567,6 +572,7 @@ impl RunConfig {
     /// command, or limits are invalid.
     pub fn validate(&self) -> Result<(), ConfigError> {
         validate_selection(&self.selection)?;
+        validate_import_roots(&self.import_roots)?;
         validate_operators(&self.operators)?;
         if self.resume && self.session.is_none() {
             return Err(ConfigError::ResumeRequiresSession);
@@ -580,6 +586,7 @@ impl RunConfig {
         PlanConfig {
             root: self.root,
             selection: self.selection,
+            import_roots: self.import_roots,
             limits: self.limits,
             test_argv: self.test_argv,
             output: self.output,
@@ -602,6 +609,7 @@ impl PlanConfig {
     /// invalid.
     pub fn validate(&self) -> Result<(), ConfigError> {
         validate_selection(&self.selection)?;
+        validate_import_roots(&self.import_roots)?;
         validate_operators(&self.operators)?;
         validate_test_argv(&self.test_argv)?;
         validate_limits(&self.limits)
@@ -612,6 +620,7 @@ impl PlanConfig {
         RunConfig {
             root: self.root,
             selection: self.selection,
+            import_roots: self.import_roots,
             fingerprint_includes: self.fingerprint_includes,
             fingerprint_files: self.fingerprint_files,
             fingerprint_inputs: self.fingerprint_inputs,
@@ -639,6 +648,12 @@ pub struct FingerprintInputFile {
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum ConfigError {
+    #[error(
+        "invalid --import-root {path}: expected a project-root-relative directory without escaping parent components"
+    )]
+    InvalidImportRoot { path: Utf8PathBuf },
+    #[error("import_roots must be normalized and contain no duplicates")]
+    NonNormalizedImportRoots,
     #[error(
         "unknown mutation operator: {value}; valid operators/selectors: {valid}",
         valid = valid_operator_names()
@@ -742,6 +757,52 @@ impl TryFrom<&RawRunLimits> for RunLimits {
 
 fn nonzero_usize(value: usize, name: &'static str) -> Result<NonZeroUsize, ConfigError> {
     NonZeroUsize::new(value).ok_or(ConfigError::InvalidLimit(name))
+}
+
+// Pure path validation: copied-directory availability belongs to workspace execution.
+fn normalize_import_roots(roots: &[Utf8PathBuf]) -> Result<Vec<Utf8PathBuf>, ConfigError> {
+    let mut normalized = Vec::new();
+    let mut seen = BTreeSet::new();
+    for path in roots {
+        let invalid = || ConfigError::InvalidImportRoot { path: path.clone() };
+        if path.as_str().is_empty() {
+            return Err(invalid());
+        }
+        let mut parts = Vec::new();
+        for component in path.components() {
+            match component {
+                Utf8Component::CurDir => {}
+                Utf8Component::Normal(part) => parts.push(part),
+                Utf8Component::ParentDir => {
+                    parts.pop().ok_or_else(invalid)?;
+                }
+                Utf8Component::Prefix(_) | Utf8Component::RootDir => return Err(invalid()),
+            }
+        }
+        let path = Utf8PathBuf::from(if parts.is_empty() {
+            ".".to_owned()
+        } else {
+            parts.join("/")
+        });
+        if seen.insert(path.clone()) {
+            normalized.push(path);
+        }
+    }
+    Ok(normalized)
+}
+
+fn validate_import_roots(roots: &[Utf8PathBuf]) -> Result<(), ConfigError> {
+    let normalized = normalize_import_roots(roots)?;
+    // Compare strings: Path equality itself ignores some harmless components.
+    if normalized
+        .iter()
+        .map(|path| path.as_str())
+        .eq(roots.iter().map(|path| path.as_str()))
+    {
+        Ok(())
+    } else {
+        Err(ConfigError::NonNormalizedImportRoots)
+    }
 }
 
 fn validate_selection(selection: &Selection) -> Result<(), ConfigError> {
@@ -865,6 +926,7 @@ impl TryFrom<RawRunConfig> for RunConfig {
         Ok(Self {
             root: raw.root,
             selection,
+            import_roots: normalize_import_roots(&raw.import_roots)?,
             fingerprint_includes: raw.fingerprint_includes,
             fingerprint_files: raw.fingerprint_files,
             fingerprint_inputs: Vec::new(),

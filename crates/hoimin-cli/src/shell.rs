@@ -27,13 +27,14 @@ use uuid::Uuid;
 
 use crate::analyzer::{AnalyzerHandler, CandidateStore};
 use crate::metrics::{MetricsCollector, MetricsError, finalize_metrics};
+use crate::metrics_destination::{MetricsDestination, validate_metrics_destination};
 use crate::process::{ProcessCancellation, ProcessHandler, ProcessRequest, ProcessStartGate};
 use crate::report::PreparedReport;
 use crate::report::delivery::ReportDelivery;
 #[cfg(not(any(windows, target_os = "linux")))]
 use crate::resource::PortableBackend;
 use crate::resource::ResourceBackend;
-use crate::session::SessionDispatcher;
+use crate::session::{SessionArtifacts, SessionDispatcher};
 use crate::target::TargetHandler;
 use crate::workspace::{
     CleanupRecord, CopyOptions, DiskMonitor, FilesystemKey, ManagedChild, ManagedRootCoordinator,
@@ -764,6 +765,8 @@ enum BlockingEffectCompletion {
         workspace: Box<WorkspaceHandler>,
         event: Box<RunEvent>,
         secondary_errors: Vec<String>,
+        metrics_destination: Option<MetricsDestination>,
+        session_path: Option<Utf8PathBuf>,
     },
 }
 
@@ -802,34 +805,57 @@ impl BlockingEffect {
                 id,
                 mut workspace,
                 request,
-                config,
+                mut config,
                 copied_at_start,
                 targets,
                 resource_mode,
             } => {
                 let mut run_fingerprint = None;
-                let event = match workspace.handle_preflight_validated(request, |root, manifest| {
-                    recheck_fingerprint_inputs(&config, root, manifest, &copied_at_start, id)?;
-                    run_fingerprint = Some(prepare_manifest_fingerprint(
-                        &config,
-                        &targets,
-                        resource_mode,
-                        manifest,
-                        id,
-                    )?);
-                    Ok(())
-                }) {
+                let mut metrics_destination = None;
+                let validation = validate_metrics_destination(&config, &targets, id).map(|value| {
+                    metrics_destination = Some(value);
+                });
+                let preflight = validation.and_then(|()| {
+                    prepare_session_artifacts(&mut config)
+                        .map_err(|error| EffectFailed::other(id, "session.path", error))
+                        .and_then(|exclusions| {
+                            workspace.set_literal_exclusions(exclusions);
+                            workspace.handle_preflight_validated(request, |root, manifest| {
+                                recheck_fingerprint_inputs(
+                                    &config,
+                                    root,
+                                    manifest,
+                                    &copied_at_start,
+                                    id,
+                                )?;
+                                run_fingerprint = Some(prepare_manifest_fingerprint(
+                                    &config,
+                                    &targets,
+                                    resource_mode,
+                                    manifest,
+                                    id,
+                                )?);
+                                Ok(())
+                            })
+                        })
+                });
+                let (event, session_path) = match preflight {
                     Ok(mut value) => {
                         value.fingerprint = run_fingerprint;
-                        RunEvent::PreflightCompleted(value)
+                        (
+                            RunEvent::PreflightCompleted(value),
+                            config.session.as_ref().map(|session| session.path.clone()),
+                        )
                     }
-                    Err(error) => RunEvent::EffectFailed(error),
+                    Err(error) => (RunEvent::EffectFailed(error), None),
                 };
                 BlockingEffectCompletion::OwnedWorkspace {
                     id,
                     workspace,
                     event: Box::new(event),
                     secondary_errors: Vec::new(),
+                    metrics_destination,
+                    session_path,
                 }
             }
             Self::Cleanup {
@@ -846,6 +872,8 @@ impl BlockingEffect {
                     workspace,
                     event: Box::new(event),
                     secondary_errors,
+                    metrics_destination: None,
+                    session_path: None,
                 }
             }
             #[cfg(test)]
@@ -891,6 +919,39 @@ fn is_blocking_io_effect(effect: &RunEffect) -> bool {
             | RunEffect::VerifyOriginals(_)
             | RunEffect::Cleanup(_)
     )
+}
+
+fn prepare_session_artifacts(
+    config: &mut RunConfig,
+) -> Result<Vec<crate::workspace::LiteralExclusion>, String> {
+    let mut literal_exclusions = Vec::new();
+    if let Some(session) = &mut config.session {
+        let artifacts =
+            SessionArtifacts::resolve(&session.path).map_err(|error| error.to_string())?;
+        let root = std::fs::canonicalize(&config.root).map_err(|error| error.to_string())?;
+        for (path, tree) in artifacts
+            .files()
+            .into_iter()
+            .map(|path| (path, false))
+            .chain(std::iter::once((artifacts.lock_directory(), true)))
+        {
+            if let Some(relative) = crate::workspace::relative_inside(&path, &root) {
+                let relative = Utf8PathBuf::from_path_buf(relative)
+                    .map_err(|_| "session artifact path is not UTF-8".to_owned())?;
+                let relative = crate::portable_path::from_native(relative.as_str())
+                    .map_err(|error| error.to_string())?;
+                let relative = Utf8PathBuf::from(relative.into_owned());
+                literal_exclusions.push(if tree {
+                    crate::workspace::LiteralExclusion::Tree(relative)
+                } else {
+                    crate::workspace::LiteralExclusion::File(relative)
+                });
+            }
+        }
+        session.path = Utf8PathBuf::from_path_buf(artifacts.database().to_owned())
+            .map_err(|_| "session database path is not UTF-8".to_owned())?;
+    }
+    Ok(literal_exclusions)
 }
 
 fn prepare_blocking_effect<Stdout, Stderr>(
@@ -973,6 +1034,8 @@ where
             workspace,
             event,
             secondary_errors,
+            metrics_destination,
+            session_path,
         } => {
             if context.workspace.is_some() {
                 return RunEvent::EffectFailed(EffectFailed::other(
@@ -982,6 +1045,12 @@ where
                 ));
             }
             context.workspace = Some(*workspace);
+            if let Some(destination) = metrics_destination {
+                context.metrics_destination = destination;
+            }
+            if let Some(path) = session_path {
+                context.session_path = Some(path);
+            }
             context.blocking_secondary_errors.extend(secondary_errors);
             *event
         }
@@ -1263,8 +1332,10 @@ fn prepare_shell_setup_sync_in(
         CopyOptions {
             includes: config.selection.includes.clone(),
             excludes: config.selection.excludes.clone(),
+            literal_exclusions: Vec::new(),
         },
     )
+    .with_import_roots(config.import_roots.clone())
     .with_managed_root(Arc::clone(&execution_root))
     .with_max_owned_bytes(config.limits.max_workspace_size.get());
     boundary(ShellSetupBoundary::WorkspaceCreated);
@@ -1794,6 +1865,7 @@ pub struct ShellContext<Stdout, Stderr> {
     fingerprint_copy_inputs: BTreeSet<Utf8PathBuf>,
     report_versions: ReportVersions,
     blocking_secondary_errors: Vec<String>,
+    metrics_destination: MetricsDestination,
     // Keep this last so every handler/root clone is dropped before an armed rollback.
     setup_rollback: Option<SetupRollback>,
 }
@@ -1841,6 +1913,7 @@ where
                 hoimin: env!("CARGO_PKG_VERSION").to_owned(),
             },
             blocking_secondary_errors: Vec::new(),
+            metrics_destination: MetricsDestination::Disabled,
             setup_rollback: Some(rollback),
         }
     }
@@ -2474,7 +2547,7 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
     fingerprint_copy_inputs: Option<BTreeSet<Utf8PathBuf>>,
     owned_report: Option<OwnedReportFactory<Stdout, Stderr>>,
 ) -> Result<i32, String> {
-    let metrics_path = config.output.metrics.clone();
+    let metrics_requested = config.output.metrics.is_some();
     if let Some(own_report) = owned_report {
         let delivery_child = context
             .spool_dir
@@ -2560,7 +2633,7 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
         let mut disk_stop_delivered = false;
         #[cfg(test)]
         let mut disk_stop_order_observed = false;
-        if metrics_path.is_some() {
+        if metrics_requested {
             let mut collector = MetricsCollector::new(state.run_id());
             if let Err(error) = collector.begin_stage("targets") {
                 metrics_warnings.push(("metrics.state", error.to_string()));
@@ -4494,34 +4567,44 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
                 ),
             );
         }
-        if let Some(path) = metrics_path {
-            match (shutdown_budget.as_ref(), shutdown_expiry_reported) {
-                (Some(budget), false) => {
-                    let finalized = finalize_metrics_with_shutdown(
-                        path.as_std_path().to_owned(),
-                        metrics,
-                        run_result.as_ref().err().cloned(),
-                        discovered,
-                        executed,
-                        metrics_warnings,
-                        budget,
-                        Box::new(|| {}),
-                    )
-                    .await;
-                    metrics_warnings = finalized.warnings;
-                    if let Some(expiry) = finalized.expiry {
-                        run_result = match run_result {
-                            Ok(_) => Err(expiry),
-                            Err(primary) => Err(combine_shutdown_errors(primary, Some(expiry))),
-                        };
-                    }
+        if metrics_requested {
+            let path = match std::mem::take(&mut context.metrics_destination) {
+                MetricsDestination::Ready(path) => Some(path),
+                MetricsDestination::Unavailable(message) => {
+                    metrics_warnings.push(("metrics.write", message));
+                    None
                 }
-                (Some(_), true) => skip_expired_metrics_finalization(
-                    metrics,
-                    run_result.as_ref().err().map(String::as_str),
-                    &mut metrics_warnings,
-                ),
-                (None, _) => unreachable!("outer finalization always has a shutdown budget"),
+                MetricsDestination::Disabled => None,
+            };
+            if let Some(path) = path {
+                match (shutdown_budget.as_ref(), shutdown_expiry_reported) {
+                    (Some(budget), false) => {
+                        let finalized = finalize_metrics_with_shutdown(
+                            path,
+                            metrics,
+                            run_result.as_ref().err().cloned(),
+                            discovered,
+                            executed,
+                            metrics_warnings,
+                            budget,
+                            Box::new(|| {}),
+                        )
+                        .await;
+                        metrics_warnings = finalized.warnings;
+                        if let Some(expiry) = finalized.expiry {
+                            run_result = match run_result {
+                                Ok(_) => Err(expiry),
+                                Err(primary) => Err(combine_shutdown_errors(primary, Some(expiry))),
+                            };
+                        }
+                    }
+                    (Some(_), true) => skip_expired_metrics_finalization(
+                        metrics,
+                        run_result.as_ref().err().map(String::as_str),
+                        &mut metrics_warnings,
+                    ),
+                    (None, _) => unreachable!("outer finalization always has a shutdown budget"),
+                }
             }
             for (code, message) in metrics_warnings {
                 if tokio::time::Instant::now() >= budget.deadline()
@@ -8610,6 +8693,7 @@ mod tests {
             &CopyOptions {
                 includes: Vec::new(),
                 excludes: vec!["target.py".to_owned()],
+                literal_exclusions: Vec::new(),
             },
         )
         .unwrap();

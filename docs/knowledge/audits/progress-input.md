@@ -1,11 +1,15 @@
 ---
 type: Audit
 title: progress入力の集計値検証と後続修正
-description: 境界監査後の修正、368観測の範囲、既存の比較用テストの前提変更を記録する。
+description: 集計値検証の過去の368観測と、単一結果検証を加えた564観測を区別して記録する。
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 audit_revision: 623dd808612dbc34775e16814845eec0bc52dff9
 sources:
+- id: issue-460-audit
+  resource: ../../superpowers/reports/2026-09-11-issue-460-progress-result-audit.md
+  working_tree: untracked
+  sha256: 34c1bfe09482686fd796f35df674bb0fdf0f9325210437884519a906304fb3a0
 - id: report
   resource: ../../superpowers/reports/2026-09-11-progress-input-lean.md
   revision: a7daea0b557cd435c1e55b540392fbdd116348e1
@@ -45,7 +49,7 @@ progressは、変異試験の結果を読み込んで進捗を比較する処理
 | 修正後 | 全368観測が一致。不正入力は終了コード2、対象パス付きエラー、progress JSON出力なし |
 | 意図的に壊した判定の検出 | completeの無条件受理、inconclusive検査欠落、終了コードの優先順位違反の3種類を検出 |
 
-元報告の実行環境はmacOS arm64である。比較の記録と、実行時間・メモリを監視する資源guardの結果はJSONに保存されている。今回はこれらの資料を参照し、試験を再実行していない。[^report][^evidence][^adapter]
+元報告の実行環境はmacOS arm64である。比較の記録と、実行時間・メモリを監視する資源guardの結果はJSONに保存されている。初回のカタログ作成ではこれらの資料を参照し、試験を再実行していない。[^report][^evidence][^adapter]
 
 # 既存の比較用テストデータの分類変更
 
@@ -55,9 +59,17 @@ progressは、変異試験の結果を読み込んで進捗を比較する処理
 
 # 証明の範囲と実行資源
 
-4つの一般定理が示すのはモデル内の性質である。有限の入力表で試験したため、任意のJSON・入力サイズ・履歴を検証したとはいえない。個々の変異候補の終了理由・出力欄の整合性（#460）や、元コードの試験結果と実行状態フラグとの全関係も範囲外である。[^report]
+元報告の4つの一般定理が示すのはモデル内の性質である。有限の入力表で試験したため、任意のJSON・入力サイズ・履歴を検証したとはいえない。元報告では、個々の変異候補の終了理由・出力欄の整合性（#460）や、元コードの試験結果と実行状態フラグとの全関係も範囲外だった。[^report]
 
 初回のネイティブ実行形式へのリンク処理は、メモリ監視の768MiB閾値で停止した。後続報告では、承認を得て上限を1GiBとし、20秒の時間制限、250msごとの監視、直列実行を保った条件で、事例生成プログラムの成功を記録している。既存キャッシュを使った増分ビルドの測定であり、キャッシュなしの結果は示していない。この過去の承認は、別作業の資源上限変更の許可には使わない。[^report]
+
+# Issue #460 の単一結果検証
+
+Issue #460 の修正では、`MutantFinished::validate_result` を生成側とprogressの両スキーマ読取りで共有する。出力状態に必要な結果欄、出力回収タイムアウトの診断、終了理由に対するstatusの順に検査する。終了理由がnullで出力状態がcompleteの旧レポートは受理し、出力回収タイムアウトによる正当なerrorも維持する。矛盾した入力は終了コード2と対象パス付き診断で拒否し、比較用JSONを出力しない。[^issue-460-audit]
+
+既存184ケースに、7種類のstatus、終了理由6種類とnull、2種類の出力状態からなる98ケースを追加した。両スキーマで564件の公開CLI観測を行い、修正前は158件が不一致、修正後は全件が一致した。最小の不一致はkilledとExit(0)の組合せで、修正前は両スキーマでusableかつsaturatedになった。旧ケースの期待値を変えずに、単一結果の検査漏れと出力状態の無視を検出するモデルも加えた。[^issue-460-audit]
+
+これは有限の結果フィールドと同一レポート2件の比較に対する検証である。Leanの定理はモデル内の性質を示し、任意のJSON、実プロセスの出力回収、全履歴の正しさを証明するものではない。診断の欠落・重複・候補IDなどの不整合はRustの直接テストで確認する。資源制限と実行結果の詳細は今回の監査報告を参照する。[^issue-460-audit]
 
 # 再確認条件
 
@@ -67,3 +79,5 @@ summary、終了コードの優先順位、読取り処理の受理条件、元�
 [^evidence]: [2026-09-11-progress-input-verification.json](../../superpowers/reports/2026-09-11-progress-input-verification.json)。
 [^input]: [input.rs](../../../crates/hoimin-cli/src/progress/input.rs)。
 [^adapter]: [lean_progress_input_oracle.rs](../../../crates/hoimin-cli/tests/lean_progress_input_oracle.rs)。
+
+[^issue-460-audit]: [2026-09-11-issue-460-progress-result-audit.md](../../superpowers/reports/2026-09-11-issue-460-progress-result-audit.md)。
