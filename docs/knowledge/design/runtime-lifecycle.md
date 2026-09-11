@@ -25,6 +25,10 @@ sources:
   resource: ../../superpowers/reports/2026-09-08-issue-342-resource-audit.md
   revision: a7daea0b557cd435c1e55b540392fbdd116348e1
   working_tree: clean
+- id: issue-484
+  resource: ../../superpowers/specs/2026-09-11-issue-484-metrics-destinations-design.md
+  working_tree: untracked
+  sha256: b146daf296d69374ad01ac86d5a5becd30b721b1983d5a54507cd0f1750ef3e7
 ---
 
 # 制限する資源とディスク監視の範囲
@@ -61,6 +65,10 @@ Unix向けの共通実装（portable経路）では、Hoiminが直接起動し�
 
 一方、execution rootの削除可否は、プロセスと作業領域を使う処理が終了したかどうかで判断する。レポート出力が終わっていなくても、独立に安全条件を満たした実行用ディレクトリの後処理は進められる。この出力方式の保証はCLIが所有するwriterを対象とし、呼出し元から借用した、別スレッドへ移せないwriter（非 `Send` writer）を受け取る同期APIにまで広げていない。[^delivery]
 
+metricsは元ソースの検証後に書き込まれるため、出力先の衝突検査と最終書込みの許可を結び付ける必要がある。Issue484の設計ではbaseline前の検査結果を最終処理へ渡し、衝突時の書込みを防ぐ。通常のbaseline失敗時のmetricsと、書込み不能時の警告は維持する。[^issue-484]
+
+保存先の同一性を確定できない場合は、実行結果を維持してmetricsの保存を見送り、終了時に `metrics.write` で通知する。未作成の親ディレクトリや対応範囲外の別名もこの扱いとし、既知の衝突をbaseline前に拒否する場合と区別する。[^issue-484]
+
 # 後処理の要求・完了と監査の範囲
 
 後処理を要求しただけでは、ディレクトリの物理削除やプロセスの終了回収（reap）が完了したことにはならない。削除を始める条件と、処理が完了したことを確認する条件を分けて扱う。[^disk][^cleanup]
@@ -80,3 +88,5 @@ Unix向けの共通実装（portable経路）では、Hoiminが直接起動し�
 [^terminal]: [2026-07-29-run-finished-terminal-design.md](../../superpowers/specs/2026-07-29-run-finished-terminal-design.md)。
 [^delivery]: [2026-09-08-issue-335-report-shutdown-design.md](../../superpowers/specs/2026-09-08-issue-335-report-shutdown-design.md)。
 [^cleanup]: [2026-09-08-issue-342-resource-audit.md](../../superpowers/reports/2026-09-08-issue-342-resource-audit.md)。
+
+[^issue-484]: [2026-09-11-issue-484-metrics-destinations-design.md](../../superpowers/specs/2026-09-11-issue-484-metrics-destinations-design.md)。

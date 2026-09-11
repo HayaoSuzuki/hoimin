@@ -39,6 +39,10 @@ sources:
   resource: ../../../crates/hoimin-cli/src/analyzer/rust.rs
   revision: a7daea0b557cd435c1e55b540392fbdd116348e1
   working_tree: clean
+- id: issue-484
+  resource: ../../superpowers/specs/2026-09-11-issue-484-metrics-destinations-design.md
+  working_tree: untracked
+  sha256: b146daf296d69374ad01ac86d5a5becd30b721b1983d5a54507cd0f1750ef3e7
 ---
 
 # 作業コピーへの変異適用
@@ -80,6 +84,10 @@ Issue #462 のFIFO読取り停止は、Pythonで実装されていたRust mutati
 
 コピー方式で避けるのは、元ソースへ変異を適用する操作である。任意の出力先や子プロセスによる変更まで防ぐ設計とは読み取れない。[境界監査](../audits/boundary-2026-09.md)では、metrics出力先と元ソースが重なる場合を別の問題として記録している。
 
+Issue484の設計では、選択済みソースや明示fingerprint入力、使用中のsessionとmetrics出力先が衝突する場合をbaseline前に拒否する。renameで置き換えるディレクトリエントリを比較し、別のhardlinkやsymlinkの参照先を同一視しない。衝突を拒否した後の最終出力も保護の対象とする。[^issue-484]
+
+保存先の同一性を確定できない場合は、実行結果を維持してmetricsの保存を見送り、終了時に `metrics.write` で通知する。未作成の親ディレクトリや対応範囲外の別名もこの扱いとし、既知の衝突をbaseline前に拒否する場合と区別する。[^issue-484]
+
 crateの依存、実行要求と完了通知、コピーへの変異適用、解析器の起動方法を変更したら、このページを見直す。終了処理の条件は[状態・終了処理](runtime-lifecycle.md)、検証の根拠は[Leanの証拠範囲](../audits/lean-evidence.md)で確認できる。
 
 # 変異対象とimport rootの分離
@@ -91,6 +99,8 @@ Issue 477では、path-only `.pth` に登録した元のsrcディレクトリが
 [^core]: [Cargo.toml](../../../crates/hoimin-core/Cargo.toml)。
 [^machine]: [machine.rs](../../../crates/hoimin-core/src/machine.rs)。
 [^analyzer]: [rust.rs](../../../crates/hoimin-cli/src/analyzer/rust.rs)。
+
+[^issue-484]: [2026-09-11-issue-484-metrics-destinations-design.md](../../superpowers/specs/2026-09-11-issue-484-metrics-destinations-design.md)。
 
 [^issue-477]: [2026-09-11-issue-477-import-roots-design.md](../../superpowers/specs/2026-09-11-issue-477-import-roots-design.md)。
 

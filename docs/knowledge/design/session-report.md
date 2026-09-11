@@ -43,6 +43,15 @@ sources:
   resource: ../../json-schema/run-result.schema.json
   revision: a7daea0b557cd435c1e55b540392fbdd116348e1
   working_tree: clean
+- id: issue-484
+  resource: ../../superpowers/specs/2026-09-11-issue-484-metrics-destinations-design.md
+  working_tree: untracked
+  sha256: b146daf296d69374ad01ac86d5a5becd30b721b1983d5a54507cd0f1750ef3e7
+- id: integration-484-472
+  resource: ../../superpowers/plans/2026-09-11-issue-484-metrics-destinations.md
+  revision: 6f6cc91a2a190a4fba8d94a3b1e66caa1f761d5d
+  working_tree: modified
+  sha256: 5a4e7f914fc2bb31c1a038a63735aa91405fa10a0a531f7cd39189a07b26f9f2
 ---
 
 # 実行単位ごとの所有権
@@ -52,6 +61,10 @@ sessionは、一回の実行（run）の結果を保存・再利用する仕組�
 結果保存の `persist` と再開時の結果検索 `lookup` には、要求されたrunの所有権が必要である。他のrunを所有していても代用できない。`finish` で所有権を解放した後は、未完了のrunでも再取得が必要になる。現在の実装でも、DB処理より前に `require_ownership` を呼ぶことを静的に確認した。[^ownership][^session]
 
 所有権がなければ、保存は `session.persist.owner`、検索は `session.lookup.owner` で先に拒否する。そのため、破損DBやトランザクション失敗を調べるテストデータ（fixture）は、先に正当な所有権を確立してから障害を起こす必要がある。所有権がないままでは、試験したいDB処理へ到達しない。[^ownership-report]
+
+Issue484の設計では、metrics出力によるsession DB、SQLite副ファイル、所有権ロックの置換も衝突検査の対象とする。WALによる復旧を上書きの安全性の根拠にせず、使用中の具体的なパスを保護する。別のリンクエントリを置き換える場合と、DBやロック自体のエントリを置き換える場合を区別する。[^issue-484]
+
+保存先の同一性を確定できない場合は、実行結果を維持してmetricsの保存を見送り、終了時に `metrics.write` で通知する。未作成の親ディレクトリや対応範囲外の別名もこの扱いとし、既知の衝突をbaseline前に拒否する場合と区別する。[^issue-484]
 
 # 実行中のsession生成物とworkspace検査
 
@@ -86,8 +99,18 @@ run所有権、再利用条件、結果置換、DBスキーマ、集計値と終
 [^reader]: [input.rs](../../../crates/hoimin-cli/src/progress/input.rs)。
 [^schema]: [run-result.schema.json](../../json-schema/run-result.schema.json)。
 
+[^issue-484]: [2026-09-11-issue-484-metrics-destinations-design.md](../../superpowers/specs/2026-09-11-issue-484-metrics-destinations-design.md)。
+
 [^issue-477]: [2026-09-11-issue-477-import-roots-design.md](../../superpowers/specs/2026-09-11-issue-477-import-roots-design.md)。
 
 [^issue-472]: [2026-09-11-issue-472-session-artifacts-design.md](../../superpowers/specs/2026-09-11-issue-472-session-artifacts-design.md)。
 
 [^issue-460]: [2026-09-11-issue-460-progress-result-design.md](../../superpowers/specs/2026-09-11-issue-460-progress-result-design.md)。
+
+# sessionとmetricsの統合後のパス保護
+
+Issue472と484の統合後は、metricsもSessionHandlerと同じSessionArtifactsから実DB・副ファイル・所有権ロックのパスを得る。正規化前の設定パスを検査し、symlink自体と正規化された実DBの両方を保護する。Windowsでは設定名側の副ファイルも保護対象として維持するため、実DBと別名であってもそれらをmetrics出力先には使えない。[^integration-484-472]
+
+検査後にsessionのコピー除外と正規化を行い、metrics出力の許可結果と実DBのパスを同じ完了通知で引き渡す。新しいWindows専用検証では、symlink作成の省略を成功として扱わない。実機結果は統合記録で別途確認する。[^integration-484-472]
+
+[^integration-484-472]: [Issue484の実装・統合記録](../../superpowers/plans/2026-09-11-issue-484-metrics-destinations.md)。

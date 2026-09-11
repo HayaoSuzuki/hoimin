@@ -790,7 +790,10 @@ class PlatformExecutionPolicyContractTests(unittest.TestCase):
         manual = yaml.safe_load(workflow)
         jobs = manual["jobs"]
 
-        self.assertEqual(set(jobs), set(MANUAL_NON_LINUX_JOB_NAMES))
+        self.assertEqual(
+            set(jobs),
+            set(MANUAL_NON_LINUX_JOB_NAMES) | {"windows-metrics-destinations"},
+        )
         self.assertNotIn("ubuntu-latest", workflow)
         self.assertNotRegex(workflow, r"(?m)^\s+if:")
         for job_name, expected_name in MANUAL_NON_LINUX_JOB_NAMES.items():
@@ -816,6 +819,59 @@ class PlatformExecutionPolicyContractTests(unittest.TestCase):
         purity = jobs["core-dependency-purity"]
         self.assertNotIn("strategy", purity)
         self.assertEqual(purity["runs-on"], "windows-latest")
+
+    def test_windows_metrics_destinations_runs_native_acceptance_independently(
+        self,
+    ) -> None:
+        jobs = yaml.safe_load(
+            NON_LINUX_CI_WORKFLOW.read_text(encoding="utf-8")
+        )["jobs"]
+
+        self.assertIn("windows-metrics-destinations", jobs)
+        self.assertEqual(
+            jobs["windows-metrics-destinations"],
+            {
+                "name": "Manual Windows metrics destinations",
+                "runs-on": "windows-latest",
+                "timeout-minutes": 25,
+                "env": {"HOIMIN_REQUIRE_WINDOWS_SYMLINKS": "1"},
+                "steps": [
+                    {"uses": CHECKOUT_ACTION},
+                    {
+                        "uses": SETUP_PYTHON_ACTION,
+                        "with": {"python-version": "3.14"},
+                    },
+                    {
+                        "uses": SETUP_UV_ACTION,
+                        "with": {"enable-cache": True},
+                    },
+                    {
+                        "name": "Install repository Rust toolchain",
+                        "run": "rustup toolchain install",
+                    },
+                    {"run": "uv sync --frozen"},
+                    {
+                        "run": (
+                            "cargo clippy -p hoimin-cli --lib "
+                            "--test metrics_destinations --all-features "
+                            "-- -D warnings"
+                        )
+                    },
+                    {
+                        "run": (
+                            "cargo test -p hoimin-cli --all-features "
+                            "--lib metrics_destination::tests -- --nocapture"
+                        )
+                    },
+                    {
+                        "run": (
+                            "cargo test -p hoimin-cli --all-features "
+                            "--test metrics_destinations -- --nocapture"
+                        )
+                    },
+                ],
+            },
+        )
 
 
 class LatestStableCanaryContractTests(unittest.TestCase):
