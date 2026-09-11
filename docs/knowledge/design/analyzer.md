@@ -9,6 +9,11 @@ sources:
   resource: ../../superpowers/specs/2026-09-11-issue-455-python-newlines-design.md
   working_tree: untracked
   sha256: 2f3470c6ec0971d2e526d7134aecf56c3c089599bcd9dc7e33373f5c24d31db4
+
+- id: exception-parentheses
+  resource: ../../superpowers/specs/2026-09-11-issue-451-exception-parentheses-design.md
+  working_tree: untracked
+  sha256: 73ff551e95721e2bfb0d188c2b76b1ce1ff1b1ef431b9eedd187af8af4298790
 - id: operators
   resource: ../../superpowers/specs/2026-08-06-collection-and-structural-mutation-operators-design.md
   revision: a7daea0b557cd435c1e55b540392fbdd116348e1
@@ -81,3 +86,9 @@ sources:
 LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証が同じ行境界を使う設計とした。元バイト列を変換せず、CRLFは一つの改行として数える。過去に誤ったCR行位置で作られたplanは再生成が必要となる。初行のBOMによる列検証の不一致は別Issue #469の対象である。[^issue-455]
 
 [^issue-455]: [Issue #455: Python physical newline indexing](../../superpowers/specs/2026-09-11-issue-455-python-newlines-design.md)。
+
+# 括弧付き例外ハンドラの削除（Issue #451）
+
+例外名のAST範囲は外側の括弧を含まない。裸の `except` へ変える際は括弧を含む例外式全体を削除し、タプル要素を削除する際もその要素の括弧を削除対象に含める設計とした。削除対象の内部にあるコメントは式とともに削除し、その外側のコメントと残す例外の表記は維持する。構文解析に加えて、生成候補をCPythonで実行して捕捉する例外を検証する。検証結果は実装計画書に記録する。[^exception-parentheses]
+
+[^exception-parentheses]: [Issue #451 design](../../superpowers/specs/2026-09-11-issue-451-exception-parentheses-design.md)。

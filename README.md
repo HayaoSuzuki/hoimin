@@ -88,7 +88,9 @@ For example, `--file src/calc.py --line src/calc.py:10-12` selects only lines 10
 
 Target, fingerprint, and copied-workspace paths use a portable `/`-separated representation. Native Windows path inputs are normalized to that form. On Unix, a concrete filename containing a literal backslash is rejected before collection because it cannot be represented unambiguously. Backslashes in glob options retain their existing escape syntax; the concrete paths matched by a glob are validated after walking.
 
-`--include GLOB` can restore files excluded by ignore rules or built-in copy exclusions. `--exclude GLOB` adds exclusions and wins when both match. Both options may be repeated.
+`--include GLOB` can restore ignored or hidden files. `--exclude GLOB` adds exclusions and wins when both match. Both options may be repeated.
+
+Target discovery and worker copying always exclude `.git`, `.venv`, `venv`, `env`, `__pycache__`, `.pytest_cache`, `.mypy_cache`, `.ruff_cache`, `.pyre`, `.pytype`, `.tox`, and `.nox` below the project root. Names are compared case-insensitively on Windows and exactly on other platforms. Includes cannot restore these entries. Automatic source scans omit them; explicit `--file` and `--line` selectors inside them fail during target resolution with the path and remediation. Choose source outside the excluded directory. The project root itself remains usable even if its name is on this list. Ignore files apply in non-Git roots too; hidden mutation targets still require an include.
 
 `--fingerprint-file PATH` records exactly one regular file at the specified `--root`-relative path and may be repeated. Every path component must remain beneath `--root`; symlink and reparse-point components are rejected instead of followed. It does not search nested directories, and characters such as `*`, `?`, and `[` are treated literally. Use it for a root-level configuration file without also selecting files with the same name in nested worktrees.
 
