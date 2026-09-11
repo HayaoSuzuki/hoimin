@@ -105,6 +105,22 @@ pub enum ResourceBackend {
 }
 
 impl ResourceBackend {
+    /// Describes the selected backend; permission to fall back does not determine its mode.
+    #[must_use]
+    pub fn resource_control(&self) -> hoimin_core::ResourceControl {
+        let mechanism = match self {
+            Self::Portable(_) => "portable",
+            #[cfg(target_os = "linux")]
+            Self::LinuxHard(_) => "linux_cgroup_v2",
+            #[cfg(windows)]
+            Self::Windows(_) => "windows_job_object",
+        };
+        hoimin_core::ResourceControl {
+            mode: self.mode(),
+            mechanism: mechanism.to_owned(),
+        }
+    }
+
     #[must_use]
     pub fn mode(&self) -> ResourceMode {
         match self {

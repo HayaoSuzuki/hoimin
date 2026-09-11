@@ -82,8 +82,8 @@ async fn create_plan_emits_versioned_manifest_without_runtime_side_effects() {
     let stdout = String::from_utf8(stdout).unwrap();
     assert_eq!(stdout.matches('\n').count(), 1);
     let manifest: serde_json::Value = serde_json::from_str(&stdout).unwrap();
-    assert_eq!(manifest["schema_version"], 3);
-    assert_eq!(manifest["ranking_rule_version"], 3);
+    assert_eq!(manifest["schema_version"], 4);
+    assert_eq!(manifest["ranking_rule_version"], 4);
     assert_eq!(manifest["kind"], "plan");
     assert!(
         manifest["sources"]
@@ -182,6 +182,295 @@ async fn plans_for_new_operator_families_pass_verify() {
         );
         assert!(!marker.exists());
     }
+}
+
+#[tokio::test]
+async fn explicit_class_symbol_ranks_and_verifies_its_method_before_an_unrelated_function() {
+    let project = tempfile::tempdir().unwrap();
+    std::fs::write(
+        project.path().join("a.py"),
+        "def other():\n    return True\n",
+    )
+    .unwrap();
+    std::fs::write(
+        project.path().join("calc.py"),
+        "class Box:\n    def check(self):\n        return True\n",
+    )
+    .unwrap();
+    let args = vec![
+        OsString::from("hoimin"),
+        OsString::from("plan"),
+        OsString::from("--root"),
+        project.path().as_os_str().to_owned(),
+        OsString::from("--source"),
+        OsString::from("."),
+        OsString::from("--symbol"),
+        OsString::from("calc:Box"),
+        OsString::from("--operators"),
+        OsString::from("boolean_literal"),
+        OsString::from("--allow-best-effort-memory"),
+        OsString::from("--min-free-space"),
+        OsString::from(TEST_MIN_FREE_SPACE),
+        OsString::from("--"),
+        python_executable().into_os_string(),
+        OsString::from("-c"),
+        OsString::from("from calc import Box; assert Box().check()"),
+    ];
+    let mut plan_stdout = Vec::new();
+    let mut plan_stderr = Vec::new();
+
+    let plan_exit = hoimin_cli::run_with_io(args, &mut plan_stdout, &mut plan_stderr).await;
+
+    assert_eq!(
+        plan_exit,
+        0,
+        "stderr={}",
+        String::from_utf8_lossy(&plan_stderr)
+    );
+    assert!(plan_stderr.is_empty());
+    let manifest: PlanManifest = serde_json::from_slice(&plan_stdout).unwrap();
+    assert_eq!(manifest.candidates.len(), 2);
+    assert_eq!(
+        manifest
+            .candidates
+            .iter()
+            .map(|candidate| (
+                candidate.path.as_str(),
+                candidate.symbol.as_deref(),
+                candidate.rank,
+                candidate.score,
+            ))
+            .collect::<Vec<_>>(),
+        vec![
+            ("calc.py", Some("Box.check"), 1, 350),
+            ("a.py", Some("other"), 2, 100),
+        ]
+    );
+    assert_eq!(manifest.schema_version, 4);
+    assert_eq!(manifest.ranking_rule_version, 4);
+    let planned = &manifest.candidates[0];
+    let planned_id = planned.id.clone();
+    let plan_path = project.path().join("plan.json");
+    std::fs::write(&plan_path, &plan_stdout).unwrap();
+    let source_before = std::fs::read(project.path().join("calc.py")).unwrap();
+    let plan_before = std::fs::read(&plan_path).unwrap();
+    let verify_args = [
+        OsString::from("hoimin"),
+        OsString::from("verify"),
+        plan_path.as_os_str().to_owned(),
+        OsString::from("--top"),
+        OsString::from("1"),
+    ];
+    let mut verify_stdout = Vec::new();
+    let mut verify_stderr = Vec::new();
+
+    let verify_exit =
+        hoimin_cli::run_with_io(verify_args, &mut verify_stdout, &mut verify_stderr).await;
+
+    assert_eq!(
+        verify_exit,
+        0,
+        "stderr={}",
+        String::from_utf8_lossy(&verify_stderr)
+    );
+    assert!(verify_stderr.is_empty());
+    let report: serde_json::Value = serde_json::from_slice(&verify_stdout).unwrap();
+    assert_eq!(
+        report["baseline"]["termination"],
+        serde_json::json!({"Exit": 0})
+    );
+    let mutants = report["mutants"].as_array().unwrap();
+    assert_eq!(mutants.len(), 1);
+    assert_eq!(mutants[0]["candidate"]["id"], planned_id);
+    assert_eq!(mutants[0]["candidate"]["path"], "calc.py");
+    assert_eq!(mutants[0]["candidate"]["symbol"], "Box.check");
+    assert_eq!(mutants[0]["status"], "killed");
+    assert_eq!(std::fs::read(&plan_path).unwrap(), plan_before);
+    assert_eq!(
+        std::fs::read(project.path().join("calc.py")).unwrap(),
+        source_before
+    );
+}
+
+#[tokio::test]
+async fn public_plans_preserve_bom_sources_and_python_columns() {
+    for (name, source, expected_line, expected_column, expected_start) in [
+        ("leading_bom.py", "\u{feff}enabled = True\n", 1, 10, 13),
+        ("plain.py", "enabled = True\n", 1, 10, 10),
+        (
+            "bom_comment.py",
+            "\u{feff}# heading\nenabled = True\n",
+            2,
+            10,
+            23,
+        ),
+        (
+            "multibyte.py",
+            "\u{feff}日本 = \"x\"; enabled = True\n",
+            1,
+            20,
+            27,
+        ),
+        (
+            "interior_bom.py",
+            "marker = \"\u{feff}\"; enabled = True\n",
+            1,
+            24,
+            26,
+        ),
+    ] {
+        let project = Project::new_with_sources(&[(name, source)]);
+        let original = source.as_bytes();
+        let marker = project.path.join("test-command-ran");
+        let module = name.strip_suffix(".py").unwrap();
+        let test_command = format!("from {module} import enabled; assert enabled is True");
+        let options = [
+            "--file",
+            &format!("src/{name}"),
+            "--operators",
+            "boolean_literal",
+        ];
+        let mut args = plan_args(&project, options.iter().copied(), &marker);
+        insert_test_min_free_space(&mut args);
+        *args.last_mut().unwrap() = OsString::from(&test_command);
+        let mut run_args = args.clone();
+        run_args[1] = OsString::from("run");
+        let separator = run_args
+            .iter()
+            .position(|argument| argument == "--")
+            .unwrap();
+        run_args.splice(
+            separator..separator,
+            [OsString::from("--format"), OsString::from("json")],
+        );
+        let ParsedCommand::Plan(plan) = parse_from(args).unwrap() else {
+            panic!("expected plan arguments");
+        };
+
+        let output = create(plan.into_run_config().unwrap()).await.unwrap();
+        let candidate = output
+            .manifest
+            .candidates
+            .iter()
+            .find(|candidate| candidate.candidate.original == "True")
+            .unwrap_or_else(|| panic!("missing boolean candidate for {name}"));
+
+        assert_eq!(candidate.candidate.line, expected_line, "{name}");
+        assert_eq!(candidate.candidate.column, expected_column, "{name}");
+        assert_eq!(candidate.candidate.span.start, expected_start, "{name}");
+        assert_eq!(candidate.candidate.span.length, 4, "{name}");
+        assert_eq!(
+            candidate.candidate.file_hash,
+            blake3::hash(original).to_hex().to_string(),
+            "{name}",
+        );
+        let planned_id = candidate.id.clone();
+        let planned_candidate = serde_json::to_value(&candidate.candidate).unwrap();
+        let path = project.path.join("plan.json");
+        write_json(&path, &serde_json::to_value(&output.manifest).unwrap());
+        let plan_bytes = std::fs::read(&path).unwrap();
+        let verify_args = vec![
+            OsString::from("hoimin"),
+            OsString::from("verify"),
+            path.as_os_str().to_owned(),
+            OsString::from("--candidate"),
+            OsString::from(&planned_id),
+            OsString::from("--format"),
+            OsString::from("json"),
+        ];
+        for (mode, execution_args) in [("verify", verify_args), ("run", run_args)] {
+            assert_planned_boolean_is_killed(
+                name,
+                mode,
+                execution_args,
+                planned_id.as_str(),
+                &planned_candidate,
+            )
+            .await;
+        }
+        assert_eq!(std::fs::read(&path).unwrap(), plan_bytes, "{name}");
+        assert_eq!(
+            std::fs::read(project.path.join("src").join(name)).unwrap(),
+            original
+        );
+    }
+}
+
+async fn assert_planned_boolean_is_killed(
+    name: &str,
+    mode: &str,
+    args: Vec<OsString>,
+    planned_id: &str,
+    planned_candidate: &serde_json::Value,
+) {
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+    assert_eq!(
+        code,
+        0,
+        "{name} {mode}: stderr={}",
+        String::from_utf8_lossy(&stderr),
+    );
+    let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+    assert_eq!(
+        report["baseline"]["termination"]["Exit"], 0,
+        "{name} {mode}",
+    );
+    let mutant = report["mutants"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|mutant| mutant["candidate"]["id"] == planned_id)
+        .unwrap_or_else(|| panic!("{name} {mode}: planned mutant was not executed"));
+    assert_eq!(mutant["status"], "killed", "{name} {mode}");
+    assert_eq!(&mutant["candidate"], planned_candidate, "{name} {mode}");
+}
+
+#[tokio::test]
+async fn cli_verify_rejects_a_bom_counted_column_before_baseline() {
+    let source = "\u{feff}enabled = True\n";
+    let project = Project::new_with_source(source);
+    let (path, manifest, marker) = write_plan_manifest(
+        &project,
+        &["--file", "src/calc.py", "--operators", "boolean_literal"],
+    )
+    .await;
+    let index = manifest
+        .candidates
+        .iter()
+        .position(|candidate| candidate.candidate.original == "True")
+        .unwrap();
+    let requested = manifest.candidates[index].id.clone();
+    assert_eq!(manifest.candidates[index].candidate.column, 10);
+    let mut tampered = serde_json::to_value(manifest).unwrap();
+    tampered["candidates"][index]["column"] = serde_json::json!(11);
+    write_json(&path, &tampered);
+    let args = [
+        OsString::from("hoimin"),
+        OsString::from("verify"),
+        path.as_os_str().to_owned(),
+        OsString::from("--candidate"),
+        OsString::from(requested),
+        OsString::from("--format"),
+        OsString::from("json"),
+    ];
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+
+    let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+
+    assert_eq!(code, 2);
+    assert!(stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(stderr).unwrap(),
+        "plan.candidate.invalid: candidate line or column does not match its byte span\n",
+    );
+    assert!(!marker.exists(), "invalid coordinate ran the baseline");
+    assert_eq!(
+        std::fs::read(project.path.join("src/calc.py")).unwrap(),
+        source.as_bytes(),
+    );
 }
 
 #[tokio::test]
@@ -1004,6 +1293,27 @@ async fn verify_rejects_malformed_headers_and_source_paths() {
 }
 
 #[tokio::test]
+async fn verify_rejects_a_ranking_version_three_plan_before_baseline_with_regeneration_guidance() {
+    let project = Project::new();
+    let (path, manifest, marker) = write_plan_manifest(&project, &[]).await;
+    let requested = vec![manifest.candidates[0].id.clone()];
+    let mut value = serde_json::to_value(manifest).unwrap();
+    assert_eq!(value["schema_version"], 4);
+    value["ranking_rule_version"] = serde_json::json!(3);
+    write_json(&path, &value);
+
+    let error = prepare_verify(&path, &requested, OutputFormat::Json)
+        .await
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "plan.manifest.invalid: unsupported ranking rule version 3; regenerate the plan with this hoimin version"
+    );
+    assert!(!marker.exists(), "ranking rejection must precede baseline");
+}
+
+#[tokio::test]
 async fn verify_rejects_duplicate_manifest_candidates_and_missing_requested_ids() {
     let project = Project::new();
     let (path, manifest, marker) = write_plan_manifest(&project, &[]).await;
@@ -1614,6 +1924,17 @@ async fn verify_runs_only_requested_candidates() {
         .iter()
         .find(|event| event["kind"] == "run_started")
         .unwrap();
+    let baseline = events
+        .iter()
+        .find(|event| event["kind"] == "baseline_finished")
+        .unwrap();
+    assert_selected_resource_policy(started, baseline);
+    assert!(
+        events
+            .iter()
+            .filter(|event| event["kind"] == "mutant_finished")
+            .all(|event| event["resource_mode"] == baseline["resource_mode"])
+    );
     assert_eq!(
         started["verification_selection"],
         serde_json::json!({
@@ -1717,6 +2038,7 @@ async fn verify_top_executes_the_highest_ranked_retained_candidate() {
     );
     let document: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
     assert!(!document["baseline"].is_null());
+    assert_selected_resource_policy(&document["run"], &document["baseline"]);
     let expected_selection = serde_json::json!({
         "mode": "top",
         "policy": "strict",
@@ -1736,6 +2058,10 @@ async fn verify_top_executes_the_highest_ranked_retained_candidate() {
     assert_eq!(document["summary"]["complete"], false);
     let mutants = document["mutants"].as_array().unwrap();
     assert_eq!(mutants.len(), 1);
+    assert_eq!(
+        mutants[0]["resource_mode"],
+        document["baseline"]["resource_mode"]
+    );
     assert_eq!(mutants[0]["candidate"]["id"], candidate_id);
 }
 
@@ -2142,4 +2468,291 @@ fn python_executable() -> PathBuf {
         executable.display()
     );
     executable
+}
+
+fn assert_selected_resource_policy(run: &serde_json::Value, baseline: &serde_json::Value) {
+    assert_eq!(run["resource_control"]["mode"], baseline["resource_mode"]);
+    assert!(
+        !run["resource_control"]["mechanism"]
+            .as_str()
+            .unwrap()
+            .is_empty()
+    );
+    if cfg!(target_os = "macos") {
+        assert_eq!(run["resource_control"]["mode"], "best_effort");
+        assert_eq!(run["resource_control"]["mechanism"], "portable");
+    }
+}
+
+#[tokio::test]
+async fn root_selection_excludes_uncopyable_sources_in_plan_run_and_verify() {
+    let project = Project::new_with_source("value = 1 + 2\n");
+    std::fs::create_dir(project.path.join("venv")).unwrap();
+    std::fs::write(project.path.join("venv/dep.py"), "value = 3 + 4\n").unwrap();
+    let coordinator = tempfile::tempdir().unwrap();
+    let marker = coordinator.path().join("test-command-ran");
+    let mut args = plan_args(&project, ["--source", ".", "--include", "venv/**"], &marker);
+    insert_test_min_free_space(&mut args);
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    assert_eq!(
+        hoimin_cli::run_with_io(args.clone(), &mut stdout, &mut stderr).await,
+        0,
+        "{}",
+        String::from_utf8_lossy(&stderr)
+    );
+    let manifest: PlanManifest = serde_json::from_slice(&stdout).unwrap();
+    assert_eq!(manifest.candidates.len(), 1);
+    assert_eq!(manifest.candidates[0].path, "src/calc.py");
+    assert!(!marker.exists());
+    let path = coordinator.path().join("plan.json");
+    std::fs::write(&path, &stdout).unwrap();
+    let verify_args = vec![
+        "hoimin".into(),
+        "verify".into(),
+        path.into_os_string(),
+        "--top".into(),
+        "1".into(),
+    ];
+    args[1] = "run".into();
+    for command in [verify_args, args] {
+        stdout.clear();
+        stderr.clear();
+        let code = hoimin_cli::run_with_io(command, &mut stdout, &mut stderr).await;
+        assert_eq!(code, 1, "{}", String::from_utf8_lossy(&stderr));
+        let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+        // pins: issue #452 — source discovery previously admitted files omitted from copying.
+        assert_eq!(report["summary"]["complete"], true);
+        assert_eq!(report["baseline"]["termination"]["Exit"], 0);
+        assert_eq!(report["summary"]["counts"]["survived"], 1);
+        assert_eq!(report["mutants"].as_array().unwrap().len(), 1);
+        assert!(marker.exists());
+        std::fs::remove_file(&marker).unwrap();
+    }
+}
+
+#[tokio::test]
+async fn plan_rejects_an_explicit_uncopyable_file_before_baseline() {
+    let project = Project::new_with_source("value = 1 + 2\n");
+    std::fs::create_dir(project.path.join("src/venv")).unwrap();
+    std::fs::write(project.path.join("src/venv/dep.py"), "value = 3 + 4\n").unwrap();
+    let marker = project.path.join("test-command-ran");
+    let args = plan_args(&project, ["--file", "src/venv/dep.py"], &marker);
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+    assert_eq!(code, 2);
+    assert!(stdout.is_empty());
+    let error = String::from_utf8(stderr).unwrap();
+    assert!(error.contains("src/venv/dep.py"), "{error}");
+    assert!(error.contains("outside"), "{error}");
+    assert!(!marker.exists());
+}
+
+#[tokio::test]
+async fn python_physical_lines_match_plan_run_and_verify_selection() {
+    for (newline, ending) in [("\r", ""), ("\r\n", "\r\n"), ("\n", "\n"), ("\r", "\r\n")] {
+        let source = format!("def f():{newline}    return 1 + 2{ending}");
+        let project = Project::new_with_source(&source);
+        let coordinator = tempfile::tempdir().unwrap();
+        let marker = coordinator.path().join("test-command-ran");
+        let mut args = plan_args(
+            &project,
+            ["--line", "src/calc.py:2-2", "--operators", "binary_add_sub"],
+            &marker,
+        );
+        *args.last_mut().unwrap() = OsString::from(format!(
+            "from pathlib import Path; Path({:?}).write_text('executed'); from src.calc import f; assert f() == 3",
+            marker.to_string_lossy()
+        ));
+        insert_test_min_free_space(&mut args);
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        assert_eq!(
+            hoimin_cli::run_with_io(args.clone(), &mut stdout, &mut stderr).await,
+            0,
+            "{}",
+            String::from_utf8_lossy(&stderr)
+        );
+        let mut manifest: PlanManifest = serde_json::from_slice(&stdout).unwrap();
+        assert_eq!(manifest.candidates.len(), 1, "{source:?}");
+        let candidate = &manifest.candidates[0];
+        assert_eq!((candidate.line, candidate.column), (2, 13));
+        assert_eq!(
+            usize::try_from(candidate.span.start).unwrap(),
+            source.find('+').unwrap()
+        );
+        assert_eq!(
+            candidate.file_hash,
+            blake3::hash(source.as_bytes()).to_hex().to_string()
+        );
+        let path = coordinator.path().join("plan.json");
+        std::fs::write(&path, &stdout).unwrap();
+        let verify_args = vec![
+            "hoimin".into(),
+            "verify".into(),
+            path.clone().into_os_string(),
+            "--top".into(),
+            "1".into(),
+        ];
+        args[1] = "run".into();
+        for command in [verify_args.clone(), args] {
+            stdout.clear();
+            stderr.clear();
+            let code = hoimin_cli::run_with_io(command, &mut stdout, &mut stderr).await;
+            assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+            let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+            assert_eq!(report["summary"]["complete"], true);
+            // pins: issue #455 — lone CR previously produced an empty successful run.
+            assert_eq!(report["summary"]["counts"]["killed"], 1);
+            assert_eq!(report["mutants"].as_array().unwrap().len(), 1);
+            assert!(marker.exists());
+            std::fs::remove_file(&marker).unwrap();
+        }
+        if newline == "\r" {
+            manifest.candidates[0].candidate.line = 1;
+            manifest.candidates[0].candidate.column = 22;
+            write_json(&path, &serde_json::to_value(&manifest).unwrap());
+            stdout.clear();
+            stderr.clear();
+            let code = hoimin_cli::run_with_io(verify_args, &mut stdout, &mut stderr).await;
+            assert_eq!(code, 2);
+            assert!(!marker.exists(), "stale CR plan must fail before baseline");
+        }
+        assert_eq!(
+            std::fs::read(project.path.join("src/calc.py")).unwrap(),
+            source.as_bytes()
+        );
+    }
+}
+
+#[tokio::test]
+async fn oversized_candidate_plan_fails_with_context_before_baseline() {
+    let source = format!("value = [\"{}\"]\n", "a".repeat(1100 * 1024));
+    let project = Project::new_with_source(&source);
+    let marker = project.path.join("test-command-ran");
+    let args = plan_args(&project, ["--operators", "collection_list_tuple"], &marker);
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+    // pins: issue #459 — plan used to succeed for a candidate the spool cannot encode.
+    assert_eq!(code, 2);
+    assert!(stdout.is_empty());
+    assert!(!marker.exists());
+    let error = String::from_utf8(stderr).unwrap();
+    for detail in ["src/calc.py:1", "collection_list_tuple", "2097152"] {
+        assert!(error.contains(detail), "missing {detail}: {error}");
+    }
+}
+
+#[tokio::test]
+async fn oversized_legacy_candidate_is_rejected_before_verify_baseline() {
+    let project = Project::new_with_source("value = [\"a\"]\n");
+    let coordinator = tempfile::tempdir().unwrap();
+    let marker = coordinator.path().join("test-command-ran");
+    let (path, mut manifest) = write_plan_manifest_with_marker(
+        &project,
+        &["--operators", "collection_list_tuple"],
+        &marker,
+    )
+    .await;
+    let contents = format!("\"{}\"", "a".repeat(1100 * 1024));
+    let source = format!("value = [{contents}]\n");
+    std::fs::write(project.path.join("src/calc.py"), &source).unwrap();
+    let candidate = &mut manifest.candidates[0].candidate;
+    candidate.original = format!("[{contents}]");
+    candidate.replacement = format!("({contents},)");
+    candidate.span.length = u64::try_from(candidate.original.len()).unwrap();
+    candidate.file_hash = blake3::hash(source.as_bytes()).to_hex().to_string();
+    candidate.id = hoimin_core::stable_mutant_id(&hoimin_core::CandidateIdentity {
+        schema_version: hoimin_core::CANDIDATE_SCHEMA_VERSION,
+        file_hash: candidate.file_hash.clone(),
+        path: candidate.path.clone(),
+        span: candidate.span,
+        operator: candidate.operator.clone(),
+        replacement: candidate.replacement.clone(),
+    })
+    .to_string();
+    manifest.sources[0].hash.clone_from(&candidate.file_hash);
+    write_json(&path, &serde_json::to_value(&manifest).unwrap());
+    let args = vec![
+        "hoimin".into(),
+        "verify".into(),
+        path.into_os_string(),
+        "--top".into(),
+        "1".into(),
+    ];
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+    assert_eq!(code, 2);
+    // pins: issue #459 — an old valid oversized plan used to start baseline first.
+    assert!(!marker.exists());
+    assert!(stdout.is_empty());
+    let error = String::from_utf8(stderr).unwrap();
+    for detail in ["src/calc.py:1", "collection_list_tuple", "2097152"] {
+        assert!(error.contains(detail), "missing {detail}: {error}");
+    }
+}
+
+#[tokio::test]
+async fn candidate_record_limits_agree_for_plan_verify_and_direct_run() {
+    for (size, fits) in [(900 * 1024, true), (1100 * 1024, false)] {
+        let source = format!("value = [\"{}\"]\n", "a".repeat(size));
+        let project = Project::new_with_source(&source);
+        let coordinator = tempfile::tempdir().unwrap();
+        let marker = coordinator.path().join("test-command-ran");
+        let mut args = plan_args(&project, ["--operators", "collection_list_tuple"], &marker);
+        insert_test_min_free_space(&mut args);
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        if fits {
+            assert_eq!(
+                hoimin_cli::run_with_io(args.clone(), &mut stdout, &mut stderr).await,
+                0
+            );
+            let path = coordinator.path().join("plan.json");
+            std::fs::write(&path, &stdout).unwrap();
+            stdout.clear();
+            stderr.clear();
+            let verify = vec![
+                "hoimin".into(),
+                "verify".into(),
+                path.into_os_string(),
+                "--top".into(),
+                "1".into(),
+            ];
+            assert_eq!(
+                hoimin_cli::run_with_io(verify, &mut stdout, &mut stderr).await,
+                1,
+                "{}",
+                String::from_utf8_lossy(&stderr)
+            );
+            let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+            assert_eq!(report["summary"]["complete"], true);
+            assert_eq!(report["summary"]["counts"]["survived"], 1);
+        }
+        args[1] = "run".into();
+        stdout.clear();
+        stderr.clear();
+        let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+        assert_eq!(
+            code,
+            if fits { 1 } else { 2 },
+            "{}",
+            String::from_utf8_lossy(&stderr)
+        );
+        let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+        assert_eq!(report["summary"]["complete"], fits);
+        assert_eq!(report["baseline"]["termination"]["Exit"], 0);
+        if fits {
+            assert_eq!(report["summary"]["counts"]["survived"], 1);
+        } else {
+            assert!(report["mutants"].as_array().unwrap().is_empty());
+            let error = String::from_utf8(stderr).unwrap();
+            for detail in ["src/calc.py:1", "collection_list_tuple", "2097152"] {
+                assert!(error.contains(detail), "missing {detail}: {error}");
+            }
+        }
+    }
 }

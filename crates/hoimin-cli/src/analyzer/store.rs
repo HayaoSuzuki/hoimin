@@ -81,6 +81,27 @@ impl CandidateStore {
         self.count
     }
 
+    /// Validates compact JSON plus one newline without allocating the encoded payload.
+    pub(crate) fn record_size(candidate: &MutationCandidate) -> Result<usize, StoreError> {
+        let mut counter = CountingWriter::default();
+        serde_json::to_writer(&mut counter, candidate)
+            .map_err(|error| StoreError::CorruptRecord(error.to_string()))?;
+        if counter.bytes >= MAX_SPOOL_RECORD_BYTES {
+            return Err(StoreError::RecordTooLarge {
+                limit: MAX_SPOOL_RECORD_BYTES,
+            });
+        }
+        let record_size = counter
+            .bytes
+            .checked_add(1)
+            .ok_or(StoreError::RecordTooLarge {
+                limit: MAX_SPOOL_RECORD_BYTES,
+            })?;
+        usize::try_from(record_size).map_err(|_| StoreError::RecordTooLarge {
+            limit: MAX_SPOOL_RECORD_BYTES,
+        })
+    }
+
     /// # Errors
     ///
     /// Returns an error when the store is full, the candidate sequence is invalid, serialization
@@ -100,23 +121,7 @@ impl CandidateStore {
                 actual: candidate.sequence,
             });
         }
-        let mut counter = CountingWriter::default();
-        serde_json::to_writer(&mut counter, candidate)
-            .map_err(|error| StoreError::CorruptRecord(error.to_string()))?;
-        if counter.bytes >= MAX_SPOOL_RECORD_BYTES {
-            return Err(StoreError::RecordTooLarge {
-                limit: MAX_SPOOL_RECORD_BYTES,
-            });
-        }
-        let record_size = counter
-            .bytes
-            .checked_add(1)
-            .ok_or(StoreError::RecordTooLarge {
-                limit: MAX_SPOOL_RECORD_BYTES,
-            })?;
-        let record_size = usize::try_from(record_size).map_err(|_| StoreError::RecordTooLarge {
-            limit: MAX_SPOOL_RECORD_BYTES,
-        })?;
+        let record_size = Self::record_size(candidate)?;
         let mut record = Vec::with_capacity(record_size);
         serde_json::to_writer(&mut record, candidate)
             .map_err(|error| StoreError::CorruptRecord(error.to_string()))?;
@@ -593,6 +598,34 @@ mod tests {
 
         drop(store);
         assert!(!path.exists());
+    }
+
+    #[test]
+    fn shared_record_size_matches_encoded_escaped_unicode_boundaries() {
+        for payload_length in [
+            MAX_SPOOL_RECORD_BYTES - 2,
+            MAX_SPOOL_RECORD_BYTES - 1,
+            MAX_SPOOL_RECORD_BYTES,
+        ] {
+            let mut candidate = candidate_with_payload_len(payload_length);
+            candidate.original = "\n\t\"\\雪🧪".to_owned();
+            let padding = usize::try_from(payload_length - serialized_len(&candidate)).unwrap();
+            candidate.original.push_str(&"a".repeat(padding));
+            let mut encoded = serde_json::to_vec(&candidate).unwrap();
+            encoded.push(b'\n');
+            assert_eq!(u64::try_from(encoded.len()).unwrap(), payload_length + 1);
+            let result = CandidateStore::record_size(&candidate);
+            if payload_length < MAX_SPOOL_RECORD_BYTES {
+                assert_eq!(result.unwrap(), encoded.len());
+            } else {
+                assert!(matches!(
+                    result,
+                    Err(StoreError::RecordTooLarge {
+                        limit: MAX_SPOOL_RECORD_BYTES
+                    })
+                ));
+            }
+        }
     }
 
     fn candidate_with_payload_len(target: u64) -> MutationCandidate {

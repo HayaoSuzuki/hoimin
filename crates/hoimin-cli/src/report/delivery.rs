@@ -248,7 +248,14 @@ mod tests {
     fn event(id: u64) -> EmitOutput {
         EmitOutput {
             id: EffectId(id),
-            event: OutputEvent::RunStarted(RunStarted::minimal("owned-report", id)),
+            event: OutputEvent::RunStarted(RunStarted::minimal(
+                "owned-report",
+                id,
+                hoimin_core::ResourceControl {
+                    mode: hoimin_core::ResourceMode::Hard,
+                    mechanism: "test_supplied_hard".into(),
+                },
+            )),
         }
     }
 

@@ -105,6 +105,7 @@ LEAN_CORPUS_BY_EXECUTABLE = {
     "generate_timeout_limit": "corpus/timeout-limit.jsonl",
     "generate_disk_guard": "corpus/disk-guard-lifecycle.jsonl",
     "generate_cleanup_capability": "corpus/cleanup-capability.jsonl",
+    "generate_comprehension_bindings": "corpus/comprehension-bindings.jsonl",
 }
 LEAN_SENSITIVITY_EXECUTABLES = {
     name
@@ -789,7 +790,11 @@ class PlatformExecutionPolicyContractTests(unittest.TestCase):
         manual = yaml.safe_load(workflow)
         jobs = manual["jobs"]
 
-        self.assertEqual(set(jobs), set(MANUAL_NON_LINUX_JOB_NAMES) | {"windows-resource-scope"})
+        self.assertEqual(
+            set(jobs),
+            set(MANUAL_NON_LINUX_JOB_NAMES)
+            | {"windows-resource-scope", "windows-metrics-destinations"},
+        )
         self.assertNotIn("ubuntu-latest", workflow)
         self.assertNotRegex(workflow, r"(?m)^\s+if:")
         for job_name, expected_name in MANUAL_NON_LINUX_JOB_NAMES.items():
@@ -835,6 +840,59 @@ class PlatformExecutionPolicyContractTests(unittest.TestCase):
                 {"run": "cargo test -p hoimin-cli --all-features --test windows_resource_scope -- --nocapture"},
             ],
         })
+
+    def test_windows_metrics_destinations_runs_native_acceptance_independently(
+        self,
+    ) -> None:
+        jobs = yaml.safe_load(
+            NON_LINUX_CI_WORKFLOW.read_text(encoding="utf-8")
+        )["jobs"]
+
+        self.assertIn("windows-metrics-destinations", jobs)
+        self.assertEqual(
+            jobs["windows-metrics-destinations"],
+            {
+                "name": "Manual Windows metrics destinations",
+                "runs-on": "windows-latest",
+                "timeout-minutes": 25,
+                "env": {"HOIMIN_REQUIRE_WINDOWS_SYMLINKS": "1"},
+                "steps": [
+                    {"uses": CHECKOUT_ACTION},
+                    {
+                        "uses": SETUP_PYTHON_ACTION,
+                        "with": {"python-version": "3.14"},
+                    },
+                    {
+                        "uses": SETUP_UV_ACTION,
+                        "with": {"enable-cache": True},
+                    },
+                    {
+                        "name": "Install repository Rust toolchain",
+                        "run": "rustup toolchain install",
+                    },
+                    {"run": "uv sync --frozen"},
+                    {
+                        "run": (
+                            "cargo clippy -p hoimin-cli --lib "
+                            "--test metrics_destinations --all-features "
+                            "-- -D warnings"
+                        )
+                    },
+                    {
+                        "run": (
+                            "cargo test -p hoimin-cli --all-features "
+                            "--lib metrics_destination::tests -- --nocapture"
+                        )
+                    },
+                    {
+                        "run": (
+                            "cargo test -p hoimin-cli --all-features "
+                            "--test metrics_destinations -- --nocapture"
+                        )
+                    },
+                ],
+            },
+        )
 
 
 class LatestStableCanaryContractTests(unittest.TestCase):

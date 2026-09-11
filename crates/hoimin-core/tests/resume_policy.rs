@@ -703,6 +703,7 @@ fn arbitrary_fingerprint_input() -> impl Strategy<Value = FingerprintInput> {
                 best,
             )| {
                 FingerprintInput {
+                    import_roots: Vec::new(),
                     sources,
                     fingerprint_inputs,
                     targets,
@@ -784,6 +785,7 @@ proptest! {
 
 fn fixture_input() -> FingerprintInput {
     FingerprintInput {
+        import_roots: Vec::new(),
         sources: vec![
             SourceHash {
                 path: "src/a.py".into(),
@@ -876,4 +878,42 @@ fn mutate_max_workspace_size(v: &mut RawRunLimits) {
 }
 fn mutate_min_free_space(v: &mut RawRunLimits) {
     v.min_free_space += 1;
+}
+
+#[test]
+fn import_root_changes_and_precedence_change_fingerprint() {
+    assert_eq!(hoimin_core::FINGERPRINT_SCHEMA_VERSION, 7);
+    let original = fixture_input();
+    let mut configured = original.clone();
+    configured.import_roots = vec!["src".into(), "vendor".into()];
+    assert_ne!(fingerprint(&original), fingerprint(&configured));
+    let mut reordered = configured.clone();
+    reordered.import_roots.reverse();
+    assert_ne!(fingerprint(&configured), fingerprint(&reordered));
+    let mut changed = configured.clone();
+    changed.import_roots[0] = "other".into();
+    assert_ne!(fingerprint(&configured), fingerprint(&changed));
+    // Framing distinguishes identical concatenated bytes with different root boundaries.
+    configured.import_roots = vec!["ab".into(), "c".into()];
+    changed.import_roots = vec!["a".into(), "bc".into()];
+    assert_ne!(fingerprint(&configured), fingerprint(&changed));
+}
+
+#[test]
+fn equivalent_normalized_import_roots_have_the_same_fingerprint() {
+    let make = |roots: &[&str]| {
+        let config = RunConfig::try_from(RawRunConfig {
+            files: vec!["src/a.py".into()],
+            import_roots: roots.iter().map(|root| (*root).into()).collect(),
+            test_argv: vec![CommandArg::Unix(b"python".to_vec())],
+            ..RawRunConfig::default()
+        })
+        .unwrap();
+        FingerprintInput::from_config(&config, vec![], vec![], ResourceMode::Hard)
+    };
+    assert_eq!(
+        fingerprint(&make(&["./src", "src/", "vendor/../vendor", "."])),
+        fingerprint(&make(&["src", "vendor", "."]))
+    );
+    assert_eq!(make(&[]).import_roots, Vec::<camino::Utf8PathBuf>::new());
 }

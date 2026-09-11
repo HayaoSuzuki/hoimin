@@ -212,7 +212,11 @@ mod cgroup_v2 {
         max_processes: usize,
     ) -> Option<ProcessHandler> {
         hard_backend(max_memory, max_processes).map(|backend| {
-            ProcessHandler::new(ResourceBackend::LinuxHard(backend), output_dir.to_owned())
+            let handler =
+                ProcessHandler::new(ResourceBackend::LinuxHard(backend), output_dir.to_owned());
+            assert_eq!(handler.resource_control().mode, ResourceMode::Hard);
+            assert_eq!(handler.resource_control().mechanism, "linux_cgroup_v2");
+            handler
         })
     }
 
@@ -1491,7 +1495,10 @@ mod job_object {
 
     fn hard_handler(output_dir: &Utf8Path) -> ProcessHandler {
         let backend = WindowsBackend::new().unwrap();
-        ProcessHandler::new(ResourceBackend::Windows(backend), output_dir.to_owned())
+        let handler = ProcessHandler::new(ResourceBackend::Windows(backend), output_dir.to_owned());
+        assert_eq!(handler.resource_control().mode, ResourceMode::Hard);
+        assert_eq!(handler.resource_control().mechanism, "windows_job_object");
+        handler
     }
 
     fn native_python() -> CommandArg {
@@ -1715,4 +1722,19 @@ mod job_object {
             EffectFailure::Io { ref code, .. } if code == "process.resource.setup"
         ));
     }
+}
+
+#[test]
+fn portable_backend_description_is_stable_and_reaches_process_handler() {
+    let backend = ResourceBackend::Portable(PortableBackend::new(true).unwrap());
+    let policy = backend.resource_control();
+    assert_eq!(policy.mode, ResourceMode::BestEffort);
+    assert_eq!(policy.mechanism, "portable");
+    let temp = tempfile::tempdir().unwrap();
+    let handler = ProcessHandler::new(
+        backend,
+        Utf8PathBuf::from_path_buf(temp.path().to_owned()).unwrap(),
+    );
+    assert_eq!(handler.resource_control(), policy);
+    assert_eq!(handler.mode(), policy.mode);
 }

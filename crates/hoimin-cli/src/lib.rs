@@ -2,9 +2,11 @@ use std::ffi::OsString;
 
 pub mod analyzer;
 pub mod cli;
+mod copy_policy;
 pub mod fingerprint_inputs;
 mod interrupt;
 mod metrics;
+mod metrics_destination;
 pub mod plan;
 mod portable_path;
 pub mod process;

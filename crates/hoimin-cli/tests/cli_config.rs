@@ -1484,6 +1484,64 @@ fn operator_flags_reject_type_mapping_alias() {
 }
 
 #[test]
+fn import_roots_are_ordered_normalized_and_independent_of_selection() {
+    for command in ["run", "plan"] {
+        let args = [
+            "hoimin",
+            command,
+            "--file",
+            "src/pkg/a.py",
+            "--import-root",
+            "./vendor",
+            "--import-root",
+            "src/./",
+            "--import-root",
+            "vendor",
+            "--import-root",
+            ".",
+            "--import-root",
+            "src/../src",
+            "--",
+            "python",
+        ];
+        let config = match parse_from(args).unwrap() {
+            ParsedCommand::Run(_) => parse_config_from(args).unwrap(),
+            ParsedCommand::Plan(args) => args.into_run_config().unwrap(),
+            _ => panic!("unexpected command"),
+        };
+        assert_eq!(config.import_roots, ["vendor", "src", "."]);
+        assert!(config.selection.sources.is_empty());
+        assert_eq!(config.selection.files, ["src/pkg/a.py"]);
+        config.validate().unwrap();
+        assert!(parse_from(["hoimin", command, "--import-root", "src", "--", "python"]).is_err());
+    }
+}
+
+#[test]
+fn import_roots_reject_absolute_and_escaping_paths() {
+    for path in [
+        "/absolute",
+        "../outside",
+        "src/../../outside",
+        "",
+        "./../src",
+    ] {
+        let error = parse_config_from([
+            "hoimin",
+            "run",
+            "--file",
+            "a.py",
+            "--import-root",
+            path,
+            "--",
+            "python",
+        ])
+        .unwrap_err();
+        assert!(error.to_string().contains("--import-root"), "{error}");
+    }
+}
+
+#[test]
 fn run_help_explains_windows_per_root_resource_scope() {
     let output = std::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
         .args(["run", "--help"])

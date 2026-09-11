@@ -5,6 +5,30 @@ description: 構文・名前解決・変更するバイト範囲・候補保持�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-478
+  resource: ../../superpowers/specs/2026-09-11-issue-478-analysis-depth-design.md
+  working_tree: untracked
+  sha256: 705f04cacb4004c050b986288b9e200c353ea19e994a609c8ee80a2b4cdfbf95
+
+- id: issue-469
+  resource: ../../superpowers/specs/2026-09-11-issue-469-bom-column-design.md
+  working_tree: untracked
+  sha256: b8c06ba180a55c43f93558d9d6e4ec812313388373e4cf72edefdbf191d4d6ce
+
+- id: issue-468
+  resource: ../../superpowers/specs/2026-09-11-issue-468-pattern-unary-design.md
+  working_tree: untracked
+  sha256: 5d76141fbf41f5811ba5b9132fcc3504962f67181bde62cfa726dd4e92c6dc31
+
+- id: issue-455
+  resource: ../../superpowers/specs/2026-09-11-issue-455-python-newlines-design.md
+  working_tree: untracked
+  sha256: 2f3470c6ec0971d2e526d7134aecf56c3c089599bcd9dc7e33373f5c24d31db4
+
+- id: exception-parentheses
+  resource: ../../superpowers/specs/2026-09-11-issue-451-exception-parentheses-design.md
+  working_tree: untracked
+  sha256: 73ff551e95721e2bfb0d188c2b76b1ce1ff1b1ef431b9eedd187af8af4298790
 - id: operators
   resource: ../../superpowers/specs/2026-08-06-collection-and-structural-mutation-operators-design.md
   revision: a7daea0b557cd435c1e55b540392fbdd116348e1
@@ -29,6 +53,20 @@ sources:
   resource: ../../../README.md
   revision: a7daea0b557cd435c1e55b540392fbdd116348e1
   working_tree: clean
+- id: issue-486
+  resource: ../../superpowers/specs/2026-09-11-issue-486-type-parameter-bindings-design.md
+  working_tree: untracked
+  sha256: 49ad4851c7549542b91e02077502d843b05e878a36b3cc00af4220d713f4ff8c
+
+- id: issue-485
+  resource: ../../superpowers/specs/2026-09-11-issue-485-mapping-pattern-keys-design.md
+  working_tree: untracked
+  sha256: 32041915ca7a4046cac8505f8b831b8280fb59d2b2833a929a2f0c32d44f7df0
+
+- id: issue-481
+  resource: ../../superpowers/specs/2026-09-11-issue-481-comprehension-bindings-design.md
+  working_tree: untracked
+  sha256: 499b6d9c2814c81f12562ecbaa2728c8763a535077a69fecef9c01797db415dd
 ---
 
 # 構文と名前解決の契約
@@ -36,6 +74,20 @@ sources:
 コレクション・構造変異の設計では、既存の演算子ID、対象選択、候補順序、重複除去を保ちながら変異対象を増やす。組込み関数と同じ名前が別の値へ再束縛されている場合、その名前を組込み関数として変異しないことも条件に含む。名前の参照先が不確かな場合には、候補を保守的に除外する。[^operators]
 
 現在のRust解析器はRuffの構文解析器を利用する。トークン（演算子や識別子などの字句）、抽象構文木（AST）、型注釈に関する候補を生成し、保持数を計測するための構造を持つ。[^implementation]
+
+内包表記の代入式は、反復変数とは異なり、最外の内包表記を囲むスコープに束縛する。global／nonlocal宣言とlambdaの境界を保ち、変異元・変異先の双方を確認する。空の内包表記やgeneratorの遅延実行では代入の可能性と実行済みの事実を区別する。Issue481の設計では、この束縛先と実行条件をRustの候補およびCPythonの観測と照合する。[^issue-481]
+
+# BOMと候補の列番号
+
+Issue #469 の設計では、解析器と共通候補バリデータで列番号の計算を共有する。列は0始まりのUnicodeコードポイント数とし、ファイル先頭にあるBOMだけを表示上の列数から除く。2行目以降や文字列内のU+FEFFは数える。元ソースのバイト列、ハッシュ、変更範囲はBOMを含む実データに対応させたまま保持する。[^issue-469]
+
+解析器だけがBOMを除いていたため、有効な1行目の候補が公開discoveryの共通検証で拒否されていた。列計算をcoreにまとめることで、verifyとworkerの適用前検証も同じ規則を使う。検証では正しい座標の受理と従来の1列ずれの拒否を対にし、公開plan・verify・runで元ソースが保存されることを確認する。[^issue-469]
+
+# パターン内の単項符号
+
+Issue #468 の設計では、`case -1` などの数値パターンに通常の単項符号変異を適用しない。Pythonのリテラルパターンでは先頭の負符号は有効だが、正符号への置換は構文エラーになるためである。除外はASTの構文上の役割に基づいてトークン候補の登録時に行い、通常の式・ガード・case本体の符号と、複素数の二項符号や真偽値パターンの変異は維持する。[^issue-468]
+
+この契約はCPythonによるコンパイルと、importだけを行う公開CLI試験で確認する。構文エラーによるkillを正常な変異の検出として数えないことが目的であり、全パターンや他の演算子の構文安全性を一括して保証するものではない。[^issue-468]
 
 # 候補数と解析メモリの上限
 
@@ -65,9 +117,53 @@ sources:
 
 演算子、名前解決、変更範囲の検証、候補順序、保持構造を変更したら、対応する監査と実装比較用のテストを再確認する。原文の演算子数は報告時点の数値として読み、現行一覧はREADMEと実装を照合する。
 
+# 型パラメータとruntime候補の名前解決
+
+Issue486では、generic function／classの型パラメータが導入する束縛を名前解決に反映する。変異元または変異先が型パラメータを参照する場合は、組込み関数の組として変異しない。通常の関数ローカルに名前を追加するだけで済ませず、定義時の式、本体、内側の関数・内包表記での可視範囲を区別する。[^issue-486]
+
+関数のdecoratorや通常の引数defaultは型パラメータの外側で評価され、annotationやgeneric classの基底・keywordでは適切なannotation scopeを考慮する。class直下のannotationからの名前参照と、通常のmethodが外側のclass変数を参照できない規則も区別する。既存のtype positionでruntime候補を生成しない契約を保ち、候補が残る境界とCPythonの束縛観測を照合する。[^issue-486]
+
+# Mapping patternのキー変異とコンパイル制約
+
+Issue485では、同じmapping pattern内で他のリテラルキーと等しくなる変異候補を除外する。`True == 1` のような数値間の等値性や、複素数を作る際の丸めも対象となる。文字列やASTの構造だけで比較せず、変更後のキーの値を比較する。単独キー、非衝突のキー、値側のpattern、通常のdict式の有効な候補は維持する。[^issue-485]
+
+Ruffや `ast.parse` が受け入れても、重複リテラルキーはCPythonのコンパイル時に拒否される。そのため、元の入力をコンパイルした上で、公開 `plan` の候補を適用した結果も `compile(..., 'exec')` で照合する。実行時に属性キーが返す任意の値の等値性や、独立した単項符号の問題まで解決したという主張には広げない。[^issue-485]
+
+# Issue 478: 再帰解析前の深さ検査
+
+長い二項演算式では、候補を保持する前のAST走査がスタックを使い切る。構造に基づく深さ検査をfacts・名前解決・注釈解析より前に置き、上限を超えたファイルはpathと原因を伴う失敗として扱う。候補上限による打切りや、完全な候補ゼロとは区別する。検査だけでなく、拒否したASTの破棄とキャンセル時の後始末もdebug・releaseの実プロセスで確認する。[^issue-478]
+
+2万項の有効な式では、通常のAST破棄も2MiBのスレッドで異常終了した。子ノードを所有する作業リストへ切り離して浅いノードから破棄し、拒否・キャンセル・構文エラー時の所有権をそろえる。この破棄用走査はRuffの子ノード定義との対応を維持する必要がある。[^issue-478]
+
+深さ128は、moduleを1としてRuffが報告する子ノードごとに1を加えて数える。128で実際の候補を維持し、129で拒否する境界を2MiBのスレッドで確認する実装上の上限であり、任意のOS stackやRuff parserの安全性を形式的に証明する値ではない。候補保持に関する既存Lean監査の証拠を、これらの安全性へ拡張して解釈しない。[^issue-478]
+
 [^operators]: [2026-08-06-collection-and-structural-mutation-operators-design.md](../../superpowers/specs/2026-08-06-collection-and-structural-mutation-operators-design.md)。
 [^implementation]: [rust.rs](../../../crates/hoimin-cli/src/analyzer/rust.rs)。
 [^operator-report]: [2026-09-08-python-operator-coverage.md](../../superpowers/reports/2026-09-08-python-operator-coverage.md)。
 [^span]: [2026-08-15-lean-byte-span-preservation-audit.md](../../superpowers/reports/2026-08-15-lean-byte-span-preservation-audit.md)。
 [^bounded]: [2026-08-14-lean-bounded-candidate-discovery-audit.md](../../superpowers/reports/2026-08-14-lean-bounded-candidate-discovery-audit.md)。
 [^readme]: [README.md](../../../README.md)。
+
+[^issue-486]: [2026-09-11-issue-486-type-parameter-bindings-design.md](../../superpowers/specs/2026-09-11-issue-486-type-parameter-bindings-design.md)。
+
+[^issue-485]: [2026-09-11-issue-485-mapping-pattern-keys-design.md](../../superpowers/specs/2026-09-11-issue-485-mapping-pattern-keys-design.md)。
+
+[^issue-481]: [2026-09-11-issue-481-comprehension-bindings-design.md](../../superpowers/specs/2026-09-11-issue-481-comprehension-bindings-design.md)。
+
+[^issue-478]: [2026-09-11-issue-478-analysis-depth-design.md](../../superpowers/specs/2026-09-11-issue-478-analysis-depth-design.md)。
+
+[^issue-469]: [2026-09-11-issue-469-bom-column-design.md](../../superpowers/specs/2026-09-11-issue-469-bom-column-design.md)。
+
+[^issue-468]: [2026-09-11-issue-468-pattern-unary-design.md](../../superpowers/specs/2026-09-11-issue-468-pattern-unary-design.md)。
+
+# Pythonの物理行と元バイト列（Issue #455）
+
+LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証が同じ行境界を使う設計とした。元バイト列を変換せず、CRLFは一つの改行として数える。過去に誤ったCR行位置で作られたplanは再生成が必要となる。初行のBOMによる列検証の不一致は別Issue #469の対象である。[^issue-455]
+
+[^issue-455]: [Issue #455: Python physical newline indexing](../../superpowers/specs/2026-09-11-issue-455-python-newlines-design.md)。
+
+# 括弧付き例外ハンドラの削除（Issue #451）
+
+例外名のAST範囲は外側の括弧を含まない。裸の `except` へ変える際は括弧を含む例外式全体を削除し、タプル要素を削除する際もその要素の括弧を削除対象に含める設計とした。削除対象の内部にあるコメントは式とともに削除し、その外側のコメントと残す例外の表記は維持する。構文解析に加えて、生成候補をCPythonで実行して捕捉する例外を検証する。検証結果は実装計画書に記録する。[^exception-parentheses]
+
+[^exception-parentheses]: [Issue #451 design](../../superpowers/specs/2026-09-11-issue-451-exception-parentheses-design.md)。

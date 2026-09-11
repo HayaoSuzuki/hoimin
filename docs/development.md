@@ -14,6 +14,17 @@ pages (or the reason no update was needed), and checks performed in the PR or
 final handoff. These steps also apply when no personal `create-okf` skill is
 installed.
 
+## Resource policy at the core boundary
+
+Select the process backend before constructing `RunState`. Pass its
+`ProcessHandler::resource_control()` description as the final argument to
+`RunState::new`, `with_fingerprint`, `with_candidate_filter`, or
+`with_ordered_candidate_filter`. `RunStarted::minimal` also requires an explicit
+`ResourceControl` as its final argument. Rust callers using the older constructor
+signatures must supply this argument; there is no inferred or default backend.
+Tests that supply a policy exercise core reporting, not native OS enforcement.
+The report schema retains its existing `mode` and singular `mechanism` fields.
+
 ## Local quality gate
 
 Run the Rust quality gate locally with the same commands used in CI:
@@ -185,6 +196,45 @@ blocked caller-provided writer can delay the run future and even the expiry
 diagnostic. The bounded-return invariant therefore assumes synchronous output
 writes make progress.
 
+## Metrics destination permission
+
+The owned blocking Preflight validates metrics output against resolved source
+entries, explicit fingerprint inputs and session artifacts before the baseline.
+Its completion returns a typed destination together with workspace ownership;
+the shell accepts both before applying the core event. The finalizer uses only
+that resolved path. A collision failure can otherwise return a modeled nonzero
+result and reach finalization, so checking `run_result.is_ok()` cannot authorize
+output. Cleanup completions preserve the preflight decision. A later baseline
+failure retains authorized metrics; a Rust error retains `metrics.incomplete`.
+
+Compare the parent directory and native entry name for rename replacement.
+Distinct hardlinks and final symlinks remain separate output entries. Unix
+inspection caches directory names and lazily indexes no-follow file identities
+to resolve inexact spellings; file identity alone does not equate outputs. The
+session artifact resolver supplies the canonical database, its companion files,
+and the ownership directory used by SessionHandler on every platform. Protect
+that literal directory entry and its resolved tree. Inspect the originally
+configured database entry before preflight replaces the session path with its
+canonical path. On Windows, also retain protection of companion names under the
+configured basename when the final entry is an alias.
+
+For prospective ASCII case aliases in one directory, query macOS pathconf,
+Windows directory case information, or the ext4/f2fs casefold flag on Linux.
+Unknown filesystem behavior, ambiguous entry aliases and prospective non-ASCII
+comparisons with protected names withhold metrics and produce a late
+`metrics.write` warning. Unsupported Windows trailing-dot, trailing-space,
+stream and prospective short-name spellings follow that policy. Keep ordinary
+directory or missing-parent output failures as warnings. Require an existing
+resolved parent before granting write permission, even if a baseline might
+create the directory later. A prospective ownership tree can still establish
+a collision before this permission check. Preserve directory-only output syntax
+before path normalization: a trailing separator or terminal `.` / `..` withholds
+metrics, so normalization cannot turn a directory requirement into replacement
+of its final symlink. These checks establish
+preflight destination identity; they do not freeze the filesystem against
+external renames during a run. Native platform tests must establish the path
+semantics; abstract lifecycle oracles alone cannot do so.
+
 ## Analyzer timeout invariants
 
 Plan creation and verification rediscovery apply the normalized
@@ -221,6 +271,20 @@ traversal admits boolean singletons inside nested patterns but excludes `None`,
 wildcard and capture patterns, and string values. A token with an ambiguous
 grammatical role does not produce a candidate: matching text alone never grants
 eligibility.
+
+Mapping-pattern boolean flips and complex separator flips are excluded when
+only that edit would duplicate another literal key in the same mapping. A
+per-mapping hash index models Python equality for the replacement domain:
+boolean targets are exactly 0/1, while nonzero imaginary parts only compare
+against complex keys. Zero-imaginary separator edits preserve equality and
+remain eligible. Ordinary integer keys are never rounded for comparison;
+integer real parts of complex literals use `num-bigint` conversion to match
+Python construction, including radix spelling and ties-to-even rounding.
+Float infinity and signed zero are handled separately from integer conversion
+overflow, which cannot form a valid original complex pattern literal.
+Nested mappings, value patterns, and dictionary expressions retain their own
+eligibility. Integration tests compile public plan mutants with CPython and
+check that import-only runs do not count invalid duplicate-key edits as kills.
 
 Native Python operator syntax uses these token-local mappings:
 
@@ -336,6 +400,33 @@ candidate-retention bound, not a general Hoimin memory bound: source text,
 parser tokens, AST facts, and small per-node replacement lists remain
 proportional to source size. `--max-memory` controls descendants rather than
 the Hoimin CLI, so it does not bound these analyzer structures.
+
+Before facts, name resolution, or annotation analysis, `rust/depth.rs` checks
+AST depth using a borrowed `AnyNodeRef` worklist. The module has depth 1; every
+child exposed by Ruff's source-order visitor adds one, including auxiliary
+nodes. The supported limit is 128. For `value = 1+...+1`, 126 terms reach depth
+128 and 127 terms exceed it. Rejection is a typed `AnalysisError::DepthExceeded`,
+mapped by both analyzer callers to `analyzer.depth` with the target path.
+Cancellation remains a separate error. Plan creation fails without a manifest;
+run reports incomplete analysis after its normal baseline stage.
+
+The parser's retained/unchecked module API preserves partial invalid trees so
+Hoimin can dispose of them safely while keeping existing invalid-syntax
+behavior. Rejected, invalid, and preflight-cancelled trees use an owned worklist:
+Ruff's `Transformer` detaches statements, expressions, patterns, and interpolated
+string elements before their shallow shells drop. These four callbacks cut every
+recursive cycle in the pinned Transformer's traversal, including nested format
+specifications. Accepted trees use ordinary drop after passing the depth check.
+Both worklists can allocate in proportion to input size; they are stack-depth
+controls, not general memory bounds.
+
+Regression coverage includes exact accepted/rejected boundaries with actual
+binary and annotation candidates on a 2 MiB thread, auxiliary AST kinds,
+repeated 25,000-term rejections with retained-allocation checks, and debug/release
+public plan/run subprocesses at 2,000, 20,000, and 25,000 terms. The 20,000-term
+fixture previously overflowed during ordinary AST drop alone. These observations
+validate the selected limit on tested stacks; they do not prove arbitrary parser
+inputs or every platform stack safe. In particular, the guard runs after parsing.
 
 Candidate-local punctuation queries must use
 `AstFacts::candidate_tokens_in_range` with the smallest relevant AST range.
@@ -490,11 +581,17 @@ cargo test -p hoimin-cli --lib analyzer::rust::rust_tests::comprehension_excepti
 
 ## Extending plan ranking
 
-Plan manifests use schema version 2 and ranking rule version 3. The schema
+Plan manifests use schema version 4 and ranking rule version 4. The schema
 version describes the manifest's serialized shape; the ranking rule version
 describes the category and scoring semantics used to order its candidates.
 Change the ranking rule version whenever those semantics change, even when the
 manifest schema itself does not.
+
+An explicitly selected symbol contributes 250 points to that symbol and its
+dot-delimited descendants in the same resolved file. The bonus is awarded once,
+even when both a parent and child selector match; `Box` matches `Box.check`, but
+does not match `BoxOther.check`. Verification rejects plans with older ranking
+rules and directs the user to regenerate them.
 
 Every canonical mutation operator is exhaustively assigned to exactly one
 fixed-score category:
@@ -573,3 +670,32 @@ implementation plans describe historical runs and are not current instructions.
 Hoimin's Python mutation testing remains available through `hoimin plan` and
 `hoimin verify`; see the repository's Python mutation-testing skills for target
 selection and resource limits.
+
+## Worker import roots
+
+`RawRunConfig.import_roots` normalizes to an ordered, duplicate-free list in
+`RunConfig` and `PlanConfig`, separate from `Selection.sources`. The normalized
+config validators reject escaped or non-normalized paths from persisted data.
+Historical run configs decode a missing list as empty. Plan schema 4 requires
+regeneration of earlier manifests before any baseline runs; fingerprint schema
+7 frames the ordered roots under field tag 9, preventing old-session reuse.
+Users must start a new session and pay the baseline and mutant execution cost.
+
+`WorkspaceHandler::with_import_roots` preserves the existing constructor and
+copy lifecycle. The owned blocking worker-materialization task checks that explicit roots
+exist as directories in the copied worker before publishing `WorkerCreated`.
+Failed validation retains cleanup ownership through the existing pending-worker
+path; command environment construction performs no filesystem reads. The error
+identifies `--import-root` and suggests checking exclusions. Import roots do
+not bypass copying policy or select additional targets. Environment order is
+worker root, explicit roots, selected source roots, then rewritten inherited
+PYTHONPATH, using the existing OS split/join and deduplication.
+
+`tests/import_roots.rs` creates a network-free `venv --without-pip` and a
+regular package exposed by a path-only `.pth`. It records actual module paths
+and results for baseline and mutant, checks narrow file/line selection and
+plan-to-verify inheritance, and retains an inherited-PYTHONPATH control. This
+observes Python import behavior directly; Lean session/workspace oracles do not
+prove how Python loaders resolve imports. The setting covers path-only `.pth`
+regular packages when Python honors PYTHONPATH, not arbitrary editable finders,
+custom loaders, or invocations with `-E`/`-I`.
