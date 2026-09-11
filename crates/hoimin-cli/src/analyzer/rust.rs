@@ -2290,8 +2290,14 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                         .operators
                         .contains(MutationOperator::ExceptionExceptionToBare)
                 {
+                    let range = ruff_python_ast::token::parenthesized_range(
+                        type_.into(),
+                        handler.into(),
+                        self.facts.tokens.expect("parser tokens are set"),
+                    )
+                    .unwrap_or_else(|| type_.range());
                     self.add_candidate(
-                        name.range(),
+                        range,
                         String::new(),
                         MutationOperator::ExceptionExceptionToBare,
                     );
@@ -2888,7 +2894,12 @@ fn tuple_remove_replacement(
     let tuple_start = usize::from(tuple.range().start());
     let tuple_end = usize::from(tuple.range().end());
     let element = tuple.elts.get(index)?;
-    let element_range = element.range();
+    let element_range = ruff_python_ast::token::parenthesized_range(
+        element.into(),
+        tuple.into(),
+        facts.tokens.expect("parser tokens are set"),
+    )
+    .unwrap_or_else(|| element.range());
     let element_start = usize::from(element_range.start());
     let element_end = usize::from(element_range.end());
     let commas: Vec<_> = facts

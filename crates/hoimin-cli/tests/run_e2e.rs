@@ -4001,3 +4001,24 @@ async fn kill_fixture_processes(processes: Option<&FixtureProcesses>) -> Result<
     }
     Ok(())
 }
+
+#[tokio::test]
+async fn parenthesized_exception_to_bare_run_survives_value_error_test() {
+    let project = tempfile::tempdir().unwrap();
+    std::fs::create_dir(project.path().join("src")).unwrap();
+    std::fs::write(project.path().join("src/calc.py"),
+        "def classify():\n    try:\n        raise ValueError('x')\n    except (\n        # grouping\n        (Exception)\n    ):\n        return 'caught'\n").unwrap();
+    let run = run_project_options(
+        project.path(),
+        1,
+        "from src.calc import classify; assert classify() == 'caught'",
+        &["--operators", "exception_exception_to_bare"],
+    )
+    .await;
+    assert_eq!(run.exit_code, 1, "{}", run.stderr);
+    assert_eq!(run.document["summary"]["complete"], true);
+    // pins: issue #451 — `except ()` incorrectly killed this mutant.
+    assert_eq!(run.statuses, ["survived"]);
+    assert_eq!(run.document["summary"]["counts"]["killed"], 0);
+    assert_eq!(run.document["summary"]["counts"]["survived"], 1);
+}

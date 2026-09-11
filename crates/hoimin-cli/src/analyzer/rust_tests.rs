@@ -7253,3 +7253,88 @@ fn truncates_after_selected_candidates_and_emits_limit_diagnostic() {
         AnalyzerDiagnosticCode::CandidateLimitExceeded
     );
 }
+
+#[test]
+fn parenthesized_exception_removals_use_complete_expression_spans() {
+    let cases = [
+        (
+            "((Exception))",
+            MutationOperator::ExceptionExceptionToBare,
+            vec![("((Exception))", "")],
+        ),
+        (
+            "(\n    # removed with expression\n    (Exception)\n)",
+            MutationOperator::ExceptionExceptionToBare,
+            vec![("(\n    # removed with expression\n    (Exception)\n)", "")],
+        ),
+        (
+            "((ValueError), (TypeError))",
+            MutationOperator::ExceptionTupleRemoveMember,
+            vec![
+                ("((ValueError), (TypeError))", "( (TypeError))"),
+                ("((ValueError), (TypeError))", "((ValueError) )"),
+            ],
+        ),
+        (
+            "((ValueError), # retained\n    ((TypeError)),)",
+            MutationOperator::ExceptionTupleRemoveMember,
+            vec![
+                (
+                    "((ValueError), # retained\n    ((TypeError)),)",
+                    "( # retained\n    ((TypeError)),)",
+                ),
+                (
+                    "((ValueError), # retained\n    ((TypeError)),)",
+                    "((ValueError), # retained\n    )",
+                ),
+            ],
+        ),
+        (
+            "(( # internal\n    ValueError), # external\n    TypeError)",
+            MutationOperator::ExceptionTupleRemoveMember,
+            vec![
+                (
+                    "(( # internal\n    ValueError), # external\n    TypeError)",
+                    "( # external\n    TypeError)",
+                ),
+                (
+                    "(( # internal\n    ValueError), # external\n    TypeError)",
+                    "(( # internal\n    ValueError) # external\n    )",
+                ),
+            ],
+        ),
+    ];
+    for (expression, operator, expected) in cases {
+        let source = format!("try:\n    work()\nexcept {expression}:\n    pass\n");
+        let mut operators = MutationOperatorSelection::default();
+        operators.include(operator);
+        let output = analyze_source(
+            &AnalyzeRequest {
+                path: Utf8Path::new("case.py"),
+                lines: &[],
+                symbols: &[],
+                operators: &operators,
+                profile: MutationProfile::Full,
+                max_candidates: 100,
+            },
+            &source,
+        );
+        let candidates: Vec<_> = output
+            .candidates
+            .iter()
+            .filter(|candidate| candidate.operator == operator.as_str())
+            .collect();
+        // pins: issue #451 — AST name ranges omit syntactically significant parentheses.
+        assert_eq!(
+            candidates
+                .iter()
+                .map(|c| (c.original.as_str(), c.replacement.as_str()))
+                .collect::<Vec<_>>(),
+            expected,
+            "{source}"
+        );
+        for candidate in candidates {
+            apply_candidate_and_reparse(&source, candidate);
+        }
+    }
+}

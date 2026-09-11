@@ -5,6 +5,10 @@ description: docs/superpowers/specs内の全Markdownを先頭見出しと出典�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-451
+  resource: ../../superpowers/specs/2026-09-11-issue-451-exception-parentheses-design.md
+  working_tree: untracked
+  sha256: 73ff551e95721e2bfb0d188c2b76b1ce1ff1b1ef431b9eedd187af8af4298790
 - id: doc-001
   resource: ../../superpowers/specs/2026-09-09-issue-447-fingerprint-memory-design.md
   revision: a7daea0b557cd435c1e55b540392fbdd116348e1
@@ -649,7 +653,7 @@ sources:
 
 # 収録一覧
 
-2026-09-11時点の160件。これは原文への索引であり、各文書の採用状況・現行性・検証結果を一括して認定するものではない。見出しは原文から抽出した。出典の版とGitの追跡状態は、冒頭のYAMLメタデータに記録している。未追跡資料は同じ作業ツリーに依存する。
+2026-09-11時点の161件。これは原文への索引であり、各文書の採用状況・現行性・検証結果を一括して認定するものではない。見出しは原文から抽出した。出典の版とGitの追跡状態は、冒頭のYAMLメタデータに記録している。未追跡資料は同じ作業ツリーに依存する。
 
 主要な論点の要約は[入口](../index.md)から読む。ファイル名に含まれる日付は作成履歴の手がかりであり、そのファイルが最後に変更された日時ではない。
 
@@ -976,3 +980,9 @@ sources:
 [^doc-158]: [2026-07-19-python-314-typing-design.md](../../superpowers/specs/2026-07-19-python-314-typing-design.md)。
 [^doc-159]: [2026-07-19-ci-hosted-runner-design.md](../../superpowers/specs/2026-07-19-ci-hosted-runner-design.md)。
 [^doc-160]: [2026-07-18-python-mutation-tool-design.md](../../superpowers/specs/2026-07-18-python-mutation-tool-design.md)。
+
+# Issue #451 の設計
+
+- [Issue #451: Parenthesized exception removal](../../superpowers/specs/2026-09-11-issue-451-exception-parentheses-design.md) - 括弧を含む例外式の削除範囲と実行検証。[^issue-451]
+
+[^issue-451]: [設計原文](../../superpowers/specs/2026-09-11-issue-451-exception-parentheses-design.md)。
