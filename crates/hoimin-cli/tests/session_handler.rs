@@ -1749,3 +1749,65 @@ fn create_nullable_corrupt_database(path: &std::path::Path) {
     )
     .unwrap();
 }
+
+#[test]
+fn session_artifacts_resolve_without_creating_the_database() {
+    use hoimin_cli::session::SessionArtifacts;
+    let directory = tempfile::tempdir().unwrap();
+    for name in ["session.sqlite3", "active[1].db", "!active.db"] {
+        let path = directory.path().join(name);
+        let artifacts = SessionArtifacts::resolve(&path).unwrap();
+        assert!(!path.exists());
+        let canonical_parent = std::fs::canonicalize(directory.path()).unwrap();
+        assert_eq!(artifacts.database(), canonical_parent.join(name));
+        assert_eq!(
+            artifacts.files(),
+            [
+                canonical_parent.join(name),
+                canonical_parent.join(format!("{name}-wal")),
+                canonical_parent.join(format!("{name}-shm")),
+                canonical_parent.join(format!("{name}-journal"))
+            ]
+        );
+        assert_eq!(
+            artifacts.lock_directory(),
+            canonical_parent.join(format!(".{name}.hoimin-locks"))
+        );
+        drop(SessionHandler::open(&path).unwrap());
+        assert_eq!(
+            SessionArtifacts::resolve(&path).unwrap().database(),
+            artifacts.database()
+        );
+    }
+    assert!(SessionArtifacts::resolve(directory.path()).is_err());
+    assert!(SessionArtifacts::resolve(directory.path().join("missing/db")).is_err());
+    assert!(!directory.path().join("missing").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn session_artifacts_resolve_aliases_and_reject_dangling_leaf_without_side_effects() {
+    use hoimin_cli::session::SessionArtifacts;
+    use std::os::unix::fs::symlink;
+    let directory = tempfile::tempdir().unwrap();
+    let parent = directory.path().join("actual");
+    std::fs::create_dir(&parent).unwrap();
+    let alias = directory.path().join("alias");
+    symlink(&parent, &alias).unwrap();
+    let path = parent.join("active*?[1].db");
+    let artifacts = SessionArtifacts::resolve(alias.join("active*?[1].db")).unwrap();
+    assert!(!path.exists());
+    drop(SessionHandler::open(&path).unwrap());
+    let leaf_alias = directory.path().join("leaf.db");
+    symlink(&path, &leaf_alias).unwrap();
+    assert_eq!(
+        SessionArtifacts::resolve(&leaf_alias).unwrap().database(),
+        artifacts.database()
+    );
+    let missing = parent.join("absent.db");
+    let dangling = directory.path().join("dangling.db");
+    symlink(&missing, &dangling).unwrap();
+    assert!(SessionArtifacts::resolve(&dangling).is_err());
+    assert!(SessionHandler::open(&dangling).is_err());
+    assert!(!missing.exists());
+}

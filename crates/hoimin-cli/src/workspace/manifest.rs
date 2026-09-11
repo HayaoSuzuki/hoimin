@@ -5,12 +5,12 @@ use std::fs;
 use std::path::Path;
 
 use camino::{Utf8Path, Utf8PathBuf};
-use ignore::WalkBuilder;
 use ignore::overrides::OverrideBuilder;
+use ignore::{DirEntry, WalkBuilder};
 
 use crate::{copy_policy::default_excluded, portable_path};
 
-use super::{CopyOptions, WorkspaceDiagnostic, WorkspaceError};
+use super::{CopyOptions, LiteralExclusion, WorkspaceDiagnostic, WorkspaceError};
 
 #[cfg(test)]
 thread_local! {
@@ -231,6 +231,14 @@ fn walk_selected_files(
     if !metadata.is_dir() {
         return Err(WorkspaceError::RootNotDirectory(root.to_owned()));
     }
+    for exclusion in &options.literal_exclusions {
+        let path = exclusion.path();
+        if !hoimin_core::normalized_relative_path(path.as_str()) {
+            return Err(WorkspaceError::InvalidPath {
+                path: path.to_owned(),
+            });
+        }
+    }
     let mut symlinks = BTreeSet::<Utf8PathBuf>::new();
 
     let normal_overrides = overrides(root.as_std_path(), &[], &options.excludes)?;
@@ -240,7 +248,7 @@ fn walk_selected_files(
         .require_git(false)
         .follow_links(false)
         .overrides(normal_overrides)
-        .filter_entry(|entry| !default_excluded(entry));
+        .filter_entry(selection_filter(root, options));
     collect(normal, root, &mut symlinks, visit)?;
 
     if !options.includes.is_empty() {
@@ -256,11 +264,41 @@ fn walk_selected_files(
             .parents(false)
             .follow_links(false)
             .overrides(include_overrides)
-            .filter_entry(|entry| !default_excluded(entry));
+            .filter_entry(selection_filter(root, options));
         collect(included, root, &mut symlinks, visit)?;
     }
 
     Ok(symlinks)
+}
+
+fn selection_filter(
+    root: &Utf8Path,
+    options: &CopyOptions,
+) -> impl Fn(&DirEntry) -> bool + Send + Sync + 'static {
+    let root = root.to_owned();
+    let exclusions = options.literal_exclusions.clone();
+    move |entry| {
+        if default_excluded(entry) {
+            return false;
+        }
+        if exclusions.is_empty() {
+            return true;
+        }
+        let Some(relative) = super::relative_inside(entry.path(), root.as_std_path()) else {
+            return true;
+        };
+        let is_directory = entry.file_type().is_some_and(|kind| kind.is_dir());
+        !exclusions.iter().any(|exclusion| {
+            let Some(tail) = super::relative_inside(&relative, exclusion.path().as_std_path())
+            else {
+                return false;
+            };
+            match exclusion {
+                LiteralExclusion::File(_) => tail.as_os_str().is_empty() && !is_directory,
+                LiteralExclusion::Tree(_) => !tail.as_os_str().is_empty() || is_directory,
+            }
+        })
+    }
 }
 
 fn overrides(
