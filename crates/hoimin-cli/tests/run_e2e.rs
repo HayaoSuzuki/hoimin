@@ -571,6 +571,49 @@ async fn protocol_contracts_distinguish_generated_mutants_in_external_tests() {
 }
 
 #[tokio::test]
+async fn generic_type_parameter_destinations_cannot_create_false_kills() {
+    for (source, command) in [
+        (
+            "def f[tuple](items):\n    return list(items)\n",
+            "from src.calc import f; assert f((1, 2)) == [1, 2]",
+        ),
+        (
+            "class C[tuple]:\n    result = list(range(1, 3))\n",
+            "from src.calc import C; assert C.result == [1, 2]",
+        ),
+    ] {
+        let project = tempfile::tempdir().unwrap();
+        std::fs::create_dir(project.path().join("src")).unwrap();
+        let path = project.path().join("src/calc.py");
+        std::fs::write(&path, source).unwrap();
+        // Keep literal collections in the command, outside analyzed source:
+        // tuple literals have legitimate independent list/tuple mutations.
+        let run = run_project_options(
+            project.path(),
+            1,
+            command,
+            &[
+                "--operators",
+                "collection_list_tuple",
+                "--baseline-timeout",
+                "5s",
+                "--total-timeout",
+                "15s",
+                "--max-mutants",
+                "1",
+            ],
+        )
+        .await;
+        assert_eq!(run.exit_code, 0, "{}", run.stderr);
+        assert_eq!(run.document["baseline"]["termination"]["Exit"], 0);
+        assert_eq!(run.document["summary"]["complete"], true);
+        assert_eq!(run.document["summary"]["counts"]["killed"], 0);
+        assert!(run.document["mutants"].as_array().unwrap().is_empty());
+        assert_eq!(std::fs::read_to_string(path).unwrap(), source);
+    }
+}
+
+#[tokio::test]
 async fn exception_default_run_reports_canonical_json_candidate() {
     let project = tempfile::tempdir().unwrap();
     write_exception_operator_project(project.path());
