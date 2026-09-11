@@ -29,6 +29,10 @@ sources:
   resource: ../../json-schema/run-result.schema.json
   revision: a7daea0b557cd435c1e55b540392fbdd116348e1
   working_tree: clean
+- id: issue-487
+  resource: ../../superpowers/specs/2026-09-11-issue-487-resource-report-policy-design.md
+  working_tree: untracked
+  sha256: 81204e5418b7fe3eac61795402199e9427a1b3157f89525d8267cb502d324e80
 ---
 
 # 実行単位ごとの所有権
@@ -55,9 +59,17 @@ JSON Schemaは結果の構造を定める元資料として保持する。ただ
 
 run所有権、再利用条件、結果置換、DBスキーマ、集計値と終了コードの規則、JSON読取り処理を変更したら更新する。保存・読取り・比較の各処理で同じ前提が維持されるかを調べる。旧報告にある未解決という記述は、その報告の時点として扱う。
 
+# 選択した資源制限方式と再利用結果
+
+Issue487では、実際に選択したbackendのmodeと識別用mechanismを、run開始前にcoreへ渡す。runヘッダーと、再利用・停止によって生成する結果は同じrunの方針を表す。best-effortを許可する設定から実行方式を推測せず、実プロセスの結果は実行側から受け取ったmodeを保つ。[^issue-487]
+
+再利用結果のterminationとoutputはnull、経過時間は0のままとする。過去のプロセスを今回実行したことにはせず、保存済みの履歴も表示のために書き換えない。JSONとJSONLの実行、自然に未完了となったsessionからのresumeを通じて、ヘッダー・実行結果・再利用結果を照合する。[^issue-487]
+
 [^ownership]: [2026-09-07-issue-363-session-ownership-design.md](../../superpowers/specs/2026-09-07-issue-363-session-ownership-design.md)。
 [^session]: [mod.rs](../../../crates/hoimin-cli/src/session/mod.rs)。
 [^ownership-report]: [2026-09-07-issue-363-session-ownership.md](../../superpowers/reports/2026-09-07-issue-363-session-ownership.md)。
 [^migration]: [2026-08-11-lean-schema-migration-concurrency-audit.md](../../superpowers/reports/2026-08-11-lean-schema-migration-concurrency-audit.md)。
 [^reader]: [input.rs](../../../crates/hoimin-cli/src/progress/input.rs)。
 [^schema]: [run-result.schema.json](../../json-schema/run-result.schema.json)。
+
+[^issue-487]: [2026-09-11-issue-487-resource-report-policy-design.md](../../superpowers/specs/2026-09-11-issue-487-resource-report-policy-design.md)。
