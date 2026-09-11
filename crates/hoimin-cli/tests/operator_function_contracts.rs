@@ -61,6 +61,76 @@ async fn plan(root: &Path, operator: &str) -> serde_json::Value {
     serde_json::from_slice(&stdout).expect("plan writes one JSON document")
 }
 
+#[tokio::test]
+async fn planned_pattern_candidates_compile_with_cpython() {
+    let directory = tempfile::tempdir().unwrap();
+    let source = concat!(
+        "class Point:\n    __match_args__ = ('x',)\n",
+        "def classify(value, guard):\n",
+        "    subject = -value\n",
+        "    match subject:\n",
+        "        case -1 | -1.5 | -2j | -3-4j | -3+4j:\n            pass\n",
+        "        case [(-5), Point(-6), {-7: True}]:\n            pass\n",
+        "        case False if +guard:\n            return +value\n",
+        "    return -value\n",
+    );
+    fs::write(directory.path().join("subject.py"), source).unwrap();
+
+    let manifest = plan(
+        directory.path(),
+        "unary_sign,binary_add_sub,boolean_literal",
+    )
+    .await;
+    let candidates = manifest["candidates"].as_array().unwrap();
+    assert!(
+        !candidates.is_empty(),
+        "the CPython check must not be vacuous"
+    );
+    assert_eq!(
+        candidates
+            .iter()
+            .filter(|candidate| candidate["operator"] == "unary_sign")
+            .count(),
+        4,
+        "only expression-context unary signs should remain: {manifest}"
+    );
+    assert!(
+        candidates.iter().any(|candidate| {
+            candidate["operator"] == "binary_add_sub" && candidate["original"] == "-"
+        }),
+        "the complex separator should remain eligible: {manifest}"
+    );
+    assert_eq!(
+        candidates
+            .iter()
+            .filter(|candidate| candidate["operator"] == "boolean_literal")
+            .count(),
+        2,
+        "boolean pattern candidates should remain eligible: {manifest}"
+    );
+
+    for candidate in candidates {
+        let start = usize::try_from(candidate["span"]["start"].as_u64().unwrap()).unwrap();
+        let length = usize::try_from(candidate["span"]["length"].as_u64().unwrap()).unwrap();
+        let mut mutated = source.to_owned();
+        mutated.replace_range(
+            start..start + length,
+            candidate["replacement"].as_str().unwrap(),
+        );
+        fs::write(directory.path().join("subject.py"), mutated).unwrap();
+        let output = run_python(
+            directory.path(),
+            "compile(open('subject.py').read(), 'subject.py', 'exec')",
+        );
+        assert!(
+            output.status.success(),
+            "candidate {} failed CPython compilation: {}",
+            candidate["id"],
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}
+
 fn run_python(root: &Path, harness: &str) -> Output {
     Command::new(python_executable())
         .args(["-c", harness])

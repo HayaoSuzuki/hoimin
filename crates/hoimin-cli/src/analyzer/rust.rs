@@ -1418,6 +1418,7 @@ struct AstFacts<'tokens> {
     scopes: Vec<ScopeInterval>,
     scope_index: ScopeIndex,
     qualname: Vec<String>,
+    in_pattern: bool,
     tokens: Option<&'tokens ruff_python_ast::token::Tokens>,
     source: &'tokens str,
     #[cfg(test)]
@@ -1713,13 +1714,13 @@ impl<'ast> Visitor<'ast> for AstFacts<'_> {
                 ],
             ),
             Expr::UnaryOp(unary) => {
-                self.record_operator_tokens(
-                    TextRange::new(unary.range().start(), unary.operand.range().start()),
-                    &["not", "+", "-", "~"],
-                );
                 let start = usize::from(unary.range().start());
                 match unary.op {
                     UnaryOp::Not => {
+                        self.record_operator_tokens(
+                            TextRange::new(unary.range().start(), unary.operand.range().start()),
+                            &["not"],
+                        );
                         let operand_range = ruff_python_ast::token::parenthesized_range(
                             unary.operand.as_ref().into(),
                             unary.into(),
@@ -1733,9 +1734,21 @@ impl<'ast> Visitor<'ast> for AstFacts<'_> {
                         ));
                     }
                     UnaryOp::UAdd | UnaryOp::USub => {
-                        self.unary_sign_starts.insert(start);
+                        if !self.in_pattern {
+                            self.record_operator_tokens(
+                                TextRange::new(
+                                    unary.range().start(),
+                                    unary.operand.range().start(),
+                                ),
+                                &["+", "-"],
+                            );
+                            self.unary_sign_starts.insert(start);
+                        }
                     }
-                    UnaryOp::Invert => {}
+                    UnaryOp::Invert => self.record_operator_tokens(
+                        TextRange::new(unary.range().start(), unary.operand.range().start()),
+                        &["~"],
+                    ),
                 }
             }
             Expr::BooleanLiteral(boolean) => {
@@ -1752,7 +1765,9 @@ impl<'ast> Visitor<'ast> for AstFacts<'_> {
         {
             self.record_operator_tokens(singleton.range(), &["True", "False"]);
         }
+        let previous = std::mem::replace(&mut self.in_pattern, true);
         visitor::walk_pattern(self, pattern);
+        self.in_pattern = previous;
     }
 }
 

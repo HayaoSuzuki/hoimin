@@ -5,6 +5,11 @@ description: docs/superpowers/specs内の全Markdownを先頭見出しと出典�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-468
+  resource: ../../superpowers/specs/2026-09-11-issue-468-pattern-unary-design.md
+  working_tree: untracked
+  sha256: 5d76141fbf41f5811ba5b9132fcc3504962f67181bde62cfa726dd4e92c6dc31
+
 - id: issue-465
   resource: ../../superpowers/specs/2026-09-11-issue-465-retired-discovery-design.md
   working_tree: untracked
@@ -682,12 +687,13 @@ sources:
 
 # 収録一覧
 
-2026-09-11時点の167件。これは原文への索引であり、各文書の採用状況・現行性・検証結果を一括して認定するものではない。見出しは原文から抽出した。出典の版とGitの追跡状態は、冒頭のYAMLメタデータに記録している。未追跡資料は同じ作業ツリーに依存する。
+2026-09-11時点の168件。これは原文への索引であり、各文書の採用状況・現行性・検証結果を一括して認定するものではない。見出しは原文から抽出した。出典の版とGitの追跡状態は、冒頭のYAMLメタデータに記録している。未追跡資料は同じ作業ツリーに依存する。
 
 主要な論点の要約は[入口](../index.md)から読む。ファイル名に含まれる日付は作成履歴の手がかりであり、そのファイルが最後に変更された日時ではない。
 
 | 原文 | 先頭見出し | 作成時の状態 |
 | --- | --- | --- |
+| [2026-09-11-issue-468-pattern-unary-design.md](../../superpowers/specs/2026-09-11-issue-468-pattern-unary-design.md) | Issue 468: Preserve literal-pattern syntax for unary signs [^issue-468] | **未追跡** |
 | [2026-09-11-issue-465-retired-discovery-design.md](../../superpowers/specs/2026-09-11-issue-465-retired-discovery-design.md) | Issue 465: Retired Rust function-discovery disposition [^issue-465] | **未追跡** |
 | [2026-09-11-issue-462-retired-reader-design.md](../../superpowers/specs/2026-09-11-issue-462-retired-reader-design.md) | Issue 462: Retired bounded-reader disposition [^issue-462] | **未追跡** |
 | [2026-09-11-issue-460-progress-result-design.md](../../superpowers/specs/2026-09-11-issue-460-progress-result-design.md) | Validate mutant results before progress comparison [^issue-460] | **未追跡** |
@@ -1012,6 +1018,8 @@ sources:
 [^doc-158]: [2026-07-19-python-314-typing-design.md](../../superpowers/specs/2026-07-19-python-314-typing-design.md)。
 [^doc-159]: [2026-07-19-ci-hosted-runner-design.md](../../superpowers/specs/2026-07-19-ci-hosted-runner-design.md)。
 [^doc-160]: [2026-07-18-python-mutation-tool-design.md](../../superpowers/specs/2026-07-18-python-mutation-tool-design.md)。
+
+[^issue-468]: [2026-09-11-issue-468-pattern-unary-design.md](../../superpowers/specs/2026-09-11-issue-468-pattern-unary-design.md)。
 
 [^issue-465]: [2026-09-11-issue-465-retired-discovery-design.md](../../superpowers/specs/2026-09-11-issue-465-retired-discovery-design.md)。
 

@@ -1235,6 +1235,73 @@ async fn failing_baseline_runs_no_mutants_and_returns_three() {
 }
 
 #[tokio::test]
+async fn import_only_match_negative_literal_has_no_unary_mutant_to_kill() {
+    let project = tempfile::tempdir().unwrap();
+    std::fs::write(
+        project.path().join("subject.py"),
+        concat!(
+            "def classify(value):\n",
+            "    match value:\n",
+            "        case -1:\n            return 'negative one'\n",
+            "        case _:\n            return 'other'\n",
+        ),
+    )
+    .unwrap();
+    let python = python_executable();
+
+    let plan = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
+        .args(["plan", "--root"])
+        .arg(project.path())
+        .args([
+            "--file",
+            "subject.py",
+            "--operators",
+            "unary_sign",
+            "--allow-best-effort-memory",
+            "--",
+        ])
+        .arg(&python)
+        .args(["-c", "from subject import classify"])
+        .output()
+        .await
+        .unwrap();
+    assert!(
+        plan.status.success(),
+        "plan stderr={}",
+        String::from_utf8_lossy(&plan.stderr)
+    );
+    let manifest: serde_json::Value = serde_json::from_slice(&plan.stdout).unwrap();
+    assert_eq!(manifest["candidates"], serde_json::json!([]));
+
+    let run = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
+        .args(["run", "--min-free-space", TEST_MIN_FREE_SPACE, "--root"])
+        .arg(project.path())
+        .args([
+            "--file",
+            "subject.py",
+            "--operators",
+            "unary_sign",
+            "--format",
+            "json",
+            "--allow-best-effort-memory",
+            "--",
+        ])
+        .arg(&python)
+        .args(["-c", "from subject import classify"])
+        .output()
+        .await
+        .unwrap();
+    assert!(
+        run.status.success(),
+        "run stderr={}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&run.stdout).unwrap();
+    assert_eq!(report["mutants"], serde_json::json!([]));
+    assert_eq!(report["summary"]["counts"]["killed"], 0);
+}
+
+#[tokio::test]
 async fn session_is_not_created_when_the_option_is_absent_and_stdout_is_one_json_document() {
     let run = run_fixture(&["-m", "unittest", "discover", "-s", "tests"]).await;
 
