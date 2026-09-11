@@ -520,12 +520,8 @@ struct LineIndex {
 
 impl LineIndex {
     fn new(source: &str) -> Self {
-        let mut starts = vec![0];
-        for (index, byte) in source.bytes().enumerate() {
-            if byte == b'\n' {
-                starts.push(u32::try_from(index + 1).expect("Ruff source offset fits u32"));
-            }
-        }
+        let starts = hoimin_core::python_line_starts(source.as_bytes())
+            .expect("Ruff source offset fits u32");
         Self { starts }
     }
 

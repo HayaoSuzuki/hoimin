@@ -5,6 +5,10 @@ description: docs/superpowers/specs内の全Markdownを先頭見出しと出典�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-455
+  resource: ../../superpowers/specs/2026-09-11-issue-455-python-newlines-design.md
+  working_tree: untracked
+  sha256: 2f3470c6ec0971d2e526d7134aecf56c3c089599bcd9dc7e33373f5c24d31db4
 - id: doc-001
   resource: ../../superpowers/specs/2026-09-09-issue-447-fingerprint-memory-design.md
   revision: a7daea0b557cd435c1e55b540392fbdd116348e1
@@ -976,3 +980,9 @@ sources:
 [^doc-158]: [2026-07-19-python-314-typing-design.md](../../superpowers/specs/2026-07-19-python-314-typing-design.md)。
 [^doc-159]: [2026-07-19-ci-hosted-runner-design.md](../../superpowers/specs/2026-07-19-ci-hosted-runner-design.md)。
 [^doc-160]: [2026-07-18-python-mutation-tool-design.md](../../superpowers/specs/2026-07-18-python-mutation-tool-design.md)。
+
+# Pythonの物理行と元バイト列（Issue #455）
+
+LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証が同じ行境界を使う設計とした。元バイト列を変換せず、CRLFは一つの改行として数える。過去に誤ったCR行位置で作られたplanは再生成が必要となる。初行のBOMによる列検証の不一致は別Issue #469の対象である。[^issue-455]
+
+[^issue-455]: [Issue #455: Python physical newline indexing](../../superpowers/specs/2026-09-11-issue-455-python-newlines-design.md)。
