@@ -157,3 +157,11 @@ No unresolved required implementation work identified. No claim of exhaustive Py
 ## Independent task review
 
 review481_task found no actionable findings in4adf809..0fcb3bf after reviewing routing/flow, publicCPython/plan/run regressions, boundedLeanmodel/generator/corpus and CI. Correspondence limitations match implementation; no mutations or test reruns.
+
+## Hosted CI follow-up
+
+The first PR run34599263747 failed Wheel smoke in `LeanAuditWorkflowContractTests.test_bounded_audit_covers_every_module_and_generator`. The new executable was registered in lakefile/CI but absent from the Python inventory. Inspection also found its CI gate had been inserted in the middle while lakefile appended it at the end; the existing test deliberately requires consistent order. Raw job log: /private/tmp/issue481-ci-wheel-clean.log. Lean audit itself passed.
+
+Added the inventory entry and moved only that new CI gate to the matching final position. Preserved all guard commands, stop-on-failure assertions and corpus checks. `python -m unittest discover -s tests -p test_ci_workflow.py -v` passed26 tests in6.830s with repository CPython3.14.7; log /private/tmp/issue481-ci-workflow-fixed.log. No Rust or Lean semantic code changed, so their previously green suites were not rerun locally.
+
+Three follow-up self-reviews:1 traced the hosted assertion through lakefile order, Python mapping and CI gate expansion;2 ran the whole workflow contract module, retaining every inventory and failure-stop assertion;3 inspected the two small registry/order edits and whitespace, recorded the initial integration failure and requested scoped independent review before pushing. No test expectation was weakened and no failure was waived.
