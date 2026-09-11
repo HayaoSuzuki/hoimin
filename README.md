@@ -425,7 +425,7 @@ uv run maturin build --release
 uv run python tests/wheel_smoke.py
 ```
 
-The smoke test installs the wheel into a new environment and runs the Rust-only CLI outside this checkout. For development verification, see [the development guide](docs/development.md).
+The smoke test installs the wheel into a new environment and runs the Rust-only CLI outside this checkout. For development verification, see [the development guide](docs/development.md). Start design and audit work with [the OKF catalog](docs/knowledge/index.md), and follow [the OKF workflow](docs/okf-workflow.md) to keep it current with each relevant change.
 
 ```console
 cargo fmt --check

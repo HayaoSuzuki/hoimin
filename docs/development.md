@@ -1,5 +1,21 @@
 # Development
 
+## Knowledge workflow
+
+Start development work with [the OKF catalog](knowledge/index.md). Read the
+relevant contracts and audit limitations, then inspect their sources and the
+affected implementation. Update the corresponding OKF concepts in the same
+change when behavior, design decisions, procedures, or audit evidence change.
+Add a new concept when the work establishes a distinct reusable topic.
+
+Follow [the OKF authoring and review procedure](okf-workflow.md) for update
+criteria, source provenance, and validation. Include consulted pages, updated
+pages (or the reason no update was needed), and checks performed in the PR or
+final handoff. These steps also apply when no personal `create-okf` skill is
+installed.
+
+## Local quality gate
+
 Run the Rust quality gate locally with the same commands used in CI:
 
 ```console

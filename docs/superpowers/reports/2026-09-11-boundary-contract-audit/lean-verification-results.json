@@ -1,0 +1,43 @@
+{
+  "head": "623dd808612dbc34775e16814845eec0bc52dff9",
+  "existing_model": "MutationScoreExitPolicy",
+  "guarded_commands": {
+    "proof": {
+      "elapsed_ms": 5323,
+      "exit_code": 0,
+      "peak_rss_kib": 675488,
+      "reason": "child_exit",
+      "rss_limit_kib": 786432,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    "corpus": {
+      "elapsed_ms": 6836,
+      "exit_code": 0,
+      "peak_rss_kib": 774784,
+      "reason": "child_exit",
+      "rss_limit_kib": 786432,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    "sensitivity": {
+      "elapsed_ms": 553,
+      "exit_code": 0,
+      "peak_rss_kib": 48784,
+      "reason": "child_exit",
+      "rss_limit_kib": 786432,
+      "schema": 1,
+      "timeout_ms": 20000
+    }
+  },
+  "adapter_tests_passed": 4,
+  "corpus_rows": 48,
+  "broken_variants_detected": 13,
+  "updated_issues": [
+    483,
+    489,
+    490,
+    491
+  ],
+  "new_models_or_adapters_implemented": false
+}

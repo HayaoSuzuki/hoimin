@@ -1,0 +1,157 @@
+{
+  "head": "623dd808612dbc34775e16814845eec0bc52dff9",
+  "date": "2026-09-11",
+  "platform": "macOS arm64",
+  "python": "3.14.7",
+  "primary_test_groups": [
+    {
+      "group": "core",
+      "results": [
+        "test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ],
+      "passed": 70,
+      "log_during_audit": "/tmp/hoimin-exhaustive-core-tests.log"
+    },
+    {
+      "group": "selection",
+      "results": [
+        "test result: ok. 55 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.39s",
+        "test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s",
+        "test result: ok. 45 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 1.03s",
+        "test result: ok. 36 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.51s"
+      ],
+      "passed": 159,
+      "log_during_audit": "/tmp/hoimin-exhaustive-selection-tests.log"
+    }
+  ],
+  "selector_matrix": {
+    "plan_cases": 72,
+    "plan_failures": [],
+    "nontruncated_run_cases": 24,
+    "nontruncated_run_failures": 0,
+    "verify_cases": 26,
+    "verify_failures": [],
+    "intentional_truncated_run_differences": [
+      {
+        "changed": false,
+        "lines": "none",
+        "symbol": false,
+        "limit": 1,
+        "expected": [
+          [
+            "src/a.py",
+            2
+          ]
+        ],
+        "actual": [
+          [
+            "src/a.py",
+            2
+          ]
+        ],
+        "truncated": true,
+        "exit": 4,
+        "ok": true,
+        "run_ok": false
+      },
+      {
+        "changed": true,
+        "lines": "none",
+        "symbol": false,
+        "limit": 1,
+        "expected": [
+          [
+            "src/a.py",
+            2
+          ]
+        ],
+        "actual": [
+          [
+            "src/a.py",
+            2
+          ]
+        ],
+        "truncated": true,
+        "exit": 4,
+        "ok": true,
+        "run_ok": false
+      }
+    ],
+    "truncated_run_interpretation": "Ordinary run intentionally executes zero mutants on candidate overflow; machine.rs:590 and machine test candidate_overflow_stops_before_any_mutant_execution. These two observed differences are not bugs."
+  },
+  "supplementary_agent_tests": {
+    "report_policy": 37,
+    "progress_input": 20,
+    "runtime": 78,
+    "overlap_note": "Runtime total overlaps primary target_policy/plan_config by 44; counts are not additive unique tests."
+  },
+  "other_probes": {
+    "safe_cli_limit_cases": 21,
+    "progress_wire_variants": 16,
+    "python_source_fixtures": 10
+  },
+  "not_executed": [
+    "Windows native backend",
+    "Linux delegated cgroup hard limits",
+    "real OOM",
+    "real ENOSPC",
+    "maximum 256-worker load",
+    "full workspace suite",
+    "new large performance benchmarks",
+    "CI run history inspection"
+  ],
+  "created_issues": [
+    {
+      "suffix": "metrics-path",
+      "label": "bug",
+      "title": "bug(metrics): 出力先が変異対象と同じでも正常終了し元ソースをJSONで上書きする",
+      "url": "https://github.com/tokyogas-tech/hoimin/issues/484"
+    },
+    {
+      "suffix": "pattern",
+      "label": "bug",
+      "title": "bug(analyzer): mapping patternのキー変異が重複キーのSyntaxErrorを生成する",
+      "url": "https://github.com/tokyogas-tech/hoimin/issues/485"
+    },
+    {
+      "suffix": "typeparams",
+      "label": "bug",
+      "title": "bug(analyzer): PEP 695型パラメータをbuiltin解決が無視し別bindingへの置換を生成する",
+      "url": "https://github.com/tokyogas-tech/hoimin/issues/486"
+    },
+    {
+      "suffix": "resource-metadata",
+      "label": "bug",
+      "title": "bug(report): best-effort実行とresume再利用をresource_control/resource_modeでhardと誤報告する",
+      "url": "https://github.com/tokyogas-tech/hoimin/issues/487"
+    },
+    {
+      "suffix": "windows-scope",
+      "label": "bug",
+      "title": "bug(resource): Windowsのroot別制限がrun全体の上限というCLI・READMEの説明と一致しない",
+      "url": "https://github.com/tokyogas-tech/hoimin/issues/488"
+    },
+    {
+      "suffix": "analyzer-corpus",
+      "label": "enhancement",
+      "title": "test(analyzer): 有効Pythonコーパスで構文・scope・spanをproducer横断で検証する",
+      "url": "https://github.com/tokyogas-tech/hoimin/issues/489"
+    },
+    {
+      "suffix": "integration-matrix",
+      "label": "enhancement",
+      "title": "test(integration): run・plan・verify・resume・report間の契約を共通fixtureで横断検証する",
+      "url": "https://github.com/tokyogas-tech/hoimin/issues/490"
+    },
+    {
+      "suffix": "scaling-gates",
+      "label": "enhancement",
+      "title": "test(perf): 入力形状別の計算量・peak memory・I/O回帰ゲートを整備する",
+      "url": "https://github.com/tokyogas-tech/hoimin/issues/491"
+    }
+  ]
+}
