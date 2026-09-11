@@ -5,10 +5,10 @@ use std::fs;
 use std::path::Path;
 
 use camino::{Utf8Path, Utf8PathBuf};
+use ignore::WalkBuilder;
 use ignore::overrides::OverrideBuilder;
-use ignore::{DirEntry, WalkBuilder};
 
-use crate::portable_path;
+use crate::{copy_policy::default_excluded, portable_path};
 
 use super::{CopyOptions, WorkspaceDiagnostic, WorkspaceError};
 
@@ -331,26 +331,4 @@ pub fn relative_utf8(root: &Utf8Path, path: &Path) -> Result<Utf8PathBuf, Worksp
             path: Utf8PathBuf::from(error.into_value()),
         })?;
     Ok(Utf8PathBuf::from(relative.into_owned()))
-}
-
-fn default_excluded(entry: &DirEntry) -> bool {
-    if entry.depth() == 0 {
-        return false;
-    }
-    let name = entry.file_name().to_string_lossy();
-    matches!(
-        name.as_ref(),
-        ".git"
-            | ".venv"
-            | "venv"
-            | "env"
-            | "__pycache__"
-            | ".pytest_cache"
-            | ".mypy_cache"
-            | ".ruff_cache"
-            | ".pyre"
-            | ".pytype"
-            | ".tox"
-            | ".nox"
-    )
 }

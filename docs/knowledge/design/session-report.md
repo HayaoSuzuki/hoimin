@@ -5,6 +5,10 @@ description: 保存・復旧の権限、スキーマ移行、結果の生成側�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-460
+  resource: ../../superpowers/specs/2026-09-11-issue-460-progress-result-design.md
+  working_tree: untracked
+  sha256: afce723f905aee27b86620e9ac5e81d5db2f408c4f4407e9e1a878b3932c3d33
 - id: ownership
   resource: ../../superpowers/specs/2026-09-07-issue-363-session-ownership-design.md
   revision: a7daea0b557cd435c1e55b540392fbdd116348e1
@@ -49,7 +53,7 @@ sessionは、一回の実行（run）の結果を保存・再利用する仕組�
 
 JSON Schemaは結果の構造を定める元資料として保持する。ただし、構造上正しいJSONにも、値どうしが矛盾した結果は入り得るため、読取り処理で意味上の整合性も検査する。現在のprogress読取り処理は、件数検査後に `validate_summary_coherence` を呼び、完了状態と終了コードが整合するか確認する。[^schema][^reader]
 
-この集計値の検査の詳細は[progress入力の後続修正](../audits/progress-input.md)を参照する。個々の変異候補の終了理由・出力欄や、全履歴の整合性には別の検証が必要である。
+この集計値の検査の詳細は[progress入力の後続修正](../audits/progress-input.md)を参照する。Issue #460 の設計は、個々の結果の検証を `MutantFinished::validate_result` にまとめ、生成側の `ReportSequence` と、現行・旧形式のprogress読取りで共有する。終了理由がある場合は出力状態も含めてstatusを照合し、矛盾した入力は比較処理へ渡す前に拒否する。旧形式で許容する終了理由のnullは維持する。[^issue-460]
 
 # 再確認条件
 
@@ -61,3 +65,5 @@ run所有権、再利用条件、結果置換、DBスキーマ、集計値と終
 [^migration]: [2026-08-11-lean-schema-migration-concurrency-audit.md](../../superpowers/reports/2026-08-11-lean-schema-migration-concurrency-audit.md)。
 [^reader]: [input.rs](../../../crates/hoimin-cli/src/progress/input.rs)。
 [^schema]: [run-result.schema.json](../../json-schema/run-result.schema.json)。
+
+[^issue-460]: [2026-09-11-issue-460-progress-result-design.md](../../superpowers/specs/2026-09-11-issue-460-progress-result-design.md)。
