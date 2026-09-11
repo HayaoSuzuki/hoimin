@@ -144,8 +144,10 @@ fn inspect(
 
 fn session_artifacts(
     configured: &Path,
-    _inspector: &mut EntryInspector,
+    inspector: &mut EntryInspector,
 ) -> io::Result<(Vec<PathBuf>, Vec<PathBuf>)> {
+    #[cfg(not(windows))]
+    let _ = inspector;
     // Use the same canonical database and companion paths as SessionHandler.
     let artifacts = crate::session::SessionArtifacts::resolve(configured)?;
     let files = artifacts.files().to_vec();
@@ -154,7 +156,7 @@ fn session_artifacts(
     #[cfg(windows)]
     let files = {
         let mut files = files;
-        let configured = _inspector.entry(configured)?.path;
+        let configured = inspector.entry(configured)?.path;
         for suffix in ["-wal", "-shm", "-journal"] {
             let mut name = configured.as_os_str().to_owned();
             name.push(suffix);
