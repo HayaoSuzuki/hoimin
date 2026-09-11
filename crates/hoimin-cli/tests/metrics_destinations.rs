@@ -481,7 +481,7 @@ async fn metrics_retains_incomplete_warning_after_later_preflight_budget_failure
 #[cfg(windows)]
 #[tokio::test]
 async fn metrics_withholds_unsupported_windows_entry_spellings() {
-    for name in ["calc.py.", "calc.py ", "calc.py:stream", "SESSIO~1.DB"] {
+    for name in ["calc.py.", "calc.py ", "calc.py:stream"] {
         let (temp, root) = fixture();
         let metrics = temp.path().join(name);
         let database = temp.path().join("session-database.db");
@@ -493,9 +493,69 @@ async fn metrics_withholds_unsupported_windows_entry_spellings() {
         );
         assert!(temp.path().join("baseline-marker").exists());
         assert!(String::from_utf8_lossy(&output.stderr).contains("metrics.write"));
-        assert!(!metrics.exists());
+        assert!(!metrics.exists(), "unexpected output at {name}");
         assert_eq!(std::fs::read(root.join("calc.py")).unwrap(), SOURCE);
     }
+}
+
+#[cfg(windows)]
+#[tokio::test]
+async fn metrics_withholds_prospective_windows_short_alias_without_overwriting_session() {
+    let (temp, root) = fixture();
+    let metrics = temp.path().join("SESSIO~1.DB");
+    let database = temp.path().join("session-database.db");
+    assert!(!metrics.try_exists().unwrap());
+    let output = run(&root, &metrics, &["--session", database.to_str().unwrap()]).await;
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(temp.path().join("baseline-marker").exists());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("metrics.write"));
+    assert_eq!(std::fs::read(root.join("calc.py")).unwrap(), SOURCE);
+
+    // Creating the session may also create its 8.3 alias. That alias is not
+    // a metrics file: no separate short-name entry or overwritten DB is allowed.
+    for entry in std::fs::read_dir(temp.path()).unwrap() {
+        let entry = entry.unwrap();
+        assert!(
+            !entry
+                .file_name()
+                .to_string_lossy()
+                .eq_ignore_ascii_case("SESSIO~1.DB"),
+            "created a separate metrics entry: {}",
+            entry.path().display()
+        );
+    }
+    if metrics.try_exists().unwrap() {
+        assert_eq!(
+            std::fs::canonicalize(&metrics).unwrap(),
+            std::fs::canonicalize(&database).unwrap(),
+            "short alias must identify the session database"
+        );
+        eprintln!("Windows short alias identifies the created session database");
+    }
+    let bytes = std::fs::read(&database).unwrap();
+    assert!(bytes.starts_with(b"SQLite format 3\0"));
+    let connection = rusqlite::Connection::open_with_flags(
+        &database,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap();
+    let integrity: String = connection
+        .query_row("PRAGMA integrity_check", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(integrity, "ok");
+    let count: u64 = connection
+        .query_row("SELECT COUNT(*) FROM runs", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(count, 1);
+    let run_id: String = connection
+        .query_row("SELECT run_id FROM runs", [], |row| row.get(0))
+        .unwrap();
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["run"]["run_id"], run_id);
 }
 
 #[cfg(unix)]
