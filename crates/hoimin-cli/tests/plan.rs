@@ -185,6 +185,141 @@ async fn plans_for_new_operator_families_pass_verify() {
 }
 
 #[tokio::test]
+async fn public_plans_preserve_bom_sources_and_python_columns() {
+    for (name, source, expected_line, expected_column, expected_start) in [
+        ("leading_bom.py", "\u{feff}enabled = True\n", 1, 10, 13),
+        ("plain.py", "enabled = True\n", 1, 10, 10),
+        (
+            "bom_comment.py",
+            "\u{feff}# heading\nenabled = True\n",
+            2,
+            10,
+            23,
+        ),
+        (
+            "multibyte.py",
+            "\u{feff}日本 = \"x\"; enabled = True\n",
+            1,
+            20,
+            27,
+        ),
+        (
+            "interior_bom.py",
+            "marker = \"\u{feff}\"; enabled = True\n",
+            1,
+            24,
+            26,
+        ),
+    ] {
+        let project = Project::new_with_sources(&[(name, source)]);
+        let original = source.as_bytes();
+        let marker = project.path.join("test-command-ran");
+        let module = name.strip_suffix(".py").unwrap();
+        let test_command = format!("from {module} import enabled; assert enabled is True");
+        let options = [
+            "--file",
+            &format!("src/{name}"),
+            "--operators",
+            "boolean_literal",
+        ];
+        let mut args = plan_args(&project, options.iter().copied(), &marker);
+        insert_test_min_free_space(&mut args);
+        *args.last_mut().unwrap() = OsString::from(&test_command);
+        let mut run_args = args.clone();
+        run_args[1] = OsString::from("run");
+        let separator = run_args
+            .iter()
+            .position(|argument| argument == "--")
+            .unwrap();
+        run_args.splice(
+            separator..separator,
+            [OsString::from("--format"), OsString::from("json")],
+        );
+        let ParsedCommand::Plan(plan) = parse_from(args).unwrap() else {
+            panic!("expected plan arguments");
+        };
+
+        let output = create(plan.into_run_config().unwrap()).await.unwrap();
+        let candidate = output
+            .manifest
+            .candidates
+            .iter()
+            .find(|candidate| candidate.candidate.original == "True")
+            .unwrap_or_else(|| panic!("missing boolean candidate for {name}"));
+
+        assert_eq!(candidate.candidate.line, expected_line, "{name}");
+        assert_eq!(candidate.candidate.column, expected_column, "{name}");
+        assert_eq!(candidate.candidate.span.start, expected_start, "{name}");
+        assert_eq!(candidate.candidate.span.length, 4, "{name}");
+        assert_eq!(
+            candidate.candidate.file_hash,
+            blake3::hash(original).to_hex().to_string(),
+            "{name}",
+        );
+        let planned_id = candidate.id.clone();
+        let planned_candidate = serde_json::to_value(&candidate.candidate).unwrap();
+        let path = project.path.join("plan.json");
+        write_json(&path, &serde_json::to_value(&output.manifest).unwrap());
+        let plan_bytes = std::fs::read(&path).unwrap();
+        let verify_args = vec![
+            OsString::from("hoimin"),
+            OsString::from("verify"),
+            path.as_os_str().to_owned(),
+            OsString::from("--candidate"),
+            OsString::from(&planned_id),
+            OsString::from("--format"),
+            OsString::from("json"),
+        ];
+        for (mode, execution_args) in [("verify", verify_args), ("run", run_args)] {
+            assert_planned_boolean_is_killed(
+                name,
+                mode,
+                execution_args,
+                planned_id.as_str(),
+                &planned_candidate,
+            )
+            .await;
+        }
+        assert_eq!(std::fs::read(&path).unwrap(), plan_bytes, "{name}");
+        assert_eq!(
+            std::fs::read(project.path.join("src").join(name)).unwrap(),
+            original
+        );
+    }
+}
+
+async fn assert_planned_boolean_is_killed(
+    name: &str,
+    mode: &str,
+    args: Vec<OsString>,
+    planned_id: &str,
+    planned_candidate: &serde_json::Value,
+) {
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+    assert_eq!(
+        code,
+        0,
+        "{name} {mode}: stderr={}",
+        String::from_utf8_lossy(&stderr),
+    );
+    let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+    assert_eq!(
+        report["baseline"]["termination"]["Exit"], 0,
+        "{name} {mode}",
+    );
+    let mutant = report["mutants"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|mutant| mutant["candidate"]["id"] == planned_id)
+        .unwrap_or_else(|| panic!("{name} {mode}: planned mutant was not executed"));
+    assert_eq!(mutant["status"], "killed", "{name} {mode}");
+    assert_eq!(&mutant["candidate"], planned_candidate, "{name} {mode}");
+}
+
+#[tokio::test]
 async fn plan_candidates_match_shared_discovery_for_normalized_selectors() {
     let project = Project::new();
     for options in [

@@ -7,6 +7,7 @@ use std::ops::Range;
 use camino::Utf8Path;
 use hoimin_core::{
     ByteSpan, LineRange, MutationOperator, MutationOperatorSelection, MutationProfile,
+    python_source_column,
 };
 use ruff_python_ast::identifier;
 use ruff_python_ast::token::TokenKind;
@@ -540,13 +541,8 @@ impl LineIndex {
             - 1;
         let line_start = self.starts[line_index] as usize;
         let line = line_index as u32 + 1;
-        let line_prefix = &source[line_start..offset];
-        let column_prefix = if line_index == 0 {
-            line_prefix.strip_prefix('\u{feff}').unwrap_or(line_prefix)
-        } else {
-            line_prefix
-        };
-        let column = column_prefix.chars().count() as u32;
+        let column = python_source_column(source, line_start, offset)
+            .expect("Ruff source offsets are valid UTF-8 boundaries within a u32-sized source");
         (line, column)
     }
 }
