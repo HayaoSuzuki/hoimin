@@ -9,6 +9,21 @@ sources:
   resource: ../../superpowers/specs/2026-09-11-issue-477-import-roots-design.md
   working_tree: untracked
   sha256: a30ed5f129c635e75431212d590171ab03e5973640a4d6624775ee43fd81dcdd
+
+- id: issue-473
+  resource: ../../superpowers/specs/2026-09-11-issue-473-symbol-ranking-design.md
+  working_tree: untracked
+  sha256: d1748256ef730d871a2158c57e8c5601145d78e32288c269cac720f60ad10618
+
+- id: issue-459
+  resource: ../../superpowers/specs/2026-09-11-issue-459-record-size-design.md
+  working_tree: untracked
+  sha256: ced8501765b2babcd15bac56139f575c00cdb779a5149bb4a6e231ea75e0af7f
+
+- id: issue-452
+  resource: ../../superpowers/specs/2026-09-11-issue-452-shared-exclusions-design.md
+  working_tree: untracked
+  sha256: c61ec9ebe8ec989d0e39ede76d57a3513ccb5768631b6e081275448a92e2b89a
 - id: initial
   resource: ../../superpowers/specs/2026-07-21-agent-plan-verify-design.md
   revision: a7daea0b557cd435c1e55b540392fbdd116348e1
@@ -54,15 +69,21 @@ sources:
 
 `diverse` では、同点の候補をファイルごとの待ち行列（queue）に分ける。後続設計は、空になった待ち行列を巡回から外し、偏った分布で候補のないファイルを繰り返し調べる操作を減らす。総候補数をN、選ぶ件数をKとすると、待ち行列の作成はO(N)、選択時のqueue操作はO(K)を目標とする。選択順序を保つことが条件であり、この性能上の議論は同点の候補が特定ファイルに偏る場合を扱っている。[^diverse]
 
-# manifest版の記述と実装の不一致
+# 明示symbolの子要素とランキング
+
+Issue #473 の設計では、明示symbolと同じファイルにある子symbolにも `explicit_symbol` の250点を一度だけ加える。`Box` は `Box.check` や `Box.Inner.check` に一致し、`BoxOther` には一致しない。親子のselectorが複数一致しても加点を重ねず、別ファイルの同名symbolには適用しない。[^issue-473]
+
+順位の意味が変わるため、ランキング規則の版を3から4へ進める。保存形式のschema版は実装の3を維持する。旧ランキング版のplanはbaseline前に拒否して再生成を案内し、保存済みの順位を暗黙に変更しない。公開planの順位とverify --topの実行候補を照合する。既存Lean oracleの明示symbol入力は真偽値であり、今回の名前階層の解決自体を証明しているわけではない。[^issue-473]
+
+# カタログ作成時のmanifest版の不一致
 
 | 出典 | 記載・静的に観測した値 |
 | --- | --- |
 | 7月21日初期設計 | plan manifest v1 |
 | README・開発資料 | plan v2の記述。開発資料ではランキング規則の版をv3として区別 |
-| 現在の `plan.rs` | `PLAN_SCHEMA_VERSION = 3`。読込み時にこの値との一致を要求 |
+| カタログ対象の `plan.rs` | `PLAN_SCHEMA_VERSION = 3`。読込み時にこの値との一致を要求 |
 
-初期設計から版が変わったことに加え、現在の公開文書と実装にも不一致がある。上表はコードを読んだ結果であり、CLIで旧版を入力する試験は行っていない。したがって、v2を現行の受理形式として案内できない。保存形式の版とランキング規則の版も別々に確認する。[^initial][^readme][^development][^plan]
+初期設計から版が変わったことに加え、カタログ作成時の公開文書と実装にも不一致があった。上表はコードを読んだ結果であり、CLIで旧版を入力する試験は行っていない。この表は当時の不一致の記録であり、Issue #473 の設計では現行資料をschema3・ranking4へ揃える。保存形式の版とランキング規則の版も別々に確認する。[^initial][^readme][^development][^plan]
 
 # 関連する監査と再確認条件
 
@@ -79,4 +100,20 @@ sources:
 [^development]: [development.md](../../development.md)。
 [^plan]: [plan.rs](../../../crates/hoimin-cli/src/plan.rs)。
 
+Issue #473と#477を統合した状態では、plan schemaは4、ranking ruleも4となる。前者はimport rootの保存形式、後者はsymbolの子孫への加点規則を表す独立した版である。個別の設計書にある版は、その設計時点の記録である。[^issue-473][^issue-477]
+
 [^issue-477]: [2026-09-11-issue-477-import-roots-design.md](../../superpowers/specs/2026-09-11-issue-477-import-roots-design.md)。
+
+[^issue-473]: [2026-09-11-issue-473-symbol-ranking-design.md](../../superpowers/specs/2026-09-11-issue-473-symbol-ranking-design.md)。
+
+# 候補の保存サイズ上限（Issue #459）
+
+planの候補にも実行用spoolと同じ2 MiBのレコード上限を適用する設計とした。JSONのエスケープとUTF-8、および末尾の改行1バイトを含むサイズで判定する。plan生成とverifyの事前検証で超過を拒否し、直接runする場合は既存のbaseline後の解析段階で不完全な実行として報告する。[^issue-459]
+
+[^issue-459]: [Issue #459: Executable candidate record limits](../../superpowers/specs/2026-09-11-issue-459-record-size-design.md)。
+
+# 対象探索とコピーの組込み除外（Issue #452）
+
+仮想環境やキャッシュなどの組込み除外を対象探索とコピーで共有する設計とした。`--include` は組込み除外を解除しない。除外場所のファイルを `--file` または `--line` で指定した場合は、対象パスと除外場所の外を選ぶ対処方法を示して対象解決時に拒否する。[^issue-452]
+
+[^issue-452]: [Issue #452: Shared workspace exclusions](../../superpowers/specs/2026-09-11-issue-452-shared-exclusions-design.md)。

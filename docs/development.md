@@ -490,11 +490,17 @@ cargo test -p hoimin-cli --lib analyzer::rust::rust_tests::comprehension_excepti
 
 ## Extending plan ranking
 
-Plan manifests use schema version 4 and ranking rule version 3. The schema
+Plan manifests use schema version 4 and ranking rule version 4. The schema
 version describes the manifest's serialized shape; the ranking rule version
 describes the category and scoring semantics used to order its candidates.
 Change the ranking rule version whenever those semantics change, even when the
 manifest schema itself does not.
+
+An explicitly selected symbol contributes 250 points to that symbol and its
+dot-delimited descendants in the same resolved file. The bonus is awarded once,
+even when both a parent and child selector match; `Box` matches `Box.check`, but
+does not match `BoxOther.check`. Verification rejects plans with older ranking
+rules and directs the user to regenerate them.
 
 Every canonical mutation operator is exhaustively assigned to exactly one
 fixed-score category:

@@ -938,6 +938,7 @@ mod tests {
         let options = CopyOptions {
             includes: vec!["target.py".to_owned()],
             excludes: Vec::new(),
+            literal_exclusions: Vec::new(),
         };
         crate::workspace::manifest::reset_source_content_metrics();
 
@@ -1345,6 +1346,7 @@ mod tests {
         let options = CopyOptions {
             includes: vec!["target.py".to_owned()],
             excludes: Vec::new(),
+            literal_exclusions: Vec::new(),
         };
         crate::workspace::manifest::reset_source_content_metrics();
         reset_snapshot_write_metrics();

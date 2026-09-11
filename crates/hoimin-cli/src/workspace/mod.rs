@@ -93,8 +93,24 @@ pub(crate) fn read_root_relative(
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct CopyOptions {
+    pub literal_exclusions: Vec<LiteralExclusion>,
     pub includes: Vec<String>,
     pub excludes: Vec<String>,
+}
+
+/// Literal normalized root-relative paths that user includes cannot restore.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum LiteralExclusion {
+    File(Utf8PathBuf),
+    Tree(Utf8PathBuf),
+}
+
+impl LiteralExclusion {
+    fn path(&self) -> &Utf8Path {
+        match self {
+            Self::File(path) | Self::Tree(path) => path,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -688,7 +704,7 @@ fn rewrite_project_path(original_root: &Utf8Path, worker_root: &Utf8Path, path: 
         .unwrap_or(normalized)
 }
 
-fn relative_inside(path: &Path, root: &Path) -> Option<PathBuf> {
+pub(crate) fn relative_inside(path: &Path, root: &Path) -> Option<PathBuf> {
     if let Ok(relative) = path.strip_prefix(root) {
         return Some(relative.to_path_buf());
     }
@@ -1053,6 +1069,10 @@ impl WorkspaceHandler {
     pub(crate) const fn with_max_owned_bytes(mut self, limit: u64) -> Self {
         self.max_owned_bytes = Some(limit);
         self
+    }
+
+    pub(crate) fn set_literal_exclusions(&mut self, exclusions: Vec<LiteralExclusion>) {
+        self.options.literal_exclusions = exclusions;
     }
 
     #[cfg(test)]

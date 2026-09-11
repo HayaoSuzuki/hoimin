@@ -25,11 +25,16 @@ hoimin verify PLAN.json --top 10 --format json > reports/batch-a-001.json
 hoimin verify PLAN.json --top 10 --selection-policy diverse
 ```
 
-Each version-2 plan candidate records `rank`, `score`, and `ranking_reasons`.
+Each version-3 plan candidate records `rank`, `score`, and `ranking_reasons`.
 The scores are transparent ordering heuristics for focusing effort; they do not
 claim that a higher-ranked mutant is more likely to reveal a defect, and
 lower-ranked candidates remain valid. `verify` uses the saved ranks and never re-ranks
 against changed source or Git state.
+
+Ranking rule version 4 awards the explicit-symbol bonus to a selected symbol
+and its dot-delimited descendants in the same file. For example, selecting
+`Box` also boosts `Box.check` and `Box.Inner.check`, but not `BoxOther.check`.
+Plans created with an older ranking rule must be regenerated before verification.
 
 The `strict` selection policy is the default and uses the saved rank prefix.
 The `diverse` selection policy round-robins production files only within equal-score tiers.
@@ -80,6 +85,8 @@ At least one target selector is required:
 
 Whole-file selectors establish the selected files first. For example, `--source src --file src/calc.py` selects every Python file below `src`, while `--file src/calc.py` alone selects only that file. A `--line` or `--symbol` then narrows a matching file. Selectors for different files remain combined. The resolver merges multiple line ranges on one file. Candidates must satisfy both constraints when a file has line and symbol selectors.
 
+Python source positions recognize LF, CRLF and lone CR, including mixtures, without normalizing file bytes. Previously saved plans with incorrect lone-CR coordinates must be regenerated; existing reports retain their recorded coordinates. Correcting line/column metadata does not change a candidate ID for identical source bytes and the same mutation.
+
 For example, `--file src/calc.py --line src/calc.py:10-12` selects only lines 10 through 12 of `src/calc.py`. Adding `--file src/calc.py` to `--source src --symbol calc:add` preserves the symbol restriction on `src/calc.py`. Other Python files selected by `--source src` remain whole-file targets unless they have a line or symbol selector.
 
 For a `src` layout installed through a path-only editable `.pth`, add an import
@@ -113,7 +120,9 @@ Saved plans preserve import-root order; `verify` inherits it without a flag.
 
 Target, fingerprint, and copied-workspace paths use a portable `/`-separated representation. Native Windows path inputs are normalized to that form. On Unix, a concrete filename containing a literal backslash is rejected before collection because it cannot be represented unambiguously. Backslashes in glob options retain their existing escape syntax; the concrete paths matched by a glob are validated after walking.
 
-`--include GLOB` can restore files excluded by ignore rules or built-in copy exclusions. `--exclude GLOB` adds exclusions and wins when both match. Both options may be repeated.
+`--include GLOB` can restore ignored or hidden files. `--exclude GLOB` adds exclusions and wins when both match. Both options may be repeated.
+
+Target discovery and worker copying always exclude `.git`, `.venv`, `venv`, `env`, `__pycache__`, `.pytest_cache`, `.mypy_cache`, `.ruff_cache`, `.pyre`, `.pytype`, `.tox`, and `.nox` below the project root. Names are compared case-insensitively on Windows and exactly on other platforms. Includes cannot restore these entries. Automatic source scans omit them; explicit `--file` and `--line` selectors inside them fail during target resolution with the path and remediation. Choose source outside the excluded directory. The project root itself remains usable even if its name is on this list. Ignore files apply in non-Git roots too; hidden mutation targets still require an include.
 
 `--fingerprint-file PATH` records exactly one regular file at the specified `--root`-relative path and may be repeated. Every path component must remain beneath `--root`; symlink and reparse-point components are rejected instead of followed. It does not search nested directories, and characters such as `*`, `?`, and `[` are treated literally. Use it for a root-level configuration file without also selecting files with the same name in nested worktrees.
 
@@ -124,6 +133,8 @@ For example, when a test needs an ignored fixture input copied into its worker:
 ```console
 hoimin run --root . --source src --fingerprint-include tests/fixtures/settings.toml --include tests/fixtures/settings.toml -- python -m pytest -q
 ```
+
+Each candidate must fit a 2 MiB compact JSON spool record, including JSON escaping, UTF-8 and one trailing newline. `plan` rejects oversized candidates instead of saving an unusable plan; `verify` rejects oversized saved records before baseline. Direct `run` discovers candidates after baseline and reports an incomplete infrastructure failure if a record exceeds this limit. The diagnostic identifies the source path, line, operator and limit. Candidate-count limits do not override this byte limit.
 
 ## Limits and defaults
 
@@ -444,10 +455,12 @@ diagnostics.
 No database is created by default. `--session PATH` stores a run in SQLite and commits each mutant result independently. `--resume` requires `--session` and looks up the newest compatible incomplete run. Compatibility includes ordered import roots, source and configuration fingerprints, test argv, verdict-affecting limits, resource policy, and the operator set. Profile selection is part of session compatibility, so a focused run never resumes results from a full run and vice versa. `--jobs` and `--max-output` are operational settings and may change when resuming; reports record their current values, and reused results do not import output retained under the earlier limit. Completed `killed` and `survived` results can be reused; `timeout`, `out_of_memory`, `process_limit`, `error`, and `not_run` are run again under the current settings. An incompatible or already complete run is not silently mixed with new results.
 
 Plan schema version 4 stores the independent import roots (ranking rule version
-3). Regenerate older plans before verification. Fingerprint schema version 7
+4). Regenerate older plans before verification. Fingerprint schema version 7
 includes their ordered list, including an empty list for default invocations.
 Older session fingerprints cannot be resumed; start a new session and rerun the
 baseline and mutants. Existing saved results are not rewritten.
+
+The active session database, its `-wal`, `-shm`, and `-journal` sidecars, and its `.<database-name>.hoimin-locks` directory are excluded from worker copies, copy-size accounting, and original-workspace integrity checks. Explicit `--include` patterns cannot restore these artifacts. Other database fixtures and similarly named files follow the normal copy rules and remain protected by integrity checks. Relative `--session` paths are resolved from the invoking working directory; existing database and parent-directory aliases resolve to the same active artifacts. Session ownership locking still prevents concurrent use of the same run.
 
 ## Build and verify a wheel
 
