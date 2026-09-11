@@ -8,7 +8,7 @@ sources:
 - id: issue-465
   resource: ../../superpowers/specs/2026-09-11-issue-465-retired-discovery-design.md
   working_tree: untracked
-  sha256: a11949aa005aae662fe28fcf04fe560ad0a2d5b2574a2eb947c7e3677be13144
+  sha256: 7efd3035a37d38c95404f12774387450f94dc0be0a69af1da905056df54cedf6
 - id: initial
   resource: ../../superpowers/specs/2026-07-18-python-mutation-tool-design.md
   revision: a7daea0b557cd435c1e55b540392fbdd116348e1

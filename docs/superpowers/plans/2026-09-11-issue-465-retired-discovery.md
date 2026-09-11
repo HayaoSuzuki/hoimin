@@ -40,3 +40,5 @@ Spec: ../specs/2026-09-11-issue-465-retired-discovery-design.md
 1. Attribute resolution to removal commit 2f27e2a and describe this PR as evidence/documentation.
 2. Separate inspected historical behavior from executed current checks and retain the Python/Rust analyzer distinction.
 3. Recheck source hash/index count, whitespace and final diff; independent review precedes publication.
+
+Independent review correction: qualified historical inventory filtering to apply when the selected set is nonempty; the old empty-selection branch retained all inventory. Updated both source hashes and rechecked OKF/whitespace. Removal disposition is unchanged.
