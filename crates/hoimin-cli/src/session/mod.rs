@@ -1,4 +1,5 @@
 mod ownership;
+pub(crate) use ownership::lock_directory_for_canonical_database;
 mod schema;
 
 use std::collections::HashMap;

@@ -35,7 +35,10 @@ impl Drop for RunOwnership {
 }
 
 pub(super) fn lock_directory(database: &Path) -> io::Result<PathBuf> {
-    let canonical = std::fs::canonicalize(database)?;
+    lock_directory_for_canonical_database(&std::fs::canonicalize(database)?)
+}
+
+pub(crate) fn lock_directory_for_canonical_database(canonical: &Path) -> io::Result<PathBuf> {
     let file_name = canonical.file_name().ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::InvalidInput,

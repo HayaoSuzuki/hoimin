@@ -27,6 +27,7 @@ use uuid::Uuid;
 
 use crate::analyzer::{AnalyzerHandler, CandidateStore};
 use crate::metrics::{MetricsCollector, MetricsError, finalize_metrics};
+use crate::metrics_destination::{MetricsDestination, validate_metrics_destination};
 use crate::process::{ProcessCancellation, ProcessHandler, ProcessRequest, ProcessStartGate};
 use crate::report::PreparedReport;
 use crate::report::delivery::ReportDelivery;
@@ -764,6 +765,7 @@ enum BlockingEffectCompletion {
         workspace: Box<WorkspaceHandler>,
         event: Box<RunEvent>,
         secondary_errors: Vec<String>,
+        metrics_destination: Option<MetricsDestination>,
     },
 }
 
@@ -808,16 +810,22 @@ impl BlockingEffect {
                 resource_mode,
             } => {
                 let mut run_fingerprint = None;
-                let event = match workspace.handle_preflight_validated(request, |root, manifest| {
-                    recheck_fingerprint_inputs(&config, root, manifest, &copied_at_start, id)?;
-                    run_fingerprint = Some(prepare_manifest_fingerprint(
-                        &config,
-                        &targets,
-                        resource_mode,
-                        manifest,
-                        id,
-                    )?);
-                    Ok(())
+                let mut metrics_destination = None;
+                let validation = validate_metrics_destination(&config, &targets, id).map(|value| {
+                    metrics_destination = Some(value);
+                });
+                let event = match validation.and_then(|()| {
+                    workspace.handle_preflight_validated(request, |root, manifest| {
+                        recheck_fingerprint_inputs(&config, root, manifest, &copied_at_start, id)?;
+                        run_fingerprint = Some(prepare_manifest_fingerprint(
+                            &config,
+                            &targets,
+                            resource_mode,
+                            manifest,
+                            id,
+                        )?);
+                        Ok(())
+                    })
                 }) {
                     Ok(mut value) => {
                         value.fingerprint = run_fingerprint;
@@ -830,6 +838,7 @@ impl BlockingEffect {
                     workspace,
                     event: Box::new(event),
                     secondary_errors: Vec::new(),
+                    metrics_destination,
                 }
             }
             Self::Cleanup {
@@ -846,6 +855,7 @@ impl BlockingEffect {
                     workspace,
                     event: Box::new(event),
                     secondary_errors,
+                    metrics_destination: None,
                 }
             }
             #[cfg(test)]
@@ -973,6 +983,7 @@ where
             workspace,
             event,
             secondary_errors,
+            metrics_destination,
         } => {
             if context.workspace.is_some() {
                 return RunEvent::EffectFailed(EffectFailed::other(
@@ -982,6 +993,9 @@ where
                 ));
             }
             context.workspace = Some(*workspace);
+            if let Some(destination) = metrics_destination {
+                context.metrics_destination = destination;
+            }
             context.blocking_secondary_errors.extend(secondary_errors);
             *event
         }
@@ -1794,6 +1808,7 @@ pub struct ShellContext<Stdout, Stderr> {
     fingerprint_copy_inputs: BTreeSet<Utf8PathBuf>,
     report_versions: ReportVersions,
     blocking_secondary_errors: Vec<String>,
+    metrics_destination: MetricsDestination,
     // Keep this last so every handler/root clone is dropped before an armed rollback.
     setup_rollback: Option<SetupRollback>,
 }
@@ -1841,6 +1856,7 @@ where
                 hoimin: env!("CARGO_PKG_VERSION").to_owned(),
             },
             blocking_secondary_errors: Vec::new(),
+            metrics_destination: MetricsDestination::Disabled,
             setup_rollback: Some(rollback),
         }
     }
@@ -2474,7 +2490,7 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
     fingerprint_copy_inputs: Option<BTreeSet<Utf8PathBuf>>,
     owned_report: Option<OwnedReportFactory<Stdout, Stderr>>,
 ) -> Result<i32, String> {
-    let metrics_path = config.output.metrics.clone();
+    let metrics_requested = config.output.metrics.is_some();
     if let Some(own_report) = owned_report {
         let delivery_child = context
             .spool_dir
@@ -2560,7 +2576,7 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
         let mut disk_stop_delivered = false;
         #[cfg(test)]
         let mut disk_stop_order_observed = false;
-        if metrics_path.is_some() {
+        if metrics_requested {
             let mut collector = MetricsCollector::new(state.run_id());
             if let Err(error) = collector.begin_stage("targets") {
                 metrics_warnings.push(("metrics.state", error.to_string()));
@@ -4494,34 +4510,44 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
                 ),
             );
         }
-        if let Some(path) = metrics_path {
-            match (shutdown_budget.as_ref(), shutdown_expiry_reported) {
-                (Some(budget), false) => {
-                    let finalized = finalize_metrics_with_shutdown(
-                        path.as_std_path().to_owned(),
-                        metrics,
-                        run_result.as_ref().err().cloned(),
-                        discovered,
-                        executed,
-                        metrics_warnings,
-                        budget,
-                        Box::new(|| {}),
-                    )
-                    .await;
-                    metrics_warnings = finalized.warnings;
-                    if let Some(expiry) = finalized.expiry {
-                        run_result = match run_result {
-                            Ok(_) => Err(expiry),
-                            Err(primary) => Err(combine_shutdown_errors(primary, Some(expiry))),
-                        };
-                    }
+        if metrics_requested {
+            let path = match std::mem::take(&mut context.metrics_destination) {
+                MetricsDestination::Ready(path) => Some(path),
+                MetricsDestination::Unavailable(message) => {
+                    metrics_warnings.push(("metrics.write", message));
+                    None
                 }
-                (Some(_), true) => skip_expired_metrics_finalization(
-                    metrics,
-                    run_result.as_ref().err().map(String::as_str),
-                    &mut metrics_warnings,
-                ),
-                (None, _) => unreachable!("outer finalization always has a shutdown budget"),
+                MetricsDestination::Disabled => None,
+            };
+            if let Some(path) = path {
+                match (shutdown_budget.as_ref(), shutdown_expiry_reported) {
+                    (Some(budget), false) => {
+                        let finalized = finalize_metrics_with_shutdown(
+                            path,
+                            metrics,
+                            run_result.as_ref().err().cloned(),
+                            discovered,
+                            executed,
+                            metrics_warnings,
+                            budget,
+                            Box::new(|| {}),
+                        )
+                        .await;
+                        metrics_warnings = finalized.warnings;
+                        if let Some(expiry) = finalized.expiry {
+                            run_result = match run_result {
+                                Ok(_) => Err(expiry),
+                                Err(primary) => Err(combine_shutdown_errors(primary, Some(expiry))),
+                            };
+                        }
+                    }
+                    (Some(_), true) => skip_expired_metrics_finalization(
+                        metrics,
+                        run_result.as_ref().err().map(String::as_str),
+                        &mut metrics_warnings,
+                    ),
+                    (None, _) => unreachable!("outer finalization always has a shutdown budget"),
+                }
             }
             for (code, message) in metrics_warnings {
                 if tokio::time::Instant::now() >= budget.deadline()

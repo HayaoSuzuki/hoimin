@@ -185,6 +185,40 @@ blocked caller-provided writer can delay the run future and even the expiry
 diagnostic. The bounded-return invariant therefore assumes synchronous output
 writes make progress.
 
+## Metrics destination permission
+
+The owned blocking Preflight validates metrics output against resolved source
+entries, explicit fingerprint inputs and session artifacts before the baseline.
+Its completion returns a typed destination together with workspace ownership;
+the shell accepts both before applying the core event. The finalizer uses only
+that resolved path. A collision failure can otherwise return a modeled nonzero
+result and reach finalization, so checking `run_result.is_ok()` cannot authorize
+output. Cleanup completions preserve the preflight decision. A later baseline
+failure retains authorized metrics; a Rust error retains `metrics.incomplete`.
+
+Compare the parent directory and native entry name for rename replacement.
+Distinct hardlinks and final symlinks remain separate output entries. Unix
+inspection caches directory names and lazily indexes no-follow file identities
+to resolve inexact spellings; file identity alone does not equate outputs. The
+session ownership implementation supplies its directory name. Protect that
+literal entry and its resolved tree. The bundled SQLite Unix VFS resolves final
+DB symlinks for sidecars; its Windows VFS uses the configured basename through
+`GetFullPathNameW`. Protect configured and resolved database entries on both.
+
+For prospective ASCII case aliases in one directory, query macOS pathconf,
+Windows directory case information, or the ext4/f2fs casefold flag on Linux.
+Unknown filesystem behavior, ambiguous entry aliases and prospective non-ASCII
+comparisons with protected names withhold metrics and produce a late
+`metrics.write` warning. Unsupported Windows trailing-dot, trailing-space,
+stream and prospective short-name spellings follow that policy. Keep ordinary
+directory or missing-parent output failures as warnings. Require an existing
+resolved parent before granting write permission, even if a baseline might
+create the directory later. A prospective ownership tree can still establish
+a collision before this permission check. These checks establish
+preflight destination identity; they do not freeze the filesystem against
+external renames during a run. Native platform tests must establish the path
+semantics; abstract lifecycle oracles alone cannot do so.
+
 ## Analyzer timeout invariants
 
 Plan creation and verification rediscovery apply the normalized
