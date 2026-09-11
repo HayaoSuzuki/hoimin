@@ -5,6 +5,10 @@ description: 候補発見と実行の分離、ランキング、部分集合、�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-452
+  resource: ../../superpowers/specs/2026-09-11-issue-452-shared-exclusions-design.md
+  working_tree: untracked
+  sha256: c61ec9ebe8ec989d0e39ede76d57a3513ccb5768631b6e081275448a92e2b89a
 - id: initial
   resource: ../../superpowers/specs/2026-07-21-agent-plan-verify-design.md
   revision: a7daea0b557cd435c1e55b540392fbdd116348e1
@@ -70,3 +74,9 @@ sources:
 [^readme]: [README.md](../../../README.md)。
 [^development]: [development.md](../../development.md)。
 [^plan]: [plan.rs](../../../crates/hoimin-cli/src/plan.rs)。
+
+# 対象探索とコピーの組込み除外（Issue #452）
+
+仮想環境やキャッシュなどの組込み除外を対象探索とコピーで共有する設計とした。`--include` は組込み除外を解除しない。除外場所のファイルを `--file` または `--line` で指定した場合は、対象パスと除外場所の外を選ぶ対処方法を示して対象解決時に拒否する。[^issue-452]
+
+[^issue-452]: [Issue #452: Shared workspace exclusions](../../superpowers/specs/2026-09-11-issue-452-shared-exclusions-design.md)。
