@@ -645,16 +645,21 @@ sources:
   resource: ../../superpowers/specs/2026-07-18-python-mutation-tool-design.md
   revision: a7daea0b557cd435c1e55b540392fbdd116348e1
   working_tree: clean
+- id: issue-485
+  resource: ../../superpowers/specs/2026-09-11-issue-485-mapping-pattern-keys-design.md
+  working_tree: untracked
+  sha256: 32041915ca7a4046cac8505f8b831b8280fb59d2b2833a929a2f0c32d44f7df0
 ---
 
 # 収録一覧
 
-2026-09-11時点の160件。これは原文への索引であり、各文書の採用状況・現行性・検証結果を一括して認定するものではない。見出しは原文から抽出した。出典の版とGitの追跡状態は、冒頭のYAMLメタデータに記録している。未追跡資料は同じ作業ツリーに依存する。
+2026-09-11時点の161件。これは原文への索引であり、各文書の採用状況・現行性・検証結果を一括して認定するものではない。見出しは原文から抽出した。出典の版とGitの追跡状態は、冒頭のYAMLメタデータに記録している。未追跡資料は同じ作業ツリーに依存する。
 
 主要な論点の要約は[入口](../index.md)から読む。ファイル名に含まれる日付は作成履歴の手がかりであり、そのファイルが最後に変更された日時ではない。
 
 | 原文 | 先頭見出し | 作成時の状態 |
 | --- | --- | --- |
+| [2026-09-11-issue-485-mapping-pattern-keys-design.md](../../superpowers/specs/2026-09-11-issue-485-mapping-pattern-keys-design.md) | Issue 485: Preserve unique literal keys in mapping-pattern mutations [^issue-485] | 未追跡 |
 | [2026-09-09-issue-447-fingerprint-memory-design.md](../../superpowers/specs/2026-09-09-issue-447-fingerprint-memory-design.md) | Issue 447: Bound fingerprint file retention [^doc-001] | 追跡済み |
 | [2026-09-09-issue-446-line-ranking-design.md](../../superpowers/specs/2026-09-09-issue-446-line-ranking-design.md) | Issue 446: Index explicit line selection for ranking [^doc-002] | 追跡済み |
 | [2026-09-09-issue-445-nullable-syntax-design.md](../../superpowers/specs/2026-09-09-issue-445-nullable-syntax-design.md) | Issue 445: Preserve syntax when removing nullable annotations [^doc-003] | 追跡済み |
@@ -976,3 +981,5 @@ sources:
 [^doc-158]: [2026-07-19-python-314-typing-design.md](../../superpowers/specs/2026-07-19-python-314-typing-design.md)。
 [^doc-159]: [2026-07-19-ci-hosted-runner-design.md](../../superpowers/specs/2026-07-19-ci-hosted-runner-design.md)。
 [^doc-160]: [2026-07-18-python-mutation-tool-design.md](../../superpowers/specs/2026-07-18-python-mutation-tool-design.md)。
+
+[^issue-485]: [2026-09-11-issue-485-mapping-pattern-keys-design.md](../../superpowers/specs/2026-09-11-issue-485-mapping-pattern-keys-design.md)。
