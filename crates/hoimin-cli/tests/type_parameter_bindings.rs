@@ -276,3 +276,30 @@ value = any(items) # keep
     .await;
     assert_plan("def f[tuple](arg=42, *, kw=list(items)): # keep\n    return list(items)\nclass C[T](marker=list(items)): # keep\n    value = list(items) # keep\n", "collection_list_tuple", "list", "tuple").await;
 }
+
+#[tokio::test]
+async fn class_global_directives_do_not_override_descendant_type_parameter_capture() {
+    for body in [
+        "    def method(self):\n        return list(range(2))\n",
+        "    def method[T](self):\n        return list(range(2))\n",
+        "    method = lambda self: list(range(2))\n",
+        "    values = [list(range(2)) for _ in range(1)]\n",
+        "    values = (list(range(2)) for _ in range(1))\n",
+    ] {
+        let source = format!(
+            "class C[tuple]:\n    global tuple\n{body}    direct = list(range(2)) # keep\n    def explicit_global(self):\n        global tuple\n        return list(range(2)) # keep\nvalue = list(range(2)) # keep\n"
+        );
+        assert_plan(&source, "collection_list_tuple", "list", "tuple").await;
+    }
+}
+
+#[tokio::test]
+async fn class_global_directives_do_not_override_ordinary_enclosing_function_bindings() {
+    assert_plan(
+        "def outer():\n    tuple = object()\n    class C:\n        global tuple\n        def method(self):\n            return list(range(2))\n        direct = list(range(2)) # keep\n    return C\nvalue = list(range(2)) # keep\n",
+        "collection_list_tuple",
+        "list",
+        "tuple",
+    )
+    .await;
+}

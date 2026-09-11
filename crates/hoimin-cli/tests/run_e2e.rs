@@ -581,6 +581,10 @@ async fn generic_type_parameter_destinations_cannot_create_false_kills() {
             "class C[tuple]:\n    result = list(range(1, 3))\n",
             "from src.calc import C; assert C.result == [1, 2]",
         ),
+        (
+            "class C[tuple]:\n    global tuple\n    def method(self):\n        return list(range(1, 3))\n",
+            "from src.calc import C; assert C().method() == [1, 2]",
+        ),
     ] {
         let project = tempfile::tempdir().unwrap();
         std::fs::create_dir(project.path().join("src")).unwrap();

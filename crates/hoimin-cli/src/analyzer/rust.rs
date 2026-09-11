@@ -728,6 +728,11 @@ impl NameResolutionIndex {
         offset: usize,
     ) -> NameResolution {
         let scope = &self.scopes[scope_id.0];
+        // Descendant lexical lookup skips the whole class scope, including
+        // directives, while retaining enclosing function/type-parameter bindings.
+        if scope.kind == NameScopeKind::Class && !direct {
+            return self.resolve_parent(scope.parent, name, offset);
+        }
         if scope.kind != NameScopeKind::Module && scope.globals.contains(name) {
             return self.resolve_module(name);
         }
@@ -770,18 +775,12 @@ impl NameResolutionIndex {
                     self.resolve_parent(scope.parent, name, offset)
                 }
             }
-            NameScopeKind::Class => {
-                if direct {
-                    match Self::resolve_ordered_at(scope, name, offset) {
-                        NameResolution::DefinitelyBuiltin => {
-                            self.resolve_class_parent(scope.parent, name, offset)
-                        }
-                        resolution => resolution,
-                    }
-                } else {
-                    self.resolve_parent(scope.parent, name, offset)
+            NameScopeKind::Class => match Self::resolve_ordered_at(scope, name, offset) {
+                NameResolution::DefinitelyBuiltin => {
+                    self.resolve_class_parent(scope.parent, name, offset)
                 }
-            }
+                resolution => resolution,
+            },
         }
     }
 

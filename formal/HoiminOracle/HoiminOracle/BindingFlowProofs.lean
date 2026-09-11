@@ -161,6 +161,13 @@ theorem unrelated_sibling_isolated
   rfl
 
 set_option maxHeartbeats 100000 in
+theorem indirect_class_skips_bindings_and_directives
+    (name : Name) (frame : Frame) (rest : List Frame)
+    (kind : frame.kind = .class) :
+    resolveFrom name (frame :: rest) false = resolveFrom name rest false := by
+  simp [resolveFrom, kind]
+
+set_option maxHeartbeats 100000 in
 theorem method_skips_class_scope (name : Name) :
     resolve name {
       path := [
