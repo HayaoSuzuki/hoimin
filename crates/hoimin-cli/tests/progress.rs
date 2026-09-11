@@ -404,6 +404,8 @@ fn input_accepts_a_canonical_null_score_summary() {
     let mut document = valid_report();
     document["mutants"][0]["status"] = json!("timeout");
     document["mutants"][0]["termination"] = json!("Timeout");
+    document["summary"]["complete"] = json!(false);
+    document["summary"]["exit_code"] = json!(4);
     document["summary"]["counts"] = json!({
         "killed": 0,
         "survived": 0,
@@ -417,7 +419,13 @@ fn input_accepts_a_canonical_null_score_summary() {
     });
     let report = write_json(&fixture, "null-score.json", &document);
 
-    assert!(matches!(read_report(&report), Ok(InputReport::Usable(_))));
+    assert!(matches!(
+        read_report(&report),
+        Ok(InputReport::Unusable {
+            reason: UnusableReason::Incomplete,
+            ..
+        })
+    ));
 }
 
 #[test]
@@ -1006,31 +1014,30 @@ async fn output_labels_the_intersection_score_as_comparable() {
     let mut before = valid_report();
     before["mutants"][0]["status"] = json!("survived");
     before["mutants"][0]["termination"] = json!({ "Exit": 0 });
-    let mut newly_conclusive = before["mutants"][0].clone();
-    newly_conclusive["sequence"] = json!(4);
-    newly_conclusive["candidate"]["id"] = json!("mutant-2");
-    newly_conclusive["candidate"]["sequence"] = json!(2);
-    newly_conclusive["candidate"]["span"]["start"] = json!(2);
-    newly_conclusive["candidate"]["original"] = json!("2");
-    newly_conclusive["status"] = json!("timeout");
-    newly_conclusive["termination"] = json!("Timeout");
-    before["mutants"] = json!([before["mutants"][0].clone(), newly_conclusive]);
-    before["summary"]["sequence"] = json!(5);
+    let mut added = before["mutants"][0].clone();
+    added["sequence"] = json!(4);
+    added["candidate"]["id"] = json!("mutant-2");
+    added["candidate"]["sequence"] = json!(2);
+    added["candidate"]["span"]["start"] = json!(2);
+    added["candidate"]["original"] = json!("2");
+    added["status"] = json!("killed");
+    added["termination"] = json!({ "Exit": 1 });
+    before["summary"]["exit_code"] = json!(1);
     before["summary"]["counts"] = json!({
         "killed": 0,
         "survived": 1,
-        "timeout": 1,
+        "timeout": 0,
         "out_of_memory": 0,
         "process_limit": 0,
         "error": 0,
         "not_run": 0,
-        "inconclusive": 1,
+        "inconclusive": 0,
         "score": 0.0
     });
 
     let mut after = before.clone();
-    after["mutants"][1]["status"] = json!("killed");
-    after["mutants"][1]["termination"] = json!({ "Exit": 1 });
+    after["mutants"].as_array_mut().unwrap().push(added);
+    after["summary"]["sequence"] = json!(5);
     after["summary"]["counts"] = json!({
         "killed": 1,
         "survived": 1,
@@ -1050,14 +1057,14 @@ async fn output_labels_the_intersection_score_as_comparable() {
     let (human_code, stdout, human_stderr) = run_progress(&reports, "human").await;
     let output = String::from_utf8(stdout).unwrap();
     assert_eq!(human_code, 0);
-    assert!(human_stderr.is_empty());
+    assert!(String::from_utf8_lossy(&human_stderr).contains("candidate"));
     assert!(output.contains("comparable score: 0.000000"), "{output}");
     assert!(!output.lines().any(|line| line.starts_with("score:")));
 
     let (json_code, stdout, json_stderr) = run_progress(&reports, "json").await;
     let document: Value = serde_json::from_slice(&stdout).unwrap();
     assert_eq!(json_code, 0);
-    assert!(json_stderr.is_empty());
+    assert!(String::from_utf8_lossy(&json_stderr).contains("candidate"));
     assert_eq!(document["comparisons"][0]["current_score"], 0.0);
     assert_eq!(document["comparisons"][0]["score_delta"], 0.0);
 }
@@ -1071,6 +1078,7 @@ async fn output_human_omits_stale_comparison_fields_after_an_unusable_report() {
     before["summary"]["counts"]["killed"] = json!(0);
     before["summary"]["counts"]["survived"] = json!(1);
     before["summary"]["counts"]["score"] = json!(0.0);
+    before["summary"]["exit_code"] = json!(1);
     let after = valid_report();
     let mut incomplete = valid_report();
     incomplete["summary"]["complete"] = json!(false);

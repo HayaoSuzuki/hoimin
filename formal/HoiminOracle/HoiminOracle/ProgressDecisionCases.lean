@@ -76,7 +76,7 @@ def progressDecisionCases : List OracleCase := [
     reports := [
       oru [om 0 0 .killed, om 1 1 .survived],
       oru [om 0 0 .survived, om 1 1 .killed]] },
-  { id := "inconclusive_resets_stalls", patience := 2,
+  { id := "inconclusive_resets_stalls", mode := "internal-fixture", patience := 2,
     reports := [one .killed, one .killed, one .timeout, one .killed, one .killed] },
   { id := "unusable_gap_resets_stalls", patience := 2,
     reports := [one .killed, one .killed, .unusable .incomplete,
@@ -101,15 +101,15 @@ def progressDecisionCases : List OracleCase := [
       oru [om 0 0 .killed, om 1 1 .survived]] },
   { id := "score_one", patience := 2,
     reports := [one .killed, one .killed] },
-  { id := "inconclusive_timeout", patience := 2,
+  { id := "inconclusive_timeout", mode := "internal-fixture", patience := 2,
     reports := [one .survived, one .timeout] },
-  { id := "inconclusive_out_of_memory", patience := 2,
+  { id := "inconclusive_out_of_memory", mode := "internal-fixture", patience := 2,
     reports := [one .survived, one .outOfMemory] },
-  { id := "inconclusive_process_limit", patience := 2,
+  { id := "inconclusive_process_limit", mode := "internal-fixture", patience := 2,
     reports := [one .survived, one .processLimit] },
-  { id := "inconclusive_error", patience := 2,
+  { id := "inconclusive_error", mode := "internal-fixture", patience := 2,
     reports := [one .survived, one .error] },
-  { id := "inconclusive_not_run", patience := 2,
+  { id := "inconclusive_not_run", mode := "internal-fixture", patience := 2,
     reports := [one .survived, one .notRun] },
   { id := "unusable_missing_baseline", patience := 2,
     reports := [one .killed, .unusable .missingBaseline] },
@@ -122,7 +122,7 @@ def progressDecisionCases : List OracleCase := [
 ]
 
 def validMode (mode : String) : Bool :=
-  mode == "strict" || mode == "model-only"
+  mode == "strict" || mode == "internal-fixture" || mode == "model-only"
 
 def caseSafe (item : OracleCase) : Bool :=
   item.schema == 1 && validMode item.mode && item.patience > 0 &&

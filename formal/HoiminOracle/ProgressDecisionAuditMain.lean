@@ -278,6 +278,7 @@ private def printStats : IO UInt32 := do
       IO.println s!"history_checks={historyCount}"
       IO.println s!"fixed_cases={progressDecisionCases.length}"
       IO.println s!"strict_cases={(progressDecisionCases.filter fun item => item.mode == "strict").length}"
+      IO.println s!"internal_fixture_cases={(progressDecisionCases.filter fun item => item.mode == "internal-fixture").length}"
       IO.println s!"model_only_cases={(progressDecisionCases.filter fun item => item.mode == "model-only").length}"
       return 0
 

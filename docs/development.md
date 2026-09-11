@@ -113,9 +113,9 @@ New cases begin in report mode while their model/implementation boundary is
 reviewed. Promoted strict cases are blocking; infrastructure errors always
 fail.
 
-The Linux `Lean audit` CI job is configured to compile all 117 package modules
-serially before building the aggregate library. It then runs all 28 corpus
-freshness checks and the 25 generators that expose sensitivity gates. The
+The Linux `Lean audit` CI job is configured to compile all 121 package modules
+serially before building the aggregate library. It then runs all 29 corpus
+freshness checks and the 26 generators that expose sensitivity gates. The
 workflow is the canonical list of package targets, corpus paths, and gate
 commands; update its contract test whenever a library module or `lakefile.toml`
 executable changes.
@@ -131,7 +131,7 @@ regenerate through the corresponding `lake exe generate* -- --output ...`
 command when an intentional model change requires it. Generated JSONL files
 must not be edited by hand.
 
-The complete 171-command sequence passed from an empty build cache in a
+The earlier 171-command sequence passed from an empty build cache in a
 one-CPU Linux aarch64 container with a hard 2 GiB limit and no swap. The longest
 command took 13.198 seconds; peak aggregate RSS was 1,077,976 KiB. Budget
 statistics take their exploration depth at runtime and run only for `--stats`,

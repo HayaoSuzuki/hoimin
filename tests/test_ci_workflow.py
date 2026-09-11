@@ -85,6 +85,7 @@ LEAN_CORPUS_BY_EXECUTABLE = {
     ),
     "generate_top_budget_projection": "corpus/top-budget-projection.jsonl",
     "generate_progress_decision": "corpus/progress-decision.jsonl",
+    "generate_progress_input": "corpus/progress-input.jsonl",
     "generate_nested_try_flow": "corpus/nested-try-flow.jsonl",
     "generate_nested_match_exits": "corpus/nested-match-exits.jsonl",
     "generate_multiple_handler_joins": "corpus/multiple-handler-joins.jsonl",

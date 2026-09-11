@@ -3,8 +3,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use hoimin_core::{
-    BaselineFinished, MutantFinished, MutationSummary, OutputEvent, ProcessTermination,
-    REPORT_SCHEMA_VERSION, ReportVersions, ResourceControl, VerificationSelection, summarize,
+    BaselineFinished, ExitPolicy, MutantFinished, MutationSummary, OutputEvent, ProcessTermination,
+    REPORT_SCHEMA_VERSION, ReportVersions, ResourceControl, VerificationSelection, exit_code_for,
+    summarize,
 };
 use serde::Deserialize;
 use thiserror::Error;
@@ -387,8 +388,7 @@ fn validate_legacy_structure(
         }
         previous = sequence;
     }
-    let _ = summary.exit_code;
-    Ok(())
+    validate_summary_coherence(path, &summary.counts, summary.complete, summary.exit_code)
 }
 
 fn validate_schema_versions(
@@ -477,6 +477,7 @@ fn validate_structure(path: &Path, document: &RunReportDocument) -> Result<(), P
             "summary counts must match mutant events",
         ));
     }
+    validate_summary_coherence(path, &summary.counts, summary.complete, summary.exit_code)?;
 
     let run_id = document.run.run_id();
     let events = document
@@ -501,6 +502,51 @@ fn validate_structure(path: &Path, document: &RunReportDocument) -> Result<(), P
         previous_sequence = Some(event.sequence());
     }
     Ok(())
+}
+
+fn validate_summary_coherence(
+    path: &Path,
+    counts: &MutationSummary,
+    complete: bool,
+    reported_exit_code: i32,
+) -> Result<(), ProgressError> {
+    let counts_policy = ExitPolicy::from_summary(counts);
+    let exit_matches_completion = if complete {
+        counts.inconclusive == 0 && reported_exit_code == exit_code_for(counts_policy)
+    } else {
+        exit_can_result_from_run_failure(counts_policy, reported_exit_code)
+    };
+    if !exit_matches_completion {
+        return Err(invalid_structure(
+            path,
+            "summary complete and exit_code must be consistent with counts and exit policy",
+        ));
+    }
+    Ok(())
+}
+
+fn exit_can_result_from_run_failure(counts_policy: ExitPolicy, reported_exit_code: i32) -> bool {
+    let possible_failure_policies = [
+        ExitPolicy {
+            interrupted: true,
+            ..counts_policy
+        },
+        ExitPolicy {
+            infrastructure_error: true,
+            ..counts_policy
+        },
+        ExitPolicy {
+            baseline_failed: true,
+            ..counts_policy
+        },
+        ExitPolicy {
+            incomplete: true,
+            ..counts_policy
+        },
+    ];
+    possible_failure_policies
+        .into_iter()
+        .any(|policy| exit_code_for(policy) == reported_exit_code)
 }
 
 fn invalid_structure(path: &Path, message: &'static str) -> ProgressError {

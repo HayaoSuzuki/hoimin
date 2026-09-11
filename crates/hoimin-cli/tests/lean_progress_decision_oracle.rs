@@ -1,7 +1,11 @@
 use std::collections::BTreeSet;
+use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::time::Duration;
 
+use hoimin_cli::progress::{
+    InputReport, ProgressResult, ProgressState, UsableReport, compare_reports,
+};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -103,7 +107,10 @@ fn validate_case(item: &OracleCase) -> Result<(), String> {
             item.id
         ));
     }
-    if !matches!(item.mode.as_str(), "strict" | "model-only") {
+    if !matches!(
+        item.mode.as_str(),
+        "strict" | "internal-fixture" | "model-only"
+    ) {
         return Err(format!("{} has unknown mode {}", item.id, item.mode));
     }
     if item.reports.is_empty() {
@@ -247,7 +254,9 @@ fn build_report(case_id: &str, report_index: usize, input: &OracleReport) -> Val
     document["summary"]["run_id"] = json!(run_id);
     document["summary"]["counts"] = counts;
     document["summary"]["complete"] = json!(true);
-    document["summary"]["exit_code"] = json!(0);
+    document["summary"]["exit_code"] = json!(i32::from(
+        document["summary"]["counts"]["survived"].as_u64().unwrap() > 0
+    ));
 
     if !input.usable {
         match input.reason.as_deref() {
@@ -460,7 +469,14 @@ fn lean_progress_decision_corpus_is_valid() {
     assert_eq!(cases.len(), 24);
     assert_eq!(
         cases.iter().filter(|item| item.mode == "strict").count(),
-        23
+        17
+    );
+    assert_eq!(
+        cases
+            .iter()
+            .filter(|item| item.mode == "internal-fixture")
+            .count(),
+        6
     );
     for required in [
         "simultaneous_regression_wins",
@@ -483,13 +499,13 @@ fn lean_progress_decision_corpus_is_valid() {
         "not_run",
     ] {
         assert!(
-            cases.iter().any(|item| item.mode == "strict"
+            cases.iter().any(|item| item.mode == "internal-fixture"
                 && item
                     .reports
                     .iter()
                     .flat_map(|report| &report.mutants)
                     .any(|mutant| mutant.status == status)),
-            "missing strict status {status}"
+            "missing internal comparison status {status}"
         );
     }
 }
@@ -502,5 +518,86 @@ async fn public_progress_matches_every_strict_lean_case() {
             .await
             .unwrap_or_else(|error| panic!("{error}"));
         assert_case_matches(item, &actual);
+    }
+}
+
+fn state_name(state: ProgressState) -> &'static str {
+    match state {
+        ProgressState::Improving => "improving",
+        ProgressState::Regressing => "regressing",
+        ProgressState::Stalled => "stalled",
+        ProgressState::Saturated => "saturated",
+        ProgressState::Indeterminate => "indeterminate",
+    }
+}
+
+fn inject_usable_reports_without_reader_validation(item: &OracleCase) -> Vec<InputReport> {
+    item.reports
+        .iter()
+        .enumerate()
+        .map(|(index, report)| {
+            assert!(
+                report.usable,
+                "internal fixture must explicitly inject usable reports"
+            );
+            let doc = build_report(&item.id, index, report);
+            InputReport::Usable(UsableReport {
+                source: PathBuf::from(format!("internal-{index}.json")),
+                mutants: doc["mutants"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|event| serde_json::from_value(event.clone()).unwrap())
+                    .collect(),
+            })
+        })
+        .collect()
+}
+
+fn comparison_result_as_cli_json(actual: &ProgressResult) -> Value {
+    let comparisons: Vec<Value> = actual
+        .comparisons
+        .iter()
+        .map(|comparison| {
+            json!({
+                "common": comparison.common,
+                "added": comparison.added,
+                "removed": comparison.removed,
+                "ambiguous": comparison.ambiguous,
+                "inconclusive": comparison.inconclusive,
+                "improvements": comparison.improvements,
+                "regressions": comparison.regressions,
+                "carried_survivors": comparison.carried_survivors,
+                "state": state_name(comparison.state),
+                "previous_score": comparison.previous_score,
+                "current_score": comparison.current_score,
+                "score_delta": comparison.score_delta
+            })
+        })
+        .collect();
+    json!({
+        "patience": actual.patience.get(),
+        "consecutive_stalls": actual.consecutive_stalls,
+        "latest": {
+            "state": state_name(actual.latest),
+            "consecutive_stalls": actual.consecutive_stalls,
+            "patience": actual.patience.get(),
+            "saturated": actual.latest == ProgressState::Saturated
+        },
+        "comparisons": comparisons
+    })
+}
+
+#[test]
+fn internal_comparison_fixtures_preserve_inconclusive_semantics() {
+    for item in parse_corpus()
+        .unwrap()
+        .iter()
+        .filter(|item| item.mode == "internal-fixture")
+    {
+        let inputs = inject_usable_reports_without_reader_validation(item);
+        let patience = NonZeroUsize::new(usize::try_from(item.patience).unwrap()).unwrap();
+        let actual = compare_reports(&inputs, patience);
+        assert_case_matches(item, &comparison_result_as_cli_json(&actual));
     }
 }

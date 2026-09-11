@@ -38,6 +38,8 @@ import HoiminOracle.TopBudgetProjectionCases
 import HoiminOracle.ProgressDecisionModel
 import HoiminOracle.ProgressDecisionProofs
 import HoiminOracle.ProgressDecisionCases
+import HoiminOracle.ProgressInputModel
+import HoiminOracle.ProgressInputProofs
 import HoiminOracle.NestedTryFlowModel
 import HoiminOracle.NestedTryFlowProofs
 import HoiminOracle.NestedTryFlowCases
