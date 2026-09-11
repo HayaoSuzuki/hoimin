@@ -347,7 +347,7 @@
         "run_id": { "type": "string" },
         "normalized_config": {
           "type": ["object", "null"],
-          "description": "Normalized invocation config. New config fields may be added in schema version 2.",
+          "description": "Normalized invocation config, including ordered import_roots when present. New config fields may be added without changing the run-event schema version.",
           "additionalProperties": true
         },
         "versions": {

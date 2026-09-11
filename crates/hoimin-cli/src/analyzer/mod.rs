@@ -380,9 +380,10 @@ fn discover_targets_blocking(work: DiscoveryWork) -> Result<Discovery, EffectFai
                         "candidate sequence overflow",
                     )
                 })?;
-            discovery
-                .candidates
-                .push(mutation_candidate(&validation, candidate, sequence)?);
+            let candidate = mutation_candidate(&validation, candidate, sequence)?;
+            CandidateStore::record_size(&candidate)
+                .map_err(|error| candidate_store_error(EffectId(0), &candidate, &error))?;
+            discovery.candidates.push(candidate);
         }
         discovery.diagnostics.extend(output.diagnostics);
         if output.truncated {
@@ -598,7 +599,7 @@ fn analyze_and_store(
         let candidate = mutation_candidate(&validation, candidate, sequence)?;
         store
             .push(&candidate)
-            .map_err(|error| EffectFailed::other(id, "analyzer.store", error.to_string()))?;
+            .map_err(|error| candidate_store_error(id, &candidate, &error))?;
     }
     if cancellation.is_cancelled() {
         return Err(cancelled(id));
@@ -701,6 +702,21 @@ fn analysis_failure(
 
 fn cancelled(id: EffectId) -> EffectFailed {
     EffectFailed::other(id, "analyzer.cancelled", "analyzer was cancelled")
+}
+
+fn candidate_store_error(
+    id: EffectId,
+    candidate: &MutationCandidate,
+    error: &StoreError,
+) -> EffectFailed {
+    EffectFailed::other(
+        id,
+        "analyzer.store",
+        format!(
+            "{}:{} ({}): {error}",
+            candidate.path, candidate.line, candidate.operator
+        ),
+    )
 }
 
 fn mutation_candidate(

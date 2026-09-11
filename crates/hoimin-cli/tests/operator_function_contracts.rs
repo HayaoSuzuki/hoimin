@@ -61,6 +61,76 @@ async fn plan(root: &Path, operator: &str) -> serde_json::Value {
     serde_json::from_slice(&stdout).expect("plan writes one JSON document")
 }
 
+#[tokio::test]
+async fn planned_pattern_candidates_compile_with_cpython() {
+    let directory = tempfile::tempdir().unwrap();
+    let source = concat!(
+        "class Point:\n    __match_args__ = ('x',)\n",
+        "def classify(value, guard):\n",
+        "    subject = -value\n",
+        "    match subject:\n",
+        "        case -1 | -1.5 | -2j | -3-4j | -3+4j:\n            pass\n",
+        "        case [(-5), Point(-6), {-7: True}]:\n            pass\n",
+        "        case False if +guard:\n            return +value\n",
+        "    return -value\n",
+    );
+    fs::write(directory.path().join("subject.py"), source).unwrap();
+
+    let manifest = plan(
+        directory.path(),
+        "unary_sign,binary_add_sub,boolean_literal",
+    )
+    .await;
+    let candidates = manifest["candidates"].as_array().unwrap();
+    assert!(
+        !candidates.is_empty(),
+        "the CPython check must not be vacuous"
+    );
+    assert_eq!(
+        candidates
+            .iter()
+            .filter(|candidate| candidate["operator"] == "unary_sign")
+            .count(),
+        4,
+        "only expression-context unary signs should remain: {manifest}"
+    );
+    assert!(
+        candidates.iter().any(|candidate| {
+            candidate["operator"] == "binary_add_sub" && candidate["original"] == "-"
+        }),
+        "the complex separator should remain eligible: {manifest}"
+    );
+    assert_eq!(
+        candidates
+            .iter()
+            .filter(|candidate| candidate["operator"] == "boolean_literal")
+            .count(),
+        2,
+        "boolean pattern candidates should remain eligible: {manifest}"
+    );
+
+    for candidate in candidates {
+        let start = usize::try_from(candidate["span"]["start"].as_u64().unwrap()).unwrap();
+        let length = usize::try_from(candidate["span"]["length"].as_u64().unwrap()).unwrap();
+        let mut mutated = source.to_owned();
+        mutated.replace_range(
+            start..start + length,
+            candidate["replacement"].as_str().unwrap(),
+        );
+        fs::write(directory.path().join("subject.py"), mutated).unwrap();
+        let output = run_python(
+            directory.path(),
+            "compile(open('subject.py').read(), 'subject.py', 'exec')",
+        );
+        assert!(
+            output.status.success(),
+            "candidate {} failed CPython compilation: {}",
+            candidate["id"],
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}
+
 fn run_python(root: &Path, harness: &str) -> Output {
     Command::new(python_executable())
         .args(["-c", harness])
@@ -1032,5 +1102,94 @@ async fn python_314_none_identity_function_replacements_execute() {
 
     for case in cases {
         assert_contract(case).await;
+    }
+}
+
+#[tokio::test]
+async fn parenthesized_exception_removals_preserve_intended_catch_sets() {
+    for expression in [
+        "(Exception)",
+        "((Exception))",
+        "(\n    # grouping\n    Exception\n)",
+    ] {
+        let source = format!(
+            "def run(error):\n    try:\n        raise error\n    except {expression}:\n        return 'caught'\n"
+        );
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("subject.py");
+        fs::write(&path, &source).unwrap();
+        let harness = "import subject\nfor error in [ValueError(), KeyboardInterrupt()]:\n    try:\n        print(subject.run(error))\n    except BaseException:\n        print('escaped')\n";
+        assert_python_output(
+            expression,
+            "baseline",
+            &run_python(directory.path(), harness),
+            "caught\nescaped\n",
+        );
+        let manifest = plan(directory.path(), "exception_exception_to_bare").await;
+        let candidates = manifest["candidates"].as_array().unwrap();
+        assert_eq!(candidates.len(), 1);
+        let candidate = &candidates[0];
+        let start = usize::try_from(candidate["span"]["start"].as_u64().unwrap()).unwrap();
+        let length = usize::try_from(candidate["span"]["length"].as_u64().unwrap()).unwrap();
+        let mut mutated = source.clone();
+        mutated.replace_range(
+            start..start + length,
+            candidate["replacement"].as_str().unwrap(),
+        );
+        fs::write(&path, mutated).unwrap();
+        // pins: issue #451 — an empty tuple reparses but catches neither exception.
+        assert_python_output(
+            expression,
+            "mutant",
+            &run_python(directory.path(), harness),
+            "caught\ncaught\n",
+        );
+    }
+    for expression in [
+        "((ValueError), TypeError)",
+        "(ValueError, ((TypeError)))",
+        "((ValueError), # retained\n    (TypeError),)",
+    ] {
+        let source = format!(
+            "def run(error):\n    try:\n        raise error\n    except {expression}:\n        return 'caught'\n"
+        );
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("subject.py");
+        fs::write(&path, &source).unwrap();
+        let harness = "import subject\nfor error in [ValueError(), TypeError(), KeyboardInterrupt()]:\n    try:\n        print(subject.run(error))\n    except BaseException:\n        print('escaped')\n";
+        assert_python_output(
+            expression,
+            "baseline",
+            &run_python(directory.path(), harness),
+            "caught\ncaught\nescaped\n",
+        );
+        let manifest = plan(directory.path(), "exception_tuple_remove_member").await;
+        let candidates = manifest["candidates"].as_array().unwrap();
+        assert_eq!(candidates.len(), 2);
+        let mut outcomes = std::collections::BTreeSet::new();
+        for candidate in candidates {
+            let start = usize::try_from(candidate["span"]["start"].as_u64().unwrap()).unwrap();
+            let length = usize::try_from(candidate["span"]["length"].as_u64().unwrap()).unwrap();
+            let mut mutated = source.clone();
+            mutated.replace_range(
+                start..start + length,
+                candidate["replacement"].as_str().unwrap(),
+            );
+            fs::write(&path, mutated).unwrap();
+            let output = run_python(directory.path(), harness);
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            outcomes.insert(String::from_utf8(output.stdout).unwrap());
+        }
+        assert_eq!(
+            outcomes,
+            std::collections::BTreeSet::from([
+                "escaped\ncaught\nescaped\n".to_owned(),
+                "caught\nescaped\nescaped\n".to_owned(),
+            ])
+        );
     }
 }

@@ -87,6 +87,10 @@ struct RawMutationArgs {
     #[arg(long, value_name = "DIR")]
     source: Vec<PathBuf>,
 
+    /// Worker import directory relative to --root; repeat in precedence order without selecting targets.
+    #[arg(long, value_name = "DIR")]
+    import_root: Vec<PathBuf>,
+
     /// Select a complete Python file; may be repeated.
     #[arg(long, value_name = "PATH")]
     file: Vec<PathBuf>,
@@ -291,6 +295,7 @@ struct RawProgressArgs {
 pub struct RunArgs {
     pub root: PathBuf,
     pub source: Vec<PathBuf>,
+    pub import_root: Vec<PathBuf>,
     pub file: Vec<PathBuf>,
     pub line: Vec<String>,
     pub symbol: Vec<String>,
@@ -551,6 +556,7 @@ fn run_args_from_mutation(
     Ok(RunArgs {
         root: raw.root,
         source: raw.source,
+        import_root: raw.import_root,
         file: raw.file,
         line: raw.line,
         symbol: raw.symbol,
@@ -684,6 +690,11 @@ fn raw_config(args: RunArgs) -> Result<RawRunConfig, CliError> {
     Ok(RawRunConfig {
         root,
         sources,
+        import_roots: args
+            .import_root
+            .into_iter()
+            .map(|path| utf8_path(path, "--import-root"))
+            .collect::<Result<Vec<_>, _>>()?,
         files,
         lines,
         symbols,
