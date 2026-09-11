@@ -362,3 +362,54 @@ fn reusable_context_preserves_validation_error_precedence() {
         assert_eq!(validate_candidate(source, &candidate), Err(expected));
     }
 }
+
+#[test]
+fn validates_python_physical_lines_without_normalizing_source_bytes() {
+    for (source, line, column) in [
+        ("x = 1\rvalue == 2\r", 2, 6),
+        ("x = 1\r\nvalue == 2\r\n", 2, 6),
+        ("x = 1\nvalue == 2", 2, 6),
+        ("# header\r\n\r# next\n値 == 2\r", 4, 2),
+        ("\u{feff}# header\r\r値 == 2", 3, 2),
+    ] {
+        let mut candidate = descriptor(source.as_bytes());
+        candidate.span.start = u64::try_from(source.find("==").unwrap()).unwrap();
+        candidate.line = line;
+        candidate.column = column;
+        let expected_id = stable_mutant_id(&CandidateIdentity::from(&candidate));
+        // pins: issue #455 — a lone CR is a physical newline, not a column character.
+        assert_eq!(
+            validate_candidate(source.as_bytes(), &candidate),
+            Ok(expected_id.clone()),
+            "{source:?}"
+        );
+        candidate.line = 1;
+        assert_eq!(
+            stable_mutant_id(&CandidateIdentity::from(&candidate)),
+            expected_id
+        );
+        assert_eq!(
+            validate_candidate(source.as_bytes(), &candidate),
+            Err(CandidateValidationError::LocationMismatch)
+        );
+    }
+}
+
+#[test]
+fn python_physical_line_starts_count_crlf_once_and_keep_empty_lines() {
+    for (source, expected) in [
+        ("", vec![0]),
+        ("\r", vec![0, 1]),
+        ("\n", vec![0, 1]),
+        ("\r\n", vec![0, 2]),
+        ("\r\r\n\n", vec![0, 1, 3, 4]),
+        ("a\r\nb\rc\n", vec![0, 3, 5, 7]),
+        ("a\rb", vec![0, 2]),
+    ] {
+        assert_eq!(
+            hoimin_core::python_line_starts(source.as_bytes()).unwrap(),
+            expected,
+            "{source:?}"
+        );
+    }
+}

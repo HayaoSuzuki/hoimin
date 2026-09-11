@@ -881,3 +881,149 @@ async fn combined_handler_preserves_effect_id_and_resolves_changed_targets() {
         }]
     );
 }
+
+#[test]
+fn automatic_discovery_shares_workspace_exclusions_even_with_includes() {
+    let temp = tempfile::tempdir().unwrap();
+    let paths = [
+        "calc.py",
+        "venv/dep.py",
+        "nested/env/dep.py",
+        "__pycache__/dep.py",
+        ".venv/dep.py",
+        ".pytest_cache/dep.py",
+    ];
+    for path in paths {
+        let path = temp.path().join(path);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, "value = 1 + 2\n").unwrap();
+    }
+    for includes in [vec![], vec!["**/*.py".to_owned()]] {
+        let selection = Selection {
+            root: Utf8PathBuf::from_path_buf(temp.path().to_path_buf()).unwrap(),
+            sources: vec![Utf8PathBuf::from(".")],
+            includes,
+            ..Selection::default()
+        };
+        let files = hoimin_cli::target::fs::discover_explicit(&selection).unwrap();
+        // pins: issue #452 — candidates must be present in the worker manifest.
+        assert_eq!(
+            files
+                .iter()
+                .map(|file| file.path.as_str())
+                .collect::<Vec<_>>(),
+            ["calc.py"]
+        );
+    }
+}
+
+#[tokio::test]
+async fn explicit_excluded_targets_explain_the_path_and_remediation() {
+    let temp = tempfile::tempdir().unwrap();
+    fs::create_dir(temp.path().join("venv")).unwrap();
+    fs::write(temp.path().join("venv/dep.py"), "value = 1 + 2\n").unwrap();
+    let root = Utf8PathBuf::from_path_buf(temp.path().to_path_buf()).unwrap();
+    for files in [true, false] {
+        let mut selection = Selection {
+            root: root.clone(),
+            ..Selection::default()
+        };
+        if files {
+            selection.files.push(root.join("venv/./dep.py"));
+        } else {
+            selection.lines.push(LineSelection {
+                path: "venv/dep.py".into(),
+                range: LineRange { start: 1, end: 1 },
+            });
+        }
+        let error = TargetHandler::resolve(&selection)
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("venv/dep.py"), "{error}");
+        assert!(error.contains("built-in"), "{error}");
+        assert!(error.contains("outside"), "{error}");
+    }
+}
+
+#[test]
+fn non_git_discovery_honors_ignore_files_and_restores_only_eligible_files() {
+    let temp = tempfile::tempdir().unwrap();
+    fs::write(temp.path().join(".gitignore"), "ignored.py\n").unwrap();
+    for name in ["calc.py", "ignored.py", ".hidden.py"] {
+        fs::write(temp.path().join(name), "value = 1 + 2\n").unwrap();
+    }
+    let mut selection = Selection {
+        root: Utf8PathBuf::from_path_buf(temp.path().to_path_buf()).unwrap(),
+        ..Selection::default()
+    };
+    let files = hoimin_cli::target::fs::discover_explicit(&selection).unwrap();
+    assert_eq!(
+        files.iter().map(|f| f.path.as_str()).collect::<Vec<_>>(),
+        ["calc.py"]
+    );
+    selection.includes = vec!["ignored.py".into(), ".hidden.py".into()];
+    selection.excludes = vec!["ignored.py".into()];
+    let files = hoimin_cli::target::fs::discover_explicit(&selection).unwrap();
+    assert_eq!(
+        files.iter().map(|f| f.path.as_str()).collect::<Vec<_>>(),
+        [".hidden.py", "calc.py"]
+    );
+}
+
+#[tokio::test]
+async fn a_root_named_venv_is_not_itself_excluded() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("venv");
+    fs::create_dir(&root).unwrap();
+    fs::write(root.join("calc.py"), "value = 1 + 2\n").unwrap();
+    let targets = TargetHandler::resolve(&Selection {
+        root: Utf8PathBuf::from_path_buf(root).unwrap(),
+        files: vec!["calc.py".into()],
+        ..Selection::default()
+    })
+    .await
+    .unwrap();
+    assert_eq!(targets.len(), 1);
+    assert_eq!(targets[0].path, "calc.py");
+}
+
+#[tokio::test]
+async fn exclusion_case_rules_follow_the_platform_for_walks_and_selectors() {
+    for actual in ["venv", "VENV"] {
+        let temp = tempfile::tempdir().unwrap();
+        fs::create_dir(temp.path().join(actual)).unwrap();
+        fs::write(temp.path().join(actual).join("dep.py"), "value = 1 + 2\n").unwrap();
+        let root = Utf8PathBuf::from_path_buf(temp.path().to_path_buf()).unwrap();
+        let files = hoimin_cli::target::fs::discover_explicit(&Selection {
+            root: root.clone(),
+            includes: vec!["**/*.py".into()],
+            ..Selection::default()
+        })
+        .unwrap();
+        let excluded = cfg!(windows) || actual == "venv";
+        assert_eq!(files.is_empty(), excluded);
+        let spellings: &[&str] = if cfg!(windows) {
+            &["venv", "VENV"]
+        } else {
+            &[actual]
+        };
+        for spelling in spellings {
+            let result = TargetHandler::resolve(&Selection {
+                root: root.clone(),
+                files: vec![format!("{spelling}/dep.py").into()],
+                ..Selection::default()
+            })
+            .await;
+            if excluded {
+                let error = result.unwrap_err().to_string();
+                assert!(
+                    error.contains("built-in") && error.contains("outside"),
+                    "{error}"
+                );
+            } else {
+                assert_eq!(result.unwrap().len(), 1);
+            }
+        }
+    }
+}

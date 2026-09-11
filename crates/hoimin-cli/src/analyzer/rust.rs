@@ -521,12 +521,8 @@ struct LineIndex {
 
 impl LineIndex {
     fn new(source: &str) -> Self {
-        let mut starts = vec![0];
-        for (index, byte) in source.bytes().enumerate() {
-            if byte == b'\n' {
-                starts.push(u32::try_from(index + 1).expect("Ruff source offset fits u32"));
-            }
-        }
+        let starts = hoimin_core::python_line_starts(source.as_bytes())
+            .expect("Ruff source offset fits u32");
         Self { starts }
     }
 
@@ -1418,6 +1414,7 @@ struct AstFacts<'tokens> {
     scopes: Vec<ScopeInterval>,
     scope_index: ScopeIndex,
     qualname: Vec<String>,
+    in_pattern: bool,
     tokens: Option<&'tokens ruff_python_ast::token::Tokens>,
     source: &'tokens str,
     #[cfg(test)]
@@ -1713,13 +1710,13 @@ impl<'ast> Visitor<'ast> for AstFacts<'_> {
                 ],
             ),
             Expr::UnaryOp(unary) => {
-                self.record_operator_tokens(
-                    TextRange::new(unary.range().start(), unary.operand.range().start()),
-                    &["not", "+", "-", "~"],
-                );
                 let start = usize::from(unary.range().start());
                 match unary.op {
                     UnaryOp::Not => {
+                        self.record_operator_tokens(
+                            TextRange::new(unary.range().start(), unary.operand.range().start()),
+                            &["not"],
+                        );
                         let operand_range = ruff_python_ast::token::parenthesized_range(
                             unary.operand.as_ref().into(),
                             unary.into(),
@@ -1733,9 +1730,21 @@ impl<'ast> Visitor<'ast> for AstFacts<'_> {
                         ));
                     }
                     UnaryOp::UAdd | UnaryOp::USub => {
-                        self.unary_sign_starts.insert(start);
+                        if !self.in_pattern {
+                            self.record_operator_tokens(
+                                TextRange::new(
+                                    unary.range().start(),
+                                    unary.operand.range().start(),
+                                ),
+                                &["+", "-"],
+                            );
+                            self.unary_sign_starts.insert(start);
+                        }
                     }
-                    UnaryOp::Invert => {}
+                    UnaryOp::Invert => self.record_operator_tokens(
+                        TextRange::new(unary.range().start(), unary.operand.range().start()),
+                        &["~"],
+                    ),
                 }
             }
             Expr::BooleanLiteral(boolean) => {
@@ -1752,7 +1761,9 @@ impl<'ast> Visitor<'ast> for AstFacts<'_> {
         {
             self.record_operator_tokens(singleton.range(), &["True", "False"]);
         }
+        let previous = std::mem::replace(&mut self.in_pattern, true);
         visitor::walk_pattern(self, pattern);
+        self.in_pattern = previous;
     }
 }
 
@@ -2286,8 +2297,14 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                         .operators
                         .contains(MutationOperator::ExceptionExceptionToBare)
                 {
+                    let range = ruff_python_ast::token::parenthesized_range(
+                        type_.into(),
+                        handler.into(),
+                        self.facts.tokens.expect("parser tokens are set"),
+                    )
+                    .unwrap_or_else(|| type_.range());
                     self.add_candidate(
-                        name.range(),
+                        range,
                         String::new(),
                         MutationOperator::ExceptionExceptionToBare,
                     );
@@ -2884,7 +2901,12 @@ fn tuple_remove_replacement(
     let tuple_start = usize::from(tuple.range().start());
     let tuple_end = usize::from(tuple.range().end());
     let element = tuple.elts.get(index)?;
-    let element_range = element.range();
+    let element_range = ruff_python_ast::token::parenthesized_range(
+        element.into(),
+        tuple.into(),
+        facts.tokens.expect("parser tokens are set"),
+    )
+    .unwrap_or_else(|| element.range());
     let element_start = usize::from(element_range.start());
     let element_end = usize::from(element_range.end());
     let commas: Vec<_> = facts
