@@ -29,6 +29,10 @@ sources:
   resource: ../../json-schema/run-result.schema.json
   revision: a7daea0b557cd435c1e55b540392fbdd116348e1
   working_tree: clean
+- id: issue-488
+  resource: ../../superpowers/specs/2026-09-11-issue-488-windows-resource-scope-design.md
+  working_tree: untracked
+  sha256: 9187c4029df0e3f1e0be45f43d11fa4b875201fcbcb7e0a22a4b4c0f31510d4a
 ---
 
 # 実行単位ごとの所有権
@@ -55,9 +59,17 @@ JSON Schemaは結果の構造を定める元資料として保持する。ただ
 
 run所有権、再利用条件、結果置換、DBスキーマ、集計値と終了コードの規則、JSON読取り処理を変更したら更新する。保存・読取り・比較の各処理で同じ前提が維持されるかを調べる。旧報告にある未解決という記述は、その報告の時点として扱う。
 
+# Windowsの制限値を読むときの単位
+
+Issue488では、Windowsのnormalized_config内のmax-memory／max-processesを、各root process treeの上限として説明する。resource_modeのhardはOSによる強制方式を表し、複数のtreeを合計した上限を意味しない。jobsを増やした場合の合計量も考慮して設定する必要がある。[^issue-488]
+
+この制限単位の修正は、開始・再利用結果へbackend情報を渡すIssue487とは独立している。既存の出力構造を説明するためだけに重複した情報伝播APIや新たなschema欄を追加しない。[^issue-488]
+
 [^ownership]: [2026-09-07-issue-363-session-ownership-design.md](../../superpowers/specs/2026-09-07-issue-363-session-ownership-design.md)。
 [^session]: [mod.rs](../../../crates/hoimin-cli/src/session/mod.rs)。
 [^ownership-report]: [2026-09-07-issue-363-session-ownership.md](../../superpowers/reports/2026-09-07-issue-363-session-ownership.md)。
 [^migration]: [2026-08-11-lean-schema-migration-concurrency-audit.md](../../superpowers/reports/2026-08-11-lean-schema-migration-concurrency-audit.md)。
 [^reader]: [input.rs](../../../crates/hoimin-cli/src/progress/input.rs)。
 [^schema]: [run-result.schema.json](../../json-schema/run-result.schema.json)。
+
+[^issue-488]: [2026-09-11-issue-488-windows-resource-scope-design.md](../../superpowers/specs/2026-09-11-issue-488-windows-resource-scope-design.md)。

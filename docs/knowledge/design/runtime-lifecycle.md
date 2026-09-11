@@ -25,6 +25,10 @@ sources:
   resource: ../../superpowers/reports/2026-09-08-issue-342-resource-audit.md
   revision: a7daea0b557cd435c1e55b540392fbdd116348e1
   working_tree: clean
+- id: issue-488
+  resource: ../../superpowers/specs/2026-09-11-issue-488-windows-resource-scope-design.md
+  working_tree: untracked
+  sha256: 9187c4029df0e3f1e0be45f43d11fa4b875201fcbcb7e0a22a4b4c0f31510d4a
 ---
 
 # 制限する資源とディスク監視の範囲
@@ -75,8 +79,18 @@ Unix向けの共通実装（portable経路）では、Hoiminが直接起動し�
 
 [境界監査](../audits/boundary-2026-09.md)では、実行方式を表すresource modeの伝播や、Windowsで制限を実行全体（run-wide）へ適用する契約も調査対象になった。OSごとの制限実装（backend）、停止処理、所有権、レポート出力、制限を適用する単位を変更したら、公開説明と各OSで実行確認した範囲を再照合する。
 
+# Windowsの制限単位と実機検証
+
+Issue488では、Windowsのメモリ・プロセス数制限を、baselineまたはmutantのroot processとその子孫から成るtreeごとの上限として公開する。外側のrun用Job Objectは後処理を担い、内側の各Job ObjectがProcessLimitsを強制する。同時実行数を増やすと、合計使用量は設定した1回分の上限を超え得る。新たなrun全体の上限は実装しない。[^issue-488]
+
+メモリはJob Objectが計上するcommit量、プロセス数はroot自身を含む数である。無視されていたconstructor引数を削除し、実際のrequest値とnative APIから読み出した上限を照合する。2つのtreeが同時に動く有限のbarrier試験で制限単位を確認し、違反したtreeへの帰属、正常なsibling、子孫の後処理も検証する。[^issue-488]
+
+Windows Server2025の専用CIジョブでは、native unit25件、handler5件、実際のCLI2件がskipなしで成功した。各treeが96 MiBを同時に保持して合計192 MiBとなり、1回分の上限160 MiBを超えることを確認した。プロセス数も各2、合計4で1回分の上限3を超えた。これは当該fixtureの実測結果であり、すべての環境・実行順序を保証するものではない。macOS上の検査や、抽象モデルだけの性質は、Windowsが設定値を強制した証拠には含めない。[^issue-488]
+
 [^readme]: [README.md](../../../README.md)。
 [^disk]: [2026-08-27-disk-safe-mutation-execution-design.md](../../superpowers/specs/2026-08-27-disk-safe-mutation-execution-design.md)。
 [^terminal]: [2026-07-29-run-finished-terminal-design.md](../../superpowers/specs/2026-07-29-run-finished-terminal-design.md)。
 [^delivery]: [2026-09-08-issue-335-report-shutdown-design.md](../../superpowers/specs/2026-09-08-issue-335-report-shutdown-design.md)。
 [^cleanup]: [2026-09-08-issue-342-resource-audit.md](../../superpowers/reports/2026-09-08-issue-342-resource-audit.md)。
+
+[^issue-488]: [2026-09-11-issue-488-windows-resource-scope-design.md](../../superpowers/specs/2026-09-11-issue-488-windows-resource-scope-design.md)。
