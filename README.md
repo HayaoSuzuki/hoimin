@@ -233,6 +233,10 @@ opt-in type IDs, and five opt-in risky exception IDs.
 | Boundary operators | `structure_index_neighbor`, `structure_slice_neighbor` | adjacent plain-decimal index and slice-bound values |
 | Exception types | `exception_type_pair` | curated pairs such as `ValueError` ↔ `TypeError` in simple `except`/`except*` clauses and supported `raise` expressions |
 
+Boolean and complex-separator mapping-pattern key edits that would duplicate a
+sibling literal key are excluded, including Python equality such as `True == 1`. Valid key,
+value-pattern, and ordinary dictionary-expression mutations remain eligible.
+
 The runtime selector families are `collection_ops`, `structure_ops`, and
 `bitwise_ops`, and `exception_ops`; for example,
 `--exclude-operators collection_ops` removes the collection family while
