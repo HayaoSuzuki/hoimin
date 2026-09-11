@@ -434,5 +434,79 @@
     },
     "test_binaries": 68,
     "ci_workflow_tests": 26
+  },
+  "native_followup": {
+    "authorization": "User requested a modest increase of the local 768 MiB RSS monitoring cap.",
+    "implementation_commit": "7c6130e199fb97ac613d65999610716193ddc1aa",
+    "local_rss_limit_mib": 1024,
+    "timeout_seconds": 20,
+    "sample_ms": 250,
+    "build_cache": "existing incremental cache retained",
+    "model_or_corpus_changed": false,
+    "ci_limit_changed": false,
+    "runs": [
+      {
+        "label": "Reader native link and freshness",
+        "command": "python3 tools/lean_resource_guard.py --timeout-seconds 20 --rss-limit-mib 1024 --sample-ms 250 --stats /tmp/hoimin-progress-input-native-1024-check.json -- lake exe generate_progress_input -- --check corpus/progress-input.jsonl",
+        "stats": {
+          "elapsed_ms": 6030,
+          "exit_code": 0,
+          "peak_rss_kib": 779888,
+          "reason": "child_exit",
+          "rss_limit_kib": 1048576,
+          "schema": 1,
+          "timeout_ms": 20000
+        }
+      },
+      {
+        "label": "Reader native sensitivity",
+        "command": "python3 tools/lean_resource_guard.py --timeout-seconds 20 --rss-limit-mib 1024 --sample-ms 250 --stats /tmp/hoimin-progress-input-native-1024-sensitivity.json -- lake exe generate_progress_input -- --sensitivity",
+        "stats": {
+          "elapsed_ms": 834,
+          "exit_code": 0,
+          "peak_rss_kib": 82384,
+          "reason": "child_exit",
+          "rss_limit_kib": 1048576,
+          "schema": 1,
+          "timeout_ms": 20000
+        }
+      },
+      {
+        "label": "Comparison native link and freshness",
+        "command": "python3 tools/lean_resource_guard.py --timeout-seconds 20 --rss-limit-mib 1024 --sample-ms 250 --stats /tmp/hoimin-progress-decision-native-1024-check.json -- lake exe generate_progress_decision -- --check corpus/progress-decision.jsonl",
+        "stats": {
+          "elapsed_ms": 6605,
+          "exit_code": 0,
+          "peak_rss_kib": 794528,
+          "reason": "child_exit",
+          "rss_limit_kib": 1048576,
+          "schema": 1,
+          "timeout_ms": 20000
+        }
+      },
+      {
+        "label": "Comparison native sensitivity",
+        "command": "python3 tools/lean_resource_guard.py --timeout-seconds 20 --rss-limit-mib 1024 --sample-ms 250 --stats /tmp/hoimin-progress-decision-native-1024-sensitivity.json -- lake exe generate_progress_decision -- --sensitivity",
+        "stats": {
+          "elapsed_ms": 827,
+          "exit_code": 0,
+          "peak_rss_kib": 86384,
+          "reason": "child_exit",
+          "rss_limit_kib": 1048576,
+          "schema": 1,
+          "timeout_ms": 20000
+        }
+      }
+    ],
+    "hosted_lean_ci": {
+      "__typename": "CheckRun",
+      "completedAt": "2026-09-11T06:19:42Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/tokyogas-tech/hoimin/actions/runs/34569154027/job/103167651933",
+      "name": "Lean audit",
+      "startedAt": "2026-09-11T06:16:48Z",
+      "status": "COMPLETED",
+      "workflowName": "CI"
+    }
   }
 }

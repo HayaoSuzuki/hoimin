@@ -30,8 +30,9 @@ unbounded execution proof. Sensitivity targets blind complete trust, omitted
 inconclusive validation, and lower-priority failure overriding error. Atomicity
 and concurrent interleavings do not apply to this pure, single-input validation.
 Repeated identical inputs exercise the comparison boundary without claiming
-general idempotency. Lean checks run serially with a 20-second deadline and
-768 MiB aggregate RSS cap, sampled every 250 ms.
+general idempotency. Initial Lean checks ran serially with a 20-second deadline
+and 768 MiB aggregate RSS cap, sampled every 250 ms. The user subsequently
+authorized a local cap increase to 1 GiB for the native-generator follow-up below.
 
 ## Implementation and results
 
@@ -108,16 +109,31 @@ the full report score is 0.5. No production comparison rules were changed.
 | Workspace Clippy, all targets/features, warnings denied | passed |
 | Formatting and diff whitespace | passed |
 | New model generic proofs | passed |
-| New/updated corpus freshness | passed through Lean interpreter |
+| New/updated corpus freshness | passed through Lean interpreter and native generators |
 | New/previous sensitivity families | 3/3 and 7/7 detected |
 
 The initial native generator build hit the 768 MiB RSS monitoring threshold
-during linking (sampled peak 806,368 KiB; guard exit 125). The limit was not raised.
-Generation, freshness and sensitivity then passed with `lake env lean --run`
-under the same guard. Native generator linking and the full hosted Lean CI job
-have not been verified locally. CI registers all four new modules, the new
-executable and its freshness/sensitivity gates under its existing 2 GiB limit.
-The workflow contract test verifies command coverage and dependency ordering.
+during linking (sampled peak 806,368 KiB; guard exit 125). Generation, freshness
+and sensitivity initially passed with `lake env lean --run` under the same guard.
+
+With the user's subsequent authorization, the local RSS cap was raised to
+1 GiB (1,048,576 KiB). The 20-second deadline, 250 ms sampling and serial execution
+were retained. Both native generators then linked and passed corpus freshness
+and sensitivity checks. These are incremental builds with the existing cache,
+not measurements from an empty build cache. No corpus or model was changed.
+
+| Native follow-up | Elapsed ms | Peak aggregate RSS KiB |
+| --- | ---: | ---: |
+| Reader native link and freshness | 6,030 | 779,888 |
+| Reader native sensitivity | 834 | 82,384 |
+| Comparison native link and freshness | 6,605 | 794,528 |
+| Comparison native sensitivity | 827 | 86,384 |
+
+The hosted [Lean audit](https://github.com/tokyogas-tech/hoimin/actions/runs/34569154027/job/103167651933)
+also passed for implementation commit `7c6130e199fb97ac613d65999610716193ddc1aa`.
+CI retains its existing 2 GiB limit and covers all registered modules and
+generator gates. The workflow contract test verifies command coverage and
+dependency ordering.
 
 Run Lean commands from `formal/HoiminOracle`, each separately:
 
@@ -142,3 +158,14 @@ Independent read-only review found no actionable issues and confirmed that only
 the six intended modes changed in the existing corpus, with all comparison
 expectations preserved. Further auditing of mutant result coherence (#460),
 metadata propagation, analyzer boundaries, and scale remains separate work.
+
+## Native follow-up commands
+
+Run separately from `formal/HoiminOracle` with the user-authorized local cap:
+
+```sh
+python3 tools/lean_resource_guard.py --timeout-seconds 20 --rss-limit-mib 1024 --sample-ms 250 --stats /tmp/hoimin-progress-input-native-1024-check.json -- lake exe generate_progress_input -- --check corpus/progress-input.jsonl
+python3 tools/lean_resource_guard.py --timeout-seconds 20 --rss-limit-mib 1024 --sample-ms 250 --stats /tmp/hoimin-progress-input-native-1024-sensitivity.json -- lake exe generate_progress_input -- --sensitivity
+python3 tools/lean_resource_guard.py --timeout-seconds 20 --rss-limit-mib 1024 --sample-ms 250 --stats /tmp/hoimin-progress-decision-native-1024-check.json -- lake exe generate_progress_decision -- --check corpus/progress-decision.jsonl
+python3 tools/lean_resource_guard.py --timeout-seconds 20 --rss-limit-mib 1024 --sample-ms 250 --stats /tmp/hoimin-progress-decision-native-1024-sensitivity.json -- lake exe generate_progress_decision -- --sensitivity
+```
