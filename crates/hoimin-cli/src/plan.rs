@@ -525,7 +525,7 @@ fn validate_header(manifest: &PlanManifest) -> Result<(), PlanError> {
     }
     if manifest.ranking_rule_version != RANKING_RULE_VERSION {
         return Err(PlanError::ManifestInvalid(format!(
-            "unsupported ranking rule version {}",
+            "unsupported ranking rule version {}; regenerate the plan with this hoimin version",
             manifest.ranking_rule_version
         )));
     }

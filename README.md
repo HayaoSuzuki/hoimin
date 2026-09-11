@@ -25,11 +25,16 @@ hoimin verify PLAN.json --top 10 --format json > reports/batch-a-001.json
 hoimin verify PLAN.json --top 10 --selection-policy diverse
 ```
 
-Each version-2 plan candidate records `rank`, `score`, and `ranking_reasons`.
+Each version-3 plan candidate records `rank`, `score`, and `ranking_reasons`.
 The scores are transparent ordering heuristics for focusing effort; they do not
 claim that a higher-ranked mutant is more likely to reveal a defect, and
 lower-ranked candidates remain valid. `verify` uses the saved ranks and never re-ranks
 against changed source or Git state.
+
+Ranking rule version 4 awards the explicit-symbol bonus to a selected symbol
+and its dot-delimited descendants in the same file. For example, selecting
+`Box` also boosts `Box.check` and `Box.Inner.check`, but not `BoxOther.check`.
+Plans created with an older ranking rule must be regenerated before verification.
 
 The `strict` selection policy is the default and uses the saved rank prefix.
 The `diverse` selection policy round-robins production files only within equal-score tiers.

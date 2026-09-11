@@ -83,7 +83,7 @@ async fn create_plan_emits_versioned_manifest_without_runtime_side_effects() {
     assert_eq!(stdout.matches('\n').count(), 1);
     let manifest: serde_json::Value = serde_json::from_str(&stdout).unwrap();
     assert_eq!(manifest["schema_version"], 3);
-    assert_eq!(manifest["ranking_rule_version"], 3);
+    assert_eq!(manifest["ranking_rule_version"], 4);
     assert_eq!(manifest["kind"], "plan");
     assert!(
         manifest["sources"]
@@ -182,6 +182,114 @@ async fn plans_for_new_operator_families_pass_verify() {
         );
         assert!(!marker.exists());
     }
+}
+
+#[tokio::test]
+async fn explicit_class_symbol_ranks_and_verifies_its_method_before_an_unrelated_function() {
+    let project = tempfile::tempdir().unwrap();
+    std::fs::write(
+        project.path().join("a.py"),
+        "def other():\n    return True\n",
+    )
+    .unwrap();
+    std::fs::write(
+        project.path().join("calc.py"),
+        "class Box:\n    def check(self):\n        return True\n",
+    )
+    .unwrap();
+    let args = vec![
+        OsString::from("hoimin"),
+        OsString::from("plan"),
+        OsString::from("--root"),
+        project.path().as_os_str().to_owned(),
+        OsString::from("--source"),
+        OsString::from("."),
+        OsString::from("--symbol"),
+        OsString::from("calc:Box"),
+        OsString::from("--operators"),
+        OsString::from("boolean_literal"),
+        OsString::from("--allow-best-effort-memory"),
+        OsString::from("--min-free-space"),
+        OsString::from(TEST_MIN_FREE_SPACE),
+        OsString::from("--"),
+        python_executable().into_os_string(),
+        OsString::from("-c"),
+        OsString::from("from calc import Box; assert Box().check()"),
+    ];
+    let mut plan_stdout = Vec::new();
+    let mut plan_stderr = Vec::new();
+
+    let plan_exit = hoimin_cli::run_with_io(args, &mut plan_stdout, &mut plan_stderr).await;
+
+    assert_eq!(
+        plan_exit,
+        0,
+        "stderr={}",
+        String::from_utf8_lossy(&plan_stderr)
+    );
+    assert!(plan_stderr.is_empty());
+    let manifest: PlanManifest = serde_json::from_slice(&plan_stdout).unwrap();
+    assert_eq!(manifest.candidates.len(), 2);
+    assert_eq!(
+        manifest
+            .candidates
+            .iter()
+            .map(|candidate| (
+                candidate.path.as_str(),
+                candidate.symbol.as_deref(),
+                candidate.rank,
+                candidate.score,
+            ))
+            .collect::<Vec<_>>(),
+        vec![
+            ("calc.py", Some("Box.check"), 1, 350),
+            ("a.py", Some("other"), 2, 100),
+        ]
+    );
+    assert_eq!(manifest.schema_version, 3);
+    assert_eq!(manifest.ranking_rule_version, 4);
+    let planned = &manifest.candidates[0];
+    let planned_id = planned.id.clone();
+    let plan_path = project.path().join("plan.json");
+    std::fs::write(&plan_path, &plan_stdout).unwrap();
+    let source_before = std::fs::read(project.path().join("calc.py")).unwrap();
+    let plan_before = std::fs::read(&plan_path).unwrap();
+    let verify_args = [
+        OsString::from("hoimin"),
+        OsString::from("verify"),
+        plan_path.as_os_str().to_owned(),
+        OsString::from("--top"),
+        OsString::from("1"),
+    ];
+    let mut verify_stdout = Vec::new();
+    let mut verify_stderr = Vec::new();
+
+    let verify_exit =
+        hoimin_cli::run_with_io(verify_args, &mut verify_stdout, &mut verify_stderr).await;
+
+    assert_eq!(
+        verify_exit,
+        0,
+        "stderr={}",
+        String::from_utf8_lossy(&verify_stderr)
+    );
+    assert!(verify_stderr.is_empty());
+    let report: serde_json::Value = serde_json::from_slice(&verify_stdout).unwrap();
+    assert_eq!(
+        report["baseline"]["termination"],
+        serde_json::json!({"Exit": 0})
+    );
+    let mutants = report["mutants"].as_array().unwrap();
+    assert_eq!(mutants.len(), 1);
+    assert_eq!(mutants[0]["candidate"]["id"], planned_id);
+    assert_eq!(mutants[0]["candidate"]["path"], "calc.py");
+    assert_eq!(mutants[0]["candidate"]["symbol"], "Box.check");
+    assert_eq!(mutants[0]["status"], "killed");
+    assert_eq!(std::fs::read(&plan_path).unwrap(), plan_before);
+    assert_eq!(
+        std::fs::read(project.path().join("calc.py")).unwrap(),
+        source_before
+    );
 }
 
 #[tokio::test]
@@ -1182,6 +1290,27 @@ async fn verify_rejects_malformed_headers_and_source_paths() {
         assert_error_code(error, "plan.manifest.invalid");
     }
     assert!(!marker.exists());
+}
+
+#[tokio::test]
+async fn verify_rejects_a_ranking_version_three_plan_before_baseline_with_regeneration_guidance() {
+    let project = Project::new();
+    let (path, manifest, marker) = write_plan_manifest(&project, &[]).await;
+    let requested = vec![manifest.candidates[0].id.clone()];
+    let mut value = serde_json::to_value(manifest).unwrap();
+    assert_eq!(value["schema_version"], 3);
+    value["ranking_rule_version"] = serde_json::json!(3);
+    write_json(&path, &value);
+
+    let error = prepare_verify(&path, &requested, OutputFormat::Json)
+        .await
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "plan.manifest.invalid: unsupported ranking rule version 3; regenerate the plan with this hoimin version"
+    );
+    assert!(!marker.exists(), "ranking rejection must precede baseline");
 }
 
 #[tokio::test]
