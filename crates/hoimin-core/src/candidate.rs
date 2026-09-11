@@ -99,14 +99,7 @@ impl<'source> CandidateValidationContext<'source> {
     ///
     /// Returns [`CandidateValidationError::SourceTooLarge`] when the source exceeds `u32::MAX` bytes.
     pub fn new(source: &'source [u8]) -> Result<Self, CandidateValidationError> {
-        let line_starts = source_line_starts(
-            source.len(),
-            source
-                .iter()
-                .enumerate()
-                .filter(|(_, byte)| **byte == b'\n')
-                .map(|(offset, _)| offset + 1),
-        )?;
+        let line_starts = python_line_starts(source)?;
         Ok(Self {
             source,
             text: std::str::from_utf8(source),
@@ -119,6 +112,23 @@ impl<'source> CandidateValidationContext<'source> {
     pub fn file_hash(&self) -> &str {
         &self.file_hash
     }
+}
+
+/// Returns physical line starts for Python's LF, CRLF and lone-CR line endings.
+/// Offsets refer to the unchanged input bytes, including any leading UTF-8 BOM.
+///
+/// # Errors
+///
+/// Returns [`CandidateValidationError::SourceTooLarge`] before scanning when the
+/// source exceeds `u32::MAX` bytes.
+pub fn python_line_starts(source: &[u8]) -> Result<Vec<u32>, CandidateValidationError> {
+    source_line_starts(
+        source.len(),
+        source.iter().enumerate().filter_map(|(offset, byte)| {
+            (*byte == b'\n' || (*byte == b'\r' && source.get(offset + 1) != Some(&b'\n')))
+                .then_some(offset + 1)
+        }),
+    )
 }
 
 fn source_line_starts(

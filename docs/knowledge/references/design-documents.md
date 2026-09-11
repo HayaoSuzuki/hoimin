@@ -9,6 +9,25 @@ sources:
   resource: ../../superpowers/specs/2026-09-11-issue-460-progress-result-design.md
   working_tree: untracked
   sha256: afce723f905aee27b86620e9ac5e81d5db2f408c4f4407e9e1a878b3932c3d33
+
+- id: issue-459
+  resource: ../../superpowers/specs/2026-09-11-issue-459-record-size-design.md
+  working_tree: untracked
+  sha256: ced8501765b2babcd15bac56139f575c00cdb779a5149bb4a6e231ea75e0af7f
+
+- id: issue-455
+  resource: ../../superpowers/specs/2026-09-11-issue-455-python-newlines-design.md
+  working_tree: untracked
+  sha256: 2f3470c6ec0971d2e526d7134aecf56c3c089599bcd9dc7e33373f5c24d31db4
+
+- id: issue-452
+  resource: ../../superpowers/specs/2026-09-11-issue-452-shared-exclusions-design.md
+  working_tree: untracked
+  sha256: c61ec9ebe8ec989d0e39ede76d57a3513ccb5768631b6e081275448a92e2b89a
+- id: issue-451
+  resource: ../../superpowers/specs/2026-09-11-issue-451-exception-parentheses-design.md
+  working_tree: untracked
+  sha256: 73ff551e95721e2bfb0d188c2b76b1ce1ff1b1ef431b9eedd187af8af4298790
 - id: doc-001
   resource: ../../superpowers/specs/2026-09-09-issue-447-fingerprint-memory-design.md
   revision: a7daea0b557cd435c1e55b540392fbdd116348e1
@@ -653,7 +672,7 @@ sources:
 
 # 収録一覧
 
-2026-09-11時点の161件。これは原文への索引であり、各文書の採用状況・現行性・検証結果を一括して認定するものではない。見出しは原文から抽出した。出典の版とGitの追跡状態は、冒頭のYAMLメタデータに記録している。未追跡資料は同じ作業ツリーに依存する。
+2026-09-11時点の165件。これは原文への索引であり、各文書の採用状況・現行性・検証結果を一括して認定するものではない。見出しは原文から抽出した。出典の版とGitの追跡状態は、冒頭のYAMLメタデータに記録している。未追跡資料は同じ作業ツリーに依存する。
 
 主要な論点の要約は[入口](../index.md)から読む。ファイル名に含まれる日付は作成履歴の手がかりであり、そのファイルが最後に変更された日時ではない。
 
@@ -983,3 +1002,26 @@ sources:
 [^doc-160]: [2026-07-18-python-mutation-tool-design.md](../../superpowers/specs/2026-07-18-python-mutation-tool-design.md)。
 
 [^issue-460]: [2026-09-11-issue-460-progress-result-design.md](../../superpowers/specs/2026-09-11-issue-460-progress-result-design.md)。
+
+# 候補の保存サイズ上限（Issue #459）
+
+planの候補にも実行用spoolと同じ2 MiBのレコード上限を適用する設計とした。JSONのエスケープとUTF-8、および末尾の改行1バイトを含むサイズで判定する。plan生成とverifyの事前検証で超過を拒否し、直接runする場合は既存のbaseline後の解析段階で不完全な実行として報告する。[^issue-459]
+
+[^issue-459]: [Issue #459: Executable candidate record limits](../../superpowers/specs/2026-09-11-issue-459-record-size-design.md)。
+
+# Pythonの物理行と元バイト列（Issue #455）
+
+LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証が同じ行境界を使う設計とした。元バイト列を変換せず、CRLFは一つの改行として数える。過去に誤ったCR行位置で作られたplanは再生成が必要となる。初行のBOMによる列検証の不一致は別Issue #469の対象である。[^issue-455]
+
+[^issue-455]: [Issue #455: Python physical newline indexing](../../superpowers/specs/2026-09-11-issue-455-python-newlines-design.md)。
+
+# 対象探索とコピーの組込み除外（Issue #452）
+
+仮想環境やキャッシュなどの組込み除外を対象探索とコピーで共有する設計とした。`--include` は組込み除外を解除しない。除外場所のファイルを `--file` または `--line` で指定した場合は、対象パスと除外場所の外を選ぶ対処方法を示して対象解決時に拒否する。[^issue-452]
+
+[^issue-452]: [Issue #452: Shared workspace exclusions](../../superpowers/specs/2026-09-11-issue-452-shared-exclusions-design.md)。
+# Issue #451 の設計
+
+- [Issue #451: Parenthesized exception removal](../../superpowers/specs/2026-09-11-issue-451-exception-parentheses-design.md) - 括弧を含む例外式の削除範囲と実行検証。[^issue-451]
+
+[^issue-451]: [設計原文](../../superpowers/specs/2026-09-11-issue-451-exception-parentheses-design.md)。
