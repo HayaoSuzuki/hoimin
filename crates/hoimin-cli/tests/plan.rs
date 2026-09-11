@@ -2208,3 +2208,80 @@ async fn plan_rejects_an_explicit_uncopyable_file_before_baseline() {
     assert!(error.contains("outside"), "{error}");
     assert!(!marker.exists());
 }
+
+#[tokio::test]
+async fn python_physical_lines_match_plan_run_and_verify_selection() {
+    for (newline, ending) in [("\r", ""), ("\r\n", "\r\n"), ("\n", "\n"), ("\r", "\r\n")] {
+        let source = format!("def f():{newline}    return 1 + 2{ending}");
+        let project = Project::new_with_source(&source);
+        let coordinator = tempfile::tempdir().unwrap();
+        let marker = coordinator.path().join("test-command-ran");
+        let mut args = plan_args(
+            &project,
+            ["--line", "src/calc.py:2-2", "--operators", "binary_add_sub"],
+            &marker,
+        );
+        *args.last_mut().unwrap() = OsString::from(format!(
+            "from pathlib import Path; Path({:?}).write_text('executed'); from src.calc import f; assert f() == 3",
+            marker.to_string_lossy()
+        ));
+        insert_test_min_free_space(&mut args);
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        assert_eq!(
+            hoimin_cli::run_with_io(args.clone(), &mut stdout, &mut stderr).await,
+            0,
+            "{}",
+            String::from_utf8_lossy(&stderr)
+        );
+        let mut manifest: PlanManifest = serde_json::from_slice(&stdout).unwrap();
+        assert_eq!(manifest.candidates.len(), 1, "{source:?}");
+        let candidate = &manifest.candidates[0];
+        assert_eq!((candidate.line, candidate.column), (2, 13));
+        assert_eq!(
+            usize::try_from(candidate.span.start).unwrap(),
+            source.find('+').unwrap()
+        );
+        assert_eq!(
+            candidate.file_hash,
+            blake3::hash(source.as_bytes()).to_hex().to_string()
+        );
+        let path = coordinator.path().join("plan.json");
+        std::fs::write(&path, &stdout).unwrap();
+        let verify_args = vec![
+            "hoimin".into(),
+            "verify".into(),
+            path.clone().into_os_string(),
+            "--top".into(),
+            "1".into(),
+        ];
+        args[1] = "run".into();
+        for command in [verify_args.clone(), args] {
+            stdout.clear();
+            stderr.clear();
+            let code = hoimin_cli::run_with_io(command, &mut stdout, &mut stderr).await;
+            assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+            let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+            assert_eq!(report["summary"]["complete"], true);
+            // pins: issue #455 — lone CR previously produced an empty successful run.
+            assert_eq!(report["summary"]["counts"]["killed"], 1);
+            assert_eq!(report["mutants"].as_array().unwrap().len(), 1);
+            assert!(marker.exists());
+            std::fs::remove_file(&marker).unwrap();
+        }
+        if newline == "\r" {
+            manifest.candidates[0].candidate.line = 1;
+            manifest.candidates[0].candidate.column = 22;
+            write_json(&path, &serde_json::to_value(&manifest).unwrap());
+            stdout.clear();
+            stderr.clear();
+            let code = hoimin_cli::run_with_io(verify_args, &mut stdout, &mut stderr).await;
+            assert_eq!(code, 2);
+            assert!(!marker.exists(), "stale CR plan must fail before baseline");
+        }
+        assert_eq!(
+            std::fs::read(project.path.join("src/calc.py")).unwrap(),
+            source.as_bytes()
+        );
+    }
+}
