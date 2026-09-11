@@ -179,6 +179,116 @@ fn ranking_uses_all_resolved_target_symbols_without_changing_output_order() {
 }
 
 #[test]
+fn ranking_matches_explicit_symbol_ancestors_at_dot_boundaries_once() {
+    let targets = vec![
+        TargetSlice {
+            path: Utf8PathBuf::from("src/calc.py"),
+            lines: Vec::new(),
+            symbols: vec!["Box".to_owned(), "Box.check".to_owned(), "outer".to_owned()],
+        },
+        TargetSlice {
+            path: Utf8PathBuf::from("src/other.py"),
+            lines: Vec::new(),
+            symbols: vec!["Other".to_owned()],
+        },
+    ];
+    let ranked = rank_candidates(
+        &Selection::default(),
+        &targets,
+        vec![
+            candidate("exact", "src/calc.py", 1, 0, "boolean_literal", Some("Box")),
+            candidate(
+                "method",
+                "src/calc.py",
+                2,
+                0,
+                "boolean_literal",
+                Some("Box.check"),
+            ),
+            candidate(
+                "nested-class",
+                "src/calc.py",
+                3,
+                0,
+                "boolean_literal",
+                Some("Box.Inner.check"),
+            ),
+            candidate(
+                "nested-function",
+                "src/calc.py",
+                4,
+                0,
+                "boolean_literal",
+                Some("outer.inner"),
+            ),
+            candidate(
+                "dot-prefix",
+                "src/calc.py",
+                5,
+                0,
+                "boolean_literal",
+                Some("BoxOther.check"),
+            ),
+            candidate(
+                "cross-file",
+                "src/other.py",
+                6,
+                0,
+                "boolean_literal",
+                Some("Box.check"),
+            ),
+            candidate(
+                "missing-symbol",
+                "src/calc.py",
+                7,
+                0,
+                "boolean_literal",
+                None,
+            ),
+        ],
+    );
+
+    assert_eq!(
+        ranked
+            .iter()
+            .map(|entry| (entry.id.as_str(), entry.rank, entry.score))
+            .collect::<Vec<_>>(),
+        vec![
+            ("exact", 1, 350),
+            ("method", 2, 350),
+            ("nested-class", 3, 350),
+            ("nested-function", 4, 350),
+            ("dot-prefix", 5, 100),
+            ("missing-symbol", 6, 100),
+            ("cross-file", 7, 100),
+        ]
+    );
+    for entry in ranked.iter().take(4) {
+        assert_explicit_symbol_reason_once(entry);
+    }
+    for entry in ranked.iter().skip(4) {
+        assert_eq!(
+            entry.ranking_reasons,
+            vec![reason(RankingReasonCode::HighValueControl, 100)],
+            "{}",
+            entry.id
+        );
+    }
+}
+
+fn assert_explicit_symbol_reason_once(entry: &RankedPlanCandidate) {
+    assert_eq!(
+        entry.ranking_reasons,
+        vec![
+            reason(RankingReasonCode::ExplicitSymbol, 250),
+            reason(RankingReasonCode::HighValueControl, 100),
+        ],
+        "{} must receive one symbol reason even when parent and child selectors match",
+        entry.id
+    );
+}
+
+#[test]
 fn ranking_keeps_explicit_symbol_paths_exact() {
     let dot_path = rank_candidates(
         &Selection::default(),
