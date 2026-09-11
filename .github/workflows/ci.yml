@@ -208,6 +208,10 @@ jobs:
             OutputRetentionAuditMain
             ProcessOutputAuditMain
             ProgressDecisionAuditMain
+            HoiminOracle.ProgressInputModel
+            HoiminOracle.ProgressInputProofs
+            HoiminOracle.ProgressInputCases
+            ProgressInputAuditMain
             ReportSequenceAuditMain
             ResultLifecycleAuditMain
             SchemaMigrationAuditMain
@@ -249,6 +253,7 @@ jobs:
             'generate_exception_match_binding|corpus/exception-match-binding-correspondence.jsonl|sensitivity'
             'generate_top_budget_projection|corpus/top-budget-projection.jsonl|sensitivity'
             'generate_progress_decision|corpus/progress-decision.jsonl|sensitivity'
+            'generate_progress_input|corpus/progress-input.jsonl|sensitivity'
             'generate_nested_try_flow|corpus/nested-try-flow.jsonl|sensitivity'
             'generate_nested_match_exits|corpus/nested-match-exits.jsonl|sensitivity'
             'generate_multiple_handler_joins|corpus/multiple-handler-joins.jsonl|sensitivity'

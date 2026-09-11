@@ -59,6 +59,10 @@ name = "generate_progress_decision"
 root = "ProgressDecisionAuditMain"
 
 [[lean_exe]]
+name = "generate_progress_input"
+root = "ProgressInputAuditMain"
+
+[[lean_exe]]
 name = "generate_nested_try_flow"
 root = "NestedTryFlowAuditMain"
 
