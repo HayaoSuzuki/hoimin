@@ -163,7 +163,7 @@ struct RawMutationArgs {
     #[arg(long, default_value = "5m", value_name = "DURATION")]
     total_timeout: String,
 
-    /// Run-wide memory limit.
+    /// Memory limit (Windows: per root process tree, committed memory; jobs multiplies total allowance).
     #[arg(long, default_value = "1GiB", value_name = "BYTES")]
     max_memory: String,
 
@@ -183,7 +183,7 @@ struct RawMutationArgs {
     #[arg(long, default_value = "10GiB", value_name = "BYTES")]
     min_free_space: String,
 
-    /// Run-wide descendant process limit.
+    /// Process limit (Windows: per root process tree, including the root; jobs multiplies total allowance).
     #[arg(long, default_value_t = 64)]
     max_processes: usize,
 

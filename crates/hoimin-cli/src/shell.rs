@@ -1935,8 +1935,10 @@ fn recheck_fingerprint_inputs(
 }
 
 #[cfg(windows)]
-fn resource_backend(config: &RunConfig) -> Result<ResourceBackend, crate::resource::ResourceError> {
-    crate::resource::WindowsBackend::new(&config.limits).map(ResourceBackend::Windows)
+fn resource_backend(
+    _config: &RunConfig,
+) -> Result<ResourceBackend, crate::resource::ResourceError> {
+    crate::resource::WindowsBackend::new().map(ResourceBackend::Windows)
 }
 
 #[cfg(target_os = "linux")]
