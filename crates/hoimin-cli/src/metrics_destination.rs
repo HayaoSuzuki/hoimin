@@ -54,19 +54,24 @@ pub(crate) fn validate_metrics_destination(
     }
 }
 
+fn directory_only_syntax(path: &Path, windows_separators: bool) -> bool {
+    // Inspect raw syntax before Path::components/absolute removes terminal `.`.
+    // Stripping a directory requirement could allow persist to replace its symlink.
+    let terminal = path
+        .as_os_str()
+        .as_encoded_bytes()
+        .rsplit(|byte| *byte == b'/' || (windows_separators && *byte == b'\\'))
+        .next()
+        .unwrap_or_default();
+    terminal.is_empty() || terminal == b"." || terminal == b".."
+}
+
 fn inspect(
     config: &RunConfig,
     targets: &[TargetSlice],
     output: &Path,
 ) -> io::Result<Result<PathBuf, PathBuf>> {
-    // A trailing separator requires a directory; dropping it would instead allow
-    // persist to replace a final symlink to that directory.
-    if output
-        .as_os_str()
-        .as_encoded_bytes()
-        .last()
-        .is_some_and(|byte| *byte == b'/' || (cfg!(windows) && *byte == b'\\'))
-    {
+    if directory_only_syntax(output, cfg!(windows)) {
         return Err(unknown("metrics destination requires a directory"));
     }
     let mut inspector = EntryInspector::default();
@@ -483,6 +488,32 @@ mod tests {
 
     fn entry(path: &Path) -> io::Result<Entry> {
         EntryInspector::default().entry(path)
+    }
+
+    #[test]
+    fn directory_only_syntax_preserves_terminal_components_and_separator_policy() {
+        for (path, windows, expected) in [
+            ("alias/", false, true),
+            ("alias/.", false, true),
+            ("alias/..", false, true),
+            (".", false, true),
+            ("..", false, true),
+            ("alias/.metrics", false, false),
+            ("alias/...", false, false),
+            ("alias/../metrics.json", false, false),
+            (r"alias\.", false, false),
+            (r"alias\.", true, true),
+            (r"alias\child/..", true, true),
+            (r"alias/child\.", true, true),
+            (r"alias/child\", true, true),
+            (r"alias/child\metrics.json", true, false),
+        ] {
+            assert_eq!(
+                directory_only_syntax(Path::new(path), windows),
+                expected,
+                "{path:?}, windows={windows}"
+            );
+        }
     }
 
     #[test]

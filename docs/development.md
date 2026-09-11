@@ -214,7 +214,10 @@ stream and prospective short-name spellings follow that policy. Keep ordinary
 directory or missing-parent output failures as warnings. Require an existing
 resolved parent before granting write permission, even if a baseline might
 create the directory later. A prospective ownership tree can still establish
-a collision before this permission check. These checks establish
+a collision before this permission check. Preserve directory-only output syntax
+before path normalization: a trailing separator or terminal `.` / `..` withholds
+metrics, so normalization cannot turn a directory requirement into replacement
+of its final symlink. These checks establish
 preflight destination identity; they do not freeze the filesystem against
 external renames during a run. Native platform tests must establish the path
 semantics; abstract lifecycle oracles alone cannot do so.

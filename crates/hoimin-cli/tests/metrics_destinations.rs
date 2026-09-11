@@ -573,10 +573,27 @@ async fn metrics_withholds_missing_parent_created_as_alias_during_baseline() {
 #[cfg(unix)]
 #[tokio::test]
 async fn metrics_directory_symlink_with_separator_retains_late_warning() {
+    assert_directory_symlink_syntax("").await;
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn metrics_directory_symlink_with_terminal_dot_retains_late_warning() {
+    assert_directory_symlink_syntax(".").await;
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn metrics_directory_symlink_with_terminal_dotdot_retains_late_warning() {
+    assert_directory_symlink_syntax("..").await;
+}
+
+#[cfg(unix)]
+async fn assert_directory_symlink_syntax(suffix: &str) {
     let (temp, root) = fixture();
     let alias = temp.path().join("directory-link");
     std::os::unix::fs::symlink(&root, &alias).unwrap();
-    let metrics = PathBuf::from(format!("{}/", alias.display()));
+    let metrics = PathBuf::from(format!("{}/{suffix}", alias.display()));
     let output = run(&root, &metrics, &[]).await;
     assert!(
         output.status.success(),
