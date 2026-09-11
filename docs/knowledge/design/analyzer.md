@@ -53,6 +53,10 @@ sources:
   resource: ../../../README.md
   revision: a7daea0b557cd435c1e55b540392fbdd116348e1
   working_tree: clean
+- id: issue-481
+  resource: ../../superpowers/specs/2026-09-11-issue-481-comprehension-bindings-design.md
+  working_tree: untracked
+  sha256: 499b6d9c2814c81f12562ecbaa2728c8763a535077a69fecef9c01797db415dd
 ---
 
 # 構文と名前解決の契約
@@ -60,6 +64,8 @@ sources:
 コレクション・構造変異の設計では、既存の演算子ID、対象選択、候補順序、重複除去を保ちながら変異対象を増やす。組込み関数と同じ名前が別の値へ再束縛されている場合、その名前を組込み関数として変異しないことも条件に含む。名前の参照先が不確かな場合には、候補を保守的に除外する。[^operators]
 
 現在のRust解析器はRuffの構文解析器を利用する。トークン（演算子や識別子などの字句）、抽象構文木（AST）、型注釈に関する候補を生成し、保持数を計測するための構造を持つ。[^implementation]
+
+内包表記の代入式は、反復変数とは異なり、最外の内包表記を囲むスコープに束縛する。global／nonlocal宣言とlambdaの境界を保ち、変異元・変異先の双方を確認する。空の内包表記やgeneratorの遅延実行では代入の可能性と実行済みの事実を区別する。Issue481の設計では、この束縛先と実行条件をRustの候補およびCPythonの観測と照合する。[^issue-481]
 
 # BOMと候補の列番号
 
@@ -115,6 +121,8 @@ Issue #468 の設計では、`case -1` などの数値パターンに通常の�
 [^span]: [2026-08-15-lean-byte-span-preservation-audit.md](../../superpowers/reports/2026-08-15-lean-byte-span-preservation-audit.md)。
 [^bounded]: [2026-08-14-lean-bounded-candidate-discovery-audit.md](../../superpowers/reports/2026-08-14-lean-bounded-candidate-discovery-audit.md)。
 [^readme]: [README.md](../../../README.md)。
+
+[^issue-481]: [2026-09-11-issue-481-comprehension-bindings-design.md](../../superpowers/specs/2026-09-11-issue-481-comprehension-bindings-design.md)。
 
 [^issue-478]: [2026-09-11-issue-478-analysis-depth-design.md](../../superpowers/specs/2026-09-11-issue-478-analysis-depth-design.md)。
 

@@ -708,16 +708,21 @@ sources:
   resource: ../../superpowers/specs/2026-07-18-python-mutation-tool-design.md
   revision: a7daea0b557cd435c1e55b540392fbdd116348e1
   working_tree: clean
+- id: issue-481
+  resource: ../../superpowers/specs/2026-09-11-issue-481-comprehension-bindings-design.md
+  working_tree: untracked
+  sha256: 499b6d9c2814c81f12562ecbaa2728c8763a535077a69fecef9c01797db415dd
 ---
 
 # 収録一覧
 
-2026-09-11時点の173件。これは原文への索引であり、各文書の採用状況・現行性・検証結果を一括して認定するものではない。見出しは原文から抽出した。出典の版とGitの追跡状態は、冒頭のYAMLメタデータに記録している。未追跡資料は同じ作業ツリーに依存する。
+2026-09-11時点の174件。これは原文への索引であり、各文書の採用状況・現行性・検証結果を一括して認定するものではない。見出しは原文から抽出した。出典の版とGitの追跡状態は、冒頭のYAMLメタデータに記録している。未追跡資料は同じ作業ツリーに依存する。
 
 主要な論点の要約は[入口](../index.md)から読む。ファイル名に含まれる日付は作成履歴の手がかりであり、そのファイルが最後に変更された日時ではない。
 
 | 原文 | 先頭見出し | 作成時の状態 |
 | --- | --- | --- |
+| [2026-09-11-issue-481-comprehension-bindings-design.md](../../superpowers/specs/2026-09-11-issue-481-comprehension-bindings-design.md) | Issue 481: Resolve comprehension assignment targets in their containing scope [^issue-481] | 未追跡 |
 | [2026-09-11-issue-478-analysis-depth-design.md](../../superpowers/specs/2026-09-11-issue-478-analysis-depth-design.md) | Issue 478: Reject unsafe AST depth before recursive analysis [^issue-478] | 未追跡 |
 | [2026-09-11-issue-477-import-roots-design.md](../../superpowers/specs/2026-09-11-issue-477-import-roots-design.md) | Issue 477: Configure worker import roots independently of mutation selection [^issue-477] | 未追跡 |
 | [2026-09-11-issue-473-symbol-ranking-design.md](../../superpowers/specs/2026-09-11-issue-473-symbol-ranking-design.md) | Issue 473: Rank candidates inside explicitly selected symbols [^issue-473] | 未追跡 |
@@ -1048,6 +1053,8 @@ sources:
 [^doc-158]: [2026-07-19-python-314-typing-design.md](../../superpowers/specs/2026-07-19-python-314-typing-design.md)。
 [^doc-159]: [2026-07-19-ci-hosted-runner-design.md](../../superpowers/specs/2026-07-19-ci-hosted-runner-design.md)。
 [^doc-160]: [2026-07-18-python-mutation-tool-design.md](../../superpowers/specs/2026-07-18-python-mutation-tool-design.md)。
+
+[^issue-481]: [2026-09-11-issue-481-comprehension-bindings-design.md](../../superpowers/specs/2026-09-11-issue-481-comprehension-bindings-design.md)。
 
 [^issue-478]: [2026-09-11-issue-478-analysis-depth-design.md](../../superpowers/specs/2026-09-11-issue-478-analysis-depth-design.md)。
 

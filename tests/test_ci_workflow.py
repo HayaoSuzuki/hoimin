@@ -105,6 +105,7 @@ LEAN_CORPUS_BY_EXECUTABLE = {
     "generate_timeout_limit": "corpus/timeout-limit.jsonl",
     "generate_disk_guard": "corpus/disk-guard-lifecycle.jsonl",
     "generate_cleanup_capability": "corpus/cleanup-capability.jsonl",
+    "generate_comprehension_bindings": "corpus/comprehension-bindings.jsonl",
 }
 LEAN_SENSITIVITY_EXECUTABLES = {
     name
