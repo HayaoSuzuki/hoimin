@@ -5,6 +5,11 @@ description: docs/superpowers/specs内の全Markdownを先頭見出しと出典�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-462
+  resource: ../../superpowers/specs/2026-09-11-issue-462-retired-reader-design.md
+  working_tree: untracked
+  sha256: d60d84425e841eeca29a40a71a9b73a18be18a43e0a306b149add1f7c029b2b0
+
 - id: issue-460
   resource: ../../superpowers/specs/2026-09-11-issue-460-progress-result-design.md
   working_tree: untracked
@@ -672,12 +677,13 @@ sources:
 
 # 収録一覧
 
-2026-09-11時点の165件。これは原文への索引であり、各文書の採用状況・現行性・検証結果を一括して認定するものではない。見出しは原文から抽出した。出典の版とGitの追跡状態は、冒頭のYAMLメタデータに記録している。未追跡資料は同じ作業ツリーに依存する。
+2026-09-11時点の166件。これは原文への索引であり、各文書の採用状況・現行性・検証結果を一括して認定するものではない。見出しは原文から抽出した。出典の版とGitの追跡状態は、冒頭のYAMLメタデータに記録している。未追跡資料は同じ作業ツリーに依存する。
 
 主要な論点の要約は[入口](../index.md)から読む。ファイル名に含まれる日付は作成履歴の手がかりであり、そのファイルが最後に変更された日時ではない。
 
 | 原文 | 先頭見出し | 作成時の状態 |
 | --- | --- | --- |
+| [2026-09-11-issue-462-retired-reader-design.md](../../superpowers/specs/2026-09-11-issue-462-retired-reader-design.md) | Issue 462: Retired bounded-reader disposition [^issue-462] | **未追跡** |
 | [2026-09-11-issue-460-progress-result-design.md](../../superpowers/specs/2026-09-11-issue-460-progress-result-design.md) | Validate mutant results before progress comparison [^issue-460] | **未追跡** |
 | [2026-09-09-issue-447-fingerprint-memory-design.md](../../superpowers/specs/2026-09-09-issue-447-fingerprint-memory-design.md) | Issue 447: Bound fingerprint file retention [^doc-001] | 追跡済み |
 | [2026-09-09-issue-446-line-ranking-design.md](../../superpowers/specs/2026-09-09-issue-446-line-ranking-design.md) | Issue 446: Index explicit line selection for ranking [^doc-002] | 追跡済み |
@@ -1000,6 +1006,8 @@ sources:
 [^doc-158]: [2026-07-19-python-314-typing-design.md](../../superpowers/specs/2026-07-19-python-314-typing-design.md)。
 [^doc-159]: [2026-07-19-ci-hosted-runner-design.md](../../superpowers/specs/2026-07-19-ci-hosted-runner-design.md)。
 [^doc-160]: [2026-07-18-python-mutation-tool-design.md](../../superpowers/specs/2026-07-18-python-mutation-tool-design.md)。
+
+[^issue-462]: [2026-09-11-issue-462-retired-reader-design.md](../../superpowers/specs/2026-09-11-issue-462-retired-reader-design.md)。
 
 [^issue-460]: [2026-09-11-issue-460-progress-result-design.md](../../superpowers/specs/2026-09-11-issue-460-progress-result-design.md)。
 
