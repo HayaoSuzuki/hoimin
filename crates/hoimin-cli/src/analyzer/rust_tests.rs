@@ -4115,6 +4115,60 @@ fn match_boolean_patterns_mutate_without_admitting_other_pattern_tokens() {
 }
 
 #[test]
+fn pattern_literal_signs_are_not_candidates_and_expression_context_is_restored() {
+    let source = concat!(
+        "class Point:\n    __match_args__ = ('x',)\n",
+        "def classify(subject, guard):\n",
+        "    match -subject:\n",
+        "        case -1:\n            return -guard\n",
+        "        case -1.5:\n            pass\n",
+        "        case -2j:\n            pass\n",
+        "        case -3-4j | -3+4j:\n            pass\n",
+        "        case (-5):\n            pass\n",
+        "        case -6 | -7:\n            pass\n",
+        "        case [-8, (-9.5)]:\n            pass\n",
+        "        case Point(-10):\n            pass\n",
+        "        case {-11: True}:\n            pass\n",
+        "        case False if +guard:\n            return +subject\n",
+        "    return -subject\n",
+    );
+    let output = analyze(source);
+    let signs: Vec<_> = output
+        .candidates
+        .iter()
+        .filter(|candidate| matches!(candidate.original.as_str(), "+" | "-"))
+        .map(|candidate| {
+            (
+                candidate.original.as_str(),
+                candidate.operator.as_str(),
+                candidate.line,
+                candidate.column,
+            )
+        })
+        .collect();
+
+    assert_eq!(
+        signs,
+        vec![
+            ("-", "unary_sign", 4, 10),
+            ("-", "unary_sign", 6, 19),
+            ("-", "binary_add_sub", 11, 15),
+            ("+", "binary_add_sub", 11, 23),
+            ("+", "unary_sign", 23, 22),
+            ("+", "unary_sign", 24, 19),
+            ("-", "unary_sign", 25, 11),
+        ]
+    );
+    let booleans: Vec<_> = output
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.operator == "boolean_literal")
+        .map(|candidate| (candidate.original.as_str(), candidate.line))
+        .collect();
+    assert_eq!(booleans, vec![("True", 21), ("False", 23)]);
+}
+
+#[test]
 fn augmented_and_pattern_candidates_share_line_symbol_and_focused_selection() {
     let source = concat!(
         "def selected(value, factor):\n",
@@ -4379,6 +4433,17 @@ fn large_source_analysis_observes_cancellation_during_token_traversal() {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     let source = "value = left == right\n".repeat(20_000);
+    // Account for the new preflight probes so cancellation still reaches the
+    // token traversal named by this regression, rather than stopping in the guard.
+    let parsed = ruff_python_parser::parse_module(&source).unwrap();
+    let preflight_probes = AtomicUsize::new(0);
+    super::depth::check(parsed.syntax(), &|| {
+        preflight_probes.fetch_add(1, Ordering::Relaxed);
+        false
+    })
+    .unwrap();
+    let cancel_on = preflight_probes.load(Ordering::Relaxed) + 128;
+    drop(parsed);
     let probes = AtomicUsize::new(0);
     let result = analyze_source_cancellable(
         &AnalyzeRequest {
@@ -4390,10 +4455,10 @@ fn large_source_analysis_observes_cancellation_during_token_traversal() {
             max_candidates: usize::MAX,
         },
         &source,
-        || probes.fetch_add(1, Ordering::Relaxed) >= 128,
+        || probes.fetch_add(1, Ordering::Relaxed) >= cancel_on,
     );
 
-    assert!(matches!(result, Err(super::AnalysisCancelled)));
+    assert!(matches!(result, Err(super::AnalysisError::Cancelled)));
 }
 
 fn analyze_types(source: &str) -> super::AnalyzerOutput {
@@ -7252,4 +7317,212 @@ fn truncates_after_selected_candidates_and_emits_limit_diagnostic() {
         output.diagnostics[0].code,
         AnalyzerDiagnosticCode::CandidateLimitExceeded
     );
+}
+
+#[test]
+fn parenthesized_exception_removals_use_complete_expression_spans() {
+    let cases = [
+        (
+            "((Exception))",
+            MutationOperator::ExceptionExceptionToBare,
+            vec![("((Exception))", "")],
+        ),
+        (
+            "(\n    # removed with expression\n    (Exception)\n)",
+            MutationOperator::ExceptionExceptionToBare,
+            vec![("(\n    # removed with expression\n    (Exception)\n)", "")],
+        ),
+        (
+            "((ValueError), (TypeError))",
+            MutationOperator::ExceptionTupleRemoveMember,
+            vec![
+                ("((ValueError), (TypeError))", "( (TypeError))"),
+                ("((ValueError), (TypeError))", "((ValueError) )"),
+            ],
+        ),
+        (
+            "((ValueError), # retained\n    ((TypeError)),)",
+            MutationOperator::ExceptionTupleRemoveMember,
+            vec![
+                (
+                    "((ValueError), # retained\n    ((TypeError)),)",
+                    "( # retained\n    ((TypeError)),)",
+                ),
+                (
+                    "((ValueError), # retained\n    ((TypeError)),)",
+                    "((ValueError), # retained\n    )",
+                ),
+            ],
+        ),
+        (
+            "(( # internal\n    ValueError), # external\n    TypeError)",
+            MutationOperator::ExceptionTupleRemoveMember,
+            vec![
+                (
+                    "(( # internal\n    ValueError), # external\n    TypeError)",
+                    "( # external\n    TypeError)",
+                ),
+                (
+                    "(( # internal\n    ValueError), # external\n    TypeError)",
+                    "(( # internal\n    ValueError) # external\n    )",
+                ),
+            ],
+        ),
+    ];
+    for (expression, operator, expected) in cases {
+        let source = format!("try:\n    work()\nexcept {expression}:\n    pass\n");
+        let mut operators = MutationOperatorSelection::default();
+        operators.include(operator);
+        let output = analyze_source(
+            &AnalyzeRequest {
+                path: Utf8Path::new("case.py"),
+                lines: &[],
+                symbols: &[],
+                operators: &operators,
+                profile: MutationProfile::Full,
+                max_candidates: 100,
+            },
+            &source,
+        );
+        let candidates: Vec<_> = output
+            .candidates
+            .iter()
+            .filter(|candidate| candidate.operator == operator.as_str())
+            .collect();
+        // pins: issue #451 — AST name ranges omit syntactically significant parentheses.
+        assert_eq!(
+            candidates
+                .iter()
+                .map(|c| (c.original.as_str(), c.replacement.as_str()))
+                .collect::<Vec<_>>(),
+            expected,
+            "{source}"
+        );
+        for candidate in candidates {
+            apply_candidate_and_reparse(&source, candidate);
+        }
+    }
+}
+
+#[test]
+fn python_physical_lines_select_candidates_after_all_newline_forms() {
+    for newline in ["\r", "\r\n", "\n"] {
+        for final_newline in ["", newline] {
+            let source = format!("def f():{newline}    return 1 + 2{final_newline}");
+            let output = analyze_with(
+                Utf8Path::new("case.py"),
+                &[LineRange { start: 2, end: 2 }],
+                &[],
+                100,
+                &source,
+            );
+            let candidates: Vec<_> = output
+                .candidates
+                .iter()
+                .filter(|c| c.operator == "binary_add_sub")
+                .collect();
+            // pins: issue #455 — line selection previously silently omitted lone-CR candidates.
+            assert_eq!(candidates.len(), 1, "{source:?}");
+            let candidate = candidates[0];
+            assert_eq!((candidate.line, candidate.column), (2, 13));
+            assert_eq!(
+                usize::try_from(candidate.span.start).unwrap(),
+                source.find('+').unwrap()
+            );
+            apply_candidate_and_reparse(&source, candidate);
+        }
+    }
+    let source = "\u{feff}# header\r\n\r# next\n値 = 1 + 2\r";
+    let output = analyze_with(
+        Utf8Path::new("case.py"),
+        &[LineRange { start: 4, end: 4 }],
+        &[],
+        100,
+        source,
+    );
+    let candidate = output
+        .candidates
+        .iter()
+        .find(|c| c.original == "+")
+        .expect("mixed-newline candidate");
+    assert_eq!((candidate.line, candidate.column), (4, 6));
+    assert_eq!(
+        usize::try_from(candidate.span.start).unwrap(),
+        source.find('+').unwrap()
+    );
+}
+
+#[test]
+fn comprehension_named_binding_execution_facts_and_rhs_order() {
+    for (source, marker, expected) in [
+        (
+            "[(list := 0) for _ in []]\nlist(values)\n",
+            "list(values)",
+            "unknown",
+        ),
+        (
+            "((list := 0) for _ in [0])\nlist(values)\n",
+            "list(values)",
+            "unknown",
+        ),
+        (
+            "def f():\n    list(values)\n    [(list := 0) for _ in []]\n",
+            "list(values)",
+            "shadowed",
+        ),
+        (
+            "list(values)\n[(list := 0) for _ in [0]]\n",
+            "list(values)",
+            "definitely-builtin",
+        ),
+        (
+            "(list := list(values))\n",
+            "list(values)",
+            "definitely-builtin",
+        ),
+        (
+            "[list(values) for list in [custom]]\n",
+            "list(values)",
+            "shadowed",
+        ),
+        (
+            "[(unused := list(values)) for list in [custom]]\n",
+            "list(values)",
+            "shadowed",
+        ),
+        (
+            "for _ in [0, 1]:\n    list(values)\n    [(list := custom) for _ in [0]]\n",
+            "list(values)",
+            "unknown",
+        ),
+    ] {
+        let snapshot = name_resolution_test_snapshot(source, marker, "list").unwrap();
+        assert_eq!(snapshot.resolution, expected, "{source}");
+    }
+}
+
+#[test]
+fn wide_mapping_keys_reject_conjugates_and_preserve_other_candidates() {
+    use std::fmt::Write;
+    let mut source = String::from("def classify(value):\n    match value:\n        case {");
+    for index in 1..=1000 {
+        write!(source, "{index}+2j: _, {index}-2j: _, ").unwrap();
+    }
+    source.push_str("False: _}: return True\n");
+    let output = analyze(&source);
+    let candidates: Vec<_> = output
+        .candidates
+        .iter()
+        .filter(|candidate| {
+            matches!(
+                candidate.operator.as_str(),
+                "boolean_literal" | "binary_add_sub"
+            )
+        })
+        .map(|candidate| (candidate.original.as_str(), candidate.replacement.as_str()))
+        .collect();
+    assert_eq!(candidates, [("False", "True"), ("True", "False")]);
+    // The mapping pass normalizes each key a bounded number of times and uses
+    // HashSet membership, regardless of whether the collision is far away.
+    assert!(!output.truncated);
 }

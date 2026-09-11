@@ -7,6 +7,7 @@ use std::ops::Range;
 use camino::Utf8Path;
 use hoimin_core::{
     ByteSpan, LineRange, MutationOperator, MutationOperatorSelection, MutationProfile,
+    python_source_column,
 };
 use ruff_python_ast::identifier;
 use ruff_python_ast::token::TokenKind;
@@ -15,13 +16,19 @@ use ruff_python_ast::{
     CmpOp, Expr, ExprBinOp, ExprCall, ExprContext, ExprList, ExprSlice, ExprSubscript, ExprTuple,
     ModModule, Number, Operator, Pattern, Singleton, Stmt, TypeParam, TypeParams, UnaryOp, visitor,
 };
+#[cfg(test)]
 use ruff_python_parser::parse_module;
+use ruff_python_parser::parse_unchecked_source;
 use ruff_text_size::{Ranged, TextRange};
 
 use super::{AnalyzerCandidate, AnalyzerDiagnostic, AnalyzerDiagnosticCode};
 
+#[path = "rust/depth.rs"]
+mod depth;
 #[path = "rust/fact_index.rs"]
 mod fact_index;
+#[path = "rust/mapping_keys.rs"]
+mod mapping_keys;
 #[path = "rust/operator_functions.rs"]
 mod operator_functions;
 #[cfg(test)]
@@ -179,9 +186,23 @@ fn candidate_identity(candidate: &AnalyzerCandidate) -> CandidateIdentity {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct AnalysisCancelled;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+pub(crate) enum AnalysisError {
+    #[error("analysis cancelled")]
+    Cancelled,
+    #[error("analysis depth exceeds supported limit {limit}")]
+    DepthExceeded { limit: usize },
+}
+
+impl From<AnalysisCancelled> for AnalysisError {
+    fn from(_: AnalysisCancelled) -> Self {
+        Self::Cancelled
+    }
+}
+
 pub(crate) fn analyze_source(request: &AnalyzeRequest<'_>, source: &str) -> AnalyzerOutput {
     analyze_source_cancellable(request, source, || false)
-        .expect("the non-cancellable analyzer probe never cancels")
+        .expect("the analyzer probe requires a source within the supported analysis depth")
 }
 
 #[expect(
@@ -192,26 +213,30 @@ pub(crate) fn analyze_source_cancellable(
     request: &AnalyzeRequest<'_>,
     source: &str,
     cancelled: impl Fn() -> bool,
-) -> Result<AnalyzerOutput, AnalysisCancelled> {
+) -> Result<AnalyzerOutput, AnalysisError> {
     if cancelled() {
-        return Err(AnalysisCancelled);
+        return Err(AnalysisError::Cancelled);
     }
-    let Ok(parsed) = parse_module(source) else {
+    // Retain invalid partial trees too: parse_module drops those recursively on Err.
+    let parsed = parse_unchecked_source(source, ruff_python_ast::PySourceType::Python);
+    if !parsed.has_valid_syntax() {
+        depth::dispose(parsed.into_syntax());
         return Ok(invalid_syntax(request.path));
-    };
-    if cancelled() {
-        return Err(AnalysisCancelled);
+    }
+    if let Err(error) = depth::check(parsed.syntax(), &cancelled) {
+        depth::dispose(parsed.into_syntax());
+        return Err(error);
     }
     let facts = AstFacts::from_module(parsed.syntax(), parsed.tokens(), source);
     if cancelled() {
-        return Err(AnalysisCancelled);
+        return Err(AnalysisError::Cancelled);
     }
     let line_index = LineIndex::new(source);
     let mut token_candidates = CandidatePrefix::new(request.max_candidates);
     let tokens: Vec<_> = parsed.tokens().iter().collect();
     for (index, token) in tokens.iter().enumerate() {
         if cancelled() {
-            return Err(AnalysisCancelled);
+            return Err(AnalysisError::Cancelled);
         }
         if matches!(
             token.kind(),
@@ -223,7 +248,7 @@ pub(crate) fn analyze_source_cancellable(
         let start = usize::from(range.start());
         let end = usize::from(range.end());
         let text = &source[start..end];
-        if !facts.is_operator_token(start) {
+        if !facts.is_operator_token(start) || facts.colliding_mapping_key_starts.contains(&start) {
             continue;
         }
         if facts.contains_annotation_span(range) {
@@ -314,7 +339,7 @@ pub(crate) fn analyze_source_cancellable(
         }
     }
     if cancelled() {
-        return Err(AnalysisCancelled);
+        return Err(AnalysisError::Cancelled);
     }
     let token_candidates = token_candidates.finish();
     let ast_candidates = ast_candidates(
@@ -326,12 +351,12 @@ pub(crate) fn analyze_source_cancellable(
         &cancelled,
     )?;
     if cancelled() {
-        return Err(AnalysisCancelled);
+        return Err(AnalysisError::Cancelled);
     }
     let type_annotation_candidates =
         type_annotation_candidates(parsed.syntax(), source, &line_index, &facts, request);
     if cancelled() {
-        return Err(AnalysisCancelled);
+        return Err(AnalysisError::Cancelled);
     }
     let producer_overflowed = token_candidates.overflowed
         || ast_candidates.overflowed
@@ -520,12 +545,8 @@ struct LineIndex {
 
 impl LineIndex {
     fn new(source: &str) -> Self {
-        let mut starts = vec![0];
-        for (index, byte) in source.bytes().enumerate() {
-            if byte == b'\n' {
-                starts.push(u32::try_from(index + 1).expect("Ruff source offset fits u32"));
-            }
-        }
+        let starts = hoimin_core::python_line_starts(source.as_bytes())
+            .expect("Ruff source offset fits u32");
         Self { starts }
     }
 
@@ -540,13 +561,8 @@ impl LineIndex {
             - 1;
         let line_start = self.starts[line_index] as usize;
         let line = line_index as u32 + 1;
-        let line_prefix = &source[line_start..offset];
-        let column_prefix = if line_index == 0 {
-            line_prefix.strip_prefix('\u{feff}').unwrap_or(line_prefix)
-        } else {
-            line_prefix
-        };
-        let column = column_prefix.chars().count() as u32;
+        let column = python_source_column(source, line_start, offset)
+            .expect("Ruff source offsets are valid UTF-8 boundaries within a u32-sized source");
         (line, column)
     }
 }
@@ -1019,6 +1035,22 @@ impl NameResolutionBuilder {
         }
     }
 
+    fn record_named_target(&mut self, target: &Expr, offset: usize) {
+        let mut destination = self.current;
+        while self.index.scopes[destination.0].kind == NameScopeKind::Comprehension {
+            destination = self.index.scopes[destination.0]
+                .parent
+                .expect("comprehensions have a containing scope");
+        }
+        // Comprehension bodies can run zero times, or later for generators.
+        // Function locals are still static; record_binding handles that and
+        // the containing scope's global/nonlocal declarations.
+        let conditional = destination != self.current;
+        self.conditional_depth += usize::from(conditional);
+        self.in_scope(destination, |this| this.record_target(target, offset));
+        self.conditional_depth -= usize::from(conditional);
+    }
+
     fn record_binding(&mut self, name: &str, offset: usize) {
         if !tracked_resolution_name(name) {
             return;
@@ -1362,7 +1394,10 @@ impl<'ast> Visitor<'ast> for NameResolutionBuilder {
         match expression {
             Expr::Name(name) => self.record_occurrence(name),
             Expr::Named(named) => {
-                self.record_target(&named.target, usize::from(named.range.end()));
+                self.visit_expr(&named.value);
+                self.record_named_target(&named.target, usize::from(named.range.end()));
+                self.visit_expr(&named.target);
+                return;
             }
             Expr::Lambda(lambda) => {
                 let scope = self.new_scope(NameScopeKind::Function);
@@ -1459,6 +1494,7 @@ impl<'ast> Visitor<'ast> for NameResolutionBuilder {
 
 #[derive(Default)]
 struct AstFacts<'tokens> {
+    colliding_mapping_key_starts: HashSet<usize>,
     operator_token_starts: HashSet<usize>,
     unary_sign_starts: HashSet<usize>,
     not_operands: Vec<(usize, usize, usize)>,
@@ -1471,6 +1507,7 @@ struct AstFacts<'tokens> {
     scopes: Vec<ScopeInterval>,
     scope_index: ScopeIndex,
     qualname: Vec<String>,
+    in_pattern: bool,
     tokens: Option<&'tokens ruff_python_ast::token::Tokens>,
     source: &'tokens str,
     #[cfg(test)]
@@ -1766,13 +1803,13 @@ impl<'ast> Visitor<'ast> for AstFacts<'_> {
                 ],
             ),
             Expr::UnaryOp(unary) => {
-                self.record_operator_tokens(
-                    TextRange::new(unary.range().start(), unary.operand.range().start()),
-                    &["not", "+", "-", "~"],
-                );
                 let start = usize::from(unary.range().start());
                 match unary.op {
                     UnaryOp::Not => {
+                        self.record_operator_tokens(
+                            TextRange::new(unary.range().start(), unary.operand.range().start()),
+                            &["not"],
+                        );
                         let operand_range = ruff_python_ast::token::parenthesized_range(
                             unary.operand.as_ref().into(),
                             unary.into(),
@@ -1786,9 +1823,21 @@ impl<'ast> Visitor<'ast> for AstFacts<'_> {
                         ));
                     }
                     UnaryOp::UAdd | UnaryOp::USub => {
-                        self.unary_sign_starts.insert(start);
+                        if !self.in_pattern {
+                            self.record_operator_tokens(
+                                TextRange::new(
+                                    unary.range().start(),
+                                    unary.operand.range().start(),
+                                ),
+                                &["+", "-"],
+                            );
+                            self.unary_sign_starts.insert(start);
+                        }
                     }
-                    UnaryOp::Invert => {}
+                    UnaryOp::Invert => self.record_operator_tokens(
+                        TextRange::new(unary.range().start(), unary.operand.range().start()),
+                        &["~"],
+                    ),
                 }
             }
             Expr::BooleanLiteral(boolean) => {
@@ -1800,12 +1849,27 @@ impl<'ast> Visitor<'ast> for AstFacts<'_> {
     }
 
     fn visit_pattern(&mut self, pattern: &'ast Pattern) {
+        if let Pattern::MatchMapping(mapping) = pattern {
+            for range in mapping_keys::colliding_edits(&mapping.keys) {
+                for token in self.tokens.expect("parser tokens are set").in_range(range) {
+                    if matches!(
+                        token.kind(),
+                        TokenKind::True | TokenKind::False | TokenKind::Plus | TokenKind::Minus
+                    ) {
+                        self.colliding_mapping_key_starts
+                            .insert(usize::from(token.start()));
+                    }
+                }
+            }
+        }
         if let Pattern::MatchSingleton(singleton) = pattern
             && matches!(singleton.value, Singleton::True | Singleton::False)
         {
             self.record_operator_tokens(singleton.range(), &["True", "False"]);
         }
+        let previous = std::mem::replace(&mut self.in_pattern, true);
         visitor::walk_pattern(self, pattern);
+        self.in_pattern = previous;
     }
 }
 
@@ -2339,8 +2403,14 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                         .operators
                         .contains(MutationOperator::ExceptionExceptionToBare)
                 {
+                    let range = ruff_python_ast::token::parenthesized_range(
+                        type_.into(),
+                        handler.into(),
+                        self.facts.tokens.expect("parser tokens are set"),
+                    )
+                    .unwrap_or_else(|| type_.range());
                     self.add_candidate(
-                        name.range(),
+                        range,
                         String::new(),
                         MutationOperator::ExceptionExceptionToBare,
                     );
@@ -2937,7 +3007,12 @@ fn tuple_remove_replacement(
     let tuple_start = usize::from(tuple.range().start());
     let tuple_end = usize::from(tuple.range().end());
     let element = tuple.elts.get(index)?;
-    let element_range = element.range();
+    let element_range = ruff_python_ast::token::parenthesized_range(
+        element.into(),
+        tuple.into(),
+        facts.tokens.expect("parser tokens are set"),
+    )
+    .unwrap_or_else(|| element.range());
     let element_start = usize::from(element_range.start());
     let element_end = usize::from(element_range.end());
     let commas: Vec<_> = facts
