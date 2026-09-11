@@ -82,6 +82,33 @@ Whole-file selectors establish the selected files first. For example, `--source 
 
 For example, `--file src/calc.py --line src/calc.py:10-12` selects only lines 10 through 12 of `src/calc.py`. Adding `--file src/calc.py` to `--source src --symbol calc:add` preserves the symbol restriction on `src/calc.py`. Other Python files selected by `--source src` remain whole-file targets unless they have a line or symbol selector.
 
+For a `src` layout installed through a path-only editable `.pth`, add an import
+root independently of the selected file:
+
+```console
+hoimin run --root . --file src/calc.py --import-root src -- python -m pytest -q
+hoimin plan --root . --line src/calc.py:10-12 --import-root src -- python -m pytest -q > plan.json
+hoimin verify plan.json --top 1 --format json
+```
+
+`--import-root DIR` is repeatable on `run` and `plan`. It adds worker import
+paths without selecting any mutation targets; a target selector is still
+required. Directories are relative to `--root`, including `.`. Absolute paths
+and parent components that escape the root are rejected. Harmless components
+are normalized and duplicate roots retain their first position. PYTHONPATH
+order is the worker root, explicit import roots in supplied order, selected
+source roots, then inherited PYTHONPATH with project paths rewritten to the
+worker. The named directory must exist in the copied worker before baseline;
+an unavailable-root diagnostic means it is missing, is not a directory, or was
+excluded by the existing copy policy. The option does not override exclusions.
+
+This supports regular packages exposed by path-only `.pth` entries when Python
+honors PYTHONPATH. Finder-based editable installs and custom import loaders are
+not guaranteed, and Python `-E`/`-I` ignores PYTHONPATH. Setting inherited
+`PYTHONPATH=/absolute/project/src` remains a workaround: hoimin rewrites that
+project path to the worker. Neither approach edits the original source or venv.
+Saved plans preserve import-root order; `verify` inherits it without a flag.
+
 `--root DIR` resolves relative paths and defaults to the current directory. Combining explicit selectors with `--changed` intersects each explicit target with changed lines. When that target also has a symbol selector, a candidate must be both on a changed line and inside the selected symbol. A `--symbol` requires `--source`; when `--source` is present, file and line paths must be inside a source root.
 
 Target, fingerprint, and copied-workspace paths use a portable `/`-separated representation. Native Windows path inputs are normalized to that form. On Unix, a concrete filename containing a literal backslash is rejected before collection because it cannot be represented unambiguously. Backslashes in glob options retain their existing escape syntax; the concrete paths matched by a glob are validated after walking.
@@ -414,7 +441,13 @@ diagnostics.
 
 ## Sessions and resume
 
-No database is created by default. `--session PATH` stores a run in SQLite and commits each mutant result independently. `--resume` requires `--session` and looks up the newest compatible incomplete run. Compatibility includes source and configuration fingerprints, test argv, verdict-affecting limits, resource policy, and the operator set. Profile selection is part of session compatibility, so a focused run never resumes results from a full run and vice versa. `--jobs` and `--max-output` are operational settings and may change when resuming; reports record their current values, and reused results do not import output retained under the earlier limit. Completed `killed` and `survived` results can be reused; `timeout`, `out_of_memory`, `process_limit`, `error`, and `not_run` are run again under the current settings. An incompatible or already complete run is not silently mixed with new results.
+No database is created by default. `--session PATH` stores a run in SQLite and commits each mutant result independently. `--resume` requires `--session` and looks up the newest compatible incomplete run. Compatibility includes ordered import roots, source and configuration fingerprints, test argv, verdict-affecting limits, resource policy, and the operator set. Profile selection is part of session compatibility, so a focused run never resumes results from a full run and vice versa. `--jobs` and `--max-output` are operational settings and may change when resuming; reports record their current values, and reused results do not import output retained under the earlier limit. Completed `killed` and `survived` results can be reused; `timeout`, `out_of_memory`, `process_limit`, `error`, and `not_run` are run again under the current settings. An incompatible or already complete run is not silently mixed with new results.
+
+Plan schema version 4 stores the independent import roots (ranking rule version
+3). Regenerate older plans before verification. Fingerprint schema version 7
+includes their ordered list, including an empty list for default invocations.
+Older session fingerprints cannot be resumed; start a new session and rerun the
+baseline and mutants. Existing saved results are not rewritten.
 
 ## Build and verify a wheel
 

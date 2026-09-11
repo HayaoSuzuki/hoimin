@@ -1087,3 +1087,46 @@ fn explicit_close_removes_active_worker_before_handler_drop() {
     assert_eq!(handler.worker_count(), 0);
     assert_eq!(handler.pending_cleanup_count(), 0);
 }
+
+#[test]
+fn explicit_import_roots_precede_sources_and_rewritten_inherited_paths() {
+    use hoimin_cli::workspace::build_command_environment_with_import_roots;
+    let original = Utf8Path::new("/project");
+    let worker = Utf8Path::new("/worker");
+    let inherited = BTreeMap::from([(
+        OsString::from("PYTHONPATH"),
+        std::env::join_paths(["/project/inherited", "/project/vendor", "/external"]).unwrap(),
+    )]);
+    let environment = build_command_environment_with_import_roots(
+        original,
+        worker,
+        &["vendor".into(), ".".into(), "src".into(), "vendor".into()],
+        &["src".into(), "selected".into()],
+        &inherited,
+    )
+    .unwrap();
+    let paths: Vec<_> = std::env::split_paths(&environment.env[OsStr::new("PYTHONPATH")]).collect();
+    assert_eq!(
+        paths,
+        [
+            "/worker",
+            "/worker/vendor",
+            "/worker/src",
+            "/worker/selected",
+            "/worker/inherited",
+            "/external"
+        ]
+        .map(PathBuf::from)
+    );
+    let default = build_command_environment_with_import_roots(
+        original,
+        worker,
+        &[],
+        &["src".into()],
+        &inherited,
+    )
+    .unwrap();
+    let legacy = build_command_environment(original, worker, &["src".into()], &inherited).unwrap();
+    assert_eq!(default.env, legacy.env);
+    assert_eq!(default.cwd, legacy.cwd);
+}
