@@ -25,7 +25,7 @@ hoimin verify PLAN.json --top 10 --format json > reports/batch-a-001.json
 hoimin verify PLAN.json --top 10 --selection-policy diverse
 ```
 
-Each version-3 plan candidate records `rank`, `score`, and `ranking_reasons`.
+Each plan candidate records `rank`, `score`, and `ranking_reasons`.
 The scores are transparent ordering heuristics for focusing effort; they do not
 claim that a higher-ranked mutant is more likely to reveal a defect, and
 lower-ranked candidates remain valid. `verify` uses the saved ranks and never re-ranks
