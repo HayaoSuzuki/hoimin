@@ -144,6 +144,24 @@ fn source_line_starts(
     Ok(line_starts)
 }
 
+/// Returns the zero-based Python source column for a checked byte range.
+///
+/// Columns count Unicode scalar values. A single UTF-8 BOM is excluded only
+/// when it begins the file; byte offsets and the source itself remain unchanged.
+/// `None` is returned when either bound is outside `source`, the range is
+/// reversed, a bound is not a UTF-8 character boundary, or the column cannot
+/// be represented as `u32`.
+#[must_use]
+pub fn python_source_column(source: &str, line_start: usize, offset: usize) -> Option<u32> {
+    let prefix = source.get(line_start..offset)?;
+    let visible_prefix = if line_start == 0 {
+        prefix.strip_prefix('\u{feff}').unwrap_or(prefix)
+    } else {
+        prefix
+    };
+    u32::try_from(visible_prefix.chars().count()).ok()
+}
+
 #[must_use]
 pub fn stable_mutant_id(identity: &CandidateIdentity) -> MutantId {
     let mut hasher = blake3::Hasher::new();
@@ -242,8 +260,8 @@ pub fn validate_candidate_with_context(
         u32::try_from(line_index + 1).map_err(|_| CandidateValidationError::LocationMismatch)?;
     let line_start = usize::try_from(context.line_starts[line_index])
         .map_err(|_| CandidateValidationError::LocationMismatch)?;
-    let column = u32::try_from(text[line_start..start].chars().count())
-        .map_err(|_| CandidateValidationError::LocationMismatch)?;
+    let column = python_source_column(text, line_start, start)
+        .ok_or(CandidateValidationError::LocationMismatch)?;
     if candidate.line != line || candidate.column != column {
         return Err(CandidateValidationError::LocationMismatch);
     }

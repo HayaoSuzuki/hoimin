@@ -1,8 +1,8 @@
 use camino::Utf8PathBuf;
 use hoimin_core::{
     ByteSpan, CANDIDATE_SCHEMA_VERSION, CandidateDescriptor, CandidateIdentity,
-    CandidateValidationContext, CandidateValidationError, stable_mutant_id, validate_candidate,
-    validate_candidate_with_context,
+    CandidateValidationContext, CandidateValidationError, python_source_column, stable_mutant_id,
+    validate_candidate, validate_candidate_with_context,
 };
 
 fn descriptor(source: &[u8]) -> CandidateDescriptor {
@@ -199,6 +199,79 @@ fn reusable_context_preserves_unicode_and_crlf_location_semantics() {
     assert_eq!(
         validate_candidate_with_context(&context, &stale_location),
         Err(CandidateValidationError::LocationMismatch)
+    );
+}
+
+#[test]
+fn python_columns_ignore_exactly_one_leading_file_bom() {
+    let source = "\u{feff}ab\n\u{feff}c\n";
+
+    for (line_start, offset, expected) in [
+        (0, 0, Some(0)),
+        (0, 3, Some(0)),
+        (0, 5, Some(2)),
+        (6, 6, Some(0)),
+        (6, 9, Some(1)),
+        (6, 10, Some(2)),
+    ] {
+        assert_eq!(
+            python_source_column(source, line_start, offset),
+            expected,
+            "column for byte range {line_start}..{offset}",
+        );
+    }
+
+    assert_eq!(python_source_column("plain", 0, 5), Some(5));
+    assert_eq!(python_source_column("日本x", 0, 6), Some(2));
+    assert_eq!(python_source_column("a\u{feff}b", 0, 4), Some(2));
+    assert_eq!(python_source_column("\u{feff}\u{feff}x", 0, 6), Some(1));
+}
+
+#[test]
+fn python_columns_reject_invalid_ranges_and_utf8_boundaries() {
+    let source = "\u{feff}β";
+
+    for (line_start, offset) in [(4, 3), (0, 6), (1, 3), (0, 4)] {
+        assert_eq!(
+            python_source_column(source, line_start, offset),
+            None,
+            "invalid byte range {line_start}..{offset}",
+        );
+    }
+}
+
+#[test]
+fn validates_bom_adjusted_first_line_without_changing_identity_inputs() {
+    let source = "\u{feff}value == 2\n".as_bytes();
+    let candidate = CandidateDescriptor {
+        schema_version: CANDIDATE_SCHEMA_VERSION,
+        path: "pkg/bom.py".into(),
+        span: ByteSpan {
+            start: 9,
+            length: 2,
+        },
+        original: "==".into(),
+        replacement: "!=".into(),
+        operator: "compare_eq_ne".into(),
+        line: 1,
+        column: 6,
+        symbol: None,
+        file_hash: blake3::hash(source).to_hex().to_string(),
+    };
+    let expected_identity = CandidateIdentity::from(&candidate);
+
+    assert_eq!(
+        validate_candidate(source, &candidate).unwrap(),
+        stable_mutant_id(&expected_identity),
+    );
+    assert_eq!(candidate.span, expected_identity.span);
+    assert_eq!(candidate.file_hash, expected_identity.file_hash);
+
+    let mut bom_counted = candidate;
+    bom_counted.column = 7;
+    assert_eq!(
+        validate_candidate(source, &bom_counted),
+        Err(CandidateValidationError::LocationMismatch),
     );
 }
 
