@@ -34,21 +34,14 @@ impl Drop for RunOwnership {
     }
 }
 
-pub(super) fn lock_directory(database: &Path) -> io::Result<PathBuf> {
-    lock_directory_for_canonical_database(&std::fs::canonicalize(database)?)
-}
-
-pub(crate) fn lock_directory_for_canonical_database(canonical: &Path) -> io::Result<PathBuf> {
-    let file_name = canonical.file_name().ok_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "session database path has no file name",
-        )
-    })?;
+pub(super) fn lock_directory(database: &Path) -> PathBuf {
+    let file_name = database
+        .file_name()
+        .expect("resolved database has a file name");
     let mut directory_name = OsString::from(".");
     directory_name.push(file_name);
     directory_name.push(".hoimin-locks");
-    Ok(canonical.with_file_name(directory_name))
+    database.with_file_name(directory_name)
 }
 
 #[cfg(unix)]

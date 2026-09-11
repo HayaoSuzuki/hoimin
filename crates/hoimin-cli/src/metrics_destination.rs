@@ -144,23 +144,28 @@ fn inspect(
 
 fn session_artifacts(
     configured: &Path,
-    inspector: &mut EntryInspector,
+    _inspector: &mut EntryInspector,
 ) -> io::Result<(Vec<PathBuf>, Vec<PathBuf>)> {
-    // Unix SQLite resolves final symlinks; ownership uses the canonical DB on all OSes.
-    let actual = resolved_database(configured, inspector)?;
-    let mut files = vec![actual.clone()];
-    // The bundled SQLite Windows VFS uses GetFullPathNameW, which retains the
-    // configured final entry. Its sidecars therefore use that entry's basename.
+    // Use the same canonical database and companion paths as SessionHandler.
+    let artifacts = crate::session::SessionArtifacts::resolve(configured)?;
+    let files = artifacts.files().to_vec();
+    // Also retain protection of the configured Windows namespace when the
+    // supplied final entry is an alias of the database opened by SessionHandler.
     #[cfg(windows)]
-    let sidecar_database = inspector.entry(configured)?.path;
-    #[cfg(not(windows))]
-    let sidecar_database = &actual;
-    for suffix in ["-wal", "-shm", "-journal"] {
-        let mut name = sidecar_database.as_os_str().to_owned();
-        name.push(suffix);
-        files.push(PathBuf::from(name));
-    }
-    let tree = crate::session::lock_directory_for_canonical_database(&actual)?;
+    let files = {
+        let mut files = files;
+        let configured = _inspector.entry(configured)?.path;
+        for suffix in ["-wal", "-shm", "-journal"] {
+            let mut name = configured.as_os_str().to_owned();
+            name.push(suffix);
+            let path = PathBuf::from(name);
+            if !files.contains(&path) {
+                files.push(path);
+            }
+        }
+        files
+    };
+    let tree = artifacts.lock_directory();
     let mut trees = vec![tree.clone()];
     match std::fs::canonicalize(&tree) {
         Ok(actual_tree) => trees.push(actual_tree),
@@ -172,22 +177,6 @@ fn session_artifacts(
 
 fn unknown(message: &str) -> io::Error {
     io::Error::other(message)
-}
-
-fn resolved_database(path: &Path, inspector: &mut EntryInspector) -> io::Result<PathBuf> {
-    match std::fs::canonicalize(path) {
-        Ok(path) => Ok(path),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {
-            // A dangling final symlink can name a database that SQLite will create later.
-            if std::fs::symlink_metadata(path).is_ok_and(|value| value.file_type().is_symlink()) {
-                return Err(unknown(
-                    "cannot resolve the prospective session database through a dangling symlink",
-                ));
-            }
-            Ok(inspector.entry(path)?.path)
-        }
-        Err(error) => Err(error),
-    }
 }
 
 impl EntryInspector {
@@ -573,12 +562,16 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
-    fn windows_session_symlink_sidecars_use_configured_entry() {
+    fn windows_session_symlink_sidecars_protect_configured_and_canonical_entries() {
         let temp = tempfile::tempdir().unwrap();
         let database = temp.path().join("original.db");
         std::fs::write(&database, b"database entry").unwrap();
         let configured = temp.path().join("configured.db");
         if let Err(error) = std::os::windows::fs::symlink_file(&database, &configured) {
+            assert!(
+                std::env::var_os("HOIMIN_REQUIRE_WINDOWS_SYMLINKS").is_none(),
+                "required Windows session symlink setup failed: {error}"
+            );
             eprintln!("SKIP Windows session symlink namespace: symlink setup unavailable: {error}");
             return;
         }
@@ -586,7 +579,11 @@ mod tests {
             session_artifacts(&configured, &mut EntryInspector::default()).unwrap();
         let parent = std::fs::canonicalize(temp.path()).unwrap();
         assert!(files.contains(&parent.join("configured.db-wal")));
-        assert!(!files.contains(&parent.join("original.db-wal")));
+        for basename in ["configured.db", "original.db"] {
+            for suffix in ["-wal", "-shm", "-journal"] {
+                assert!(files.contains(&parent.join(format!("{basename}{suffix}"))));
+            }
+        }
         assert!(trees.contains(&parent.join(".original.db.hoimin-locks")));
     }
 }

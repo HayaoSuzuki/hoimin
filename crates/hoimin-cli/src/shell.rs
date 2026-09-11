@@ -34,7 +34,7 @@ use crate::report::delivery::ReportDelivery;
 #[cfg(not(any(windows, target_os = "linux")))]
 use crate::resource::PortableBackend;
 use crate::resource::ResourceBackend;
-use crate::session::SessionDispatcher;
+use crate::session::{SessionArtifacts, SessionDispatcher};
 use crate::target::TargetHandler;
 use crate::workspace::{
     CleanupRecord, CopyOptions, DiskMonitor, FilesystemKey, ManagedChild, ManagedRootCoordinator,
@@ -766,6 +766,7 @@ enum BlockingEffectCompletion {
         event: Box<RunEvent>,
         secondary_errors: Vec<String>,
         metrics_destination: Option<MetricsDestination>,
+        session_path: Option<Utf8PathBuf>,
     },
 }
 
@@ -804,7 +805,7 @@ impl BlockingEffect {
                 id,
                 mut workspace,
                 request,
-                config,
+                mut config,
                 copied_at_start,
                 targets,
                 resource_mode,
@@ -814,24 +815,39 @@ impl BlockingEffect {
                 let validation = validate_metrics_destination(&config, &targets, id).map(|value| {
                     metrics_destination = Some(value);
                 });
-                let event = match validation.and_then(|()| {
-                    workspace.handle_preflight_validated(request, |root, manifest| {
-                        recheck_fingerprint_inputs(&config, root, manifest, &copied_at_start, id)?;
-                        run_fingerprint = Some(prepare_manifest_fingerprint(
-                            &config,
-                            &targets,
-                            resource_mode,
-                            manifest,
-                            id,
-                        )?);
-                        Ok(())
-                    })
-                }) {
+                let preflight = validation.and_then(|()| {
+                    prepare_session_artifacts(&mut config)
+                        .map_err(|error| EffectFailed::other(id, "session.path", error))
+                        .and_then(|exclusions| {
+                            workspace.set_literal_exclusions(exclusions);
+                            workspace.handle_preflight_validated(request, |root, manifest| {
+                                recheck_fingerprint_inputs(
+                                    &config,
+                                    root,
+                                    manifest,
+                                    &copied_at_start,
+                                    id,
+                                )?;
+                                run_fingerprint = Some(prepare_manifest_fingerprint(
+                                    &config,
+                                    &targets,
+                                    resource_mode,
+                                    manifest,
+                                    id,
+                                )?);
+                                Ok(())
+                            })
+                        })
+                });
+                let (event, session_path) = match preflight {
                     Ok(mut value) => {
                         value.fingerprint = run_fingerprint;
-                        RunEvent::PreflightCompleted(value)
+                        (
+                            RunEvent::PreflightCompleted(value),
+                            config.session.as_ref().map(|session| session.path.clone()),
+                        )
                     }
-                    Err(error) => RunEvent::EffectFailed(error),
+                    Err(error) => (RunEvent::EffectFailed(error), None),
                 };
                 BlockingEffectCompletion::OwnedWorkspace {
                     id,
@@ -839,6 +855,7 @@ impl BlockingEffect {
                     event: Box::new(event),
                     secondary_errors: Vec::new(),
                     metrics_destination,
+                    session_path,
                 }
             }
             Self::Cleanup {
@@ -856,6 +873,7 @@ impl BlockingEffect {
                     event: Box::new(event),
                     secondary_errors,
                     metrics_destination: None,
+                    session_path: None,
                 }
             }
             #[cfg(test)]
@@ -901,6 +919,39 @@ fn is_blocking_io_effect(effect: &RunEffect) -> bool {
             | RunEffect::VerifyOriginals(_)
             | RunEffect::Cleanup(_)
     )
+}
+
+fn prepare_session_artifacts(
+    config: &mut RunConfig,
+) -> Result<Vec<crate::workspace::LiteralExclusion>, String> {
+    let mut literal_exclusions = Vec::new();
+    if let Some(session) = &mut config.session {
+        let artifacts =
+            SessionArtifacts::resolve(&session.path).map_err(|error| error.to_string())?;
+        let root = std::fs::canonicalize(&config.root).map_err(|error| error.to_string())?;
+        for (path, tree) in artifacts
+            .files()
+            .into_iter()
+            .map(|path| (path, false))
+            .chain(std::iter::once((artifacts.lock_directory(), true)))
+        {
+            if let Some(relative) = crate::workspace::relative_inside(&path, &root) {
+                let relative = Utf8PathBuf::from_path_buf(relative)
+                    .map_err(|_| "session artifact path is not UTF-8".to_owned())?;
+                let relative = crate::portable_path::from_native(relative.as_str())
+                    .map_err(|error| error.to_string())?;
+                let relative = Utf8PathBuf::from(relative.into_owned());
+                literal_exclusions.push(if tree {
+                    crate::workspace::LiteralExclusion::Tree(relative)
+                } else {
+                    crate::workspace::LiteralExclusion::File(relative)
+                });
+            }
+        }
+        session.path = Utf8PathBuf::from_path_buf(artifacts.database().to_owned())
+            .map_err(|_| "session database path is not UTF-8".to_owned())?;
+    }
+    Ok(literal_exclusions)
 }
 
 fn prepare_blocking_effect<Stdout, Stderr>(
@@ -984,6 +1035,7 @@ where
             event,
             secondary_errors,
             metrics_destination,
+            session_path,
         } => {
             if context.workspace.is_some() {
                 return RunEvent::EffectFailed(EffectFailed::other(
@@ -995,6 +1047,9 @@ where
             context.workspace = Some(*workspace);
             if let Some(destination) = metrics_destination {
                 context.metrics_destination = destination;
+            }
+            if let Some(path) = session_path {
+                context.session_path = Some(path);
             }
             context.blocking_secondary_errors.extend(secondary_errors);
             *event
@@ -1277,8 +1332,10 @@ fn prepare_shell_setup_sync_in(
         CopyOptions {
             includes: config.selection.includes.clone(),
             excludes: config.selection.excludes.clone(),
+            literal_exclusions: Vec::new(),
         },
     )
+    .with_import_roots(config.import_roots.clone())
     .with_managed_root(Arc::clone(&execution_root))
     .with_max_owned_bytes(config.limits.max_workspace_size.get());
     boundary(ShellSetupBoundary::WorkspaceCreated);
@@ -8636,6 +8693,7 @@ mod tests {
             &CopyOptions {
                 includes: Vec::new(),
                 excludes: vec!["target.py".to_owned()],
+                literal_exclusions: Vec::new(),
             },
         )
         .unwrap();

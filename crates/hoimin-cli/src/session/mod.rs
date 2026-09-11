@@ -1,5 +1,4 @@
 mod ownership;
-pub(crate) use ownership::lock_directory_for_canonical_database;
 mod schema;
 
 use std::collections::HashMap;
@@ -38,6 +37,71 @@ pub enum SessionError {
     Ownership(#[source] std::io::Error),
 }
 
+/// Resolved names owned by a persistent session, discovered without creating artifacts.
+#[derive(Clone, Debug)]
+pub struct SessionArtifacts {
+    database: PathBuf,
+}
+
+impl SessionArtifacts {
+    /// Resolves an existing database or the existing parent of a new database.
+    ///
+    /// # Errors
+    /// Returns an I/O error for inaccessible paths, missing parents, or dangling symlinks.
+    pub fn resolve(path: impl AsRef<Path>) -> std::io::Result<Self> {
+        let path = path.as_ref();
+        let database = match std::fs::symlink_metadata(path) {
+            Ok(_) => std::fs::canonicalize(path)?,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                let name = path.file_name().ok_or_else(|| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "session database path has no file name",
+                    )
+                })?;
+                let parent = path
+                    .parent()
+                    .filter(|parent| !parent.as_os_str().is_empty())
+                    .unwrap_or_else(|| Path::new("."));
+                std::fs::canonicalize(parent)?.join(name)
+            }
+            Err(error) => return Err(error),
+        };
+        if database.file_name().is_none() || database.is_dir() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "session database path must name a file",
+            ));
+        }
+        Ok(Self { database })
+    }
+
+    #[must_use]
+    pub fn database(&self) -> &Path {
+        &self.database
+    }
+
+    #[must_use]
+    pub fn files(&self) -> [PathBuf; 4] {
+        let sidecar = |suffix: &str| {
+            let mut name = self.database.as_os_str().to_owned();
+            name.push(suffix);
+            PathBuf::from(name)
+        };
+        [
+            self.database.clone(),
+            sidecar("-wal"),
+            sidecar("-shm"),
+            sidecar("-journal"),
+        ]
+    }
+
+    #[must_use]
+    pub fn lock_directory(&self) -> PathBuf {
+        ownership::lock_directory(&self.database)
+    }
+}
+
 pub struct SessionHandler {
     connection: Connection,
     lock_directory: PathBuf,
@@ -54,10 +118,10 @@ impl SessionHandler {
     /// Returns [`SessionError`] when `SQLite` cannot open the database or its schema cannot be
     /// configured.
     pub fn open(path: impl AsRef<Path>) -> Result<Self, SessionError> {
-        let path = path.as_ref();
-        let mut connection = Connection::open(path)?;
+        let artifacts = SessionArtifacts::resolve(path).map_err(SessionError::Ownership)?;
+        let mut connection = Connection::open(artifacts.database())?;
         schema::configure(&mut connection)?;
-        let lock_directory = ownership::lock_directory(path).map_err(SessionError::Ownership)?;
+        let lock_directory = artifacts.lock_directory();
         Ok(Self {
             connection,
             lock_directory,

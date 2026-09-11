@@ -532,20 +532,35 @@ async fn metrics_collision_protects_windows_configured_session_symlink_sidecars(
     drop(hoimin_cli::session::SessionHandler::open(&database).unwrap());
     let configured = temp.path().join("session-link.db");
     if let Err(error) = std::os::windows::fs::symlink_file(&database, &configured) {
+        assert!(
+            std::env::var_os("HOIMIN_REQUIRE_WINDOWS_SYMLINKS").is_none(),
+            "required Windows session symlink setup failed: {error}"
+        );
         eprintln!("SKIP Windows session symlink sidecars: symlink setup unavailable: {error}");
         return;
     }
-    for suffix in ["-wal", "-shm", "-journal"] {
-        let protected = temp.path().join(format!("session-link.db{suffix}"));
-        let bytes = b"configured Windows session artifact\n";
-        std::fs::write(&protected, bytes).unwrap();
-        let output = run(
-            &root,
-            &protected,
-            &["--session", configured.to_str().unwrap()],
-        )
-        .await;
-        assert_collision(&output, temp.path(), &protected, bytes);
+    let database_before = std::fs::read(&database).unwrap();
+    for basename in ["session-link.db", "session.db"] {
+        for suffix in ["-wal", "-shm", "-journal"] {
+            let protected = temp.path().join(format!("{basename}{suffix}"));
+            let bytes = b"protected Windows session artifact\n";
+            std::fs::write(&protected, bytes).unwrap();
+            let output = run(
+                &root,
+                &protected,
+                &["--session", configured.to_str().unwrap()],
+            )
+            .await;
+            assert_collision(&output, temp.path(), &protected, bytes);
+            assert_eq!(std::fs::read(&database).unwrap(), database_before);
+            assert!(
+                std::fs::symlink_metadata(&configured)
+                    .unwrap()
+                    .file_type()
+                    .is_symlink()
+            );
+            std::fs::remove_file(protected).unwrap();
+        }
     }
 }
 
@@ -622,4 +637,33 @@ async fn metrics_collision_rejects_future_ownership_tree_before_missing_parent_w
     assert!(!temp.path().join("baseline-marker").exists());
     assert!(!database.exists());
     assert!(!metrics.exists());
+}
+
+#[tokio::test]
+async fn metrics_and_in_root_session_complete_without_copying_session_artifacts() {
+    let (temp, root) = fixture();
+    let session = root.join("session.db");
+    let metrics = temp.path().join("metrics.json");
+    let script = "from pathlib import Path; assert not Path('session.db').exists(); assert not Path('.session.db.hoimin-locks').exists(); from calc import add; assert add(2,3)==5";
+    let output = run_script(
+        &root,
+        Some(&metrics),
+        &["--session", session.to_str().unwrap(), "--jobs", "2"],
+        script,
+    )
+    .await;
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["baseline"]["termination"]["Exit"], 0);
+    assert_eq!(report["summary"]["complete"], true);
+    assert_eq!(report["summary"]["counts"]["killed"], 1);
+    assert!(session.is_file());
+    let metrics: hoimin_core::RunMetrics =
+        serde_json::from_slice(&std::fs::read(metrics).unwrap()).unwrap();
+    assert_eq!(metrics.executed, 1);
+    assert_eq!(std::fs::read(root.join("calc.py")).unwrap(), SOURCE);
 }

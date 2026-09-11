@@ -9,7 +9,7 @@ use crate::{
     TargetSlice,
 };
 
-pub const FINGERPRINT_SCHEMA_VERSION: u8 = 6;
+pub const FINGERPRINT_SCHEMA_VERSION: u8 = 7;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SourceHash {
@@ -22,6 +22,7 @@ pub struct FingerprintInput {
     pub sources: Vec<SourceHash>,
     pub fingerprint_inputs: Vec<FingerprintInputFile>,
     pub targets: Vec<TargetSlice>,
+    pub import_roots: Vec<Utf8PathBuf>,
     pub operators: Vec<String>,
     pub profile: MutationProfile,
     pub test_argv: Vec<CommandArg>,
@@ -38,6 +39,7 @@ impl FingerprintInput {
         resource_mode: ResourceMode,
     ) -> Self {
         Self {
+            import_roots: config.import_roots.clone(),
             sources,
             fingerprint_inputs: config.fingerprint_inputs.clone(),
             targets,
@@ -89,6 +91,12 @@ pub fn fingerprint(input: &FingerprintInput) -> RunFingerprint {
         }],
     );
     encoder.field(8, &encode_fingerprint_inputs(&input.fingerprint_inputs));
+    let mut roots = Encoder::new();
+    roots.count(input.import_roots.len());
+    for root in &input.import_roots {
+        roots.bytes(root.as_str().as_bytes());
+    }
+    encoder.field(9, &roots.bytes);
     RunFingerprint(*blake3::hash(&encoder.bytes).as_bytes())
 }
 

@@ -8,7 +8,7 @@ use hoimin_core::{
 };
 use serde::{Deserialize, Serialize};
 
-pub(crate) const RANKING_RULE_VERSION: u32 = 3;
+pub(crate) const RANKING_RULE_VERSION: u32 = 4;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -80,7 +80,7 @@ pub(crate) fn rank_candidates(
                     candidate
                         .symbol
                         .as_deref()
-                        .is_some_and(|symbol| symbols.contains(symbol))
+                        .is_some_and(|symbol| matches_selected_symbol(symbols, symbol))
                 })
             {
                 ranking_reasons.push(reason(RankingReasonCode::ExplicitSymbol));
@@ -105,6 +105,18 @@ pub(crate) fn rank_candidates(
         candidate.rank = index + 1;
     }
     ranked
+}
+
+fn matches_selected_symbol(selected: &HashSet<&str>, mut symbol: &str) -> bool {
+    loop {
+        if selected.contains(symbol) {
+            return true;
+        }
+        let Some((parent, _)) = symbol.rsplit_once('.') else {
+            return false;
+        };
+        symbol = parent;
+    }
 }
 
 pub(crate) fn validate_ranking(candidates: &[RankedPlanCandidate]) -> Result<(), String> {
