@@ -151,3 +151,11 @@ Reviewer review484_task found one P2 issue in4adf809..913101a: terminal `directo
 Follow-up76390dc preserves terminal directory-only syntax before normalization. Controller follow-up reviews:1 read the raw-component diff against the installed std normalization evidence;2 confirmed real alias/. RED1fail2pass,24 CLI GREEN and explicit alias/.. preservation, with14 lexical cases distinct from Windows native execution;3 independently counted the final70 summaries including the interleaved child (1636 pass/0 fail/13 ignore), read final Clippy and refreshed design/OKF hashes. No new ruling or test waiver.
 
 Task review outcome: review484_task initial one P2 finding addressed by76390dc. Scoped re-review913101a..76390dc clean, with no new actionable findings, deferred items or test waivers. Full task and follow-up evidence retained above.
+
+## Hosted Linux lint follow-up
+
+First normal CI34603735403 failed Linux-only Clippy items_after_statements at metrics_destination.rs:432. Move the unchanged FS_CASEFOLD_FL constant to the beginning of its Linux helper, before statements. No behavior, flag value, ioctl storage, filesystem scope or tests change. Local macOS Clippy cannot type-check this cfg branch; hosted Linux quality is the authoritative follow-up gate.
+
+Three follow-up self-reviews:1 read the exact hosted diagnostic and verify this is the only normal-CI failure;2 inspect the diff to confirm only declaration placement changes, keeping the same c_int type/value and lookup;3 run direct rustfmt/check and whitespace validation, then request scoped review and a new hosted Linux check. Repeating the green macOS full suite would not validate this Linux lint.
+
+Manual native run34603740404: macOS quality, Rust and wheel jobs passed. Windows quality stopped at unchanged workspace_recovery.rs WorkspacePlan import; wheel stopped at six unchanged Lean shell-guard tests (same base blockers observed in #495). Windows native Rust/helper results were still pending when this entry was written. These failures do not establish that new Windows tests executed.

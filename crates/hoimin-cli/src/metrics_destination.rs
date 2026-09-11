@@ -411,6 +411,7 @@ fn case_sensitive(parent: &Path) -> io::Result<bool> {
 #[cfg(target_os = "linux")]
 fn case_sensitive(parent: &Path) -> io::Result<bool> {
     use std::os::fd::AsRawFd;
+    const FS_CASEFOLD_FL: libc::c_int = 0x4000_0000;
     let directory = std::fs::File::open(parent)?;
     // Only these filesystems expose directory casefold through FS_IOC_GETFLAGS.
     // A zero flag on an arbitrary filesystem is not evidence of sensitive lookup.
@@ -429,7 +430,6 @@ fn case_sensitive(parent: &Path) -> io::Result<bool> {
     if unsafe { libc::ioctl(directory.as_raw_fd(), libc::FS_IOC_GETFLAGS, &raw mut flags) } == -1 {
         return Err(unknown("filesystem case sensitivity is unavailable"));
     }
-    const FS_CASEFOLD_FL: libc::c_int = 0x4000_0000;
     Ok(flags & FS_CASEFOLD_FL == 0)
 }
 
