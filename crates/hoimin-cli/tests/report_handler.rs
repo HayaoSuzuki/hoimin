@@ -261,7 +261,7 @@ fn all_optional_report_events(current: bool) -> Vec<OutputEvent> {
     } else {
         "schema-v3-original"
     };
-    let mut started = RunStarted::minimal(run_id, 1);
+    let mut started = RunStarted::minimal(run_id, 1, test_resource_control());
     started.normalized_config = Some(config);
     "golden-os".clone_into(&mut started.versions.os);
     "golden-hoimin".clone_into(&mut started.versions.hoimin);
@@ -798,7 +798,11 @@ fn actual_pre_baseline_report() -> serde_json::Value {
     emit(
         &mut handler,
         1,
-        OutputEvent::RunStarted(RunStarted::minimal("pre-baseline", 1)),
+        OutputEvent::RunStarted(RunStarted::minimal(
+            "pre-baseline",
+            1,
+            test_resource_control(),
+        )),
     );
     emit(
         &mut handler,
@@ -829,7 +833,7 @@ fn documented_verification_selection() -> VerificationSelection {
 }
 
 fn documented_events() -> Vec<OutputEvent> {
-    let mut run_started = RunStarted::minimal("documented-run", 1);
+    let mut run_started = RunStarted::minimal("documented-run", 1, test_resource_control());
     run_started.verification_selection = Some(documented_verification_selection());
     let mut events = vec![
         OutputEvent::RunStarted(run_started),
@@ -1092,7 +1096,11 @@ fn jsonl_flushes_each_event_and_keeps_diagnostics_on_stderr() {
     let emitted = handler
         .handle(EmitOutput {
             id: EffectId(41),
-            event: OutputEvent::RunStarted(RunStarted::minimal("run-1", 1)),
+            event: OutputEvent::RunStarted(RunStarted::minimal(
+                "run-1",
+                1,
+                test_resource_control(),
+            )),
         })
         .unwrap();
     assert_eq!(emitted.id, EffectId(41));
@@ -1122,8 +1130,12 @@ fn jsonl_flushes_each_event_and_keeps_diagnostics_on_stderr() {
         stdout.text(),
         format!(
             "{}\n",
-            serde_json::to_string(&OutputEvent::RunStarted(RunStarted::minimal("run-1", 1)))
-                .unwrap()
+            serde_json::to_string(&OutputEvent::RunStarted(RunStarted::minimal(
+                "run-1",
+                1,
+                test_resource_control()
+            )))
+            .unwrap()
         )
     );
 }
@@ -1228,7 +1240,11 @@ fn report_errors_are_typed_and_echo_the_effect_id() {
     let failed = handler
         .handle(EmitOutput {
             id: EffectId(99),
-            event: OutputEvent::RunStarted(RunStarted::minimal("run-1", 1)),
+            event: OutputEvent::RunStarted(RunStarted::minimal(
+                "run-1",
+                1,
+                test_resource_control(),
+            )),
         })
         .unwrap_err();
     assert_eq!(failed.id, EffectId(99));
@@ -1240,12 +1256,16 @@ fn report_errors_are_typed_and_echo_the_effect_id() {
     emit(
         &mut handler,
         1,
-        OutputEvent::RunStarted(RunStarted::minimal("run-1", 1)),
+        OutputEvent::RunStarted(RunStarted::minimal("run-1", 1, test_resource_control())),
     );
     let failed = handler
         .handle(EmitOutput {
             id: EffectId(100),
-            event: OutputEvent::RunStarted(RunStarted::minimal("run-1", 2)),
+            event: OutputEvent::RunStarted(RunStarted::minimal(
+                "run-1",
+                2,
+                test_resource_control(),
+            )),
         })
         .unwrap_err();
     assert_eq!(failed.id, EffectId(100));
@@ -1261,7 +1281,11 @@ fn report_errors_are_typed_and_echo_the_effect_id() {
     let failed = handler
         .handle(EmitOutput {
             id: EffectId(101),
-            event: OutputEvent::RunStarted(RunStarted::minimal("run-1", 1)),
+            event: OutputEvent::RunStarted(RunStarted::minimal(
+                "run-1",
+                1,
+                test_resource_control(),
+            )),
         })
         .unwrap_err();
     assert_eq!(failed.id, EffectId(101));
@@ -1281,7 +1305,7 @@ fn partial_stdout_failure_poisons_json_report() {
     emit(
         &mut handler,
         1,
-        OutputEvent::RunStarted(RunStarted::minimal("run-1", 1)),
+        OutputEvent::RunStarted(RunStarted::minimal("run-1", 1, test_resource_control())),
     );
     let failed = handler
         .handle(EmitOutput {
@@ -1313,7 +1337,7 @@ fn partial_mutant_spool_failure_poisons_json_report() {
     emit(
         &mut handler,
         1,
-        OutputEvent::RunStarted(RunStarted::minimal("run-1", 1)),
+        OutputEvent::RunStarted(RunStarted::minimal("run-1", 1, test_resource_control())),
     );
     let failed = handler
         .handle(EmitOutput {
@@ -1465,7 +1489,7 @@ fn human_format_includes_profile_and_fingerprint_provenance_for_normalized_runs(
         std::env::temp_dir(),
     )
     .unwrap();
-    let mut started = RunStarted::minimal("run-1", 1);
+    let mut started = RunStarted::minimal("run-1", 1, test_resource_control());
     started.normalized_config = Some({
         let mut config = hoimin_cli::cli::parse_config_from([
             "hoimin",
@@ -1528,7 +1552,7 @@ fn human_format_includes_verification_selection_policy() {
         std::env::temp_dir(),
     )
     .unwrap();
-    let mut started = RunStarted::minimal("run-1", 1);
+    let mut started = RunStarted::minimal("run-1", 1, test_resource_control());
     started.normalized_config = Some(
         hoimin_cli::cli::parse_config_from(["hoimin", "run", "--file", "x.py", "--", "check"])
             .unwrap(),
@@ -1564,7 +1588,7 @@ fn human_format_omits_fingerprint_provenance_without_patterns() {
         std::env::temp_dir(),
     )
     .unwrap();
-    let mut started = RunStarted::minimal("run-1", 1);
+    let mut started = RunStarted::minimal("run-1", 1, test_resource_control());
     started.normalized_config = Some(
         hoimin_cli::cli::parse_config_from([
             "hoimin",
@@ -1660,7 +1684,7 @@ fn emit(handler: &mut ReportHandler<impl Write, impl Write>, id: u64, event: Out
 
 fn events() -> Vec<OutputEvent> {
     vec![
-        OutputEvent::RunStarted(RunStarted::minimal("run-1", 1)),
+        OutputEvent::RunStarted(RunStarted::minimal("run-1", 1, test_resource_control())),
         OutputEvent::BaselineFinished(BaselineFinished {
             schema_version: REPORT_SCHEMA_VERSION,
             sequence: 2,
@@ -1740,5 +1764,12 @@ fn output_ref() -> OutputSpoolRef {
         token: "output".to_owned(),
         retained: 4,
         observed: 9,
+    }
+}
+
+fn test_resource_control() -> hoimin_core::ResourceControl {
+    hoimin_core::ResourceControl {
+        mode: hoimin_core::ResourceMode::Hard,
+        mechanism: "test_supplied_hard".into(),
     }
 }

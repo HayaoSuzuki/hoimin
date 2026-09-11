@@ -134,7 +134,7 @@ fn plan_config_round_trips_canonical_names_and_accepts_legacy_names() {
 
 #[test]
 fn run_started_round_trips_canonical_normalized_config() {
-    let mut started = RunStarted::minimal("run-1", 1);
+    let mut started = RunStarted::minimal("run-1", 1, test_resource_control());
     started.normalized_config = Some(config(
         CommandArg::Windows(vec![112, 121]),
         Some(Duration::from_secs(7)),
@@ -156,7 +156,7 @@ fn run_started_round_trips_canonical_normalized_config() {
 
 #[test]
 fn run_started_accepts_legacy_normalized_config_names() {
-    let mut started = RunStarted::minimal("run-1", 1);
+    let mut started = RunStarted::minimal("run-1", 1, test_resource_control());
     started.normalized_config = Some(config(
         CommandArg::Windows(vec![112, 121]),
         Some(Duration::from_secs(7)),
@@ -184,4 +184,11 @@ fn config(test_arg: CommandArg, mutant_timeout: Option<Duration>) -> RunConfig {
         ..RawRunConfig::default()
     })
     .unwrap()
+}
+
+fn test_resource_control() -> hoimin_core::ResourceControl {
+    hoimin_core::ResourceControl {
+        mode: hoimin_core::ResourceMode::Hard,
+        mechanism: "test_supplied_hard".into(),
+    }
 }

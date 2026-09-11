@@ -357,7 +357,11 @@ fn complete_exit_policy_has_stable_precedence() {
 fn invalid_sequence_is_a_typed_runtime_error() {
     let mut sequence = ReportSequence::new();
     sequence
-        .observe(&OutputEvent::RunStarted(RunStarted::minimal("run-1", 10)))
+        .observe(&OutputEvent::RunStarted(RunStarted::minimal(
+            "run-1",
+            10,
+            test_resource_control(),
+        )))
         .unwrap();
     assert_eq!(
         sequence.observe(&OutputEvent::Diagnostic(hoimin_core::Diagnostic::new(
@@ -381,7 +385,11 @@ fn sequence_requires_run_start_and_rejects_cross_run_events() {
         Err(hoimin_core::ReportSequenceError::RunNotStarted)
     );
     sequence
-        .observe(&OutputEvent::RunStarted(RunStarted::minimal("run-1", 1)))
+        .observe(&OutputEvent::RunStarted(RunStarted::minimal(
+            "run-1",
+            1,
+            test_resource_control(),
+        )))
         .unwrap();
     assert_eq!(
         sequence.observe(&OutputEvent::Diagnostic(hoimin_core::Diagnostic::new(
@@ -393,7 +401,11 @@ fn sequence_requires_run_start_and_rejects_cross_run_events() {
         })
     );
     assert!(matches!(
-        sequence.observe(&OutputEvent::RunStarted(RunStarted::minimal("run-1", 2))),
+        sequence.observe(&OutputEvent::RunStarted(RunStarted::minimal(
+            "run-1",
+            2,
+            test_resource_control()
+        ))),
         Err(hoimin_core::ReportSequenceError::RunAlreadyStarted { .. })
     ));
 }
@@ -403,7 +415,11 @@ fn sequence_requires_run_start_and_rejects_cross_run_events() {
 fn a_mutant_finish_must_follow_its_matching_start() {
     let mut sequence = ReportSequence::new();
     sequence
-        .observe(&OutputEvent::RunStarted(RunStarted::minimal("run-1", 1)))
+        .observe(&OutputEvent::RunStarted(RunStarted::minimal(
+            "run-1",
+            1,
+            test_resource_control(),
+        )))
         .unwrap();
     let finished = finished_event(2, candidate("m1", 7));
     assert_eq!(
@@ -428,7 +444,11 @@ fn a_mutant_finish_must_follow_its_matching_start() {
 fn sequence_rejects_sequential_stable_identity_reuse_with_another_sequence() {
     let mut sequence = ReportSequence::new();
     sequence
-        .observe(&OutputEvent::RunStarted(RunStarted::minimal("run-1", 1)))
+        .observe(&OutputEvent::RunStarted(RunStarted::minimal(
+            "run-1",
+            1,
+            test_resource_control(),
+        )))
         .unwrap();
     sequence
         .observe(&OutputEvent::MutantStarted(MutantStarted::new(
@@ -458,7 +478,11 @@ fn sequence_rejects_sequential_stable_identity_reuse_with_another_sequence() {
 fn sequence_rejects_concurrent_stable_identity_reuse_with_another_sequence() {
     let mut sequence = ReportSequence::new();
     sequence
-        .observe(&OutputEvent::RunStarted(RunStarted::minimal("run-1", 1)))
+        .observe(&OutputEvent::RunStarted(RunStarted::minimal(
+            "run-1",
+            1,
+            test_resource_control(),
+        )))
         .unwrap();
     sequence
         .observe(&OutputEvent::MutantStarted(MutantStarted::new(
@@ -485,7 +509,11 @@ fn sequence_rejects_concurrent_stable_identity_reuse_with_another_sequence() {
 fn sequence_rejects_duplicate_stable_identity_with_the_same_sequence() {
     let mut sequence = ReportSequence::new();
     sequence
-        .observe(&OutputEvent::RunStarted(RunStarted::minimal("run-1", 1)))
+        .observe(&OutputEvent::RunStarted(RunStarted::minimal(
+            "run-1",
+            1,
+            test_resource_control(),
+        )))
         .unwrap();
     sequence
         .observe(&OutputEvent::MutantStarted(MutantStarted::new(
@@ -512,7 +540,11 @@ fn sequence_rejects_duplicate_stable_identity_with_the_same_sequence() {
 fn sequence_rejects_finish_with_a_different_identity_sequence() {
     let mut sequence = ReportSequence::new();
     sequence
-        .observe(&OutputEvent::RunStarted(RunStarted::minimal("run-1", 1)))
+        .observe(&OutputEvent::RunStarted(RunStarted::minimal(
+            "run-1",
+            1,
+            test_resource_control(),
+        )))
         .unwrap();
     sequence
         .observe(&OutputEvent::MutantStarted(MutantStarted::new(
@@ -537,7 +569,7 @@ fn sequence_rejects_finish_with_a_different_identity_sequence() {
 fn sequence_accepts_distinct_stable_identities_executing_concurrently() {
     let mut sequence = ReportSequence::new();
     for event in [
-        OutputEvent::RunStarted(RunStarted::minimal("run-1", 1)),
+        OutputEvent::RunStarted(RunStarted::minimal("run-1", 1, test_resource_control())),
         OutputEvent::MutantStarted(MutantStarted::new("run-1", 2, "m1", 7)),
         OutputEvent::MutantStarted(MutantStarted::new("run-1", 3, "m2", 8)),
         finished_event(4, candidate("m2", 8)),
@@ -553,7 +585,11 @@ fn sequence_accepts_distinct_stable_identities_executing_concurrently() {
 fn run_finished_rejects_every_later_event() {
     let mut sequence = ReportSequence::new();
     sequence
-        .observe(&OutputEvent::RunStarted(RunStarted::minimal("run-1", 1)))
+        .observe(&OutputEvent::RunStarted(RunStarted::minimal(
+            "run-1",
+            1,
+            test_resource_control(),
+        )))
         .unwrap();
     sequence.observe(&run_finished_event(2)).unwrap();
 
@@ -582,7 +618,11 @@ fn run_finished_rejects_every_later_event() {
 fn run_finished_rejects_active_mutants() {
     let mut sequence = ReportSequence::new();
     sequence
-        .observe(&OutputEvent::RunStarted(RunStarted::minimal("run-1", 1)))
+        .observe(&OutputEvent::RunStarted(RunStarted::minimal(
+            "run-1",
+            1,
+            test_resource_control(),
+        )))
         .unwrap();
     sequence
         .observe(&OutputEvent::MutantStarted(MutantStarted::new(
@@ -606,7 +646,11 @@ fn run_finished_rejects_active_mutants() {
 fn sequence_rejects_status_that_disagrees_with_termination_without_advancing() {
     let mut sequence = ReportSequence::new();
     sequence
-        .observe(&OutputEvent::RunStarted(RunStarted::minimal("run-1", 1)))
+        .observe(&OutputEvent::RunStarted(RunStarted::minimal(
+            "run-1",
+            1,
+            test_resource_control(),
+        )))
         .unwrap();
     sequence
         .observe(&OutputEvent::MutantStarted(MutantStarted::new(
@@ -659,7 +703,11 @@ fn sequence_accepts_every_classified_status_and_an_absent_termination() {
     ];
     let mut sequence = ReportSequence::new();
     sequence
-        .observe(&OutputEvent::RunStarted(RunStarted::minimal("run-1", 1)))
+        .observe(&OutputEvent::RunStarted(RunStarted::minimal(
+            "run-1",
+            1,
+            test_resource_control(),
+        )))
         .unwrap();
 
     let mut event_sequence = 2;
@@ -690,7 +738,11 @@ fn sequence_accepts_every_classified_status_and_an_absent_termination() {
 fn sequence_with_started_mutant() -> ReportSequence {
     let mut sequence = ReportSequence::new();
     sequence
-        .observe(&OutputEvent::RunStarted(RunStarted::minimal("run-1", 1)))
+        .observe(&OutputEvent::RunStarted(RunStarted::minimal(
+            "run-1",
+            1,
+            test_resource_control(),
+        )))
         .unwrap();
     sequence
         .observe(&OutputEvent::MutantStarted(MutantStarted::new(
@@ -819,7 +871,7 @@ fn legacy_mutant_finish_defaults_and_omits_output_completion_fields() {
 #[test]
 fn all_event_variants_have_the_exact_public_kind() {
     let events = [
-        OutputEvent::RunStarted(RunStarted::minimal("run-1", 1)),
+        OutputEvent::RunStarted(RunStarted::minimal("run-1", 1, test_resource_control())),
         serde_json::from_value(json!({
             "kind": "baseline_finished",
             "schema_version": 1,
@@ -881,7 +933,11 @@ fn all_event_variants_have_the_exact_public_kind() {
 fn invalid_sequence_trips_the_ci_contract() {
     let mut sequence = ReportSequence::new();
     sequence
-        .observe(&OutputEvent::RunStarted(RunStarted::minimal("run-1", 10)))
+        .observe(&OutputEvent::RunStarted(RunStarted::minimal(
+            "run-1",
+            10,
+            test_resource_control(),
+        )))
         .unwrap();
     let _ = sequence.observe(&OutputEvent::Diagnostic(hoimin_core::Diagnostic::new(
         "run-1", 9, "warning", "x", "y",
@@ -894,7 +950,11 @@ fn invalid_sequence_trips_the_ci_contract() {
 fn cross_run_event_trips_the_ci_contract() {
     let mut sequence = ReportSequence::new();
     sequence
-        .observe(&OutputEvent::RunStarted(RunStarted::minimal("run-1", 1)))
+        .observe(&OutputEvent::RunStarted(RunStarted::minimal(
+            "run-1",
+            1,
+            test_resource_control(),
+        )))
         .unwrap();
     let _ = sequence.observe(&OutputEvent::Diagnostic(hoimin_core::Diagnostic::new(
         "run-2", 2, "warning", "x", "y",
@@ -907,7 +967,11 @@ fn cross_run_event_trips_the_ci_contract() {
 fn incoherent_mutant_finish_trips_the_ci_contract() {
     let mut sequence = ReportSequence::new();
     sequence
-        .observe(&OutputEvent::RunStarted(RunStarted::minimal("run-1", 1)))
+        .observe(&OutputEvent::RunStarted(RunStarted::minimal(
+            "run-1",
+            1,
+            test_resource_control(),
+        )))
         .unwrap();
     sequence
         .observe(&OutputEvent::MutantStarted(MutantStarted::new(
@@ -1001,6 +1065,13 @@ fn disk_json() -> serde_json::Value {
     serde_json::to_value(hoimin_core::DiskRunSummary::unmeasured(8, 10)).unwrap()
 }
 
+fn test_resource_control() -> hoimin_core::ResourceControl {
+    hoimin_core::ResourceControl {
+        mode: hoimin_core::ResourceMode::Hard,
+        mechanism: "test_supplied_hard".into(),
+    }
+}
+
 #[test]
 fn standalone_result_validation_preserves_error_precedence() {
     use hoimin_core::{ProcessOutputState, ReportSequenceError};
@@ -1063,7 +1134,11 @@ fn sequence_checks_lifecycle_before_result_and_rejection_preserves_active_mutant
     );
     let mut sequence = ReportSequence::new();
     sequence
-        .observe(&OutputEvent::RunStarted(RunStarted::minimal("run-1", 1)))
+        .observe(&OutputEvent::RunStarted(RunStarted::minimal(
+            "run-1",
+            1,
+            test_resource_control(),
+        )))
         .unwrap();
     assert!(matches!(
         sequence.observe(&event),

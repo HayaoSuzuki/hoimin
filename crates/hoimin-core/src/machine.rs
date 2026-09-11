@@ -167,6 +167,7 @@ struct OrderedCandidateState {
 pub struct RunState {
     run_id: String,
     config: RunConfig,
+    resource_control: crate::ResourceControl,
     phase: RunPhase,
     next_effect_id: u64,
     pending: BTreeMap<EffectId, PendingEffect>,
@@ -203,7 +204,12 @@ pub struct RunState {
 }
 
 impl RunState {
-    pub fn new(run_id: impl Into<String>, config: RunConfig) -> Self {
+    /// Creates a run with the description of its already-selected resource backend.
+    pub fn new(
+        run_id: impl Into<String>,
+        config: RunConfig,
+        resource_control: crate::ResourceControl,
+    ) -> Self {
         let budgets = RunBudgets {
             memory: config.limits.max_memory.get(),
             copy: config.limits.max_copy_size.get(),
@@ -216,6 +222,7 @@ impl RunState {
         Self {
             run_id: run_id.into(),
             config,
+            resource_control,
             phase: RunPhase::Validate,
             next_effect_id: 1,
             pending: BTreeMap::new(),
@@ -277,8 +284,9 @@ impl RunState {
         run_id: impl Into<String>,
         config: RunConfig,
         fingerprint: RunFingerprint,
+        resource_control: crate::ResourceControl,
     ) -> Self {
-        let mut state = Self::new(run_id, config);
+        let mut state = Self::new(run_id, config, resource_control);
         state.fingerprint = Some(fingerprint);
         state
     }
@@ -289,8 +297,9 @@ impl RunState {
         run_id: impl Into<String>,
         config: RunConfig,
         candidate_ids: BTreeSet<String>,
+        resource_control: crate::ResourceControl,
     ) -> Self {
-        let mut state = Self::new(run_id, config);
+        let mut state = Self::new(run_id, config, resource_control);
         state.candidate_filter = Some(candidate_ids);
         state
     }
@@ -304,8 +313,9 @@ impl RunState {
         run_id: impl Into<String>,
         config: RunConfig,
         ordered_candidate_ids: Vec<String>,
+        resource_control: crate::ResourceControl,
     ) -> Self {
-        let mut state = Self::new(run_id, config);
+        let mut state = Self::new(run_id, config, resource_control);
         let mut candidate_filter = BTreeSet::new();
         let ordered_candidate_ids = ordered_candidate_ids
             .into_iter()
@@ -679,7 +689,8 @@ impl RunState {
         let id = self.allocate_id()?;
         self.run_started_output_id = Some(id);
         let sequence = self.output_sequence();
-        let mut run_started = RunStarted::minimal(self.run_id.clone(), sequence);
+        let mut run_started =
+            RunStarted::minimal(self.run_id.clone(), sequence, self.resource_control.clone());
         run_started.normalized_config = Some(self.config.clone());
         run_started
             .verification_selection
@@ -1083,7 +1094,7 @@ impl RunState {
                 termination: None,
                 output_state: ProcessOutputState::Complete,
                 elapsed_ms: 0,
-                resource_mode: crate::ResourceMode::Hard,
+                resource_mode: self.resource_control.mode,
                 output: None,
                 diagnostics: Vec::new(),
             }),
@@ -2254,7 +2265,14 @@ mod tests {
                 .iter()
                 .map(|name| audit_status(name))
                 .collect::<Vec<_>>();
-            let mut state = RunState::new("lean-policy-audit", audit_config());
+            let mut state = RunState::new(
+                "lean-policy-audit",
+                audit_config(),
+                crate::ResourceControl {
+                    mode: crate::ResourceMode::Hard,
+                    mechanism: "test_supplied_hard".into(),
+                },
+            );
             state.summary = summarize(&statuses);
             state.flags.outcome.infrastructure_error = case.run_flags.infrastructure_error;
             state.flags.outcome.baseline_failed = case.run_flags.baseline_failed;
@@ -2350,7 +2368,14 @@ mod tests {
                 for baseline_failed in booleans {
                     for incomplete in booleans {
                         for interrupted in booleans {
-                            let mut state = RunState::new("lean-policy-audit", audit_config());
+                            let mut state = RunState::new(
+                                "lean-policy-audit",
+                                audit_config(),
+                                crate::ResourceControl {
+                                    mode: crate::ResourceMode::Hard,
+                                    mechanism: "test_supplied_hard".into(),
+                                },
+                            );
                             state.summary = summarize(&statuses);
                             state.flags.outcome.infrastructure_error = infrastructure_error;
                             state.flags.outcome.baseline_failed = baseline_failed;

@@ -43,6 +43,11 @@ sources:
   resource: ../../json-schema/run-result.schema.json
   revision: a7daea0b557cd435c1e55b540392fbdd116348e1
   working_tree: clean
+- id: issue-487
+  resource: ../../superpowers/specs/2026-09-11-issue-487-resource-report-policy-design.md
+  working_tree: untracked
+  sha256: 81204e5418b7fe3eac61795402199e9427a1b3157f89525d8267cb502d324e80
+
 - id: issue-484
   resource: ../../superpowers/specs/2026-09-11-issue-484-metrics-destinations-design.md
   working_tree: untracked
@@ -88,6 +93,12 @@ JSON Schemaは結果の構造を定める元資料として保持する。ただ
 
 run所有権、再利用条件、結果置換、DBスキーマ、集計値と終了コードの規則、JSON読取り処理を変更したら更新する。保存・読取り・比較の各処理で同じ前提が維持されるかを調べる。旧報告にある未解決という記述は、その報告の時点として扱う。
 
+# 選択した資源制限方式と再利用結果
+
+Issue487では、実際に選択したbackendのmodeと識別用mechanismを、run開始前にcoreへ渡す。runヘッダーと、再利用・停止によって生成する結果は同じrunの方針を表す。best-effortを許可する設定から実行方式を推測せず、実プロセスの結果は実行側から受け取ったmodeを保つ。[^issue-487]
+
+再利用結果のterminationとoutputはnull、経過時間は0のままとする。過去のプロセスを今回実行したことにはせず、保存済みの履歴も表示のために書き換えない。JSONとJSONLの実行、自然に未完了となったsessionからのresumeを通じて、ヘッダー・実行結果・再利用結果を照合する。[^issue-487]
+
 # Issue 477: import順序と再利用条件
 
 明示import rootの順序は実行されるモジュールを変え得るため、正規化した順序付きリストをfingerprintへ加える。fingerprint schemaはv6からv7へ進め、旧sessionは既存の版不一致診断に従う。rootの値や順序が異なる結果を再利用せず、同じ順序の重複は除く。過去のrunレポートでフィールドがない場合の読取りと、旧plan・旧sessionの実行互換性は別に扱う。[^issue-477]
@@ -98,6 +109,8 @@ run所有権、再利用条件、結果置換、DBスキーマ、集計値と終
 [^migration]: [2026-08-11-lean-schema-migration-concurrency-audit.md](../../superpowers/reports/2026-08-11-lean-schema-migration-concurrency-audit.md)。
 [^reader]: [input.rs](../../../crates/hoimin-cli/src/progress/input.rs)。
 [^schema]: [run-result.schema.json](../../json-schema/run-result.schema.json)。
+
+[^issue-487]: [2026-09-11-issue-487-resource-report-policy-design.md](../../superpowers/specs/2026-09-11-issue-487-resource-report-policy-design.md)。
 
 [^issue-484]: [2026-09-11-issue-484-metrics-destinations-design.md](../../superpowers/specs/2026-09-11-issue-484-metrics-destinations-design.md)。
 

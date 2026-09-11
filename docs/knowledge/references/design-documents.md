@@ -708,6 +708,11 @@ sources:
   resource: ../../superpowers/specs/2026-07-18-python-mutation-tool-design.md
   revision: a7daea0b557cd435c1e55b540392fbdd116348e1
   working_tree: clean
+- id: issue-487
+  resource: ../../superpowers/specs/2026-09-11-issue-487-resource-report-policy-design.md
+  working_tree: untracked
+  sha256: 81204e5418b7fe3eac61795402199e9427a1b3157f89525d8267cb502d324e80
+
 - id: issue-486
   resource: ../../superpowers/specs/2026-09-11-issue-486-type-parameter-bindings-design.md
   working_tree: untracked
@@ -731,12 +736,13 @@ sources:
 
 # 収録一覧
 
-2026-09-11時点の177件。これは原文への索引であり、各文書の採用状況・現行性・検証結果を一括して認定するものではない。見出しは原文から抽出した。出典の版とGitの追跡状態は、冒頭のYAMLメタデータに記録している。未追跡資料は同じ作業ツリーに依存する。
+2026-09-11時点の178件。これは原文への索引であり、各文書の採用状況・現行性・検証結果を一括して認定するものではない。見出しは原文から抽出した。出典の版とGitの追跡状態は、冒頭のYAMLメタデータに記録している。未追跡資料は同じ作業ツリーに依存する。
 
 主要な論点の要約は[入口](../index.md)から読む。ファイル名に含まれる日付は作成履歴の手がかりであり、そのファイルが最後に変更された日時ではない。
 
 | 原文 | 先頭見出し | 作成時の状態 |
 | --- | --- | --- |
+| [2026-09-11-issue-487-resource-report-policy-design.md](../../superpowers/specs/2026-09-11-issue-487-resource-report-policy-design.md) | Issue 487: Report the selected resource backend throughout a run [^issue-487] | 未追跡 |
 | [2026-09-11-issue-486-type-parameter-bindings-design.md](../../superpowers/specs/2026-09-11-issue-486-type-parameter-bindings-design.md) | Issue 486: Resolve PEP 695 type-parameter bindings in their annotation scope [^issue-486] | 未追跡 |
 | [2026-09-11-issue-485-mapping-pattern-keys-design.md](../../superpowers/specs/2026-09-11-issue-485-mapping-pattern-keys-design.md) | Issue 485: Preserve unique literal keys in mapping-pattern mutations [^issue-485] | 未追跡 |
 | [2026-09-11-issue-484-metrics-destinations-design.md](../../superpowers/specs/2026-09-11-issue-484-metrics-destinations-design.md) | Issue 484: Reject metrics destinations that replace protected input entries [^issue-484] | 未追跡 |
@@ -1071,6 +1077,8 @@ sources:
 [^doc-158]: [2026-07-19-python-314-typing-design.md](../../superpowers/specs/2026-07-19-python-314-typing-design.md)。
 [^doc-159]: [2026-07-19-ci-hosted-runner-design.md](../../superpowers/specs/2026-07-19-ci-hosted-runner-design.md)。
 [^doc-160]: [2026-07-18-python-mutation-tool-design.md](../../superpowers/specs/2026-07-18-python-mutation-tool-design.md)。
+
+[^issue-487]: [2026-09-11-issue-487-resource-report-policy-design.md](../../superpowers/specs/2026-09-11-issue-487-resource-report-policy-design.md)。
 
 [^issue-486]: [2026-09-11-issue-486-type-parameter-bindings-design.md](../../superpowers/specs/2026-09-11-issue-486-type-parameter-bindings-design.md)。
 

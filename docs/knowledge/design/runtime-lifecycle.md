@@ -25,6 +25,11 @@ sources:
   resource: ../../superpowers/reports/2026-09-08-issue-342-resource-audit.md
   revision: a7daea0b557cd435c1e55b540392fbdd116348e1
   working_tree: clean
+- id: issue-487
+  resource: ../../superpowers/specs/2026-09-11-issue-487-resource-report-policy-design.md
+  working_tree: untracked
+  sha256: 81204e5418b7fe3eac61795402199e9427a1b3157f89525d8267cb502d324e80
+
 - id: issue-484
   resource: ../../superpowers/specs/2026-09-11-issue-484-metrics-destinations-design.md
   working_tree: untracked
@@ -83,10 +88,18 @@ metricsは元ソースの検証後に書き込まれるため、出力先の衝�
 
 [境界監査](../audits/boundary-2026-09.md)では、実行方式を表すresource modeの伝播や、Windowsで制限を実行全体（run-wide）へ適用する契約も調査対象になった。OSごとの制限実装（backend）、停止処理、所有権、レポート出力、制限を適用する単位を変更したら、公開説明と各OSで実行確認した範囲を再照合する。
 
+# 実行方式の情報をレポートへ渡す
+
+Issue487では、選択済みbackendのmodeと安定したmechanism名を、StartRequestedより前に状態機械へ渡す。すべての候補選択経路でこの情報を共有し、runヘッダーや停止時の未実行結果に架空のhard方式を設定しない。資源制限の実装や後処理を変える修正ではない。[^issue-487]
+
+実際のbackend情報を渡したRustの遷移試験と、OSが上限を強制したという実機の証拠は区別する。Windowsの制限単位は独立したIssue488の対象であり、この情報伝播の修正だけでrun全体の上限を保証しない。[^issue-487]
+
 [^readme]: [README.md](../../../README.md)。
 [^disk]: [2026-08-27-disk-safe-mutation-execution-design.md](../../superpowers/specs/2026-08-27-disk-safe-mutation-execution-design.md)。
 [^terminal]: [2026-07-29-run-finished-terminal-design.md](../../superpowers/specs/2026-07-29-run-finished-terminal-design.md)。
 [^delivery]: [2026-09-08-issue-335-report-shutdown-design.md](../../superpowers/specs/2026-09-08-issue-335-report-shutdown-design.md)。
 [^cleanup]: [2026-09-08-issue-342-resource-audit.md](../../superpowers/reports/2026-09-08-issue-342-resource-audit.md)。
+
+[^issue-487]: [2026-09-11-issue-487-resource-report-policy-design.md](../../superpowers/specs/2026-09-11-issue-487-resource-report-policy-design.md)。
 
 [^issue-484]: [2026-09-11-issue-484-metrics-destinations-design.md](../../superpowers/specs/2026-09-11-issue-484-metrics-destinations-design.md)。

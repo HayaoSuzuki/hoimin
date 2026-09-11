@@ -285,6 +285,12 @@ impl ProcessHandler {
         Ok(self.output_dir.join(format!("{}.bin", output.token)))
     }
 
+    /// Returns the selected backend description for run initialization.
+    #[must_use]
+    pub fn resource_control(&self) -> hoimin_core::ResourceControl {
+        self.backend.resource_control()
+    }
+
     #[must_use]
     pub fn mode(&self) -> hoimin_core::ResourceMode {
         self.backend.mode()

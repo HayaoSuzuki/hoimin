@@ -301,7 +301,11 @@ mod correspondence {
     fn to_output_event(event: &OracleEvent) -> Result<OutputEvent, String> {
         let run_id = run_id(&event.run_id)?;
         Ok(match event.kind.as_str() {
-            "run_started" => OutputEvent::RunStarted(RunStarted::minimal(run_id, event.sequence)),
+            "run_started" => OutputEvent::RunStarted(RunStarted::minimal(
+                run_id,
+                event.sequence,
+                test_resource_control(),
+            )),
             "diagnostic" => OutputEvent::Diagnostic(Diagnostic::new(
                 run_id,
                 event.sequence,
@@ -582,5 +586,13 @@ mod correspondence {
             }
         }
         assert!(exercised > 0, "case filter selected no corpus row");
+    }
+}
+
+#[cfg(not(feature = "contracts"))]
+fn test_resource_control() -> hoimin_core::ResourceControl {
+    hoimin_core::ResourceControl {
+        mode: hoimin_core::ResourceMode::Hard,
+        mechanism: "test_supplied_hard".into(),
     }
 }

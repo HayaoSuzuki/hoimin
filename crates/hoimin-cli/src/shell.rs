@@ -2609,18 +2609,28 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
     let run_result = async {
         let mut state = Box::new(match candidate_selection {
             CandidateSelection::Explicit(candidate_ids, verification_selection) => {
-                RunState::with_candidate_filter(initial_run_id.clone(), config, candidate_ids)
-                    .with_verification_selection(verification_selection)
+                RunState::with_candidate_filter(
+                    initial_run_id.clone(),
+                    config,
+                    candidate_ids,
+                    context.process.resource_control(),
+                )
+                .with_verification_selection(verification_selection)
             }
             CandidateSelection::Ordered(candidate_ids, verification_selection) => {
                 RunState::with_ordered_candidate_filter(
                     initial_run_id.clone(),
                     config,
                     candidate_ids,
+                    context.process.resource_control(),
                 )
                 .with_verification_selection(verification_selection)
             }
-            CandidateSelection::All => RunState::new(initial_run_id.clone(), config),
+            CandidateSelection::All => RunState::new(
+                initial_run_id.clone(),
+                config,
+                context.process.resource_control(),
+            ),
         });
         let (next, initial) = transition(*state, RunEvent::StartRequested(StartRequested))
             .map_err(|error| error.to_string())?;
@@ -7538,7 +7548,14 @@ mod tests {
             "hoimin", "run", "--root", ".", "--source", ".", "--", "python", "-m", "pytest",
         ])
         .unwrap();
-        let state = RunState::new("persisted-session-run", config);
+        let state = RunState::new(
+            "persisted-session-run",
+            config,
+            hoimin_core::ResourceControl {
+                mode: hoimin_core::ResourceMode::Hard,
+                mechanism: "test_supplied_hard".into(),
+            },
+        );
         let mut diagnostic_run_id = "initial-run".to_owned();
 
         track_diagnostic_run_id(&mut diagnostic_run_id, &state);
@@ -9315,7 +9332,14 @@ mod tests {
         ])
         .unwrap();
         let (state, pending_effects) = transition(
-            RunState::new("run-1", config),
+            RunState::new(
+                "run-1",
+                config,
+                hoimin_core::ResourceControl {
+                    mode: hoimin_core::ResourceMode::Hard,
+                    mechanism: "test_supplied_hard".into(),
+                },
+            ),
             RunEvent::StartRequested(StartRequested),
         )
         .unwrap();
