@@ -139,19 +139,53 @@ fn repeated_depth_rejections_reclaim_ast_allocations() {
                 profile: hoimin_core::MutationProfile::Full,
                 max_candidates: 1,
             };
-            let source = format!("value = {}\n", vec!["1"; 25_000].join("+"));
+            let sources = [
+                format!("value = {}\n", vec!["1"; 25_000].join("+")),
+                format!("value = {}1\n", "-".repeat(1_000)),
+                format!("value = {}\n", vec!["1"; 2_000].join("**")),
+                format!("value = {}1\n", "lambda: ".repeat(2_000)),
+                format!("value = {}1\n", "1 if x else ".repeat(2_000)),
+            ];
             // Warm parser thread-local state before checking retained allocations.
-            assert!(rust::analyze_source_cancellable(&request, &source, || false).is_err());
+            for source in &sources {
+                assert!(rust::analyze_source_cancellable(&request, source, || false).is_err());
+            }
             let baseline = heap::live();
             for _ in 0..20 {
-                assert!(matches!(
-                    rust::analyze_source_cancellable(&request, &source, || false),
-                    Err(rust::AnalysisError::DepthExceeded { limit: 128 })
-                ));
-                assert!(
-                    heap::live() <= baseline + 1024,
-                    "rejection retained AST memory"
-                );
+                for source in &sources {
+                    assert!(matches!(
+                        rust::analyze_source_cancellable(&request, source, || false),
+                        Err(rust::AnalysisError::DepthExceeded { limit: 128 })
+                    ));
+                    assert!(
+                        heap::live() <= baseline + 1024,
+                        "rejection retained AST memory"
+                    );
+                }
+            }
+            // Recovery discards trees before returning a module. Process-exit
+            // reclamation cannot stand in for releasing those owned subtrees.
+            let recovered = [
+                format!(
+                    "with ({}) as context:\n pass\n",
+                    vec!["1"; 25_000].join("+")
+                ),
+                format!("match({})\n", vec!["1"; 25_000].join("+")),
+                format!("match x:\n case C(a{}=other): pass\n", ".b".repeat(25_000)),
+                format!("match x:\n case (a{} as y)(): pass\n", ".b".repeat(25_000)),
+            ];
+            for source in &recovered {
+                let _ = rust::analyze_source_cancellable(&request, source, || false);
+            }
+            let baseline = heap::live();
+            for _ in 0..10 {
+                for source in &recovered {
+                    let _ = rust::analyze_source_cancellable(&request, source, || false);
+                    assert!(
+                        heap::live() <= baseline + 1024,
+                        "parser recovery retained AST memory"
+                    );
+                }
             }
         })
         .unwrap()

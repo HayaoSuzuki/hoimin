@@ -1,6 +1,10 @@
 [workspace]
 members = ["crates/hoimin-core", "crates/hoimin-cli"]
+exclude = ["vendor/ruff_python_parser"]
 resolver = "3"
+
+[patch.crates-io]
+littrs-ruff-python-parser = { path = "vendor/ruff_python_parser" }
 
 [workspace.package]
 version = "0.1.0"

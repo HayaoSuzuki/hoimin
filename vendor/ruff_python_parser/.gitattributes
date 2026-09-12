@@ -1,0 +1,2 @@
+# Upstream parser fixtures intentionally exercise CRLF and other literal bytes.
+resources/** -text
