@@ -186,6 +186,35 @@ fn pair_scenario_contract(id: &str) -> Option<ScenarioContract> {
             "builtin-pair",
             &["tuple = local_tuple", "hidden_destination = list(items)"],
         ),
+        "builtin_method_skips_class_global" => (
+            "strict",
+            "builtin-pair",
+            &[
+                "def outer():",
+                "tuple = object()",
+                "global tuple",
+                "def method(self):",
+            ],
+        ),
+        "builtin_direct_class_global" => (
+            "strict",
+            "builtin-pair",
+            &[
+                "def outer():",
+                "tuple = object()",
+                "global tuple",
+                "value = list(range(2))",
+            ],
+        ),
+        "builtin_method_own_global" => (
+            "strict",
+            "builtin-pair",
+            &[
+                "def outer():",
+                "tuple = object()",
+                "def method(self):\n            global tuple",
+            ],
+        ),
         "exception_pair_clean" => ("strict", "exception-pair", &["raise ValueError"]),
         "exception_source_shadowed" => (
             "strict",
@@ -511,7 +540,7 @@ async fn strict_public_plan_observations_match_lean() {
 fn corpus_accepts_the_lean_binding_flow_schema() {
     let cases = parse_corpus(CORPUS).expect("Lean binding-flow corpus must be valid");
 
-    assert_eq!(cases.len(), 25);
+    assert_eq!(cases.len(), 28);
     assert!(cases.iter().any(|item| item.mode == "strict"));
     assert!(cases.iter().any(|item| item.mode == "internal-fixture"));
     assert!(cases.iter().any(|item| item.mode == "model-only"));
