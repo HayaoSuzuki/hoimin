@@ -89,4 +89,40 @@ except TypeError as error:
     assert 'TypeVar' in str(error) and 'not callable' in str(error)
 else:
     raise AssertionError('mutant must call the non-builtin TypeVar')
+
+# A class directive governs direct class lookup; descendants still capture
+# the enclosing type parameter unless they declare their own global.
+class ClassGlobal[tuple]:
+    global tuple
+    direct = tuple
+    def method(self):
+        return tuple
+    def generic[T](self):
+        return tuple
+    via_lambda = lambda self: tuple
+    values = [tuple for _ in range(1)]
+    deferred = (tuple for _ in range(1))
+    def explicit_global(self):
+        global tuple
+        return tuple
+parameter = ClassGlobal.__type_params__[0]
+assert ClassGlobal.direct is builtins.tuple
+assert ClassGlobal().explicit_global() is builtins.tuple
+assert ClassGlobal().method() is parameter
+assert ClassGlobal().generic() is parameter
+assert ClassGlobal().via_lambda() is parameter
+assert ClassGlobal.values[0] is parameter
+assert next(ClassGlobal.deferred) is parameter
+
+def ordinary_closure():
+    tuple = object()
+    class C:
+        global tuple
+        direct = tuple
+        def method(self):
+            return tuple
+    assert C.direct is builtins.tuple
+    assert C().method() is tuple
+ordinary_closure()
+
 print('header/body/lazy identities OK')

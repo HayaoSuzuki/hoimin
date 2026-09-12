@@ -95,6 +95,7 @@ private def printStats (depth : Nat) : IO UInt32 := do
 private def printSensitivity : IO UInt32 := do
   IO.println s!"union_meet_detected={unionSensitivity}"
   IO.println s!"class_resolution_detected={classSensitivity}"
+  IO.println s!"class_directive_order_detected={classDirectiveSensitivity}"
   IO.println s!"finally_routing_detected={finallySensitivity}"
   IO.println s!"loop_iteration_detected={loopSensitivity}"
   IO.println s!"destination_gate_detected={destinationSensitivity}"

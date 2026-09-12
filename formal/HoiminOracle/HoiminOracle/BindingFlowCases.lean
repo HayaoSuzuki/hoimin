@@ -136,6 +136,22 @@ def nonlocalUnknownCandidate : Candidate := {
   ]
 }
 
+def classGlobalClosurePath : List Frame := [
+  classFrame 2 emptyEnv emptyEnv .global,
+  functionFrame 1 (destinationFact .shadowed),
+  moduleFrame emptyEnv emptyEnv
+]
+
+def classGlobalMethodCandidate : Candidate := {
+  path := functionFrame 3 emptyEnv :: classGlobalClosurePath
+}
+
+def classGlobalDirectCandidate : Candidate := { path := classGlobalClosurePath }
+
+def methodGlobalCandidate : Candidate := {
+  path := functionFrame 3 emptyEnv .global :: classGlobalClosurePath
+}
+
 def cases : List OracleCase := [
   {
     id := "typing_if_identical"
@@ -429,6 +445,51 @@ def cases : List OracleCase := [
     replacement := "tuple"
   },
   {
+    id := "builtin_method_skips_class_global"
+    mode := "strict"
+    family := "builtin-pair"
+    operator := "collection_list_tuple"
+    source := "def outer():\n    tuple = object()\n    class C:\n        global tuple\n        def method(self):\n            return list(range(2))\n    return C\n"
+    siteMarker := "list(range(2))"
+    initial := builtinInitial
+    program := .scoped classGlobalMethodCandidate .skip
+    target := .builtin
+    expectedPresent := false
+    original := "list"
+    replacement := "tuple"
+    symbol := some "outer.C.method"
+  },
+  {
+    id := "builtin_direct_class_global"
+    mode := "strict"
+    family := "builtin-pair"
+    operator := "collection_list_tuple"
+    source := "def outer():\n    tuple = object()\n    class C:\n        global tuple\n        value = list(range(2))\n    return C\n"
+    siteMarker := "list(range(2))"
+    initial := builtinInitial
+    program := .scoped classGlobalDirectCandidate .skip
+    target := .builtin
+    expectedPresent := true
+    original := "list"
+    replacement := "tuple"
+    symbol := some "outer.C"
+  },
+  {
+    id := "builtin_method_own_global"
+    mode := "strict"
+    family := "builtin-pair"
+    operator := "collection_list_tuple"
+    source := "def outer():\n    tuple = object()\n    class C:\n        global tuple\n        def method(self):\n            global tuple\n            return list(range(2))\n    return C\n"
+    siteMarker := "list(range(2))"
+    initial := builtinInitial
+    program := .scoped methodGlobalCandidate .skip
+    target := .builtin
+    expectedPresent := true
+    original := "list"
+    replacement := "tuple"
+    symbol := some "outer.C.method"
+  },
+  {
     id := "exception_pair_clean"
     mode := "strict"
     family := "exception-pair"
@@ -512,6 +573,22 @@ def classSensitivity : Bool :=
   resolve .destination classMethodCandidate = .known .typing &&
     brokenResolveThroughClass .destination classMethodCandidate = .shadowed
 
+-- The pre-fix rule inspects an indirectly reached class directive before
+-- deciding whether that class participates in lexical lookup.
+def brokenClassDirectiveFirst (name : Name) (candidate : Candidate) : Fact :=
+  match candidate.path with
+  | method :: frame :: rest =>
+      if method.kind == .function && frame.kind == .class &&
+          frame.directive == .global then resolveModuleWhole name rest
+      else resolve name candidate
+  | _ => resolve name candidate
+
+def classDirectiveSensitivity : Bool :=
+  resolve .destination classGlobalMethodCandidate == .shadowed &&
+  brokenClassDirectiveFirst .destination classGlobalMethodCandidate == .known .builtin &&
+  resolve .destination classGlobalDirectCandidate == .known .builtin &&
+  resolve .destination methodGlobalCandidate == .known .builtin
+
 def finallySensitivity : Bool :=
   routeCategory .continue (Exits.fallthroughOnly typingInitial) =
       Exits.categoryOnly .continue typingInitial &&
@@ -532,7 +609,7 @@ def destinationSensitivity : Bool :=
       { builtinInitial with destination := .shadowed } .builtin
 
 def sensitivityPasses : Bool :=
-  unionSensitivity && classSensitivity && finallySensitivity &&
+  unionSensitivity && classSensitivity && classDirectiveSensitivity && finallySensitivity &&
     loopSensitivity && destinationSensitivity
 
 def auditAtoms : List Stmt := [

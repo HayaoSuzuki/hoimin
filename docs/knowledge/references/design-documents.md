@@ -9,6 +9,10 @@ sources:
   resource: ../../superpowers/specs/2026-09-12-issue-513-parser-recursion-design.md
   working_tree: untracked
   sha256: 5f9dbe6895760a0675c9a74e3a98207327832450e33433ac869e118125485dc8
+- id: issue-515
+  resource: ../../superpowers/specs/2026-09-12-issue-515-class-directives-design.md
+  working_tree: untracked
+  sha256: b8b9af043c170b7eff1ecb0344a6eea2bddcfec9337c67cb548f1579452edcd0
 - id: issue-478
   resource: ../../superpowers/specs/2026-09-11-issue-478-analysis-depth-design.md
   working_tree: untracked
@@ -751,6 +755,7 @@ sources:
 
 | 原文 | 先頭見出し | 作成時の状態 |
 | --- | --- | --- |
+| [2026-09-12-issue-515-class-directives-design.md](../../superpowers/specs/2026-09-12-issue-515-class-directives-design.md) | Issue 515: Skip enclosing class directives during lexical lookup [^issue-515] | 未追跡 |
 | [2026-09-11-issue-488-windows-resource-scope-design.md](../../superpowers/specs/2026-09-11-issue-488-windows-resource-scope-design.md) | Issue 488: Make Windows per-root resource limits explicit and test the native caps [^issue-488] | 未追跡 |
 | [2026-09-11-issue-487-resource-report-policy-design.md](../../superpowers/specs/2026-09-11-issue-487-resource-report-policy-design.md) | Issue 487: Report the selected resource backend throughout a run [^issue-487] | 未追跡 |
 | [2026-09-11-issue-486-type-parameter-bindings-design.md](../../superpowers/specs/2026-09-11-issue-486-type-parameter-bindings-design.md) | Issue 486: Resolve PEP 695 type-parameter bindings in their annotation scope [^issue-486] | 未追跡 |
@@ -1143,3 +1148,4 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 [^issue-451]: [設計原文](../../superpowers/specs/2026-09-11-issue-451-exception-parentheses-design.md)。
 
 [^issue-513]: [2026-09-12-issue-513-parser-recursion-design.md](../../superpowers/specs/2026-09-12-issue-513-parser-recursion-design.md)。
+[^issue-515]: [Issue515 class directive design](../../superpowers/specs/2026-09-12-issue-515-class-directives-design.md)。

@@ -119,14 +119,14 @@ mutual
             | .normal =>
                 factResolution (frame.whole.get name) (resolveFrom name rest false)
         | .class =>
-            match frame.directive with
-            | .global => resolveModuleWhole name rest
-            | .nonlocal => resolveNonlocal name rest
-            | .normal =>
-                if direct then
+            if direct then
+              match frame.directive with
+              | .global => resolveModuleWhole name rest
+              | .nonlocal => resolveNonlocal name rest
+              | .normal =>
                   factResolution (frame.before.get name) (resolveFrom name rest false)
-                else
-                  resolveFrom name rest false
+            else
+              resolveFrom name rest false
 end
 
 structure Candidate where

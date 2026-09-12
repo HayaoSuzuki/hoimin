@@ -138,6 +138,8 @@ Independent integration review found no blocking issue and identified missing ve
 ### Delivery status
 
 - [x] Prepare commit and draft PR; delivery identifiers are reported with the PR.
-- [ ] Report remote CI result or pending state, without treating local macOS checks as Windows/Linux evidence.
+- [x] Draft PR #519 created; remote CI pending at delivery. Local macOS checks do not establish Windows/Linux results.
 
 Final test-only review follow-up: strengthened invalid-syntax assertions pass in both profiles (9 public tests each): `/private/tmp/issue513-public-final.log`, `/private/tmp/issue513-release-public-final.log`. Final strict workspace Clippy also exits0 (`/private/tmp/issue513-clippy-final.log`). Vendored `.gitattributes` disables newline normalization for parser resource fixtures; all526 staged resource files were compared byte-for-byte against the registry package and match. The final Rust reviewer reported no correctness findings in checkpoint closures, discarded ownership, or shared destruction.
+
+PR: https://github.com/tokyogas-tech/hoimin/pull/519 (draft). Integrated latest main8f1613b into the PR branch after GitHub reported conflicts in the two OKF pages. Both Issue513 and515 source entries, sections and citations are preserved. Post-integration workspace all-feature test: exit0, 1753 passed executions across 76 result groups,0 failed,13 ignored (`/private/tmp/issue513-merged-workspace.log`). Merged OKF YAML,source hashes,citations,links and design-index checks passed again. This is an integration into the feature branch, not a merge of the PR into main.
