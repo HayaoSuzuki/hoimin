@@ -9,3 +9,10 @@
 {"expected_present":true,"id":"lambda_boundary","mode":"strict","owner":2,"schema":1,"source":"[(lambda: (any := 0))() for _ in [0]]\nassert any([False, True]) is True\n"}
 {"expected_present":true,"id":"function_boundary","mode":"strict","owner":2,"schema":1,"source":"def f():\n    [(any := 0) for _ in [0]]\nf()\nassert any([False, True]) is True\n"}
 {"expected_present":true,"id":"iteration_local","mode":"strict","owner":1,"schema":1,"source":"[any for any in [0]]\nassert any([False, True]) is True\n"}
+{"expected_present":true,"id":"first_list_source","mode":"strict","owner":0,"schema":1,"source":"values = [(any := 0, item)[1] for item in [any((0, 1))]]\nassert next(iter(values)) is True\n"}
+{"expected_present":true,"id":"first_list_destination","mode":"strict","owner":0,"schema":1,"source":"values = [(all := 0, item)[1] for item in [any((0, 1))]]\nassert next(iter(values)) is True\n"}
+{"expected_present":true,"id":"first_set_destination","mode":"strict","owner":0,"schema":1,"source":"values = {(all := 0, item)[1] for item in [any((0, 1))]}\nassert next(iter(values)) is True\n"}
+{"expected_present":true,"id":"first_dict_destination","mode":"strict","owner":0,"schema":1,"source":"values = {item: (all := 0) for item in [any((0, 1))]}\nassert next(iter(values)) is True\n"}
+{"expected_present":true,"id":"first_generator_destination","mode":"strict","owner":0,"schema":1,"source":"values = ((all := 0, item)[1] for item in [any((0, 1))])\nassert next(iter(values)) is True\n"}
+{"expected_present":false,"id":"first_static_function","mode":"strict","owner":2,"schema":1,"source":"def f():\n    return [(any := 0) for item in [any((0, 1))]]\ntry:\n    f()\nexcept UnboundLocalError:\n    pass\nelse:\n    raise AssertionError('expected static local')\n"}
+{"expected_present":false,"id":"post_sibling","mode":"strict","owner":0,"schema":1,"source":"values = ([(all := 0) for _ in range(1)], any((0, 1)))\n"}

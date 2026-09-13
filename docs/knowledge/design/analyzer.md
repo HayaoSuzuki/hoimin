@@ -13,6 +13,10 @@ sources:
   resource: ../../superpowers/specs/2026-09-12-issue-515-class-directives-design.md
   working_tree: untracked
   sha256: b8b9af043c170b7eff1ecb0344a6eea2bddcfec9337c67cb548f1579452edcd0
+- id: issue-514
+  resource: ../../superpowers/specs/2026-09-12-issue-514-comprehension-effect-order-design.md
+  working_tree: untracked
+  sha256: adfc5116dd78b572a24680947062b4229857e776904dcf2eaf99d786d9033b18
 - id: issue-478
   resource: ../../superpowers/specs/2026-09-11-issue-478-analysis-depth-design.md
   working_tree: untracked
@@ -84,6 +88,8 @@ sources:
 現在のRust解析器はRuffの構文解析器を利用する。トークン（演算子や識別子などの字句）、抽象構文木（AST）、型注釈に関する候補を生成し、保持数を計測するための構造を持つ。[^implementation]
 
 内包表記の代入式は、反復変数とは異なり、最外の内包表記を囲むスコープに束縛する。global／nonlocal宣言とlambdaの境界を保ち、変異元・変異先の双方を確認する。空の内包表記やgeneratorの遅延実行では代入の可能性と実行済みの事実を区別する。Issue481の設計では、この束縛先と実行条件をRustの候補およびCPythonの観測と照合する。[^issue-481]
+
+Issue #514では、内包表記本体の代入式が外側へ与える束縛の可能性を、内包表記全体の完了位置で反映する。先に評価される最初のiterableで有効な組込み関数の変異を残すためである。関数ローカルの静的な束縛、generator作成後の代入の可能性、次のループ反復で参照される束縛情報は、従来どおり保持する。4形式それぞれの呼出し元・変異先を検証し、Leanから生成した18例を公開CLIと照合する。Leanの証明は宣言情報を固定したモデル内の評価順に限られ、PythonやRust実装全体を証明するものではない。[^issue-514]
 
 # BOMと候補の列番号
 
@@ -188,3 +194,4 @@ ASTの深さ検査より前に、Ruffによる構文解析がスタックを使�
 
 [^issue-513]: [2026-09-12-issue-513-parser-recursion-design.md](../../superpowers/specs/2026-09-12-issue-513-parser-recursion-design.md)。
 [^issue-515]: [Issue515 class directive design](../../superpowers/specs/2026-09-12-issue-515-class-directives-design.md)。
+[^issue-514]: [Issue514 comprehension effect order design](../../superpowers/specs/2026-09-12-issue-514-comprehension-effect-order-design.md)。

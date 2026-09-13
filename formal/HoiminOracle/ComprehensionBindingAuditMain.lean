@@ -8,6 +8,7 @@ structure Case where
   name : Name := .source
   dropFrames : Nat := 1
   iteration : Bool := false
+  observation : Option Bool := none -- some true: first iterable; some false: later sibling
 def function : Frame := functionFrame 2 emptyEnv
 def cases : List Case := [
   { id := "module_source", path := [comp, module]
@@ -31,12 +32,32 @@ def cases : List Case := [
   { id := "function_boundary", path := [comp, function, module], dropFrames := 2
     source := "def f():\n    [(any := 0) for _ in [0]]\nf()\nassert any([False, True]) is True\n" },
   { id := "iteration_local", path := [comp, module], iteration := true
-    source := "[any for any in [0]]\nassert any([False, True]) is True\n" }
+    source := "[any for any in [0]]\nassert any([False, True]) is True\n" },
+  { id := "first_list_source", path := [comp, module], observation := some true, name := .source
+    source := "values = [(any := 0, item)[1] for item in [any((0, 1))]]\nassert next(iter(values)) is True\n" },
+  { id := "first_list_destination", path := [comp, module], observation := some true, name := .destination
+    source := "values = [(all := 0, item)[1] for item in [any((0, 1))]]\nassert next(iter(values)) is True\n" },
+  { id := "first_set_destination", path := [comp, module], observation := some true, name := .destination
+    source := "values = {(all := 0, item)[1] for item in [any((0, 1))]}\nassert next(iter(values)) is True\n" },
+  { id := "first_dict_destination", path := [comp, module], observation := some true, name := .destination
+    source := "values = {item: (all := 0) for item in [any((0, 1))]}\nassert next(iter(values)) is True\n" },
+  { id := "first_generator_destination", path := [comp, module], observation := some true, name := .destination
+    source := "values = ((all := 0, item)[1] for item in [any((0, 1))])\nassert next(iter(values)) is True\n" },
+  { id := "first_static_function", path := [comp, function, module], observation := some true
+    source := "def f():\n    return [(any := 0) for item in [any((0, 1))]]\ntry:\n    f()\nexcept UnboundLocalError:\n    pass\nelse:\n    raise AssertionError('expected static local')\n" },
+  { id := "post_sibling", path := [comp, module], observation := some false, name := .destination
+    source := "values = ([(all := 0) for _ in range(1)], any((0, 1)))\n" }
 ]
 def owner (item : Case) : Option Nat :=
   if item.iteration then item.path.head?.map Frame.id else destination item.name item.path
+def summaryFor (item : Case) (first : Bool) : Summary :=
+  let writes := [{ name := item.name, owner := owner item }]
+  if first then .comprehension (.observe item.dropFrames) writes
+  else .sequence (.comprehension .empty writes) (.observe item.dropFrames)
 def expected (item : Case) : Bool :=
-  allows ((writeAt item.name (owner item) item.path).drop item.dropFrames)
+  match item.observation with
+  | none => allows ((writeAt item.name (owner item) item.path).drop item.dropFrames)
+  | some first => (evaluate item.path (summaryFor item first)).headD false
 def render : String := String.join (cases.map fun item =>
   (Lean.Json.mkObj [
     ("schema", Lean.toJson (1 : Nat)), ("mode", .str "strict"),
@@ -50,7 +71,7 @@ def brokenIgnoreDirective (path : List Frame) : Option Nat :=
 def brokenCrossFunction (path : List Frame) : Option Nat :=
   (path.find? (fun frame => frame.kind == .module)).map Frame.id
 
-def sensitivity : Bool :=
+def routingSensitivity : Bool :=
   let globalPath := [comp, { function with directive := .global }, module]
   let nonlocalPath := [comp, { function with directive := .nonlocal },
     functionFrame 3 (emptyEnv.set .source .shadowed), module]
@@ -67,6 +88,23 @@ def sensitivity : Bool :=
   allows ((namedWrite .source lambdaPath).drop 2) &&
   -- Broken zero-iteration rule: omit the static declaration altogether.
   allows (staticPath.drop 1) && !allows ((namedWrite .source staticPath).drop 1)
+-- Broken execution modes: early publication, omitted lazy/empty publication,
+-- and omitted static declaration. Compare each to the same source row.
+def orderSensitivity : Bool :=
+  let firstRows := cases.filter (fun item => item.observation == some true)
+  let earlyDetected := firstRows.any fun item =>
+    expected item != allows ((writeAt item.name (owner item) item.path).drop item.dropFrames)
+  let noStaticDetected := firstRows.any fun item =>
+    expected item != (interpret item.path (summaryFor item true)).1.headD false
+  let noPublicationDetected := cases.any fun item =>
+    item.observation == some false && expected item != allows (item.path.drop item.dropFrames)
+  let lazyDetected := cases.any fun item =>
+    item.id == "lazy_module" && expected item != allows (item.path.drop item.dropFrames)
+  let emptyDetected := cases.any fun item =>
+    item.id == "empty_module" && expected item != allows (item.path.drop item.dropFrames)
+  earlyDetected && noStaticDetected && noPublicationDetected && lazyDetected && emptyDetected
+
+def sensitivity : Bool := routingSensitivity && orderSensitivity
 def main (args : List String) : IO UInt32 := do
   unless sensitivity do
     IO.eprintln "named-binding routing sensitivity failed"

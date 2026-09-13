@@ -79,4 +79,66 @@ theorem old_current_scope_detected :
     allows ((brokenCurrentWrite .source [comp, module]).drop 1) = true ∧
     allows ((namedWrite .source [comp, module]).drop 1) = false := by decide
 
+-- Declarations precede evaluation; ordered effects follow expression completion.
+structure RoutedWrite where
+  name : Name
+  owner : Option Nat
+
+inductive Summary where
+  | observe (dropFrames : Nat)
+  | sequence (left right : Summary)
+  | comprehension (firstIterable : Summary) (writes : List RoutedWrite)
+  | empty
+
+def declareAt (write : RoutedWrite) (path : List Frame) : List Frame :=
+  path.map fun frame =>
+    if write.owner == some frame.id then
+      let fact := if frame.kind == .function || frame.kind == .comprehension then Fact.shadowed else .unknown
+      { frame with whole := frame.whole.set write.name fact }
+    else frame
+
+def declarations : Summary → List RoutedWrite
+  | .observe _ | .empty => []
+  | .sequence left right => declarations left ++ declarations right
+  | .comprehension first writes => declarations first ++ writes
+
+def publish (writes : List RoutedWrite) (path : List Frame) : List Frame :=
+  writes.foldl (fun frames write => writeAt write.name write.owner frames) path
+
+def interpret (path : List Frame) : Summary → List Bool × List Frame
+  | .empty => ([], path)
+  | .observe dropFrames => ([allows (path.drop dropFrames)], path)
+  | .sequence left right =>
+    let (observations, next) := interpret path left
+    let (later, final) := interpret next right
+    (observations ++ later, final)
+  | .comprehension first writes =>
+    let (observations, next) := interpret path first
+    (observations, publish writes next)
+
+def evaluate (path : List Frame) (summary : Summary) : List Bool :=
+  let declared := (declarations summary).foldl (fun frames write => declareAt write frames) path
+  (interpret declared summary).1
+
+-- Same declaration environment is essential: function locals are static.
+theorem first_iterable_independent (path : List Frame) (first : Summary)
+    (left right : List RoutedWrite) :
+    (interpret path (.comprehension first left)).1 =
+      (interpret path (.comprehension first right)).1 := by rfl
+
+theorem publication_cannot_invent_builtin (fact : Fact) :
+    fact.meet .shadowed ≠ .known .builtin := by
+  cases fact <;> simp [Fact.meet]
+
+theorem static_source_ineligible (id : Nat) (before whole : Env) (rest : List Frame) :
+    allows ({ id, kind := .function, before, whole := whole.set .source .shadowed } :: rest) = false := by
+  have h : (Fact.shadowed == Fact.known Target.builtin) = false := by decide
+  simp [allows, resolveCandidate, resolve, resolveFrom, Env.set, Env.get, factResolution, h]
+
+def firstWitness : Summary :=
+  .comprehension (.observe 1) [{ name := .destination, owner := destination .destination [comp, module] }]
+theorem early_publication_detected :
+    evaluate [comp, module] firstWitness = [true] ∧
+    (interpret (namedWrite .destination [comp, module]) (.observe 1)).1 = [false] := by decide
+
 end HoiminOracle.ComprehensionBinding
