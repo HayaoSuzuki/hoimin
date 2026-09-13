@@ -968,7 +968,9 @@ class ToolchainReleaseDocumentationContractTests(unittest.TestCase):
         self.assertIn("does not raise the minimum supported Rust version", guide)
         expected_commands = [
             "cargo fmt --all -- --check",
+            "cargo fmt --manifest-path vendor/ruff_python_parser/Cargo.toml -- --check",
             "cargo clippy --workspace --all-targets --all-features -- -D warnings",
+            "cargo clippy --locked -p littrs-ruff-python-parser --lib --no-deps -- -D warnings",
             "cargo test --workspace",
             "cargo test -p hoimin-cli --test run_e2e",
             "cargo test -p hoimin-core --features contracts",
