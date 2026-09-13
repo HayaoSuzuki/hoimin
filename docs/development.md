@@ -31,7 +31,9 @@ Run the Rust quality gate locally with the same commands used in CI:
 
 ```console
 cargo fmt --all -- --check
+cargo fmt --manifest-path vendor/ruff_python_parser/Cargo.toml -- --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo clippy --locked -p littrs-ruff-python-parser --lib --no-deps -- -D warnings
 cargo test --workspace
 cargo test -p hoimin-cli --test run_e2e
 cargo test -p hoimin-core --features contracts
@@ -410,13 +412,24 @@ mapped by both analyzer callers to `analyzer.depth` with the target path.
 Cancellation remains a separate error. Plan creation fails without a manifest;
 run reports incomplete analysis after its normal baseline stage.
 
+The parser is a local backport of `littrs-ruff-python-parser 0.6.2`, selected via
+the root Cargo patch. Ruff PR #25464's recursive checkpoints use `stacker`
+(locked to 0.1.25): each checks a 128 KiB red zone and grows a 1 MiB segment when
+needed. Context assignment, assignment/delete validation, old-decorator checks,
+and pattern-to-expression recovery have checkpoints too. This preserves the
+grammar and syntax diagnostics before applying Hoimin's AST-depth limit, without
+assuming that one larger worker stack is sufficient for every input.
+
 The parser's retained/unchecked module API preserves partial invalid trees so
 Hoimin can dispose of them safely while keeping existing invalid-syntax
 behavior. Rejected, invalid, and preflight-cancelled trees use an owned worklist:
 Ruff's `Transformer` detaches statements, expressions, patterns, and interpolated
 string elements before their shallow shells drop. These four callbacks cut every
 recursive cycle in the pinned Transformer's traversal, including nested format
-specifications. Accepted trees use ordinary drop after passing the depth check.
+specifications. This disposal implementation lives in the parser's `ast_cleanup`
+module and also releases discarded with/match speculative results, invalid
+keyword patterns, and discarded `as` subpatterns. Hoimin's `depth::dispose` calls
+the same implementation. Accepted trees use ordinary drop after passing the depth check.
 Both worklists can allocate in proportion to input size; they are stack-depth
 controls, not general memory bounds.
 

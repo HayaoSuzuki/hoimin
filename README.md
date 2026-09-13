@@ -201,6 +201,10 @@ including auxiliary syntax nodes. A deeper tree fails with its source path and
 `analysis depth exceeds supported limit 128`; it does not produce a complete
 empty result. This limit applies even with `--max-candidates 1`. Flat files with
 many shallow statements are not rejected by this depth limit.
+The bundled Rust parser checks remaining stack during recursive parsing and
+recovery. Rejected and discarded partial trees are destroyed iteratively, so
+deep unary, power, lambda, and conditional expressions can reach this diagnostic.
+Parser stack segments and AST storage still consume memory proportional to input.
 
 For `plan` creation and `verify` rediscovery, `--analyzer-timeout` is one
 deadline for the complete discovery phase, not a new deadline per target. A

@@ -1,13 +1,11 @@
 //! Bound recursive analysis independently of candidate retention, and dispose rejected trees.
-use std::cell::RefCell;
 
 use ruff_python_ast::visitor::source_order::{SourceOrderVisitor, TraversalSignal};
-use ruff_python_ast::visitor::transformer::{self, Transformer};
-use ruff_python_ast::{
-    AnyNodeRef, AtomicNodeIndex, Expr, ExprNoneLiteral, InterpolatedStringElement,
-    InterpolatedStringLiteralElement, ModModule, Pattern, PatternMatchStar, Stmt, StmtPass,
-};
+use ruff_python_ast::{AnyNodeRef, ModModule};
+#[cfg(test)]
+use ruff_python_ast::{AtomicNodeIndex, Expr, InterpolatedStringElement, Stmt};
 
+#[cfg(test)]
 use ruff_text_size::TextRange;
 
 use super::AnalysisError;
@@ -55,68 +53,8 @@ pub(super) fn check(
 /// a statement, expression, pattern or interpolated element; these callbacks enqueue
 /// ownership instead of recursing. The remaining auxiliary paths have fixed depth.
 /// Do not replace this with ordinary drop: a 20,000-term binary AST overflows 2 MiB.
-pub(super) fn dispose(mut module: ModModule) {
-    enum Node {
-        Statement(Stmt),
-        Expression(Expr),
-        Pattern(Pattern),
-        Element(InterpolatedStringElement),
-    }
-    struct Detach(RefCell<Vec<Node>>);
-    impl Transformer for Detach {
-        fn visit_stmt(&self, node: &mut Stmt) {
-            let empty = Stmt::Pass(StmtPass {
-                node_index: AtomicNodeIndex::default(),
-                range: TextRange::default(),
-            });
-            self.0
-                .borrow_mut()
-                .push(Node::Statement(std::mem::replace(node, empty)));
-        }
-        fn visit_expr(&self, node: &mut Expr) {
-            let empty = Expr::NoneLiteral(ExprNoneLiteral::default());
-            self.0
-                .borrow_mut()
-                .push(Node::Expression(std::mem::replace(node, empty)));
-        }
-        fn visit_pattern(&self, node: &mut Pattern) {
-            let empty = Pattern::MatchStar(PatternMatchStar {
-                node_index: AtomicNodeIndex::default(),
-                range: TextRange::default(),
-                name: None,
-            });
-            self.0
-                .borrow_mut()
-                .push(Node::Pattern(std::mem::replace(node, empty)));
-        }
-        fn visit_interpolated_string_element(&self, node: &mut InterpolatedStringElement) {
-            let empty = InterpolatedStringElement::Literal(InterpolatedStringLiteralElement {
-                node_index: AtomicNodeIndex::default(),
-                range: TextRange::default(),
-                value: Box::default(),
-            });
-            self.0
-                .borrow_mut()
-                .push(Node::Element(std::mem::replace(node, empty)));
-        }
-    }
-    let detach = Detach(RefCell::new(
-        module.body.drain(..).map(Node::Statement).collect(),
-    ));
-    loop {
-        let Some(mut node) = detach.0.borrow_mut().pop() else {
-            break;
-        };
-        match &mut node {
-            Node::Statement(stmt) => transformer::walk_stmt(&detach, stmt),
-            Node::Expression(expr) => transformer::walk_expr(&detach, expr),
-            Node::Pattern(pattern) => transformer::walk_pattern(&detach, pattern),
-            Node::Element(element) => {
-                transformer::walk_interpolated_string_element(&detach, element);
-            }
-        }
-        // All recursive children now belong to the worklist. Only shallow shells drop.
-    }
+pub(super) fn dispose(module: ModModule) {
+    ruff_python_parser::ast_cleanup::dispose_module(module);
 }
 
 #[cfg(test)]

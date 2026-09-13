@@ -5,6 +5,10 @@ description: docs/superpowers/specs内の全Markdownを先頭見出しと出典�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-513
+  resource: ../../superpowers/specs/2026-09-12-issue-513-parser-recursion-design.md
+  working_tree: untracked
+  sha256: 5f9dbe6895760a0675c9a74e3a98207327832450e33433ac869e118125485dc8
 - id: issue-515
   resource: ../../superpowers/specs/2026-09-12-issue-515-class-directives-design.md
   working_tree: untracked
@@ -758,6 +762,7 @@ sources:
 | [2026-09-11-issue-485-mapping-pattern-keys-design.md](../../superpowers/specs/2026-09-11-issue-485-mapping-pattern-keys-design.md) | Issue 485: Preserve unique literal keys in mapping-pattern mutations [^issue-485] | 未追跡 |
 | [2026-09-11-issue-484-metrics-destinations-design.md](../../superpowers/specs/2026-09-11-issue-484-metrics-destinations-design.md) | Issue 484: Reject metrics destinations that replace protected input entries [^issue-484] | 未追跡 |
 | [2026-09-11-issue-481-comprehension-bindings-design.md](../../superpowers/specs/2026-09-11-issue-481-comprehension-bindings-design.md) | Issue 481: Resolve comprehension assignment targets in their containing scope [^issue-481] | 未追跡 |
+| [2026-09-12-issue-513-parser-recursion-design.md](../../superpowers/specs/2026-09-12-issue-513-parser-recursion-design.md) | Issue 513: Python構文解析中のスタック使用 [^issue-513] | 未追跡 |
 | [2026-09-11-issue-478-analysis-depth-design.md](../../superpowers/specs/2026-09-11-issue-478-analysis-depth-design.md) | Issue 478: Reject unsafe AST depth before recursive analysis [^issue-478] | 未追跡 |
 | [2026-09-11-issue-477-import-roots-design.md](../../superpowers/specs/2026-09-11-issue-477-import-roots-design.md) | Issue 477: Configure worker import roots independently of mutation selection [^issue-477] | 未追跡 |
 | [2026-09-11-issue-473-symbol-ranking-design.md](../../superpowers/specs/2026-09-11-issue-473-symbol-ranking-design.md) | Issue 473: Rank candidates inside explicitly selected symbols [^issue-473] | 未追跡 |
@@ -1142,4 +1147,5 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 
 [^issue-451]: [設計原文](../../superpowers/specs/2026-09-11-issue-451-exception-parentheses-design.md)。
 
+[^issue-513]: [2026-09-12-issue-513-parser-recursion-design.md](../../superpowers/specs/2026-09-12-issue-513-parser-recursion-design.md)。
 [^issue-515]: [Issue515 class directive design](../../superpowers/specs/2026-09-12-issue-515-class-directives-design.md)。

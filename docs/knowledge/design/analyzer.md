@@ -5,6 +5,10 @@ description: 構文・名前解決・変更するバイト範囲・候補保持�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-513
+  resource: ../../superpowers/specs/2026-09-12-issue-513-parser-recursion-design.md
+  working_tree: untracked
+  sha256: 5f9dbe6895760a0675c9a74e3a98207327832450e33433ac869e118125485dc8
 - id: issue-515
   resource: ../../superpowers/specs/2026-09-12-issue-515-class-directives-design.md
   working_tree: untracked
@@ -174,4 +178,13 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 
 [^exception-parentheses]: [Issue #451 design](../../superpowers/specs/2026-09-11-issue-451-exception-parentheses-design.md)。
 
+# Issue 513: 構文解析中のスタック制御
+
+ASTの深さ検査より前に、Ruffによる構文解析がスタックを使い切る入力があった。Issue #513では利用中のパーサーを同梱し、再帰箇所でスタック残量を確認して必要な領域を確保する上流の対策を移植する。構文解析後の深さ128、ファイル名付きエラー、不正構文の診断は維持する。[^issue-513]
+
+解析途中の代入先検査やパターン変換も、完成した部分木を再帰的にたどるため、同じスタック検査で保護する。試行解析の結果や無効なパターンを捨てる箇所では、子ノードを切り離して反復的に破棄する。構文解析中のスタック検査だけで、部分木の通常の破棄まで保護したとは扱わない。[^issue-513]
+
+公開plan/runの4種の有効例はCPythonでコンパイルを確認する。512 KiBスレッドでの深いリスト・suite・format specificationや不正構文は、Ruffの走査と所有権を調べる別の試験である。メモリ確保の総量や任意のOS・ビルド条件での安全性は保証しない。依存版、再帰箇所、AST型、破棄経路の変更時は、深さ境界・不正構文・繰り返し回収の回帰試験を再実行する。[^issue-513]
+
+[^issue-513]: [2026-09-12-issue-513-parser-recursion-design.md](../../superpowers/specs/2026-09-12-issue-513-parser-recursion-design.md)。
 [^issue-515]: [Issue515 class directive design](../../superpowers/specs/2026-09-12-issue-515-class-directives-design.md)。
