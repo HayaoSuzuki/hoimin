@@ -5,6 +5,11 @@ description: docs/superpowers/specs内の全Markdownを先頭見出しと出典�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-467-design
+  resource: ../../superpowers/specs/2026-09-14-issue-467-jsonl-progress-design.md
+  revision: 8b33167a049e3cae0fc05e96ccf2253c660b7023
+  working_tree: untracked
+  sha256: c4ba67a289f61675332af0cd124b013717c7ec4dca1ff1c8445e284ebdcdc860
 - id: issue-491-design
   resource: ../../superpowers/specs/2026-09-14-issue-491-performance-shapes-design.md
   working_tree: modified
@@ -825,6 +830,7 @@ sources:
 
 | 原文 | 先頭見出し | 作成時の状態 |
 | --- | --- | --- |
+| [2026-09-14-issue-467-jsonl-progress-design.md](../../superpowers/specs/2026-09-14-issue-467-jsonl-progress-design.md) | JSONL progress input design (Issue 467) [^issue-467-design] | 未追跡 |
 | [2026-09-14-issue-453-scoped-discovery-design.md](../../superpowers/specs/2026-09-14-issue-453-scoped-discovery-design.md) | Issue 453: Scope discovery for exact selectors [^issue-453-index] | 未追跡 |
 | [2026-09-14-issue-475-range-normalization-design.md](../../superpowers/specs/2026-09-14-issue-475-range-normalization-design.md) | Issue 475: Normalize explicit selector groups once [^issue-475-index] | 未追跡 |
 | [2026-09-14-issue-474-selector-index-design.md](../../superpowers/specs/2026-09-14-issue-474-selector-index-design.md) | Issue 474: Explicit selector file index [^issue-474-index] | 未追跡 |
@@ -1282,3 +1288,5 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 | [Issue #456: verify のファイル単位の候補検証](../../superpowers/specs/2026-09-14-issue-456-validation-context-design.md) | 前処理の共有、診断順とソース所有権。[^issue-456] |
 
 [^issue-456]: [2026-09-14-issue-456-validation-context-design.md](../../superpowers/specs/2026-09-14-issue-456-validation-context-design.md)。
+
+[^issue-467-design]: [2026-09-14-issue-467-jsonl-progress-design.md](../../superpowers/specs/2026-09-14-issue-467-jsonl-progress-design.md)。

@@ -22,7 +22,7 @@ okf_version: "0.2"
 
 - [Lean監査の読み方](audits/lean-evidence.md) - モデル証明・有限探索・Rust対応・実機確認の違い。
 - [2026-09-11 境界監査](audits/boundary-2026-09.md) - 解析・選択・実行・保存の横断結果と未検証条件。
-- [progress入力の後続修正](audits/progress-input.md) - 過去の368観測、単一結果検証を加えた564観測、既存テストデータの前提変更。
+- [progress入力の後続修正](audits/progress-input.md) - 過去の368/564観測、JSONLイベント列の読取りと検証範囲。
 - [2026年7月 Rust監査](audits/rust-2026-07.md) - 初期監査の発見分類と実機制約。
 
 # 原文を探す

@@ -5,6 +5,11 @@ description: docs/auditsとdocs/superpowers/reports内の全Markdownを追跡状
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-467-review
+  resource: ../../superpowers/reports/2026-09-14-issue-467-jsonl-progress-review.md
+  revision: 8b33167a049e3cae0fc05e96ccf2253c660b7023
+  working_tree: untracked
+  sha256: 49ab2810c65360e6e65c1c44b8e625871e17b179e775b5e72a2b653a38a8dfb1
 - id: issue-461-merge-review
   resource: ../../superpowers/reports/2026-09-14-issue-461-self-review.md
   revision: 11dd162101c4351dfdd15cb52ba112bdf1fe9cf2
@@ -427,6 +432,7 @@ sources:
 
 | 原文 | 先頭見出し | 作成時の状態 |
 | --- | --- | --- |
+| [2026-09-14-issue-467-jsonl-progress-review.md](../../superpowers/reports/2026-09-14-issue-467-jsonl-progress-review.md) | Issue 467 JSONL progress implementation and review [^issue-467-review] | 未追跡 |
 | [2026-09-14-issue-453-scoped-discovery.md](../../superpowers/reports/2026-09-14-issue-453-scoped-discovery.md) | Issue 453 scoped discovery report [^issue-453-report] | 未追跡 |
 | [2026-09-14-issue-475-range-normalization.md](../../superpowers/reports/2026-09-14-issue-475-range-normalization.md) | Issue 475 range normalization report [^issue-475-report] | 未追跡 |
 | [2026-09-14-issue-474-selector-index.md](../../superpowers/reports/2026-09-14-issue-474-selector-index.md) | Issue 474 explicit selector index report [^issue-474-report] | 未追跡 |
@@ -648,3 +654,5 @@ sources:
 [^issue-470-merge-review]: [2026-09-14-issue-470-self-review.md](../../superpowers/reports/2026-09-14-issue-470-self-review.md)。
 [^issue-479-merge-review]: [2026-09-14-issue-479-self-review.md](../../superpowers/reports/2026-09-14-issue-479-self-review.md)。
 [^issue-482-merge-review]: [2026-09-14-issue-482-self-review.md](../../superpowers/reports/2026-09-14-issue-482-self-review.md)。
+
+[^issue-467-review]: [2026-09-14-issue-467-jsonl-progress-review.md](../../superpowers/reports/2026-09-14-issue-467-jsonl-progress-review.md)。
