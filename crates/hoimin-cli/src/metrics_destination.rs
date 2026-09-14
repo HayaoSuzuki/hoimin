@@ -167,13 +167,7 @@ fn session_artifacts(
         }
         files
     };
-    let tree = artifacts.lock_directory();
-    let mut trees = vec![tree.clone()];
-    match std::fs::canonicalize(&tree) {
-        Ok(actual_tree) => trees.push(actual_tree),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-        Err(error) => return Err(error),
-    }
+    let trees = artifacts.lock_trees()?;
     Ok((files, trees))
 }
 

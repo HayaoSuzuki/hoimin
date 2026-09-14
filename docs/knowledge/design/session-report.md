@@ -5,6 +5,10 @@ description: 保存・復旧の権限、スキーマ移行、結果の生成側�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-516
+  resource: ../../superpowers/specs/2026-09-12-issue-516-session-ownership-identities-design.md
+  working_tree: untracked
+  sha256: 41e0f7660f2903f726d4c6fe1f9ee974d525864bcf2b8cb90e475e428d64555c
 - id: issue-477
   resource: ../../superpowers/specs/2026-09-11-issue-477-import-roots-design.md
   working_tree: untracked
@@ -140,3 +144,11 @@ Issue472と484の統合後は、metricsもSessionHandlerと同じSessionArtifact
 検査後にsessionのコピー除外と正規化を行い、metrics出力の許可結果と実DBのパスを同じ完了通知で引き渡す。新しいWindows専用検証では、symlink作成の省略を成功として扱わない。実機結果は統合記録で別途確認する。[^integration-484-472]
 
 [^integration-484-472]: [Issue484の実装・統合記録](../../superpowers/plans/2026-09-11-issue-484-metrics-destinations.md)。
+
+# active session の所有権ディレクトリ（Issue #516）
+
+session の所有権ロックを置くディレクトリについて、指定パスから構成した表記と、既存ディレクトリを canonicalize した実体パスを `SessionArtifacts` から取得する。workspace の事前除外と metrics の衝突判定が同じ一覧を使う。これにより、ロック用の別名がプロジェクト内の実体ディレクトリを指す場合も、hoimin 自身の書込みを元ソースの変更と誤認しないようにする。[^issue-516]
+
+macOSで、並列数1・2、root内外の別名、大小文字の別名、実際のタイムアウト後の再開を検証した。Linux・Windowsの実機検証はローカルでは行っていない。既存の I/O 事前処理でのみ実体を解決し、存在しないロックディレクトリを作成しない。元ソース・通常の fixture の変更検知、所有権競合の検出、metrics の安全な別エントリ置換は維持する。[^issue-516]
+
+[^issue-516]: [Issue 516: Share active session ownership-tree identities](../../superpowers/specs/2026-09-12-issue-516-session-ownership-identities-design.md)。

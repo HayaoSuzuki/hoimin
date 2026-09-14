@@ -929,11 +929,12 @@ fn prepare_session_artifacts(
         let artifacts =
             SessionArtifacts::resolve(&session.path).map_err(|error| error.to_string())?;
         let root = std::fs::canonicalize(&config.root).map_err(|error| error.to_string())?;
+        let trees = artifacts.lock_trees().map_err(|error| error.to_string())?;
         for (path, tree) in artifacts
             .files()
             .into_iter()
             .map(|path| (path, false))
-            .chain(std::iter::once((artifacts.lock_directory(), true)))
+            .chain(trees.into_iter().map(|path| (path, true)))
         {
             if let Some(relative) = crate::workspace::relative_inside(&path, &root) {
                 let relative = Utf8PathBuf::from_path_buf(relative)

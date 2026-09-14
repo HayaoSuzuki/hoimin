@@ -100,6 +100,25 @@ impl SessionArtifacts {
     pub fn lock_directory(&self) -> PathBuf {
         ownership::lock_directory(&self.database)
     }
+
+    /// Lexical and existing canonical ownership trees, without creating either.
+    /// Resolve these at blocking preflight boundaries, before taking a snapshot.
+    /// A missing tree will be created by ownership acquisition.
+    ///
+    /// # Errors
+    /// Returns canonicalization errors other than `NotFound`, so an uncertain
+    /// identity cannot silently remove protection of an existing tree.
+    pub fn lock_trees(&self) -> std::io::Result<Vec<PathBuf>> {
+        let lexical = self.lock_directory();
+        let mut trees = vec![lexical.clone()];
+        match std::fs::canonicalize(&lexical) {
+            Ok(actual) if actual != lexical => trees.push(actual),
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error),
+        }
+        Ok(trees)
+    }
 }
 
 pub struct SessionHandler {

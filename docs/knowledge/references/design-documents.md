@@ -17,6 +17,10 @@ sources:
   resource: ../../superpowers/specs/2026-09-12-issue-514-comprehension-effect-order-design.md
   working_tree: untracked
   sha256: adfc5116dd78b572a24680947062b4229857e776904dcf2eaf99d786d9033b18
+- id: issue-516
+  resource: ../../superpowers/specs/2026-09-12-issue-516-session-ownership-identities-design.md
+  working_tree: untracked
+  sha256: 41e0f7660f2903f726d4c6fe1f9ee974d525864bcf2b8cb90e475e428d64555c
 - id: issue-478
   resource: ../../superpowers/specs/2026-09-11-issue-478-analysis-depth-design.md
   working_tree: untracked
@@ -753,7 +757,7 @@ sources:
 
 # 収録一覧
 
-2026-09-11時点の179件。これは原文への索引であり、各文書の採用状況・現行性・検証結果を一括して認定するものではない。見出しは原文から抽出した。出典の版とGitの追跡状態は、冒頭のYAMLメタデータに記録している。未追跡資料は同じ作業ツリーに依存する。
+2026-09-12時点の180件。これは原文への索引であり、各文書の採用状況・現行性・検証結果を一括して認定するものではない。見出しは原文から抽出した。出典の版とGitの追跡状態は、冒頭のYAMLメタデータに記録している。未追跡資料は同じ作業ツリーに依存する。
 
 主要な論点の要約は[入口](../index.md)から読む。ファイル名に含まれる日付は作成履歴の手がかりであり、そのファイルが最後に変更された日時ではない。
 
@@ -761,6 +765,7 @@ sources:
 | --- | --- | --- |
 | [2026-09-12-issue-515-class-directives-design.md](../../superpowers/specs/2026-09-12-issue-515-class-directives-design.md) | Issue 515: Skip enclosing class directives during lexical lookup [^issue-515] | 未追跡 |
 | [2026-09-12-issue-514-comprehension-effect-order-design.md](../../superpowers/specs/2026-09-12-issue-514-comprehension-effect-order-design.md) | Issue 514: Preserve first-iterable lookup before comprehension body effects [^issue-514] | 未追跡 |
+| [2026-09-12-issue-516-session-ownership-identities-design.md](../../superpowers/specs/2026-09-12-issue-516-session-ownership-identities-design.md) | Issue 516: Share active session ownership-tree identities [^issue-516] | 未追跡 |
 | [2026-09-11-issue-488-windows-resource-scope-design.md](../../superpowers/specs/2026-09-11-issue-488-windows-resource-scope-design.md) | Issue 488: Make Windows per-root resource limits explicit and test the native caps [^issue-488] | 未追跡 |
 | [2026-09-11-issue-487-resource-report-policy-design.md](../../superpowers/specs/2026-09-11-issue-487-resource-report-policy-design.md) | Issue 487: Report the selected resource backend throughout a run [^issue-487] | 未追跡 |
 | [2026-09-11-issue-486-type-parameter-bindings-design.md](../../superpowers/specs/2026-09-11-issue-486-type-parameter-bindings-design.md) | Issue 486: Resolve PEP 695 type-parameter bindings in their annotation scope [^issue-486] | 未追跡 |
@@ -1155,3 +1160,4 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 [^issue-513]: [2026-09-12-issue-513-parser-recursion-design.md](../../superpowers/specs/2026-09-12-issue-513-parser-recursion-design.md)。
 [^issue-515]: [Issue515 class directive design](../../superpowers/specs/2026-09-12-issue-515-class-directives-design.md)。
 [^issue-514]: [Issue514 comprehension effect order design](../../superpowers/specs/2026-09-12-issue-514-comprehension-effect-order-design.md)。
+[^issue-516]: [Issue 516: Share active session ownership-tree identities](../../superpowers/specs/2026-09-12-issue-516-session-ownership-identities-design.md)。
