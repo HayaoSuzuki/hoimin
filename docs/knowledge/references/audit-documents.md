@@ -30,7 +30,7 @@ sources:
   resource: ../../superpowers/reports/2026-09-14-issue-489-valid-python-corpus.md
   revision: fb8fabf8af84a1ecbdf7adc820be6fbb8ab40d25
   working_tree: modified
-  sha256: b442dc4dce6911fa269a2d38676c9da3d85f398fb350967f0f4fcc45c1490a74
+  sha256: b9afa31b3b0bfa7e6239aaae2b4de77974ee60723c37350cf87412ef6e404bf8
 - id: issue-464-review
   resource: ../../superpowers/reports/2026-09-14-issue-464-baseline-output-review.md
   working_tree: modified
