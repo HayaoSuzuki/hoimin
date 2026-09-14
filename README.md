@@ -144,6 +144,38 @@ hoimin run --root . --source src --fingerprint-include tests/fixtures/settings.t
 
 Each candidate must fit a 2 MiB compact JSON spool record, including JSON escaping, UTF-8 and one trailing newline. `plan` rejects oversized candidates instead of saving an unusable plan; `verify` rejects oversized saved records before baseline. Direct `run` discovers candidates after baseline and reports an incomplete infrastructure failure if a record exceeds this limit. The diagnostic identifies the source path, line, operator and limit. Candidate-count limits do not override this byte limit.
 
+## Python source encodings
+
+Hoimin recognizes Python encoding declarations in a standalone comment on the
+first line, or on the second line after a blank/comment-only first line.
+Without a declaration it uses UTF-8. It supports these codecs in Rust:
+
+| Codec | Accepted names (case-insensitive; underscores may replace hyphens) |
+| --- | --- |
+| UTF-8 | `utf-8`, `utf8` |
+| ASCII | `ascii`, `us-ascii`, `646` |
+| Latin-1 / ISO-8859-1 | `latin-1`, `latin1`, `iso-8859-1`, `iso8859-1`, `iso-latin-1`, `latin`, `l1`, `cp819`, `ibm819` |
+
+Python's tokenizer also normalizes names beginning with `utf-8-`, `latin-1-`,
+`iso-8859-1-` or `iso-latin-1-` to those codecs. A leading UTF-8 BOM is preserved
+in file bytes and requires a tokenizer-normalized UTF-8 declaration: use
+`utf-8` rather than the generic `utf8` alias with a BOM. Declarations in strings,
+after a statement, or after the second line are ignored. A matching `coding:`
+inside an otherwise ordinary standalone comment still declares an encoding.
+
+Unsupported or unknown names, BOM conflicts and invalid UTF-8/ASCII bytes
+produce a diagnostic containing the path and declaration. Latin-1 maps every
+byte to a character, so it cannot detect that a file was intended to use a
+different encoding. Save each file using its declared codec.
+
+Analysis uses Unicode text; candidate spans and file hashes refer to original
+bytes. Mutation text is encoded back into the same codec, preserving untouched
+bytes, BOM and line endings. A replacement that cannot be encoded is rejected.
+`plan` decodes without running a baseline. Normal `run` retains its baseline
+before analysis, so a baseline failure may precede the encoding diagnostic;
+explicit symbol validation decodes earlier during target resolution. No Python
+loader or external Python process is used for production source decoding.
+
 ## Limits and defaults
 
 The defaults are:

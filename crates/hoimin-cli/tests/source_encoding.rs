@@ -220,3 +220,100 @@ async fn accepted_cookie_placements_preserve_original_plan_hashes() {
         assert_eq!(&source[start..start + 4], b"True");
     }
 }
+
+#[tokio::test]
+async fn latin1_symbol_selection_uses_shared_decoding_in_plan_run_and_verify() {
+    let project = tempfile::tempdir().unwrap();
+    let output = tempfile::tempdir().unwrap();
+    let source = b"# coding: latin-1\ndef caf\xe9():\n    return True\n";
+    std::fs::write(project.path().join("calc.py"), source).unwrap();
+    let mut command_args = args(project.path(), &output.path().join("unused"));
+    let separator = command_args
+        .iter()
+        .position(|argument| argument == "--")
+        .unwrap();
+    command_args.splice(
+        separator..separator,
+        ["--source", ".", "--symbol", "calc:café"].map(OsString::from),
+    );
+    *command_args.last_mut().unwrap() = "import calc; assert calc.café()".into();
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    assert_eq!(
+        hoimin_cli::run_with_io(command_args.clone(), &mut stdout, &mut stderr).await,
+        0,
+        "{}",
+        String::from_utf8_lossy(&stderr)
+    );
+    let manifest: PlanManifest = serde_json::from_slice(&stdout).unwrap();
+    assert_eq!(manifest.candidates.len(), 1);
+    assert_eq!(manifest.candidates[0].symbol.as_deref(), Some("café"));
+    let plan_path = output.path().join("plan.json");
+    std::fs::write(&plan_path, &stdout).unwrap();
+    command_args[1] = "run".into();
+    let verify_args = vec![
+        "hoimin".into(),
+        "verify".into(),
+        plan_path.into_os_string(),
+        "--top".into(),
+        "1".into(),
+    ];
+    for command in [command_args, verify_args] {
+        stdout.clear();
+        stderr.clear();
+        assert_eq!(
+            hoimin_cli::run_with_io(command, &mut stdout, &mut stderr).await,
+            0,
+            "{}",
+            String::from_utf8_lossy(&stderr)
+        );
+        let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+        assert_eq!(
+            report["mutants"][0]["candidate"]["id"],
+            manifest.candidates[0].id
+        );
+        assert_eq!(
+            std::fs::read(project.path().join("calc.py")).unwrap(),
+            source
+        );
+    }
+}
+
+#[test]
+fn supported_codec_cookie_boundaries_match_cpython_compilation() {
+    let project = tempfile::tempdir().unwrap();
+    let path = project.path().join("calc.py");
+    for (source, accepted) in [
+        (b"# coding: latin-1\nvalue = '\xe9'\n".as_slice(), true),
+        (b"# first\n# coding: latin-1\nvalue = '\xe9'\n", true),
+        (b"\n# coding: latin-1\nvalue = '\xe9'\n", true),
+        (b"value = 1\n# coding: latin-1\ntext = '\xe9'\n", false),
+        (b"text = 'coding: latin-1'\nvalue = '\xe9'\n", false),
+        (b"value = 1 # coding: latin-1\ntext = '\xe9'\n", false),
+        (
+            b"# first\n# second\n# coding: latin-1\ntext = '\xe9'\n",
+            false,
+        ),
+        (b"# explanation coding: latin-1\ntext = '\xe9'\n", true),
+        (b"\xef\xbb\xbf# coding: UTF_8\nvalue = True\n", true),
+        (b"\xef\xbb\xbf# coding: utf8\nvalue = True\n", false),
+        (b"\xef\xbb\xbf# coding: latin-1\nvalue = True\n", false),
+        (b"# coding: ascii\ntext = '\xe9'\n", false),
+    ] {
+        std::fs::write(&path, source).unwrap();
+        let compiled = std::process::Command::new(python())
+            .args(["-c", "import sys; from pathlib import Path; compile(Path(sys.argv[1]).read_bytes(), sys.argv[1], 'exec')"])
+            .arg(&path).output().unwrap();
+        assert_eq!(
+            compiled.status.success(),
+            accepted,
+            "{source:?}: {}",
+            String::from_utf8_lossy(&compiled.stderr)
+        );
+        assert_eq!(
+            hoimin_core::decode_python_source(source).is_ok(),
+            accepted,
+            "{source:?}"
+        );
+    }
+}
