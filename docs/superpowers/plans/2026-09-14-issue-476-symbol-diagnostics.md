@@ -34,4 +34,4 @@ Files: README.md, docs/knowledge/design/selection-plan-verify.md, docs/knowledge
 - [x] Document exact definition validation versus empty candidate sets in README and the existing selection contract.
 - [x] Record three separate actual self-reviews for OKF, design, plan and implementation with findings and corrections.
 - [x] Add source metadata and footnotes for final spec/report content; validate YAML, local links, source hashes and claim scope separately.
-- [ ] Record actual checks and limitations, commit changes, push branch and create PR using repository template with `Closes #476`.
+- [x] Record actual checks and limitations, commit changes, push branch and create PR using repository template with `Closes #476`.

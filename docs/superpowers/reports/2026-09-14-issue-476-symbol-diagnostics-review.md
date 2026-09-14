@@ -49,3 +49,7 @@ Validation runs on macOS through public `run_with_io` entry points and existing 
 3. Re-ran YAML/reserved-file validation for all 19 knowledge pages, issue-476 source hashes and matching footnotes (7 entries), local Markdown links in touched pages (616 destinations), and reachability of all 19 pages from the root index. Reviewed claims against the final source after the lint relocation; no unverified native-platform or runtime-binding guarantee was added.
 
 The parent agent separately reviewed the code and design and reported no blocking finding: pre-intersection exact definition checks, AST depth/disposal, disambiguating file/qualname diagnostics and the documented extra-parse limitation were checked.
+
+## Publication
+
+Implementation commit: `9d9e79247ac4f9146c623102c7e5503bcd1e94ab`. [PR #536](https://github.com/tokyogas-tech/hoimin/pull/536) was created against `main` from `enhancement/issue-476`. The initial remote check was in progress when publication was verified; local success is not a claim that hosted CI has finished.

@@ -8,7 +8,7 @@ sources:
 - id: issue-476-report-index
   resource: ../../superpowers/reports/2026-09-14-issue-476-symbol-diagnostics-review.md
   working_tree: untracked
-  sha256: adcfbf827e908c56b5e4995f1702c8c262604ef6ad0fda507b48a2d440d1f154
+  sha256: bff2a183f0c702c556d19c832b59836613d9e7a20975d89893d5d1c7fa0292ec
 - id: issue-461-merge-review
   resource: ../../superpowers/reports/2026-09-14-issue-461-self-review.md
   revision: 11dd162101c4351dfdd15cb52ba112bdf1fe9cf2
