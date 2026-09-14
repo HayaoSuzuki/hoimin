@@ -59,3 +59,8 @@ No production Python changed; Python mutation testing is not applicable. Full wo
 The issue-471 agent reviewed production dispatch, path normalization and tests. It found no production blocker, but identified that a 100 ms total timeout may expire during preflight on a loaded host. The test now requires a baseline stage only for the ordinary baseline-failure case; timeout still requires a valid sidecar, zero executed mutants and final JSONL output. This avoids treating an unstarted baseline as a required observation. Parent reviewed and applied the finding.
 
 Publication checked through GitHub: PR #537 targets main, contains 10 changed files, and its implementation head is `88c14025a9a27c2fa562ce32ce901afdeed159bc`. Parent confirmed the URL, title, base and head after push. Hosted CI was not treated as passed at publication.
+
+
+## CI follow-up: obsolete rejection assertion
+
+CI run34819303761 exposed an existing cli_config assertion that verify rejects --metrics. This was a missed compatibility-test update in this change, not a timing failure. Updated the test to retain plan rejection and assert verify acceptance with an absolute invocation-relative destination. Review1 checked the changed contract against both raw/public VerifyArgs; review2 searched remaining CLI option rejection tests; review3 broadened verification to the complete cli_config suite (58 tests), including all other command validation. Dedicated target rebuilt after earlier disk cleanup; all58 cli_config tests passed in0.36s. Original CI failure remains in its run history.
