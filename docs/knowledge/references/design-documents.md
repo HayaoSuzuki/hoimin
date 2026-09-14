@@ -5,6 +5,12 @@ description: docs/superpowers/specs内の全Markdownを先頭見出しと出典�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-479-stream
+  resource: ../../superpowers/specs/2026-09-14-issue-479-stream-annotations-design.md
+  working_tree: clean
+  revision: bfa346ca49285a3ebedd4d77c70f93dafb743846
+  sha256: 14ecae895345bbd5bf40452ed53655fc2ff4aec67e292010c2f26a10c39ee3e2
+
 - id: issue-461-lazy
   resource: ../../superpowers/specs/2026-09-14-issue-461-lazy-candidates-design.md
   working_tree: clean
@@ -1227,6 +1233,12 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 [^issue-515]: [Issue515 class directive design](../../superpowers/specs/2026-09-12-issue-515-class-directives-design.md)。
 [^issue-514]: [Issue514 comprehension effect order design](../../superpowers/specs/2026-09-12-issue-514-comprehension-effect-order-design.md)。
 [^issue-516]: [Issue 516: Share active session ownership-tree identities](../../superpowers/specs/2026-09-12-issue-516-session-ownership-identities-design.md)。
+
+# Issue #479 の設計
+
+- [Issue #479: Streaming annotation candidates](../../superpowers/specs/2026-09-14-issue-479-stream-annotations-design.md) - 型注釈候補をcurrent import stateから逐次生成する。[^issue-479-stream]
+
+[^issue-479-stream]: [設計原文](../../superpowers/specs/2026-09-14-issue-479-stream-annotations-design.md)。
 
 # Issue #461 の設計
 

@@ -5,6 +5,11 @@ description: 構文・名前解決・変更するバイト範囲・候補保持�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-479
+  resource: ../../superpowers/specs/2026-09-14-issue-479-stream-annotations-design.md
+  working_tree: untracked
+  sha256: 14ecae895345bbd5bf40452ed53655fc2ff4aec67e292010c2f26a10c39ee3e2
+
 - id: issue-461
   resource: ../../superpowers/specs/2026-09-14-issue-461-lazy-candidates-design.md
   working_tree: untracked
@@ -207,6 +212,12 @@ ASTの深さ検査より前に、Ruffによる構文解析がスタックを使�
 [^issue-513]: [2026-09-12-issue-513-parser-recursion-design.md](../../superpowers/specs/2026-09-12-issue-513-parser-recursion-design.md)。
 [^issue-515]: [Issue515 class directive design](../../superpowers/specs/2026-09-12-issue-515-class-directives-design.md)。
 [^issue-514]: [Issue514 comprehension effect order design](../../superpowers/specs/2026-09-12-issue-514-comprehension-effect-order-design.md)。
+
+# 型注釈候補の状態保持（Issue #479）
+
+型演算子を選択しない解析では、型候補用のimport flow収集を実行しない。型演算子を選択する場合は、各annotation時点のimportsを借用して候補を逐次生成し、全mapのsnapshotをsiteごとに保持しない。runtime候補を注釈内で抑止する範囲索引と、binding-flow correspondence用の所有snapshotは維持する。[^issue-479]
+
+[^issue-479]: [Issue #479: Streaming annotation candidates](../../superpowers/specs/2026-09-14-issue-479-stream-annotations-design.md)。
 
 # 未選択候補の所有文字列（Issue #461）
 
