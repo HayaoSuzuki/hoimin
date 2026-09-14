@@ -24,7 +24,7 @@
 - [x] Record old/new release scaling for 8k through 64k assignments and calls.
 - [x] Run analyzer, clippy and workspace suites.
 - [x] Update analyzer OKF and design index with real source hash.
-- [ ] Record six stages of three reviews, commit, push and create the closing PR.
+- [x] Record six stages of three reviews, commit, push and create closing PR #532.
 
 ## Planセルフレビュー
 

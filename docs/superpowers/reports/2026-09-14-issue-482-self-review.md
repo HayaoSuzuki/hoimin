@@ -34,6 +34,6 @@
 
 ## PR
 
-1. 受け入れ条件: 挿入順、三effect、scope、cost counter、release scalingをdiffと本文に対応付ける。
-2. 証拠: parity 4件、analyzer Rust 159件成功・2件ignored、workspace全体、clippy、OKF、releaseの実ログを確認した。
-3. metadata: base main、closing keyword、変更ファイル、remote check、未検証platformを確認する。
+1. 受け入れ条件: PR #532の6ファイルを再読し、挿入順、三effect、scope、構築・照会counter、release scalingがdiffと本文に対応することを確認した。
+2. 証拠: parity/cost 4件、analyzer Rust 159件成功・2件ignored、workspace全体、clippy、OKF、releaseの実ログを本文と照合した。
+3. metadata: `gh pr view` でtitle、base `main`、head、`Closes #482`、変更ファイルを確認した。作成直後のQualityはpendingで、未検証platformとともに成功扱いしていない。
