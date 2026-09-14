@@ -5,6 +5,25 @@ description: docs/superpowers/specs内の全Markdownを先頭見出しと出典�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-490-design
+  resource: ../../superpowers/specs/2026-09-14-issue-490-boundary-contracts-design.md
+  revision: 7d5bdc5a643add4ba55e8541fa59a069d0ff5c5e
+  working_tree: untracked
+  sha256: 8e90be8bf11f38328ea1fd92fd82af2b8b4972d73437a88e94c547a336807bad
+- id: issue-467-design
+  resource: ../../superpowers/specs/2026-09-14-issue-467-jsonl-progress-design.md
+  revision: 8b33167a049e3cae0fc05e96ccf2253c660b7023
+  working_tree: untracked
+  sha256: c4ba67a289f61675332af0cd124b013717c7ec4dca1ff1c8445e284ebdcdc860
+- id: issue-480-design-index
+  resource: ../../superpowers/specs/2026-09-14-issue-480-source-encoding-design.md
+  working_tree: clean
+  sha256: 55a99855ee216bfff5afdfd5ffdeeab6c13e1877ec751b0ee88c9a35cb78c37e
+  revision: 98969d7a840362f78dceb12f91cc5188214f68d5
+- id: issue-476-design-index
+  resource: ../../superpowers/specs/2026-09-14-issue-476-symbol-diagnostics-design.md
+  working_tree: untracked
+  sha256: 9d9087b95cf13cedc4d75626d4cb87b93c41bb45f399a33dbb9a1cbe333c0092
 - id: issue-491-design
   resource: ../../superpowers/specs/2026-09-14-issue-491-performance-shapes-design.md
   working_tree: modified
@@ -826,6 +845,9 @@ sources:
 
 | 原文 | 先頭見出し | 作成時の状態 |
 | --- | --- | --- |
+| [2026-09-14-issue-467-jsonl-progress-design.md](../../superpowers/specs/2026-09-14-issue-467-jsonl-progress-design.md) | JSONL progress input design (Issue 467) [^issue-467-design] | 未追跡 |
+| [2026-09-14-issue-480-source-encoding-design.md](../../superpowers/specs/2026-09-14-issue-480-source-encoding-design.md) | Issue #480: Python source encodings and raw-byte candidates [^issue-480-design-index] | 追跡済み |
+| [2026-09-14-issue-476-symbol-diagnostics-design.md](../../superpowers/specs/2026-09-14-issue-476-symbol-diagnostics-design.md) | Issue #476: missing symbol definition diagnostics [^issue-476-design-index] | 未追跡 |
 | [2026-09-14-issue-453-scoped-discovery-design.md](../../superpowers/specs/2026-09-14-issue-453-scoped-discovery-design.md) | Issue 453: Scope discovery for exact selectors [^issue-453-index] | 未追跡 |
 | [2026-09-14-issue-475-range-normalization-design.md](../../superpowers/specs/2026-09-14-issue-475-range-normalization-design.md) | Issue 475: Normalize explicit selector groups once [^issue-475-index] | 未追跡 |
 | [2026-09-14-issue-474-selector-index-design.md](../../superpowers/specs/2026-09-14-issue-474-selector-index-design.md) | Issue 474: Explicit selector file index [^issue-474-index] | 未追跡 |
@@ -1283,3 +1305,12 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 | [Issue #456: verify のファイル単位の候補検証](../../superpowers/specs/2026-09-14-issue-456-validation-context-design.md) | 前処理の共有、診断順とソース所有権。[^issue-456] |
 
 [^issue-456]: [2026-09-14-issue-456-validation-context-design.md](../../superpowers/specs/2026-09-14-issue-456-validation-context-design.md)。
+
+[^issue-467-design]: [2026-09-14-issue-467-jsonl-progress-design.md](../../superpowers/specs/2026-09-14-issue-467-jsonl-progress-design.md)。
+
+- [Issue 490 boundary contracts](../../superpowers/specs/2026-09-14-issue-490-boundary-contracts-design.md)。[^issue-490-design]
+
+[^issue-490-design]: [原文](../../superpowers/specs/2026-09-14-issue-490-boundary-contracts-design.md)。出典版と SHA-256 は frontmatter に記録。
+[^issue-476-design-index]: [Issue #476: missing symbol definition diagnostics](../../superpowers/specs/2026-09-14-issue-476-symbol-diagnostics-design.md).
+
+[^issue-480-design-index]: [Issue #480: Python source encodings and raw-byte candidates](../../superpowers/specs/2026-09-14-issue-480-source-encoding-design.md).
