@@ -54,3 +54,10 @@ Related integrations passed 54 tests: annotation scope 4, binding flow 4, candid
 
 This infrastructure change does not modify production analyzer behavior. Two annotation source fixtures are model-only because current public output disagrees with the normalized scope rule; they still undergo compile, validator and public/direct metadata checks. The linked worksheet identifies the mismatches. No existing internal-fixture scope evidence is promoted by analogy. Finite exact small key equality is not arbitrary Python numeric equality; the proof does not establish CPython grammar/compiler correctness. Representative cross-products leave 385 axis pairs uncovered, and 47 canonical operators deferred. The adapter reports those gaps instead of silently inferring support.
 
+
+
+## Ordered integration: merge through issue464
+
+Merged enhancement/issue-464 ata21d5a5 into the issue489 branch. Three actual merge reviews: (1) inspected all nine conflict blocks across development, analyzer concept and the two source indexes; additions were independent and source IDs disjoint, so retained both complete sides. (2) Checked the automatically combined workflow and its contract test: both issue490 boundary-contract Rust-job classification and issue489 valid-Python generator/freshness entry are retained. The package inventory remains126 modules,31 corpora and28 sensitivity generators, matching the development guide. The valid-Python model, generator source and generated corpus remain byte-identical to the previously validated issue489 head. (3) Ran28 CI workflow tests and10 boundary-runner contract unit tests, all passing, then verified formatting/diff and OKF20pages/828links with complete source indexes. Runner unit tests intentionally exercise mismatch/unexecuted report fixtures; this is not a fresh strict boundary replay.
+
+No large Rust build or Lean regeneration was performed for this documentation-only conflict resolution; the parent owns the final combined Rust smoke and hosted CI. Historical corpus success is not relabeled as a new merged implementation run. Logs: `/private/tmp/issue489-merge464-ci.log` and `/private/tmp/issue489-merge464-boundary.log`.

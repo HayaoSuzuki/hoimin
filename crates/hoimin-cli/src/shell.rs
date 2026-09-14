@@ -2114,6 +2114,11 @@ where
             "remaining budget observation must run in the scheduler",
         )),
         RunEffect::EmitOutput(mut request) => {
+            if let OutputEvent::BaselineFinished(baseline) = &request.event
+                && baseline.termination != hoimin_core::ProcessTermination::Exit(0)
+            {
+                crate::baseline_output::emit(&context.process, &mut context.report, baseline).await;
+            }
             if let OutputEvent::RunStarted(run_started) = &mut request.event {
                 run_started.versions = context.report_versions.clone();
             }

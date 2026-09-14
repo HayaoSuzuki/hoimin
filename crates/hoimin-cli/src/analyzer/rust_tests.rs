@@ -3804,6 +3804,8 @@ fn structure_index_neighbor_mutates_decimal_load_indices_only() {
             ("1", "2"),
             ("1", "0"),
             ("18446744073709551615", "18446744073709551614"),
+            ("-1", "0"),
+            ("-1", "-2"),
         ]
     );
     for candidate in candidates {
@@ -3846,6 +3848,11 @@ fn structure_slice_neighbor_mutates_decimal_bounds_without_zero_steps() {
             ("1", "2"),
             ("3", "4"),
             ("3", "2"),
+            ("-1", "0"),
+            ("-1", "-2"),
+            ("-3", "-2"),
+            ("-3", "-4"),
+            ("-1", "-2"),
         ]
     );
     for candidate in candidates {
@@ -7679,4 +7686,77 @@ fn wide_mapping_keys_reject_conjugates_and_preserve_other_candidates() {
     // The mapping pass normalizes each key a bounded number of times and uses
     // HashSet membership, regardless of whether the collision is far away.
     assert!(!output.truncated);
+}
+
+#[test]
+fn structure_negative_neighbors_cover_positions_spelling_and_range_limits() {
+    let cases: &[(&str, &[&str])] = &[
+        ("items[-1]", &["0", "-2"]),
+        ("items[-1:]", &["0", "-2"]),
+        ("items[:-1]", &["0", "-2"]),
+        ("items[::-1]", &["-2"]),
+        ("items[-2]", &["-1", "-3"]),
+        ("items[-2:]", &["-1", "-3"]),
+        ("items[:-2]", &["-1", "-3"]),
+        ("items[::-2]", &["-1", "-3"]),
+        ("items[-0]", &["1", "-1"]),
+        ("items[::-0]", &["1", "-1"]),
+        ("items[(-1)]", &["0", "-2"]),
+        ("items[-(1)]", &["0", "-2"]),
+        ("items[( -\n  (1) # inner comment\n)]", &["0", "-2"]),
+        ("items[-18446744073709551615]", &["-18446744073709551614"]),
+        ("items[-18446744073709551616]", &[]),
+        ("items[18446744073709551616]", &[]),
+        ("items[-99999999999999999999999999999999999999999999]", &[]),
+        ("items[-0x10]", &[]),
+        ("items[-1_000]", &[]),
+        ("items[-1.0]", &[]),
+        ("items[-True]", &[]),
+        ("items[--1]", &[]),
+        ("items[+1]", &[]),
+        ("items[-(1+2)]", &[]),
+    ];
+    for (expression, expected) in cases {
+        let source = format!("value = {expression}\n");
+        let output = analyze(&source);
+        let candidates: Vec<_> = output
+            .candidates
+            .iter()
+            .filter(|c| {
+                matches!(
+                    c.operator.as_str(),
+                    "structure_index_neighbor" | "structure_slice_neighbor"
+                )
+            })
+            .collect();
+        assert_eq!(
+            candidates
+                .iter()
+                .map(|c| c.replacement.as_str())
+                .collect::<Vec<_>>(),
+            *expected,
+            "{source}"
+        );
+        for candidate in candidates {
+            assert!(candidate.original.starts_with('-'), "{candidate:?}");
+            apply_candidate_and_reparse(&source, candidate);
+        }
+    }
+}
+
+#[test]
+fn structure_negative_neighbors_remain_excluded_from_annotations_and_targets() {
+    let source = concat!(
+        "annotation: items[-1]\n",
+        "annotation_slice: items[-1:-2:-1]\n",
+        "items[-1] = value\n",
+        "items[-1:-2:-1] = value\n",
+        "del items[-1]\n",
+        "del items[-1:-2:-1]\n",
+    );
+    let output = analyze(source);
+    assert!(output.candidates.iter().all(|c| !matches!(
+        c.operator.as_str(),
+        "structure_index_neighbor" | "structure_slice_neighbor"
+    )));
 }

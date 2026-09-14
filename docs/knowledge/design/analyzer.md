@@ -9,6 +9,41 @@ sources:
   resource: ../../superpowers/specs/2026-09-14-issue-489-valid-python-corpus-design.md
   working_tree: untracked
   sha256: 47a53d5cee6dd179baf0bca4b3a0cd3ae8892873986ec9a2fd70f8a7ce37c1dc
+- id: issue-471
+  resource: ../../superpowers/specs/2026-09-14-issue-471-negative-neighbors-design.md
+  working_tree: untracked
+  sha256: c6b6af9099cdb3e6e15b504fd5cee6349e8906658f036a4775f41d02973ac110
+
+- id: issue-480-spec
+  resource: ../../superpowers/specs/2026-09-14-issue-480-source-encoding-design.md
+  working_tree: clean
+  sha256: 55a99855ee216bfff5afdfd5ffdeeab6c13e1877ec751b0ee88c9a35cb78c37e
+  revision: 98969d7a840362f78dceb12f91cc5188214f68d5
+- id: issue-480-codec
+  resource: ../../../crates/hoimin-core/src/source_encoding.rs
+  working_tree: clean
+  sha256: 954deff5938c049804c83f9b903cc5742fd04f0c407a8859094b23344cef55d9
+  revision: 98969d7a840362f78dceb12f91cc5188214f68d5
+- id: issue-480-validator
+  resource: ../../../crates/hoimin-core/src/candidate.rs
+  working_tree: clean
+  sha256: 122f8224aa03efca2ea3da2d061d87fa8e341af29076c9c6b2c4882f989386bc
+  revision: 98969d7a840362f78dceb12f91cc5188214f68d5
+- id: issue-480-writeback
+  resource: ../../../crates/hoimin-cli/src/workspace/mutation.rs
+  working_tree: clean
+  sha256: 9df6269a7021d5ad604331ae14b952448b47cbc76d943b3665bf9b80541d9f86
+  revision: 98969d7a840362f78dceb12f91cc5188214f68d5
+- id: issue-480-tests
+  resource: ../../../crates/hoimin-cli/tests/source_encoding.rs
+  working_tree: modified
+  sha256: 8e81fa46f9b3caa687569fbaae5e8bd046def854773432b425e175ce32df4acf
+  revision: 98969d7a840362f78dceb12f91cc5188214f68d5
+- id: issue-480-report
+  resource: ../../superpowers/reports/2026-09-14-issue-480-source-encoding-review.md
+  working_tree: modified
+  sha256: f8cc3f5e7e8d5ae7afec4b3321751e3d0a36dee584256c930395e5571fa59102
+  revision: a19bf3aadb0d56cc514d857a0e6359a563e67a18
 - id: issue-482
   resource: ../../superpowers/specs/2026-09-14-issue-482-name-history-index-design.md
   working_tree: untracked
@@ -245,3 +280,32 @@ module/classの名前束縛eventはvisitorの挿入順を意味順として保�
 CPython3.14で元入力をコンパイルしてから、宣言済みの適格・不適格位置とRust解析器・公開planの候補を照合する。各候補には共有validator、独立した位置計算、1件ずつ適用した結果のCPythonコンパイルを適用する。scope・key・spanの小さいLean契約を再利用し、producer間で未観測の組合せは未検証として出力する。[^issue-489]
 
 [^issue-489]: [Issue #489: Valid Python candidate contract corpus](../../superpowers/specs/2026-09-14-issue-489-valid-python-corpus-design.md)。
+# 負の添字とslice境界（Issue #471）
+
+単項負号と十進整数の組を境界値演算子の対象へ追加する。負号を含むAST範囲全体を置換し、slice stepのゼロ候補を除く。整数の絶対値はu64の最大値以下に限定し、範囲を超える入力と隣接値を除外する。既存の符号なしゼロは+1だけを保持し、`-0`は+1と-1を生成する。型注釈・代入先・削除対象の除外は維持する。[^issue-471]
+
+[^issue-471]: [Issue #471: Negative index and slice neighbors](../../superpowers/specs/2026-09-14-issue-471-negative-neighbors-design.md)。
+
+# ソース文字コードと元バイト位置
+
+Issue #480 では、Rustの共通decoderでUTF-8、ASCII、Latin-1の宣言を認識する。宣言なしはUTF-8とする。先頭行の独立したコメント、または先頭行が空白・コメントだけの場合の2行目を調べる。BOMがある場合はCPython tokenizerと同じUTF-8名の正規化条件を使う。未知・未対応codec、BOMとの衝突、UTF-8・ASCIIの不正バイトは、元の宣言名と対象pathを診断に含める。Latin-1は全バイトに対応するため、別の文字コードを意図して保存されたかどうかまでは判定できない。[^issue-480-spec][^issue-480-codec]
+
+解析用テキストはUnicode、候補spanとfile hashは元バイト列を基準にする。Latin-1では非ASCIIバイトの疎な索引を作り、UTF-8位置と元バイト位置の境界を二分探索で対応させる。共通候補検証は元codecでoriginalを照合し、対応後のUnicode列とreplacementの表現可能性を確認する。IDのschemaは1を維持し、元hash・元span・Unicode replacementという既存の入力を使う。[^issue-480-codec][^issue-480-validator]
+
+workerには元バイトのprefix、元codecでエンコードしたreplacement、元バイトのsuffixを書く。ファイル全体をUTF-8へ変換しない。公開CLIテストでは、アクセント付き文字の前後の候補と、それを含むcollectionの置換について、plan・run・verifyのID、元span、hash、CPythonが読む実バイトと値を照合する。[^issue-480-writeback][^issue-480-tests]
+
+通常のrunはbaseline後に解析するため、baselineの失敗が文字コード診断より先になることがある。planにはbaselineがなく、明示symbolは対象解決で先にdecodeする。これは既存の実行順序を変更する機能ではない。[^issue-480-spec]
+
+UTF-8とASCIIは入力を借用するが、Latin-1のテキストと索引のメモリは入力に比例する。過去のUTF-8対象のLean保証をcodec全体へ拡張して解釈しない。[^issue-480-spec][^issue-480-report]
+
+[^issue-480-spec]: [2026-09-14-issue-480-source-encoding-design.md](../../superpowers/specs/2026-09-14-issue-480-source-encoding-design.md).
+
+[^issue-480-codec]: [source_encoding.rs](../../../crates/hoimin-core/src/source_encoding.rs).
+
+[^issue-480-validator]: [candidate.rs](../../../crates/hoimin-core/src/candidate.rs).
+
+[^issue-480-writeback]: [mutation.rs](../../../crates/hoimin-cli/src/workspace/mutation.rs).
+
+[^issue-480-tests]: [source_encoding.rs](../../../crates/hoimin-cli/tests/source_encoding.rs).
+
+[^issue-480-report]: [2026-09-14-issue-480-source-encoding-review.md](../../superpowers/reports/2026-09-14-issue-480-source-encoding-review.md).

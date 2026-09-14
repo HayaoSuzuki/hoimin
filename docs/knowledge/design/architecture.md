@@ -5,10 +5,15 @@ description: 元ソースへの変異適用を避け、状態遷移と入出力�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-466-revalidation
+  resource: ../../superpowers/reports/2026-09-14-issue-466-revalidation.md
+  working_tree: untracked
+  sha256: 75fd46a6a0e5fac58f369fb837d571388ddb46969b1458139caa7fbde1b3f0d1
 - id: issue-466
   resource: ../../superpowers/specs/2026-09-14-issue-466-retired-blank-line-discovery-design.md
-  working_tree: untracked
-  sha256: a81a30e965b53eea08c62acba2767f44afb806b4b68b1d8113bdd3faf918966e
+  revision: 8b33167a049e3cae0fc05e96ccf2253c660b7023
+  working_tree: modified
+  sha256: dfa895dc4f91c1b8a912112008488426525d26376d7e09d397a6f65cbae8d8db
 
 - id: issue-477
   resource: ../../superpowers/specs/2026-09-11-issue-477-import-roots-design.md
@@ -116,3 +121,9 @@ Issue 477では、path-only `.pth` に登録した元のsrcディレクトリが
 [^issue-466]: [2026-09-14-issue-466-retired-blank-line-discovery-design.md](../../superpowers/specs/2026-09-14-issue-466-retired-blank-line-discovery-design.md)。
 
 [^issue-462]: [2026-09-11-issue-462-retired-reader-design.md](../../superpowers/specs/2026-09-11-issue-462-retired-reader-design.md)。
+
+# Issue #466 の再確認（2026-09-14）
+
+基準コミット `8b33167` で削除と先行PR #527の包含、現在の呼出し元の不在を再確認した。受け入れ条件4項目は連携の廃止により対象外となる。`tools/performance_shapes.py` は現在存在するため、ディレクトリ全体の不在を判定条件にしない。今回の確認は構文互換性や性能改善の実測を保証しない。[^issue-466-revalidation]
+
+[^issue-466-revalidation]: [Issue 466 retirement revalidation and self-review](../../superpowers/reports/2026-09-14-issue-466-revalidation.md)。

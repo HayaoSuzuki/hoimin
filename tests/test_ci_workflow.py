@@ -27,6 +27,7 @@ STABLE_CANARY_WORKFLOW = (
     ROOT / ".github" / "workflows" / "rust-stable-canary.yml"
 )
 REPOSITORY_RUST_JOBS = {
+    "boundary-contracts",
     "quality",
     "rust",
     "contracts",
