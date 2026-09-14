@@ -5,6 +5,10 @@ description: 保存・復旧の権限、スキーマ移行、結果の生成側�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-464
+  resource: ../../superpowers/specs/2026-09-14-issue-464-baseline-output-design.md
+  working_tree: untracked
+  sha256: 4a10160c54d1b56ab624fc7a28885247bb7e23de622250d3f0ed56a774c7d445
 - id: issue-516
   resource: ../../superpowers/specs/2026-09-12-issue-516-session-ownership-identities-design.md
   working_tree: untracked
@@ -152,3 +156,9 @@ session の所有権ロックを置くディレクトリについて、指定パ
 macOSで、並列数1・2、root内外の別名、大小文字の別名、実際のタイムアウト後の再開を検証した。Linux・Windowsの実機検証はローカルでは行っていない。既存の I/O 事前処理でのみ実体を解決し、存在しないロックディレクトリを作成しない。元ソース・通常の fixture の変更検知、所有権競合の検出、metrics の安全な別エントリ置換は維持する。[^issue-516]
 
 [^issue-516]: [Issue 516: Share active session ownership-tree identities](../../superpowers/specs/2026-09-12-issue-516-session-ownership-identities-design.md)。
+
+## baseline失敗時の保存済み出力
+
+`run` と `verify` は失敗またはプロセスの時間切れとなったbaselineについて、cleanup前に保存済みの標準出力・標準エラーをstderr診断へ逐次出力する。`--max-output` の末尾保持上限に従い、保持量・観測量・切詰め有無とraw byte offsetを示す。非UTF8は置換文字、端末制御文字はエスケープで表す。stdoutのスキーマは変えない。保存にはstderrのリダイレクトを使う。キャンセルや出力先の詰まりで総時間制限に達すると出力は途中で止まりうる。[^issue-464]
+
+[^issue-464]: [原文](../../superpowers/specs/2026-09-14-issue-464-baseline-output-design.md)。

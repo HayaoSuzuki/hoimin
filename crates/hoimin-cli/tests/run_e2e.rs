@@ -4680,3 +4680,48 @@ async fn active_session_lock_tree_invalid_aliases_fail_before_baseline() {
         assert_eq!(std::fs::read(root.join("src/calc.py")).unwrap(), source);
     }
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn stalled_baseline_log_consumer_respects_total_timeout_and_grace() {
+    use std::process::Stdio;
+
+    let project = tempfile::tempdir().unwrap();
+    std::fs::write(project.path().join("target.py"), "value = 1 + 2\n").unwrap();
+    let (consumer, producer, _) = full_report_transport();
+    let mut child = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
+        .args(["run", "--root"])
+        .arg(project.path())
+        .args([
+            "--file",
+            "target.py",
+            "--format",
+            "json",
+            "--allow-best-effort-memory",
+            "--min-free-space",
+            TEST_MIN_FREE_SPACE,
+            "--total-timeout",
+            "1s",
+            "--",
+        ])
+        .arg(python_executable())
+        .args(["-c", "print('FAILED_BASELINE_LOG'); raise SystemExit(7)"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::from(producer))
+        .kill_on_drop(true)
+        .spawn()
+        .unwrap();
+    let status = tokio::time::timeout(Duration::from_secs(6), child.wait()).await;
+    if status.is_err() {
+        child.kill().await.unwrap();
+        child.wait().await.unwrap();
+    }
+    drop(consumer);
+    assert_eq!(
+        status
+            .expect("stalled baseline log exceeded timeout plus grace")
+            .unwrap()
+            .code(),
+        Some(2)
+    );
+}

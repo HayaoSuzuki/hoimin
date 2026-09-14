@@ -5,6 +5,10 @@ description: docs/superpowers/specs内の全Markdownを先頭見出しと出典�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-464-design
+  resource: ../../superpowers/specs/2026-09-14-issue-464-baseline-output-design.md
+  working_tree: untracked
+  sha256: 4a10160c54d1b56ab624fc7a28885247bb7e23de622250d3f0ed56a774c7d445
 - id: issue-491-design
   resource: ../../superpowers/specs/2026-09-14-issue-491-performance-shapes-design.md
   working_tree: modified
@@ -1282,3 +1286,9 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 | [Issue #456: verify のファイル単位の候補検証](../../superpowers/specs/2026-09-14-issue-456-validation-context-design.md) | 前処理の共有、診断順とソース所有権。[^issue-456] |
 
 [^issue-456]: [2026-09-14-issue-456-validation-context-design.md](../../superpowers/specs/2026-09-14-issue-456-validation-context-design.md)。
+
+## Issue #464 の設計
+
+[baseline失敗ログの出力](../../superpowers/specs/2026-09-14-issue-464-baseline-output-design.md):既存spoolをcleanup前にstderrへ逐次出力する契約。[^issue-464-design]
+
+[^issue-464-design]: [原文](../../superpowers/specs/2026-09-14-issue-464-baseline-output-design.md)。

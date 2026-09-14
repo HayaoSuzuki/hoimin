@@ -5,6 +5,10 @@ description: docs/auditsとdocs/superpowers/reports内の全Markdownを追跡状
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-464-review
+  resource: ../../superpowers/reports/2026-09-14-issue-464-baseline-output-review.md
+  working_tree: untracked
+  sha256: 6fea222da530ffe38493d6c7ba40109e2557c07627d1cbbc8c2f24bc75c05fa3
 - id: issue-461-merge-review
   resource: ../../superpowers/reports/2026-09-14-issue-461-self-review.md
   revision: 11dd162101c4351dfdd15cb52ba112bdf1fe9cf2
@@ -648,3 +652,9 @@ sources:
 [^issue-470-merge-review]: [2026-09-14-issue-470-self-review.md](../../superpowers/reports/2026-09-14-issue-470-self-review.md)。
 [^issue-479-merge-review]: [2026-09-14-issue-479-self-review.md](../../superpowers/reports/2026-09-14-issue-479-self-review.md)。
 [^issue-482-merge-review]: [2026-09-14-issue-482-self-review.md](../../superpowers/reports/2026-09-14-issue-482-self-review.md)。
+
+## Issue #464 の検証
+
+[baselineログ出力のレビュー](../../superpowers/reports/2026-09-14-issue-464-baseline-output-review.md):各工程3回のレビューと実CLI・出力制限・cleanup検証。[^issue-464-review]
+
+[^issue-464-review]: [原文](../../superpowers/reports/2026-09-14-issue-464-baseline-output-review.md)。
