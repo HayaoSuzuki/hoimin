@@ -5,6 +5,10 @@ description: docs/auditsとdocs/superpowers/reports内の全Markdownを追跡状
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-466-revalidation
+  resource: ../../superpowers/reports/2026-09-14-issue-466-revalidation.md
+  working_tree: untracked
+  sha256: 75fd46a6a0e5fac58f369fb837d571388ddb46969b1458139caa7fbde1b3f0d1
 - id: issue-490-review
   resource: ../../superpowers/reports/2026-09-14-issue-490-boundary-contracts-review.md
   revision: c7ce87f8d4c584c2d8df2dcb9d65348c3dd3a706
@@ -446,6 +450,7 @@ sources:
 
 | 原文 | 先頭見出し | 作成時の状態 |
 | --- | --- | --- |
+| [2026-09-14-issue-466-revalidation.md](../../superpowers/reports/2026-09-14-issue-466-revalidation.md) | Issue 466 retirement revalidation and self-review [^issue-466-revalidation] | 未追跡 |
 | [2026-09-14-issue-467-jsonl-progress-review.md](../../superpowers/reports/2026-09-14-issue-467-jsonl-progress-review.md) | Issue 467 JSONL progress implementation and review [^issue-467-review] | 未追跡 |
 | [2026-09-14-issue-480-source-encoding-review.md](../../superpowers/reports/2026-09-14-issue-480-source-encoding-review.md) | Issue #480: source encoding review [^issue-480-report-index] | 追跡済み |
 | [2026-09-14-issue-476-symbol-diagnostics-review.md](../../superpowers/reports/2026-09-14-issue-476-symbol-diagnostics-review.md) | Issue #476: symbol diagnostics review [^issue-476-report-index] | 未追跡 |
@@ -671,6 +676,7 @@ sources:
 [^issue-479-merge-review]: [2026-09-14-issue-479-self-review.md](../../superpowers/reports/2026-09-14-issue-479-self-review.md)。
 [^issue-482-merge-review]: [2026-09-14-issue-482-self-review.md](../../superpowers/reports/2026-09-14-issue-482-self-review.md)。
 
+[^issue-466-revalidation]: [Issue 466 retirement revalidation and self-review](../../superpowers/reports/2026-09-14-issue-466-revalidation.md)。
 [^issue-467-review]: [2026-09-14-issue-467-jsonl-progress-review.md](../../superpowers/reports/2026-09-14-issue-467-jsonl-progress-review.md)。
 
 - [Issue 490 boundary contracts](../../superpowers/reports/2026-09-14-issue-490-boundary-contracts-review.md)。[^issue-490-review]
