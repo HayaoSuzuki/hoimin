@@ -8,7 +8,7 @@ use ignore::overrides::{Override, OverrideBuilder};
 use crate::portable_path;
 use crate::workspace::{self, RootRelativeReadError, WorkspaceManifest};
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Clone, Debug, thiserror::Error)]
 pub enum FingerprintInputError {
     #[error("fingerprint.include.invalid_glob: {0}")]
     InvalidGlob(String),
@@ -43,17 +43,7 @@ pub fn resolve(
     patterns: &[String],
     files: &[String],
 ) -> Result<Vec<FingerprintInputFile>, FingerprintInputError> {
-    let mut selected = BTreeMap::new();
-    for pattern in patterns {
-        validate_pattern(root, pattern)?;
-        let matched = resolve_one(root, pattern)?;
-        if matched.is_empty() {
-            return Err(FingerprintInputError::Unmatched(pattern.clone()));
-        }
-        for path in matched {
-            selected.entry(path).or_insert(None);
-        }
-    }
+    let mut selected = resolve_patterns(root, patterns)?.selected;
     for file in files {
         let path = resolve_exact(file)?;
         let bytes = workspace::read_root_relative(root, &path).map_err(|error| match error {
@@ -193,8 +183,65 @@ fn validate_pattern(root: &Utf8Path, pattern: &str) -> Result<(), FingerprintInp
     Ok(())
 }
 
-fn resolve_one(root: &Utf8Path, pattern: &str) -> Result<Vec<Utf8PathBuf>, FingerprintInputError> {
-    let overrides = build_override(root, pattern)?;
+struct PatternState {
+    pattern: String,
+    overrides: Override,
+    matched: bool,
+    error: Option<FingerprintInputError>,
+}
+
+struct PatternResolution {
+    selected: BTreeMap<Utf8PathBuf, Option<blake3::Hash>>,
+    #[cfg(test)]
+    walks: usize,
+}
+
+#[allow(
+    clippy::too_many_lines,
+    reason = "pattern compilation, one traversal, and ordered error replay stay together"
+)]
+fn resolve_patterns(
+    root: &Utf8Path,
+    patterns: &[String],
+) -> Result<PatternResolution, FingerprintInputError> {
+    let mut states = Vec::new();
+    let mut deferred_error = None;
+    for pattern in patterns {
+        if let Err(error) = validate_pattern(root, pattern) {
+            deferred_error = Some(error);
+            break;
+        }
+        states.push(PatternState {
+            pattern: pattern.clone(),
+            overrides: build_override(root, pattern)?,
+            matched: false,
+            error: None,
+        });
+    }
+    if states.is_empty() {
+        return deferred_error.map_or_else(
+            || {
+                Ok(PatternResolution {
+                    selected: BTreeMap::new(),
+                    #[cfg(test)]
+                    walks: 0,
+                })
+            },
+            Err,
+        );
+    }
+
+    let mut union_builder = OverrideBuilder::new(root.as_std_path());
+    for state in &states {
+        if !state.pattern.starts_with('!') {
+            union_builder
+                .add(&state.pattern)
+                .map_err(|error| FingerprintInputError::InvalidGlob(error.to_string()))?;
+        }
+    }
+    let union = union_builder
+        .build()
+        .map_err(|error| FingerprintInputError::InvalidGlob(error.to_string()))?;
     let mut builder = WalkBuilder::new(root.as_std_path());
     builder
         .hidden(false)
@@ -204,9 +251,15 @@ fn resolve_one(root: &Utf8Path, pattern: &str) -> Result<Vec<Utf8PathBuf>, Finge
         .git_exclude(false)
         .parents(false)
         .follow_links(false)
-        .overrides(overrides.clone());
+        .overrides(union);
 
-    let mut matched = Vec::new();
+    let mut selected = BTreeMap::new();
+    #[cfg(test)]
+    let mut walks = 0;
+    #[cfg(test)]
+    {
+        walks += 1;
+    }
     for result in builder.build() {
         let entry =
             result.map_err(|error| FingerprintInputError::UnsupportedFile(error.to_string()))?;
@@ -216,29 +269,78 @@ fn resolve_one(root: &Utf8Path, pattern: &str) -> Result<Vec<Utf8PathBuf>, Finge
         let is_directory = entry
             .file_type()
             .is_some_and(|file_type| file_type.is_dir());
-        if !overrides.matched(entry.path(), is_directory).is_whitelist() {
+        let matching = states
+            .iter()
+            .enumerate()
+            .filter_map(|(index, state)| {
+                state
+                    .overrides
+                    .matched(entry.path(), is_directory)
+                    .is_whitelist()
+                    .then_some(index)
+            })
+            .collect::<Vec<_>>();
+        if matching.is_empty() {
             continue;
         }
-        let relative = entry.path().strip_prefix(root.as_std_path()).map_err(|_| {
-            FingerprintInputError::UnsupportedFile("selected path is outside root".to_owned())
-        })?;
-        let relative = Utf8PathBuf::from_path_buf(relative.to_path_buf()).map_err(|_| {
-            FingerprintInputError::UnsupportedFile("selected path must be valid UTF-8".to_owned())
-        })?;
-        let relative = portable_path::from_native(relative.as_str())
-            .map_err(|error| FingerprintInputError::UnsupportedFile(error.into_value()))?;
-        let relative = Utf8PathBuf::from(relative.into_owned());
+        for &index in &matching {
+            states[index].matched = true;
+        }
+        let relative = entry
+            .path()
+            .strip_prefix(root.as_std_path())
+            .map_err(|_| {
+                FingerprintInputError::UnsupportedFile("selected path is outside root".to_owned())
+            })
+            .and_then(|path| {
+                Utf8PathBuf::from_path_buf(path.to_path_buf()).map_err(|_| {
+                    FingerprintInputError::UnsupportedFile(
+                        "selected path must be valid UTF-8".to_owned(),
+                    )
+                })
+            })
+            .and_then(|path| {
+                portable_path::from_native(path.as_str())
+                    .map(|path| Utf8PathBuf::from(path.into_owned()))
+                    .map_err(|error| FingerprintInputError::UnsupportedFile(error.into_value()))
+            });
+        let relative = match relative {
+            Ok(relative) => relative,
+            Err(error) => {
+                for index in matching {
+                    states[index].error.get_or_insert_with(|| error.clone());
+                }
+                continue;
+            }
+        };
         let file_type = entry
             .file_type()
             .ok_or_else(|| FingerprintInputError::UnsupportedFile(relative.as_str().to_owned()))?;
         if file_type.is_dir() || file_type.is_symlink() || !file_type.is_file() {
-            return Err(FingerprintInputError::UnsupportedFile(
-                relative.as_str().to_owned(),
-            ));
+            let error = FingerprintInputError::UnsupportedFile(relative.as_str().to_owned());
+            for index in matching {
+                states[index].error.get_or_insert_with(|| error.clone());
+            }
+            continue;
         }
-        matched.push(relative);
+        selected.entry(relative).or_insert(None);
     }
-    Ok(matched)
+    for state in states {
+        if let Some(error) = state.error {
+            return Err(error);
+        }
+        if !state.matched {
+            return Err(FingerprintInputError::Unmatched(state.pattern));
+        }
+    }
+    if let Some(error) = deferred_error {
+        return Err(error);
+    }
+    Ok(PatternResolution {
+        selected,
+        #[cfg(test)]
+        walks,
+    })
 }
 
 fn build_override(root: &Utf8Path, pattern: &str) -> Result<Override, FingerprintInputError> {
@@ -249,4 +351,42 @@ fn build_override(root: &Utf8Path, pattern: &str) -> Result<Override, Fingerprin
     builder
         .build()
         .map_err(|error| FingerprintInputError::InvalidGlob(error.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pattern_count_and_unrelated_tree_size_do_not_multiply_walks() {
+        for unrelated in [0, 64] {
+            let directory = tempfile::tempdir().unwrap();
+            std::fs::write(directory.path().join("a.toml"), "a").unwrap();
+            std::fs::create_dir(directory.path().join("unrelated")).unwrap();
+            for index in 0..unrelated {
+                std::fs::write(
+                    directory
+                        .path()
+                        .join("unrelated")
+                        .join(format!("{index}.txt")),
+                    "x",
+                )
+                .unwrap();
+            }
+            let root = Utf8Path::from_path(directory.path()).unwrap();
+            assert_eq!(resolve_patterns(root, &[]).unwrap().walks, 0);
+            for count in [1, 2, 4] {
+                let patterns = std::iter::repeat_n("*.toml".to_owned(), count).collect::<Vec<_>>();
+                let resolution = resolve_patterns(root, &patterns).unwrap();
+                assert_eq!(
+                    resolution.walks, 1,
+                    "patterns={count}, unrelated={unrelated}"
+                );
+                assert_eq!(
+                    resolution.selected.keys().collect::<Vec<_>>(),
+                    [Utf8Path::new("a.toml")]
+                );
+            }
+        }
+    }
 }

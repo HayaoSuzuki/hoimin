@@ -7,7 +7,7 @@ use std::ops::Range;
 use camino::Utf8Path;
 use hoimin_core::{
     ByteSpan, LineRange, MutationOperator, MutationOperatorSelection, MutationProfile,
-    python_source_column,
+    PythonSourceIndex,
 };
 use ruff_python_ast::identifier;
 use ruff_python_ast::token::TokenKind;
@@ -38,8 +38,24 @@ use operator_functions::OperatorImports;
 
 #[cfg(test)]
 thread_local! {
+    static COLLECTION_REPLACEMENT_BUILDS: Cell<usize> = const { Cell::new(0) };
+    static CANDIDATE_ORIGINAL_COPIES: Cell<usize> = const { Cell::new(0) };
     static ANNOTATION_RECORDS: Cell<usize> = const { Cell::new(0) };
     static ANNOTATION_IMPORT_SNAPSHOT_CLONES: Cell<usize> = const { Cell::new(0) };
+}
+
+#[cfg(test)]
+fn reset_candidate_work_stats() {
+    COLLECTION_REPLACEMENT_BUILDS.set(0);
+    CANDIDATE_ORIGINAL_COPIES.set(0);
+}
+
+#[cfg(test)]
+fn candidate_work_stats() -> (usize, usize) {
+    (
+        COLLECTION_REPLACEMENT_BUILDS.get(),
+        CANDIDATE_ORIGINAL_COPIES.get(),
+    )
 }
 
 #[cfg(test)]
@@ -464,16 +480,19 @@ fn make_candidate(
     operator: MutationOperator,
     symbol: Option<String>,
 ) -> Option<AnalyzerCandidate> {
-    if range.start >= range.end || range.end > source.len() {
+    if !request.operators.contains(operator) || range.start >= range.end || range.end > source.len()
+    {
         return None;
     }
-    let original = source.get(range.clone())?.to_owned();
     let start = u64::try_from(range.start).ok()?;
     let length = u64::try_from(range.len()).ok()?;
     let (line, column) = line_index.line_and_column(source, range.start);
-    if !selected(request, line, symbol.as_deref()) || !request.operators.contains(operator) {
+    if !selected(request, line, symbol.as_deref()) {
         return None;
     }
+    #[cfg(test)]
+    CANDIDATE_ORIGINAL_COPIES.set(CANDIDATE_ORIGINAL_COPIES.get().saturating_add(1));
+    let original = source.get(range)?.to_owned();
     Some(AnalyzerCandidate {
         path: request.path.to_owned(),
         span: ByteSpan { start, length },
@@ -560,30 +579,24 @@ fn replacement(text: &str, unary: bool) -> Option<(&'static str, &'static str)> 
 }
 
 struct LineIndex {
-    starts: Vec<u32>,
+    source: PythonSourceIndex,
 }
 
 impl LineIndex {
     fn new(source: &str) -> Self {
-        let starts = hoimin_core::python_line_starts(source.as_bytes())
-            .expect("Ruff source offset fits u32");
-        Self { starts }
+        Self {
+            source: PythonSourceIndex::new(source).expect("Ruff source offset fits u32"),
+        }
     }
 
     #[allow(
         clippy::cast_possible_truncation,
         reason = "Ruff TextSize offsets cap parsed source at u32::MAX bytes, and code-point counts cannot exceed byte counts."
     )]
-    fn line_and_column(&self, source: &str, offset: usize) -> (u32, u32) {
-        let line_index = self
-            .starts
-            .partition_point(|start| (*start as usize) <= offset)
-            - 1;
-        let line_start = self.starts[line_index] as usize;
-        let line = line_index as u32 + 1;
-        let column = python_source_column(source, line_start, offset)
-            .expect("Ruff source offsets are valid UTF-8 boundaries within a u32-sized source");
-        (line, column)
+    fn line_and_column(&self, _source: &str, offset: usize) -> (u32, u32) {
+        self.source
+            .line_and_column(offset)
+            .expect("Ruff source offsets are valid UTF-8 boundaries within a u32-sized source")
     }
 }
 
@@ -2323,12 +2336,18 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
     }
 
     fn collect_list_literal(&mut self, list: &ExprList) {
-        if list.ctx != ExprContext::Load
+        if !self
+            .request
+            .operators
+            .contains(MutationOperator::CollectionListTuple)
+            || list.ctx != ExprContext::Load
             || self.exception_type_depth > 0
             || self.facts.contains_annotation_span(list.range())
         {
             return;
         }
+        #[cfg(test)]
+        COLLECTION_REPLACEMENT_BUILDS.set(COLLECTION_REPLACEMENT_BUILDS.get().saturating_add(1));
         if let Some(replacement) = list_to_tuple_replacement(self.source, list, self.facts) {
             self.add_candidate(
                 list.range(),
@@ -2339,12 +2358,18 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
     }
 
     fn collect_tuple_literal(&mut self, tuple: &ExprTuple) {
-        if tuple.ctx != ExprContext::Load
+        if !self
+            .request
+            .operators
+            .contains(MutationOperator::CollectionListTuple)
+            || tuple.ctx != ExprContext::Load
             || self.exception_type_depth > 0
             || self.facts.contains_annotation_span(tuple.range())
         {
             return;
         }
+        #[cfg(test)]
+        COLLECTION_REPLACEMENT_BUILDS.set(COLLECTION_REPLACEMENT_BUILDS.get().saturating_add(1));
         if let Some(replacement) = tuple_to_list_replacement(self.source, tuple) {
             self.add_candidate(
                 tuple.range(),
