@@ -4,7 +4,7 @@
 
 ## OKF
 
-1. 形式: YAML、source脚注、本文リンクをvalidatorで確認する。
+1. 形式: YAML、source脚注、本文リンクをvalidatorで検査し、16ページ成功を確認した。設計索引のsources不足を追加の文書監査で見つけ、出典revision/hashを登録した後にも再検査した。
 2. 出典: 設計原文のSHA-256を実ファイルから計算し、未commit状態を記録した。
 3. 限定: 型候補collector、runtime抑止用range、test snapshotを区別し、変更対象だけを記述した。
 

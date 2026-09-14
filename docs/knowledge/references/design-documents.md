@@ -5,6 +5,11 @@ description: docs/superpowers/specs内の全Markdownを先頭見出しと出典�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-479-stream
+  resource: ../../superpowers/specs/2026-09-14-issue-479-stream-annotations-design.md
+  working_tree: clean
+  revision: bfa346ca49285a3ebedd4d77c70f93dafb743846
+  sha256: 14ecae895345bbd5bf40452ed53655fc2ff4aec67e292010c2f26a10c39ee3e2
 - id: issue-513
   resource: ../../superpowers/specs/2026-09-12-issue-513-parser-recursion-design.md
   working_tree: untracked
