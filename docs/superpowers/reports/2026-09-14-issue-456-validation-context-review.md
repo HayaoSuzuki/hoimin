@@ -80,4 +80,3 @@ workspace試験には `run_e2e` も含む。上記の件数は各コマンドの
 1. Issue #456 の受け入れ条件と差分を照合し、対象外のschema/ranking/再発見変更がないことを確認した。
 2. PR本文の検証件数を実ログと照合した。Pythonパスとsandboxによる初回失敗、未実施のネイティブOS/RSS、benchmarkの比較条件を隠さない。
 3. コード、テスト、設計・計画・報告、OKFの追跡対象を再点検した。worktreeのローカル `.venv` と生成wheelをcommit対象に含めず、main向けのIssue専用ブランチとして公開する。
-

@@ -12,7 +12,7 @@ sources:
 - id: issue-456-review
   resource: ../../superpowers/reports/2026-09-14-issue-456-validation-context-review.md
   working_tree: untracked
-  sha256: 651a41d08586e9d2971372881ab7dd6202ee08a517ca76529921281e4824dad6
+  sha256: 5042ef83fb71837543be9fb358b2453931bdf70ce77f6033381e5756632b09f0
 - id: issue-456-code
   resource: ../../../crates/hoimin-cli/src/plan.rs
   working_tree: modified
