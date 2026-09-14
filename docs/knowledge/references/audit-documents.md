@@ -21,7 +21,7 @@ sources:
   resource: ../../superpowers/reports/2026-09-14-issue-491-operation-cost-review.md
   working_tree: modified
   revision: f14aa1b34ec6d166882e720661aee0fceb3543ee
-  sha256: abc609a72b992f5fdf7890d0325e3362952d186d3925454ee9b7403dba20d0b8
+  sha256: 90036e84a9987231975f14b7d20525dcd2bea3a290d3d7aa66c9a98c552526f6
 - id: issue-489-worksheet
   resource: ../../superpowers/reports/2026-09-14-issue-489-correspondence-worksheet.md
   working_tree: untracked

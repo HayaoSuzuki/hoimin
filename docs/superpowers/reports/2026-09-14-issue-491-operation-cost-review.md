@@ -114,3 +114,6 @@ Progress PR/publication reviews: (1) Parent independently reviewed fixture drop 
 統合後のPR535/537/539/541で、contractsのCLIテスト実行前に異なる実行ファイルのlinkがBus errorで停止した。PR539は直前の空き容量34MB、PR541は77MBをrunnerが報告した。他2件の個別原因まで証明したとは扱わない。初回ログは/private/tmp/pr{535,537,539,541}-integration-contracts-failure.logと/private/tmp/contracts-integration-disk-failures.jsonに保持し、同じ失敗を繰り返す再実行は行わなかった。
 
 レビュー1:失敗時点と複数runnerの容量を比較し、test assertionではなくbuild資源への対応として範囲を限定した。レビュー2:contractsジョブだけにCARGO_PROFILE_DEV_DEBUG=0、CARGO_PROFILE_TEST_DEBUG=0、CARGO_INCREMENTAL=0、CARGO_BUILD_JOBS=2を追加し、両cargo testコマンドとfeaturesが変更前と等しいことを構造比較で確認した。debug情報の抑制はdebug assertionの無効化ではない。別担当もこの区別とtest filterの追加がないことを確認した。レビュー3:CI構成28件が成功し、先行535から全後続PRへ通常mergeで同じ修正を適用した。CI再実行の結果を確認するまで解消済みとは扱わない。
+
+
+続いて全変更を含むPR544の通常Rustジョブも、空き容量9MBでcoreテスト実行ファイルのlinkがSIGBUSになった。証跡は/private/tmp/pr544-integration-rust-failure.log。追加レビュー1でこの実測値とテスト前の失敗を確認し、2で通常Rustとランダム順Rustにも同じ4設定だけを追加して、全ジョブ定義から追加envを除くと変更前と同一になることを構造比較した。追加レビュー3ではCI構成28件が成功した。通常テスト・性能ゲート・shuffleの実行コマンド、assertion、featureは維持した。最新CIで効果を確認する。
