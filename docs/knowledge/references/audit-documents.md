@@ -5,6 +5,10 @@ description: docs/auditsとdocs/superpowers/reports内の全Markdownを追跡状
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-475-report
+  resource: ../../superpowers/reports/2026-09-14-issue-475-range-normalization.md
+  sha256: 4a5ebaf30d38b75272a82443ec7c1845f4aeae8bf2be142324b7db504e25ad63
+
 - id: issue-474-report
   resource: ../../superpowers/reports/2026-09-14-issue-474-selector-index.md
   working_tree: untracked
@@ -392,6 +396,7 @@ sources:
 
 | 原文 | 先頭見出し | 作成時の状態 |
 | --- | --- | --- |
+| [2026-09-14-issue-475-range-normalization.md](../../superpowers/reports/2026-09-14-issue-475-range-normalization.md) | Issue 475 range normalization report [^issue-475-report] | 未追跡 |
 | [2026-09-14-issue-474-selector-index.md](../../superpowers/reports/2026-09-14-issue-474-selector-index.md) | Issue 474 explicit selector index report [^issue-474-report] | 未追跡 |
 | [2026-09-11-issue-460-progress-result-audit.md](../../superpowers/reports/2026-09-11-issue-460-progress-result-audit.md) | Progress result validation audit (issue 460) [^issue-460-audit] | **未追跡** |
 | [2026-09-11-progress-input-lean.md](../../superpowers/reports/2026-09-11-progress-input-lean.md) | Progress input summary coherence (#483) [^doc-001] | 追跡済み |
@@ -577,6 +582,8 @@ sources:
 [^doc-089]: [findings.md](../../audits/2026-07-rust-codebase/findings.md)。
 [^doc-090]: [coverage.md](../../audits/2026-07-rust-codebase/coverage.md)。
 [^doc-091]: [README.md](../../audits/2026-07-rust-codebase/README.md)。
+
+[^issue-475-report]: [Issue 475 range normalization report](../../superpowers/reports/2026-09-14-issue-475-range-normalization.md)。
 
 [^issue-474-report]: [Issue 474 explicit selector index report](../../superpowers/reports/2026-09-14-issue-474-selector-index.md)。
 
