@@ -1,6 +1,7 @@
 use std::ffi::OsString;
 
 pub mod analyzer;
+mod baseline_output;
 pub mod cli;
 mod copy_policy;
 pub mod fingerprint_inputs;
