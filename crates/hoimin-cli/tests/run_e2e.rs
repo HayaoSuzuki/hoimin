@@ -1546,6 +1546,7 @@ async fn shell_context_construction_performs_no_project_io() {
 
     assert!(!missing_root.exists());
     assert!(!session.exists());
+    assert!(!missing_root.join(".session.sqlite3.hoimin-locks").exists());
     drop(context);
 }
 
@@ -4402,32 +4403,42 @@ async fn active_session_artifacts_follow_root_parent_and_database_aliases() {
 #[tokio::test]
 async fn active_session_artifacts_do_not_exempt_original_source_or_fixture_edits() {
     for path in ["fixture.db", "src/calc.py"] {
-        let project = tempfile::tempdir().unwrap();
-        write_parallel_project(project.path());
-        std::fs::write(project.path().join("fixture.db"), b"original fixture").unwrap();
-        let session = project.path().join("session.db");
-        let original = project.path().join(path);
-        let command = format!(
-            "from pathlib import Path; Path({:?}).write_text('changed')",
-            original.to_str().unwrap()
-        );
-        let output = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
-            .args(real_cli_session_args(
-                project.path(),
-                &session,
-                false,
-                &command,
-            ))
-            .kill_on_drop(true)
-            .output()
-            .await
-            .unwrap();
-        assert_eq!(output.status.code(), Some(2));
-        assert!(
-            String::from_utf8_lossy(&output.stderr).contains("workspace.original.changed"),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
+        for alias in [false, true] {
+            let project = tempfile::tempdir().unwrap();
+            write_parallel_project(project.path());
+            std::fs::write(project.path().join("fixture.db"), b"original fixture").unwrap();
+            let session = project.path().join("session.db");
+            #[cfg(any(unix, windows))]
+            if alias {
+                let actual = project.path().join("actual-locks");
+                std::fs::create_dir(&actual).unwrap();
+                session_directory_alias(&actual, &project.path().join(".session.db.hoimin-locks"));
+            }
+            #[cfg(not(any(unix, windows)))]
+            let _ = alias;
+            let original = project.path().join(path);
+            let command = format!(
+                "from pathlib import Path; Path({:?}).write_text('changed')",
+                original.to_str().unwrap()
+            );
+            let output = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
+                .args(real_cli_session_args(
+                    project.path(),
+                    &session,
+                    false,
+                    &command,
+                ))
+                .kill_on_drop(true)
+                .output()
+                .await
+                .unwrap();
+            assert_eq!(output.status.code(), Some(2));
+            assert!(
+                String::from_utf8_lossy(&output.stderr).contains("workspace.original.changed"),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
     }
 }
 
@@ -4454,4 +4465,218 @@ async fn active_session_artifacts_missing_parent_fails_preflight_without_creatio
     assert!(report["baseline"].is_null());
     assert_eq!(report["summary"]["complete"], false);
     assert!(!missing_parent.exists());
+}
+
+#[cfg(any(unix, windows))]
+fn session_directory_alias(target: &Path, alias: &Path) {
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(target, alias).unwrap();
+    #[cfg(windows)]
+    std::os::windows::fs::symlink_dir(target, alias)
+        .expect("session alias regression requires directory symlink support");
+}
+
+#[cfg(any(unix, windows))]
+async fn assert_active_session_aliased_lock_tree_is_excluded(jobs: &str, mode: &str) {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path().join("project");
+    std::fs::create_dir(&root).unwrap();
+    let source = b"value = True\n";
+    std::fs::write(root.join("calc.py"), source).unwrap();
+    let fixture = rusqlite::Connection::open(root.join("fixture.db")).unwrap();
+    fixture
+        .execute_batch(
+            "CREATE TABLE fixture(value TEXT); INSERT INTO fixture VALUES ('ordinary fixture');",
+        )
+        .unwrap();
+    drop(fixture);
+    let fixture_bytes = std::fs::read(root.join("fixture.db")).unwrap();
+    std::fs::create_dir(root.join("actual-locks-backup")).unwrap();
+    std::fs::write(root.join("actual-locks-backup/keep"), b"keep").unwrap();
+    let session_parent = if mode == "outside-alias" {
+        directory.path()
+    } else {
+        root.as_path()
+    };
+    let session = session_parent.join("session.db");
+    let alias = session_parent.join(".session.db.hoimin-locks");
+    let actual = match mode {
+        "outside-target" => directory.path().join("actual-locks"),
+        "native-case" => root.join(".SESSION.DB.HOIMIN-LOCKS"),
+        _ => root.join("actual-locks"),
+    };
+    std::fs::create_dir(&actual).unwrap();
+    if mode == "native-case" {
+        if !alias.exists() {
+            eprintln!("SKIP native case-alias test: filesystem is case-sensitive");
+            return;
+        }
+        eprintln!("native case-alias capability confirmed");
+    } else {
+        session_directory_alias(&actual, &alias);
+    }
+    std::fs::write(actual.join("existing.lock"), b"preserved").unwrap();
+    let script = "from pathlib import Path; import sqlite3; assert not Path('actual-locks').exists(); assert not Path('.SESSION.DB.HOIMIN-LOCKS').exists(); assert sqlite3.connect('file:fixture.db?mode=ro', uri=True).execute('select value from fixture').fetchone() == ('ordinary fixture',); assert Path('actual-locks-backup/keep').read_bytes() == b'keep'; import calc; assert calc.value";
+    let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"));
+    command
+        .current_dir(&root)
+        .args("run --root . --file calc.py --operators boolean_literal --include ** --format json --allow-best-effort-memory --min-free-space 1B --total-timeout 20s".split_whitespace())
+        .args(["--jobs", jobs])
+        .arg("--session")
+        .arg(&session)
+        .arg("--")
+        .arg(python_executable())
+        .args(["-c", script])
+        .kill_on_drop(true);
+    let output = tokio::time::timeout(Duration::from_secs(30), command.output())
+        .await
+        .expect("session alias CLI timed out")
+        .unwrap();
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "jobs={jobs} stdout={} stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["baseline"]["termination"]["Exit"], 0);
+    assert_eq!(report["summary"]["complete"], true);
+    assert_eq!(report["mutants"].as_array().unwrap().len(), 1);
+    assert_eq!(report["mutants"][0]["status"], "killed");
+    assert_eq!(std::fs::read(root.join("calc.py")).unwrap(), source);
+    assert_eq!(
+        std::fs::read(root.join("fixture.db")).unwrap(),
+        fixture_bytes
+    );
+    assert_eq!(
+        std::fs::read(actual.join("existing.lock")).unwrap(),
+        b"preserved"
+    );
+    let owned_locks = std::fs::read_dir(actual)
+        .unwrap()
+        .filter(|entry| {
+            let path = entry.as_ref().unwrap().path();
+            path.file_name().unwrap() != "existing.lock"
+                && path
+                    .extension()
+                    .is_some_and(|extension| extension == "lock")
+        })
+        .count();
+    assert_eq!(
+        owned_locks, 1,
+        "ownership acquisition must create its own lock"
+    );
+}
+
+#[cfg(any(unix, windows))]
+#[tokio::test]
+async fn active_session_aliased_lock_tree_is_excluded_serial() {
+    assert_active_session_aliased_lock_tree_is_excluded("1", "inside").await;
+}
+
+#[cfg(any(unix, windows))]
+#[tokio::test]
+async fn active_session_aliased_lock_tree_is_excluded_parallel() {
+    assert_active_session_aliased_lock_tree_is_excluded("2", "inside").await;
+}
+
+#[cfg(any(unix, windows))]
+#[tokio::test]
+async fn active_session_lock_tree_aliases_across_root_boundary() {
+    for mode in ["outside-alias", "outside-target"] {
+        assert_active_session_aliased_lock_tree_is_excluded("1", mode).await;
+    }
+}
+
+#[cfg(any(unix, windows))]
+#[tokio::test]
+async fn active_session_lock_tree_native_case_alias() {
+    assert_active_session_aliased_lock_tree_is_excluded("1", "native-case").await;
+}
+
+#[cfg(any(unix, windows))]
+#[tokio::test]
+async fn active_session_lock_tree_alias_supports_natural_resume() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    let source = "def first(a, b):\n    return a + b\ndef second(a, b):\n    return a + b\n";
+    std::fs::write(root.join("calc.py"), source).unwrap();
+    let actual = root.join("actual-locks");
+    std::fs::create_dir(&actual).unwrap();
+    session_directory_alias(&actual, &root.join(".session.db.hoimin-locks"));
+    let mut first_id = None;
+    let mut candidate_ids = Vec::new();
+    for resume in [false, true] {
+        let stdout = tokio::time::timeout(
+            Duration::from_secs(30),
+            resource_policy_run(root, &root.join("session.db"), "json", resume),
+        )
+        .await
+        .expect("bounded session resume");
+        let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+        assert_eq!(report["baseline"]["termination"]["Exit"], 0);
+        assert_eq!(report["summary"]["complete"], false);
+        let mutants = report["mutants"].as_array().unwrap();
+        assert_eq!(mutants.len(), 2);
+        let killed = mutants.iter().find(|m| m["status"] == "killed").unwrap();
+        let timeout = mutants.iter().find(|m| m["status"] == "timeout").unwrap();
+        assert_eq!(timeout["termination"], "Timeout");
+        let ids: Vec<_> = mutants
+            .iter()
+            .map(|m| m["candidate"]["id"].clone())
+            .collect();
+        if resume {
+            assert_eq!(first_id.as_ref().unwrap(), &report["run"]["run_id"]);
+            assert_eq!(ids, candidate_ids);
+            assert!(killed["termination"].is_null());
+            assert_eq!(killed["elapsed_ms"], 0);
+        } else {
+            first_id = Some(report["run"]["run_id"].clone());
+            candidate_ids = ids;
+            assert!(!killed["termination"].is_null());
+        }
+        assert_eq!(
+            std::fs::read_to_string(root.join("calc.py")).unwrap(),
+            source
+        );
+    }
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn active_session_lock_tree_invalid_aliases_fail_before_baseline() {
+    for looping in [false, true] {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path();
+        write_parallel_project(root);
+        let source = std::fs::read(root.join("src/calc.py")).unwrap();
+        let alias = root.join(".session.db.hoimin-locks");
+        session_directory_alias(if looping { &alias } else { root }, &alias);
+        let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"));
+        command
+            .args(real_cli_session_args(
+                root,
+                &root.join("session.db"),
+                false,
+                "raise AssertionError('baseline must not run')",
+            ))
+            .kill_on_drop(true);
+        let output = tokio::time::timeout(Duration::from_secs(30), command.output())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2));
+        let diagnostics = String::from_utf8_lossy(&output.stderr);
+        let code = if looping {
+            "session.path"
+        } else {
+            "workspace.path.invalid"
+        };
+        assert!(diagnostics.contains(code), "{diagnostics}");
+        let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert!(report["baseline"].is_null());
+        assert!(!root.join("session.db").exists());
+        assert_eq!(std::fs::read(root.join("src/calc.py")).unwrap(), source);
+    }
 }

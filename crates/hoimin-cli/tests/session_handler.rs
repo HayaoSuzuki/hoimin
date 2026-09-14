@@ -1811,3 +1811,61 @@ fn session_artifacts_resolve_aliases_and_reject_dangling_leaf_without_side_effec
     assert!(SessionHandler::open(&dangling).is_err());
     assert!(!missing.exists());
 }
+
+#[test]
+fn session_lock_trees_do_not_create_artifacts_and_deduplicate_existing_directory() {
+    use hoimin_cli::session::SessionArtifacts;
+    let directory = tempfile::tempdir().unwrap();
+    let root = std::fs::canonicalize(directory.path()).unwrap();
+    let database = root.join("session.db");
+    let locks = root.join(".session.db.hoimin-locks");
+    let artifacts = SessionArtifacts::resolve(&database).unwrap();
+    assert_eq!(artifacts.lock_trees().unwrap(), vec![locks.clone()]);
+    assert_eq!(std::fs::read_dir(&root).unwrap().count(), 0);
+    std::fs::create_dir(&locks).unwrap();
+    std::fs::write(locks.join("existing.lock"), b"owned").unwrap();
+    assert_eq!(artifacts.lock_trees().unwrap(), vec![locks.clone()]);
+    assert_eq!(
+        std::fs::read(locks.join("existing.lock")).unwrap(),
+        b"owned"
+    );
+    assert!(!database.exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn session_lock_trees_retain_alias_and_actual_identity_without_creating_missing_targets() {
+    use hoimin_cli::session::SessionArtifacts;
+    let directory = tempfile::tempdir().unwrap();
+    let root = std::fs::canonicalize(directory.path()).unwrap();
+    let database = root.join("session.db");
+    let actual = root.join("actual");
+    let alias = root.join(".session.db.hoimin-locks");
+    std::os::unix::fs::symlink(&actual, &alias).unwrap();
+    let artifacts = SessionArtifacts::resolve(&database).unwrap();
+    assert_eq!(artifacts.lock_trees().unwrap(), vec![alias.clone()]);
+    assert!(!actual.exists());
+    std::fs::create_dir(&actual).unwrap();
+    assert_eq!(
+        artifacts.lock_trees().unwrap(),
+        vec![alias.clone(), actual.clone()]
+    );
+    assert_eq!(std::fs::canonicalize(alias).unwrap(), actual);
+    assert!(!database.exists());
+    assert_eq!(std::fs::read_dir(actual).unwrap().count(), 0);
+}
+
+#[cfg(unix)]
+#[test]
+fn session_lock_trees_propagate_existing_alias_resolution_failure() {
+    use hoimin_cli::session::SessionArtifacts;
+    let directory = tempfile::tempdir().unwrap();
+    let alias = directory.path().join(".session.db.hoimin-locks");
+    std::os::unix::fs::symlink(&alias, &alias).unwrap();
+    let native_error = std::fs::canonicalize(&alias).unwrap_err();
+    assert_ne!(native_error.kind(), std::io::ErrorKind::NotFound);
+    let artifacts = SessionArtifacts::resolve(directory.path().join("session.db")).unwrap();
+    let error = artifacts.lock_trees().unwrap_err();
+    assert_eq!(error.raw_os_error(), native_error.raw_os_error());
+    assert!(!directory.path().join("session.db").exists());
+}

@@ -391,21 +391,31 @@ async fn metrics_allows_similarly_named_inactive_session_artifact() {
 #[cfg(unix)]
 #[tokio::test]
 async fn metrics_collision_protects_session_lock_directory_symlink_referent() {
-    let (temp, root) = fixture();
-    let database = temp.path().join("session.db");
-    let locks = temp.path().join("actual-locks");
-    std::fs::create_dir(&locks).unwrap();
-    std::os::unix::fs::symlink(&locks, temp.path().join(".session.db.hoimin-locks")).unwrap();
-    let protected = locks.join("owned.lock");
-    let bytes = b"owned lock\n";
-    std::fs::write(&protected, bytes).unwrap();
-    let output = run(
-        &root,
-        &protected,
-        &["--session", database.to_str().unwrap()],
-    )
-    .await;
-    assert_collision(&output, temp.path(), &protected, bytes);
+    for lexical in [false, true] {
+        let (temp, root) = fixture();
+        let database = root.join("session.db");
+        let locks = root.join("actual-locks");
+        let alias = root.join(".session.db.hoimin-locks");
+        std::fs::create_dir(&locks).unwrap();
+        std::os::unix::fs::symlink(&locks, &alias).unwrap();
+        let protected = locks.join("owned.lock");
+        let bytes = b"owned lock\n";
+        std::fs::write(&protected, bytes).unwrap();
+        let output_path = if lexical {
+            alias.join("owned.lock")
+        } else {
+            protected.clone()
+        };
+        let output = run(
+            &root,
+            &output_path,
+            &["--session", database.to_str().unwrap()],
+        )
+        .await;
+        assert_collision(&output, temp.path(), &protected, bytes);
+        assert!(!database.exists());
+        assert_eq!(std::fs::read_dir(&locks).unwrap().count(), 1);
+    }
 }
 
 #[cfg(unix)]
