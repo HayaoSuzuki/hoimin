@@ -5,6 +5,11 @@ description: 元ソースへの変異適用を避け、状態遷移と入出力�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-466
+  resource: ../../superpowers/specs/2026-09-14-issue-466-retired-blank-line-discovery-design.md
+  working_tree: untracked
+  sha256: a81a30e965b53eea08c62acba2767f44afb806b4b68b1d8113bdd3faf918966e
+
 - id: issue-477
   resource: ../../superpowers/specs/2026-09-11-issue-477-import-roots-design.md
   working_tree: untracked
@@ -76,6 +81,8 @@ hoiminの初期設計では、一時領域に作ったテスト実行用のコ�
 
 Issue #465 の関数取りこぼしは、Rustの関数を正規表現で列挙してcargo-mutantsの候補を絞るPython製開発ツールの問題だった。コミット `2f27e2a` で探索処理と候補フィルタを含む連携全体が削除されている。今回、その削除が作業対象に含まれること、現行の呼出し元が残っていないこと、開発スキルの契約テスト3件の成功を確認した。既存の機能削除による解消であり、新しいRust構文解析器を実装したものではない。Pythonソースを解析する現行hoiminのRust実装とは対象が異なる。[^issue-465]
 
+Issue #466 の空行数に対する処理時間増加も、同じ開発ツールの正規表現によるRust関数探索で発生していた。履歴上の `_FUNCTION` は改行を含む `\s` で始まり、ファイル全体への `findall` が候補数の検査より先に完了する構造だった。コミット `2f27e2a` はこの探索処理、コマンド入口、補助パッケージを削除している。現行ツリーで削除コミットの包含、対象ファイルと呼出し元の不在、cargo-mutantsを実行しない開発方針を確認した。これは既存の削除による解消であり、正規表現の修正版や新しい性能測定ではない。将来Rust mutation discoveryを再導入する場合は、構文の対応範囲、時間予算の確認点、固定時間閾値に依存しない入力規模試験を改めて設計する。[^issue-466]
+
 # 廃止した開発ツールの不具合
 
 Issue #462 のFIFO読取り停止は、Pythonで実装されていたRust mutation testing用の開発ツールに関するものだった。コミット `2f27e2a` で読み取り関数・探索処理・コマンド入口が削除されており、現在の開発手順もcargo-mutantsを実行しない方針である。今回、削除コミットが作業対象に含まれること、現行ツリーに呼出し元が残っていないこと、現行スキルの契約テスト3件の成功を確認した。これは既存の機能削除による解消であり、現行Rust実装全体のFIFO安全性を示す検証ではない。[^issue-462]
@@ -105,5 +112,7 @@ Issue 477では、path-only `.pth` に登録した元のsrcディレクトリが
 [^issue-477]: [2026-09-11-issue-477-import-roots-design.md](../../superpowers/specs/2026-09-11-issue-477-import-roots-design.md)。
 
 [^issue-465]: [2026-09-11-issue-465-retired-discovery-design.md](../../superpowers/specs/2026-09-11-issue-465-retired-discovery-design.md)。
+
+[^issue-466]: [2026-09-14-issue-466-retired-blank-line-discovery-design.md](../../superpowers/specs/2026-09-14-issue-466-retired-blank-line-discovery-design.md)。
 
 [^issue-462]: [2026-09-11-issue-462-retired-reader-design.md](../../superpowers/specs/2026-09-11-issue-462-retired-reader-design.md)。

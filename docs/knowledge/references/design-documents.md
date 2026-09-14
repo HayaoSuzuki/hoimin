@@ -5,6 +5,11 @@ description: docs/superpowers/specs内の全Markdownを先頭見出しと出典�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-466
+  resource: ../../superpowers/specs/2026-09-14-issue-466-retired-blank-line-discovery-design.md
+  working_tree: untracked
+  sha256: a81a30e965b53eea08c62acba2767f44afb806b4b68b1d8113bdd3faf918966e
+
 - id: issue-513
   resource: ../../superpowers/specs/2026-09-12-issue-513-parser-recursion-design.md
   working_tree: untracked
@@ -1127,6 +1132,12 @@ sources:
 [^issue-469]: [2026-09-11-issue-469-bom-column-design.md](../../superpowers/specs/2026-09-11-issue-469-bom-column-design.md)。
 
 [^issue-468]: [2026-09-11-issue-468-pattern-unary-design.md](../../superpowers/specs/2026-09-11-issue-468-pattern-unary-design.md)。
+
+# 空行による探索時間増加の廃止確認（Issue #466）
+
+Rust関数を列挙していた旧開発ツールの正規表現と候補上限の順序を履歴から確認し、現行ツリーでは連携全体が削除済みであることを記録した。実行コードを復元せず、将来再導入する場合の性能契約を示す。[^issue-466]
+
+[^issue-466]: [2026-09-14-issue-466-retired-blank-line-discovery-design.md](../../superpowers/specs/2026-09-14-issue-466-retired-blank-line-discovery-design.md)。
 
 [^issue-465]: [2026-09-11-issue-465-retired-discovery-design.md](../../superpowers/specs/2026-09-11-issue-465-retired-discovery-design.md)。
 
