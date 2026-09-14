@@ -29,10 +29,12 @@ Files: modify `crates/hoimin-cli/src/plan.rs`; add focused tests under `crates/h
 - [x] Run release comparison for 1/100/500 candidates with fixed source size and 1/2/4 files; assert identical stable IDs, save commands, repeats and environment. Distinguish isolated validation measurements from CLI timings.
 - [x] Run applicable development quality gates. Record failures and unverified platforms explicitly.
 - [x] Update `docs/knowledge/design/selection-plan-verify.md`, design and report indexes, source metadata and hashes; parse frontmatter with PyYAML and check local links/source footnotes. Review format, factual correspondence and Japanese prose separately.
-- [ ] Commit only this Issue's files; review PR scope/closing reference, validation evidence, then final staged diff and branch status. Push the issue branch and create a PR against main using the repository template.
+- [x] Commit only this Issue's files; review PR scope/closing reference, validation evidence, then final staged diff and branch status. Push the issue branch and create a PR against main using the repository template.
 
 ## Planセルフレビュー
 
 1. 設計と対応付け、各受け入れ条件の実装・テスト・性能測定をTask 1/2へ割り当てた。
 2. 借用contextをbytesと同じmapへ入れる自己参照構造を避けた。cfg(test)観測は並行テスト間で共有せず、一呼び出しの値に限定する。
 3. コマンド・変更ファイル・診断優先順・未検証条件を再点検した。既存の単件APIとの比較だけに依存しない独立したエラー期待値も指定した。
+
+PR: https://github.com/tokyogas-tech/hoimin/pull/523 。
