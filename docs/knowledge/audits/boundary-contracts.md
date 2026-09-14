@@ -11,9 +11,9 @@ sources:
   sha256: 8e90be8bf11f38328ea1fd92fd82af2b8b4972d73437a88e94c547a336807bad
 - id: issue-490-review
   resource: ../../superpowers/reports/2026-09-14-issue-490-boundary-contracts-review.md
-  revision: 7d5bdc5a643add4ba55e8541fa59a069d0ff5c5e
-  working_tree: untracked
-  sha256: 38186ac141705f0f2475524851b61dd98696b788fedc995a78c6e510f52e1f5e
+  revision: c7ce87f8d4c584c2d8df2dcb9d65348c3dd3a706
+  working_tree: modified
+  sha256: 03cc7e076df1207ade765d1a2ee0160e1efeb3c45678e41d56ef5f5b4067a344
 - id: issue-490-evidence
   resource: ../../superpowers/reports/2026-09-14-issue-490-boundary-contracts-verification.json
   revision: 7d5bdc5a643add4ba55e8541fa59a069d0ff5c5e

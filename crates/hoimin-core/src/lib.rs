@@ -1,5 +1,8 @@
 #![forbid(unsafe_code)]
 
+mod source_encoding;
+pub use source_encoding::*;
+
 pub mod budget;
 pub mod budget_projection;
 pub mod candidate;

@@ -133,3 +133,10 @@ remains the sensitivity evidence.
 
 Whole Python suite after classification fix: 89 tests pass with process
 observation enabled. CI for the follow-up commit is still pending.
+
+
+## Merge of main-backed issue467 before ordered integration
+
+Merged enhancement/issue-467 at2d04458 into the issue490 branch based on c7ce87f. Three actual merge reviews: (1) inspected all four conflicts; they were independent appended plan tests, development sections and source-index footnotes. Kept both complete sides, and verified the merged plan file has71 unique async functions, exactly the union of63 and70 from the parents. (2) Checked that the preparation-deadline regression and missing-symbol/source-encoding tests remain present, and that both boundary-contract replay and source-encoding documentation are retained. No competing production implementation required manual resolution. (3) Ran focused merged-code tests and workflow/OKF validation, then refreshed only the changed issue490 review source hashes. Existing Lean evidence and other historical execution claims were not relabeled as new runs.
+
+Dedicated-target CLI plan tests passed64 with one existing ignored test; all five source-encoding integration tests passed. All28 CI workflow contract tests passed. Formatting and diff checks passed. OKF structural/source-footnote/link and complete-index validation passed20 pages and798 local links. Logs: `/private/tmp/issue490-merge467-tests.log` and `/private/tmp/issue490-merge467-ci.log`. A temporary link to the prepared root Python environment was removed after the tests.

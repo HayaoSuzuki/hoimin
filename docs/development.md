@@ -730,3 +730,27 @@ existing Lean proof/sensitivity/freshness gate, then adapter checks, strict
 replay, all-case report and a minimal result-validation witness. Native Linux
 hard controls, Windows PID/fault cases and preparation cancellation remain
 explicit report gaps. See [the worksheet](superpowers/specs/2026-09-14-issue-490-boundary-contracts-design.md).
+## Python source encoding contract
+
+Use `hoimin_core::decode_python_source` for source bytes that need Python text,
+including symbol existence checks. Its `DecodedPythonSource` exposes `text()`,
+`encoding()`, `utf8_to_raw()` and `raw_to_utf8()`. The two offset methods accept
+only character boundaries. UTF-8/ASCII borrow source text; Latin-1 owns decoded
+UTF-8 plus a sparse expansion index. This storage grows with source input and
+is not bounded by `max_candidates`.
+
+Candidate spans and source hashes always describe original bytes. Convert
+Ruff's UTF-8 spans before constructing persisted candidates, then validate with
+`CandidateValidationContext`. It owns decoded facts and shares the existing
+Unicode-column index across candidates. The candidate strings are Unicode;
+the source codec must encode original and replacement text. Keep replacement
+representability checks before worker writes, and write raw prefix, encoded
+replacement, raw suffix. Never apply decoded offsets directly to raw Latin-1
+bytes or write `replacement.as_bytes()` for every codec.
+
+The stable-ID schema remains 1: it already frames raw source hash/span and
+Unicode replacement. Source records and fingerprint inputs remain raw bytes.
+Run `cargo test -p hoimin-core --test source_encoding --test candidate_policy`
+and `cargo test -p hoimin-cli --test source_encoding --test plan` for codec
+changes. The CLI encoding fixture observes CPython worker bytes and values;
+existing UTF-8 Lean/source-index proofs do not establish codec correspondence.

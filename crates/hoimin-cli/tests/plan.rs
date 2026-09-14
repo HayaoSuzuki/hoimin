@@ -2816,3 +2816,204 @@ async fn preparation_errors_precede_the_analyzer_deadline_without_baseline() {
         assert!(!marker.exists());
     }
 }
+#[tokio::test]
+async fn symbol_definition_missing_is_rejected_before_baseline() {
+    for command in ["plan", "run"] {
+        let project = Project::new();
+        let marker = project.path.join("baseline-marker");
+        let mut args = plan_args(
+            &project,
+            ["--symbol", "calc:only_add", "--symbol", "calc:missing"],
+            &marker,
+        );
+        args[1] = command.into();
+        insert_test_min_free_space(&mut args);
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+        // pins: issue #476
+        assert_eq!(code, 2, "{command}: {}", String::from_utf8_lossy(&stderr));
+        assert!(String::from_utf8_lossy(&stderr).contains("calc:missing"));
+        assert!(!marker.exists(), "{command} ran baseline");
+    }
+}
+
+#[tokio::test]
+async fn symbol_definition_missing_is_rejected_with_clean_git() {
+    let (project, _) = Project::new_changed_git();
+    run_git(&project.path, &["checkout", "--", "src/calc.py"]);
+    let marker = project.path.join("baseline-marker");
+    let args = plan_args(&project, ["--symbol", "calc:missing", "--changed"], &marker);
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+    assert_eq!(code, 2, "{}", String::from_utf8_lossy(&stderr));
+    assert!(String::from_utf8_lossy(&stderr).contains("calc:missing"));
+    assert!(!marker.exists());
+}
+
+#[tokio::test]
+async fn symbol_definition_verify_checks_unrequested_symbol_files() {
+    let project = Project::new_with_sources(&[
+        ("calc.py", "value = 1 + 2\n"),
+        ("other.py", "def empty():\n    pass\n"),
+    ]);
+    let coordinator = tempfile::tempdir().unwrap();
+    let marker = coordinator.path().join("baseline-marker");
+    let args = plan_args(&project, ["--symbol", "other:empty"], &marker);
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    assert_eq!(
+        hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await,
+        0
+    );
+    let mut manifest: PlanManifest = serde_json::from_slice(&stdout).unwrap();
+    assert_eq!(manifest.candidates.len(), 1);
+    manifest.normalized_config.selection.symbols[0].qualname = "missing".into();
+    let path = coordinator.path().join("plan.json");
+    std::fs::write(&path, serde_json::to_vec(&manifest).unwrap()).unwrap();
+    stdout.clear();
+    stderr.clear();
+    let code = hoimin_cli::run_with_io(
+        vec![
+            "hoimin".into(),
+            "verify".into(),
+            path.into_os_string(),
+            "--top".into(),
+            "1".into(),
+        ],
+        &mut stdout,
+        &mut stderr,
+    )
+    .await;
+    assert_eq!(code, 2, "{}", String::from_utf8_lossy(&stderr));
+    assert!(String::from_utf8_lossy(&stderr).contains("other:missing"));
+    assert!(!marker.exists());
+}
+
+#[tokio::test]
+async fn symbol_definition_existing_empty_scopes_are_valid() {
+    let project = Project::new_with_source(
+        "class Box:\n    def method(self):\n        pass\n    class Inner:\n        pass\nasync def outer():\n    def inner():\n        pass\n",
+    );
+    let marker = project.path.join("baseline-marker");
+    for name in ["Box", "Box.method", "Box.Inner", "outer", "outer.inner"] {
+        let selector = format!("calc:{name}");
+        let args = plan_args(
+            &project,
+            [
+                "--symbol",
+                &selector,
+                "--operators",
+                "boolean_literal",
+                "--line",
+                "src/calc.py:1",
+            ],
+            &marker,
+        );
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        assert_eq!(
+            hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await,
+            0,
+            "{name}: {}",
+            String::from_utf8_lossy(&stderr)
+        );
+        let manifest: PlanManifest = serde_json::from_slice(&stdout).unwrap();
+        assert!(manifest.candidates.is_empty());
+        assert!(manifest.diagnostics.is_empty());
+    }
+}
+
+#[tokio::test]
+async fn symbol_definition_existing_unchanged_scope_is_valid() {
+    let (project, _) = Project::new_changed_git();
+    let marker = project.path.join("baseline-marker");
+    for clean in [false, true] {
+        if clean {
+            run_git(&project.path, &["checkout", "--", "src/calc.py"]);
+        }
+        let args = plan_args(
+            &project,
+            ["--symbol", "calc:untouched", "--changed"],
+            &marker,
+        );
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        assert_eq!(
+            hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await,
+            0,
+            "{}",
+            String::from_utf8_lossy(&stderr)
+        );
+        let manifest: PlanManifest = serde_json::from_slice(&stdout).unwrap();
+        assert!(manifest.candidates.is_empty());
+        assert!(manifest.diagnostics.is_empty());
+    }
+}
+
+#[tokio::test]
+async fn symbol_definition_package_init_is_valid() {
+    let project = Project::new_with_source("value = True\n");
+    std::fs::create_dir(project.path.join("src/pkg")).unwrap();
+    std::fs::write(
+        project.path.join("src/pkg/__init__.py"),
+        "def empty():\n    pass\n",
+    )
+    .unwrap();
+    let marker = project.path.join("baseline-marker");
+    let args = plan_args(&project, ["--symbol", "pkg:empty"], &marker);
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    assert_eq!(
+        hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await,
+        0,
+        "{}",
+        String::from_utf8_lossy(&stderr)
+    );
+    let manifest: PlanManifest = serde_json::from_slice(&stdout).unwrap();
+    assert!(
+        manifest
+            .candidates
+            .iter()
+            .all(|candidate| candidate.path == "src/calc.py")
+    );
+}
+
+#[tokio::test]
+async fn symbol_definition_requires_exact_definition_not_assignment_or_prefix() {
+    let project = Project::new_with_source(
+        "alias = True\nclass BoxOther:\n    def method(self):\n        pass\n",
+    );
+    let marker = project.path.join("baseline-marker");
+    for selector in ["calc:alias", "calc:Box", "calc:BoxOther.missing"] {
+        let args = plan_args(
+            &project,
+            ["--symbol", selector, "--max-candidates", "1"],
+            &marker,
+        );
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+        assert_eq!(code, 2, "{}", String::from_utf8_lossy(&stderr));
+        assert!(String::from_utf8_lossy(&stderr).contains(selector));
+    }
+}
+
+#[tokio::test]
+async fn symbol_definition_invalid_syntax_is_not_diagnosed_as_missing() {
+    let project = Project::new_with_source("def broken(:\n    pass\n");
+    let marker = project.path.join("baseline-marker");
+    let args = plan_args(&project, ["--symbol", "calc:broken"], &marker);
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    assert_eq!(
+        hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await,
+        2
+    );
+    let stderr = String::from_utf8_lossy(&stderr);
+    assert!(stderr.contains("invalid Python syntax"));
+    assert!(stderr.contains("src/calc.py"));
+    assert!(!stderr.contains("symbol definition not found"));
+    assert!(!marker.exists());
+}
