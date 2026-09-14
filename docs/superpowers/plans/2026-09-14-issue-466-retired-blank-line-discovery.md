@@ -65,5 +65,8 @@ follow-up in `enhancement/issue-466`; the user authorized autonomous publication
   verification and PR preparation in `../reports/2026-09-14-issue-466-revalidation.md`.
 - [x] Update architecture and both source indexes with checked provenance;
   validate YAML, links, source IDs, hashes and source-list completeness.
-- [ ] Check the final diff, commit, push and publish a documentation PR that
+- [x] Check the final diff, commit, push and publish a documentation PR that
   explicitly closes the obsolete issue by retirement.
+
+Published follow-up: https://github.com/tokyogas-tech/hoimin/pull/534
+(initial evidence commit `e1e3806`).
