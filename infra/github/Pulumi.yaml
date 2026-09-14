@@ -1,0 +1,73 @@
+name: hoimin-github
+runtime: yaml
+description: GitHub rules for tokyogas-tech/hoimin
+backend:
+  url: file://./state
+
+resources:
+  github:
+    type: pulumi:providers:github
+    options:
+      version: 6.15.0
+    properties:
+      owner: tokyogas-tech
+
+  main:
+    type: github:index/repositoryRuleset:RepositoryRuleset
+    options:
+      provider: ${github}
+      version: 6.15.0
+      protect: true
+    properties:
+      repository: hoimin
+      name: main-protection
+      target: branch
+      enforcement: active
+      bypassActors: []
+      conditions:
+        refName:
+          includes: [refs/heads/main]
+          excludes: []
+      rules:
+        deletion: true
+        nonFastForward: true
+        pullRequest:
+          requiredApprovingReviewCount: 0
+        requiredStatusChecks:
+          # The queue tests against current main; PRs need not rebase first.
+          strictRequiredStatusChecksPolicy: false
+          doNotEnforceOnCreate: false
+          # Exact GitHub Actions check names from .github/workflows/ci.yml.
+          # Manual, scheduled and push-only checks are not PR prerequisites.
+          requiredChecks:
+            - context: Quality (ubuntu-latest)
+              integrationId: 15368
+            - context: Rust MSRV (1.88)
+              integrationId: 15368
+            - context: Rust (ubuntu-latest)
+              integrationId: 15368
+            - context: Lean audit
+              integrationId: 15368
+            - context: Cross-boundary contracts
+              integrationId: 15368
+            - context: Rust randomized order (nightly-2026-07-27)
+              integrationId: 15368
+            - context: contracts
+              integrationId: 15368
+            - context: Core dependency purity (ubuntu-latest)
+              integrationId: 15368
+            - context: Wheel smoke (ubuntu-latest)
+              integrationId: 15368
+            - context: linux-best-effort
+              integrationId: 15368
+        mergeQueue:
+          checkResponseTimeoutMinutes: 120
+          groupingStrategy: ALLGREEN
+          maxEntriesToBuild: 1
+          maxEntriesToMerge: 1
+          mergeMethod: MERGE
+          minEntriesToMerge: 1
+          minEntriesToMergeWaitMinutes: 0
+
+outputs:
+  rulesetId: ${main.rulesetId}

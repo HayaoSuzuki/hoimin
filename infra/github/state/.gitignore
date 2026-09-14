@@ -1,0 +1,6 @@
+.pulumi/locks/
+.pulumi/history/
+.pulumi/backups/
+*.bak
+*.tmp
+*.attrs
