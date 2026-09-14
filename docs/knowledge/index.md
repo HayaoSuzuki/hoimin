@@ -14,6 +14,7 @@ okf_version: "0.2"
 - [対象選択・plan・verify](design/selection-plan-verify.md) - ランキング、部分集合、保存形式の版の要確認事項。
 - [資源と終了処理](design/runtime-lifecycle.md) - OS別制限、後処理の所有権、レポート書込み。
 - [sessionとレポート](design/session-report.md) - DB所有権、移行、読取り時の整合性検証。
+- [JSON mutant spool](design/json-report-spool.md) - record単位の書込みと失敗時のack・poison契約。
 
 # 監査と検証範囲
 
