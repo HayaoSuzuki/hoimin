@@ -342,9 +342,11 @@ fn discover_targets_blocking(work: DiscoveryWork) -> Result<Discovery, EffectFai
             EffectFailed::other(EffectId(0), "analyzer.source.read", error.to_string())
         })?;
         ensure_discovery_active(&cancellation)?;
-        let module = String::from_utf8(source.clone()).map_err(|error| {
-            EffectFailed::other(EffectId(0), "analyzer.source.utf8", error.to_string())
-        })?;
+        let validation = source_validation(&source, &target.path, EffectId(0))?;
+        let module = validation
+            .decoded_source()
+            .expect("source was decoded")
+            .text();
         #[cfg(test)]
         if let Some(mut control) = control.take() {
             if let Some(deadline_arm) = control.deadline_arm.take() {
@@ -361,13 +363,10 @@ fn discover_targets_blocking(work: DiscoveryWork) -> Result<Discovery, EffectFai
                 profile,
                 max_candidates: max_candidates.saturating_sub(discovery.candidates.len()),
             },
-            &module,
+            module,
             || cancellation.is_cancelled(),
         )
         .map_err(|error| analysis_failure(EffectId(0), &target.path, error))?;
-        let validation = CandidateValidationContext::new(&source).map_err(|error| {
-            EffectFailed::other(EffectId(0), "analyzer.source", error.to_string())
-        })?;
         for candidate in output.candidates {
             ensure_discovery_active(&cancellation)?;
             let sequence = u64::try_from(discovery.candidates.len())
@@ -491,8 +490,6 @@ impl AnalyzerHandler {
             result = async { self.read_source(&request.target.path) } => result
                 .map_err(|error| EffectFailed::other(id, "analyzer.source.read", error.to_string()))?,
         };
-        let module = String::from_utf8(source.clone())
-            .map_err(|error| EffectFailed::other(id, "analyzer.source.utf8", error.to_string()))?;
         let store = self.store.take().expect("store initialized");
         let remaining = request.max_candidates.saturating_sub(store.count());
         let max_candidates = usize::try_from(remaining).unwrap_or(usize::MAX);
@@ -512,7 +509,6 @@ impl AnalyzerHandler {
                 operators,
                 profile,
                 source,
-                module,
                 store,
                 max_candidates,
                 cancellation: task_cancellation,
@@ -554,7 +550,6 @@ struct BlockingAnalysis {
     operators: MutationOperatorSelection,
     profile: MutationProfile,
     source: Vec<u8>,
-    module: String,
     store: CandidateStore,
     max_candidates: usize,
     cancellation: ProcessCancellation,
@@ -568,12 +563,16 @@ fn analyze_and_store(
         operators,
         profile,
         source,
-        module,
         mut store,
         max_candidates,
         cancellation,
     } = work;
     let id = request.id;
+    let validation = source_validation(&source, &request.target.path, id)?;
+    let module = validation
+        .decoded_source()
+        .expect("source was decoded")
+        .text();
     let output = rust::analyze_source_cancellable(
         &rust::AnalyzeRequest {
             path: &request.target.path,
@@ -583,12 +582,10 @@ fn analyze_and_store(
             profile,
             max_candidates,
         },
-        &module,
+        module,
         || cancellation.is_cancelled(),
     )
     .map_err(|error| analysis_failure(id, &request.target.path, error))?;
-    let validation = CandidateValidationContext::new(&source)
-        .map_err(|error| EffectFailed::other(id, "analyzer.source", error.to_string()))?;
     for candidate in output.candidates {
         if cancellation.is_cancelled() {
             return Err(cancelled(id));
@@ -719,15 +716,56 @@ fn candidate_store_error(
     )
 }
 
+fn source_validation<'source>(
+    source: &'source [u8],
+    path: &Utf8Path,
+    id: EffectId,
+) -> Result<CandidateValidationContext<'source>, EffectFailed> {
+    let failure = |error: String| {
+        EffectFailed::other(id, "analyzer.source.encoding", format!("{path}: {error}"))
+    };
+    let validation =
+        CandidateValidationContext::new(source).map_err(|error| failure(error.to_string()))?;
+    validation
+        .decoded_source()
+        .map_err(|error| failure(error.to_string()))?;
+    Ok(validation)
+}
+
 fn mutation_candidate(
     validation: &CandidateValidationContext<'_>,
     candidate: AnalyzerCandidate,
     sequence: u64,
 ) -> Result<MutationCandidate, EffectFailed> {
+    let decoded = validation.decoded_source().map_err(|error| {
+        EffectFailed::other(
+            EffectId(0),
+            "analyzer.source.encoding",
+            format!("{}: {error}", candidate.path),
+        )
+    })?;
+    let raw_span = (|| {
+        let start = usize::try_from(candidate.span.start).ok()?;
+        let length = usize::try_from(candidate.span.length).ok()?;
+        let end = start.checked_add(length)?;
+        let raw_start = decoded.utf8_to_raw(start)?;
+        let raw_end = decoded.utf8_to_raw(end)?;
+        Some(hoimin_core::ByteSpan {
+            start: u64::try_from(raw_start).ok()?,
+            length: u64::try_from(raw_end.checked_sub(raw_start)?).ok()?,
+        })
+    })()
+    .ok_or_else(|| {
+        EffectFailed::other(
+            EffectId(0),
+            "analyzer.candidate",
+            "decoded candidate span is not an original source boundary",
+        )
+    })?;
     let descriptor = CandidateDescriptor {
         schema_version: CANDIDATE_SCHEMA_VERSION,
         path: candidate.path,
-        span: candidate.span,
+        span: raw_span,
         original: candidate.original,
         replacement: candidate.replacement,
         operator: candidate.operator,
