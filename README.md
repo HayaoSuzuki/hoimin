@@ -83,6 +83,14 @@ At least one target selector is required:
 - `--changed` restricts selection to staged, unstaged, and untracked Git changes. It requires `--source`.
 - `--diff-base REV` uses the merge base of `REV` and `HEAD` for `--changed`. It is invalid without `--changed`.
 
+An explicit `--symbol` must name an existing function or class definition in the
+resolved Python file, including methods, nested definitions and package
+`__init__.py` definitions. A missing definition is an exit-2 error before the
+baseline in `run`, `plan` and `verify`, even with `--changed` and no changed
+lines. Existing definitions with no candidates under the selected operators,
+profile, lines or Git diff remain valid empty selections. Imported names and
+assignment aliases do not count as definitions.
+
 Whole-file selectors establish the selected files first. For example, `--source src --file src/calc.py` selects every Python file below `src`, while `--file src/calc.py` alone selects only that file. A `--line` or `--symbol` then narrows a matching file. Selectors for different files remain combined. The resolver merges multiple line ranges on one file. Candidates must satisfy both constraints when a file has line and symbol selectors.
 
 Python source positions recognize LF, CRLF and lone CR, including mixtures, without normalizing file bytes. Previously saved plans with incorrect lone-CR coordinates must be regenerated; existing reports retain their recorded coordinates. Correcting line/column metadata does not change a candidate ID for identical source bytes and the same mutation.
@@ -135,6 +143,38 @@ hoimin run --root . --source src --fingerprint-include tests/fixtures/settings.t
 ```
 
 Each candidate must fit a 2 MiB compact JSON spool record, including JSON escaping, UTF-8 and one trailing newline. `plan` rejects oversized candidates instead of saving an unusable plan; `verify` rejects oversized saved records before baseline. Direct `run` discovers candidates after baseline and reports an incomplete infrastructure failure if a record exceeds this limit. The diagnostic identifies the source path, line, operator and limit. Candidate-count limits do not override this byte limit.
+
+## Python source encodings
+
+Hoimin recognizes Python encoding declarations in a standalone comment on the
+first line, or on the second line after a blank/comment-only first line.
+Without a declaration it uses UTF-8. It supports these codecs in Rust:
+
+| Codec | Accepted names (case-insensitive; underscores may replace hyphens) |
+| --- | --- |
+| UTF-8 | `utf-8`, `utf8` |
+| ASCII | `ascii`, `us-ascii`, `646` |
+| Latin-1 / ISO-8859-1 | `latin-1`, `latin1`, `iso-8859-1`, `iso8859-1`, `iso-latin-1`, `latin`, `l1`, `cp819`, `ibm819` |
+
+Python's tokenizer also normalizes names beginning with `utf-8-`, `latin-1-`,
+`iso-8859-1-` or `iso-latin-1-` to those codecs. A leading UTF-8 BOM is preserved
+in file bytes and requires a tokenizer-normalized UTF-8 declaration: use
+`utf-8` rather than the generic `utf8` alias with a BOM. Declarations in strings,
+after a statement, or after the second line are ignored. A matching `coding:`
+inside an otherwise ordinary standalone comment still declares an encoding.
+
+Unsupported or unknown names, BOM conflicts and invalid UTF-8/ASCII bytes
+produce a diagnostic containing the path and declaration. Latin-1 maps every
+byte to a character, so it cannot detect that a file was intended to use a
+different encoding. Save each file using its declared codec.
+
+Analysis uses Unicode text; candidate spans and file hashes refer to original
+bytes. Mutation text is encoded back into the same codec, preserving untouched
+bytes, BOM and line endings. A replacement that cannot be encoded is rejected.
+`plan` decodes without running a baseline. Normal `run` retains its baseline
+before analysis, so a baseline failure may precede the encoding diagnostic;
+explicit symbol validation decodes earlier during target resolution. No Python
+loader or external Python process is used for production source decoding.
 
 ## Limits and defaults
 
@@ -290,8 +330,18 @@ opt-in type IDs, and five opt-in risky exception IDs.
 | Bitwise operators | `bitwise_and_or`, `bitwise_shift` | `&` ↔ `\|`; `<<` ↔ `>>` |
 | Additional operator syntax | `binary_power`, `binary_matmul`, `augmented_power`, `augmented_matmul`, `bitwise_xor`, `bitwise_invert`, `augmented_bitwise_and_or`, `augmented_bitwise_xor`, `augmented_bitwise_shift` | `**` and `@` become `*`; `**=` and `@=` become `*=`; `^` becomes `&`; `~` becomes unary `+`; `&=`/`\|=` and `<<=`/`>>=` exchange; `^=` becomes `&=` |
 | Standard-library operator functions | `operator_function` | Mutates trusted Python 3.14 `operator` callable references across comparison, arithmetic, bitwise, unary, truth, identity, in-place, and sequence operations; also covers `contains`, `getitem`, `setitem`, `delitem`, and `call` |
-| Boundary operators | `structure_index_neighbor`, `structure_slice_neighbor` | adjacent plain-decimal index and slice-bound values |
+| Boundary operators | `structure_index_neighbor`, `structure_slice_neighbor` | adjacent plain-decimal index and slice-bound values, including unary-minus integers |
 | Exception types | `exception_type_pair` | curated pairs such as `ValueError` ↔ `TypeError` in simple `except`/`except*` clauses and supported `raise` expressions |
+
+Boundary operators recognize ASCII decimal digits with an optional unary minus,
+including grouped or multiline spellings such as `items[(-1)]` and `items[-(1)]`.
+`items[-1]` and `items[:-1]` produce `0` and `-2`; `items[::-1]` produces only
+`-2`, because slice-step replacements never contain zero. `-2` produces `-1`
+and `-3`. The magnitude must fit `u64` (at most `18446744073709551615`);
+larger Python integers and neighbors outside that range are skipped. Unsigned
+`0` retains its existing `1` candidate; `-0` produces `1` and `-1`. Hexadecimal,
+underscored, float, unary-plus, repeated-sign and computed expressions are
+excluded. Type annotations and store/delete subscripts remain excluded.
 
 Boolean and complex-separator mapping-pattern key edits that would duplicate a
 sibling literal key are excluded, including Python equality such as `True == 1`. Valid key,
@@ -405,6 +455,29 @@ hoimin run --profile focused --root . --source src -- python -m pytest -q
 
 Compare ordered run reports to track mutation-testing progress. Inputs are oldest-to-newest, and `--patience` defaults to three consecutive comparable stalls.
 
+Inputs may mix JSON documents (schema v2/v3) and current-schema JSONL event
+streams saved from `hoimin run --format jsonl`. Detection uses content, not
+filename. For example:
+
+```console
+hoimin progress --format json reports/before.json reports/after.jsonl
+```
+
+JSONL is read one event per nonblank line. `run_started` must come first and
+`run_finished` must be present and last. `mutant_started` must precede the
+matching `mutant_finished`; diagnostic events are validated and then discarded.
+Run IDs, event sequence, baseline order, mutant identities, results and summary
+counts must be consistent. Truncated lines, missing completion, mixed runs and
+duplicate events are rejected with exit code 2. A valid stream whose completed
+summary marks the run incomplete, or whose baseline failed, is unusable for
+comparison just like its JSON document. CRLF and a complete final line without
+a newline are accepted. Legacy schema v2 JSONL is unsupported.
+
+The JSONL reader retains comparison candidates and one reusable event buffer;
+it does not retain the diagnostic/start-event history or the entire input
+string. Its memory use still depends on candidate data and the largest event.
+
+
 ```console
 hoimin progress --patience 3 reports/before.json reports/after.json reports/latest.json
 hoimin progress --format json reports/*.json
@@ -467,7 +540,11 @@ Run metrics are an opt-in operational sidecar, separate from the run JSON. Write
 
 ```console
 hoimin run --root . --source src --metrics metrics.json -- python -m pytest -q
+hoimin verify plan.json --top 20 --metrics batch-metrics.json > batch-report.json
+hoimin verify plan.json --candidate m1_ID --metrics candidate-metrics.json > candidate-report.json
 ```
+
+`verify --metrics` supports explicit candidate IDs and both strict and diverse top selections. Relative metrics paths use the directory where you invoke hoimin, independently of the saved project root. The destination is not stored in the plan and does not change candidate selection or execution limits. Metrics begin when shell execution starts; plan validation and rediscovery time are not included. A failure during plan preparation leaves the destination untouched. Once execution starts, failed baselines and interrupted runs follow the same sidecar and warning rules as `run`.
 
 The sidecar uses the versioned [`run-metrics.schema.json`](docs/json-schema/run-metrics.schema.json) contract. Its `executed` count never exceeds `discovered` and equals the sum of per-worker `processes`. Metrics are operational observations: they do not affect resume compatibility and are not embedded in the run-result document. A metrics write failure warns without changing the mutation result. A confirmed collision with a selected source, explicit fingerprint input, session database, active SQLite companion or session ownership lock is rejected before the baseline. You can write metrics inside the project or replace an existing metrics file. A separate hardlink or final symlink can be replaced while preserving its protected referent.
 

@@ -260,7 +260,7 @@ fn run_resolves_metrics_path_from_invocation_directory() {
 }
 
 #[test]
-fn metrics_is_rejected_outside_run() {
+fn metrics_is_rejected_for_plan_and_resolved_for_verify() {
     assert!(
         parse_from([
             "hoimin",
@@ -274,18 +274,22 @@ fn metrics_is_rejected_outside_run() {
         ])
         .is_err()
     );
-    assert!(
-        parse_from([
-            "hoimin",
-            "verify",
-            "plan.json",
-            "--candidate",
-            "m1_a",
-            "--metrics",
-            "metrics.json",
-        ])
-        .is_err()
-    );
+    let ParsedCommand::Verify(args) = parse_from([
+        "hoimin",
+        "verify",
+        "plan.json",
+        "--candidate",
+        "m1_a",
+        "--metrics",
+        "metrics.json",
+    ])
+    .unwrap() else {
+        panic!("expected verify")
+    };
+    let expected = camino::Utf8PathBuf::from_path_buf(std::env::current_dir().unwrap())
+        .unwrap()
+        .join("metrics.json");
+    assert_eq!(args.metrics.as_ref(), Some(&expected));
 }
 
 #[test]

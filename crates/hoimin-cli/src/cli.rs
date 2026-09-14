@@ -276,6 +276,10 @@ struct RawVerifyArgs {
     )]
     selection_policy: Option<TopSelectionPolicy>,
 
+    /// Write execution metrics to PATH, relative to the invocation directory.
+    #[arg(long, value_name = "PATH")]
+    metrics: Option<PathBuf>,
+
     /// Machine-readable output format.
     #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
     format: OutputFormat,
@@ -385,6 +389,7 @@ pub enum VerifySelection {
 
 #[derive(Debug)]
 pub struct VerifyArgs {
+    pub metrics: Option<Utf8PathBuf>,
     pub manifest: PathBuf,
     pub selection: VerifySelection,
     pub format: OutputFormat,
@@ -516,6 +521,7 @@ impl TryFrom<Command> for ParsedCommand {
                     None => VerifySelection::CandidateIds(raw.candidate_ids),
                 };
                 Ok(Self::Verify(VerifyArgs {
+                    metrics: raw.metrics.map(metrics_path).transpose()?,
                     manifest: raw.manifest,
                     selection,
                     format: raw.format,
@@ -671,22 +677,7 @@ fn raw_config(args: RunArgs) -> Result<RawRunConfig, CliError> {
         .session
         .map(|path| utf8_path(path, "--session").map(|path| SessionConfig { path }))
         .transpose()?;
-    let metrics = args
-        .metrics
-        .map(|path| {
-            let path = if path.is_absolute() {
-                path
-            } else {
-                std::env::current_dir()
-                    .map_err(|error| CliError::InvalidValue {
-                        name: "--metrics",
-                        value: error.to_string(),
-                    })?
-                    .join(path)
-            };
-            utf8_path(path, "--metrics")
-        })
-        .transpose()?;
+    let metrics = args.metrics.map(metrics_path).transpose()?;
     let limits = RawRunLimits {
         jobs: args.jobs,
         max_mutants: args.max_mutants,
@@ -740,6 +731,20 @@ fn raw_config(args: RunArgs) -> Result<RawRunConfig, CliError> {
         session,
         resume: args.resume,
     })
+}
+
+fn metrics_path(path: PathBuf) -> Result<Utf8PathBuf, CliError> {
+    let path = if path.is_absolute() {
+        path
+    } else {
+        std::env::current_dir()
+            .map_err(|error| CliError::InvalidValue {
+                name: "--metrics",
+                value: error.to_string(),
+            })?
+            .join(path)
+    };
+    utf8_path(path, "--metrics")
 }
 
 fn utf8_path(path: PathBuf, name: &'static str) -> Result<Utf8PathBuf, CliError> {

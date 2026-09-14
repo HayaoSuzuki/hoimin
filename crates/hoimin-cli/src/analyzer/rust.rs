@@ -72,6 +72,46 @@ fn annotation_retention_stats() -> (usize, usize) {
     )
 }
 
+/// Collect syntactic definitions independently of mutation eligibility.
+pub(crate) fn definition_names(source: &str) -> Result<BTreeSet<String>, String> {
+    #[derive(Default)]
+    struct Definitions {
+        scope: Vec<String>,
+        names: BTreeSet<String>,
+    }
+    impl<'ast> Visitor<'ast> for Definitions {
+        fn visit_stmt(&mut self, statement: &'ast Stmt) {
+            let name = match statement {
+                Stmt::FunctionDef(definition) => Some(definition.name.as_str()),
+                Stmt::ClassDef(definition) => Some(definition.name.as_str()),
+                _ => None,
+            };
+            if let Some(name) = name {
+                self.scope.push(name.to_owned());
+                self.names.insert(self.scope.join("."));
+            }
+            visitor::walk_stmt(self, statement);
+            if name.is_some() {
+                self.scope.pop();
+            }
+        }
+    }
+    let parsed = parse_unchecked_source(source, ruff_python_ast::PySourceType::Python);
+    if !parsed.has_valid_syntax() {
+        depth::dispose(parsed.into_syntax());
+        return Err("invalid Python syntax; cannot validate symbol definitions".into());
+    }
+    if let Err(error) = depth::check(parsed.syntax(), &|| false) {
+        depth::dispose(parsed.into_syntax());
+        return Err(format!("cannot validate symbol definitions: {error:?}"));
+    }
+    let mut definitions = Definitions::default();
+    for statement in &parsed.syntax().body {
+        definitions.visit_stmt(statement);
+    }
+    Ok(definitions.names)
+}
+
 pub(crate) struct AnalyzeRequest<'a> {
     pub path: &'a Utf8Path,
     pub lines: &'a [LineRange],
@@ -2945,31 +2985,36 @@ fn is_zero_literal(expression: &Expr) -> bool {
 }
 
 fn decimal_literal_neighbors(source: &str, expression: &Expr, excludes_zero: bool) -> Vec<String> {
-    let Some(value) = decimal_literal_value(source, expression) else {
+    let Some((value, negative_spelling)) = decimal_literal_value(source, expression) else {
         return Vec::new();
     };
-    let mut replacements = Vec::with_capacity(2);
-    if let Some(next) = value.checked_add(1) {
-        replacements.push(next.to_string());
-    }
-    if let Some(previous) = value
-        .checked_sub(1)
-        .filter(|previous| !excludes_zero || *previous != 0)
-    {
-        replacements.push(previous.to_string());
-    }
-    replacements
+    let maximum = i128::from(u64::MAX);
+    // Preserve unsigned zero's historical single neighbor. A unary-minus
+    // spelling, including -0, may have negative neighbors.
+    let minimum = if negative_spelling { -maximum } else { 0 };
+    // Values come from u64 magnitudes, so adding/subtracting one fits i128.
+    [value + 1, value - 1]
+        .into_iter()
+        .filter(|neighbor| (minimum..=maximum).contains(neighbor))
+        .filter(|neighbor| !excludes_zero || *neighbor != 0)
+        .map(|neighbor| neighbor.to_string())
+        .collect()
 }
 
-fn decimal_literal_value(source: &str, expression: &Expr) -> Option<u64> {
-    if !matches!(expression, Expr::NumberLiteral(_)) {
+fn decimal_literal_value(source: &str, expression: &Expr) -> Option<(i128, bool)> {
+    let (operand, negative) = match expression {
+        Expr::UnaryOp(unary) if unary.op == UnaryOp::USub => (unary.operand.as_ref(), true),
+        expression => (expression, false),
+    };
+    if !matches!(operand, Expr::NumberLiteral(_)) {
         return None;
     }
-    let literal = source_text(source, expression.range())?;
+    let literal = source_text(source, operand.range())?;
     if literal.is_empty() || !literal.bytes().all(|byte| byte.is_ascii_digit()) {
         return None;
     }
-    literal.parse().ok()
+    let magnitude = i128::from(literal.parse::<u64>().ok()?);
+    Some((if negative { -magnitude } else { magnitude }, negative))
 }
 
 fn append_to_insert_replacement(

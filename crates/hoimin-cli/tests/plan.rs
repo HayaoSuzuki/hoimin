@@ -2960,3 +2960,547 @@ async fn fixed_batch_real_cli_reports_disjoint_ids_and_repeated_progress() {
     let comparison: serde_json::Value = serde_json::from_slice(&progress.stdout).unwrap();
     assert_eq!(comparison["comparisons"][0]["common"], 1);
 }
+
+#[tokio::test]
+async fn verify_metrics_exports_existing_sidecar_for_each_selection() {
+    let project = Project::new_with_source("def total():\n    return 1 + 2 + 3\n");
+    let coordinator = tempfile::tempdir().unwrap();
+    let (path, manifest) = write_plan_manifest_with_marker(
+        &project,
+        &[
+            "--file",
+            "src/calc.py",
+            "--operators",
+            "binary_add_sub",
+            "--jobs",
+            "2",
+        ],
+        &coordinator.path().join("marker"),
+    )
+    .await;
+    assert_eq!(manifest.candidates.len(), 2);
+    for selection in [
+        vec!["--top", "2"],
+        vec!["--top", "2", "--selection-policy", "diverse"],
+        vec![
+            "--candidate",
+            manifest.candidates[0].candidate.id.as_str(),
+            "--candidate",
+            manifest.candidates[1].candidate.id.as_str(),
+        ],
+    ] {
+        let directory = tempfile::tempdir().unwrap();
+        let metrics_path = directory.path().join("metrics.json");
+        let mut args = vec![
+            OsString::from("hoimin"),
+            OsString::from("verify"),
+            path.as_os_str().to_owned(),
+        ];
+        args.extend(selection.iter().map(OsString::from));
+        args.extend([
+            OsString::from("--metrics"),
+            metrics_path.as_os_str().to_owned(),
+        ]);
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let exit = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+        assert_eq!(exit, 1, "{}", String::from_utf8_lossy(&stderr));
+        let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+        let metrics: hoimin_core::RunMetrics =
+            serde_json::from_slice(&std::fs::read(&metrics_path).unwrap()).unwrap();
+        metrics.validate().unwrap();
+        assert_eq!(metrics.discovered, 2);
+        assert_eq!(metrics.executed, 2);
+        assert_eq!(metrics.run_id, report["run"]["run_id"]);
+        let expected: BTreeSet<_> = manifest
+            .candidates
+            .iter()
+            .map(|c| c.candidate.id.as_str())
+            .collect();
+        let actual: BTreeSet<_> = report["mutants"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|m| m["candidate"]["id"].as_str().unwrap())
+            .collect();
+        assert_eq!(actual, expected);
+    }
+}
+
+#[tokio::test]
+async fn verify_metrics_preserves_write_warning_and_source_collision_contracts() {
+    let project = Project::new();
+    let coordinator = tempfile::tempdir().unwrap();
+    let marker = coordinator.path().join("marker");
+    let (path, _) = write_plan_manifest_with_marker(&project, &[], &marker).await;
+    let source = project.path.join("src/calc.py");
+    let original = std::fs::read(&source).unwrap();
+    for (destination, expected_exit, diagnostic) in [
+        (
+            coordinator.path().join("missing/metrics.json"),
+            1,
+            "metrics.write",
+        ),
+        (source.clone(), 2, "metrics.destination"),
+    ] {
+        if marker.exists() {
+            std::fs::remove_file(&marker).unwrap();
+        }
+        let args = [
+            OsString::from("hoimin"),
+            OsString::from("verify"),
+            path.as_os_str().to_owned(),
+            OsString::from("--top"),
+            OsString::from("1"),
+            OsString::from("--metrics"),
+            destination.into_os_string(),
+        ];
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let exit = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+        assert_eq!(exit, expected_exit, "{}", String::from_utf8_lossy(&stderr));
+        assert!(
+            String::from_utf8_lossy(&stderr).contains(diagnostic),
+            "{}",
+            String::from_utf8_lossy(&stderr)
+        );
+        assert_eq!(marker.exists(), expected_exit == 1);
+        assert_eq!(std::fs::read(&source).unwrap(), original);
+    }
+}
+
+#[tokio::test]
+async fn verify_metrics_is_not_written_when_plan_validation_fails() {
+    let project = Project::new();
+    let coordinator = tempfile::tempdir().unwrap();
+    let marker = coordinator.path().join("marker");
+    let (path, _) = write_plan_manifest_with_marker(&project, &[], &marker).await;
+    std::fs::write(project.path.join("src/calc.py"), "changed = True\n").unwrap();
+    let metrics_path = coordinator.path().join("metrics.json");
+    std::fs::write(&metrics_path, "previous sidecar").unwrap();
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let exit = hoimin_cli::run_with_io(
+        [
+            OsString::from("hoimin"),
+            OsString::from("verify"),
+            path.into_os_string(),
+            OsString::from("--top"),
+            OsString::from("1"),
+            OsString::from("--metrics"),
+            metrics_path.as_os_str().to_owned(),
+        ],
+        &mut stdout,
+        &mut stderr,
+    )
+    .await;
+    assert_eq!(exit, 2);
+    assert!(String::from_utf8_lossy(&stderr).contains("plan.source.changed"));
+    assert!(stdout.is_empty());
+    assert!(!marker.exists());
+    assert_eq!(
+        std::fs::read_to_string(metrics_path).unwrap(),
+        "previous sidecar"
+    );
+}
+
+#[tokio::test]
+async fn verify_metrics_real_cli_uses_invocation_directory_and_preserves_results() {
+    let project = Project::new();
+    let coordinator = tempfile::tempdir().unwrap();
+    let marker = coordinator.path().join("marker");
+    let (path, _) = write_plan_manifest_with_marker(&project, &[], &marker).await;
+    let binary = env!("CARGO_BIN_EXE_hoimin");
+    let control = std::process::Command::new(binary)
+        .current_dir(coordinator.path())
+        .args(["verify", path.to_str().unwrap(), "--top", "2"])
+        .output()
+        .unwrap();
+    let actual = std::process::Command::new(binary)
+        .current_dir(coordinator.path())
+        .args([
+            "verify",
+            path.to_str().unwrap(),
+            "--top",
+            "2",
+            "--metrics",
+            "metrics.json",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(
+        actual.status.code(),
+        Some(1),
+        "{}",
+        String::from_utf8_lossy(&actual.stderr)
+    );
+    assert_eq!(actual.status.code(), control.status.code());
+    let expected: serde_json::Value = serde_json::from_slice(&control.stdout).unwrap();
+    let report: serde_json::Value = serde_json::from_slice(&actual.stdout).unwrap();
+    for field in ["candidate", "status"] {
+        let values = |v: &serde_json::Value| {
+            v["mutants"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|m| m[field].clone())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(values(&report), values(&expected));
+    }
+    assert!(report["run"]["normalized_config"]["limits"].is_object());
+    assert_eq!(
+        report["run"]["normalized_config"]["limits"],
+        expected["run"]["normalized_config"]["limits"]
+    );
+    let mut observed_config = report["run"]["normalized_config"].clone();
+    let mut expected_config = expected["run"]["normalized_config"].clone();
+    assert!(
+        observed_config
+            .as_object_mut()
+            .unwrap()
+            .remove("output")
+            .is_some()
+    );
+    assert!(
+        expected_config
+            .as_object_mut()
+            .unwrap()
+            .remove("output")
+            .is_some()
+    );
+    assert_eq!(observed_config, expected_config);
+    let metrics: hoimin_core::RunMetrics =
+        serde_json::from_slice(&std::fs::read(coordinator.path().join("metrics.json")).unwrap())
+            .unwrap();
+    metrics.validate().unwrap();
+    assert_eq!(metrics.executed, 2);
+    assert!(!project.path.join("metrics.json").exists());
+    let help = std::process::Command::new(binary)
+        .args(["verify", "--help"])
+        .output()
+        .unwrap();
+    assert!(help.status.success());
+    assert!(String::from_utf8_lossy(&help.stdout).contains("--metrics <PATH>"));
+}
+
+#[tokio::test]
+async fn verify_metrics_exports_baseline_failure_and_total_timeout_with_jsonl_output() {
+    for (command, options, expected_exit) in [
+        ("raise SystemExit(1)", vec![], 3),
+        (
+            "import time; time.sleep(20)",
+            vec!["--total-timeout", "100ms"],
+            4,
+        ),
+    ] {
+        let project = Project::new();
+        let coordinator = tempfile::tempdir().unwrap();
+        let mut args = plan_args(&project, options, &coordinator.path().join("marker"));
+        insert_test_min_free_space(&mut args);
+        *args.last_mut().unwrap() = OsString::from(command);
+        let ParsedCommand::Plan(plan) = parse_from(args).unwrap() else {
+            panic!("expected plan");
+        };
+        let planned = create(plan.into_run_config().unwrap()).await.unwrap();
+        let path = project.path.join("plan.json");
+        write_json(&path, &serde_json::to_value(&planned.manifest).unwrap());
+        let metrics_path = coordinator.path().join("metrics.json");
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let exit = hoimin_cli::run_with_io(
+            [
+                OsString::from("hoimin"),
+                OsString::from("verify"),
+                path.into_os_string(),
+                OsString::from("--top"),
+                OsString::from("1"),
+                OsString::from("--format"),
+                OsString::from("jsonl"),
+                OsString::from("--metrics"),
+                metrics_path.as_os_str().to_owned(),
+            ],
+            &mut stdout,
+            &mut stderr,
+        )
+        .await;
+        assert_eq!(exit, expected_exit, "{}", String::from_utf8_lossy(&stderr));
+        let events: Vec<serde_json::Value> = stdout
+            .split(|b| *b == b'\n')
+            .filter(|s| !s.is_empty())
+            .map(|line| serde_json::from_slice(line).unwrap())
+            .collect();
+        if expected_exit == 3 {
+            assert!(events.iter().any(|e| e["kind"] == "baseline_finished"));
+        }
+        assert!(events.iter().any(|e| e["kind"] == "run_finished"));
+        let metrics: hoimin_core::RunMetrics =
+            serde_json::from_slice(&std::fs::read(metrics_path).unwrap()).unwrap();
+        metrics.validate().unwrap();
+        assert_eq!(metrics.executed, 0);
+        if expected_exit == 3 {
+            assert!(metrics.stages.iter().any(|s| s.name == "baseline"));
+        }
+    }
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn preparation_errors_precede_the_analyzer_deadline_without_baseline() {
+    use std::os::unix::fs::PermissionsExt;
+    for stage in ["manifest", "source", "fingerprint", "copy"] {
+        let project = Project::new();
+        let (path, mut manifest, marker) =
+            write_plan_manifest(&project, &["--fingerprint-include", "config.toml"]).await;
+        let requested = manifest.candidates[0].id.clone();
+        let ParsedCommand::Plan(plan) = parse_from(plan_args(
+            &project,
+            ["--file", "src/calc.py", "--analyzer-timeout", "1ns"],
+            &marker,
+        ))
+        .unwrap() else {
+            panic!("plan args")
+        };
+        manifest.normalized_config.limits.analyzer_timeout =
+            plan.into_run_config().unwrap().limits.analyzer_timeout;
+        match stage {
+            "manifest" => manifest.schema_version = 0,
+            "source" => {
+                std::fs::write(project.path.join("src/calc.py"), "changed = 1 + 2\n").unwrap();
+            }
+            "fingerprint" => {
+                std::fs::write(project.path.join("config.toml"), "changed = true\n").unwrap();
+            }
+            "copy" => {
+                let unreadable = project.path.join("unreadable.txt");
+                std::fs::write(&unreadable, "unselected").unwrap();
+                std::fs::set_permissions(&unreadable, std::fs::Permissions::from_mode(0o0))
+                    .unwrap();
+                assert!(
+                    std::fs::read(&unreadable).is_err(),
+                    "BOUNDARY_INFRASTRUCTURE: fixture requires an unprivileged reader"
+                );
+            }
+            _ => unreachable!(),
+        }
+        write_json(&path, &serde_json::to_value(manifest).unwrap());
+        let error = prepare_verify(&path, &[requested], OutputFormat::Json)
+            .await
+            .unwrap_err();
+        let message = error.to_string();
+        let expected = match stage {
+            "manifest" => "plan.manifest",
+            "source" => "plan.source.changed",
+            "fingerprint" => "plan.fingerprint_input.changed",
+            "copy" => "plan.workspace",
+            _ => unreachable!(),
+        };
+        assert!(message.contains(expected), "{stage}: {message}");
+        assert!(
+            !message.contains("analyzer.timeout"),
+            "preparation is outside analyzer rediscovery deadline"
+        );
+        assert!(!marker.exists());
+    }
+}
+#[tokio::test]
+async fn symbol_definition_missing_is_rejected_before_baseline() {
+    for command in ["plan", "run"] {
+        let project = Project::new();
+        let marker = project.path.join("baseline-marker");
+        let mut args = plan_args(
+            &project,
+            ["--symbol", "calc:only_add", "--symbol", "calc:missing"],
+            &marker,
+        );
+        args[1] = command.into();
+        insert_test_min_free_space(&mut args);
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+        // pins: issue #476
+        assert_eq!(code, 2, "{command}: {}", String::from_utf8_lossy(&stderr));
+        assert!(String::from_utf8_lossy(&stderr).contains("calc:missing"));
+        assert!(!marker.exists(), "{command} ran baseline");
+    }
+}
+
+#[tokio::test]
+async fn symbol_definition_missing_is_rejected_with_clean_git() {
+    let (project, _) = Project::new_changed_git();
+    run_git(&project.path, &["checkout", "--", "src/calc.py"]);
+    let marker = project.path.join("baseline-marker");
+    let args = plan_args(&project, ["--symbol", "calc:missing", "--changed"], &marker);
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+    assert_eq!(code, 2, "{}", String::from_utf8_lossy(&stderr));
+    assert!(String::from_utf8_lossy(&stderr).contains("calc:missing"));
+    assert!(!marker.exists());
+}
+
+#[tokio::test]
+async fn symbol_definition_verify_checks_unrequested_symbol_files() {
+    let project = Project::new_with_sources(&[
+        ("calc.py", "value = 1 + 2\n"),
+        ("other.py", "def empty():\n    pass\n"),
+    ]);
+    let coordinator = tempfile::tempdir().unwrap();
+    let marker = coordinator.path().join("baseline-marker");
+    let args = plan_args(&project, ["--symbol", "other:empty"], &marker);
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    assert_eq!(
+        hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await,
+        0
+    );
+    let mut manifest: PlanManifest = serde_json::from_slice(&stdout).unwrap();
+    assert_eq!(manifest.candidates.len(), 1);
+    manifest.normalized_config.selection.symbols[0].qualname = "missing".into();
+    let path = coordinator.path().join("plan.json");
+    std::fs::write(&path, serde_json::to_vec(&manifest).unwrap()).unwrap();
+    stdout.clear();
+    stderr.clear();
+    let code = hoimin_cli::run_with_io(
+        vec![
+            "hoimin".into(),
+            "verify".into(),
+            path.into_os_string(),
+            "--top".into(),
+            "1".into(),
+        ],
+        &mut stdout,
+        &mut stderr,
+    )
+    .await;
+    assert_eq!(code, 2, "{}", String::from_utf8_lossy(&stderr));
+    assert!(String::from_utf8_lossy(&stderr).contains("other:missing"));
+    assert!(!marker.exists());
+}
+
+#[tokio::test]
+async fn symbol_definition_existing_empty_scopes_are_valid() {
+    let project = Project::new_with_source(
+        "class Box:\n    def method(self):\n        pass\n    class Inner:\n        pass\nasync def outer():\n    def inner():\n        pass\n",
+    );
+    let marker = project.path.join("baseline-marker");
+    for name in ["Box", "Box.method", "Box.Inner", "outer", "outer.inner"] {
+        let selector = format!("calc:{name}");
+        let args = plan_args(
+            &project,
+            [
+                "--symbol",
+                &selector,
+                "--operators",
+                "boolean_literal",
+                "--line",
+                "src/calc.py:1",
+            ],
+            &marker,
+        );
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        assert_eq!(
+            hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await,
+            0,
+            "{name}: {}",
+            String::from_utf8_lossy(&stderr)
+        );
+        let manifest: PlanManifest = serde_json::from_slice(&stdout).unwrap();
+        assert!(manifest.candidates.is_empty());
+        assert!(manifest.diagnostics.is_empty());
+    }
+}
+
+#[tokio::test]
+async fn symbol_definition_existing_unchanged_scope_is_valid() {
+    let (project, _) = Project::new_changed_git();
+    let marker = project.path.join("baseline-marker");
+    for clean in [false, true] {
+        if clean {
+            run_git(&project.path, &["checkout", "--", "src/calc.py"]);
+        }
+        let args = plan_args(
+            &project,
+            ["--symbol", "calc:untouched", "--changed"],
+            &marker,
+        );
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        assert_eq!(
+            hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await,
+            0,
+            "{}",
+            String::from_utf8_lossy(&stderr)
+        );
+        let manifest: PlanManifest = serde_json::from_slice(&stdout).unwrap();
+        assert!(manifest.candidates.is_empty());
+        assert!(manifest.diagnostics.is_empty());
+    }
+}
+
+#[tokio::test]
+async fn symbol_definition_package_init_is_valid() {
+    let project = Project::new_with_source("value = True\n");
+    std::fs::create_dir(project.path.join("src/pkg")).unwrap();
+    std::fs::write(
+        project.path.join("src/pkg/__init__.py"),
+        "def empty():\n    pass\n",
+    )
+    .unwrap();
+    let marker = project.path.join("baseline-marker");
+    let args = plan_args(&project, ["--symbol", "pkg:empty"], &marker);
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    assert_eq!(
+        hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await,
+        0,
+        "{}",
+        String::from_utf8_lossy(&stderr)
+    );
+    let manifest: PlanManifest = serde_json::from_slice(&stdout).unwrap();
+    assert!(
+        manifest
+            .candidates
+            .iter()
+            .all(|candidate| candidate.path == "src/calc.py")
+    );
+}
+
+#[tokio::test]
+async fn symbol_definition_requires_exact_definition_not_assignment_or_prefix() {
+    let project = Project::new_with_source(
+        "alias = True\nclass BoxOther:\n    def method(self):\n        pass\n",
+    );
+    let marker = project.path.join("baseline-marker");
+    for selector in ["calc:alias", "calc:Box", "calc:BoxOther.missing"] {
+        let args = plan_args(
+            &project,
+            ["--symbol", selector, "--max-candidates", "1"],
+            &marker,
+        );
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+        assert_eq!(code, 2, "{}", String::from_utf8_lossy(&stderr));
+        assert!(String::from_utf8_lossy(&stderr).contains(selector));
+    }
+}
+
+#[tokio::test]
+async fn symbol_definition_invalid_syntax_is_not_diagnosed_as_missing() {
+    let project = Project::new_with_source("def broken(:\n    pass\n");
+    let marker = project.path.join("baseline-marker");
+    let args = plan_args(&project, ["--symbol", "calc:broken"], &marker);
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    assert_eq!(
+        hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await,
+        2
+    );
+    let stderr = String::from_utf8_lossy(&stderr);
+    assert!(stderr.contains("invalid Python syntax"));
+    assert!(stderr.contains("src/calc.py"));
+    assert!(!stderr.contains("symbol definition not found"));
+    assert!(!marker.exists());
+}
