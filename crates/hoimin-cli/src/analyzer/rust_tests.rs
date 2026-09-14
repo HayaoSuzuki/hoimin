@@ -4,8 +4,8 @@ use super::{
     analyze_source, analyze_source_cancellable, annotation_site_test_snapshot,
     binding_flow_handler_exit_snapshot, binding_flow_handler_exit_snapshot_with_mutation,
     binding_flow_loop_head_snapshot, binding_flow_marker_snapshot,
-    binding_flow_marker_snapshot_with_mutation, binding_flow_test_snapshot,
-    name_resolution_test_snapshot,
+    binding_flow_marker_snapshot_with_mutation, binding_flow_test_snapshot, candidate_work_stats,
+    name_resolution_test_snapshot, reset_candidate_work_stats,
 };
 use crate::analyzer::AnalyzerDiagnosticCode;
 use camino::Utf8Path;
@@ -128,6 +128,56 @@ struct ExceptionMatchBindingCorpusCase {
 
 fn analyze(source: &str) -> super::AnalyzerOutput {
     analyze_with(Utf8Path::new("pkg/sample.py"), &[], &[], 10_000, source)
+}
+
+#[test]
+fn unselected_collection_literals_build_no_large_candidate_strings() {
+    let depth = 64;
+    let source = format!(
+        "data = {}\"{}\"{}\nx = 1 + 2\n",
+        "[".repeat(depth),
+        "a".repeat(64_000),
+        "]".repeat(depth)
+    );
+    let mut operators = MutationOperatorSelection::default();
+    for name in operators.names() {
+        let operator = MutationOperatorSelection::parse_selector(&name).unwrap()[0];
+        if operator != MutationOperator::BinaryAddSub {
+            operators.exclude(operator);
+        }
+    }
+
+    reset_candidate_work_stats();
+    let output = analyze_source(
+        &AnalyzeRequest {
+            path: Utf8Path::new("pkg/large.py"),
+            lines: &[],
+            symbols: &[],
+            operators: &operators,
+            profile: MutationProfile::Full,
+            max_candidates: 1,
+        },
+        &source,
+    );
+
+    assert_eq!(candidate_work_stats(), (0, 1));
+    assert_eq!(output.candidates.len(), 1);
+    assert_eq!(output.candidates[0].operator, "binary_add_sub");
+    assert_eq!(output.candidates[0].original, "+");
+    assert!(!output.truncated);
+}
+
+#[test]
+fn selected_collection_literal_still_builds_its_candidate() {
+    reset_candidate_work_stats();
+    let output = analyze("data = [item]\n");
+
+    assert_eq!(candidate_work_stats().0, 1);
+    assert!(output.candidates.iter().any(|candidate| {
+        candidate.operator == "collection_list_tuple"
+            && candidate.original == "[item]"
+            && candidate.replacement == "(item,)"
+    }));
 }
 
 // These literal expectations detect missing callable families, incorrect pairs, and

@@ -5,6 +5,10 @@ description: 構文・名前解決・変更するバイト範囲・候補保持�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-461
+  resource: ../../superpowers/specs/2026-09-14-issue-461-lazy-candidates-design.md
+  working_tree: untracked
+  sha256: 683834f572abb49a7d2a5fc7c36890ce0ac57be4daebcb62467af5391edd1dc1
 - id: issue-513
   resource: ../../superpowers/specs/2026-09-12-issue-513-parser-recursion-design.md
   working_tree: untracked
@@ -195,3 +199,9 @@ ASTの深さ検査より前に、Ruffによる構文解析がスタックを使�
 [^issue-513]: [2026-09-12-issue-513-parser-recursion-design.md](../../superpowers/specs/2026-09-12-issue-513-parser-recursion-design.md)。
 [^issue-515]: [Issue515 class directive design](../../superpowers/specs/2026-09-12-issue-515-class-directives-design.md)。
 [^issue-514]: [Issue514 comprehension effect order design](../../superpowers/specs/2026-09-12-issue-514-comprehension-effect-order-design.md)。
+
+# 未選択候補の所有文字列（Issue #461）
+
+演算子や対象選択で除外できる候補は、元ソース範囲の複製より先に判定する。list/tuple literalのように置換生成自体が入力範囲に比例する場合は、演算子選択をhelper呼出し前に確認する。この省略は現在のnodeの候補生成に限り、子nodeの探索は継続する。候補上限は保持数を制約するが、解析中の全確保量を制約しない。[^issue-461]
+
+[^issue-461]: [Issue #461: Lazy candidate strings](../../superpowers/specs/2026-09-14-issue-461-lazy-candidates-design.md)。
