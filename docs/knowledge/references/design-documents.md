@@ -9,6 +9,37 @@ sources:
   resource: ../../superpowers/specs/2026-09-14-issue-464-baseline-output-design.md
   working_tree: untracked
   sha256: 4a10160c54d1b56ab624fc7a28885247bb7e23de622250d3f0ed56a774c7d445
+- id: issue-454-design
+  resource: ../../superpowers/specs/2026-09-14-issue-454-fixed-batches-design.md
+  working_tree: untracked
+  sha256: 10e05c4a8d518d5334e191a2999d2bd9f5c198569a3db650969f51adcc097dd1
+- id: issue-458-design
+  resource: ../../superpowers/specs/2026-09-14-issue-458-verify-metrics-design.md
+  working_tree: untracked
+  sha256: 9348d92fc7357d35f6092240f58cd681672864de808daa41b989f0cb717c4887
+- id: issue-471-specs
+  resource: ../../superpowers/specs/2026-09-14-issue-471-negative-neighbors-design.md
+  working_tree: untracked
+  sha256: c6b6af9099cdb3e6e15b504fd5cee6349e8906658f036a4775f41d02973ac110
+- id: issue-490-design
+  resource: ../../superpowers/specs/2026-09-14-issue-490-boundary-contracts-design.md
+  revision: 7d5bdc5a643add4ba55e8541fa59a069d0ff5c5e
+  working_tree: untracked
+  sha256: 8e90be8bf11f38328ea1fd92fd82af2b8b4972d73437a88e94c547a336807bad
+- id: issue-467-design
+  resource: ../../superpowers/specs/2026-09-14-issue-467-jsonl-progress-design.md
+  revision: 8b33167a049e3cae0fc05e96ccf2253c660b7023
+  working_tree: untracked
+  sha256: c4ba67a289f61675332af0cd124b013717c7ec4dca1ff1c8445e284ebdcdc860
+- id: issue-480-design-index
+  resource: ../../superpowers/specs/2026-09-14-issue-480-source-encoding-design.md
+  working_tree: clean
+  sha256: 55a99855ee216bfff5afdfd5ffdeeab6c13e1877ec751b0ee88c9a35cb78c37e
+  revision: 98969d7a840362f78dceb12f91cc5188214f68d5
+- id: issue-476-design-index
+  resource: ../../superpowers/specs/2026-09-14-issue-476-symbol-diagnostics-design.md
+  working_tree: untracked
+  sha256: 9d9087b95cf13cedc4d75626d4cb87b93c41bb45f399a33dbb9a1cbe333c0092
 - id: issue-491-design
   resource: ../../superpowers/specs/2026-09-14-issue-491-performance-shapes-design.md
   working_tree: modified
@@ -43,8 +74,9 @@ sources:
   revision: f3440ac435747d831db6a8b0d93758242060a8cf
 - id: issue-466
   resource: ../../superpowers/specs/2026-09-14-issue-466-retired-blank-line-discovery-design.md
-  working_tree: untracked
-  sha256: a81a30e965b53eea08c62acba2767f44afb806b4b68b1d8113bdd3faf918966e
+  revision: 8b33167a049e3cae0fc05e96ccf2253c660b7023
+  working_tree: modified
+  sha256: dfa895dc4f91c1b8a912112008488426525d26376d7e09d397a6f65cbae8d8db
 
 - id: issue-463
   resource: ../../superpowers/specs/2026-09-14-issue-463-json-record-write-design.md
@@ -829,6 +861,10 @@ sources:
 
 | 原文 | 先頭見出し | 作成時の状態 |
 | --- | --- | --- |
+| [2026-09-14-issue-471-negative-neighbors-design.md](../../superpowers/specs/2026-09-14-issue-471-negative-neighbors-design.md) | Issue #471: Negative index and slice neighbors [^issue-471-specs] | 未追跡（参照時点） |
+| [2026-09-14-issue-467-jsonl-progress-design.md](../../superpowers/specs/2026-09-14-issue-467-jsonl-progress-design.md) | JSONL progress input design (Issue 467) [^issue-467-design] | 未追跡 |
+| [2026-09-14-issue-480-source-encoding-design.md](../../superpowers/specs/2026-09-14-issue-480-source-encoding-design.md) | Issue #480: Python source encodings and raw-byte candidates [^issue-480-design-index] | 追跡済み |
+| [2026-09-14-issue-476-symbol-diagnostics-design.md](../../superpowers/specs/2026-09-14-issue-476-symbol-diagnostics-design.md) | Issue #476: missing symbol definition diagnostics [^issue-476-design-index] | 未追跡 |
 | [2026-09-14-issue-453-scoped-discovery-design.md](../../superpowers/specs/2026-09-14-issue-453-scoped-discovery-design.md) | Issue 453: Scope discovery for exact selectors [^issue-453-index] | 未追跡 |
 | [2026-09-14-issue-475-range-normalization-design.md](../../superpowers/specs/2026-09-14-issue-475-range-normalization-design.md) | Issue 475: Normalize explicit selector groups once [^issue-475-index] | 未追跡 |
 | [2026-09-14-issue-474-selector-index-design.md](../../superpowers/specs/2026-09-14-issue-474-selector-index-design.md) | Issue 474: Explicit selector file index [^issue-474-index] | 未追跡 |
@@ -1292,3 +1328,22 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 [baseline失敗ログの出力](../../superpowers/specs/2026-09-14-issue-464-baseline-output-design.md):既存spoolをcleanup前にstderrへ逐次出力する契約。[^issue-464-design]
 
 [^issue-464-design]: [原文](../../superpowers/specs/2026-09-14-issue-464-baseline-output-design.md)。
+# Issue 454
+
+- [Issue 454: Fixed verify batches](../../superpowers/specs/2026-09-14-issue-454-fixed-batches-design.md) — 固定バッチ選択と確認範囲。[^issue-454-design]
+
+[^issue-454-design]: [Issue 454: Fixed verify batches](../../superpowers/specs/2026-09-14-issue-454-fixed-batches-design.md)。
+# Issue 458
+
+- [Issue 458: Verify operational metrics](../../superpowers/specs/2026-09-14-issue-458-verify-metrics-design.md) — verifyのmetrics出力と確認範囲。[^issue-458-design]
+
+[^issue-458-design]: [Issue 458: Verify operational metrics](../../superpowers/specs/2026-09-14-issue-458-verify-metrics-design.md)。
+[^issue-471-specs]: [2026-09-14-issue-471-negative-neighbors-design.md](../../superpowers/specs/2026-09-14-issue-471-negative-neighbors-design.md)。
+[^issue-467-design]: [2026-09-14-issue-467-jsonl-progress-design.md](../../superpowers/specs/2026-09-14-issue-467-jsonl-progress-design.md)。
+
+- [Issue 490 boundary contracts](../../superpowers/specs/2026-09-14-issue-490-boundary-contracts-design.md)。[^issue-490-design]
+
+[^issue-490-design]: [原文](../../superpowers/specs/2026-09-14-issue-490-boundary-contracts-design.md)。出典版と SHA-256 は frontmatter に記録。
+[^issue-476-design-index]: [Issue #476: missing symbol definition diagnostics](../../superpowers/specs/2026-09-14-issue-476-symbol-diagnostics-design.md).
+
+[^issue-480-design-index]: [Issue #480: Python source encodings and raw-byte candidates](../../superpowers/specs/2026-09-14-issue-480-source-encoding-design.md).

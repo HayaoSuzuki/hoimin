@@ -10,6 +10,42 @@ sources:
   working_tree: modified
   revision: c96c89ec575cc3ac72a621aa267fbc011e9be898
   sha256: 4dc8b97db4e401f403397d2dab4b648c611d96ac3931d099eb4d3dd11f2f79fb
+- id: issue-454-review
+  resource: ../../superpowers/reports/2026-09-14-issue-454-fixed-batches-review.md
+  working_tree: untracked
+  sha256: bddc76fea5ffd3dd176b09048deb6a155b7d16b4a63059589c79ee274486c485
+- id: issue-458-review
+  resource: ../../superpowers/reports/2026-09-14-issue-458-verify-metrics-review.md
+  revision: 6a6e233
+  working_tree: modified
+  sha256: 43a74c2b6926c982c111bd49c590de34e7de05b8ad708384d6968209d719f74c
+- id: issue-471-reports
+  resource: ../../superpowers/reports/2026-09-14-issue-471-negative-neighbors.md
+  working_tree: untracked
+  sha256: befd1573038e54b60ad8fd431597e3da5331c3915248d17c712aa70ea902cdf8
+- id: issue-466-revalidation
+  resource: ../../superpowers/reports/2026-09-14-issue-466-revalidation.md
+  working_tree: untracked
+  sha256: 75fd46a6a0e5fac58f369fb837d571388ddb46969b1458139caa7fbde1b3f0d1
+- id: issue-490-review
+  resource: ../../superpowers/reports/2026-09-14-issue-490-boundary-contracts-review.md
+  revision: c7ce87f8d4c584c2d8df2dcb9d65348c3dd3a706
+  working_tree: modified
+  sha256: 03cc7e076df1207ade765d1a2ee0160e1efeb3c45678e41d56ef5f5b4067a344
+- id: issue-467-review
+  resource: ../../superpowers/reports/2026-09-14-issue-467-jsonl-progress-review.md
+  revision: 8b33167a049e3cae0fc05e96ccf2253c660b7023
+  working_tree: untracked
+  sha256: 49ab2810c65360e6e65c1c44b8e625871e17b179e775b5e72a2b653a38a8dfb1
+- id: issue-480-report-index
+  resource: ../../superpowers/reports/2026-09-14-issue-480-source-encoding-review.md
+  working_tree: modified
+  sha256: f8cc3f5e7e8d5ae7afec4b3321751e3d0a36dee584256c930395e5571fa59102
+  revision: a19bf3aadb0d56cc514d857a0e6359a563e67a18
+- id: issue-476-report-index
+  resource: ../../superpowers/reports/2026-09-14-issue-476-symbol-diagnostics-review.md
+  working_tree: untracked
+  sha256: bff2a183f0c702c556d19c832b59836613d9e7a20975d89893d5d1c7fa0292ec
 - id: issue-461-merge-review
   resource: ../../superpowers/reports/2026-09-14-issue-461-self-review.md
   revision: 11dd162101c4351dfdd15cb52ba112bdf1fe9cf2
@@ -432,6 +468,11 @@ sources:
 
 | 原文 | 先頭見出し | 作成時の状態 |
 | --- | --- | --- |
+| [2026-09-14-issue-471-negative-neighbors.md](../../superpowers/reports/2026-09-14-issue-471-negative-neighbors.md) | Issue #471: Negative neighbor implementation and review [^issue-471-reports] | 未追跡（参照時点） |
+| [2026-09-14-issue-466-revalidation.md](../../superpowers/reports/2026-09-14-issue-466-revalidation.md) | Issue 466 retirement revalidation and self-review [^issue-466-revalidation] | 未追跡 |
+| [2026-09-14-issue-467-jsonl-progress-review.md](../../superpowers/reports/2026-09-14-issue-467-jsonl-progress-review.md) | Issue 467 JSONL progress implementation and review [^issue-467-review] | 未追跡 |
+| [2026-09-14-issue-480-source-encoding-review.md](../../superpowers/reports/2026-09-14-issue-480-source-encoding-review.md) | Issue #480: source encoding review [^issue-480-report-index] | 追跡済み |
+| [2026-09-14-issue-476-symbol-diagnostics-review.md](../../superpowers/reports/2026-09-14-issue-476-symbol-diagnostics-review.md) | Issue #476: symbol diagnostics review [^issue-476-report-index] | 未追跡 |
 | [2026-09-14-issue-453-scoped-discovery.md](../../superpowers/reports/2026-09-14-issue-453-scoped-discovery.md) | Issue 453 scoped discovery report [^issue-453-report] | 未追跡 |
 | [2026-09-14-issue-475-range-normalization.md](../../superpowers/reports/2026-09-14-issue-475-range-normalization.md) | Issue 475 range normalization report [^issue-475-report] | 未追跡 |
 | [2026-09-14-issue-474-selector-index.md](../../superpowers/reports/2026-09-14-issue-474-selector-index.md) | Issue 474 explicit selector index report [^issue-474-report] | 未追跡 |
@@ -659,3 +700,23 @@ sources:
 [baselineログ出力のレビュー](../../superpowers/reports/2026-09-14-issue-464-baseline-output-review.md):各工程3回のレビューと実CLI・出力制限・cleanup検証。[^issue-464-review]
 
 [^issue-464-review]: [原文](../../superpowers/reports/2026-09-14-issue-464-baseline-output-review.md)。
+# Issue 454
+
+- [Issue 454 fixed-batch review](../../superpowers/reports/2026-09-14-issue-454-fixed-batches-review.md) — 固定バッチ選択と確認範囲。[^issue-454-review]
+
+[^issue-454-review]: [Issue 454 fixed-batch review](../../superpowers/reports/2026-09-14-issue-454-fixed-batches-review.md)。
+# Issue 458
+
+- [Issue 458 review record](../../superpowers/reports/2026-09-14-issue-458-verify-metrics-review.md) — verifyのmetrics出力と確認範囲。[^issue-458-review]
+
+[^issue-458-review]: [Issue 458 review record](../../superpowers/reports/2026-09-14-issue-458-verify-metrics-review.md)。
+[^issue-471-reports]: [2026-09-14-issue-471-negative-neighbors.md](../../superpowers/reports/2026-09-14-issue-471-negative-neighbors.md)。
+[^issue-466-revalidation]: [Issue 466 retirement revalidation and self-review](../../superpowers/reports/2026-09-14-issue-466-revalidation.md)。
+[^issue-467-review]: [2026-09-14-issue-467-jsonl-progress-review.md](../../superpowers/reports/2026-09-14-issue-467-jsonl-progress-review.md)。
+
+- [Issue 490 boundary contracts](../../superpowers/reports/2026-09-14-issue-490-boundary-contracts-review.md)。[^issue-490-review]
+
+[^issue-490-review]: [原文](../../superpowers/reports/2026-09-14-issue-490-boundary-contracts-review.md)。出典版と SHA-256 は frontmatter に記録。
+[^issue-476-report-index]: [Issue #476: symbol diagnostics review](../../superpowers/reports/2026-09-14-issue-476-symbol-diagnostics-review.md).
+
+[^issue-480-report-index]: [Issue #480: source encoding review](../../superpowers/reports/2026-09-14-issue-480-source-encoding-review.md).

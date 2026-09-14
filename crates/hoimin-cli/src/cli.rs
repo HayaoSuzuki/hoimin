@@ -255,6 +255,15 @@ struct RawVerifyArgs {
     #[arg(long, value_name = "N")]
     top: Option<NonZeroUsize>,
 
+    /// Skip K candidates in the complete selected-policy ordering before taking --top N.
+    #[arg(
+        long,
+        requires = "top",
+        conflicts_with = "candidate_ids",
+        value_name = "K"
+    )]
+    offset: Option<usize>,
+
     /// Select strict saved-rank order or equal-score file diversity for --top.
     ///
     /// Diverse round-robins files only within equal-score tiers.
@@ -266,6 +275,10 @@ struct RawVerifyArgs {
         value_name = "POLICY"
     )]
     selection_policy: Option<TopSelectionPolicy>,
+
+    /// Write execution metrics to PATH, relative to the invocation directory.
+    #[arg(long, value_name = "PATH")]
+    metrics: Option<PathBuf>,
 
     /// Machine-readable output format.
     #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
@@ -367,10 +380,16 @@ pub enum VerifySelection {
         count: NonZeroUsize,
         policy: TopSelectionPolicy,
     },
+    TopRange {
+        count: NonZeroUsize,
+        policy: TopSelectionPolicy,
+        offset: usize,
+    },
 }
 
 #[derive(Debug)]
 pub struct VerifyArgs {
+    pub metrics: Option<Utf8PathBuf>,
     pub manifest: PathBuf,
     pub selection: VerifySelection,
     pub format: OutputFormat,
@@ -490,6 +509,11 @@ impl TryFrom<Command> for ParsedCommand {
                 let mut seen = std::collections::BTreeSet::new();
                 raw.candidate_ids.retain(|id| seen.insert(id.clone()));
                 let selection = match raw.top {
+                    Some(count) if raw.offset.is_some() => VerifySelection::TopRange {
+                        count,
+                        policy: raw.selection_policy.unwrap_or(TopSelectionPolicy::Strict),
+                        offset: raw.offset.unwrap_or_default(),
+                    },
                     Some(count) => VerifySelection::Top {
                         count,
                         policy: raw.selection_policy.unwrap_or(TopSelectionPolicy::Strict),
@@ -497,6 +521,7 @@ impl TryFrom<Command> for ParsedCommand {
                     None => VerifySelection::CandidateIds(raw.candidate_ids),
                 };
                 Ok(Self::Verify(VerifyArgs {
+                    metrics: raw.metrics.map(metrics_path).transpose()?,
                     manifest: raw.manifest,
                     selection,
                     format: raw.format,
@@ -652,22 +677,7 @@ fn raw_config(args: RunArgs) -> Result<RawRunConfig, CliError> {
         .session
         .map(|path| utf8_path(path, "--session").map(|path| SessionConfig { path }))
         .transpose()?;
-    let metrics = args
-        .metrics
-        .map(|path| {
-            let path = if path.is_absolute() {
-                path
-            } else {
-                std::env::current_dir()
-                    .map_err(|error| CliError::InvalidValue {
-                        name: "--metrics",
-                        value: error.to_string(),
-                    })?
-                    .join(path)
-            };
-            utf8_path(path, "--metrics")
-        })
-        .transpose()?;
+    let metrics = args.metrics.map(metrics_path).transpose()?;
     let limits = RawRunLimits {
         jobs: args.jobs,
         max_mutants: args.max_mutants,
@@ -721,6 +731,20 @@ fn raw_config(args: RunArgs) -> Result<RawRunConfig, CliError> {
         session,
         resume: args.resume,
     })
+}
+
+fn metrics_path(path: PathBuf) -> Result<Utf8PathBuf, CliError> {
+    let path = if path.is_absolute() {
+        path
+    } else {
+        std::env::current_dir()
+            .map_err(|error| CliError::InvalidValue {
+                name: "--metrics",
+                value: error.to_string(),
+            })?
+            .join(path)
+    };
+    utf8_path(path, "--metrics")
 }
 
 fn utf8_path(path: PathBuf, name: &'static str) -> Result<Utf8PathBuf, CliError> {
