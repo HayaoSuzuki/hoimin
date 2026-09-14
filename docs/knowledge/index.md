@@ -16,6 +16,8 @@ okf_version: "0.2"
 - [sessionとレポート](design/session-report.md) - DB所有権、移行、読取り時の整合性検証。
 - [JSON mutant spool](design/json-report-spool.md) - record単位の書込みと失敗時のack・poison契約。
 
+- [fingerprint入力glob](design/fingerprint-inputs.md) - 複数include globの共有走査と入力順エラー。
+
 # 監査と検証範囲
 
 - [Lean監査の読み方](audits/lean-evidence.md) - モデル証明・有限探索・Rust対応・実機確認の違い。

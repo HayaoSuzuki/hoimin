@@ -7,6 +7,8 @@
 - [session所有権とレポートの検証](session-report.md) - 保存・復旧の権限、スキーマ移行、結果の生成側と読取り側の検証責務を整理する。
 - [JSONレポートのmutant record書込み](json-report-spool.md) - 一括書込み、ack、short write、poisoned状態を整理する。
 
+- [fingerprint入力globの共有走査](fingerprint-inputs.md) - 複数globの一回走査、入力順エラー、未選択ファイルの境界を整理する。
+
 # 関連
 
 - [カタログの入口](../index.md) - 全体の読み順。
