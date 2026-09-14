@@ -8,11 +8,13 @@ sources:
 - id: issue-453
   resource: ../../superpowers/specs/2026-09-14-issue-453-scoped-discovery-design.md
   sha256: cce7701d3552cc3887c8129b01589736e6defd31389db98de76ac32b619527aa
-
+  working_tree: clean
+  revision: e59ce2726f71e7c366b8855664b5cce43a13c6a6
 - id: issue-475
   resource: ../../superpowers/specs/2026-09-14-issue-475-range-normalization-design.md
   sha256: a73a0b51c51b10d1d958585acbc0455d3c9d18ec340ef6acec053c2c5427081f
-
+  working_tree: clean
+  revision: f3440ac435747d831db6a8b0d93758242060a8cf
 - id: issue-474
   resource: ../../superpowers/specs/2026-09-14-issue-474-selector-index-design.md
   working_tree: untracked

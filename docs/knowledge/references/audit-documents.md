@@ -5,14 +5,41 @@ description: docs/auditsとdocs/superpowers/reports内の全Markdownを追跡状
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-461-merge-review
+  resource: ../../superpowers/reports/2026-09-14-issue-461-self-review.md
+  revision: 11dd162101c4351dfdd15cb52ba112bdf1fe9cf2
+  working_tree: clean
+  sha256: f3f4229f345454faedf2541348dddaa77fc5f79033e0392818a66850345e4a2b
+- id: issue-470-merge-review
+  resource: ../../superpowers/reports/2026-09-14-issue-470-self-review.md
+  revision: 55edef2f856d347b26db99d0cdb8ababf638abd9
+  working_tree: clean
+  sha256: 96e5eb365a1e5f8508941c9eff15f3f8cd9c95ecfbc7c0e2502f660977733302
+- id: issue-479-merge-review
+  resource: ../../superpowers/reports/2026-09-14-issue-479-self-review.md
+  revision: 1b16fc05855b14eb87eae52e2ccac03bf259b63c
+  working_tree: clean
+  sha256: c5d90ff72953f9667d7c0bc135edb6fbc9dfab405ab370f3271512aebdd5d774
+- id: issue-482-merge-review
+  resource: ../../superpowers/reports/2026-09-14-issue-482-self-review.md
+  revision: 58092b31994e43227e2292e6ba97f51874ea36e4
+  working_tree: clean
+  sha256: f686b3d5b382a8d7ee7c9346ab213bae833c19ff83d77938ef75d3199cff3a77
+- id: issue-491-review
+  resource: ../../superpowers/reports/2026-09-14-issue-491-performance-shapes-review.md
+  working_tree: modified
+  revision: da6b9cf5fd6eff71438c503b0b99a15571b5e696
+  sha256: 903abf4a3d7010cd791a463fb8d1393583440e1150464ec4ec07bc28e85ad1f9
 - id: issue-453-report
   resource: ../../superpowers/reports/2026-09-14-issue-453-scoped-discovery.md
   sha256: 00388a47831d5139281558dc112b82d72504de76c4e2f3df00adfd1ad742433b
-
+  working_tree: clean
+  revision: 7b7192f8a2e1935c503bd9be1020e9b13f6b6858
 - id: issue-475-report
   resource: ../../superpowers/reports/2026-09-14-issue-475-range-normalization.md
   sha256: 4a5ebaf30d38b75272a82443ec7c1845f4aeae8bf2be142324b7db504e25ad63
-
+  working_tree: clean
+  revision: 15f0d54ea2b8a1eba4317b04649a3d7f7c46079b
 - id: issue-474-report
   resource: ../../superpowers/reports/2026-09-14-issue-474-selector-index.md
   working_tree: untracked
@@ -596,6 +623,10 @@ sources:
 
 [^issue-460-audit]: [2026-09-11-issue-460-progress-result-audit.md](../../superpowers/reports/2026-09-11-issue-460-progress-result-audit.md)。
 
+- [Issue #491 性能検証基盤](../../superpowers/reports/2026-09-14-issue-491-performance-shapes-review.md) [^issue-491-review]
+
+[^issue-491-review]: [2026-09-14-issue-491-performance-shapes-review.md](../../superpowers/reports/2026-09-14-issue-491-performance-shapes-review.md)。
+
 # 2026-09-14 の追加
 
 | 原文 | 内容 |
@@ -603,3 +634,17 @@ sources:
 | [Issue #456: 候補検証の前処理共有と検証記録](../../superpowers/reports/2026-09-14-issue-456-validation-context-review.md) | 操作回数、release計測、各工程の3回のセルフレビュー。[^issue-456-review] |
 
 [^issue-456-review]: [2026-09-14-issue-456-validation-context-review.md](../../superpowers/reports/2026-09-14-issue-456-validation-context-review.md)。
+
+# 2026-09-14 統合時に補完した報告
+
+| 原文 | 内容 |
+| --- | --- |
+| [Issue #461 セルフレビュー記録](../../superpowers/reports/2026-09-14-issue-461-self-review.md) | 実装、計数検査、release計測、各工程3回のレビュー。[^issue-461-merge-review] |
+| [Issue #470 セルフレビュー記録](../../superpowers/reports/2026-09-14-issue-470-self-review.md) | 実装、計数検査、release計測、各工程3回のレビュー。[^issue-470-merge-review] |
+| [Issue #479 セルフレビュー記録](../../superpowers/reports/2026-09-14-issue-479-self-review.md) | 実装、計数検査、release計測、各工程3回のレビュー。[^issue-479-merge-review] |
+| [Issue #482 セルフレビュー記録](../../superpowers/reports/2026-09-14-issue-482-self-review.md) | 実装、計数検査、release計測、各工程3回のレビュー。[^issue-482-merge-review] |
+
+[^issue-461-merge-review]: [2026-09-14-issue-461-self-review.md](../../superpowers/reports/2026-09-14-issue-461-self-review.md)。
+[^issue-470-merge-review]: [2026-09-14-issue-470-self-review.md](../../superpowers/reports/2026-09-14-issue-470-self-review.md)。
+[^issue-479-merge-review]: [2026-09-14-issue-479-self-review.md](../../superpowers/reports/2026-09-14-issue-479-self-review.md)。
+[^issue-482-merge-review]: [2026-09-14-issue-482-self-review.md](../../superpowers/reports/2026-09-14-issue-482-self-review.md)。

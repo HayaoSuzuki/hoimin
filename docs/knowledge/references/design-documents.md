@@ -5,10 +5,16 @@ description: docs/superpowers/specs内の全Markdownを先頭見出しと出典�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-491-design
+  resource: ../../superpowers/specs/2026-09-14-issue-491-performance-shapes-design.md
+  working_tree: modified
+  revision: da6b9cf5fd6eff71438c503b0b99a15571b5e696
+  sha256: 89fb01871fdbcd7cfdb3a4f1fca9c3d30b2251e9656c7fe4a90c93a141eac1bf
 - id: issue-453-index
   resource: ../../superpowers/specs/2026-09-14-issue-453-scoped-discovery-design.md
   sha256: cce7701d3552cc3887c8129b01589736e6defd31389db98de76ac32b619527aa
-
+  working_tree: clean
+  revision: e59ce2726f71e7c366b8855664b5cce43a13c6a6
 - id: issue-482-index
   resource: ../../superpowers/specs/2026-09-14-issue-482-name-history-index-design.md
   working_tree: untracked
@@ -29,7 +35,8 @@ sources:
 - id: issue-475-index
   resource: ../../superpowers/specs/2026-09-14-issue-475-range-normalization-design.md
   sha256: a73a0b51c51b10d1d958585acbc0455d3c9d18ec340ef6acec053c2c5427081f
-
+  working_tree: clean
+  revision: f3440ac435747d831db6a8b0d93758242060a8cf
 - id: issue-466
   resource: ../../superpowers/specs/2026-09-14-issue-466-retired-blank-line-discovery-design.md
   working_tree: untracked
@@ -1245,6 +1252,10 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 [^issue-515]: [Issue515 class directive design](../../superpowers/specs/2026-09-12-issue-515-class-directives-design.md)。
 [^issue-514]: [Issue514 comprehension effect order design](../../superpowers/specs/2026-09-12-issue-514-comprehension-effect-order-design.md)。
 [^issue-516]: [Issue 516: Share active session ownership-tree identities](../../superpowers/specs/2026-09-12-issue-516-session-ownership-identities-design.md)。
+
+- [Issue #491 性能検証基盤](../../superpowers/specs/2026-09-14-issue-491-performance-shapes-design.md) [^issue-491-design]
+
+[^issue-491-design]: [2026-09-14-issue-491-performance-shapes-design.md](../../superpowers/specs/2026-09-14-issue-491-performance-shapes-design.md)。
 
 # Issue #482 の設計
 

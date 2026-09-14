@@ -30,3 +30,5 @@ okf_version: "0.2"
 - [原文索引の入口](references/index.md) - 設計書と監査・報告の一覧。
 - [設計書一覧](references/design-documents.md) - 全設計Markdownへの索引。
 - [監査・報告一覧](references/audit-documents.md) - 全監査・報告Markdownへの索引。
+
+- [入力形状別の性能検証](audits/performance-shapes.md) - 実行ゲート、release計測、依存PRと証拠の限界。
