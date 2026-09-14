@@ -107,3 +107,10 @@ Progress PR/publication reviews: (1) Parent independently reviewed fixture drop 
 実CLIの追加確認は初回で成功した。Latin-1のcafé関数内の負の添字について、元span85/2、反復planの同一候補、baselineと2workerの実バイトを照合した。strict/diverseのoffset1・top2は異なる期待ID順となり、metrics有無で候補が一致し、sidecarのrun_id・discovered4・executed2を確認した。元ソースと保存planは不変だった。CPython3.14.7、debug実行ファイルSHA-256は0809a065cc63f73785fdca88bf0a9c8709d91035b6975a6d781a27f3dc009db5。独立したBLAKE3の再計算は行っていない。
 
 ローカル証跡は/private/tmp/hoimin-cumulative-rust-tests-ready.log、/private/tmp/hoimin-cumulative-clippy.log、/private/tmp/hoimin-cumulative-smoke-results/result.jsonに保存した。統合時のレビューは既存522回のrelease計測を再実行したという意味ではない。
+
+
+### contractsビルドのディスク圧迫への対応
+
+統合後のPR535/537/539/541で、contractsのCLIテスト実行前に異なる実行ファイルのlinkがBus errorで停止した。PR539は直前の空き容量34MB、PR541は77MBをrunnerが報告した。他2件の個別原因まで証明したとは扱わない。初回ログは/private/tmp/pr{535,537,539,541}-integration-contracts-failure.logと/private/tmp/contracts-integration-disk-failures.jsonに保持し、同じ失敗を繰り返す再実行は行わなかった。
+
+レビュー1:失敗時点と複数runnerの容量を比較し、test assertionではなくbuild資源への対応として範囲を限定した。レビュー2:contractsジョブだけにCARGO_PROFILE_DEV_DEBUG=0、CARGO_PROFILE_TEST_DEBUG=0、CARGO_INCREMENTAL=0、CARGO_BUILD_JOBS=2を追加し、両cargo testコマンドとfeaturesが変更前と等しいことを構造比較で確認した。debug情報の抑制はdebug assertionの無効化ではない。別担当もこの区別とtest filterの追加がないことを確認した。レビュー3:CI構成28件が成功し、先行535から全後続PRへ通常mergeで同じ修正を適用した。CI再実行の結果を確認するまで解消済みとは扱わない。
