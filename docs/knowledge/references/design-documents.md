@@ -5,6 +5,12 @@ description: docs/superpowers/specs内の全Markdownを先頭見出しと出典�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-461-lazy
+  resource: ../../superpowers/specs/2026-09-14-issue-461-lazy-candidates-design.md
+  working_tree: clean
+  revision: 38ee010b2e0768d82c37488075275edc34f8293b
+  sha256: 683834f572abb49a7d2a5fc7c36890ce0ac57be4daebcb62467af5391edd1dc1
+
 - id: issue-475-index
   resource: ../../superpowers/specs/2026-09-14-issue-475-range-normalization-design.md
   sha256: a73a0b51c51b10d1d958585acbc0455d3c9d18ec340ef6acec053c2c5427081f
@@ -1221,6 +1227,12 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 [^issue-515]: [Issue515 class directive design](../../superpowers/specs/2026-09-12-issue-515-class-directives-design.md)。
 [^issue-514]: [Issue514 comprehension effect order design](../../superpowers/specs/2026-09-12-issue-514-comprehension-effect-order-design.md)。
 [^issue-516]: [Issue 516: Share active session ownership-tree identities](../../superpowers/specs/2026-09-12-issue-516-session-ownership-identities-design.md)。
+
+# Issue #461 の設計
+
+- [Issue #461: Lazy candidate strings](../../superpowers/specs/2026-09-14-issue-461-lazy-candidates-design.md) - 未選択候補のreplacementとoriginalの生成を選択判定後へ遅延する。[^issue-461-lazy]
+
+[^issue-461-lazy]: [設計原文](../../superpowers/specs/2026-09-14-issue-461-lazy-candidates-design.md)。
 
 # 2026-09-14 の追加
 
