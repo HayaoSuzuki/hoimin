@@ -5,14 +5,20 @@ description: 決定的な回帰ゲートとrelease計測、未統合の依存、
 status: draft
 catalog_revision: 165a2d284a1af92eb02ffd214ba8c0070c2f3808
 sources:
+- id: integration
+  resource: ../../performance/2026-09-14-integration-check.md
+  working_tree: untracked
+  sha256: e11e40961e7b00a5e7781f87b0bec36123798830da6d9ebc3e2731a64cd62fce
 - id: guide
   resource: ../../performance/README.md
-  working_tree: untracked
-  sha256: f87afed9e510f92dfdab421fa58a98d2203fa0773dd9d2a7594d2f0f919454db
+  working_tree: modified
+  revision: 779fb2b0f571d4ec31f9196f20cdf0b9a16a2874
+  sha256: 58c15d85616eaecc2cc121d369b21bff07f52ae53b4772d15fffd7290296f622
 - id: registry
   resource: ../../performance/shapes.json
-  working_tree: untracked
-  sha256: 42baf57b596ce5435bd2bc5dbd25607214b3fcd17cdc72ea747913dbf9c20da9
+  working_tree: modified
+  revision: 779fb2b0f571d4ec31f9196f20cdf0b9a16a2874
+  sha256: 274cfe58564d91b9a911443c35848011a19f9d938d31989be68b25eb901f5292
 - id: design
   resource: ../../superpowers/specs/2026-09-14-issue-491-performance-shapes-design.md
   working_tree: untracked
@@ -41,3 +47,9 @@ sources:
 [^registry]: [shapes.json](../../performance/shapes.json)。
 [^design]: [2026-09-14-issue-491-performance-shapes-design.md](../../superpowers/specs/2026-09-14-issue-491-performance-shapes-design.md)。
 [^review]: [2026-09-14-issue-491-performance-shapes-review.md](../../superpowers/reports/2026-09-14-issue-491-performance-shapes-review.md)。
+
+# 個別修正の統合確認
+
+全10件のRust差分をローカルで組み合わせ、追加テスト46件の欠落がないことと、全workspace試験1,814件の成功を確認した。mainへのマージは行っておらず、通常ゲートのpendingをこの結果だけでactiveには変更しない。[^integration]
+
+[^integration]: [2026-09-14-integration-check.md](../../performance/2026-09-14-integration-check.md)。

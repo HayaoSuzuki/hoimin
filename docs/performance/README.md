@@ -44,3 +44,7 @@ GitHub Actions の `Performance measurements` は手動実行専用。選んだr
 ## Leanの証拠
 
 台帳の `lean` から既存のモデル・証明・生成corpus・Rust adapterをたどれる。生成器のbuild、`--sensitivity`、`--check` をresource guard付きで順番に実行した後、`lean-target-reads` gateで実装の対象読取り数を照合する。caseはLeanで定義し、JSONLを手編集しない。既存の0/1/上限/overflowケースはprefixと順序を検証し、CLI全体の定数メモリやnative stackを保証しない。新しいbinding索引やwrite回数のモデル対応は、各観測点と表現上限を確認して追加する作業として残る。
+
+## 個別修正を組み合わせた確認
+
+[2026-09-14の統合確認](2026-09-14-integration-check.md) に、10件のPRのRust差分を組み合わせたrevision、競合解消、全workspace試験の結果を記録した。台帳のpending gateには実際のPRとテスト名を登録している。統合用worktreeでの成功と、mainへ統合された状態は区別する。

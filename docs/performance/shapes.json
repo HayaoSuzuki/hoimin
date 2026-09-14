@@ -313,7 +313,12 @@
       "status": "pending",
       "issue": "https://github.com/tokyogas-tech/hoimin/issues/453",
       "promotion": "Merge the issue PR, register its actual counter test args, run gate, then set active.",
-      "metric": "operations"
+      "metric": "operations",
+      "dependency_pr": "https://github.com/tokyogas-tech/hoimin/pull/533",
+      "expected_tests": [
+        "target::fs::tests::exact_file_prunes_unrelated_subtrees_and_records",
+        "target::fs::tests::many_exact_files_use_one_scope_key_lookup_per_visited_entry"
+      ]
     },
     {
       "id": "context-builds",
@@ -339,7 +344,8 @@
       "issue": "https://github.com/tokyogas-tech/hoimin/issues/461",
       "promotion": "Merge the issue PR, register its actual counter test args, run gate, then set active.",
       "metric": "operations",
-      "pull_request": "https://github.com/tokyogas-tech/hoimin/pull/529"
+      "dependency_pr": "https://github.com/tokyogas-tech/hoimin/pull/529",
+      "expected_test": "analyzer::rust::rust_tests::unselected_collection_literals_build_no_large_candidate_strings"
     },
     {
       "id": "spool-writes",
@@ -374,26 +380,33 @@
       "issue": "https://github.com/tokyogas-tech/hoimin/issues/475",
       "promotion": "Merge the issue PR, register its actual counter test args, run gate, then set active.",
       "metric": "operations",
-      "pull_request": "https://github.com/tokyogas-tech/hoimin/pull/528",
       "expected_tests": [
         "target::tests::explicit_ranges_are_normalized_once_per_file",
         "target::tests::explicit_symbols_are_normalized_once_per_file",
         "target::tests::explicit_groups_are_normalized_once_for_each_file"
-      ]
+      ],
+      "dependency_pr": "https://github.com/tokyogas-tech/hoimin/pull/528"
     },
     {
       "id": "annotation-copies",
       "status": "pending",
       "issue": "https://github.com/tokyogas-tech/hoimin/issues/479",
       "promotion": "Merge the issue PR, register its actual counter test args, run gate, then set active.",
-      "metric": "operations"
+      "metric": "operations",
+      "dependency_pr": "https://github.com/tokyogas-tech/hoimin/pull/531",
+      "expected_test": "analyzer::rust::rust_tests::annotation_import_snapshots_are_not_retained_per_site"
     },
     {
       "id": "binding-history",
       "status": "pending",
       "issue": "https://github.com/tokyogas-tech/hoimin/issues/482",
       "promotion": "Merge the issue PR, register its actual counter test args, run gate, then set active.",
-      "metric": "operations"
+      "metric": "operations",
+      "dependency_pr": "https://github.com/tokyogas-tech/hoimin/pull/532",
+      "expected_tests": [
+        "analyzer::rust::ordered_history_tests::preprocessing_and_monotonic_lookups_have_bounded_work",
+        "analyzer::rust::ordered_history_tests::alternating_offsets_still_have_logarithmic_lookups"
+      ]
     }
   ],
   "lean": {
