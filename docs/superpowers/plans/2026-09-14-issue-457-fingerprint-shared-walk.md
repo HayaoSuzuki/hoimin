@@ -7,7 +7,7 @@ Spec: ../specs/2026-09-14-issue-457-fingerprint-shared-walk-design.md
 - [x] Add regression tests for one walk, equivalent records and argument-ordered failures. The issue's 1/10/30-pattern measurement is the performance RED; the previous implementation structurally called `resolve_one` once per pattern.
 - [x] Replace per-pattern `resolve_one` traversal with compiled pattern states and one union traversal.
 - [x] Run focused tests, release measurement, formatting, Clippy and workspace tests.
-- [ ] Record implementation, test and PR reviews, commit, push and open the issue PR.
+- [x] Record implementation, test and PR reviews, commit, push and open the issue PR.
 
 ## Plan self-review
 
@@ -50,3 +50,9 @@ The first full-suite attempt failed seven `analysis_depth` cases because the new
 1. Reproduced the cross-pattern negation defect: `*.toml`, then `!a.toml` incorrectly reported the first positive pattern unmatched. The union now contains positive patterns only; independent matchers retain negative semantics.
 2. Replaced the returned literal traversal count with an increment next to the actual `WalkBuilder::build` call and expanded the gate across 0/1/2/4 patterns and two unrelated-tree sizes.
 3. Rechecked traversal errors. Walker construction/iteration errors still fail the active valid prefix immediately, matching the former first-pattern traversal for the paths selected by its positive union. The selected-entry unsupported errors remain stored per matching pattern so argument order wins over a deferred invalid glob. Native unreadable-directory ordering is platform-dependent and is not presented as a deterministic performance assertion.
+
+## Publication and CI evidence
+
+- Commit `4446105e26478e4c4ee8b7a11e6635afe437c15a` was pushed as `perf/issue-457-fingerprint-shared-walk` and published in PR [#522](https://github.com/tokyogas-tech/hoimin/pull/522).
+- Quality, MSRV, Ubuntu Rust, Lean audit, randomized-order Rust, core dependency purity, wheel smoke and Linux best-effort jobs passed for that head. The hard-cgroup job was skipped by workflow policy.
+- The first contracts job failed in the existing timing-sensitive `shell::tests::blocked_monitor_join_defers_both_roots_without_recursive_cleanup` test. Its rerun passed without a source change; the fingerprint implementation and focused regression were not named in the failure.
