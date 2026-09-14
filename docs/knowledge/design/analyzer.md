@@ -5,6 +5,10 @@ description: 構文・名前解決・変更するバイト範囲・候補保持�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-482
+  resource: ../../superpowers/specs/2026-09-14-issue-482-name-history-index-design.md
+  working_tree: untracked
+  sha256: d561460521f12160b3598596dc65d3e3e3898455d9fa93c22b6fdee21ac89f91
 - id: issue-513
   resource: ../../superpowers/specs/2026-09-12-issue-513-parser-recursion-design.md
   working_tree: untracked
@@ -195,3 +199,9 @@ ASTの深さ検査より前に、Ruffによる構文解析がスタックを使�
 [^issue-513]: [2026-09-12-issue-513-parser-recursion-design.md](../../superpowers/specs/2026-09-12-issue-513-parser-recursion-design.md)。
 [^issue-515]: [Issue515 class directive design](../../superpowers/specs/2026-09-12-issue-515-class-directives-design.md)。
 [^issue-514]: [Issue514 comprehension effect order design](../../superpowers/specs/2026-09-12-issue-514-comprehension-effect-order-design.md)。
+
+# 名前束縛履歴の照会（Issue #482）
+
+module/classの名前束縛eventはvisitorの挿入順を意味順として保持する。各名前の履歴をoffset範囲と累積解決変換を持つ木へ構築し、通常のsource順履歴では参照位置までの状態を対数node訪問で求める。非単調offsetと同一offsetでも左右を挿入順に合成し、従来の全走査foldと一致させる。[^issue-482]
+
+[^issue-482]: [Issue #482: Name history index](../../superpowers/specs/2026-09-14-issue-482-name-history-index-design.md)。

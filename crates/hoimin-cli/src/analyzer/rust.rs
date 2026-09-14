@@ -652,6 +652,252 @@ enum BindingEffect {
     Unknown,
 }
 
+#[derive(Clone, Copy)]
+struct ResolutionTransform([NameResolution; 3]);
+
+impl ResolutionTransform {
+    fn identity() -> Self {
+        Self([
+            NameResolution::DefinitelyBuiltin,
+            NameResolution::Shadowed,
+            NameResolution::Unknown,
+        ])
+    }
+
+    fn effect(effect: BindingEffect) -> Self {
+        Self([
+            apply_binding_effect(NameResolution::DefinitelyBuiltin, effect),
+            apply_binding_effect(NameResolution::Shadowed, effect),
+            apply_binding_effect(NameResolution::Unknown, effect),
+        ])
+    }
+
+    fn apply(self, resolution: NameResolution) -> NameResolution {
+        self.0[resolution_index(resolution)]
+    }
+
+    fn then(self, next: Self) -> Self {
+        Self([
+            next.apply(self.0[0]),
+            next.apply(self.0[1]),
+            next.apply(self.0[2]),
+        ])
+    }
+}
+
+#[derive(Default)]
+struct OrderedBindingHistory {
+    events: Vec<(usize, BindingEffect)>,
+    cumulative: Vec<(usize, NameResolution)>,
+    #[cfg(test)]
+    build_updates: Cell<usize>,
+    #[cfg(test)]
+    query_comparisons: Cell<usize>,
+}
+
+impl OrderedBindingHistory {
+    fn push(&mut self, event: (usize, BindingEffect)) {
+        self.events.push(event);
+    }
+
+    fn finalize(&mut self) {
+        if self.events.is_empty() {
+            return;
+        }
+        let leaf_count = self.events.len().next_power_of_two();
+        let mut tree = vec![ResolutionTransform::identity(); leaf_count * 2];
+        let mut activation_order = (0..self.events.len()).collect::<Vec<_>>();
+        activation_order.sort_by_key(|index| self.events[*index].0);
+        let mut cursor = 0;
+        while cursor < activation_order.len() {
+            let offset = self.events[activation_order[cursor]].0;
+            while cursor < activation_order.len()
+                && self.events[activation_order[cursor]].0 == offset
+            {
+                let event_index = activation_order[cursor];
+                let mut node = leaf_count + event_index;
+                tree[node] = ResolutionTransform::effect(self.events[event_index].1);
+                #[cfg(test)]
+                self.build_updates
+                    .set(self.build_updates.get().saturating_add(1));
+                while node > 1 {
+                    node /= 2;
+                    tree[node] = tree[node * 2].then(tree[node * 2 + 1]);
+                    #[cfg(test)]
+                    self.build_updates
+                        .set(self.build_updates.get().saturating_add(1));
+                }
+                cursor += 1;
+            }
+            self.cumulative
+                .push((offset, tree[1].apply(NameResolution::DefinitelyBuiltin)));
+        }
+    }
+
+    fn resolve_at(&self, offset: usize) -> NameResolution {
+        let mut left = 0;
+        let mut right = self.cumulative.len();
+        while left < right {
+            let middle = left + (right - left) / 2;
+            #[cfg(test)]
+            self.query_comparisons
+                .set(self.query_comparisons.get().saturating_add(1));
+            if self.cumulative[middle].0 <= offset {
+                left = middle + 1;
+            } else {
+                right = middle;
+            }
+        }
+        left.checked_sub(1)
+            .map_or(NameResolution::DefinitelyBuiltin, |index| {
+                self.cumulative[index].1
+            })
+    }
+}
+
+fn resolution_index(resolution: NameResolution) -> usize {
+    match resolution {
+        NameResolution::DefinitelyBuiltin => 0,
+        NameResolution::Shadowed => 1,
+        NameResolution::Unknown => 2,
+    }
+}
+
+fn apply_binding_effect(resolution: NameResolution, effect: BindingEffect) -> NameResolution {
+    match effect {
+        BindingEffect::Bind => NameResolution::Shadowed,
+        BindingEffect::MaybeBind => match resolution {
+            NameResolution::Shadowed => NameResolution::Shadowed,
+            NameResolution::DefinitelyBuiltin | NameResolution::Unknown => NameResolution::Unknown,
+        },
+        BindingEffect::Unknown => NameResolution::Unknown,
+    }
+}
+
+#[cfg(test)]
+mod ordered_history_tests {
+    use super::{BindingEffect, NameResolution, OrderedBindingHistory};
+
+    fn reference_fold(events: &[(usize, BindingEffect)], offset: usize) -> NameResolution {
+        let mut resolution = NameResolution::DefinitelyBuiltin;
+        for &(event_offset, effect) in events {
+            if event_offset > offset {
+                continue;
+            }
+            resolution = match (resolution, effect) {
+                (_, BindingEffect::Bind) | (NameResolution::Shadowed, BindingEffect::MaybeBind) => {
+                    NameResolution::Shadowed
+                }
+                (_, BindingEffect::MaybeBind | BindingEffect::Unknown) => NameResolution::Unknown,
+            };
+        }
+        resolution
+    }
+
+    #[test]
+    fn indexed_history_matches_insertion_order_reference_at_every_boundary() {
+        let cases = [
+            vec![
+                (8, BindingEffect::Unknown),
+                (2, BindingEffect::Bind),
+                (8, BindingEffect::MaybeBind),
+                (5, BindingEffect::Unknown),
+                (2, BindingEffect::MaybeBind),
+            ],
+            vec![
+                (4, BindingEffect::MaybeBind),
+                (4, BindingEffect::Bind),
+                (4, BindingEffect::Unknown),
+            ],
+            vec![
+                (4, BindingEffect::Unknown),
+                (4, BindingEffect::Bind),
+                (4, BindingEffect::MaybeBind),
+            ],
+        ];
+        for events in cases {
+            let mut history = OrderedBindingHistory::default();
+            for event in &events {
+                history.push(*event);
+            }
+            history.finalize();
+            for offset in 0..=10 {
+                assert_eq!(history.resolve_at(offset), reference_fold(&events, offset));
+            }
+        }
+    }
+
+    #[test]
+    fn generated_histories_match_the_independent_reference_fold() {
+        let mut state = 0x9e37_79b9_u32;
+        for length in 0..128 {
+            let mut events = Vec::with_capacity(length);
+            for _ in 0..length {
+                state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                let effect = match state % 3 {
+                    0 => BindingEffect::Bind,
+                    1 => BindingEffect::MaybeBind,
+                    _ => BindingEffect::Unknown,
+                };
+                events.push(((state as usize >> 8) % 32, effect));
+            }
+            let mut history = OrderedBindingHistory::default();
+            for event in &events {
+                history.push(*event);
+            }
+            history.finalize();
+            for offset in 0..=32 {
+                assert_eq!(history.resolve_at(offset), reference_fold(&events, offset));
+            }
+        }
+    }
+
+    #[test]
+    fn preprocessing_and_monotonic_lookups_have_bounded_work() {
+        let count = 4_096;
+        let mut history = OrderedBindingHistory::default();
+        for offset in 0..count {
+            history.push((offset * 2, BindingEffect::Bind));
+        }
+        history.finalize();
+        assert_eq!(history.events.len(), count);
+        assert_eq!(history.cumulative.len(), count);
+        assert_eq!(
+            history.build_updates.get(),
+            count * (count.ilog2() as usize + 1)
+        );
+
+        for offset in 0..count {
+            assert_eq!(history.resolve_at(offset * 2 + 1), NameResolution::Shadowed);
+        }
+        let comparison_limit = count * (count.ilog2() as usize + 1);
+        assert!(history.query_comparisons.get() <= comparison_limit);
+    }
+
+    #[test]
+    fn alternating_offsets_still_have_logarithmic_lookups() {
+        let count = 4_096;
+        let mut history = OrderedBindingHistory::default();
+        for index in 0..count {
+            let offset = if index % 2 == 0 {
+                index
+            } else {
+                count * 2 - index
+            };
+            history.push((offset, BindingEffect::MaybeBind));
+        }
+        history.finalize();
+        for offset in 0..count * 2 {
+            assert_eq!(
+                history.resolve_at(offset),
+                reference_fold(&history.events, offset)
+            );
+        }
+        let comparison_limit = count * 2 * (count.ilog2() as usize + 1);
+        assert!(history.query_comparisons.get() <= comparison_limit);
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 struct ScopeId(usize);
 
@@ -662,7 +908,7 @@ struct NameScope {
     possible_bindings: HashSet<String>,
     globals: HashSet<String>,
     nonlocals: HashSet<String>,
-    ordered: HashMap<String, Vec<(usize, BindingEffect)>>,
+    ordered: HashMap<String, OrderedBindingHistory>,
     wildcard: bool,
 }
 
@@ -697,6 +943,11 @@ impl NameResolutionIndex {
     fn from_module(module: &ModModule) -> Self {
         let mut builder = NameResolutionBuilder::new();
         builder.visit_body(&module.body);
+        for scope in &mut builder.index.scopes {
+            for history in scope.ordered.values_mut() {
+                history.finalize();
+            }
+        }
         builder.index
     }
 
@@ -785,25 +1036,12 @@ impl NameResolutionIndex {
     }
 
     fn resolve_ordered_at(scope: &NameScope, name: &str, offset: usize) -> NameResolution {
-        let mut resolution = NameResolution::DefinitelyBuiltin;
-        if let Some(events) = scope.ordered.get(name) {
-            for (event_offset, effect) in events {
-                if *event_offset > offset {
-                    continue;
-                }
-                resolution = match effect {
-                    BindingEffect::Bind => NameResolution::Shadowed,
-                    BindingEffect::MaybeBind => match resolution {
-                        NameResolution::Shadowed => NameResolution::Shadowed,
-                        NameResolution::DefinitelyBuiltin | NameResolution::Unknown => {
-                            NameResolution::Unknown
-                        }
-                    },
-                    BindingEffect::Unknown => NameResolution::Unknown,
-                };
-            }
-        }
-        resolution
+        scope
+            .ordered
+            .get(name)
+            .map_or(NameResolution::DefinitelyBuiltin, |history| {
+                history.resolve_at(offset)
+            })
     }
 
     fn resolve_parent(&self, parent: Option<ScopeId>, name: &str, offset: usize) -> NameResolution {
