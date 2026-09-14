@@ -5,6 +5,10 @@ description: 構文・名前解決・変更するバイト範囲・候補保持�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-471
+  resource: ../../superpowers/specs/2026-09-14-issue-471-negative-neighbors-design.md
+  working_tree: untracked
+  sha256: c6b6af9099cdb3e6e15b504fd5cee6349e8906658f036a4775f41d02973ac110
 - id: issue-482
   resource: ../../superpowers/specs/2026-09-14-issue-482-name-history-index-design.md
   working_tree: untracked
@@ -235,3 +239,9 @@ module/classの名前束縛eventはvisitorの挿入順を意味順として保�
 演算子や対象選択で除外できる候補は、元ソース範囲の複製より先に判定する。list/tuple literalのように置換生成自体が入力範囲に比例する場合は、演算子選択をhelper呼出し前に確認する。この省略は現在のnodeの候補生成に限り、子nodeの探索は継続する。候補上限は保持数を制約するが、解析中の全確保量を制約しない。[^issue-461]
 
 [^issue-461]: [Issue #461: Lazy candidate strings](../../superpowers/specs/2026-09-14-issue-461-lazy-candidates-design.md)。
+
+# 負の添字とslice境界（Issue #471）
+
+単項負号と十進整数の組を境界値演算子の対象へ追加する。負号を含むAST範囲全体を置換し、slice stepのゼロ候補を除く。整数の絶対値はu64の最大値以下に限定し、範囲を超える入力と隣接値を除外する。既存の符号なしゼロは+1だけを保持し、`-0`は+1と-1を生成する。型注釈・代入先・削除対象の除外は維持する。[^issue-471]
+
+[^issue-471]: [Issue #471: Negative index and slice neighbors](../../superpowers/specs/2026-09-14-issue-471-negative-neighbors-design.md)。

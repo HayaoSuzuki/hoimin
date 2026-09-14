@@ -290,8 +290,18 @@ opt-in type IDs, and five opt-in risky exception IDs.
 | Bitwise operators | `bitwise_and_or`, `bitwise_shift` | `&` ↔ `\|`; `<<` ↔ `>>` |
 | Additional operator syntax | `binary_power`, `binary_matmul`, `augmented_power`, `augmented_matmul`, `bitwise_xor`, `bitwise_invert`, `augmented_bitwise_and_or`, `augmented_bitwise_xor`, `augmented_bitwise_shift` | `**` and `@` become `*`; `**=` and `@=` become `*=`; `^` becomes `&`; `~` becomes unary `+`; `&=`/`\|=` and `<<=`/`>>=` exchange; `^=` becomes `&=` |
 | Standard-library operator functions | `operator_function` | Mutates trusted Python 3.14 `operator` callable references across comparison, arithmetic, bitwise, unary, truth, identity, in-place, and sequence operations; also covers `contains`, `getitem`, `setitem`, `delitem`, and `call` |
-| Boundary operators | `structure_index_neighbor`, `structure_slice_neighbor` | adjacent plain-decimal index and slice-bound values |
+| Boundary operators | `structure_index_neighbor`, `structure_slice_neighbor` | adjacent plain-decimal index and slice-bound values, including unary-minus integers |
 | Exception types | `exception_type_pair` | curated pairs such as `ValueError` ↔ `TypeError` in simple `except`/`except*` clauses and supported `raise` expressions |
+
+Boundary operators recognize ASCII decimal digits with an optional unary minus,
+including grouped or multiline spellings such as `items[(-1)]` and `items[-(1)]`.
+`items[-1]` and `items[:-1]` produce `0` and `-2`; `items[::-1]` produces only
+`-2`, because slice-step replacements never contain zero. `-2` produces `-1`
+and `-3`. The magnitude must fit `u64` (at most `18446744073709551615`);
+larger Python integers and neighbors outside that range are skipped. Unsigned
+`0` retains its existing `1` candidate; `-0` produces `1` and `-1`. Hexadecimal,
+underscored, float, unary-plus, repeated-sign and computed expressions are
+excluded. Type annotations and store/delete subscripts remain excluded.
 
 Boolean and complex-separator mapping-pattern key edits that would duplicate a
 sibling literal key are excluded, including Python equality such as `True == 1`. Valid key,
