@@ -9,7 +9,7 @@ sources:
   resource: ../../superpowers/reports/2026-09-14-issue-490-boundary-contracts-review.md
   revision: 7d5bdc5a643add4ba55e8541fa59a069d0ff5c5e
   working_tree: untracked
-  sha256: 5e912d129ca2af7858eef10190140e009abd1b9aa0f6b4c945b92b1feadac46d
+  sha256: 38186ac141705f0f2475524851b61dd98696b788fedc995a78c6e510f52e1f5e
 - id: issue-467-review
   resource: ../../superpowers/reports/2026-09-14-issue-467-jsonl-progress-review.md
   revision: 8b33167a049e3cae0fc05e96ccf2253c660b7023

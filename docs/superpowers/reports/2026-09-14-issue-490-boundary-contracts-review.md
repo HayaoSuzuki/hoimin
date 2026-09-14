@@ -111,3 +111,25 @@ OKF validation covers 20 pages, 775 local links, current issue-490 hashes,
 source footnotes and complete design/report indexes. Three report rows remain
 unexecuted. Clippy also flagged the single fixture length after stronger
 assertions; a local allowance keeps this one cross-command scenario readable.
+
+## CI classification follow-up
+
+The first PR #543 wheel job failed the existing exhaustive CI-job toolchain
+contract: `boundary-contracts` was absent from `REPOSITORY_RUST_JOBS`.
+This was an introduced test-registration omission, not infrastructure noise.
+Reproduced that failure locally before adding the new job to the repository
+Rust-toolchain class; all existing toolchain assertions remain active.
+
+Three follow-up review passes: (1) inspected the failed assertion and checked
+that this job installs the repository toolchain, not MSRV/nightly;
+(2) preserved exhaustive classification and ran the whole Python suite to
+catch interactions beyond the new runner's focused tests;
+(3) recorded the original CI failure separately and refreshed OKF report
+hashes. The first whole-suite local run had four unchanged resource-guard
+failures because sandbox process observation was blocked (exit 126); the
+suite was rerun with process observation enabled. No production Python
+behavior changed in this follow-up, so the prior selected mutation probe
+remains the sensitivity evidence.
+
+Whole Python suite after classification fix: 89 tests pass with process
+observation enabled. CI for the follow-up commit is still pending.
