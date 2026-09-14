@@ -5,6 +5,10 @@ description: 構文・名前解決・変更するバイト範囲・候補保持�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-489
+  resource: ../../superpowers/specs/2026-09-14-issue-489-valid-python-corpus-design.md
+  working_tree: untracked
+  sha256: 47a53d5cee6dd179baf0bca4b3a0cd3ae8892873986ec9a2fd70f8a7ce37c1dc
 - id: issue-471
   resource: ../../superpowers/specs/2026-09-14-issue-471-negative-neighbors-design.md
   working_tree: untracked
@@ -271,6 +275,11 @@ module/classの名前束縛eventはvisitorの挿入順を意味順として保�
 
 [^issue-461]: [Issue #461: Lazy candidate strings](../../superpowers/specs/2026-09-14-issue-461-lazy-candidates-design.md)。
 
+# 有効Pythonを起点とする候補契約（Issue #489）
+
+CPython3.14で元入力をコンパイルしてから、宣言済みの適格・不適格位置とRust解析器・公開planの候補を照合する。各候補には共有validator、独立した位置計算、1件ずつ適用した結果のCPythonコンパイルを適用する。scope・key・spanの小さいLean契約を再利用し、producer間で未観測の組合せは未検証として出力する。[^issue-489]
+
+[^issue-489]: [Issue #489: Valid Python candidate contract corpus](../../superpowers/specs/2026-09-14-issue-489-valid-python-corpus-design.md)。
 # 負の添字とslice境界（Issue #471）
 
 単項負号と十進整数の組を境界値演算子の対象へ追加する。負号を含むAST範囲全体を置換し、slice stepのゼロ候補を除く。整数の絶対値はu64の最大値以下に限定し、範囲を超える入力と隣接値を除外する。既存の符号なしゼロは+1だけを保持し、`-0`は+1と-1を生成する。型注釈・代入先・削除対象の除外は維持する。[^issue-471]

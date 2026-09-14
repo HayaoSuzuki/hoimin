@@ -107,6 +107,7 @@ LEAN_CORPUS_BY_EXECUTABLE = {
     "generate_disk_guard": "corpus/disk-guard-lifecycle.jsonl",
     "generate_cleanup_capability": "corpus/cleanup-capability.jsonl",
     "generate_comprehension_bindings": "corpus/comprehension-bindings.jsonl",
+    "generate_valid_python": "corpus/valid-python.jsonl",
 }
 LEAN_SENSITIVITY_EXECUTABLES = {
     name

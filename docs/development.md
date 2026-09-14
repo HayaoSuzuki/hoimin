@@ -142,9 +142,9 @@ New cases begin in report mode while their model/implementation boundary is
 reviewed. Promoted strict cases are blocking; infrastructure errors always
 fail.
 
-The Linux `Lean audit` CI job is configured to compile all 121 package modules
-serially before building the aggregate library. It then runs all 29 corpus
-freshness checks and the 26 generators that expose sensitivity gates. The
+The Linux `Lean audit` CI job is configured to compile all 126 package modules
+serially before building the aggregate library. It then runs all 31 corpus
+freshness checks and the 28 generators that expose sensitivity gates. The
 workflow is the canonical list of package targets, corpus paths, and gate
 commands; update its contract test whenever a library module or `lakefile.toml`
 executable changes.
@@ -713,6 +713,33 @@ prove how Python loaders resolve imports. The setting covers path-only `.pth`
 regular packages when Python honors PYTHONPATH, not arbitrary editable finders,
 custom loaders, or invocations with `-E`/`-I`.
 
+## Valid Python candidate corpus
+
+`formal/HoiminOracle/ValidPythonAuditMain.lean` owns the seed489 fixtures and
+eligible/ineligible sites. The `valid_python_corpus` integration test compiles
+original bytes with CPython3.14 before comparing the direct Rust analyzer with
+the real CLI plan. It validates every emitted candidate, checks independent
+physical-line/Unicode locations, and compiles each one-candidate replacement.
+Runtime probes check representative bindings and protocol behavior.
+
+```console
+HOIMIN_OPERATOR_TEST_PYTHON=/path/to/python3.14 \
+  cargo test -p hoimin-cli --test valid_python_corpus valid_python_ -- --nocapture
+```
+
+The output names every fixture/operator, seed, known-risk triple and uncovered
+axis pair. Register every new canonical operator in
+`crates/hoimin-cli/tests/fixtures/valid-python-operators.json`; a deferred entry
+must explain why it remains outside this bounded corpus. A registered negative
+fixture is not evidence of positive coverage for that operator. The producer
+controls and required-position gates prevent an all-empty corpus from passing.
+
+Regenerate only through `generate_valid_python`; use the existing 30-second,
+2GiB Lean resource guard for output, freshness and sensitivity commands. The
+[correspondence worksheet](superpowers/reports/2026-09-14-issue-489-correspondence-worksheet.md)
+explains normalized scope/key premises, public observations and model limits.
+This corpus supplements the focused operator regressions and existing Lean
+adapters; it does not relabel their internal-fixture or model-only cases.
 ### Cross-boundary contract replay
 
 `tests/fixtures/boundary-contracts.json` connects six boundaries to exact tests.

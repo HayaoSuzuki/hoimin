@@ -5,6 +5,15 @@ description: docs/auditsとdocs/superpowers/reports内の全Markdownを追跡状
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-489-worksheet
+  resource: ../../superpowers/reports/2026-09-14-issue-489-correspondence-worksheet.md
+  working_tree: untracked
+  sha256: bccdcb3cd771f72266a716fa9bad8c8521d4bfb9180d36d44635709360d00137
+- id: issue-489-reports
+  resource: ../../superpowers/reports/2026-09-14-issue-489-valid-python-corpus.md
+  revision: fb8fabf8af84a1ecbdf7adc820be6fbb8ab40d25
+  working_tree: modified
+  sha256: b9afa31b3b0bfa7e6239aaae2b4de77974ee60723c37350cf87412ef6e404bf8
 - id: issue-464-review
   resource: ../../superpowers/reports/2026-09-14-issue-464-baseline-output-review.md
   working_tree: modified
@@ -468,6 +477,8 @@ sources:
 
 | 原文 | 先頭見出し | 作成時の状態 |
 | --- | --- | --- |
+| [2026-09-14-issue-489-correspondence-worksheet.md](../../superpowers/reports/2026-09-14-issue-489-correspondence-worksheet.md) | Issue #489: Case correspondence worksheet [^issue-489-worksheet] | 未追跡（参照時点） |
+| [2026-09-14-issue-489-valid-python-corpus.md](../../superpowers/reports/2026-09-14-issue-489-valid-python-corpus.md) | Issue #489: Valid Python corpus review and evidence [^issue-489-reports] | 未追跡（参照時点） |
 | [2026-09-14-issue-471-negative-neighbors.md](../../superpowers/reports/2026-09-14-issue-471-negative-neighbors.md) | Issue #471: Negative neighbor implementation and review [^issue-471-reports] | 未追跡（参照時点） |
 | [2026-09-14-issue-466-revalidation.md](../../superpowers/reports/2026-09-14-issue-466-revalidation.md) | Issue 466 retirement revalidation and self-review [^issue-466-revalidation] | 未追跡 |
 | [2026-09-14-issue-467-jsonl-progress-review.md](../../superpowers/reports/2026-09-14-issue-467-jsonl-progress-review.md) | Issue 467 JSONL progress implementation and review [^issue-467-review] | 未追跡 |
@@ -695,6 +706,9 @@ sources:
 [^issue-479-merge-review]: [2026-09-14-issue-479-self-review.md](../../superpowers/reports/2026-09-14-issue-479-self-review.md)。
 [^issue-482-merge-review]: [2026-09-14-issue-482-self-review.md](../../superpowers/reports/2026-09-14-issue-482-self-review.md)。
 
+[^issue-489-reports]: [2026-09-14-issue-489-valid-python-corpus.md](../../superpowers/reports/2026-09-14-issue-489-valid-python-corpus.md)。
+
+[^issue-489-worksheet]: [2026-09-14-issue-489-correspondence-worksheet.md](../../superpowers/reports/2026-09-14-issue-489-correspondence-worksheet.md)。
 ## Issue #464 の検証
 
 [baselineログ出力のレビュー](../../superpowers/reports/2026-09-14-issue-464-baseline-output-review.md):各工程3回のレビューと実CLI・出力制限・cleanup検証。[^issue-464-review]
