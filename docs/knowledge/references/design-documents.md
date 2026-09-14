@@ -5,6 +5,10 @@ description: docs/superpowers/specs内の全Markdownを先頭見出しと出典�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-453-index
+  resource: ../../superpowers/specs/2026-09-14-issue-453-scoped-discovery-design.md
+  sha256: cce7701d3552cc3887c8129b01589736e6defd31389db98de76ac32b619527aa
+
 - id: issue-482-index
   resource: ../../superpowers/specs/2026-09-14-issue-482-name-history-index-design.md
   working_tree: untracked
@@ -814,6 +818,7 @@ sources:
 
 | 原文 | 先頭見出し | 作成時の状態 |
 | --- | --- | --- |
+| [2026-09-14-issue-453-scoped-discovery-design.md](../../superpowers/specs/2026-09-14-issue-453-scoped-discovery-design.md) | Issue 453: Scope discovery for exact selectors [^issue-453-index] | 未追跡 |
 | [2026-09-14-issue-475-range-normalization-design.md](../../superpowers/specs/2026-09-14-issue-475-range-normalization-design.md) | Issue 475: Normalize explicit selector groups once [^issue-475-index] | 未追跡 |
 | [2026-09-14-issue-474-selector-index-design.md](../../superpowers/specs/2026-09-14-issue-474-selector-index-design.md) | Issue 474: Explicit selector file index [^issue-474-index] | 未追跡 |
 | [2026-09-12-issue-515-class-directives-design.md](../../superpowers/specs/2026-09-12-issue-515-class-directives-design.md) | Issue 515: Skip enclosing class directives during lexical lookup [^issue-515] | 未追跡 |
@@ -1229,6 +1234,8 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 - [Issue #451: Parenthesized exception removal](../../superpowers/specs/2026-09-11-issue-451-exception-parentheses-design.md) - 括弧を含む例外式の削除範囲と実行検証。[^issue-451]
 
 [^issue-451]: [設計原文](../../superpowers/specs/2026-09-11-issue-451-exception-parentheses-design.md)。
+
+[^issue-453-index]: [Issue 453: Scope discovery for exact selectors](../../superpowers/specs/2026-09-14-issue-453-scoped-discovery-design.md)。
 
 [^issue-475-index]: [Issue 475: Normalize explicit selector groups once](../../superpowers/specs/2026-09-14-issue-475-range-normalization-design.md)。
 
