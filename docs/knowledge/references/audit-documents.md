@@ -7,7 +7,8 @@ catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
 - id: issue-458-review
   resource: ../../superpowers/reports/2026-09-14-issue-458-verify-metrics-review.md
-  working_tree: untracked
+  revision: 6a6e233
+  working_tree: clean
   sha256: 6f697d9f3770826c09ebaa77847db7904abb650459d5de40369d15f48b57cc64
 - id: issue-461-merge-review
   resource: ../../superpowers/reports/2026-09-14-issue-461-self-review.md
