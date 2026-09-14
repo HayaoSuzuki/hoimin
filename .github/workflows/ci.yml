@@ -244,6 +244,10 @@ jobs:
             HoiminOracle.NestedMatchExitCases
             NestedTryFlowAuditMain
             ExceptStarFlowAuditMain
+            HoiminOracle.PerformanceCostModel
+            HoiminOracle.PerformanceCostProofs
+            HoiminOracle.PerformanceCostCases
+            PerformanceCostAuditMain
             HoiminOracle.ValidPythonModel
             ValidPythonAuditMain
             HoiminOracle
@@ -288,6 +292,7 @@ jobs:
             'generate_disk_guard|corpus/disk-guard-lifecycle.jsonl|sensitivity'
             'generate_cleanup_capability|corpus/cleanup-capability.jsonl|sensitivity'
             'generate_comprehension_bindings|corpus/comprehension-bindings.jsonl|sensitivity'
+            'generate_performance_cost|corpus/performance-cost.jsonl|sensitivity'
             'generate_valid_python|corpus/valid-python.jsonl|sensitivity'
           )
           for entry in "${generators[@]}"; do

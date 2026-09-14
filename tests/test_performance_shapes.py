@@ -68,7 +68,7 @@ class PerformanceShapesTests(unittest.TestCase):
                     root = Path(directory)/name
                     fixture = shapes.make_fixture(name, 1, root)
                     self.assertEqual(fixture['size'], 1)
-                    self.assertFalse(fixture['truncated'])
+                    self.assertEqual(fixture['truncated'], name == 'verify-partial')
                     compile((root/'case.py').read_text(), 'case.py', 'exec')
 
     def test_output_validation_does_not_accept_empty_candidates(self):
@@ -176,3 +176,50 @@ class PerformanceShapesTests(unittest.TestCase):
                 with self.assertRaises(subprocess.TimeoutExpired):
                     shapes.run_gate(registry, artifact)
             self.assertEqual((artifact/'blocked.log').read_text(), 'partial compiler diagnostic\n')
+
+
+    def test_added_axes_materialize_independent_sources_and_selection_controls(self):
+        with tempfile.TemporaryDirectory() as directory:
+            parent = Path(directory)
+            for name, count in [('target-files', 1), ('file-selectors', 1), ('symbol-selectors', 1), ('line-selectors', 1), ('fingerprint-files', 1), ('fingerprint-bytes', 1), ('fingerprint-mixed', 1), ('unicode-long-line', 1), ('unicode-many-lines', 1), ('ast-wide', 1), ('ast-left', 1), ('large-literal', 1), ('imports-active', 1), ('verify-multifile', 4), ('verify-partial', 4), ('output-record', 1), ('workspace-bytes', 1), ('workspace-workers', 4)]:
+                with self.subTest(name=name):
+                    root = parent/name
+                    fixture = shapes.make_fixture(name, 4, root)
+                    self.assertEqual(fixture['expected_candidates'], count)
+                    for path in root.glob('*.py'):
+                        compile(path.read_bytes(), str(path), 'exec')
+            self.assertEqual(len(list((parent/'target-files').glob('selected*.py'))), 4)
+            self.assertEqual((parent/'fingerprint-bytes/config.toml').stat().st_size, 4096)
+            self.assertEqual((parent/'workspace-bytes/data.bin').stat().st_size, 4*65536)
+            self.assertEqual((parent/'unicode-long-line/case.py').stat().st_size, (parent/'unicode-many-lines/case.py').stat().st_size)
+            self.assertIn('雪', (parent/'unicode-long-line/case.py').read_text())
+            self.assertEqual(shapes.make_fixture('workspace-workers', 2, parent/'workers')['jobs'], 2)
+            symbols = shapes.make_fixture('symbol-selectors', 4, parent/'symbols')
+            self.assertEqual(symbols['selectors'], ['--symbol', 'case:subject']*4)
+            self.assertEqual(symbols['options'], ['--source', '.'])
+            self.assertEqual(shapes.make_fixture('line-selectors', 4, parent/'lines')['selectors'], ['--line', 'case.py:1-1']*4)
+            self.assertEqual(shapes.make_fixture('file-selectors', 4, parent/'files')['selectors'], ['--file', 'case.py']*4)
+
+    def test_partial_verify_has_explicit_incomplete_contract(self):
+        fixture = {'mode': 'verify', 'expected_candidates': 2, 'truncated': True}
+        observed = {'mutants': [{}, {}], 'summary': {'complete': False}}
+        self.assertEqual(shapes.validate_output(observed, fixture)['candidates'], 2)
+        with self.assertRaises(shapes.SemanticMismatch):
+            shapes.validate_output({**observed, 'summary': {'complete': True}}, fixture)
+        with self.assertRaises(shapes.SemanticMismatch):
+            shapes.validate_output(observed, {**fixture, 'truncated': False})
+
+    def test_growth_compares_each_binary_across_n_2n_4n_separately(self):
+        medians = [{'shape': 'source', 'label': label, 'size': n, 'elapsed_ms': n*factor,
+                    'sampled_tree_rss_bytes': n*100 if label == 'baseline' else None,
+                    'output_document_bytes': n*20}
+                   for label, factor in [('baseline', 10), ('candidate', 7)] for n in [2, 4, 8]]
+        growth = shapes.summarize_growth(medians)
+        self.assertEqual(len(growth), 4)
+        baseline = [r for r in growth if r['label'] == 'baseline']
+        candidate = [r for r in growth if r['label'] == 'candidate']
+        self.assertEqual([r['elapsed_ratio'] for r in baseline], [2, 4])
+        self.assertEqual([r['output_document_ratio'] for r in candidate], [2, 4])
+        self.assertTrue(all(r['sampled_tree_rss_ratio'] is None for r in candidate))
+        with self.assertRaises(ValueError):
+            shapes.summarize_growth(medians[:-1])
