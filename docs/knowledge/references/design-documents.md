@@ -39,8 +39,9 @@ sources:
   revision: f3440ac435747d831db6a8b0d93758242060a8cf
 - id: issue-466
   resource: ../../superpowers/specs/2026-09-14-issue-466-retired-blank-line-discovery-design.md
-  working_tree: untracked
-  sha256: a81a30e965b53eea08c62acba2767f44afb806b4b68b1d8113bdd3faf918966e
+  revision: 8b33167a049e3cae0fc05e96ccf2253c660b7023
+  working_tree: modified
+  sha256: dfa895dc4f91c1b8a912112008488426525d26376d7e09d397a6f65cbae8d8db
 
 - id: issue-463
   resource: ../../superpowers/specs/2026-09-14-issue-463-json-record-write-design.md

@@ -49,3 +49,21 @@ Spec: ../specs/2026-09-14-issue-466-retired-blank-line-discovery-design.md
 - Bounded import: failed immediately with `ModuleNotFoundError: No module named 'tools'`.
 - Current tests: `python3 -m unittest discover -s tests -p test_skills.py -v` passed 3/3.
 - Documentation: the OKF validator passed 16 pages and `git diff --check` passed.
+
+## Follow-up at 8b33167
+
+The original tasks above describe the earlier disposition PR. Execute this
+follow-up in `enhancement/issue-466`; the user authorized autonomous publication.
+
+- [x] Recheck `git merge-base --is-ancestor 2f27e2a HEAD`, the tracked retired
+  package and `rg` callers in active sources; inspect the historical regex.
+- [x] Map each acceptance condition in the existing spec to retirement, without
+  claiming replacement performance or compatibility.
+- [x] Run `python3 -m unittest discover -s tests -p test_skills.py -v` and a
+  five-second subprocess import probe; no retired mutation tool is executed.
+- [x] Record three actual review passes for OKF, design, plan, implementation,
+  verification and PR preparation in `../reports/2026-09-14-issue-466-revalidation.md`.
+- [x] Update architecture and both source indexes with checked provenance;
+  validate YAML, links, source IDs, hashes and source-list completeness.
+- [ ] Check the final diff, commit, push and publish a documentation PR that
+  explicitly closes the obsolete issue by retirement.
