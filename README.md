@@ -439,7 +439,11 @@ Run metrics are an opt-in operational sidecar, separate from the run JSON. Write
 
 ```console
 hoimin run --root . --source src --metrics metrics.json -- python -m pytest -q
+hoimin verify plan.json --top 20 --metrics batch-metrics.json > batch-report.json
+hoimin verify plan.json --candidate m1_ID --metrics candidate-metrics.json > candidate-report.json
 ```
+
+`verify --metrics` supports explicit candidate IDs and both strict and diverse top selections. Relative metrics paths use the directory where you invoke hoimin, independently of the saved project root. The destination is not stored in the plan and does not change candidate selection or execution limits. Metrics begin when shell execution starts; plan validation and rediscovery time are not included. A failure during plan preparation leaves the destination untouched. Once execution starts, failed baselines and interrupted runs follow the same sidecar and warning rules as `run`.
 
 The sidecar uses the versioned [`run-metrics.schema.json`](docs/json-schema/run-metrics.schema.json) contract. Its `executed` count never exceeds `discovered` and equals the sum of per-worker `processes`. Metrics are operational observations: they do not affect resume compatibility and are not embedded in the run-result document. A metrics write failure warns without changing the mutation result. A confirmed collision with a selected source, explicit fingerprint input, session database, active SQLite companion or session ownership lock is rejected before the baseline. You can write metrics inside the project or replace an existing metrics file. A separate hardlink or final symlink can be replaced while preserving its protected referent.
 

@@ -39,7 +39,8 @@ where
         Ok(cli::ParsedCommand::Verify(args)) => {
             match plan::prepare_verify_selection(&args.manifest, &args.selection, args.format).await
             {
-                Ok(verified) => {
+                Ok(mut verified) => {
+                    verified.config.output.metrics = args.metrics;
                     shell::run_owned_verified(verified, std::io::stdout(), std::io::stderr()).await
                 }
                 Err(error) => Err(error.to_string()),
@@ -142,7 +143,8 @@ async fn run_parsed_with_io<Stdout: std::io::Write, Stderr: std::io::Write>(
         Ok(cli::ParsedCommand::Verify(args)) => {
             match plan::prepare_verify_selection(&args.manifest, &args.selection, args.format).await
             {
-                Ok(verified) => {
+                Ok(mut verified) => {
+                    verified.config.output.metrics = args.metrics;
                     let verification_selection = verified.verification_selection;
                     let result = match verified.selection {
                         plan::ResolvedVerifySelection::ExplicitCandidates(candidate_ids) => {

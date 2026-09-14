@@ -5,6 +5,10 @@ description: docs/auditsとdocs/superpowers/reports内の全Markdownを追跡状
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-458-review
+  resource: ../../superpowers/reports/2026-09-14-issue-458-verify-metrics-review.md
+  working_tree: untracked
+  sha256: 1fca3322e83795c50e54a179bc05dd8d92b0d0f82fb6a901061bd99657557b3c
 - id: issue-461-merge-review
   resource: ../../superpowers/reports/2026-09-14-issue-461-self-review.md
   revision: 11dd162101c4351dfdd15cb52ba112bdf1fe9cf2
@@ -648,3 +652,9 @@ sources:
 [^issue-470-merge-review]: [2026-09-14-issue-470-self-review.md](../../superpowers/reports/2026-09-14-issue-470-self-review.md)。
 [^issue-479-merge-review]: [2026-09-14-issue-479-self-review.md](../../superpowers/reports/2026-09-14-issue-479-self-review.md)。
 [^issue-482-merge-review]: [2026-09-14-issue-482-self-review.md](../../superpowers/reports/2026-09-14-issue-482-self-review.md)。
+
+# Issue 458
+
+- [Issue 458 review record](../../superpowers/reports/2026-09-14-issue-458-verify-metrics-review.md) — verifyのmetrics出力と確認範囲。[^issue-458-review]
+
+[^issue-458-review]: [Issue 458 review record](../../superpowers/reports/2026-09-14-issue-458-verify-metrics-review.md)。
