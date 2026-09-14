@@ -239,6 +239,8 @@ jobs:
             HoiminOracle.NestedMatchExitCases
             NestedTryFlowAuditMain
             ExceptStarFlowAuditMain
+            HoiminOracle.ValidPythonModel
+            ValidPythonAuditMain
             HoiminOracle
             MultipleHandlerJoinAuditMain
             NestedMatchExitAuditMain
@@ -281,6 +283,7 @@ jobs:
             'generate_disk_guard|corpus/disk-guard-lifecycle.jsonl|sensitivity'
             'generate_cleanup_capability|corpus/cleanup-capability.jsonl|sensitivity'
             'generate_comprehension_bindings|corpus/comprehension-bindings.jsonl|sensitivity'
+            'generate_valid_python|corpus/valid-python.jsonl|sensitivity'
           )
           for entry in "${generators[@]}"; do
             IFS='|' read -r executable corpus sensitivity <<< "$entry"

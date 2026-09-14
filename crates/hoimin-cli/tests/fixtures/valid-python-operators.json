@@ -1,0 +1,277 @@
+[
+  {
+    "operator": "compare_eq_ne",
+    "status": "deferred",
+    "reason": "Existing operator-specific tests remain authoritative; not included in this initial cross-producer corpus"
+  },
+  {
+    "operator": "compare_order",
+    "status": "deferred",
+    "reason": "Existing operator-specific tests remain authoritative; not included in this initial cross-producer corpus"
+  },
+  {
+    "operator": "membership",
+    "status": "deferred",
+    "reason": "Existing operator-specific tests remain authoritative; not included in this initial cross-producer corpus"
+  },
+  {
+    "operator": "identity",
+    "status": "deferred",
+    "reason": "Existing operator-specific tests remain authoritative; not included in this initial cross-producer corpus"
+  },
+  {
+    "operator": "boolean_and_or",
+    "status": "deferred",
+    "reason": "Existing operator-specific tests remain authoritative; not included in this initial cross-producer corpus"
+  },
+  {
+    "operator": "binary_add_sub",
+    "status": "covered",
+    "reason": "Initial producer/scope/compiler representative in Lean corpus"
+  },
+  {
+    "operator": "augmented_add_sub",
+    "status": "deferred",
+    "reason": "Existing operator-specific tests remain authoritative; not included in this initial cross-producer corpus"
+  },
+  {
+    "operator": "binary_mul_div",
+    "status": "deferred",
+    "reason": "Existing operator-specific tests remain authoritative; not included in this initial cross-producer corpus"
+  },
+  {
+    "operator": "augmented_mul_div",
+    "status": "deferred",
+    "reason": "Existing operator-specific tests remain authoritative; not included in this initial cross-producer corpus"
+  },
+  {
+    "operator": "binary_floor_mod",
+    "status": "deferred",
+    "reason": "Existing operator-specific tests remain authoritative; not included in this initial cross-producer corpus"
+  },
+  {
+    "operator": "augmented_floor_mod",
+    "status": "deferred",
+    "reason": "Existing operator-specific tests remain authoritative; not included in this initial cross-producer corpus"
+  },
+  {
+    "operator": "unary_sign",
+    "status": "covered",
+    "reason": "Initial producer/scope/compiler representative in Lean corpus"
+  },
+  {
+    "operator": "remove_not",
+    "status": "deferred",
+    "reason": "Existing operator-specific tests remain authoritative; not included in this initial cross-producer corpus"
+  },
+  {
+    "operator": "boolean_literal",
+    "status": "covered",
+    "reason": "Initial producer/scope/compiler representative in Lean corpus"
+  },
+  {
+    "operator": "break_continue",
+    "status": "deferred",
+    "reason": "Existing operator-specific tests remain authoritative; not included in this initial cross-producer corpus"
+  },
+  {
+    "operator": "collection_any_all",
+    "status": "covered",
+    "reason": "Initial producer/scope/compiler representative in Lean corpus"
+  },
+  {
+    "operator": "collection_list_tuple",
+    "status": "covered",
+    "reason": "Initial producer/scope/compiler representative in Lean corpus"
+  },
+  {
+    "operator": "collection_set_frozenset",
+    "status": "deferred",
+    "reason": "Existing operator-specific tests remain authoritative; not included in this initial cross-producer corpus"
+  },
+  {
+    "operator": "collection_append_insert",
+    "status": "deferred",
+    "reason": "Existing operator-specific tests remain authoritative; not included in this initial cross-producer corpus"
+  },
+  {
+    "operator": "collection_min_max",
+    "status": "deferred",
+    "reason": "Existing operator-specific tests remain authoritative; not included in this initial cross-producer corpus"
+  },
+  {
+    "operator": "collection_set_add_discard",
+    "status": "deferred",
+    "reason": "Existing operator-specific tests remain authoritative; not included in this initial cross-producer corpus"
+  },
+  {
+    "operator": "collection_set_remove_discard",
+    "status": "deferred",
+    "reason": "Existing operator-specific tests remain authoritative; not included in this initial cross-producer corpus"
+  },
+  {
+    "operator": "collection_string_starts_ends",
+    "status": "deferred",
+    "reason": "Existing operator-specific tests remain authoritative; not included in this initial cross-producer corpus"
+  },
+  {
+    "operator": "collection_string_split_rsplit",
+    "status": "deferred",
+    "reason": "Existing operator-specific tests remain authoritative; not included in this initial cross-producer corpus"
+  },
+  {
+    "operator": "bitwise_and_or",
+    "status": "deferred",
+    "reason": "Existing operator-specific tests remain authoritative; not included in this initial cross-producer corpus"
+  },
+  {
+    "operator": "bitwise_shift",
+    "status": "deferred",
+    "reason": "Existing operator-specific tests remain authoritative; not included in this initial cross-producer corpus"
+  },
+  {
+    "operator": "binary_power",
+    "status": "deferred",
+    "reason": "Existing operator-specific tests remain authoritative; not included in this initial cross-producer corpus"
+  },
+  {
+    "operator": "binary_matmul",
+    "status": "deferred",
+    "reason": "Existing operator-specific tests remain authoritative; not included in this initial cross-producer corpus"
+  },
+  {
+    "operator": "augmented_power",
+    "status": "deferred",
+    "reason": "Existing operator-specific tests remain authoritative; not included in this initial cross-producer corpus"
+  },
+  {
+    "operator": "augmented_matmul",
+    "status": "deferred",
+    "reason": "Existing operator-specific tests remain authoritative; not included in this initial cross-producer corpus"
+  },
+  {
+    "operator": "bitwise_xor",
+    "status": "deferred",
+    "reason": "Existing operator-specific tests remain authoritative; not included in this initial cross-producer corpus"
+  },
+  {
+    "operator": "bitwise_invert",
+    "status": "deferred",
+    "reason": "Existing operator-specific tests remain authoritative; not included in this initial cross-producer corpus"
+  },
+  {
+    "operator": "augmented_bitwise_and_or",
+    "status": "deferred",
+    "reason": "Existing operator-specific tests remain authoritative; not included in this initial cross-producer corpus"
+  },
+  {
+    "operator": "augmented_bitwise_xor",
+    "status": "deferred",
+    "reason": "Existing operator-specific tests remain authoritative; not included in this initial cross-producer corpus"
+  },
+  {
+    "operator": "augmented_bitwise_shift",
+    "status": "deferred",
+    "reason": "Existing operator-specific tests remain authoritative; not included in this initial cross-producer corpus"
+  },
+  {
+    "operator": "operator_function",
+    "status": "covered",
+    "reason": "Initial producer/scope/compiler representative in Lean corpus"
+  },
+  {
+    "operator": "structure_append_extend",
+    "status": "deferred",
+    "reason": "Existing operator-specific tests remain authoritative; not included in this initial cross-producer corpus"
+  },
+  {
+    "operator": "structure_mapping_get_subscript",
+    "status": "deferred",
+    "reason": "Existing operator-specific tests remain authoritative; not included in this initial cross-producer corpus"
+  },
+  {
+    "operator": "structure_sort_reverse",
+    "status": "deferred",
+    "reason": "Existing operator-specific tests remain authoritative; not included in this initial cross-producer corpus"
+  },
+  {
+    "operator": "structure_sorted_reversed",
+    "status": "deferred",
+    "reason": "Existing operator-specific tests remain authoritative; not included in this initial cross-producer corpus"
+  },
+  {
+    "operator": "structure_index_neighbor",
+    "status": "deferred",
+    "reason": "Existing operator-specific tests remain authoritative; not included in this initial cross-producer corpus"
+  },
+  {
+    "operator": "structure_slice_neighbor",
+    "status": "deferred",
+    "reason": "Existing operator-specific tests remain authoritative; not included in this initial cross-producer corpus"
+  },
+  {
+    "operator": "exception_type_pair",
+    "status": "covered",
+    "reason": "Initial producer/scope/compiler representative in Lean corpus"
+  },
+  {
+    "operator": "exception_bare_to_exception",
+    "status": "deferred",
+    "reason": "Existing operator-specific tests remain authoritative; not included in this initial cross-producer corpus"
+  },
+  {
+    "operator": "exception_exception_to_bare",
+    "status": "deferred",
+    "reason": "Existing operator-specific tests remain authoritative; not included in this initial cross-producer corpus"
+  },
+  {
+    "operator": "exception_base_boundary",
+    "status": "deferred",
+    "reason": "Existing operator-specific tests remain authoritative; not included in this initial cross-producer corpus"
+  },
+  {
+    "operator": "exception_tuple_add_pair",
+    "status": "deferred",
+    "reason": "Existing operator-specific tests remain authoritative; not included in this initial cross-producer corpus"
+  },
+  {
+    "operator": "exception_tuple_remove_member",
+    "status": "deferred",
+    "reason": "Existing operator-specific tests remain authoritative; not included in this initial cross-producer corpus"
+  },
+  {
+    "operator": "type_nullable_remove",
+    "status": "deferred",
+    "reason": "Existing operator-specific tests remain authoritative; not included in this initial cross-producer corpus"
+  },
+  {
+    "operator": "type_nullable_add",
+    "status": "deferred",
+    "reason": "Existing operator-specific tests remain authoritative; not included in this initial cross-producer corpus"
+  },
+  {
+    "operator": "type_list_sequence",
+    "status": "covered",
+    "reason": "Initial producer/scope/compiler representative in Lean corpus"
+  },
+  {
+    "operator": "type_set_abstract_set",
+    "status": "deferred",
+    "reason": "Existing operator-specific tests remain authoritative; not included in this initial cross-producer corpus"
+  },
+  {
+    "operator": "type_dict_mapping",
+    "status": "deferred",
+    "reason": "Existing operator-specific tests remain authoritative; not included in this initial cross-producer corpus"
+  },
+  {
+    "operator": "type_iterable_iterator",
+    "status": "deferred",
+    "reason": "Existing operator-specific tests remain authoritative; not included in this initial cross-producer corpus"
+  },
+  {
+    "operator": "type_sequence_iterable",
+    "status": "deferred",
+    "reason": "Existing operator-specific tests remain authoritative; not included in this initial cross-producer corpus"
+  }
+]
