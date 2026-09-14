@@ -1,11 +1,31 @@
 ---
 type: Audit
-title: progress入力の集計値検証と後続修正
-description: 集計値検証の過去の368観測と、単一結果検証を加えた564観測を区別して記録する。
+title: progress入力の集計値検証とJSONL対応
+description: 集計値・単一結果検証の監査と、JSONLストリーム読取りの契約を記録する。
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 audit_revision: 623dd808612dbc34775e16814845eec0bc52dff9
 sources:
+- id: issue-467-design
+  resource: ../../superpowers/specs/2026-09-14-issue-467-jsonl-progress-design.md
+  revision: 8b33167a049e3cae0fc05e96ccf2253c660b7023
+  working_tree: untracked
+  sha256: c4ba67a289f61675332af0cd124b013717c7ec4dca1ff1c8445e284ebdcdc860
+- id: issue-467-review
+  resource: ../../superpowers/reports/2026-09-14-issue-467-jsonl-progress-review.md
+  revision: 8b33167a049e3cae0fc05e96ccf2253c660b7023
+  working_tree: untracked
+  sha256: 49ab2810c65360e6e65c1c44b8e625871e17b179e775b5e72a2b653a38a8dfb1
+- id: issue-467-reader
+  resource: ../../../crates/hoimin-cli/src/progress/input/jsonl.rs
+  revision: 8b33167a049e3cae0fc05e96ccf2253c660b7023
+  working_tree: untracked
+  sha256: ca242438209ae995dacbb85273c0a4966c0c3fbd38a4717f1750f78eff8ccfee
+- id: issue-467-sequence
+  resource: ../../../crates/hoimin-core/src/report.rs
+  revision: 8b33167a049e3cae0fc05e96ccf2253c660b7023
+  working_tree: modified
+  sha256: 824485848858d32ae15ded85d3e550dc2dc74a3b6428aef5b6d4953754469ac9
 - id: issue-460-audit
   resource: ../../superpowers/reports/2026-09-11-issue-460-progress-result-audit.md
   working_tree: untracked
@@ -20,8 +40,9 @@ sources:
   working_tree: clean
 - id: input
   resource: ../../../crates/hoimin-cli/src/progress/input.rs
-  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
-  working_tree: clean
+  revision: 8b33167a049e3cae0fc05e96ccf2253c660b7023
+  working_tree: modified
+  sha256: 5a3f6e6e11720f6e0ff88dd916a7455072f185fb851e6acf39389d5eed78eddb
 - id: adapter
   resource: ../../../crates/hoimin-cli/tests/lean_progress_input_oracle.rs
   revision: a7daea0b557cd435c1e55b540392fbdd116348e1
@@ -81,3 +102,21 @@ summary、終了コードの優先順位、読取り処理の受理条件、元�
 [^adapter]: [lean_progress_input_oracle.rs](../../../crates/hoimin-cli/tests/lean_progress_input_oracle.rs)。
 
 [^issue-460-audit]: [2026-09-11-issue-460-progress-result-audit.md](../../superpowers/reports/2026-09-11-issue-460-progress-result-audit.md)。
+
+# Issue #467 のJSONL読取り
+
+今回の変更はschema v3のJSONLイベント列を1行ずつ読み、終了した変異候補を既存の文書検証へ渡す。schema v2/v3のJSON文書も従来どおり受理する。形式は拡張子によらず、最初の空行以外の行が `kind` を持つJSONオブジェクトかで判定する。v2のJSONLは対象外である。[^issue-467-design][^issue-467-reader]
+
+JSONLでは `run_started` と最後の `run_finished` が必要で、同一run、単調増加するsequence、変異候補の開始と終了の対応を検査する。baselineは変異候補の開始より前に一度だけ現れる。diagnosticもrunとsequenceを検査してから破棄する。検査用の `ReportSequence::validate` は状態を変更せず、契約検査ビルドでも不正な入力を通常のエラーとして返す。生成側の `observe` による契約assertionは維持する。[^issue-467-reader][^issue-467-sequence]
+
+終了イベントがある未完了runやbaseline失敗は、JSON文書と同じ理由で比較対象外になる。終了イベント欠落、途中で切れた行、複数run混入、重複候補、順序・結果・集計の矛盾は入力エラーとなる。JSON文書は開始イベントを省略した形式のため、JSONLと同じ開始イベントの存在条件は課さない。[^input][^issue-467-reader]
+
+メモリには比較に必要な候補と最大イベントの大きさが反映される。イベントの全履歴を保持しないことと、CLI全体の定数メモリ保証は区別する。今回の実CLI、heap、既存Lean corpusとの対応検証、自己レビューの範囲は報告に記録する。[^issue-467-review]
+
+[^issue-467-design]: [2026-09-14-issue-467-jsonl-progress-design.md](../../superpowers/specs/2026-09-14-issue-467-jsonl-progress-design.md)。
+
+[^issue-467-review]: [2026-09-14-issue-467-jsonl-progress-review.md](../../superpowers/reports/2026-09-14-issue-467-jsonl-progress-review.md)。
+
+[^issue-467-reader]: [jsonl.rs](../../../crates/hoimin-cli/src/progress/input/jsonl.rs)。
+
+[^issue-467-sequence]: [report.rs](../../../crates/hoimin-core/src/report.rs)。

@@ -10,3 +10,5 @@
 - [カタログの入口](../index.md) - 全体の読み順。
 
 - [入力形状別の性能検証](performance-shapes.md) - 実行ゲート、release計測、依存PRと証拠の限界。
+
+- [境界をまたぐ契約 fixture](boundary-contracts.md) - strict 実行、全件報告と未検証条件。

@@ -9,6 +9,40 @@ sources:
   resource: ../../superpowers/specs/2026-09-14-issue-458-verify-metrics-design.md
   working_tree: untracked
   sha256: 9348d92fc7357d35f6092240f58cd681672864de808daa41b989f0cb717c4887
+
+- id: issue-480-symbol
+  resource: ../../../crates/hoimin-cli/src/target/mod.rs
+  working_tree: modified
+  sha256: 97fc31c5b4eb885660de54c8711c4f187974e3c0b82ffca172a10f41ca7b2529
+  revision: 98969d7a840362f78dceb12f91cc5188214f68d5
+- id: issue-480-symbol-spec
+  resource: ../../superpowers/specs/2026-09-14-issue-480-source-encoding-design.md
+  working_tree: clean
+  sha256: 55a99855ee216bfff5afdfd5ffdeeab6c13e1877ec751b0ee88c9a35cb78c37e
+  revision: 98969d7a840362f78dceb12f91cc5188214f68d5
+- id: issue-476-report
+  resource: ../../superpowers/reports/2026-09-14-issue-476-symbol-diagnostics-review.md
+  working_tree: untracked
+  sha256: bff2a183f0c702c556d19c832b59836613d9e7a20975d89893d5d1c7fa0292ec
+- id: issue-476-design
+  resource: ../../superpowers/specs/2026-09-14-issue-476-symbol-diagnostics-design.md
+  working_tree: untracked
+  sha256: 9d9087b95cf13cedc4d75626d4cb87b93c41bb45f399a33dbb9a1cbe333c0092
+- id: issue-476-target
+  resource: ../../../crates/hoimin-cli/src/target/mod.rs
+  working_tree: modified
+  sha256: 2679747599bc69451f05128d6f6ab08fb22fb65460179d4f9a40d71e936aa3d5
+  revision: 8b33167a049e3cae0fc05e96ccf2253c660b7023
+- id: issue-476-analyzer
+  resource: ../../../crates/hoimin-cli/src/analyzer/rust.rs
+  working_tree: modified
+  sha256: b4e03399f3d7e6786fcecb7c876bd94232a16bea5c7d61f98feb31fdd5f69c19
+  revision: 8b33167a049e3cae0fc05e96ccf2253c660b7023
+- id: issue-476-tests
+  resource: ../../../crates/hoimin-cli/tests/plan.rs
+  working_tree: modified
+  sha256: 410ad372b3ddf1ac57afcb9d1197f3395e02bf8e492553e74b7759f6ee1a3f47
+  revision: 8b33167a049e3cae0fc05e96ccf2253c660b7023
 - id: issue-453
   resource: ../../superpowers/specs/2026-09-14-issue-453-scoped-discovery-design.md
   sha256: cce7701d3552cc3887c8129b01589736e6defd31389db98de76ac32b619527aa
@@ -193,3 +227,30 @@ fileまたはlineだけを指定した場合、rootからの探索は指定フ�
 planの形式、候補、ソース、fingerprint、再発見の検証に失敗した場合、metrics出力先は変更しない。shell実行開始後のbaseline失敗、総時間制限、保存失敗はrunと同じ規則で扱う。metricsの各段階の時間には、先行するplan検証を含めない。[^issue-458]
 
 [^issue-458]: [Issue 458: Verify operational metrics](../../superpowers/specs/2026-09-14-issue-458-verify-metrics-design.md)。
+
+# 明示symbolの定義存在確認
+
+Issue #476 の変更では、対象ファイルの解決後、Git変更行との交差前に、ASTの関数・クラス定義に指定qualnameが存在するかを確認する。メソッド、ネストした定義、async関数、packageの `__init__.py` を含む。代入名やimport先は定義とみなさない。不存在ならファイル、qualname、対応する元のselectorを含む診断で、run・plan・verifyをbaseline前にexit 2で拒否する。[^issue-476-design][^issue-476-target][^issue-476-analyzer]
+
+定義が存在すれば、operator、profile、行範囲、Git差分によって候補がなくても有効である。候補上限やverifyの候補部分集合で検査対象を省略しない。構文不正は存在確認不能として扱い、不存在とは診断しない。今回の公開CLIテストでは、空のGit差分、別定義だけの変更、候補のない定義、verifyで実行候補のないファイルのselectorも確認する。[^issue-476-tests]
+
+symbol指定ファイルは候補解析前にもparseする。既存のAST深さ制限を使うが、この対象解決時のI/Oとparseはanalyzer discovery timeoutの対象外であり、全処理の時間上限を新たに保証する変更ではない。[^issue-476-design]
+
+[^issue-476-design]: [2026-09-14-issue-476-symbol-diagnostics-design.md](../../superpowers/specs/2026-09-14-issue-476-symbol-diagnostics-design.md).
+
+[^issue-476-target]: [mod.rs](../../../crates/hoimin-cli/src/target/mod.rs).
+
+[^issue-476-analyzer]: [rust.rs](../../../crates/hoimin-cli/src/analyzer/rust.rs).
+
+[^issue-476-tests]: [plan.rs](../../../crates/hoimin-cli/tests/plan.rs).
+
+今回の自己レビュー、検証結果と未確認範囲は[Issue #476 の報告](../../superpowers/reports/2026-09-14-issue-476-symbol-diagnostics-review.md)に記録する。[^issue-476-report]
+
+[^issue-476-report]: [Issue #476: symbol diagnostics review](../../superpowers/reports/2026-09-14-issue-476-symbol-diagnostics-review.md).
+
+# symbol定義確認での文字コード
+
+Issue #480 は、Issue #476 の定義存在確認にも共通decoderを使う。Latin-1で書かれた関数名をUnicodeのqualnameとして照合し、候補解析と異なるUTF-8限定の読み込みを残さない。文字コードの対応範囲と元バイト位置の扱いは[解析契約](analyzer.md)を参照する。[^issue-480-symbol][^issue-480-symbol-spec]
+
+[^issue-480-symbol]: [target/mod.rs](../../../crates/hoimin-cli/src/target/mod.rs).
+[^issue-480-symbol-spec]: [Issue #480 design](../../superpowers/specs/2026-09-14-issue-480-source-encoding-design.md).

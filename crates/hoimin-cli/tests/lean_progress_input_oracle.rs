@@ -164,11 +164,19 @@ async fn observe_cli_self_comparison(
     case: &LeanOracleCase,
     schema: u32,
 ) -> Result<CliObservation, String> {
+    observe_cli_encoding(case, schema, false).await
+}
+
+async fn observe_cli_encoding(
+    case: &LeanOracleCase,
+    schema: u32,
+    jsonl: bool,
+) -> Result<CliObservation, String> {
     let fixture = tempfile::tempdir().map_err(|error| error.to_string())?;
-    let path = fixture.path().join(format!("{}.json", case.id));
+    let path = fixture.path().join(format!("{}.report", case.id));
     std::fs::write(
         &path,
-        serde_json::to_vec(&report_json_from_lean_case(case, schema)).unwrap(),
+        encode_report(&report_json_from_lean_case(case, schema), jsonl),
     )
     .map_err(|error| error.to_string())?;
     let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"));
@@ -275,4 +283,138 @@ async fn killed_exit_zero_minimal_regression_follows_lean() {
         assert_eq!(observed.disposition, case.expected_disposition, "v{schema}");
         assert_eq!(observed.history, case.expected_history, "v{schema}");
     }
+}
+
+fn encode_report(document: &Value, jsonl: bool) -> Vec<u8> {
+    if !jsonl {
+        return serde_json::to_vec(document).unwrap();
+    }
+    let mut events = vec![document["run"].clone()];
+    if !document["baseline"].is_null() {
+        events.push(document["baseline"].clone());
+    }
+    for mutant in document["mutants"].as_array().unwrap() {
+        events.push(json!({
+            "kind": "mutant_started", "schema_version": 3,
+            "sequence": 0, "run_id": document["run"]["run_id"],
+            "mutant_id": mutant["candidate"]["id"],
+            "mutant_sequence": mutant["candidate"]["sequence"]
+        }));
+        events.push(mutant.clone());
+    }
+    events.push(document["summary"].clone());
+    let mut bytes = Vec::new();
+    for (index, event) in events.iter_mut().enumerate() {
+        event["sequence"] = json!(index + 1);
+        serde_json::to_writer(&mut bytes, event).unwrap();
+        bytes.push(b'\n');
+    }
+    bytes
+}
+
+#[tokio::test]
+async fn shared_reader_progress_formats_follow_lean() {
+    let mut failures = Vec::new();
+    let selected = std::env::var("HOIMIN_BOUNDARY_CASE").ok();
+    let mut selected_cases = 0;
+    for case in parse_lean_oracle_cases() {
+        if selected.as_ref().is_some_and(|id| *id != case.id) {
+            continue;
+        }
+        selected_cases += 1;
+        for (encoding, schema, jsonl) in [
+            ("json-v2", 2, false),
+            ("json-v3", 3, false),
+            ("jsonl-v3", 3, true),
+        ] {
+            if jsonl && case.baseline == "missing" && !case.statuses.is_empty() {
+                println!(
+                    "BOUNDARY_OBSERVATION {}",
+                    json!({
+                        "fixture": case.id, "encoding": encoding, "boundary": "reader-progress",
+                        "mode": "report", "evidence": "real-cli", "status": "unexecuted",
+                        "reason": "document permits missing baseline with mutant projections; full JSONL lifecycle requires preceding baseline"
+                    })
+                );
+                continue;
+            }
+            let observed = observe_cli_encoding(&case, schema, jsonl).await;
+            let (status, reason) = match &observed {
+                Ok(value)
+                    if value.disposition == case.expected_disposition
+                        && value.history == case.expected_history =>
+                {
+                    ("match", None)
+                }
+                Ok(value) => (
+                    "mismatch",
+                    Some(format!(
+                        "expected {:?}/{:?}, observed {value:?}",
+                        case.expected_disposition, case.expected_history
+                    )),
+                ),
+                Err(error) => ("infrastructure-error", Some(error.clone())),
+            };
+            println!(
+                "BOUNDARY_OBSERVATION {}",
+                json!({
+                    "fixture": case.id, "encoding": encoding, "boundary": "reader-progress",
+                    "mode": "strict", "evidence": "real-cli", "status": status, "reason": reason,
+                    "expected_disposition": case.expected_disposition
+                })
+            );
+            if status != "match" {
+                failures.push(format!("{} {encoding}: {reason:?}", case.id));
+            }
+        }
+    }
+    assert!(selected_cases > 0, "unknown HOIMIN_BOUNDARY_CASE");
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+fn shared_reader_fixture_encodings_preserve_fields_and_projection_premises() {
+    let cases = parse_lean_oracle_cases();
+    let mut applicable = 0;
+    let mut projection_gaps = 0;
+    for case in cases {
+        let document = report_json_from_lean_case(&case, 3);
+        let encoded = encode_report(&document, true);
+        let events: Vec<Value> = encoded
+            .split(|byte| *byte == b'\n')
+            .filter(|line| !line.is_empty())
+            .map(|line| serde_json::from_slice(line).unwrap())
+            .collect();
+        let mutants: Vec<_> = events
+            .iter()
+            .filter(|event| event["kind"] == "mutant_finished")
+            .collect();
+        assert_eq!(mutants.len(), case.statuses.len());
+        assert_eq!(
+            events.last().unwrap()["counts"],
+            document["summary"]["counts"]
+        );
+        for (event, original) in mutants.iter().zip(document["mutants"].as_array().unwrap()) {
+            for field in [
+                "candidate",
+                "status",
+                "termination",
+                "output_state",
+                "diagnostics",
+            ] {
+                assert_eq!(event[field], original[field], "{} {field}", case.id);
+            }
+        }
+        if case.baseline == "missing" && !case.statuses.is_empty() {
+            projection_gaps += 1;
+        } else {
+            applicable += 1;
+        }
+    }
+    assert_eq!(applicable + projection_gaps, 282);
+    assert_eq!(applicable, 282);
+    assert_eq!(
+        projection_gaps, 0,
+        "current Lean missing-baseline cases have no mutants"
+    );
 }

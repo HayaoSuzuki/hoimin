@@ -837,11 +837,13 @@ impl ReportSequence {
         }
     }
 
+    /// Checks an event without mutating state or asserting producer contracts.
+    ///
     /// # Errors
     ///
     /// Returns [`ReportSequenceError`] when the event violates the run,
     /// mutant-lifecycle, or strictly increasing sequence invariants.
-    pub fn observe(&mut self, event: &OutputEvent) -> Result<(), ReportSequenceError> {
+    pub fn validate(&self, event: &OutputEvent) -> Result<(), ReportSequenceError> {
         let lifecycle_error = if self.finished {
             Some(ReportSequenceError::RunAlreadyFinished {
                 run_id: self.run_id.clone().unwrap_or_default(),
@@ -873,9 +875,21 @@ impl ReportSequence {
                 })
             })
         });
+        error.map_or(Ok(()), Err)
+    }
+
+    /// Records a producer event after validating the lifecycle invariants.
+    /// Untrusted input can call [`Self::validate`] first to receive errors
+    /// without triggering producer assertions in contracts builds.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ReportSequenceError`] when lifecycle or sequence rules fail.
+    pub fn observe(&mut self, event: &OutputEvent) -> Result<(), ReportSequenceError> {
+        let result = self.validate(event);
         contract_ensure!(
             "report.sequence.invariant",
-            error.is_none(),
+            result.is_ok(),
             (
                 &self.run_id,
                 &self.active_mutants,
@@ -885,9 +899,7 @@ impl ReportSequence {
                 event.sequence()
             )
         );
-        if let Some(error) = error {
-            return Err(error);
-        }
+        result?;
         self.last = Some(event.sequence());
         match event {
             OutputEvent::RunStarted(value) => self.run_id = Some(value.run_id.clone()),
