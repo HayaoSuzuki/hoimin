@@ -5,6 +5,8 @@
 - [対象選択・plan・verifyの契約](selection-plan-verify.md) - 候補発見と実行の分離、ランキング、部分集合、保存形式の版の不整合を整理する。
 - [資源制限・終了時の後処理・最終出力](runtime-lifecycle.md) - OS別の資源制限と、プロセス終了・一時ファイル削除・レポート出力の完了条件を整理する。
 - [session所有権とレポートの検証](session-report.md) - 保存・復旧の権限、スキーマ移行、結果の生成側と読取り側の検証責務を整理する。
+- [JSONレポートのmutant record書込み](json-report-spool.md) - 一括書込み、ack、short write、poisoned状態を整理する。
+
 - [fingerprint入力globの共有走査](fingerprint-inputs.md) - 複数globの一回走査、入力順エラー、未選択ファイルの境界を整理する。
 
 # 関連
