@@ -5,6 +5,10 @@ description: docs/superpowers/specs内の全Markdownを先頭見出しと出典�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-471-specs
+  resource: ../../superpowers/specs/2026-09-14-issue-471-negative-neighbors-design.md
+  working_tree: untracked
+  sha256: c6b6af9099cdb3e6e15b504fd5cee6349e8906658f036a4775f41d02973ac110
 - id: issue-490-design
   resource: ../../superpowers/specs/2026-09-14-issue-490-boundary-contracts-design.md
   revision: 7d5bdc5a643add4ba55e8541fa59a069d0ff5c5e
@@ -845,6 +849,7 @@ sources:
 
 | 原文 | 先頭見出し | 作成時の状態 |
 | --- | --- | --- |
+| [2026-09-14-issue-471-negative-neighbors-design.md](../../superpowers/specs/2026-09-14-issue-471-negative-neighbors-design.md) | Issue #471: Negative index and slice neighbors [^issue-471-specs] | 未追跡（参照時点） |
 | [2026-09-14-issue-467-jsonl-progress-design.md](../../superpowers/specs/2026-09-14-issue-467-jsonl-progress-design.md) | JSONL progress input design (Issue 467) [^issue-467-design] | 未追跡 |
 | [2026-09-14-issue-480-source-encoding-design.md](../../superpowers/specs/2026-09-14-issue-480-source-encoding-design.md) | Issue #480: Python source encodings and raw-byte candidates [^issue-480-design-index] | 追跡済み |
 | [2026-09-14-issue-476-symbol-diagnostics-design.md](../../superpowers/specs/2026-09-14-issue-476-symbol-diagnostics-design.md) | Issue #476: missing symbol definition diagnostics [^issue-476-design-index] | 未追跡 |
@@ -1306,6 +1311,7 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 
 [^issue-456]: [2026-09-14-issue-456-validation-context-design.md](../../superpowers/specs/2026-09-14-issue-456-validation-context-design.md)。
 
+[^issue-471-specs]: [2026-09-14-issue-471-negative-neighbors-design.md](../../superpowers/specs/2026-09-14-issue-471-negative-neighbors-design.md)。
 [^issue-467-design]: [2026-09-14-issue-467-jsonl-progress-design.md](../../superpowers/specs/2026-09-14-issue-467-jsonl-progress-design.md)。
 
 - [Issue 490 boundary contracts](../../superpowers/specs/2026-09-14-issue-490-boundary-contracts-design.md)。[^issue-490-design]

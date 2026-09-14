@@ -5,6 +5,10 @@ description: docs/auditsとdocs/superpowers/reports内の全Markdownを追跡状
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-471-reports
+  resource: ../../superpowers/reports/2026-09-14-issue-471-negative-neighbors.md
+  working_tree: untracked
+  sha256: befd1573038e54b60ad8fd431597e3da5331c3915248d17c712aa70ea902cdf8
 - id: issue-466-revalidation
   resource: ../../superpowers/reports/2026-09-14-issue-466-revalidation.md
   working_tree: untracked
@@ -450,6 +454,7 @@ sources:
 
 | 原文 | 先頭見出し | 作成時の状態 |
 | --- | --- | --- |
+| [2026-09-14-issue-471-negative-neighbors.md](../../superpowers/reports/2026-09-14-issue-471-negative-neighbors.md) | Issue #471: Negative neighbor implementation and review [^issue-471-reports] | 未追跡（参照時点） |
 | [2026-09-14-issue-466-revalidation.md](../../superpowers/reports/2026-09-14-issue-466-revalidation.md) | Issue 466 retirement revalidation and self-review [^issue-466-revalidation] | 未追跡 |
 | [2026-09-14-issue-467-jsonl-progress-review.md](../../superpowers/reports/2026-09-14-issue-467-jsonl-progress-review.md) | Issue 467 JSONL progress implementation and review [^issue-467-review] | 未追跡 |
 | [2026-09-14-issue-480-source-encoding-review.md](../../superpowers/reports/2026-09-14-issue-480-source-encoding-review.md) | Issue #480: source encoding review [^issue-480-report-index] | 追跡済み |
@@ -676,6 +681,7 @@ sources:
 [^issue-479-merge-review]: [2026-09-14-issue-479-self-review.md](../../superpowers/reports/2026-09-14-issue-479-self-review.md)。
 [^issue-482-merge-review]: [2026-09-14-issue-482-self-review.md](../../superpowers/reports/2026-09-14-issue-482-self-review.md)。
 
+[^issue-471-reports]: [2026-09-14-issue-471-negative-neighbors.md](../../superpowers/reports/2026-09-14-issue-471-negative-neighbors.md)。
 [^issue-466-revalidation]: [Issue 466 retirement revalidation and self-review](../../superpowers/reports/2026-09-14-issue-466-revalidation.md)。
 [^issue-467-review]: [2026-09-14-issue-467-jsonl-progress-review.md](../../superpowers/reports/2026-09-14-issue-467-jsonl-progress-review.md)。
 
