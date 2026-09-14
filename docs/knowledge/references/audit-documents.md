@@ -8,8 +8,8 @@ sources:
 - id: issue-480-report-index
   resource: ../../superpowers/reports/2026-09-14-issue-480-source-encoding-review.md
   working_tree: modified
-  sha256: 2cf604540a1e15f4b4c55fd55d0e557beb413482d10ccd09ab9a5e55e567eb0b
-  revision: 98969d7a840362f78dceb12f91cc5188214f68d5
+  sha256: f8cc3f5e7e8d5ae7afec4b3321751e3d0a36dee584256c930395e5571fa59102
+  revision: a19bf3aadb0d56cc514d857a0e6359a563e67a18
 - id: issue-476-report-index
   resource: ../../superpowers/reports/2026-09-14-issue-476-symbol-diagnostics-review.md
   working_tree: untracked

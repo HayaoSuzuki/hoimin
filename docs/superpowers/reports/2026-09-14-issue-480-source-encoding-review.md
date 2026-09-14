@@ -45,3 +45,7 @@ Initial focused results: core candidate policy 18 passed, new encoding 6 passed;
 1. Reviewed the PR draft against final diff and dependency: base `enhancement/issue-476`, dependency #536, all #480 codec acceptance points implemented. Normal run's baseline-before-analysis order and the earlier symbol-resolution decoder are described separately.
 2. Reviewed source inventory and working tree: include shared core decoder, validator, analyzer conversion, worker encoding, symbol adaptation, six core encoding tests and five CLI encoding tests, README/development contracts and this issue's documents. Exclude the temporary `.venv` symlink and dedicated build output.
 3. Validated 19 OKF pages with a YAML parser, ten issue-480 source hashes/citations, 651 local link destinations in touched pages and reachability of all 19 pages. Six clean source entries were additionally compared with `git show` at their recorded commits. Reviewed the Japanese contract paragraphs separately and preserved earlier issue provenance instead of refreshing unrelated historical hashes.
+
+## Publication
+
+[PR #540](https://github.com/tokyogas-tech/hoimin/pull/540) targets `enhancement/issue-476` and depends on [PR #536](https://github.com/tokyogas-tech/hoimin/pull/536). Published integration commit: `a19bf3aadb0d56cc514d857a0e6359a563e67a18`; initial codec implementation: `98bff45`. GitHub showed the Ubuntu quality check in progress at publication; local success does not claim hosted CI completion.

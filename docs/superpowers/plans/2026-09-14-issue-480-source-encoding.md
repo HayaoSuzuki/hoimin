@@ -36,4 +36,4 @@ Files: `crates/hoimin-cli/src/analyzer/mod.rs`, `src/workspace/mutation.rs`, new
 
 - [x] Commit initial implementation, merge enhancement/issue-476, adapt its symbol validation to `decode_python_source(&bytes)?.text()` and verify Latin-1 symbol selection.
 - [x] Update README, analyzer OKF contract and source indexes with final spec/report hashes. Record at least three actual review passes for each stage.
-- [ ] Validate YAML, source citations/hashes, links, reachability and claim scope; commit/push; create dependent PR explaining #536 and close #480 only when codec acceptance is fulfilled.
+- [x] Validate YAML, source citations/hashes, links, reachability and claim scope; commit/push; create dependent PR explaining #536 and close #480 only when codec acceptance is fulfilled.
