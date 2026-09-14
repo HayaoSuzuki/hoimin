@@ -5,6 +5,9 @@ description: 候補発見と実行の分離、ランキング、部分集合、�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-453
+  resource: ../../superpowers/specs/2026-09-14-issue-453-scoped-discovery-design.md
+  sha256: cce7701d3552cc3887c8129b01589736e6defd31389db98de76ac32b619527aa
 - id: issue-477
   resource: ../../superpowers/specs/2026-09-11-issue-477-import-roots-design.md
   working_tree: untracked
@@ -117,3 +120,11 @@ planの候補にも実行用spoolと同じ2 MiBのレコード上限を適用す
 仮想環境やキャッシュなどの組込み除外を対象探索とコピーで共有する設計とした。`--include` は組込み除外を解除しない。除外場所のファイルを `--file` または `--line` で指定した場合は、対象パスと除外場所の外を選ぶ対処方法を示して対象解決時に拒否する。[^issue-452]
 
 [^issue-452]: [Issue #452: Shared workspace exclusions](../../superpowers/specs/2026-09-11-issue-452-shared-exclusions-design.md)。
+
+# exact selectorの対象発見（Issue #453）
+
+fileまたはlineだけを指定した場合、rootからの探索は指定ファイルとその親ディレクトリに限定する。root起点の探索、ignore/include/exclude、組込み除外、platformの大小文字規則は維持する。sourceまたはsymbolを含む場合は、対象列挙が必要なため全体探索を継続する。[^issue-453]
+
+限定探索では、選択経路の外にあるportable pathへ変換できない名前を診断しない。指定ファイル、親経路、または全体探索で発見した不正な名前は従来どおり診断する。この境界により、無関係なファイル名がexact selectorの成否を左右しない。[^issue-453]
+
+[^issue-453]: [Issue 453: Scope discovery for exact selectors](../../superpowers/specs/2026-09-14-issue-453-scoped-discovery-design.md)。

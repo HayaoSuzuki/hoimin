@@ -312,6 +312,13 @@ pub fn logical_paths_equal(left: &Utf8Path, right: &Utf8Path) -> bool {
     paths_equal(left, right)
 }
 
+/// Returns the platform-specific comparison key used for normalized logical
+/// target paths.
+#[must_use]
+pub fn logical_path_equality_key(path: &Utf8Path) -> Cow<'_, str> {
+    path_equality_key(path)
+}
+
 fn path_key(value: &str) -> String {
     let value = value.replace('\\', "/");
     if cfg!(windows) {

@@ -5,6 +5,9 @@ description: docs/auditsとdocs/superpowers/reports内の全Markdownを追跡状
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-453-report
+  resource: ../../superpowers/reports/2026-09-14-issue-453-scoped-discovery.md
+  sha256: e652f4cb3d4393cd6e92aebf2ab26c3ba1f90895aa84d4255046eca36d9886e7
 - id: issue-460-audit
   resource: ../../superpowers/reports/2026-09-11-issue-460-progress-result-audit.md
   working_tree: untracked
@@ -377,12 +380,13 @@ sources:
 
 # 収録一覧
 
-2026-09-11時点の92件。これは原文への索引であり、各文書の採用状況・現行性・検証結果を一括して認定するものではない。見出しは原文から抽出した。出典の版とGitの追跡状態は、冒頭のYAMLメタデータに記録している。未追跡資料は同じ作業ツリーに依存する。
+2026-09-14時点の93件。これは原文への索引であり、各文書の採用状況・現行性・検証結果を一括して認定するものではない。見出しは原文から抽出した。出典の版とGitの追跡状態は、冒頭のYAMLメタデータに記録している。未追跡資料は同じ作業ツリーに依存する。
 
 主要な論点の要約は[入口](../index.md)から読む。ファイル名に含まれる日付は作成履歴の手がかりであり、そのファイルが最後に変更された日時ではない。
 
 | 原文 | 先頭見出し | 作成時の状態 |
 | --- | --- | --- |
+| [2026-09-14-issue-453-scoped-discovery.md](../../superpowers/reports/2026-09-14-issue-453-scoped-discovery.md) | Issue 453 scoped discovery report [^issue-453-report] | 未追跡 |
 | [2026-09-11-issue-460-progress-result-audit.md](../../superpowers/reports/2026-09-11-issue-460-progress-result-audit.md) | Progress result validation audit (issue 460) [^issue-460-audit] | **未追跡** |
 | [2026-09-11-progress-input-lean.md](../../superpowers/reports/2026-09-11-progress-input-lean.md) | Progress input summary coherence (#483) [^doc-001] | 追跡済み |
 | [selection.md](../../superpowers/reports/2026-09-11-boundary-contract-audit/selection.md) | 対象選択・plan/verify・入力所有権の監査 [^doc-002] | **未追跡** |
@@ -566,6 +570,8 @@ sources:
 [^doc-088]: [issues.md](../../audits/2026-07-rust-codebase/issues.md)。
 [^doc-089]: [findings.md](../../audits/2026-07-rust-codebase/findings.md)。
 [^doc-090]: [coverage.md](../../audits/2026-07-rust-codebase/coverage.md)。
+
+[^issue-453-report]: [Issue 453 scoped discovery report](../../superpowers/reports/2026-09-14-issue-453-scoped-discovery.md)。
 [^doc-091]: [README.md](../../audits/2026-07-rust-codebase/README.md)。
 
 [^issue-460-audit]: [2026-09-11-issue-460-progress-result-audit.md](../../superpowers/reports/2026-09-11-issue-460-progress-result-audit.md)。
