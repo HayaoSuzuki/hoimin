@@ -27,4 +27,6 @@ Files: `crates/hoimin-cli/src/cli.rs`, `crates/hoimin-cli/src/plan.rs`, `crates/
 - [x] Document batch creation/repetition and separate progress histories in README.
 - [x] Update selection OKF with design/source provenance and source indexes; validate YAML, links, hashes and claims separately.
 - [x] Record three reviews for each stage and address independent review.
-- [ ] Commit dedicated branch, push and create PR using repository template; inspect published head/body/checks.
+- [x] Commit dedicated branch, push and create PR using repository template; inspect published head/body/checks.
+
+Publication verified: https://github.com/tokyogas-tech/hoimin/pull/539. Current applicable CI checks passed before this documentation-only delivery-state update.
