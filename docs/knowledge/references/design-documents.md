@@ -5,6 +5,10 @@ description: docs/superpowers/specs内の全Markdownを先頭見出しと出典�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-470
+  resource: ../../superpowers/specs/2026-09-14-issue-470-column-index-design.md
+  working_tree: untracked
+  sha256: 1e6e2edd408f35816863baad22f78426c506a099808846add62a33cd12b062a3
 - id: issue-513
   resource: ../../superpowers/specs/2026-09-12-issue-513-parser-recursion-design.md
   working_tree: untracked
@@ -777,6 +781,7 @@ sources:
 | [2026-09-11-issue-477-import-roots-design.md](../../superpowers/specs/2026-09-11-issue-477-import-roots-design.md) | Issue 477: Configure worker import roots independently of mutation selection [^issue-477] | 未追跡 |
 | [2026-09-11-issue-473-symbol-ranking-design.md](../../superpowers/specs/2026-09-11-issue-473-symbol-ranking-design.md) | Issue 473: Rank candidates inside explicitly selected symbols [^issue-473] | 未追跡 |
 | [2026-09-11-issue-472-session-artifacts-design.md](../../superpowers/specs/2026-09-11-issue-472-session-artifacts-design.md) | Issue 472: Exclude the active session artifacts from workspace snapshots [^issue-472] | 未追跡 |
+| [2026-09-14-issue-470-column-index-design.md](../../superpowers/specs/2026-09-14-issue-470-column-index-design.md) | Issue 470: 候補列番号索引の設計 [^issue-470] | **未追跡** |
 | [2026-09-11-issue-469-bom-column-design.md](../../superpowers/specs/2026-09-11-issue-469-bom-column-design.md) | Issue 469: Share Python source-column semantics [^issue-469] | **未追跡** |
 | [2026-09-11-issue-468-pattern-unary-design.md](../../superpowers/specs/2026-09-11-issue-468-pattern-unary-design.md) | Issue 468: Preserve literal-pattern syntax for unary signs [^issue-468] | **未追跡** |
 | [2026-09-11-issue-465-retired-discovery-design.md](../../superpowers/specs/2026-09-11-issue-465-retired-discovery-design.md) | Issue 465: Retired Rust function-discovery disposition [^issue-465] | **未追跡** |
@@ -1125,6 +1130,7 @@ sources:
 [^issue-472]: [2026-09-11-issue-472-session-artifacts-design.md](../../superpowers/specs/2026-09-11-issue-472-session-artifacts-design.md)。
 
 [^issue-469]: [2026-09-11-issue-469-bom-column-design.md](../../superpowers/specs/2026-09-11-issue-469-bom-column-design.md)。
+[^issue-470]: [2026-09-14-issue-470-column-index-design.md](../../superpowers/specs/2026-09-14-issue-470-column-index-design.md)。
 
 [^issue-468]: [2026-09-11-issue-468-pattern-unary-design.md](../../superpowers/specs/2026-09-11-issue-468-pattern-unary-design.md)。
 
