@@ -18,7 +18,7 @@ Execute inline in enhancement/issue-467 under user-authorized autonomy.
 - [x] Add actual CLI producer parity and diagnostic-history heap checks.
 - [x] Document format/lifecycle/memory contracts in README and existing OKF
   progress concept; register spec/report with revision and final hashes.
-- [ ] Run relevant progress and Lean adapters plus fmt/clippy, record all
+- [x] Run relevant progress and Lean adapters plus fmt/clippy, record all
   three self-review passes per stage, commit/push and create template PR.
 
 Builds use the worktree's dedicated target with CARGO_BUILD_JOBS=2,
@@ -31,3 +31,6 @@ and heap tests, not only synthetic happy-path decoding.
 Implementation review found producer contract assertions in ReportSequence;
 extract `validate(&self, &OutputEvent)` and call it before observe for untrusted
 JSONL. Verify both default and contracts builds; producer assertions remain.
+
+Published: https://github.com/tokyogas-tech/hoimin/pull/538
+Implementation commit: `e5e5956`.
