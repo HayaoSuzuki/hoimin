@@ -9,6 +9,12 @@ sources:
   resource: ../../superpowers/specs/2026-09-14-issue-456-validation-context-design.md
   working_tree: untracked
   sha256: a3f08279a0c60e016cef85ba37827f2b3be4fd5006bbb2068cce2c75bdf8991b
+- id: issue-457
+  resource: ../../superpowers/specs/2026-09-14-issue-457-fingerprint-shared-walk-design.md
+  revision: 67b82d65bfa6f4c13b7476531161c1852be50381
+  working_tree: clean
+  sha256: 9f7b93abdbe62ab58d1ca1f4c6bb3f3bbbdd4326956cc1dde9b14d27b4cfc4b7
+
 - id: issue-513
   resource: ../../superpowers/specs/2026-09-12-issue-513-parser-recursion-design.md
   working_tree: untracked
@@ -1137,6 +1143,12 @@ sources:
 [^issue-462]: [2026-09-11-issue-462-retired-reader-design.md](../../superpowers/specs/2026-09-11-issue-462-retired-reader-design.md)。
 
 [^issue-460]: [2026-09-11-issue-460-progress-result-design.md](../../superpowers/specs/2026-09-11-issue-460-progress-result-design.md)。
+
+# fingerprint glob共有走査（Issue #457）
+
+複数のfingerprint include globを一度のディレクトリ走査で解決し、入力順のエラーとglobごとの照合を維持する設計を記録した。[^issue-457]
+
+[^issue-457]: [2026-09-14-issue-457-fingerprint-shared-walk-design.md](../../superpowers/specs/2026-09-14-issue-457-fingerprint-shared-walk-design.md)。
 
 # 候補の保存サイズ上限（Issue #459）
 
