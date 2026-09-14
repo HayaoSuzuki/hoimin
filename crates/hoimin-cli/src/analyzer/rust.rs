@@ -7,7 +7,7 @@ use std::ops::Range;
 use camino::Utf8Path;
 use hoimin_core::{
     ByteSpan, LineRange, MutationOperator, MutationOperatorSelection, MutationProfile,
-    python_source_column,
+    PythonSourceIndex,
 };
 use ruff_python_ast::identifier;
 use ruff_python_ast::token::TokenKind;
@@ -35,6 +35,42 @@ mod operator_functions;
 use fact_index::IndexLookupStats;
 use fact_index::{ContainmentIndex, NotOperandIndex, ScopeIndex, ScopeInterval};
 use operator_functions::OperatorImports;
+
+#[cfg(test)]
+thread_local! {
+    static COLLECTION_REPLACEMENT_BUILDS: Cell<usize> = const { Cell::new(0) };
+    static CANDIDATE_ORIGINAL_COPIES: Cell<usize> = const { Cell::new(0) };
+    static ANNOTATION_RECORDS: Cell<usize> = const { Cell::new(0) };
+    static ANNOTATION_IMPORT_SNAPSHOT_CLONES: Cell<usize> = const { Cell::new(0) };
+}
+
+#[cfg(test)]
+fn reset_candidate_work_stats() {
+    COLLECTION_REPLACEMENT_BUILDS.set(0);
+    CANDIDATE_ORIGINAL_COPIES.set(0);
+}
+
+#[cfg(test)]
+fn candidate_work_stats() -> (usize, usize) {
+    (
+        COLLECTION_REPLACEMENT_BUILDS.get(),
+        CANDIDATE_ORIGINAL_COPIES.get(),
+    )
+}
+
+#[cfg(test)]
+fn reset_annotation_retention_stats() {
+    ANNOTATION_RECORDS.set(0);
+    ANNOTATION_IMPORT_SNAPSHOT_CLONES.set(0);
+}
+
+#[cfg(test)]
+fn annotation_retention_stats() -> (usize, usize) {
+    (
+        ANNOTATION_RECORDS.get(),
+        ANNOTATION_IMPORT_SNAPSHOT_CLONES.get(),
+    )
+}
 
 pub(crate) struct AnalyzeRequest<'a> {
     pub path: &'a Utf8Path,
@@ -444,16 +480,19 @@ fn make_candidate(
     operator: MutationOperator,
     symbol: Option<String>,
 ) -> Option<AnalyzerCandidate> {
-    if range.start >= range.end || range.end > source.len() {
+    if !request.operators.contains(operator) || range.start >= range.end || range.end > source.len()
+    {
         return None;
     }
-    let original = source.get(range.clone())?.to_owned();
     let start = u64::try_from(range.start).ok()?;
     let length = u64::try_from(range.len()).ok()?;
     let (line, column) = line_index.line_and_column(source, range.start);
-    if !selected(request, line, symbol.as_deref()) || !request.operators.contains(operator) {
+    if !selected(request, line, symbol.as_deref()) {
         return None;
     }
+    #[cfg(test)]
+    CANDIDATE_ORIGINAL_COPIES.set(CANDIDATE_ORIGINAL_COPIES.get().saturating_add(1));
+    let original = source.get(range)?.to_owned();
     Some(AnalyzerCandidate {
         path: request.path.to_owned(),
         span: ByteSpan { start, length },
@@ -540,30 +579,24 @@ fn replacement(text: &str, unary: bool) -> Option<(&'static str, &'static str)> 
 }
 
 struct LineIndex {
-    starts: Vec<u32>,
+    source: PythonSourceIndex,
 }
 
 impl LineIndex {
     fn new(source: &str) -> Self {
-        let starts = hoimin_core::python_line_starts(source.as_bytes())
-            .expect("Ruff source offset fits u32");
-        Self { starts }
+        Self {
+            source: PythonSourceIndex::new(source).expect("Ruff source offset fits u32"),
+        }
     }
 
     #[allow(
         clippy::cast_possible_truncation,
         reason = "Ruff TextSize offsets cap parsed source at u32::MAX bytes, and code-point counts cannot exceed byte counts."
     )]
-    fn line_and_column(&self, source: &str, offset: usize) -> (u32, u32) {
-        let line_index = self
-            .starts
-            .partition_point(|start| (*start as usize) <= offset)
-            - 1;
-        let line_start = self.starts[line_index] as usize;
-        let line = line_index as u32 + 1;
-        let column = python_source_column(source, line_start, offset)
-            .expect("Ruff source offsets are valid UTF-8 boundaries within a u32-sized source");
-        (line, column)
+    fn line_and_column(&self, _source: &str, offset: usize) -> (u32, u32) {
+        self.source
+            .line_and_column(offset)
+            .expect("Ruff source offsets are valid UTF-8 boundaries within a u32-sized source")
     }
 }
 
@@ -2541,12 +2574,18 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
     }
 
     fn collect_list_literal(&mut self, list: &ExprList) {
-        if list.ctx != ExprContext::Load
+        if !self
+            .request
+            .operators
+            .contains(MutationOperator::CollectionListTuple)
+            || list.ctx != ExprContext::Load
             || self.exception_type_depth > 0
             || self.facts.contains_annotation_span(list.range())
         {
             return;
         }
+        #[cfg(test)]
+        COLLECTION_REPLACEMENT_BUILDS.set(COLLECTION_REPLACEMENT_BUILDS.get().saturating_add(1));
         if let Some(replacement) = list_to_tuple_replacement(self.source, list, self.facts) {
             self.add_candidate(
                 list.range(),
@@ -2557,12 +2596,18 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
     }
 
     fn collect_tuple_literal(&mut self, tuple: &ExprTuple) {
-        if tuple.ctx != ExprContext::Load
+        if !self
+            .request
+            .operators
+            .contains(MutationOperator::CollectionListTuple)
+            || tuple.ctx != ExprContext::Load
             || self.exception_type_depth > 0
             || self.facts.contains_annotation_span(tuple.range())
         {
             return;
         }
+        #[cfg(test)]
+        COLLECTION_REPLACEMENT_BUILDS.set(COLLECTION_REPLACEMENT_BUILDS.get().saturating_add(1));
         if let Some(replacement) = tuple_to_list_replacement(self.source, tuple) {
             self.add_candidate(
                 tuple.range(),
@@ -4065,8 +4110,21 @@ struct AnnotationSite<'ast> {
     scope_kind: ScopeKind,
 }
 
-struct AnnotationCollector<'ast> {
+type AnnotationCallback<'ast, 'callback> =
+    dyn FnMut(&'ast Expr, Option<String>, &KnownImports) + 'callback;
+const TYPE_OPERATORS: [MutationOperator; 7] = [
+    MutationOperator::TypeNullableRemove,
+    MutationOperator::TypeNullableAdd,
+    MutationOperator::TypeListSequence,
+    MutationOperator::TypeSetAbstractSet,
+    MutationOperator::TypeMapping,
+    MutationOperator::TypeIterableIterator,
+    MutationOperator::TypeSequenceIterable,
+];
+
+struct AnnotationCollector<'ast, 'callback> {
     annotations: Vec<AnnotationSite<'ast>>,
+    annotation_callback: Option<&'callback mut AnnotationCallback<'ast, 'callback>>,
     imports: KnownImports,
     class_body_fallback: Option<KnownImports>,
     class_external_bindings: Option<ClassExternalBindings>,
@@ -4152,16 +4210,26 @@ pub(super) enum BindingFlowTestMutation {
     DropBodyTerminates,
 }
 
-impl<'ast> AnnotationCollector<'ast> {
+impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
     fn collect(module: &'ast ModModule) -> Vec<AnnotationSite<'ast>> {
         let mut collector = Self::empty();
         collector.visit_suite(&module.body);
         collector.annotations
     }
 
+    fn visit_each(
+        module: &'ast ModModule,
+        callback: &'callback mut AnnotationCallback<'ast, 'callback>,
+    ) {
+        let mut collector = Self::empty();
+        collector.annotation_callback = Some(callback);
+        collector.visit_suite(&module.body);
+    }
+
     fn empty() -> Self {
         Self {
             annotations: Vec::new(),
+            annotation_callback: None,
             imports: KnownImports::default(),
             class_body_fallback: None,
             class_external_bindings: None,
@@ -4439,9 +4507,19 @@ impl<'ast> AnnotationCollector<'ast> {
         if !self.record_annotations {
             return;
         }
+        #[cfg(test)]
+        ANNOTATION_RECORDS.set(ANNOTATION_RECORDS.get().saturating_add(1));
+        let symbol = self.symbol();
+        if let Some(callback) = self.annotation_callback.as_mut() {
+            callback(annotation, symbol, &self.imports);
+            return;
+        }
+        #[cfg(test)]
+        ANNOTATION_IMPORT_SNAPSHOT_CLONES
+            .set(ANNOTATION_IMPORT_SNAPSHOT_CLONES.get().saturating_add(1));
         self.annotations.push(AnnotationSite {
             annotation,
-            symbol: self.symbol(),
+            symbol,
             imports: self.imports.clone(),
             #[cfg(test)]
             scope_kind: self.scope_kind,
@@ -5108,7 +5186,7 @@ impl<'ast> AnnotationCollector<'ast> {
     }
 }
 
-impl<'ast> Visitor<'ast> for AnnotationCollector<'ast> {
+impl<'ast> Visitor<'ast> for AnnotationCollector<'ast, '_> {
     fn visit_stmt(&mut self, statement: &'ast Stmt) {
         let exits = self.visit_statement_flow(statement);
         if let Some(imports) = exits.fallthrough {
@@ -5565,11 +5643,15 @@ fn type_annotation_candidates(
     request: &AnalyzeRequest<'_>,
 ) -> ProducerPrefix {
     let mut candidates = CandidatePrefix::new(request.max_candidates);
-    for site in AnnotationCollector::collect(module) {
-        for (replacement, operator) in
-            annotation_replacements(site.annotation, source, facts, &site.imports)
-        {
-            let range = site.annotation.range();
+    if !TYPE_OPERATORS
+        .iter()
+        .any(|operator| request.operators.contains(*operator))
+    {
+        return candidates.finish();
+    }
+    AnnotationCollector::visit_each(module, &mut |annotation, symbol, imports| {
+        for (replacement, operator) in annotation_replacements(annotation, source, facts, imports) {
+            let range = annotation.range();
             let start = usize::from(range.start());
             let end = usize::from(range.end());
             if let Some(candidate) = make_candidate(
@@ -5579,13 +5661,13 @@ fn type_annotation_candidates(
                 start..end,
                 replacement,
                 operator,
-                site.symbol.clone(),
+                symbol.clone(),
             ) && retained_by_profile(&candidate, request.profile, facts)
             {
                 candidates.push(candidate);
             }
         }
-    }
+    });
     candidates.finish()
 }
 

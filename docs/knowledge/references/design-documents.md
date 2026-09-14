@@ -9,6 +9,53 @@ sources:
   resource: ../../superpowers/specs/2026-09-14-issue-482-name-history-index-design.md
   working_tree: untracked
   sha256: d561460521f12160b3598596dc65d3e3e3898455d9fa93c22b6fdee21ac89f91
+
+- id: issue-479-stream
+  resource: ../../superpowers/specs/2026-09-14-issue-479-stream-annotations-design.md
+  working_tree: clean
+  revision: bfa346ca49285a3ebedd4d77c70f93dafb743846
+  sha256: 14ecae895345bbd5bf40452ed53655fc2ff4aec67e292010c2f26a10c39ee3e2
+
+- id: issue-461-lazy
+  resource: ../../superpowers/specs/2026-09-14-issue-461-lazy-candidates-design.md
+  working_tree: clean
+  revision: 38ee010b2e0768d82c37488075275edc34f8293b
+  sha256: 683834f572abb49a7d2a5fc7c36890ce0ac57be4daebcb62467af5391edd1dc1
+
+- id: issue-475-index
+  resource: ../../superpowers/specs/2026-09-14-issue-475-range-normalization-design.md
+  sha256: a73a0b51c51b10d1d958585acbc0455d3c9d18ec340ef6acec053c2c5427081f
+
+- id: issue-466
+  resource: ../../superpowers/specs/2026-09-14-issue-466-retired-blank-line-discovery-design.md
+  working_tree: untracked
+  sha256: a81a30e965b53eea08c62acba2767f44afb806b4b68b1d8113bdd3faf918966e
+
+- id: issue-463
+  resource: ../../superpowers/specs/2026-09-14-issue-463-json-record-write-design.md
+  revision: bd8de5bdee2f0e4033623e5b44eff5f62db89b72
+  working_tree: clean
+  sha256: 76d7312dba2c393de9f8c9b47c0f767df0c4100df53a47a07142ba5897eabd19
+
+- id: issue-474-index
+  resource: ../../superpowers/specs/2026-09-14-issue-474-selector-index-design.md
+  working_tree: untracked
+  sha256: 0325588c52127c73cb41fbf33ef9d9e244915a6de4de5f6b3134b31312500ef6
+
+- id: issue-470
+  resource: ../../superpowers/specs/2026-09-14-issue-470-column-index-design.md
+  working_tree: untracked
+  sha256: 1e6e2edd408f35816863baad22f78426c506a099808846add62a33cd12b062a3
+- id: issue-456
+  resource: ../../superpowers/specs/2026-09-14-issue-456-validation-context-design.md
+  working_tree: untracked
+  sha256: a3f08279a0c60e016cef85ba37827f2b3be4fd5006bbb2068cce2c75bdf8991b
+- id: issue-457
+  resource: ../../superpowers/specs/2026-09-14-issue-457-fingerprint-shared-walk-design.md
+  revision: 67b82d65bfa6f4c13b7476531161c1852be50381
+  working_tree: clean
+  sha256: 9f7b93abdbe62ab58d1ca1f4c6bb3f3bbbdd4326956cc1dde9b14d27b4cfc4b7
+
 - id: issue-513
   resource: ../../superpowers/specs/2026-09-12-issue-513-parser-recursion-design.md
   working_tree: untracked
@@ -761,12 +808,14 @@ sources:
 
 # 収録一覧
 
-2026-09-12時点の180件。これは原文への索引であり、各文書の採用状況・現行性・検証結果を一括して認定するものではない。見出しは原文から抽出した。出典の版とGitの追跡状態は、冒頭のYAMLメタデータに記録している。未追跡資料は同じ作業ツリーに依存する。
+2026-09-14時点の181件。これは原文への索引であり、各文書の採用状況・現行性・検証結果を一括して認定するものではない。見出しは原文から抽出した。出典の版とGitの追跡状態は、冒頭のYAMLメタデータに記録している。未追跡資料は同じ作業ツリーに依存する。
 
 主要な論点の要約は[入口](../index.md)から読む。ファイル名に含まれる日付は作成履歴の手がかりであり、そのファイルが最後に変更された日時ではない。
 
 | 原文 | 先頭見出し | 作成時の状態 |
 | --- | --- | --- |
+| [2026-09-14-issue-475-range-normalization-design.md](../../superpowers/specs/2026-09-14-issue-475-range-normalization-design.md) | Issue 475: Normalize explicit selector groups once [^issue-475-index] | 未追跡 |
+| [2026-09-14-issue-474-selector-index-design.md](../../superpowers/specs/2026-09-14-issue-474-selector-index-design.md) | Issue 474: Explicit selector file index [^issue-474-index] | 未追跡 |
 | [2026-09-12-issue-515-class-directives-design.md](../../superpowers/specs/2026-09-12-issue-515-class-directives-design.md) | Issue 515: Skip enclosing class directives during lexical lookup [^issue-515] | 未追跡 |
 | [2026-09-12-issue-514-comprehension-effect-order-design.md](../../superpowers/specs/2026-09-12-issue-514-comprehension-effect-order-design.md) | Issue 514: Preserve first-iterable lookup before comprehension body effects [^issue-514] | 未追跡 |
 | [2026-09-12-issue-516-session-ownership-identities-design.md](../../superpowers/specs/2026-09-12-issue-516-session-ownership-identities-design.md) | Issue 516: Share active session ownership-tree identities [^issue-516] | 未追跡 |
@@ -781,6 +830,7 @@ sources:
 | [2026-09-11-issue-477-import-roots-design.md](../../superpowers/specs/2026-09-11-issue-477-import-roots-design.md) | Issue 477: Configure worker import roots independently of mutation selection [^issue-477] | 未追跡 |
 | [2026-09-11-issue-473-symbol-ranking-design.md](../../superpowers/specs/2026-09-11-issue-473-symbol-ranking-design.md) | Issue 473: Rank candidates inside explicitly selected symbols [^issue-473] | 未追跡 |
 | [2026-09-11-issue-472-session-artifacts-design.md](../../superpowers/specs/2026-09-11-issue-472-session-artifacts-design.md) | Issue 472: Exclude the active session artifacts from workspace snapshots [^issue-472] | 未追跡 |
+| [2026-09-14-issue-470-column-index-design.md](../../superpowers/specs/2026-09-14-issue-470-column-index-design.md) | Issue 470: 候補列番号索引の設計 [^issue-470] | **未追跡** |
 | [2026-09-11-issue-469-bom-column-design.md](../../superpowers/specs/2026-09-11-issue-469-bom-column-design.md) | Issue 469: Share Python source-column semantics [^issue-469] | **未追跡** |
 | [2026-09-11-issue-468-pattern-unary-design.md](../../superpowers/specs/2026-09-11-issue-468-pattern-unary-design.md) | Issue 468: Preserve literal-pattern syntax for unary signs [^issue-468] | **未追跡** |
 | [2026-09-11-issue-465-retired-discovery-design.md](../../superpowers/specs/2026-09-11-issue-465-retired-discovery-design.md) | Issue 465: Retired Rust function-discovery disposition [^issue-465] | **未追跡** |
@@ -1129,14 +1179,33 @@ sources:
 [^issue-472]: [2026-09-11-issue-472-session-artifacts-design.md](../../superpowers/specs/2026-09-11-issue-472-session-artifacts-design.md)。
 
 [^issue-469]: [2026-09-11-issue-469-bom-column-design.md](../../superpowers/specs/2026-09-11-issue-469-bom-column-design.md)。
+[^issue-470]: [2026-09-14-issue-470-column-index-design.md](../../superpowers/specs/2026-09-14-issue-470-column-index-design.md)。
 
 [^issue-468]: [2026-09-11-issue-468-pattern-unary-design.md](../../superpowers/specs/2026-09-11-issue-468-pattern-unary-design.md)。
 
+# 空行による探索時間増加の廃止確認（Issue #466）
+
+Rust関数を列挙していた旧開発ツールの正規表現と候補上限の順序を履歴から確認し、現行ツリーでは連携全体が削除済みであることを記録した。実行コードを復元せず、将来再導入する場合の性能契約を示す。[^issue-466]
+
+[^issue-466]: [2026-09-14-issue-466-retired-blank-line-discovery-design.md](../../superpowers/specs/2026-09-14-issue-466-retired-blank-line-discovery-design.md)。
+
 [^issue-465]: [2026-09-11-issue-465-retired-discovery-design.md](../../superpowers/specs/2026-09-11-issue-465-retired-discovery-design.md)。
+
+# JSON mutant record一括書込み（Issue #463）
+
+mutantイベントと区切りを一件のrecordとして直列化し、同期的な`write_all`の完了後に応答する設計を記録した。[^issue-463]
+
+[^issue-463]: [2026-09-14-issue-463-json-record-write-design.md](../../superpowers/specs/2026-09-14-issue-463-json-record-write-design.md)。
 
 [^issue-462]: [2026-09-11-issue-462-retired-reader-design.md](../../superpowers/specs/2026-09-11-issue-462-retired-reader-design.md)。
 
 [^issue-460]: [2026-09-11-issue-460-progress-result-design.md](../../superpowers/specs/2026-09-11-issue-460-progress-result-design.md)。
+
+# fingerprint glob共有走査（Issue #457）
+
+複数のfingerprint include globを一度のディレクトリ走査で解決し、入力順のエラーとglobごとの照合を維持する設計を記録した。[^issue-457]
+
+[^issue-457]: [2026-09-14-issue-457-fingerprint-shared-walk-design.md](../../superpowers/specs/2026-09-14-issue-457-fingerprint-shared-walk-design.md)。
 
 # 候補の保存サイズ上限（Issue #459）
 
@@ -1161,6 +1230,10 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 
 [^issue-451]: [設計原文](../../superpowers/specs/2026-09-11-issue-451-exception-parentheses-design.md)。
 
+[^issue-475-index]: [Issue 475: Normalize explicit selector groups once](../../superpowers/specs/2026-09-14-issue-475-range-normalization-design.md)。
+
+[^issue-474-index]: [Issue 474: Explicit selector file index](../../superpowers/specs/2026-09-14-issue-474-selector-index-design.md)。
+
 [^issue-513]: [2026-09-12-issue-513-parser-recursion-design.md](../../superpowers/specs/2026-09-12-issue-513-parser-recursion-design.md)。
 [^issue-515]: [Issue515 class directive design](../../superpowers/specs/2026-09-12-issue-515-class-directives-design.md)。
 [^issue-514]: [Issue514 comprehension effect order design](../../superpowers/specs/2026-09-12-issue-514-comprehension-effect-order-design.md)。
@@ -1171,3 +1244,23 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 - [Issue #482: Name history index](../../superpowers/specs/2026-09-14-issue-482-name-history-index-design.md) - 挿入順foldを保持する束縛履歴索引。[^issue-482-index]
 
 [^issue-482-index]: [設計原文](../../superpowers/specs/2026-09-14-issue-482-name-history-index-design.md)。
+
+# Issue #479 の設計
+
+- [Issue #479: Streaming annotation candidates](../../superpowers/specs/2026-09-14-issue-479-stream-annotations-design.md) - 型注釈候補をcurrent import stateから逐次生成する。[^issue-479-stream]
+
+[^issue-479-stream]: [設計原文](../../superpowers/specs/2026-09-14-issue-479-stream-annotations-design.md)。
+
+# Issue #461 の設計
+
+- [Issue #461: Lazy candidate strings](../../superpowers/specs/2026-09-14-issue-461-lazy-candidates-design.md) - 未選択候補のreplacementとoriginalの生成を選択判定後へ遅延する。[^issue-461-lazy]
+
+[^issue-461-lazy]: [設計原文](../../superpowers/specs/2026-09-14-issue-461-lazy-candidates-design.md)。
+
+# 2026-09-14 の追加
+
+| 原文 | 内容 |
+| --- | --- |
+| [Issue #456: verify のファイル単位の候補検証](../../superpowers/specs/2026-09-14-issue-456-validation-context-design.md) | 前処理の共有、診断順とソース所有権。[^issue-456] |
+
+[^issue-456]: [2026-09-14-issue-456-validation-context-design.md](../../superpowers/specs/2026-09-14-issue-456-validation-context-design.md)。

@@ -141,6 +141,15 @@ pub fn resolve_explicit(
         })
         .filter(|(path, _)| !excludes.contains(&path_key(path.as_str())))
         .collect();
+    let available_python: BTreeMap<String, Utf8PathBuf> = available
+        .iter()
+        .filter(|(_, is_python)| **is_python)
+        .fold(BTreeMap::new(), |mut indexed, (path, _)| {
+            indexed
+                .entry(path_equality_key(path).into_owned())
+                .or_insert_with(|| path.clone());
+            indexed
+        });
 
     let mut targets = BTreeMap::<Utf8PathBuf, TargetSlice>::new();
     for (path, is_python) in &available {
@@ -151,7 +160,7 @@ pub fn resolve_explicit(
 
     for raw_path in &selection.files {
         let requested = checked_explicit_path(selection, &sources, raw_path)?;
-        let path = require_python(&available, &requested)?;
+        let path = require_python(&available_python, &requested)?;
         targets.insert(path.clone(), whole_file(path));
     }
 
@@ -160,26 +169,35 @@ pub fn resolve_explicit(
             return Err(TargetError::InvalidLineRange(line.range));
         }
         let requested = checked_explicit_path(selection, &sources, &line.path)?;
-        let path = require_python(&available, &requested)?;
+        let path = require_python(&available_python, &requested)?;
         let entry = targets.entry(path.clone()).or_insert_with(|| TargetSlice {
             path,
             lines: Vec::new(),
             symbols: Vec::new(),
         });
         entry.lines.push(line.range);
-        normalize_ranges(&mut entry.lines);
     }
 
     for symbol in &selection.symbols {
-        let path = resolve_symbol_path(symbol, &sources, &available)?;
+        let path = resolve_symbol_path(symbol, &sources, &available_python)?;
         let entry = targets.entry(path.clone()).or_insert_with(|| TargetSlice {
             path,
             lines: Vec::new(),
             symbols: Vec::new(),
         });
         entry.symbols.push(symbol.qualname.clone());
-        entry.symbols.sort();
-        entry.symbols.dedup();
+    }
+
+    for target in targets.values_mut() {
+        if !target.lines.is_empty() {
+            normalize_ranges(&mut target.lines);
+        }
+        if !target.symbols.is_empty() {
+            #[cfg(test)]
+            SYMBOL_NORMALIZATIONS.with(|count| count.set(count.get() + 1));
+            target.symbols.sort();
+            target.symbols.dedup();
+        }
     }
 
     let targets: Vec<_> = targets.into_values().collect();
@@ -204,13 +222,12 @@ fn checked_explicit_path(
 }
 
 fn require_python(
-    available: &BTreeMap<Utf8PathBuf, bool>,
+    available_python: &BTreeMap<String, Utf8PathBuf>,
     path: &Utf8Path,
 ) -> Result<Utf8PathBuf, TargetError> {
-    available
-        .iter()
-        .find(|(candidate, is_python)| **is_python && paths_equal(candidate, path))
-        .map(|(candidate, _)| candidate.clone())
+    available_python
+        .get(path_equality_key(path).as_ref())
+        .cloned()
         .ok_or_else(|| TargetError::MissingOrNonPythonFile(path.to_owned()))
 }
 
@@ -297,7 +314,14 @@ fn paths_equal(left: &Utf8Path, right: &Utf8Path) -> bool {
     path_equality_key(left) == path_equality_key(right)
 }
 
+#[cfg(test)]
+thread_local! {
+    static PATH_KEY_DERIVATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 fn path_equality_key(path: &Utf8Path) -> Cow<'_, str> {
+    #[cfg(test)]
+    PATH_KEY_DERIVATIONS.with(|count| count.set(count.get() + 1));
     if cfg!(windows) {
         Cow::Owned(path_key(path.as_str()))
     } else {
@@ -338,13 +362,13 @@ fn simple_uppercase(value: char) -> char {
 fn resolve_symbol_path(
     symbol: &SymbolSelection,
     sources: &[Utf8PathBuf],
-    available: &BTreeMap<Utf8PathBuf, bool>,
+    available_python: &BTreeMap<String, Utf8PathBuf>,
 ) -> Result<Utf8PathBuf, TargetError> {
     let module = symbol.module.replace('.', "/");
     for source in sources {
         for suffix in [format!("{module}.py"), format!("{module}/__init__.py")] {
             let path = source.join(suffix);
-            if let Ok(path) = require_python(available, &path) {
+            if let Ok(path) = require_python(available_python, &path) {
                 return Ok(path);
             }
         }
@@ -353,6 +377,8 @@ fn resolve_symbol_path(
 }
 
 fn normalize_ranges(ranges: &mut Vec<LineRange>) {
+    #[cfg(test)]
+    RANGE_NORMALIZATIONS.with(|count| count.set(count.get() + 1));
     ranges.sort_by_key(|range| (range.start, range.end));
     let mut merged: Vec<LineRange> = Vec::with_capacity(ranges.len());
     for range in ranges.drain(..) {
@@ -365,6 +391,12 @@ fn normalize_ranges(ranges: &mut Vec<LineRange>) {
         merged.push(range);
     }
     *ranges = merged;
+}
+
+#[cfg(test)]
+thread_local! {
+    static RANGE_NORMALIZATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static SYMBOL_NORMALIZATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 #[must_use]
@@ -483,4 +515,292 @@ pub fn targets_are_normalized(targets: &[TargetSlice]) -> bool {
                     .iter()
                     .all(|range| range.start > 0 && range.start <= range.end)
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::hint::black_box;
+    use std::time::Instant;
+
+    #[test]
+    fn explicit_file_lookups_do_not_scan_every_discovered_file() {
+        let count = 128;
+        let discovered = (0..count)
+            .map(|index| DiscoveredFile::python(format!("src/file{index:03}.py")))
+            .collect::<Vec<_>>();
+        let selection = Selection {
+            root: "/project".into(),
+            files: discovered.iter().map(|file| file.path.clone()).collect(),
+            ..Selection::default()
+        };
+
+        PATH_KEY_DERIVATIONS.with(|checks| checks.set(0));
+        let targets = resolve_explicit(&selection, &discovered).unwrap();
+        let key_derivations = PATH_KEY_DERIVATIONS.with(std::cell::Cell::get);
+
+        assert_eq!(targets.len(), count);
+        assert_eq!(key_derivations, count * 2);
+    }
+
+    #[test]
+    fn line_and_symbol_lookups_share_the_discovered_file_index() {
+        let count = 128;
+        let discovered = (0..count)
+            .map(|index| DiscoveredFile::python(format!("src/file{index:03}.py")))
+            .collect::<Vec<_>>();
+        let selection = Selection {
+            root: "/project".into(),
+            sources: vec!["src".into()],
+            lines: vec![LineSelection {
+                path: "src/file127.py".into(),
+                range: LineRange { start: 1, end: 1 },
+            }],
+            symbols: vec![SymbolSelection {
+                module: "file126".into(),
+                qualname: "run".into(),
+            }],
+            ..Selection::default()
+        };
+
+        PATH_KEY_DERIVATIONS.with(|checks| checks.set(0));
+        let targets = resolve_explicit(&selection, &discovered).unwrap();
+        let key_derivations = PATH_KEY_DERIVATIONS.with(std::cell::Cell::get);
+
+        assert_eq!(targets.len(), count);
+        assert_eq!(key_derivations, count + 2);
+    }
+
+    #[test]
+    fn missing_symbol_lookup_does_not_scan_discovered_files() {
+        let count = 128;
+        let discovered = (0..count)
+            .map(|index| DiscoveredFile::python(format!("src/file{index:03}.py")))
+            .collect::<Vec<_>>();
+        let selection = Selection {
+            root: "/project".into(),
+            sources: vec!["src".into()],
+            symbols: vec![SymbolSelection {
+                module: "missing".into(),
+                qualname: "run".into(),
+            }],
+            ..Selection::default()
+        };
+
+        PATH_KEY_DERIVATIONS.with(|checks| checks.set(0));
+        let error = resolve_explicit(&selection, &discovered).unwrap_err();
+        let key_derivations = PATH_KEY_DERIVATIONS.with(std::cell::Cell::get);
+
+        assert_eq!(error, TargetError::SymbolModuleNotFound("missing".into()));
+        assert_eq!(key_derivations, count + 2);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn python_index_ignores_a_case_equivalent_non_python_entry() {
+        let selection = Selection {
+            root: "C:/project".into(),
+            files: vec!["src/case.py".into()],
+            ..Selection::default()
+        };
+        let discovered = [
+            DiscoveredFile::regular("SRC/CASE.PY"),
+            DiscoveredFile::python("src/case.py"),
+        ];
+
+        let targets = resolve_explicit(&selection, &discovered).unwrap();
+
+        assert_eq!(targets, vec![whole_file("src/case.py".into())]);
+    }
+
+    fn sparse_selection(count: u32) -> Selection {
+        Selection {
+            root: "/project".into(),
+            lines: (0..count)
+                .rev()
+                .map(|index| LineSelection {
+                    path: "calc.py".into(),
+                    range: LineRange {
+                        start: index * 2 + 1,
+                        end: index * 2 + 1,
+                    },
+                })
+                .collect(),
+            symbols: (0..count)
+                .rev()
+                .flat_map(|index| {
+                    [
+                        SymbolSelection {
+                            module: "calc".into(),
+                            qualname: format!("symbol{index:05}"),
+                        },
+                        SymbolSelection {
+                            module: "calc".into(),
+                            qualname: format!("symbol{index:05}"),
+                        },
+                    ]
+                })
+                .collect(),
+            sources: vec![Utf8PathBuf::new()],
+            ..Selection::default()
+        }
+    }
+
+    #[test]
+    fn explicit_ranges_are_normalized_once_per_file() {
+        let count = 128;
+        RANGE_NORMALIZATIONS.with(|calls| calls.set(0));
+
+        let targets = resolve_explicit(
+            &sparse_selection(count),
+            &[DiscoveredFile::python("calc.py")],
+        )
+        .unwrap();
+        let normalizations = RANGE_NORMALIZATIONS.with(std::cell::Cell::get);
+
+        assert_eq!(normalizations, 1);
+        assert_eq!(targets[0].lines.len(), count as usize);
+        assert_eq!(targets[0].symbols.len(), count as usize);
+        assert!(targets_are_normalized(&targets));
+    }
+
+    #[test]
+    fn explicit_symbols_are_normalized_once_per_file() {
+        let count = 128;
+        SYMBOL_NORMALIZATIONS.with(|calls| calls.set(0));
+
+        let targets = resolve_explicit(
+            &sparse_selection(count),
+            &[DiscoveredFile::python("calc.py")],
+        )
+        .unwrap();
+        let normalizations = SYMBOL_NORMALIZATIONS.with(std::cell::Cell::get);
+
+        assert_eq!(normalizations, 1);
+        assert_eq!(targets[0].symbols.len(), count as usize);
+    }
+
+    #[test]
+    fn explicit_groups_are_normalized_once_for_each_file() {
+        let mut selection = sparse_selection(4);
+        selection.lines.extend((0..4).map(|index| LineSelection {
+            path: "other.py".into(),
+            range: LineRange {
+                start: index * 2 + 1,
+                end: index * 2 + 1,
+            },
+        }));
+        selection
+            .symbols
+            .extend((0..4).map(|index| SymbolSelection {
+                module: "other".into(),
+                qualname: format!("other{index}"),
+            }));
+        RANGE_NORMALIZATIONS.with(|calls| calls.set(0));
+        SYMBOL_NORMALIZATIONS.with(|calls| calls.set(0));
+
+        let targets = resolve_explicit(
+            &selection,
+            &[
+                DiscoveredFile::python("calc.py"),
+                DiscoveredFile::python("other.py"),
+            ],
+        )
+        .unwrap();
+
+        assert_eq!(targets.len(), 2);
+        assert_eq!(RANGE_NORMALIZATIONS.with(std::cell::Cell::get), 2);
+        assert_eq!(SYMBOL_NORMALIZATIONS.with(std::cell::Cell::get), 2);
+    }
+
+    #[test]
+    fn explicit_range_normalization_preserves_boundaries() {
+        let selection = Selection {
+            root: "/project".into(),
+            lines: vec![
+                LineSelection {
+                    path: "calc.py".into(),
+                    range: LineRange {
+                        start: u32::MAX,
+                        end: u32::MAX,
+                    },
+                },
+                LineSelection {
+                    path: "calc.py".into(),
+                    range: LineRange { start: 4, end: 5 },
+                },
+                LineSelection {
+                    path: "calc.py".into(),
+                    range: LineRange { start: 3, end: 4 },
+                },
+                LineSelection {
+                    path: "calc.py".into(),
+                    range: LineRange { start: 3, end: 4 },
+                },
+            ],
+            ..Selection::default()
+        };
+
+        let targets = resolve_explicit(&selection, &[DiscoveredFile::python("calc.py")]).unwrap();
+
+        assert_eq!(
+            targets[0].lines,
+            vec![
+                LineRange { start: 3, end: 5 },
+                LineRange {
+                    start: u32::MAX,
+                    end: u32::MAX,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    #[ignore = "release performance evidence"]
+    fn measure_explicit_file_lookup_scaling() {
+        for count in [2_000, 4_000, 8_000] {
+            let discovered = (0..count)
+                .map(|index| DiscoveredFile::python(format!("src/file{index:05}.py")))
+                .collect::<Vec<_>>();
+            let selection = Selection {
+                root: "/project".into(),
+                files: discovered.iter().map(|file| file.path.clone()).collect(),
+                ..Selection::default()
+            };
+            let mut samples = Vec::new();
+            for _ in 0..5 {
+                let started = Instant::now();
+                let targets = black_box(resolve_explicit(
+                    black_box(&selection),
+                    black_box(&discovered),
+                ))
+                .unwrap();
+                assert_eq!(targets.len(), count);
+                samples.push(started.elapsed());
+            }
+            samples.sort_unstable();
+            println!("files={count} selectors={count} median={:?}", samples[2]);
+        }
+    }
+
+    #[test]
+    #[ignore = "release performance evidence"]
+    fn measure_explicit_range_scaling() {
+        for count in [2_000, 4_000, 8_000] {
+            let selection = sparse_selection(count);
+            let mut samples = Vec::new();
+            for _ in 0..5 {
+                let started = Instant::now();
+                let targets = black_box(resolve_explicit(
+                    black_box(&selection),
+                    black_box(&[DiscoveredFile::python("calc.py")]),
+                ))
+                .unwrap();
+                assert_eq!(targets[0].lines.len(), count as usize);
+                samples.push(started.elapsed());
+            }
+            samples.sort_unstable();
+            println!("sparse_ranges={count} median={:?}", samples[2]);
+        }
+    }
 }
