@@ -418,7 +418,35 @@ results in both reports. Read the latest run summary for its whole-run mutation
 score.
 
 For split verification, choose stable candidate batches and keep a separate oldest-to-newest
-report history for each batch.
+report history for each batch. `--offset K --top N` skips K entries in the complete
+selected-policy ordering, then selects up to N candidates:
+
+```console
+hoimin plan --root . --source src --max-mutants 100 -- python -m pytest -q > plan.json
+mkdir -p reports
+hoimin verify plan.json --top 100 --offset 0 > reports/batch-a-001.json
+hoimin verify plan.json --top 20 --offset 100 > reports/batch-b-001.json
+# After improving tests, repeat the same ranges from the same plan.
+hoimin verify plan.json --top 100 --offset 0 > reports/batch-a-002.json
+hoimin verify plan.json --top 20 --offset 100 > reports/batch-b-002.json
+hoimin progress reports/batch-a-001.json reports/batch-a-002.json
+hoimin progress reports/batch-b-001.json reports/batch-b-002.json
+```
+
+This example partitions a plan with 120 retained candidates. Keep the same
+`--selection-policy` for its batches: `strict` uses saved rank order; `diverse`
+uses the complete equal-score file-round-robin order before slicing. Changing
+the policy between batches can change membership. The JSON/JSONL mutant records
+retain the actual selected candidate IDs; save the range/policy commands with
+those reports for reruns.
+
+Offset is zero-based, requires `--top`, and cannot accompany `--candidate`.
+An empty plan or an offset at/beyond its retained length fails before baseline.
+A range extending beyond the end selects the available suffix. Truncated plans
+permit only retained ranges and remain incomplete. Each batch inherits the saved
+limits, including `max-mutants`; skipped entries do not consume that limit.
+Changing selected source or fingerprint inputs still requires a new plan.
+
 After every test improvement, rerun every stable batch and save each report separately.
 Pass `hoimin progress` only reports covering the identical candidate-ID set.
 The command marks a comparison `indeterminate`, resets its comparable stall

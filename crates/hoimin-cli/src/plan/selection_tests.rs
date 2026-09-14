@@ -165,3 +165,29 @@ fn diverse_is_deterministic_and_selects_each_retained_candidate_once() {
         strict.iter().collect::<BTreeSet<_>>()
     );
 }
+
+#[test]
+fn fixed_batch_diverse_slices_the_global_order_across_files_and_tiers() {
+    let candidates = vec![
+        candidate("A1", "a.py", 1, 100),
+        candidate("A2", "a.py", 2, 100),
+        candidate("A3", "a.py", 3, 100),
+        candidate("B1", "b.py", 4, 100),
+        candidate("B2", "b.py", 5, 100),
+        candidate("C1", "c.py", 6, 90),
+    ];
+    let select = |offset, count| {
+        super::selection::select_top_candidate_ids_at(
+            &candidates,
+            NonZeroUsize::new(count).unwrap(),
+            TopSelectionPolicy::Diverse,
+            offset,
+        )
+    };
+    assert_eq!(select(0, 2), ["A1", "B1"]);
+    assert_eq!(select(2, 2), ["A2", "B2"]);
+    assert_eq!(select(4, 2), ["A3", "C1"]);
+    assert_eq!(select(5, usize::MAX), ["C1"]);
+    assert!(select(6, 1).is_empty());
+    assert!(select(usize::MAX, usize::MAX).is_empty());
+}

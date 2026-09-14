@@ -5,6 +5,10 @@ description: docs/auditsとdocs/superpowers/reports内の全Markdownを追跡状
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-454-review
+  resource: ../../superpowers/reports/2026-09-14-issue-454-fixed-batches-review.md
+  working_tree: untracked
+  sha256: bddc76fea5ffd3dd176b09048deb6a155b7d16b4a63059589c79ee274486c485
 - id: issue-461-merge-review
   resource: ../../superpowers/reports/2026-09-14-issue-461-self-review.md
   revision: 11dd162101c4351dfdd15cb52ba112bdf1fe9cf2
@@ -648,3 +652,9 @@ sources:
 [^issue-470-merge-review]: [2026-09-14-issue-470-self-review.md](../../superpowers/reports/2026-09-14-issue-470-self-review.md)。
 [^issue-479-merge-review]: [2026-09-14-issue-479-self-review.md](../../superpowers/reports/2026-09-14-issue-479-self-review.md)。
 [^issue-482-merge-review]: [2026-09-14-issue-482-self-review.md](../../superpowers/reports/2026-09-14-issue-482-self-review.md)。
+
+# Issue 454
+
+- [Issue 454 fixed-batch review](../../superpowers/reports/2026-09-14-issue-454-fixed-batches-review.md) — 固定バッチ選択と確認範囲。[^issue-454-review]
+
+[^issue-454-review]: [Issue 454 fixed-batch review](../../superpowers/reports/2026-09-14-issue-454-fixed-batches-review.md)。

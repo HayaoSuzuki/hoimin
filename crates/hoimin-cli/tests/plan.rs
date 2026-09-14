@@ -2756,3 +2756,207 @@ async fn candidate_record_limits_agree_for_plan_verify_and_direct_run() {
         }
     }
 }
+
+#[tokio::test]
+async fn fixed_batch_partition_covers_120_candidates_without_overriding_limits() {
+    use std::fmt::Write as _;
+    let mut source = String::new();
+    for index in 0..120 {
+        writeln!(source, "x{index} = 1 + 2").unwrap();
+    }
+    let project = Project::new_with_source(&source);
+    let (path, manifest, marker) =
+        write_plan_manifest(&project, &["--operators", "binary_add_sub"]).await;
+    assert_eq!(manifest.candidates.len(), 120);
+    let expected: BTreeSet<_> = manifest.candidates.iter().map(|c| c.id.clone()).collect();
+    for policy in ["strict", "diverse"] {
+        let mut batches = Vec::new();
+        for (count, offset) in [("100", "0"), ("20", "100"), ("20", "100")] {
+            let ParsedCommand::Verify(args) = parse_from([
+                "hoimin",
+                "verify",
+                path.to_str().unwrap(),
+                "--top",
+                count,
+                "--offset",
+                offset,
+                "--selection-policy",
+                policy,
+            ])
+            .unwrap() else {
+                panic!("verify args");
+            };
+            let verified = prepare_verify_selection(&args.manifest, &args.selection, args.format)
+                .await
+                .unwrap();
+            assert_eq!(verified.config.limits, manifest.normalized_config.limits);
+            let ResolvedVerifySelection::RankedCandidates(ids) = verified.selection else {
+                panic!("ranked selection");
+            };
+            assert_eq!(ids.len(), count.parse::<usize>().unwrap());
+            batches.push(ids);
+        }
+        assert_eq!(batches[1], batches[2]);
+        let first: BTreeSet<_> = batches[0].iter().cloned().collect();
+        let second: BTreeSet<_> = batches[1].iter().cloned().collect();
+        assert!(first.is_disjoint(&second));
+        assert_eq!(
+            first.union(&second).cloned().collect::<BTreeSet<_>>(),
+            expected
+        );
+    }
+    assert!(!marker.exists());
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&std::fs::read(path).unwrap()).unwrap(),
+        serde_json::to_value(manifest).unwrap()
+    );
+}
+
+#[tokio::test]
+async fn fixed_batch_bounds_preserve_truncation_and_reject_invalid_ranges() {
+    let project = Project::new_with_source("x = 1 + 2 + 3 + 4\n");
+    let (path, manifest, marker) = write_plan_manifest(
+        &project,
+        &[
+            "--operators",
+            "binary_add_sub",
+            "--max-candidates",
+            "2",
+            "--max-mutants",
+            "1",
+        ],
+    )
+    .await;
+    assert!(manifest.truncated);
+    let selection = |count, offset| VerifySelection::TopRange {
+        count: std::num::NonZeroUsize::new(count).unwrap(),
+        policy: TopSelectionPolicy::Strict,
+        offset,
+    };
+    let suffix = prepare_verify_selection(&path, &selection(usize::MAX, 1), OutputFormat::Json)
+        .await
+        .unwrap();
+    assert!(suffix.plan_truncated);
+    assert_eq!(suffix.verification_selection.requested, usize::MAX);
+    assert_eq!(suffix.verification_selection.selected, 1);
+    assert_eq!(suffix.config.limits, manifest.normalized_config.limits);
+    for offset in [2, 3, usize::MAX] {
+        let error = prepare_verify_selection(&path, &selection(1, offset), OutputFormat::Json)
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("--offset"), "{error}");
+    }
+    let error = prepare_verify_selection(&path, &selection(2, 0), OutputFormat::Json)
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("exceeds max_mutants 1"));
+    assert!(!marker.exists());
+    for args in [
+        vec!["hoimin", "verify", "plan.json", "--offset", "1"],
+        vec![
+            "hoimin",
+            "verify",
+            "plan.json",
+            "--candidate",
+            "ID",
+            "--offset",
+            "1",
+        ],
+        vec![
+            "hoimin",
+            "verify",
+            "plan.json",
+            "--top",
+            "0",
+            "--offset",
+            "1",
+        ],
+        vec![
+            "hoimin",
+            "verify",
+            "plan.json",
+            "--top",
+            "1",
+            "--offset",
+            "-1",
+        ],
+    ] {
+        assert!(parse_from(args).is_err());
+    }
+}
+
+#[tokio::test]
+async fn fixed_batch_real_cli_reports_disjoint_ids_and_repeated_progress() {
+    let project = Project::new_with_source("x = 1 + 2 + 3 + 4\n");
+    let coordinator = tempfile::tempdir().unwrap();
+    let (path, manifest) = write_plan_manifest_with_marker(
+        &project,
+        &["--operators", "binary_add_sub"],
+        &coordinator.path().join("marker"),
+    )
+    .await;
+    let binary = env!("CARGO_BIN_EXE_hoimin");
+    let mut ids = Vec::new();
+    for (offset, filename) in [("0", "a.json"), ("1", "b-1.json"), ("1", "b-2.json")] {
+        let output = tokio::time::timeout(
+            std::time::Duration::from_secs(30),
+            tokio::process::Command::new(binary)
+                .args([
+                    "verify",
+                    path.to_str().unwrap(),
+                    "--top",
+                    "1",
+                    "--offset",
+                    offset,
+                ])
+                .kill_on_drop(true)
+                .output(),
+        )
+        .await
+        .expect("verify subprocess deadline")
+        .unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(1),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(report["run"]["verification_selection"]["selected"], 1);
+        assert_eq!(report["mutants"].as_array().unwrap().len(), 1);
+        ids.push(
+            report["mutants"][0]["candidate"]["id"]
+                .as_str()
+                .unwrap()
+                .to_owned(),
+        );
+        std::fs::write(coordinator.path().join(filename), output.stdout).unwrap();
+    }
+    assert_eq!(
+        ids,
+        [
+            manifest.candidates[0].id.clone(),
+            manifest.candidates[1].id.clone(),
+            manifest.candidates[1].id.clone()
+        ]
+    );
+    let progress = tokio::time::timeout(
+        std::time::Duration::from_secs(30),
+        tokio::process::Command::new(binary)
+            .args(["progress", "--format", "json"])
+            .arg(coordinator.path().join("b-1.json"))
+            .arg(coordinator.path().join("b-2.json"))
+            .kill_on_drop(true)
+            .output(),
+    )
+    .await
+    .expect("progress subprocess deadline")
+    .unwrap();
+    assert!(
+        progress.status.success(),
+        "{}",
+        String::from_utf8_lossy(&progress.stderr)
+    );
+    let comparison: serde_json::Value = serde_json::from_slice(&progress.stdout).unwrap();
+    assert_eq!(comparison["comparisons"][0]["common"], 1);
+}
