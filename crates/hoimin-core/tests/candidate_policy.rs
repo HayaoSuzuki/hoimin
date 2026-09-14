@@ -1,8 +1,8 @@
 use camino::Utf8PathBuf;
 use hoimin_core::{
     ByteSpan, CANDIDATE_SCHEMA_VERSION, CandidateDescriptor, CandidateIdentity,
-    CandidateValidationContext, CandidateValidationError, python_source_column, stable_mutant_id,
-    validate_candidate, validate_candidate_with_context,
+    CandidateValidationContext, CandidateValidationError, PythonSourceIndex, python_source_column,
+    stable_mutant_id, validate_candidate, validate_candidate_with_context,
 };
 
 fn descriptor(source: &[u8]) -> CandidateDescriptor {
@@ -20,6 +20,54 @@ fn descriptor(source: &[u8]) -> CandidateDescriptor {
         column: 6,
         symbol: Some("compare".into()),
         file_hash: blake3::hash(source).to_hex().to_string(),
+    }
+}
+
+#[test]
+fn indexed_source_locations_preserve_python_columns_for_arbitrary_queries() {
+    let source = "\u{feff}aβ😀\r\nxy\u{301}z\r最後\n";
+    let index = PythonSourceIndex::new(source).unwrap();
+
+    for (offset, expected) in [
+        (3, Some((1, 0))),
+        (4, Some((1, 1))),
+        (6, Some((1, 2))),
+        (10, Some((1, 3))),
+        (14, Some((2, 2))),
+        (16, Some((2, 3))),
+        (18, Some((3, 0))),
+        (24, Some((3, 2))),
+        (4, Some((1, 1))),
+    ] {
+        assert_eq!(index.line_and_column(offset), expected, "offset {offset}");
+    }
+
+    for offset in [1, 5, 7, 15, source.len() + 1] {
+        assert_eq!(index.line_and_column(offset), None, "offset {offset}");
+    }
+}
+
+#[test]
+fn indexed_source_locations_match_the_single_query_contract() {
+    for source in [
+        "",
+        "plain ascii\nnext",
+        "\u{feff}first\r\nβeta\r😀 end\n",
+        "a\u{feff}b\n\u{feff}c",
+        "e\u{301} and 日本語",
+    ] {
+        let index = PythonSourceIndex::new(source).unwrap();
+        let starts = hoimin_core::python_line_starts(source.as_bytes()).unwrap();
+        for offset in 0..=source.len() {
+            let line_index = starts.partition_point(|start| *start as usize <= offset) - 1;
+            let expected = python_source_column(source, starts[line_index] as usize, offset)
+                .map(|column| (u32::try_from(line_index).unwrap() + 1, column));
+            assert_eq!(
+                index.line_and_column(offset),
+                expected,
+                "{source:?} at {offset}"
+            );
+        }
     }
 }
 

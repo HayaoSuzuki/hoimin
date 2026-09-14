@@ -73,6 +73,72 @@ fn resolve_rejects_unmatched_patterns() {
 }
 
 #[test]
+fn earlier_unmatched_pattern_precedes_a_later_invalid_pattern() {
+    let fixture = fixture_root(&[("file.txt", "x")]);
+
+    let error = resolve(&fixture.root, &["missing/*.json".into(), "[".into()], &[]).unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "fingerprint.include.unmatched: missing/*.json"
+    );
+}
+
+#[test]
+fn earlier_unsupported_match_precedes_a_later_invalid_pattern() {
+    let fixture = fixture_root(&[("file.txt", "x")]);
+    std::fs::create_dir(fixture.root.join("selected")).unwrap();
+
+    let error = resolve(&fixture.root, &["selected".into(), "[".into()], &[]).unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "fingerprint.include.unsupported_file: selected"
+    );
+}
+
+#[test]
+fn overlapping_patterns_preserve_sorted_deduplicated_records() {
+    let fixture = fixture_root(&[("nested/a.toml", "a"), ("nested/b.json", "b")]);
+
+    let records = resolve(
+        &fixture.root,
+        &["*.toml".into(), "nested/*".into(), "**/*.toml".into()],
+        &[],
+    )
+    .unwrap();
+
+    assert_eq!(
+        records
+            .iter()
+            .map(|record| record.path.as_str())
+            .collect::<Vec<_>>(),
+        ["nested/a.toml", "nested/b.json"]
+    );
+}
+
+#[test]
+fn a_negative_pattern_does_not_suppress_an_earlier_positive_pattern() {
+    let fixture = fixture_root(&[("a.toml", "a")]);
+
+    let error = resolve(&fixture.root, &["*.toml".into(), "!a.toml".into()], &[]).unwrap_err();
+
+    assert_eq!(error.to_string(), "fingerprint.include.unmatched: !a.toml");
+}
+
+#[test]
+fn an_escaped_negation_keeps_the_existing_invalid_glob_diagnostic() {
+    let fixture = fixture_root(&[("!a.toml", "a")]);
+
+    let error = resolve(&fixture.root, &[r"\!a.toml".into()], &[]).unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        r"fingerprint.include.invalid_glob: \!a.toml"
+    );
+}
+
+#[test]
 fn resolve_rejects_absolute_parent_nul_and_invalid_glob_patterns() {
     let fixture = fixture_root(&[("file.txt", "x")]);
 
