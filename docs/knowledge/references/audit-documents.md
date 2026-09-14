@@ -5,6 +5,11 @@ description: docs/auditsとdocs/superpowers/reports内の全Markdownを追跡状
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-490-review
+  resource: ../../superpowers/reports/2026-09-14-issue-490-boundary-contracts-review.md
+  revision: 7d5bdc5a643add4ba55e8541fa59a069d0ff5c5e
+  working_tree: untracked
+  sha256: 5e912d129ca2af7858eef10190140e009abd1b9aa0f6b4c945b92b1feadac46d
 - id: issue-467-review
   resource: ../../superpowers/reports/2026-09-14-issue-467-jsonl-progress-review.md
   revision: 8b33167a049e3cae0fc05e96ccf2253c660b7023
@@ -656,3 +661,7 @@ sources:
 [^issue-482-merge-review]: [2026-09-14-issue-482-self-review.md](../../superpowers/reports/2026-09-14-issue-482-self-review.md)。
 
 [^issue-467-review]: [2026-09-14-issue-467-jsonl-progress-review.md](../../superpowers/reports/2026-09-14-issue-467-jsonl-progress-review.md)。
+
+- [Issue 490 boundary contracts](../../superpowers/reports/2026-09-14-issue-490-boundary-contracts-review.md)。[^issue-490-review]
+
+[^issue-490-review]: [原文](../../superpowers/reports/2026-09-14-issue-490-boundary-contracts-review.md)。出典版と SHA-256 は frontmatter に記録。

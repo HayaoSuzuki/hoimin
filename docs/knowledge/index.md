@@ -32,3 +32,5 @@ okf_version: "0.2"
 - [監査・報告一覧](references/audit-documents.md) - 全監査・報告Markdownへの索引。
 
 - [入力形状別の性能検証](audits/performance-shapes.md) - 実行ゲート、release計測、依存PRと証拠の限界。
+
+- [境界をまたぐ契約 fixture](audits/boundary-contracts.md) - strict 実行、全件報告と未検証条件。

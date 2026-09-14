@@ -5,6 +5,11 @@ description: docs/superpowers/specs内の全Markdownを先頭見出しと出典�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-490-design
+  resource: ../../superpowers/specs/2026-09-14-issue-490-boundary-contracts-design.md
+  revision: 7d5bdc5a643add4ba55e8541fa59a069d0ff5c5e
+  working_tree: untracked
+  sha256: 8e90be8bf11f38328ea1fd92fd82af2b8b4972d73437a88e94c547a336807bad
 - id: issue-467-design
   resource: ../../superpowers/specs/2026-09-14-issue-467-jsonl-progress-design.md
   revision: 8b33167a049e3cae0fc05e96ccf2253c660b7023
@@ -1290,3 +1295,7 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 [^issue-456]: [2026-09-14-issue-456-validation-context-design.md](../../superpowers/specs/2026-09-14-issue-456-validation-context-design.md)。
 
 [^issue-467-design]: [2026-09-14-issue-467-jsonl-progress-design.md](../../superpowers/specs/2026-09-14-issue-467-jsonl-progress-design.md)。
+
+- [Issue 490 boundary contracts](../../superpowers/specs/2026-09-14-issue-490-boundary-contracts-design.md)。[^issue-490-design]
+
+[^issue-490-design]: [原文](../../superpowers/specs/2026-09-14-issue-490-boundary-contracts-design.md)。出典版と SHA-256 は frontmatter に記録。

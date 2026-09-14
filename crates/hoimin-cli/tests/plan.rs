@@ -2756,3 +2756,63 @@ async fn candidate_record_limits_agree_for_plan_verify_and_direct_run() {
         }
     }
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn preparation_errors_precede_the_analyzer_deadline_without_baseline() {
+    use std::os::unix::fs::PermissionsExt;
+    for stage in ["manifest", "source", "fingerprint", "copy"] {
+        let project = Project::new();
+        let (path, mut manifest, marker) =
+            write_plan_manifest(&project, &["--fingerprint-include", "config.toml"]).await;
+        let requested = manifest.candidates[0].id.clone();
+        let ParsedCommand::Plan(plan) = parse_from(plan_args(
+            &project,
+            ["--file", "src/calc.py", "--analyzer-timeout", "1ns"],
+            &marker,
+        ))
+        .unwrap() else {
+            panic!("plan args")
+        };
+        manifest.normalized_config.limits.analyzer_timeout =
+            plan.into_run_config().unwrap().limits.analyzer_timeout;
+        match stage {
+            "manifest" => manifest.schema_version = 0,
+            "source" => {
+                std::fs::write(project.path.join("src/calc.py"), "changed = 1 + 2\n").unwrap();
+            }
+            "fingerprint" => {
+                std::fs::write(project.path.join("config.toml"), "changed = true\n").unwrap();
+            }
+            "copy" => {
+                let unreadable = project.path.join("unreadable.txt");
+                std::fs::write(&unreadable, "unselected").unwrap();
+                std::fs::set_permissions(&unreadable, std::fs::Permissions::from_mode(0o0))
+                    .unwrap();
+                assert!(
+                    std::fs::read(&unreadable).is_err(),
+                    "BOUNDARY_INFRASTRUCTURE: fixture requires an unprivileged reader"
+                );
+            }
+            _ => unreachable!(),
+        }
+        write_json(&path, &serde_json::to_value(manifest).unwrap());
+        let error = prepare_verify(&path, &[requested], OutputFormat::Json)
+            .await
+            .unwrap_err();
+        let message = error.to_string();
+        let expected = match stage {
+            "manifest" => "plan.manifest",
+            "source" => "plan.source.changed",
+            "fingerprint" => "plan.fingerprint_input.changed",
+            "copy" => "plan.workspace",
+            _ => unreachable!(),
+        };
+        assert!(message.contains(expected), "{stage}: {message}");
+        assert!(
+            !message.contains("analyzer.timeout"),
+            "preparation is outside analyzer rediscovery deadline"
+        );
+        assert!(!marker.exists());
+    }
+}
