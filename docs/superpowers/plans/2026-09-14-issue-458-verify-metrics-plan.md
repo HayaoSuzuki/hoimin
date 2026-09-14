@@ -29,4 +29,6 @@ Files: README operational metrics; related OKF selection contract; design/audit 
 - [x] Add verify usage with separate report and metrics paths and explain prevalidation failure/stage timing.
 - [x] Record source hashes only after final edits; validate OKF frontmatter through YAML parser and links separately.
 - [x] Review OKF, design, plan, implementation, tests and PR three times each; record findings and fixes with evidence in the review report.
-- [ ] Commit only issue files, push dedicated branch, create PR from repository template; inspect published diff/body and checks.
+- [x] Commit only issue files, push dedicated branch, create PR from repository template; inspect published diff/body and checks.
+
+Published PR: https://github.com/tokyogas-tech/hoimin/pull/537 (implementation 88c1402).

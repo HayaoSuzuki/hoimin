@@ -8,7 +8,7 @@ sources:
 - id: issue-458-review
   resource: ../../superpowers/reports/2026-09-14-issue-458-verify-metrics-review.md
   working_tree: untracked
-  sha256: 1fca3322e83795c50e54a179bc05dd8d92b0d0f82fb6a901061bd99657557b3c
+  sha256: 6f697d9f3770826c09ebaa77847db7904abb650459d5de40369d15f48b57cc64
 - id: issue-461-merge-review
   resource: ../../superpowers/reports/2026-09-14-issue-461-self-review.md
   revision: 11dd162101c4351dfdd15cb52ba112bdf1fe9cf2
