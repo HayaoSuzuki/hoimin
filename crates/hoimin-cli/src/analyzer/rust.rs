@@ -7,7 +7,7 @@ use std::ops::Range;
 use camino::Utf8Path;
 use hoimin_core::{
     ByteSpan, LineRange, MutationOperator, MutationOperatorSelection, MutationProfile,
-    python_source_column,
+    PythonSourceIndex,
 };
 use ruff_python_ast::identifier;
 use ruff_python_ast::token::TokenKind;
@@ -563,30 +563,24 @@ fn replacement(text: &str, unary: bool) -> Option<(&'static str, &'static str)> 
 }
 
 struct LineIndex {
-    starts: Vec<u32>,
+    source: PythonSourceIndex,
 }
 
 impl LineIndex {
     fn new(source: &str) -> Self {
-        let starts = hoimin_core::python_line_starts(source.as_bytes())
-            .expect("Ruff source offset fits u32");
-        Self { starts }
+        Self {
+            source: PythonSourceIndex::new(source).expect("Ruff source offset fits u32"),
+        }
     }
 
     #[allow(
         clippy::cast_possible_truncation,
         reason = "Ruff TextSize offsets cap parsed source at u32::MAX bytes, and code-point counts cannot exceed byte counts."
     )]
-    fn line_and_column(&self, source: &str, offset: usize) -> (u32, u32) {
-        let line_index = self
-            .starts
-            .partition_point(|start| (*start as usize) <= offset)
-            - 1;
-        let line_start = self.starts[line_index] as usize;
-        let line = line_index as u32 + 1;
-        let column = python_source_column(source, line_start, offset)
-            .expect("Ruff source offsets are valid UTF-8 boundaries within a u32-sized source");
-        (line, column)
+    fn line_and_column(&self, _source: &str, offset: usize) -> (u32, u32) {
+        self.source
+            .line_and_column(offset)
+            .expect("Ruff source offsets are valid UTF-8 boundaries within a u32-sized source")
     }
 }
 

@@ -1,6 +1,9 @@
 use std::io::{self, Cursor, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicUsize, Ordering},
+};
 
 use hoimin_cli::report::ReportHandler;
 use hoimin_core::{
@@ -1359,6 +1362,85 @@ fn partial_mutant_spool_failure_poisons_json_report() {
 }
 
 #[test]
+fn json_spool_writes_one_complete_record_per_mutant() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let stdout = SharedWriter::default();
+    let mut handler = ReportHandler::with_mutant_spool(
+        OutputFormat::Json,
+        stdout.clone(),
+        io::sink(),
+        CountingSpool::new(usize::MAX, Arc::clone(&calls)),
+    );
+    emit(
+        &mut handler,
+        1,
+        OutputEvent::RunStarted(RunStarted::minimal("run-1", 1, test_resource_control())),
+    );
+    for index in 0..100 {
+        emit(&mut handler, index + 2, mutant_finished(index + 2, index));
+    }
+    emit(&mut handler, 102, run_summary(102));
+
+    assert_eq!(calls.load(Ordering::Relaxed), 100);
+    let document: serde_json::Value = serde_json::from_str(stdout.text().trim()).unwrap();
+    assert_eq!(document["mutants"].as_array().unwrap().len(), 100);
+}
+
+#[test]
+fn json_spool_retries_short_writes_until_the_complete_record_is_stored() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let stdout = SharedWriter::default();
+    let mut handler = ReportHandler::with_mutant_spool(
+        OutputFormat::Json,
+        stdout.clone(),
+        io::sink(),
+        CountingSpool::new(7, Arc::clone(&calls)),
+    );
+    emit(
+        &mut handler,
+        1,
+        OutputEvent::RunStarted(RunStarted::minimal("run-1", 1, test_resource_control())),
+    );
+    emit(&mut handler, 2, mutant_finished(2, 0));
+    emit(&mut handler, 3, run_summary(3));
+
+    assert!(calls.load(Ordering::Relaxed) > 1);
+    let document: serde_json::Value = serde_json::from_str(stdout.text().trim()).unwrap();
+    assert_eq!(document["mutants"][0]["kind"], "mutant_finished");
+}
+
+#[test]
+fn zero_progress_mutant_spool_write_fails_before_ack_and_poisons_report() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let mut handler = ReportHandler::with_mutant_spool(
+        OutputFormat::Json,
+        io::sink(),
+        io::sink(),
+        CountingSpool::new(0, Arc::clone(&calls)),
+    );
+    let failed = handler
+        .handle(EmitOutput {
+            id: EffectId(1),
+            event: mutant_finished(1, 0),
+        })
+        .unwrap_err();
+
+    assert_eq!(failed.id, EffectId(1));
+    assert!(matches!(
+        failed.failure,
+        EffectFailure::ReportIo { ref operation, .. } if operation == "write mutant record"
+    ));
+    assert_eq!(calls.load(Ordering::Relaxed), 1);
+    let retry = handler
+        .handle(EmitOutput {
+            id: EffectId(2),
+            event: mutant_finished(2, 0),
+        })
+        .unwrap_err();
+    assert!(matches!(retry.failure, EffectFailure::ReportState { .. }));
+}
+
+#[test]
 fn human_format_writes_progress_to_stdout_and_diagnostics_to_stderr() {
     let stdout = SharedWriter::default();
     let stderr = SharedWriter::default();
@@ -1634,6 +1716,46 @@ impl Write for FailingWriter {
 struct FailAfter {
     inner: Cursor<Vec<u8>>,
     remaining: usize,
+}
+
+struct CountingSpool {
+    inner: Cursor<Vec<u8>>,
+    max_chunk: usize,
+    calls: Arc<AtomicUsize>,
+}
+
+impl CountingSpool {
+    fn new(max_chunk: usize, calls: Arc<AtomicUsize>) -> Self {
+        Self {
+            inner: Cursor::new(Vec::new()),
+            max_chunk,
+            calls,
+        }
+    }
+}
+
+impl Write for CountingSpool {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        self.calls.fetch_add(1, Ordering::Relaxed);
+        let length = bytes.len().min(self.max_chunk);
+        self.inner.write(&bytes[..length])
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl Read for CountingSpool {
+    fn read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
+        self.inner.read(bytes)
+    }
+}
+
+impl Seek for CountingSpool {
+    fn seek(&mut self, position: SeekFrom) -> io::Result<u64> {
+        self.inner.seek(position)
+    }
 }
 
 impl FailAfter {

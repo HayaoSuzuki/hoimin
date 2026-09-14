@@ -9,6 +9,11 @@ sources:
   resource: ../../superpowers/specs/2026-09-14-issue-461-lazy-candidates-design.md
   working_tree: untracked
   sha256: 683834f572abb49a7d2a5fc7c36890ce0ac57be4daebcb62467af5391edd1dc1
+
+- id: issue-470
+  resource: ../../superpowers/specs/2026-09-14-issue-470-column-index-design.md
+  working_tree: untracked
+  sha256: 1e6e2edd408f35816863baad22f78426c506a099808846add62a33cd12b062a3
 - id: issue-513
   resource: ../../superpowers/specs/2026-09-12-issue-513-parser-recursion-design.md
   working_tree: untracked
@@ -101,6 +106,8 @@ Issue #469 の設計では、解析器と共通候補バリデータで列番号
 
 解析器だけがBOMを除いていたため、有効な1行目の候補が公開discoveryの共通検証で拒否されていた。列計算をcoreにまとめることで、verifyとworkerの適用前検証も同じ規則を使う。検証では正しい座標の受理と従来の1列ずれの拒否を対にし、公開plan・verify・runで元ソースが保存されることを確認する。[^issue-469]
 
+Issue #470では、同じ列契約を再利用可能な疎な索引で計算する。索引は物理行の開始位置と非ASCII文字の累積余剰バイト数を一度だけ記録し、候補ごとの照会では二分探索を使う。ASCIIだけの長い1行では行頭から候補位置まで再走査せず、解析器と候補検証が同じ索引を参照する。照会順は問わず、候補の順位と保持上限の意味も変更しない。[^issue-470]
+
 # パターン内の単項符号
 
 Issue #468 の設計では、`case -1` などの数値パターンに通常の単項符号変異を適用しない。Pythonのリテラルパターンでは先頭の負符号は有効だが、正符号への置換は構文エラーになるためである。除外はASTの構文上の役割に基づいてトークン候補の登録時に行い、通常の式・ガード・case本体の符号と、複素数の二項符号や真偽値パターンの変異は維持する。[^issue-468]
@@ -173,6 +180,7 @@ Ruffや `ast.parse` が受け入れても、重複リテラルキーはCPython�
 [^issue-478]: [2026-09-11-issue-478-analysis-depth-design.md](../../superpowers/specs/2026-09-11-issue-478-analysis-depth-design.md)。
 
 [^issue-469]: [2026-09-11-issue-469-bom-column-design.md](../../superpowers/specs/2026-09-11-issue-469-bom-column-design.md)。
+[^issue-470]: [2026-09-14-issue-470-column-index-design.md](../../superpowers/specs/2026-09-14-issue-470-column-index-design.md)。
 
 [^issue-468]: [2026-09-11-issue-468-pattern-unary-design.md](../../superpowers/specs/2026-09-11-issue-468-pattern-unary-design.md)。
 
