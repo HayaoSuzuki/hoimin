@@ -34,6 +34,6 @@
 
 ## PR
 
-1. 受け入れ条件: 未選択helper、original、子探索、候補値、累積確保と保持上限の区別をdiffと本文に対応付ける。
-2. 検証記録: REDとGREEN、fmt、clippy、focused、workspace、OKF、releaseの実ログだけを記載する。
-3. 範囲: base main、`Closes #461`、macOS arm64以外の性能未検証、タイミング非閾値を明記する。
+1. 受け入れ条件: PR #529のdiffを再読し、未選択helper、original、子探索、候補値、累積確保と保持上限の区別が実装と本文に対応していることを確認した。
+2. メタデータ: `gh pr view` でtitle、base `main`、head、`Closes #461`、検証値を確認した。変更ファイルは実装・試験・OKF・設計資料の7件である。
+3. checks: 作成直後のQuality checkはpendingだった。ローカルのfmt、clippy、focused、workspace、OKF、release実ログは本文に記載し、未完了のremote checkを成功とは記載していない。

@@ -24,7 +24,7 @@
 - [x] Update analyzer OKF and the design-document index with real source hash.
 - [x] Run fmt, clippy, focused analyzer tests and workspace tests.
 - [x] Record three self-reviews for OKF, design, plan, implementation, tests and PR.
-- [ ] Commit, push and create a PR closing #461.
+- [x] Commit, push and create PR #529 closing #461.
 
 ## Planセルフレビュー
 
