@@ -5,6 +5,9 @@ description: docs/superpowers/specs内の全Markdownを先頭見出しと出典�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-475-index
+  resource: ../../superpowers/specs/2026-09-14-issue-475-range-normalization-design.md
+  sha256: a73a0b51c51b10d1d958585acbc0455d3c9d18ec340ef6acec053c2c5427081f
 - id: issue-513
   resource: ../../superpowers/specs/2026-09-12-issue-513-parser-recursion-design.md
   working_tree: untracked
@@ -757,12 +760,13 @@ sources:
 
 # 収録一覧
 
-2026-09-12時点の180件。これは原文への索引であり、各文書の採用状況・現行性・検証結果を一括して認定するものではない。見出しは原文から抽出した。出典の版とGitの追跡状態は、冒頭のYAMLメタデータに記録している。未追跡資料は同じ作業ツリーに依存する。
+2026-09-14時点の181件。これは原文への索引であり、各文書の採用状況・現行性・検証結果を一括して認定するものではない。見出しは原文から抽出した。出典の版とGitの追跡状態は、冒頭のYAMLメタデータに記録している。未追跡資料は同じ作業ツリーに依存する。
 
 主要な論点の要約は[入口](../index.md)から読む。ファイル名に含まれる日付は作成履歴の手がかりであり、そのファイルが最後に変更された日時ではない。
 
 | 原文 | 先頭見出し | 作成時の状態 |
 | --- | --- | --- |
+| [2026-09-14-issue-475-range-normalization-design.md](../../superpowers/specs/2026-09-14-issue-475-range-normalization-design.md) | Issue 475: Normalize explicit selector groups once [^issue-475-index] | 未追跡 |
 | [2026-09-12-issue-515-class-directives-design.md](../../superpowers/specs/2026-09-12-issue-515-class-directives-design.md) | Issue 515: Skip enclosing class directives during lexical lookup [^issue-515] | 未追跡 |
 | [2026-09-12-issue-514-comprehension-effect-order-design.md](../../superpowers/specs/2026-09-12-issue-514-comprehension-effect-order-design.md) | Issue 514: Preserve first-iterable lookup before comprehension body effects [^issue-514] | 未追跡 |
 | [2026-09-12-issue-516-session-ownership-identities-design.md](../../superpowers/specs/2026-09-12-issue-516-session-ownership-identities-design.md) | Issue 516: Share active session ownership-tree identities [^issue-516] | 未追跡 |
@@ -1156,6 +1160,8 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 - [Issue #451: Parenthesized exception removal](../../superpowers/specs/2026-09-11-issue-451-exception-parentheses-design.md) - 括弧を含む例外式の削除範囲と実行検証。[^issue-451]
 
 [^issue-451]: [設計原文](../../superpowers/specs/2026-09-11-issue-451-exception-parentheses-design.md)。
+
+[^issue-475-index]: [Issue 475: Normalize explicit selector groups once](../../superpowers/specs/2026-09-14-issue-475-range-normalization-design.md)。
 
 [^issue-513]: [2026-09-12-issue-513-parser-recursion-design.md](../../superpowers/specs/2026-09-12-issue-513-parser-recursion-design.md)。
 [^issue-515]: [Issue515 class directive design](../../superpowers/specs/2026-09-12-issue-515-class-directives-design.md)。

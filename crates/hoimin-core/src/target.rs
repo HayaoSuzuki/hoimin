@@ -167,7 +167,6 @@ pub fn resolve_explicit(
             symbols: Vec::new(),
         });
         entry.lines.push(line.range);
-        normalize_ranges(&mut entry.lines);
     }
 
     for symbol in &selection.symbols {
@@ -178,8 +177,18 @@ pub fn resolve_explicit(
             symbols: Vec::new(),
         });
         entry.symbols.push(symbol.qualname.clone());
-        entry.symbols.sort();
-        entry.symbols.dedup();
+    }
+
+    for target in targets.values_mut() {
+        if !target.lines.is_empty() {
+            normalize_ranges(&mut target.lines);
+        }
+        if !target.symbols.is_empty() {
+            #[cfg(test)]
+            SYMBOL_NORMALIZATIONS.with(|count| count.set(count.get() + 1));
+            target.symbols.sort();
+            target.symbols.dedup();
+        }
     }
 
     let targets: Vec<_> = targets.into_values().collect();
@@ -353,6 +362,8 @@ fn resolve_symbol_path(
 }
 
 fn normalize_ranges(ranges: &mut Vec<LineRange>) {
+    #[cfg(test)]
+    RANGE_NORMALIZATIONS.with(|count| count.set(count.get() + 1));
     ranges.sort_by_key(|range| (range.start, range.end));
     let mut merged: Vec<LineRange> = Vec::with_capacity(ranges.len());
     for range in ranges.drain(..) {
@@ -365,6 +376,12 @@ fn normalize_ranges(ranges: &mut Vec<LineRange>) {
         merged.push(range);
     }
     *ranges = merged;
+}
+
+#[cfg(test)]
+thread_local! {
+    static RANGE_NORMALIZATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static SYMBOL_NORMALIZATIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 #[must_use]
@@ -483,4 +500,174 @@ pub fn targets_are_normalized(targets: &[TargetSlice]) -> bool {
                     .iter()
                     .all(|range| range.start > 0 && range.start <= range.end)
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::hint::black_box;
+    use std::time::Instant;
+
+    fn sparse_selection(count: u32) -> Selection {
+        Selection {
+            root: "/project".into(),
+            lines: (0..count)
+                .rev()
+                .map(|index| LineSelection {
+                    path: "calc.py".into(),
+                    range: LineRange {
+                        start: index * 2 + 1,
+                        end: index * 2 + 1,
+                    },
+                })
+                .collect(),
+            symbols: (0..count)
+                .rev()
+                .flat_map(|index| {
+                    [
+                        SymbolSelection {
+                            module: "calc".into(),
+                            qualname: format!("symbol{index:05}"),
+                        },
+                        SymbolSelection {
+                            module: "calc".into(),
+                            qualname: format!("symbol{index:05}"),
+                        },
+                    ]
+                })
+                .collect(),
+            sources: vec![Utf8PathBuf::new()],
+            ..Selection::default()
+        }
+    }
+
+    #[test]
+    fn explicit_ranges_are_normalized_once_per_file() {
+        let count = 128;
+        RANGE_NORMALIZATIONS.with(|calls| calls.set(0));
+
+        let targets = resolve_explicit(
+            &sparse_selection(count),
+            &[DiscoveredFile::python("calc.py")],
+        )
+        .unwrap();
+        let normalizations = RANGE_NORMALIZATIONS.with(std::cell::Cell::get);
+
+        assert_eq!(normalizations, 1);
+        assert_eq!(targets[0].lines.len(), count as usize);
+        assert_eq!(targets[0].symbols.len(), count as usize);
+        assert!(targets_are_normalized(&targets));
+    }
+
+    #[test]
+    fn explicit_symbols_are_normalized_once_per_file() {
+        let count = 128;
+        SYMBOL_NORMALIZATIONS.with(|calls| calls.set(0));
+
+        let targets = resolve_explicit(
+            &sparse_selection(count),
+            &[DiscoveredFile::python("calc.py")],
+        )
+        .unwrap();
+        let normalizations = SYMBOL_NORMALIZATIONS.with(std::cell::Cell::get);
+
+        assert_eq!(normalizations, 1);
+        assert_eq!(targets[0].symbols.len(), count as usize);
+    }
+
+    #[test]
+    fn explicit_groups_are_normalized_once_for_each_file() {
+        let mut selection = sparse_selection(4);
+        selection.lines.extend((0..4).map(|index| LineSelection {
+            path: "other.py".into(),
+            range: LineRange {
+                start: index * 2 + 1,
+                end: index * 2 + 1,
+            },
+        }));
+        selection
+            .symbols
+            .extend((0..4).map(|index| SymbolSelection {
+                module: "other".into(),
+                qualname: format!("other{index}"),
+            }));
+        RANGE_NORMALIZATIONS.with(|calls| calls.set(0));
+        SYMBOL_NORMALIZATIONS.with(|calls| calls.set(0));
+
+        let targets = resolve_explicit(
+            &selection,
+            &[
+                DiscoveredFile::python("calc.py"),
+                DiscoveredFile::python("other.py"),
+            ],
+        )
+        .unwrap();
+
+        assert_eq!(targets.len(), 2);
+        assert_eq!(RANGE_NORMALIZATIONS.with(std::cell::Cell::get), 2);
+        assert_eq!(SYMBOL_NORMALIZATIONS.with(std::cell::Cell::get), 2);
+    }
+
+    #[test]
+    fn explicit_range_normalization_preserves_boundaries() {
+        let selection = Selection {
+            root: "/project".into(),
+            lines: vec![
+                LineSelection {
+                    path: "calc.py".into(),
+                    range: LineRange {
+                        start: u32::MAX,
+                        end: u32::MAX,
+                    },
+                },
+                LineSelection {
+                    path: "calc.py".into(),
+                    range: LineRange { start: 4, end: 5 },
+                },
+                LineSelection {
+                    path: "calc.py".into(),
+                    range: LineRange { start: 3, end: 4 },
+                },
+                LineSelection {
+                    path: "calc.py".into(),
+                    range: LineRange { start: 3, end: 4 },
+                },
+            ],
+            ..Selection::default()
+        };
+
+        let targets = resolve_explicit(&selection, &[DiscoveredFile::python("calc.py")]).unwrap();
+
+        assert_eq!(
+            targets[0].lines,
+            vec![
+                LineRange { start: 3, end: 5 },
+                LineRange {
+                    start: u32::MAX,
+                    end: u32::MAX,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    #[ignore = "release performance evidence"]
+    fn measure_explicit_range_scaling() {
+        for count in [2_000, 4_000, 8_000] {
+            let selection = sparse_selection(count);
+            let mut samples = Vec::new();
+            for _ in 0..5 {
+                let started = Instant::now();
+                let targets = black_box(resolve_explicit(
+                    black_box(&selection),
+                    black_box(&[DiscoveredFile::python("calc.py")]),
+                ))
+                .unwrap();
+                assert_eq!(targets[0].lines.len(), count as usize);
+                samples.push(started.elapsed());
+            }
+            samples.sort_unstable();
+            println!("sparse_ranges={count} median={:?}", samples[2]);
+        }
+    }
 }
