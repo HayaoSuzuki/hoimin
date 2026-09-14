@@ -23,7 +23,7 @@
 - [x] Run annotation, correspondence, analyzer, clippy and workspace suites.
 - [x] Measure old/new release RSS for disabled and enabled type paths.
 - [x] Update analyzer OKF and design index with real hash.
-- [ ] Record six stages of three self-reviews, commit, push and create the closing PR.
+- [x] Record six stages of three self-reviews, commit, push and create closing PR #531.
 
 ## Planセルフレビュー
 

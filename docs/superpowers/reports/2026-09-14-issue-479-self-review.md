@@ -34,6 +34,6 @@
 
 ## PR
 
-1. 受け入れ条件: 未選択省略、選択stream、flow snapshot互換、候補prefix、RSSをdiffと本文へ対応付ける。
-2. 証拠: RED、focused、correspondence、workspace、clippy、OKF、release実ログだけを記載する。
-3. 範囲: base main、closing keyword、未検証platform、remote check状態を確認して記録する。
+1. 受け入れ条件: PR #531の7ファイルを再読し、未選択省略、選択stream、flow snapshot互換、候補prefix、RSSがdiffと本文に対応することを確認した。
+2. metadata: `gh pr view` でtitle、base `main`、head、`Closes #479`、検証値を照合した。実装・試験・OKF・設計資料以外の変更はない。
+3. checks: 作成直後のQuality checkはpendingだった。ローカルのRED、focused、workspace、clippy、OKF、releaseだけを成功として記載し、未検証platformとRSS範囲を明示した。
