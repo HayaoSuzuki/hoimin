@@ -8,6 +8,16 @@ sources:
 - id: issue-475-report
   resource: ../../superpowers/reports/2026-09-14-issue-475-range-normalization.md
   sha256: 4a5ebaf30d38b75272a82443ec7c1845f4aeae8bf2be142324b7db504e25ad63
+
+- id: issue-474-report
+  resource: ../../superpowers/reports/2026-09-14-issue-474-selector-index.md
+  working_tree: untracked
+  sha256: 4173549c5d8f5f037aec6e97b479028bf3a3320d30ef2e223a47ffb226b3c0ed
+
+- id: issue-456-review
+  resource: ../../superpowers/reports/2026-09-14-issue-456-validation-context-review.md
+  working_tree: untracked
+  sha256: 5042ef83fb71837543be9fb358b2453931bdf70ce77f6033381e5756632b09f0
 - id: issue-460-audit
   resource: ../../superpowers/reports/2026-09-11-issue-460-progress-result-audit.md
   working_tree: untracked
@@ -387,6 +397,7 @@ sources:
 | 原文 | 先頭見出し | 作成時の状態 |
 | --- | --- | --- |
 | [2026-09-14-issue-475-range-normalization.md](../../superpowers/reports/2026-09-14-issue-475-range-normalization.md) | Issue 475 range normalization report [^issue-475-report] | 未追跡 |
+| [2026-09-14-issue-474-selector-index.md](../../superpowers/reports/2026-09-14-issue-474-selector-index.md) | Issue 474 explicit selector index report [^issue-474-report] | 未追跡 |
 | [2026-09-11-issue-460-progress-result-audit.md](../../superpowers/reports/2026-09-11-issue-460-progress-result-audit.md) | Progress result validation audit (issue 460) [^issue-460-audit] | **未追跡** |
 | [2026-09-11-progress-input-lean.md](../../superpowers/reports/2026-09-11-progress-input-lean.md) | Progress input summary coherence (#483) [^doc-001] | 追跡済み |
 | [selection.md](../../superpowers/reports/2026-09-11-boundary-contract-audit/selection.md) | 対象選択・plan/verify・入力所有権の監査 [^doc-002] | **未追跡** |
@@ -574,4 +585,14 @@ sources:
 
 [^issue-475-report]: [Issue 475 range normalization report](../../superpowers/reports/2026-09-14-issue-475-range-normalization.md)。
 
+[^issue-474-report]: [Issue 474 explicit selector index report](../../superpowers/reports/2026-09-14-issue-474-selector-index.md)。
+
 [^issue-460-audit]: [2026-09-11-issue-460-progress-result-audit.md](../../superpowers/reports/2026-09-11-issue-460-progress-result-audit.md)。
+
+# 2026-09-14 の追加
+
+| 原文 | 内容 |
+| --- | --- |
+| [Issue #456: 候補検証の前処理共有と検証記録](../../superpowers/reports/2026-09-14-issue-456-validation-context-review.md) | 操作回数、release計測、各工程の3回のセルフレビュー。[^issue-456-review] |
+
+[^issue-456-review]: [2026-09-14-issue-456-validation-context-review.md](../../superpowers/reports/2026-09-14-issue-456-validation-context-review.md)。

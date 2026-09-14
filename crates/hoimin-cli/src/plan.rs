@@ -3,10 +3,11 @@ use std::path::Path;
 
 use camino::{Utf8Path, Utf8PathBuf};
 use hoimin_core::{
-    CandidateDescriptor, FingerprintInputFile, MutationCandidate, OutputConfig, PlanConfig,
-    RunConfig, TargetSlice, VerificationSelection, VerificationSelectionMode,
-    VerificationSelectionPolicy, VerificationSelectionScope as ReportVerificationSelectionScope,
-    normalized_relative_path, validate_candidate,
+    CandidateDescriptor, CandidateValidationContext, FingerprintInputFile, MutationCandidate,
+    OutputConfig, PlanConfig, RunConfig, TargetSlice, VerificationSelection,
+    VerificationSelectionMode, VerificationSelectionPolicy,
+    VerificationSelectionScope as ReportVerificationSelectionScope, normalized_relative_path,
+    validate_candidate_with_context,
 };
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -28,6 +29,8 @@ mod ranking_tests;
 mod selection;
 #[cfg(test)]
 mod selection_tests;
+#[cfg(test)]
+mod validation_tests;
 
 use ranking::{RANKING_RULE_VERSION, rank_candidates, validate_ranking, validate_ranking_against};
 pub use ranking::{RankedPlanCandidate, RankingReason, RankingReasonCode};
@@ -399,6 +402,8 @@ async fn prepare_verify_selection_inner(
         &targets,
         #[cfg(test)]
         control,
+        #[cfg(test)]
+        None,
     )
     .await?;
 
@@ -697,54 +702,35 @@ fn record_map(records: &[FingerprintInputFile]) -> BTreeMap<Utf8PathBuf, String>
         .collect()
 }
 
+#[cfg(test)]
+#[derive(Default, Debug)]
+struct ValidationStats {
+    contexts: usize,
+    source_bytes: usize,
+}
+
 async fn validate_requested_candidates(
     manifest: &PlanManifest,
     requested_ids: &BTreeSet<String>,
     config: &RunConfig,
     targets: &[TargetSlice],
     #[cfg(test)] control: Option<DiscoveryControl>,
+    #[cfg(test)] stats: Option<&mut ValidationStats>,
 ) -> Result<(), PlanError> {
     let candidates = manifest
         .candidates
         .iter()
         .map(|candidate| (candidate.id.as_str(), &candidate.candidate))
         .collect::<BTreeMap<_, _>>();
-    let mut requested_paths = BTreeSet::new();
-    let mut source_bytes = BTreeMap::new();
-    for candidate_id in requested_ids {
-        let candidate = candidates.get(candidate_id.as_str()).ok_or_else(|| {
-            PlanError::CandidateInvalid(format!("candidate id is not in the plan: {candidate_id}"))
-        })?;
-        if !targets.iter().any(|target| target.path == candidate.path) {
-            return Err(PlanError::CandidateInvalid(format!(
-                "candidate target is not selected: {}",
-                candidate.path
-            )));
-        }
-        requested_paths.insert(candidate.path.clone());
-        let source = if let Some(source) = source_bytes.get(&candidate.path) {
-            source
-        } else {
-            let source = tokio::fs::read(config.root.join(&candidate.path))
-                .await
-                .map_err(|error| {
-                    PlanError::CandidateInvalid(format!("{}: {error}", candidate.path))
-                })?;
-            source_bytes.insert(candidate.path.clone(), source);
-            source_bytes
-                .get(&candidate.path)
-                .expect("source bytes inserted for candidate path")
-        };
-        let descriptor = candidate_descriptor(candidate);
-        let stable_id = validate_candidate(source, &descriptor)
-            .map_err(|error| PlanError::CandidateInvalid(error.to_string()))?;
-        if stable_id.as_str() != candidate.id {
-            return Err(PlanError::CandidateInvalid(format!(
-                "candidate stable id differs for {}",
-                candidate.id
-            )));
-        }
-    }
+    let requested_paths = validate_requested_descriptors(
+        &candidates,
+        requested_ids,
+        config,
+        targets,
+        #[cfg(test)]
+        stats,
+    )
+    .await?;
 
     let discovery_targets = requested_discovery_targets(targets, &requested_paths);
     let discovery = discover_plan_targets(
@@ -780,6 +766,71 @@ async fn validate_requested_candidates(
         }
     }
     Ok(())
+}
+
+async fn validate_requested_descriptors(
+    candidates: &BTreeMap<&str, &MutationCandidate>,
+    requested_ids: &BTreeSet<String>,
+    config: &RunConfig,
+    targets: &[TargetSlice],
+    #[cfg(test)] mut stats: Option<&mut ValidationStats>,
+) -> Result<BTreeSet<Utf8PathBuf>, PlanError> {
+    let mut by_path: BTreeMap<&Utf8Path, Vec<&MutationCandidate>> = BTreeMap::new();
+    for id in requested_ids {
+        if let Some(candidate) = candidates.get(id.as_str()) {
+            by_path.entry(&candidate.path).or_default().push(candidate);
+        }
+    }
+    let mut requested_paths = BTreeSet::new();
+    let mut results = BTreeMap::new();
+    for candidate_id in requested_ids {
+        let candidate = candidates.get(candidate_id.as_str()).ok_or_else(|| {
+            PlanError::CandidateInvalid(format!("candidate id is not in the plan: {candidate_id}"))
+        })?;
+        if !targets.iter().any(|target| target.path == candidate.path) {
+            return Err(PlanError::CandidateInvalid(format!(
+                "candidate target is not selected: {}",
+                candidate.path
+            )));
+        }
+        requested_paths.insert(candidate.path.clone());
+        if let Some(file_candidates) = by_path.remove(candidate.path.as_path()) {
+            let source = tokio::fs::read(config.root.join(&candidate.path))
+                .await
+                .map_err(|error| {
+                    PlanError::CandidateInvalid(format!("{}: {error}", candidate.path))
+                })?;
+            #[cfg(test)]
+            if let Some(stats) = stats.as_deref_mut() {
+                stats.contexts += 1;
+                stats.source_bytes += source.len();
+            }
+            let context = CandidateValidationContext::new(&source)
+                .map_err(|error| PlanError::CandidateInvalid(error.to_string()))?;
+            for candidate in file_candidates {
+                let result =
+                    validate_candidate_with_context(&context, &candidate_descriptor(candidate))
+                        .map_err(|error| PlanError::CandidateInvalid(error.to_string()))
+                        .and_then(|stable_id| {
+                            if stable_id.as_str() == candidate.id {
+                                Ok(())
+                            } else {
+                                Err(PlanError::CandidateInvalid(format!(
+                                    "candidate stable id differs for {}",
+                                    candidate.id
+                                )))
+                            }
+                        });
+                results.insert(candidate.id.as_str(), result);
+            }
+            // The source and its borrowed index are released before reading another file.
+        }
+        // Preserve requested-ID error ordering even when files are interleaved.
+        results
+            .remove(candidate_id.as_str())
+            .expect("requested candidate was validated")?;
+    }
+    Ok(requested_paths)
 }
 
 fn requested_discovery_targets(
@@ -859,14 +910,14 @@ mod tests {
         prepare_verify_with_discovery_control, requested_discovery_targets,
     };
 
-    struct Project {
+    pub(super) struct Project {
         _directory: tempfile::TempDir,
-        root: Utf8PathBuf,
+        pub(super) root: Utf8PathBuf,
         marker: std::path::PathBuf,
     }
 
     impl Project {
-        fn new() -> Self {
+        pub(super) fn new() -> Self {
             let directory = tempfile::tempdir().unwrap();
             std::fs::create_dir(directory.path().join("src")).unwrap();
             std::fs::write(
@@ -881,7 +932,7 @@ mod tests {
             }
         }
 
-        fn config(&self, analyzer_timeout: &str) -> RunConfig {
+        pub(super) fn config(&self, analyzer_timeout: &str) -> RunConfig {
             let command = format!(
                 "from pathlib import Path; Path({:?}).write_text('ran')",
                 self.marker.to_string_lossy()
@@ -948,6 +999,40 @@ mod tests {
             candidates: Vec::new(),
             truncated: true,
             diagnostics: Vec::new(),
+        }
+    }
+
+    #[tokio::test]
+    async fn requested_validation_preprocesses_each_file_once() {
+        for count in [1, 2, 4] {
+            let project = Project::new();
+            let source = "x = 1 + 2\n".repeat(count);
+            std::fs::write(project.root.join("src/calc.py"), &source).unwrap();
+            let config = project.config("30s");
+            let targets = crate::target::TargetHandler::resolve(&config.selection)
+                .await
+                .unwrap();
+            let output = super::create(config.clone()).await.unwrap();
+            assert_eq!(output.manifest.candidates.len(), count);
+            let ids = output
+                .manifest
+                .candidates
+                .iter()
+                .map(|c| c.id.clone())
+                .collect();
+            let mut stats = super::ValidationStats::default();
+            super::validate_requested_candidates(
+                &output.manifest,
+                &ids,
+                &config,
+                &targets,
+                None,
+                Some(&mut stats),
+            )
+            .await
+            .unwrap();
+            assert_eq!(stats.contexts, 1, "{count} candidates: {stats:?}");
+            assert_eq!(stats.source_bytes, source.len());
         }
     }
 

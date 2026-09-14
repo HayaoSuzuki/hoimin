@@ -130,6 +130,23 @@ fn analyze(source: &str) -> super::AnalyzerOutput {
     analyze_with(Utf8Path::new("pkg/sample.py"), &[], &[], 10_000, source)
 }
 
+#[test]
+fn line_index_answers_out_of_order_ascii_and_unicode_offsets() {
+    let source = "\u{feff}aβ😀\r\nxy\u{301}z\r最後\n";
+    let index = LineIndex::new(source);
+
+    for (offset, expected) in [
+        (24, (3, 2)),
+        (3, (1, 0)),
+        (16, (2, 3)),
+        (6, (1, 2)),
+        (18, (3, 0)),
+        (4, (1, 1)),
+    ] {
+        assert_eq!(index.line_and_column(source, offset), expected);
+    }
+}
+
 // These literal expectations detect missing callable families, incorrect pairs, and
 // alias spellings independently of the production catalog.
 type OperatorFunctionPair = (
@@ -4285,6 +4302,60 @@ fn benchmark_candidate_line_positions() {
         source.len(),
         elapsed.as_secs_f64() * 1_000.0
     );
+}
+
+#[test]
+#[ignore = "benchmark harness; run explicitly in release mode"]
+fn benchmark_long_single_line_candidate_columns() {
+    const COUNT: usize = 32_000;
+    let single = format!(
+        "values = [{}]\n",
+        (0..COUNT)
+            .map(|_| "True")
+            .collect::<Vec<_>>()
+            .join(",                               ")
+    );
+    let multiline = format!(
+        "values = [{}]\n",
+        (0..COUNT)
+            .map(|_| "True")
+            .collect::<Vec<_>>()
+            .join(",\n                              ")
+    );
+    assert_eq!(single.len(), multiline.len());
+
+    let mut operators = MutationOperatorSelection::default();
+    for name in operators.names() {
+        let operator = MutationOperatorSelection::parse_selector(&name).unwrap()[0];
+        if operator != MutationOperator::BooleanLiteral {
+            operators.exclude(operator);
+        }
+    }
+    for (shape, source) in [("single", single), ("multiline", multiline)] {
+        let started = std::time::Instant::now();
+        let output = analyze_source(
+            &AnalyzeRequest {
+                path: Utf8Path::new("pkg/long.py"),
+                lines: &[],
+                symbols: &[],
+                operators: &operators,
+                profile: MutationProfile::Full,
+                max_candidates: 1,
+            },
+            &source,
+        );
+        let elapsed = started.elapsed();
+        assert_eq!(output.candidates.len(), 1);
+        assert!(output.truncated);
+        assert_eq!(output.candidates[0].operator, "boolean_literal");
+        println!(
+            "shape={shape} source_bytes={} discovered={} retained={} elapsed_ms={}",
+            source.len(),
+            COUNT,
+            output.candidates.len(),
+            elapsed.as_secs_f64() * 1_000.0
+        );
+    }
 }
 
 #[test]
