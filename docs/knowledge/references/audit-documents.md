@@ -7,7 +7,7 @@ catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
 - id: issue-453-report
   resource: ../../superpowers/reports/2026-09-14-issue-453-scoped-discovery.md
-  sha256: e652f4cb3d4393cd6e92aebf2ab26c3ba1f90895aa84d4255046eca36d9886e7
+  sha256: 00388a47831d5139281558dc112b82d72504de76c4e2f3df00adfd1ad742433b
 - id: issue-460-audit
   resource: ../../superpowers/reports/2026-09-11-issue-460-progress-result-audit.md
   working_tree: untracked

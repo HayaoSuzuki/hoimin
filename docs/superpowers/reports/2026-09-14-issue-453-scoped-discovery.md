@@ -38,12 +38,12 @@ Base: `165a2d284a1af92eb02ffd214ba8c0070c2f3808`.
 
 1. Scope review confirms the diff is limited to issue #453 discovery/core-key code, tests, artifacts, and issue-specific OKF/index entries.
 2. Claim review avoids constant-time language because root-level siblings are still enumerated and release timings are environment evidence only.
-3. Publication review will verify the open PR base/head, rendered diagnostic caveat, evidence, validation list, and issue closure reference.
+3. Publication review verified PR #533 is open from `perf/issue-453-scoped-discovery` into `main`, and its rendered body retains the diagnostic caveat, deterministic and release evidence, validation list, and `Closes #453`.
 
 ## Verification
 
 - `cargo fmt --all -- --check`: passed.
-- `cargo test -p hoimin-cli --test target_handler`: 43 passed.
+- `cargo test -p hoimin-cli --test target_handler`: 44 passed.
 - `cargo test --workspace`: passed.
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`: passed.
 - Focused discovery tests: 3 passed, 1 ignored measurement.
