@@ -5,6 +5,11 @@ description: 候補発見と実行の分離、ランキング、部分集合、�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-474
+  resource: ../../superpowers/specs/2026-09-14-issue-474-selector-index-design.md
+  working_tree: untracked
+  sha256: 0325588c52127c73cb41fbf33ef9d9e244915a6de4de5f6b3134b31312500ef6
+
 - id: issue-456
   resource: ../../superpowers/specs/2026-09-14-issue-456-validation-context-design.md
   working_tree: untracked
@@ -130,6 +135,14 @@ planの候補にも実行用spoolと同じ2 MiBのレコード上限を適用す
 仮想環境やキャッシュなどの組込み除外を対象探索とコピーで共有する設計とした。`--include` は組込み除外を解除しない。除外場所のファイルを `--file` または `--line` で指定した場合は、対象パスと除外場所の外を選ぶ対処方法を示して対象解決時に拒否する。[^issue-452]
 
 [^issue-452]: [Issue #452: Shared workspace exclusions](../../superpowers/specs/2026-09-11-issue-452-shared-exclusions-design.md)。
+
+# 明示selectorから対象ファイルを引く索引（Issue #474）
+
+明示したfile、line、symbolのmoduleを対象ファイルへ対応させる処理では、発見済みファイルからプラットフォーム別のパス同値キーを使ったPythonファイル索引を一度作る。各selectorはこの索引を検索する。発見済みファイル数をF、selector数をSとすると、順序付き索引の構築と検索に要する比較回数はO(F log F + S log F)となる。[^issue-474]
+
+元の発見済みファイル一覧は、source rootからの列挙と出力順を決める正本として残す。Windowsで大小文字だけが異なる複数のパスが同じキーになる場合は、従来の順序で最初に見つかるPythonファイルの表記を索引に保存する。LinuxとmacOSで実行した試験からWindows実機の動作は判断しない。[^issue-474]
+
+[^issue-474]: [Issue 474: Explicit selector file index](../../superpowers/specs/2026-09-14-issue-474-selector-index-design.md)。
 
 # verifyのファイル単位の前処理（Issue #456）
 
