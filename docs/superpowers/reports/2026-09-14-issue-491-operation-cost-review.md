@@ -53,3 +53,15 @@ This closes the missing validation infrastructure, not every possible asymptotic
 ## Publication
 
 Published [PR #544](https://github.com/tokyogas-tech/hoimin/pull/544) from enhancement/issue-491, implementation commit7213011. Delivery checklist is complete. Final OKF checks passed19 reserved/YAML pages,416 source IDs/footnotes,768 local links, root reachability, complete design/report indexes and all eight newly read performance-concept hashes. All35 nonempty generated cost sources also compiled with repository CPython3.14. This publication-state edit changes documentation only; implementation validation above remains the final code evidence.
+
+## Hosted CI follow-up: ordinary output fixture isolation
+
+PR544's randomized Linux run failed an unchanged paused-output unit fixture before its writer was entered (`Ok(2)`); the same head's ordinary Linux run passed that test. PR537 had shown the same symptom. The original test discarded stderr and the owned wrapper maps an inner error to exit2, so the precise original cause cannot be established from that log.
+
+Review1 found a concrete isolation gap: output_failure_test_config used the CLI's default10GiB free-space reserve despite an existing host-independent ordinary-test helper. Adding that helper's reserve assertion to the paused test produced deterministic RED (10737418240 versus1). The shared output-failure config now uses the existing1B helper. Production limits, mutation-plan reserve and explicit disk-threshold tests are unchanged.
+
+Review2 traced owned-writer lifetime and both tokio::select failure branches. A short-lived mutex-backed stderr capture now includes diagnostics for premature run completion or a dropped pause signal. This changes test failure visibility; stdout pause/release,50ms shutdown grace,1s post-cancel deadline, spool retention, execution cleanup and no-ack assertions remain intact.
+
+Review3 checked all helper consumers and validation scope. All three affected ordinary output tests passed under both default and contracts builds, and all-feature lib/tests Clippy passed. Final formatting/whitespace checks and updated source hashes are checked before push. The parent did not claim the historical CI error was proven to be low disk or remove any output-lifecycle assertion.
+
+Independent agent review found no blocker: capture lock scope and ownership are bounded, both early failure paths preserve diagnostics, ordinary output tests are isolated from host reserve, and explicit disk-stop tests retain their own settings. Hosted CI for this follow-up is tracked separately from these local results.

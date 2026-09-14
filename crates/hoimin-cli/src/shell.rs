@@ -5519,7 +5519,7 @@ mod tests {
             OsString::from("--"),
         ];
         args.extend(successful_test_command());
-        crate::cli::parse_config_from(args).unwrap()
+        parse_host_independent_shell_test_config(args)
     }
 
     #[tokio::test]
@@ -6837,6 +6837,20 @@ mod tests {
 
     struct AlwaysFailingWriter;
 
+    #[derive(Clone, Default)]
+    struct SharedDiagnosticCapture(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+
+    impl Write for SharedDiagnosticCapture {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
     struct PausedReportWriter {
         entered: Option<tokio::sync::oneshot::Sender<()>>,
         release: std::sync::mpsc::Receiver<()>,
@@ -6876,6 +6890,7 @@ mod tests {
         for pause_flush in [false, true] {
             let project = tempfile::tempdir().unwrap();
             let config = output_failure_test_config(&project, "json");
+            assert_host_independent_test_reserve(&config);
             let mut control = RunControl::new();
             control.shutdown_grace = Duration::from_millis(50);
             let observed = control.clone();
@@ -6886,10 +6901,18 @@ mod tests {
                 release: release_rx,
                 pause_flush,
             };
-            let mut run = Box::pin(run_owned_loop(config, writer, Vec::new(), control));
+            let diagnostics = SharedDiagnosticCapture::default();
+            let captured = diagnostics.clone();
+            let mut run = Box::pin(run_owned_loop(config, writer, diagnostics, control));
             tokio::select! {
-                result = &mut run => panic!("run finished before report pause: {result:?}"),
-                entered = entered_rx => entered.unwrap(),
+                result = &mut run => panic!(
+                    "run finished before report pause: {result:?}; stderr={}",
+                    String::from_utf8_lossy(&captured.0.lock().unwrap()),
+                ),
+                entered = entered_rx => entered.unwrap_or_else(|error| panic!(
+                    "report pause signal dropped: {error}; stderr={}",
+                    String::from_utf8_lossy(&captured.0.lock().unwrap()),
+                )),
             }
             let roots = observed.managed_root_paths();
             let delivery = &roots[1];

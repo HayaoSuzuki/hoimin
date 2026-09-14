@@ -19,8 +19,9 @@ sources:
   sha256: 199af4da50a8332e620e5a23ea45e23e22bda523c967834dc5999b05aef83dcd
 - id: issue-491-operation-cost-review
   resource: ../../superpowers/reports/2026-09-14-issue-491-operation-cost-review.md
-  working_tree: untracked
-  sha256: df11726a454946de8a6a8cdaa2a30c0dc1ef13a71fdba157ef3df3254644a3d2
+  working_tree: modified
+  sha256: 523e3169e63ae25d76a14395b4b1d5cb4bd20837d690c6f38425165bb1b2fd09
+  revision: c5c3b72ce89685d15296ef9154e523d2bfefd470
 - id: issue-461-merge-review
   resource: ../../superpowers/reports/2026-09-14-issue-461-self-review.md
   revision: 11dd162101c4351dfdd15cb52ba112bdf1fe9cf2
@@ -446,7 +447,7 @@ sources:
 | [2026-09-14-issue-491-rust-cost-review.md](../../superpowers/reports/2026-09-14-issue-491-rust-cost-review.md) | Issue #491 Rust cost adapter and workspace preflight peak review [^issue-491-rust-cost-review] | 未追跡（参照時点） |
 | [2026-09-14-issue-491-input-axis-review.md](../../superpowers/reports/2026-09-14-issue-491-input-axis-review.md) | Issue491 input-axis expansion review [^issue-491-input-axis-review] | 未追跡（参照時点） |
 | [2026-09-14-issue-491-cost-correspondence-worksheet.md](../../superpowers/reports/2026-09-14-issue-491-cost-correspondence-worksheet.md) | Issue #491: Cost correspondence worksheet [^issue-491-cost-correspondence-worksheet] | 未追跡（参照時点） |
-| [2026-09-14-issue-491-operation-cost-review.md](../../superpowers/reports/2026-09-14-issue-491-operation-cost-review.md) | Issue #491: Remaining acceptance review and evidence [^issue-491-operation-cost-review] | 未追跡（参照時点） |
+| [2026-09-14-issue-491-operation-cost-review.md](../../superpowers/reports/2026-09-14-issue-491-operation-cost-review.md) | Issue #491: Remaining acceptance review and evidence [^issue-491-operation-cost-review] | 変更あり（再参照） |
 | [2026-09-14-issue-453-scoped-discovery.md](../../superpowers/reports/2026-09-14-issue-453-scoped-discovery.md) | Issue 453 scoped discovery report [^issue-453-report] | 未追跡 |
 | [2026-09-14-issue-475-range-normalization.md](../../superpowers/reports/2026-09-14-issue-475-range-normalization.md) | Issue 475 range normalization report [^issue-475-report] | 未追跡 |
 | [2026-09-14-issue-474-selector-index.md](../../superpowers/reports/2026-09-14-issue-474-selector-index.md) | Issue 474 explicit selector index report [^issue-474-report] | 未追跡 |
