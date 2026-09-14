@@ -543,7 +543,28 @@
         "progress_heap_peak_is_independent_of_history_length",
         "--",
         "--exact"
-      ]
+      ],
+      "input_axes": {
+        "report_mutants": [
+          500,
+          1000,
+          2000
+        ],
+        "history_lengths": [
+          2,
+          4,
+          8
+        ],
+        "retained_corner": {
+          "report_mutants": 2000,
+          "history_length": 16
+        },
+        "report_bytes": "actual serialized file length, recorded for each report; headers prevent exact byte doubling"
+      },
+      "growth_model": "Peak may scale with one report plus compact history/output metadata; for each report size, history2/4/8 (and retained16 corner) stays within history2 peak +512KiB.",
+      "semantic_checks": "All inputs usable; H-1 comparisons; common candidates equals report mutant count; scores1.0/delta0; no added/removed/ambiguous/inconclusive/improved/regressed candidates; correct stalled/saturated state.",
+      "sensitivity": "Actual read_report results retained in Vec for H=8 then compare_reports; matching semantic results must exceed the same allocator peak bound.",
+      "coverage": "Deterministic allocator peak gate, separate from the29 release shapes and522 release executions."
     },
     {
       "id": "workspace-retained",

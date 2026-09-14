@@ -65,3 +65,30 @@ Review2 traced owned-writer lifetime and both tokio::select failure branches. A 
 Review3 checked all helper consumers and validation scope. All three affected ordinary output tests passed under both default and contracts builds, and all-feature lib/tests Clippy passed. Final formatting/whitespace checks and updated source hashes are checked before push. The parent did not claim the historical CI error was proven to be low disk or remove any output-lifecycle assertion.
 
 Independent agent review found no blocker: capture lock scope and ownership are bounded, both early failure paths preserve diagnostics, ordinary output tests are isolated from host reserve, and explicit disk-stop tests retain their own settings. Hosted CI for this follow-up is tracked separately from these local results.
+
+
+## Progress history axis follow-up
+
+Design reviews: (1) The existing progress gate fixed a2,000-mutant report and measured only histories2/16, so it did not explicitly cover the requested independent report-bytes×history N/2N/4N axis. (2) Preserve the same gate and production entry point; vary report content500/1,000/2,000 and histories2/4/8, recording actual serialized bytes rather than claiming headers scale exactly. Preserve the old2,000×16 corner. (3) Keep a single allocator-test function to avoid concurrent global peak sessions, finish fixture allocation before measuring, and allow one-report memory plus compact history/output metadata.
+
+Plan reviews: (1) Observe the first smaller fixture request fail against the existing fixed-size generator, then parameterize content and summary coherently. (2) Capture bounded JSON output and check input/comparison semantics after finishing heap tracking; success alone is insufficient. (3) Add an actual eager Vec<InputReport> read/compare control at the largest history, compare its semantics and require it to exceed the same peak allowance. Keep the original522release measurements separate; rerun only the expanded exact gate and relevant validation before parent review.
+
+
+Progress implementation reviews: (1) The first requested500-mutant fixture failed against the original fixed2,000 output (actual2000 versus expected500). Parameterized both mutant entries and summary sequence/count rather than changing only the filename or metadata. (2) Fixture documents are dropped before peak tracking; captured JSON is compact legitimate output, and parsing/assertions happen after finish. Explicit comparison and usable-input checks replace sink-only success. (3) The sensitivity path retains real public read_report results and uses public compare_reports, with all comparison fields matched against streamed output; no fabricated heap counts or production changes.
+
+A separate read-only full-acceptance review by agent476 found no further material gap beyond this progress axis. Its review does not count as executing the new test or add progress to the522release observations. Parent independently confirmed the fixed2000-versus500 RED before implementation completion.
+
+
+Progress test reviews: (1) Default exact gate passed after the fixed-size fixture RED. All nine matrix points plus the original16-history corner pass the same512KiB growth allowance; three separate history2 measurements establish each report-size reference. Actual report lengths are251978/502484/1010484 bytes, not an asserted exact byte-doubling sequence. (2) The real retained-history control reaches15038287 peak bytes versus4779743 at the normal largest-report/history2 reference, exceeding its5304031-byte bound. Every comparison count, score and state matches the streamed output, and the allocation is retained through measurement finish. (3) Re-ran the same exact gate with contracts: one test passed in each mode (2.52s default,2.57s contracts). All16 performance-tool Python tests, registry check29shapes, all-feature Clippy for progress_heap, formatting and diff checks passed. No new release measurement is inferred from these allocator results.
+
+| Mutants per report | Actual report bytes | Peak H=2 | Peak H=4 | Peak H=8 |
+| --- | --- | --- | --- | --- |
+| 500 | 251978 | 1191910 | 1192456 | 1193068 |
+| 1000 | 502484 | 2384590 | 2385136 | 2385748 |
+| 2000 | 1010484 | 4779743 | 4780289 | 4780901 |
+
+The retained2000×16 probe peaks at4782125 bytes. These allocator requested-byte observations are identical in the two local feature modes; they are not RSS or a proof for arbitrary history/report sizes. Logs: `/private/tmp/issue491-progress-{red,green,contracts,clippy,metadata-python}.log`.
+
+Progress OKF reviews: (1) The performance concept's opening still used11 shapes in present tense; marked that as the initial design and connected the current29 release shapes to the added deterministic history gate. (2) Registry metadata now declares both independent dimensions, actual serialized-byte observation, the retained16 corner, semantic checks and the real eager control. The26 gate names and29 release-shape entries are unchanged. (3) Re-read updated guide, registry and report, refreshed their hashes and comparison revision, and checked the complete source/link inventories rather than treating old hashes as current.
+
+Progress PR/publication reviews: (1) Parent independently reviewed fixture drop timing, measured allocation intervals, output parsing after finish, coherent summary counts and actual retained-report sensitivity with no blocker. (2) Agent466 independently reviewed the matrix, semantics and same-bound control with no blocker; agent476's separate full-acceptance audit found no further material gap. (3) Compared final diff with the requested test-only scope: progress_heap, registry metadata, guide and review/provenance only. Existing production/runner code,26 gate identities,29 release inputs and the historical522 executions are unchanged. The parent owns the follow-up commit and hosted-CI confirmation; this records the concrete pre-publication review.

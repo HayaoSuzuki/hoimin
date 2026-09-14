@@ -20,8 +20,8 @@ sources:
 - id: issue-491-operation-cost-review
   resource: ../../superpowers/reports/2026-09-14-issue-491-operation-cost-review.md
   working_tree: modified
-  sha256: 523e3169e63ae25d76a14395b4b1d5cb4bd20837d690c6f38425165bb1b2fd09
-  revision: c5c3b72ce89685d15296ef9154e523d2bfefd470
+  revision: f14aa1b34ec6d166882e720661aee0fceb3543ee
+  sha256: f2923c6adc2273dab52d20478f78a4d3b2ff0be2101ceb43f649236b0890ca96
 - id: issue-461-merge-review
   resource: ../../superpowers/reports/2026-09-14-issue-461-self-review.md
   revision: 11dd162101c4351dfdd15cb52ba112bdf1fe9cf2

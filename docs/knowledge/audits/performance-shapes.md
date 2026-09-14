@@ -24,8 +24,8 @@ sources:
 - id: cost-review
   resource: ../../superpowers/reports/2026-09-14-issue-491-operation-cost-review.md
   working_tree: modified
-  sha256: 523e3169e63ae25d76a14395b4b1d5cb4bd20837d690c6f38425165bb1b2fd09
-  revision: c5c3b72ce89685d15296ef9154e523d2bfefd470
+  revision: f14aa1b34ec6d166882e720661aee0fceb3543ee
+  sha256: f2923c6adc2273dab52d20478f78a4d3b2ff0be2101ceb43f649236b0890ca96
 - id: cost-design
   resource: ../../superpowers/specs/2026-09-14-issue-491-operation-cost-design.md
   working_tree: untracked
@@ -37,13 +37,13 @@ sources:
 - id: guide
   resource: ../../performance/README.md
   working_tree: modified
-  revision: 8b33167a049e3cae0fc05e96ccf2253c660b7023
-  sha256: 6b395df2cbf1eb933643b07bce89289cdea46a7c006e89e13edd81a9caeda126
+  revision: f14aa1b34ec6d166882e720661aee0fceb3543ee
+  sha256: 6b53ad8f5bb11e7fd83d94abf15b8490b2b77341d3f9cdfaafa05429ce2baa80
 - id: registry
   resource: ../../performance/shapes.json
   working_tree: modified
-  revision: 8b33167a049e3cae0fc05e96ccf2253c660b7023
-  sha256: 999bbce6608cfc8aff8cba89b44e10033ab95db26f2cac03c8f4717756e0ac83
+  revision: f14aa1b34ec6d166882e720661aee0fceb3543ee
+  sha256: 128a6cfce3b1d25081a86018903086b6c3282ee5b11612b71f47616168c66525
 - id: design
   resource: ../../superpowers/specs/2026-09-14-issue-491-performance-shapes-design.md
   working_tree: modified
@@ -101,3 +101,6 @@ Issue #491の追加検証では、既存21ゲートを保持し、実際のtree�
 preflightのallocator peakはmanifest entriesと既存hasherの最大1ファイル分のbufferを許容し、全ファイルをworker数だけ保持する対照を検出する。作成後retained heap、preflight peak、sampled RSSを別の測定値として扱う。新しい5ゲートを含む26ゲートと、default/contracts両方の追加counter試験が成功した。[^cost-review][^rust-cost]
 
 release laneは対象ファイル・selector、fingerprint files/bytes、Unicode、AST幅と左深さ、多file・部分verify、record長、worker数を追加し、29形状のN/2N/4Nを各binaryで3回実行した。今回の522回は全件で意味検証を通過した。macOSの時間・RSSと出力bytesを保存するが、全入力の漸近上界や他OSの性能は結論しない。[^axis-review][^expanded-measurement]
+
+
+progressの通常ゲートは1reportの内容500/1,000/2,000件と履歴2/4/8を独立に増やし、実際のserialized bytesを記録する。元の2,000件×16履歴も保持し、各reportサイズで履歴2からの追加peakを512KiB以下に制限する。候補対応数・score・停滞判断を同時に検査し、実際に全履歴のparsed reportを保持する対照は同じ上界を超えた。このallocator検証は29形状・522回のrelease実測とは別の結果である。[^cost-review][^registry]

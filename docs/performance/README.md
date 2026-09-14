@@ -10,7 +10,7 @@
 | AST | 幅、左深さ、巨大literal、未選択collectionを別々に増やす | #461のreplacement生成数をactive登録。既存prefix/overflowをactive登録 |
 | 解析状態 | import幅×annotation数、再代入×呼出数。選択・候補0対照 | #479/#482の操作数をactive登録 |
 | verify | 1file・多file、top1/topN、明示した不完全plan | #456の前処理回数をactive登録 |
-| 出力 | mutant record数とrecord長を独立に増やす | 既存report/progressのallocator peakをactive登録。#463のwrite数をactive登録 |
+| 出力 | mutant record数とrecord長を独立に増やす | report/progressのallocator peak、#463のwrite数に加え、1reportの内容500/1,000/2,000件×履歴2/4/8のprogressゲート |
 | workspace | file数・bytes・worker数を独立に増やす | 作成後retained heapとpreflight allocator peakを別ゲートで測る |
 
 現在のブランチは26個のactiveゲートを実行する。これで全入力形状の性能回帰を網羅するわけではない。追加の修正が未導入の場合はpendingとして登録し、成功数へ含めない。修正を取り込んだ後に実際のテスト名と計数箇所を照合し、`args` を指定して実行してからactiveへ変更する。単にラベルを変えて検証済みにしない。
@@ -55,3 +55,6 @@ GitHub Actions の `Performance measurements` は手動実行専用。選んだr
 [今回のrelease計測](2026-09-14-issue-491-expanded-measurement.json)は29形状×3サイズ×3反復×2実行ファイルの522回を記録する。出力document bytes、同一binary内のN/2N/4N比、baselineとの比を保存し、未観測RSSはnullのままとする。既存198回の監査とは別の実行である。詳しい環境・digest・感度検証は[入力軸の報告](../superpowers/reports/2026-09-14-issue-491-input-axis-review.md)に記載した。
 
 preflightのallocator peakはmanifest entriesに加え、既存hasherの最大1ファイル分のbufferを許容する。作成前に全ファイルをworker数だけ保持する対照は同じ上界を超える。許容する入力比例メモリをCLI全体の定数メモリ保証へ読み替えない。
+
+
+progressのallocatorゲートは同じ関数名のまま、1reportの内容500/1,000/2,000件と履歴2/4/8を独立に増やす。元の2,000件×16履歴も保持する。実際のreport bytesを記録し、各reportサイズで履歴2に対する追加peakを512KiB以下に制限する。全入力が利用可能で、候補対応数、score、差分、停滞判断が正しいことを同時に検査する。実際に全履歴のparsed reportを保持する対照は同じ上界を超える。この通常ゲートの追加確認を522回のrelease実測に含めない。
