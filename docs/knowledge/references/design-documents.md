@@ -5,6 +5,11 @@ description: docs/superpowers/specs内の全Markdownを先頭見出しと出典�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-461-lazy
+  resource: ../../superpowers/specs/2026-09-14-issue-461-lazy-candidates-design.md
+  working_tree: clean
+  revision: 38ee010b2e0768d82c37488075275edc34f8293b
+  sha256: 683834f572abb49a7d2a5fc7c36890ce0ac57be4daebcb62467af5391edd1dc1
 - id: issue-513
   resource: ../../superpowers/specs/2026-09-12-issue-513-parser-recursion-design.md
   working_tree: untracked
