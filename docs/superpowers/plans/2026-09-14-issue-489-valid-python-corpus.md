@@ -30,4 +30,6 @@ Do not add production analyzer code or hand-edit generated corpus. Mode claims r
 
 - [x] Run bounded model gates, new Rust correspondence, related scope/span integrations, format/Clippy, CI workflow tests and OKF checks.
 - [x] Record three self-reviews each for OKF, design, plan, model/implementation, tests and PR; record actual counts, modes, scope limits and resource stats.
-- [ ] Commit/push an independent branch and create a PR using the template (delivery step after final checks).
+- [x] Commit/push an independent branch and create a PR using the template (delivery step after final checks).
+
+Publication verified: https://github.com/tokyogas-tech/hoimin/pull/542. Current applicable CI checks passed before this documentation-only delivery-state update.
