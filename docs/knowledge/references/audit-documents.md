@@ -7,8 +7,9 @@ catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
 - id: issue-464-review
   resource: ../../superpowers/reports/2026-09-14-issue-464-baseline-output-review.md
-  working_tree: untracked
-  sha256: 6fea222da530ffe38493d6c7ba40109e2557c07627d1cbbc8c2f24bc75c05fa3
+  working_tree: modified
+  revision: c96c89ec575cc3ac72a621aa267fbc011e9be898
+  sha256: 4dc8b97db4e401f403397d2dab4b648c611d96ac3931d099eb4d3dd11f2f79fb
 - id: issue-461-merge-review
   resource: ../../superpowers/reports/2026-09-14-issue-461-self-review.md
   revision: 11dd162101c4351dfdd15cb52ba112bdf1fe9cf2

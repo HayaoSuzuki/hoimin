@@ -27,4 +27,4 @@ Files: new `crates/hoimin-cli/src/baseline_output.rs`, `src/lib.rs`, `src/shell.
 - [x] Document stderr viewing/saving, combined streams, truncation, encoding, interrupted export limitation.
 - [x] Update session/report OKF concept and source indexes with final hashes; validate YAML, links and claims separately.
 - [x] Record three actual reviews for each stage; incorporate independent review before publication.
-- [ ] Commit/push dedicated branch and create PR using template; inspect published head and CI separately.
+- [x] Commit/push dedicated branch and create PR using template; inspect published head and CI separately.

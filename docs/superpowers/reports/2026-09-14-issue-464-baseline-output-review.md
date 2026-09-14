@@ -49,3 +49,5 @@ Base 8b33167, reviewer Codex, worktree .worktrees/issue-464.
 ## Independent review
 
 The issue-476 agent reviewed chunk/UTF8 carry bounds, terminal escaping, retained-tail metadata and raw offsets, spool lifecycle, read/write failure handling, original BaselineFinished reporting and owned delivery deadlines. No blocking findings. It independently reran all4 baseline_output tests and the blocked stderr regression (1passed,73filtered;3.49s). The review confirmed the stated absence of an injected read-failure test, borrowed-writer progress assumption and interrupted-export limitation.
+
+Publication verified:PR #541 targets main at implementation commit c96c89ec575cc3ac72a621aa267fbc011e9be898;12changed files match staged scope. Hosted CI is pending separately.
