@@ -9,6 +9,16 @@ sources:
   resource: ../../superpowers/specs/2026-09-14-issue-470-column-index-design.md
   working_tree: untracked
   sha256: 1e6e2edd408f35816863baad22f78426c506a099808846add62a33cd12b062a3
+- id: issue-456
+  resource: ../../superpowers/specs/2026-09-14-issue-456-validation-context-design.md
+  working_tree: untracked
+  sha256: a3f08279a0c60e016cef85ba37827f2b3be4fd5006bbb2068cce2c75bdf8991b
+- id: issue-457
+  resource: ../../superpowers/specs/2026-09-14-issue-457-fingerprint-shared-walk-design.md
+  revision: 67b82d65bfa6f4c13b7476531161c1852be50381
+  working_tree: clean
+  sha256: 9f7b93abdbe62ab58d1ca1f4c6bb3f3bbbdd4326956cc1dde9b14d27b4cfc4b7
+
 - id: issue-513
   resource: ../../superpowers/specs/2026-09-12-issue-513-parser-recursion-design.md
   working_tree: untracked
@@ -1140,6 +1150,12 @@ sources:
 
 [^issue-460]: [2026-09-11-issue-460-progress-result-design.md](../../superpowers/specs/2026-09-11-issue-460-progress-result-design.md)。
 
+# fingerprint glob共有走査（Issue #457）
+
+複数のfingerprint include globを一度のディレクトリ走査で解決し、入力順のエラーとglobごとの照合を維持する設計を記録した。[^issue-457]
+
+[^issue-457]: [2026-09-14-issue-457-fingerprint-shared-walk-design.md](../../superpowers/specs/2026-09-14-issue-457-fingerprint-shared-walk-design.md)。
+
 # 候補の保存サイズ上限（Issue #459）
 
 planの候補にも実行用spoolと同じ2 MiBのレコード上限を適用する設計とした。JSONのエスケープとUTF-8、および末尾の改行1バイトを含むサイズで判定する。plan生成とverifyの事前検証で超過を拒否し、直接runする場合は既存のbaseline後の解析段階で不完全な実行として報告する。[^issue-459]
@@ -1167,3 +1183,11 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 [^issue-515]: [Issue515 class directive design](../../superpowers/specs/2026-09-12-issue-515-class-directives-design.md)。
 [^issue-514]: [Issue514 comprehension effect order design](../../superpowers/specs/2026-09-12-issue-514-comprehension-effect-order-design.md)。
 [^issue-516]: [Issue 516: Share active session ownership-tree identities](../../superpowers/specs/2026-09-12-issue-516-session-ownership-identities-design.md)。
+
+# 2026-09-14 の追加
+
+| 原文 | 内容 |
+| --- | --- |
+| [Issue #456: verify のファイル単位の候補検証](../../superpowers/specs/2026-09-14-issue-456-validation-context-design.md) | 前処理の共有、診断順とソース所有権。[^issue-456] |
+
+[^issue-456]: [2026-09-14-issue-456-validation-context-design.md](../../superpowers/specs/2026-09-14-issue-456-validation-context-design.md)。
