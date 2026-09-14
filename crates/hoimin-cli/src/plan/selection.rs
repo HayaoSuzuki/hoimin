@@ -22,6 +22,22 @@ pub(crate) fn select_top_candidate_ids(
     }
 }
 
+pub(crate) fn select_top_candidate_ids_at(
+    candidates: &[RankedPlanCandidate],
+    count: NonZeroUsize,
+    policy: TopSelectionPolicy,
+    offset: usize,
+) -> Vec<String> {
+    if offset >= candidates.len() {
+        return Vec::new();
+    }
+    let prefix = offset.saturating_add(count.get()).min(candidates.len());
+    select_top_candidate_ids(candidates, NonZeroUsize::new(prefix).unwrap(), policy)
+        .into_iter()
+        .skip(offset)
+        .collect()
+}
+
 fn select_diverse_candidate_ids(candidates: &[RankedPlanCandidate], limit: usize) -> Vec<String> {
     let mut selected = Vec::with_capacity(limit);
     let mut tier_start = 0;

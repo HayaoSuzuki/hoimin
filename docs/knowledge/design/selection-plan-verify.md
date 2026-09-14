@@ -5,6 +5,11 @@ description: 候補発見と実行の分離、ランキング、部分集合、�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-454
+  resource: ../../superpowers/specs/2026-09-14-issue-454-fixed-batches-design.md
+  working_tree: untracked
+  sha256: 10e05c4a8d518d5334e191a2999d2bd9f5c198569a3db650969f51adcc097dd1
+
 - id: issue-458
   resource: ../../superpowers/specs/2026-09-14-issue-458-verify-metrics-design.md
   working_tree: untracked
@@ -219,6 +224,16 @@ fileまたはlineだけを指定した場合、rootからの探索は指定フ�
 [^issue-456-review]: [2026-09-14-issue-456-validation-context-review.md](../../superpowers/reports/2026-09-14-issue-456-validation-context-review.md)。
 
 [^issue-456-code]: [plan.rs](../../../crates/hoimin-cli/src/plan.rs)。
+
+# 固定バッチの範囲選択（Issue #454）
+
+`verify --top N --offset K` は、指定した選択規則による全体の順序からK件を飛ばし、続く最大N件を選ぶ。strictは保存順位、diverseは同点内でファイルを巡回する全体順序に対して範囲を適用する。同じplanと選択規則で隣接範囲を指定すれば、各範囲のID集合は重複しない。[^issue-454]
+
+offsetは0始まりでtopとの併用を必須とし、候補ID指定とは併用しない。保持数以上のoffsetと空planはbaseline前に拒否する。末尾を越える件数は残りに切り詰め、max_mutantsは飛ばした件数を除く実際のバッチに適用する。truncated planの範囲は保持済み候補だけであり、完全実行の扱いへ変更しない。[^issue-454]
+
+JSON/JSONLのmutant記録に実際の候補IDを残す。バッチの再実行では範囲と選択規則を保存し、同じID集合のレポートだけでprogress履歴を作る。異なるバッチのscoreや飽和判定は合成しない。[^issue-454]
+
+[^issue-454]: [Issue 454: Fixed verify batches](../../superpowers/specs/2026-09-14-issue-454-fixed-batches-design.md)。
 
 # verifyの運用metrics（Issue #458）
 

@@ -5,6 +5,10 @@ description: docs/superpowers/specs内の全Markdownを先頭見出しと出典�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-454-design
+  resource: ../../superpowers/specs/2026-09-14-issue-454-fixed-batches-design.md
+  working_tree: untracked
+  sha256: 10e05c4a8d518d5334e191a2999d2bd9f5c198569a3db650969f51adcc097dd1
 - id: issue-458-design
   resource: ../../superpowers/specs/2026-09-14-issue-458-verify-metrics-design.md
   working_tree: untracked
@@ -1315,6 +1319,11 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 
 [^issue-456]: [2026-09-14-issue-456-validation-context-design.md](../../superpowers/specs/2026-09-14-issue-456-validation-context-design.md)。
 
+# Issue 454
+
+- [Issue 454: Fixed verify batches](../../superpowers/specs/2026-09-14-issue-454-fixed-batches-design.md) — 固定バッチ選択と確認範囲。[^issue-454-design]
+
+[^issue-454-design]: [Issue 454: Fixed verify batches](../../superpowers/specs/2026-09-14-issue-454-fixed-batches-design.md)。
 # Issue 458
 
 - [Issue 458: Verify operational metrics](../../superpowers/specs/2026-09-14-issue-458-verify-metrics-design.md) — verifyのmetrics出力と確認範囲。[^issue-458-design]
