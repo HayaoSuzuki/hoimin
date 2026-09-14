@@ -1,8 +1,8 @@
 use std::io::{Seek, SeekFrom, Write};
 
 use hoimin_core::{
-    CANDIDATE_SCHEMA_VERSION, CandidateDescriptor, CandidateValidationError, MutationCandidate,
-    validate_candidate,
+    CANDIDATE_SCHEMA_VERSION, CandidateDescriptor, CandidateValidationContext,
+    CandidateValidationError, MutationCandidate, validate_candidate_with_context,
 };
 
 use super::{WorkerWorkspace, WorkspaceError};
@@ -30,9 +30,14 @@ impl WorkerWorkspace {
                 path: candidate.path.clone(),
             });
         }
+        let validation = CandidateValidationContext::new(&bytes).map_err(|_| {
+            WorkspaceError::MutationSpanInvalid {
+                path: candidate.path.clone(),
+            }
+        })?;
         let stable_id =
-            validate_candidate(&bytes, &candidate_descriptor(candidate)).map_err(|error| {
-                match error {
+            validate_candidate_with_context(&validation, &candidate_descriptor(candidate))
+                .map_err(|error| match error {
                     CandidateValidationError::FileHashMismatch => {
                         WorkspaceError::MutationHashMismatch {
                             path: candidate.path.clone(),
@@ -48,14 +53,14 @@ impl WorkerWorkspace {
                     | CandidateValidationError::InvalidPath
                     | CandidateValidationError::SpanOutOfBounds
                     | CandidateValidationError::LocationMismatch
+                    | CandidateValidationError::InvalidEncoding(_)
                     | CandidateValidationError::InvalidUtf8
                     | CandidateValidationError::InvalidMutation => {
                         WorkspaceError::MutationSpanInvalid {
                             path: candidate.path.clone(),
                         }
                     }
-                }
-            })?;
+                })?;
         if stable_id.as_str() != candidate.id {
             return Err(WorkspaceError::MutationSpanInvalid {
                 path: candidate.path.clone(),
@@ -78,15 +83,20 @@ impl WorkerWorkspace {
             .ok_or_else(|| WorkspaceError::MutationSpanInvalid {
                 path: candidate.path.clone(),
             })?;
-        if bytes.get(start..end) != Some(candidate.original.as_bytes()) {
-            return Err(WorkspaceError::MutationOriginalMismatch {
+        let encoding = validation
+            .decoded_source()
+            .map_err(|_| WorkspaceError::MutationSpanInvalid {
                 path: candidate.path.clone(),
-            });
-        }
-
-        let mut mutated = Vec::with_capacity(bytes.len() - length + candidate.replacement.len());
+            })?
+            .encoding();
+        let replacement = encoding.encode(&candidate.replacement).map_err(|_| {
+            WorkspaceError::MutationSpanInvalid {
+                path: candidate.path.clone(),
+            }
+        })?;
+        let mut mutated = Vec::with_capacity(bytes.len() - length + replacement.len());
         mutated.extend_from_slice(&bytes[..start]);
-        mutated.extend_from_slice(candidate.replacement.as_bytes());
+        mutated.extend_from_slice(&replacement);
         mutated.extend_from_slice(&bytes[end..]);
         let mut file = target.into_writable(&candidate.path)?;
         file.seek(SeekFrom::Start(0))
@@ -100,7 +110,7 @@ impl WorkerWorkspace {
         hoimin_core::contract_ensure!(
             "workspace.mutation.post",
             mutated[..start] == bytes[..start]
-                && mutated[start + candidate.replacement.len()..] == bytes[end..],
+                && mutated[start + replacement.len()..] == bytes[end..],
             &candidate.path,
         );
         Ok(())

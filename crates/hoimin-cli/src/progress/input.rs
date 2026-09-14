@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
-use std::fs;
+use std::fs::File;
+use std::io::{BufReader, Read};
+
 use std::path::{Path, PathBuf};
 
 use hoimin_core::{
@@ -9,6 +11,8 @@ use hoimin_core::{
 };
 use serde::Deserialize;
 use thiserror::Error;
+
+mod jsonl;
 
 #[derive(Debug)]
 pub enum InputReport {
@@ -115,8 +119,7 @@ struct ProgressRunStarted {
     normalized_config: serde_json::Value,
     #[serde(rename = "versions")]
     _versions: ReportVersions,
-    #[serde(rename = "resource_control")]
-    _resource_control: ResourceControl,
+    resource_control: ResourceControl,
     #[serde(default, rename = "verification_selection")]
     _verification_selection: Option<VerificationSelection>,
 }
@@ -185,10 +188,22 @@ struct LegacyV2RunSummary {
 ///
 /// Returns an error when the report cannot be read, parsed, or structurally validated.
 pub fn read_report(path: &Path) -> Result<InputReport, ProgressError> {
-    let bytes = fs::read(path).map_err(|source| ProgressError::Read {
+    let file = File::open(path).map_err(|source| ProgressError::Read {
         path: path.to_path_buf(),
         source,
     })?;
+    let mut reader = BufReader::new(file);
+    let mut bytes = Vec::new();
+    jsonl::read_line(path, &mut reader, &mut bytes)?;
+    if jsonl::is_event(&bytes) {
+        return validate_document(path, jsonl::read_document(path, reader, bytes)?);
+    }
+    reader
+        .read_to_end(&mut bytes)
+        .map_err(|source| ProgressError::Read {
+            path: path.to_path_buf(),
+            source,
+        })?;
     let header =
         serde_json::from_slice::<ReportHeader>(&bytes).map_err(|source| ProgressError::Parse {
             path: path.to_path_buf(),
@@ -204,6 +219,13 @@ pub fn read_report(path: &Path) -> Result<InputReport, ProgressError> {
         }
     })?;
 
+    validate_document(path, document)
+}
+
+fn validate_document(
+    path: &Path,
+    document: RunReportDocument,
+) -> Result<InputReport, ProgressError> {
     validate_schema_versions(path, &document)?;
     validate_structure(path, &document)?;
 

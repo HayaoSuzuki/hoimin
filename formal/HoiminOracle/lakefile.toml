@@ -129,3 +129,7 @@ root = "ComprehensionBindingAuditMain"
 [[lean_exe]]
 name = "generate_performance_cost"
 root = "PerformanceCostAuditMain"
+
+[[lean_exe]]
+name = "generate_valid_python"
+root = "ValidPythonAuditMain"

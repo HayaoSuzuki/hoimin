@@ -25,7 +25,7 @@ sources:
   resource: ../../superpowers/reports/2026-09-14-issue-491-operation-cost-review.md
   working_tree: modified
   revision: f14aa1b34ec6d166882e720661aee0fceb3543ee
-  sha256: f2923c6adc2273dab52d20478f78a4d3b2ff0be2101ceb43f649236b0890ca96
+  sha256: 1fa54e6e2645568ed794c811c33bd4251344bf00fdf631b332c9c10708c82388
 - id: cost-design
   resource: ../../superpowers/specs/2026-09-14-issue-491-operation-cost-design.md
   working_tree: untracked

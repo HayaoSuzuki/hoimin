@@ -440,9 +440,24 @@ fn resolve_verify_selection(
             VerificationSelectionPolicy::ExplicitCandidates,
             requested_ids.iter().collect::<BTreeSet<_>>().len(),
         ),
-        VerifySelection::Top { count, policy } => {
-            let candidate_ids =
-                selection::select_top_candidate_ids(&manifest.candidates, *count, *policy);
+        VerifySelection::Top { count, policy }
+        | VerifySelection::TopRange { count, policy, .. } => {
+            let offset = match requested_selection {
+                VerifySelection::TopRange { offset, .. } => *offset,
+                _ => 0,
+            };
+            if offset > 0 && offset >= manifest.candidates.len() {
+                return Err(PlanError::CandidateInvalid(format!(
+                    "--offset {offset} is outside the {} retained candidates",
+                    manifest.candidates.len()
+                )));
+            }
+            let candidate_ids = selection::select_top_candidate_ids_at(
+                &manifest.candidates,
+                *count,
+                *policy,
+                offset,
+            );
             if candidate_ids.is_empty() {
                 return Err(PlanError::CandidateInvalid(
                     "--top requires at least one candidate; the plan has no retained candidates"

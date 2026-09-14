@@ -142,9 +142,9 @@ New cases begin in report mode while their model/implementation boundary is
 reviewed. Promoted strict cases are blocking; infrastructure errors always
 fail.
 
-The Linux `Lean audit` CI job is configured to compile all 128 package modules
-serially before building the aggregate library. It then runs all 31 corpus
-freshness checks and the 28 generators that expose sensitivity gates. The
+The Linux `Lean audit` CI job is configured to compile all 130 package modules
+serially before building the aggregate library. It then runs all 32 corpus
+freshness checks and the 29 generators that expose sensitivity gates. The
 workflow is the canonical list of package targets, corpus paths, and gate
 commands; update its contract test whenever a library module or `lakefile.toml`
 executable changes.
@@ -729,3 +729,71 @@ while release time/RSS observations use separate public subprocesses. See the
 [performance guide](performance/README.md) and
 [cost worksheet](superpowers/reports/2026-09-14-issue-491-cost-correspondence-worksheet.md)
 for measured steps, native-integer premises and excluded costs.
+## Valid Python candidate corpus
+
+`formal/HoiminOracle/ValidPythonAuditMain.lean` owns the seed489 fixtures and
+eligible/ineligible sites. The `valid_python_corpus` integration test compiles
+original bytes with CPython3.14 before comparing the direct Rust analyzer with
+the real CLI plan. It validates every emitted candidate, checks independent
+physical-line/Unicode locations, and compiles each one-candidate replacement.
+Runtime probes check representative bindings and protocol behavior.
+
+```console
+HOIMIN_OPERATOR_TEST_PYTHON=/path/to/python3.14 \
+  cargo test -p hoimin-cli --test valid_python_corpus valid_python_ -- --nocapture
+```
+
+The output names every fixture/operator, seed, known-risk triple and uncovered
+axis pair. Register every new canonical operator in
+`crates/hoimin-cli/tests/fixtures/valid-python-operators.json`; a deferred entry
+must explain why it remains outside this bounded corpus. A registered negative
+fixture is not evidence of positive coverage for that operator. The producer
+controls and required-position gates prevent an all-empty corpus from passing.
+
+Regenerate only through `generate_valid_python`; use the existing 30-second,
+2GiB Lean resource guard for output, freshness and sensitivity commands. The
+[correspondence worksheet](superpowers/reports/2026-09-14-issue-489-correspondence-worksheet.md)
+explains normalized scope/key premises, public observations and model limits.
+This corpus supplements the focused operator regressions and existing Lean
+adapters; it does not relabel their internal-fixture or model-only cases.
+### Cross-boundary contract replay
+
+`tests/fixtures/boundary-contracts.json` connects six boundaries to exact tests.
+Run `python3 tools/boundary_contracts.py strict --output /tmp/hoimin-boundaries`
+from a worktree with its own Cargo target and prepared `.venv`. Each strict row
+must execute and match; zero-test success, unavailable premises and external
+deadlines cannot count as matches. The runner removes inherited minimal-case
+filters so corpus coverage stays complete.
+
+Run `python3 tools/boundary_contracts.py report --from-results
+/tmp/hoimin-boundaries/strict.json --output /tmp/hoimin-boundaries` as one command
+to retain failures and unexecuted native/preparation cases. Missing strict
+results produce unexecuted rows, not inferred passes. CI runs this after the
+existing Lean proof/sensitivity/freshness gate, then adapter checks, strict
+replay, all-case report and a minimal result-validation witness. Native Linux
+hard controls, Windows PID/fault cases and preparation cancellation remain
+explicit report gaps. See [the worksheet](superpowers/specs/2026-09-14-issue-490-boundary-contracts-design.md).
+## Python source encoding contract
+
+Use `hoimin_core::decode_python_source` for source bytes that need Python text,
+including symbol existence checks. Its `DecodedPythonSource` exposes `text()`,
+`encoding()`, `utf8_to_raw()` and `raw_to_utf8()`. The two offset methods accept
+only character boundaries. UTF-8/ASCII borrow source text; Latin-1 owns decoded
+UTF-8 plus a sparse expansion index. This storage grows with source input and
+is not bounded by `max_candidates`.
+
+Candidate spans and source hashes always describe original bytes. Convert
+Ruff's UTF-8 spans before constructing persisted candidates, then validate with
+`CandidateValidationContext`. It owns decoded facts and shares the existing
+Unicode-column index across candidates. The candidate strings are Unicode;
+the source codec must encode original and replacement text. Keep replacement
+representability checks before worker writes, and write raw prefix, encoded
+replacement, raw suffix. Never apply decoded offsets directly to raw Latin-1
+bytes or write `replacement.as_bytes()` for every codec.
+
+The stable-ID schema remains 1: it already frames raw source hash/span and
+Unicode replacement. Source records and fingerprint inputs remain raw bytes.
+Run `cargo test -p hoimin-core --test source_encoding --test candidate_policy`
+and `cargo test -p hoimin-cli --test source_encoding --test plan` for codec
+changes. The CLI encoding fixture observes CPython worker bytes and values;
+existing UTF-8 Lean/source-index proofs do not establish codec correspondence.

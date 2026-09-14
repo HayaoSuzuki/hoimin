@@ -92,3 +92,18 @@ The retained2000×16 probe peaks at4782125 bytes. These allocator requested-byte
 Progress OKF reviews: (1) The performance concept's opening still used11 shapes in present tense; marked that as the initial design and connected the current29 release shapes to the added deterministic history gate. (2) Registry metadata now declares both independent dimensions, actual serialized-byte observation, the retained16 corner, semantic checks and the real eager control. The26 gate names and29 release-shape entries are unchanged. (3) Re-read updated guide, registry and report, refreshed their hashes and comparison revision, and checked the complete source/link inventories rather than treating old hashes as current.
 
 Progress PR/publication reviews: (1) Parent independently reviewed fixture drop timing, measured allocation intervals, output parsing after finish, coherent summary counts and actual retained-report sensitivity with no blocker. (2) Agent466 independently reviewed the matrix, semantics and same-bound control with no blocker; agent476's separate full-acceptance audit found no further material gap. (3) Compared final diff with the requested test-only scope: progress_heap, registry metadata, guide and review/provenance only. Existing production/runner code,26 gate identities,29 release inputs and the historical522 executions are unchanged. The parent owns the follow-up commit and hosted-CI confirmation; this records the concrete pre-publication review.
+
+
+## 全 enhancement PR の統合確認
+
+ユーザーの順次マージ指示に基づき、#536 → #540、続いて #538 → #543 → #534 → #535 → #537 → #539 → #541 → #542 → #544 の順で先行変更を取り込んだ。各統合headのCIを確認してからmainへマージする。以下は最終統合ツリーのローカル検証であり、完了前のCIを成功とは扱わない。
+
+レビュー1では、索引・設計節・追加テストの競合を両親の内容と照合した。planテストは共通prefixと双方の追加関数を保持し、関数名の和集合と重複なしを確認した。最終のLean/CI競合13箇所では、両generatorへ個別のlean_exeヘッダーを残した。
+
+レビュー2では、別担当が実装の自動統合を照合した。offsetとmetricsのCLI引数、prepare成功後の両verify dispatch、元バイトspanと再エンコード、負号を含む候補範囲、symbol定義確認、baseline診断と既存イベント処理、test-only操作数観測をすべて保持した。Lean登録は両親の集合の和と一致し、130 modules、32 corpora、29 sensitivity generatorsとなった。登録検証をLean証明の再実行とは扱わない。
+
+レビュー3では、統合ツリーでRustのplan72件、baseline出力4件、負の添字2件、文字コード5件が成功した（既存ignored 1件）。最初はworktreeの.venv参照がなく4件がprocess.spawn ENOENTで失敗したため、既存root環境への一時symlinkを接続して再実行した。コード変更で回避していない。CI構成28件、boundary runner10件、performance tool16件、全workspace/all-targets/all-features Clippyも成功した。OKF20ページ844リンク、全原文の索引包含、fmtと差分を検証した。
+
+実CLIの追加確認は初回で成功した。Latin-1のcafé関数内の負の添字について、元span85/2、反復planの同一候補、baselineと2workerの実バイトを照合した。strict/diverseのoffset1・top2は異なる期待ID順となり、metrics有無で候補が一致し、sidecarのrun_id・discovered4・executed2を確認した。元ソースと保存planは不変だった。CPython3.14.7、debug実行ファイルSHA-256は0809a065cc63f73785fdca88bf0a9c8709d91035b6975a6d781a27f3dc009db5。独立したBLAKE3の再計算は行っていない。
+
+ローカル証跡は/private/tmp/hoimin-cumulative-rust-tests-ready.log、/private/tmp/hoimin-cumulative-clippy.log、/private/tmp/hoimin-cumulative-smoke-results/result.jsonに保存した。統合時のレビューは既存522回のrelease計測を再実行したという意味ではない。
