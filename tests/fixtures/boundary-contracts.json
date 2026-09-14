@@ -1,0 +1,263 @@
+{
+  "schema": 1,
+  "cases": [
+    {
+      "id": "reader-progress",
+      "boundary": [
+        "result-json-jsonl-progress"
+      ],
+      "package": "hoimin-cli",
+      "target": "lean_progress_input_oracle",
+      "test": "shared_reader_progress_formats_follow_lean",
+      "mode": "strict",
+      "evidence": "real-cli",
+      "platforms": [
+        "darwin",
+        "linux"
+      ],
+      "timeout_seconds": 180,
+      "premise": "282 Lean-generated result/summary inputs; valid JSONL lifecycle projection where applicable",
+      "observation": "Independent Lean disposition and history at actual progress CLI",
+      "sources": [
+        "crates/hoimin-cli/tests/lean_progress_input_oracle.rs"
+      ]
+    },
+    {
+      "id": "selectors-overflow",
+      "boundary": [
+        "selectors-plan-run-verify"
+      ],
+      "package": "hoimin-cli",
+      "target": "boundary_selection",
+      "test": "literal_selector_fixture_respects_run_overflow_and_partial_verify",
+      "mode": "strict",
+      "evidence": "real-cli",
+      "platforms": [
+        "darwin",
+        "linux"
+      ],
+      "timeout_seconds": 180,
+      "premise": "Fixed two-site source, explicit operator, limits 1/2",
+      "observation": "Literal path/span/replacement expectations; stable IDs, normal abort versus partial plan/verify, inherited limits",
+      "sources": [
+        "crates/hoimin-cli/tests/boundary_selection.rs"
+      ]
+    },
+    {
+      "id": "backend-session-resume",
+      "boundary": [
+        "backend-header-results",
+        "sqlite-resume"
+      ],
+      "package": "hoimin-cli",
+      "target": "run_e2e",
+      "test": "selected_resource_policy_survives_fresh_and_natural_resume_reports",
+      "mode": "strict",
+      "evidence": "real-cli-sqlite",
+      "platforms": [
+        "darwin",
+        "linux"
+      ],
+      "timeout_seconds": 180,
+      "premise": "Real session with one killed and one timeout; approved best effort; JSON and JSONL",
+      "observation": "Current mode/metadata agree, completed SQLite rows unchanged, replayed IDs/verdicts without historical output",
+      "sources": [
+        "crates/hoimin-cli/tests/run_e2e.rs"
+      ]
+    },
+    {
+      "id": "lean-session-sqlite",
+      "boundary": [
+        "sqlite-resume"
+      ],
+      "package": "hoimin-cli",
+      "target": "lean_session_oracle",
+      "test": "oracle_correspondence",
+      "mode": "strict",
+      "evidence": "public-handler-sqlite",
+      "platforms": [
+        "darwin",
+        "linux"
+      ],
+      "timeout_seconds": 180,
+      "premise": "Checked-in Lean session recovery schedules replayed through actual SQLite store",
+      "observation": "Independent completed/reusable expectations and result identity",
+      "sources": [
+        "crates/hoimin-cli/tests/lean_session_oracle.rs",
+        "formal/HoiminOracle/corpus/session-recovery.jsonl"
+      ]
+    },
+    {
+      "id": "source-metrics-finalization",
+      "boundary": [
+        "output-finalization"
+      ],
+      "package": "hoimin-cli",
+      "target": "metrics_destinations",
+      "test": "metrics_collision_preserves_selected_source_before_baseline",
+      "mode": "strict",
+      "evidence": "real-cli",
+      "platforms": [
+        "darwin",
+        "linux"
+      ],
+      "timeout_seconds": 180,
+      "premise": "Selected source destination collides with metrics",
+      "observation": "Rejection before baseline and protected bytes unchanged",
+      "sources": [
+        "crates/hoimin-cli/tests/metrics_destinations.rs"
+      ]
+    },
+    {
+      "id": "fingerprint-metrics-finalization",
+      "boundary": [
+        "output-finalization"
+      ],
+      "package": "hoimin-cli",
+      "target": "metrics_destinations",
+      "test": "metrics_collision_preserves_explicit_fingerprint_input",
+      "mode": "strict",
+      "evidence": "real-cli",
+      "platforms": [
+        "darwin",
+        "linux"
+      ],
+      "timeout_seconds": 180,
+      "premise": "Explicit fingerprint file destination collides with metrics",
+      "observation": "Rejection before baseline and protected bytes unchanged",
+      "sources": [
+        "crates/hoimin-cli/tests/metrics_destinations.rs"
+      ]
+    },
+    {
+      "id": "session-metrics-finalization",
+      "boundary": [
+        "output-finalization"
+      ],
+      "package": "hoimin-cli",
+      "target": "metrics_destinations",
+      "test": "metrics_collision_preserves_existing_session_database_without_recovery",
+      "mode": "strict",
+      "evidence": "real-cli",
+      "platforms": [
+        "darwin",
+        "linux"
+      ],
+      "timeout_seconds": 180,
+      "premise": "Existing session destination collides with metrics",
+      "observation": "Rejection before baseline and protected bytes unchanged",
+      "sources": [
+        "crates/hoimin-cli/tests/metrics_destinations.rs"
+      ]
+    },
+    {
+      "id": "inherited-inputs",
+      "boundary": [
+        "plan-validation-execution"
+      ],
+      "package": "hoimin-cli",
+      "target": "plan",
+      "test": "verify_rejects_changed_fingerprint_input_before_baseline",
+      "mode": "strict",
+      "evidence": "public-handler",
+      "platforms": [
+        "darwin",
+        "linux"
+      ],
+      "timeout_seconds": 180,
+      "premise": "Saved fingerprint input changed before verify",
+      "observation": "Stage-specific error before baseline; preparation is not covered by rediscovery timeout",
+      "sources": [
+        "crates/hoimin-cli/tests/plan.rs"
+      ]
+    },
+    {
+      "id": "invalid-config",
+      "boundary": [
+        "plan-validation-execution"
+      ],
+      "package": "hoimin-cli",
+      "target": "plan",
+      "test": "verify_rejects_invalid_normalized_config_before_project_work",
+      "mode": "strict",
+      "evidence": "public-handler",
+      "platforms": [
+        "darwin",
+        "linux"
+      ],
+      "timeout_seconds": 180,
+      "premise": "Malformed inherited configuration before project access",
+      "observation": "Stage-specific error before baseline; preparation is not covered by rediscovery timeout",
+      "sources": [
+        "crates/hoimin-cli/tests/plan.rs"
+      ]
+    },
+    {
+      "id": "preparation-deadline-scope",
+      "boundary": [
+        "plan-validation-execution"
+      ],
+      "package": "hoimin-cli",
+      "target": "plan",
+      "test": "preparation_errors_precede_the_analyzer_deadline_without_baseline",
+      "mode": "strict",
+      "evidence": "public-handler",
+      "platforms": [
+        "darwin",
+        "linux"
+      ],
+      "timeout_seconds": 180,
+      "premise": "1ns analyzer budget plus independent manifest/source/fingerprint/copy errors",
+      "observation": "Stage-specific error before baseline; preparation is not covered by rediscovery timeout",
+      "sources": [
+        "crates/hoimin-cli/tests/plan.rs"
+      ]
+    },
+    {
+      "id": "preparation-cancellation",
+      "boundary": [
+        "plan-validation-execution"
+      ],
+      "mode": "report",
+      "evidence": "native-backend",
+      "premise": "Native availability or absent preparation control must be established separately",
+      "observation": "No strict success without current native execution",
+      "reason": "No end-to-end cancellation hook covers synchronous manifest/fingerprint/copy preparation; stage error precedence tests do not establish cancellation latency",
+      "sources": [
+        "crates/hoimin-cli/src/plan.rs"
+      ]
+    },
+    {
+      "id": "linux-hard-enforcement",
+      "boundary": [
+        "backend-header-results"
+      ],
+      "mode": "report",
+      "evidence": "native-backend",
+      "premise": "Native availability or absent preparation control must be established separately",
+      "observation": "No strict success without current native execution",
+      "reason": "Hard OOM/process-limit requires delegated Linux cgroup lane; portable/macOS results are not hard enforcement evidence",
+      "sources": [
+        "https://github.com/tokyogas-tech/hoimin/issues/228",
+        "https://github.com/tokyogas-tech/hoimin/issues/229"
+      ]
+    },
+    {
+      "id": "windows-pid-fault",
+      "boundary": [
+        "backend-header-results",
+        "sqlite-resume"
+      ],
+      "mode": "report",
+      "evidence": "native-backend",
+      "premise": "Native availability or absent preparation control must be established separately",
+      "observation": "No strict success without current native execution",
+      "reason": "Windows PID/fault scenarios require their existing native lanes, not POSIX runner substitution",
+      "sources": [
+        "https://github.com/tokyogas-tech/hoimin/issues/157",
+        "https://github.com/tokyogas-tech/hoimin/issues/162",
+        "https://github.com/tokyogas-tech/hoimin/issues/223"
+      ]
+    }
+  ]
+}

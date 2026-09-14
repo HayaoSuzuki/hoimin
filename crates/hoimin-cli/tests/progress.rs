@@ -1810,6 +1810,14 @@ async fn run_real_binary(project: &Path, test_command: &str, timeout: Duration) 
 }
 
 fn real_binary_command(project: &Path, test_command: &str) -> tokio::process::Command {
+    real_binary_command_with_format(project, test_command, "json")
+}
+
+fn real_binary_command_with_format(
+    project: &Path,
+    test_command: &str,
+    format: &str,
+) -> tokio::process::Command {
     let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"));
     command
         .arg("run")
@@ -1822,7 +1830,7 @@ fn real_binary_command(project: &Path, test_command: &str) -> tokio::process::Co
         .arg("--file")
         .arg("src/calc.py")
         .arg("--format")
-        .arg("json")
+        .arg(format)
         .arg("--operators")
         .arg("binary_add_sub")
         .arg("--max-mutants")
@@ -2506,4 +2514,345 @@ fn input_preserves_output_error_override_and_legacy_null_termination() {
         let path = write_json(&fixture, "legacy.json", &legacy);
         assert!(matches!(read_report(&path), Ok(InputReport::Usable(_))));
     }
+}
+
+fn jsonl_events(document: &Value) -> Vec<Value> {
+    let mut events = vec![document["run"].clone()];
+    if !document["baseline"].is_null() {
+        events.push(document["baseline"].clone());
+    }
+    for mutant in document["mutants"].as_array().unwrap() {
+        events.push(json!({
+            "kind": "mutant_started", "schema_version": REPORT_SCHEMA_VERSION,
+            "sequence": 0, "run_id": document["run"]["run_id"],
+            "mutant_id": mutant["candidate"]["id"],
+            "mutant_sequence": mutant["candidate"]["sequence"]
+        }));
+        events.push(mutant.clone());
+    }
+    events.push(document["summary"].clone());
+    for (index, event) in events.iter_mut().enumerate() {
+        event["sequence"] = json!(index + 1);
+    }
+    events
+}
+
+fn write_jsonl(fixture: &tempfile::TempDir, events: &[Value]) -> PathBuf {
+    let path = fixture.path().join("events.report");
+    let mut text = events
+        .iter()
+        .map(Value::to_string)
+        .collect::<Vec<_>>()
+        .join("\n");
+    text.push('\n');
+    std::fs::write(&path, text).unwrap();
+    path
+}
+
+#[tokio::test]
+async fn jsonl_and_document_inputs_have_identical_progress() {
+    let fixture = tempfile::tempdir().unwrap();
+    let document = valid_report();
+    let json = write_json(&fixture, "document.report", &document);
+    let jsonl = write_jsonl(&fixture, &jsonl_events(&document));
+    let InputReport::Usable(actual) = read_report(&jsonl).unwrap() else {
+        panic!("completed JSONL must be usable");
+    };
+    assert_eq!(actual.mutants.len(), 1);
+    assert_eq!(actual.mutants[0].candidate.id, "mutant-1");
+    let (expected_code, expected, _) = run_progress(&[json.clone(), json.clone()], "json").await;
+    let (actual_code, actual, errors) = run_progress(&[json, jsonl], "json").await;
+    assert_eq!(actual_code, expected_code, "{errors:?}");
+    let expected: Value = serde_json::from_slice(&expected).unwrap();
+    let actual: Value = serde_json::from_slice(&actual).unwrap();
+    assert_eq!(actual["latest"], expected["latest"]);
+    assert_eq!(actual["comparisons"], expected["comparisons"]);
+}
+
+#[test]
+fn jsonl_rejects_corrupt_lifecycles_and_results() {
+    let fixture = tempfile::tempdir().unwrap();
+    for defect in [
+        "missing_end",
+        "duplicate_run",
+        "after_end",
+        "duplicate_baseline",
+        "late_baseline",
+        "missing_start",
+        "active_at_end",
+        "duplicate_mutant",
+        "wrong_run",
+        "sequence",
+        "schema",
+        "unknown_kind",
+        "counts",
+        "result",
+    ] {
+        let mut events = jsonl_events(&valid_report());
+        match defect {
+            "missing_end" => {
+                events.pop();
+            }
+            "duplicate_run" => {
+                events.insert(1, events[0].clone());
+            }
+            "after_end" => {
+                events.push(events[1].clone());
+            }
+            "duplicate_baseline" => {
+                events.insert(2, events[1].clone());
+            }
+            "late_baseline" => {
+                events.swap(1, 2);
+            }
+            "missing_start" => {
+                events.remove(2);
+            }
+            "active_at_end" => {
+                events.remove(3);
+            }
+            "duplicate_mutant" => {
+                events.insert(4, events[3].clone());
+            }
+            "wrong_run" => events[2]["run_id"] = json!("other"),
+            "sequence" => events[2]["sequence"] = json!(1),
+            "schema" => events[2]["schema_version"] = json!(2),
+            "unknown_kind" => events[2]["kind"] = json!("future_event"),
+            "counts" => events[4]["counts"]["killed"] = json!(2),
+            "result" => events[3]["termination"] = json!({"Exit": 0}),
+            _ => unreachable!(),
+        }
+        // Keep sequence valid unless sequence order itself is under test.
+        if defect != "sequence" {
+            for (index, event) in events.iter_mut().enumerate() {
+                event["sequence"] = json!(index + 1);
+            }
+        }
+        let path = write_jsonl(&fixture, &events);
+        assert!(read_report(&path).is_err(), "accepted {defect}");
+    }
+    let path = write_jsonl(&fixture, &jsonl_events(&valid_report()));
+    let mut text = std::fs::read_to_string(&path).unwrap();
+    text.push_str("{\"kind\":");
+    std::fs::write(&path, text).unwrap();
+    assert!(matches!(
+        read_report(&path),
+        Err(ProgressError::Parse { .. })
+    ));
+}
+
+#[test]
+fn jsonl_preserves_opaque_config_layout_and_unusable_reasons() {
+    let fixture = tempfile::tempdir().unwrap();
+    for reason in [
+        None,
+        Some(UnusableReason::MissingBaseline),
+        Some(UnusableReason::BaselineFailed),
+        Some(UnusableReason::Incomplete),
+    ] {
+        let mut document = valid_report();
+        document["run"]["normalized_config"] = json!({"future_config": [1, 2]});
+        match reason {
+            Some(UnusableReason::MissingBaseline) => {
+                document["baseline"] = Value::Null;
+                document["mutants"] = json!([]);
+                document["summary"]["counts"] =
+                    serde_json::to_value(hoimin_core::summarize(&[])).unwrap();
+                document["summary"]["complete"] = json!(false);
+                document["summary"]["exit_code"] = json!(4);
+            }
+            Some(UnusableReason::BaselineFailed) => {
+                document["baseline"]["termination"] = json!({"Exit": 1});
+            }
+            Some(UnusableReason::Incomplete) => {
+                document["summary"]["complete"] = json!(false);
+                document["summary"]["exit_code"] = json!(4);
+            }
+            None => {}
+        }
+        let events = jsonl_events(&document);
+        let path = write_jsonl(&fixture, &events);
+        let text = std::fs::read_to_string(&path).unwrap();
+        std::fs::write(
+            &path,
+            format!("\r\n {}", text.trim_end().replace('\n', "\r\n\r\n")),
+        )
+        .unwrap();
+        let actual = read_report(&path).unwrap();
+        let json_path = write_json(&fixture, "same.json", &document);
+        let expected = read_report(&json_path).unwrap();
+        match (actual, expected, reason) {
+            (InputReport::Usable(_), InputReport::Usable(_), None) => {}
+            (
+                InputReport::Unusable { reason: a, .. },
+                InputReport::Unusable { reason: b, .. },
+                Some(r),
+            ) => {
+                assert_eq!(a, r);
+                assert_eq!(a, b);
+            }
+            values => panic!("unexpected classification {values:?}"),
+        }
+    }
+}
+
+#[tokio::test]
+async fn jsonl_real_run_output_matches_document_progress() {
+    let project = tempfile::tempdir().unwrap();
+    std::fs::create_dir(project.path().join("src")).unwrap();
+    std::fs::write(
+        project.path().join("src/calc.py"),
+        "def add(a, b):\n    return a + b\n",
+    )
+    .unwrap();
+    std::fs::write(project.path().join("src/__init__.py"), "").unwrap();
+    let mut reports = Vec::new();
+    for format in ["json", "jsonl"] {
+        let mut command = real_binary_command_with_format(
+            project.path(),
+            "from src.calc import add; assert add(2, 3) == 5",
+            format,
+        );
+        let output = bounded_output(&mut command, Duration::from_secs(30))
+            .await
+            .unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "{format}: {:?}",
+            output.stderr
+        );
+        let path = project.path().join(format!("{format}.report"));
+        std::fs::write(&path, output.stdout).unwrap();
+        assert!(matches!(
+            read_report(&path).unwrap(),
+            InputReport::Usable(_)
+        ));
+        reports.push(path);
+    }
+    let (code, output, errors) = run_progress(&reports, "json").await;
+    assert_eq!(code, 0, "{errors:?}");
+    let output: Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(output["latest"]["state"], "stalled");
+    assert_eq!(output["comparisons"][0]["common"], 1);
+    assert_eq!(output["comparisons"][0]["previous_score"], 1.0);
+    assert_eq!(output["comparisons"][0]["current_score"], 1.0);
+}
+
+#[tokio::test]
+async fn jsonl_invalid_input_has_no_partial_progress_output() {
+    let fixture = tempfile::tempdir().unwrap();
+    let json = write_json(&fixture, "valid.json", &valid_report());
+    let mut events = jsonl_events(&valid_report());
+    events.pop();
+    let jsonl = write_jsonl(&fixture, &events);
+    let (code, output, error) = run_progress(&[json, jsonl.clone()], "json").await;
+    assert_eq!(code, 2);
+    assert!(output.is_empty());
+    let error = String::from_utf8(error).unwrap();
+    assert!(error.contains(&jsonl.display().to_string()), "{error}");
+    assert!(error.contains("run_finished"), "{error}");
+}
+
+#[test]
+fn jsonl_checks_discarded_diagnostics_and_rejects_legacy_streams() {
+    let fixture = tempfile::tempdir().unwrap();
+    let mut events = jsonl_events(&valid_report());
+    events[0]["schema_version"] = json!(2);
+    let path = write_jsonl(&fixture, &events);
+    assert!(matches!(
+        read_report(&path),
+        Err(ProgressError::UnsupportedSchema { found: 2, .. })
+    ));
+    for defect in ["none", "schema", "run_id", "sequence"] {
+        let mut events = jsonl_events(&valid_report());
+        let mut diagnostic = json!({
+            "kind": "diagnostic", "schema_version": REPORT_SCHEMA_VERSION,
+            "sequence": 5, "run_id": "run-1", "level": "info", "code": "test", "message": "test"
+        });
+        match defect {
+            "schema" => diagnostic["schema_version"] = json!(2),
+            "run_id" => diagnostic["run_id"] = json!("another-run"),
+            "sequence" => diagnostic["sequence"] = json!(4),
+            "none" => {}
+            _ => unreachable!(),
+        }
+        events[4]["sequence"] = json!(6);
+        events.insert(4, diagnostic);
+        let path = write_jsonl(&fixture, &events);
+        assert_eq!(read_report(&path).is_ok(), defect == "none", "{defect}");
+    }
+    let path = write_jsonl(&fixture, &jsonl_events(&valid_report()));
+    let text = std::fs::read(&path).unwrap();
+    std::fs::write(&path, [b"\x0b\n".as_slice(), &text].concat()).unwrap();
+    assert!(
+        read_report(&path).is_err(),
+        "non-JSON control whitespace must not be skipped"
+    );
+}
+
+#[tokio::test]
+async fn jsonl_real_failed_baseline_has_document_disposition() {
+    let project = tempfile::tempdir().unwrap();
+    std::fs::create_dir(project.path().join("src")).unwrap();
+    std::fs::write(project.path().join("src/calc.py"), "value = 1 + 2\n").unwrap();
+    for format in ["json", "jsonl"] {
+        let mut command =
+            real_binary_command_with_format(project.path(), "raise SystemExit(7)", format);
+        let output = bounded_output(&mut command, Duration::from_secs(30))
+            .await
+            .unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(3),
+            "{format}: {:?}",
+            output.stderr
+        );
+        let path = project.path().join(format!("{format}.report"));
+        std::fs::write(&path, output.stdout).unwrap();
+        assert!(matches!(
+            read_report(&path).unwrap(),
+            InputReport::Unusable {
+                reason: UnusableReason::BaselineFailed,
+                ..
+            }
+        ));
+    }
+}
+
+#[test]
+fn jsonl_not_run_requires_start_and_preceding_baseline() {
+    let fixture = tempfile::tempdir().unwrap();
+    let mut document = valid_report();
+    document["mutants"][0]["status"] = json!("not_run");
+    document["mutants"][0]["termination"] = Value::Null;
+    document["mutants"][0]["output"] = Value::Null;
+    document["summary"]["counts"] =
+        serde_json::to_value(hoimin_core::summarize(&[MutationStatus::NotRun])).unwrap();
+    document["summary"]["complete"] = json!(false);
+    document["summary"]["exit_code"] = json!(4);
+    let mut events = jsonl_events(&document);
+    let path = write_jsonl(&fixture, &events);
+    assert!(matches!(
+        read_report(&path).unwrap(),
+        InputReport::Unusable {
+            reason: UnusableReason::Incomplete,
+            ..
+        }
+    ));
+    events.remove(2);
+    let path = write_jsonl(&fixture, &events);
+    assert!(
+        read_report(&path).is_err(),
+        "not_run does not exempt lifecycle starts"
+    );
+    events.swap(1, 2);
+    for (index, event) in events.iter_mut().enumerate() {
+        event["sequence"] = json!(index + 1);
+    }
+    let path = write_jsonl(&fixture, &events);
+    assert!(
+        read_report(&path).is_err(),
+        "not_run before baseline is invalid"
+    );
 }
