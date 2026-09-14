@@ -3,6 +3,8 @@ mod protocol;
 mod rust;
 mod store;
 
+pub(crate) use rust::definition_names;
+
 use std::fmt::Write as _;
 use std::sync::Arc;
 use std::time::Duration;

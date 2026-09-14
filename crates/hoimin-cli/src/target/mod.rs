@@ -32,6 +32,7 @@ impl TargetHandler {
         let discovered = fs::discover_explicit(selection)
             .map_err(|error| TargetError::DiscoveryFailed(error.to_string()))?;
         let explicit = resolve_explicit(selection, &discovered)?;
+        validate_symbols(selection, &explicit)?;
         if !selection.changed {
             return Ok(explicit);
         }
@@ -65,4 +66,37 @@ impl TargetHandler {
             .map(|targets| TargetsResolved { id, targets })
             .map_err(|error| EffectFailed::other(id, "target.resolve", error.to_string()))
     }
+}
+
+fn validate_symbols(selection: &Selection, targets: &[TargetSlice]) -> Result<(), TargetError> {
+    if selection.symbols.is_empty() {
+        return Ok(());
+    }
+    let root = crate::workspace::RootRelativeReader::open(selection.root.clone())
+        .map_err(|error| TargetError::DiscoveryFailed(error.to_string()))?;
+    let mut selectors = std::collections::BTreeMap::<&str, Vec<String>>::new();
+    for symbol in &selection.symbols {
+        selectors
+            .entry(&symbol.qualname)
+            .or_default()
+            .push(format!("{}:{}", symbol.module, symbol.qualname));
+    }
+    for target in targets.iter().filter(|target| !target.symbols.is_empty()) {
+        let failure =
+            |error: String| TargetError::DiscoveryFailed(format!("{}: {error}", target.path));
+        let bytes = root
+            .read(&target.path)
+            .map_err(|error| failure(error.to_string()))?;
+        let source = String::from_utf8(bytes).map_err(|error| failure(error.to_string()))?;
+        let definitions = crate::analyzer::definition_names(&source).map_err(failure)?;
+        for qualname in &target.symbols {
+            if !definitions.contains(qualname) {
+                let requested = selectors[qualname.as_str()].join(", ");
+                return Err(failure(format!(
+                    "symbol definition not found: {qualname} (requested --symbol {requested})"
+                )));
+            }
+        }
+    }
+    Ok(())
 }

@@ -72,6 +72,46 @@ fn annotation_retention_stats() -> (usize, usize) {
     )
 }
 
+/// Collect syntactic definitions independently of mutation eligibility.
+pub(crate) fn definition_names(source: &str) -> Result<BTreeSet<String>, String> {
+    #[derive(Default)]
+    struct Definitions {
+        scope: Vec<String>,
+        names: BTreeSet<String>,
+    }
+    impl<'ast> Visitor<'ast> for Definitions {
+        fn visit_stmt(&mut self, statement: &'ast Stmt) {
+            let name = match statement {
+                Stmt::FunctionDef(definition) => Some(definition.name.as_str()),
+                Stmt::ClassDef(definition) => Some(definition.name.as_str()),
+                _ => None,
+            };
+            if let Some(name) = name {
+                self.scope.push(name.to_owned());
+                self.names.insert(self.scope.join("."));
+            }
+            visitor::walk_stmt(self, statement);
+            if name.is_some() {
+                self.scope.pop();
+            }
+        }
+    }
+    let parsed = parse_unchecked_source(source, ruff_python_ast::PySourceType::Python);
+    if !parsed.has_valid_syntax() {
+        depth::dispose(parsed.into_syntax());
+        return Err("invalid Python syntax; cannot validate symbol definitions".into());
+    }
+    if let Err(error) = depth::check(parsed.syntax(), &|| false) {
+        depth::dispose(parsed.into_syntax());
+        return Err(format!("cannot validate symbol definitions: {error:?}"));
+    }
+    let mut definitions = Definitions::default();
+    for statement in &parsed.syntax().body {
+        definitions.visit_stmt(statement);
+    }
+    Ok(definitions.names)
+}
+
 pub(crate) struct AnalyzeRequest<'a> {
     pub path: &'a Utf8Path,
     pub lines: &'a [LineRange],
