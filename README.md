@@ -83,6 +83,14 @@ At least one target selector is required:
 - `--changed` restricts selection to staged, unstaged, and untracked Git changes. It requires `--source`.
 - `--diff-base REV` uses the merge base of `REV` and `HEAD` for `--changed`. It is invalid without `--changed`.
 
+An explicit `--symbol` must name an existing function or class definition in the
+resolved Python file, including methods, nested definitions and package
+`__init__.py` definitions. A missing definition is an exit-2 error before the
+baseline in `run`, `plan` and `verify`, even with `--changed` and no changed
+lines. Existing definitions with no candidates under the selected operators,
+profile, lines or Git diff remain valid empty selections. Imported names and
+assignment aliases do not count as definitions.
+
 Whole-file selectors establish the selected files first. For example, `--source src --file src/calc.py` selects every Python file below `src`, while `--file src/calc.py` alone selects only that file. A `--line` or `--symbol` then narrows a matching file. Selectors for different files remain combined. The resolver merges multiple line ranges on one file. Candidates must satisfy both constraints when a file has line and symbol selectors.
 
 Python source positions recognize LF, CRLF and lone CR, including mixtures, without normalizing file bytes. Previously saved plans with incorrect lone-CR coordinates must be regenerated; existing reports retain their recorded coordinates. Correcting line/column metadata does not change a candidate ID for identical source bytes and the same mutation.
