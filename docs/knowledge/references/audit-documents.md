@@ -5,6 +5,11 @@ description: docs/auditsとdocs/superpowers/reports内の全Markdownを追跡状
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-480-report-index
+  resource: ../../superpowers/reports/2026-09-14-issue-480-source-encoding-review.md
+  working_tree: modified
+  sha256: f8cc3f5e7e8d5ae7afec4b3321751e3d0a36dee584256c930395e5571fa59102
+  revision: a19bf3aadb0d56cc514d857a0e6359a563e67a18
 - id: issue-476-report-index
   resource: ../../superpowers/reports/2026-09-14-issue-476-symbol-diagnostics-review.md
   working_tree: untracked
@@ -431,6 +436,7 @@ sources:
 
 | 原文 | 先頭見出し | 作成時の状態 |
 | --- | --- | --- |
+| [2026-09-14-issue-480-source-encoding-review.md](../../superpowers/reports/2026-09-14-issue-480-source-encoding-review.md) | Issue #480: source encoding review [^issue-480-report-index] | 追跡済み |
 | [2026-09-14-issue-476-symbol-diagnostics-review.md](../../superpowers/reports/2026-09-14-issue-476-symbol-diagnostics-review.md) | Issue #476: symbol diagnostics review [^issue-476-report-index] | 未追跡 |
 | [2026-09-14-issue-453-scoped-discovery.md](../../superpowers/reports/2026-09-14-issue-453-scoped-discovery.md) | Issue 453 scoped discovery report [^issue-453-report] | 未追跡 |
 | [2026-09-14-issue-475-range-normalization.md](../../superpowers/reports/2026-09-14-issue-475-range-normalization.md) | Issue 475 range normalization report [^issue-475-report] | 未追跡 |
@@ -655,3 +661,5 @@ sources:
 [^issue-482-merge-review]: [2026-09-14-issue-482-self-review.md](../../superpowers/reports/2026-09-14-issue-482-self-review.md)。
 
 [^issue-476-report-index]: [Issue #476: symbol diagnostics review](../../superpowers/reports/2026-09-14-issue-476-symbol-diagnostics-review.md).
+
+[^issue-480-report-index]: [Issue #480: source encoding review](../../superpowers/reports/2026-09-14-issue-480-source-encoding-review.md).

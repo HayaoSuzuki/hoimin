@@ -87,8 +87,9 @@ fn validate_symbols(selection: &Selection, targets: &[TargetSlice]) -> Result<()
         let bytes = root
             .read(&target.path)
             .map_err(|error| failure(error.to_string()))?;
-        let source = String::from_utf8(bytes).map_err(|error| failure(error.to_string()))?;
-        let definitions = crate::analyzer::definition_names(&source).map_err(failure)?;
+        let source = hoimin_core::decode_python_source(&bytes)
+            .map_err(|error| failure(error.to_string()))?;
+        let definitions = crate::analyzer::definition_names(source.text()).map_err(failure)?;
         for qualname in &target.symbols {
             if !definitions.contains(qualname) {
                 let requested = selectors[qualname.as_str()].join(", ");

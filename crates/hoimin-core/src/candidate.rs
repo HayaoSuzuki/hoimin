@@ -6,7 +6,7 @@ use camino::Utf8PathBuf;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::ByteSpan;
+use crate::{ByteSpan, DecodedPythonSource, SourceEncodingError, decode_python_source};
 
 pub const CANDIDATE_SCHEMA_VERSION: u32 = 1;
 const MUTANT_ID_DOMAIN: &[u8] = b"hoimin.mutant-id.v1\0";
@@ -83,6 +83,8 @@ pub enum CandidateValidationError {
     LocationMismatch,
     #[error("candidate source is not valid UTF-8")]
     InvalidUtf8,
+    #[error("candidate {0}")]
+    InvalidEncoding(String),
     #[error("candidate operator is empty or replacement is unchanged")]
     InvalidMutation,
 }
@@ -91,7 +93,7 @@ pub enum CandidateValidationError {
 #[derive(Debug)]
 pub struct CandidateValidationContext<'source> {
     source: &'source [u8],
-    text: Result<&'source str, std::str::Utf8Error>,
+    decoded: Result<DecodedPythonSource<'source>, SourceEncodingError>,
     file_hash: String,
     source_index: Option<PythonSourceIndex>,
 }
@@ -101,18 +103,27 @@ impl<'source> CandidateValidationContext<'source> {
     ///
     /// Returns [`CandidateValidationError::SourceTooLarge`] when the source exceeds `u32::MAX` bytes.
     pub fn new(source: &'source [u8]) -> Result<Self, CandidateValidationError> {
-        let line_starts = python_line_starts(source)?;
-        let text = std::str::from_utf8(source);
-        let source_index = text
+        u32::try_from(source.len()).map_err(|_| CandidateValidationError::SourceTooLarge)?;
+        let decoded = decode_python_source(source);
+        let source_index = decoded
             .as_ref()
             .ok()
-            .map(|text| PythonSourceIndex::from_parts(text, line_starts));
+            .map(|decoded| PythonSourceIndex::new(decoded.text()))
+            .transpose()?;
         Ok(Self {
             source,
-            text,
+            decoded,
             file_hash: blake3::hash(source).to_hex().to_string(),
             source_index,
         })
+    }
+
+    /// Returns decoded source facts, including a declaration-specific error.
+    ///
+    /// # Errors
+    /// Returns the decoding error retained when this context was constructed.
+    pub fn decoded_source(&self) -> Result<&DecodedPythonSource<'source>, &SourceEncodingError> {
+        self.decoded.as_ref()
     }
 
     #[must_use]
@@ -402,20 +413,39 @@ pub fn validate_candidate_with_context(
         .checked_add(length)
         .filter(|end| *end <= context.source.len())
         .ok_or(CandidateValidationError::SpanOutOfBounds)?;
-    if context.source.get(start..end) != Some(candidate.original.as_bytes()) {
+    // Preserve original-mismatch precedence even for invalid source encodings.
+    let original = context
+        .decoded
+        .as_ref()
+        .map_or_else(
+            |_| Ok(std::borrow::Cow::Borrowed(candidate.original.as_bytes())),
+            |decoded| decoded.encoding().encode(&candidate.original),
+        )
+        .map_err(|_| CandidateValidationError::OriginalMismatch)?;
+    if context.source.get(start..end) != Some(original.as_ref()) {
         return Err(CandidateValidationError::OriginalMismatch);
     }
-
-    let text = context
-        .text
-        .map_err(|_| CandidateValidationError::InvalidUtf8)?;
-    if !text.is_char_boundary(start) || !text.is_char_boundary(end) {
-        return Err(CandidateValidationError::OriginalMismatch);
-    }
+    let decoded = context.decoded.as_ref().map_err(|error| {
+        if error.encoding == "utf-8 (default)" {
+            CandidateValidationError::InvalidUtf8
+        } else {
+            CandidateValidationError::InvalidEncoding(error.to_string())
+        }
+    })?;
+    let decoded_start = decoded
+        .raw_to_utf8(start)
+        .ok_or(CandidateValidationError::OriginalMismatch)?;
+    decoded
+        .raw_to_utf8(end)
+        .ok_or(CandidateValidationError::OriginalMismatch)?;
+    decoded
+        .encoding()
+        .encode(&candidate.replacement)
+        .map_err(|error| CandidateValidationError::InvalidEncoding(error.to_string()))?;
     let (line, column) = context
         .source_index
         .as_ref()
-        .and_then(|index| index.line_and_column(start))
+        .and_then(|index| index.line_and_column(decoded_start))
         .ok_or(CandidateValidationError::LocationMismatch)?;
     if candidate.line != line || candidate.column != column {
         return Err(CandidateValidationError::LocationMismatch);

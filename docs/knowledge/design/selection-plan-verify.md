@@ -5,6 +5,16 @@ description: 候補発見と実行の分離、ランキング、部分集合、�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-480-symbol
+  resource: ../../../crates/hoimin-cli/src/target/mod.rs
+  working_tree: modified
+  sha256: 97fc31c5b4eb885660de54c8711c4f187974e3c0b82ffca172a10f41ca7b2529
+  revision: 98969d7a840362f78dceb12f91cc5188214f68d5
+- id: issue-480-symbol-spec
+  resource: ../../superpowers/specs/2026-09-14-issue-480-source-encoding-design.md
+  working_tree: clean
+  sha256: 55a99855ee216bfff5afdfd5ffdeeab6c13e1877ec751b0ee88c9a35cb78c37e
+  revision: 98969d7a840362f78dceb12f91cc5188214f68d5
 - id: issue-476-report
   resource: ../../superpowers/reports/2026-09-14-issue-476-symbol-diagnostics-review.md
   working_tree: untracked
@@ -224,3 +234,10 @@ symbol指定ファイルは候補解析前にもparseする。既存のAST深さ
 今回の自己レビュー、検証結果と未確認範囲は[Issue #476 の報告](../../superpowers/reports/2026-09-14-issue-476-symbol-diagnostics-review.md)に記録する。[^issue-476-report]
 
 [^issue-476-report]: [Issue #476: symbol diagnostics review](../../superpowers/reports/2026-09-14-issue-476-symbol-diagnostics-review.md).
+
+# symbol定義確認での文字コード
+
+Issue #480 は、Issue #476 の定義存在確認にも共通decoderを使う。Latin-1で書かれた関数名をUnicodeのqualnameとして照合し、候補解析と異なるUTF-8限定の読み込みを残さない。文字コードの対応範囲と元バイト位置の扱いは[解析契約](analyzer.md)を参照する。[^issue-480-symbol][^issue-480-symbol-spec]
+
+[^issue-480-symbol]: [target/mod.rs](../../../crates/hoimin-cli/src/target/mod.rs).
+[^issue-480-symbol-spec]: [Issue #480 design](../../superpowers/specs/2026-09-14-issue-480-source-encoding-design.md).
