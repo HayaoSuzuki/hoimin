@@ -5,6 +5,19 @@ description: 候補発見と実行の分離、ランキング、部分集合、�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-456
+  resource: ../../superpowers/specs/2026-09-14-issue-456-validation-context-design.md
+  working_tree: untracked
+  sha256: a3f08279a0c60e016cef85ba37827f2b3be4fd5006bbb2068cce2c75bdf8991b
+- id: issue-456-review
+  resource: ../../superpowers/reports/2026-09-14-issue-456-validation-context-review.md
+  working_tree: untracked
+  sha256: 651a41d08586e9d2971372881ab7dd6202ee08a517ca76529921281e4824dad6
+- id: issue-456-code
+  resource: ../../../crates/hoimin-cli/src/plan.rs
+  working_tree: modified
+  sha256: c5fa356be1e661d21ca8fd1837eca63fa30cc472b4ac815391e8005f086e90e9
+  revision: 165a2d284a1af92eb02ffd214ba8c0070c2f3808
 - id: issue-477
   resource: ../../superpowers/specs/2026-09-11-issue-477-import-roots-design.md
   working_tree: untracked
@@ -117,3 +130,15 @@ planの候補にも実行用spoolと同じ2 MiBのレコード上限を適用す
 仮想環境やキャッシュなどの組込み除外を対象探索とコピーで共有する設計とした。`--include` は組込み除外を解除しない。除外場所のファイルを `--file` または `--line` で指定した場合は、対象パスと除外場所の外を選ぶ対処方法を示して対象解決時に拒否する。[^issue-452]
 
 [^issue-452]: [Issue #452: Shared workspace exclusions](../../superpowers/specs/2026-09-11-issue-452-shared-exclusions-design.md)。
+
+# verifyのファイル単位の前処理（Issue #456）
+
+要求候補のdescriptor検証では、同じファイルのハッシュ、UTF-8検証、行索引を一度だけ構築して共有する。ファイル単位で検証した結果を要求IDの従来の順序で取り出すため、複数ファイルにまたがるエラーの優先順を維持する。候補の内容・位置・stable IDと、後続の再発見による照合は省略しない。[^issue-456][^issue-456-code]
+
+ソースbytesと借用contextは一ファイルの検証が終わると解放し、要求候補の参照と結果だけを保持する。ソース全体の前処理は要求ファイルのbytes合計に比例する。行内の列計算や再発見を含むverify全体の計算量を保証する変更ではない。操作回数とrelease計測、実行環境、未測定のメモリ指標は今回の検証記録を参照する。[^issue-456-review]
+
+[^issue-456]: [2026-09-14-issue-456-validation-context-design.md](../../superpowers/specs/2026-09-14-issue-456-validation-context-design.md)。
+
+[^issue-456-review]: [2026-09-14-issue-456-validation-context-review.md](../../superpowers/reports/2026-09-14-issue-456-validation-context-review.md)。
+
+[^issue-456-code]: [plan.rs](../../../crates/hoimin-cli/src/plan.rs)。
