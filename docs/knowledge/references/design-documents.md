@@ -5,6 +5,10 @@ description: docs/superpowers/specs内の全Markdownを先頭見出しと出典�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-491-operation-cost-design
+  resource: ../../superpowers/specs/2026-09-14-issue-491-operation-cost-design.md
+  working_tree: untracked
+  sha256: 7115aa8e9accf16b3013af153173679f558850b092a4d749ec2453d3a6eee010
 - id: issue-491-design
   resource: ../../superpowers/specs/2026-09-14-issue-491-performance-shapes-design.md
   working_tree: modified
@@ -825,6 +829,7 @@ sources:
 
 | 原文 | 先頭見出し | 作成時の状態 |
 | --- | --- | --- |
+| [2026-09-14-issue-491-operation-cost-design.md](../../superpowers/specs/2026-09-14-issue-491-operation-cost-design.md) | Issue #491: Operation costs and missing input dimensions [^issue-491-operation-cost-design] | 未追跡（参照時点） |
 | [2026-09-14-issue-453-scoped-discovery-design.md](../../superpowers/specs/2026-09-14-issue-453-scoped-discovery-design.md) | Issue 453: Scope discovery for exact selectors [^issue-453-index] | 未追跡 |
 | [2026-09-14-issue-475-range-normalization-design.md](../../superpowers/specs/2026-09-14-issue-475-range-normalization-design.md) | Issue 475: Normalize explicit selector groups once [^issue-475-index] | 未追跡 |
 | [2026-09-14-issue-474-selector-index-design.md](../../superpowers/specs/2026-09-14-issue-474-selector-index-design.md) | Issue 474: Explicit selector file index [^issue-474-index] | 未追跡 |
@@ -1282,3 +1287,5 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 | [Issue #456: verify のファイル単位の候補検証](../../superpowers/specs/2026-09-14-issue-456-validation-context-design.md) | 前処理の共有、診断順とソース所有権。[^issue-456] |
 
 [^issue-456]: [2026-09-14-issue-456-validation-context-design.md](../../superpowers/specs/2026-09-14-issue-456-validation-context-design.md)。
+
+[^issue-491-operation-cost-design]: [2026-09-14-issue-491-operation-cost-design.md](../../superpowers/specs/2026-09-14-issue-491-operation-cost-design.md)。

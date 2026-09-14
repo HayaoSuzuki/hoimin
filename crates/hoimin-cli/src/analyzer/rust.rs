@@ -38,6 +38,13 @@ use operator_functions::OperatorImports;
 
 #[cfg(test)]
 thread_local! {
+    static RECORD_CLONE_CALLS: Cell<usize> = const { Cell::new(0) };
+    static RECORD_CLONE_ENTRIES: Cell<usize> = const { Cell::new(0) };
+    static BROKEN_RECORD_CLONE: Cell<bool> = const { Cell::new(false) };
+    static BROKEN_EAGER_REPLACEMENT: Cell<bool> = const { Cell::new(false) };
+    static IMPORT_CLONE_CALLS: Cell<usize> = const { Cell::new(0) };
+    static IMPORT_CLONE_ENTRIES: Cell<usize> = const { Cell::new(0) };
+    static COLLECTION_REPLACEMENT_BYTES: Cell<usize> = const { Cell::new(0) };
     static COLLECTION_REPLACEMENT_BUILDS: Cell<usize> = const { Cell::new(0) };
     static CANDIDATE_ORIGINAL_COPIES: Cell<usize> = const { Cell::new(0) };
     static ANNOTATION_RECORDS: Cell<usize> = const { Cell::new(0) };
@@ -2574,6 +2581,15 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
     }
 
     fn collect_list_literal(&mut self, list: &ExprList) {
+        #[cfg(test)]
+        if BROKEN_EAGER_REPLACEMENT.get()
+            && !self
+                .request
+                .operators
+                .contains(MutationOperator::CollectionListTuple)
+        {
+            std::hint::black_box(list_to_tuple_replacement(self.source, list, self.facts));
+        }
         if !self
             .request
             .operators
@@ -2584,8 +2600,6 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         {
             return;
         }
-        #[cfg(test)]
-        COLLECTION_REPLACEMENT_BUILDS.set(COLLECTION_REPLACEMENT_BUILDS.get().saturating_add(1));
         if let Some(replacement) = list_to_tuple_replacement(self.source, list, self.facts) {
             self.add_candidate(
                 list.range(),
@@ -2596,6 +2610,15 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
     }
 
     fn collect_tuple_literal(&mut self, tuple: &ExprTuple) {
+        #[cfg(test)]
+        if BROKEN_EAGER_REPLACEMENT.get()
+            && !self
+                .request
+                .operators
+                .contains(MutationOperator::CollectionListTuple)
+        {
+            std::hint::black_box(tuple_to_list_replacement(self.source, tuple));
+        }
         if !self
             .request
             .operators
@@ -2606,8 +2629,6 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         {
             return;
         }
-        #[cfg(test)]
-        COLLECTION_REPLACEMENT_BUILDS.set(COLLECTION_REPLACEMENT_BUILDS.get().saturating_add(1));
         if let Some(replacement) = tuple_to_list_replacement(self.source, tuple) {
             self.add_candidate(
                 tuple.range(),
@@ -3208,6 +3229,22 @@ fn is_supported_mapping_key(expression: &Expr) -> bool {
     ) && !matches!(expression, Expr::Tuple(tuple) if !tuple.parenthesized)
 }
 
+#[inline]
+fn observe_collection_replacement(replacement: String) -> String {
+    #[cfg(test)]
+    {
+        COLLECTION_REPLACEMENT_BUILDS
+            .set(COLLECTION_REPLACEMENT_BUILDS.get().checked_add(1).unwrap());
+        COLLECTION_REPLACEMENT_BYTES.set(
+            COLLECTION_REPLACEMENT_BYTES
+                .get()
+                .checked_add(replacement.len())
+                .unwrap(),
+        );
+    }
+    replacement
+}
+
 fn list_to_tuple_replacement(
     source: &str,
     list: &ExprList,
@@ -3217,13 +3254,13 @@ fn list_to_tuple_replacement(
     let literal = source_text(source, range)?;
     let contents = literal.strip_prefix('[')?.strip_suffix(']')?;
     if list.elts.len() != 1 {
-        return Some(format!("({contents})"));
+        return Some(observe_collection_replacement(format!("({contents})")));
     }
     let comma_range = TextRange::new(list.elts[0].range().end(), range.end());
     if has_comma_after_element(facts, comma_range) {
-        return Some(format!("({contents})"));
+        return Some(observe_collection_replacement(format!("({contents})")));
     }
-    Some(format!("({contents},)"))
+    Some(observe_collection_replacement(format!("({contents},)")))
 }
 
 fn has_comma_after_element(facts: &AstFacts<'_>, range: TextRange) -> bool {
@@ -3240,7 +3277,7 @@ fn tuple_to_list_replacement(source: &str, tuple: &ExprTuple) -> Option<String> 
     } else {
         literal
     };
-    Some(format!("[{contents}]"))
+    Some(observe_collection_replacement(format!("[{contents}]")))
 }
 
 fn base_exception_boundary_replacement(name: &str) -> Option<&'static str> {
@@ -3403,11 +3440,66 @@ mod compound_pattern_guard_oracle_tests;
 #[path = "except_star_flow_oracle_tests.rs"]
 mod except_star_flow_oracle_tests;
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Debug, Default, Eq, PartialEq)]
+#[cfg_attr(not(test), derive(Clone))]
 struct KnownImports {
     direct: HashMap<String, String>,
     modules: HashMap<String, String>,
     type_vars: HashSet<String>,
+}
+
+#[cfg(test)]
+impl Clone for KnownImports {
+    fn clone(&self) -> Self {
+        IMPORT_CLONE_CALLS.set(IMPORT_CLONE_CALLS.get().checked_add(1).unwrap());
+        let entries = self
+            .direct
+            .len()
+            .checked_add(self.modules.len())
+            .unwrap()
+            .checked_add(self.type_vars.len())
+            .unwrap();
+        IMPORT_CLONE_ENTRIES.set(IMPORT_CLONE_ENTRIES.get().checked_add(entries).unwrap());
+        Self {
+            direct: self.direct.clone(),
+            modules: self.modules.clone(),
+            type_vars: self.type_vars.clone(),
+        }
+    }
+}
+
+#[cfg(test)]
+struct RecordCloneObservation {
+    calls: usize,
+    entries: usize,
+}
+
+#[cfg(test)]
+impl RecordCloneObservation {
+    fn start() -> Self {
+        Self {
+            calls: IMPORT_CLONE_CALLS.get(),
+            entries: IMPORT_CLONE_ENTRIES.get(),
+        }
+    }
+}
+
+#[cfg(test)]
+impl Drop for RecordCloneObservation {
+    fn drop(&mut self) {
+        RECORD_CLONE_CALLS.set(
+            RECORD_CLONE_CALLS
+                .get()
+                .checked_add(IMPORT_CLONE_CALLS.get() - self.calls)
+                .unwrap(),
+        );
+        RECORD_CLONE_ENTRIES.set(
+            RECORD_CLONE_ENTRIES
+                .get()
+                .checked_add(IMPORT_CLONE_ENTRIES.get() - self.entries)
+                .unwrap(),
+        );
+    }
 }
 
 impl KnownImports {
@@ -4509,6 +4601,12 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
         }
         #[cfg(test)]
         ANNOTATION_RECORDS.set(ANNOTATION_RECORDS.get().saturating_add(1));
+        #[cfg(test)]
+        let _clone_observation = RecordCloneObservation::start();
+        #[cfg(test)]
+        if BROKEN_RECORD_CLONE.get() {
+            std::hint::black_box(self.imports.clone());
+        }
         let symbol = self.symbol();
         if let Some(callback) = self.annotation_callback.as_mut() {
             callback(annotation, symbol, &self.imports);
@@ -5952,4 +6050,484 @@ fn expression_source(expression: &Expr, source: &str) -> String {
 
 fn is_none(expression: &Expr) -> bool {
     matches!(expression, Expr::NoneLiteral(_))
+}
+
+#[cfg(test)]
+mod performance_cost_tests {
+    use super::*;
+
+    #[test]
+    fn actual_import_clone_counts_entries_at_the_clone_boundary() {
+        let mut imports = KnownImports::default();
+        imports.direct.insert("A".into(), "Optional".into());
+        imports.modules.insert("t".into(), "typing".into());
+        imports.type_vars.insert("T".into());
+        IMPORT_CLONE_CALLS.set(0);
+        IMPORT_CLONE_ENTRIES.set(0);
+        let copied = imports.clone();
+        assert_eq!(copied, imports);
+        assert_eq!(
+            (IMPORT_CLONE_CALLS.get(), IMPORT_CLONE_ENTRIES.get()),
+            (1, 3)
+        );
+    }
+    #[test]
+    fn replacement_counter_observes_direct_builder_calls() {
+        let source = "value = [0]\n";
+        let parsed = parse_unchecked_source(source, ruff_python_ast::PySourceType::Python);
+        assert!(parsed.has_valid_syntax());
+        let facts = AstFacts::from_module(parsed.syntax(), parsed.tokens(), source);
+        let Stmt::Assign(assign) = &parsed.syntax().body[0] else {
+            panic!("fixture assignment");
+        };
+        let Expr::List(list) = assign.value.as_ref() else {
+            panic!("fixture list");
+        };
+        COLLECTION_REPLACEMENT_BUILDS.set(0);
+        COLLECTION_REPLACEMENT_BYTES.set(0);
+        assert_eq!(
+            list_to_tuple_replacement(source, list, &facts).as_deref(),
+            Some("(0,)")
+        );
+        assert_eq!(
+            (
+                COLLECTION_REPLACEMENT_BUILDS.get(),
+                COLLECTION_REPLACEMENT_BYTES.get()
+            ),
+            (1, 4)
+        );
+    }
+
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct Event {
+        offset: u64,
+        effect: Effect,
+    }
+
+    #[derive(Clone, Copy, serde::Deserialize)]
+    #[serde(rename_all = "kebab-case")]
+    enum Effect {
+        Bind,
+        MaybeBind,
+        Unknown,
+    }
+
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct Query {
+        offset: u64,
+        expected: Resolution,
+    }
+
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "kebab-case")]
+    enum Resolution {
+        Builtin,
+        Shadowed,
+        Unknown,
+    }
+
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "kebab-case")]
+    enum Family {
+        Binding,
+        Annotation,
+        Replacement,
+    }
+
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct Case {
+        schema: u64,
+        id: String,
+        family: Family,
+        events: Vec<Event>,
+        queries: Vec<Query>,
+        build_updates: u64,
+        query_bound: u64,
+        linear_visits: u64,
+        aliases: u64,
+        annotations: u64,
+        selected: bool,
+        source: String,
+        operator: String,
+        limit: u64,
+        candidates: u64,
+        truncated: bool,
+        clone_calls: u64,
+        clone_entries: u64,
+        replacement_builds: u64,
+        replacement_bytes: u64,
+    }
+
+    fn native(value: u64) -> usize {
+        usize::try_from(value).expect("infrastructure-error: unsupported corpus integer")
+    }
+
+    fn corpus() -> Vec<Case> {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../formal/HoiminOracle/corpus/performance-cost.jsonl");
+        let text =
+            std::fs::read_to_string(path).expect("infrastructure-error: missing cost corpus");
+        assert!(
+            text.len() <= 1024 * 1024,
+            "infrastructure-error: oversized cost corpus"
+        );
+        let cases = text
+            .lines()
+            .map(|line| {
+                let case: Case =
+                    serde_json::from_str(line).expect("infrastructure-error: invalid cost corpus");
+                assert_eq!(
+                    case.schema, 1,
+                    "infrastructure-error: unsupported cost schema"
+                );
+                for value in [
+                    case.build_updates,
+                    case.query_bound,
+                    case.linear_visits,
+                    case.aliases,
+                    case.annotations,
+                    case.limit,
+                    case.candidates,
+                    case.clone_calls,
+                    case.clone_entries,
+                    case.replacement_builds,
+                    case.replacement_bytes,
+                ] {
+                    native(value);
+                }
+                assert!(case.events.len() <= 128 && case.queries.len() <= 512);
+                assert!(case.source.len() <= 64 * 1024 && case.limit <= 1000);
+                // This is representation validation, not an expected-cost computation.
+                let leaves = case.events.len().checked_next_power_of_two().unwrap();
+                leaves
+                    .checked_mul(2)
+                    .expect("infrastructure-error: tree allocation overflow");
+                case.events.len().checked_mul(case.queries.len()).unwrap();
+                native(case.aliases)
+                    .checked_mul(native(case.annotations))
+                    .unwrap();
+                for event in &case.events {
+                    native(event.offset);
+                }
+                for query in &case.queries {
+                    native(query.offset);
+                }
+                case
+            })
+            .collect::<Vec<_>>();
+        assert!(!cases.is_empty(), "infrastructure-error: empty cost corpus");
+        let ids = cases.iter().map(|case| &case.id).collect::<HashSet<_>>();
+        assert_eq!(
+            ids.len(),
+            cases.len(),
+            "infrastructure-error: duplicate case id"
+        );
+        let mut expected_ids = HashSet::new();
+        for size in [0, 1, 7, 8, 9, 16, 32] {
+            for shape in ["ordered", "duplicate", "nonmonotone"] {
+                expected_ids.insert(format!("binding-{shape}-{size}"));
+            }
+            for selected in [false, true] {
+                expected_ids.insert(format!("annotation-{selected}-{size}"));
+                expected_ids.insert(format!("replacement-flat-{selected}-{size}"));
+            }
+            expected_ids.insert(format!("replacement-nested-false-{size}"));
+        }
+        let actual_ids = cases
+            .iter()
+            .map(|case| case.id.clone())
+            .collect::<HashSet<_>>();
+        assert_eq!(actual_ids, expected_ids, "cost boundary inventory changed");
+        cases
+    }
+
+    fn fixture_size(case: &Case) -> usize {
+        case.id.rsplit('-').next().unwrap().parse().unwrap()
+    }
+
+    fn effect(value: Effect) -> BindingEffect {
+        match value {
+            Effect::Bind => BindingEffect::Bind,
+            Effect::MaybeBind => BindingEffect::MaybeBind,
+            Effect::Unknown => BindingEffect::Unknown,
+        }
+    }
+
+    fn expected(value: &Resolution) -> NameResolution {
+        match value {
+            Resolution::Builtin => NameResolution::DefinitelyBuiltin,
+            Resolution::Shadowed => NameResolution::Shadowed,
+            Resolution::Unknown => NameResolution::Unknown,
+        }
+    }
+
+    fn binding_observation(case: &Case, broken: bool) -> (usize, usize) {
+        assert_eq!(
+            case.events.len(),
+            fixture_size(case),
+            "{} binding fixture size",
+            case.id
+        );
+        let mut history = OrderedBindingHistory::default();
+        for event in &case.events {
+            history.push((native(event.offset), effect(event.effect)));
+        }
+        history.finalize();
+        for query in &case.queries {
+            let observed = if broken {
+                // Deliberately replace the lookup with the old full-history fold.
+                let mut resolution = NameResolution::DefinitelyBuiltin;
+                for &(offset, event) in &history.events {
+                    history
+                        .query_comparisons
+                        .set(history.query_comparisons.get().checked_add(1).unwrap());
+                    if offset <= native(query.offset) {
+                        resolution = apply_binding_effect(resolution, event);
+                    }
+                }
+                resolution
+            } else {
+                history.resolve_at(native(query.offset))
+            };
+            assert_eq!(
+                observed,
+                expected(&query.expected),
+                "{} semantic result",
+                case.id
+            );
+        }
+        (history.build_updates.get(), history.query_comparisons.get())
+    }
+
+    fn binding_matches(case: &Case, observation: (usize, usize)) -> bool {
+        observation.0 == native(case.build_updates) && observation.1 <= native(case.query_bound)
+    }
+
+    struct BrokenGuard;
+    impl Drop for BrokenGuard {
+        fn drop(&mut self) {
+            BROKEN_RECORD_CLONE.set(false);
+            BROKEN_EAGER_REPLACEMENT.set(false);
+        }
+    }
+
+    #[derive(Debug)]
+    struct Observation {
+        clone_calls: usize,
+        clone_entries: usize,
+        builds: usize,
+        bytes: usize,
+        semantics: Vec<AnalyzerCandidate>,
+    }
+
+    fn source_observation(case: &Case, broken: bool) -> Observation {
+        let size = fixture_size(case);
+        match case.family {
+            Family::Annotation => assert_eq!(native(case.annotations), size),
+            Family::Replacement => {
+                let expected_source = if case.id.starts_with("replacement-flat-") {
+                    format!("value = [{}]\n", "0, ".repeat(size))
+                } else {
+                    format!(
+                        "value = {}0{}\n",
+                        "[".repeat(size.max(1)),
+                        "]".repeat(size.max(1))
+                    )
+                };
+                assert_eq!(case.source, expected_source, "{} source fixture", case.id);
+            }
+            Family::Binding => unreachable!("binding uses history adapter"),
+        }
+        let _guard = BrokenGuard;
+        BROKEN_RECORD_CLONE.set(broken && matches!(case.family, Family::Annotation));
+        BROKEN_EAGER_REPLACEMENT.set(broken && matches!(case.family, Family::Replacement));
+        RECORD_CLONE_CALLS.set(0);
+        RECORD_CLONE_ENTRIES.set(0);
+        COLLECTION_REPLACEMENT_BUILDS.set(0);
+        COLLECTION_REPLACEMENT_BYTES.set(0);
+        let mut operators = MutationOperatorSelection::default();
+        for name in operators.names() {
+            for operator in MutationOperatorSelection::parse_selector(&name).unwrap() {
+                operators.exclude(operator);
+            }
+        }
+        for operator in MutationOperatorSelection::parse_selector(&case.operator).unwrap() {
+            operators.include(operator);
+        }
+        let output = analyze_source(
+            &AnalyzeRequest {
+                path: Utf8Path::new("cost.py"),
+                lines: &[],
+                symbols: &[],
+                operators: &operators,
+                profile: MutationProfile::Full,
+                max_candidates: native(case.limit),
+            },
+            &case.source,
+        );
+        assert!(
+            output.diagnostics.is_empty(),
+            "{} analysis diagnostics",
+            case.id
+        );
+        assert_eq!(
+            output.candidates.len(),
+            native(case.candidates),
+            "{} candidate count",
+            case.id
+        );
+        assert_eq!(output.truncated, case.truncated, "{} truncation", case.id);
+        validate_candidates(case, &output.candidates);
+        Observation {
+            clone_calls: RECORD_CLONE_CALLS.get(),
+            clone_entries: RECORD_CLONE_ENTRIES.get(),
+            builds: COLLECTION_REPLACEMENT_BUILDS.get(),
+            bytes: COLLECTION_REPLACEMENT_BYTES.get(),
+            semantics: output.candidates,
+        }
+    }
+
+    fn validate_candidates(case: &Case, candidates: &[AnalyzerCandidate]) {
+        let size = fixture_size(case);
+        for candidate in candidates {
+            match case.family {
+                Family::Annotation => {
+                    assert_eq!(
+                        candidate.original, "list[int]",
+                        "{} annotation original",
+                        case.id
+                    );
+                    assert_eq!(
+                        candidate.replacement, "Sequence[int]",
+                        "{} annotation replacement",
+                        case.id
+                    );
+                }
+                Family::Replacement => {
+                    assert_eq!(
+                        candidate.original,
+                        format!("[{}]", "0, ".repeat(size)),
+                        "{} flat original",
+                        case.id
+                    );
+                    assert_eq!(
+                        candidate.replacement,
+                        format!("({})", "0, ".repeat(size)),
+                        "{} flat replacement",
+                        case.id
+                    );
+                }
+                Family::Binding => unreachable!(),
+            }
+            assert_eq!(
+                candidate.operator, case.operator,
+                "{} selected operator",
+                case.id
+            );
+            let start = native(candidate.span.start);
+            let stop = start.checked_add(native(candidate.span.length)).unwrap();
+            assert_eq!(
+                &case.source[start..stop],
+                candidate.original,
+                "{} original span",
+                case.id
+            );
+            let mut mutated = case.source.clone();
+            mutated.replace_range(start..stop, &candidate.replacement);
+            assert!(
+                parse_module(&mutated).is_ok(),
+                "{} replacement syntax",
+                case.id
+            );
+        }
+    }
+
+    fn source_matches(case: &Case, observation: &Observation) -> bool {
+        observation.clone_calls == native(case.clone_calls)
+            && observation.clone_entries == native(case.clone_entries)
+            && observation.builds == native(case.replacement_builds)
+            && observation.bytes == native(case.replacement_bytes)
+    }
+
+    #[test]
+    fn real_operation_counters_match_lean_cost_corpus() {
+        let mut families = [0; 3];
+        for case in corpus() {
+            match case.family {
+                Family::Binding => {
+                    families[0] += 1;
+                    assert!(
+                        binding_matches(&case, binding_observation(&case, false)),
+                        "{} binding cost",
+                        case.id
+                    );
+                }
+                Family::Annotation | Family::Replacement => {
+                    families[if matches!(case.family, Family::Annotation) {
+                        1
+                    } else {
+                        2
+                    }] += 1;
+                    let observation = source_observation(&case, false);
+                    assert!(
+                        source_matches(&case, &observation),
+                        "{} cost {observation:?}",
+                        case.id
+                    );
+                }
+            }
+        }
+        assert_eq!(families, [21, 14, 21]);
+    }
+
+    #[test]
+    fn real_broken_cost_variants_are_detected_without_semantic_changes() {
+        let mut detected = [false; 3];
+        for case in corpus() {
+            match case.family {
+                Family::Binding => {
+                    let observed = binding_observation(&case, true);
+                    assert_eq!(
+                        observed.1,
+                        native(case.linear_visits),
+                        "{} scan count",
+                        case.id
+                    );
+                    detected[0] |= !binding_matches(&case, observed);
+                }
+                Family::Annotation | Family::Replacement => {
+                    let normal = source_observation(&case, false);
+                    assert!(source_matches(&case, &normal), "{} normal cost", case.id);
+                    let broken = source_observation(&case, true);
+                    assert_eq!(
+                        normal.semantics, broken.semantics,
+                        "{} changed semantics",
+                        case.id
+                    );
+                    let family = if matches!(case.family, Family::Annotation) {
+                        1
+                    } else {
+                        2
+                    };
+                    if (family == 1 && case.selected && case.annotations > 0)
+                        || (family == 2 && !case.selected)
+                    {
+                        assert!(
+                            !source_matches(&case, &broken),
+                            "{} broken cost escaped",
+                            case.id
+                        );
+                        detected[family] = true;
+                    }
+                }
+            }
+        }
+        assert_eq!(
+            detected, [true; 3],
+            "all actual broken families must be detected"
+        );
+    }
 }

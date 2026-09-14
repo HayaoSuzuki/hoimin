@@ -1,19 +1,19 @@
 # 入力形状別の性能検証
 
-[shapes.json](shapes.json) は、8次元・11形状の入力、N/2N/4Nのサイズ、測定対象、実行可能な回帰テストを記録する台帳である。`growth_model` は入力の構造、`expected_after_fix` は依存Issueが統合された後の期待値を示す。実測の記録は、それぞれに明記したrevisionの観測として読む。
+[shapes.json](shapes.json) は、8次元・29形状の入力、N/2N/4Nのサイズ、測定対象、実行可能な回帰テストを記録する台帳である。`growth_model` は入力の構造、`expected_after_fix` は依存Issueが統合された後の期待値を示す。実測の記録は、それぞれに明記したrevisionの観測として読む。
 
 | 次元 | release入力 | 決定的な通常ゲートとの対応 |
 | --- | --- | --- |
-| 対象発見 | `--file case.py` を固定し無関係なsubtreeのファイル数を増やす | #453の走査数、#474のselector照会、#475の行範囲統合をactive登録 |
-| fingerprint | 小さなconfig1ファイルに重複globをN件指定 | #457のwalk回数をactive登録 |
-| ソース配置 | 同じbytes・候補を長い1行と多数行へ配置 | #470の列照会をactive登録。既存token範囲照会をactive登録 |
-| AST | 未選択collectionの深さを増やし、選択した加算を内部に置く | #461のreplacement生成数をactive登録。既存prefix/overflowをactive登録 |
-| 解析状態 | import幅×annotation数、再代入×呼出数。両方とも候補0 | #479/#482の操作数をactive登録 |
-| verify | 同じファイルの候補数とtop1/topN | #456の前処理回数をactive登録 |
-| 出力 | mutant record数 | 既存report/progressのallocator peakをactive登録。#463のwrite数をactive登録 |
-| workspace | 1 workerへコピーするファイル数とbytes | 既存の作成後retained heapをactive登録。preflight peak/RSSとは区別 |
+| 対象発見 | 非対象・対象ファイル数、file/symbol/line selector宣言数を独立に増やす | #453の走査数、#474のselector照会、#475の行範囲統合をactive登録 |
+| fingerprint | ファイル数・総bytes・重複glob数とexact/glob混在 | #457のwalk回数をactive登録 |
+| ソース配置 | 同じbytes・候補を長い1行と多数行へ配置しUnicode列も比較 | #470の列照会をactive登録。既存token範囲照会をactive登録 |
+| AST | 幅、左深さ、巨大literal、未選択collectionを別々に増やす | #461のreplacement生成数をactive登録。既存prefix/overflowをactive登録 |
+| 解析状態 | import幅×annotation数、再代入×呼出数。選択・候補0対照 | #479/#482の操作数をactive登録 |
+| verify | 1file・多file、top1/topN、明示した不完全plan | #456の前処理回数をactive登録 |
+| 出力 | mutant record数とrecord長を独立に増やす | 既存report/progressのallocator peakをactive登録。#463のwrite数をactive登録 |
+| workspace | file数・bytes・worker数を独立に増やす | 作成後retained heapとpreflight allocator peakを別ゲートで測る |
 
-現在のブランチは21個のactiveゲートを実行する。これで全入力形状の性能回帰を網羅するわけではない。追加の修正が未導入の場合はpendingとして登録し、成功数へ含めない。修正を取り込んだ後に実際のテスト名と計数箇所を照合し、`args` を指定して実行してからactiveへ変更する。単にラベルを変えて検証済みにしない。
+現在のブランチは26個のactiveゲートを実行する。これで全入力形状の性能回帰を網羅するわけではない。追加の修正が未導入の場合はpendingとして登録し、成功数へ含めない。修正を取り込んだ後に実際のテスト名と計数箇所を照合し、`args` を指定して実行してからactiveへ変更する。単にラベルを変えて検証済みにしない。
 
 ## 通常ゲート
 
@@ -43,8 +43,15 @@ GitHub Actions の `Performance measurements` は手動実行専用。選んだr
 
 ## Leanの証拠
 
-台帳の `lean` から既存のモデル・証明・生成corpus・Rust adapterをたどれる。生成器のbuild、`--sensitivity`、`--check` をresource guard付きで順番に実行した後、`lean-target-reads` gateで実装の対象読取り数を照合する。caseはLeanで定義し、JSONLを手編集しない。既存の0/1/上限/overflowケースはprefixと順序を検証し、CLI全体の定数メモリやnative stackを保証しない。新しいbinding索引やwrite回数のモデル対応は、各観測点と表現上限を確認して追加する作業として残る。
+台帳の `lean` から既存のモデル・証明・生成corpus・Rust adapterをたどれる。生成器のbuild、`--sensitivity`、`--check` をresource guard付きで順番に実行した後、`lean-target-reads` gateで実装の対象読取り数を照合する。caseはLeanで定義し、JSONLを手編集しない。既存の0/1/上限/overflowケースはprefixと順序を検証し、CLI全体の定数メモリやnative stackを保証しない。追加した `lean.cost` は56ケースでbinding索引、annotation callback内の全状態clone、実replacement builderの回数・bytesを照合する。0/1、7/8/9、8/16/32と、実際に全走査・clone・filter前buildを行う壊した経路を検査する。counterの観測には内部seamが必要なためinternal-fixtureとし、詳細は[対応表](../superpowers/reports/2026-09-14-issue-491-cost-correspondence-worksheet.md)に記録する。
 
 ## 個別修正を組み合わせた確認
 
 [2026-09-14の統合確認](2026-09-14-integration-check.md) に、10件のPRのRust差分を組み合わせたrevision、競合解消、全workspace試験の結果を記録した。依存修正を取り込んだ統合時には21ゲートを実行してactiveへ昇格した。mainへのマージは各PRのCI成功後に順次行う。
+
+
+## 追加した実行証拠
+
+[今回のrelease計測](2026-09-14-issue-491-expanded-measurement.json)は29形状×3サイズ×3反復×2実行ファイルの522回を記録する。出力document bytes、同一binary内のN/2N/4N比、baselineとの比を保存し、未観測RSSはnullのままとする。既存198回の監査とは別の実行である。詳しい環境・digest・感度検証は[入力軸の報告](../superpowers/reports/2026-09-14-issue-491-input-axis-review.md)に記載した。
+
+preflightのallocator peakはmanifest entriesに加え、既存hasherの最大1ファイル分のbufferを許容する。作成前に全ファイルをworker数だけ保持する対照は同じ上界を超える。許容する入力比例メモリをCLI全体の定数メモリ保証へ読み替えない。

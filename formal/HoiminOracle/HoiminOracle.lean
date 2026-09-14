@@ -80,3 +80,5 @@ import HoiminOracle.TimeoutLimitCases
 import HoiminOracle.CleanupCapabilityModel
 import HoiminOracle.CleanupCapabilityProofs
 import HoiminOracle.CleanupCapabilityCases
+
+import HoiminOracle.PerformanceCostCases

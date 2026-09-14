@@ -106,6 +106,7 @@ LEAN_CORPUS_BY_EXECUTABLE = {
     "generate_disk_guard": "corpus/disk-guard-lifecycle.jsonl",
     "generate_cleanup_capability": "corpus/cleanup-capability.jsonl",
     "generate_comprehension_bindings": "corpus/comprehension-bindings.jsonl",
+    "generate_performance_cost": "corpus/performance-cost.jsonl",
 }
 LEAN_SENSITIVITY_EXECUTABLES = {
     name

@@ -5,6 +5,22 @@ description: docs/auditsとdocs/superpowers/reports内の全Markdownを追跡状
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-491-rust-cost-review
+  resource: ../../superpowers/reports/2026-09-14-issue-491-rust-cost-review.md
+  working_tree: untracked
+  sha256: 1337e928052a03ca8080674b8f76ef50d7b5cba9e14b5399f6a5ecce77f7c185
+- id: issue-491-input-axis-review
+  resource: ../../superpowers/reports/2026-09-14-issue-491-input-axis-review.md
+  working_tree: untracked
+  sha256: a04236891ab5f2058f8c65d6deb915405a7a6066dff7cc543d93c0a55c35b8c5
+- id: issue-491-cost-correspondence-worksheet
+  resource: ../../superpowers/reports/2026-09-14-issue-491-cost-correspondence-worksheet.md
+  working_tree: untracked
+  sha256: 199af4da50a8332e620e5a23ea45e23e22bda523c967834dc5999b05aef83dcd
+- id: issue-491-operation-cost-review
+  resource: ../../superpowers/reports/2026-09-14-issue-491-operation-cost-review.md
+  working_tree: untracked
+  sha256: 96eb336a2e215dd03060a4552d289c75b679a222e0f5f658e54d67ea71874a5c
 - id: issue-461-merge-review
   resource: ../../superpowers/reports/2026-09-14-issue-461-self-review.md
   revision: 11dd162101c4351dfdd15cb52ba112bdf1fe9cf2
@@ -427,6 +443,10 @@ sources:
 
 | 原文 | 先頭見出し | 作成時の状態 |
 | --- | --- | --- |
+| [2026-09-14-issue-491-rust-cost-review.md](../../superpowers/reports/2026-09-14-issue-491-rust-cost-review.md) | Issue #491 Rust cost adapter and workspace preflight peak review [^issue-491-rust-cost-review] | 未追跡（参照時点） |
+| [2026-09-14-issue-491-input-axis-review.md](../../superpowers/reports/2026-09-14-issue-491-input-axis-review.md) | Issue491 input-axis expansion review [^issue-491-input-axis-review] | 未追跡（参照時点） |
+| [2026-09-14-issue-491-cost-correspondence-worksheet.md](../../superpowers/reports/2026-09-14-issue-491-cost-correspondence-worksheet.md) | Issue #491: Cost correspondence worksheet [^issue-491-cost-correspondence-worksheet] | 未追跡（参照時点） |
+| [2026-09-14-issue-491-operation-cost-review.md](../../superpowers/reports/2026-09-14-issue-491-operation-cost-review.md) | Issue #491: Remaining acceptance review and evidence [^issue-491-operation-cost-review] | 未追跡（参照時点） |
 | [2026-09-14-issue-453-scoped-discovery.md](../../superpowers/reports/2026-09-14-issue-453-scoped-discovery.md) | Issue 453 scoped discovery report [^issue-453-report] | 未追跡 |
 | [2026-09-14-issue-475-range-normalization.md](../../superpowers/reports/2026-09-14-issue-475-range-normalization.md) | Issue 475 range normalization report [^issue-475-report] | 未追跡 |
 | [2026-09-14-issue-474-selector-index.md](../../superpowers/reports/2026-09-14-issue-474-selector-index.md) | Issue 474 explicit selector index report [^issue-474-report] | 未追跡 |
@@ -648,3 +668,11 @@ sources:
 [^issue-470-merge-review]: [2026-09-14-issue-470-self-review.md](../../superpowers/reports/2026-09-14-issue-470-self-review.md)。
 [^issue-479-merge-review]: [2026-09-14-issue-479-self-review.md](../../superpowers/reports/2026-09-14-issue-479-self-review.md)。
 [^issue-482-merge-review]: [2026-09-14-issue-482-self-review.md](../../superpowers/reports/2026-09-14-issue-482-self-review.md)。
+
+[^issue-491-operation-cost-review]: [2026-09-14-issue-491-operation-cost-review.md](../../superpowers/reports/2026-09-14-issue-491-operation-cost-review.md)。
+
+[^issue-491-cost-correspondence-worksheet]: [2026-09-14-issue-491-cost-correspondence-worksheet.md](../../superpowers/reports/2026-09-14-issue-491-cost-correspondence-worksheet.md)。
+
+[^issue-491-input-axis-review]: [2026-09-14-issue-491-input-axis-review.md](../../superpowers/reports/2026-09-14-issue-491-input-axis-review.md)。
+
+[^issue-491-rust-cost-review]: [2026-09-14-issue-491-rust-cost-review.md](../../superpowers/reports/2026-09-14-issue-491-rust-cost-review.md)。

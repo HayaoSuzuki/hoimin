@@ -13,7 +13,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 DIMENSIONS = {'discovery', 'fingerprint', 'layout', 'ast', 'analysis-state', 'verify', 'output', 'workspace'}
 SHAPES = {'discovery', 'fingerprint', 'long-line', 'many-lines', 'ast', 'imports', 'bindings', 'verify-top1', 'verify-topn', 'output', 'workspace'}
+ADDITIONAL_SHAPES = {'target-files', 'file-selectors', 'symbol-selectors', 'line-selectors', 'fingerprint-files', 'fingerprint-bytes', 'fingerprint-mixed', 'unicode-long-line', 'unicode-many-lines', 'ast-wide', 'ast-left', 'large-literal', 'imports-active', 'verify-multifile', 'verify-partial', 'output-record', 'workspace-bytes', 'workspace-workers'}
+SHAPES |= ADDITIONAL_SHAPES
 LIMITS = {name: (128 if name in {'ast', 'verify-top1', 'verify-topn', 'output', 'workspace'} else 65536) for name in SHAPES}
+LIMITS.update({'ast-left': 128, 'verify-multifile': 128, 'verify-partial': 128, 'workspace-workers': 4})
 METRICS = {'operations', 'retained_heap', 'peak_heap', 'sampled_tree_rss', 'time'}
 
 
@@ -73,6 +76,8 @@ def make_fixture(name, size, root):
     root.mkdir(parents=True)
     source, operator, count, truncated, mode = 'x = 1 + 2\n', 'binary_add_sub', 1, False, 'plan'
     options = []
+    selectors = ['--file', 'case.py']
+    jobs, candidate_limit, plan_count = 1, None, None
     if name == 'discovery':
         (root/'unrelated').mkdir()
         for i in range(size):
@@ -99,9 +104,68 @@ def make_fixture(name, size, root):
         (root/'data').mkdir()
         for i in range(size):
             (root/'data'/f'{i}.txt').write_bytes(b'x' * 65536)
+    elif name == 'target-files':
+        source = 'pass\n'
+        selectors = ['--source', '.']
+        for i in range(size):
+            (root/f'selected{i}.py').write_text('value = 1 + 2\n')
+        truncated = size > 1
+    elif name in {'file-selectors', 'symbol-selectors', 'line-selectors'}:
+        if name == 'symbol-selectors':
+            source = 'def subject():\n    return 1 + 2\n'
+            selectors = ['--symbol', 'case:subject'] * size
+            options = ['--source', '.']
+        else:
+            selectors = (['--file', 'case.py'] if name == 'file-selectors' else ['--line', 'case.py:1-1']) * size
+    elif name == 'fingerprint-files':
+        for i in range(size):
+            (root/f'config{i}.toml').write_text('value = 1\n')
+        options = ['--fingerprint-include', '*.toml']
+    elif name == 'fingerprint-bytes':
+        (root/'config.toml').write_bytes(b'#' * (size * 1024))
+        options = ['--fingerprint-file', 'config.toml']
+    elif name == 'fingerprint-mixed':
+        (root/'config.toml').write_text('value = 1\n')
+        options = ['--fingerprint-file', 'config.toml'] + ['--fingerprint-include', '*.toml'] * size
+    elif name in {'unicode-long-line', 'unicode-many-lines'}:
+        separator = ' ' if name == 'unicode-long-line' else '\n'
+        source = 'x = [' + separator.join(["('雪', True),"] * size) + ']\n'
+        operator, truncated = 'boolean_literal', size > 1
+    elif name == 'ast-wide':
+        source = 'x = [' + '1,' * size + ']\ny = 1 + 2\n'
+    elif name == 'ast-left':
+        source = 'x = ' + ' + '.join(['1'] * (size + 1)) + '\n'
+        truncated = size > 1
+    elif name == 'large-literal':
+        source = "x = ['" + 'x' * (size * 256) + "']\ny = 1 + 2\n"
+    elif name == 'imports-active':
+        source = 'from typing import Sequence\n'
+        source += ''.join(f'from typing import Optional as A{i}\n' for i in range(size))
+        source += ''.join(f'x{i}: list[int]\n' for i in range(size))
+        operator, truncated = 'type_list_sequence', size > 1
+    elif name == 'verify-multifile':
+        source, mode, count = 'pass\n', 'verify', size
+        selectors = ['--source', '.']
+        for i in range(size):
+            (root/f'selected{i}.py').write_text('value = 1 + 2\n')
+    elif name == 'verify-partial':
+        source = 'value = 1 + 2\n' * (size + 1)
+        mode, count, candidate_limit, plan_count, truncated = 'verify', size, size, size, True
+    elif name == 'output-record':
+        source = "x = ['" + 'x' * (size * 256) + "']\n"
+        mode, operator = 'run', 'collection_list_tuple'
+    elif name == 'workspace-bytes':
+        mode = 'run'
+        (root/'data.bin').write_bytes(b'x' * (size * 65536))
+    elif name == 'workspace-workers':
+        source, mode, count, jobs = 'value = 1 + 2\n' * 4, 'run', 4, size
+        (root/'data.bin').write_bytes(b'x' * 65536)
     (root/'case.py').write_text(source)
     return dict(name=name, size=size, mode=mode, operator=operator, expected_candidates=count,
-                truncated=truncated, options=options, source_bytes=len(source.encode()),
+                truncated=truncated, options=options, selectors=selectors, jobs=jobs,
+                candidate_limit=candidate_limit or (1 if mode == 'plan' else 128),
+                plan_count=plan_count if plan_count is not None else size, source_bytes=len(source.encode()),
+                python_source_bytes=sum(p.stat().st_size for p in root.rglob('*.py')),
                 input_files=sum(1 for p in root.rglob('*') if p.is_file()),
                 input_bytes=sum(p.stat().st_size for p in root.rglob('*') if p.is_file()))
 
@@ -117,8 +181,8 @@ def validate_output(document, fixture):
             raise SemanticMismatch('unexpected truncation')
     else:
         records = document.get('mutants')
-        if document.get('summary', {}).get('complete') is not True:
-            raise SemanticMismatch('incomplete execution')
+        if document.get('summary', {}).get('complete') is not (not fixture['truncated']):
+            raise SemanticMismatch('unexpected execution completeness')
     if not isinstance(records, list) or len(records) != fixture['expected_candidates']:
         raise SemanticMismatch('unexpected candidate count')
     return dict(candidates=len(records), truncated=fixture['truncated'])
@@ -131,9 +195,9 @@ def observed_rss(stats):
 
 
 def measure_once(binary, fixture, root, artifact, sample_ms):
-    common = ['--root', str(root), '--file', 'case.py', '--operators', fixture['operator'],
-              '--jobs', '1', '--max-mutants', '128', '--max-candidates',
-              '1' if fixture['mode'] == 'plan' else '128', '--allow-best-effort-memory',
+    common = ['--root', str(root), *fixture['selectors'], '--operators', fixture['operator'],
+              '--jobs', str(fixture['jobs']), '--max-mutants', '128', '--max-candidates',
+              str(fixture['candidate_limit']), '--allow-best-effort-memory',
               '--max-workspace-size', '8GiB', '--min-free-space', '10GiB'] + fixture['options']
     test = ['--', sys.executable, '-c', 'pass']
     command = [str(binary), 'plan', *common, *test]
@@ -141,9 +205,9 @@ def measure_once(binary, fixture, root, artifact, sample_ms):
         manifest = artifact/'plan.json'
         with manifest.open('wb') as out, (artifact/'plan.stderr').open('wb') as err:
             prepared = subprocess.run(command, stdout=out, stderr=err, timeout=30, check=False)
-        if prepared.returncode != 0:
+        if prepared.returncode != (4 if fixture['truncated'] else 0):
             raise ValueError('verify fixture plan failed')
-        validate_output(json.loads(manifest.read_text()), dict(mode='plan', expected_candidates=fixture['size'], truncated=False))
+        validate_output(json.loads(manifest.read_text()), dict(mode='plan', expected_candidates=fixture['plan_count'], truncated=fixture['truncated']))
         command = [str(binary), 'verify', str(manifest), '--top', str(fixture['expected_candidates']), '--format', 'json']
     elif fixture['mode'] == 'run':
         command = [str(binary), 'run', *common, '--format', 'json', *test]
@@ -160,7 +224,8 @@ def measure_once(binary, fixture, root, artifact, sample_ms):
         raise ValueError(f'CLI exit {completed.returncode}; expected {expected_exit}')
     observation = validate_output(json.loads((artifact/'stdout.json').read_text()), fixture)
     return dict(argv=command, elapsed_ms=stats['elapsed_ms'], sampled_tree_rss_bytes=rss,
-                sample_ms=sample_ms, exit_code=completed.returncode, **observation)
+                sample_ms=sample_ms, exit_code=completed.returncode,
+                output_document_bytes=(artifact/'stdout.json').stat().st_size, **observation)
 
 
 def run_gate(registry, artifact):
@@ -209,6 +274,27 @@ def summarize_comparisons(medians):
     return comparisons
 
 
+def summarize_growth(medians):
+    """Report N-relative growth within each binary; RSS is not allocator peak."""
+    grouped = {}
+    for item in medians:
+        grouped.setdefault((item['shape'], item['label']), []).append(item)
+    growth = []
+    for (shape, label), items in grouped.items():
+        items.sort(key=lambda item: item['size'])
+        sizes = [item['size'] for item in items]
+        if len(sizes) != 3 or sizes != [sizes[0], sizes[0]*2, sizes[0]*4]:
+            raise ValueError(f'missing N/2N/4N medians: {shape}/{label}')
+        first = items[0]
+        for item in items[1:]:
+            row = dict(shape=shape, label=label, base_size=first['size'], size=item['size'])
+            for source, field in [('elapsed_ms', 'elapsed_ratio'), ('sampled_tree_rss_bytes', 'sampled_tree_rss_ratio'), ('output_document_bytes', 'output_document_ratio')]:
+                base, observed = first.get(source), item.get(source)
+                row[field] = observed/base if base not in (None, 0) and observed is not None else None
+            growth.append(row)
+    return growth
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('mode', choices=['check', 'gate', 'measure'])
@@ -254,6 +340,7 @@ def main():
                     for label, info in result['binaries'].items():
                         elapsed = []
                         rss_samples = []
+                        document_bytes = []
                         for repeat in range(args.repeats):
                             artifact = args.output/f"{row['id']}-{size}-{label}-{repeat}"
                             artifact.mkdir()
@@ -264,12 +351,15 @@ def main():
                             result['runs'].append(dict(shape=row['id'], label=label, repeat=repeat, fixture=fixture, **run))
                             elapsed.append(run['elapsed_ms'])
                             rss_samples.append(run['sampled_tree_rss_bytes'])
+                            document_bytes.append(run['output_document_bytes'])
                         result.setdefault('medians', []).append(dict(shape=row['id'], size=size, label=label,
                             elapsed_ms=statistics.median(elapsed),
+                            output_document_bytes=statistics.median(document_bytes),
                             sampled_tree_rss_bytes=(statistics.median(rss_samples)
                                                     if all(value is not None for value in rss_samples)
                                                     else None)))
             result['comparisons'] = summarize_comparisons(result.get('medians', []))
+            result['growth'] = summarize_growth(result.get('medians', []))
         result['status'] = 'passed'
     except SemanticMismatch as error:
         result['status'], result['error'] = 'mismatch', str(error)

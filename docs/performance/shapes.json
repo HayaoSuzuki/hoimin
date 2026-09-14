@@ -203,6 +203,258 @@
       "growth_model": "one selected mutant; N unselected files of64KiB copied to one worker",
       "coverage": "measurement-only: bounded smoke scaling; no timing/RSS regression threshold",
       "expected_model_status": "implemented in prerequisite PRs; release evidence remains revision-specific"
+    },
+    {
+      "id": "target-files",
+      "fixture": "target-files",
+      "dimension": "discovery",
+      "sizes": [
+        16,
+        32,
+        64
+      ],
+      "metric": "sampled_tree_rss",
+      "status": "measurement-only",
+      "growth_model": "N selected files, max-candidates1; target expansion before bounded analysis",
+      "coverage": "isolated release time/sampled process-tree RSS and public output bytes; not allocator peak or a time/RSS threshold"
+    },
+    {
+      "id": "file-selectors",
+      "fixture": "file-selectors",
+      "dimension": "discovery",
+      "sizes": [
+        32,
+        64,
+        128
+      ],
+      "metric": "sampled_tree_rss",
+      "status": "measurement-only",
+      "growth_model": "N repeated file declarations over one source; normalization work",
+      "coverage": "isolated release time/sampled process-tree RSS and public output bytes; not allocator peak or a time/RSS threshold"
+    },
+    {
+      "id": "symbol-selectors",
+      "fixture": "symbol-selectors",
+      "dimension": "discovery",
+      "sizes": [
+        32,
+        64,
+        128
+      ],
+      "metric": "sampled_tree_rss",
+      "status": "measurement-only",
+      "growth_model": "N repeated qualified-symbol declarations over one function; normalization work",
+      "coverage": "isolated release time/sampled process-tree RSS and public output bytes; not allocator peak or a time/RSS threshold"
+    },
+    {
+      "id": "line-selectors",
+      "fixture": "line-selectors",
+      "dimension": "discovery",
+      "sizes": [
+        32,
+        64,
+        128
+      ],
+      "metric": "sampled_tree_rss",
+      "status": "measurement-only",
+      "growth_model": "N repeated line ranges over one source; normalization work",
+      "coverage": "isolated release time/sampled process-tree RSS and public output bytes; not allocator peak or a time/RSS threshold"
+    },
+    {
+      "id": "fingerprint-files",
+      "fixture": "fingerprint-files",
+      "dimension": "fingerprint",
+      "sizes": [
+        16,
+        32,
+        64
+      ],
+      "metric": "sampled_tree_rss",
+      "status": "measurement-only",
+      "growth_model": "N fingerprint files with fixed bytes per file and one glob",
+      "coverage": "isolated release time/sampled process-tree RSS and public output bytes; not allocator peak or a time/RSS threshold"
+    },
+    {
+      "id": "fingerprint-bytes",
+      "fixture": "fingerprint-bytes",
+      "dimension": "fingerprint",
+      "sizes": [
+        16,
+        32,
+        64
+      ],
+      "metric": "sampled_tree_rss",
+      "status": "measurement-only",
+      "growth_model": "one fingerprint file with N KiB; byte hashing independent of file count",
+      "coverage": "isolated release time/sampled process-tree RSS and public output bytes; not allocator peak or a time/RSS threshold"
+    },
+    {
+      "id": "fingerprint-mixed",
+      "fixture": "fingerprint-mixed",
+      "dimension": "fingerprint",
+      "sizes": [
+        8,
+        16,
+        32
+      ],
+      "metric": "sampled_tree_rss",
+      "status": "measurement-only",
+      "growth_model": "one exact fingerprint plus N repeated globs over the same file",
+      "coverage": "isolated release time/sampled process-tree RSS and public output bytes; not allocator peak or a time/RSS threshold"
+    },
+    {
+      "id": "unicode-long-line",
+      "fixture": "unicode-long-line",
+      "dimension": "layout",
+      "sizes": [
+        64,
+        128,
+        256
+      ],
+      "metric": "sampled_tree_rss",
+      "status": "measurement-only",
+      "growth_model": "N UTF8 tuple/Boolean sites on one physical line; one retained candidate",
+      "coverage": "isolated release time/sampled process-tree RSS and public output bytes; not allocator peak or a time/RSS threshold"
+    },
+    {
+      "id": "unicode-many-lines",
+      "fixture": "unicode-many-lines",
+      "dimension": "layout",
+      "sizes": [
+        64,
+        128,
+        256
+      ],
+      "metric": "sampled_tree_rss",
+      "status": "measurement-only",
+      "growth_model": "same UTF8 bytes and sites as unicode-long-line, N physical lines",
+      "coverage": "isolated release time/sampled process-tree RSS and public output bytes; not allocator peak or a time/RSS threshold"
+    },
+    {
+      "id": "ast-wide",
+      "fixture": "ast-wide",
+      "dimension": "ast",
+      "sizes": [
+        64,
+        128,
+        256
+      ],
+      "metric": "sampled_tree_rss",
+      "status": "measurement-only",
+      "growth_model": "N sibling literal nodes, fixed-depth AST, one selected addition",
+      "coverage": "isolated release time/sampled process-tree RSS and public output bytes; not allocator peak or a time/RSS threshold"
+    },
+    {
+      "id": "ast-left",
+      "fixture": "ast-left",
+      "dimension": "ast",
+      "sizes": [
+        16,
+        32,
+        64
+      ],
+      "metric": "sampled_tree_rss",
+      "status": "measurement-only",
+      "growth_model": "N nested left-associated additions, one retained candidate; bounded native parser input",
+      "coverage": "isolated release time/sampled process-tree RSS and public output bytes; not allocator peak or a time/RSS threshold"
+    },
+    {
+      "id": "large-literal",
+      "fixture": "large-literal",
+      "dimension": "ast",
+      "sizes": [
+        64,
+        128,
+        256
+      ],
+      "metric": "sampled_tree_rss",
+      "status": "measurement-only",
+      "growth_model": "N*256 literal bytes in an unselected collection, one unrelated selected addition",
+      "coverage": "isolated release time/sampled process-tree RSS and public output bytes; not allocator peak or a time/RSS threshold"
+    },
+    {
+      "id": "imports-active",
+      "fixture": "imports-active",
+      "dimension": "analysis-state",
+      "sizes": [
+        16,
+        32,
+        64
+      ],
+      "metric": "sampled_tree_rss",
+      "status": "measurement-only",
+      "growth_model": "N imports times N eligible annotations, max-candidates1; contrasts unselected imports",
+      "coverage": "isolated release time/sampled process-tree RSS and public output bytes; not allocator peak or a time/RSS threshold"
+    },
+    {
+      "id": "verify-multifile",
+      "fixture": "verify-multifile",
+      "dimension": "verify",
+      "sizes": [
+        2,
+        4,
+        8
+      ],
+      "metric": "sampled_tree_rss",
+      "status": "measurement-only",
+      "growth_model": "N candidates across N files, topN; one validation context per file",
+      "coverage": "isolated release time/sampled process-tree RSS and public output bytes; not allocator peak or a time/RSS threshold"
+    },
+    {
+      "id": "verify-partial",
+      "fixture": "verify-partial",
+      "dimension": "verify",
+      "sizes": [
+        2,
+        4,
+        8
+      ],
+      "metric": "sampled_tree_rss",
+      "status": "measurement-only",
+      "growth_model": "N+1available sites/Nretained/topN; incomplete plan and execution remain explicit",
+      "coverage": "isolated release time/sampled process-tree RSS and public output bytes; not allocator peak or a time/RSS threshold"
+    },
+    {
+      "id": "output-record",
+      "fixture": "output-record",
+      "dimension": "output",
+      "sizes": [
+        16,
+        32,
+        64
+      ],
+      "metric": "sampled_tree_rss",
+      "status": "measurement-only",
+      "growth_model": "one mutant record whose original/replacement grow by N*256bytes",
+      "coverage": "isolated release time/sampled process-tree RSS and public output bytes; not allocator peak or a time/RSS threshold"
+    },
+    {
+      "id": "workspace-bytes",
+      "fixture": "workspace-bytes",
+      "dimension": "workspace",
+      "sizes": [
+        8,
+        16,
+        32
+      ],
+      "metric": "sampled_tree_rss",
+      "status": "measurement-only",
+      "growth_model": "one copied file, N*64KiB, one worker; bytes independent of file count",
+      "coverage": "isolated release time/sampled process-tree RSS and public output bytes; not allocator peak or a time/RSS threshold"
+    },
+    {
+      "id": "workspace-workers",
+      "fixture": "workspace-workers",
+      "dimension": "workspace",
+      "sizes": [
+        1,
+        2,
+        4
+      ],
+      "metric": "sampled_tree_rss",
+      "status": "measurement-only",
+      "growth_model": "fixed4mutants and64KiB copied file, N workers; preflight peak is measured separately",
+      "coverage": "isolated release time/sampled process-tree RSS and public output bytes; not allocator peak or a time/RSS threshold"
     }
   ],
   "gates": [
@@ -532,6 +784,77 @@
         "--",
         "--exact"
       ]
+    },
+    {
+      "id": "lean-cost-real_operation_counters_match_lean_cost_corpus",
+      "status": "active",
+      "metric": "operations",
+      "args": [
+        "test",
+        "-p",
+        "hoimin-cli",
+        "--lib",
+        "analyzer::rust::performance_cost_tests::real_operation_counters_match_lean_cost_corpus",
+        "--",
+        "--exact"
+      ]
+    },
+    {
+      "id": "lean-cost-real_broken_cost_variants_are_detected_without_semantic_changes",
+      "status": "active",
+      "metric": "operations",
+      "args": [
+        "test",
+        "-p",
+        "hoimin-cli",
+        "--lib",
+        "analyzer::rust::performance_cost_tests::real_broken_cost_variants_are_detected_without_semantic_changes",
+        "--",
+        "--exact"
+      ]
+    },
+    {
+      "id": "lean-cost-actual_import_clone_counts_entries_at_the_clone_boundary",
+      "status": "active",
+      "metric": "operations",
+      "args": [
+        "test",
+        "-p",
+        "hoimin-cli",
+        "--lib",
+        "analyzer::rust::performance_cost_tests::actual_import_clone_counts_entries_at_the_clone_boundary",
+        "--",
+        "--exact"
+      ]
+    },
+    {
+      "id": "lean-cost-replacement_counter_observes_direct_builder_calls",
+      "status": "active",
+      "metric": "operations",
+      "args": [
+        "test",
+        "-p",
+        "hoimin-cli",
+        "--lib",
+        "analyzer::rust::performance_cost_tests::replacement_counter_observes_direct_builder_calls",
+        "--",
+        "--exact"
+      ]
+    },
+    {
+      "id": "workspace-preflight-peak",
+      "status": "active",
+      "metric": "peak_heap",
+      "args": [
+        "test",
+        "-p",
+        "hoimin-cli",
+        "--test",
+        "workspace_preflight_heap",
+        "preflight_peak_tracks_entries_and_largest_file_not_worker_copies",
+        "--",
+        "--exact"
+      ]
     }
   ],
   "lean": {
@@ -546,6 +869,25 @@
       "lake build generate_bounded_candidate_discovery",
       "lake exe generate_bounded_candidate_discovery -- --sensitivity",
       "lake exe generate_bounded_candidate_discovery -- --check corpus/bounded-candidate-discovery.jsonl"
-    ]
+    ],
+    "cost": {
+      "model": "formal/HoiminOracle/HoiminOracle/PerformanceCostModel.lean",
+      "proofs": "formal/HoiminOracle/HoiminOracle/PerformanceCostProofs.lean",
+      "cases": "formal/HoiminOracle/HoiminOracle/PerformanceCostCases.lean",
+      "corpus": "formal/HoiminOracle/corpus/performance-cost.jsonl",
+      "adapter": "crates/hoimin-cli/src/analyzer/rust.rs#performance_cost_tests",
+      "worksheet": "docs/superpowers/reports/2026-09-14-issue-491-cost-correspondence-worksheet.md",
+      "generator": "generate_performance_cost",
+      "mode": "internal-fixture",
+      "scope": "56 cases:21 binding,14 annotation,21 replacement; actual tree-update/query/clone/build counters and semantic observations; excludes sort/allocation/native-stack/time/RSS proof.",
+      "representation": "Checked u64-to-usize, power-of-two tree allocation and event/query/clone products; finite cases max32events34queries,64KiBsource,limit1000.",
+      "commands": [
+        "lake build +HoiminOracle.PerformanceCostProofs",
+        "lake build +HoiminOracle.PerformanceCostCases",
+        "lake exe generate_performance_cost -- --check corpus/performance-cost.jsonl",
+        "lake exe generate_performance_cost -- --sensitivity"
+      ],
+      "resource_guard": "Run serially with tools/lean_resource_guard.py:20s;768MiB proofs/runtime,2GiB generator compilation after measured768MiB resource failures."
+    }
   }
 }

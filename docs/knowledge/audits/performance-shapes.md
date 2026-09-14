@@ -5,6 +5,30 @@ description: 決定的な回帰ゲートとrelease計測、未統合の依存、
 status: draft
 catalog_revision: 165a2d284a1af92eb02ffd214ba8c0070c2f3808
 sources:
+- id: expanded-measurement
+  resource: ../../performance/2026-09-14-issue-491-expanded-measurement.json
+  working_tree: untracked
+  sha256: 1a75393f131903065634e61a8ed03d945acaeada8dce277df36d3074b2722013
+- id: rust-cost
+  resource: ../../superpowers/reports/2026-09-14-issue-491-rust-cost-review.md
+  working_tree: untracked
+  sha256: 1337e928052a03ca8080674b8f76ef50d7b5cba9e14b5399f6a5ecce77f7c185
+- id: axis-review
+  resource: ../../superpowers/reports/2026-09-14-issue-491-input-axis-review.md
+  working_tree: untracked
+  sha256: a04236891ab5f2058f8c65d6deb915405a7a6066dff7cc543d93c0a55c35b8c5
+- id: cost-worksheet
+  resource: ../../superpowers/reports/2026-09-14-issue-491-cost-correspondence-worksheet.md
+  working_tree: untracked
+  sha256: 199af4da50a8332e620e5a23ea45e23e22bda523c967834dc5999b05aef83dcd
+- id: cost-review
+  resource: ../../superpowers/reports/2026-09-14-issue-491-operation-cost-review.md
+  working_tree: untracked
+  sha256: 96eb336a2e215dd03060a4552d289c75b679a222e0f5f658e54d67ea71874a5c
+- id: cost-design
+  resource: ../../superpowers/specs/2026-09-14-issue-491-operation-cost-design.md
+  working_tree: untracked
+  sha256: 7115aa8e9accf16b3013af153173679f558850b092a4d749ec2453d3a6eee010
 - id: integration
   resource: ../../performance/2026-09-14-integration-check.md
   working_tree: untracked
@@ -12,13 +36,13 @@ sources:
 - id: guide
   resource: ../../performance/README.md
   working_tree: modified
-  revision: da6b9cf5fd6eff71438c503b0b99a15571b5e696
-  sha256: 94482fc2358513b5723d839d68345996629a68808931f319e5adef5aecf0ffaf
+  revision: 8b33167a049e3cae0fc05e96ccf2253c660b7023
+  sha256: 6b395df2cbf1eb933643b07bce89289cdea46a7c006e89e13edd81a9caeda126
 - id: registry
   resource: ../../performance/shapes.json
   working_tree: modified
-  revision: da6b9cf5fd6eff71438c503b0b99a15571b5e696
-  sha256: 6a2a9681cd6df920d65e5f08f16967f0691947e6b9643e42500ddc87cb3ce899
+  revision: 8b33167a049e3cae0fc05e96ccf2253c660b7023
+  sha256: 999bbce6608cfc8aff8cba89b44e10033ab95db26f2cac03c8f4717756e0ac83
 - id: design
   resource: ../../superpowers/specs/2026-09-14-issue-491-performance-shapes-design.md
   working_tree: modified
@@ -55,3 +79,24 @@ sources:
 全10件のRust差分をローカルで組み合わせ、追加テスト46件の欠落がないことと、全workspace試験1,814件の成功を確認した。これは初回PR公開時の統合確認であり、この結果だけではpendingをactiveに変更しなかった。順次マージ時には依存実装を取り込み、21ゲートすべての実行成功によりactiveへ昇格した。[^review][^integration]
 
 [^integration]: [2026-09-14-integration-check.md](../../performance/2026-09-14-integration-check.md)。
+
+[^cost-design]: [2026-09-14-issue-491-operation-cost-design.md](../../superpowers/specs/2026-09-14-issue-491-operation-cost-design.md)。
+
+[^cost-review]: [2026-09-14-issue-491-operation-cost-review.md](../../superpowers/reports/2026-09-14-issue-491-operation-cost-review.md)。
+
+[^cost-worksheet]: [2026-09-14-issue-491-cost-correspondence-worksheet.md](../../superpowers/reports/2026-09-14-issue-491-cost-correspondence-worksheet.md)。
+
+[^axis-review]: [2026-09-14-issue-491-input-axis-review.md](../../superpowers/reports/2026-09-14-issue-491-input-axis-review.md)。
+
+[^rust-cost]: [2026-09-14-issue-491-rust-cost-review.md](../../superpowers/reports/2026-09-14-issue-491-rust-cost-review.md)。
+
+[^expanded-measurement]: [2026-09-14-issue-491-expanded-measurement.json](../../performance/2026-09-14-issue-491-expanded-measurement.json)。
+
+
+# 追加のコスト対応と入力軸
+
+Issue #491の追加検証では、既存21ゲートを保持し、実際のtree更新・照会、annotation callback中の全状態clone、replacement builderの回数・bytesをLean生成56ケースと照合する。候補保持の既存証明と、並べ替え・allocationを含まない操作数の上界は別の契約である。counterの観測には内部seamが必要なためinternal-fixtureとし、公開CLIの保証へ昇格させない。[^cost-design][^cost-worksheet][^rust-cost]
+
+preflightのallocator peakはmanifest entriesと既存hasherの最大1ファイル分のbufferを許容し、全ファイルをworker数だけ保持する対照を検出する。作成後retained heap、preflight peak、sampled RSSを別の測定値として扱う。新しい5ゲートを含む26ゲートと、default/contracts両方の追加counter試験が成功した。[^cost-review][^rust-cost]
+
+release laneは対象ファイル・selector、fingerprint files/bytes、Unicode、AST幅と左深さ、多file・部分verify、record長、worker数を追加し、29形状のN/2N/4Nを各binaryで3回実行した。今回の522回は全件で意味検証を通過した。macOSの時間・RSSと出力bytesを保存するが、全入力の漸近上界や他OSの性能は結論しない。[^axis-review][^expanded-measurement]

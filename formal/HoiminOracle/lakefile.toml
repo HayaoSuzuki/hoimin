@@ -125,3 +125,7 @@ root = "CleanupCapabilityAuditMain"
 [[lean_exe]]
 name = "generate_comprehension_bindings"
 root = "ComprehensionBindingAuditMain"
+
+[[lean_exe]]
+name = "generate_performance_cost"
+root = "PerformanceCostAuditMain"

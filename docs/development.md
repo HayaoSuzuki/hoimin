@@ -142,9 +142,9 @@ New cases begin in report mode while their model/implementation boundary is
 reviewed. Promoted strict cases are blocking; infrastructure errors always
 fail.
 
-The Linux `Lean audit` CI job is configured to compile all 121 package modules
-serially before building the aggregate library. It then runs all 29 corpus
-freshness checks and the 26 generators that expose sensitivity gates. The
+The Linux `Lean audit` CI job is configured to compile all 128 package modules
+serially before building the aggregate library. It then runs all 31 corpus
+freshness checks and the 28 generators that expose sensitivity gates. The
 workflow is the canonical list of package targets, corpus paths, and gate
 commands; update its contract test whenever a library module or `lakefile.toml`
 executable changes.
@@ -712,3 +712,20 @@ observes Python import behavior directly; Lean session/workspace oracles do not
 prove how Python loaders resolve imports. The setting covers path-only `.pth`
 regular packages when Python honors PYTHONPATH, not arbitrary editable finders,
 custom loaders, or invocations with `-E`/`-I`.
+
+
+## Performance cost correspondence
+
+The shape registry now retains the original 21 gates and adds four actual cost
+counter gates plus a separate workspace preflight allocator-peak gate. The 56
+Lean-owned cases exercise zero/one, tree boundaries and N/2N/4N; never edit
+`formal/HoiminOracle/corpus/performance-cost.jsonl` by hand. The generator and
+its model/proofs are registered in the existing serial bounded Lean CI lane.
+
+Run `cargo test -p hoimin-cli --lib performance_cost_tests` and
+`cargo test -p hoimin-cli --test workspace_preflight_heap`; the registry gate
+runs these tests by exact name. Counter correspondence is internal-fixture,
+while release time/RSS observations use separate public subprocesses. See the
+[performance guide](performance/README.md) and
+[cost worksheet](superpowers/reports/2026-09-14-issue-491-cost-correspondence-worksheet.md)
+for measured steps, native-integer premises and excluded costs.
