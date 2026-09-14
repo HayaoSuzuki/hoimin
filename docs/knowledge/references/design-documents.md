@@ -5,6 +5,11 @@ description: docs/superpowers/specs内の全Markdownを先頭見出しと出典�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-467-design
+  resource: ../../superpowers/specs/2026-09-14-issue-467-jsonl-progress-design.md
+  revision: 8b33167a049e3cae0fc05e96ccf2253c660b7023
+  working_tree: untracked
+  sha256: c4ba67a289f61675332af0cd124b013717c7ec4dca1ff1c8445e284ebdcdc860
 - id: issue-480-design-index
   resource: ../../superpowers/specs/2026-09-14-issue-480-source-encoding-design.md
   working_tree: clean
@@ -834,6 +839,7 @@ sources:
 
 | 原文 | 先頭見出し | 作成時の状態 |
 | --- | --- | --- |
+| [2026-09-14-issue-467-jsonl-progress-design.md](../../superpowers/specs/2026-09-14-issue-467-jsonl-progress-design.md) | JSONL progress input design (Issue 467) [^issue-467-design] | 未追跡 |
 | [2026-09-14-issue-480-source-encoding-design.md](../../superpowers/specs/2026-09-14-issue-480-source-encoding-design.md) | Issue #480: Python source encodings and raw-byte candidates [^issue-480-design-index] | 追跡済み |
 | [2026-09-14-issue-476-symbol-diagnostics-design.md](../../superpowers/specs/2026-09-14-issue-476-symbol-diagnostics-design.md) | Issue #476: missing symbol definition diagnostics [^issue-476-design-index] | 未追跡 |
 | [2026-09-14-issue-453-scoped-discovery-design.md](../../superpowers/specs/2026-09-14-issue-453-scoped-discovery-design.md) | Issue 453: Scope discovery for exact selectors [^issue-453-index] | 未追跡 |
@@ -1294,6 +1300,7 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 
 [^issue-456]: [2026-09-14-issue-456-validation-context-design.md](../../superpowers/specs/2026-09-14-issue-456-validation-context-design.md)。
 
+[^issue-467-design]: [2026-09-14-issue-467-jsonl-progress-design.md](../../superpowers/specs/2026-09-14-issue-467-jsonl-progress-design.md)。
 [^issue-476-design-index]: [Issue #476: missing symbol definition diagnostics](../../superpowers/specs/2026-09-14-issue-476-symbol-diagnostics-design.md).
 
 [^issue-480-design-index]: [Issue #480: Python source encodings and raw-byte candidates](../../superpowers/specs/2026-09-14-issue-480-source-encoding-design.md).

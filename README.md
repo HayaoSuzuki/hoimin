@@ -445,6 +445,29 @@ hoimin run --profile focused --root . --source src -- python -m pytest -q
 
 Compare ordered run reports to track mutation-testing progress. Inputs are oldest-to-newest, and `--patience` defaults to three consecutive comparable stalls.
 
+Inputs may mix JSON documents (schema v2/v3) and current-schema JSONL event
+streams saved from `hoimin run --format jsonl`. Detection uses content, not
+filename. For example:
+
+```console
+hoimin progress --format json reports/before.json reports/after.jsonl
+```
+
+JSONL is read one event per nonblank line. `run_started` must come first and
+`run_finished` must be present and last. `mutant_started` must precede the
+matching `mutant_finished`; diagnostic events are validated and then discarded.
+Run IDs, event sequence, baseline order, mutant identities, results and summary
+counts must be consistent. Truncated lines, missing completion, mixed runs and
+duplicate events are rejected with exit code 2. A valid stream whose completed
+summary marks the run incomplete, or whose baseline failed, is unusable for
+comparison just like its JSON document. CRLF and a complete final line without
+a newline are accepted. Legacy schema v2 JSONL is unsupported.
+
+The JSONL reader retains comparison candidates and one reusable event buffer;
+it does not retain the diagnostic/start-event history or the entire input
+string. Its memory use still depends on candidate data and the largest event.
+
+
 ```console
 hoimin progress --patience 3 reports/before.json reports/after.json reports/latest.json
 hoimin progress --format json reports/*.json
