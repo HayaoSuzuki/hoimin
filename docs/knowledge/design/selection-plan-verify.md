@@ -5,6 +5,11 @@ description: 候補発見と実行の分離、ランキング、部分集合、�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-458
+  resource: ../../superpowers/specs/2026-09-14-issue-458-verify-metrics-design.md
+  working_tree: untracked
+  sha256: 9348d92fc7357d35f6092240f58cd681672864de808daa41b989f0cb717c4887
+
 - id: issue-480-symbol
   resource: ../../../crates/hoimin-cli/src/target/mod.rs
   working_tree: modified
@@ -214,6 +219,14 @@ fileまたはlineだけを指定した場合、rootからの探索は指定フ�
 [^issue-456-review]: [2026-09-14-issue-456-validation-context-review.md](../../superpowers/reports/2026-09-14-issue-456-validation-context-review.md)。
 
 [^issue-456-code]: [plan.rs](../../../crates/hoimin-cli/src/plan.rs)。
+
+# verifyの運用metrics（Issue #458）
+
+`verify --metrics PATH` は候補ID指定とstrict/diverseの上位選択に対応する。相対パスは呼出し時の作業ディレクトリを基準とし、planへ保存しない。出力先の正規化とshellのmetrics収集・保存はrunと共用する。出力設定以外の実行条件と候補選択は維持する。[^issue-458]
+
+planの形式、候補、ソース、fingerprint、再発見の検証に失敗した場合、metrics出力先は変更しない。shell実行開始後のbaseline失敗、総時間制限、保存失敗はrunと同じ規則で扱う。metricsの各段階の時間には、先行するplan検証を含めない。[^issue-458]
+
+[^issue-458]: [Issue 458: Verify operational metrics](../../superpowers/specs/2026-09-14-issue-458-verify-metrics-design.md)。
 
 # 明示symbolの定義存在確認
 

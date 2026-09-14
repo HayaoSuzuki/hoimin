@@ -5,6 +5,11 @@ description: docs/auditsとdocs/superpowers/reports内の全Markdownを追跡状
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-458-review
+  resource: ../../superpowers/reports/2026-09-14-issue-458-verify-metrics-review.md
+  revision: 6a6e233
+  working_tree: modified
+  sha256: 43a74c2b6926c982c111bd49c590de34e7de05b8ad708384d6968209d719f74c
 - id: issue-471-reports
   resource: ../../superpowers/reports/2026-09-14-issue-471-negative-neighbors.md
   working_tree: untracked
@@ -681,6 +686,11 @@ sources:
 [^issue-479-merge-review]: [2026-09-14-issue-479-self-review.md](../../superpowers/reports/2026-09-14-issue-479-self-review.md)。
 [^issue-482-merge-review]: [2026-09-14-issue-482-self-review.md](../../superpowers/reports/2026-09-14-issue-482-self-review.md)。
 
+# Issue 458
+
+- [Issue 458 review record](../../superpowers/reports/2026-09-14-issue-458-verify-metrics-review.md) — verifyのmetrics出力と確認範囲。[^issue-458-review]
+
+[^issue-458-review]: [Issue 458 review record](../../superpowers/reports/2026-09-14-issue-458-verify-metrics-review.md)。
 [^issue-471-reports]: [2026-09-14-issue-471-negative-neighbors.md](../../superpowers/reports/2026-09-14-issue-471-negative-neighbors.md)。
 [^issue-466-revalidation]: [Issue 466 retirement revalidation and self-review](../../superpowers/reports/2026-09-14-issue-466-revalidation.md)。
 [^issue-467-review]: [2026-09-14-issue-467-jsonl-progress-review.md](../../superpowers/reports/2026-09-14-issue-467-jsonl-progress-review.md)。
