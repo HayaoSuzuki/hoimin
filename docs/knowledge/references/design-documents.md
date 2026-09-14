@@ -5,6 +5,12 @@ description: docs/superpowers/specs内の全Markdownを先頭見出しと出典�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-463
+  resource: ../../superpowers/specs/2026-09-14-issue-463-json-record-write-design.md
+  revision: bd8de5bdee2f0e4033623e5b44eff5f62db89b72
+  working_tree: clean
+  sha256: 76d7312dba2c393de9f8c9b47c0f767df0c4100df53a47a07142ba5897eabd19
+
 - id: issue-513
   resource: ../../superpowers/specs/2026-09-12-issue-513-parser-recursion-design.md
   working_tree: untracked
@@ -1129,6 +1135,12 @@ sources:
 [^issue-468]: [2026-09-11-issue-468-pattern-unary-design.md](../../superpowers/specs/2026-09-11-issue-468-pattern-unary-design.md)。
 
 [^issue-465]: [2026-09-11-issue-465-retired-discovery-design.md](../../superpowers/specs/2026-09-11-issue-465-retired-discovery-design.md)。
+
+# JSON mutant record一括書込み（Issue #463）
+
+mutantイベントと区切りを一件のrecordとして直列化し、同期的な`write_all`の完了後に応答する設計を記録した。[^issue-463]
+
+[^issue-463]: [2026-09-14-issue-463-json-record-write-design.md](../../superpowers/specs/2026-09-14-issue-463-json-record-write-design.md)。
 
 [^issue-462]: [2026-09-11-issue-462-retired-reader-design.md](../../superpowers/specs/2026-09-11-issue-462-retired-reader-design.md)。
 

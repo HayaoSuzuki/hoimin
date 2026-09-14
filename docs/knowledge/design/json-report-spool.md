@@ -7,10 +7,19 @@ source_revision: 165a2d284a1af92eb02ffd214ba8c0070c2f3808
 sources:
   - id: design
     resource: ../../superpowers/specs/2026-09-14-issue-463-json-record-write-design.md
+    revision: bd8de5bdee2f0e4033623e5b44eff5f62db89b72
+    working_tree: clean
+    sha256: 76d7312dba2c393de9f8c9b47c0f767df0c4100df53a47a07142ba5897eabd19
   - id: implementation
     resource: ../../../crates/hoimin-cli/src/report/json.rs
+    revision: bd8de5bdee2f0e4033623e5b44eff5f62db89b72
+    working_tree: clean
+    sha256: 3357da3117212874872b3a1c5245bd8b94dcfd58bee4322edab3758503db16f3
   - id: tests
     resource: ../../../crates/hoimin-cli/tests/report_handler.rs
+    revision: bd8de5bdee2f0e4033623e5b44eff5f62db89b72
+    working_tree: clean
+    sha256: 98836b9bec5c5f828ba8763439e33670967c7b616d531f6f8bdbd8fe34adbd15
 ---
 
 # mutant recordの書込み
