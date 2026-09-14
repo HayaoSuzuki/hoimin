@@ -48,3 +48,8 @@ Dependency compilation initially peaked 1,314,704 KiB under20s/2GiB. Isolated pr
 ## Remaining limits
 
 This closes the missing validation infrastructure, not every possible asymptotic regression. Measurements are bounded macOS arm64 observations with concurrent-build noise; Linux/Windows performance and stack capacity are not established locally. CI covers the aggregate Lean build. The cost vector excludes sorting/allocation details and does not prove compiled Rust from Lean. Sources/AST memory and one-file fingerprint buffer remain input-proportional. Nested size0/1 share a valid minimal fixture. All counter modes remain internal-fixture; release timing/RSS are separate public measurements without fixed speed thresholds.
+
+
+## Publication
+
+Published [PR #544](https://github.com/tokyogas-tech/hoimin/pull/544) from enhancement/issue-491, implementation commit7213011. Delivery checklist is complete. Final OKF checks passed19 reserved/YAML pages,416 source IDs/footnotes,768 local links, root reachability, complete design/report indexes and all eight newly read performance-concept hashes. All35 nonempty generated cost sources also compiled with repository CPython3.14. This publication-state edit changes documentation only; implementation validation above remains the final code evidence.

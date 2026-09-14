@@ -7,3 +7,5 @@
 5. Record three actual reviews per stage, mode worksheet and exact limitations, update OKF sources/index hashes, commit/push and create PR.
 
 Plan reviews: (1) Assigned files explicitly to prevent concurrent edits; runtime Python lane and Lean lane have separate owners and observations. (2) Required zero/one and tree boundaries plus duplicates/nonmonotone semantics, so a single large happy-path test is insufficient. (3) Retained real broken operations and numeric preconditions, and made release evidence depend on actual expanded fixtures rather than rerunning historical input shapes.
+
+- [x] Implementation, validation, commit and publication complete: [PR #544](https://github.com/tokyogas-tech/hoimin/pull/544), code commit `7213011`.
