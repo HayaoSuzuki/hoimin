@@ -5,6 +5,36 @@ description: 構文・名前解決・変更するバイト範囲・候補保持�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-480-spec
+  resource: ../../superpowers/specs/2026-09-14-issue-480-source-encoding-design.md
+  working_tree: clean
+  sha256: 55a99855ee216bfff5afdfd5ffdeeab6c13e1877ec751b0ee88c9a35cb78c37e
+  revision: 98969d7a840362f78dceb12f91cc5188214f68d5
+- id: issue-480-codec
+  resource: ../../../crates/hoimin-core/src/source_encoding.rs
+  working_tree: clean
+  sha256: 954deff5938c049804c83f9b903cc5742fd04f0c407a8859094b23344cef55d9
+  revision: 98969d7a840362f78dceb12f91cc5188214f68d5
+- id: issue-480-validator
+  resource: ../../../crates/hoimin-core/src/candidate.rs
+  working_tree: clean
+  sha256: 122f8224aa03efca2ea3da2d061d87fa8e341af29076c9c6b2c4882f989386bc
+  revision: 98969d7a840362f78dceb12f91cc5188214f68d5
+- id: issue-480-writeback
+  resource: ../../../crates/hoimin-cli/src/workspace/mutation.rs
+  working_tree: clean
+  sha256: 9df6269a7021d5ad604331ae14b952448b47cbc76d943b3665bf9b80541d9f86
+  revision: 98969d7a840362f78dceb12f91cc5188214f68d5
+- id: issue-480-tests
+  resource: ../../../crates/hoimin-cli/tests/source_encoding.rs
+  working_tree: modified
+  sha256: 8e81fa46f9b3caa687569fbaae5e8bd046def854773432b425e175ce32df4acf
+  revision: 98969d7a840362f78dceb12f91cc5188214f68d5
+- id: issue-480-report
+  resource: ../../superpowers/reports/2026-09-14-issue-480-source-encoding-review.md
+  working_tree: modified
+  sha256: f8cc3f5e7e8d5ae7afec4b3321751e3d0a36dee584256c930395e5571fa59102
+  revision: a19bf3aadb0d56cc514d857a0e6359a563e67a18
 - id: issue-482
   resource: ../../superpowers/specs/2026-09-14-issue-482-name-history-index-design.md
   working_tree: untracked
@@ -235,3 +265,27 @@ module/classの名前束縛eventはvisitorの挿入順を意味順として保�
 演算子や対象選択で除外できる候補は、元ソース範囲の複製より先に判定する。list/tuple literalのように置換生成自体が入力範囲に比例する場合は、演算子選択をhelper呼出し前に確認する。この省略は現在のnodeの候補生成に限り、子nodeの探索は継続する。候補上限は保持数を制約するが、解析中の全確保量を制約しない。[^issue-461]
 
 [^issue-461]: [Issue #461: Lazy candidate strings](../../superpowers/specs/2026-09-14-issue-461-lazy-candidates-design.md)。
+
+# ソース文字コードと元バイト位置
+
+Issue #480 では、Rustの共通decoderでUTF-8、ASCII、Latin-1の宣言を認識する。宣言なしはUTF-8とする。先頭行の独立したコメント、または先頭行が空白・コメントだけの場合の2行目を調べる。BOMがある場合はCPython tokenizerと同じUTF-8名の正規化条件を使う。未知・未対応codec、BOMとの衝突、UTF-8・ASCIIの不正バイトは、元の宣言名と対象pathを診断に含める。Latin-1は全バイトに対応するため、別の文字コードを意図して保存されたかどうかまでは判定できない。[^issue-480-spec][^issue-480-codec]
+
+解析用テキストはUnicode、候補spanとfile hashは元バイト列を基準にする。Latin-1では非ASCIIバイトの疎な索引を作り、UTF-8位置と元バイト位置の境界を二分探索で対応させる。共通候補検証は元codecでoriginalを照合し、対応後のUnicode列とreplacementの表現可能性を確認する。IDのschemaは1を維持し、元hash・元span・Unicode replacementという既存の入力を使う。[^issue-480-codec][^issue-480-validator]
+
+workerには元バイトのprefix、元codecでエンコードしたreplacement、元バイトのsuffixを書く。ファイル全体をUTF-8へ変換しない。公開CLIテストでは、アクセント付き文字の前後の候補と、それを含むcollectionの置換について、plan・run・verifyのID、元span、hash、CPythonが読む実バイトと値を照合する。[^issue-480-writeback][^issue-480-tests]
+
+通常のrunはbaseline後に解析するため、baselineの失敗が文字コード診断より先になることがある。planにはbaselineがなく、明示symbolは対象解決で先にdecodeする。これは既存の実行順序を変更する機能ではない。[^issue-480-spec]
+
+UTF-8とASCIIは入力を借用するが、Latin-1のテキストと索引のメモリは入力に比例する。過去のUTF-8対象のLean保証をcodec全体へ拡張して解釈しない。[^issue-480-spec][^issue-480-report]
+
+[^issue-480-spec]: [2026-09-14-issue-480-source-encoding-design.md](../../superpowers/specs/2026-09-14-issue-480-source-encoding-design.md).
+
+[^issue-480-codec]: [source_encoding.rs](../../../crates/hoimin-core/src/source_encoding.rs).
+
+[^issue-480-validator]: [candidate.rs](../../../crates/hoimin-core/src/candidate.rs).
+
+[^issue-480-writeback]: [mutation.rs](../../../crates/hoimin-cli/src/workspace/mutation.rs).
+
+[^issue-480-tests]: [source_encoding.rs](../../../crates/hoimin-cli/tests/source_encoding.rs).
+
+[^issue-480-report]: [2026-09-14-issue-480-source-encoding-review.md](../../superpowers/reports/2026-09-14-issue-480-source-encoding-review.md).
