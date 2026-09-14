@@ -1,11 +1,12 @@
 use super::{
     AnalyzeRequest, AnalyzerCandidate, AnnotationSiteTestSnapshot, BindingFlowTestMutation,
     BindingFlowTestSnapshot, CandidatePrefix, LineIndex, NameResolutionTestSnapshot,
-    analyze_source, analyze_source_cancellable, annotation_site_test_snapshot,
-    binding_flow_handler_exit_snapshot, binding_flow_handler_exit_snapshot_with_mutation,
-    binding_flow_loop_head_snapshot, binding_flow_marker_snapshot,
-    binding_flow_marker_snapshot_with_mutation, binding_flow_test_snapshot,
-    name_resolution_test_snapshot,
+    analyze_source, analyze_source_cancellable, annotation_retention_stats,
+    annotation_site_test_snapshot, binding_flow_handler_exit_snapshot,
+    binding_flow_handler_exit_snapshot_with_mutation, binding_flow_loop_head_snapshot,
+    binding_flow_marker_snapshot, binding_flow_marker_snapshot_with_mutation,
+    binding_flow_test_snapshot, candidate_work_stats, name_resolution_test_snapshot,
+    reset_annotation_retention_stats, reset_candidate_work_stats,
 };
 use crate::analyzer::AnalyzerDiagnosticCode;
 use camino::Utf8Path;
@@ -14,6 +15,7 @@ use hoimin_core::{
 };
 use proptest::prelude::*;
 use ruff_python_parser::parse_module;
+use std::fmt::Write as _;
 
 const BINDING_FLOW_CORPUS: &str =
     include_str!("../../../../formal/HoiminOracle/corpus/binding-flow-joins.jsonl");
@@ -128,6 +130,104 @@ struct ExceptionMatchBindingCorpusCase {
 
 fn analyze(source: &str) -> super::AnalyzerOutput {
     analyze_with(Utf8Path::new("pkg/sample.py"), &[], &[], 10_000, source)
+}
+
+fn analyze_with_only_operator(
+    source: &str,
+    selected_operator: MutationOperator,
+) -> super::AnalyzerOutput {
+    let mut operators = MutationOperatorSelection::default();
+    for name in operators.names() {
+        let operator = MutationOperatorSelection::parse_selector(&name).unwrap()[0];
+        if operator != selected_operator {
+            operators.exclude(operator);
+        }
+    }
+    operators.include(selected_operator);
+    analyze_source(
+        &AnalyzeRequest {
+            path: Utf8Path::new("pkg/annotations.py"),
+            lines: &[],
+            symbols: &[],
+            operators: &operators,
+            profile: MutationProfile::Full,
+            max_candidates: 1,
+        },
+        source,
+    )
+}
+
+#[test]
+fn unselected_collection_literals_build_no_large_candidate_strings() {
+    let depth = 64;
+    let source = format!(
+        "data = {}\"{}\"{}\nx = 1 + 2\n",
+        "[".repeat(depth),
+        "a".repeat(64_000),
+        "]".repeat(depth)
+    );
+    reset_candidate_work_stats();
+    let output = analyze_with_only_operator(&source, MutationOperator::BinaryAddSub);
+
+    assert_eq!(candidate_work_stats(), (0, 1));
+    assert_eq!(output.candidates.len(), 1);
+    assert_eq!(output.candidates[0].operator, "binary_add_sub");
+    assert_eq!(output.candidates[0].original, "+");
+    assert!(!output.truncated);
+}
+
+#[test]
+fn selected_collection_literal_still_builds_its_candidate() {
+    reset_candidate_work_stats();
+    let output = analyze("data = [item]\n");
+
+    assert_eq!(candidate_work_stats().0, 1);
+    assert!(output.candidates.iter().any(|candidate| {
+        candidate.operator == "collection_list_tuple"
+            && candidate.original == "[item]"
+            && candidate.replacement == "(item,)"
+    }));
+}
+
+#[test]
+fn line_index_answers_out_of_order_ascii_and_unicode_offsets() {
+    let source = "\u{feff}aβ😀\r\nxy\u{301}z\r最後\n";
+    let index = LineIndex::new(source);
+
+    for (offset, expected) in [
+        (24, (3, 2)),
+        (3, (1, 0)),
+        (16, (2, 3)),
+        (6, (1, 2)),
+        (18, (3, 0)),
+        (4, (1, 1)),
+    ] {
+        assert_eq!(index.line_and_column(source, offset), expected);
+    }
+}
+
+#[test]
+fn annotation_import_snapshots_are_not_retained_per_site() {
+    let count = 256;
+    let imports = (0..count)
+        .map(|index| format!("Optional as T{index}"))
+        .collect::<Vec<_>>()
+        .join(",");
+    let annotations = (0..count).fold(String::new(), |mut output, index| {
+        writeln!(output, "x{index}: int").unwrap();
+        output
+    });
+    let source = format!("from typing import {imports}\n{annotations}");
+
+    reset_annotation_retention_stats();
+    let unselected = analyze_with_only_operator(&source, MutationOperator::BooleanLiteral);
+    assert!(unselected.candidates.is_empty());
+    assert_eq!(annotation_retention_stats(), (0, 0));
+
+    reset_annotation_retention_stats();
+    let selected = analyze_with_only_operator(&source, MutationOperator::TypeNullableAdd);
+    assert_eq!(selected.candidates.len(), 1);
+    assert_eq!(annotation_retention_stats(), (count, 0));
 }
 
 // These literal expectations detect missing callable families, incorrect pairs, and
@@ -4285,6 +4385,60 @@ fn benchmark_candidate_line_positions() {
         source.len(),
         elapsed.as_secs_f64() * 1_000.0
     );
+}
+
+#[test]
+#[ignore = "benchmark harness; run explicitly in release mode"]
+fn benchmark_long_single_line_candidate_columns() {
+    const COUNT: usize = 32_000;
+    let single = format!(
+        "values = [{}]\n",
+        (0..COUNT)
+            .map(|_| "True")
+            .collect::<Vec<_>>()
+            .join(",                               ")
+    );
+    let multiline = format!(
+        "values = [{}]\n",
+        (0..COUNT)
+            .map(|_| "True")
+            .collect::<Vec<_>>()
+            .join(",\n                              ")
+    );
+    assert_eq!(single.len(), multiline.len());
+
+    let mut operators = MutationOperatorSelection::default();
+    for name in operators.names() {
+        let operator = MutationOperatorSelection::parse_selector(&name).unwrap()[0];
+        if operator != MutationOperator::BooleanLiteral {
+            operators.exclude(operator);
+        }
+    }
+    for (shape, source) in [("single", single), ("multiline", multiline)] {
+        let started = std::time::Instant::now();
+        let output = analyze_source(
+            &AnalyzeRequest {
+                path: Utf8Path::new("pkg/long.py"),
+                lines: &[],
+                symbols: &[],
+                operators: &operators,
+                profile: MutationProfile::Full,
+                max_candidates: 1,
+            },
+            &source,
+        );
+        let elapsed = started.elapsed();
+        assert_eq!(output.candidates.len(), 1);
+        assert!(output.truncated);
+        assert_eq!(output.candidates[0].operator, "boolean_literal");
+        println!(
+            "shape={shape} source_bytes={} discovered={} retained={} elapsed_ms={}",
+            source.len(),
+            COUNT,
+            output.candidates.len(),
+            elapsed.as_secs_f64() * 1_000.0
+        );
+    }
 }
 
 #[test]

@@ -47,3 +47,5 @@
 Python79件、active Rust gate7件、全形状198回とtop1追試18回、既存Lean build/sensitivity/freshness/Rust adapter、OKF17ページの構造検査が成功した。限定変異はsurvivedからテスト追加後killed。詳細と未検証条件は [レビュー記録](../reports/2026-09-14-issue-491-performance-shapes-review.md) を参照。PR: https://github.com/tokyogas-tech/hoimin/pull/530 。公開後にbase=main、head=test/issue-491-performance-shapes、実装commit=0c6d4ecと17変更ファイルを照合した。
 
 追記: 全10件の依存PRと実在するテスト名を台帳に登録した。個別Rust差分をローカルで組み合わせ、Clippyと全workspaceテスト（1,814成功、0失敗、19ignored）を確認した。詳細は [統合確認](../../performance/2026-09-14-integration-check.md) を参照。
+
+順次マージ時の追記: 全依存修正を取り込み、21個の具体的なテストゲートを実行して成功を確認した。登録・実行・文書の3回の再レビューを実施。公開時のpending記録は過去の記録として残し、現在の台帳とREADMEはactiveへ更新した。

@@ -131,6 +131,61 @@ fn explicit_discovery_rejects_before_a_backslash_path_can_collide() {
     assert!(error.to_string().contains(r"foo\bar.py"), "{error}");
 }
 
+#[cfg(unix)]
+#[test]
+fn exact_file_discovery_does_not_diagnose_an_unrelated_backslash_path() {
+    let temp = tempfile::tempdir().unwrap();
+    fs::write(temp.path().join("calc.py"), "value = 1\n").unwrap();
+    fs::write(temp.path().join(r"unrelated\fixture.py"), "value = 2\n").unwrap();
+    let selection = Selection {
+        root: Utf8PathBuf::from_path_buf(temp.path().to_path_buf()).unwrap(),
+        files: vec!["calc.py".into()],
+        ..Selection::default()
+    };
+
+    let files = hoimin_cli::target::fs::discover_explicit(&selection).unwrap();
+
+    assert_eq!(files.len(), 1);
+    assert_eq!(files[0].path, "calc.py");
+}
+
+#[cfg(unix)]
+#[test]
+fn exact_file_discovery_still_diagnoses_a_selected_backslash_path() {
+    let temp = tempfile::tempdir().unwrap();
+    fs::write(temp.path().join(r"selected\fixture.py"), "value = 1\n").unwrap();
+    let selection = Selection {
+        root: Utf8PathBuf::from_path_buf(temp.path().to_path_buf()).unwrap(),
+        files: vec![Utf8PathBuf::from(r"selected\fixture.py")],
+        ..Selection::default()
+    };
+
+    let error = hoimin_cli::target::fs::discover_explicit(&selection).unwrap_err();
+
+    assert!(
+        error.to_string().contains(r"selected\fixture.py"),
+        "{error}"
+    );
+}
+
+#[test]
+fn exact_file_include_restores_only_the_requested_ignored_file() {
+    let temp = tempfile::tempdir().unwrap();
+    fs::write(temp.path().join(".gitignore"), "*.py\n").unwrap();
+    fs::write(temp.path().join("calc.py"), "value = 1\n").unwrap();
+    fs::write(temp.path().join("other.py"), "value = 2\n").unwrap();
+    let selection = Selection {
+        root: Utf8PathBuf::from_path_buf(temp.path().to_path_buf()).unwrap(),
+        files: vec!["calc.py".into()],
+        includes: vec!["calc.py".into()],
+        ..Selection::default()
+    };
+
+    let files = hoimin_cli::target::fs::discover_explicit(&selection).unwrap();
+
+    assert_eq!(files, [hoimin_core::DiscoveredFile::python("calc.py")]);
+}
+
 #[test]
 fn explicit_exclude_wins_over_include() {
     let temp = tempfile::tempdir().unwrap();

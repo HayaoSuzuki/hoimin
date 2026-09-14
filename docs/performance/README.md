@@ -1,19 +1,19 @@
 # 入力形状別の性能検証
 
-[shapes.json](shapes.json) は、8次元・11形状の入力、N/2N/4Nのサイズ、測定対象、既存の回帰テストと未マージの修正を区別する台帳である。`growth_model` は入力の構造、`expected_after_fix` は依存Issueが統合された後の期待値を示す。後者を現行mainの保証と読み替えない。
+[shapes.json](shapes.json) は、8次元・11形状の入力、N/2N/4Nのサイズ、測定対象、実行可能な回帰テストを記録する台帳である。`growth_model` は入力の構造、`expected_after_fix` は依存Issueが統合された後の期待値を示す。実測の記録は、それぞれに明記したrevisionの観測として読む。
 
 | 次元 | release入力 | 決定的な通常ゲートとの対応 |
 | --- | --- | --- |
-| 対象発見 | `--file case.py` を固定し無関係なsubtreeのファイル数を増やす | #453の走査数、#474のselector照会、#475の行範囲統合は依存PR待ち |
-| fingerprint | 小さなconfig1ファイルに重複globをN件指定 | #457のwalk回数は依存PR待ち |
-| ソース配置 | 同じbytes・候補を長い1行と多数行へ配置 | #470の列照会は依存PR待ち。既存token範囲照会をactive登録 |
-| AST | 未選択collectionの深さを増やし、選択した加算を内部に置く | #461のreplacement生成数は依存PR待ち。既存prefix/overflowをactive登録 |
-| 解析状態 | import幅×annotation数、再代入×呼出数。両方とも候補0 | #479/#482の操作数は依存PR待ち |
-| verify | 同じファイルの候補数とtop1/topN | #456の前処理回数は依存PR待ち |
-| 出力 | mutant record数 | 既存report/progressのallocator peakをactive登録。#463のwrite数は依存PR待ち |
+| 対象発見 | `--file case.py` を固定し無関係なsubtreeのファイル数を増やす | #453の走査数、#474のselector照会、#475の行範囲統合をactive登録 |
+| fingerprint | 小さなconfig1ファイルに重複globをN件指定 | #457のwalk回数をactive登録 |
+| ソース配置 | 同じbytes・候補を長い1行と多数行へ配置 | #470の列照会をactive登録。既存token範囲照会をactive登録 |
+| AST | 未選択collectionの深さを増やし、選択した加算を内部に置く | #461のreplacement生成数をactive登録。既存prefix/overflowをactive登録 |
+| 解析状態 | import幅×annotation数、再代入×呼出数。両方とも候補0 | #479/#482の操作数をactive登録 |
+| verify | 同じファイルの候補数とtop1/topN | #456の前処理回数をactive登録 |
+| 出力 | mutant record数 | 既存report/progressのallocator peakをactive登録。#463のwrite数をactive登録 |
 | workspace | 1 workerへコピーするファイル数とbytes | 既存の作成後retained heapをactive登録。preflight peak/RSSとは区別 |
 
-全次元の性能回帰がすでにCIで阻止されるわけではない。activeゲートは現在のブランチで実行し、pendingは依存PR・予定テストを表示するだけで成功数へ含めない。依存PRを統合した後、実際のテスト名と計数箇所を照合し、`args` を指定してゲートを実行してからactiveへ変更する。単にラベルを変えて検証済みにしない。
+現在のブランチは21個のactiveゲートを実行する。これで全入力形状の性能回帰を網羅するわけではない。追加の修正が未導入の場合はpendingとして登録し、成功数へ含めない。修正を取り込んだ後に実際のテスト名と計数箇所を照合し、`args` を指定して実行してからactiveへ変更する。単にラベルを変えて検証済みにしない。
 
 ## 通常ゲート
 
@@ -47,4 +47,4 @@ GitHub Actions の `Performance measurements` は手動実行専用。選んだr
 
 ## 個別修正を組み合わせた確認
 
-[2026-09-14の統合確認](2026-09-14-integration-check.md) に、10件のPRのRust差分を組み合わせたrevision、競合解消、全workspace試験の結果を記録した。台帳のpending gateには実際のPRとテスト名を登録している。統合用worktreeでの成功と、mainへ統合された状態は区別する。
+[2026-09-14の統合確認](2026-09-14-integration-check.md) に、10件のPRのRust差分を組み合わせたrevision、競合解消、全workspace試験の結果を記録した。依存修正を取り込んだ統合時には21ゲートを実行してactiveへ昇格した。mainへのマージは各PRのCI成功後に順次行う。

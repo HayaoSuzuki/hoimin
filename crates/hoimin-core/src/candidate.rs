@@ -1,3 +1,5 @@
+#[cfg(test)]
+use std::cell::Cell;
 use std::fmt;
 
 use camino::Utf8PathBuf;
@@ -91,7 +93,7 @@ pub struct CandidateValidationContext<'source> {
     source: &'source [u8],
     text: Result<&'source str, std::str::Utf8Error>,
     file_hash: String,
-    line_starts: Vec<u32>,
+    source_index: Option<PythonSourceIndex>,
 }
 
 impl<'source> CandidateValidationContext<'source> {
@@ -100,11 +102,16 @@ impl<'source> CandidateValidationContext<'source> {
     /// Returns [`CandidateValidationError::SourceTooLarge`] when the source exceeds `u32::MAX` bytes.
     pub fn new(source: &'source [u8]) -> Result<Self, CandidateValidationError> {
         let line_starts = python_line_starts(source)?;
+        let text = std::str::from_utf8(source);
+        let source_index = text
+            .as_ref()
+            .ok()
+            .map(|text| PythonSourceIndex::from_parts(text, line_starts));
         Ok(Self {
             source,
-            text: std::str::from_utf8(source),
+            text,
             file_hash: blake3::hash(source).to_hex().to_string(),
-            line_starts,
+            source_index,
         })
     }
 
@@ -112,6 +119,160 @@ impl<'source> CandidateValidationContext<'source> {
     pub fn file_hash(&self) -> &str {
         &self.file_hash
     }
+}
+
+/// Reusable physical-line and Unicode-column facts for valid UTF-8 Python source.
+#[derive(Debug)]
+pub struct PythonSourceIndex {
+    source_len: u32,
+    line_starts: Vec<u32>,
+    leading_bom: bool,
+    // Each entry records the cumulative number of bytes beyond one byte per
+    // Unicode scalar after the scalar ending at the given byte offset.
+    unicode_excess: Vec<(u32, u32)>,
+    #[cfg(test)]
+    lookup_stats: SourceLocationLookupStats,
+}
+
+#[cfg(test)]
+#[derive(Debug, Default)]
+struct SourceLocationLookupStats {
+    queries: Cell<usize>,
+    line_comparisons: Cell<usize>,
+    unicode_comparisons: Cell<usize>,
+}
+
+impl PythonSourceIndex {
+    /// Builds an index without changing the source bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CandidateValidationError::SourceTooLarge`] when the source
+    /// exceeds `u32::MAX` bytes.
+    pub fn new(source: &str) -> Result<Self, CandidateValidationError> {
+        let line_starts = python_line_starts(source.as_bytes())?;
+        Ok(Self::from_parts(source, line_starts))
+    }
+
+    fn from_parts(source: &str, line_starts: Vec<u32>) -> Self {
+        let mut cumulative = 0u32;
+        let mut unicode_excess = Vec::new();
+        for (start, character) in source.char_indices() {
+            let length =
+                u32::try_from(character.len_utf8()).expect("UTF-8 scalar uses at most 4 bytes");
+            if length > 1 {
+                cumulative += length - 1;
+                unicode_excess.push((
+                    u32::try_from(start + character.len_utf8())
+                        .expect("source length was checked before index construction"),
+                    cumulative,
+                ));
+            }
+        }
+        Self {
+            source_len: u32::try_from(source.len())
+                .expect("source length was checked before index construction"),
+            line_starts,
+            leading_bom: source.starts_with('\u{feff}'),
+            unicode_excess,
+            #[cfg(test)]
+            lookup_stats: SourceLocationLookupStats::default(),
+        }
+    }
+
+    /// Returns the one-based physical line and zero-based Python source column.
+    #[must_use]
+    pub fn line_and_column(&self, offset: usize) -> Option<(u32, u32)> {
+        #[cfg(test)]
+        self.lookup_stats
+            .queries
+            .set(self.lookup_stats.queries.get().saturating_add(1));
+        let offset = u32::try_from(offset).ok()?;
+        if offset > self.source_len || !self.is_character_boundary(offset) {
+            return None;
+        }
+        let line_index = self.line_partition(offset) - 1;
+        let line_start = self.line_starts[line_index];
+        let byte_column = offset - line_start;
+        let unicode_excess = self.excess_at(offset) - self.excess_at(line_start);
+        let bom_column = u32::from(line_start == 0 && offset >= 3 && self.leading_bom);
+        Some((
+            one_based_line(line_index)?,
+            byte_column - unicode_excess - bom_column,
+        ))
+    }
+
+    fn excess_at(&self, offset: u32) -> u32 {
+        let index = self.unicode_partition(offset);
+        index
+            .checked_sub(1)
+            .map_or(0, |index| self.unicode_excess[index].1)
+    }
+
+    fn is_character_boundary(&self, offset: u32) -> bool {
+        let index = self.unicode_partition(offset);
+        self.unicode_excess
+            .get(index)
+            .is_none_or(|(end, cumulative)| {
+                let previous = index
+                    .checked_sub(1)
+                    .map_or(0, |previous| self.unicode_excess[previous].1);
+                let scalar_start = end - (cumulative - previous + 1);
+                offset <= scalar_start
+            })
+    }
+
+    fn line_partition(&self, offset: u32) -> usize {
+        partition_point_counted(
+            &self.line_starts,
+            |start| *start <= offset,
+            || {
+                #[cfg(test)]
+                self.lookup_stats
+                    .line_comparisons
+                    .set(self.lookup_stats.line_comparisons.get().saturating_add(1));
+            },
+        )
+    }
+
+    fn unicode_partition(&self, offset: u32) -> usize {
+        partition_point_counted(
+            &self.unicode_excess,
+            |(end, _)| *end <= offset,
+            || {
+                #[cfg(test)]
+                self.lookup_stats.unicode_comparisons.set(
+                    self.lookup_stats
+                        .unicode_comparisons
+                        .get()
+                        .saturating_add(1),
+                );
+            },
+        )
+    }
+}
+
+fn one_based_line(line_index: usize) -> Option<u32> {
+    u32::try_from(line_index).ok()?.checked_add(1)
+}
+
+fn partition_point_counted<T>(
+    slice: &[T],
+    mut predicate: impl FnMut(&T) -> bool,
+    mut compared: impl FnMut(),
+) -> usize {
+    let mut left = 0;
+    let mut right = slice.len();
+    while left < right {
+        let middle = left + (right - left) / 2;
+        compared();
+        if predicate(&slice[middle]) {
+            left = middle + 1;
+        } else {
+            right = middle;
+        }
+    }
+    left
 }
 
 /// Returns physical line starts for Python's LF, CRLF and lone-CR line endings.
@@ -251,16 +412,10 @@ pub fn validate_candidate_with_context(
     if !text.is_char_boundary(start) || !text.is_char_boundary(end) {
         return Err(CandidateValidationError::OriginalMismatch);
     }
-    let start_u32 = u32::try_from(start).map_err(|_| CandidateValidationError::LocationMismatch)?;
-    let line_index = context
-        .line_starts
-        .partition_point(|line_start| *line_start <= start_u32)
-        .saturating_sub(1);
-    let line =
-        u32::try_from(line_index + 1).map_err(|_| CandidateValidationError::LocationMismatch)?;
-    let line_start = usize::try_from(context.line_starts[line_index])
-        .map_err(|_| CandidateValidationError::LocationMismatch)?;
-    let column = python_source_column(text, line_start, start)
+    let (line, column) = context
+        .source_index
+        .as_ref()
+        .and_then(|index| index.line_and_column(start))
         .ok_or(CandidateValidationError::LocationMismatch)?;
     if candidate.line != line || candidate.column != column {
         return Err(CandidateValidationError::LocationMismatch);
@@ -299,7 +454,46 @@ fn canonical_identity_path(path: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{CandidateValidationError, source_line_starts};
+    use super::{CandidateValidationError, PythonSourceIndex, source_line_starts};
+
+    #[test]
+    fn ascii_source_uses_no_unicode_correction_entries() {
+        let source = "True,".repeat(64_000);
+        let index = PythonSourceIndex::new(&source).unwrap();
+
+        assert!(index.unicode_excess.is_empty());
+        for offset in (0..source.len()).step_by(5) {
+            assert_eq!(
+                index.line_and_column(offset),
+                Some((1, u32::try_from(offset).unwrap()))
+            );
+        }
+        assert_eq!(index.lookup_stats.queries.get(), 64_000);
+        assert_eq!(index.lookup_stats.line_comparisons.get(), 64_000);
+        assert_eq!(index.lookup_stats.unicode_comparisons.get(), 0);
+    }
+
+    #[test]
+    fn indexed_lookup_work_scales_with_queries_times_log_lines() {
+        for line_count in [1_024_usize, 2_048, 4_096] {
+            let source = "x\n".repeat(line_count);
+            let index = PythonSourceIndex::new(&source).unwrap();
+            for offset in (0..source.len()).step_by(2) {
+                assert!(index.line_and_column(offset).is_some());
+            }
+
+            let queries = index.lookup_stats.queries.get();
+            let comparison_limit = queries * (line_count.ilog2() as usize + 2);
+            assert_eq!(queries, line_count);
+            assert!(index.lookup_stats.line_comparisons.get() <= comparison_limit);
+            assert_eq!(index.lookup_stats.unicode_comparisons.get(), 0);
+        }
+    }
+
+    #[test]
+    fn one_based_line_overflow_is_rejected() {
+        assert_eq!(super::one_based_line(u32::MAX as usize), None);
+    }
 
     #[test]
     fn line_index_preserves_empty_and_trailing_newline_sources() {

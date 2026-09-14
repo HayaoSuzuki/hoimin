@@ -16,7 +16,7 @@
       "expected_after_fix": "fixed selected file; unrelated directory entries grow N",
       "growth_model": "one selected file; N unrelated regular entries beneath one sibling directory",
       "coverage": "measurement-only: bounded smoke scaling; no timing/RSS regression threshold",
-      "expected_model_status": "pending sibling merge",
+      "expected_model_status": "implemented in prerequisite PRs; release evidence remains revision-specific",
       "dependency": "https://github.com/tokyogas-tech/hoimin/issues/453"
     },
     {
@@ -34,7 +34,7 @@
       "expected_after_fix": "fixed file set; glob count N; one filesystem walk after #457",
       "growth_model": "one selected config file; N repeated glob declarations",
       "coverage": "measurement-only: bounded smoke scaling; no timing/RSS regression threshold",
-      "expected_model_status": "pending sibling merge",
+      "expected_model_status": "implemented in prerequisite PRs; release evidence remains revision-specific",
       "dependency": "https://github.com/tokyogas-tech/hoimin/issues/457",
       "dependency_pr": "https://github.com/tokyogas-tech/hoimin/pull/522"
     },
@@ -53,7 +53,7 @@
       "expected_after_fix": "N candidate sites; indexed columns O(bytes+queries log unicode)",
       "growth_model": "N Boolean sites in one line; max-candidates=1",
       "coverage": "measurement-only: bounded smoke scaling; no timing/RSS regression threshold",
-      "expected_model_status": "pending sibling merge",
+      "expected_model_status": "implemented in prerequisite PRs; release evidence remains revision-specific",
       "dependency": "https://github.com/tokyogas-tech/hoimin/issues/470",
       "dependency_pr": "https://github.com/tokyogas-tech/hoimin/pull/524"
     },
@@ -72,7 +72,7 @@
       "expected_after_fix": "same source bytes/candidates as long-line; physical lines N",
       "growth_model": "same bytes and Boolean sites as long-line; N physical lines",
       "coverage": "measurement-only: bounded smoke scaling; no timing/RSS regression threshold",
-      "expected_model_status": "pending sibling merge",
+      "expected_model_status": "implemented in prerequisite PRs; release evidence remains revision-specific",
       "dependency": "https://github.com/tokyogas-tech/hoimin/issues/470",
       "dependency_pr": "https://github.com/tokyogas-tech/hoimin/pull/524"
     },
@@ -91,7 +91,7 @@
       "expected_after_fix": "AST depth N; unselected collection replacements zero after #461",
       "growth_model": "N nested collection nodes around one selected addition",
       "coverage": "measurement-only: bounded smoke scaling; no timing/RSS regression threshold",
-      "expected_model_status": "pending sibling merge",
+      "expected_model_status": "implemented in prerequisite PRs; release evidence remains revision-specific",
       "dependency": "https://github.com/tokyogas-tech/hoimin/issues/461"
     },
     {
@@ -109,7 +109,7 @@
       "expected_after_fix": "N aliases x N annotations; no type-state copies when type operators absent",
       "growth_model": "N imported aliases and N annotations; type operators unselected",
       "coverage": "measurement-only: bounded smoke scaling; no timing/RSS regression threshold",
-      "expected_model_status": "pending sibling merge",
+      "expected_model_status": "implemented in prerequisite PRs; release evidence remains revision-specific",
       "dependency": "https://github.com/tokyogas-tech/hoimin/issues/479"
     },
     {
@@ -127,7 +127,7 @@
       "expected_after_fix": "N assignments x N calls; indexed history O(N log N) after #482",
       "growth_model": "N shadowing assignments and N calls; zero eligible candidates",
       "coverage": "measurement-only: bounded smoke scaling; no timing/RSS regression threshold",
-      "expected_model_status": "pending sibling merge",
+      "expected_model_status": "implemented in prerequisite PRs; release evidence remains revision-specific",
       "dependency": "https://github.com/tokyogas-tech/hoimin/issues/482"
     },
     {
@@ -145,7 +145,7 @@
       "expected_after_fix": "N available candidates; one selected; preprocessing one file",
       "growth_model": "N available candidates in one file; top1 execution",
       "coverage": "measurement-only: bounded smoke scaling; no timing/RSS regression threshold",
-      "expected_model_status": "pending sibling merge",
+      "expected_model_status": "implemented in prerequisite PRs; release evidence remains revision-specific",
       "dependency": "https://github.com/tokyogas-tech/hoimin/issues/456",
       "dependency_pr": "https://github.com/tokyogas-tech/hoimin/pull/523"
     },
@@ -164,7 +164,7 @@
       "expected_after_fix": "N available/selected candidates; preprocessing one file after #456",
       "growth_model": "N available candidates in one file; topN execution",
       "coverage": "measurement-only: bounded smoke scaling; no timing/RSS regression threshold",
-      "expected_model_status": "pending sibling merge",
+      "expected_model_status": "implemented in prerequisite PRs; release evidence remains revision-specific",
       "dependency": "https://github.com/tokyogas-tech/hoimin/issues/456",
       "dependency_pr": "https://github.com/tokyogas-tech/hoimin/pull/523"
     },
@@ -183,7 +183,7 @@
       "expected_after_fix": "N records; N underlying full writes after #463",
       "growth_model": "N mutant result records with fixed descriptor size",
       "coverage": "measurement-only: bounded smoke scaling; no timing/RSS regression threshold",
-      "expected_model_status": "pending sibling merge",
+      "expected_model_status": "implemented in prerequisite PRs; release evidence remains revision-specific",
       "dependency": "https://github.com/tokyogas-tech/hoimin/issues/463",
       "dependency_pr": "https://github.com/tokyogas-tech/hoimin/pull/526"
     },
@@ -202,7 +202,7 @@
       "expected_after_fix": "N files of64KiB; one worker; copied bytes proportional",
       "growth_model": "one selected mutant; N unselected files of64KiB copied to one worker",
       "coverage": "measurement-only: bounded smoke scaling; no timing/RSS regression threshold",
-      "expected_model_status": "existing implementation; retained-heap gate is a separate metric"
+      "expected_model_status": "implemented in prerequisite PRs; release evidence remains revision-specific"
     }
   ],
   "gates": [
@@ -309,103 +309,228 @@
       ]
     },
     {
-      "id": "target-walk",
-      "status": "pending",
+      "id": "target-walk-1",
+      "status": "active",
       "issue": "https://github.com/tokyogas-tech/hoimin/issues/453",
-      "promotion": "Merge the issue PR, register its actual counter test args, run gate, then set active.",
       "metric": "operations",
       "dependency_pr": "https://github.com/tokyogas-tech/hoimin/pull/533",
-      "expected_tests": [
+      "args": [
+        "test",
+        "-p",
+        "hoimin-cli",
+        "--lib",
         "target::fs::tests::exact_file_prunes_unrelated_subtrees_and_records",
-        "target::fs::tests::many_exact_files_use_one_scope_key_lookup_per_visited_entry"
+        "--",
+        "--exact"
+      ]
+    },
+    {
+      "id": "target-walk-2",
+      "status": "active",
+      "issue": "https://github.com/tokyogas-tech/hoimin/issues/453",
+      "metric": "operations",
+      "dependency_pr": "https://github.com/tokyogas-tech/hoimin/pull/533",
+      "args": [
+        "test",
+        "-p",
+        "hoimin-cli",
+        "--lib",
+        "target::fs::tests::many_exact_files_use_one_scope_key_lookup_per_visited_entry",
+        "--",
+        "--exact"
       ]
     },
     {
       "id": "context-builds",
-      "status": "pending",
+      "status": "active",
       "issue": "https://github.com/tokyogas-tech/hoimin/issues/456",
-      "promotion": "Merge the issue PR, register its actual counter test args, run gate, then set active.",
       "metric": "operations",
       "dependency_pr": "https://github.com/tokyogas-tech/hoimin/pull/523",
-      "expected_test": "plan::validation_tests::descriptor_validation_cost_tracks_files_and_bytes_not_candidates"
+      "args": [
+        "test",
+        "-p",
+        "hoimin-cli",
+        "--lib",
+        "plan::validation_tests::descriptor_validation_cost_tracks_files_and_bytes_not_candidates",
+        "--",
+        "--exact"
+      ]
     },
     {
       "id": "fingerprint-walk",
-      "status": "pending",
+      "status": "active",
       "issue": "https://github.com/tokyogas-tech/hoimin/issues/457",
-      "promotion": "Merge the issue PR, register its actual counter test args, run gate, then set active.",
       "metric": "operations",
       "dependency_pr": "https://github.com/tokyogas-tech/hoimin/pull/522",
-      "expected_test": "fingerprint_inputs::tests::pattern_count_and_unrelated_tree_size_do_not_multiply_walks"
+      "args": [
+        "test",
+        "-p",
+        "hoimin-cli",
+        "--lib",
+        "fingerprint_inputs::tests::pattern_count_and_unrelated_tree_size_do_not_multiply_walks",
+        "--",
+        "--exact"
+      ]
     },
     {
       "id": "replacement-copies",
-      "status": "pending",
+      "status": "active",
       "issue": "https://github.com/tokyogas-tech/hoimin/issues/461",
-      "promotion": "Merge the issue PR, register its actual counter test args, run gate, then set active.",
       "metric": "operations",
       "dependency_pr": "https://github.com/tokyogas-tech/hoimin/pull/529",
-      "expected_test": "analyzer::rust::rust_tests::unselected_collection_literals_build_no_large_candidate_strings"
+      "args": [
+        "test",
+        "-p",
+        "hoimin-cli",
+        "--lib",
+        "analyzer::rust::rust_tests::unselected_collection_literals_build_no_large_candidate_strings",
+        "--",
+        "--exact"
+      ]
     },
     {
       "id": "spool-writes",
-      "status": "pending",
+      "status": "active",
       "issue": "https://github.com/tokyogas-tech/hoimin/issues/463",
-      "promotion": "Merge the issue PR, register its actual counter test args, run gate, then set active.",
       "metric": "operations",
       "dependency_pr": "https://github.com/tokyogas-tech/hoimin/pull/526",
-      "expected_test": "json_spool_writes_one_complete_record_per_mutant"
+      "args": [
+        "test",
+        "-p",
+        "hoimin-cli",
+        "--test",
+        "report_handler",
+        "json_spool_writes_one_complete_record_per_mutant",
+        "--",
+        "--exact"
+      ]
     },
     {
       "id": "column-queries",
-      "status": "pending",
+      "status": "active",
       "issue": "https://github.com/tokyogas-tech/hoimin/issues/470",
-      "promotion": "Merge the issue PR, register its actual counter test args, run gate, then set active.",
       "metric": "operations",
       "dependency_pr": "https://github.com/tokyogas-tech/hoimin/pull/524",
-      "expected_test": "candidate::tests::indexed_lookup_work_scales_with_queries_times_log_lines"
+      "args": [
+        "test",
+        "-p",
+        "hoimin-core",
+        "--lib",
+        "candidate::tests::indexed_lookup_work_scales_with_queries_times_log_lines",
+        "--",
+        "--exact"
+      ]
     },
     {
       "id": "selector-lookups",
-      "status": "pending",
+      "status": "active",
       "issue": "https://github.com/tokyogas-tech/hoimin/issues/474",
-      "promotion": "Merge the issue PR, register its actual counter test args, run gate, then set active.",
       "metric": "operations",
       "dependency_pr": "https://github.com/tokyogas-tech/hoimin/pull/525",
-      "expected_test": "target::tests::explicit_file_lookups_do_not_scan_every_discovered_file"
+      "args": [
+        "test",
+        "-p",
+        "hoimin-core",
+        "--lib",
+        "target::tests::explicit_file_lookups_do_not_scan_every_discovered_file",
+        "--",
+        "--exact"
+      ]
     },
     {
-      "id": "range-normalization",
-      "status": "pending",
+      "id": "range-normalization-1",
+      "status": "active",
       "issue": "https://github.com/tokyogas-tech/hoimin/issues/475",
-      "promotion": "Merge the issue PR, register its actual counter test args, run gate, then set active.",
       "metric": "operations",
-      "expected_tests": [
+      "dependency_pr": "https://github.com/tokyogas-tech/hoimin/pull/528",
+      "args": [
+        "test",
+        "-p",
+        "hoimin-core",
+        "--lib",
         "target::tests::explicit_ranges_are_normalized_once_per_file",
+        "--",
+        "--exact"
+      ]
+    },
+    {
+      "id": "range-normalization-2",
+      "status": "active",
+      "issue": "https://github.com/tokyogas-tech/hoimin/issues/475",
+      "metric": "operations",
+      "dependency_pr": "https://github.com/tokyogas-tech/hoimin/pull/528",
+      "args": [
+        "test",
+        "-p",
+        "hoimin-core",
+        "--lib",
         "target::tests::explicit_symbols_are_normalized_once_per_file",
-        "target::tests::explicit_groups_are_normalized_once_for_each_file"
-      ],
-      "dependency_pr": "https://github.com/tokyogas-tech/hoimin/pull/528"
+        "--",
+        "--exact"
+      ]
+    },
+    {
+      "id": "range-normalization-3",
+      "status": "active",
+      "issue": "https://github.com/tokyogas-tech/hoimin/issues/475",
+      "metric": "operations",
+      "dependency_pr": "https://github.com/tokyogas-tech/hoimin/pull/528",
+      "args": [
+        "test",
+        "-p",
+        "hoimin-core",
+        "--lib",
+        "target::tests::explicit_groups_are_normalized_once_for_each_file",
+        "--",
+        "--exact"
+      ]
     },
     {
       "id": "annotation-copies",
-      "status": "pending",
+      "status": "active",
       "issue": "https://github.com/tokyogas-tech/hoimin/issues/479",
-      "promotion": "Merge the issue PR, register its actual counter test args, run gate, then set active.",
       "metric": "operations",
       "dependency_pr": "https://github.com/tokyogas-tech/hoimin/pull/531",
-      "expected_test": "analyzer::rust::rust_tests::annotation_import_snapshots_are_not_retained_per_site"
+      "args": [
+        "test",
+        "-p",
+        "hoimin-cli",
+        "--lib",
+        "analyzer::rust::rust_tests::annotation_import_snapshots_are_not_retained_per_site",
+        "--",
+        "--exact"
+      ]
     },
     {
-      "id": "binding-history",
-      "status": "pending",
+      "id": "binding-history-1",
+      "status": "active",
       "issue": "https://github.com/tokyogas-tech/hoimin/issues/482",
-      "promotion": "Merge the issue PR, register its actual counter test args, run gate, then set active.",
       "metric": "operations",
       "dependency_pr": "https://github.com/tokyogas-tech/hoimin/pull/532",
-      "expected_tests": [
+      "args": [
+        "test",
+        "-p",
+        "hoimin-cli",
+        "--lib",
         "analyzer::rust::ordered_history_tests::preprocessing_and_monotonic_lookups_have_bounded_work",
-        "analyzer::rust::ordered_history_tests::alternating_offsets_still_have_logarithmic_lookups"
+        "--",
+        "--exact"
+      ]
+    },
+    {
+      "id": "binding-history-2",
+      "status": "active",
+      "issue": "https://github.com/tokyogas-tech/hoimin/issues/482",
+      "metric": "operations",
+      "dependency_pr": "https://github.com/tokyogas-tech/hoimin/pull/532",
+      "args": [
+        "test",
+        "-p",
+        "hoimin-cli",
+        "--lib",
+        "analyzer::rust::ordered_history_tests::alternating_offsets_still_have_logarithmic_lookups",
+        "--",
+        "--exact"
       ]
     }
   ],

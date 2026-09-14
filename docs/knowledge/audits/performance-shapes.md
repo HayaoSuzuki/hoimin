@@ -12,21 +12,23 @@ sources:
 - id: guide
   resource: ../../performance/README.md
   working_tree: modified
-  revision: 779fb2b0f571d4ec31f9196f20cdf0b9a16a2874
-  sha256: 58c15d85616eaecc2cc121d369b21bff07f52ae53b4772d15fffd7290296f622
+  revision: da6b9cf5fd6eff71438c503b0b99a15571b5e696
+  sha256: 94482fc2358513b5723d839d68345996629a68808931f319e5adef5aecf0ffaf
 - id: registry
   resource: ../../performance/shapes.json
   working_tree: modified
-  revision: 779fb2b0f571d4ec31f9196f20cdf0b9a16a2874
-  sha256: 274cfe58564d91b9a911443c35848011a19f9d938d31989be68b25eb901f5292
+  revision: da6b9cf5fd6eff71438c503b0b99a15571b5e696
+  sha256: 6a2a9681cd6df920d65e5f08f16967f0691947e6b9643e42500ddc87cb3ce899
 - id: design
   resource: ../../superpowers/specs/2026-09-14-issue-491-performance-shapes-design.md
-  working_tree: untracked
-  sha256: a4f5eff4cb019d8b1b70c78f528c32b05e839c9c1eea879319b8588f4b36b895
+  working_tree: modified
+  revision: da6b9cf5fd6eff71438c503b0b99a15571b5e696
+  sha256: 89fb01871fdbcd7cfdb3a4f1fca9c3d30b2251e9656c7fe4a90c93a141eac1bf
 - id: review
   resource: ../../superpowers/reports/2026-09-14-issue-491-performance-shapes-review.md
-  working_tree: untracked
-  sha256: f3b51dcbefefd654871b1dc353804df820588be307e92aa934a737a7f58352dd
+  working_tree: modified
+  revision: da6b9cf5fd6eff71438c503b0b99a15571b5e696
+  sha256: 903abf4a3d7010cd791a463fb8d1393583440e1150464ec4ec07bc28e85ad1f9
 ---
 
 # 入力を増やす軸と測定指標
@@ -41,7 +43,7 @@ sources:
 
 今回のmacOS実行では11形状の198回比較と最終top1追試18回が意味検証を通過した。既存Leanのbuild・感度・freshnessとRust adapterも成功したが、新しいコストモデルを追加したわけではない。全8次元の漸近的回帰がCIで阻止されること、全体定数メモリ、別OSでの性能は結論しない。[^review]
 
-依存PRの統合時は、テスト名、実際の計数点、モデルの仮定を照合し、ゲートを実行してからpendingをactiveへ変更する。入力上限、測定指標、CLI出力契約、監視方式を変更した場合も台帳と本ページを再確認する。[^guide]
+依存修正を取り込むときは、テスト名、実際の計数点、モデルの仮定を照合し、ゲートを実行してからpendingをactiveへ変更する。入力上限、測定指標、CLI出力契約、監視方式を変更した場合も台帳と本ページを再確認する。[^guide]
 
 [^guide]: [README.md](../../performance/README.md)。
 [^registry]: [shapes.json](../../performance/shapes.json)。
@@ -50,6 +52,6 @@ sources:
 
 # 個別修正の統合確認
 
-全10件のRust差分をローカルで組み合わせ、追加テスト46件の欠落がないことと、全workspace試験1,814件の成功を確認した。mainへのマージは行っておらず、通常ゲートのpendingをこの結果だけでactiveには変更しない。[^integration]
+全10件のRust差分をローカルで組み合わせ、追加テスト46件の欠落がないことと、全workspace試験1,814件の成功を確認した。これは初回PR公開時の統合確認であり、この結果だけではpendingをactiveに変更しなかった。順次マージ時には依存実装を取り込み、21ゲートすべての実行成功によりactiveへ昇格した。[^review][^integration]
 
 [^integration]: [2026-09-14-integration-check.md](../../performance/2026-09-14-integration-check.md)。

@@ -5,10 +5,50 @@ description: docs/auditsとdocs/superpowers/reports内の全Markdownを追跡状
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-461-merge-review
+  resource: ../../superpowers/reports/2026-09-14-issue-461-self-review.md
+  revision: 11dd162101c4351dfdd15cb52ba112bdf1fe9cf2
+  working_tree: clean
+  sha256: f3f4229f345454faedf2541348dddaa77fc5f79033e0392818a66850345e4a2b
+- id: issue-470-merge-review
+  resource: ../../superpowers/reports/2026-09-14-issue-470-self-review.md
+  revision: 55edef2f856d347b26db99d0cdb8ababf638abd9
+  working_tree: clean
+  sha256: 96e5eb365a1e5f8508941c9eff15f3f8cd9c95ecfbc7c0e2502f660977733302
+- id: issue-479-merge-review
+  resource: ../../superpowers/reports/2026-09-14-issue-479-self-review.md
+  revision: 1b16fc05855b14eb87eae52e2ccac03bf259b63c
+  working_tree: clean
+  sha256: c5d90ff72953f9667d7c0bc135edb6fbc9dfab405ab370f3271512aebdd5d774
+- id: issue-482-merge-review
+  resource: ../../superpowers/reports/2026-09-14-issue-482-self-review.md
+  revision: 58092b31994e43227e2292e6ba97f51874ea36e4
+  working_tree: clean
+  sha256: f686b3d5b382a8d7ee7c9346ab213bae833c19ff83d77938ef75d3199cff3a77
 - id: issue-491-review
   resource: ../../superpowers/reports/2026-09-14-issue-491-performance-shapes-review.md
+  working_tree: modified
+  revision: da6b9cf5fd6eff71438c503b0b99a15571b5e696
+  sha256: 903abf4a3d7010cd791a463fb8d1393583440e1150464ec4ec07bc28e85ad1f9
+- id: issue-453-report
+  resource: ../../superpowers/reports/2026-09-14-issue-453-scoped-discovery.md
+  sha256: 00388a47831d5139281558dc112b82d72504de76c4e2f3df00adfd1ad742433b
+  working_tree: clean
+  revision: 7b7192f8a2e1935c503bd9be1020e9b13f6b6858
+- id: issue-475-report
+  resource: ../../superpowers/reports/2026-09-14-issue-475-range-normalization.md
+  sha256: 4a5ebaf30d38b75272a82443ec7c1845f4aeae8bf2be142324b7db504e25ad63
+  working_tree: clean
+  revision: 15f0d54ea2b8a1eba4317b04649a3d7f7c46079b
+- id: issue-474-report
+  resource: ../../superpowers/reports/2026-09-14-issue-474-selector-index.md
   working_tree: untracked
-  sha256: f3b51dcbefefd654871b1dc353804df820588be307e92aa934a737a7f58352dd
+  sha256: 4173549c5d8f5f037aec6e97b479028bf3a3320d30ef2e223a47ffb226b3c0ed
+
+- id: issue-456-review
+  resource: ../../superpowers/reports/2026-09-14-issue-456-validation-context-review.md
+  working_tree: untracked
+  sha256: 5042ef83fb71837543be9fb358b2453931bdf70ce77f6033381e5756632b09f0
 - id: issue-460-audit
   resource: ../../superpowers/reports/2026-09-11-issue-460-progress-result-audit.md
   working_tree: untracked
@@ -381,12 +421,15 @@ sources:
 
 # 収録一覧
 
-2026-09-11時点の92件。これは原文への索引であり、各文書の採用状況・現行性・検証結果を一括して認定するものではない。見出しは原文から抽出した。出典の版とGitの追跡状態は、冒頭のYAMLメタデータに記録している。未追跡資料は同じ作業ツリーに依存する。
+2026-09-14時点の93件。これは原文への索引であり、各文書の採用状況・現行性・検証結果を一括して認定するものではない。見出しは原文から抽出した。出典の版とGitの追跡状態は、冒頭のYAMLメタデータに記録している。未追跡資料は同じ作業ツリーに依存する。
 
 主要な論点の要約は[入口](../index.md)から読む。ファイル名に含まれる日付は作成履歴の手がかりであり、そのファイルが最後に変更された日時ではない。
 
 | 原文 | 先頭見出し | 作成時の状態 |
 | --- | --- | --- |
+| [2026-09-14-issue-453-scoped-discovery.md](../../superpowers/reports/2026-09-14-issue-453-scoped-discovery.md) | Issue 453 scoped discovery report [^issue-453-report] | 未追跡 |
+| [2026-09-14-issue-475-range-normalization.md](../../superpowers/reports/2026-09-14-issue-475-range-normalization.md) | Issue 475 range normalization report [^issue-475-report] | 未追跡 |
+| [2026-09-14-issue-474-selector-index.md](../../superpowers/reports/2026-09-14-issue-474-selector-index.md) | Issue 474 explicit selector index report [^issue-474-report] | 未追跡 |
 | [2026-09-11-issue-460-progress-result-audit.md](../../superpowers/reports/2026-09-11-issue-460-progress-result-audit.md) | Progress result validation audit (issue 460) [^issue-460-audit] | **未追跡** |
 | [2026-09-11-progress-input-lean.md](../../superpowers/reports/2026-09-11-progress-input-lean.md) | Progress input summary coherence (#483) [^doc-001] | 追跡済み |
 | [selection.md](../../superpowers/reports/2026-09-11-boundary-contract-audit/selection.md) | 対象選択・plan/verify・入力所有権の監査 [^doc-002] | **未追跡** |
@@ -570,10 +613,38 @@ sources:
 [^doc-088]: [issues.md](../../audits/2026-07-rust-codebase/issues.md)。
 [^doc-089]: [findings.md](../../audits/2026-07-rust-codebase/findings.md)。
 [^doc-090]: [coverage.md](../../audits/2026-07-rust-codebase/coverage.md)。
+
+[^issue-453-report]: [Issue 453 scoped discovery report](../../superpowers/reports/2026-09-14-issue-453-scoped-discovery.md)。
 [^doc-091]: [README.md](../../audits/2026-07-rust-codebase/README.md)。
+
+[^issue-475-report]: [Issue 475 range normalization report](../../superpowers/reports/2026-09-14-issue-475-range-normalization.md)。
+
+[^issue-474-report]: [Issue 474 explicit selector index report](../../superpowers/reports/2026-09-14-issue-474-selector-index.md)。
 
 [^issue-460-audit]: [2026-09-11-issue-460-progress-result-audit.md](../../superpowers/reports/2026-09-11-issue-460-progress-result-audit.md)。
 
 - [Issue #491 性能検証基盤](../../superpowers/reports/2026-09-14-issue-491-performance-shapes-review.md) [^issue-491-review]
 
 [^issue-491-review]: [2026-09-14-issue-491-performance-shapes-review.md](../../superpowers/reports/2026-09-14-issue-491-performance-shapes-review.md)。
+
+# 2026-09-14 の追加
+
+| 原文 | 内容 |
+| --- | --- |
+| [Issue #456: 候補検証の前処理共有と検証記録](../../superpowers/reports/2026-09-14-issue-456-validation-context-review.md) | 操作回数、release計測、各工程の3回のセルフレビュー。[^issue-456-review] |
+
+[^issue-456-review]: [2026-09-14-issue-456-validation-context-review.md](../../superpowers/reports/2026-09-14-issue-456-validation-context-review.md)。
+
+# 2026-09-14 統合時に補完した報告
+
+| 原文 | 内容 |
+| --- | --- |
+| [Issue #461 セルフレビュー記録](../../superpowers/reports/2026-09-14-issue-461-self-review.md) | 実装、計数検査、release計測、各工程3回のレビュー。[^issue-461-merge-review] |
+| [Issue #470 セルフレビュー記録](../../superpowers/reports/2026-09-14-issue-470-self-review.md) | 実装、計数検査、release計測、各工程3回のレビュー。[^issue-470-merge-review] |
+| [Issue #479 セルフレビュー記録](../../superpowers/reports/2026-09-14-issue-479-self-review.md) | 実装、計数検査、release計測、各工程3回のレビュー。[^issue-479-merge-review] |
+| [Issue #482 セルフレビュー記録](../../superpowers/reports/2026-09-14-issue-482-self-review.md) | 実装、計数検査、release計測、各工程3回のレビュー。[^issue-482-merge-review] |
+
+[^issue-461-merge-review]: [2026-09-14-issue-461-self-review.md](../../superpowers/reports/2026-09-14-issue-461-self-review.md)。
+[^issue-470-merge-review]: [2026-09-14-issue-470-self-review.md](../../superpowers/reports/2026-09-14-issue-470-self-review.md)。
+[^issue-479-merge-review]: [2026-09-14-issue-479-self-review.md](../../superpowers/reports/2026-09-14-issue-479-self-review.md)。
+[^issue-482-merge-review]: [2026-09-14-issue-482-self-review.md](../../superpowers/reports/2026-09-14-issue-482-self-review.md)。
