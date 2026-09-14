@@ -44,6 +44,13 @@ jobs:
       - run: uv sync --frozen
       - run: cargo test --workspace
       - run: cargo test -p hoimin-cli --test run_e2e
+      - name: Performance shape gates
+        run: python tools/performance_shapes.py gate --output "${{ runner.temp }}/performance-gates"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: performance-gates-${{ matrix.os }}
+          path: ${{ runner.temp }}/performance-gates
       - run: uv run --frozen python -m unittest tests/test_skills.py
 
   core-dependency-purity:

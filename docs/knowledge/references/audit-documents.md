@@ -5,6 +5,10 @@ description: docs/auditsとdocs/superpowers/reports内の全Markdownを追跡状
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-491-review
+  resource: ../../superpowers/reports/2026-09-14-issue-491-performance-shapes-review.md
+  working_tree: untracked
+  sha256: f3b51dcbefefd654871b1dc353804df820588be307e92aa934a737a7f58352dd
 - id: issue-460-audit
   resource: ../../superpowers/reports/2026-09-11-issue-460-progress-result-audit.md
   working_tree: untracked
@@ -569,3 +573,7 @@ sources:
 [^doc-091]: [README.md](../../audits/2026-07-rust-codebase/README.md)。
 
 [^issue-460-audit]: [2026-09-11-issue-460-progress-result-audit.md](../../superpowers/reports/2026-09-11-issue-460-progress-result-audit.md)。
+
+- [Issue #491 性能検証基盤](../../superpowers/reports/2026-09-14-issue-491-performance-shapes-review.md) [^issue-491-review]
+
+[^issue-491-review]: [2026-09-14-issue-491-performance-shapes-review.md](../../superpowers/reports/2026-09-14-issue-491-performance-shapes-review.md)。

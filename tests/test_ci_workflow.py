@@ -796,7 +796,13 @@ class PlatformExecutionPolicyContractTests(unittest.TestCase):
             | {"windows-resource-scope", "windows-metrics-destinations"},
         )
         self.assertNotIn("ubuntu-latest", workflow)
-        self.assertNotRegex(workflow, r"(?m)^\s+if:")
+        for job_name, job in jobs.items():
+            self.assertNotIn("if", job, job_name)
+            for step in job.get("steps", []):
+                if step.get("uses", "").startswith("actions/upload-artifact@"):
+                    self.assertEqual(step.get("if"), "always()", job_name)
+                else:
+                    self.assertNotIn("if", step, job_name)
         for job_name, expected_name in MANUAL_NON_LINUX_JOB_NAMES.items():
             job = jobs[job_name]
             self.assertEqual(job["name"], expected_name, job_name)
