@@ -36,6 +36,26 @@ use fact_index::IndexLookupStats;
 use fact_index::{ContainmentIndex, NotOperandIndex, ScopeIndex, ScopeInterval};
 use operator_functions::OperatorImports;
 
+#[cfg(test)]
+thread_local! {
+    static ANNOTATION_RECORDS: Cell<usize> = const { Cell::new(0) };
+    static ANNOTATION_IMPORT_SNAPSHOT_CLONES: Cell<usize> = const { Cell::new(0) };
+}
+
+#[cfg(test)]
+fn reset_annotation_retention_stats() {
+    ANNOTATION_RECORDS.set(0);
+    ANNOTATION_IMPORT_SNAPSHOT_CLONES.set(0);
+}
+
+#[cfg(test)]
+fn annotation_retention_stats() -> (usize, usize) {
+    (
+        ANNOTATION_RECORDS.get(),
+        ANNOTATION_IMPORT_SNAPSHOT_CLONES.get(),
+    )
+}
+
 pub(crate) struct AnalyzeRequest<'a> {
     pub path: &'a Utf8Path,
     pub lines: &'a [LineRange],
@@ -3827,8 +3847,21 @@ struct AnnotationSite<'ast> {
     scope_kind: ScopeKind,
 }
 
-struct AnnotationCollector<'ast> {
+type AnnotationCallback<'ast, 'callback> =
+    dyn FnMut(&'ast Expr, Option<String>, &KnownImports) + 'callback;
+const TYPE_OPERATORS: [MutationOperator; 7] = [
+    MutationOperator::TypeNullableRemove,
+    MutationOperator::TypeNullableAdd,
+    MutationOperator::TypeListSequence,
+    MutationOperator::TypeSetAbstractSet,
+    MutationOperator::TypeMapping,
+    MutationOperator::TypeIterableIterator,
+    MutationOperator::TypeSequenceIterable,
+];
+
+struct AnnotationCollector<'ast, 'callback> {
     annotations: Vec<AnnotationSite<'ast>>,
+    annotation_callback: Option<&'callback mut AnnotationCallback<'ast, 'callback>>,
     imports: KnownImports,
     class_body_fallback: Option<KnownImports>,
     class_external_bindings: Option<ClassExternalBindings>,
@@ -3914,16 +3947,26 @@ pub(super) enum BindingFlowTestMutation {
     DropBodyTerminates,
 }
 
-impl<'ast> AnnotationCollector<'ast> {
+impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
     fn collect(module: &'ast ModModule) -> Vec<AnnotationSite<'ast>> {
         let mut collector = Self::empty();
         collector.visit_suite(&module.body);
         collector.annotations
     }
 
+    fn visit_each(
+        module: &'ast ModModule,
+        callback: &'callback mut AnnotationCallback<'ast, 'callback>,
+    ) {
+        let mut collector = Self::empty();
+        collector.annotation_callback = Some(callback);
+        collector.visit_suite(&module.body);
+    }
+
     fn empty() -> Self {
         Self {
             annotations: Vec::new(),
+            annotation_callback: None,
             imports: KnownImports::default(),
             class_body_fallback: None,
             class_external_bindings: None,
@@ -4201,9 +4244,19 @@ impl<'ast> AnnotationCollector<'ast> {
         if !self.record_annotations {
             return;
         }
+        #[cfg(test)]
+        ANNOTATION_RECORDS.set(ANNOTATION_RECORDS.get().saturating_add(1));
+        let symbol = self.symbol();
+        if let Some(callback) = self.annotation_callback.as_mut() {
+            callback(annotation, symbol, &self.imports);
+            return;
+        }
+        #[cfg(test)]
+        ANNOTATION_IMPORT_SNAPSHOT_CLONES
+            .set(ANNOTATION_IMPORT_SNAPSHOT_CLONES.get().saturating_add(1));
         self.annotations.push(AnnotationSite {
             annotation,
-            symbol: self.symbol(),
+            symbol,
             imports: self.imports.clone(),
             #[cfg(test)]
             scope_kind: self.scope_kind,
@@ -4870,7 +4923,7 @@ impl<'ast> AnnotationCollector<'ast> {
     }
 }
 
-impl<'ast> Visitor<'ast> for AnnotationCollector<'ast> {
+impl<'ast> Visitor<'ast> for AnnotationCollector<'ast, '_> {
     fn visit_stmt(&mut self, statement: &'ast Stmt) {
         let exits = self.visit_statement_flow(statement);
         if let Some(imports) = exits.fallthrough {
@@ -5327,11 +5380,15 @@ fn type_annotation_candidates(
     request: &AnalyzeRequest<'_>,
 ) -> ProducerPrefix {
     let mut candidates = CandidatePrefix::new(request.max_candidates);
-    for site in AnnotationCollector::collect(module) {
-        for (replacement, operator) in
-            annotation_replacements(site.annotation, source, facts, &site.imports)
-        {
-            let range = site.annotation.range();
+    if !TYPE_OPERATORS
+        .iter()
+        .any(|operator| request.operators.contains(*operator))
+    {
+        return candidates.finish();
+    }
+    AnnotationCollector::visit_each(module, &mut |annotation, symbol, imports| {
+        for (replacement, operator) in annotation_replacements(annotation, source, facts, imports) {
+            let range = annotation.range();
             let start = usize::from(range.start());
             let end = usize::from(range.end());
             if let Some(candidate) = make_candidate(
@@ -5341,13 +5398,13 @@ fn type_annotation_candidates(
                 start..end,
                 replacement,
                 operator,
-                site.symbol.clone(),
+                symbol.clone(),
             ) && retained_by_profile(&candidate, request.profile, facts)
             {
                 candidates.push(candidate);
             }
         }
-    }
+    });
     candidates.finish()
 }
 

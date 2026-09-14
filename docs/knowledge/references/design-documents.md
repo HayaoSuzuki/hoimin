@@ -1161,3 +1161,9 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 [^issue-515]: [Issue515 class directive design](../../superpowers/specs/2026-09-12-issue-515-class-directives-design.md)。
 [^issue-514]: [Issue514 comprehension effect order design](../../superpowers/specs/2026-09-12-issue-514-comprehension-effect-order-design.md)。
 [^issue-516]: [Issue 516: Share active session ownership-tree identities](../../superpowers/specs/2026-09-12-issue-516-session-ownership-identities-design.md)。
+
+# Issue #479 の設計
+
+- [Issue #479: Streaming annotation candidates](../../superpowers/specs/2026-09-14-issue-479-stream-annotations-design.md) - 型注釈候補をcurrent import stateから逐次生成する。[^issue-479-stream]
+
+[^issue-479-stream]: [設計原文](../../superpowers/specs/2026-09-14-issue-479-stream-annotations-design.md)。

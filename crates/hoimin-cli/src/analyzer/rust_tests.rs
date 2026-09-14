@@ -1,11 +1,11 @@
 use super::{
     AnalyzeRequest, AnalyzerCandidate, AnnotationSiteTestSnapshot, BindingFlowTestMutation,
     BindingFlowTestSnapshot, CandidatePrefix, LineIndex, NameResolutionTestSnapshot,
-    analyze_source, analyze_source_cancellable, annotation_site_test_snapshot,
-    binding_flow_handler_exit_snapshot, binding_flow_handler_exit_snapshot_with_mutation,
-    binding_flow_loop_head_snapshot, binding_flow_marker_snapshot,
-    binding_flow_marker_snapshot_with_mutation, binding_flow_test_snapshot,
-    name_resolution_test_snapshot,
+    analyze_source, analyze_source_cancellable, annotation_retention_stats,
+    annotation_site_test_snapshot, binding_flow_handler_exit_snapshot,
+    binding_flow_handler_exit_snapshot_with_mutation, binding_flow_loop_head_snapshot,
+    binding_flow_marker_snapshot, binding_flow_marker_snapshot_with_mutation,
+    binding_flow_test_snapshot, name_resolution_test_snapshot, reset_annotation_retention_stats,
 };
 use crate::analyzer::AnalyzerDiagnosticCode;
 use camino::Utf8Path;
@@ -14,6 +14,7 @@ use hoimin_core::{
 };
 use proptest::prelude::*;
 use ruff_python_parser::parse_module;
+use std::fmt::Write as _;
 
 const BINDING_FLOW_CORPUS: &str =
     include_str!("../../../../formal/HoiminOracle/corpus/binding-flow-joins.jsonl");
@@ -128,6 +129,55 @@ struct ExceptionMatchBindingCorpusCase {
 
 fn analyze(source: &str) -> super::AnalyzerOutput {
     analyze_with(Utf8Path::new("pkg/sample.py"), &[], &[], 10_000, source)
+}
+
+fn analyze_with_only_operator(
+    source: &str,
+    selected_operator: MutationOperator,
+) -> super::AnalyzerOutput {
+    let mut operators = MutationOperatorSelection::default();
+    for name in operators.names() {
+        let operator = MutationOperatorSelection::parse_selector(&name).unwrap()[0];
+        if operator != selected_operator {
+            operators.exclude(operator);
+        }
+    }
+    operators.include(selected_operator);
+    analyze_source(
+        &AnalyzeRequest {
+            path: Utf8Path::new("pkg/annotations.py"),
+            lines: &[],
+            symbols: &[],
+            operators: &operators,
+            profile: MutationProfile::Full,
+            max_candidates: 1,
+        },
+        source,
+    )
+}
+
+#[test]
+fn annotation_import_snapshots_are_not_retained_per_site() {
+    let count = 256;
+    let imports = (0..count)
+        .map(|index| format!("Optional as T{index}"))
+        .collect::<Vec<_>>()
+        .join(",");
+    let annotations = (0..count).fold(String::new(), |mut output, index| {
+        writeln!(output, "x{index}: int").unwrap();
+        output
+    });
+    let source = format!("from typing import {imports}\n{annotations}");
+
+    reset_annotation_retention_stats();
+    let unselected = analyze_with_only_operator(&source, MutationOperator::BooleanLiteral);
+    assert!(unselected.candidates.is_empty());
+    assert_eq!(annotation_retention_stats(), (0, 0));
+
+    reset_annotation_retention_stats();
+    let selected = analyze_with_only_operator(&source, MutationOperator::TypeNullableAdd);
+    assert_eq!(selected.candidates.len(), 1);
+    assert_eq!(annotation_retention_stats(), (count, 0));
 }
 
 // These literal expectations detect missing callable families, incorrect pairs, and
