@@ -38,7 +38,7 @@ Base: `165a2d284a1af92eb02ffd214ba8c0070c2f3808`.
 
 1. Scope review confirms the diff contains only issue #475 resolver code, tests, its design/plan/report, and issue-specific OKF/index entries.
 2. Claim review describes deterministic operation counts as the regression guarantee and elapsed release measurements as nonblocking evidence.
-3. Publication review will verify the pushed head SHA, `main` base, issue closure reference, and rendered PR body after creation.
+3. Publication review verified PR #528 is open from `perf/issue-475-range-normalization` into `main`, and its rendered body retains the deterministic evidence, nonblocking timing label, validation list, and `Closes #475`.
 
 ## Verification
 

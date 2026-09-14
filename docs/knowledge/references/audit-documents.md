@@ -7,7 +7,7 @@ catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
 - id: issue-475-report
   resource: ../../superpowers/reports/2026-09-14-issue-475-range-normalization.md
-  sha256: b4ad6f795d28cfe86e82b13a1b49eaa88381c68fce843db48bf3a5248e6ab5c7
+  sha256: 4a5ebaf30d38b75272a82443ec7c1845f4aeae8bf2be142324b7db504e25ad63
 - id: issue-460-audit
   resource: ../../superpowers/reports/2026-09-11-issue-460-progress-result-audit.md
   working_tree: untracked
