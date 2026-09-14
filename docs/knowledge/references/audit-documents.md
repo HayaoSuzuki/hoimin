@@ -9,6 +9,11 @@ sources:
   resource: ../../superpowers/reports/2026-09-14-issue-474-selector-index.md
   working_tree: untracked
   sha256: 4173549c5d8f5f037aec6e97b479028bf3a3320d30ef2e223a47ffb226b3c0ed
+
+- id: issue-456-review
+  resource: ../../superpowers/reports/2026-09-14-issue-456-validation-context-review.md
+  working_tree: untracked
+  sha256: 5042ef83fb71837543be9fb358b2453931bdf70ce77f6033381e5756632b09f0
 - id: issue-460-audit
   resource: ../../superpowers/reports/2026-09-11-issue-460-progress-result-audit.md
   working_tree: untracked
@@ -576,3 +581,11 @@ sources:
 [^issue-474-report]: [Issue 474 explicit selector index report](../../superpowers/reports/2026-09-14-issue-474-selector-index.md)。
 
 [^issue-460-audit]: [2026-09-11-issue-460-progress-result-audit.md](../../superpowers/reports/2026-09-11-issue-460-progress-result-audit.md)。
+
+# 2026-09-14 の追加
+
+| 原文 | 内容 |
+| --- | --- |
+| [Issue #456: 候補検証の前処理共有と検証記録](../../superpowers/reports/2026-09-14-issue-456-validation-context-review.md) | 操作回数、release計測、各工程の3回のセルフレビュー。[^issue-456-review] |
+
+[^issue-456-review]: [2026-09-14-issue-456-validation-context-review.md](../../superpowers/reports/2026-09-14-issue-456-validation-context-review.md)。
