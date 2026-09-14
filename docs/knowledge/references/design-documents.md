@@ -5,6 +5,11 @@ description: docs/superpowers/specs内の全Markdownを先頭見出しと出典�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-482-index
+  resource: ../../superpowers/specs/2026-09-14-issue-482-name-history-index-design.md
+  working_tree: untracked
+  sha256: d561460521f12160b3598596dc65d3e3e3898455d9fa93c22b6fdee21ac89f91
+
 - id: issue-479-stream
   resource: ../../superpowers/specs/2026-09-14-issue-479-stream-annotations-design.md
   working_tree: clean
@@ -1233,6 +1238,12 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 [^issue-515]: [Issue515 class directive design](../../superpowers/specs/2026-09-12-issue-515-class-directives-design.md)。
 [^issue-514]: [Issue514 comprehension effect order design](../../superpowers/specs/2026-09-12-issue-514-comprehension-effect-order-design.md)。
 [^issue-516]: [Issue 516: Share active session ownership-tree identities](../../superpowers/specs/2026-09-12-issue-516-session-ownership-identities-design.md)。
+
+# Issue #482 の設計
+
+- [Issue #482: Name history index](../../superpowers/specs/2026-09-14-issue-482-name-history-index-design.md) - 挿入順foldを保持する束縛履歴索引。[^issue-482-index]
+
+[^issue-482-index]: [設計原文](../../superpowers/specs/2026-09-14-issue-482-name-history-index-design.md)。
 
 # Issue #479 の設計
 
