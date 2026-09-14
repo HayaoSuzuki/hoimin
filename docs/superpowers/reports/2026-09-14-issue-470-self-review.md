@@ -34,6 +34,6 @@
 
 ## PR
 
-1. 受け入れ条件とdiff: ASCIIのprefix再走査を疎な索引へ置換し、任意順・Unicode・BOM・共通検証の試験が含まれることを確認した。変更範囲はcoreの位置索引、解析器の利用箇所、試験、設計資料に限られている。
-2. 本文と実ログ: candidate policy 18件、analyzer unit 160件、workspace全体、clippy、OKF検査、release benchmarkの値をコマンド出力と照合する。最初の失敗や未確認OSを成功結果として扱わない。
-3. baseと終了条件: baseを `main`、本文に `Closes #470`、競合可能性として同じprivate contextを変更する#456を記載する。macOS arm64以外のrelease性能は未確認とする。
+1. 受け入れ条件とdiff: PR #524のdiffを再読し、ASCII prefix再走査の置換、任意順・Unicode・BOM・共通検証・overflow・実比較counterが含まれることを確認した。
+2. 本文と実ログ: `gh pr view` でtitle、base `main`、head、`Closes #470`、workspace・clippy・OKF・旧新版release値を実ログと照合した。変更範囲は位置索引、解析器利用、試験、設計資料である。
+3. checksと限定: 公開head `68bfa73` とPR本文更新を確認した。remote check状態とmacOS arm64以外のrelease性能を成功扱いせず、計測を閾値にしていない。
