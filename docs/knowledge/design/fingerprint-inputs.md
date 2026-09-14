@@ -7,10 +7,19 @@ source_revision: 165a2d284a1af92eb02ffd214ba8c0070c2f3808
 sources:
   - id: design
     resource: ../../superpowers/specs/2026-09-14-issue-457-fingerprint-shared-walk-design.md
+    revision: 67b82d65bfa6f4c13b7476531161c1852be50381
+    working_tree: clean
+    sha256: 9f7b93abdbe62ab58d1ca1f4c6bb3f3bbbdd4326956cc1dde9b14d27b4cfc4b7
   - id: implementation
     resource: ../../../crates/hoimin-cli/src/fingerprint_inputs.rs
+    revision: 67b82d65bfa6f4c13b7476531161c1852be50381
+    working_tree: clean
+    sha256: c77fd4122114a522116e130fa0024c339409e528a63ba857dfd444b2ed24e5d5
   - id: tests
     resource: ../../../crates/hoimin-cli/tests/fingerprint_inputs.rs
+    revision: 67b82d65bfa6f4c13b7476531161c1852be50381
+    working_tree: clean
+    sha256: 95ff6b857b2a13f8c22087d66e8437ad8c5cd0e3ce5cb88e58686298cc09f9b2
 ---
 
 # glob解決の契約
