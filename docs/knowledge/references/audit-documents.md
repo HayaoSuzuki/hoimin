@@ -5,6 +5,11 @@ description: docs/auditsとdocs/superpowers/reports内の全Markdownを追跡状
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-490-review
+  resource: ../../superpowers/reports/2026-09-14-issue-490-boundary-contracts-review.md
+  revision: c7ce87f8d4c584c2d8df2dcb9d65348c3dd3a706
+  working_tree: modified
+  sha256: 03cc7e076df1207ade765d1a2ee0160e1efeb3c45678e41d56ef5f5b4067a344
 - id: issue-467-review
   resource: ../../superpowers/reports/2026-09-14-issue-467-jsonl-progress-review.md
   revision: 8b33167a049e3cae0fc05e96ccf2253c660b7023
@@ -667,6 +672,10 @@ sources:
 [^issue-482-merge-review]: [2026-09-14-issue-482-self-review.md](../../superpowers/reports/2026-09-14-issue-482-self-review.md)。
 
 [^issue-467-review]: [2026-09-14-issue-467-jsonl-progress-review.md](../../superpowers/reports/2026-09-14-issue-467-jsonl-progress-review.md)。
+
+- [Issue 490 boundary contracts](../../superpowers/reports/2026-09-14-issue-490-boundary-contracts-review.md)。[^issue-490-review]
+
+[^issue-490-review]: [原文](../../superpowers/reports/2026-09-14-issue-490-boundary-contracts-review.md)。出典版と SHA-256 は frontmatter に記録。
 [^issue-476-report-index]: [Issue #476: symbol diagnostics review](../../superpowers/reports/2026-09-14-issue-476-symbol-diagnostics-review.md).
 
 [^issue-480-report-index]: [Issue #480: source encoding review](../../superpowers/reports/2026-09-14-issue-480-source-encoding-review.md).

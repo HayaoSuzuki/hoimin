@@ -713,6 +713,23 @@ prove how Python loaders resolve imports. The setting covers path-only `.pth`
 regular packages when Python honors PYTHONPATH, not arbitrary editable finders,
 custom loaders, or invocations with `-E`/`-I`.
 
+### Cross-boundary contract replay
+
+`tests/fixtures/boundary-contracts.json` connects six boundaries to exact tests.
+Run `python3 tools/boundary_contracts.py strict --output /tmp/hoimin-boundaries`
+from a worktree with its own Cargo target and prepared `.venv`. Each strict row
+must execute and match; zero-test success, unavailable premises and external
+deadlines cannot count as matches. The runner removes inherited minimal-case
+filters so corpus coverage stays complete.
+
+Run `python3 tools/boundary_contracts.py report --from-results
+/tmp/hoimin-boundaries/strict.json --output /tmp/hoimin-boundaries` as one command
+to retain failures and unexecuted native/preparation cases. Missing strict
+results produce unexecuted rows, not inferred passes. CI runs this after the
+existing Lean proof/sensitivity/freshness gate, then adapter checks, strict
+replay, all-case report and a minimal result-validation witness. Native Linux
+hard controls, Windows PID/fault cases and preparation cancellation remain
+explicit report gaps. See [the worksheet](superpowers/specs/2026-09-14-issue-490-boundary-contracts-design.md).
 ## Python source encoding contract
 
 Use `hoimin_core::decode_python_source` for source bytes that need Python text,
