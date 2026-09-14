@@ -91,15 +91,17 @@ impl JsonReport {
     }
 
     fn write_mutant(&mut self, event: &OutputEvent) -> Result<(), JsonError> {
+        let mut record = Vec::new();
         if self.has_mutants {
-            self.mutants
-                .write_all(b",")
-                .map_err(|source| JsonError::Io {
-                    operation: "write mutant separator",
-                    source,
-                })?;
+            record.push(b',');
         }
-        serde_json::to_writer(&mut self.mutants, event).map_err(JsonError::Serialization)?;
+        serde_json::to_writer(&mut record, event).map_err(JsonError::Serialization)?;
+        self.mutants
+            .write_all(&record)
+            .map_err(|source| JsonError::Io {
+                operation: "write mutant record",
+                source,
+            })?;
         self.has_mutants = true;
         Ok(())
     }
