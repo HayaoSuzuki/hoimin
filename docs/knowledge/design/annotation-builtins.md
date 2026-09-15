@@ -17,19 +17,21 @@ sources:
   sha256: ce8edf8778d99da3bba284c21c859d3c331aeec5455745984988f62e59b2893d
 - id: issue-548-tests
   resource: ../../../crates/hoimin-cli/tests/collection_annotation_builtins.rs
-  revision: f11013542ccd735ab9741b5079c0b39a517df256
-  working_tree: untracked
-  sha256: b86a5a5830d386568f6cded7bfcc47a5e2398d598f8931828ac2e6729eb7c4dc
+  working_tree: modified
+  sha256: 6b9824b1114fde4cb059cc0ebfb1898c03138e49e57aae5eb3e6cfab5bab514e
 - id: issue-548-lean
-  resource: ../../../formal/HoiminOracle/CollectionAnnotationAuditMain.lean
-  revision: f11013542ccd735ab9741b5079c0b39a517df256
-  working_tree: untracked
-  sha256: 156319a1307d4e3876eb23f4ffdb910d04f291de06d27ebb3d519d6b2d3eff3c
+  resource: ../../../formal/HoiminOracle/HoiminOracle/CollectionAnnotationModel.lean
+  working_tree: modified
+  sha256: fa0dba0ccc0b596b346dbf88abd7a671c628db8d5494b000cdb6e650db97c194
 - id: issue-548-report
   resource: ../../superpowers/reports/2026-09-15-issue-548-annotation-builtins-review.md
   revision: f11013542ccd735ab9741b5079c0b39a517df256
   working_tree: untracked
   sha256: 20a2db1609dc6fc42f31a451b1a3a21113cba2d04cebc6847c77e43afd7176a4
+- id: audit-promotion
+  resource: ../../superpowers/reports/2026-09-15-audit-verification-promotion.md
+  working_tree: untracked
+  sha256: 3a3a79631919bc7f2d52b7e73c888345bf12050e7b5a2b198b7b24986b5191b1
 ---
 
 # 対象と契約
@@ -52,14 +54,18 @@ resolver、type parameterのscope、注釈の遅延評価、collection pairを�
 
 注釈位置のscopeを既存の名前解決索引へ記録し、alias valueと型パラメータのbound/defaultにも同じ走査を行う。dictも束縛の追跡対象へ追加した。[^issue-548-implementation]
 
-114件のLean生成fixtureは公開planと一致し、別途42件の注釈位置・alias、48件のalias value・bound/default、抽象型同士の1件を確認した。CPython3.14.7では元入力と保持候補の注釈または遅延値を実際に評価した。元から不正なgeneric concrete sourceの評価エラーは別扱いである。[^issue-548-tests][^issue-548-report]
+初回の114件に監査原文の未収録7件を追加し、121件のLean生成fixtureを公開planと照合した。監査15入力の残る8件は既存fixtureと原文が一致する。[^audit-promotion]
 
-Leanは許可からbuiltinであることを導く性質と、shadowed/unknownの拒否を確認する。fixtureのscopeがモデル前提に対応することは、有限入力の実装比較による証拠である。[^issue-548-lean]
+初回検証では、別途42件の注釈位置・alias、48件のalias value・bound/default、抽象型同士の1件を確認した。CPython3.14.7では元入力と保持候補の注釈または遅延値を実際に評価した。元から不正なgeneric concrete sourceの評価エラーは別扱いである。[^issue-548-tests][^issue-548-report]
+
+Leanは独立したCollectionAnnotationModelで、許可からbuiltinであることを導く性質と、shadowed/unknownの拒否を確認する。fixtureのscopeがモデル前提に対応することは、有限入力の実装比較による証拠である。[^issue-548-lean]
 
 [^issue-548-implementation]: [rust.rs](../../../crates/hoimin-cli/src/analyzer/rust.rs)。
 
 [^issue-548-tests]: [collection_annotation_builtins.rs](../../../crates/hoimin-cli/tests/collection_annotation_builtins.rs)。
 
-[^issue-548-lean]: [CollectionAnnotationAuditMain.lean](../../../formal/HoiminOracle/CollectionAnnotationAuditMain.lean)。
+[^issue-548-lean]: [CollectionAnnotationModel.lean](../../../formal/HoiminOracle/HoiminOracle/CollectionAnnotationModel.lean)。生成は[専用生成器](../../../formal/HoiminOracle/CollectionAnnotationAuditMain.lean)から行う。
 
 [^issue-548-report]: [2026-09-15-issue-548-annotation-builtins-review.md](../../superpowers/reports/2026-09-15-issue-548-annotation-builtins-review.md)。
+
+[^audit-promotion]: [監査コード・ケースの正式な検証への移行](../../superpowers/reports/2026-09-15-audit-verification-promotion.md)。

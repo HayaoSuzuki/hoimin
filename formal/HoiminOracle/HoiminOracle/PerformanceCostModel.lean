@@ -48,4 +48,9 @@ def eagerReplacementBytes (replacementLengths : List Nat) : Nat := replacementLe
 def filteredReplacementBytes (selected : Bool) (lengths : List Nat) : Nat :=
   if selected then lengths.sum else 0
 
+-- Historical defective replay: each loop replays its nested body twice.
+def replayLoopVisits : Nat → Nat
+  | 0 => 1
+  | depth + 1 => 2 * replayLoopVisits depth
+
 end HoiminOracle.PerformanceCost

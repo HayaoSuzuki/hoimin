@@ -55,7 +55,19 @@ def sliceTupleCases : List Case :=
       sites := [{ anchor := "(x[:], 'a:b')", original := "(x[:], 'a:b')", replacement := "[x[:], 'a:b']", eligible := tupleAllowed [.expression, .expression] }] }
   ]
 
-def cases : List Case := sliceTupleCases ++ [
+-- Preserve the archived enumeration order and exact def f / trailing-comma
+-- sources while deriving every expectation from the shared tuple model.
+def auditSliceTupleCases : List Case :=
+  (tupleDomain.map List.reverse).zipIdx.map fun (elements, index) =>
+    let parts := elements.map fun element => if element == .slice then ":" else "1"
+    let interior := String.intercalate ", " parts ++ ","
+    { id := "audit_slice_tuple_" ++ toString index,
+      producer := "ast", position := "subscript", binding := "unshadowed",
+      source := "def f(x):\n    return x[" ++ interior ++ "]\n",
+      operator := "collection_list_tuple",
+      sites := [{ anchor := interior, original := interior, replacement := "[" ++ interior ++ "]", eligible := tupleAllowed elements, broken := if tupleAllowed elements then none else some (brokenTupleAllowed elements), fault := "allow-slice-tuple" }] }
+
+def cases : List Case := sliceTupleCases ++ auditSliceTupleCases ++ [
   { id := "annotation_generic_destination", producer := "annotation", position := "annotation", binding := "generic-destination",
     source := "from typing import Sequence\ndef subject[Sequence](value: list[int]):\n    return value\n", operator := "type_list_sequence",
     sites := [{ anchor := "list[int]", original := "list[int]", replacement := "Sequence[int]", eligible := genericAllowed .destination true, broken := some (brokenGeneric .destination true), fault := "ignore-type-parameter" }] },

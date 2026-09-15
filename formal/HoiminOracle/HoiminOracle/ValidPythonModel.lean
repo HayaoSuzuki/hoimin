@@ -88,6 +88,11 @@ set_option maxHeartbeats 100000 in
 
 theorem direct_slice_blocked : tupleAllowed [.slice] = false := by decide
 
+-- The archive's rejection theorem also covers every tail, beyond tupleDomain.
+theorem slice_is_rejected (elements : List TupleElement) :
+    tupleAllowed (.slice :: elements) = false := by
+  rfl
+
 def replace (source replacement : List Nat) (start length : Nat) : List Nat :=
   CandidateSpan.replaceBytes source {
     path := "subject.py", start, length, original := (source.drop start).take length,

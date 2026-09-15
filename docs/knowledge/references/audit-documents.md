@@ -5,6 +5,62 @@ description: docs/auditsとdocs/superpowers/reports内の全Markdownを追跡状
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: audit-archive-01
+  resource: ../../audits/README.md
+  working_tree: modified
+  sha256: c166e540084903b668789abaefd72e40656200cd8f573b7bce0eee6f804dc5be
+- id: audit-archive-02
+  resource: ../../audits/2026-09-14-additional/README.md
+  working_tree: untracked
+  sha256: dd983964bea7840821b1d394739df065664e196cfc6eed8c927502038906acca
+- id: audit-archive-03
+  resource: ../../audits/2026-09-14-additional/correspondence.md
+  working_tree: untracked
+  sha256: 0b914f0483651e2032d592e5cc891dd5065679f22ddfaa0cabae6a07fcc9f600
+- id: audit-archive-04
+  resource: ../../audits/2026-09-14-additional/issue.md
+  working_tree: untracked
+  sha256: d67426ee6007a1462e500fb1a83e000d773668ed4728b1c36f644aea1f83e99e
+- id: audit-archive-05
+  resource: ../../audits/2026-09-14-followup/README.md
+  working_tree: untracked
+  sha256: dcd21d616d07d195997b0c9cdf2b11e5f38f2298c00c65bb01840b5a71bebf43
+- id: audit-archive-06
+  resource: ../../audits/2026-09-14-post-integration/README.md
+  working_tree: untracked
+  sha256: f163f5ff8fe76fcdf6ae807e6a5ec29b6af6a39ecefce89bc0ed9c1ede8ab6a7
+- id: audit-archive-07
+  resource: ../../audits/2026-09-14-post-integration/correspondence.md
+  working_tree: untracked
+  sha256: 92df03d143cafe57ef6cd11007e632ab0727c90a0e2660b547747e0b2d80e54f
+- id: audit-archive-08
+  resource: ../../audits/2026-09-14-post-integration/issue-flow-clones.md
+  working_tree: untracked
+  sha256: d6fd7bf525708a1b70ab334fd3d5bcf931db1926912261d34ba79e09294c3299
+- id: audit-archive-09
+  resource: ../../audits/2026-09-14-post-integration/issue-implicit-exception.md
+  working_tree: untracked
+  sha256: 757ff122d9cc61e3181e816ae40887042752fe4fa75394abcaef865f4aa63be0
+- id: audit-archive-10
+  resource: ../../audits/2026-09-14-post-integration/issue-loop-cost.md
+  working_tree: untracked
+  sha256: 8befde02562fef69b2bbdc0cb713ce8d721df6b63b5625261dee577dffe5d869
+- id: audit-archive-11
+  resource: ../../audits/2026-09-14-slice-tuples/README.md
+  working_tree: untracked
+  sha256: 8f72f9a1ea886adde140aded91197214bf5f8e42abaf17ce508f1ef2b77d7aaa
+- id: audit-archive-12
+  resource: ../../audits/2026-09-14-slice-tuples/correspondence.md
+  working_tree: untracked
+  sha256: 2c42a589d216c58061350b4116a76a048ed6dba82d365eb1252a20bd86b8f28a
+- id: audit-archive-13
+  resource: ../../audits/2026-09-14-slice-tuples/issue.md
+  working_tree: untracked
+  sha256: fae2d992f89a0932fad9b455582156e5ae5659007d10089fe887d53d20bbc843
+- id: audit-archive-14
+  resource: ../../superpowers/reports/2026-09-15-issues-545-549-integration.md
+  working_tree: untracked
+  sha256: deb7754fbd1acefc841e8d9b076c60da6aa3f34659409998498dc6f5ef86086e
 - id: issue-549-report
   resource: ../../superpowers/reports/2026-09-15-issue-549-slice-tuple.md
   revision: f11013542ccd735ab9741b5079c0b39a517df256
@@ -512,6 +568,10 @@ sources:
   resource: ../../audits/2026-07-rust-codebase/README.md
   revision: a7daea0b557cd435c1e55b540392fbdd116348e1
   working_tree: clean
+- id: audit-promotion
+  resource: ../../superpowers/reports/2026-09-15-audit-verification-promotion.md
+  working_tree: untracked
+  sha256: 3a3a79631919bc7f2d52b7e73c888345bf12050e7b5a2b198b7b24986b5191b1
 ---
 
 # 収録一覧
@@ -816,3 +876,45 @@ sources:
 [^issue-547-review]: [原文](../../superpowers/reports/2026-09-15-issue-547-self-review.md)。
 
 [^issue-546-report]: [Issue #546: ループ転送再利用の自己レビュー](../../superpowers/reports/2026-09-15-issue-546-loop-transfer-review.md)。
+
+# 2026年9月の監査原資料と統合検証
+
+ここに追加した資料は同じ変更でGit管理へ含める。元のログは修正前の対象版に対する観測であり、現在の検証先は[解析監査と回帰検証への反映](../audits/analysis-2026-09.md)を参照する。
+
+| 原文 | 見出し | 参照時点 |
+| --- | --- | --- |
+| [docs/audits/README.md](../../audits/README.md) | 監査資料 [^audit-archive-01] | 未追跡 |
+| [docs/audits/2026-09-14-additional/README.md](../../audits/2026-09-14-additional/README.md) | 追加監査: 型注釈の具体型名の解決 [^audit-archive-02] | 未追跡 |
+| [docs/audits/2026-09-14-additional/correspondence.md](../../audits/2026-09-14-additional/correspondence.md) | モデル化前の対応表 [^audit-archive-03] | 未追跡 |
+| [docs/audits/2026-09-14-additional/issue.md](../../audits/2026-09-14-additional/issue.md) | 確認した問題 [^audit-archive-04] | 未追跡 |
+| [docs/audits/2026-09-14-followup/README.md](../../audits/2026-09-14-followup/README.md) | 追加監査: plan / verify / progress [^audit-archive-05] | 未追跡 |
+| [docs/audits/2026-09-14-post-integration/README.md](../../audits/2026-09-14-post-integration/README.md) | 統合後のLean監査・性能調査 [^audit-archive-06] | 未追跡 |
+| [docs/audits/2026-09-14-post-integration/correspondence.md](../../audits/2026-09-14-post-integration/correspondence.md) | モデル化前の対応表 [^audit-archive-07] | 未追跡 |
+| [docs/audits/2026-09-14-post-integration/issue-flow-clones.md](../../audits/2026-09-14-post-integration/issue-flow-clones.md) | 確認した改善余地 [^audit-archive-08] | 未追跡 |
+| [docs/audits/2026-09-14-post-integration/issue-implicit-exception.md](../../audits/2026-09-14-post-integration/issue-implicit-exception.md) | 確認した問題 [^audit-archive-09] | 未追跡 |
+| [docs/audits/2026-09-14-post-integration/issue-loop-cost.md](../../audits/2026-09-14-post-integration/issue-loop-cost.md) | 確認した問題 [^audit-archive-10] | 未追跡 |
+| [docs/audits/2026-09-14-slice-tuples/README.md](../../audits/2026-09-14-slice-tuples/README.md) | 追加監査: 多次元スライスのtuple-to-list変換 [^audit-archive-11] | 未追跡 |
+| [docs/audits/2026-09-14-slice-tuples/correspondence.md](../../audits/2026-09-14-slice-tuples/correspondence.md) | モデル化前の対応表 [^audit-archive-12] | 未追跡 |
+| [docs/audits/2026-09-14-slice-tuples/issue.md](../../audits/2026-09-14-slice-tuples/issue.md) | 確認した問題 [^audit-archive-13] | 未追跡 |
+| [docs/superpowers/reports/2026-09-15-issues-545-549-integration.md](../../superpowers/reports/2026-09-15-issues-545-549-integration.md) | Issues #545–#549 統合検証（2026-09-15） [^audit-archive-14] | 未追跡 |
+
+[^audit-archive-01]: [監査資料](../../audits/README.md)。
+[^audit-archive-02]: [追加監査: 型注釈の具体型名の解決](../../audits/2026-09-14-additional/README.md)。
+[^audit-archive-03]: [モデル化前の対応表](../../audits/2026-09-14-additional/correspondence.md)。
+[^audit-archive-04]: [確認した問題](../../audits/2026-09-14-additional/issue.md)。
+[^audit-archive-05]: [追加監査: plan / verify / progress](../../audits/2026-09-14-followup/README.md)。
+[^audit-archive-06]: [統合後のLean監査・性能調査](../../audits/2026-09-14-post-integration/README.md)。
+[^audit-archive-07]: [モデル化前の対応表](../../audits/2026-09-14-post-integration/correspondence.md)。
+[^audit-archive-08]: [確認した改善余地](../../audits/2026-09-14-post-integration/issue-flow-clones.md)。
+[^audit-archive-09]: [確認した問題](../../audits/2026-09-14-post-integration/issue-implicit-exception.md)。
+[^audit-archive-10]: [確認した問題](../../audits/2026-09-14-post-integration/issue-loop-cost.md)。
+[^audit-archive-11]: [追加監査: 多次元スライスのtuple-to-list変換](../../audits/2026-09-14-slice-tuples/README.md)。
+[^audit-archive-12]: [モデル化前の対応表](../../audits/2026-09-14-slice-tuples/correspondence.md)。
+[^audit-archive-13]: [確認した問題](../../audits/2026-09-14-slice-tuples/issue.md)。
+[^audit-archive-14]: [Issues #545–#549 統合検証（2026-09-15）](../../superpowers/reports/2026-09-15-issues-545-549-integration.md)。
+
+[^audit-promotion]: [監査コード・ケースの正式な検証への移行](../../superpowers/reports/2026-09-15-audit-verification-promotion.md)。
+
+| 原文 | 内容 | 追跡状態 |
+| --- | --- | --- |
+| [docs/superpowers/reports/2026-09-15-audit-verification-promotion.md](../../superpowers/reports/2026-09-15-audit-verification-promotion.md) | 監査入力・定理・実行検証の正式テストへの移行 [^audit-promotion] | 未追跡 |

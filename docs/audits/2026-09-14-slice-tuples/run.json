@@ -1,0 +1,60 @@
+{
+  "case": {
+    "expected_candidate_count": 0,
+    "id": "slice-tuple-1",
+    "mode": "strict",
+    "source": "def f(x):\n    return x[:,]\n"
+  },
+  "cli_exit": 0,
+  "stderr": "",
+  "baseline_termination": {
+    "Exit": 0
+  },
+  "counts": {
+    "killed": 1,
+    "survived": 0,
+    "timeout": 0,
+    "out_of_memory": 0,
+    "process_limit": 0,
+    "error": 0,
+    "not_run": 0,
+    "inconclusive": 0,
+    "score": 1.0
+  },
+  "complete": true,
+  "mutants": [
+    {
+      "kind": "mutant_finished",
+      "schema_version": 3,
+      "sequence": 4,
+      "run_id": "7dfb071c-3482-41fe-aa39-f1302c858cc6",
+      "candidate": {
+        "id": "m1_7846635d39903249dba569eac1de07878b12a506343470b7220187538587cc8c",
+        "sequence": 1,
+        "path": "subject.py",
+        "span": {
+          "start": 23,
+          "length": 2
+        },
+        "original": ":,",
+        "replacement": "[:,]",
+        "operator": "collection_list_tuple",
+        "line": 2,
+        "column": 13,
+        "symbol": "f",
+        "file_hash": "5b614ae2b91396d8e8f9a25d75ccc2e711b5df8160d27c6003b9f0052947e0cc"
+      },
+      "status": "killed",
+      "termination": {
+        "Exit": 1
+      },
+      "elapsed_ms": 25,
+      "resource_mode": "best_effort",
+      "output": {
+        "token": "45ed4390-4871-401f-be63-f2ac4ecdb962",
+        "retained": 357,
+        "observed": 357
+      }
+    }
+  ]
+}

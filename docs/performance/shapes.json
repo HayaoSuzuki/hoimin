@@ -975,6 +975,38 @@
         "--",
         "--exact"
       ]
+    },
+    {
+      "id": "audit-promoted-546",
+      "status": "active",
+      "metric": "operations",
+      "related_issue": 546,
+      "scope": "Archived for-loop sources at depths 18/19/20, selected/unselected type operator; zero candidates and no truncation; selected leaves<=depth+1 and statements<=triangular bound, unselected zero.",
+      "args": [
+        "test",
+        "-p",
+        "hoimin-cli",
+        "--lib",
+        "analyzer::rust::nested_loop_transfer_tests::archived_audit_nested_loops_bound_visits",
+        "--",
+        "--exact"
+      ]
+    },
+    {
+      "id": "audit-promoted-547",
+      "status": "active",
+      "metric": "operations",
+      "related_issue": 547,
+      "scope": "Archived N aliases plus N int annotations at 512/1024/2048, selected/unselected type operator; zero candidates, selected clone calls <= 1 and entries<=N, unselected zero.",
+      "args": [
+        "test",
+        "-p",
+        "hoimin-cli",
+        "--lib",
+        "analyzer::rust::nested_loop_transfer_tests::archived_audit_import_annotations_bound_clone_cost",
+        "--",
+        "--exact"
+      ]
     }
   ],
   "lean": {

@@ -83,3 +83,6 @@ import HoiminOracle.CleanupCapabilityCases
 
 import HoiminOracle.PerformanceCostCases
 import HoiminOracle.ValidPythonModel
+
+import HoiminOracle.ImplicitFinallyModel
+import HoiminOracle.CollectionAnnotationModel

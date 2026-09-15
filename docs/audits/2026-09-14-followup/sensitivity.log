@@ -1,0 +1,7 @@
+regression_precedence_detected=true
+indeterminate_reset_detected=true
+unusable_reset_detected=true
+patience_boundary_detected=true
+matching_id_join_detected=true
+duplicate_content_detected=true
+inconclusive_exclusion_detected=true

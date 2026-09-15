@@ -38,3 +38,5 @@ okf_version: "0.2"
 - [境界をまたぐ契約 fixture](audits/boundary-contracts.md) - strict 実行、全件報告と未検証条件。
 
 - [コレクション型注釈の参照先](design/annotation-builtins.md) - 具体型の両方向、遅延評価とscopeの判定。
+
+- [2026年9月の解析監査と回帰検証への反映](audits/analysis-2026-09.md) - #545〜#549の原証拠、修正PR、正式なテストの対応。

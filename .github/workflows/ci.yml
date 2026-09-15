@@ -245,12 +245,14 @@ jobs:
             HoiminOracle.MultipleHandlerJoinCases
             HoiminOracle.NestedMatchExitCases
             NestedTryFlowAuditMain
+            HoiminOracle.ImplicitFinallyModel
             ImplicitFinallyAuditMain
             ExceptStarFlowAuditMain
             HoiminOracle.PerformanceCostModel
             HoiminOracle.PerformanceCostProofs
             HoiminOracle.PerformanceCostCases
             PerformanceCostAuditMain
+            HoiminOracle.CollectionAnnotationModel
             CollectionAnnotationAuditMain
             HoiminOracle.ValidPythonModel
             ValidPythonAuditMain

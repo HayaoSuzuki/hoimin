@@ -1,20 +1,7 @@
+import HoiminOracle.CollectionAnnotationModel
 import Lean
 
 namespace CollectionAnnotation
-
-inductive Provenance where
-  | builtin | shadowed | unknown
-  deriving DecidableEq, Repr
-
-def allowed (p : Provenance) : Bool := p == .builtin
-
-theorem allowed_iff_builtin (p : Provenance) : allowed p = true ↔ p = .builtin := by
-  cases p <;> simp [allowed]
-
--- A spelling-only gate is detected for both non-builtin states.
-def brokenAllowed (_ : Provenance) : Bool := true
-example : allowed .shadowed = false ∧ brokenAllowed .shadowed = true := by decide
-example : allowed .unknown = false ∧ brokenAllowed .unknown = true := by decide
 
 structure Pair where
   concrete : String
@@ -56,8 +43,7 @@ def scenarios : List Scenario := [
   ⟨"generic-function", .shadowed, fun n a => s!"def record[{n}](value: {a}):\n    pass\n", "record", true⟩,
   ⟨"generic-class", .shadowed, fun n a => s!"class Box[{n}]:\n    def record(value: {a}):\n        pass\n", "Box.record", true⟩]
 
-def corpus : String := String.join <| pairs.flatMap fun p => scenarios.flatMap fun s =>
-  [false, true].map fun reverse =>
+def renderCase (p : Pair) (s : Scenario) (reverse : Bool) : String :=
     let original := s!"{if reverse then p.abstract else p.concrete}[{p.args}]"
     let replacement := s!"{if reverse then p.concrete else p.abstract}[{p.args}]"
     let row := Lean.Json.mkObj [
@@ -71,6 +57,29 @@ def corpus : String := String.join <| pairs.flatMap fun p => scenarios.flatMap f
       ("present", Lean.toJson <| allowed s.provenance),
       ("evaluation_error", Lean.toJson <| s.generic && !reverse)]
     row.compress ++ "\n"
+
+-- Exact sources from the additional audit that are absent from the original
+-- 114-case matrix: frozenset shadowing and dict[str, int] argument order.
+def auditCases : List (Pair × Scenario × Bool) :=
+  let setPair : Pair := ⟨"set", "AbstractSet", "int", "type_set_abstract_set"⟩
+  let dictPair : Pair := ⟨"dict", "Mapping", "str, int", "type_dict_mapping"⟩
+  let control : Scenario :=
+    ⟨"audit-control", .builtin, fun _ a => s!"def record(value: {a}):\n    pass\n", "record", false⟩
+  let moduleShadow (custom : String) : Scenario :=
+    ⟨"audit-module-shadow", .shadowed,
+      fun n a => s!"{n} = {custom}\ndef record(value: {a}):\n    pass\n", "record", false⟩
+  let typeParameter : Scenario :=
+    ⟨"audit-type-parameter", .shadowed,
+      fun n a => s!"def record[{n}](value: {a}):\n    pass\n", "record", true⟩
+  [false, true].map (fun reverse => (setPair, moduleShadow "frozenset", reverse)) ++
+  [false, true].map (fun reverse => (dictPair, control, reverse)) ++
+  [false, true].map (fun reverse => (dictPair, moduleShadow "tuple", reverse)) ++
+  [(dictPair, typeParameter, true)]
+
+def corpus : String := String.join <|
+  (pairs.flatMap fun p => scenarios.flatMap fun s =>
+    [false, true].map (renderCase p s)) ++
+  (auditCases.map fun (p, s, reverse) => renderCase p s reverse)
 
 end CollectionAnnotation
 
