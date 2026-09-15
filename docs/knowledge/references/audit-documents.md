@@ -5,6 +5,18 @@ description: docs/auditsとdocs/superpowers/reports内の全Markdownを追跡状
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-549-report
+  resource: ../../superpowers/reports/2026-09-15-issue-549-slice-tuple.md
+  revision: f11013542ccd735ab9741b5079c0b39a517df256
+  working_tree: untracked
+  sha256: 80f6a99dabfdbe084de6cba0e211e55b4033bf7449c5dd344ab922358c1fac6b
+
+- id: issue-548-report
+  resource: ../../superpowers/reports/2026-09-15-issue-548-annotation-builtins-review.md
+  revision: f11013542ccd735ab9741b5079c0b39a517df256
+  working_tree: untracked
+  sha256: 20a2db1609dc6fc42f31a451b1a3a21113cba2d04cebc6847c77e43afd7176a4
+
 - id: issue-545
   resource: ../../superpowers/reports/2026-09-15-issue-545-implicit-finally-review.md
   revision: f11013542ccd735ab9741b5079c0b39a517df256
@@ -499,6 +511,8 @@ sources:
 
 | 原文 | 先頭見出し | 作成時の状態 |
 | --- | --- | --- |
+| [2026-09-15-issue-549-slice-tuple.md](../../superpowers/reports/2026-09-15-issue-549-slice-tuple.md) | Issue #549: Slice tuple修正の検証 [^issue-549-report] | 未追跡（参照時点） |
+
 | [2026-09-15-issue-545-implicit-finally-review.md](../../superpowers/reports/2026-09-15-issue-545-implicit-finally-review.md) | Issue #545: 暗黙例外と finally の検証記録 [^issue-545] | 追跡済み |
 | [2026-09-14-issue-491-rust-cost-review.md](../../superpowers/reports/2026-09-14-issue-491-rust-cost-review.md) | Issue #491 Rust cost adapter and workspace preflight peak review [^issue-491-rust-cost-review] | 未追跡（参照時点） |
 | [2026-09-14-issue-491-input-axis-review.md](../../superpowers/reports/2026-09-14-issue-491-input-axis-review.md) | Issue491 input-axis expansion review [^issue-491-input-axis-review] | 未追跡（参照時点） |
@@ -768,5 +782,16 @@ sources:
 [^issue-476-report-index]: [Issue #476: symbol diagnostics review](../../superpowers/reports/2026-09-14-issue-476-symbol-diagnostics-review.md).
 
 [^issue-480-report-index]: [Issue #480: source encoding review](../../superpowers/reports/2026-09-14-issue-480-source-encoding-review.md).
+
+
+[^issue-549-report]: [Issue #549: Slice tuple修正の検証](../../superpowers/reports/2026-09-15-issue-549-slice-tuple.md)。
+
+# Issue #548
+
+| 原文の先頭見出し | 原文 |
+| --- | --- |
+| Issue #548: Annotation builtin review and correspondence | [報告](../../superpowers/reports/2026-09-15-issue-548-annotation-builtins-review.md) [^issue-548-report] |
+
+[^issue-548-report]: [Issue #548: Annotation builtin review and correspondence](../../superpowers/reports/2026-09-15-issue-548-annotation-builtins-review.md)。
 
 [^issue-545]: [Issue #545: 暗黙例外と finally の検証記録](../../superpowers/reports/2026-09-15-issue-545-implicit-finally-review.md)。

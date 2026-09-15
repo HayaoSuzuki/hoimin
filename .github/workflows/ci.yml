@@ -251,6 +251,7 @@ jobs:
             HoiminOracle.PerformanceCostProofs
             HoiminOracle.PerformanceCostCases
             PerformanceCostAuditMain
+            CollectionAnnotationAuditMain
             HoiminOracle.ValidPythonModel
             ValidPythonAuditMain
             HoiminOracle
@@ -297,6 +298,8 @@ jobs:
             'generate_comprehension_bindings|corpus/comprehension-bindings.jsonl|sensitivity'
             'generate_performance_cost|corpus/performance-cost.jsonl|sensitivity'
             'generate_valid_python|corpus/valid-python.jsonl|sensitivity'
+            'generate_collection_annotation|corpus/collection-annotation.jsonl|sensitivity'
+
             'generate_implicit_finally|corpus/implicit-finally.jsonl|sensitivity'
           )
           for entry in "${generators[@]}"; do
