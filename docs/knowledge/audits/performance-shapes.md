@@ -5,6 +5,14 @@ description: 決定的な回帰ゲートとrelease計測、未統合の依存、
 status: draft
 catalog_revision: 165a2d284a1af92eb02ffd214ba8c0070c2f3808
 sources:
+- id: issue-546-report
+  resource: ../../superpowers/reports/2026-09-15-issue-546-loop-transfer-review.md
+  working_tree: untracked
+  sha256: 547a626c92a728919ae45f41b950383e7ce305379d2cd523d5405dc1c4ef4e4f
+- id: issue-546-design
+  resource: ../../superpowers/specs/2026-09-15-issue-546-loop-transfer-design.md
+  working_tree: untracked
+  sha256: 13f80e2b6ea3088347ac6f7d5515f0973abdb745fc85ae2453cfaf9f6c0d4c66
 - id: expanded-measurement
   resource: ../../performance/2026-09-14-issue-491-expanded-measurement.json
   working_tree: untracked
@@ -36,14 +44,14 @@ sources:
   sha256: e11e40961e7b00a5e7781f87b0bec36123798830da6d9ebc3e2731a64cd62fce
 - id: guide
   resource: ../../performance/README.md
+  revision: f11013542ccd735ab9741b5079c0b39a517df256
   working_tree: modified
-  revision: f14aa1b34ec6d166882e720661aee0fceb3543ee
-  sha256: 6b53ad8f5bb11e7fd83d94abf15b8490b2b77341d3f9cdfaafa05429ce2baa80
+  sha256: 2db0a12e4fac5d16c997f7e8d95e5969c0c807e645ee3fb104e24a1bda2619ce
 - id: registry
   resource: ../../performance/shapes.json
+  revision: f11013542ccd735ab9741b5079c0b39a517df256
   working_tree: modified
-  revision: f14aa1b34ec6d166882e720661aee0fceb3543ee
-  sha256: 128a6cfce3b1d25081a86018903086b6c3282ee5b11612b71f47616168c66525
+  sha256: a9600c5867eee69e0ec505e80c611c9646960e129166714c8827281fa8b26fb4
 - id: design
   resource: ../../superpowers/specs/2026-09-14-issue-491-performance-shapes-design.md
   working_tree: modified
@@ -104,3 +112,12 @@ release laneは対象ファイル・selector、fingerprint files/bytes、Unicode
 
 
 progressの通常ゲートは1reportの内容500/1,000/2,000件と履歴2/4/8を独立に増やし、実際のserialized bytesを記録する。元の2,000件×16履歴も保持し、各reportサイズで履歴2からの追加peakを512KiB以下に制限する。候補対応数・score・停滞判断を同時に検査し、実際に全履歴のparsed reportを保持する対照は同じ上界を超えた。このallocator検証は29形状・522回のrelease実測とは別の結果である。[^cost-review][^registry]
+
+# 制御フローの入れ子と再解析（Issue #546）
+
+制御フローの再解析をASTの幅・式の深さと別の入力軸として登録する。新しいexact gateは、module/class内の空のimport状態のfor/whileを深さ1、2、4、8、16、20で生成し、実際のstatement訪問数とannotation statement訪問数を数える。型演算子選択時はそれぞれ三角数、d+1を上限とし、未選択時は両方0とする。候補0、診断なし、truncated=falseも同時に確認する。[^issue-546-design][^registry]
+
+旧再走査を実際に有効にする対照は、深さ8で同じ上限を超える必要がある。状態の変わるloop、class fallback、finally、callback観測は別の意味比較で確認する。class fallbackが変化した評価とテストprojectionでは再利用を無効にするため、全制御フローに同じ上界があるとは扱わない。今回の実行結果と自己レビューは専用の報告に記録する。[^issue-546-report]
+
+[^issue-546-design]: [入れ子ループの転送結果の再利用](../../superpowers/specs/2026-09-15-issue-546-loop-transfer-design.md)。
+[^issue-546-report]: [ループ転送再利用の自己レビュー](../../superpowers/reports/2026-09-15-issue-546-loop-transfer-review.md)。

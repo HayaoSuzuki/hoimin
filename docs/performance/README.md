@@ -58,3 +58,24 @@ preflightのallocator peakはmanifest entriesに加え、既存hasherの最大1�
 
 
 progressのallocatorゲートは同じ関数名のまま、1reportの内容500/1,000/2,000件と履歴2/4/8を独立に増やす。元の2,000件×16履歴も保持する。実際のreport bytesを記録し、各reportサイズで履歴2に対する追加peakを512KiB以下に制限する。全入力が利用可能で、候補対応数、score、差分、停滞判断が正しいことを同時に検査する。実際に全履歴のparsed reportを保持する対照は同じ上界を超える。この通常ゲートの追加確認を522回のrelease実測に含めない。
+
+## Nested control-flow reanalysis (Issue #546)
+
+The `control-flow-reanalysis-*` exact Rust gates measure a separate input axis:
+loop nesting with empty imports, not expression depth or AST width. They count
+actual `visit_statement_flow` calls and actual annotation-statement visits at
+depths 1, 2, 4, 8, 16, and 20, for both for and while in module and class scope. With the type operator
+selected, the bounds are `(d+1)(d+2)/2` total statements and `d+1` annotation
+visits (add one total statement for the class definition). The unselected control must perform zero annotation-flow visits, with
+zero candidates and no truncation. A second gate re-enables the old replay at
+depth 8 and requires it to exceed the same bound without changing candidates.
+
+Only the stable final transfer from the current fixed-point invocation is
+reused; no map of cached import snapshots is retained. Annotation recording,
+a changed class fallback, and test projections keep their full traversal.
+A fallback snapshot is kept only during each active class-loop evaluation,
+then discarded; retention depends on fallback size and active nesting depth. These gates
+do not establish a quadratic bound for changing import states, class scopes,
+or arbitrary finally paths; elapsed time and RSS are not pass/fail metrics.
+See the [design](../superpowers/specs/2026-09-15-issue-546-loop-transfer-design.md)
+and [review](../superpowers/reports/2026-09-15-issue-546-loop-transfer-review.md).

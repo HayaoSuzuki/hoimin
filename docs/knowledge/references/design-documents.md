@@ -26,6 +26,11 @@ sources:
   resource: ../../superpowers/specs/2026-09-15-issue-547-import-transfer-design.md
   working_tree: untracked
   sha256: 3fa1b369ff21d00b335d91fb0c83b18b61f54fcd45747ef07ee5386cae273ae8
+
+- id: issue-546-design
+  resource: ../../superpowers/specs/2026-09-15-issue-546-loop-transfer-design.md
+  working_tree: untracked
+  sha256: 13f80e2b6ea3088347ac6f7d5515f0973abdb745fc85ae2453cfaf9f6c0d4c66
 - id: issue-491-operation-cost-design
   resource: ../../superpowers/specs/2026-09-14-issue-491-operation-cost-design.md
   working_tree: untracked
@@ -893,6 +898,8 @@ sources:
 | [2026-09-15-issue-549-slice-tuple-design.md](../../superpowers/specs/2026-09-15-issue-549-slice-tuple-design.md) | Issue #549: Sliceを含むtupleの候補除外 [^issue-549-design] | 未追跡（参照時点） |
 
 | [2026-09-15-issue-545-implicit-finally-design.md](../../superpowers/specs/2026-09-15-issue-545-implicit-finally-design.md) | Issue #545: 暗黙例外の finally 入口 [^issue-545] | 追跡済み |
+
+| [2026-09-15-issue-546-loop-transfer-design.md](../../superpowers/specs/2026-09-15-issue-546-loop-transfer-design.md) | Issue #546: 入れ子ループの転送結果の再利用 [^issue-546-design] | 未追跡（参照時点） |
 | [2026-09-14-issue-491-operation-cost-design.md](../../superpowers/specs/2026-09-14-issue-491-operation-cost-design.md) | Issue #491: Operation costs and missing input dimensions [^issue-491-operation-cost-design] | 未追跡（参照時点） |
 | [2026-09-14-issue-489-valid-python-corpus-design.md](../../superpowers/specs/2026-09-14-issue-489-valid-python-corpus-design.md) | Issue #489: Valid Python candidate contract corpus [^issue-489-specs] | 未追跡（参照時点） |
 | [2026-09-14-issue-471-negative-neighbors-design.md](../../superpowers/specs/2026-09-14-issue-471-negative-neighbors-design.md) | Issue #471: Negative index and slice neighbors [^issue-471-specs] | 未追跡（参照時点） |
@@ -1402,3 +1409,5 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 - [2026-09-15-issue-547-import-transfer-design](../../superpowers/specs/2026-09-15-issue-547-import-transfer-design.md) — 単一路のimport状態の受渡し。[^issue-547-design]
 
 [^issue-547-design]: [原文](../../superpowers/specs/2026-09-15-issue-547-import-transfer-design.md)。
+
+[^issue-546-design]: [Issue #546: 入れ子ループの転送結果の再利用](../../superpowers/specs/2026-09-15-issue-546-loop-transfer-design.md)。

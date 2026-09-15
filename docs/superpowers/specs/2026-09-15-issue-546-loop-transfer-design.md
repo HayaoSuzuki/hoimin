@@ -1,0 +1,29 @@
+# Issue #546: 入れ子ループの転送結果の再利用
+
+## 問題と対象
+
+基準版は `f11013542ccd735ab9741b5079c0b39a517df256`。型注釈解析では、各ループで固定点を求めた後に本体をもう一度走査する。注釈を記録しない内側の解析にもこの二重走査があり、空のimport状態で深さdの末端を2^d回訪問する。
+
+## 採用する変更
+
+固定点計算は収束したheadと最後の本体のControlFlowExitsを返す。注釈記録が無効で、最後の本体評価の前後でclass_body_fallbackが等しく、テスト用の観測・変異もないときだけ、その本体結果を再利用する。再利用は同一呼出しの最後の評価に限り、別の入力状態・AST・scopeへ持ち越さない。annotation callbackを呼ぶ本走査は省略しない。
+
+class_body_fallbackは、関数定義によってimports以外の可変状態として更新されることがある。各本体評価の直前のfallbackと直後のfallbackを比較し、変化した場合は従来の再走査を維持する。snapshotはその評価が終わると破棄する。marker、handler、tryのprojectionと意図的な変異は観測の呼出し回数や順序に依存するため、同じく従来の走査を維持する。
+
+head更新には従来と同じinitial、fallthrough、continueの共通部分を使う。forの次反復ではtargetを無効にする。break、terminateはback-edgeに含めず、本体の終了結果として保持する。elseとfinallyの経路合流は変更しない。収束時の結果を再利用するので、異なるincoming importsを鍵にしたキャッシュは不要である。
+
+## 選ばなかった方式
+
+ASTとimportsを鍵にしたメモ化は再訪問を減らせるが、class fallbackや観測を鍵・副作用として扱う必要があり、状態snapshotの保持量も増える。今回は採用しない。注釈記録の無効化だけでは再走査を止められず、問題が残る。
+
+## 計測と受け入れ条件
+
+visit_statement_flowの実呼出しとAnnAssignの実呼出しをtest-only counterで数える。moduleとclassの空状態のfor/whileを深さ1、2、4、8、16、20で増やし、選択時の末端訪問をd+1以下、全文訪問を(d+1)(d+2)/2以下とする。classの場合はclass文の1訪問を加える。type_list_sequence未選択では両方0、候補0、truncated=falseを検査する。単純ループについての二次上界であり、任意の状態変化・class・finallyを含む全入力の二次上界ではない。
+
+importが変化するback-edge、continue、break、finally、for target、関数とclass fallbackについて、最適化の有無でcallbackのannotation範囲・symbol・importsと最終exitが一致することを検査する。既存Lean adapterは実行するが、新しい形式証明を追加したとは扱わない。
+
+## 保持量と限界
+
+結果は現在の固定点評価の所有値として返し、visit_loop内で消費する。AST全体のcacheやannotation snapshotの一覧は追加しない。追加のfallback snapshotはclass内の実行中のloop評価につき1個で、保持量はその時点のfallbackサイズと再帰深さに依存する。全入力に対する定数メモリを主張しない。fallbackが実際に変化する評価とprojection付き走査では従来の再走査を維持する。入力状態が変わり続ける場合の反復回数も減らさない。
+
+性能台帳には幅・式の深さと別に制御フローの再解析ゲートを追加する。時間やRSSのしきい値で合否を決めない。設計・回帰結果はOKFのanalyzerとperformance-shapes、原文一覧から参照する。

@@ -23,10 +23,16 @@ sources:
   working_tree: untracked
   sha256: 1f24068440027fb9084264b25b9f9294421da130d4e939ea2532bc4e47099c60
 
+
 - id: issue-547-review
   resource: ../../superpowers/reports/2026-09-15-issue-547-self-review.md
   working_tree: untracked
   sha256: a4dd80f0c8d7e2c01271363db1b22a1e7fec5e59d8ce74d1da0df2c11b340934
+
+- id: issue-546-report
+  resource: ../../superpowers/reports/2026-09-15-issue-546-loop-transfer-review.md
+  working_tree: untracked
+  sha256: 547a626c92a728919ae45f41b950383e7ce305379d2cd523d5405dc1c4ef4e4f
 - id: issue-491-rust-cost-review
   resource: ../../superpowers/reports/2026-09-14-issue-491-rust-cost-review.md
   working_tree: untracked
@@ -519,6 +525,8 @@ sources:
 | [2026-09-15-issue-549-slice-tuple.md](../../superpowers/reports/2026-09-15-issue-549-slice-tuple.md) | Issue #549: Slice tuple修正の検証 [^issue-549-report] | 未追跡（参照時点） |
 
 | [2026-09-15-issue-545-implicit-finally-review.md](../../superpowers/reports/2026-09-15-issue-545-implicit-finally-review.md) | Issue #545: 暗黙例外と finally の検証記録 [^issue-545] | 追跡済み |
+
+| [2026-09-15-issue-546-loop-transfer-review.md](../../superpowers/reports/2026-09-15-issue-546-loop-transfer-review.md) | Issue #546: ループ転送再利用の自己レビュー [^issue-546-report] | 未追跡（参照時点） |
 | [2026-09-14-issue-491-rust-cost-review.md](../../superpowers/reports/2026-09-14-issue-491-rust-cost-review.md) | Issue #491 Rust cost adapter and workspace preflight peak review [^issue-491-rust-cost-review] | 未追跡（参照時点） |
 | [2026-09-14-issue-491-input-axis-review.md](../../superpowers/reports/2026-09-14-issue-491-input-axis-review.md) | Issue491 input-axis expansion review [^issue-491-input-axis-review] | 未追跡（参照時点） |
 | [2026-09-14-issue-491-cost-correspondence-worksheet.md](../../superpowers/reports/2026-09-14-issue-491-cost-correspondence-worksheet.md) | Issue #491: Cost correspondence worksheet [^issue-491-cost-correspondence-worksheet] | 未追跡（参照時点） |
@@ -806,3 +814,5 @@ sources:
 - [2026-09-15-issue-547-self-review](../../superpowers/reports/2026-09-15-issue-547-self-review.md) — 単一路のimport状態の受渡し。[^issue-547-review]
 
 [^issue-547-review]: [原文](../../superpowers/reports/2026-09-15-issue-547-self-review.md)。
+
+[^issue-546-report]: [Issue #546: ループ転送再利用の自己レビュー](../../superpowers/reports/2026-09-15-issue-546-loop-transfer-review.md)。
