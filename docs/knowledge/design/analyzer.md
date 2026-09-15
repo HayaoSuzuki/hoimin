@@ -5,6 +5,16 @@ description: 構文・名前解決・変更するバイト範囲・候補保持�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-549-report
+  resource: ../../superpowers/reports/2026-09-15-issue-549-slice-tuple.md
+  revision: f11013542ccd735ab9741b5079c0b39a517df256
+  working_tree: untracked
+  sha256: 80f6a99dabfdbe084de6cba0e211e55b4033bf7449c5dd344ab922358c1fac6b
+- id: issue-549
+  resource: ../../superpowers/specs/2026-09-15-issue-549-slice-tuple-design.md
+  revision: f11013542ccd735ab9741b5079c0b39a517df256
+  working_tree: untracked
+  sha256: 1e0e66ee142ae6e8e71019b67d4901bcc640797781ed8e8d3878cbe2e64460bf
 - id: issue-489
   resource: ../../superpowers/specs/2026-09-14-issue-489-valid-python-corpus-design.md
   working_tree: untracked
@@ -309,3 +319,13 @@ UTF-8とASCIIは入力を借用するが、Latin-1のテキストと索引のメ
 [^issue-480-tests]: [source_encoding.rs](../../../crates/hoimin-cli/tests/source_encoding.rs).
 
 [^issue-480-report]: [2026-09-14-issue-480-source-encoding-review.md](../../superpowers/reports/2026-09-14-issue-480-source-encoding-review.md).
+
+# Sliceを含むtupleの適格条件（Issue #549）
+
+collection_list_tupleのtupleからlistへの変換は、直接の要素にSliceがある場合は生成しない。Sliceは `x[:,]` などの添字では有効だが、colonをlist要素へ移せない。通常の式tupleとstarredを維持し、Sliceのstart/stop/stepの子探索も続ける。これは候補生成時の条件であり、生成済みの不正候補を実行結果から除く処理ではない。[^issue-549]
+
+[^issue-549]: [Issue #549: Sliceを含むtupleの候補除外](../../superpowers/specs/2026-09-15-issue-549-slice-tuple-design.md)。
+
+有限モデルの14入力と11反例、公開plan/CPythonの照合、import-only runの修正前後を[検証報告](../../superpowers/reports/2026-09-15-issue-549-slice-tuple.md)に分けて記録する。[^issue-549-report]
+
+[^issue-549-report]: [Issue #549: Slice tuple修正の検証](../../superpowers/reports/2026-09-15-issue-549-slice-tuple.md)。
