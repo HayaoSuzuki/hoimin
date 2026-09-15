@@ -1051,6 +1051,69 @@ impl NameResolutionIndex {
         }
     }
 
+    fn annotation_resolution(&self, offset: usize, name: &str) -> NameResolution {
+        self.occurrences
+            .get(&offset)
+            .map_or(NameResolution::Unknown, |site| {
+                self.resolve_annotation_scope(site.scope, name, true)
+            })
+    }
+
+    fn resolve_annotation_scope(
+        &self,
+        scope_id: ScopeId,
+        name: &str,
+        direct: bool,
+    ) -> NameResolution {
+        let scope = &self.scopes[scope_id.0];
+        let parent = |direct| {
+            scope
+                .parent
+                .map_or(NameResolution::DefinitelyBuiltin, |parent| {
+                    self.resolve_annotation_scope(parent, name, direct)
+                })
+        };
+        // Ordinary lexical descendants skip class namespaces and directives.
+        if scope.kind == NameScopeKind::Class && !direct {
+            return parent(false);
+        }
+        if scope.kind != NameScopeKind::Module && scope.globals.contains(name) {
+            return self.resolve_module(name);
+        }
+        if scope.nonlocals.contains(name) {
+            return self.resolve_nonlocal(scope.parent, name);
+        }
+        match scope.kind {
+            NameScopeKind::Module | NameScopeKind::Class => {
+                // Python 3.14 annotations can be evaluated after the entire suite.
+                // A later or conditional binding therefore prevents builtin proof.
+                if scope.wildcard || scope.possible_bindings.contains(name) {
+                    NameResolution::Unknown
+                } else {
+                    parent(false)
+                }
+            }
+            NameScopeKind::Function | NameScopeKind::Comprehension { .. } => {
+                if scope.locals.contains(name) {
+                    NameResolution::Shadowed
+                } else if scope.wildcard {
+                    NameResolution::Unknown
+                } else {
+                    parent(false)
+                }
+            }
+            NameScopeKind::TypeParameters => {
+                if scope.locals.contains(name) {
+                    NameResolution::Shadowed
+                } else {
+                    // Declaration annotations retain access to the enclosing class;
+                    // a function body that captures type parameters does not.
+                    parent(direct)
+                }
+            }
+        }
+    }
+
     fn resolve_scope(
         &self,
         scope_id: ScopeId,
@@ -1255,7 +1318,9 @@ impl NameResolutionBuilder {
             self.add_local(scope, name);
         }
         self.in_scope(scope, |this| {
-            this.visit_type_params(parameters);
+            visit_type_param_expressions(parameters, |expression| {
+                this.visit_annotation(expression);
+            });
             visit(this);
         });
     }
@@ -1567,6 +1632,13 @@ impl NameResolutionBuilder {
 }
 
 impl<'ast> Visitor<'ast> for NameResolutionBuilder {
+    fn visit_annotation(&mut self, annotation: &'ast Expr) {
+        // Abstract bases such as Sequence are not runtime builtin occurrences,
+        // but their replacements still need the scope at this annotation site.
+        self.record_resolution_site(usize::from(annotation.range().start()), false);
+        self.visit_expr(annotation);
+    }
+
     #[expect(
         clippy::too_many_lines,
         reason = "the exhaustive statement-binding pass keeps evaluation order and scope entry visible in one match"
@@ -1632,7 +1704,13 @@ impl<'ast> Visitor<'ast> for NameResolutionBuilder {
             }
             Stmt::AugAssign(assign) => self.record_target(&assign.target, end),
             Stmt::AnnAssign(assign) => self.record_target(&assign.target, end),
-            Stmt::TypeAlias(alias) => self.record_target(&alias.name, end),
+            Stmt::TypeAlias(alias) => {
+                self.record_target(&alias.name, end);
+                self.in_type_parameters(alias.type_params.as_deref(), |this| {
+                    this.visit_annotation(&alias.value);
+                });
+                return;
+            }
             Stmt::Delete(delete) => {
                 let mut names = Vec::new();
                 for target in &delete.targets {
@@ -2224,6 +2302,7 @@ const MUTABLE_BUILTINS: &[&str] = &[
     "any",
     "all",
     "list",
+    "dict",
     "tuple",
     "set",
     "frozenset",
@@ -5839,7 +5918,7 @@ fn annotation_replacements(
             MutationOperator::TypeNullableAdd,
         ));
     }
-    replacements.extend(collection_replacements(annotation, source, imports));
+    replacements.extend(collection_replacements(annotation, source, facts, imports));
     replacements
 }
 
@@ -6008,6 +6087,7 @@ fn contains_disallowed_annotation(annotation: &Expr, imports: &KnownImports) -> 
 fn collection_replacements(
     annotation: &Expr,
     source: &str,
+    facts: &AstFacts<'_>,
     imports: &KnownImports,
 ) -> Vec<(String, MutationOperator)> {
     let Expr::Subscript(subscript) = annotation else {
@@ -6015,6 +6095,12 @@ fn collection_replacements(
     };
     let Some(resolved) = imports.resolved_name(subscript.value.as_ref()) else {
         return Vec::new();
+    };
+    let builtin = |name| {
+        facts
+            .name_resolution
+            .annotation_resolution(usize::from(annotation.range().start()), name)
+            == NameResolution::DefinitelyBuiltin
     };
     let base = expression_source(subscript.value.as_ref(), source);
     let replacement = |name: String, operator| {
@@ -6024,15 +6110,18 @@ fn collection_replacements(
         )
     };
     match resolved.as_str() {
-        "list" => imports
+        "list" if builtin("list") => imports
             .spelling_for(&base, &["typing.Sequence", "collections.abc.Sequence"])
             .map(|name| vec![replacement(name, MutationOperator::TypeListSequence)])
             .unwrap_or_default(),
         "typing.Sequence" | "collections.abc.Sequence" => {
-            let mut replacements = vec![replacement(
-                "list".to_owned(),
-                MutationOperator::TypeListSequence,
-            )];
+            let mut replacements = Vec::new();
+            if builtin("list") {
+                replacements.push(replacement(
+                    "list".to_owned(),
+                    MutationOperator::TypeListSequence,
+                ));
+            }
             if let Some(name) =
                 imports.spelling_for(&base, &["typing.Iterable", "collections.abc.Iterable"])
             {
@@ -6040,22 +6129,24 @@ fn collection_replacements(
             }
             replacements
         }
-        "set" => imports
+        "set" if builtin("set") => imports
             .spelling_for(
                 &base,
                 &["typing.AbstractSet", "collections.abc.AbstractSet"],
             )
             .map(|name| vec![replacement(name, MutationOperator::TypeSetAbstractSet)])
             .unwrap_or_default(),
-        "typing.AbstractSet" | "collections.abc.AbstractSet" => vec![replacement(
-            "set".to_owned(),
-            MutationOperator::TypeSetAbstractSet,
-        )],
-        "dict" => imports
+        "typing.AbstractSet" | "collections.abc.AbstractSet" if builtin("set") => {
+            vec![replacement(
+                "set".to_owned(),
+                MutationOperator::TypeSetAbstractSet,
+            )]
+        }
+        "dict" if builtin("dict") => imports
             .spelling_for(&base, &["typing.Mapping", "collections.abc.Mapping"])
             .map(|name| vec![replacement(name, MutationOperator::TypeMapping)])
             .unwrap_or_default(),
-        "typing.Mapping" | "collections.abc.Mapping" => vec![replacement(
+        "typing.Mapping" | "collections.abc.Mapping" if builtin("dict") => vec![replacement(
             "dict".to_owned(),
             MutationOperator::TypeMapping,
         )],

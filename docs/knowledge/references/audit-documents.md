@@ -10,6 +10,12 @@ sources:
   revision: f11013542ccd735ab9741b5079c0b39a517df256
   working_tree: untracked
   sha256: 80f6a99dabfdbe084de6cba0e211e55b4033bf7449c5dd344ab922358c1fac6b
+
+- id: issue-548-report
+  resource: ../../superpowers/reports/2026-09-15-issue-548-annotation-builtins-review.md
+  revision: f11013542ccd735ab9741b5079c0b39a517df256
+  working_tree: untracked
+  sha256: 20a2db1609dc6fc42f31a451b1a3a21113cba2d04cebc6847c77e43afd7176a4
 - id: issue-491-rust-cost-review
   resource: ../../superpowers/reports/2026-09-14-issue-491-rust-cost-review.md
   working_tree: untracked
@@ -771,3 +777,11 @@ sources:
 
 
 [^issue-549-report]: [Issue #549: Slice tuple修正の検証](../../superpowers/reports/2026-09-15-issue-549-slice-tuple.md)。
+
+# Issue #548
+
+| 原文の先頭見出し | 原文 |
+| --- | --- |
+| Issue #548: Annotation builtin review and correspondence | [報告](../../superpowers/reports/2026-09-15-issue-548-annotation-builtins-review.md) [^issue-548-report] |
+
+[^issue-548-report]: [Issue #548: Annotation builtin review and correspondence](../../superpowers/reports/2026-09-15-issue-548-annotation-builtins-review.md)。

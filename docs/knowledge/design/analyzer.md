@@ -329,3 +329,7 @@ collection_list_tupleのtupleからlistへの変換は、直接の要素にSlice
 有限モデルの14入力と11反例、公開plan/CPythonの照合、import-only runの修正前後を[検証報告](../../superpowers/reports/2026-09-15-issue-549-slice-tuple.md)に分けて記録する。[^issue-549-report]
 
 [^issue-549-report]: [Issue #549: Slice tuple修正の検証](../../superpowers/reports/2026-09-15-issue-549-slice-tuple.md)。
+
+# コレクション型注釈の組込み型provenance（Issue #548）
+
+[型注釈の参照先の契約](annotation-builtins.md)では、具体型名の綴りだけで組込み型と判断せず、source・destinationの両方向で注釈scopeの束縛を確認する。runtimeの名前解決とは遅延評価の扱いが異なるため、module/classの後続束縛も考慮する。

@@ -109,6 +109,7 @@ LEAN_CORPUS_BY_EXECUTABLE = {
     "generate_comprehension_bindings": "corpus/comprehension-bindings.jsonl",
     "generate_performance_cost": "corpus/performance-cost.jsonl",
     "generate_valid_python": "corpus/valid-python.jsonl",
+    "generate_collection_annotation": "corpus/collection-annotation.jsonl",
 }
 LEAN_SENSITIVITY_EXECUTABLES = {
     name
