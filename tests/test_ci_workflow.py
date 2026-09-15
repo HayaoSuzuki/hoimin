@@ -748,7 +748,7 @@ class PlatformExecutionPolicyContractTests(unittest.TestCase):
 
         self.assertEqual(
             trigger_events(workflow),
-            {"pull_request", "push", "workflow_dispatch"},
+            {"pull_request", "push", "merge_group", "workflow_dispatch"},
         )
         self.assertNotIn("windows-latest", workflow)
         self.assertNotIn("macos-14", workflow)
