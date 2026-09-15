@@ -2743,6 +2743,9 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             .operators
             .contains(MutationOperator::CollectionListTuple)
             || tuple.ctx != ExprContext::Load
+            // Subscript tuples can contain slices, which are not list elements.
+            // Only reject this tuple; the visitor still walks its slice bounds.
+            || tuple.elts.iter().any(|element| matches!(element, Expr::Slice(_)))
             || self.exception_type_depth > 0
             || self.facts.contains_annotation_span(tuple.range())
         {
