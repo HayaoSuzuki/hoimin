@@ -4891,7 +4891,7 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
             },
         );
         self.imports.transfer_statement(statement);
-        ControlFlowExits::fallthrough(self.imports.clone())
+        ControlFlowExits::fallthrough(std::mem::take(&mut self.imports))
     }
 
     fn record(&mut self, annotation: &'ast Expr) {
@@ -4938,7 +4938,8 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
 
     fn visit_suite_flow(&mut self, statements: &'ast [Stmt]) -> ControlFlowExits {
         let mut exits = ControlFlowExits::default();
-        let mut fallthrough = Some(self.imports.clone());
+        // A single successor owns the state; only forks and suite restoration need copies.
+        let mut fallthrough = Some(std::mem::take(&mut self.imports));
         for statement in statements {
             let Some(imports) = fallthrough.take() else {
                 let inherited = self.imports.clone();
@@ -4959,7 +4960,7 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
                 .flatten();
             let mut statement_exits = self.visit_statement_flow(statement);
             statement_exits.merge_implicit(implicit_entry);
-            fallthrough.clone_from(&statement_exits.fallthrough);
+            fallthrough = statement_exits.fallthrough.take();
             exits.merge_abrupt(statement_exits);
         }
         if let Some(imports) = &fallthrough {
@@ -5021,7 +5022,7 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
         self.class_body_fallback = inherited_fallback;
         self.class_external_bindings = inherited_bindings;
         self.class_parent_scope = inherited_class_parent_scope;
-        ControlFlowExits::fallthrough(self.imports.clone())
+        ControlFlowExits::fallthrough(std::mem::take(&mut self.imports))
     }
 
     fn visit_class_definition(
@@ -5075,7 +5076,7 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
         self.class_parent_scope = inherited_class_parent_scope;
         self.scope_kind = inherited_scope;
         self.imports.transfer_statement(statement);
-        ControlFlowExits::fallthrough(self.imports.clone())
+        ControlFlowExits::fallthrough(std::mem::take(&mut self.imports))
     }
 
     fn visit_if(&mut self, statement: &'ast ruff_python_ast::StmtIf) -> ControlFlowExits {
@@ -5612,7 +5613,7 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
                 }
                 self.record(assign.annotation.as_ref());
                 NamedBindingInvalidator::visit(&mut self.imports, assign.annotation.as_ref());
-                ControlFlowExits::fallthrough(self.imports.clone())
+                ControlFlowExits::fallthrough(std::mem::take(&mut self.imports))
             }
             Stmt::Break(_) => {
                 visitor::walk_stmt(self, statement);
@@ -5640,7 +5641,7 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
                 visitor::walk_stmt(self, statement);
                 NamedBindingInvalidator::visit_statement(&mut self.imports, statement);
                 self.imports.transfer_statement(statement);
-                ControlFlowExits::fallthrough(self.imports.clone())
+                ControlFlowExits::fallthrough(std::mem::take(&mut self.imports))
             }
         }
     }
@@ -6429,6 +6430,37 @@ fn is_none(expression: &Expr) -> bool {
 #[cfg(test)]
 mod performance_cost_tests {
     use super::*;
+
+    #[test]
+    fn straight_line_import_transfer_copy_cost_is_independent_of_annotations() {
+        use std::fmt::Write as _;
+        for imports in [8, 0, 32, 128] {
+            for annotations in [32, 0, 8, 128] {
+                let mut source = String::new();
+                for index in 0..imports {
+                    writeln!(source, "import typing as t{index}").unwrap();
+                }
+                source.push_str(&"x: int\n".repeat(annotations));
+                let parsed = parse_unchecked_source(&source, ruff_python_ast::PySourceType::Python);
+                assert!(parsed.has_valid_syntax());
+                IMPORT_CLONE_CALLS.set(0);
+                IMPORT_CLONE_ENTRIES.set(0);
+                let mut records = 0;
+                AnnotationCollector::visit_each(parsed.syntax(), &mut |_, _, _| records += 1);
+                assert_eq!(records, annotations);
+                assert!(
+                    IMPORT_CLONE_CALLS.get() <= 1,
+                    "I={imports}, A={annotations}: {} clone calls",
+                    IMPORT_CLONE_CALLS.get()
+                );
+                assert!(
+                    IMPORT_CLONE_ENTRIES.get() <= imports,
+                    "I={imports}, A={annotations}: {} copied entries",
+                    IMPORT_CLONE_ENTRIES.get()
+                );
+            }
+        }
+    }
 
     #[test]
     fn actual_import_clone_counts_entries_at_the_clone_boundary() {

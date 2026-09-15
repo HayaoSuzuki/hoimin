@@ -22,6 +22,11 @@ sources:
   revision: f11013542ccd735ab9741b5079c0b39a517df256
   working_tree: untracked
   sha256: 1f24068440027fb9084264b25b9f9294421da130d4e939ea2532bc4e47099c60
+
+- id: issue-547-review
+  resource: ../../superpowers/reports/2026-09-15-issue-547-self-review.md
+  working_tree: untracked
+  sha256: a4dd80f0c8d7e2c01271363db1b22a1e7fec5e59d8ce74d1da0df2c11b340934
 - id: issue-491-rust-cost-review
   resource: ../../superpowers/reports/2026-09-14-issue-491-rust-cost-review.md
   working_tree: untracked
@@ -795,3 +800,9 @@ sources:
 [^issue-548-report]: [Issue #548: Annotation builtin review and correspondence](../../superpowers/reports/2026-09-15-issue-548-annotation-builtins-review.md)。
 
 [^issue-545]: [Issue #545: 暗黙例外と finally の検証記録](../../superpowers/reports/2026-09-15-issue-545-implicit-finally-review.md)。
+
+# Issue #547
+
+- [2026-09-15-issue-547-self-review](../../superpowers/reports/2026-09-15-issue-547-self-review.md) — 単一路のimport状態の受渡し。[^issue-547-review]
+
+[^issue-547-review]: [原文](../../superpowers/reports/2026-09-15-issue-547-self-review.md)。

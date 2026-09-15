@@ -21,6 +21,11 @@ sources:
   revision: f11013542ccd735ab9741b5079c0b39a517df256
   working_tree: untracked
   sha256: f2d56cddd7659add3ef30fed812ac8174bf45e725fa0ef380f2ca39c8b0dda51
+
+- id: issue-547-design
+  resource: ../../superpowers/specs/2026-09-15-issue-547-import-transfer-design.md
+  working_tree: untracked
+  sha256: 3fa1b369ff21d00b335d91fb0c83b18b61f54fcd45747ef07ee5386cae273ae8
 - id: issue-491-operation-cost-design
   resource: ../../superpowers/specs/2026-09-14-issue-491-operation-cost-design.md
   working_tree: untracked
@@ -1391,3 +1396,9 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 [^issue-548-design]: [Issue #548: Collection annotation builtin provenance](../../superpowers/specs/2026-09-15-issue-548-annotation-builtins-design.md)。
 
 [^issue-545]: [Issue #545: 暗黙例外の finally 入口](../../superpowers/specs/2026-09-15-issue-545-implicit-finally-design.md)。
+
+# Issue #547
+
+- [2026-09-15-issue-547-import-transfer-design](../../superpowers/specs/2026-09-15-issue-547-import-transfer-design.md) — 単一路のimport状態の受渡し。[^issue-547-design]
+
+[^issue-547-design]: [原文](../../superpowers/specs/2026-09-15-issue-547-import-transfer-design.md)。

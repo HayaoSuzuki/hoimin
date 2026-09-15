@@ -21,6 +21,11 @@ sources:
   revision: f11013542ccd735ab9741b5079c0b39a517df256
   working_tree: untracked
   sha256: f2d56cddd7659add3ef30fed812ac8174bf45e725fa0ef380f2ca39c8b0dda51
+
+- id: issue-547
+  resource: ../../superpowers/specs/2026-09-15-issue-547-import-transfer-design.md
+  working_tree: untracked
+  sha256: 3fa1b369ff21d00b335d91fb0c83b18b61f54fcd45747ef07ee5386cae273ae8
 - id: issue-489
   resource: ../../superpowers/specs/2026-09-14-issue-489-valid-python-corpus-design.md
   working_tree: untracked
@@ -347,3 +352,9 @@ call、subscript、attribute、演算や比較、反復などの評価が後続 
 [検証範囲](../audits/implicit-finally.md)に小モデル、公開 plan 対応、未対応の式や動的挙動を記録する。
 
 [^issue-545]: [Issue #545 設計](../../superpowers/specs/2026-09-15-issue-545-implicit-finally-design.md)。
+
+# 単一路のimport状態の受渡し
+
+Issue #547の設計では、型注釈collectorの通常の文から次の文へ進む状態を所有権移動で渡す。import数Iと注釈数Aを別々に増やした場合にも、単一路の全状態コピーをsuite境界の一回に限定する。分岐、loop、finallyの合流とスコープ復元のための複製は保持し、すべての入力で線形時間になるとは主張しない。[^issue-547]
+
+[^issue-547]: [Issue #547設計](../../superpowers/specs/2026-09-15-issue-547-import-transfer-design.md)。
