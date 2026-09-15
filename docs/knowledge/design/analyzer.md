@@ -5,6 +5,28 @@ description: 構文・名前解決・変更するバイト範囲・候補保持�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-549-report
+  resource: ../../superpowers/reports/2026-09-15-issue-549-slice-tuple.md
+  revision: f11013542ccd735ab9741b5079c0b39a517df256
+  working_tree: untracked
+  sha256: 80f6a99dabfdbe084de6cba0e211e55b4033bf7449c5dd344ab922358c1fac6b
+- id: issue-549
+  resource: ../../superpowers/specs/2026-09-15-issue-549-slice-tuple-design.md
+  revision: f11013542ccd735ab9741b5079c0b39a517df256
+  working_tree: untracked
+  sha256: 1e0e66ee142ae6e8e71019b67d4901bcc640797781ed8e8d3878cbe2e64460bf
+
+- id: issue-545
+  resource: ../../superpowers/specs/2026-09-15-issue-545-implicit-finally-design.md
+  revision: f11013542ccd735ab9741b5079c0b39a517df256
+  working_tree: untracked
+  sha256: f2d56cddd7659add3ef30fed812ac8174bf45e725fa0ef380f2ca39c8b0dda51
+
+- id: issue-547
+  resource: ../../superpowers/specs/2026-09-15-issue-547-import-transfer-design.md
+  working_tree: untracked
+  sha256: 3fa1b369ff21d00b335d91fb0c83b18b61f54fcd45747ef07ee5386cae273ae8
+
 - id: issue-546-design
   resource: ../../superpowers/specs/2026-09-15-issue-546-loop-transfer-design.md
   working_tree: untracked
@@ -313,6 +335,34 @@ UTF-8とASCIIは入力を借用するが、Latin-1のテキストと索引のメ
 [^issue-480-tests]: [source_encoding.rs](../../../crates/hoimin-cli/tests/source_encoding.rs).
 
 [^issue-480-report]: [2026-09-14-issue-480-source-encoding-review.md](../../superpowers/reports/2026-09-14-issue-480-source-encoding-review.md).
+
+# Sliceを含むtupleの適格条件（Issue #549）
+
+collection_list_tupleのtupleからlistへの変換は、直接の要素にSliceがある場合は生成しない。Sliceは `x[:,]` などの添字では有効だが、colonをlist要素へ移せない。通常の式tupleとstarredを維持し、Sliceのstart/stop/stepの子探索も続ける。これは候補生成時の条件であり、生成済みの不正候補を実行結果から除く処理ではない。[^issue-549]
+
+[^issue-549]: [Issue #549: Sliceを含むtupleの候補除外](../../superpowers/specs/2026-09-15-issue-549-slice-tuple-design.md)。
+
+有限モデルの14入力と11反例、公開plan/CPythonの照合、import-only runの修正前後を[検証報告](../../superpowers/reports/2026-09-15-issue-549-slice-tuple.md)に分けて記録する。[^issue-549-report]
+
+[^issue-549-report]: [Issue #549: Slice tuple修正の検証](../../superpowers/reports/2026-09-15-issue-549-slice-tuple.md)。
+
+# コレクション型注釈の組込み型provenance（Issue #548）
+
+[型注釈の参照先の契約](annotation-builtins.md)では、具体型名の綴りだけで組込み型と判断せず、source・destinationの両方向で注釈scopeの束縛を確認する。runtimeの名前解決とは遅延評価の扱いが異なるため、module/classの後続束縛も考慮する。
+
+# finally への暗黙例外入口
+
+call、subscript、attribute、演算や比較、反復などの評価が後続 import より先に失敗した場合、finally の注釈は例外前の束縛も参照し得る。解析器はこの入口を正常入口と合流し、全入口で一致しない typing 由来の候補を抑制する。暗黙例外は正常後続へ混ぜず、finally の通常終了後も例外として外側へ渡す。[^issue-545]
+
+[検証範囲](../audits/implicit-finally.md)に小モデル、公開 plan 対応、未対応の式や動的挙動を記録する。
+
+[^issue-545]: [Issue #545 設計](../../superpowers/specs/2026-09-15-issue-545-implicit-finally-design.md)。
+
+# 単一路のimport状態の受渡し
+
+Issue #547の設計では、型注釈collectorの通常の文から次の文へ進む状態を所有権移動で渡す。import数Iと注釈数Aを別々に増やした場合にも、単一路の全状態コピーをsuite境界の一回に限定する。分岐、loop、finallyの合流とスコープ復元のための複製は保持し、すべての入力で線形時間になるとは主張しない。[^issue-547]
+
+[^issue-547]: [Issue #547設計](../../superpowers/specs/2026-09-15-issue-547-import-transfer-design.md)。
 
 # 入れ子ループの転送再解析（Issue #546）
 

@@ -878,6 +878,38 @@
       ]
     },
     {
+      "id": "annotation-statement-transfer-copies",
+      "status": "active",
+      "metric": "operations",
+      "related_issue": 547,
+      "scope": "Independent I/A axes 0/8/32/128: collector-wide actual KnownImports clone calls <=1 and copied entries <=I for I module imports and A plain annotations. Excludes branch/scope/loop iteration complexity.",
+      "args": [
+        "test",
+        "-p",
+        "hoimin-cli",
+        "--lib",
+        "analyzer::rust::performance_cost_tests::straight_line_import_transfer_copy_cost_is_independent_of_annotations",
+        "--",
+        "--exact"
+      ]
+    },
+    {
+      "id": "annotation-statement-transfer-candidates",
+      "status": "active",
+      "metric": "operations",
+      "related_issue": 547,
+      "scope": "Independent aliases/filler annotations axes 8/32/128, plus one Sequence import and one list[int] annotation: selected path yields exactly one candidate, one clone and aliases+1 copied entries; unselected path has zero candidates/clones/entries. No annotation snapshots retained.",
+      "args": [
+        "test",
+        "-p",
+        "hoimin-cli",
+        "--lib",
+        "analyzer::rust::rust_tests::straight_line_import_transfer_preserves_selected_candidates_and_skips_unselected",
+        "--",
+        "--exact"
+      ]
+    },
+    {
       "id": "control-flow-reanalysis-nested_loops_bound_actual_statement_and_annotation_visits",
       "status": "active",
       "metric": "operations",

@@ -628,6 +628,7 @@ fn valid_python_operator_inventory_requires_registration_and_positive_producers(
         "match-guard",
         "except",
         "except-star",
+        "subscript",
         "first-iterable",
         "comprehension-body",
     ] {
@@ -643,6 +644,7 @@ fn valid_python_operator_inventory_requires_registration_and_positive_producers(
     for triple in [
         ("token", "match-key", "unshadowed"),
         ("ast", "expression", "generic-destination"),
+        ("ast", "subscript", "unshadowed"),
         ("annotation", "annotation", "generic-source"),
         ("operator-import", "expression", "generic-source"),
         ("ast", "first-iterable", "walrus"),
@@ -727,4 +729,51 @@ async fn valid_python_adapter_rejects_missing_excess_and_corrupt_observations() 
         .unwrap();
     assert_eq!(observation[0]["compiled"], false);
     assert_eq!(observation[0]["exception"], "SyntaxError");
+}
+
+#[tokio::test]
+async fn slice_tuple_import_only_run_does_not_count_syntax_error_as_killed() {
+    // With no ordinary tuple literals, every old candidate is a syntax-error false kill.
+    let root = tempfile::tempdir().unwrap();
+    let source = "def subject(x):\n    a = x[:,]\n    b = x[1:2, 3]\n    return x[:, :]\n";
+    std::fs::write(root.path().join("subject.py"), source).unwrap();
+    let result = tokio::time::timeout(
+        Duration::from_secs(30),
+        tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
+            .args(["run", "--root"])
+            .arg(root.path())
+            .args([
+                "--file",
+                "subject.py",
+                "--operators",
+                "collection_list_tuple",
+                "--format",
+                "json",
+                "--min-free-space",
+                "1B",
+                "--allow-best-effort-memory",
+                "--",
+            ])
+            .arg(python())
+            .args(["-B", "-c", "import subject"])
+            .kill_on_drop(true)
+            .output(),
+    )
+    .await
+    .expect("infrastructure-error: run deadline")
+    .expect("infrastructure-error: run launch");
+    assert!(
+        result.status.success(),
+        "run failed: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+    assert_eq!(report["baseline"]["termination"]["Exit"], 0, "{report}");
+    assert_eq!(report["summary"]["counts"]["killed"], 0, "{report}");
+    assert!(report["mutants"].as_array().unwrap().is_empty(), "{report}");
+    assert_eq!(report["summary"]["complete"], true, "{report}");
+    assert_eq!(
+        std::fs::read_to_string(root.path().join("subject.py")).unwrap(),
+        source
+    );
 }

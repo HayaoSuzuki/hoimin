@@ -1,0 +1,6 @@
+{"candidate_count":0,"id":"call_before_import","schema":1,"source":"Sequence = set\ntry:\n    hazard()\n    from typing import Sequence\nfinally:\n    def record(value: Sequence[int]):\n        pass\n"}
+{"candidate_count":0,"id":"subscript_before_import","schema":1,"source":"Sequence = set\ntry:\n    items[0]\n    from typing import Sequence\nfinally:\n    def record(value: Sequence[int]):\n        pass\n"}
+{"candidate_count":0,"id":"attribute_before_import","schema":1,"source":"Sequence = set\ntry:\n    item.value\n    from typing import Sequence\nfinally:\n    def record(value: Sequence[int]):\n        pass\n"}
+{"candidate_count":1,"id":"import_before_call","schema":1,"source":"Sequence = set\ntry:\n    from typing import Sequence\n    hazard()\nfinally:\n    def record(value: Sequence[int]):\n        pass\n"}
+{"candidate_count":0,"id":"explicit_raise","schema":1,"source":"Sequence = set\ntry:\n    raise KeyError()\n    from typing import Sequence\nfinally:\n    def record(value: Sequence[int]):\n        pass\n"}
+{"candidate_count":1,"id":"normal_import","schema":1,"source":"Sequence = set\ntry:\n    from typing import Sequence\nfinally:\n    def record(value: Sequence[int]):\n        pass\n"}

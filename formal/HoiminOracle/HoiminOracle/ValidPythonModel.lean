@@ -51,6 +51,43 @@ def uniqueReplacement (replacement : Key) (siblings : List Key) : Bool :=
 theorem equal_sibling_rejected (key other : Key) (h : sameValue key other = true) :
     uniqueReplacement key [other] = false := by simp [uniqueReplacement, h]
 
+-- Direct tuple elements only: nested expressions and starred expressions are
+-- ordinary here. Parser correctness and all other eligibility guards are premises.
+inductive TupleElement where
+  | expression
+  | slice
+  deriving BEq, DecidableEq, Repr
+
+def tupleAllowed (elements : List TupleElement) : Bool :=
+  elements.all (· == .expression)
+
+theorem allowed_elements (elements : List TupleElement) (h : tupleAllowed elements = true) :
+    ∀ element ∈ elements, element = .expression := by
+  intro element member
+  have result := (List.all_eq_true.mp h) element member
+  cases element with
+  | expression => rfl
+  | slice => contradiction
+
+def brokenTupleAllowed (_elements : List TupleElement) : Bool := true
+
+def tupleInputs : Nat → List (List TupleElement)
+  | 0 => [[]]
+  | n + 1 => (tupleInputs n).flatMap fun tail =>
+      [TupleElement.expression, .slice].map (· :: tail)
+
+def tupleDomain : List (List TupleElement) :=
+  [1, 2, 3].flatMap tupleInputs
+
+def tupleWitnesses := tupleDomain.filter fun elements =>
+  tupleAllowed elements != brokenTupleAllowed elements
+
+set_option maxHeartbeats 100000 in
+ theorem tuple_finite_sensitivity : tupleDomain.length = 14 ∧
+    tupleWitnesses.length = 11 ∧ tupleWitnesses.head? = some [.slice] := by decide
+
+theorem direct_slice_blocked : tupleAllowed [.slice] = false := by decide
+
 def replace (source replacement : List Nat) (start length : Nat) : List Nat :=
   CandidateSpan.replaceBytes source {
     path := "subject.py", start, length, original := (source.drop start).take length,
