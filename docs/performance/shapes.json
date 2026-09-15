@@ -876,6 +876,73 @@
         "--",
         "--exact"
       ]
+    },
+    {
+      "id": "control-flow-reanalysis-nested_loops_bound_actual_statement_and_annotation_visits",
+      "status": "active",
+      "metric": "operations",
+      "input_axis": "nested control-flow transfer reanalysis (separate from AST width/expression depth)",
+      "depths": [
+        1,
+        2,
+        4,
+        8,
+        16,
+        20
+      ],
+      "scope": "module/class for/while with empty imports; selected and unselected type operator; changed class fallback excluded",
+      "args": [
+        "test",
+        "-p",
+        "hoimin-cli",
+        "--lib",
+        "analyzer::rust::nested_loop_transfer_tests::nested_loops_bound_actual_statement_and_annotation_visits",
+        "--",
+        "--exact"
+      ]
+    },
+    {
+      "id": "control-flow-reanalysis-nested_loop_old_replay_exceeds_bound_with_identical_candidates",
+      "status": "active",
+      "metric": "operations",
+      "input_axis": "nested control-flow transfer reanalysis (separate from AST width/expression depth)",
+      "depths": [
+        8
+      ],
+      "scope": "module/class for/while with empty imports; selected and unselected type operator; changed class fallback excluded",
+      "args": [
+        "test",
+        "-p",
+        "hoimin-cli",
+        "--lib",
+        "analyzer::rust::nested_loop_transfer_tests::nested_loop_old_replay_exceeds_bound_with_identical_candidates",
+        "--",
+        "--exact"
+      ]
+    },
+    {
+      "id": "control-flow-reanalysis-nested_class_loops_bound_actual_statement_and_annotation_visits",
+      "status": "active",
+      "metric": "operations",
+      "input_axis": "nested class control-flow transfer reanalysis",
+      "depths": [
+        1,
+        2,
+        4,
+        8,
+        16,
+        20
+      ],
+      "scope": "class for/while with unchanged fallback; total statement bound adds one class definition",
+      "args": [
+        "test",
+        "-p",
+        "hoimin-cli",
+        "--lib",
+        "analyzer::rust::nested_loop_transfer_tests::nested_class_loops_bound_actual_statement_and_annotation_visits",
+        "--",
+        "--exact"
+      ]
     }
   ],
   "lean": {

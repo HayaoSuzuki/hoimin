@@ -5,6 +5,10 @@ description: 構文・名前解決・変更するバイト範囲・候補保持�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-546-design
+  resource: ../../superpowers/specs/2026-09-15-issue-546-loop-transfer-design.md
+  working_tree: untracked
+  sha256: 13f80e2b6ea3088347ac6f7d5515f0973abdb745fc85ae2453cfaf9f6c0d4c66
 - id: issue-489
   resource: ../../superpowers/specs/2026-09-14-issue-489-valid-python-corpus-design.md
   working_tree: untracked
@@ -309,3 +313,11 @@ UTF-8とASCIIは入力を借用するが、Latin-1のテキストと索引のメ
 [^issue-480-tests]: [source_encoding.rs](../../../crates/hoimin-cli/tests/source_encoding.rs).
 
 [^issue-480-report]: [2026-09-14-issue-480-source-encoding-review.md](../../superpowers/reports/2026-09-14-issue-480-source-encoding-review.md).
+
+# 入れ子ループの転送再解析（Issue #546）
+
+固定点とは、loop本体のfallthrough・continueから求めた次反復のimport状態が現在のheadと一致する状態である。注釈記録を停止した解析では、収束を確認した最後の本体終了結果をその場で消費して二度目の本体走査を省く。別の入力・scopeへ結果を持ち越すcacheは追加しない。[^issue-546-design]
+
+注釈callbackを実行する走査、最後の評価でclass fallbackが変化した走査、テストのprojection・変異を使う走査は従来どおり実行する。module/class内の単純な空状態のfor/whileの再解析を抑える変更であり、classや状態変化を含む全入力の計算量を保証するものではない。性能ゲートと実行結果は[入力形状別の性能検証](../audits/performance-shapes.md)から参照する。[^issue-546-design]
+
+[^issue-546-design]: [Issue #546: 入れ子ループの転送結果の再利用](../../superpowers/specs/2026-09-15-issue-546-loop-transfer-design.md)。

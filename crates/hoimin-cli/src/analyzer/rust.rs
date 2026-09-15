@@ -38,6 +38,9 @@ use operator_functions::OperatorImports;
 
 #[cfg(test)]
 thread_local! {
+    static DISABLE_LOOP_TRANSFER_REUSE: Cell<bool> = const { Cell::new(false) };
+    static LOOP_STATEMENT_VISITS: Cell<usize> = const { Cell::new(0) };
+    static LOOP_ANNOTATION_VISITS: Cell<usize> = const { Cell::new(0) };
     static RECORD_CLONE_CALLS: Cell<usize> = const { Cell::new(0) };
     static RECORD_CLONE_ENTRIES: Cell<usize> = const { Cell::new(0) };
     static BROKEN_RECORD_CLONE: Cell<bool> = const { Cell::new(false) };
@@ -3552,17 +3555,17 @@ impl KnownImports {
         let mut states = states.into_iter();
         let mut intersection = states.next()?;
         for state in states {
-            intersection
-                .direct
-                .retain(|name, resolved| state.direct.get(name) == Some(resolved));
-            intersection
-                .modules
-                .retain(|name, resolved| state.modules.get(name) == Some(resolved));
-            intersection
-                .type_vars
-                .retain(|name| state.type_vars.contains(name));
+            intersection.intersect_with(&state);
         }
         Some(intersection)
+    }
+
+    fn intersect_with(&mut self, state: &Self) {
+        self.direct
+            .retain(|name, resolved| state.direct.get(name) == Some(resolved));
+        self.modules
+            .retain(|name, resolved| state.modules.get(name) == Some(resolved));
+        self.type_vars.retain(|name| state.type_vars.contains(name));
     }
 
     fn invalidate(&mut self, name: &str) {
@@ -4207,6 +4210,12 @@ struct ControlFlowExits {
     breaks: Vec<KnownImports>,
     continues: Vec<KnownImports>,
     terminates: Vec<KnownImports>,
+}
+
+struct LoopHeadTransfer {
+    head: KnownImports,
+    exits: ControlFlowExits,
+    fallback_unchanged: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -4855,8 +4864,15 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
         body: &'ast [Stmt],
         orelse: &'ast [Stmt],
     ) -> ControlFlowExits {
-        let body_imports = self.loop_head_fixed_point(body_imports, iteration_target, body);
-        let body_exits = self.visit_suite_from(body_imports, body);
+        let transfer = self.loop_head_fixed_point(body_imports, iteration_target, body);
+        let body_exits = if self.can_reuse_loop_transfer(transfer.fallback_unchanged) {
+            drop(transfer.head);
+            transfer.exits
+        } else {
+            // Do not retain the transfer snapshots while recording the body.
+            drop(transfer.exits);
+            self.visit_suite_from(transfer.head, body)
+        };
         let mut natural = vec![zero_iteration];
         natural.extend(body_exits.fallthrough.clone());
         natural.extend(body_exits.continues.iter().cloned());
@@ -4876,43 +4892,69 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
         exits
     }
 
+    fn can_reuse_loop_transfer(&self, fallback_unchanged: bool) -> bool {
+        // Recording must visit every annotation. A transfer can also update
+        // class fallback state, which is not part of the loop-head fixed point.
+        if self.record_annotations || !fallback_unchanged {
+            return false;
+        }
+        #[cfg(test)]
+        if DISABLE_LOOP_TRANSFER_REUSE.get()
+            || self.marker_projection.is_some()
+            || self.handler_exit_projection.is_some()
+            || self.try_exit_projection.is_some()
+            || self.test_mutation.is_some()
+        {
+            return false;
+        }
+        true
+    }
+
     fn loop_head_fixed_point(
         &mut self,
         initial: &KnownImports,
         iteration_target: Option<&'ast Expr>,
         body: &'ast [Stmt],
-    ) -> KnownImports {
+    ) -> LoopHeadTransfer {
         let mut head = initial.clone();
         loop {
             let record_annotations = self.record_annotations;
             self.record_annotations = false;
-            let body_exits = self.visit_suite_from(head.clone(), body);
+            let (body_exits, fallback_unchanged) = {
+                // Only class scope owns a fallback. Keep its snapshot for this
+                // evaluation, then drop it before updating or returning the head.
+                let fallback_before = self.class_body_fallback.clone();
+                let exits = self.visit_suite_from(head.clone(), body);
+                (exits, fallback_before == self.class_body_fallback)
+            };
             self.record_annotations = record_annotations;
 
-            let mut entries = vec![initial.clone()];
-            if let Some(mut imports) = body_exits.fallthrough {
-                if let Some(target) = iteration_target {
-                    imports.invalidate_target(target);
-                }
-                entries.push(imports);
-            }
             #[cfg(test)]
             let include_continues =
                 self.test_mutation != Some(BindingFlowTestMutation::OmitLoopContinueBackEdge);
             #[cfg(not(test))]
             let include_continues = true;
-            if include_continues {
-                for mut imports in body_exits.continues {
-                    if let Some(target) = iteration_target {
-                        imports.invalidate_target(target);
-                    }
-                    entries.push(imports);
+            // Borrow back-edge states so the final transfer can be consumed
+            // without cloning its exit vectors or retaining a per-AST cache.
+            let mut next = initial.clone();
+            for imports in body_exits
+                .fallthrough
+                .iter()
+                .chain(body_exits.continues.iter().filter(|_| include_continues))
+            {
+                next.intersect_with(imports);
+                // Target invalidation only removes names, so it distributes
+                // over intersection and need not clone each back-edge state.
+                if let Some(target) = iteration_target {
+                    next.invalidate_target(target);
                 }
             }
-            let next = KnownImports::intersection(entries)
-                .expect("a loop head always includes its initial entry");
             if next == head {
-                return head;
+                return LoopHeadTransfer {
+                    head,
+                    exits: body_exits,
+                    fallback_unchanged,
+                };
             }
             head = next;
         }
@@ -5260,6 +5302,13 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
     }
 
     fn visit_statement_flow(&mut self, statement: &'ast Stmt) -> ControlFlowExits {
+        #[cfg(test)]
+        {
+            LOOP_STATEMENT_VISITS.set(LOOP_STATEMENT_VISITS.get().checked_add(1).unwrap());
+            if matches!(statement, Stmt::AnnAssign(_)) {
+                LOOP_ANNOTATION_VISITS.set(LOOP_ANNOTATION_VISITS.get().checked_add(1).unwrap());
+            }
+        }
         #[cfg(test)]
         if !matches!(
             statement,
@@ -5717,7 +5766,9 @@ pub(super) fn binding_flow_loop_head_snapshot(
             NamedBindingInvalidator::visit(&mut collector.imports, statement_while.test.as_ref());
             let initial = collector.imports.clone();
             let head = if include_continues {
-                collector.loop_head_fixed_point(&initial, None, &statement_while.body)
+                collector
+                    .loop_head_fixed_point(&initial, None, &statement_while.body)
+                    .head
             } else {
                 collector.loop_head_fixed_point_without_continues(
                     &initial,
@@ -5761,7 +5812,9 @@ pub(super) fn binding_flow_loop_head_snapshot_at_marker(
             matching += 1;
             NamedBindingInvalidator::visit(&mut collector.imports, statement_while.test.as_ref());
             let initial = collector.imports.clone();
-            let head = collector.loop_head_fixed_point(&initial, None, &statement_while.body);
+            let head = collector
+                .loop_head_fixed_point(&initial, None, &statement_while.body)
+                .head;
             observed = Some(normalize_binding_flow_imports(&head));
         }
         let exits = collector.visit_statement_flow(statement);
@@ -6576,3 +6629,7 @@ mod performance_cost_tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "rust/loop_transfer_tests.rs"]
+mod nested_loop_transfer_tests;

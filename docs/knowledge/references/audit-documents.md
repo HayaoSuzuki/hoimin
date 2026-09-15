@@ -5,6 +5,10 @@ description: docs/auditsとdocs/superpowers/reports内の全Markdownを追跡状
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-546-report
+  resource: ../../superpowers/reports/2026-09-15-issue-546-loop-transfer-review.md
+  working_tree: untracked
+  sha256: 547a626c92a728919ae45f41b950383e7ce305379d2cd523d5405dc1c4ef4e4f
 - id: issue-491-rust-cost-review
   resource: ../../superpowers/reports/2026-09-14-issue-491-rust-cost-review.md
   working_tree: untracked
@@ -494,6 +498,7 @@ sources:
 
 | 原文 | 先頭見出し | 作成時の状態 |
 | --- | --- | --- |
+| [2026-09-15-issue-546-loop-transfer-review.md](../../superpowers/reports/2026-09-15-issue-546-loop-transfer-review.md) | Issue #546: ループ転送再利用の自己レビュー [^issue-546-report] | 未追跡（参照時点） |
 | [2026-09-14-issue-491-rust-cost-review.md](../../superpowers/reports/2026-09-14-issue-491-rust-cost-review.md) | Issue #491 Rust cost adapter and workspace preflight peak review [^issue-491-rust-cost-review] | 未追跡（参照時点） |
 | [2026-09-14-issue-491-input-axis-review.md](../../superpowers/reports/2026-09-14-issue-491-input-axis-review.md) | Issue491 input-axis expansion review [^issue-491-input-axis-review] | 未追跡（参照時点） |
 | [2026-09-14-issue-491-cost-correspondence-worksheet.md](../../superpowers/reports/2026-09-14-issue-491-cost-correspondence-worksheet.md) | Issue #491: Cost correspondence worksheet [^issue-491-cost-correspondence-worksheet] | 未追跡（参照時点） |
@@ -762,3 +767,5 @@ sources:
 [^issue-476-report-index]: [Issue #476: symbol diagnostics review](../../superpowers/reports/2026-09-14-issue-476-symbol-diagnostics-review.md).
 
 [^issue-480-report-index]: [Issue #480: source encoding review](../../superpowers/reports/2026-09-14-issue-480-source-encoding-review.md).
+
+[^issue-546-report]: [Issue #546: ループ転送再利用の自己レビュー](../../superpowers/reports/2026-09-15-issue-546-loop-transfer-review.md)。
