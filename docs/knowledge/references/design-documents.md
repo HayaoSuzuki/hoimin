@@ -5,6 +5,11 @@ description: docs/superpowers/specs内の全Markdownを先頭見出しと出典�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-545
+  resource: ../../superpowers/specs/2026-09-15-issue-545-implicit-finally-design.md
+  revision: f11013542ccd735ab9741b5079c0b39a517df256
+  working_tree: untracked
+  sha256: f2d56cddd7659add3ef30fed812ac8174bf45e725fa0ef380f2ca39c8b0dda51
 - id: issue-491-operation-cost-design
   resource: ../../superpowers/specs/2026-09-14-issue-491-operation-cost-design.md
   working_tree: untracked
@@ -869,6 +874,7 @@ sources:
 
 | 原文 | 先頭見出し | 作成時の状態 |
 | --- | --- | --- |
+| [2026-09-15-issue-545-implicit-finally-design.md](../../superpowers/specs/2026-09-15-issue-545-implicit-finally-design.md) | Issue #545: 暗黙例外の finally 入口 [^issue-545] | 追跡済み |
 | [2026-09-14-issue-491-operation-cost-design.md](../../superpowers/specs/2026-09-14-issue-491-operation-cost-design.md) | Issue #491: Operation costs and missing input dimensions [^issue-491-operation-cost-design] | 未追跡（参照時点） |
 | [2026-09-14-issue-489-valid-python-corpus-design.md](../../superpowers/specs/2026-09-14-issue-489-valid-python-corpus-design.md) | Issue #489: Valid Python candidate contract corpus [^issue-489-specs] | 未追跡（参照時点） |
 | [2026-09-14-issue-471-negative-neighbors-design.md](../../superpowers/specs/2026-09-14-issue-471-negative-neighbors-design.md) | Issue #471: Negative index and slice neighbors [^issue-471-specs] | 未追跡（参照時点） |
@@ -1359,3 +1365,5 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 [^issue-476-design-index]: [Issue #476: missing symbol definition diagnostics](../../superpowers/specs/2026-09-14-issue-476-symbol-diagnostics-design.md).
 
 [^issue-480-design-index]: [Issue #480: Python source encodings and raw-byte candidates](../../superpowers/specs/2026-09-14-issue-480-source-encoding-design.md).
+
+[^issue-545]: [Issue #545: 暗黙例外の finally 入口](../../superpowers/specs/2026-09-15-issue-545-implicit-finally-design.md)。

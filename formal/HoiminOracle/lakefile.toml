@@ -133,3 +133,7 @@ root = "PerformanceCostAuditMain"
 [[lean_exe]]
 name = "generate_valid_python"
 root = "ValidPythonAuditMain"
+
+[[lean_exe]]
+name = "generate_implicit_finally"
+root = "ImplicitFinallyAuditMain"

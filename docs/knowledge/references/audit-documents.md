@@ -5,6 +5,11 @@ description: docs/auditsとdocs/superpowers/reports内の全Markdownを追跡状
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-545
+  resource: ../../superpowers/reports/2026-09-15-issue-545-implicit-finally-review.md
+  revision: f11013542ccd735ab9741b5079c0b39a517df256
+  working_tree: untracked
+  sha256: 04a697f4a1c037c5759f8d92b3185cace24cfa2775645d3035750ef649b483a3
 - id: issue-491-rust-cost-review
   resource: ../../superpowers/reports/2026-09-14-issue-491-rust-cost-review.md
   working_tree: untracked
@@ -494,6 +499,7 @@ sources:
 
 | 原文 | 先頭見出し | 作成時の状態 |
 | --- | --- | --- |
+| [2026-09-15-issue-545-implicit-finally-review.md](../../superpowers/reports/2026-09-15-issue-545-implicit-finally-review.md) | Issue #545: 暗黙例外と finally の検証記録 [^issue-545] | 追跡済み |
 | [2026-09-14-issue-491-rust-cost-review.md](../../superpowers/reports/2026-09-14-issue-491-rust-cost-review.md) | Issue #491 Rust cost adapter and workspace preflight peak review [^issue-491-rust-cost-review] | 未追跡（参照時点） |
 | [2026-09-14-issue-491-input-axis-review.md](../../superpowers/reports/2026-09-14-issue-491-input-axis-review.md) | Issue491 input-axis expansion review [^issue-491-input-axis-review] | 未追跡（参照時点） |
 | [2026-09-14-issue-491-cost-correspondence-worksheet.md](../../superpowers/reports/2026-09-14-issue-491-cost-correspondence-worksheet.md) | Issue #491: Cost correspondence worksheet [^issue-491-cost-correspondence-worksheet] | 未追跡（参照時点） |
@@ -762,3 +768,5 @@ sources:
 [^issue-476-report-index]: [Issue #476: symbol diagnostics review](../../superpowers/reports/2026-09-14-issue-476-symbol-diagnostics-review.md).
 
 [^issue-480-report-index]: [Issue #480: source encoding review](../../superpowers/reports/2026-09-14-issue-480-source-encoding-review.md).
+
+[^issue-545]: [Issue #545: 暗黙例外と finally の検証記録](../../superpowers/reports/2026-09-15-issue-545-implicit-finally-review.md)。

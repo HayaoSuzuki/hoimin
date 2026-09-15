@@ -7760,3 +7760,193 @@ fn structure_negative_neighbors_remain_excluded_from_annotations_and_targets() {
         "structure_index_neighbor" | "structure_slice_neighbor"
     )));
 }
+
+#[test]
+fn implicit_finally_preserves_nested_and_deferred_boundaries() {
+    let cases = [
+        (
+            "nested finally",
+            "Sequence = set\ntry:\n    try:\n        hazard()\n        from typing import Sequence\n    finally:\n        pass\nfinally:\n    value: Sequence[int]\n",
+            0,
+        ),
+        (
+            "else exception",
+            "Sequence = set\ntry:\n    pass\nexcept KeyError:\n    pass\nelse:\n    hazard()\n    from typing import Sequence\nfinally:\n    value: Sequence[int]\n",
+            0,
+        ),
+        (
+            "handler exception",
+            "Sequence = set\ntry:\n    raise KeyError\nexcept KeyError:\n    hazard()\n    from typing import Sequence\nfinally:\n    value: Sequence[int]\n",
+            0,
+        ),
+        (
+            "loop exception",
+            "Sequence = set\ntry:\n    while condition:\n        hazard()\n    from typing import Sequence\nfinally:\n    value: Sequence[int]\n",
+            0,
+        ),
+        (
+            "normal successor",
+            "Sequence = set\ntry:\n    hazard()\n    from typing import Sequence\nfinally:\n    pass\nvalue: Sequence[int]\n",
+            1,
+        ),
+        (
+            "deferred function",
+            "Sequence = set\ntry:\n    def later():\n        hazard()\n    from typing import Sequence\nfinally:\n    value: Sequence[int]\n",
+            1,
+        ),
+        (
+            "deferred lambda",
+            "Sequence = set\ntry:\n    later = lambda: hazard()\n    from typing import Sequence\nfinally:\n    value: Sequence[int]\n",
+            1,
+        ),
+        (
+            "deferred generator",
+            "Sequence = set\ntry:\n    later = (hazard() for x in ())\n    from typing import Sequence\nfinally:\n    value: Sequence[int]\n",
+            1,
+        ),
+        (
+            "lambda default",
+            "Sequence = set\ntry:\n    later = lambda x=hazard(): x\n    from typing import Sequence\nfinally:\n    value: Sequence[int]\n",
+            0,
+        ),
+        (
+            "generator iterable",
+            "Sequence = set\ntry:\n    later = (x for x in hazard())\n    from typing import Sequence\nfinally:\n    value: Sequence[int]\n",
+            0,
+        ),
+        (
+            "finally restores import",
+            "Sequence = set\ntry:\n    try:\n        hazard()\n    finally:\n        from typing import Sequence\nfinally:\n    value: Sequence[int]\n",
+            1,
+        ),
+        (
+            "unreachable hazard",
+            "def f():\n    from typing import Sequence\n    try:\n        return\n        hazard()\n        Sequence = set\n    finally:\n        value: Sequence[int]\n",
+            1,
+        ),
+        (
+            "walrus before failure",
+            "from typing import Sequence\ntry:\n    hazard((Sequence := set))\n    from typing import Sequence\nfinally:\n    value: Sequence[int]\n",
+            0,
+        ),
+        (
+            "call assignment",
+            "Sequence = set\ntry:\n    x = hazard()\n    from typing import Sequence\nfinally:\n    value: Sequence[int]\n",
+            0,
+        ),
+    ];
+    for (label, source, expected) in cases {
+        let actual = analyze_with_only_operator(source, MutationOperator::TypeListSequence);
+        assert_eq!(actual.candidates.len(), expected, "{label}\n{source}");
+    }
+}
+
+#[test]
+fn implicit_finally_covers_operator_and_statement_exception_entries() {
+    let bodies = [
+        ("division", "1 / 0"),
+        ("comparison", "left < right"),
+        ("unary operator", "-operand"),
+        ("assertion", "assert condition"),
+        ("iteration", "for item in items:\n        pass"),
+        ("context manager", "with manager:\n        pass"),
+        ("class body", "class C:\n        hazard()"),
+        ("truth test", "if condition:\n        pass"),
+        (
+            "handler header",
+            "try:\n        pass\n    except hazard():\n        pass",
+        ),
+    ];
+    let mut mismatches = Vec::new();
+    for (label, body) in bodies {
+        let source = format!(
+            "Sequence = set\ntry:\n    {body}\n    from typing import Sequence\nfinally:\n    value: Sequence[int]\n"
+        );
+        if !analyze_with_only_operator(&source, MutationOperator::TypeListSequence)
+            .candidates
+            .is_empty()
+        {
+            mismatches.push(label);
+        }
+    }
+    for (label, source) in [
+        (
+            "class global",
+            "from typing import Sequence\ntry:\n    class C:\n        global Sequence\n        Sequence = set\n        hazard()\n    from typing import Sequence\nfinally:\n    value: Sequence[int]\n",
+        ),
+        (
+            "class nonlocal",
+            "def f():\n    from typing import Sequence\n    try:\n        class C:\n            nonlocal Sequence\n            Sequence = set\n            hazard()\n        from typing import Sequence\n    finally:\n        value: Sequence[int]\n",
+        ),
+    ] {
+        if !analyze_with_only_operator(source, MutationOperator::TypeListSequence)
+            .candidates
+            .is_empty()
+        {
+            mismatches.push(label);
+        }
+    }
+    assert!(
+        mismatches.is_empty(),
+        "missed implicit exception entries: {mismatches:?}"
+    );
+}
+
+#[test]
+fn implicit_finally_covers_name_container_format_and_partial_binding_failures() {
+    let bodies = [
+        ("name load", "missing"),
+        ("set hash", "{[]}"),
+        ("dict hash", "{[]: 1}"),
+        ("format protocol", "f'{value}'"),
+        ("starred expansion", "[*values]"),
+        ("unpack", "first, second = values"),
+    ];
+    let mut mismatches = Vec::new();
+    for (label, body) in bodies {
+        let source = format!(
+            "Sequence = set\ntry:\n    {body}\n    from typing import Sequence\nfinally:\n    value: Sequence[int]\n"
+        );
+        if !analyze_with_only_operator(&source, MutationOperator::TypeListSequence)
+            .candidates
+            .is_empty()
+        {
+            mismatches.push(label);
+        }
+    }
+    for (label, source) in [
+        (
+            "partial unpack binding",
+            "from typing import Sequence\ntry:\n    Sequence, (first, second) = values\n    from typing import Sequence\nfinally:\n    value: Sequence[int]\n",
+        ),
+        (
+            "multiple with targets",
+            "from typing import Sequence\ntry:\n    with manager as Sequence, other:\n        from typing import Sequence\nfinally:\n    value: Sequence[int]\n",
+        ),
+        (
+            "partial multiple assignment",
+            "from typing import Sequence\ntry:\n    Sequence = holder.value = supplied\n    from typing import Sequence\nfinally:\n    value: Sequence[int]\n",
+        ),
+    ] {
+        if !analyze_with_only_operator(source, MutationOperator::TypeListSequence)
+            .candidates
+            .is_empty()
+        {
+            mismatches.push(label);
+        }
+    }
+    assert!(
+        mismatches.is_empty(),
+        "missed ordinary exceptions: {mismatches:?}"
+    );
+}
+
+#[test]
+fn implicit_finally_covers_pattern_capture_before_guard_failure() {
+    let source = "from typing import Sequence\ntry:\n    match subject:\n        case Sequence if hazard():\n            pass\n    from typing import Sequence\nfinally:\n    value: Sequence[int]\n";
+    assert!(
+        analyze_with_only_operator(source, MutationOperator::TypeListSequence)
+            .candidates
+            .is_empty()
+    );
+}
