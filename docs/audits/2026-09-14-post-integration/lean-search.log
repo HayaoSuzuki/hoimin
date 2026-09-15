@@ -1,0 +1,5 @@
+depth=0 alphabet=3 traces=1 transitions=0 mismatches=0 first=none
+depth=1 alphabet=3 traces=4 transitions=3 mismatches=0 first=none
+depth=2 alphabet=3 traces=13 transitions=21 mismatches=1 first=some [PostIntegration.Event.mayRaise, PostIntegration.Event.importTyping]
+depth=3 alphabet=3 traces=40 transitions=102 mismatches=5 first=some [PostIntegration.Event.mayRaise, PostIntegration.Event.importTyping]
+depth=4 alphabet=3 traces=121 transitions=426 mismatches=18 first=some [PostIntegration.Event.mayRaise, PostIntegration.Event.importTyping]

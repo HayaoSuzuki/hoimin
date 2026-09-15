@@ -14,3 +14,5 @@
 - [境界をまたぐ契約 fixture](boundary-contracts.md) - strict 実行、全件報告と未検証条件。
 
 - [暗黙例外と finally](implicit-finally.md) - typing 由来の合流、Lean 小モデル、公開 plan の対応範囲。
+
+- [2026年9月の解析監査と回帰検証への反映](analysis-2026-09.md) - #545〜#549の原証拠、修正PR、正式なテストの対応。

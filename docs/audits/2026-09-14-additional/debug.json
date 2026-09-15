@@ -1,0 +1,624 @@
+{
+  "head": "f11013542ccd735ab9741b5079c0b39a517df256",
+  "binary_sha256": "99ee00c4ee4e116b4ae33a246ceae7141b1b46ee46a74e27b9080a77df37a48c",
+  "rows": [
+    {
+      "id": "list-control-false",
+      "mode": "strict",
+      "expected_candidate_count": 1,
+      "actual_candidate_count": 1,
+      "status": "match",
+      "candidates": [
+        {
+          "id": "m1_9a377c92e90a97d0b795b98eb97823416ac9ad431bbf159d875ff32d65b0a194",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 46,
+            "length": 9
+          },
+          "original": "list[int]",
+          "replacement": "Sequence[int]",
+          "operator": "type_list_sequence",
+          "line": 2,
+          "column": 18,
+          "symbol": "record",
+          "file_hash": "7833449653d63a3ad47c5262c69ed279bf70a908b13812cb1637000eb3961888",
+          "rank": 1,
+          "score": 50,
+          "ranking_reasons": [
+            {
+              "code": "type_annotation",
+              "score": 50
+            }
+          ]
+        }
+      ],
+      "baseline": {
+        "annotation": "list[int]"
+      },
+      "mutants": [
+        {
+          "annotation": "typing.Sequence[int]"
+        }
+      ]
+    },
+    {
+      "id": "list-control-true",
+      "mode": "strict",
+      "expected_candidate_count": 1,
+      "actual_candidate_count": 1,
+      "status": "match",
+      "candidates": [
+        {
+          "id": "m1_d462b33ad21ffe50078e85c1daef5141efe1ea2ea2b9aece8b0af5d252ed75c2",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 46,
+            "length": 13
+          },
+          "original": "Sequence[int]",
+          "replacement": "list[int]",
+          "operator": "type_list_sequence",
+          "line": 2,
+          "column": 18,
+          "symbol": "record",
+          "file_hash": "acb1f767027c34f7f18bec161275223e6704ab21360e9f17dd8badb2aa8194b0",
+          "rank": 1,
+          "score": 50,
+          "ranking_reasons": [
+            {
+              "code": "type_annotation",
+              "score": 50
+            }
+          ]
+        }
+      ],
+      "baseline": {
+        "annotation": "typing.Sequence[int]"
+      },
+      "mutants": [
+        {
+          "annotation": "list[int]"
+        }
+      ]
+    },
+    {
+      "id": "list-module_shadow-false",
+      "mode": "strict",
+      "expected_candidate_count": 0,
+      "actual_candidate_count": 1,
+      "status": "mismatch",
+      "candidates": [
+        {
+          "id": "m1_ba02ef94be9660dd172e9ecfb6a6421158dc61492ed4214305585d1e574f57ef",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 59,
+            "length": 9
+          },
+          "original": "list[int]",
+          "replacement": "Sequence[int]",
+          "operator": "type_list_sequence",
+          "line": 3,
+          "column": 18,
+          "symbol": "record",
+          "file_hash": "43051f4c17ce96d2a217f19b1a7063318b67e50c5d4df5a281ca7cbdc512fa02",
+          "rank": 1,
+          "score": 50,
+          "ranking_reasons": [
+            {
+              "code": "type_annotation",
+              "score": 50
+            }
+          ]
+        }
+      ],
+      "baseline": {
+        "annotation": "tuple[int]"
+      },
+      "mutants": [
+        {
+          "annotation": "typing.Sequence[int]"
+        }
+      ]
+    },
+    {
+      "id": "list-module_shadow-true",
+      "mode": "strict",
+      "expected_candidate_count": 0,
+      "actual_candidate_count": 1,
+      "status": "mismatch",
+      "candidates": [
+        {
+          "id": "m1_f2c80e546a8754fba29bf7a66b4874c16e193b5efbed7b9fa32ab60701f892c3",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 59,
+            "length": 13
+          },
+          "original": "Sequence[int]",
+          "replacement": "list[int]",
+          "operator": "type_list_sequence",
+          "line": 3,
+          "column": 18,
+          "symbol": "record",
+          "file_hash": "de0a2a6fdd9b97d27611475074786cd3291cf872063c9b7cb46c2bcb0da8027d",
+          "rank": 1,
+          "score": 50,
+          "ranking_reasons": [
+            {
+              "code": "type_annotation",
+              "score": 50
+            }
+          ]
+        }
+      ],
+      "baseline": {
+        "annotation": "typing.Sequence[int]"
+      },
+      "mutants": [
+        {
+          "annotation": "tuple[int]"
+        }
+      ]
+    },
+    {
+      "id": "list-type_parameter-true",
+      "mode": "strict",
+      "expected_candidate_count": 0,
+      "actual_candidate_count": 1,
+      "status": "mismatch",
+      "candidates": [
+        {
+          "id": "m1_89bb94c3f532a0527a3de360e13cf8c5eacd6091799b9f6064a21d7eadecb471",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 52,
+            "length": 13
+          },
+          "original": "Sequence[int]",
+          "replacement": "list[int]",
+          "operator": "type_list_sequence",
+          "line": 2,
+          "column": 24,
+          "symbol": "record",
+          "file_hash": "b2abf73bc4796b8ba8314b87934708f4dbab4a4a6b52a96d58a366fbe82b4673",
+          "rank": 1,
+          "score": 50,
+          "ranking_reasons": [
+            {
+              "code": "type_annotation",
+              "score": 50
+            }
+          ]
+        }
+      ],
+      "baseline": {
+        "annotation": "typing.Sequence[int]"
+      },
+      "mutants": [
+        {
+          "error": "TypeError",
+          "message": "'typing.TypeVar' object is not subscriptable"
+        }
+      ]
+    },
+    {
+      "id": "set-control-false",
+      "mode": "strict",
+      "expected_candidate_count": 1,
+      "actual_candidate_count": 1,
+      "status": "match",
+      "candidates": [
+        {
+          "id": "m1_0dcf633088e6472ba2a743027256391ae3d6908e7e58c02a4aa9d86b85841aab",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 49,
+            "length": 8
+          },
+          "original": "set[int]",
+          "replacement": "AbstractSet[int]",
+          "operator": "type_set_abstract_set",
+          "line": 2,
+          "column": 18,
+          "symbol": "record",
+          "file_hash": "1e437aceb8b09dfbcc041f920e7791725d3a2f91a6fd84b0cfe5ec1b6555e6ad",
+          "rank": 1,
+          "score": 50,
+          "ranking_reasons": [
+            {
+              "code": "type_annotation",
+              "score": 50
+            }
+          ]
+        }
+      ],
+      "baseline": {
+        "annotation": "set[int]"
+      },
+      "mutants": [
+        {
+          "annotation": "typing.AbstractSet[int]"
+        }
+      ]
+    },
+    {
+      "id": "set-control-true",
+      "mode": "strict",
+      "expected_candidate_count": 1,
+      "actual_candidate_count": 1,
+      "status": "match",
+      "candidates": [
+        {
+          "id": "m1_80d79c9cecd36986245486b0419c74aba1a51653ae174534d7de27833e070f18",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 49,
+            "length": 16
+          },
+          "original": "AbstractSet[int]",
+          "replacement": "set[int]",
+          "operator": "type_set_abstract_set",
+          "line": 2,
+          "column": 18,
+          "symbol": "record",
+          "file_hash": "186144c0a8b1cd19a39d06dc140ebc94728c2b92bb7ba17e57ac6bce002d0032",
+          "rank": 1,
+          "score": 50,
+          "ranking_reasons": [
+            {
+              "code": "type_annotation",
+              "score": 50
+            }
+          ]
+        }
+      ],
+      "baseline": {
+        "annotation": "typing.AbstractSet[int]"
+      },
+      "mutants": [
+        {
+          "annotation": "set[int]"
+        }
+      ]
+    },
+    {
+      "id": "set-module_shadow-false",
+      "mode": "strict",
+      "expected_candidate_count": 0,
+      "actual_candidate_count": 1,
+      "status": "mismatch",
+      "candidates": [
+        {
+          "id": "m1_e07c88899c8b82ddd0b7b4cd9ba649bc261ba3546d8faed77714732c59b6deab",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 65,
+            "length": 8
+          },
+          "original": "set[int]",
+          "replacement": "AbstractSet[int]",
+          "operator": "type_set_abstract_set",
+          "line": 3,
+          "column": 18,
+          "symbol": "record",
+          "file_hash": "2bcabfeaa0e48fe41fdfdd458dd32d833f18b9443106921581ded9d991a0add4",
+          "rank": 1,
+          "score": 50,
+          "ranking_reasons": [
+            {
+              "code": "type_annotation",
+              "score": 50
+            }
+          ]
+        }
+      ],
+      "baseline": {
+        "annotation": "frozenset[int]"
+      },
+      "mutants": [
+        {
+          "annotation": "typing.AbstractSet[int]"
+        }
+      ]
+    },
+    {
+      "id": "set-module_shadow-true",
+      "mode": "strict",
+      "expected_candidate_count": 0,
+      "actual_candidate_count": 1,
+      "status": "mismatch",
+      "candidates": [
+        {
+          "id": "m1_3a0c7bd6b90d1187c48835fe8f3717817e72943e2b1bdf8bb69d95ae798fe914",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 65,
+            "length": 16
+          },
+          "original": "AbstractSet[int]",
+          "replacement": "set[int]",
+          "operator": "type_set_abstract_set",
+          "line": 3,
+          "column": 18,
+          "symbol": "record",
+          "file_hash": "6240d12da14050b40c508e2ef6b340392355e5989c9245d09bdebb4712522f00",
+          "rank": 1,
+          "score": 50,
+          "ranking_reasons": [
+            {
+              "code": "type_annotation",
+              "score": 50
+            }
+          ]
+        }
+      ],
+      "baseline": {
+        "annotation": "typing.AbstractSet[int]"
+      },
+      "mutants": [
+        {
+          "annotation": "frozenset[int]"
+        }
+      ]
+    },
+    {
+      "id": "set-type_parameter-true",
+      "mode": "strict",
+      "expected_candidate_count": 0,
+      "actual_candidate_count": 1,
+      "status": "mismatch",
+      "candidates": [
+        {
+          "id": "m1_4151dabbd949f0ba8bf94601fac01b5bda11064570943226550d0b2f673c4b2e",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 54,
+            "length": 16
+          },
+          "original": "AbstractSet[int]",
+          "replacement": "set[int]",
+          "operator": "type_set_abstract_set",
+          "line": 2,
+          "column": 23,
+          "symbol": "record",
+          "file_hash": "3c820e1c0f22412beb85ddab14aa877c7fe08cccc50d36b75815bec86eba3c03",
+          "rank": 1,
+          "score": 50,
+          "ranking_reasons": [
+            {
+              "code": "type_annotation",
+              "score": 50
+            }
+          ]
+        }
+      ],
+      "baseline": {
+        "annotation": "typing.AbstractSet[int]"
+      },
+      "mutants": [
+        {
+          "error": "TypeError",
+          "message": "'typing.TypeVar' object is not subscriptable"
+        }
+      ]
+    },
+    {
+      "id": "dict-control-false",
+      "mode": "strict",
+      "expected_candidate_count": 1,
+      "actual_candidate_count": 1,
+      "status": "match",
+      "candidates": [
+        {
+          "id": "m1_566114b35a940382dbb19f8b93ae2352c050c561684bdd66477add0345752c93",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 45,
+            "length": 14
+          },
+          "original": "dict[str, int]",
+          "replacement": "Mapping[str, int]",
+          "operator": "type_dict_mapping",
+          "line": 2,
+          "column": 18,
+          "symbol": "record",
+          "file_hash": "fdf8add32da43aaf6167cd5ad324850c13d64b8ca248009377a804eeefc8a7f1",
+          "rank": 1,
+          "score": 50,
+          "ranking_reasons": [
+            {
+              "code": "type_annotation",
+              "score": 50
+            }
+          ]
+        }
+      ],
+      "baseline": {
+        "annotation": "dict[str, int]"
+      },
+      "mutants": [
+        {
+          "annotation": "typing.Mapping[str, int]"
+        }
+      ]
+    },
+    {
+      "id": "dict-control-true",
+      "mode": "strict",
+      "expected_candidate_count": 1,
+      "actual_candidate_count": 1,
+      "status": "match",
+      "candidates": [
+        {
+          "id": "m1_d20ed60b02a5232b4b7fc931f4224c2c1d9a3ee823e196d93b00709e21f7b0a4",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 45,
+            "length": 17
+          },
+          "original": "Mapping[str, int]",
+          "replacement": "dict[str, int]",
+          "operator": "type_dict_mapping",
+          "line": 2,
+          "column": 18,
+          "symbol": "record",
+          "file_hash": "5a2bdc439e317b641d0b877ee91e574b531e06ba91cbcea9eedc799be7e66d20",
+          "rank": 1,
+          "score": 50,
+          "ranking_reasons": [
+            {
+              "code": "type_annotation",
+              "score": 50
+            }
+          ]
+        }
+      ],
+      "baseline": {
+        "annotation": "typing.Mapping[str, int]"
+      },
+      "mutants": [
+        {
+          "annotation": "dict[str, int]"
+        }
+      ]
+    },
+    {
+      "id": "dict-module_shadow-false",
+      "mode": "strict",
+      "expected_candidate_count": 0,
+      "actual_candidate_count": 1,
+      "status": "mismatch",
+      "candidates": [
+        {
+          "id": "m1_f8713c491fecd5bf7900d2fc6cab5404793480654a21db06a6ac516e5959023c",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 58,
+            "length": 14
+          },
+          "original": "dict[str, int]",
+          "replacement": "Mapping[str, int]",
+          "operator": "type_dict_mapping",
+          "line": 3,
+          "column": 18,
+          "symbol": "record",
+          "file_hash": "9471cc6ccd40e5b44f26dbb0870fcc98f69c9e3ed9ba2290f10126c4a95aca35",
+          "rank": 1,
+          "score": 50,
+          "ranking_reasons": [
+            {
+              "code": "type_annotation",
+              "score": 50
+            }
+          ]
+        }
+      ],
+      "baseline": {
+        "annotation": "tuple[str, int]"
+      },
+      "mutants": [
+        {
+          "annotation": "typing.Mapping[str, int]"
+        }
+      ]
+    },
+    {
+      "id": "dict-module_shadow-true",
+      "mode": "strict",
+      "expected_candidate_count": 0,
+      "actual_candidate_count": 1,
+      "status": "mismatch",
+      "candidates": [
+        {
+          "id": "m1_8f7e10f3779340012ebc877d909f0e253788b319633f278bfd28daea3cea0b7f",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 58,
+            "length": 17
+          },
+          "original": "Mapping[str, int]",
+          "replacement": "dict[str, int]",
+          "operator": "type_dict_mapping",
+          "line": 3,
+          "column": 18,
+          "symbol": "record",
+          "file_hash": "fe0bef36bdb2ca425a4fe169dac6c9fe07ff0cb0933951de0a0c6c884781e5f2",
+          "rank": 1,
+          "score": 50,
+          "ranking_reasons": [
+            {
+              "code": "type_annotation",
+              "score": 50
+            }
+          ]
+        }
+      ],
+      "baseline": {
+        "annotation": "typing.Mapping[str, int]"
+      },
+      "mutants": [
+        {
+          "annotation": "tuple[str, int]"
+        }
+      ]
+    },
+    {
+      "id": "dict-type_parameter-true",
+      "mode": "strict",
+      "expected_candidate_count": 0,
+      "actual_candidate_count": 1,
+      "status": "mismatch",
+      "candidates": [
+        {
+          "id": "m1_5512b35bcb926ed96161dea8cd2b496e2ac0499d3b61fddf026490a23efdbc31",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 51,
+            "length": 17
+          },
+          "original": "Mapping[str, int]",
+          "replacement": "dict[str, int]",
+          "operator": "type_dict_mapping",
+          "line": 2,
+          "column": 24,
+          "symbol": "record",
+          "file_hash": "7ad3f71257deab8d8628931c245ab8e0ddc5cbaf9f4d9a9a41efb1b79ea529b4",
+          "rank": 1,
+          "score": 50,
+          "ranking_reasons": [
+            {
+              "code": "type_annotation",
+              "score": 50
+            }
+          ]
+        }
+      ],
+      "baseline": {
+        "annotation": "typing.Mapping[str, int]"
+      },
+      "mutants": [
+        {
+          "error": "TypeError",
+          "message": "'typing.TypeVar' object is not subscriptable"
+        }
+      ]
+    }
+  ]
+}

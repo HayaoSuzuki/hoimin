@@ -1,0 +1,116 @@
+{
+  "head": "f11013542ccd735ab9741b5079c0b39a517df256",
+  "binary_sha256": "271bee25922fc981e81f16ab584c86209e41b8e4c0394ae8021617cbe4993408",
+  "results": [
+    {
+      "id": "implicit_before_import",
+      "mode": "strict",
+      "expected_candidate_count": 0,
+      "actual_candidate_count": 1,
+      "status": "mismatch",
+      "candidates": [
+        {
+          "id": "m1_2421405da44a9bdd8eb983081bc9a5188c7b30520cb99b08e9b29d36c66ebc72",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 121,
+            "length": 13
+          },
+          "original": "Sequence[int]",
+          "replacement": "list[int]",
+          "operator": "type_list_sequence",
+          "line": 7,
+          "column": 26,
+          "symbol": "record",
+          "file_hash": "71760eef3692800247df442677190e3456842ff14f78b6375e88ad945b6aaf2c",
+          "rank": 1,
+          "score": 50,
+          "ranking_reasons": [
+            {
+              "code": "type_annotation",
+              "score": 50
+            }
+          ]
+        }
+      ],
+      "runtime": [
+        {
+          "raises": false,
+          "typing": true,
+          "observed": "typing.Sequence[int]"
+        },
+        {
+          "raises": true,
+          "typing": false,
+          "observed": "set[int]"
+        }
+      ]
+    },
+    {
+      "id": "import_before_implicit",
+      "mode": "strict",
+      "expected_candidate_count": 1,
+      "actual_candidate_count": 1,
+      "status": "match",
+      "candidates": [
+        {
+          "id": "m1_07b3d6d8ce57d1a7fa2f5cb2fe125c36dd2acd789e6f9c8cc7bdd2240c21029b",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 121,
+            "length": 13
+          },
+          "original": "Sequence[int]",
+          "replacement": "list[int]",
+          "operator": "type_list_sequence",
+          "line": 7,
+          "column": 26,
+          "symbol": "record",
+          "file_hash": "9bb7733e4c6bd03031eff5fde996d06044a743d1f4b32777466f3336e32bee98",
+          "rank": 1,
+          "score": 50,
+          "ranking_reasons": [
+            {
+              "code": "type_annotation",
+              "score": 50
+            }
+          ]
+        }
+      ],
+      "runtime": [
+        {
+          "raises": false,
+          "typing": true,
+          "observed": "typing.Sequence[int]"
+        },
+        {
+          "raises": true,
+          "typing": true,
+          "observed": "typing.Sequence[int]"
+        }
+      ]
+    },
+    {
+      "id": "explicit_before_import",
+      "mode": "strict",
+      "expected_candidate_count": 0,
+      "actual_candidate_count": 0,
+      "status": "match",
+      "candidates": [],
+      "runtime": [
+        {
+          "raises": false,
+          "typing": false,
+          "observed": "set[int]"
+        },
+        {
+          "raises": true,
+          "typing": false,
+          "observed": "set[int]"
+        }
+      ]
+    }
+  ]
+}

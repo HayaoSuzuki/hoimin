@@ -1,0 +1,563 @@
+{
+  "head": "f11013542ccd735ab9741b5079c0b39a517df256",
+  "binary_sha256": "99ee00c4ee4e116b4ae33a246ceae7141b1b46ee46a74e27b9080a77df37a48c",
+  "rows": [
+    {
+      "id": "slice-tuple-0",
+      "mode": "strict",
+      "expected_candidate_count": 1,
+      "actual_candidate_count": 1,
+      "status": "match",
+      "candidates": [
+        {
+          "id": "m1_de35e12a997789325306c35cbdad15ec7b86e6155fafd24a73fc1d8c32bb59f7",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 23,
+            "length": 2
+          },
+          "original": "1,",
+          "replacement": "[1,]",
+          "operator": "collection_list_tuple",
+          "line": 2,
+          "column": 13,
+          "symbol": "f",
+          "file_hash": "ac8d80d402f1ab29d5c029074ff151a06d330d73e817552fe79e0cd696bf1332",
+          "rank": 1,
+          "score": 80,
+          "ranking_reasons": [
+            {
+              "code": "behavioral",
+              "score": 80
+            }
+          ]
+        }
+      ],
+      "mutants": [
+        {
+          "source": "def f(x):\n    return x[[1,]]\n",
+          "valid": true
+        }
+      ]
+    },
+    {
+      "id": "slice-tuple-1",
+      "mode": "strict",
+      "expected_candidate_count": 0,
+      "actual_candidate_count": 1,
+      "status": "mismatch",
+      "candidates": [
+        {
+          "id": "m1_7846635d39903249dba569eac1de07878b12a506343470b7220187538587cc8c",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 23,
+            "length": 2
+          },
+          "original": ":,",
+          "replacement": "[:,]",
+          "operator": "collection_list_tuple",
+          "line": 2,
+          "column": 13,
+          "symbol": "f",
+          "file_hash": "5b614ae2b91396d8e8f9a25d75ccc2e711b5df8160d27c6003b9f0052947e0cc",
+          "rank": 1,
+          "score": 80,
+          "ranking_reasons": [
+            {
+              "code": "behavioral",
+              "score": 80
+            }
+          ]
+        }
+      ],
+      "mutants": [
+        {
+          "source": "def f(x):\n    return x[[:,]]\n",
+          "valid": false,
+          "error": "invalid syntax (<fixture>, line 2)"
+        }
+      ]
+    },
+    {
+      "id": "slice-tuple-2",
+      "mode": "strict",
+      "expected_candidate_count": 1,
+      "actual_candidate_count": 1,
+      "status": "match",
+      "candidates": [
+        {
+          "id": "m1_d019a8892b9d553d8733bbb19e89f37e5b067f13b19e2e272df00b615d79042f",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 23,
+            "length": 5
+          },
+          "original": "1, 1,",
+          "replacement": "[1, 1,]",
+          "operator": "collection_list_tuple",
+          "line": 2,
+          "column": 13,
+          "symbol": "f",
+          "file_hash": "811e4589d0029536fcbb80505a88087637e37acfe15b525ebbf4c67bee1edc40",
+          "rank": 1,
+          "score": 80,
+          "ranking_reasons": [
+            {
+              "code": "behavioral",
+              "score": 80
+            }
+          ]
+        }
+      ],
+      "mutants": [
+        {
+          "source": "def f(x):\n    return x[[1, 1,]]\n",
+          "valid": true
+        }
+      ]
+    },
+    {
+      "id": "slice-tuple-3",
+      "mode": "strict",
+      "expected_candidate_count": 0,
+      "actual_candidate_count": 1,
+      "status": "mismatch",
+      "candidates": [
+        {
+          "id": "m1_b3bb01565f9b8a7b5b1a1154b8c13ba0cc74cf5dac507b3aacfc3fbd7a6c1bec",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 23,
+            "length": 5
+          },
+          "original": "1, :,",
+          "replacement": "[1, :,]",
+          "operator": "collection_list_tuple",
+          "line": 2,
+          "column": 13,
+          "symbol": "f",
+          "file_hash": "4b4fc09502a3dabb37e1dfd6e6d08445a314ff123610f36bb87ea6a0e5bdec80",
+          "rank": 1,
+          "score": 80,
+          "ranking_reasons": [
+            {
+              "code": "behavioral",
+              "score": 80
+            }
+          ]
+        }
+      ],
+      "mutants": [
+        {
+          "source": "def f(x):\n    return x[[1, :,]]\n",
+          "valid": false,
+          "error": "invalid syntax (<fixture>, line 2)"
+        }
+      ]
+    },
+    {
+      "id": "slice-tuple-4",
+      "mode": "strict",
+      "expected_candidate_count": 0,
+      "actual_candidate_count": 1,
+      "status": "mismatch",
+      "candidates": [
+        {
+          "id": "m1_82a5d638d0242b2fa2dfabdf78e3e6b1a8a1d0ea41e23743caa6858e2fa10224",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 23,
+            "length": 5
+          },
+          "original": ":, 1,",
+          "replacement": "[:, 1,]",
+          "operator": "collection_list_tuple",
+          "line": 2,
+          "column": 13,
+          "symbol": "f",
+          "file_hash": "c70bc609b2d3f203713396d30815a7fcd89f8bbe1e5c098003b23dae9ee4a75f",
+          "rank": 1,
+          "score": 80,
+          "ranking_reasons": [
+            {
+              "code": "behavioral",
+              "score": 80
+            }
+          ]
+        }
+      ],
+      "mutants": [
+        {
+          "source": "def f(x):\n    return x[[:, 1,]]\n",
+          "valid": false,
+          "error": "invalid syntax (<fixture>, line 2)"
+        }
+      ]
+    },
+    {
+      "id": "slice-tuple-5",
+      "mode": "strict",
+      "expected_candidate_count": 0,
+      "actual_candidate_count": 1,
+      "status": "mismatch",
+      "candidates": [
+        {
+          "id": "m1_017507042a116db0bdd6fc5e51bcc4f700c036bde8d5df392867489274577513",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 23,
+            "length": 5
+          },
+          "original": ":, :,",
+          "replacement": "[:, :,]",
+          "operator": "collection_list_tuple",
+          "line": 2,
+          "column": 13,
+          "symbol": "f",
+          "file_hash": "e21511c62d13b45ca229d0d77e849929a4021a5b189c0c60a3af779c567ce770",
+          "rank": 1,
+          "score": 80,
+          "ranking_reasons": [
+            {
+              "code": "behavioral",
+              "score": 80
+            }
+          ]
+        }
+      ],
+      "mutants": [
+        {
+          "source": "def f(x):\n    return x[[:, :,]]\n",
+          "valid": false,
+          "error": "invalid syntax (<fixture>, line 2)"
+        }
+      ]
+    },
+    {
+      "id": "slice-tuple-6",
+      "mode": "strict",
+      "expected_candidate_count": 1,
+      "actual_candidate_count": 1,
+      "status": "match",
+      "candidates": [
+        {
+          "id": "m1_f9729537d3e92cda4642a3f69e637038602c38054c776c0f17c0440f608cfbfb",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 23,
+            "length": 8
+          },
+          "original": "1, 1, 1,",
+          "replacement": "[1, 1, 1,]",
+          "operator": "collection_list_tuple",
+          "line": 2,
+          "column": 13,
+          "symbol": "f",
+          "file_hash": "edf1189bac471e407a88288b597b296e1b412c3a1688f10b52b2afb495e89fbe",
+          "rank": 1,
+          "score": 80,
+          "ranking_reasons": [
+            {
+              "code": "behavioral",
+              "score": 80
+            }
+          ]
+        }
+      ],
+      "mutants": [
+        {
+          "source": "def f(x):\n    return x[[1, 1, 1,]]\n",
+          "valid": true
+        }
+      ]
+    },
+    {
+      "id": "slice-tuple-7",
+      "mode": "strict",
+      "expected_candidate_count": 0,
+      "actual_candidate_count": 1,
+      "status": "mismatch",
+      "candidates": [
+        {
+          "id": "m1_0a72b5ce3bc09c32bcb5764a5003fcb083e8c71a01406a918862056f1faefc06",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 23,
+            "length": 8
+          },
+          "original": "1, 1, :,",
+          "replacement": "[1, 1, :,]",
+          "operator": "collection_list_tuple",
+          "line": 2,
+          "column": 13,
+          "symbol": "f",
+          "file_hash": "48abd753ddadbb79b45edf1f0cbfbf0f3ce3e2c9dd4094e5fbf53d230d8e50a8",
+          "rank": 1,
+          "score": 80,
+          "ranking_reasons": [
+            {
+              "code": "behavioral",
+              "score": 80
+            }
+          ]
+        }
+      ],
+      "mutants": [
+        {
+          "source": "def f(x):\n    return x[[1, 1, :,]]\n",
+          "valid": false,
+          "error": "invalid syntax (<fixture>, line 2)"
+        }
+      ]
+    },
+    {
+      "id": "slice-tuple-8",
+      "mode": "strict",
+      "expected_candidate_count": 0,
+      "actual_candidate_count": 1,
+      "status": "mismatch",
+      "candidates": [
+        {
+          "id": "m1_5b9b66c619ad90f3e809d09f05fc9877ae5d6226f7829b188f34b0ba6019658b",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 23,
+            "length": 8
+          },
+          "original": "1, :, 1,",
+          "replacement": "[1, :, 1,]",
+          "operator": "collection_list_tuple",
+          "line": 2,
+          "column": 13,
+          "symbol": "f",
+          "file_hash": "0db6546383b0142ec7c843195b91531b19f5183cd5ac208c0419fdf376f9f391",
+          "rank": 1,
+          "score": 80,
+          "ranking_reasons": [
+            {
+              "code": "behavioral",
+              "score": 80
+            }
+          ]
+        }
+      ],
+      "mutants": [
+        {
+          "source": "def f(x):\n    return x[[1, :, 1,]]\n",
+          "valid": false,
+          "error": "invalid syntax (<fixture>, line 2)"
+        }
+      ]
+    },
+    {
+      "id": "slice-tuple-9",
+      "mode": "strict",
+      "expected_candidate_count": 0,
+      "actual_candidate_count": 1,
+      "status": "mismatch",
+      "candidates": [
+        {
+          "id": "m1_9a36b5d7771703fcfd068661f844a9cea0960b342cbe318a95c25acb975fdc78",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 23,
+            "length": 8
+          },
+          "original": "1, :, :,",
+          "replacement": "[1, :, :,]",
+          "operator": "collection_list_tuple",
+          "line": 2,
+          "column": 13,
+          "symbol": "f",
+          "file_hash": "8f457416346e522b497e49845b8a0787eb83bb43d46d3f553eb6a8f8699da71a",
+          "rank": 1,
+          "score": 80,
+          "ranking_reasons": [
+            {
+              "code": "behavioral",
+              "score": 80
+            }
+          ]
+        }
+      ],
+      "mutants": [
+        {
+          "source": "def f(x):\n    return x[[1, :, :,]]\n",
+          "valid": false,
+          "error": "invalid syntax (<fixture>, line 2)"
+        }
+      ]
+    },
+    {
+      "id": "slice-tuple-10",
+      "mode": "strict",
+      "expected_candidate_count": 0,
+      "actual_candidate_count": 1,
+      "status": "mismatch",
+      "candidates": [
+        {
+          "id": "m1_b960df2e148fe585562aee60c964e734d92cc6b97f1a8de16c237c821717b04a",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 23,
+            "length": 8
+          },
+          "original": ":, 1, 1,",
+          "replacement": "[:, 1, 1,]",
+          "operator": "collection_list_tuple",
+          "line": 2,
+          "column": 13,
+          "symbol": "f",
+          "file_hash": "9de2c5f8bc37a0d369cd374e7d70f005824838d15c562395dda61a26dff6f572",
+          "rank": 1,
+          "score": 80,
+          "ranking_reasons": [
+            {
+              "code": "behavioral",
+              "score": 80
+            }
+          ]
+        }
+      ],
+      "mutants": [
+        {
+          "source": "def f(x):\n    return x[[:, 1, 1,]]\n",
+          "valid": false,
+          "error": "invalid syntax (<fixture>, line 2)"
+        }
+      ]
+    },
+    {
+      "id": "slice-tuple-11",
+      "mode": "strict",
+      "expected_candidate_count": 0,
+      "actual_candidate_count": 1,
+      "status": "mismatch",
+      "candidates": [
+        {
+          "id": "m1_7b9c777379315460b71ae358cbeebcf7d477ca5018283d8591ac2b90010058bb",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 23,
+            "length": 8
+          },
+          "original": ":, 1, :,",
+          "replacement": "[:, 1, :,]",
+          "operator": "collection_list_tuple",
+          "line": 2,
+          "column": 13,
+          "symbol": "f",
+          "file_hash": "96ee43655d531772cfaed7041fe420ac1f15554f3b40bc2d129c110729abd0ae",
+          "rank": 1,
+          "score": 80,
+          "ranking_reasons": [
+            {
+              "code": "behavioral",
+              "score": 80
+            }
+          ]
+        }
+      ],
+      "mutants": [
+        {
+          "source": "def f(x):\n    return x[[:, 1, :,]]\n",
+          "valid": false,
+          "error": "invalid syntax (<fixture>, line 2)"
+        }
+      ]
+    },
+    {
+      "id": "slice-tuple-12",
+      "mode": "strict",
+      "expected_candidate_count": 0,
+      "actual_candidate_count": 1,
+      "status": "mismatch",
+      "candidates": [
+        {
+          "id": "m1_c1cb060bcd2749cf50b91fbc8f46e1637036622979872ef51054af25bf11aa49",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 23,
+            "length": 8
+          },
+          "original": ":, :, 1,",
+          "replacement": "[:, :, 1,]",
+          "operator": "collection_list_tuple",
+          "line": 2,
+          "column": 13,
+          "symbol": "f",
+          "file_hash": "e67c768721fe87ac7764e67ac46cb48e3d0df6939368b7162fed3f500c77a520",
+          "rank": 1,
+          "score": 80,
+          "ranking_reasons": [
+            {
+              "code": "behavioral",
+              "score": 80
+            }
+          ]
+        }
+      ],
+      "mutants": [
+        {
+          "source": "def f(x):\n    return x[[:, :, 1,]]\n",
+          "valid": false,
+          "error": "invalid syntax (<fixture>, line 2)"
+        }
+      ]
+    },
+    {
+      "id": "slice-tuple-13",
+      "mode": "strict",
+      "expected_candidate_count": 0,
+      "actual_candidate_count": 1,
+      "status": "mismatch",
+      "candidates": [
+        {
+          "id": "m1_07f5294a6212d95366f0126333aabbb939e97b8dcc6ed2ad68210e2a72b8ee86",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 23,
+            "length": 8
+          },
+          "original": ":, :, :,",
+          "replacement": "[:, :, :,]",
+          "operator": "collection_list_tuple",
+          "line": 2,
+          "column": 13,
+          "symbol": "f",
+          "file_hash": "00cdc5679542980f4ed08823fc0052b6bcbe9e7185f0c0ab3f4af2628c6de06c",
+          "rank": 1,
+          "score": 80,
+          "ranking_reasons": [
+            {
+              "code": "behavioral",
+              "score": 80
+            }
+          ]
+        }
+      ],
+      "mutants": [
+        {
+          "source": "def f(x):\n    return x[[:, :, :,]]\n",
+          "valid": false,
+          "error": "invalid syntax (<fixture>, line 2)"
+        }
+      ]
+    }
+  ]
+}

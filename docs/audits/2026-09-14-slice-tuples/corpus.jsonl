@@ -1,0 +1,14 @@
+{"expected_candidate_count":1,"id":"slice-tuple-0","mode":"strict","source":"def f(x):\n    return x[1,]\n"}
+{"expected_candidate_count":0,"id":"slice-tuple-1","mode":"strict","source":"def f(x):\n    return x[:,]\n"}
+{"expected_candidate_count":1,"id":"slice-tuple-2","mode":"strict","source":"def f(x):\n    return x[1, 1,]\n"}
+{"expected_candidate_count":0,"id":"slice-tuple-3","mode":"strict","source":"def f(x):\n    return x[1, :,]\n"}
+{"expected_candidate_count":0,"id":"slice-tuple-4","mode":"strict","source":"def f(x):\n    return x[:, 1,]\n"}
+{"expected_candidate_count":0,"id":"slice-tuple-5","mode":"strict","source":"def f(x):\n    return x[:, :,]\n"}
+{"expected_candidate_count":1,"id":"slice-tuple-6","mode":"strict","source":"def f(x):\n    return x[1, 1, 1,]\n"}
+{"expected_candidate_count":0,"id":"slice-tuple-7","mode":"strict","source":"def f(x):\n    return x[1, 1, :,]\n"}
+{"expected_candidate_count":0,"id":"slice-tuple-8","mode":"strict","source":"def f(x):\n    return x[1, :, 1,]\n"}
+{"expected_candidate_count":0,"id":"slice-tuple-9","mode":"strict","source":"def f(x):\n    return x[1, :, :,]\n"}
+{"expected_candidate_count":0,"id":"slice-tuple-10","mode":"strict","source":"def f(x):\n    return x[:, 1, 1,]\n"}
+{"expected_candidate_count":0,"id":"slice-tuple-11","mode":"strict","source":"def f(x):\n    return x[:, 1, :,]\n"}
+{"expected_candidate_count":0,"id":"slice-tuple-12","mode":"strict","source":"def f(x):\n    return x[:, :, 1,]\n"}
+{"expected_candidate_count":0,"id":"slice-tuple-13","mode":"strict","source":"def f(x):\n    return x[:, :, :,]\n"}

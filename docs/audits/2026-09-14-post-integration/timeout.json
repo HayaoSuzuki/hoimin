@@ -1,0 +1,16 @@
+[
+  {
+    "analyzer_timeout": "10ms",
+    "elapsed_ms": 26,
+    "exit_code": 2,
+    "stderr": "plan.discovery: analyzer.timeout: --analyzer-timeout expired after 10ms\n",
+    "stdout": ""
+  },
+  {
+    "analyzer_timeout": "100ms",
+    "elapsed_ms": 106,
+    "exit_code": 2,
+    "stderr": "plan.discovery: analyzer.timeout: --analyzer-timeout expired after 100ms\n",
+    "stdout": ""
+  }
+]
