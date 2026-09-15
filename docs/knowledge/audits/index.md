@@ -12,3 +12,5 @@
 - [入力形状別の性能検証](performance-shapes.md) - 実行ゲート、release計測、依存PRと証拠の限界。
 
 - [境界をまたぐ契約 fixture](boundary-contracts.md) - strict 実行、全件報告と未検証条件。
+
+- [暗黙例外と finally](implicit-finally.md) - typing 由来の合流、Lean 小モデル、公開 plan の対応範囲。

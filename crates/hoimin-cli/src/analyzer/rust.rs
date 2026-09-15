@@ -1051,6 +1051,69 @@ impl NameResolutionIndex {
         }
     }
 
+    fn annotation_resolution(&self, offset: usize, name: &str) -> NameResolution {
+        self.occurrences
+            .get(&offset)
+            .map_or(NameResolution::Unknown, |site| {
+                self.resolve_annotation_scope(site.scope, name, true)
+            })
+    }
+
+    fn resolve_annotation_scope(
+        &self,
+        scope_id: ScopeId,
+        name: &str,
+        direct: bool,
+    ) -> NameResolution {
+        let scope = &self.scopes[scope_id.0];
+        let parent = |direct| {
+            scope
+                .parent
+                .map_or(NameResolution::DefinitelyBuiltin, |parent| {
+                    self.resolve_annotation_scope(parent, name, direct)
+                })
+        };
+        // Ordinary lexical descendants skip class namespaces and directives.
+        if scope.kind == NameScopeKind::Class && !direct {
+            return parent(false);
+        }
+        if scope.kind != NameScopeKind::Module && scope.globals.contains(name) {
+            return self.resolve_module(name);
+        }
+        if scope.nonlocals.contains(name) {
+            return self.resolve_nonlocal(scope.parent, name);
+        }
+        match scope.kind {
+            NameScopeKind::Module | NameScopeKind::Class => {
+                // Python 3.14 annotations can be evaluated after the entire suite.
+                // A later or conditional binding therefore prevents builtin proof.
+                if scope.wildcard || scope.possible_bindings.contains(name) {
+                    NameResolution::Unknown
+                } else {
+                    parent(false)
+                }
+            }
+            NameScopeKind::Function | NameScopeKind::Comprehension { .. } => {
+                if scope.locals.contains(name) {
+                    NameResolution::Shadowed
+                } else if scope.wildcard {
+                    NameResolution::Unknown
+                } else {
+                    parent(false)
+                }
+            }
+            NameScopeKind::TypeParameters => {
+                if scope.locals.contains(name) {
+                    NameResolution::Shadowed
+                } else {
+                    // Declaration annotations retain access to the enclosing class;
+                    // a function body that captures type parameters does not.
+                    parent(direct)
+                }
+            }
+        }
+    }
+
     fn resolve_scope(
         &self,
         scope_id: ScopeId,
@@ -1255,7 +1318,9 @@ impl NameResolutionBuilder {
             self.add_local(scope, name);
         }
         self.in_scope(scope, |this| {
-            this.visit_type_params(parameters);
+            visit_type_param_expressions(parameters, |expression| {
+                this.visit_annotation(expression);
+            });
             visit(this);
         });
     }
@@ -1567,6 +1632,13 @@ impl NameResolutionBuilder {
 }
 
 impl<'ast> Visitor<'ast> for NameResolutionBuilder {
+    fn visit_annotation(&mut self, annotation: &'ast Expr) {
+        // Abstract bases such as Sequence are not runtime builtin occurrences,
+        // but their replacements still need the scope at this annotation site.
+        self.record_resolution_site(usize::from(annotation.range().start()), false);
+        self.visit_expr(annotation);
+    }
+
     #[expect(
         clippy::too_many_lines,
         reason = "the exhaustive statement-binding pass keeps evaluation order and scope entry visible in one match"
@@ -1632,7 +1704,13 @@ impl<'ast> Visitor<'ast> for NameResolutionBuilder {
             }
             Stmt::AugAssign(assign) => self.record_target(&assign.target, end),
             Stmt::AnnAssign(assign) => self.record_target(&assign.target, end),
-            Stmt::TypeAlias(alias) => self.record_target(&alias.name, end),
+            Stmt::TypeAlias(alias) => {
+                self.record_target(&alias.name, end);
+                self.in_type_parameters(alias.type_params.as_deref(), |this| {
+                    this.visit_annotation(&alias.value);
+                });
+                return;
+            }
             Stmt::Delete(delete) => {
                 let mut names = Vec::new();
                 for target in &delete.targets {
@@ -2224,6 +2302,7 @@ const MUTABLE_BUILTINS: &[&str] = &[
     "any",
     "all",
     "list",
+    "dict",
     "tuple",
     "set",
     "frozenset",
@@ -2664,6 +2743,9 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             .operators
             .contains(MutationOperator::CollectionListTuple)
             || tuple.ctx != ExprContext::Load
+            // Subscript tuples can contain slices, which are not list elements.
+            // Only reject this tuple; the visitor still walks its slice bounds.
+            || tuple.elts.iter().any(|element| matches!(element, Expr::Slice(_)))
             || self.exception_type_depth > 0
             || self.facts.contains_annotation_span(tuple.range())
         {
@@ -4097,6 +4179,167 @@ impl<'ast> Visitor<'ast> for NamedBindingInvalidator<'_> {
     }
 }
 
+/// Exceptions from expressions evaluated by this statement, excluding child
+/// suites and deferred lambda bodies. Imports retain their existing contract.
+struct ImplicitExceptionEntry<'imports> {
+    incoming: &'imports KnownImports,
+    invalidated: Option<KnownImports>,
+    may_raise: bool,
+}
+
+impl ImplicitExceptionEntry<'_> {
+    fn for_statement(imports: &KnownImports, statement: &Stmt) -> Option<KnownImports> {
+        let mut entry = ImplicitExceptionEntry {
+            incoming: imports,
+            invalidated: None,
+            may_raise: matches!(
+                statement,
+                Stmt::Assert(_)
+                    | Stmt::AugAssign(_)
+                    | Stmt::For(_)
+                    | Stmt::While(_)
+                    | Stmt::If(_)
+                    | Stmt::With(_)
+                    | Stmt::ClassDef(_)
+                    | Stmt::Delete(_)
+                    | Stmt::Match(_)
+            ),
+        };
+        if let Stmt::ClassDef(class) = statement {
+            // Class construction runs its body immediately, but class-local
+            // environments must not leak into the enclosing scope.
+            let external = ClassExternalBindings::collect(&class.body);
+            for name in external.globals.iter().chain(&external.nonlocals) {
+                entry
+                    .invalidated
+                    .get_or_insert_with(|| imports.clone())
+                    .invalidate(name);
+            }
+        }
+        // Some stores can fail after an earlier target was already written.
+        let mut partial_targets = Vec::new();
+        match statement {
+            Stmt::Assign(assign)
+                if assign
+                    .targets
+                    .iter()
+                    .any(|target| !matches!(target, Expr::Name(_))) =>
+            {
+                partial_targets.extend(assign.targets.iter());
+            }
+            Stmt::AnnAssign(assign) if !matches!(assign.target.as_ref(), Expr::Name(_)) => {
+                partial_targets.push(assign.target.as_ref());
+            }
+            Stmt::AugAssign(assign) => partial_targets.push(assign.target.as_ref()),
+            Stmt::Delete(delete) => partial_targets.extend(delete.targets.iter()),
+            Stmt::For(loop_) => partial_targets.push(loop_.target.as_ref()),
+            Stmt::With(with) => partial_targets.extend(
+                with.items
+                    .iter()
+                    .filter_map(|item| item.optional_vars.as_deref()),
+            ),
+            _ => {}
+        }
+        for target in partial_targets {
+            entry.may_raise = true;
+            entry
+                .invalidated
+                .get_or_insert_with(|| imports.clone())
+                .invalidate_target(target);
+        }
+        // Handler headers are evaluated after the body, not at try entry.
+        if !matches!(statement, Stmt::Try(_) | Stmt::TypeAlias(_)) {
+            visitor::walk_stmt(&mut entry, statement);
+        }
+        entry
+            .may_raise
+            .then(|| entry.invalidated.unwrap_or_else(|| imports.clone()))
+    }
+}
+
+impl ImplicitExceptionEntry<'_> {
+    fn for_expression(imports: &KnownImports, expression: &Expr) -> Option<KnownImports> {
+        let mut entry = ImplicitExceptionEntry {
+            incoming: imports,
+            invalidated: None,
+            may_raise: false,
+        };
+        entry.visit_expr(expression);
+        entry
+            .may_raise
+            .then(|| entry.invalidated.unwrap_or_else(|| imports.clone()))
+    }
+}
+
+impl<'ast> Visitor<'ast> for ImplicitExceptionEntry<'_> {
+    fn visit_body(&mut self, _body: &'ast [Stmt]) {}
+
+    fn visit_pattern(&mut self, pattern: &'ast Pattern) {
+        // A refutable pattern or its guard can fail after an earlier capture.
+        let captured = match pattern {
+            Pattern::MatchMapping(mapping) => mapping.rest.as_ref(),
+            Pattern::MatchStar(star) => star.name.as_ref(),
+            Pattern::MatchAs(as_pattern) => as_pattern.name.as_ref(),
+            _ => None,
+        };
+        if let Some(name) = captured {
+            self.invalidated
+                .get_or_insert_with(|| self.incoming.clone())
+                .invalidate(name.as_str());
+        }
+        visitor::walk_pattern(self, pattern);
+    }
+
+    fn visit_expr(&mut self, expression: &'ast Expr) {
+        match expression {
+            Expr::Call(_)
+            | Expr::Subscript(_)
+            | Expr::Attribute(_)
+            | Expr::BinOp(_)
+            | Expr::BoolOp(_)
+            | Expr::UnaryOp(_)
+            | Expr::Compare(_)
+            | Expr::If(_)
+            | Expr::Await(_)
+            | Expr::Yield(_)
+            | Expr::YieldFrom(_)
+            | Expr::ListComp(_)
+            | Expr::SetComp(_)
+            | Expr::DictComp(_)
+            | Expr::Dict(_)
+            | Expr::Set(_)
+            | Expr::FString(_)
+            | Expr::Starred(_) => self.may_raise = true,
+            Expr::Name(name) if name.ctx == ExprContext::Load => self.may_raise = true,
+            Expr::Named(named) => {
+                self.invalidated
+                    .get_or_insert_with(|| self.incoming.clone())
+                    .invalidate_target(named.target.as_ref());
+            }
+            Expr::Lambda(lambda) => {
+                if let Some(parameters) = &lambda.parameters {
+                    for default in parameters
+                        .iter_non_variadic_params()
+                        .filter_map(ruff_python_ast::ParameterWithDefault::default)
+                    {
+                        self.visit_expr(default);
+                    }
+                }
+                return;
+            }
+            Expr::Generator(generator) => {
+                // Only the first iterable is evaluated when creating a generator.
+                if let Some(first) = generator.generators.first() {
+                    self.visit_expr(&first.iter);
+                }
+                return;
+            }
+            _ => {}
+        }
+        visitor::walk_expr(self, expression);
+    }
+}
+
 struct PatternBindingFlow {
     matched: Option<KnownImports>,
     failed: Option<KnownImports>,
@@ -4207,6 +4450,7 @@ struct ControlFlowExits {
     breaks: Vec<KnownImports>,
     continues: Vec<KnownImports>,
     terminates: Vec<KnownImports>,
+    implicit_raises: Option<KnownImports>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -4232,10 +4476,18 @@ impl ControlFlowExits {
         }
     }
 
+    fn merge_implicit(&mut self, states: impl IntoIterator<Item = KnownImports>) {
+        // All pending implicit exceptions have the same continuation category.
+        // Retain their must-agree facts, rather than one environment per call.
+        self.implicit_raises =
+            KnownImports::intersection(self.implicit_raises.take().into_iter().chain(states));
+    }
+
     fn merge_abrupt(&mut self, other: Self) {
         self.breaks.extend(other.breaks);
         self.continues.extend(other.continues);
         self.terminates.extend(other.terminates);
+        self.merge_implicit(other.implicit_raises);
     }
 }
 
@@ -4269,6 +4521,7 @@ struct AnnotationCollector<'ast, 'callback> {
     scope_kind: ScopeKind,
     qualname: Vec<String>,
     record_annotations: bool,
+    track_implicit_exceptions: bool,
     #[cfg(test)]
     marker_projection: Option<BindingFlowMarkerProjection>,
     #[cfg(test)]
@@ -4374,6 +4627,7 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
             scope_kind: ScopeKind::Module,
             qualname: Vec::new(),
             record_annotations: true,
+            track_implicit_exceptions: false,
             #[cfg(test)]
             marker_projection: None,
             #[cfg(test)]
@@ -4700,7 +4954,12 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
                 continue;
             };
             self.imports = imports;
+            let implicit_entry = self
+                .track_implicit_exceptions
+                .then(|| ImplicitExceptionEntry::for_statement(&self.imports, statement))
+                .flatten();
             let mut statement_exits = self.visit_statement_flow(statement);
+            statement_exits.merge_implicit(implicit_entry);
             fallthrough = statement_exits.fallthrough.take();
             exits.merge_abrupt(statement_exits);
         }
@@ -4753,7 +5012,10 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
         let inherited_scope = self.scope_kind;
         self.scope_kind = ScopeKind::Function;
         self.qualname.push(definition.name.as_str().to_owned());
+        let track_implicit_exceptions =
+            std::mem::replace(&mut self.track_implicit_exceptions, false);
         self.visit_suite(&definition.body);
+        self.track_implicit_exceptions = track_implicit_exceptions;
         self.qualname.pop();
         self.scope_kind = inherited_scope;
         self.imports = inherited;
@@ -4858,6 +5120,11 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
     ) -> ControlFlowExits {
         let body_imports = self.loop_head_fixed_point(body_imports, iteration_target, body);
         let body_exits = self.visit_suite_from(body_imports, body);
+        let mut repeated_exceptions = Vec::new();
+        if self.track_implicit_exceptions {
+            repeated_exceptions.extend(body_exits.fallthrough.iter().cloned());
+            repeated_exceptions.extend(body_exits.continues.iter().cloned());
+        }
         let mut natural = vec![zero_iteration];
         natural.extend(body_exits.fallthrough.clone());
         natural.extend(body_exits.continues.iter().cloned());
@@ -4871,9 +5138,12 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
         let mut exits = ControlFlowExits {
             fallthrough: KnownImports::intersection(after_loop),
             terminates: body_exits.terminates,
+            implicit_raises: body_exits.implicit_raises,
             ..ControlFlowExits::default()
         };
         exits.terminates.extend(orelse_exits.terminates);
+        exits.merge_implicit(orelse_exits.implicit_raises);
+        exits.merge_implicit(repeated_exceptions);
         exits
     }
 
@@ -4982,10 +5252,71 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
                 self.imports.invalidate_target(target);
             }
         }
-        self.visit_suite_flow(&statement.body)
+        let mut exits = self.visit_suite_flow(&statement.body);
+        if self.track_implicit_exceptions {
+            // __exit__/__aexit__ also runs on break, continue, and termination.
+            let states = exits
+                .fallthrough
+                .iter()
+                .chain(&exits.breaks)
+                .chain(&exits.continues)
+                .chain(&exits.terminates)
+                .cloned()
+                .collect::<Vec<_>>();
+            exits.merge_implicit(states);
+        }
+        exits
+    }
+
+    #[cfg_attr(
+        not(test),
+        expect(
+            clippy::unused_self,
+            reason = "test builds select handler-cleanup omissions"
+        )
+    )]
+    fn clear_handler_target(&self, name: &str, exits: &mut ControlFlowExits) {
+        let invalidate = |state: &mut KnownImports| state.invalidate(name);
+        #[cfg(test)]
+        let omitted_category = match self.test_mutation {
+            Some(BindingFlowTestMutation::OmitHandlerFallthroughCleanup) => {
+                Some(ExitCategory::Fallthrough)
+            }
+            Some(BindingFlowTestMutation::OmitHandlerBreakCleanup) => Some(ExitCategory::Break),
+            Some(BindingFlowTestMutation::OmitHandlerContinueCleanup) => {
+                Some(ExitCategory::Continue)
+            }
+            Some(BindingFlowTestMutation::OmitHandlerTerminateCleanup) => {
+                Some(ExitCategory::Terminate)
+            }
+            _ => None,
+        };
+        #[cfg(not(test))]
+        let omitted_category = None;
+        if let Some(state) = &mut exits.fallthrough
+            && omitted_category != Some(ExitCategory::Fallthrough)
+        {
+            invalidate(state);
+        }
+        for (category, states) in [
+            (ExitCategory::Break, &mut exits.breaks),
+            (ExitCategory::Continue, &mut exits.continues),
+            (ExitCategory::Terminate, &mut exits.terminates),
+        ] {
+            if omitted_category != Some(category) {
+                for state in states {
+                    invalidate(state);
+                }
+            }
+        }
+        if let Some(state) = &mut exits.implicit_raises {
+            state.invalidate(name);
+        }
     }
 
     fn visit_try(&mut self, statement: &'ast ruff_python_ast::StmtTry) -> ControlFlowExits {
+        let track_implicit_exceptions = self.track_implicit_exceptions;
+        self.track_implicit_exceptions |= !statement.finalbody.is_empty();
         let incoming = self.imports.clone();
         let body_exits = self.visit_suite_from(incoming.clone(), &statement.body);
         let normal_exits = body_exits
@@ -4999,6 +5330,7 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
         if let Some(normal) = normal_exits {
             Self::merge_branch(&mut fallthrough, &mut joined, normal);
         }
+        joined.merge_implicit(body_exits.implicit_raises);
         joined.breaks.extend(body_exits.breaks);
         joined.continues.extend(body_exits.continues);
         #[cfg(test)]
@@ -5014,6 +5346,12 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
                 self.capture_compound_header_entry(handler.range, &handler.body);
             }
             if let Some(type_) = &handler.type_ {
+                if self.track_implicit_exceptions {
+                    joined.merge_implicit(ImplicitExceptionEntry::for_expression(
+                        &imports,
+                        type_.as_ref(),
+                    ));
+                }
                 NamedBindingInvalidator::visit(&mut imports, type_.as_ref());
             }
             if let Some(name) = &handler.name {
@@ -5026,41 +5364,7 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
             }
             let mut handler_exits = self.visit_suite_from(imports, &handler.body);
             if let Some(name) = &handler.name {
-                let invalidate = |state: &mut KnownImports| state.invalidate(name.as_str());
-                #[cfg(test)]
-                let omitted_category = match self.test_mutation {
-                    Some(BindingFlowTestMutation::OmitHandlerFallthroughCleanup) => {
-                        Some(ExitCategory::Fallthrough)
-                    }
-                    Some(BindingFlowTestMutation::OmitHandlerBreakCleanup) => {
-                        Some(ExitCategory::Break)
-                    }
-                    Some(BindingFlowTestMutation::OmitHandlerContinueCleanup) => {
-                        Some(ExitCategory::Continue)
-                    }
-                    Some(BindingFlowTestMutation::OmitHandlerTerminateCleanup) => {
-                        Some(ExitCategory::Terminate)
-                    }
-                    _ => None,
-                };
-                #[cfg(not(test))]
-                let omitted_category = None;
-                if let Some(state) = &mut handler_exits.fallthrough
-                    && omitted_category != Some(ExitCategory::Fallthrough)
-                {
-                    invalidate(state);
-                }
-                for (category, states) in [
-                    (ExitCategory::Break, &mut handler_exits.breaks),
-                    (ExitCategory::Continue, &mut handler_exits.continues),
-                    (ExitCategory::Terminate, &mut handler_exits.terminates),
-                ] {
-                    if omitted_category != Some(category) {
-                        for state in states {
-                            invalidate(state);
-                        }
-                    }
-                }
+                self.clear_handler_target(name.as_str(), &mut handler_exits);
             }
             #[cfg(test)]
             self.mutate_multiple_handler_exits(&mut handler_exits);
@@ -5080,6 +5384,7 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
         let exits = self.apply_finally(joined, &statement.finalbody);
         #[cfg(test)]
         self.capture_try_exit(statement.range, &exits);
+        self.track_implicit_exceptions = track_implicit_exceptions;
         exits
     }
 
@@ -5097,6 +5402,7 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
         annotation_entries.extend(exits.breaks.iter().cloned());
         annotation_entries.extend(exits.continues.iter().cloned());
         annotation_entries.extend(exits.terminates.iter().cloned());
+        annotation_entries.extend(exits.implicit_raises.iter().cloned());
         let Some(annotation_entry) = KnownImports::intersection(annotation_entries) else {
             let _ = self.visit_suite_from(self.imports.clone(), finalbody);
             return ControlFlowExits::default();
@@ -5129,6 +5435,16 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
                 );
             }
         }
+        if let Some(imports) = exits.implicit_raises {
+            let record_annotations = self.record_annotations;
+            self.record_annotations = false;
+            let mut final_exits = self.visit_suite_from(imports, finalbody);
+            self.record_annotations = record_annotations;
+            // A falling finally resumes the pending exception. An abrupt finally
+            // replaces it through the same merge used for explicit exits.
+            result.merge_implicit(final_exits.fallthrough.take());
+            result.merge_abrupt(final_exits);
+        }
         result.fallthrough = KnownImports::intersection(fallthrough);
         result
     }
@@ -5157,6 +5473,7 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
         result.breaks.extend(final_exits.breaks);
         result.continues.extend(final_exits.continues);
         result.terminates.extend(final_exits.terminates);
+        result.merge_implicit(final_exits.implicit_raises);
     }
 
     fn visit_match(&mut self, statement: &'ast ruff_python_ast::StmtMatch) -> ControlFlowExits {
@@ -5837,7 +6154,7 @@ fn annotation_replacements(
             MutationOperator::TypeNullableAdd,
         ));
     }
-    replacements.extend(collection_replacements(annotation, source, imports));
+    replacements.extend(collection_replacements(annotation, source, facts, imports));
     replacements
 }
 
@@ -6006,6 +6323,7 @@ fn contains_disallowed_annotation(annotation: &Expr, imports: &KnownImports) -> 
 fn collection_replacements(
     annotation: &Expr,
     source: &str,
+    facts: &AstFacts<'_>,
     imports: &KnownImports,
 ) -> Vec<(String, MutationOperator)> {
     let Expr::Subscript(subscript) = annotation else {
@@ -6013,6 +6331,12 @@ fn collection_replacements(
     };
     let Some(resolved) = imports.resolved_name(subscript.value.as_ref()) else {
         return Vec::new();
+    };
+    let builtin = |name| {
+        facts
+            .name_resolution
+            .annotation_resolution(usize::from(annotation.range().start()), name)
+            == NameResolution::DefinitelyBuiltin
     };
     let base = expression_source(subscript.value.as_ref(), source);
     let replacement = |name: String, operator| {
@@ -6022,15 +6346,18 @@ fn collection_replacements(
         )
     };
     match resolved.as_str() {
-        "list" => imports
+        "list" if builtin("list") => imports
             .spelling_for(&base, &["typing.Sequence", "collections.abc.Sequence"])
             .map(|name| vec![replacement(name, MutationOperator::TypeListSequence)])
             .unwrap_or_default(),
         "typing.Sequence" | "collections.abc.Sequence" => {
-            let mut replacements = vec![replacement(
-                "list".to_owned(),
-                MutationOperator::TypeListSequence,
-            )];
+            let mut replacements = Vec::new();
+            if builtin("list") {
+                replacements.push(replacement(
+                    "list".to_owned(),
+                    MutationOperator::TypeListSequence,
+                ));
+            }
             if let Some(name) =
                 imports.spelling_for(&base, &["typing.Iterable", "collections.abc.Iterable"])
             {
@@ -6038,22 +6365,24 @@ fn collection_replacements(
             }
             replacements
         }
-        "set" => imports
+        "set" if builtin("set") => imports
             .spelling_for(
                 &base,
                 &["typing.AbstractSet", "collections.abc.AbstractSet"],
             )
             .map(|name| vec![replacement(name, MutationOperator::TypeSetAbstractSet)])
             .unwrap_or_default(),
-        "typing.AbstractSet" | "collections.abc.AbstractSet" => vec![replacement(
-            "set".to_owned(),
-            MutationOperator::TypeSetAbstractSet,
-        )],
-        "dict" => imports
+        "typing.AbstractSet" | "collections.abc.AbstractSet" if builtin("set") => {
+            vec![replacement(
+                "set".to_owned(),
+                MutationOperator::TypeSetAbstractSet,
+            )]
+        }
+        "dict" if builtin("dict") => imports
             .spelling_for(&base, &["typing.Mapping", "collections.abc.Mapping"])
             .map(|name| vec![replacement(name, MutationOperator::TypeMapping)])
             .unwrap_or_default(),
-        "typing.Mapping" | "collections.abc.Mapping" => vec![replacement(
+        "typing.Mapping" | "collections.abc.Mapping" if builtin("dict") => vec![replacement(
             "dict".to_owned(),
             MutationOperator::TypeMapping,
         )],
