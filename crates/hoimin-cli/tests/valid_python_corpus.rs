@@ -762,6 +762,11 @@ async fn slice_tuple_import_only_run_does_not_count_syntax_error_as_killed() {
     .await
     .expect("infrastructure-error: run deadline")
     .expect("infrastructure-error: run launch");
+    assert!(
+        result.status.success(),
+        "run failed: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
     let report: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
     assert_eq!(report["baseline"]["termination"]["Exit"], 0, "{report}");
     assert_eq!(report["summary"]["counts"]["killed"], 0, "{report}");

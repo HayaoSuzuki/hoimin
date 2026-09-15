@@ -9,7 +9,7 @@ sources:
   resource: ../../superpowers/reports/2026-09-15-issue-549-slice-tuple.md
   revision: f11013542ccd735ab9741b5079c0b39a517df256
   working_tree: untracked
-  sha256: 8d77886da10b8feb0d1806f43ae0096857c2f46beb52522a25f3863c34529b90
+  sha256: 80f6a99dabfdbe084de6cba0e211e55b4033bf7449c5dd344ab922358c1fac6b
 - id: issue-491-rust-cost-review
   resource: ../../superpowers/reports/2026-09-14-issue-491-rust-cost-review.md
   working_tree: untracked

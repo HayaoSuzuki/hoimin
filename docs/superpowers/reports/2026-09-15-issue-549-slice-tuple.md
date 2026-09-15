@@ -91,3 +91,7 @@ CPython 3.14.7、macOS arm64、debugで全valid_python_corpusは207 passed / 0 f
 cargo clippy --offline -p hoimin-cli --test valid_python_corpus -- -D warnings、cargo fmt --all -- --check、git diff --checkは成功した。release binary、Windows、Linuxでは今回の新規fixtureを実行していない。並行作業中のshared targetを使用した最初のGreenの後、専用worktreeの独立targetで再実行した。207 passed / 0 failed / 3 ignored、11.12秒で、同じ361照合・262候補compileを確認した。ログは /private/tmp/hoimin-549-green-isolated.log。最終Lean build/freshness/sensitivityは7.89秒で成功し、corpus全体は66例。
 
 OKFの最終確認では、20 MarkdownのYAML・予約ファイル構造と今回の4出典のリンク、脚注、SHA-256を検査した。設計/報告一覧の追加行が表の外へ出ていたため、既存表の先頭へ移して先頭見出しと参照時点の状態を揃えた。内容点検では、直接Sliceの条件、子探索の継続、過去監査と今回の実行結果、未検証OSの区別を確認した。verified metadataは追加していない。
+
+## 親担当による公開前レビュー
+
+productionの3行のguard、Leanの14入力、corpusの25追加例、import-onlyの実行assertを個別に照合した。import-only testにCLIの終了成功を明示するassertを追加した。計画書の共有target記述を最終の独立targetへ更新し、ファイル別の手順と再検証コマンドを追記した。
