@@ -34,3 +34,5 @@ okf_version: "0.2"
 - [入力形状別の性能検証](audits/performance-shapes.md) - 実行ゲート、release計測、依存PRと証拠の限界。
 
 - [境界をまたぐ契約 fixture](audits/boundary-contracts.md) - strict 実行、全件報告と未検証条件。
+
+- [コレクション型注釈の参照先](design/annotation-builtins.md) - 具体型の両方向、遅延評価とscopeの判定。

@@ -5317,9 +5317,10 @@ fn typing_module_alias_rebinding_linear() {
             ],
         ),
         (
-            "unsupported wildcard import invalidates module aliases",
+            "wildcard import also invalidates deferred builtin provenance",
             "import typing as t\nbefore: list[str]\nfrom local import *\nafter: list[str]\n",
-            vec![(27, 9, 2, None, "t.Sequence[str]")],
+            // Even the earlier annotation may see a shadowed list when evaluated.
+            vec![],
         ),
     ] {
         let output = analyze_types(source);
@@ -6118,7 +6119,8 @@ fn typing_import_rebinding_try_handler_includes_unknown_wildcard_effect() {
         "from typing import Sequence\n",
         "untouched: list[str]\n",
     );
-    assert_type_list_sequence_sites(source, &[(294, 9, 16, None, "Sequence[str]")]);
+    // Restoring Sequence does not establish that list survived the wildcard import.
+    assert_type_list_sequence_sites(source, &[]);
 }
 
 #[test]

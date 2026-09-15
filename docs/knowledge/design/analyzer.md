@@ -309,3 +309,7 @@ UTF-8とASCIIは入力を借用するが、Latin-1のテキストと索引のメ
 [^issue-480-tests]: [source_encoding.rs](../../../crates/hoimin-cli/tests/source_encoding.rs).
 
 [^issue-480-report]: [2026-09-14-issue-480-source-encoding-review.md](../../superpowers/reports/2026-09-14-issue-480-source-encoding-review.md).
+
+# コレクション型注釈の組込み型provenance（Issue #548）
+
+[型注釈の参照先の契約](annotation-builtins.md)では、具体型名の綴りだけで組込み型と判断せず、source・destinationの両方向で注釈scopeの束縛を確認する。runtimeの名前解決とは遅延評価の扱いが異なるため、module/classの後続束縛も考慮する。
