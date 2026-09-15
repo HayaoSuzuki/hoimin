@@ -207,6 +207,46 @@ fn line_index_answers_out_of_order_ascii_and_unicode_offsets() {
 }
 
 #[test]
+fn straight_line_import_transfer_preserves_selected_candidates_and_skips_unselected() {
+    for aliases in [8, 32, 128] {
+        for annotations in [8, 32, 128] {
+            let mut source = String::from("from typing import Sequence\n");
+            for index in 0..aliases {
+                writeln!(source, "import typing as t{index}").unwrap();
+            }
+            source.push_str(&"x: int\n".repeat(annotations));
+            source.push_str("value: list[int]\n");
+            for selected in [false, true] {
+                super::IMPORT_CLONE_CALLS.set(0);
+                super::IMPORT_CLONE_ENTRIES.set(0);
+                reset_annotation_retention_stats();
+                let operator = if selected {
+                    MutationOperator::TypeListSequence
+                } else {
+                    MutationOperator::BooleanLiteral
+                };
+                let output = analyze_with_only_operator(&source, operator);
+                assert!(output.diagnostics.is_empty());
+                assert!(!output.truncated);
+                assert_eq!(output.candidates.len(), usize::from(selected));
+                if selected {
+                    let candidate = &output.candidates[0];
+                    assert_eq!(candidate.original, "list[int]");
+                    assert_eq!(candidate.replacement, "Sequence[int]");
+                    assert_eq!(super::IMPORT_CLONE_CALLS.get(), 1);
+                    assert_eq!(super::IMPORT_CLONE_ENTRIES.get(), aliases + 1);
+                    assert_eq!(annotation_retention_stats(), (annotations + 1, 0));
+                } else {
+                    assert_eq!(super::IMPORT_CLONE_CALLS.get(), 0);
+                    assert_eq!(super::IMPORT_CLONE_ENTRIES.get(), 0);
+                    assert_eq!(annotation_retention_stats(), (0, 0));
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn annotation_import_snapshots_are_not_retained_per_site() {
     let count = 256;
     let imports = (0..count)

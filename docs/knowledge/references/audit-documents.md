@@ -5,6 +5,10 @@ description: docs/auditsとdocs/superpowers/reports内の全Markdownを追跡状
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-547-review
+  resource: ../../superpowers/reports/2026-09-15-issue-547-self-review.md
+  working_tree: untracked
+  sha256: a4dd80f0c8d7e2c01271363db1b22a1e7fec5e59d8ce74d1da0df2c11b340934
 - id: issue-491-rust-cost-review
   resource: ../../superpowers/reports/2026-09-14-issue-491-rust-cost-review.md
   working_tree: untracked
@@ -762,3 +766,9 @@ sources:
 [^issue-476-report-index]: [Issue #476: symbol diagnostics review](../../superpowers/reports/2026-09-14-issue-476-symbol-diagnostics-review.md).
 
 [^issue-480-report-index]: [Issue #480: source encoding review](../../superpowers/reports/2026-09-14-issue-480-source-encoding-review.md).
+
+# Issue #547
+
+- [2026-09-15-issue-547-self-review](../../superpowers/reports/2026-09-15-issue-547-self-review.md) — 単一路のimport状態の受渡し。[^issue-547-review]
+
+[^issue-547-review]: [原文](../../superpowers/reports/2026-09-15-issue-547-self-review.md)。

@@ -5,6 +5,10 @@ description: 構文・名前解決・変更するバイト範囲・候補保持�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-547
+  resource: ../../superpowers/specs/2026-09-15-issue-547-import-transfer-design.md
+  working_tree: untracked
+  sha256: 3fa1b369ff21d00b335d91fb0c83b18b61f54fcd45747ef07ee5386cae273ae8
 - id: issue-489
   resource: ../../superpowers/specs/2026-09-14-issue-489-valid-python-corpus-design.md
   working_tree: untracked
@@ -309,3 +313,9 @@ UTF-8とASCIIは入力を借用するが、Latin-1のテキストと索引のメ
 [^issue-480-tests]: [source_encoding.rs](../../../crates/hoimin-cli/tests/source_encoding.rs).
 
 [^issue-480-report]: [2026-09-14-issue-480-source-encoding-review.md](../../superpowers/reports/2026-09-14-issue-480-source-encoding-review.md).
+
+# 単一路のimport状態の受渡し
+
+Issue #547の設計では、型注釈collectorの通常の文から次の文へ進む状態を所有権移動で渡す。import数Iと注釈数Aを別々に増やした場合にも、単一路の全状態コピーをsuite境界の一回に限定する。分岐、loop、finallyの合流とスコープ復元のための複製は保持し、すべての入力で線形時間になるとは主張しない。[^issue-547]
+
+[^issue-547]: [Issue #547設計](../../superpowers/specs/2026-09-15-issue-547-import-transfer-design.md)。

@@ -5,6 +5,10 @@ description: docs/superpowers/specs内の全Markdownを先頭見出しと出典�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-547-design
+  resource: ../../superpowers/specs/2026-09-15-issue-547-import-transfer-design.md
+  working_tree: untracked
+  sha256: 3fa1b369ff21d00b335d91fb0c83b18b61f54fcd45747ef07ee5386cae273ae8
 - id: issue-491-operation-cost-design
   resource: ../../superpowers/specs/2026-09-14-issue-491-operation-cost-design.md
   working_tree: untracked
@@ -1359,3 +1363,9 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 [^issue-476-design-index]: [Issue #476: missing symbol definition diagnostics](../../superpowers/specs/2026-09-14-issue-476-symbol-diagnostics-design.md).
 
 [^issue-480-design-index]: [Issue #480: Python source encodings and raw-byte candidates](../../superpowers/specs/2026-09-14-issue-480-source-encoding-design.md).
+
+# Issue #547
+
+- [2026-09-15-issue-547-import-transfer-design](../../superpowers/specs/2026-09-15-issue-547-import-transfer-design.md) — 単一路のimport状態の受渡し。[^issue-547-design]
+
+[^issue-547-design]: [原文](../../superpowers/specs/2026-09-15-issue-547-import-transfer-design.md)。
