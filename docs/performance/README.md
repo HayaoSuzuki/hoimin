@@ -79,3 +79,9 @@ do not establish a quadratic bound for changing import states, class scopes,
 or arbitrary finally paths; elapsed time and RSS are not pass/fail metrics.
 See the [design](../superpowers/specs/2026-09-15-issue-546-loop-transfer-design.md)
 and [review](../superpowers/reports/2026-09-15-issue-546-loop-transfer-review.md).
+
+## 監査入力の回帰ゲート
+
+`audit-promoted-546` は監査原文と同じforループの深さ18／19／20、`audit-promoted-547` はimportとint注釈の数512／1,024／2,048を使う。どちらも型演算子選択・未選択で、候補なしと操作数の上限を検査する。台帳のactiveゲートとして通常CIから実行する。
+
+旧監査の時間・RSS測定は履歴として保持する。今回のゲートは訪問回数・clone回数・コピー要素数を対象とし、時間の閾値を設けない。詳細は[移行検証報告](../superpowers/reports/2026-09-15-audit-verification-promotion.md)を参照する。

@@ -132,7 +132,7 @@ async fn plan(source: &str, operator: &str) -> PlanManifest {
 #[test]
 fn corpus_schema_and_original_annotation_evaluation() {
     let cases = cases();
-    assert_eq!(cases.len(), 114);
+    assert_eq!(cases.len(), 121);
     let mut ids = std::collections::BTreeSet::new();
     for case in cases {
         assert_eq!(case.schema, 1);

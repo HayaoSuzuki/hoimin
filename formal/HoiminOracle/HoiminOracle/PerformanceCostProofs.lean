@@ -63,4 +63,14 @@ theorem retained_bound (items : List HoiminOracle.BoundedCandidateDiscovery.Cand
 -- Boundary witness: the initial deliberately omitted ancestors gave 8 and failed.
 example : buildUpdates 8 = 32 := by native_decide
 
+-- Imported from the audit's historical cost model, not a bound on current Rust.
+theorem replay_loop_exponential (depth : Nat) : replayLoopVisits depth = 2 ^ depth := by
+  induction depth with
+  | zero => rfl
+  | succ depth ih => simp [replayLoopVisits, ih, Nat.pow_succ, Nat.mul_comm]
+
+theorem doubling_clone_axes_quadruples (aliases annotations : Nat) :
+    cloneEntries (2 * aliases) (2 * annotations) = 4 * cloneEntries aliases annotations := by
+  simp [cloneEntries, Nat.mul_assoc, Nat.mul_left_comm, Nat.mul_comm]
+
 end HoiminOracle.PerformanceCost

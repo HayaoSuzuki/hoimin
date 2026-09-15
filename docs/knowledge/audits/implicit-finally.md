@@ -21,10 +21,13 @@ sources:
   working_tree: modified
   sha256: 1a31757e7932ce7fa0fe8407fed27558414def841a7ad23459c623cf9f018e70
 - id: model
-  resource: ../../../formal/HoiminOracle/ImplicitFinallyAuditMain.lean
-  revision: f11013542ccd735ab9741b5079c0b39a517df256
+  resource: ../../../formal/HoiminOracle/HoiminOracle/ImplicitFinallyModel.lean
+  working_tree: modified
+  sha256: 2cc802d3c91cbdb3389cab972927cf4c68491b3a7693018e9812ad3a5089e8cd
+- id: audit-promotion
+  resource: ../../superpowers/reports/2026-09-15-audit-verification-promotion.md
   working_tree: untracked
-  sha256: 0235a1a9ffbd5e0ef7c86d55b93f778bfef9e9d1ede4e470fa0a281c0a0dabfd
+  sha256: 3a3a79631919bc7f2d52b7e73c888345bf12050e7b5a2b198b7b24986b5191b1
 ---
 
 # 対象と契約
@@ -33,7 +36,9 @@ sources:
 
 # 証拠の範囲
 
-Lean の3イベントモデルは、custom 束縛で始まる `mayRaise` に任意の後続列を足しても、全入口が typing になるとは判定できないことを証明する。入口を捨てる壊れたモデルとの相違もカーネルで確認する。6件の生成 fixture は call/subscript/attribute の負例と import 先行・明示 raise・通常 import の対照を含む。[^model]
+Lean の3イベントモデルは、custom 束縛で始まる `mayRaise` に任意の後続列を足しても、全入口が typing になるとは判定できないことを証明する。入口を捨てる壊れたモデルとの相違もカーネルで確認する。9件の生成 fixture は既存6件に監査の原文3件を加えたもの。call/subscript/attribute の負例と import 先行・明示 raise・通常 import の対照を含む。モデルは独立モジュールへ移し、実行経路の入口が保守的な入口集合に含まれることも証明する。[^model][^audit-promotion]
+
+監査3入力について通常・例外経路の6観測をCPythonと照合する。期待値はLean生成器を正本とする。公開 `run` ではbaseline成功、killed=0、候補なし、完了、元ファイル不変を確認する。深さ0〜4の列挙と壊れたモデルとの差分件数も感度検査で固定する。[^audit-promotion]
 
 公開 plan の比較は候補数、原文、置換、バイト範囲を検査する。別の Rust テストは入れ子、else/handler/loop、遅延実行、正常後続、walrus など14入力と、演算・assert・反復・context manager・class・handler 型式の11入力、名前・コンテナ・書式化・部分束縛の9入力、match guard 前のcaptureの1入力を確認する。実行結果と再現コマンドは報告書に記録する。[^review]
 
@@ -44,4 +49,6 @@ Lean の3イベントモデルは、custom 束縛で始まる `mayRaise` に任�
 [^design]: [設計](../../superpowers/specs/2026-09-15-issue-545-implicit-finally-design.md)。
 [^review]: [検証記録](../../superpowers/reports/2026-09-15-issue-545-implicit-finally-review.md)。
 [^implementation]: [解析器](../../../crates/hoimin-cli/src/analyzer/rust.rs)。
-[^model]: [Lean モデルと生成器](../../../formal/HoiminOracle/ImplicitFinallyAuditMain.lean)。
+[^model]: [Leanモデル](../../../formal/HoiminOracle/HoiminOracle/ImplicitFinallyModel.lean)。生成は[専用生成器](../../../formal/HoiminOracle/ImplicitFinallyAuditMain.lean)から行う。
+
+[^audit-promotion]: [監査コード・ケースの正式な検証への移行](../../superpowers/reports/2026-09-15-audit-verification-promotion.md)。

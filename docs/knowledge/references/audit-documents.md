@@ -7,8 +7,8 @@ catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
 - id: audit-archive-01
   resource: ../../audits/README.md
-  working_tree: untracked
-  sha256: 917abcbaf1a2ae23c40c39c3515aacb8aae0f3343b2ebd58b0900df9adc97218
+  working_tree: modified
+  sha256: c166e540084903b668789abaefd72e40656200cd8f573b7bce0eee6f804dc5be
 - id: audit-archive-02
   resource: ../../audits/2026-09-14-additional/README.md
   working_tree: untracked
@@ -568,6 +568,10 @@ sources:
   resource: ../../audits/2026-07-rust-codebase/README.md
   revision: a7daea0b557cd435c1e55b540392fbdd116348e1
   working_tree: clean
+- id: audit-promotion
+  resource: ../../superpowers/reports/2026-09-15-audit-verification-promotion.md
+  working_tree: untracked
+  sha256: 3a3a79631919bc7f2d52b7e73c888345bf12050e7b5a2b198b7b24986b5191b1
 ---
 
 # 収録一覧
@@ -908,3 +912,9 @@ sources:
 [^audit-archive-12]: [モデル化前の対応表](../../audits/2026-09-14-slice-tuples/correspondence.md)。
 [^audit-archive-13]: [確認した問題](../../audits/2026-09-14-slice-tuples/issue.md)。
 [^audit-archive-14]: [Issues #545–#549 統合検証（2026-09-15）](../../superpowers/reports/2026-09-15-issues-545-549-integration.md)。
+
+[^audit-promotion]: [監査コード・ケースの正式な検証への移行](../../superpowers/reports/2026-09-15-audit-verification-promotion.md)。
+
+| 原文 | 内容 | 追跡状態 |
+| --- | --- | --- |
+| [docs/superpowers/reports/2026-09-15-audit-verification-promotion.md](../../superpowers/reports/2026-09-15-audit-verification-promotion.md) | 監査入力・定理・実行検証の正式テストへの移行 [^audit-promotion] | 未追跡 |

@@ -70,6 +70,47 @@ fn nested_loops_bound_actual_statement_and_annotation_visits() {
     }
 }
 
+#[test]
+fn archived_audit_nested_loops_bound_visits() {
+    for depth in [18, 19, 20] {
+        let source = nested_source(depth, false);
+        assert_eq!(analyze_visits(&source, false), (0, 0));
+        let (statements, leaves) = analyze_visits(&source, true);
+        assert!(leaves <= depth + 1, "depth={depth}: {leaves} leaf visits");
+        assert!(
+            statements <= (depth + 1) * (depth + 2) / 2,
+            "depth={depth}: {statements} statement visits"
+        );
+    }
+}
+
+#[test]
+fn archived_audit_import_annotations_bound_clone_cost() {
+    use std::fmt::Write as _;
+
+    for size in [512, 1024, 2048] {
+        let mut source = String::new();
+        for index in 0..size {
+            writeln!(source, "import typing as t{index}").unwrap();
+        }
+        source.push_str(&"x: int\n".repeat(size));
+        for selected in [false, true] {
+            IMPORT_CLONE_CALLS.set(0);
+            IMPORT_CLONE_ENTRIES.set(0);
+            let visits = analyze_visits(&source, selected);
+            let calls = IMPORT_CLONE_CALLS.get();
+            let entries = IMPORT_CLONE_ENTRIES.get();
+            if selected {
+                assert!(calls <= 1, "size={size}: {calls} clone calls");
+                assert!(entries <= size, "size={size}: {entries} copied entries");
+            } else {
+                assert_eq!(visits, (0, 0), "size={size}");
+                assert_eq!((calls, entries), (0, 0), "size={size}");
+            }
+        }
+    }
+}
+
 struct ReuseGuard(bool);
 
 impl ReuseGuard {

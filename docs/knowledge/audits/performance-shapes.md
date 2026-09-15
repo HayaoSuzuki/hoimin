@@ -44,14 +44,12 @@ sources:
   sha256: e11e40961e7b00a5e7781f87b0bec36123798830da6d9ebc3e2731a64cd62fce
 - id: guide
   resource: ../../performance/README.md
-  revision: f11013542ccd735ab9741b5079c0b39a517df256
   working_tree: modified
-  sha256: 2db0a12e4fac5d16c997f7e8d95e5969c0c807e645ee3fb104e24a1bda2619ce
+  sha256: 0715bf9cf5fd7b8b9e14abf4cb43a8a1e28583d3898d8b54a9b9f436075e9be8
 - id: registry
   resource: ../../performance/shapes.json
-  revision: f11013542ccd735ab9741b5079c0b39a517df256
   working_tree: modified
-  sha256: a9600c5867eee69e0ec505e80c611c9646960e129166714c8827281fa8b26fb4
+  sha256: 91c428c662cb1b1c1d3fe25b6d7b41bd2e7567707701202a05c2b5db9db82272
 - id: design
   resource: ../../superpowers/specs/2026-09-14-issue-491-performance-shapes-design.md
   working_tree: modified
@@ -62,6 +60,10 @@ sources:
   working_tree: modified
   revision: da6b9cf5fd6eff71438c503b0b99a15571b5e696
   sha256: 903abf4a3d7010cd791a463fb8d1393583440e1150464ec4ec07bc28e85ad1f9
+- id: audit-promotion
+  resource: ../../superpowers/reports/2026-09-15-audit-verification-promotion.md
+  working_tree: untracked
+  sha256: 3a3a79631919bc7f2d52b7e73c888345bf12050e7b5a2b198b7b24986b5191b1
 ---
 
 # 入力を増やす軸と測定指標
@@ -121,3 +123,11 @@ progressの通常ゲートは1reportの内容500/1,000/2,000件と履歴2/4/8を
 
 [^issue-546-design]: [入れ子ループの転送結果の再利用](../../superpowers/specs/2026-09-15-issue-546-loop-transfer-design.md)。
 [^issue-546-report]: [ループ転送再利用の自己レビュー](../../superpowers/reports/2026-09-15-issue-546-loop-transfer-review.md)。
+
+# 監査入力と定理の移行
+
+監査のforループ深さ18／19／20、import・int注釈数512／1,024／2,048を正式な操作数テストに追加した。6入力を演算子選択・未選択の計12条件で検査する。台帳の `audit-promoted-546` と `audit-promoted-547` からexact指定で実行する。[^registry][^audit-promotion]
+
+旧モデルの再走査回数2^nと、import数・注釈数をともに2倍にした場合のコピー量4倍もPerformanceCostProofsへ移した。これは旧方式の定理であり、現在のRust実装全体の上界を証明するものではない。旧監査の36回の時間測定と、今回の操作数の検査は分けて扱う。[^audit-promotion]
+
+[^audit-promotion]: [監査コード・ケースの正式な検証への移行](../../superpowers/reports/2026-09-15-audit-verification-promotion.md)。
