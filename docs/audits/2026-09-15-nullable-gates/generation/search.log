@@ -1,0 +1,5 @@
+depth=0 constructors=4 trees=2 trusted_values=2 eligibility_cases=4 node_visits_per_pass=2 tuple_mismatches=0 name_mismatches=1 elapsed_ms=0
+depth=1 constructors=4 trees=8 trusted_values=2 eligibility_cases=16 node_visits_per_pass=18 tuple_mismatches=3 name_mismatches=3 elapsed_ms=0
+depth=2 constructors=4 trees=74 trusted_values=2 eligibility_cases=148 node_visits_per_pass=380 tuple_mismatches=58 name_mismatches=13 elapsed_ms=0
+witness tuple: pair(good,bad), expected=false, broken=true; witness name: trusted=false/atom good, expected=false, broken=true
+sensitivity: tuple-child bypass, name-resolution bypass, reject-all detected

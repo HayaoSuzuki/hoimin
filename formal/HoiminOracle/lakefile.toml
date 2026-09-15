@@ -141,3 +141,27 @@ root = "CollectionAnnotationAuditMain"
 [[lean_exe]]
 name = "generate_implicit_finally"
 root = "ImplicitFinallyAuditMain"
+
+[[lean_exe]]
+name = "generate_with_suppression"
+root = "WithSuppressionAuditMain"
+
+[[lean_exe]]
+name = "generate_deferred_annotation"
+root = "DeferredAnnotationAuditMain"
+
+[[lean_exe]]
+name = "generate_evaluation_order"
+root = "EvaluationOrderAuditMain"
+
+[[lean_exe]]
+name = "generate_declaration_only"
+root = "DeclarationOnlyAuditMain"
+
+[[lean_exe]]
+name = "generate_resume_copy"
+root = "ResumeCopyAuditMain"
+
+[[lean_exe]]
+name = "generate_nullable_gate"
+root = "NullableGateAuditMain"

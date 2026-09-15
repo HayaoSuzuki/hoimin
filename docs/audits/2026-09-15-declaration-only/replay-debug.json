@@ -1,0 +1,415 @@
+{
+  "head": "5e631efc46a6e8c0b9fcf2d7a74536e57f79a369",
+  "binary": "/Users/hayao/RustroverProjects/hoimin/target/debug/hoimin",
+  "binary_sha256": "e09ab4ef7e34fc229a74915ce2b69786e7eb80a2d285e87911a20268f2376d6f",
+  "python": "Python 3.14.7",
+  "contract": "proposed precision improvement; conservative omission is currently permitted",
+  "summary": {
+    "match": 7,
+    "mismatch": 7,
+    "infrastructure error": 0
+  },
+  "cases": [
+    {
+      "id": "module_source",
+      "mode": "strict",
+      "expected_pairs": [
+        [
+          "any",
+          "all"
+        ]
+      ],
+      "original_evaluation": {
+        "ok": true,
+        "value": "False"
+      },
+      "candidates": [],
+      "observed_pairs": [],
+      "status": "mismatch",
+      "candidate_evaluations": [],
+      "expected_evaluations": [
+        {
+          "ok": true,
+          "value": "True"
+        }
+      ]
+    },
+    {
+      "id": "module_destination",
+      "mode": "strict",
+      "expected_pairs": [
+        [
+          "any",
+          "all"
+        ]
+      ],
+      "original_evaluation": {
+        "ok": true,
+        "value": "False"
+      },
+      "candidates": [],
+      "observed_pairs": [],
+      "status": "mismatch",
+      "candidate_evaluations": [],
+      "expected_evaluations": [
+        {
+          "ok": true,
+          "value": "True"
+        }
+      ]
+    },
+    {
+      "id": "class_source",
+      "mode": "strict",
+      "expected_pairs": [
+        [
+          "any",
+          "all"
+        ]
+      ],
+      "original_evaluation": {
+        "ok": true,
+        "value": "False"
+      },
+      "candidates": [],
+      "observed_pairs": [],
+      "status": "mismatch",
+      "candidate_evaluations": [],
+      "expected_evaluations": [
+        {
+          "ok": true,
+          "value": "True"
+        }
+      ]
+    },
+    {
+      "id": "class_destination",
+      "mode": "strict",
+      "expected_pairs": [
+        [
+          "any",
+          "all"
+        ]
+      ],
+      "original_evaluation": {
+        "ok": true,
+        "value": "False"
+      },
+      "candidates": [],
+      "observed_pairs": [],
+      "status": "mismatch",
+      "candidate_evaluations": [],
+      "expected_evaluations": [
+        {
+          "ok": true,
+          "value": "True"
+        }
+      ]
+    },
+    {
+      "id": "outer_declaration",
+      "mode": "strict",
+      "expected_pairs": [
+        [
+          "any",
+          "all"
+        ]
+      ],
+      "original_evaluation": {
+        "ok": true,
+        "value": "False"
+      },
+      "candidates": [],
+      "observed_pairs": [],
+      "status": "mismatch",
+      "candidate_evaluations": [],
+      "expected_evaluations": [
+        {
+          "ok": true,
+          "value": "True"
+        }
+      ]
+    },
+    {
+      "id": "module_alias",
+      "mode": "strict",
+      "expected_pairs": [
+        [
+          "add",
+          "sub"
+        ]
+      ],
+      "original_evaluation": {
+        "ok": true,
+        "value": "3"
+      },
+      "candidates": [],
+      "observed_pairs": [],
+      "status": "mismatch",
+      "candidate_evaluations": [],
+      "expected_evaluations": [
+        {
+          "ok": true,
+          "value": "1"
+        }
+      ]
+    },
+    {
+      "id": "direct_alias",
+      "mode": "strict",
+      "expected_pairs": [
+        [
+          "fn",
+          "__import__('operator').sub"
+        ]
+      ],
+      "original_evaluation": {
+        "ok": true,
+        "value": "3"
+      },
+      "candidates": [],
+      "observed_pairs": [],
+      "status": "mismatch",
+      "candidate_evaluations": [],
+      "expected_evaluations": [
+        {
+          "ok": true,
+          "value": "1"
+        }
+      ]
+    },
+    {
+      "id": "prior_custom",
+      "mode": "strict",
+      "expected_pairs": [],
+      "original_evaluation": {
+        "ok": true,
+        "value": "custom"
+      },
+      "candidates": [],
+      "observed_pairs": [],
+      "status": "match",
+      "candidate_evaluations": [],
+      "expected_evaluations": []
+    },
+    {
+      "id": "class_outer_custom",
+      "mode": "strict",
+      "expected_pairs": [],
+      "original_evaluation": {
+        "ok": true,
+        "value": "custom"
+      },
+      "candidates": [],
+      "observed_pairs": [],
+      "status": "match",
+      "candidate_evaluations": [],
+      "expected_evaluations": []
+    },
+    {
+      "id": "rhs_rebinding",
+      "mode": "strict",
+      "expected_pairs": [],
+      "original_evaluation": {
+        "ok": true,
+        "value": "custom"
+      },
+      "candidates": [],
+      "observed_pairs": [],
+      "status": "match",
+      "candidate_evaluations": [],
+      "expected_evaluations": []
+    },
+    {
+      "id": "function_local",
+      "mode": "strict",
+      "expected_pairs": [],
+      "original_evaluation": {
+        "ok": true,
+        "value": "unbound"
+      },
+      "candidates": [],
+      "observed_pairs": [],
+      "status": "match",
+      "candidate_evaluations": [],
+      "expected_evaluations": []
+    },
+    {
+      "id": "normal_builtin",
+      "mode": "strict",
+      "expected_pairs": [
+        [
+          "any",
+          "all"
+        ]
+      ],
+      "original_evaluation": {
+        "ok": true,
+        "value": "False"
+      },
+      "candidates": [
+        {
+          "id": "m1_8d24c2e08dba83c00fb38e4d384b7783203d96e141abfeb850041b45e76e60e5",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 9,
+            "length": 3
+          },
+          "original": "any",
+          "replacement": "all",
+          "operator": "collection_any_all",
+          "line": 1,
+          "column": 9,
+          "symbol": null,
+          "file_hash": "859afb890de5dd2fbd0301438357b5101df957110996428b8afef3052e0d52f9",
+          "rank": 1,
+          "score": 80,
+          "ranking_reasons": [
+            {
+              "code": "behavioral",
+              "score": 80
+            }
+          ]
+        }
+      ],
+      "observed_pairs": [
+        [
+          "any",
+          "all"
+        ]
+      ],
+      "status": "match",
+      "candidate_evaluations": [
+        {
+          "ok": true,
+          "value": "True"
+        }
+      ],
+      "expected_evaluations": [
+        {
+          "ok": true,
+          "value": "True"
+        }
+      ]
+    },
+    {
+      "id": "normal_alias",
+      "mode": "strict",
+      "expected_pairs": [
+        [
+          "add",
+          "sub"
+        ]
+      ],
+      "original_evaluation": {
+        "ok": true,
+        "value": "3"
+      },
+      "candidates": [
+        {
+          "id": "m1_ec33821ff68d07756fc01b16a1bc94973da02d7cfc342d8b65f42cb57743df38",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 34,
+            "length": 3
+          },
+          "original": "add",
+          "replacement": "sub",
+          "operator": "operator_function",
+          "line": 2,
+          "column": 12,
+          "symbol": null,
+          "file_hash": "95f00d7de57cfa8433eb5cb661bbf0610d45c2e6f5aca05f36f8bb4f4a12e5e0",
+          "rank": 1,
+          "score": 80,
+          "ranking_reasons": [
+            {
+              "code": "behavioral",
+              "score": 80
+            }
+          ]
+        }
+      ],
+      "observed_pairs": [
+        [
+          "add",
+          "sub"
+        ]
+      ],
+      "status": "match",
+      "candidate_evaluations": [
+        {
+          "ok": true,
+          "value": "1"
+        }
+      ],
+      "expected_evaluations": [
+        {
+          "ok": true,
+          "value": "1"
+        }
+      ]
+    },
+    {
+      "id": "normal_direct_alias",
+      "mode": "strict",
+      "expected_pairs": [
+        [
+          "fn",
+          "__import__('operator').sub"
+        ]
+      ],
+      "original_evaluation": {
+        "ok": true,
+        "value": "3"
+      },
+      "candidates": [
+        {
+          "id": "m1_ff176f5496ecf8856bf4a612b3a23b9322a2dc74244a72f54017239177440fc6",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 40,
+            "length": 2
+          },
+          "original": "fn",
+          "replacement": "__import__('operator').sub",
+          "operator": "operator_function",
+          "line": 2,
+          "column": 9,
+          "symbol": null,
+          "file_hash": "45f7e37bfba429afd6539ad98058a5ad992aaae7ea04c75411bff92ea0aa2e27",
+          "rank": 1,
+          "score": 80,
+          "ranking_reasons": [
+            {
+              "code": "behavioral",
+              "score": 80
+            }
+          ]
+        }
+      ],
+      "observed_pairs": [
+        [
+          "fn",
+          "__import__('operator').sub"
+        ]
+      ],
+      "status": "match",
+      "candidate_evaluations": [
+        {
+          "ok": true,
+          "value": "1"
+        }
+      ],
+      "expected_evaluations": [
+        {
+          "ok": true,
+          "value": "1"
+        }
+      ]
+    }
+  ]
+}

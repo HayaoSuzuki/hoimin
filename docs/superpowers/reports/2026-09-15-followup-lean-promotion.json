@@ -1,0 +1,348 @@
+{
+  "schema": 1,
+  "environment": "macOS arm64, Lean 4.32.2",
+  "expected_nonzero_suffix": "-negative-check",
+  "commands": {
+    "build-DeclarationOnlyAuditMain": {
+      "elapsed_ms": 817,
+      "exit_code": 0,
+      "peak_rss_kib": 695712,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    "build-DeferredAnnotationAuditMain": {
+      "elapsed_ms": 738,
+      "exit_code": 0,
+      "peak_rss_kib": 687024,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    "build-EvaluationOrderAuditMain": {
+      "elapsed_ms": 751,
+      "exit_code": 0,
+      "peak_rss_kib": 684608,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    "build-HoiminOracle.DeclarationOnlyModel": {
+      "elapsed_ms": 604,
+      "exit_code": 0,
+      "peak_rss_kib": 682576,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    "build-HoiminOracle.DeferredAnnotationModel": {
+      "elapsed_ms": 674,
+      "exit_code": 0,
+      "peak_rss_kib": 700336,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    "build-HoiminOracle.EvaluationOrderModel": {
+      "elapsed_ms": 608,
+      "exit_code": 0,
+      "peak_rss_kib": 658624,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    "build-HoiminOracle.NullableGateModel": {
+      "elapsed_ms": 600,
+      "exit_code": 0,
+      "peak_rss_kib": 682592,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    "build-HoiminOracle.ResumeCopyModel": {
+      "elapsed_ms": 755,
+      "exit_code": 0,
+      "peak_rss_kib": 679632,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    "build-HoiminOracle.WithSuppressionModel": {
+      "elapsed_ms": 3711,
+      "exit_code": 0,
+      "peak_rss_kib": 680688,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    "build-NullableGateAuditMain": {
+      "elapsed_ms": 604,
+      "exit_code": 0,
+      "peak_rss_kib": 691152,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    "build-ResumeCopyAuditMain": {
+      "elapsed_ms": 749,
+      "exit_code": 0,
+      "peak_rss_kib": 686624,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    "build-WithSuppressionAuditMain": {
+      "elapsed_ms": 750,
+      "exit_code": 0,
+      "peak_rss_kib": 686896,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    "declaration_only-check": {
+      "elapsed_ms": 1334,
+      "exit_code": 0,
+      "peak_rss_kib": 809456,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    "declaration_only-negative-check": {
+      "elapsed_ms": 252,
+      "exit_code": 1,
+      "peak_rss_kib": 69456,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    "declaration_only-negative-output": {
+      "elapsed_ms": 396,
+      "exit_code": 0,
+      "peak_rss_kib": 90736,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    "declaration_only-sensitivity": {
+      "elapsed_ms": 232,
+      "exit_code": 0,
+      "peak_rss_kib": 62080,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    "deferred_annotation-check": {
+      "elapsed_ms": 1461,
+      "exit_code": 0,
+      "peak_rss_kib": 760064,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    "deferred_annotation-negative-check": {
+      "elapsed_ms": 240,
+      "exit_code": 1,
+      "peak_rss_kib": 69104,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    "deferred_annotation-negative-output": {
+      "elapsed_ms": 233,
+      "exit_code": 0,
+      "peak_rss_kib": 57008,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    "deferred_annotation-sensitivity": {
+      "elapsed_ms": 245,
+      "exit_code": 0,
+      "peak_rss_kib": 57424,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    "evaluation_order-check": {
+      "elapsed_ms": 1420,
+      "exit_code": 0,
+      "peak_rss_kib": 779008,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    "evaluation_order-negative-check": {
+      "elapsed_ms": 231,
+      "exit_code": 1,
+      "peak_rss_kib": 61408,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    "evaluation_order-negative-output": {
+      "elapsed_ms": 460,
+      "exit_code": 0,
+      "peak_rss_kib": 91296,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    "evaluation_order-sensitivity": {
+      "elapsed_ms": 236,
+      "exit_code": 0,
+      "peak_rss_kib": 57120,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    "library": {
+      "elapsed_ms": 720,
+      "exit_code": 0,
+      "peak_rss_kib": 651616,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    "nullable_gate-check": {
+      "elapsed_ms": 1466,
+      "exit_code": 0,
+      "peak_rss_kib": 804784,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    "nullable_gate-negative-check": {
+      "elapsed_ms": 248,
+      "exit_code": 1,
+      "peak_rss_kib": 70160,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    "nullable_gate-negative-output": {
+      "elapsed_ms": 410,
+      "exit_code": 0,
+      "peak_rss_kib": 92720,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    "nullable_gate-sensitivity": {
+      "elapsed_ms": 240,
+      "exit_code": 0,
+      "peak_rss_kib": 69216,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    "resume_copy-check": {
+      "elapsed_ms": 1321,
+      "exit_code": 0,
+      "peak_rss_kib": 807728,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    "resume_copy-negative-check": {
+      "elapsed_ms": 239,
+      "exit_code": 1,
+      "peak_rss_kib": 69504,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    "resume_copy-negative-output": {
+      "elapsed_ms": 381,
+      "exit_code": 0,
+      "peak_rss_kib": 88928,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    "resume_copy-sensitivity": {
+      "elapsed_ms": 231,
+      "exit_code": 0,
+      "peak_rss_kib": 68320,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    "with_suppression-check": {
+      "elapsed_ms": 2484,
+      "exit_code": 0,
+      "peak_rss_kib": 784624,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    "with_suppression-negative-check": {
+      "elapsed_ms": 234,
+      "exit_code": 1,
+      "peak_rss_kib": 57056,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    "with_suppression-negative-output": {
+      "elapsed_ms": 529,
+      "exit_code": 0,
+      "peak_rss_kib": 75184,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    "with_suppression-sensitivity": {
+      "elapsed_ms": 236,
+      "exit_code": 0,
+      "peak_rss_kib": 56704,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    }
+  },
+  "sensitivity": {
+    "declaration_only-sensitivity": "scopes=1 states=6 actions=2 cases=12 transitions=12 always_store_mismatches=3 ignore_rhs_mismatches=3 fallback_mismatches=0 elapsed_ms=0\nscopes=2 states=12 actions=2 cases=24 transitions=24 always_store_mismatches=6 ignore_rhs_mismatches=6 fallback_mismatches=0 elapsed_ms=0\nscopes=3 states=18 actions=2 cases=36 transitions=36 always_store_mismatches=8 ignore_rhs_mismatches=8 fallback_mismatches=1 elapsed_ms=0\nsensitivity: always-store, ignore-RHS, function-fallback detected\nfirst witness: module / missing / fallback=true / hasValue=false; value stays missing; expected=true; always-store=false\n",
+    "deferred_annotation-sensitivity": "depth=0 alphabet=3 traces=1 events=0 stale_snapshot=0 first=none elapsed_ms=0\ndepth=1 alphabet=3 traces=4 events=3 stale_snapshot=1 first=some [AnnotationAudit.Event.rebind] elapsed_ms=0\ndepth=2 alphabet=3 traces=13 events=21 stale_snapshot=4 first=some [AnnotationAudit.Event.rebind] elapsed_ms=0\ndepth=3 alphabet=3 traces=40 events=102 stale_snapshot=13 first=some [AnnotationAudit.Event.rebind] elapsed_ms=0\ndepth=4 alphabet=3 traces=121 events=426 stale_snapshot=40 first=some [AnnotationAudit.Event.rebind] elapsed_ms=0\nsensitivity: stale-snapshot, lost-cache, reject-all, universal-AbstractSet detected; providers=2 members=2\n",
+    "evaluation_order-sensitivity": "depth=0 alphabet=3 traces=1 transitions=0 mismatches=0 first=none elapsed_ms=0\ndepth=1 alphabet=3 traces=4 transitions=3 mismatches=0 first=none elapsed_ms=0\ndepth=2 alphabet=3 traces=13 transitions=21 mismatches=2 first=some [OrderAudit.Event.bindSource, OrderAudit.Event.lookup] elapsed_ms=0\ndepth=3 alphabet=3 traces=40 transitions=102 mismatches=14 first=some [OrderAudit.Event.bindSource, OrderAudit.Event.lookup] elapsed_ms=0\ndepth=4 alphabet=3 traces=121 transitions=426 mismatches=64 first=some [OrderAudit.Event.bindSource, OrderAudit.Event.lookup] elapsed_ms=0\nsensitivity: delayed source, delayed destination, premature store/reject-all detected\n",
+    "nullable_gate-sensitivity": "depth=0 constructors=4 trees=2 trusted_values=2 eligibility_cases=4 node_visits_per_pass=2 tuple_mismatches=0 name_mismatches=1 elapsed_ms=0\ndepth=1 constructors=4 trees=8 trusted_values=2 eligibility_cases=16 node_visits_per_pass=18 tuple_mismatches=3 name_mismatches=3 elapsed_ms=0\ndepth=2 constructors=4 trees=74 trusted_values=2 eligibility_cases=148 node_visits_per_pass=380 tuple_mismatches=58 name_mismatches=13 elapsed_ms=0\nwitness tuple: pair(good,bad), expected=false, broken=true; witness name: trusted=false/atom good, expected=false, broken=true\nsensitivity: tuple-child bypass, name-resolution bypass, reject-all detected\n",
+    "resume_copy-sensitivity": "output_caps=1 configurations=2 cases=4 resume_transitions=4 omitted_copy_mismatches=2 output_key_mismatches=0 elapsed_ms=0\noutput_caps=2 configurations=4 cases=16 resume_transitions=16 omitted_copy_mismatches=8 output_key_mismatches=4 elapsed_ms=0\nfirst witness: save copied=true/killed; resume copied=false; expected fresh survived/reused=false; broken killed/reused=true\nsensitivity: omitted-copy, output-key, reject-all detected\n",
+    "with_suppression-sensitivity": "depth=0 alphabet=3 traces=1 event_occurrences=0 differences=0 unsafe=0 firstUnsafe=none elapsed_ms=0\ndepth=1 alphabet=3 traces=4 event_occurrences=3 differences=0 unsafe=0 firstUnsafe=none elapsed_ms=0\ndepth=2 alphabet=3 traces=13 event_occurrences=21 differences=2 unsafe=1 firstUnsafe=some [WithAudit.Event.mayRaise, WithAudit.Event.importTyping] elapsed_ms=0\ndepth=3 alphabet=3 traces=40 event_occurrences=102 differences=10 unsafe=4 firstUnsafe=some [WithAudit.Event.mayRaise, WithAudit.Event.importTyping] elapsed_ms=0\ndepth=4 alphabet=3 traces=121 event_occurrences=426 differences=36 unsafe=11 firstUnsafe=some [WithAudit.Event.mayRaise, WithAudit.Event.importTyping] elapsed_ms=0\nsensitivity: drop-suppression, reject-all, suppress-all, duplicate-traversal detected\n"
+  }
+}

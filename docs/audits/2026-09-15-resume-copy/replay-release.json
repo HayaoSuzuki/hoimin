@@ -1,0 +1,3163 @@
+{
+  "head": "5e631efc46a6e8c0b9fcf2d7a74536e57f79a369",
+  "binary": "/Users/hayao/RustroverProjects/hoimin/target/release/hoimin",
+  "binary_sha256": "f6e20e88c31f41b1d23aee3bd43ae836e42933cec05d10eb294915642b92df9e",
+  "python": "Python 3.14.7",
+  "summary": {
+    "match": 3,
+    "mismatch": 4,
+    "infrastructure error": 0
+  },
+  "cases": [
+    {
+      "id": "exclude_added",
+      "mode": "strict",
+      "expected": {
+        "initial": "killed",
+        "resumed": "survived",
+        "fresh": "survived",
+        "reused": false
+      },
+      "observed": {
+        "initial": "killed",
+        "resumed": "killed",
+        "fresh": "survived",
+        "reused": true
+      },
+      "initial": {
+        "exit_code": 4,
+        "run_id": "9667a329-cef2-4dad-97e5-4fe2484f7380",
+        "baseline_termination": {
+          "Exit": 0
+        },
+        "first_mutant": {
+          "kind": "mutant_finished",
+          "schema_version": 3,
+          "sequence": 4,
+          "run_id": "9667a329-cef2-4dad-97e5-4fe2484f7380",
+          "candidate": {
+            "id": "m1_6f9f946ac12212bf6730bd5369526ebac0b21744f6ccfeff7289b7578df0d40c",
+            "sequence": 1,
+            "path": "subject.py",
+            "span": {
+              "start": 23,
+              "length": 1
+            },
+            "original": "+",
+            "replacement": "-",
+            "operator": "binary_add_sub",
+            "line": 2,
+            "column": 10,
+            "symbol": "value",
+            "file_hash": "38a51027d823955544a6a108b9df14226f47c8d7a2f181a9a83284f0a797d770"
+          },
+          "status": "killed",
+          "termination": {
+            "Exit": 1
+          },
+          "elapsed_ms": 30,
+          "resource_mode": "best_effort",
+          "output": {
+            "token": "37e0eeab-a9cf-43db-b126-af0be8a62aac",
+            "retained": 324,
+            "observed": 324
+          }
+        },
+        "counts": {
+          "killed": 1,
+          "survived": 0,
+          "timeout": 0,
+          "out_of_memory": 0,
+          "process_limit": 0,
+          "error": 0,
+          "not_run": 2,
+          "inconclusive": 2,
+          "score": 1.0
+        },
+        "complete": false,
+        "cleanup": [
+          {
+            "root_id": "execution",
+            "owner": "hoimin",
+            "status": "clean",
+            "remaining_root": null
+          },
+          {
+            "root_id": "delivery",
+            "owner": "hoimin",
+            "status": "cleanup_after_delivery",
+            "remaining_root": null
+          }
+        ],
+        "selection": {
+          "root": "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-copy-audit-o1jdjw5r/project",
+          "sources": [],
+          "files": [
+            "subject.py"
+          ],
+          "lines": [],
+          "symbols": [],
+          "changed": false,
+          "diff_base": null,
+          "includes": [],
+          "excludes": []
+        },
+        "fingerprint_inputs": [
+          {
+            "path": "strict.flag",
+            "hash": "74dcacc21fecb923db74f05db5cce1a6042532b0c8dd65b778e7b046c9dc67aa"
+          }
+        ],
+        "limits": {
+          "jobs": 1,
+          "max_mutants": 1,
+          "max_candidates": 10000,
+          "analyzer_timeout": {
+            "secs": 30,
+            "nanos": 0
+          },
+          "baseline_timeout": {
+            "secs": 60,
+            "nanos": 0
+          },
+          "mutant_timeout": "auto",
+          "total_timeout": {
+            "secs": 300,
+            "nanos": 0
+          },
+          "max_memory": 1073741824,
+          "max_output": 1024,
+          "max_copy_size": 1073741824,
+          "max_workspace_size": 8589934592,
+          "min_free_space": 10737418240,
+          "max_processes": 64
+        },
+        "argv": [
+          "/Users/hayao/RustroverProjects/hoimin/target/release/hoimin",
+          "run",
+          "--root",
+          "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-copy-audit-o1jdjw5r/project",
+          "--file",
+          "subject.py",
+          "--operators",
+          "binary_add_sub",
+          "--jobs",
+          "1",
+          "--max-mutants",
+          "1",
+          "--max-workspace-size",
+          "8GiB",
+          "--min-free-space",
+          "10GiB",
+          "--max-output",
+          "1024B",
+          "--fingerprint-file",
+          "strict.flag",
+          "--allow-best-effort-memory",
+          "--format",
+          "json",
+          "--session",
+          "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-copy-audit-o1jdjw5r/session.sqlite3",
+          "--",
+          "/Users/hayao/RustroverProjects/hoimin/.venv/bin/python",
+          "check.py"
+        ]
+      },
+      "resumed": {
+        "exit_code": 4,
+        "run_id": "9667a329-cef2-4dad-97e5-4fe2484f7380",
+        "baseline_termination": {
+          "Exit": 0
+        },
+        "first_mutant": {
+          "kind": "mutant_finished",
+          "schema_version": 3,
+          "sequence": 4,
+          "run_id": "9667a329-cef2-4dad-97e5-4fe2484f7380",
+          "candidate": {
+            "id": "m1_6f9f946ac12212bf6730bd5369526ebac0b21744f6ccfeff7289b7578df0d40c",
+            "sequence": 1,
+            "path": "subject.py",
+            "span": {
+              "start": 23,
+              "length": 1
+            },
+            "original": "+",
+            "replacement": "-",
+            "operator": "binary_add_sub",
+            "line": 2,
+            "column": 10,
+            "symbol": "value",
+            "file_hash": "38a51027d823955544a6a108b9df14226f47c8d7a2f181a9a83284f0a797d770"
+          },
+          "status": "killed",
+          "termination": null,
+          "elapsed_ms": 0,
+          "resource_mode": "best_effort",
+          "output": null
+        },
+        "counts": {
+          "killed": 1,
+          "survived": 0,
+          "timeout": 0,
+          "out_of_memory": 0,
+          "process_limit": 0,
+          "error": 0,
+          "not_run": 2,
+          "inconclusive": 2,
+          "score": 1.0
+        },
+        "complete": false,
+        "cleanup": [
+          {
+            "root_id": "execution",
+            "owner": "hoimin",
+            "status": "clean",
+            "remaining_root": null
+          },
+          {
+            "root_id": "delivery",
+            "owner": "hoimin",
+            "status": "cleanup_after_delivery",
+            "remaining_root": null
+          }
+        ],
+        "selection": {
+          "root": "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-copy-audit-o1jdjw5r/project",
+          "sources": [],
+          "files": [
+            "subject.py"
+          ],
+          "lines": [],
+          "symbols": [],
+          "changed": false,
+          "diff_base": null,
+          "includes": [],
+          "excludes": [
+            "strict.flag"
+          ]
+        },
+        "fingerprint_inputs": [
+          {
+            "path": "strict.flag",
+            "hash": "74dcacc21fecb923db74f05db5cce1a6042532b0c8dd65b778e7b046c9dc67aa"
+          }
+        ],
+        "limits": {
+          "jobs": 1,
+          "max_mutants": 1,
+          "max_candidates": 10000,
+          "analyzer_timeout": {
+            "secs": 30,
+            "nanos": 0
+          },
+          "baseline_timeout": {
+            "secs": 60,
+            "nanos": 0
+          },
+          "mutant_timeout": "auto",
+          "total_timeout": {
+            "secs": 300,
+            "nanos": 0
+          },
+          "max_memory": 1073741824,
+          "max_output": 1024,
+          "max_copy_size": 1073741824,
+          "max_workspace_size": 8589934592,
+          "min_free_space": 10737418240,
+          "max_processes": 64
+        },
+        "argv": [
+          "/Users/hayao/RustroverProjects/hoimin/target/release/hoimin",
+          "run",
+          "--root",
+          "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-copy-audit-o1jdjw5r/project",
+          "--file",
+          "subject.py",
+          "--operators",
+          "binary_add_sub",
+          "--jobs",
+          "1",
+          "--max-mutants",
+          "1",
+          "--max-workspace-size",
+          "8GiB",
+          "--min-free-space",
+          "10GiB",
+          "--max-output",
+          "1024B",
+          "--fingerprint-file",
+          "strict.flag",
+          "--allow-best-effort-memory",
+          "--format",
+          "json",
+          "--exclude",
+          "strict.flag",
+          "--session",
+          "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-copy-audit-o1jdjw5r/session.sqlite3",
+          "--resume",
+          "--",
+          "/Users/hayao/RustroverProjects/hoimin/.venv/bin/python",
+          "check.py"
+        ]
+      },
+      "fresh": {
+        "exit_code": 4,
+        "run_id": "e215edee-93f9-4337-9970-ef08faf2f77d",
+        "baseline_termination": {
+          "Exit": 0
+        },
+        "first_mutant": {
+          "kind": "mutant_finished",
+          "schema_version": 3,
+          "sequence": 4,
+          "run_id": "e215edee-93f9-4337-9970-ef08faf2f77d",
+          "candidate": {
+            "id": "m1_6f9f946ac12212bf6730bd5369526ebac0b21744f6ccfeff7289b7578df0d40c",
+            "sequence": 1,
+            "path": "subject.py",
+            "span": {
+              "start": 23,
+              "length": 1
+            },
+            "original": "+",
+            "replacement": "-",
+            "operator": "binary_add_sub",
+            "line": 2,
+            "column": 10,
+            "symbol": "value",
+            "file_hash": "38a51027d823955544a6a108b9df14226f47c8d7a2f181a9a83284f0a797d770"
+          },
+          "status": "survived",
+          "termination": {
+            "Exit": 0
+          },
+          "elapsed_ms": 18,
+          "resource_mode": "best_effort",
+          "output": {
+            "token": "24d01b7d-f52c-4d7c-98f8-852b0be596da",
+            "retained": 0,
+            "observed": 0
+          }
+        },
+        "counts": {
+          "killed": 0,
+          "survived": 1,
+          "timeout": 0,
+          "out_of_memory": 0,
+          "process_limit": 0,
+          "error": 0,
+          "not_run": 2,
+          "inconclusive": 2,
+          "score": 0.0
+        },
+        "complete": false,
+        "cleanup": [
+          {
+            "root_id": "execution",
+            "owner": "hoimin",
+            "status": "clean",
+            "remaining_root": null
+          },
+          {
+            "root_id": "delivery",
+            "owner": "hoimin",
+            "status": "cleanup_after_delivery",
+            "remaining_root": null
+          }
+        ],
+        "selection": {
+          "root": "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-copy-audit-o1jdjw5r/project",
+          "sources": [],
+          "files": [
+            "subject.py"
+          ],
+          "lines": [],
+          "symbols": [],
+          "changed": false,
+          "diff_base": null,
+          "includes": [],
+          "excludes": [
+            "strict.flag"
+          ]
+        },
+        "fingerprint_inputs": [
+          {
+            "path": "strict.flag",
+            "hash": "74dcacc21fecb923db74f05db5cce1a6042532b0c8dd65b778e7b046c9dc67aa"
+          }
+        ],
+        "limits": {
+          "jobs": 1,
+          "max_mutants": 1,
+          "max_candidates": 10000,
+          "analyzer_timeout": {
+            "secs": 30,
+            "nanos": 0
+          },
+          "baseline_timeout": {
+            "secs": 60,
+            "nanos": 0
+          },
+          "mutant_timeout": "auto",
+          "total_timeout": {
+            "secs": 300,
+            "nanos": 0
+          },
+          "max_memory": 1073741824,
+          "max_output": 1024,
+          "max_copy_size": 1073741824,
+          "max_workspace_size": 8589934592,
+          "min_free_space": 10737418240,
+          "max_processes": 64
+        },
+        "argv": [
+          "/Users/hayao/RustroverProjects/hoimin/target/release/hoimin",
+          "run",
+          "--root",
+          "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-copy-audit-o1jdjw5r/project",
+          "--file",
+          "subject.py",
+          "--operators",
+          "binary_add_sub",
+          "--jobs",
+          "1",
+          "--max-mutants",
+          "1",
+          "--max-workspace-size",
+          "8GiB",
+          "--min-free-space",
+          "10GiB",
+          "--max-output",
+          "1024B",
+          "--fingerprint-file",
+          "strict.flag",
+          "--allow-best-effort-memory",
+          "--format",
+          "json",
+          "--exclude",
+          "strict.flag",
+          "--",
+          "/Users/hayao/RustroverProjects/hoimin/.venv/bin/python",
+          "check.py"
+        ]
+      },
+      "session_rows": [
+        [
+          "9667a329-cef2-4dad-97e5-4fe2484f7380",
+          "226624F9B5311AF1CE4E09DCB7F46DF439B8748F550787E2F9ADBD15FF8F0443",
+          0
+        ]
+      ],
+      "unchanged_file_hashes": {
+        "check.py": "4ac3b3de68510b09a03e5203c973d71175534bbead19376c20069445b172e313",
+        "subject.py": "abdda95d8babecffbfb3c132d0a308611c090c5988c380987974e3acc5125185",
+        "strict.flag": "0974043862386ed7d22a83fa4dc8733d75a10d779f5742781eaf1efe5763e62e"
+      },
+      "status": "mismatch"
+    },
+    {
+      "id": "exclude_removed",
+      "mode": "strict",
+      "expected": {
+        "initial": "survived",
+        "resumed": "killed",
+        "fresh": "killed",
+        "reused": false
+      },
+      "observed": {
+        "initial": "survived",
+        "resumed": "survived",
+        "fresh": "killed",
+        "reused": true
+      },
+      "initial": {
+        "exit_code": 4,
+        "run_id": "13a8b2a2-d28e-49a1-a9ed-7d94df49aef2",
+        "baseline_termination": {
+          "Exit": 0
+        },
+        "first_mutant": {
+          "kind": "mutant_finished",
+          "schema_version": 3,
+          "sequence": 4,
+          "run_id": "13a8b2a2-d28e-49a1-a9ed-7d94df49aef2",
+          "candidate": {
+            "id": "m1_6f9f946ac12212bf6730bd5369526ebac0b21744f6ccfeff7289b7578df0d40c",
+            "sequence": 1,
+            "path": "subject.py",
+            "span": {
+              "start": 23,
+              "length": 1
+            },
+            "original": "+",
+            "replacement": "-",
+            "operator": "binary_add_sub",
+            "line": 2,
+            "column": 10,
+            "symbol": "value",
+            "file_hash": "38a51027d823955544a6a108b9df14226f47c8d7a2f181a9a83284f0a797d770"
+          },
+          "status": "survived",
+          "termination": {
+            "Exit": 0
+          },
+          "elapsed_ms": 22,
+          "resource_mode": "best_effort",
+          "output": {
+            "token": "090b05de-5546-4c60-b99b-cfb0baa0b6a7",
+            "retained": 0,
+            "observed": 0
+          }
+        },
+        "counts": {
+          "killed": 0,
+          "survived": 1,
+          "timeout": 0,
+          "out_of_memory": 0,
+          "process_limit": 0,
+          "error": 0,
+          "not_run": 2,
+          "inconclusive": 2,
+          "score": 0.0
+        },
+        "complete": false,
+        "cleanup": [
+          {
+            "root_id": "execution",
+            "owner": "hoimin",
+            "status": "clean",
+            "remaining_root": null
+          },
+          {
+            "root_id": "delivery",
+            "owner": "hoimin",
+            "status": "cleanup_after_delivery",
+            "remaining_root": null
+          }
+        ],
+        "selection": {
+          "root": "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-copy-audit-9almr77w/project",
+          "sources": [],
+          "files": [
+            "subject.py"
+          ],
+          "lines": [],
+          "symbols": [],
+          "changed": false,
+          "diff_base": null,
+          "includes": [],
+          "excludes": [
+            "strict.flag"
+          ]
+        },
+        "fingerprint_inputs": [
+          {
+            "path": "strict.flag",
+            "hash": "74dcacc21fecb923db74f05db5cce1a6042532b0c8dd65b778e7b046c9dc67aa"
+          }
+        ],
+        "limits": {
+          "jobs": 1,
+          "max_mutants": 1,
+          "max_candidates": 10000,
+          "analyzer_timeout": {
+            "secs": 30,
+            "nanos": 0
+          },
+          "baseline_timeout": {
+            "secs": 60,
+            "nanos": 0
+          },
+          "mutant_timeout": "auto",
+          "total_timeout": {
+            "secs": 300,
+            "nanos": 0
+          },
+          "max_memory": 1073741824,
+          "max_output": 1024,
+          "max_copy_size": 1073741824,
+          "max_workspace_size": 8589934592,
+          "min_free_space": 10737418240,
+          "max_processes": 64
+        },
+        "argv": [
+          "/Users/hayao/RustroverProjects/hoimin/target/release/hoimin",
+          "run",
+          "--root",
+          "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-copy-audit-9almr77w/project",
+          "--file",
+          "subject.py",
+          "--operators",
+          "binary_add_sub",
+          "--jobs",
+          "1",
+          "--max-mutants",
+          "1",
+          "--max-workspace-size",
+          "8GiB",
+          "--min-free-space",
+          "10GiB",
+          "--max-output",
+          "1024B",
+          "--fingerprint-file",
+          "strict.flag",
+          "--allow-best-effort-memory",
+          "--format",
+          "json",
+          "--exclude",
+          "strict.flag",
+          "--session",
+          "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-copy-audit-9almr77w/session.sqlite3",
+          "--",
+          "/Users/hayao/RustroverProjects/hoimin/.venv/bin/python",
+          "check.py"
+        ]
+      },
+      "resumed": {
+        "exit_code": 4,
+        "run_id": "13a8b2a2-d28e-49a1-a9ed-7d94df49aef2",
+        "baseline_termination": {
+          "Exit": 0
+        },
+        "first_mutant": {
+          "kind": "mutant_finished",
+          "schema_version": 3,
+          "sequence": 4,
+          "run_id": "13a8b2a2-d28e-49a1-a9ed-7d94df49aef2",
+          "candidate": {
+            "id": "m1_6f9f946ac12212bf6730bd5369526ebac0b21744f6ccfeff7289b7578df0d40c",
+            "sequence": 1,
+            "path": "subject.py",
+            "span": {
+              "start": 23,
+              "length": 1
+            },
+            "original": "+",
+            "replacement": "-",
+            "operator": "binary_add_sub",
+            "line": 2,
+            "column": 10,
+            "symbol": "value",
+            "file_hash": "38a51027d823955544a6a108b9df14226f47c8d7a2f181a9a83284f0a797d770"
+          },
+          "status": "survived",
+          "termination": null,
+          "elapsed_ms": 0,
+          "resource_mode": "best_effort",
+          "output": null
+        },
+        "counts": {
+          "killed": 0,
+          "survived": 1,
+          "timeout": 0,
+          "out_of_memory": 0,
+          "process_limit": 0,
+          "error": 0,
+          "not_run": 2,
+          "inconclusive": 2,
+          "score": 0.0
+        },
+        "complete": false,
+        "cleanup": [
+          {
+            "root_id": "execution",
+            "owner": "hoimin",
+            "status": "clean",
+            "remaining_root": null
+          },
+          {
+            "root_id": "delivery",
+            "owner": "hoimin",
+            "status": "cleanup_after_delivery",
+            "remaining_root": null
+          }
+        ],
+        "selection": {
+          "root": "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-copy-audit-9almr77w/project",
+          "sources": [],
+          "files": [
+            "subject.py"
+          ],
+          "lines": [],
+          "symbols": [],
+          "changed": false,
+          "diff_base": null,
+          "includes": [],
+          "excludes": []
+        },
+        "fingerprint_inputs": [
+          {
+            "path": "strict.flag",
+            "hash": "74dcacc21fecb923db74f05db5cce1a6042532b0c8dd65b778e7b046c9dc67aa"
+          }
+        ],
+        "limits": {
+          "jobs": 1,
+          "max_mutants": 1,
+          "max_candidates": 10000,
+          "analyzer_timeout": {
+            "secs": 30,
+            "nanos": 0
+          },
+          "baseline_timeout": {
+            "secs": 60,
+            "nanos": 0
+          },
+          "mutant_timeout": "auto",
+          "total_timeout": {
+            "secs": 300,
+            "nanos": 0
+          },
+          "max_memory": 1073741824,
+          "max_output": 1024,
+          "max_copy_size": 1073741824,
+          "max_workspace_size": 8589934592,
+          "min_free_space": 10737418240,
+          "max_processes": 64
+        },
+        "argv": [
+          "/Users/hayao/RustroverProjects/hoimin/target/release/hoimin",
+          "run",
+          "--root",
+          "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-copy-audit-9almr77w/project",
+          "--file",
+          "subject.py",
+          "--operators",
+          "binary_add_sub",
+          "--jobs",
+          "1",
+          "--max-mutants",
+          "1",
+          "--max-workspace-size",
+          "8GiB",
+          "--min-free-space",
+          "10GiB",
+          "--max-output",
+          "1024B",
+          "--fingerprint-file",
+          "strict.flag",
+          "--allow-best-effort-memory",
+          "--format",
+          "json",
+          "--session",
+          "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-copy-audit-9almr77w/session.sqlite3",
+          "--resume",
+          "--",
+          "/Users/hayao/RustroverProjects/hoimin/.venv/bin/python",
+          "check.py"
+        ]
+      },
+      "fresh": {
+        "exit_code": 4,
+        "run_id": "04d210a1-70f8-44b5-b501-aefbd512e3ae",
+        "baseline_termination": {
+          "Exit": 0
+        },
+        "first_mutant": {
+          "kind": "mutant_finished",
+          "schema_version": 3,
+          "sequence": 4,
+          "run_id": "04d210a1-70f8-44b5-b501-aefbd512e3ae",
+          "candidate": {
+            "id": "m1_6f9f946ac12212bf6730bd5369526ebac0b21744f6ccfeff7289b7578df0d40c",
+            "sequence": 1,
+            "path": "subject.py",
+            "span": {
+              "start": 23,
+              "length": 1
+            },
+            "original": "+",
+            "replacement": "-",
+            "operator": "binary_add_sub",
+            "line": 2,
+            "column": 10,
+            "symbol": "value",
+            "file_hash": "38a51027d823955544a6a108b9df14226f47c8d7a2f181a9a83284f0a797d770"
+          },
+          "status": "killed",
+          "termination": {
+            "Exit": 1
+          },
+          "elapsed_ms": 26,
+          "resource_mode": "best_effort",
+          "output": {
+            "token": "828de7d4-8819-4173-a43f-8920ee7e169b",
+            "retained": 324,
+            "observed": 324
+          }
+        },
+        "counts": {
+          "killed": 1,
+          "survived": 0,
+          "timeout": 0,
+          "out_of_memory": 0,
+          "process_limit": 0,
+          "error": 0,
+          "not_run": 2,
+          "inconclusive": 2,
+          "score": 1.0
+        },
+        "complete": false,
+        "cleanup": [
+          {
+            "root_id": "execution",
+            "owner": "hoimin",
+            "status": "clean",
+            "remaining_root": null
+          },
+          {
+            "root_id": "delivery",
+            "owner": "hoimin",
+            "status": "cleanup_after_delivery",
+            "remaining_root": null
+          }
+        ],
+        "selection": {
+          "root": "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-copy-audit-9almr77w/project",
+          "sources": [],
+          "files": [
+            "subject.py"
+          ],
+          "lines": [],
+          "symbols": [],
+          "changed": false,
+          "diff_base": null,
+          "includes": [],
+          "excludes": []
+        },
+        "fingerprint_inputs": [
+          {
+            "path": "strict.flag",
+            "hash": "74dcacc21fecb923db74f05db5cce1a6042532b0c8dd65b778e7b046c9dc67aa"
+          }
+        ],
+        "limits": {
+          "jobs": 1,
+          "max_mutants": 1,
+          "max_candidates": 10000,
+          "analyzer_timeout": {
+            "secs": 30,
+            "nanos": 0
+          },
+          "baseline_timeout": {
+            "secs": 60,
+            "nanos": 0
+          },
+          "mutant_timeout": "auto",
+          "total_timeout": {
+            "secs": 300,
+            "nanos": 0
+          },
+          "max_memory": 1073741824,
+          "max_output": 1024,
+          "max_copy_size": 1073741824,
+          "max_workspace_size": 8589934592,
+          "min_free_space": 10737418240,
+          "max_processes": 64
+        },
+        "argv": [
+          "/Users/hayao/RustroverProjects/hoimin/target/release/hoimin",
+          "run",
+          "--root",
+          "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-copy-audit-9almr77w/project",
+          "--file",
+          "subject.py",
+          "--operators",
+          "binary_add_sub",
+          "--jobs",
+          "1",
+          "--max-mutants",
+          "1",
+          "--max-workspace-size",
+          "8GiB",
+          "--min-free-space",
+          "10GiB",
+          "--max-output",
+          "1024B",
+          "--fingerprint-file",
+          "strict.flag",
+          "--allow-best-effort-memory",
+          "--format",
+          "json",
+          "--",
+          "/Users/hayao/RustroverProjects/hoimin/.venv/bin/python",
+          "check.py"
+        ]
+      },
+      "session_rows": [
+        [
+          "13a8b2a2-d28e-49a1-a9ed-7d94df49aef2",
+          "226624F9B5311AF1CE4E09DCB7F46DF439B8748F550787E2F9ADBD15FF8F0443",
+          0
+        ]
+      ],
+      "unchanged_file_hashes": {
+        "check.py": "4ac3b3de68510b09a03e5203c973d71175534bbead19376c20069445b172e313",
+        "subject.py": "abdda95d8babecffbfb3c132d0a308611c090c5988c380987974e3acc5125185",
+        "strict.flag": "0974043862386ed7d22a83fa4dc8733d75a10d779f5742781eaf1efe5763e62e"
+      },
+      "status": "mismatch"
+    },
+    {
+      "id": "exclude_unchanged_present",
+      "mode": "strict",
+      "expected": {
+        "initial": "killed",
+        "resumed": "killed",
+        "fresh": "killed",
+        "reused": true
+      },
+      "observed": {
+        "initial": "killed",
+        "resumed": "killed",
+        "fresh": "killed",
+        "reused": true
+      },
+      "initial": {
+        "exit_code": 4,
+        "run_id": "7bcd9d5f-3f13-485a-a301-45a414267d1b",
+        "baseline_termination": {
+          "Exit": 0
+        },
+        "first_mutant": {
+          "kind": "mutant_finished",
+          "schema_version": 3,
+          "sequence": 4,
+          "run_id": "7bcd9d5f-3f13-485a-a301-45a414267d1b",
+          "candidate": {
+            "id": "m1_6f9f946ac12212bf6730bd5369526ebac0b21744f6ccfeff7289b7578df0d40c",
+            "sequence": 1,
+            "path": "subject.py",
+            "span": {
+              "start": 23,
+              "length": 1
+            },
+            "original": "+",
+            "replacement": "-",
+            "operator": "binary_add_sub",
+            "line": 2,
+            "column": 10,
+            "symbol": "value",
+            "file_hash": "38a51027d823955544a6a108b9df14226f47c8d7a2f181a9a83284f0a797d770"
+          },
+          "status": "killed",
+          "termination": {
+            "Exit": 1
+          },
+          "elapsed_ms": 28,
+          "resource_mode": "best_effort",
+          "output": {
+            "token": "afea2f9e-bcc0-4b85-a1f9-f34f4886c8e1",
+            "retained": 324,
+            "observed": 324
+          }
+        },
+        "counts": {
+          "killed": 1,
+          "survived": 0,
+          "timeout": 0,
+          "out_of_memory": 0,
+          "process_limit": 0,
+          "error": 0,
+          "not_run": 2,
+          "inconclusive": 2,
+          "score": 1.0
+        },
+        "complete": false,
+        "cleanup": [
+          {
+            "root_id": "execution",
+            "owner": "hoimin",
+            "status": "clean",
+            "remaining_root": null
+          },
+          {
+            "root_id": "delivery",
+            "owner": "hoimin",
+            "status": "cleanup_after_delivery",
+            "remaining_root": null
+          }
+        ],
+        "selection": {
+          "root": "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-copy-audit-sdd63xrh/project",
+          "sources": [],
+          "files": [
+            "subject.py"
+          ],
+          "lines": [],
+          "symbols": [],
+          "changed": false,
+          "diff_base": null,
+          "includes": [],
+          "excludes": []
+        },
+        "fingerprint_inputs": [
+          {
+            "path": "strict.flag",
+            "hash": "74dcacc21fecb923db74f05db5cce1a6042532b0c8dd65b778e7b046c9dc67aa"
+          }
+        ],
+        "limits": {
+          "jobs": 1,
+          "max_mutants": 1,
+          "max_candidates": 10000,
+          "analyzer_timeout": {
+            "secs": 30,
+            "nanos": 0
+          },
+          "baseline_timeout": {
+            "secs": 60,
+            "nanos": 0
+          },
+          "mutant_timeout": "auto",
+          "total_timeout": {
+            "secs": 300,
+            "nanos": 0
+          },
+          "max_memory": 1073741824,
+          "max_output": 1024,
+          "max_copy_size": 1073741824,
+          "max_workspace_size": 8589934592,
+          "min_free_space": 10737418240,
+          "max_processes": 64
+        },
+        "argv": [
+          "/Users/hayao/RustroverProjects/hoimin/target/release/hoimin",
+          "run",
+          "--root",
+          "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-copy-audit-sdd63xrh/project",
+          "--file",
+          "subject.py",
+          "--operators",
+          "binary_add_sub",
+          "--jobs",
+          "1",
+          "--max-mutants",
+          "1",
+          "--max-workspace-size",
+          "8GiB",
+          "--min-free-space",
+          "10GiB",
+          "--max-output",
+          "1024B",
+          "--fingerprint-file",
+          "strict.flag",
+          "--allow-best-effort-memory",
+          "--format",
+          "json",
+          "--session",
+          "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-copy-audit-sdd63xrh/session.sqlite3",
+          "--",
+          "/Users/hayao/RustroverProjects/hoimin/.venv/bin/python",
+          "check.py"
+        ]
+      },
+      "resumed": {
+        "exit_code": 4,
+        "run_id": "7bcd9d5f-3f13-485a-a301-45a414267d1b",
+        "baseline_termination": {
+          "Exit": 0
+        },
+        "first_mutant": {
+          "kind": "mutant_finished",
+          "schema_version": 3,
+          "sequence": 4,
+          "run_id": "7bcd9d5f-3f13-485a-a301-45a414267d1b",
+          "candidate": {
+            "id": "m1_6f9f946ac12212bf6730bd5369526ebac0b21744f6ccfeff7289b7578df0d40c",
+            "sequence": 1,
+            "path": "subject.py",
+            "span": {
+              "start": 23,
+              "length": 1
+            },
+            "original": "+",
+            "replacement": "-",
+            "operator": "binary_add_sub",
+            "line": 2,
+            "column": 10,
+            "symbol": "value",
+            "file_hash": "38a51027d823955544a6a108b9df14226f47c8d7a2f181a9a83284f0a797d770"
+          },
+          "status": "killed",
+          "termination": null,
+          "elapsed_ms": 0,
+          "resource_mode": "best_effort",
+          "output": null
+        },
+        "counts": {
+          "killed": 1,
+          "survived": 0,
+          "timeout": 0,
+          "out_of_memory": 0,
+          "process_limit": 0,
+          "error": 0,
+          "not_run": 2,
+          "inconclusive": 2,
+          "score": 1.0
+        },
+        "complete": false,
+        "cleanup": [
+          {
+            "root_id": "execution",
+            "owner": "hoimin",
+            "status": "clean",
+            "remaining_root": null
+          },
+          {
+            "root_id": "delivery",
+            "owner": "hoimin",
+            "status": "cleanup_after_delivery",
+            "remaining_root": null
+          }
+        ],
+        "selection": {
+          "root": "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-copy-audit-sdd63xrh/project",
+          "sources": [],
+          "files": [
+            "subject.py"
+          ],
+          "lines": [],
+          "symbols": [],
+          "changed": false,
+          "diff_base": null,
+          "includes": [],
+          "excludes": []
+        },
+        "fingerprint_inputs": [
+          {
+            "path": "strict.flag",
+            "hash": "74dcacc21fecb923db74f05db5cce1a6042532b0c8dd65b778e7b046c9dc67aa"
+          }
+        ],
+        "limits": {
+          "jobs": 1,
+          "max_mutants": 1,
+          "max_candidates": 10000,
+          "analyzer_timeout": {
+            "secs": 30,
+            "nanos": 0
+          },
+          "baseline_timeout": {
+            "secs": 60,
+            "nanos": 0
+          },
+          "mutant_timeout": "auto",
+          "total_timeout": {
+            "secs": 300,
+            "nanos": 0
+          },
+          "max_memory": 1073741824,
+          "max_output": 1024,
+          "max_copy_size": 1073741824,
+          "max_workspace_size": 8589934592,
+          "min_free_space": 10737418240,
+          "max_processes": 64
+        },
+        "argv": [
+          "/Users/hayao/RustroverProjects/hoimin/target/release/hoimin",
+          "run",
+          "--root",
+          "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-copy-audit-sdd63xrh/project",
+          "--file",
+          "subject.py",
+          "--operators",
+          "binary_add_sub",
+          "--jobs",
+          "1",
+          "--max-mutants",
+          "1",
+          "--max-workspace-size",
+          "8GiB",
+          "--min-free-space",
+          "10GiB",
+          "--max-output",
+          "1024B",
+          "--fingerprint-file",
+          "strict.flag",
+          "--allow-best-effort-memory",
+          "--format",
+          "json",
+          "--session",
+          "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-copy-audit-sdd63xrh/session.sqlite3",
+          "--resume",
+          "--",
+          "/Users/hayao/RustroverProjects/hoimin/.venv/bin/python",
+          "check.py"
+        ]
+      },
+      "fresh": {
+        "exit_code": 4,
+        "run_id": "5e2b7775-c1e5-4134-9756-e6643af81050",
+        "baseline_termination": {
+          "Exit": 0
+        },
+        "first_mutant": {
+          "kind": "mutant_finished",
+          "schema_version": 3,
+          "sequence": 4,
+          "run_id": "5e2b7775-c1e5-4134-9756-e6643af81050",
+          "candidate": {
+            "id": "m1_6f9f946ac12212bf6730bd5369526ebac0b21744f6ccfeff7289b7578df0d40c",
+            "sequence": 1,
+            "path": "subject.py",
+            "span": {
+              "start": 23,
+              "length": 1
+            },
+            "original": "+",
+            "replacement": "-",
+            "operator": "binary_add_sub",
+            "line": 2,
+            "column": 10,
+            "symbol": "value",
+            "file_hash": "38a51027d823955544a6a108b9df14226f47c8d7a2f181a9a83284f0a797d770"
+          },
+          "status": "killed",
+          "termination": {
+            "Exit": 1
+          },
+          "elapsed_ms": 26,
+          "resource_mode": "best_effort",
+          "output": {
+            "token": "3962a787-ee57-4ff2-98de-1e2f2cc1ebf3",
+            "retained": 324,
+            "observed": 324
+          }
+        },
+        "counts": {
+          "killed": 1,
+          "survived": 0,
+          "timeout": 0,
+          "out_of_memory": 0,
+          "process_limit": 0,
+          "error": 0,
+          "not_run": 2,
+          "inconclusive": 2,
+          "score": 1.0
+        },
+        "complete": false,
+        "cleanup": [
+          {
+            "root_id": "execution",
+            "owner": "hoimin",
+            "status": "clean",
+            "remaining_root": null
+          },
+          {
+            "root_id": "delivery",
+            "owner": "hoimin",
+            "status": "cleanup_after_delivery",
+            "remaining_root": null
+          }
+        ],
+        "selection": {
+          "root": "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-copy-audit-sdd63xrh/project",
+          "sources": [],
+          "files": [
+            "subject.py"
+          ],
+          "lines": [],
+          "symbols": [],
+          "changed": false,
+          "diff_base": null,
+          "includes": [],
+          "excludes": []
+        },
+        "fingerprint_inputs": [
+          {
+            "path": "strict.flag",
+            "hash": "74dcacc21fecb923db74f05db5cce1a6042532b0c8dd65b778e7b046c9dc67aa"
+          }
+        ],
+        "limits": {
+          "jobs": 1,
+          "max_mutants": 1,
+          "max_candidates": 10000,
+          "analyzer_timeout": {
+            "secs": 30,
+            "nanos": 0
+          },
+          "baseline_timeout": {
+            "secs": 60,
+            "nanos": 0
+          },
+          "mutant_timeout": "auto",
+          "total_timeout": {
+            "secs": 300,
+            "nanos": 0
+          },
+          "max_memory": 1073741824,
+          "max_output": 1024,
+          "max_copy_size": 1073741824,
+          "max_workspace_size": 8589934592,
+          "min_free_space": 10737418240,
+          "max_processes": 64
+        },
+        "argv": [
+          "/Users/hayao/RustroverProjects/hoimin/target/release/hoimin",
+          "run",
+          "--root",
+          "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-copy-audit-sdd63xrh/project",
+          "--file",
+          "subject.py",
+          "--operators",
+          "binary_add_sub",
+          "--jobs",
+          "1",
+          "--max-mutants",
+          "1",
+          "--max-workspace-size",
+          "8GiB",
+          "--min-free-space",
+          "10GiB",
+          "--max-output",
+          "1024B",
+          "--fingerprint-file",
+          "strict.flag",
+          "--allow-best-effort-memory",
+          "--format",
+          "json",
+          "--",
+          "/Users/hayao/RustroverProjects/hoimin/.venv/bin/python",
+          "check.py"
+        ]
+      },
+      "session_rows": [
+        [
+          "7bcd9d5f-3f13-485a-a301-45a414267d1b",
+          "226624F9B5311AF1CE4E09DCB7F46DF439B8748F550787E2F9ADBD15FF8F0443",
+          0
+        ]
+      ],
+      "unchanged_file_hashes": {
+        "check.py": "4ac3b3de68510b09a03e5203c973d71175534bbead19376c20069445b172e313",
+        "subject.py": "abdda95d8babecffbfb3c132d0a308611c090c5988c380987974e3acc5125185",
+        "strict.flag": "0974043862386ed7d22a83fa4dc8733d75a10d779f5742781eaf1efe5763e62e"
+      },
+      "status": "match"
+    },
+    {
+      "id": "exclude_unchanged_absent",
+      "mode": "strict",
+      "expected": {
+        "initial": "survived",
+        "resumed": "survived",
+        "fresh": "survived",
+        "reused": true
+      },
+      "observed": {
+        "initial": "survived",
+        "resumed": "survived",
+        "fresh": "survived",
+        "reused": true
+      },
+      "initial": {
+        "exit_code": 4,
+        "run_id": "24403c62-1c5d-42df-aa96-971ab0710250",
+        "baseline_termination": {
+          "Exit": 0
+        },
+        "first_mutant": {
+          "kind": "mutant_finished",
+          "schema_version": 3,
+          "sequence": 4,
+          "run_id": "24403c62-1c5d-42df-aa96-971ab0710250",
+          "candidate": {
+            "id": "m1_6f9f946ac12212bf6730bd5369526ebac0b21744f6ccfeff7289b7578df0d40c",
+            "sequence": 1,
+            "path": "subject.py",
+            "span": {
+              "start": 23,
+              "length": 1
+            },
+            "original": "+",
+            "replacement": "-",
+            "operator": "binary_add_sub",
+            "line": 2,
+            "column": 10,
+            "symbol": "value",
+            "file_hash": "38a51027d823955544a6a108b9df14226f47c8d7a2f181a9a83284f0a797d770"
+          },
+          "status": "survived",
+          "termination": {
+            "Exit": 0
+          },
+          "elapsed_ms": 17,
+          "resource_mode": "best_effort",
+          "output": {
+            "token": "82fefe5b-b4f9-40cd-b44e-458446034c45",
+            "retained": 0,
+            "observed": 0
+          }
+        },
+        "counts": {
+          "killed": 0,
+          "survived": 1,
+          "timeout": 0,
+          "out_of_memory": 0,
+          "process_limit": 0,
+          "error": 0,
+          "not_run": 2,
+          "inconclusive": 2,
+          "score": 0.0
+        },
+        "complete": false,
+        "cleanup": [
+          {
+            "root_id": "execution",
+            "owner": "hoimin",
+            "status": "clean",
+            "remaining_root": null
+          },
+          {
+            "root_id": "delivery",
+            "owner": "hoimin",
+            "status": "cleanup_after_delivery",
+            "remaining_root": null
+          }
+        ],
+        "selection": {
+          "root": "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-copy-audit-kmu_89ln/project",
+          "sources": [],
+          "files": [
+            "subject.py"
+          ],
+          "lines": [],
+          "symbols": [],
+          "changed": false,
+          "diff_base": null,
+          "includes": [],
+          "excludes": [
+            "strict.flag"
+          ]
+        },
+        "fingerprint_inputs": [
+          {
+            "path": "strict.flag",
+            "hash": "74dcacc21fecb923db74f05db5cce1a6042532b0c8dd65b778e7b046c9dc67aa"
+          }
+        ],
+        "limits": {
+          "jobs": 1,
+          "max_mutants": 1,
+          "max_candidates": 10000,
+          "analyzer_timeout": {
+            "secs": 30,
+            "nanos": 0
+          },
+          "baseline_timeout": {
+            "secs": 60,
+            "nanos": 0
+          },
+          "mutant_timeout": "auto",
+          "total_timeout": {
+            "secs": 300,
+            "nanos": 0
+          },
+          "max_memory": 1073741824,
+          "max_output": 1024,
+          "max_copy_size": 1073741824,
+          "max_workspace_size": 8589934592,
+          "min_free_space": 10737418240,
+          "max_processes": 64
+        },
+        "argv": [
+          "/Users/hayao/RustroverProjects/hoimin/target/release/hoimin",
+          "run",
+          "--root",
+          "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-copy-audit-kmu_89ln/project",
+          "--file",
+          "subject.py",
+          "--operators",
+          "binary_add_sub",
+          "--jobs",
+          "1",
+          "--max-mutants",
+          "1",
+          "--max-workspace-size",
+          "8GiB",
+          "--min-free-space",
+          "10GiB",
+          "--max-output",
+          "1024B",
+          "--fingerprint-file",
+          "strict.flag",
+          "--allow-best-effort-memory",
+          "--format",
+          "json",
+          "--exclude",
+          "strict.flag",
+          "--session",
+          "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-copy-audit-kmu_89ln/session.sqlite3",
+          "--",
+          "/Users/hayao/RustroverProjects/hoimin/.venv/bin/python",
+          "check.py"
+        ]
+      },
+      "resumed": {
+        "exit_code": 4,
+        "run_id": "24403c62-1c5d-42df-aa96-971ab0710250",
+        "baseline_termination": {
+          "Exit": 0
+        },
+        "first_mutant": {
+          "kind": "mutant_finished",
+          "schema_version": 3,
+          "sequence": 4,
+          "run_id": "24403c62-1c5d-42df-aa96-971ab0710250",
+          "candidate": {
+            "id": "m1_6f9f946ac12212bf6730bd5369526ebac0b21744f6ccfeff7289b7578df0d40c",
+            "sequence": 1,
+            "path": "subject.py",
+            "span": {
+              "start": 23,
+              "length": 1
+            },
+            "original": "+",
+            "replacement": "-",
+            "operator": "binary_add_sub",
+            "line": 2,
+            "column": 10,
+            "symbol": "value",
+            "file_hash": "38a51027d823955544a6a108b9df14226f47c8d7a2f181a9a83284f0a797d770"
+          },
+          "status": "survived",
+          "termination": null,
+          "elapsed_ms": 0,
+          "resource_mode": "best_effort",
+          "output": null
+        },
+        "counts": {
+          "killed": 0,
+          "survived": 1,
+          "timeout": 0,
+          "out_of_memory": 0,
+          "process_limit": 0,
+          "error": 0,
+          "not_run": 2,
+          "inconclusive": 2,
+          "score": 0.0
+        },
+        "complete": false,
+        "cleanup": [
+          {
+            "root_id": "execution",
+            "owner": "hoimin",
+            "status": "clean",
+            "remaining_root": null
+          },
+          {
+            "root_id": "delivery",
+            "owner": "hoimin",
+            "status": "cleanup_after_delivery",
+            "remaining_root": null
+          }
+        ],
+        "selection": {
+          "root": "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-copy-audit-kmu_89ln/project",
+          "sources": [],
+          "files": [
+            "subject.py"
+          ],
+          "lines": [],
+          "symbols": [],
+          "changed": false,
+          "diff_base": null,
+          "includes": [],
+          "excludes": [
+            "strict.flag"
+          ]
+        },
+        "fingerprint_inputs": [
+          {
+            "path": "strict.flag",
+            "hash": "74dcacc21fecb923db74f05db5cce1a6042532b0c8dd65b778e7b046c9dc67aa"
+          }
+        ],
+        "limits": {
+          "jobs": 1,
+          "max_mutants": 1,
+          "max_candidates": 10000,
+          "analyzer_timeout": {
+            "secs": 30,
+            "nanos": 0
+          },
+          "baseline_timeout": {
+            "secs": 60,
+            "nanos": 0
+          },
+          "mutant_timeout": "auto",
+          "total_timeout": {
+            "secs": 300,
+            "nanos": 0
+          },
+          "max_memory": 1073741824,
+          "max_output": 1024,
+          "max_copy_size": 1073741824,
+          "max_workspace_size": 8589934592,
+          "min_free_space": 10737418240,
+          "max_processes": 64
+        },
+        "argv": [
+          "/Users/hayao/RustroverProjects/hoimin/target/release/hoimin",
+          "run",
+          "--root",
+          "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-copy-audit-kmu_89ln/project",
+          "--file",
+          "subject.py",
+          "--operators",
+          "binary_add_sub",
+          "--jobs",
+          "1",
+          "--max-mutants",
+          "1",
+          "--max-workspace-size",
+          "8GiB",
+          "--min-free-space",
+          "10GiB",
+          "--max-output",
+          "1024B",
+          "--fingerprint-file",
+          "strict.flag",
+          "--allow-best-effort-memory",
+          "--format",
+          "json",
+          "--exclude",
+          "strict.flag",
+          "--session",
+          "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-copy-audit-kmu_89ln/session.sqlite3",
+          "--resume",
+          "--",
+          "/Users/hayao/RustroverProjects/hoimin/.venv/bin/python",
+          "check.py"
+        ]
+      },
+      "fresh": {
+        "exit_code": 4,
+        "run_id": "97de1159-9a6f-45a5-86cb-52889ce9fbc2",
+        "baseline_termination": {
+          "Exit": 0
+        },
+        "first_mutant": {
+          "kind": "mutant_finished",
+          "schema_version": 3,
+          "sequence": 4,
+          "run_id": "97de1159-9a6f-45a5-86cb-52889ce9fbc2",
+          "candidate": {
+            "id": "m1_6f9f946ac12212bf6730bd5369526ebac0b21744f6ccfeff7289b7578df0d40c",
+            "sequence": 1,
+            "path": "subject.py",
+            "span": {
+              "start": 23,
+              "length": 1
+            },
+            "original": "+",
+            "replacement": "-",
+            "operator": "binary_add_sub",
+            "line": 2,
+            "column": 10,
+            "symbol": "value",
+            "file_hash": "38a51027d823955544a6a108b9df14226f47c8d7a2f181a9a83284f0a797d770"
+          },
+          "status": "survived",
+          "termination": {
+            "Exit": 0
+          },
+          "elapsed_ms": 17,
+          "resource_mode": "best_effort",
+          "output": {
+            "token": "5ab88765-012b-40e1-989c-b9f23c47708d",
+            "retained": 0,
+            "observed": 0
+          }
+        },
+        "counts": {
+          "killed": 0,
+          "survived": 1,
+          "timeout": 0,
+          "out_of_memory": 0,
+          "process_limit": 0,
+          "error": 0,
+          "not_run": 2,
+          "inconclusive": 2,
+          "score": 0.0
+        },
+        "complete": false,
+        "cleanup": [
+          {
+            "root_id": "execution",
+            "owner": "hoimin",
+            "status": "clean",
+            "remaining_root": null
+          },
+          {
+            "root_id": "delivery",
+            "owner": "hoimin",
+            "status": "cleanup_after_delivery",
+            "remaining_root": null
+          }
+        ],
+        "selection": {
+          "root": "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-copy-audit-kmu_89ln/project",
+          "sources": [],
+          "files": [
+            "subject.py"
+          ],
+          "lines": [],
+          "symbols": [],
+          "changed": false,
+          "diff_base": null,
+          "includes": [],
+          "excludes": [
+            "strict.flag"
+          ]
+        },
+        "fingerprint_inputs": [
+          {
+            "path": "strict.flag",
+            "hash": "74dcacc21fecb923db74f05db5cce1a6042532b0c8dd65b778e7b046c9dc67aa"
+          }
+        ],
+        "limits": {
+          "jobs": 1,
+          "max_mutants": 1,
+          "max_candidates": 10000,
+          "analyzer_timeout": {
+            "secs": 30,
+            "nanos": 0
+          },
+          "baseline_timeout": {
+            "secs": 60,
+            "nanos": 0
+          },
+          "mutant_timeout": "auto",
+          "total_timeout": {
+            "secs": 300,
+            "nanos": 0
+          },
+          "max_memory": 1073741824,
+          "max_output": 1024,
+          "max_copy_size": 1073741824,
+          "max_workspace_size": 8589934592,
+          "min_free_space": 10737418240,
+          "max_processes": 64
+        },
+        "argv": [
+          "/Users/hayao/RustroverProjects/hoimin/target/release/hoimin",
+          "run",
+          "--root",
+          "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-copy-audit-kmu_89ln/project",
+          "--file",
+          "subject.py",
+          "--operators",
+          "binary_add_sub",
+          "--jobs",
+          "1",
+          "--max-mutants",
+          "1",
+          "--max-workspace-size",
+          "8GiB",
+          "--min-free-space",
+          "10GiB",
+          "--max-output",
+          "1024B",
+          "--fingerprint-file",
+          "strict.flag",
+          "--allow-best-effort-memory",
+          "--format",
+          "json",
+          "--exclude",
+          "strict.flag",
+          "--",
+          "/Users/hayao/RustroverProjects/hoimin/.venv/bin/python",
+          "check.py"
+        ]
+      },
+      "session_rows": [
+        [
+          "24403c62-1c5d-42df-aa96-971ab0710250",
+          "226624F9B5311AF1CE4E09DCB7F46DF439B8748F550787E2F9ADBD15FF8F0443",
+          0
+        ]
+      ],
+      "unchanged_file_hashes": {
+        "check.py": "4ac3b3de68510b09a03e5203c973d71175534bbead19376c20069445b172e313",
+        "subject.py": "abdda95d8babecffbfb3c132d0a308611c090c5988c380987974e3acc5125185",
+        "strict.flag": "0974043862386ed7d22a83fa4dc8733d75a10d779f5742781eaf1efe5763e62e"
+      },
+      "status": "match"
+    },
+    {
+      "id": "include_added",
+      "mode": "strict",
+      "expected": {
+        "initial": "survived",
+        "resumed": "killed",
+        "fresh": "killed",
+        "reused": false
+      },
+      "observed": {
+        "initial": "survived",
+        "resumed": "survived",
+        "fresh": "killed",
+        "reused": true
+      },
+      "initial": {
+        "exit_code": 4,
+        "run_id": "995e62dd-b751-4d9b-9d9e-cea5fbbc3abc",
+        "baseline_termination": {
+          "Exit": 0
+        },
+        "first_mutant": {
+          "kind": "mutant_finished",
+          "schema_version": 3,
+          "sequence": 4,
+          "run_id": "995e62dd-b751-4d9b-9d9e-cea5fbbc3abc",
+          "candidate": {
+            "id": "m1_6f9f946ac12212bf6730bd5369526ebac0b21744f6ccfeff7289b7578df0d40c",
+            "sequence": 1,
+            "path": "subject.py",
+            "span": {
+              "start": 23,
+              "length": 1
+            },
+            "original": "+",
+            "replacement": "-",
+            "operator": "binary_add_sub",
+            "line": 2,
+            "column": 10,
+            "symbol": "value",
+            "file_hash": "38a51027d823955544a6a108b9df14226f47c8d7a2f181a9a83284f0a797d770"
+          },
+          "status": "survived",
+          "termination": {
+            "Exit": 0
+          },
+          "elapsed_ms": 17,
+          "resource_mode": "best_effort",
+          "output": {
+            "token": "fa73c589-8756-4302-ab58-da5ecc7122e6",
+            "retained": 0,
+            "observed": 0
+          }
+        },
+        "counts": {
+          "killed": 0,
+          "survived": 1,
+          "timeout": 0,
+          "out_of_memory": 0,
+          "process_limit": 0,
+          "error": 0,
+          "not_run": 2,
+          "inconclusive": 2,
+          "score": 0.0
+        },
+        "complete": false,
+        "cleanup": [
+          {
+            "root_id": "execution",
+            "owner": "hoimin",
+            "status": "clean",
+            "remaining_root": null
+          },
+          {
+            "root_id": "delivery",
+            "owner": "hoimin",
+            "status": "cleanup_after_delivery",
+            "remaining_root": null
+          }
+        ],
+        "selection": {
+          "root": "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-copy-audit-s1zg7j01/project",
+          "sources": [],
+          "files": [
+            "subject.py"
+          ],
+          "lines": [],
+          "symbols": [],
+          "changed": false,
+          "diff_base": null,
+          "includes": [
+            "subject.py",
+            "check.py"
+          ],
+          "excludes": []
+        },
+        "fingerprint_inputs": [
+          {
+            "path": "strict.flag",
+            "hash": "74dcacc21fecb923db74f05db5cce1a6042532b0c8dd65b778e7b046c9dc67aa"
+          }
+        ],
+        "limits": {
+          "jobs": 1,
+          "max_mutants": 1,
+          "max_candidates": 10000,
+          "analyzer_timeout": {
+            "secs": 30,
+            "nanos": 0
+          },
+          "baseline_timeout": {
+            "secs": 60,
+            "nanos": 0
+          },
+          "mutant_timeout": "auto",
+          "total_timeout": {
+            "secs": 300,
+            "nanos": 0
+          },
+          "max_memory": 1073741824,
+          "max_output": 1024,
+          "max_copy_size": 1073741824,
+          "max_workspace_size": 8589934592,
+          "min_free_space": 10737418240,
+          "max_processes": 64
+        },
+        "argv": [
+          "/Users/hayao/RustroverProjects/hoimin/target/release/hoimin",
+          "run",
+          "--root",
+          "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-copy-audit-s1zg7j01/project",
+          "--file",
+          "subject.py",
+          "--operators",
+          "binary_add_sub",
+          "--jobs",
+          "1",
+          "--max-mutants",
+          "1",
+          "--max-workspace-size",
+          "8GiB",
+          "--min-free-space",
+          "10GiB",
+          "--max-output",
+          "1024B",
+          "--fingerprint-file",
+          "strict.flag",
+          "--allow-best-effort-memory",
+          "--format",
+          "json",
+          "--include",
+          "subject.py",
+          "--include",
+          "check.py",
+          "--session",
+          "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-copy-audit-s1zg7j01/session.sqlite3",
+          "--",
+          "/Users/hayao/RustroverProjects/hoimin/.venv/bin/python",
+          "check.py"
+        ]
+      },
+      "resumed": {
+        "exit_code": 4,
+        "run_id": "995e62dd-b751-4d9b-9d9e-cea5fbbc3abc",
+        "baseline_termination": {
+          "Exit": 0
+        },
+        "first_mutant": {
+          "kind": "mutant_finished",
+          "schema_version": 3,
+          "sequence": 4,
+          "run_id": "995e62dd-b751-4d9b-9d9e-cea5fbbc3abc",
+          "candidate": {
+            "id": "m1_6f9f946ac12212bf6730bd5369526ebac0b21744f6ccfeff7289b7578df0d40c",
+            "sequence": 1,
+            "path": "subject.py",
+            "span": {
+              "start": 23,
+              "length": 1
+            },
+            "original": "+",
+            "replacement": "-",
+            "operator": "binary_add_sub",
+            "line": 2,
+            "column": 10,
+            "symbol": "value",
+            "file_hash": "38a51027d823955544a6a108b9df14226f47c8d7a2f181a9a83284f0a797d770"
+          },
+          "status": "survived",
+          "termination": null,
+          "elapsed_ms": 0,
+          "resource_mode": "best_effort",
+          "output": null
+        },
+        "counts": {
+          "killed": 0,
+          "survived": 1,
+          "timeout": 0,
+          "out_of_memory": 0,
+          "process_limit": 0,
+          "error": 0,
+          "not_run": 2,
+          "inconclusive": 2,
+          "score": 0.0
+        },
+        "complete": false,
+        "cleanup": [
+          {
+            "root_id": "execution",
+            "owner": "hoimin",
+            "status": "clean",
+            "remaining_root": null
+          },
+          {
+            "root_id": "delivery",
+            "owner": "hoimin",
+            "status": "cleanup_after_delivery",
+            "remaining_root": null
+          }
+        ],
+        "selection": {
+          "root": "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-copy-audit-s1zg7j01/project",
+          "sources": [],
+          "files": [
+            "subject.py"
+          ],
+          "lines": [],
+          "symbols": [],
+          "changed": false,
+          "diff_base": null,
+          "includes": [
+            "subject.py",
+            "check.py",
+            "strict.flag"
+          ],
+          "excludes": []
+        },
+        "fingerprint_inputs": [
+          {
+            "path": "strict.flag",
+            "hash": "74dcacc21fecb923db74f05db5cce1a6042532b0c8dd65b778e7b046c9dc67aa"
+          }
+        ],
+        "limits": {
+          "jobs": 1,
+          "max_mutants": 1,
+          "max_candidates": 10000,
+          "analyzer_timeout": {
+            "secs": 30,
+            "nanos": 0
+          },
+          "baseline_timeout": {
+            "secs": 60,
+            "nanos": 0
+          },
+          "mutant_timeout": "auto",
+          "total_timeout": {
+            "secs": 300,
+            "nanos": 0
+          },
+          "max_memory": 1073741824,
+          "max_output": 1024,
+          "max_copy_size": 1073741824,
+          "max_workspace_size": 8589934592,
+          "min_free_space": 10737418240,
+          "max_processes": 64
+        },
+        "argv": [
+          "/Users/hayao/RustroverProjects/hoimin/target/release/hoimin",
+          "run",
+          "--root",
+          "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-copy-audit-s1zg7j01/project",
+          "--file",
+          "subject.py",
+          "--operators",
+          "binary_add_sub",
+          "--jobs",
+          "1",
+          "--max-mutants",
+          "1",
+          "--max-workspace-size",
+          "8GiB",
+          "--min-free-space",
+          "10GiB",
+          "--max-output",
+          "1024B",
+          "--fingerprint-file",
+          "strict.flag",
+          "--allow-best-effort-memory",
+          "--format",
+          "json",
+          "--include",
+          "subject.py",
+          "--include",
+          "check.py",
+          "--include",
+          "strict.flag",
+          "--session",
+          "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-copy-audit-s1zg7j01/session.sqlite3",
+          "--resume",
+          "--",
+          "/Users/hayao/RustroverProjects/hoimin/.venv/bin/python",
+          "check.py"
+        ]
+      },
+      "fresh": {
+        "exit_code": 4,
+        "run_id": "79687d56-feff-4081-a760-104bea9fa914",
+        "baseline_termination": {
+          "Exit": 0
+        },
+        "first_mutant": {
+          "kind": "mutant_finished",
+          "schema_version": 3,
+          "sequence": 4,
+          "run_id": "79687d56-feff-4081-a760-104bea9fa914",
+          "candidate": {
+            "id": "m1_6f9f946ac12212bf6730bd5369526ebac0b21744f6ccfeff7289b7578df0d40c",
+            "sequence": 1,
+            "path": "subject.py",
+            "span": {
+              "start": 23,
+              "length": 1
+            },
+            "original": "+",
+            "replacement": "-",
+            "operator": "binary_add_sub",
+            "line": 2,
+            "column": 10,
+            "symbol": "value",
+            "file_hash": "38a51027d823955544a6a108b9df14226f47c8d7a2f181a9a83284f0a797d770"
+          },
+          "status": "killed",
+          "termination": {
+            "Exit": 1
+          },
+          "elapsed_ms": 24,
+          "resource_mode": "best_effort",
+          "output": {
+            "token": "1b0ed8fd-8927-4984-a4d1-f8a30127f325",
+            "retained": 324,
+            "observed": 324
+          }
+        },
+        "counts": {
+          "killed": 1,
+          "survived": 0,
+          "timeout": 0,
+          "out_of_memory": 0,
+          "process_limit": 0,
+          "error": 0,
+          "not_run": 2,
+          "inconclusive": 2,
+          "score": 1.0
+        },
+        "complete": false,
+        "cleanup": [
+          {
+            "root_id": "execution",
+            "owner": "hoimin",
+            "status": "clean",
+            "remaining_root": null
+          },
+          {
+            "root_id": "delivery",
+            "owner": "hoimin",
+            "status": "cleanup_after_delivery",
+            "remaining_root": null
+          }
+        ],
+        "selection": {
+          "root": "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-copy-audit-s1zg7j01/project",
+          "sources": [],
+          "files": [
+            "subject.py"
+          ],
+          "lines": [],
+          "symbols": [],
+          "changed": false,
+          "diff_base": null,
+          "includes": [
+            "subject.py",
+            "check.py",
+            "strict.flag"
+          ],
+          "excludes": []
+        },
+        "fingerprint_inputs": [
+          {
+            "path": "strict.flag",
+            "hash": "74dcacc21fecb923db74f05db5cce1a6042532b0c8dd65b778e7b046c9dc67aa"
+          }
+        ],
+        "limits": {
+          "jobs": 1,
+          "max_mutants": 1,
+          "max_candidates": 10000,
+          "analyzer_timeout": {
+            "secs": 30,
+            "nanos": 0
+          },
+          "baseline_timeout": {
+            "secs": 60,
+            "nanos": 0
+          },
+          "mutant_timeout": "auto",
+          "total_timeout": {
+            "secs": 300,
+            "nanos": 0
+          },
+          "max_memory": 1073741824,
+          "max_output": 1024,
+          "max_copy_size": 1073741824,
+          "max_workspace_size": 8589934592,
+          "min_free_space": 10737418240,
+          "max_processes": 64
+        },
+        "argv": [
+          "/Users/hayao/RustroverProjects/hoimin/target/release/hoimin",
+          "run",
+          "--root",
+          "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-copy-audit-s1zg7j01/project",
+          "--file",
+          "subject.py",
+          "--operators",
+          "binary_add_sub",
+          "--jobs",
+          "1",
+          "--max-mutants",
+          "1",
+          "--max-workspace-size",
+          "8GiB",
+          "--min-free-space",
+          "10GiB",
+          "--max-output",
+          "1024B",
+          "--fingerprint-file",
+          "strict.flag",
+          "--allow-best-effort-memory",
+          "--format",
+          "json",
+          "--include",
+          "subject.py",
+          "--include",
+          "check.py",
+          "--include",
+          "strict.flag",
+          "--",
+          "/Users/hayao/RustroverProjects/hoimin/.venv/bin/python",
+          "check.py"
+        ]
+      },
+      "session_rows": [
+        [
+          "995e62dd-b751-4d9b-9d9e-cea5fbbc3abc",
+          "226624F9B5311AF1CE4E09DCB7F46DF439B8748F550787E2F9ADBD15FF8F0443",
+          0
+        ]
+      ],
+      "unchanged_file_hashes": {
+        "check.py": "4ac3b3de68510b09a03e5203c973d71175534bbead19376c20069445b172e313",
+        "subject.py": "abdda95d8babecffbfb3c132d0a308611c090c5988c380987974e3acc5125185",
+        ".ignore": "ec6fc5c8900c8e3e974912480ab0b0afbd338e7a6c0a679ab3ef2c6d22a27827",
+        "strict.flag": "0974043862386ed7d22a83fa4dc8733d75a10d779f5742781eaf1efe5763e62e"
+      },
+      "status": "mismatch"
+    },
+    {
+      "id": "include_removed",
+      "mode": "strict",
+      "expected": {
+        "initial": "killed",
+        "resumed": "survived",
+        "fresh": "survived",
+        "reused": false
+      },
+      "observed": {
+        "initial": "killed",
+        "resumed": "killed",
+        "fresh": "survived",
+        "reused": true
+      },
+      "initial": {
+        "exit_code": 4,
+        "run_id": "897e75d4-7acc-45b7-b4ef-35e30c2b4d48",
+        "baseline_termination": {
+          "Exit": 0
+        },
+        "first_mutant": {
+          "kind": "mutant_finished",
+          "schema_version": 3,
+          "sequence": 4,
+          "run_id": "897e75d4-7acc-45b7-b4ef-35e30c2b4d48",
+          "candidate": {
+            "id": "m1_6f9f946ac12212bf6730bd5369526ebac0b21744f6ccfeff7289b7578df0d40c",
+            "sequence": 1,
+            "path": "subject.py",
+            "span": {
+              "start": 23,
+              "length": 1
+            },
+            "original": "+",
+            "replacement": "-",
+            "operator": "binary_add_sub",
+            "line": 2,
+            "column": 10,
+            "symbol": "value",
+            "file_hash": "38a51027d823955544a6a108b9df14226f47c8d7a2f181a9a83284f0a797d770"
+          },
+          "status": "killed",
+          "termination": {
+            "Exit": 1
+          },
+          "elapsed_ms": 25,
+          "resource_mode": "best_effort",
+          "output": {
+            "token": "c59b39b7-e4ca-403c-9c68-431eca6b8517",
+            "retained": 324,
+            "observed": 324
+          }
+        },
+        "counts": {
+          "killed": 1,
+          "survived": 0,
+          "timeout": 0,
+          "out_of_memory": 0,
+          "process_limit": 0,
+          "error": 0,
+          "not_run": 2,
+          "inconclusive": 2,
+          "score": 1.0
+        },
+        "complete": false,
+        "cleanup": [
+          {
+            "root_id": "execution",
+            "owner": "hoimin",
+            "status": "clean",
+            "remaining_root": null
+          },
+          {
+            "root_id": "delivery",
+            "owner": "hoimin",
+            "status": "cleanup_after_delivery",
+            "remaining_root": null
+          }
+        ],
+        "selection": {
+          "root": "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-copy-audit-8evod_0m/project",
+          "sources": [],
+          "files": [
+            "subject.py"
+          ],
+          "lines": [],
+          "symbols": [],
+          "changed": false,
+          "diff_base": null,
+          "includes": [
+            "subject.py",
+            "check.py",
+            "strict.flag"
+          ],
+          "excludes": []
+        },
+        "fingerprint_inputs": [
+          {
+            "path": "strict.flag",
+            "hash": "74dcacc21fecb923db74f05db5cce1a6042532b0c8dd65b778e7b046c9dc67aa"
+          }
+        ],
+        "limits": {
+          "jobs": 1,
+          "max_mutants": 1,
+          "max_candidates": 10000,
+          "analyzer_timeout": {
+            "secs": 30,
+            "nanos": 0
+          },
+          "baseline_timeout": {
+            "secs": 60,
+            "nanos": 0
+          },
+          "mutant_timeout": "auto",
+          "total_timeout": {
+            "secs": 300,
+            "nanos": 0
+          },
+          "max_memory": 1073741824,
+          "max_output": 1024,
+          "max_copy_size": 1073741824,
+          "max_workspace_size": 8589934592,
+          "min_free_space": 10737418240,
+          "max_processes": 64
+        },
+        "argv": [
+          "/Users/hayao/RustroverProjects/hoimin/target/release/hoimin",
+          "run",
+          "--root",
+          "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-copy-audit-8evod_0m/project",
+          "--file",
+          "subject.py",
+          "--operators",
+          "binary_add_sub",
+          "--jobs",
+          "1",
+          "--max-mutants",
+          "1",
+          "--max-workspace-size",
+          "8GiB",
+          "--min-free-space",
+          "10GiB",
+          "--max-output",
+          "1024B",
+          "--fingerprint-file",
+          "strict.flag",
+          "--allow-best-effort-memory",
+          "--format",
+          "json",
+          "--include",
+          "subject.py",
+          "--include",
+          "check.py",
+          "--include",
+          "strict.flag",
+          "--session",
+          "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-copy-audit-8evod_0m/session.sqlite3",
+          "--",
+          "/Users/hayao/RustroverProjects/hoimin/.venv/bin/python",
+          "check.py"
+        ]
+      },
+      "resumed": {
+        "exit_code": 4,
+        "run_id": "897e75d4-7acc-45b7-b4ef-35e30c2b4d48",
+        "baseline_termination": {
+          "Exit": 0
+        },
+        "first_mutant": {
+          "kind": "mutant_finished",
+          "schema_version": 3,
+          "sequence": 4,
+          "run_id": "897e75d4-7acc-45b7-b4ef-35e30c2b4d48",
+          "candidate": {
+            "id": "m1_6f9f946ac12212bf6730bd5369526ebac0b21744f6ccfeff7289b7578df0d40c",
+            "sequence": 1,
+            "path": "subject.py",
+            "span": {
+              "start": 23,
+              "length": 1
+            },
+            "original": "+",
+            "replacement": "-",
+            "operator": "binary_add_sub",
+            "line": 2,
+            "column": 10,
+            "symbol": "value",
+            "file_hash": "38a51027d823955544a6a108b9df14226f47c8d7a2f181a9a83284f0a797d770"
+          },
+          "status": "killed",
+          "termination": null,
+          "elapsed_ms": 0,
+          "resource_mode": "best_effort",
+          "output": null
+        },
+        "counts": {
+          "killed": 1,
+          "survived": 0,
+          "timeout": 0,
+          "out_of_memory": 0,
+          "process_limit": 0,
+          "error": 0,
+          "not_run": 2,
+          "inconclusive": 2,
+          "score": 1.0
+        },
+        "complete": false,
+        "cleanup": [
+          {
+            "root_id": "execution",
+            "owner": "hoimin",
+            "status": "clean",
+            "remaining_root": null
+          },
+          {
+            "root_id": "delivery",
+            "owner": "hoimin",
+            "status": "cleanup_after_delivery",
+            "remaining_root": null
+          }
+        ],
+        "selection": {
+          "root": "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-copy-audit-8evod_0m/project",
+          "sources": [],
+          "files": [
+            "subject.py"
+          ],
+          "lines": [],
+          "symbols": [],
+          "changed": false,
+          "diff_base": null,
+          "includes": [
+            "subject.py",
+            "check.py"
+          ],
+          "excludes": []
+        },
+        "fingerprint_inputs": [
+          {
+            "path": "strict.flag",
+            "hash": "74dcacc21fecb923db74f05db5cce1a6042532b0c8dd65b778e7b046c9dc67aa"
+          }
+        ],
+        "limits": {
+          "jobs": 1,
+          "max_mutants": 1,
+          "max_candidates": 10000,
+          "analyzer_timeout": {
+            "secs": 30,
+            "nanos": 0
+          },
+          "baseline_timeout": {
+            "secs": 60,
+            "nanos": 0
+          },
+          "mutant_timeout": "auto",
+          "total_timeout": {
+            "secs": 300,
+            "nanos": 0
+          },
+          "max_memory": 1073741824,
+          "max_output": 1024,
+          "max_copy_size": 1073741824,
+          "max_workspace_size": 8589934592,
+          "min_free_space": 10737418240,
+          "max_processes": 64
+        },
+        "argv": [
+          "/Users/hayao/RustroverProjects/hoimin/target/release/hoimin",
+          "run",
+          "--root",
+          "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-copy-audit-8evod_0m/project",
+          "--file",
+          "subject.py",
+          "--operators",
+          "binary_add_sub",
+          "--jobs",
+          "1",
+          "--max-mutants",
+          "1",
+          "--max-workspace-size",
+          "8GiB",
+          "--min-free-space",
+          "10GiB",
+          "--max-output",
+          "1024B",
+          "--fingerprint-file",
+          "strict.flag",
+          "--allow-best-effort-memory",
+          "--format",
+          "json",
+          "--include",
+          "subject.py",
+          "--include",
+          "check.py",
+          "--session",
+          "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-copy-audit-8evod_0m/session.sqlite3",
+          "--resume",
+          "--",
+          "/Users/hayao/RustroverProjects/hoimin/.venv/bin/python",
+          "check.py"
+        ]
+      },
+      "fresh": {
+        "exit_code": 4,
+        "run_id": "25194d1f-bcc6-4610-9661-16c22ede227f",
+        "baseline_termination": {
+          "Exit": 0
+        },
+        "first_mutant": {
+          "kind": "mutant_finished",
+          "schema_version": 3,
+          "sequence": 4,
+          "run_id": "25194d1f-bcc6-4610-9661-16c22ede227f",
+          "candidate": {
+            "id": "m1_6f9f946ac12212bf6730bd5369526ebac0b21744f6ccfeff7289b7578df0d40c",
+            "sequence": 1,
+            "path": "subject.py",
+            "span": {
+              "start": 23,
+              "length": 1
+            },
+            "original": "+",
+            "replacement": "-",
+            "operator": "binary_add_sub",
+            "line": 2,
+            "column": 10,
+            "symbol": "value",
+            "file_hash": "38a51027d823955544a6a108b9df14226f47c8d7a2f181a9a83284f0a797d770"
+          },
+          "status": "survived",
+          "termination": {
+            "Exit": 0
+          },
+          "elapsed_ms": 17,
+          "resource_mode": "best_effort",
+          "output": {
+            "token": "0c31eb74-509e-47e2-8951-731083408280",
+            "retained": 0,
+            "observed": 0
+          }
+        },
+        "counts": {
+          "killed": 0,
+          "survived": 1,
+          "timeout": 0,
+          "out_of_memory": 0,
+          "process_limit": 0,
+          "error": 0,
+          "not_run": 2,
+          "inconclusive": 2,
+          "score": 0.0
+        },
+        "complete": false,
+        "cleanup": [
+          {
+            "root_id": "execution",
+            "owner": "hoimin",
+            "status": "clean",
+            "remaining_root": null
+          },
+          {
+            "root_id": "delivery",
+            "owner": "hoimin",
+            "status": "cleanup_after_delivery",
+            "remaining_root": null
+          }
+        ],
+        "selection": {
+          "root": "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-copy-audit-8evod_0m/project",
+          "sources": [],
+          "files": [
+            "subject.py"
+          ],
+          "lines": [],
+          "symbols": [],
+          "changed": false,
+          "diff_base": null,
+          "includes": [
+            "subject.py",
+            "check.py"
+          ],
+          "excludes": []
+        },
+        "fingerprint_inputs": [
+          {
+            "path": "strict.flag",
+            "hash": "74dcacc21fecb923db74f05db5cce1a6042532b0c8dd65b778e7b046c9dc67aa"
+          }
+        ],
+        "limits": {
+          "jobs": 1,
+          "max_mutants": 1,
+          "max_candidates": 10000,
+          "analyzer_timeout": {
+            "secs": 30,
+            "nanos": 0
+          },
+          "baseline_timeout": {
+            "secs": 60,
+            "nanos": 0
+          },
+          "mutant_timeout": "auto",
+          "total_timeout": {
+            "secs": 300,
+            "nanos": 0
+          },
+          "max_memory": 1073741824,
+          "max_output": 1024,
+          "max_copy_size": 1073741824,
+          "max_workspace_size": 8589934592,
+          "min_free_space": 10737418240,
+          "max_processes": 64
+        },
+        "argv": [
+          "/Users/hayao/RustroverProjects/hoimin/target/release/hoimin",
+          "run",
+          "--root",
+          "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-copy-audit-8evod_0m/project",
+          "--file",
+          "subject.py",
+          "--operators",
+          "binary_add_sub",
+          "--jobs",
+          "1",
+          "--max-mutants",
+          "1",
+          "--max-workspace-size",
+          "8GiB",
+          "--min-free-space",
+          "10GiB",
+          "--max-output",
+          "1024B",
+          "--fingerprint-file",
+          "strict.flag",
+          "--allow-best-effort-memory",
+          "--format",
+          "json",
+          "--include",
+          "subject.py",
+          "--include",
+          "check.py",
+          "--",
+          "/Users/hayao/RustroverProjects/hoimin/.venv/bin/python",
+          "check.py"
+        ]
+      },
+      "session_rows": [
+        [
+          "897e75d4-7acc-45b7-b4ef-35e30c2b4d48",
+          "226624F9B5311AF1CE4E09DCB7F46DF439B8748F550787E2F9ADBD15FF8F0443",
+          0
+        ]
+      ],
+      "unchanged_file_hashes": {
+        "check.py": "4ac3b3de68510b09a03e5203c973d71175534bbead19376c20069445b172e313",
+        "subject.py": "abdda95d8babecffbfb3c132d0a308611c090c5988c380987974e3acc5125185",
+        ".ignore": "ec6fc5c8900c8e3e974912480ab0b0afbd338e7a6c0a679ab3ef2c6d22a27827",
+        "strict.flag": "0974043862386ed7d22a83fa4dc8733d75a10d779f5742781eaf1efe5763e62e"
+      },
+      "status": "mismatch"
+    },
+    {
+      "id": "output_limit_changed",
+      "mode": "strict",
+      "expected": {
+        "initial": "killed",
+        "resumed": "killed",
+        "fresh": "killed",
+        "reused": true
+      },
+      "observed": {
+        "initial": "killed",
+        "resumed": "killed",
+        "fresh": "killed",
+        "reused": true
+      },
+      "initial": {
+        "exit_code": 4,
+        "run_id": "e1efe69f-bd07-4a60-8d95-1721b642b2d7",
+        "baseline_termination": {
+          "Exit": 0
+        },
+        "first_mutant": {
+          "kind": "mutant_finished",
+          "schema_version": 3,
+          "sequence": 4,
+          "run_id": "e1efe69f-bd07-4a60-8d95-1721b642b2d7",
+          "candidate": {
+            "id": "m1_6f9f946ac12212bf6730bd5369526ebac0b21744f6ccfeff7289b7578df0d40c",
+            "sequence": 1,
+            "path": "subject.py",
+            "span": {
+              "start": 23,
+              "length": 1
+            },
+            "original": "+",
+            "replacement": "-",
+            "operator": "binary_add_sub",
+            "line": 2,
+            "column": 10,
+            "symbol": "value",
+            "file_hash": "38a51027d823955544a6a108b9df14226f47c8d7a2f181a9a83284f0a797d770"
+          },
+          "status": "killed",
+          "termination": {
+            "Exit": 1
+          },
+          "elapsed_ms": 25,
+          "resource_mode": "best_effort",
+          "output": {
+            "token": "9b2e1681-cdc6-4e4b-b6d4-d6093bf53468",
+            "retained": 324,
+            "observed": 324
+          }
+        },
+        "counts": {
+          "killed": 1,
+          "survived": 0,
+          "timeout": 0,
+          "out_of_memory": 0,
+          "process_limit": 0,
+          "error": 0,
+          "not_run": 2,
+          "inconclusive": 2,
+          "score": 1.0
+        },
+        "complete": false,
+        "cleanup": [
+          {
+            "root_id": "execution",
+            "owner": "hoimin",
+            "status": "clean",
+            "remaining_root": null
+          },
+          {
+            "root_id": "delivery",
+            "owner": "hoimin",
+            "status": "cleanup_after_delivery",
+            "remaining_root": null
+          }
+        ],
+        "selection": {
+          "root": "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-copy-audit-yy60mf07/project",
+          "sources": [],
+          "files": [
+            "subject.py"
+          ],
+          "lines": [],
+          "symbols": [],
+          "changed": false,
+          "diff_base": null,
+          "includes": [],
+          "excludes": []
+        },
+        "fingerprint_inputs": [
+          {
+            "path": "strict.flag",
+            "hash": "74dcacc21fecb923db74f05db5cce1a6042532b0c8dd65b778e7b046c9dc67aa"
+          }
+        ],
+        "limits": {
+          "jobs": 1,
+          "max_mutants": 1,
+          "max_candidates": 10000,
+          "analyzer_timeout": {
+            "secs": 30,
+            "nanos": 0
+          },
+          "baseline_timeout": {
+            "secs": 60,
+            "nanos": 0
+          },
+          "mutant_timeout": "auto",
+          "total_timeout": {
+            "secs": 300,
+            "nanos": 0
+          },
+          "max_memory": 1073741824,
+          "max_output": 1024,
+          "max_copy_size": 1073741824,
+          "max_workspace_size": 8589934592,
+          "min_free_space": 10737418240,
+          "max_processes": 64
+        },
+        "argv": [
+          "/Users/hayao/RustroverProjects/hoimin/target/release/hoimin",
+          "run",
+          "--root",
+          "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-copy-audit-yy60mf07/project",
+          "--file",
+          "subject.py",
+          "--operators",
+          "binary_add_sub",
+          "--jobs",
+          "1",
+          "--max-mutants",
+          "1",
+          "--max-workspace-size",
+          "8GiB",
+          "--min-free-space",
+          "10GiB",
+          "--max-output",
+          "1024B",
+          "--fingerprint-file",
+          "strict.flag",
+          "--allow-best-effort-memory",
+          "--format",
+          "json",
+          "--session",
+          "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-copy-audit-yy60mf07/session.sqlite3",
+          "--",
+          "/Users/hayao/RustroverProjects/hoimin/.venv/bin/python",
+          "check.py"
+        ]
+      },
+      "resumed": {
+        "exit_code": 4,
+        "run_id": "e1efe69f-bd07-4a60-8d95-1721b642b2d7",
+        "baseline_termination": {
+          "Exit": 0
+        },
+        "first_mutant": {
+          "kind": "mutant_finished",
+          "schema_version": 3,
+          "sequence": 4,
+          "run_id": "e1efe69f-bd07-4a60-8d95-1721b642b2d7",
+          "candidate": {
+            "id": "m1_6f9f946ac12212bf6730bd5369526ebac0b21744f6ccfeff7289b7578df0d40c",
+            "sequence": 1,
+            "path": "subject.py",
+            "span": {
+              "start": 23,
+              "length": 1
+            },
+            "original": "+",
+            "replacement": "-",
+            "operator": "binary_add_sub",
+            "line": 2,
+            "column": 10,
+            "symbol": "value",
+            "file_hash": "38a51027d823955544a6a108b9df14226f47c8d7a2f181a9a83284f0a797d770"
+          },
+          "status": "killed",
+          "termination": null,
+          "elapsed_ms": 0,
+          "resource_mode": "best_effort",
+          "output": null
+        },
+        "counts": {
+          "killed": 1,
+          "survived": 0,
+          "timeout": 0,
+          "out_of_memory": 0,
+          "process_limit": 0,
+          "error": 0,
+          "not_run": 2,
+          "inconclusive": 2,
+          "score": 1.0
+        },
+        "complete": false,
+        "cleanup": [
+          {
+            "root_id": "execution",
+            "owner": "hoimin",
+            "status": "clean",
+            "remaining_root": null
+          },
+          {
+            "root_id": "delivery",
+            "owner": "hoimin",
+            "status": "cleanup_after_delivery",
+            "remaining_root": null
+          }
+        ],
+        "selection": {
+          "root": "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-copy-audit-yy60mf07/project",
+          "sources": [],
+          "files": [
+            "subject.py"
+          ],
+          "lines": [],
+          "symbols": [],
+          "changed": false,
+          "diff_base": null,
+          "includes": [],
+          "excludes": []
+        },
+        "fingerprint_inputs": [
+          {
+            "path": "strict.flag",
+            "hash": "74dcacc21fecb923db74f05db5cce1a6042532b0c8dd65b778e7b046c9dc67aa"
+          }
+        ],
+        "limits": {
+          "jobs": 1,
+          "max_mutants": 1,
+          "max_candidates": 10000,
+          "analyzer_timeout": {
+            "secs": 30,
+            "nanos": 0
+          },
+          "baseline_timeout": {
+            "secs": 60,
+            "nanos": 0
+          },
+          "mutant_timeout": "auto",
+          "total_timeout": {
+            "secs": 300,
+            "nanos": 0
+          },
+          "max_memory": 1073741824,
+          "max_output": 2048,
+          "max_copy_size": 1073741824,
+          "max_workspace_size": 8589934592,
+          "min_free_space": 10737418240,
+          "max_processes": 64
+        },
+        "argv": [
+          "/Users/hayao/RustroverProjects/hoimin/target/release/hoimin",
+          "run",
+          "--root",
+          "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-copy-audit-yy60mf07/project",
+          "--file",
+          "subject.py",
+          "--operators",
+          "binary_add_sub",
+          "--jobs",
+          "1",
+          "--max-mutants",
+          "1",
+          "--max-workspace-size",
+          "8GiB",
+          "--min-free-space",
+          "10GiB",
+          "--max-output",
+          "2048B",
+          "--fingerprint-file",
+          "strict.flag",
+          "--allow-best-effort-memory",
+          "--format",
+          "json",
+          "--session",
+          "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-copy-audit-yy60mf07/session.sqlite3",
+          "--resume",
+          "--",
+          "/Users/hayao/RustroverProjects/hoimin/.venv/bin/python",
+          "check.py"
+        ]
+      },
+      "fresh": {
+        "exit_code": 4,
+        "run_id": "a7cf8958-1c60-4a05-95c9-6908114a8d87",
+        "baseline_termination": {
+          "Exit": 0
+        },
+        "first_mutant": {
+          "kind": "mutant_finished",
+          "schema_version": 3,
+          "sequence": 4,
+          "run_id": "a7cf8958-1c60-4a05-95c9-6908114a8d87",
+          "candidate": {
+            "id": "m1_6f9f946ac12212bf6730bd5369526ebac0b21744f6ccfeff7289b7578df0d40c",
+            "sequence": 1,
+            "path": "subject.py",
+            "span": {
+              "start": 23,
+              "length": 1
+            },
+            "original": "+",
+            "replacement": "-",
+            "operator": "binary_add_sub",
+            "line": 2,
+            "column": 10,
+            "symbol": "value",
+            "file_hash": "38a51027d823955544a6a108b9df14226f47c8d7a2f181a9a83284f0a797d770"
+          },
+          "status": "killed",
+          "termination": {
+            "Exit": 1
+          },
+          "elapsed_ms": 27,
+          "resource_mode": "best_effort",
+          "output": {
+            "token": "ee27003b-23d2-4e08-92cc-f255401dc69c",
+            "retained": 324,
+            "observed": 324
+          }
+        },
+        "counts": {
+          "killed": 1,
+          "survived": 0,
+          "timeout": 0,
+          "out_of_memory": 0,
+          "process_limit": 0,
+          "error": 0,
+          "not_run": 2,
+          "inconclusive": 2,
+          "score": 1.0
+        },
+        "complete": false,
+        "cleanup": [
+          {
+            "root_id": "execution",
+            "owner": "hoimin",
+            "status": "clean",
+            "remaining_root": null
+          },
+          {
+            "root_id": "delivery",
+            "owner": "hoimin",
+            "status": "cleanup_after_delivery",
+            "remaining_root": null
+          }
+        ],
+        "selection": {
+          "root": "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-copy-audit-yy60mf07/project",
+          "sources": [],
+          "files": [
+            "subject.py"
+          ],
+          "lines": [],
+          "symbols": [],
+          "changed": false,
+          "diff_base": null,
+          "includes": [],
+          "excludes": []
+        },
+        "fingerprint_inputs": [
+          {
+            "path": "strict.flag",
+            "hash": "74dcacc21fecb923db74f05db5cce1a6042532b0c8dd65b778e7b046c9dc67aa"
+          }
+        ],
+        "limits": {
+          "jobs": 1,
+          "max_mutants": 1,
+          "max_candidates": 10000,
+          "analyzer_timeout": {
+            "secs": 30,
+            "nanos": 0
+          },
+          "baseline_timeout": {
+            "secs": 60,
+            "nanos": 0
+          },
+          "mutant_timeout": "auto",
+          "total_timeout": {
+            "secs": 300,
+            "nanos": 0
+          },
+          "max_memory": 1073741824,
+          "max_output": 2048,
+          "max_copy_size": 1073741824,
+          "max_workspace_size": 8589934592,
+          "min_free_space": 10737418240,
+          "max_processes": 64
+        },
+        "argv": [
+          "/Users/hayao/RustroverProjects/hoimin/target/release/hoimin",
+          "run",
+          "--root",
+          "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-copy-audit-yy60mf07/project",
+          "--file",
+          "subject.py",
+          "--operators",
+          "binary_add_sub",
+          "--jobs",
+          "1",
+          "--max-mutants",
+          "1",
+          "--max-workspace-size",
+          "8GiB",
+          "--min-free-space",
+          "10GiB",
+          "--max-output",
+          "2048B",
+          "--fingerprint-file",
+          "strict.flag",
+          "--allow-best-effort-memory",
+          "--format",
+          "json",
+          "--",
+          "/Users/hayao/RustroverProjects/hoimin/.venv/bin/python",
+          "check.py"
+        ]
+      },
+      "session_rows": [
+        [
+          "e1efe69f-bd07-4a60-8d95-1721b642b2d7",
+          "226624F9B5311AF1CE4E09DCB7F46DF439B8748F550787E2F9ADBD15FF8F0443",
+          0
+        ]
+      ],
+      "unchanged_file_hashes": {
+        "check.py": "4ac3b3de68510b09a03e5203c973d71175534bbead19376c20069445b172e313",
+        "subject.py": "abdda95d8babecffbfb3c132d0a308611c090c5988c380987974e3acc5125185",
+        "strict.flag": "0974043862386ed7d22a83fa4dc8733d75a10d779f5742781eaf1efe5763e62e"
+      },
+      "status": "match"
+    }
+  ]
+}

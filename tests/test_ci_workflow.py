@@ -112,6 +112,12 @@ LEAN_CORPUS_BY_EXECUTABLE = {
     "generate_collection_annotation": "corpus/collection-annotation.jsonl",
 
     "generate_implicit_finally": "corpus/implicit-finally.jsonl",
+    "generate_with_suppression": "corpus/with-suppression.jsonl",
+    "generate_deferred_annotation": "corpus/deferred-annotation.jsonl",
+    "generate_evaluation_order": "corpus/evaluation-order.jsonl",
+    "generate_declaration_only": "corpus/declaration-only.jsonl",
+    "generate_resume_copy": "corpus/resume-copy.jsonl",
+    "generate_nullable_gate": "corpus/nullable-gate.jsonl",
 }
 LEAN_SENSITIVITY_EXECUTABLES = {
     name

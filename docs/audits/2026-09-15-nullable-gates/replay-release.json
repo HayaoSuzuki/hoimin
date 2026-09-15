@@ -1,0 +1,748 @@
+{
+  "head": "5e631efc46a6e8c0b9fcf2d7a74536e57f79a369",
+  "binary": "/Users/hayao/RustroverProjects/hoimin/target/release/hoimin",
+  "binary_sha256": "f6e20e88c31f41b1d23aee3bd43ae836e42933cec05d10eb294915642b92df9e",
+  "python": "Python 3.14.7",
+  "contract": "known type names and recursively supported annotation contents only",
+  "summary": {
+    "match": 4,
+    "mismatch": 11,
+    "infrastructure error": 0
+  },
+  "cases": [
+    {
+      "id": "shadow_int_number",
+      "mode": "strict",
+      "expected_pairs": [],
+      "original_evaluation": {
+        "ok": true,
+        "value": "7"
+      },
+      "candidates": [
+        {
+          "id": "m1_90afe767ad0930f7cb93d3a4951e15b490b9579f63ae85fb00431d63b611ecad",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 8,
+            "length": 3
+          },
+          "original": "int",
+          "replacement": "int | None",
+          "operator": "type_nullable_add",
+          "line": 2,
+          "column": 2,
+          "symbol": null,
+          "file_hash": "b6a6da80ea6aabe72fff8b0e637c7fd0ca56c83b74d1efb43aee22f6112c3a3c",
+          "rank": 1,
+          "score": 50,
+          "ranking_reasons": [
+            {
+              "code": "type_annotation",
+              "score": 50
+            }
+          ]
+        }
+      ],
+      "observed_pairs": [
+        [
+          "int",
+          "int | None"
+        ]
+      ],
+      "status": "mismatch",
+      "candidate_evaluations": [
+        {
+          "ok": false,
+          "error": "TypeError",
+          "message": "unsupported operand type(s) for |: 'int' and 'NoneType'"
+        }
+      ],
+      "expected_evaluations": []
+    },
+    {
+      "id": "shadow_str_number",
+      "mode": "strict",
+      "expected_pairs": [],
+      "original_evaluation": {
+        "ok": true,
+        "value": "7"
+      },
+      "candidates": [
+        {
+          "id": "m1_d2350b22b49a34733e308e13d817a8f7a1b60209525bd4456dd4b8859752cc98",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 8,
+            "length": 3
+          },
+          "original": "str",
+          "replacement": "str | None",
+          "operator": "type_nullable_add",
+          "line": 2,
+          "column": 2,
+          "symbol": null,
+          "file_hash": "c7dd4aa063ecfacb7be8eb880be9460990161ae3d68e87dc2776f9124928a81f",
+          "rank": 1,
+          "score": 50,
+          "ranking_reasons": [
+            {
+              "code": "type_annotation",
+              "score": 50
+            }
+          ]
+        }
+      ],
+      "observed_pairs": [
+        [
+          "str",
+          "str | None"
+        ]
+      ],
+      "status": "mismatch",
+      "candidate_evaluations": [
+        {
+          "ok": false,
+          "error": "TypeError",
+          "message": "unsupported operand type(s) for |: 'int' and 'NoneType'"
+        }
+      ],
+      "expected_evaluations": []
+    },
+    {
+      "id": "shadow_int_class",
+      "mode": "strict",
+      "expected_pairs": [],
+      "original_evaluation": {
+        "ok": true,
+        "value": "<class 'subject.int'>"
+      },
+      "candidates": [
+        {
+          "id": "m1_5b060575c1612c35d06acf962ed46b2fa8ee9583f30178de19ca94f8c261f2ca",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 112,
+            "length": 3
+          },
+          "original": "int",
+          "replacement": "int | None",
+          "operator": "type_nullable_add",
+          "line": 4,
+          "column": 2,
+          "symbol": null,
+          "file_hash": "b24c812e9205e4ff2a32233e86fd42ac43fbf5e4ad261acc9443d5d4ec9c057a",
+          "rank": 1,
+          "score": 50,
+          "ranking_reasons": [
+            {
+              "code": "type_annotation",
+              "score": 50
+            }
+          ]
+        }
+      ],
+      "observed_pairs": [
+        [
+          "int",
+          "int | None"
+        ]
+      ],
+      "status": "mismatch",
+      "candidate_evaluations": [
+        {
+          "ok": false,
+          "error": "RuntimeError",
+          "message": "custom union"
+        }
+      ],
+      "expected_evaluations": []
+    },
+    {
+      "id": "shadow_list_mapping",
+      "mode": "strict",
+      "expected_pairs": [],
+      "original_evaluation": {
+        "ok": true,
+        "value": "7"
+      },
+      "candidates": [
+        {
+          "id": "m1_6dda595727e2a1f50144ced3dad6172eb9e64b20afd7370027975f10b4df4cfa",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 15,
+            "length": 9
+          },
+          "original": "list[int]",
+          "replacement": "list[int] | None",
+          "operator": "type_nullable_add",
+          "line": 2,
+          "column": 2,
+          "symbol": null,
+          "file_hash": "c5141919d4f61dc7ca35783afe3873be0fdf050716ed00614962d9988f87a6d0",
+          "rank": 1,
+          "score": 50,
+          "ranking_reasons": [
+            {
+              "code": "type_annotation",
+              "score": 50
+            }
+          ]
+        }
+      ],
+      "observed_pairs": [
+        [
+          "list[int]",
+          "list[int] | None"
+        ]
+      ],
+      "status": "mismatch",
+      "candidate_evaluations": [
+        {
+          "ok": false,
+          "error": "TypeError",
+          "message": "unsupported operand type(s) for |: 'int' and 'NoneType'"
+        }
+      ],
+      "expected_evaluations": []
+    },
+    {
+      "id": "dict_any",
+      "mode": "strict",
+      "expected_pairs": [],
+      "original_evaluation": {
+        "ok": true,
+        "value": "dict[str, typing.Any]"
+      },
+      "candidates": [
+        {
+          "id": "m1_0411e0671a3e7d13d463b4eed2e51722f949a86afc0a84e7f9b099bbaad10614",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 25,
+            "length": 13
+          },
+          "original": "dict[str,Any]",
+          "replacement": "dict[str,Any] | None",
+          "operator": "type_nullable_add",
+          "line": 2,
+          "column": 2,
+          "symbol": null,
+          "file_hash": "abda7f44a5918026f08d3c9197ca6d72e2309b1b6e2c6f6e6fbfe22cfe746e02",
+          "rank": 1,
+          "score": 50,
+          "ranking_reasons": [
+            {
+              "code": "type_annotation",
+              "score": 50
+            }
+          ]
+        }
+      ],
+      "observed_pairs": [
+        [
+          "dict[str,Any]",
+          "dict[str,Any] | None"
+        ]
+      ],
+      "status": "mismatch",
+      "candidate_evaluations": [
+        {
+          "ok": true,
+          "value": "dict[str, typing.Any] | None"
+        }
+      ],
+      "expected_evaluations": []
+    },
+    {
+      "id": "dict_object",
+      "mode": "strict",
+      "expected_pairs": [],
+      "original_evaluation": {
+        "ok": true,
+        "value": "dict[str, object]"
+      },
+      "candidates": [
+        {
+          "id": "m1_af7da845820a81e51aeb07375552354b09f6b0267c9f284c986583cb15437bc1",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 2,
+            "length": 16
+          },
+          "original": "dict[str,object]",
+          "replacement": "dict[str,object] | None",
+          "operator": "type_nullable_add",
+          "line": 1,
+          "column": 2,
+          "symbol": null,
+          "file_hash": "b53af4f240a06259b18742763fc573ec616d0555531531102d87d84f9910ac37",
+          "rank": 1,
+          "score": 50,
+          "ranking_reasons": [
+            {
+              "code": "type_annotation",
+              "score": 50
+            }
+          ]
+        }
+      ],
+      "observed_pairs": [
+        [
+          "dict[str,object]",
+          "dict[str,object] | None"
+        ]
+      ],
+      "status": "mismatch",
+      "candidate_evaluations": [
+        {
+          "ok": true,
+          "value": "dict[str, object] | None"
+        }
+      ],
+      "expected_evaluations": []
+    },
+    {
+      "id": "dict_typevar",
+      "mode": "strict",
+      "expected_pairs": [],
+      "original_evaluation": {
+        "ok": true,
+        "value": "dict[str, ~T]"
+      },
+      "candidates": [
+        {
+          "id": "m1_b373c1fa6a4d29c73b086b35009525c535e2ccea14a5a9bb04a4e6b50495851a",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 44,
+            "length": 11
+          },
+          "original": "dict[str,T]",
+          "replacement": "dict[str,T] | None",
+          "operator": "type_nullable_add",
+          "line": 3,
+          "column": 2,
+          "symbol": null,
+          "file_hash": "199feda1a1be77dccf7a5e54abc93eacb4f3aac6230095a1b2b71502392dc66d",
+          "rank": 1,
+          "score": 50,
+          "ranking_reasons": [
+            {
+              "code": "type_annotation",
+              "score": 50
+            }
+          ]
+        }
+      ],
+      "observed_pairs": [
+        [
+          "dict[str,T]",
+          "dict[str,T] | None"
+        ]
+      ],
+      "status": "mismatch",
+      "candidate_evaluations": [
+        {
+          "ok": true,
+          "value": "dict[str, ~T] | None"
+        }
+      ],
+      "expected_evaluations": []
+    },
+    {
+      "id": "dict_forward",
+      "mode": "strict",
+      "expected_pairs": [],
+      "original_evaluation": {
+        "ok": true,
+        "value": "dict[str, 'Foo']"
+      },
+      "candidates": [
+        {
+          "id": "m1_c7c0e2c1dd111b670be2f7c23f0020ff46cb4477c32298df529107d4472def0c",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 2,
+            "length": 15
+          },
+          "original": "dict[str,\"Foo\"]",
+          "replacement": "dict[str,\"Foo\"] | None",
+          "operator": "type_nullable_add",
+          "line": 1,
+          "column": 2,
+          "symbol": null,
+          "file_hash": "b9dbe87c65c9c9c354754289437fdc7f993546148443d78073ccbd23dc1ae0bd",
+          "rank": 1,
+          "score": 50,
+          "ranking_reasons": [
+            {
+              "code": "type_annotation",
+              "score": 50
+            }
+          ]
+        }
+      ],
+      "observed_pairs": [
+        [
+          "dict[str,\"Foo\"]",
+          "dict[str,\"Foo\"] | None"
+        ]
+      ],
+      "status": "mismatch",
+      "candidate_evaluations": [
+        {
+          "ok": true,
+          "value": "dict[str, 'Foo'] | None"
+        }
+      ],
+      "expected_evaluations": []
+    },
+    {
+      "id": "dict_annotated",
+      "mode": "strict",
+      "expected_pairs": [],
+      "original_evaluation": {
+        "ok": true,
+        "value": "dict[str, typing.Annotated[int, 'tag']]"
+      },
+      "candidates": [
+        {
+          "id": "m1_0e32938db0abfe4276946e3a00351182e3ea6b413449660571dd4a27e92efd06",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 31,
+            "length": 30
+          },
+          "original": "dict[str,Annotated[int,'tag']]",
+          "replacement": "dict[str,Annotated[int,'tag']] | None",
+          "operator": "type_nullable_add",
+          "line": 2,
+          "column": 2,
+          "symbol": null,
+          "file_hash": "49fcae50482838f8b740bf7c9250508ab4ce2a65833067d8d19400e36bc2db76",
+          "rank": 1,
+          "score": 50,
+          "ranking_reasons": [
+            {
+              "code": "type_annotation",
+              "score": 50
+            }
+          ]
+        }
+      ],
+      "observed_pairs": [
+        [
+          "dict[str,Annotated[int,'tag']]",
+          "dict[str,Annotated[int,'tag']] | None"
+        ]
+      ],
+      "status": "mismatch",
+      "candidate_evaluations": [
+        {
+          "ok": true,
+          "value": "dict[str, typing.Annotated[int, 'tag']] | None"
+        }
+      ],
+      "expected_evaluations": []
+    },
+    {
+      "id": "dict_callable",
+      "mode": "strict",
+      "expected_pairs": [],
+      "original_evaluation": {
+        "ok": true,
+        "value": "dict[str, typing.Callable[[int], str]]"
+      },
+      "candidates": [
+        {
+          "id": "m1_2b35550919d9d52efe243a6e8373ddbad6caadd9dee7e6528d7aa130d6fa679f",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 30,
+            "length": 29
+          },
+          "original": "dict[str,Callable[[int],str]]",
+          "replacement": "dict[str,Callable[[int],str]] | None",
+          "operator": "type_nullable_add",
+          "line": 2,
+          "column": 2,
+          "symbol": null,
+          "file_hash": "a3b28ac635c2745f4e277ef0a31ae5fbb4c843b45ba937a8aafd81a9bc02e5cb",
+          "rank": 1,
+          "score": 50,
+          "ranking_reasons": [
+            {
+              "code": "type_annotation",
+              "score": 50
+            }
+          ]
+        }
+      ],
+      "observed_pairs": [
+        [
+          "dict[str,Callable[[int],str]]",
+          "dict[str,Callable[[int],str]] | None"
+        ]
+      ],
+      "status": "mismatch",
+      "candidate_evaluations": [
+        {
+          "ok": true,
+          "value": "dict[str, typing.Callable[[int], str]] | None"
+        }
+      ],
+      "expected_evaluations": []
+    },
+    {
+      "id": "nested_list_dict_any",
+      "mode": "strict",
+      "expected_pairs": [],
+      "original_evaluation": {
+        "ok": true,
+        "value": "list[dict[str, typing.Any]]"
+      },
+      "candidates": [
+        {
+          "id": "m1_b413a59f38fc0a224b23ac627ce5376770b54388527c625a02220eed28db3395",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 25,
+            "length": 19
+          },
+          "original": "list[dict[str,Any]]",
+          "replacement": "list[dict[str,Any]] | None",
+          "operator": "type_nullable_add",
+          "line": 2,
+          "column": 2,
+          "symbol": null,
+          "file_hash": "6b856eb0f3911f4c7533b71422e0fd9580dbe0adcdf96670ce8ec1c93938ee50",
+          "rank": 1,
+          "score": 50,
+          "ranking_reasons": [
+            {
+              "code": "type_annotation",
+              "score": 50
+            }
+          ]
+        }
+      ],
+      "observed_pairs": [
+        [
+          "list[dict[str,Any]]",
+          "list[dict[str,Any]] | None"
+        ]
+      ],
+      "status": "mismatch",
+      "candidate_evaluations": [
+        {
+          "ok": true,
+          "value": "list[dict[str, typing.Any]] | None"
+        }
+      ],
+      "expected_evaluations": []
+    },
+    {
+      "id": "list_any",
+      "mode": "strict",
+      "expected_pairs": [],
+      "original_evaluation": {
+        "ok": true,
+        "value": "list[typing.Any]"
+      },
+      "candidates": [],
+      "observed_pairs": [],
+      "status": "match",
+      "candidate_evaluations": [],
+      "expected_evaluations": []
+    },
+    {
+      "id": "normal_int",
+      "mode": "strict",
+      "expected_pairs": [
+        [
+          "int",
+          "int | None"
+        ]
+      ],
+      "original_evaluation": {
+        "ok": true,
+        "value": "<class 'int'>"
+      },
+      "candidates": [
+        {
+          "id": "m1_17f7cd1e22788e0be2090edb83f791247b669b645e579252d18703cc90e41967",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 2,
+            "length": 3
+          },
+          "original": "int",
+          "replacement": "int | None",
+          "operator": "type_nullable_add",
+          "line": 1,
+          "column": 2,
+          "symbol": null,
+          "file_hash": "e582e5519ec2a068c2213581eec350b49ecc4c17289ac0d0a8cb52394af15fd6",
+          "rank": 1,
+          "score": 50,
+          "ranking_reasons": [
+            {
+              "code": "type_annotation",
+              "score": 50
+            }
+          ]
+        }
+      ],
+      "observed_pairs": [
+        [
+          "int",
+          "int | None"
+        ]
+      ],
+      "status": "match",
+      "candidate_evaluations": [
+        {
+          "ok": true,
+          "value": "int | None"
+        }
+      ],
+      "expected_evaluations": [
+        {
+          "ok": true,
+          "value": "int | None"
+        }
+      ]
+    },
+    {
+      "id": "normal_list",
+      "mode": "strict",
+      "expected_pairs": [
+        [
+          "list[int]",
+          "list[int] | None"
+        ]
+      ],
+      "original_evaluation": {
+        "ok": true,
+        "value": "list[int]"
+      },
+      "candidates": [
+        {
+          "id": "m1_f58231c260cbee750866253735636c17499f9c0a42a1768ab3eb21a677b064cd",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 2,
+            "length": 9
+          },
+          "original": "list[int]",
+          "replacement": "list[int] | None",
+          "operator": "type_nullable_add",
+          "line": 1,
+          "column": 2,
+          "symbol": null,
+          "file_hash": "6e5b5be3ec86cb44908e58e8fc0443bb2e8eaba669a1688abd1e61daed22979a",
+          "rank": 1,
+          "score": 50,
+          "ranking_reasons": [
+            {
+              "code": "type_annotation",
+              "score": 50
+            }
+          ]
+        }
+      ],
+      "observed_pairs": [
+        [
+          "list[int]",
+          "list[int] | None"
+        ]
+      ],
+      "status": "match",
+      "candidate_evaluations": [
+        {
+          "ok": true,
+          "value": "list[int] | None"
+        }
+      ],
+      "expected_evaluations": [
+        {
+          "ok": true,
+          "value": "list[int] | None"
+        }
+      ]
+    },
+    {
+      "id": "normal_dict",
+      "mode": "strict",
+      "expected_pairs": [
+        [
+          "dict[str,int]",
+          "dict[str,int] | None"
+        ]
+      ],
+      "original_evaluation": {
+        "ok": true,
+        "value": "dict[str, int]"
+      },
+      "candidates": [
+        {
+          "id": "m1_f8d96d491e02f8c60c2d0639362c08a64dd988c1143a662ee22e8f86521949ed",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 2,
+            "length": 13
+          },
+          "original": "dict[str,int]",
+          "replacement": "dict[str,int] | None",
+          "operator": "type_nullable_add",
+          "line": 1,
+          "column": 2,
+          "symbol": null,
+          "file_hash": "f45b7cc93ae9e60aa7438a78651260e41efcc17bb72ba278c0832b22845731fd",
+          "rank": 1,
+          "score": 50,
+          "ranking_reasons": [
+            {
+              "code": "type_annotation",
+              "score": 50
+            }
+          ]
+        }
+      ],
+      "observed_pairs": [
+        [
+          "dict[str,int]",
+          "dict[str,int] | None"
+        ]
+      ],
+      "status": "match",
+      "candidate_evaluations": [
+        {
+          "ok": true,
+          "value": "dict[str, int] | None"
+        }
+      ],
+      "expected_evaluations": [
+        {
+          "ok": true,
+          "value": "dict[str, int] | None"
+        }
+      ]
+    }
+  ]
+}

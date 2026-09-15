@@ -5,10 +5,90 @@ description: docs/auditsとdocs/superpowers/reports内の全Markdownを追跡状
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: followup-lean-promotion
+  resource: ../../superpowers/reports/2026-09-15-followup-lean-promotion.md
+  working_tree: untracked
+  sha256: 616caba8b9a1812ad70af5734c545090f1352d1f3c5ac91f5ac25e4f7a5abd24
+- id: nullable-gates-report
+  resource: ../../audits/2026-09-15-nullable-gates/README.md
+  working_tree: untracked
+  sha256: 13a3b384def390e0596119cc5901ef1b12ac7cd32bbd4ae73266000a6e207b52
+- id: nullable-gates-correspondence
+  resource: ../../audits/2026-09-15-nullable-gates/correspondence.md
+  working_tree: untracked
+  sha256: d129e9a236ab4f0419e769612c52a5e4521ed4fad71f9691c7b4e86b8ab0f18f
+- id: nullable-gates-name
+  resource: ../../audits/2026-09-15-nullable-gates/issue-name.md
+  working_tree: untracked
+  sha256: 5c7a5d17ae1d1868170a49a2d0de5d6e77918b991d30cffeec71a86992bfbe6b
+- id: nullable-gates-tuple
+  resource: ../../audits/2026-09-15-nullable-gates/issue-tuple.md
+  working_tree: untracked
+  sha256: cca889e7d86783afd769553692c9a2d8cb2daa275f9ef65bbfde15576d46f5ed
+- id: resume-copy-report
+  resource: ../../audits/2026-09-15-resume-copy/README.md
+  working_tree: untracked
+  sha256: 85e48710c73efb62a5ce970061dc6af55720579ee837a7c4e6fe762acfb61048
+- id: resume-copy-correspondence
+  resource: ../../audits/2026-09-15-resume-copy/correspondence.md
+  working_tree: untracked
+  sha256: ef28e19d67c40d1f946919883c6bef72b8b8a9620d3ab5efe4462dff22f8a2f6
+- id: resume-copy-issue
+  resource: ../../audits/2026-09-15-resume-copy/issue.md
+  working_tree: untracked
+  sha256: 324971624b07677f04dd4077d41edf4fc169357c7dd2e77bf65773b0fc13f4a8
+- id: declaration-only-report
+  resource: ../../audits/2026-09-15-declaration-only/README.md
+  working_tree: untracked
+  sha256: 4272c093852eab370489e8345c9ed515f20cdf26f2e5f13a4d495977db8636c9
+- id: declaration-only-correspondence
+  resource: ../../audits/2026-09-15-declaration-only/correspondence.md
+  working_tree: untracked
+  sha256: 060e6eff8289df5cc7900e4ba0a7d0a1350a6f643785073e2c0a7a4cbbdbc932
+- id: declaration-only-issue
+  resource: ../../audits/2026-09-15-declaration-only/issue.md
+  working_tree: untracked
+  sha256: a2fff281c5e3dd91822eb2a7340708f679333462a32f19c81e18579ed703f763
+- id: evaluation-order-report
+  resource: ../../audits/2026-09-15-evaluation-order/README.md
+  working_tree: untracked
+- id: evaluation-order-correspondence
+  resource: ../../audits/2026-09-15-evaluation-order/correspondence.md
+  working_tree: untracked
+- id: evaluation-order-bug
+  resource: ../../audits/2026-09-15-evaluation-order/issue-order.md
+  working_tree: untracked
+- id: evaluation-order-perf
+  resource: ../../audits/2026-09-15-evaluation-order/issue-method-allocation.md
+  working_tree: untracked
+- id: annotation-followup-report
+  resource: ../../audits/2026-09-15-annotation-followup/README.md
+  working_tree: untracked
+- id: annotation-followup-correspondence
+  resource: ../../audits/2026-09-15-annotation-followup/correspondence.md
+  working_tree: untracked
+- id: annotation-followup-deferred
+  resource: ../../audits/2026-09-15-annotation-followup/issue-deferred.md
+  working_tree: untracked
+- id: annotation-followup-set
+  resource: ../../audits/2026-09-15-annotation-followup/issue-abc-set.md
+  working_tree: untracked
+- id: with-finally-report
+  resource: ../../audits/2026-09-15-with-finally/README.md
+  working_tree: untracked
+- id: with-finally-correspondence
+  resource: ../../audits/2026-09-15-with-finally/correspondence.md
+  working_tree: untracked
+- id: with-finally-bug
+  resource: ../../audits/2026-09-15-with-finally/issue-with.md
+  working_tree: untracked
+- id: with-finally-performance
+  resource: ../../audits/2026-09-15-with-finally/issue-finally-performance.md
+  working_tree: untracked
 - id: audit-archive-01
   resource: ../../audits/README.md
   working_tree: modified
-  sha256: c166e540084903b668789abaefd72e40656200cd8f573b7bce0eee6f804dc5be
+  sha256: cc121de2cb11b757f0b594baa7766843f8379659ed8d51499a80baacca8b98dc
 - id: audit-archive-02
   resource: ../../audits/2026-09-14-additional/README.md
   working_tree: untracked
@@ -918,3 +998,69 @@ sources:
 | 原文 | 内容 | 追跡状態 |
 | --- | --- | --- |
 | [docs/superpowers/reports/2026-09-15-audit-verification-promotion.md](../../superpowers/reports/2026-09-15-audit-verification-promotion.md) | 監査入力・定理・実行検証の正式テストへの移行 [^audit-promotion] | 未追跡 |
+
+## 2026-09-15: with/finally追加監査（対象5e631ef）
+
+同じHEADでの[遅延注釈・集合ABC追加監査](../../audits/2026-09-15-annotation-followup/README.md)は#558/#559を記録する。[対応表](../../audits/2026-09-15-annotation-followup/correspondence.md)、[遅延注釈Issue](../../audits/2026-09-15-annotation-followup/issue-deferred.md)、[集合ABC Issue](../../audits/2026-09-15-annotation-followup/issue-abc-set.md)も未追跡の原文として追加した。
+
+| 原文 | 内容 | 追跡状態 |
+| --- | --- | --- |
+| [報告](../../audits/2026-09-15-with-finally/README.md) | #556/#557、Lean証明、公開CLI、性能測定 | 未追跡 |
+| [対応表](../../audits/2026-09-15-with-finally/correspondence.md) | モデル化前の前提と観測の対応 | 未追跡 |
+| [不具合Issue本文](../../audits/2026-09-15-with-finally/issue-with.md) | withの例外抑制後のimport誤認 | 未追跡 |
+| [性能Issue本文](../../audits/2026-09-15-with-finally/issue-finally-performance.md) | 入れ子finallyの二重走査 | 未追跡 |
+
+## 2026-09-15: 評価順序と未選択methodの追加監査（対象5e631ef）
+
+#560/#561の資料を未追跡の原文として追加した。
+
+| 原文 | 追跡状態 |
+| --- | --- |
+| [報告](../../audits/2026-09-15-evaluation-order/README.md) | 未追跡 |
+| [対応表](../../audits/2026-09-15-evaluation-order/correspondence.md) | 未追跡 |
+| [評価順序Issue本文](../../audits/2026-09-15-evaluation-order/issue-order.md) | 未追跡 |
+| [確保量Issue本文](../../audits/2026-09-15-evaluation-order/issue-method-allocation.md) | 未追跡 |
+
+## 2026-09-15: 値なし注釈の候補精度（対象5e631ef）
+
+| 原文の先頭見出し | 原文 | 追跡状態 |
+| --- | --- | --- |
+| 追加監査: 値なし注釈と候補精度 | [README.md](../../audits/2026-09-15-declaration-only/README.md) [^declaration-only-report] | 未追跡 |
+| モデル化前の対応表 | [correspondence.md](../../audits/2026-09-15-declaration-only/correspondence.md) [^declaration-only-correspondence] | 未追跡 |
+| 改善したい挙動 | [issue.md](../../audits/2026-09-15-declaration-only/issue.md) [^declaration-only-issue] | 未追跡 |
+
+[^declaration-only-report]: [追加監査: 値なし注釈と候補精度](../../audits/2026-09-15-declaration-only/README.md)。
+[^declaration-only-correspondence]: [モデル化前の対応表](../../audits/2026-09-15-declaration-only/correspondence.md)。
+[^declaration-only-issue]: [改善したい挙動](../../audits/2026-09-15-declaration-only/issue.md)。
+
+## 2026-09-15: コピー方針とsession再開（対象5e631ef）
+
+| 原文の先頭見出し | 原文 | 追跡状態 |
+| --- | --- | --- |
+| 追加監査: コピー方針とsession再開 | [README.md](../../audits/2026-09-15-resume-copy/README.md) [^resume-copy-report] | 未追跡 |
+| モデル化前の対応表 | [correspondence.md](../../audits/2026-09-15-resume-copy/correspondence.md) [^resume-copy-correspondence] | 未追跡 |
+| 問題 | [issue.md](../../audits/2026-09-15-resume-copy/issue.md) [^resume-copy-issue] | 未追跡 |
+
+[^resume-copy-report]: [追加監査: コピー方針とsession再開](../../audits/2026-09-15-resume-copy/README.md)。
+[^resume-copy-correspondence]: [モデル化前の対応表](../../audits/2026-09-15-resume-copy/correspondence.md)。
+[^resume-copy-issue]: [問題](../../audits/2026-09-15-resume-copy/issue.md)。
+
+## 2026-09-15: nullable型変異の適用条件（対象5e631ef）
+
+| 原文の先頭見出し | 原文 | 追跡状態 |
+| --- | --- | --- |
+| 追加監査: nullable型変異の適用条件 | [README.md](../../audits/2026-09-15-nullable-gates/README.md) [^nullable-gates-report] | 未追跡 |
+| モデル化前の対応表 | [correspondence.md](../../audits/2026-09-15-nullable-gates/correspondence.md) [^nullable-gates-correspondence] | 未追跡 |
+| 問題 | [issue-name.md](../../audits/2026-09-15-nullable-gates/issue-name.md) [^nullable-gates-name] | 未追跡 |
+| 問題 | [issue-tuple.md](../../audits/2026-09-15-nullable-gates/issue-tuple.md) [^nullable-gates-tuple] | 未追跡 |
+
+[^nullable-gates-report]: [追加監査: nullable型変異の適用条件](../../audits/2026-09-15-nullable-gates/README.md)。
+[^nullable-gates-correspondence]: [モデル化前の対応表](../../audits/2026-09-15-nullable-gates/correspondence.md)。
+[^nullable-gates-name]: [問題](../../audits/2026-09-15-nullable-gates/issue-name.md)。
+[^nullable-gates-tuple]: [問題](../../audits/2026-09-15-nullable-gates/issue-tuple.md)。
+
+## 2026-09-15: 追加監査のLean統合
+
+6モデル・33定理・58入力の正式プロジェクトとCIへの組み込み、および実装との対応の限界を記録した。[^followup-lean-promotion]
+
+[^followup-lean-promotion]: [追加監査のLeanモデルを正式な検証へ組み込む](../../superpowers/reports/2026-09-15-followup-lean-promotion.md)。

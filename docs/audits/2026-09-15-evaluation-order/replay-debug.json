@@ -1,0 +1,368 @@
+{
+  "head": "5e631efc46a6e8c0b9fcf2d7a74536e57f79a369",
+  "binary": "/Users/hayao/RustroverProjects/hoimin/target/debug/hoimin",
+  "binary_sha256": "e09ab4ef7e34fc229a74915ce2b69786e7eb80a2d285e87911a20268f2376d6f",
+  "python": "Python 3.14.7",
+  "cases": [
+    {
+      "id": "unpack_target",
+      "mode": "strict",
+      "expected_pairs": [],
+      "candidates": [
+        {
+          "id": "m1_2daa7c20a33e8967a35cf07fa3502b6edb0de64469557be6c7437488d0e2cea7",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 58,
+            "length": 3
+          },
+          "original": "any",
+          "replacement": "all",
+          "operator": "collection_any_all",
+          "line": 3,
+          "column": 11,
+          "symbol": null,
+          "file_hash": "e14307be877fd5b1a8d283fded4f7f548ff4e8d6437caf4cdea7040b46d9446b",
+          "rank": 1,
+          "score": 80,
+          "ranking_reasons": [
+            {
+              "code": "behavioral",
+              "score": 80
+            }
+          ]
+        }
+      ],
+      "observed_pairs": [
+        [
+          "any",
+          "all"
+        ]
+      ],
+      "status": "mismatch",
+      "evaluations": [
+        {
+          "candidate_id": null,
+          "ok": true,
+          "value": "['custom']"
+        },
+        {
+          "candidate_id": "m1_2daa7c20a33e8967a35cf07fa3502b6edb0de64469557be6c7437488d0e2cea7",
+          "ok": true,
+          "value": "[True]"
+        }
+      ]
+    },
+    {
+      "id": "chain_target",
+      "mode": "strict",
+      "expected_pairs": [],
+      "candidates": [
+        {
+          "id": "m1_d99e20ff12877db40a035a90f1285caa0c470796c62833dff71de160945bef88",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 59,
+            "length": 3
+          },
+          "original": "any",
+          "replacement": "all",
+          "operator": "collection_any_all",
+          "line": 3,
+          "column": 12,
+          "symbol": null,
+          "file_hash": "ddd5e3586b28f3782e186e3c0c6d0b845fe4dc3dbd6663c96a95b12b297b3ede",
+          "rank": 1,
+          "score": 80,
+          "ranking_reasons": [
+            {
+              "code": "behavioral",
+              "score": 80
+            }
+          ]
+        }
+      ],
+      "observed_pairs": [
+        [
+          "any",
+          "all"
+        ]
+      ],
+      "status": "mismatch",
+      "evaluations": [
+        {
+          "candidate_id": null,
+          "ok": true,
+          "value": "['custom']"
+        },
+        {
+          "candidate_id": "m1_d99e20ff12877db40a035a90f1285caa0c470796c62833dff71de160945bef88",
+          "ok": true,
+          "value": "[True]"
+        }
+      ]
+    },
+    {
+      "id": "rhs_walrus",
+      "mode": "strict",
+      "expected_pairs": [],
+      "candidates": [
+        {
+          "id": "m1_f9b4f40ee48b4c3d8d2f3f4900cb9d19a68da8e5951713e401d4e8b7ef441b0a",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 53,
+            "length": 3
+          },
+          "original": "any",
+          "replacement": "all",
+          "operator": "collection_any_all",
+          "line": 3,
+          "column": 6,
+          "symbol": null,
+          "file_hash": "093a7329e153bad3825d359c96ac2e435acb685cefa2c0fe3daab918d3e8d86c",
+          "rank": 1,
+          "score": 80,
+          "ranking_reasons": [
+            {
+              "code": "behavioral",
+              "score": 80
+            }
+          ]
+        }
+      ],
+      "observed_pairs": [
+        [
+          "any",
+          "all"
+        ]
+      ],
+      "status": "mismatch",
+      "evaluations": [
+        {
+          "candidate_id": null,
+          "ok": true,
+          "value": "['custom']"
+        },
+        {
+          "candidate_id": "m1_f9b4f40ee48b4c3d8d2f3f4900cb9d19a68da8e5951713e401d4e8b7ef441b0a",
+          "ok": true,
+          "value": "[True]"
+        }
+      ]
+    },
+    {
+      "id": "destination_target",
+      "mode": "strict",
+      "expected_pairs": [],
+      "candidates": [
+        {
+          "id": "m1_a13c81f752198eb9673339686ed9bce007e4c8f2dcbcfad37dbd6df97a87fb37",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 58,
+            "length": 3
+          },
+          "original": "any",
+          "replacement": "all",
+          "operator": "collection_any_all",
+          "line": 3,
+          "column": 11,
+          "symbol": null,
+          "file_hash": "ce81aff5b91401949db811c650d76bac996bac15f5c8aac79fb3067b047c61f5",
+          "rank": 1,
+          "score": 80,
+          "ranking_reasons": [
+            {
+              "code": "behavioral",
+              "score": 80
+            }
+          ]
+        }
+      ],
+      "observed_pairs": [
+        [
+          "any",
+          "all"
+        ]
+      ],
+      "status": "mismatch",
+      "evaluations": [
+        {
+          "candidate_id": null,
+          "ok": true,
+          "value": "[False]"
+        },
+        {
+          "candidate_id": "m1_a13c81f752198eb9673339686ed9bce007e4c8f2dcbcfad37dbd6df97a87fb37",
+          "ok": true,
+          "value": "['custom']"
+        }
+      ]
+    },
+    {
+      "id": "keyword_star",
+      "mode": "strict",
+      "expected_pairs": [],
+      "candidates": [
+        {
+          "id": "m1_26580c3cd330ca446c17a44816db2fb585c125096d107324bfc95d029b54c808",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 115,
+            "length": 3
+          },
+          "original": "any",
+          "replacement": "all",
+          "operator": "collection_any_all",
+          "line": 4,
+          "column": 19,
+          "symbol": null,
+          "file_hash": "adbc4e7ab590521a69c2e1d02d429eab43ac2a4709bad8b17e1c281ffdc55eed",
+          "rank": 1,
+          "score": 80,
+          "ranking_reasons": [
+            {
+              "code": "behavioral",
+              "score": 80
+            }
+          ]
+        }
+      ],
+      "observed_pairs": [
+        [
+          "any",
+          "all"
+        ]
+      ],
+      "status": "mismatch",
+      "evaluations": [
+        {
+          "candidate_id": null,
+          "ok": true,
+          "value": "custom"
+        },
+        {
+          "candidate_id": "m1_26580c3cd330ca446c17a44816db2fb585c125096d107324bfc95d029b54c808",
+          "ok": true,
+          "value": "True"
+        }
+      ]
+    },
+    {
+      "id": "rhs_before_store",
+      "mode": "strict",
+      "expected_pairs": [
+        [
+          "any",
+          "all"
+        ]
+      ],
+      "candidates": [
+        {
+          "id": "m1_5b0379292e77ce17b763e1a5b3968d5dfdc5e36fdf514322a3822f511f046ea0",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 63,
+            "length": 3
+          },
+          "original": "any",
+          "replacement": "all",
+          "operator": "collection_any_all",
+          "line": 3,
+          "column": 16,
+          "symbol": null,
+          "file_hash": "4bef3fae91f3963a45720b44d78fff982bb244a6cece4e92933117cb504fba96",
+          "rank": 1,
+          "score": 80,
+          "ranking_reasons": [
+            {
+              "code": "behavioral",
+              "score": 80
+            }
+          ]
+        }
+      ],
+      "observed_pairs": [
+        [
+          "any",
+          "all"
+        ]
+      ],
+      "status": "match",
+      "evaluations": [
+        {
+          "candidate_id": null,
+          "ok": true,
+          "value": "False"
+        },
+        {
+          "candidate_id": "m1_5b0379292e77ce17b763e1a5b3968d5dfdc5e36fdf514322a3822f511f046ea0",
+          "ok": true,
+          "value": "True"
+        }
+      ]
+    },
+    {
+      "id": "normal_call",
+      "mode": "strict",
+      "expected_pairs": [
+        [
+          "any",
+          "all"
+        ]
+      ],
+      "candidates": [
+        {
+          "id": "m1_ecff667325c93fdbb919a1864d2eed2357512c30ab9068ead46566d9ddc2a993",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 56,
+            "length": 3
+          },
+          "original": "any",
+          "replacement": "all",
+          "operator": "collection_any_all",
+          "line": 3,
+          "column": 9,
+          "symbol": null,
+          "file_hash": "5660a6c1a69f26f92141232350406411ec46f0f1309b605e64c0099c37a18490",
+          "rank": 1,
+          "score": 80,
+          "ranking_reasons": [
+            {
+              "code": "behavioral",
+              "score": 80
+            }
+          ]
+        }
+      ],
+      "observed_pairs": [
+        [
+          "any",
+          "all"
+        ]
+      ],
+      "status": "match",
+      "evaluations": [
+        {
+          "candidate_id": null,
+          "ok": true,
+          "value": "False"
+        },
+        {
+          "candidate_id": "m1_ecff667325c93fdbb919a1864d2eed2357512c30ab9068ead46566d9ddc2a993",
+          "ok": true,
+          "value": "True"
+        }
+      ]
+    }
+  ]
+}

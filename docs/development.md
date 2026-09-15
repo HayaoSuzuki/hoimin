@@ -142,9 +142,14 @@ New cases begin in report mode while their model/implementation boundary is
 reviewed. Promoted strict cases are blocking; infrastructure errors always
 fail.
 
-The Linux `Lean audit` CI job is configured to compile all 130 package modules
-serially before building the aggregate library. It then runs all 32 corpus
-freshness checks and the 29 generators that expose sensitivity gates. The
+The six follow-up audit models from 2026-09-15 also participate in the Lean
+build, corpus freshness, and sensitivity gates. Their implementation gaps
+remain in report mode; see the [promotion report](superpowers/reports/2026-09-15-followup-lean-promotion.md)
+for model boundaries, corpus paths, and the unresolved issue ledger.
+
+The Linux `Lean audit` CI job is configured to compile every package module
+serially before building the aggregate library. It then runs every registered
+corpus freshness check and each generator that exposes a sensitivity gate. The
 workflow is the canonical list of package targets, corpus paths, and gate
 commands; update its contract test whenever a library module or `lakefile.toml`
 executable changes.

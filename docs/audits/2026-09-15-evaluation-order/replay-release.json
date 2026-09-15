@@ -1,0 +1,844 @@
+{
+  "head": "5e631efc46a6e8c0b9fcf2d7a74536e57f79a369",
+  "binary": "/Users/hayao/RustroverProjects/hoimin/target/release/hoimin",
+  "binary_sha256": "f6e20e88c31f41b1d23aee3bd43ae836e42933cec05d10eb294915642b92df9e",
+  "python": "Python 3.14.7",
+  "cases": [
+    {
+      "id": "unpack_target",
+      "mode": "strict",
+      "expected_pairs": [],
+      "candidates": [
+        {
+          "id": "m1_2daa7c20a33e8967a35cf07fa3502b6edb0de64469557be6c7437488d0e2cea7",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 58,
+            "length": 3
+          },
+          "original": "any",
+          "replacement": "all",
+          "operator": "collection_any_all",
+          "line": 3,
+          "column": 11,
+          "symbol": null,
+          "file_hash": "e14307be877fd5b1a8d283fded4f7f548ff4e8d6437caf4cdea7040b46d9446b",
+          "rank": 1,
+          "score": 80,
+          "ranking_reasons": [
+            {
+              "code": "behavioral",
+              "score": 80
+            }
+          ]
+        }
+      ],
+      "observed_pairs": [
+        [
+          "any",
+          "all"
+        ]
+      ],
+      "status": "mismatch",
+      "evaluations": [
+        {
+          "candidate_id": null,
+          "ok": true,
+          "value": "['custom']"
+        },
+        {
+          "candidate_id": "m1_2daa7c20a33e8967a35cf07fa3502b6edb0de64469557be6c7437488d0e2cea7",
+          "ok": true,
+          "value": "[True]"
+        }
+      ],
+      "full_run": {
+        "exit": 0,
+        "report": {
+          "schema_version": 3,
+          "run": {
+            "kind": "run_started",
+            "schema_version": 3,
+            "sequence": 1,
+            "run_id": "53e64b7a-4c8b-42ae-8f86-dea600794620",
+            "normalized_config": {
+              "root": "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/tmptr1gsloe",
+              "selection": {
+                "root": "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/tmptr1gsloe",
+                "sources": [],
+                "files": [
+                  "subject.py"
+                ],
+                "lines": [],
+                "symbols": [],
+                "changed": false,
+                "diff_base": null,
+                "includes": [],
+                "excludes": []
+              },
+              "import_roots": [],
+              "fingerprint_includes": [],
+              "fingerprint_files": [],
+              "fingerprint_inputs": [],
+              "limits": {
+                "jobs": 1,
+                "max_mutants": 100,
+                "max_candidates": 10000,
+                "analyzer_timeout": {
+                  "secs": 30,
+                  "nanos": 0
+                },
+                "baseline_timeout": {
+                  "secs": 60,
+                  "nanos": 0
+                },
+                "mutant_timeout": "auto",
+                "total_timeout": {
+                  "secs": 300,
+                  "nanos": 0
+                },
+                "max_memory": 1073741824,
+                "max_output": 1048576,
+                "max_copy_size": 1073741824,
+                "max_workspace_size": 8589934592,
+                "min_free_space": 10737418240,
+                "max_processes": 64
+              },
+              "test_argv": [
+                {
+                  "unix": [
+                    47,
+                    85,
+                    115,
+                    101,
+                    114,
+                    115,
+                    47,
+                    104,
+                    97,
+                    121,
+                    97,
+                    111,
+                    47,
+                    82,
+                    117,
+                    115,
+                    116,
+                    114,
+                    111,
+                    118,
+                    101,
+                    114,
+                    80,
+                    114,
+                    111,
+                    106,
+                    101,
+                    99,
+                    116,
+                    115,
+                    47,
+                    104,
+                    111,
+                    105,
+                    109,
+                    105,
+                    110,
+                    47,
+                    46,
+                    118,
+                    101,
+                    110,
+                    118,
+                    47,
+                    98,
+                    105,
+                    110,
+                    47,
+                    112,
+                    121,
+                    116,
+                    104,
+                    111,
+                    110
+                  ]
+                },
+                {
+                  "unix": [
+                    99,
+                    104,
+                    101,
+                    99,
+                    107,
+                    46,
+                    112,
+                    121
+                  ]
+                }
+              ],
+              "output": {
+                "format": "json",
+                "metrics": null
+              },
+              "session": null,
+              "operators": [
+                "collection_any_all"
+              ],
+              "allow_best_effort_memory": true,
+              "profile": "full",
+              "resume": false
+            },
+            "versions": {
+              "os": "macos",
+              "hoimin": "0.1.0"
+            },
+            "resource_control": {
+              "mode": "best_effort",
+              "mechanism": "portable"
+            }
+          },
+          "baseline": {
+            "kind": "baseline_finished",
+            "schema_version": 3,
+            "sequence": 2,
+            "run_id": "53e64b7a-4c8b-42ae-8f86-dea600794620",
+            "termination": {
+              "Exit": 0
+            },
+            "elapsed_ms": 14,
+            "resource_mode": "best_effort",
+            "output": {
+              "token": "9ccd877f-6b35-407d-9fc6-401bdf5da57c",
+              "retained": 0,
+              "observed": 0
+            }
+          },
+          "mutants": [
+            {
+              "kind": "mutant_finished",
+              "schema_version": 3,
+              "sequence": 4,
+              "run_id": "53e64b7a-4c8b-42ae-8f86-dea600794620",
+              "candidate": {
+                "id": "m1_2daa7c20a33e8967a35cf07fa3502b6edb0de64469557be6c7437488d0e2cea7",
+                "sequence": 1,
+                "path": "subject.py",
+                "span": {
+                  "start": 58,
+                  "length": 3
+                },
+                "original": "any",
+                "replacement": "all",
+                "operator": "collection_any_all",
+                "line": 3,
+                "column": 11,
+                "symbol": null,
+                "file_hash": "e14307be877fd5b1a8d283fded4f7f548ff4e8d6437caf4cdea7040b46d9446b"
+              },
+              "status": "killed",
+              "termination": {
+                "Exit": 1
+              },
+              "elapsed_ms": 28,
+              "resource_mode": "best_effort",
+              "output": {
+                "token": "68643516-d6ba-4c80-82f0-755b1cc0753a",
+                "retained": 346,
+                "observed": 346
+              }
+            }
+          ],
+          "summary": {
+            "kind": "run_finished",
+            "schema_version": 3,
+            "sequence": 5,
+            "run_id": "53e64b7a-4c8b-42ae-8f86-dea600794620",
+            "counts": {
+              "killed": 1,
+              "survived": 0,
+              "timeout": 0,
+              "out_of_memory": 0,
+              "process_limit": 0,
+              "error": 0,
+              "not_run": 0,
+              "inconclusive": 0,
+              "score": 1.0
+            },
+            "complete": true,
+            "exit_code": 0,
+            "disk": {
+              "configured_max_owned_bytes": 8589934592,
+              "configured_min_free_bytes": 10737418240,
+              "peak_owned_bytes": 2081,
+              "minimum_available_bytes": 31051444224,
+              "filesystems": [
+                {
+                  "key": "16777232",
+                  "start_available_bytes": 31051481088,
+                  "minimum_available_bytes": 31051444224,
+                  "end_available_bytes": 31051472896,
+                  "available_bytes_change": -8192
+                }
+              ],
+              "sample_count": 7,
+              "maximum_measurement_ms": 0,
+              "enforcement": [
+                {
+                  "kind": "portable_guard"
+                }
+              ],
+              "stop": null,
+              "cleanup": [
+                {
+                  "root_id": "execution",
+                  "owner": "hoimin",
+                  "status": "clean",
+                  "examined_entries": 45,
+                  "removed_entries": 13,
+                  "details": [
+                    "startup janitor preserved 210 managed roots",
+                    "managed root is not yet reclaimable: run-00d1c820-047e-4e8e-bb13-0cd58d07536e",
+                    "managed root is not yet reclaimable: run-025b1ff8-f90e-492b-a8cc-6bb588f09528",
+                    "managed root is not yet reclaimable: run-0478b694-b820-4ab0-89a1-4215cdfbb9de",
+                    "managed root is not yet reclaimable: run-04f409ed-0145-4d37-9071-aea89d146b0d",
+                    "managed root is not yet reclaimable: run-0699a926-d8a6-4e16-8bda-679b86bce2d5",
+                    "managed root is not yet reclaimable: run-089c4845-0403-4071-92ef-a82802c5275f",
+                    "managed root is not yet reclaimable: run-0987f0e3-ee14-42e3-afc6-273bd97739b4",
+                    "managed root is not yet reclaimable: run-0c4c63b3-c5d6-41ca-a775-784477394bec",
+                    "managed root is not yet reclaimable: run-0ca52b93-f89e-4072-b739-1c739820ed46",
+                    "managed root is not yet reclaimable: run-0d6e8efd-3ccd-4960-b511-99a0564407a6",
+                    "managed root is not yet reclaimable: run-1276667d-50ee-4b38-ac19-fdb7cab8e35d",
+                    "managed root is not yet reclaimable: run-12d459aa-a2cf-425a-a5df-e4d7d41f0ac4",
+                    "managed root is not yet reclaimable: run-13e16dab-671f-492f-b96b-e6dffffe95ef",
+                    "managed root is not yet reclaimable: run-14b02961-28e7-4bbe-97f1-945d784c885a",
+                    "managed root is not yet reclaimable: run-14b6e2a7-7239-4dad-8dce-46d446b2b7a5",
+                    "managed root is not yet reclaimable: run-16369338-aa5c-440f-a695-3ea93ddc57b1",
+                    "managed root is not yet reclaimable: run-166de707-d772-41e9-971d-e50763ca53b3",
+                    "managed root is not yet reclaimable: run-18f10d73-2f90-46bc-b64e-d54922f11625",
+                    "managed root is not yet reclaimable: run-1971b531-6b9b-4db8-87f8-d4bcac8b93a8",
+                    "managed root is not yet reclaimable: run-1aaa1b6b-2828-40d9-b490-a559dbe5c8dd",
+                    "managed root is not yet reclaimable: run-1bc3dbaf-16b2-4fe5-9400-ded1fab21025",
+                    "managed root is not yet reclaimable: run-1e28c15d-38fd-477c-b8f6-19ab4184349a",
+                    "managed root is not yet reclaimable: run-1eb58b67-63c1-48f0-8a3e-4c9a02e132b5",
+                    "managed root is not yet reclaimable: run-1fd937a2-4207-46bd-ba92-d49b7e5ffd7f",
+                    "managed root is not yet reclaimable: run-20419b6d-f565-4950-8718-e92ede29845a",
+                    "managed root is not yet reclaimable: run-205d1c24-bd75-4401-9818-c6db0b09f6e1",
+                    "managed root is not yet reclaimable: run-22753825-59f6-4686-8d5b-9b3e403ba216",
+                    "managed root is not yet reclaimable: run-23c3ff91-ada9-4fb5-bb5e-27eb8c539ac6",
+                    "managed root is not yet reclaimable: run-2598e110-f9eb-473b-a900-0832178e4241",
+                    "managed root is not yet reclaimable: run-25d26289-0a46-4492-95e5-ec48e2ea0cea",
+                    "managed root is not yet reclaimable: run-26508d30-a4b6-4f0f-9a4e-23aa8fc654e5",
+                    "managed root is not yet reclaimable: run-28343770-d3f7-4b46-8d93-df9e79d84222",
+                    "managed root is not yet reclaimable: run-284206d1-2038-4b8c-87e4-8ec5ad9dc82e",
+                    "managed root is not yet reclaimable: run-28449240-dde4-4300-b41b-eed1380011ef",
+                    "managed root is not yet reclaimable: run-28aa1864-61ce-4201-a8b2-4e1839cc8247",
+                    "managed root is not yet reclaimable: run-293b3ab7-1f2f-4862-884e-c117884a2c7f",
+                    "managed root is not yet reclaimable: run-2de6d7f4-a1dc-4c93-8fa5-75ab32860c70",
+                    "managed root is not yet reclaimable: run-30558edb-615c-48d8-b676-2ba93e093645",
+                    "managed root is not yet reclaimable: run-31fc3cc4-3498-4f27-a159-81a9e79193a7",
+                    "managed root is not yet reclaimable: run-330b4ad4-bced-4d3d-828d-65060c9e406e",
+                    "managed root is not yet reclaimable: run-33dd7afc-cb6e-4715-a065-eafa8afc2df8",
+                    "managed root is not yet reclaimable: run-33f25732-c849-4417-957c-9c111f8f49aa",
+                    "managed root is not yet reclaimable: run-3467c402-620b-45aa-8bf2-5ff6502f658f",
+                    "managed root is not yet reclaimable: run-35c2465d-f91a-4fa9-8f27-8cd32086497c",
+                    "managed root is not yet reclaimable: run-36e80f00-3eaf-4df5-b36d-574882f52281",
+                    "managed root is not yet reclaimable: run-39dc5c2a-e21b-414a-b663-5ae69cbfaa36",
+                    "managed root is not yet reclaimable: run-3dc3da99-7258-4042-9056-5af289d86552",
+                    "managed root is not yet reclaimable: run-3ec8d5b6-a96f-4d8c-9385-1e8495e2c01d",
+                    "managed root is not yet reclaimable: run-4388cdea-3207-454e-8344-4c304e877492",
+                    "managed root is not yet reclaimable: run-43908d30-a89c-4ece-b2d8-1f5588126a55",
+                    "managed root is not yet reclaimable: run-442dcd61-bb84-4a60-b09c-7557a2f0da58",
+                    "managed root is not yet reclaimable: run-4449e0e6-7f87-4e95-a0d7-bfe5fae17a29",
+                    "managed root is not yet reclaimable: run-44a24298-a67d-4de8-9385-5946e9963074",
+                    "managed root is not yet reclaimable: run-44ff7a8d-2bfd-42fa-8187-69b212335346",
+                    "managed root is not yet reclaimable: run-464acc38-5b72-464e-a526-3c3cd5c5047c",
+                    "managed root is not yet reclaimable: run-471db658-9ad7-4452-9505-21286367b618",
+                    "managed root is not yet reclaimable: run-490d7ccf-907a-40d2-ae8a-dccb8c6d9dfa",
+                    "managed root is not yet reclaimable: run-49d8be2b-f105-408b-86fd-94ffa3c01de9",
+                    "managed root is not yet reclaimable: run-4aab0709-41a4-42cb-b5f5-18e60439f0cd",
+                    "managed root is not yet reclaimable: run-4b270445-d986-43d2-8487-12ad3fe1e913",
+                    "managed root is not yet reclaimable: run-4d05333c-08d6-4a86-8134-b570d310b39e",
+                    "managed root is not yet reclaimable: run-4ed08125-9bc9-4a1b-b106-0df0444e0ed1",
+                    "managed root is not yet reclaimable: run-4fc481dc-daab-4711-8e76-8bf860f74877",
+                    "managed root is not yet reclaimable: run-50afd0db-8f26-49d6-8d39-8108a7820653",
+                    "managed root is not yet reclaimable: run-51266b8f-2e14-4f6f-b3f9-881a98bac51a",
+                    "managed root is not yet reclaimable: run-531dd941-a9b2-4ace-ae75-be989c9d6c11",
+                    "managed root is not yet reclaimable: run-532c490d-d49b-4f2a-a91a-ac57d4025eb4",
+                    "managed root is not yet reclaimable: run-533170ca-31ec-43fa-b798-cce3562b6531",
+                    "managed root is not yet reclaimable: run-5345de2a-a4b2-4557-938c-ca6efca576ac",
+                    "managed root is not yet reclaimable: run-54703cee-750e-4d48-8fdc-c5be15c0fdba",
+                    "managed root is not yet reclaimable: run-54a1dbc9-333b-405c-9dcc-51e120742119",
+                    "managed root is not yet reclaimable: run-5611118e-8658-43ab-84b7-b6d36e86e049",
+                    "managed root is not yet reclaimable: run-5661a6c3-2bba-43e3-8090-0046ff46c0b0",
+                    "managed root is not yet reclaimable: run-57a2803c-6da9-4d3f-b58c-e3c09c0b898f",
+                    "managed root is not yet reclaimable: run-58aa1833-5c01-4e66-9253-6d2e7e45c9b5",
+                    "managed root is not yet reclaimable: run-5ca77b3b-dc4d-4e7c-8f3d-7b8e2e3df54e",
+                    "managed root is not yet reclaimable: run-5d64aef0-330f-448c-906a-065d6d11e0b7",
+                    "managed root is not yet reclaimable: run-60101e46-3591-4248-87da-504017c85806",
+                    "managed root is not yet reclaimable: run-6044b52f-7a63-4766-b132-f00ebb73c389",
+                    "managed root is not yet reclaimable: run-62dc5a71-a7cd-4e1a-aa35-9d8d3d819aaa",
+                    "managed root is not yet reclaimable: run-62f29372-2e54-4e10-842c-1fedca703328",
+                    "managed root is not yet reclaimable: run-64740004-6b8b-4fa5-816b-fc4bc751698e",
+                    "managed root is not yet reclaimable: run-64a310a4-9df5-443a-b083-aba6b69ff35c",
+                    "managed root is not yet reclaimable: run-68ac4445-a124-4d9a-9c19-f9fdef28615d",
+                    "managed root is not yet reclaimable: run-6948e71c-741d-4cda-9737-df1b7c27a21f",
+                    "managed root is not yet reclaimable: run-6a01373b-2b98-4b5d-8953-d59eee61a299",
+                    "managed root is not yet reclaimable: run-6a37ab03-4ea7-4b25-ae72-ca8a5a0a3acf",
+                    "managed root is not yet reclaimable: run-6acd3778-91e5-49fa-84d4-7c15d1ebacf4",
+                    "managed root is not yet reclaimable: run-6c8ee469-3ec1-49ad-addc-0947429bb856",
+                    "managed root is not yet reclaimable: run-6cd9d1d8-1abc-42dc-bea9-615b9226a7a0",
+                    "managed root is not yet reclaimable: run-6dea2a63-7c82-461a-8218-49be66a55075",
+                    "managed root is not yet reclaimable: run-6e1579f6-eb1e-4630-a791-71c7f1459b0c",
+                    "managed root is not yet reclaimable: run-70459cea-5b33-4d41-b78d-0b9746b99038",
+                    "managed root is not yet reclaimable: run-714b1762-4277-4401-a428-a68c9648fe14",
+                    "managed root is not yet reclaimable: run-71b505d4-0303-45a7-858e-aed8424a7095",
+                    "managed root is not yet reclaimable: run-7358addb-965c-46b9-8995-68a81df39ece",
+                    "managed root is not yet reclaimable: run-74d7d77b-6f09-4132-946a-8a13e6839f2a",
+                    "managed root is not yet reclaimable: run-76185aa0-c751-4abf-a2ce-16334f0ae52a",
+                    "managed root is not yet reclaimable: run-7900c8e7-170a-4a69-b714-5d8f583ededf",
+                    "managed root is not yet reclaimable: run-79cdfc92-9186-4ec3-bd7e-bfa0bc1c4dd6",
+                    "managed root is not yet reclaimable: run-7ba3a430-245b-4a31-b9a6-70cbf88550ac",
+                    "managed root is not yet reclaimable: run-7e525d1c-714d-4a40-a873-d6f7109b04f4",
+                    "managed root is not yet reclaimable: run-7e602fc7-38af-4a65-9341-093e4bf684ff",
+                    "managed root is not yet reclaimable: run-808a2d6a-b447-445b-8fc1-5dea95a64bf4",
+                    "managed root is not yet reclaimable: run-80a72108-2d62-4a8a-b52c-0fc26be05809",
+                    "managed root is not yet reclaimable: run-81d448d1-0862-4280-a7a0-6388ef77be89",
+                    "managed root is not yet reclaimable: run-825435fa-cc3b-4c7e-9405-d2d39a2cab58",
+                    "managed root is not yet reclaimable: run-833f7e34-7589-475c-818c-40d503dfffe9",
+                    "managed root is not yet reclaimable: run-8475ff25-12dc-424d-9dcf-b60912bba56d",
+                    "managed root is not yet reclaimable: run-85fc5741-3361-4609-89c4-c711267331fc",
+                    "managed root is not yet reclaimable: run-86d09c71-5e5e-41a5-b767-ff23ecc42926",
+                    "managed root is not yet reclaimable: run-87f0eb81-0cab-4035-bc1b-2cd0dd74dcd4",
+                    "managed root is not yet reclaimable: run-88a29c96-949c-408d-bc0f-35a467dd34b2",
+                    "managed root is not yet reclaimable: run-88e590f9-4c59-44f3-a49f-8f607fa9e785",
+                    "managed root is not yet reclaimable: run-89661417-cf65-4f7b-974d-2bf53b612811",
+                    "managed root is not yet reclaimable: run-89a94976-9d89-4e1b-a305-6691fee9191a",
+                    "managed root is not yet reclaimable: run-8a86a8ef-ef1f-44fc-968c-40240683d056",
+                    "managed root is not yet reclaimable: run-8ace4006-171a-4e22-87ce-a6c897af41a6",
+                    "managed root is not yet reclaimable: run-8e67786c-b2bc-4e7c-ac8b-214f99e15fc1",
+                    "managed root is not yet reclaimable: run-902325f0-b236-4e13-8686-4c4603fa6499",
+                    "managed root is not yet reclaimable: run-9106b568-a206-4087-af56-0ad995b27ee3",
+                    "managed root is not yet reclaimable: run-914dd6d0-038b-40df-8bb3-f5f624196064",
+                    "managed root is not yet reclaimable: run-92536fd2-e574-434b-a798-06bb5a8f6197",
+                    "managed root is not yet reclaimable: run-926db6ea-2684-44c3-a97d-38041011bb8f",
+                    "managed root is not yet reclaimable: run-92a12c1f-c13c-424b-9af7-a8c83eaa45d6",
+                    "managed root is not yet reclaimable: run-932f1690-082f-446d-8799-c12629001def",
+                    "managed root is not yet reclaimable: run-9377871e-0ba2-49eb-a9db-8071d3791cf7",
+                    "managed root is not yet reclaimable: run-9399f2d8-4519-4153-9e99-59b471a9aada",
+                    "managed root is not yet reclaimable: run-93b61d32-93e3-4dcb-98f6-ec45ab036668",
+                    "managed root is not yet reclaimable: run-952098d5-f7a2-494d-a5d7-b610ab45601c",
+                    "managed root is not yet reclaimable: run-9b44db12-2968-4c4d-9a62-18ab2302140f",
+                    "managed root is not yet reclaimable: run-9b5607cc-4580-4c8c-b153-4602fa936e9e",
+                    "managed root is not yet reclaimable: run-9ce7b36f-d69a-4cb4-a363-95a321bd997f",
+                    "managed root is not yet reclaimable: run-9d3970cb-0fc6-441c-a669-898b579c2a0b",
+                    "managed root is not yet reclaimable: run-9df72a16-a10b-4c99-a2e0-64cf6c260420",
+                    "managed root is not yet reclaimable: run-a148fb54-5e0b-497b-9780-0e922e6efab3",
+                    "managed root is not yet reclaimable: run-a171022d-ac80-4653-9fb8-8de9cac66914",
+                    "managed root is not yet reclaimable: run-a229e417-c9e1-4d11-808d-3d551718d2a0",
+                    "managed root is not yet reclaimable: run-a257990b-12a5-4e5f-80ed-88c4b0682607",
+                    "managed root is not yet reclaimable: run-a2c0d585-cdaf-417f-953a-5d5b80b92da0",
+                    "managed root is not yet reclaimable: run-a3b70c97-3a78-42dd-b0d4-53743b136586",
+                    "managed root is not yet reclaimable: run-a541585d-8a85-4157-bc8f-5a413f8e7ac2",
+                    "managed root is not yet reclaimable: run-a79b594e-edb0-4118-9cd2-6fe0a2b4a39d",
+                    "managed root is not yet reclaimable: run-a8277fe6-a19a-4a44-9e05-8487def19beb",
+                    "managed root is not yet reclaimable: run-a830c84e-338d-4ef2-929c-c89f23d31f14",
+                    "managed root is not yet reclaimable: run-a842a0ca-2465-4a0f-bbe7-ab2aac7e81f5",
+                    "managed root is not yet reclaimable: run-a8f74168-5c4e-4cea-b764-3b601b727820",
+                    "managed root is not yet reclaimable: run-a906b841-d994-48e8-ba3a-5a4b46a4f865",
+                    "managed root is not yet reclaimable: run-acdb83dd-892e-4970-a6a3-685b90376b04",
+                    "managed root is not yet reclaimable: run-ace10463-ddd0-4690-a374-67b93cc07d14",
+                    "managed root is not yet reclaimable: run-adc34787-e28d-4cc2-85cf-c652975cabbd",
+                    "managed root is not yet reclaimable: run-ae5f9666-2df7-46ce-9a38-f5a337f4ab22",
+                    "managed root is not yet reclaimable: run-b1c706ff-4aab-4828-8e88-00ba2b47b9ae",
+                    "managed root is not yet reclaimable: run-b341a26c-e132-45bb-b194-3e23564b5ce7",
+                    "managed root is not yet reclaimable: run-b4e37ab7-0c53-4458-8582-142af72c4c90",
+                    "managed root is not yet reclaimable: run-b5e26005-33f8-4fce-ae1e-93595c75cb3c",
+                    "managed root is not yet reclaimable: run-b61da4a4-3747-47da-9674-2e35632e82c5",
+                    "managed root is not yet reclaimable: run-b6d91c9e-4ef9-4e31-b8f0-59ed60668eb8",
+                    "managed root is not yet reclaimable: run-b6fb4156-c8d7-474f-b2dc-70718acdfc40",
+                    "managed root is not yet reclaimable: run-b947216b-0917-478b-813d-30b48de0f535",
+                    "managed root is not yet reclaimable: run-ba32a238-513e-48f4-bef3-fecffb7d582a",
+                    "managed root is not yet reclaimable: run-bb6d3d62-cd3b-47de-bf23-af469a4f93b6",
+                    "managed root is not yet reclaimable: run-bd376b72-90b0-49f5-808a-201e1f0c31c0",
+                    "managed root is not yet reclaimable: run-bd8f023f-4d10-4b3c-a868-8a3d63f4ea7f",
+                    "managed root is not yet reclaimable: run-bf7338cb-481f-4703-8d87-87eafc1ee7ac",
+                    "managed root is not yet reclaimable: run-c0c939fe-fa42-4e22-b280-58b3615b48bf",
+                    "managed root is not yet reclaimable: run-c1132dd2-feb2-42b3-96c0-c04f8e2ab321",
+                    "managed root is not yet reclaimable: run-c29eb489-8cf6-4509-b3b0-b911ad7bce35",
+                    "managed root is not yet reclaimable: run-c56077c1-41f0-4bb4-a8b3-97ec73d05120",
+                    "managed root is not yet reclaimable: run-c5766014-009b-487f-872f-82a0816c9ac6",
+                    "managed root is not yet reclaimable: run-c58080a9-0ac3-4035-890e-01737aef47ec",
+                    "managed root is not yet reclaimable: run-c6eed49a-d11a-49e0-ac9b-9e066d1fffbe",
+                    "managed root is not yet reclaimable: run-c7d95c8e-3ad1-4d8f-b61e-c6bdd4fdcfa4",
+                    "managed root is not yet reclaimable: run-cbc78286-d84b-443d-8de4-eec4ebea81b4",
+                    "managed root is not yet reclaimable: run-cc91ebed-4b37-4243-9744-84193812cb35",
+                    "managed root is not yet reclaimable: run-ce624a70-7676-4f82-aebd-2f380c94c48d",
+                    "managed root is not yet reclaimable: run-cf323b43-7ef8-4290-899d-d9db24242993",
+                    "managed root is not yet reclaimable: run-cf71eaa1-74cf-4cc7-bab9-49536fe9bf23",
+                    "managed root is not yet reclaimable: run-cfe05bf2-50af-42fd-acb5-b4993df2e23f",
+                    "managed root is not yet reclaimable: run-d379c058-14a5-4786-b51c-3b546636562e",
+                    "managed root is not yet reclaimable: run-d570f29c-3997-4e35-91a5-1b3b2fafa6d4",
+                    "managed root is not yet reclaimable: run-d5ea4371-58b1-4ecf-ad54-ccaafb2a1673",
+                    "managed root is not yet reclaimable: run-db041d43-b253-45c3-bba4-10c981c28b57",
+                    "managed root is not yet reclaimable: run-dcca69f9-7647-4d7e-a0c6-5a9fad8a90e7",
+                    "managed root is not yet reclaimable: run-dcd5a8f6-1910-4430-a00e-898255429c8a",
+                    "managed root is not yet reclaimable: run-dd19e516-f93e-4f1d-aca7-f5a6a50cca1b",
+                    "managed root is not yet reclaimable: run-de52d4bc-102f-4ed7-99b5-fe1f3a997870",
+                    "managed root is not yet reclaimable: run-e06f9f45-919b-4777-ae54-5d067b65c622",
+                    "managed root is not yet reclaimable: run-e09c36af-5c60-490f-8222-8a5abb5bdd84",
+                    "managed root is not yet reclaimable: run-e0af6634-3bca-417f-950e-efc1994ec868",
+                    "managed root is not yet reclaimable: run-e4a1c248-9edc-46dd-bc23-d9880709add9",
+                    "managed root is not yet reclaimable: run-e5352bfe-1804-4c48-8b0f-1e7f26cef375",
+                    "managed root is not yet reclaimable: run-e5817bdf-4650-4c94-a899-47bb57c41b4f",
+                    "managed root is not yet reclaimable: run-e5c8fde0-20e3-47ca-bae0-b2e7e140ddff",
+                    "managed root is not yet reclaimable: run-e6efa906-3046-4fe4-a5ed-5685008e8fb2",
+                    "managed root is not yet reclaimable: run-ea53f89f-25bf-4c5a-8628-292c56e4adf5",
+                    "managed root is not yet reclaimable: run-eb280608-89fe-4977-b57a-011641f9622a",
+                    "managed root is not yet reclaimable: run-eef2c7f8-70d7-494c-b836-aa4072d3d8fe",
+                    "managed root is not yet reclaimable: run-f1ad5d5d-eb68-42b9-bd81-e7436c678bae",
+                    "managed root is not yet reclaimable: run-f22b41ee-ff39-4728-8b3c-d563c4276bde",
+                    "managed root is not yet reclaimable: run-f4028683-aa4a-4600-8ab2-d658f4053eb9",
+                    "managed root is not yet reclaimable: run-f4542823-26c1-469c-8956-4804bc0211c7",
+                    "managed root is not yet reclaimable: run-f5e968f6-2364-4dc9-9991-2ba7a1469714",
+                    "managed root is not yet reclaimable: run-f7e4b4f7-be90-45cf-afb9-e098e3fa9ba2",
+                    "managed root is not yet reclaimable: run-f8884fc9-4e41-4b7f-a998-db89b7ca7a95",
+                    "managed root is not yet reclaimable: run-fb08d555-88c3-4afc-8547-4679f5780a56",
+                    "managed root is not yet reclaimable: run-fcb7393e-60e3-4f86-9d81-5648bd16b6f2",
+                    "managed root is not yet reclaimable: run-fcd2791f-f871-470f-8ba2-c72185770ee0",
+                    "managed root is not yet reclaimable: run-fd936620-deb5-4eed-aa8b-e5f0a654ace9",
+                    "managed root is not yet reclaimable: run-ff71459d-24e0-4133-b73b-861e3f0808df"
+                  ],
+                  "omitted_detail_count": 0,
+                  "remaining_root": null
+                },
+                {
+                  "root_id": "delivery",
+                  "owner": "hoimin",
+                  "status": "cleanup_after_delivery",
+                  "examined_entries": 0,
+                  "removed_entries": 0,
+                  "details": [],
+                  "omitted_detail_count": 0,
+                  "remaining_root": null
+                }
+              ],
+              "removed_logical_bytes": 1220,
+              "stale_roots_reclaimed": 0
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "chain_target",
+      "mode": "strict",
+      "expected_pairs": [],
+      "candidates": [
+        {
+          "id": "m1_d99e20ff12877db40a035a90f1285caa0c470796c62833dff71de160945bef88",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 59,
+            "length": 3
+          },
+          "original": "any",
+          "replacement": "all",
+          "operator": "collection_any_all",
+          "line": 3,
+          "column": 12,
+          "symbol": null,
+          "file_hash": "ddd5e3586b28f3782e186e3c0c6d0b845fe4dc3dbd6663c96a95b12b297b3ede",
+          "rank": 1,
+          "score": 80,
+          "ranking_reasons": [
+            {
+              "code": "behavioral",
+              "score": 80
+            }
+          ]
+        }
+      ],
+      "observed_pairs": [
+        [
+          "any",
+          "all"
+        ]
+      ],
+      "status": "mismatch",
+      "evaluations": [
+        {
+          "candidate_id": null,
+          "ok": true,
+          "value": "['custom']"
+        },
+        {
+          "candidate_id": "m1_d99e20ff12877db40a035a90f1285caa0c470796c62833dff71de160945bef88",
+          "ok": true,
+          "value": "[True]"
+        }
+      ]
+    },
+    {
+      "id": "rhs_walrus",
+      "mode": "strict",
+      "expected_pairs": [],
+      "candidates": [
+        {
+          "id": "m1_f9b4f40ee48b4c3d8d2f3f4900cb9d19a68da8e5951713e401d4e8b7ef441b0a",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 53,
+            "length": 3
+          },
+          "original": "any",
+          "replacement": "all",
+          "operator": "collection_any_all",
+          "line": 3,
+          "column": 6,
+          "symbol": null,
+          "file_hash": "093a7329e153bad3825d359c96ac2e435acb685cefa2c0fe3daab918d3e8d86c",
+          "rank": 1,
+          "score": 80,
+          "ranking_reasons": [
+            {
+              "code": "behavioral",
+              "score": 80
+            }
+          ]
+        }
+      ],
+      "observed_pairs": [
+        [
+          "any",
+          "all"
+        ]
+      ],
+      "status": "mismatch",
+      "evaluations": [
+        {
+          "candidate_id": null,
+          "ok": true,
+          "value": "['custom']"
+        },
+        {
+          "candidate_id": "m1_f9b4f40ee48b4c3d8d2f3f4900cb9d19a68da8e5951713e401d4e8b7ef441b0a",
+          "ok": true,
+          "value": "[True]"
+        }
+      ]
+    },
+    {
+      "id": "destination_target",
+      "mode": "strict",
+      "expected_pairs": [],
+      "candidates": [
+        {
+          "id": "m1_a13c81f752198eb9673339686ed9bce007e4c8f2dcbcfad37dbd6df97a87fb37",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 58,
+            "length": 3
+          },
+          "original": "any",
+          "replacement": "all",
+          "operator": "collection_any_all",
+          "line": 3,
+          "column": 11,
+          "symbol": null,
+          "file_hash": "ce81aff5b91401949db811c650d76bac996bac15f5c8aac79fb3067b047c61f5",
+          "rank": 1,
+          "score": 80,
+          "ranking_reasons": [
+            {
+              "code": "behavioral",
+              "score": 80
+            }
+          ]
+        }
+      ],
+      "observed_pairs": [
+        [
+          "any",
+          "all"
+        ]
+      ],
+      "status": "mismatch",
+      "evaluations": [
+        {
+          "candidate_id": null,
+          "ok": true,
+          "value": "[False]"
+        },
+        {
+          "candidate_id": "m1_a13c81f752198eb9673339686ed9bce007e4c8f2dcbcfad37dbd6df97a87fb37",
+          "ok": true,
+          "value": "['custom']"
+        }
+      ]
+    },
+    {
+      "id": "keyword_star",
+      "mode": "strict",
+      "expected_pairs": [],
+      "candidates": [
+        {
+          "id": "m1_26580c3cd330ca446c17a44816db2fb585c125096d107324bfc95d029b54c808",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 115,
+            "length": 3
+          },
+          "original": "any",
+          "replacement": "all",
+          "operator": "collection_any_all",
+          "line": 4,
+          "column": 19,
+          "symbol": null,
+          "file_hash": "adbc4e7ab590521a69c2e1d02d429eab43ac2a4709bad8b17e1c281ffdc55eed",
+          "rank": 1,
+          "score": 80,
+          "ranking_reasons": [
+            {
+              "code": "behavioral",
+              "score": 80
+            }
+          ]
+        }
+      ],
+      "observed_pairs": [
+        [
+          "any",
+          "all"
+        ]
+      ],
+      "status": "mismatch",
+      "evaluations": [
+        {
+          "candidate_id": null,
+          "ok": true,
+          "value": "custom"
+        },
+        {
+          "candidate_id": "m1_26580c3cd330ca446c17a44816db2fb585c125096d107324bfc95d029b54c808",
+          "ok": true,
+          "value": "True"
+        }
+      ]
+    },
+    {
+      "id": "rhs_before_store",
+      "mode": "strict",
+      "expected_pairs": [
+        [
+          "any",
+          "all"
+        ]
+      ],
+      "candidates": [
+        {
+          "id": "m1_5b0379292e77ce17b763e1a5b3968d5dfdc5e36fdf514322a3822f511f046ea0",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 63,
+            "length": 3
+          },
+          "original": "any",
+          "replacement": "all",
+          "operator": "collection_any_all",
+          "line": 3,
+          "column": 16,
+          "symbol": null,
+          "file_hash": "4bef3fae91f3963a45720b44d78fff982bb244a6cece4e92933117cb504fba96",
+          "rank": 1,
+          "score": 80,
+          "ranking_reasons": [
+            {
+              "code": "behavioral",
+              "score": 80
+            }
+          ]
+        }
+      ],
+      "observed_pairs": [
+        [
+          "any",
+          "all"
+        ]
+      ],
+      "status": "match",
+      "evaluations": [
+        {
+          "candidate_id": null,
+          "ok": true,
+          "value": "False"
+        },
+        {
+          "candidate_id": "m1_5b0379292e77ce17b763e1a5b3968d5dfdc5e36fdf514322a3822f511f046ea0",
+          "ok": true,
+          "value": "True"
+        }
+      ]
+    },
+    {
+      "id": "normal_call",
+      "mode": "strict",
+      "expected_pairs": [
+        [
+          "any",
+          "all"
+        ]
+      ],
+      "candidates": [
+        {
+          "id": "m1_ecff667325c93fdbb919a1864d2eed2357512c30ab9068ead46566d9ddc2a993",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 56,
+            "length": 3
+          },
+          "original": "any",
+          "replacement": "all",
+          "operator": "collection_any_all",
+          "line": 3,
+          "column": 9,
+          "symbol": null,
+          "file_hash": "5660a6c1a69f26f92141232350406411ec46f0f1309b605e64c0099c37a18490",
+          "rank": 1,
+          "score": 80,
+          "ranking_reasons": [
+            {
+              "code": "behavioral",
+              "score": 80
+            }
+          ]
+        }
+      ],
+      "observed_pairs": [
+        [
+          "any",
+          "all"
+        ]
+      ],
+      "status": "match",
+      "evaluations": [
+        {
+          "candidate_id": null,
+          "ok": true,
+          "value": "False"
+        },
+        {
+          "candidate_id": "m1_ecff667325c93fdbb919a1864d2eed2357512c30ab9068ead46566d9ddc2a993",
+          "ok": true,
+          "value": "True"
+        }
+      ]
+    }
+  ]
+}

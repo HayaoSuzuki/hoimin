@@ -1,0 +1,6 @@
+depth=0 alphabet=3 traces=1 events=0 stale_snapshot=0 first=none elapsed_ms=0
+depth=1 alphabet=3 traces=4 events=3 stale_snapshot=1 first=some [AnnotationAudit.Event.rebind] elapsed_ms=0
+depth=2 alphabet=3 traces=13 events=21 stale_snapshot=4 first=some [AnnotationAudit.Event.rebind] elapsed_ms=0
+depth=3 alphabet=3 traces=40 events=102 stale_snapshot=13 first=some [AnnotationAudit.Event.rebind] elapsed_ms=0
+depth=4 alphabet=3 traces=121 events=426 stale_snapshot=40 first=some [AnnotationAudit.Event.rebind] elapsed_ms=0
+sensitivity: stale-snapshot, lost-cache, reject-all, universal-AbstractSet detected; providers=2 members=2

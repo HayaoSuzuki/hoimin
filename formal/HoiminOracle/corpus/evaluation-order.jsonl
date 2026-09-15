@@ -1,0 +1,7 @@
+{"id":"unpack_target","mode":"strict","operator":"collection_any_all","pairs":[],"schema":1,"source":"def custom(values): return 'custom'\nslots = {}\nany, slots[any([])] = custom, 7\nobserved=list(slots)\n"}
+{"id":"chain_target","mode":"strict","operator":"collection_any_all","pairs":[],"schema":1,"source":"def custom(values): return 'custom'\nslots = {}\nany = slots[any([])] = custom\nobserved=list(slots)\n"}
+{"id":"rhs_walrus","mode":"strict","operator":"collection_any_all","pairs":[],"schema":1,"source":"def custom(values): return 'custom'\nslots = {}\nslots[any([])] = (any := custom)\nobserved=list(slots)\n"}
+{"id":"destination_target","mode":"strict","operator":"collection_any_all","pairs":[],"schema":1,"source":"def custom(values): return 'custom'\nslots = {}\nall, slots[any([])] = custom, 7\nobserved=list(slots)\n"}
+{"id":"keyword_star","mode":"strict","operator":"collection_any_all","pairs":[],"schema":1,"source":"def custom(values): return 'custom'\nslots = {}\ndef sink(*args, **kwargs): return kwargs['flag']\nobserved=sink(flag=any([]), *[(any := custom)])\n"}
+{"id":"rhs_before_store","mode":"strict","operator":"collection_any_all","pairs":[["any","all"]],"schema":1,"source":"def custom(values): return 'custom'\nslots = {}\nany, slots[0] = any([]), 7\nobserved=any\n"}
+{"id":"normal_call","mode":"strict","operator":"collection_any_all","pairs":[["any","all"]],"schema":1,"source":"def custom(values): return 'custom'\nslots = {}\nobserved=any([])\n"}

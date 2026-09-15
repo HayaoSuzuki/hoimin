@@ -1,0 +1,189 @@
+{
+  "head": "5e631efc46a6e8c0b9fcf2d7a74536e57f79a369",
+  "binary": "/Users/hayao/RustroverProjects/hoimin/target/debug/hoimin",
+  "binary_sha256": "e09ab4ef7e34fc229a74915ce2b69786e7eb80a2d285e87911a20268f2376d6f",
+  "python": "Python 3.14.7",
+  "cases": [
+    {
+      "id": "call_before_import",
+      "mode": "strict",
+      "expected_count": 0,
+      "expected_runtime_typing": [
+        true,
+        false
+      ],
+      "candidates": [
+        {
+          "id": "m1_0a2216d40c7a80e33798ac2cd766341615fcd84c1fe8e0172c6b26f7c37336de",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 135,
+            "length": 13
+          },
+          "original": "Sequence[int]",
+          "replacement": "list[int]",
+          "operator": "type_list_sequence",
+          "line": 6,
+          "column": 18,
+          "symbol": "record",
+          "file_hash": "da4e18b84e9c73c6e86d181436f12ad7a923581467f24db03a95f7b7c7981945",
+          "rank": 1,
+          "score": 50,
+          "ranking_reasons": [
+            {
+              "code": "type_annotation",
+              "score": 50
+            }
+          ]
+        }
+      ],
+      "runtime": [
+        {
+          "typing": true,
+          "annotation": "typing.Sequence[int]"
+        },
+        {
+          "typing": false,
+          "annotation": "set[int]"
+        }
+      ],
+      "status": "mismatch"
+    },
+    {
+      "id": "import_before_call",
+      "mode": "strict",
+      "expected_count": 1,
+      "expected_runtime_typing": [
+        true,
+        true
+      ],
+      "candidates": [
+        {
+          "id": "m1_49a39f587aad3a1aeb4f879a624debd92dffc27582d94f115683362ea7a19a60",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 135,
+            "length": 13
+          },
+          "original": "Sequence[int]",
+          "replacement": "list[int]",
+          "operator": "type_list_sequence",
+          "line": 6,
+          "column": 18,
+          "symbol": "record",
+          "file_hash": "34ee3d9278875de1250ef55ee0a564a92f6f7db2374c631dec8da7a06f6e2569",
+          "rank": 1,
+          "score": 50,
+          "ranking_reasons": [
+            {
+              "code": "type_annotation",
+              "score": 50
+            }
+          ]
+        }
+      ],
+      "runtime": [
+        {
+          "typing": true,
+          "annotation": "typing.Sequence[int]"
+        },
+        {
+          "typing": true,
+          "annotation": "typing.Sequence[int]"
+        }
+      ],
+      "status": "match"
+    },
+    {
+      "id": "explicit_raise",
+      "mode": "strict",
+      "expected_count": 0,
+      "expected_runtime_typing": [
+        false,
+        false
+      ],
+      "candidates": [],
+      "runtime": [
+        {
+          "typing": false,
+          "annotation": "set[int]"
+        },
+        {
+          "typing": false,
+          "annotation": "set[int]"
+        }
+      ],
+      "status": "match"
+    },
+    {
+      "id": "normal_import",
+      "mode": "strict",
+      "expected_count": 1,
+      "expected_runtime_typing": [
+        true,
+        true
+      ],
+      "candidates": [
+        {
+          "id": "m1_f7a009e334c15e10b85a648395232928670bc62a330539dd854304694d04f8a9",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 122,
+            "length": 13
+          },
+          "original": "Sequence[int]",
+          "replacement": "list[int]",
+          "operator": "type_list_sequence",
+          "line": 5,
+          "column": 18,
+          "symbol": "record",
+          "file_hash": "789eb461c783936a56ba179575e8d0edea4b4be89236306a2360d0d23f54aefe",
+          "rank": 1,
+          "score": 50,
+          "ranking_reasons": [
+            {
+              "code": "type_annotation",
+              "score": 50
+            }
+          ]
+        }
+      ],
+      "runtime": [
+        {
+          "typing": true,
+          "annotation": "typing.Sequence[int]"
+        },
+        {
+          "typing": true,
+          "annotation": "typing.Sequence[int]"
+        }
+      ],
+      "status": "match"
+    },
+    {
+      "id": "custom_only",
+      "mode": "strict",
+      "expected_count": 0,
+      "expected_runtime_typing": [
+        false,
+        false
+      ],
+      "candidates": [],
+      "runtime": [
+        {
+          "typing": false,
+          "annotation": "set[int]"
+        },
+        {
+          "typing": false,
+          "annotation": "set[int]"
+        }
+      ],
+      "status": "match"
+    }
+  ],
+  "benchmarks": []
+}

@@ -1,0 +1,44 @@
+[
+  {
+    "id": "cached_before_rebind",
+    "replacement": "list[int]",
+    "exit": 0,
+    "annotation": "list[int]"
+  },
+  {
+    "id": "restored_before_observe",
+    "replacement": "list[int]",
+    "exit": 0,
+    "annotation": "list[int]"
+  },
+  {
+    "id": "stable_source",
+    "replacement": "list[int]",
+    "exit": 0,
+    "annotation": "list[int]"
+  },
+  {
+    "id": "abc_module",
+    "replacement": "abc.Set[int]",
+    "exit": 0,
+    "annotation": "collections.abc.Set[int]"
+  },
+  {
+    "id": "abc_direct",
+    "replacement": "Set[int]",
+    "exit": 0,
+    "annotation": "collections.abc.Set[int]"
+  },
+  {
+    "id": "abc_inverse",
+    "replacement": "set[int]",
+    "exit": 0,
+    "annotation": "set[int]"
+  },
+  {
+    "id": "typing_module",
+    "replacement": "t.AbstractSet[int]",
+    "exit": 0,
+    "annotation": "typing.AbstractSet[int]"
+  }
+]

@@ -1,0 +1,15 @@
+{"id":"shadow_int_number","mode":"strict","operator":"type_nullable_add","pairs":[],"schema":1,"source":"int=7\nx:int\n"}
+{"id":"shadow_str_number","mode":"strict","operator":"type_nullable_add","pairs":[],"schema":1,"source":"str=7\nx:str\n"}
+{"id":"shadow_int_class","mode":"strict","operator":"type_nullable_add","pairs":[],"schema":1,"source":"class Meta(type):\n def __or__(cls, other): raise RuntimeError('custom union')\nclass int(metaclass=Meta): pass\nx:int\n"}
+{"id":"shadow_list_mapping","mode":"strict","operator":"type_nullable_add","pairs":[],"schema":1,"source":"list={int:7}\nx:list[int]\n"}
+{"id":"dict_any","mode":"strict","operator":"type_nullable_add","pairs":[],"schema":1,"source":"from typing import Any\nx:dict[str,Any]\n"}
+{"id":"dict_object","mode":"strict","operator":"type_nullable_add","pairs":[],"schema":1,"source":"x:dict[str,object]\n"}
+{"id":"dict_typevar","mode":"strict","operator":"type_nullable_add","pairs":[],"schema":1,"source":"from typing import TypeVar\nT=TypeVar('T')\nx:dict[str,T]\n"}
+{"id":"dict_forward","mode":"strict","operator":"type_nullable_add","pairs":[],"schema":1,"source":"x:dict[str,\"Foo\"]\n"}
+{"id":"dict_annotated","mode":"strict","operator":"type_nullable_add","pairs":[],"schema":1,"source":"from typing import Annotated\nx:dict[str,Annotated[int,'tag']]\n"}
+{"id":"dict_callable","mode":"strict","operator":"type_nullable_add","pairs":[],"schema":1,"source":"from typing import Callable\nx:dict[str,Callable[[int],str]]\n"}
+{"id":"nested_list_dict_any","mode":"strict","operator":"type_nullable_add","pairs":[],"schema":1,"source":"from typing import Any\nx:list[dict[str,Any]]\n"}
+{"id":"list_any","mode":"strict","operator":"type_nullable_add","pairs":[],"schema":1,"source":"from typing import Any\nx:list[Any]\n"}
+{"id":"normal_int","mode":"strict","operator":"type_nullable_add","pairs":[["int","int | None"]],"schema":1,"source":"x:int\n"}
+{"id":"normal_list","mode":"strict","operator":"type_nullable_add","pairs":[["list[int]","list[int] | None"]],"schema":1,"source":"x:list[int]\n"}
+{"id":"normal_dict","mode":"strict","operator":"type_nullable_add","pairs":[["dict[str,int]","dict[str,int] | None"]],"schema":1,"source":"x:dict[str,int]\n"}

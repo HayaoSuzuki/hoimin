@@ -5,6 +5,9 @@ description: Issue #545 の小モデル、公開 plan 対応、既存制御フ�
 status: draft
 catalog_revision: f11013542ccd735ab9741b5079c0b39a517df256
 sources:
+- id: with-finally-followup
+  resource: ../../audits/2026-09-15-with-finally/README.md
+  working_tree: untracked
 - id: design
   resource: ../../superpowers/specs/2026-09-15-issue-545-implicit-finally-design.md
   revision: f11013542ccd735ab9741b5079c0b39a517df256
@@ -43,6 +46,10 @@ Lean の3イベントモデルは、custom 束縛で始まる `mayRaise` に任�
 公開 plan の比較は候補数、原文、置換、バイト範囲を検査する。別の Rust テストは入れ子、else/handler/loop、遅延実行、正常後続、walrus など14入力と、演算・assert・反復・context manager・class・handler 型式の11入力、名前・コンテナ・書式化・部分束縛の9入力、match guard 前のcaptureの1入力を確認する。実行結果と再現コマンドは報告書に記録する。[^review]
 
 # 限界と再確認条件
+
+`5e631ef`の追加監査では、withによる例外抑制後の合流と、finallyの入れ子走査に別の問題を確認した。#545の検証成功でこれらを保証したとは扱わない。[#556/#557の証拠と対応範囲](with-finally-2026-09.md)を参照する。[^with-finally-followup]
+
+[^with-finally-followup]: [追加監査報告](../../audits/2026-09-15-with-finally/README.md)。
 
 このモデルは import 自体の失敗、全 Python 構文、任意の動的 hook を証明しない。演算や class 構築は保守的に例外が起き得ると扱い、実際の値に基づく無例外性は証明しない。正常候補の抑制範囲、式 visitor、finally の伝播、関数の遅延評価境界を変えた際はモデルと実装の対応を再確認する。[^design][^review]
 

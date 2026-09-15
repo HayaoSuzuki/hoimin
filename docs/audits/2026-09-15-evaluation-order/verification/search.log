@@ -1,0 +1,6 @@
+depth=0 alphabet=3 traces=1 transitions=0 mismatches=0 first=none elapsed_ms=0
+depth=1 alphabet=3 traces=4 transitions=3 mismatches=0 first=none elapsed_ms=0
+depth=2 alphabet=3 traces=13 transitions=21 mismatches=2 first=some [OrderAudit.Event.bindSource, OrderAudit.Event.lookup] elapsed_ms=0
+depth=3 alphabet=3 traces=40 transitions=102 mismatches=14 first=some [OrderAudit.Event.bindSource, OrderAudit.Event.lookup] elapsed_ms=0
+depth=4 alphabet=3 traces=121 transitions=426 mismatches=64 first=some [OrderAudit.Event.bindSource, OrderAudit.Event.lookup] elapsed_ms=0
+sensitivity: delayed source, delayed destination, premature store/reject-all detected

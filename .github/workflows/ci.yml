@@ -256,6 +256,18 @@ jobs:
             CollectionAnnotationAuditMain
             HoiminOracle.ValidPythonModel
             ValidPythonAuditMain
+            HoiminOracle.WithSuppressionModel
+            WithSuppressionAuditMain
+            HoiminOracle.DeferredAnnotationModel
+            DeferredAnnotationAuditMain
+            HoiminOracle.EvaluationOrderModel
+            EvaluationOrderAuditMain
+            HoiminOracle.DeclarationOnlyModel
+            DeclarationOnlyAuditMain
+            HoiminOracle.ResumeCopyModel
+            ResumeCopyAuditMain
+            HoiminOracle.NullableGateModel
+            NullableGateAuditMain
             HoiminOracle
             MultipleHandlerJoinAuditMain
             NestedMatchExitAuditMain
@@ -303,6 +315,12 @@ jobs:
             'generate_collection_annotation|corpus/collection-annotation.jsonl|sensitivity'
 
             'generate_implicit_finally|corpus/implicit-finally.jsonl|sensitivity'
+            'generate_with_suppression|corpus/with-suppression.jsonl|sensitivity'
+            'generate_deferred_annotation|corpus/deferred-annotation.jsonl|sensitivity'
+            'generate_evaluation_order|corpus/evaluation-order.jsonl|sensitivity'
+            'generate_declaration_only|corpus/declaration-only.jsonl|sensitivity'
+            'generate_resume_copy|corpus/resume-copy.jsonl|sensitivity'
+            'generate_nullable_gate|corpus/nullable-gate.jsonl|sensitivity'
           )
           for entry in "${generators[@]}"; do
             IFS='|' read -r executable corpus sensitivity <<< "$entry"

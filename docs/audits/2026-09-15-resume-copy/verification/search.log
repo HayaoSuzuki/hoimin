@@ -1,0 +1,4 @@
+output_caps=1 configurations=2 cases=4 resume_transitions=4 omitted_copy_mismatches=2 output_key_mismatches=0 elapsed_ms=1
+output_caps=2 configurations=4 cases=16 resume_transitions=16 omitted_copy_mismatches=8 output_key_mismatches=4 elapsed_ms=0
+first witness: save copied=true/killed; resume copied=false; expected fresh survived/reused=false; broken killed/reused=true
+sensitivity: omitted-copy, output-key, reject-all detected

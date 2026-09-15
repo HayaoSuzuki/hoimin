@@ -5,6 +5,23 @@ description: 構文・名前解決・変更するバイト範囲・候補保持�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: nullable-gates-audit
+  resource: ../../audits/2026-09-15-nullable-gates/README.md
+  working_tree: untracked
+  sha256: 13a3b384def390e0596119cc5901ef1b12ac7cd32bbd4ae73266000a6e207b52
+- id: declaration-only-audit
+  resource: ../../audits/2026-09-15-declaration-only/README.md
+  working_tree: untracked
+  sha256: 4272c093852eab370489e8345c9ed515f20cdf26f2e5f13a4d495977db8636c9
+- id: evaluation-order-audit
+  resource: ../../audits/2026-09-15-evaluation-order/README.md
+  working_tree: untracked
+- id: annotation-followup
+  resource: ../../audits/2026-09-15-annotation-followup/README.md
+  working_tree: untracked
+- id: with-finally-audit
+  resource: ../../audits/2026-09-15-with-finally/README.md
+  working_tree: untracked
 - id: issue-549-report
   resource: ../../superpowers/reports/2026-09-15-issue-549-slice-tuple.md
   revision: f11013542ccd735ab9741b5079c0b39a517df256
@@ -371,3 +388,33 @@ Issue #547の設計では、型注釈collectorの通常の文から次の文へ�
 注釈callbackを実行する走査、最後の評価でclass fallbackが変化した走査、テストのprojection・変異を使う走査は従来どおり実行する。module/class内の単純な空状態のfor/whileの再解析を抑える変更であり、classや状態変化を含む全入力の計算量を保証するものではない。性能ゲートと実行結果は[入力形状別の性能検証](../audits/performance-shapes.md)から参照する。[^issue-546-design]
 
 [^issue-546-design]: [Issue #546: 入れ子ループの転送結果の再利用](../../superpowers/specs/2026-09-15-issue-546-loop-transfer-design.md)。
+
+# withの例外抑制とfinallyの走査（Issue #556/#557）
+
+`5e631ef`の追加監査で、with本体の例外が抑制された後のimport合流に欠落を確認した。finallyの暗黙例外入口とは別に、例外から正常継続への変換が必要となる。finallyには記録無効でも記録用走査を行う経路が残り、入れ子のrelease計測で時間がほぼ倍増した。両件とも未修正であり、[監査の証拠と限界](../audits/with-finally-2026-09.md)を参照する。[^with-finally-audit]
+
+[^with-finally-audit]: [withの例外抑制とfinallyの解析コスト](../../audits/2026-09-15-with-finally/README.md)。
+
+# 遅延注釈と集合ABCの綴り（Issue #558/#559）
+
+`5e631ef`では、型注釈のtyping aliasに定義時のimport状態を使うため、3.14の初回評価前の再代入を見落とす。また、collections.abcの集合抽象型はSetであるのに、AbstractSetという候補を生成する。両件の実行観測、初回評価キャッシュのモデル証明、型名の対応は[追加監査](../audits/annotation-followup-2026-09.md)を参照する。製品修正は未実施。[^annotation-followup]
+
+[^annotation-followup]: [遅延注釈とcollections.abc.Set](../../audits/2026-09-15-annotation-followup/README.md)。
+
+## 評価順序と未選択methodの追加監査
+
+`5e631ef`では、ソースoffsetによる名前解決が多重代入・引数展開の評価順序と一致せず、再代入済みの名前を組込みと誤認した（#560）。また、未選択のmethod変異のreplacement確保が残る（#561）。[監査の証拠と限界](../audits/evaluation-order-2026-09.md)に、7入力の照合とdebugの累積確保要求量を記録した。[^evaluation-order-audit]
+
+[^evaluation-order-audit]: [評価順序と未選択methodの確保](../../audits/2026-09-15-evaluation-order/README.md)。
+
+## 値なし注釈と候補精度
+
+`5e631ef`では、値を伴わない名前の注釈も再束縛として扱い、builtin・module import aliasの候補が欠落した。#562では、関数のローカル宣言を維持しながら、値なし注釈で既知の参照先を保持する改善を提案する。既存設計は保守的な欠落を許容するため、安全性違反とは分類していない。[監査の証拠と限界](../audits/declaration-only-2026-09.md)を参照する。[^declaration-only-audit]
+
+[^declaration-only-audit]: [値なし注釈と候補精度](../../audits/2026-09-15-declaration-only/README.md)。
+
+## nullable型変異の適用条件
+
+`5e631ef`ではnullable追加で名前の再束縛を見落とし（#564）、複数型引数のtuple内部で対象外要素の検査を省いていた（#565）。[監査の証拠と限界](../audits/nullable-gates-2026-09.md)に、15入力の照合と名前条件・子孫の再帰条件のLean証明を記録した。修正時には通常の組込み型と対象内だけの複数型引数を保持する。[^nullable-gates-audit]
+
+[^nullable-gates-audit]: [nullable型変異の適用条件](../../audits/2026-09-15-nullable-gates/README.md)。

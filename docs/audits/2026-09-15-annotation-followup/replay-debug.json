@@ -1,0 +1,474 @@
+{
+  "head": "5e631efc46a6e8c0b9fcf2d7a74536e57f79a369",
+  "binary": "/Users/hayao/RustroverProjects/hoimin/target/debug/hoimin",
+  "binary_sha256": "e09ab4ef7e34fc229a74915ce2b69786e7eb80a2d285e87911a20268f2376d6f",
+  "python": "Python 3.14.7",
+  "cases": [
+    {
+      "id": "late_source",
+      "mode": "strict",
+      "expected_pairs": [],
+      "candidates": [
+        {
+          "id": "m1_8acb3104360788d6815a36b7833abb6607bb8ad94c814db9ddd1388d47f567b3",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 37,
+            "length": 13
+          },
+          "original": "Sequence[int]",
+          "replacement": "list[int]",
+          "operator": "type_list_sequence",
+          "line": 2,
+          "column": 9,
+          "symbol": "f",
+          "file_hash": "29ab7a80994e6e515e7b580f6c521e6ef444b7d752ce2f7f04e44860fa0953c8",
+          "rank": 1,
+          "score": 50,
+          "ranking_reasons": [
+            {
+              "code": "type_annotation",
+              "score": 50
+            }
+          ]
+        }
+      ],
+      "observed_pairs": [
+        [
+          "Sequence[int]",
+          "list[int]"
+        ]
+      ],
+      "status": "mismatch",
+      "evaluations": [
+        {
+          "candidate_id": null,
+          "ok": true,
+          "annotation": "set[int]"
+        },
+        {
+          "candidate_id": "m1_8acb3104360788d6815a36b7833abb6607bb8ad94c814db9ddd1388d47f567b3",
+          "ok": true,
+          "annotation": "list[int]"
+        }
+      ]
+    },
+    {
+      "id": "cached_before_rebind",
+      "mode": "strict",
+      "expected_pairs": [
+        [
+          "Sequence[int]",
+          "list[int]"
+        ]
+      ],
+      "candidates": [
+        {
+          "id": "m1_00d7279aa0d8f4879677caec1d9b11e995dcdccdac06ebb72de113e8a2bb976a",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 37,
+            "length": 13
+          },
+          "original": "Sequence[int]",
+          "replacement": "list[int]",
+          "operator": "type_list_sequence",
+          "line": 2,
+          "column": 9,
+          "symbol": "f",
+          "file_hash": "e87b692503655267a3815c3dabfa6937759f4465ef5dfb95bb19c344d78754cc",
+          "rank": 1,
+          "score": 50,
+          "ranking_reasons": [
+            {
+              "code": "type_annotation",
+              "score": 50
+            }
+          ]
+        }
+      ],
+      "observed_pairs": [
+        [
+          "Sequence[int]",
+          "list[int]"
+        ]
+      ],
+      "status": "match",
+      "evaluations": [
+        {
+          "candidate_id": null,
+          "ok": true,
+          "annotation": "typing.Sequence[int]"
+        },
+        {
+          "candidate_id": "m1_00d7279aa0d8f4879677caec1d9b11e995dcdccdac06ebb72de113e8a2bb976a",
+          "ok": true,
+          "annotation": "list[int]"
+        }
+      ]
+    },
+    {
+      "id": "restored_before_observe",
+      "mode": "strict",
+      "expected_pairs": [
+        [
+          "Sequence[int]",
+          "list[int]"
+        ]
+      ],
+      "candidates": [
+        {
+          "id": "m1_be3f8630237fdddb5f7f22f56ccbd1c8c4b4e776a5a33bf278f18ddcaa905d10",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 37,
+            "length": 13
+          },
+          "original": "Sequence[int]",
+          "replacement": "list[int]",
+          "operator": "type_list_sequence",
+          "line": 2,
+          "column": 9,
+          "symbol": "f",
+          "file_hash": "ae4325176e6ca9c0ee9444b63d02725c47d31e172b2640095c39b1478bc569b2",
+          "rank": 1,
+          "score": 50,
+          "ranking_reasons": [
+            {
+              "code": "type_annotation",
+              "score": 50
+            }
+          ]
+        }
+      ],
+      "observed_pairs": [
+        [
+          "Sequence[int]",
+          "list[int]"
+        ]
+      ],
+      "status": "match",
+      "evaluations": [
+        {
+          "candidate_id": null,
+          "ok": true,
+          "annotation": "typing.Sequence[int]"
+        },
+        {
+          "candidate_id": "m1_be3f8630237fdddb5f7f22f56ccbd1c8c4b4e776a5a33bf278f18ddcaa905d10",
+          "ok": true,
+          "annotation": "list[int]"
+        }
+      ]
+    },
+    {
+      "id": "stable_source",
+      "mode": "strict",
+      "expected_pairs": [
+        [
+          "Sequence[int]",
+          "list[int]"
+        ]
+      ],
+      "candidates": [
+        {
+          "id": "m1_a5aaa35cb8403e5627734ace096af7a99ea246253b724f4ff2ad8423c97a861e",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 37,
+            "length": 13
+          },
+          "original": "Sequence[int]",
+          "replacement": "list[int]",
+          "operator": "type_list_sequence",
+          "line": 2,
+          "column": 9,
+          "symbol": "f",
+          "file_hash": "4be9940aca9a9b3f9802abbc209bc67d784d9bb2c16116eca0d454e30ba6636f",
+          "rank": 1,
+          "score": 50,
+          "ranking_reasons": [
+            {
+              "code": "type_annotation",
+              "score": 50
+            }
+          ]
+        }
+      ],
+      "observed_pairs": [
+        [
+          "Sequence[int]",
+          "list[int]"
+        ]
+      ],
+      "status": "match",
+      "evaluations": [
+        {
+          "candidate_id": null,
+          "ok": true,
+          "annotation": "typing.Sequence[int]"
+        },
+        {
+          "candidate_id": "m1_a5aaa35cb8403e5627734ace096af7a99ea246253b724f4ff2ad8423c97a861e",
+          "ok": true,
+          "annotation": "list[int]"
+        }
+      ]
+    },
+    {
+      "id": "late_destination",
+      "mode": "strict",
+      "expected_pairs": [],
+      "candidates": [
+        {
+          "id": "m1_25dd7ae6f2a4bcac5fcee1bf554053c16bf0a24e8c949977bee1d7a078ef2423",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 37,
+            "length": 9
+          },
+          "original": "list[int]",
+          "replacement": "Sequence[int]",
+          "operator": "type_list_sequence",
+          "line": 2,
+          "column": 9,
+          "symbol": "f",
+          "file_hash": "77f82e82e6bfa9e12d8f4fdde93864de3b6d94962d1cbbd81144ac8c523f7d8f",
+          "rank": 1,
+          "score": 50,
+          "ranking_reasons": [
+            {
+              "code": "type_annotation",
+              "score": 50
+            }
+          ]
+        }
+      ],
+      "observed_pairs": [
+        [
+          "list[int]",
+          "Sequence[int]"
+        ]
+      ],
+      "status": "mismatch",
+      "evaluations": [
+        {
+          "candidate_id": null,
+          "ok": true,
+          "annotation": "list[int]"
+        },
+        {
+          "candidate_id": "m1_25dd7ae6f2a4bcac5fcee1bf554053c16bf0a24e8c949977bee1d7a078ef2423",
+          "ok": true,
+          "annotation": "set[int]"
+        }
+      ]
+    },
+    {
+      "id": "late_class_source",
+      "mode": "strict",
+      "expected_pairs": [],
+      "candidates": [
+        {
+          "id": "m1_9a176d18c782ee77785294db7ce5dcaae47e5344258df7c84b9a4ec5696d3a2f",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 50,
+            "length": 13
+          },
+          "original": "Sequence[int]",
+          "replacement": "list[int]",
+          "operator": "type_list_sequence",
+          "line": 3,
+          "column": 13,
+          "symbol": "C.f",
+          "file_hash": "a9cfb09b49ae8ad686951561c8dd9496a9056c8869ca5f8183a98653c4a6ad3a",
+          "rank": 1,
+          "score": 50,
+          "ranking_reasons": [
+            {
+              "code": "type_annotation",
+              "score": 50
+            }
+          ]
+        }
+      ],
+      "observed_pairs": [
+        [
+          "Sequence[int]",
+          "list[int]"
+        ]
+      ],
+      "status": "mismatch",
+      "evaluations": [
+        {
+          "candidate_id": null,
+          "ok": true,
+          "annotation": "set[int]"
+        },
+        {
+          "candidate_id": "m1_9a176d18c782ee77785294db7ce5dcaae47e5344258df7c84b9a4ec5696d3a2f",
+          "ok": true,
+          "annotation": "list[int]"
+        }
+      ]
+    },
+    {
+      "id": "abc_module",
+      "mode": "strict",
+      "expected_pairs": [
+        [
+          "set[int]",
+          "abc.Set[int]"
+        ]
+      ],
+      "candidates": [
+        {
+          "id": "m1_90bc0af70de5bc6a6e6c44dbe36a17af822b8caea870c82682c3b9b4d21ceb2e",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 39,
+            "length": 8
+          },
+          "original": "set[int]",
+          "replacement": "abc.AbstractSet[int]",
+          "operator": "type_set_abstract_set",
+          "line": 2,
+          "column": 9,
+          "symbol": "f",
+          "file_hash": "2f8e72e05c77ab65239f185a7a5a6d774572617980b5e2a02a4f35d1893f84ad",
+          "rank": 1,
+          "score": 50,
+          "ranking_reasons": [
+            {
+              "code": "type_annotation",
+              "score": 50
+            }
+          ]
+        }
+      ],
+      "observed_pairs": [
+        [
+          "set[int]",
+          "abc.AbstractSet[int]"
+        ]
+      ],
+      "status": "mismatch",
+      "evaluations": [
+        {
+          "candidate_id": null,
+          "ok": true,
+          "annotation": "set[int]"
+        },
+        {
+          "candidate_id": "m1_90bc0af70de5bc6a6e6c44dbe36a17af822b8caea870c82682c3b9b4d21ceb2e",
+          "ok": false,
+          "error": "AttributeError",
+          "message": "module 'collections.abc' has no attribute 'AbstractSet'"
+        }
+      ]
+    },
+    {
+      "id": "abc_direct",
+      "mode": "strict",
+      "expected_pairs": [
+        [
+          "set[int]",
+          "Set[int]"
+        ]
+      ],
+      "candidates": [],
+      "observed_pairs": [],
+      "status": "mismatch",
+      "evaluations": [
+        {
+          "candidate_id": null,
+          "ok": true,
+          "annotation": "set[int]"
+        }
+      ]
+    },
+    {
+      "id": "abc_inverse",
+      "mode": "strict",
+      "expected_pairs": [
+        [
+          "Set[int]",
+          "set[int]"
+        ]
+      ],
+      "candidates": [],
+      "observed_pairs": [],
+      "status": "mismatch",
+      "evaluations": [
+        {
+          "candidate_id": null,
+          "ok": true,
+          "annotation": "collections.abc.Set[int]"
+        }
+      ]
+    },
+    {
+      "id": "typing_module",
+      "mode": "strict",
+      "expected_pairs": [
+        [
+          "set[int]",
+          "t.AbstractSet[int]"
+        ]
+      ],
+      "candidates": [
+        {
+          "id": "m1_550af2008df585934ce6813c80c0a006ac72ddbc8b737cb526f1f7bf70d6d690",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 28,
+            "length": 8
+          },
+          "original": "set[int]",
+          "replacement": "t.AbstractSet[int]",
+          "operator": "type_set_abstract_set",
+          "line": 2,
+          "column": 9,
+          "symbol": "f",
+          "file_hash": "fa23843ff8117254e9421ba4a468097cc768d898598c355e33845450bcda695f",
+          "rank": 1,
+          "score": 50,
+          "ranking_reasons": [
+            {
+              "code": "type_annotation",
+              "score": 50
+            }
+          ]
+        }
+      ],
+      "observed_pairs": [
+        [
+          "set[int]",
+          "t.AbstractSet[int]"
+        ]
+      ],
+      "status": "match",
+      "evaluations": [
+        {
+          "candidate_id": null,
+          "ok": true,
+          "annotation": "set[int]"
+        },
+        {
+          "candidate_id": "m1_550af2008df585934ce6813c80c0a006ac72ddbc8b737cb526f1f7bf70d6d690",
+          "ok": true,
+          "annotation": "typing.AbstractSet[int]"
+        }
+      ]
+    }
+  ]
+}

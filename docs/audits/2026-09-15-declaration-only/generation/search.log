@@ -1,0 +1,5 @@
+scopes=1 states=6 actions=2 cases=12 transitions=12 always_store_mismatches=3 ignore_rhs_mismatches=3 fallback_mismatches=0 elapsed_ms=2
+scopes=2 states=12 actions=2 cases=24 transitions=24 always_store_mismatches=6 ignore_rhs_mismatches=6 fallback_mismatches=0 elapsed_ms=0
+scopes=3 states=18 actions=2 cases=36 transitions=36 always_store_mismatches=8 ignore_rhs_mismatches=8 fallback_mismatches=1 elapsed_ms=0
+sensitivity: always-store, ignore-RHS, function-fallback detected
+first witness: module / missing / fallback=true / hasValue=false; value stays missing; expected=true; always-store=false

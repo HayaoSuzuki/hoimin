@@ -86,3 +86,11 @@ import HoiminOracle.ValidPythonModel
 
 import HoiminOracle.ImplicitFinallyModel
 import HoiminOracle.CollectionAnnotationModel
+
+-- Models promoted from the 2026-09-15 audit; implementation gaps remain in the audit ledger.
+import HoiminOracle.WithSuppressionModel
+import HoiminOracle.DeferredAnnotationModel
+import HoiminOracle.EvaluationOrderModel
+import HoiminOracle.DeclarationOnlyModel
+import HoiminOracle.ResumeCopyModel
+import HoiminOracle.NullableGateModel

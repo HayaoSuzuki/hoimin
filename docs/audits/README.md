@@ -6,6 +6,12 @@
 
 | 資料 | 対象と結果 | 現在の検証先 |
 | --- | --- | --- |
+| [nullable型変異の適用条件](2026-09-15-nullable-gates/README.md) | `5e631ef`で#564/#565を発見 | [証拠と未確認事項](../knowledge/audits/nullable-gates-2026-09.md) |
+| [コピー方針とsession再開](2026-09-15-resume-copy/README.md) | `5e631ef`で#563を発見 | [証拠と未確認事項](../knowledge/audits/resume-copy-2026-09.md) |
+| [値なし注釈と候補精度](2026-09-15-declaration-only/README.md) | `5e631ef`で#562の改善を提案 | [証拠と未確認事項](../knowledge/audits/declaration-only-2026-09.md) |
+| [評価順序と未選択methodの確保](2026-09-15-evaluation-order/README.md) | `5e631ef`で#560/#561を発見 | [証拠と未確認事項](../knowledge/audits/evaluation-order-2026-09.md) |
+| [遅延注釈とcollections.abc.Set](2026-09-15-annotation-followup/README.md) | `5e631ef`で#558/#559を発見 | [証拠と未確認事項](../knowledge/audits/annotation-followup-2026-09.md) |
+| [withの例外抑制とfinallyの解析コスト](2026-09-15-with-finally/README.md) | `5e631ef`で#556/#557を発見 | [証拠と未確認事項](../knowledge/audits/with-finally-2026-09.md) |
 | [2026年7月 Rust監査](2026-07-rust-codebase/README.md) | 初期のコード監査と対応Issue | [当時の対応一覧](2026-07-rust-codebase/issues.md) |
 | [統合後のLean監査・性能調査](2026-09-14-post-integration/README.md) | 暗黙例外、入れ子ループ、import状態コピー。#545〜#547を発見 | [暗黙例外](../knowledge/audits/implicit-finally.md)、[性能検証](../knowledge/audits/performance-shapes.md) |
 | [型注釈の具体型名](2026-09-14-additional/README.md) | module再代入と型パラメータ。#548を発見 | [型注釈の参照先](../knowledge/design/annotation-builtins.md) |
@@ -24,4 +30,6 @@
 
 ## 正式なテスト・モデルへの移行
 
-監査の32入力は、既存8入力の再利用と24入力の追加で正式なLean生成コーパスへ対応付けた。暗黙例外の6実行観測、公開runの誤計上検証、性能監査の入力を用いた操作数ゲート2件も通常の検証へ組み込んだ。定理の移行先、入力の対応、実行結果は[移行検証報告](../superpowers/reports/2026-09-15-audit-verification-promotion.md)を参照する。
+2026-09-15の追加監査6組は、6モデル・33定理・58入力を正式なLeanプロジェクトとCIへ組み込んだ。[追加監査のLean移行報告](../superpowers/reports/2026-09-15-followup-lean-promotion.md)に移行先と検証結果を記録した。実装との不一致は各監査とIssue #556〜#565で追跡する。
+
+2026-09-14の監査の32入力は、既存8入力の再利用と24入力の追加で正式なLean生成コーパスへ対応付けた。暗黙例外の6実行観測、公開runの誤計上検証、性能監査の入力を用いた操作数ゲート2件も通常の検証へ組み込んだ。定理の移行先、入力の対応、実行結果は[移行検証報告](../superpowers/reports/2026-09-15-audit-verification-promotion.md)を参照する。

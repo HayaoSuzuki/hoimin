@@ -5,6 +5,10 @@ description: 保存・復旧の権限、スキーマ移行、結果の生成側�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: resume-copy-audit
+  resource: ../../audits/2026-09-15-resume-copy/README.md
+  working_tree: untracked
+  sha256: 85e48710c73efb62a5ce970061dc6af55720579ee837a7c4e6fe762acfb61048
 - id: issue-464
   resource: ../../superpowers/specs/2026-09-14-issue-464-baseline-output-design.md
   working_tree: untracked
@@ -162,3 +166,9 @@ macOSで、並列数1・2、root内外の別名、大小文字の別名、実際
 `run` と `verify` は失敗またはプロセスの時間切れとなったbaselineについて、cleanup前に保存済みの標準出力・標準エラーをstderr診断へ逐次出力する。`--max-output` の末尾保持上限に従い、保持量・観測量・切詰め有無とraw byte offsetを示す。非UTF8は置換文字、端末制御文字はエスケープで表す。stdoutのスキーマは変えない。保存にはstderrのリダイレクトを使う。キャンセルや出力先の詰まりで総時間制限に達すると出力は途中で止まりうる。[^issue-464]
 
 [^issue-464]: [原文](../../superpowers/specs/2026-09-14-issue-464-baseline-output-design.md)。
+
+## コピー方針変更時の再開互換性
+
+`5e631ef`ではinclude/excludeがfingerprintへ含まれず、コピーされる補助ファイルが変わっても旧条件のkilled/survivedを再利用した（#563）。[監査の証拠と限界](../audits/resume-copy-2026-09.md)に、設定変更の4反例と据置き・出力上限変更の正例を記録した。修正時にはコピー設定の比較方法とfingerprint schemaの更新を決める。[^resume-copy-audit]
+
+[^resume-copy-audit]: [コピー方針とsession再開](../../audits/2026-09-15-resume-copy/README.md)。

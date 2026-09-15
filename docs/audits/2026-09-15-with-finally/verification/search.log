@@ -1,0 +1,6 @@
+depth=0 alphabet=3 traces=1 event_occurrences=0 differences=0 unsafe=0 firstUnsafe=none elapsed_ms=0
+depth=1 alphabet=3 traces=4 event_occurrences=3 differences=0 unsafe=0 firstUnsafe=none elapsed_ms=0
+depth=2 alphabet=3 traces=13 event_occurrences=21 differences=2 unsafe=1 firstUnsafe=some [WithAudit.Event.mayRaise, WithAudit.Event.importTyping] elapsed_ms=0
+depth=3 alphabet=3 traces=40 event_occurrences=102 differences=10 unsafe=4 firstUnsafe=some [WithAudit.Event.mayRaise, WithAudit.Event.importTyping] elapsed_ms=0
+depth=4 alphabet=3 traces=121 event_occurrences=426 differences=36 unsafe=11 firstUnsafe=some [WithAudit.Event.mayRaise, WithAudit.Event.importTyping] elapsed_ms=0
+sensitivity: drop-suppression, reject-all, suppress-all, duplicate-traversal detected
