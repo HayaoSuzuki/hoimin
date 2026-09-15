@@ -24,7 +24,38 @@ structure Case where
   baseline : String := ""
   mutant : String := ""
 
-def cases : List Case := [
+def sliceTupleCase (id interior : String) (elements : List TupleElement) : Case :=
+  { id := "slice_tuple_" ++ id, producer := "ast", position := "subscript", binding := "unshadowed",
+    source := "def subject(x):\n    return x[" ++ interior ++ "]\n",
+    operator := "collection_list_tuple",
+    sites := [{ anchor := interior, original := interior, replacement := "[" ++ interior ++ "]", eligible := tupleAllowed elements, broken := if tupleAllowed elements then none else some (brokenTupleAllowed elements), fault := "allow-slice-tuple" }] }
+
+def sliceTupleCases : List Case :=
+  (tupleDomain.zipIdx.map fun (elements, index) =>
+    let parts := elements.map fun element => if element == .slice then ":" else "1"
+    let interior := String.intercalate ", " parts ++ if elements.length == 1 then "," else ""
+    sliceTupleCase (toString index) interior elements) ++
+  (["1:", ":2", "::3", "1:2", "1:2:3", ":2:3", "1::3"].zipIdx.map fun (bound, index) =>
+    sliceTupleCase ("bound_" ++ toString index) (bound ++ ",") [.slice]) ++ [
+    { id := "slice_tuple_starred", producer := "ast", position := "subscript", binding := "unshadowed",
+      source := "def subject(x, values):\n    return x[1, *values]\n", operator := "collection_list_tuple",
+      sites := [{ anchor := "1, *values", original := "1, *values", replacement := "[1, *values]", eligible := tupleAllowed [.expression, .expression] }] },
+    { id := "slice_tuple_nested", producer := "ast", position := "subscript", binding := "unshadowed",
+      source := "def subject(x):\n    return x[:, (1, 2)]\n", operator := "collection_list_tuple",
+      sites := [{ anchor := ":, (1, 2)", original := ":, (1, 2)", replacement := "[:, (1, 2)]", eligible := tupleAllowed [.slice, .expression] },
+        { anchor := "(1, 2)", original := "(1, 2)", replacement := "[1, 2]", eligible := tupleAllowed [.expression, .expression] }] },
+    { id := "slice_tuple_bound_recursion", producer := "ast", position := "subscript", binding := "unshadowed",
+      source := "def subject(x):\n    return x[(1, 2):(3, 4):(5, 6),]\n", operator := "collection_list_tuple",
+      sites := [{ anchor := "(1, 2):(3, 4):(5, 6),", original := "(1, 2):(3, 4):(5, 6),", replacement := "[(1, 2):(3, 4):(5, 6),]", eligible := tupleAllowed [.slice] },
+        { anchor := "(1, 2)", original := "(1, 2)", replacement := "[1, 2]", eligible := tupleAllowed [.expression, .expression] },
+        { anchor := "(3, 4)", original := "(3, 4)", replacement := "[3, 4]", eligible := tupleAllowed [.expression, .expression] },
+        { anchor := "(5, 6)", original := "(5, 6)", replacement := "[5, 6]", eligible := tupleAllowed [.expression, .expression] }] },
+    { id := "slice_tuple_nested_subscript", producer := "ast", position := "expression", binding := "unshadowed",
+      source := "def subject(x):\n    return (x[:], 'a:b')\n", operator := "collection_list_tuple",
+      sites := [{ anchor := "(x[:], 'a:b')", original := "(x[:], 'a:b')", replacement := "[x[:], 'a:b']", eligible := tupleAllowed [.expression, .expression] }] }
+  ]
+
+def cases : List Case := sliceTupleCases ++ [
   { id := "annotation_generic_destination", producer := "annotation", position := "annotation", binding := "generic-destination",
     source := "from typing import Sequence\ndef subject[Sequence](value: list[int]):\n    return value\n", operator := "type_list_sequence",
     sites := [{ anchor := "list[int]", original := "list[int]", replacement := "Sequence[int]", eligible := genericAllowed .destination true, broken := some (brokenGeneric .destination true), fault := "ignore-type-parameter" }] },
@@ -142,7 +173,7 @@ def render : String := String.join (cases.map fun item =>
   ]).compress ++ "\n")
 
 def main (args : List String) : IO UInt32 := do
-  unless sensitivity && ["walrus-local", "ignore-type-parameter", "lexical-key"].all (fun fault =>
+  unless sensitivity && ["walrus-local", "ignore-type-parameter", "lexical-key", "allow-slice-tuple"].all (fun fault =>
       cases.any (fun item => item.sites.any (fun site => site.fault == fault && site.broken.any (fun b => b != site.eligible)))) do
     IO.eprintln "broken variant sensitivity failed"
     return 2
