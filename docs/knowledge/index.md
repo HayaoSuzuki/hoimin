@@ -20,6 +20,8 @@ okf_version: "0.2"
 
 # 監査と検証範囲
 
+- [暗黙例外と finally](audits/implicit-finally.md) - typing 由来の合流、Lean 小モデル、公開 plan の対応範囲。
+
 - [Lean監査の読み方](audits/lean-evidence.md) - モデル証明・有限探索・Rust対応・実機確認の違い。
 - [2026-09-11 境界監査](audits/boundary-2026-09.md) - 解析・選択・実行・保存の横断結果と未検証条件。
 - [progress入力の後続修正](audits/progress-input.md) - 過去の368/564観測、JSONLイベント列の読取りと検証範囲。

@@ -495,6 +495,15 @@ function body predeclares Python-local names before its body is visited. Nested
 scopes do not leak their bindings into an enclosing scope. At control-flow
 joins, retain only imports known identically on every reachable exit; when no
 safe direct-name or module-alias spelling remains, skip the replacement.
+Finally annotation entries also include implicit exceptions from expressions
+and statement protocols evaluated before later imports (calls, subscripts,
+attributes, names, operators, container protocols, formatting, assertions,
+iteration, context managers, and class construction). Partial assignment and
+pattern targets are conservatively invalidated on these entries. These pending exceptions stay separate from normal fallthrough;
+a normally finishing finally resumes them. Implicit entries retain one merged
+environment per flow instead of one snapshot per expression. Class globals/nonlocals are
+conservatively invalidated without leaking class-local environments. Import
+failures and arbitrary dynamic hooks remain outside this analysis.
 
 The supported structural shapes are exact: `append(value)` ↔
 `extend([value])` only when the inverse list literal has one non-starred

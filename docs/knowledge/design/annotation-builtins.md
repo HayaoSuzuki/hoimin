@@ -14,7 +14,7 @@ sources:
   resource: ../../../crates/hoimin-cli/src/analyzer/rust.rs
   revision: f11013542ccd735ab9741b5079c0b39a517df256
   working_tree: modified
-  sha256: 1027820683f1264c82b483477b318bbeb741d212416333b15c1a8773555ae2fe
+  sha256: 03a99d8aa327a0081245c1e98ff7c4ce00854b27b53062f5c74caf100ad840bf
 - id: issue-548-tests
   resource: ../../../crates/hoimin-cli/tests/collection_annotation_builtins.rs
   revision: f11013542ccd735ab9741b5079c0b39a517df256

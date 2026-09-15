@@ -245,6 +245,7 @@ jobs:
             HoiminOracle.MultipleHandlerJoinCases
             HoiminOracle.NestedMatchExitCases
             NestedTryFlowAuditMain
+            ImplicitFinallyAuditMain
             ExceptStarFlowAuditMain
             HoiminOracle.PerformanceCostModel
             HoiminOracle.PerformanceCostProofs
@@ -298,6 +299,8 @@ jobs:
             'generate_performance_cost|corpus/performance-cost.jsonl|sensitivity'
             'generate_valid_python|corpus/valid-python.jsonl|sensitivity'
             'generate_collection_annotation|corpus/collection-annotation.jsonl|sensitivity'
+
+            'generate_implicit_finally|corpus/implicit-finally.jsonl|sensitivity'
           )
           for entry in "${generators[@]}"; do
             IFS='|' read -r executable corpus sensitivity <<< "$entry"

@@ -15,6 +15,12 @@ sources:
   revision: f11013542ccd735ab9741b5079c0b39a517df256
   working_tree: untracked
   sha256: 1e0e66ee142ae6e8e71019b67d4901bcc640797781ed8e8d3878cbe2e64460bf
+
+- id: issue-545
+  resource: ../../superpowers/specs/2026-09-15-issue-545-implicit-finally-design.md
+  revision: f11013542ccd735ab9741b5079c0b39a517df256
+  working_tree: untracked
+  sha256: f2d56cddd7659add3ef30fed812ac8174bf45e725fa0ef380f2ca39c8b0dda51
 - id: issue-489
   resource: ../../superpowers/specs/2026-09-14-issue-489-valid-python-corpus-design.md
   working_tree: untracked
@@ -333,3 +339,11 @@ collection_list_tupleのtupleからlistへの変換は、直接の要素にSlice
 # コレクション型注釈の組込み型provenance（Issue #548）
 
 [型注釈の参照先の契約](annotation-builtins.md)では、具体型名の綴りだけで組込み型と判断せず、source・destinationの両方向で注釈scopeの束縛を確認する。runtimeの名前解決とは遅延評価の扱いが異なるため、module/classの後続束縛も考慮する。
+
+# finally への暗黙例外入口
+
+call、subscript、attribute、演算や比較、反復などの評価が後続 import より先に失敗した場合、finally の注釈は例外前の束縛も参照し得る。解析器はこの入口を正常入口と合流し、全入口で一致しない typing 由来の候補を抑制する。暗黙例外は正常後続へ混ぜず、finally の通常終了後も例外として外側へ渡す。[^issue-545]
+
+[検証範囲](../audits/implicit-finally.md)に小モデル、公開 plan 対応、未対応の式や動的挙動を記録する。
+
+[^issue-545]: [Issue #545 設計](../../superpowers/specs/2026-09-15-issue-545-implicit-finally-design.md)。

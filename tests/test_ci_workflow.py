@@ -110,6 +110,8 @@ LEAN_CORPUS_BY_EXECUTABLE = {
     "generate_performance_cost": "corpus/performance-cost.jsonl",
     "generate_valid_python": "corpus/valid-python.jsonl",
     "generate_collection_annotation": "corpus/collection-annotation.jsonl",
+
+    "generate_implicit_finally": "corpus/implicit-finally.jsonl",
 }
 LEAN_SENSITIVITY_EXECUTABLES = {
     name

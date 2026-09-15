@@ -15,6 +15,12 @@ sources:
   resource: ../../superpowers/specs/2026-09-15-issue-548-annotation-builtins-design.md
   working_tree: untracked
   sha256: 064489054f3c1e2bb0959094f1b81258d02fd2eec5ce89712509931b9d998218
+
+- id: issue-545
+  resource: ../../superpowers/specs/2026-09-15-issue-545-implicit-finally-design.md
+  revision: f11013542ccd735ab9741b5079c0b39a517df256
+  working_tree: untracked
+  sha256: f2d56cddd7659add3ef30fed812ac8174bf45e725fa0ef380f2ca39c8b0dda51
 - id: issue-491-operation-cost-design
   resource: ../../superpowers/specs/2026-09-14-issue-491-operation-cost-design.md
   working_tree: untracked
@@ -880,6 +886,8 @@ sources:
 | 原文 | 先頭見出し | 作成時の状態 |
 | --- | --- | --- |
 | [2026-09-15-issue-549-slice-tuple-design.md](../../superpowers/specs/2026-09-15-issue-549-slice-tuple-design.md) | Issue #549: Sliceを含むtupleの候補除外 [^issue-549-design] | 未追跡（参照時点） |
+
+| [2026-09-15-issue-545-implicit-finally-design.md](../../superpowers/specs/2026-09-15-issue-545-implicit-finally-design.md) | Issue #545: 暗黙例外の finally 入口 [^issue-545] | 追跡済み |
 | [2026-09-14-issue-491-operation-cost-design.md](../../superpowers/specs/2026-09-14-issue-491-operation-cost-design.md) | Issue #491: Operation costs and missing input dimensions [^issue-491-operation-cost-design] | 未追跡（参照時点） |
 | [2026-09-14-issue-489-valid-python-corpus-design.md](../../superpowers/specs/2026-09-14-issue-489-valid-python-corpus-design.md) | Issue #489: Valid Python candidate contract corpus [^issue-489-specs] | 未追跡（参照時点） |
 | [2026-09-14-issue-471-negative-neighbors-design.md](../../superpowers/specs/2026-09-14-issue-471-negative-neighbors-design.md) | Issue #471: Negative index and slice neighbors [^issue-471-specs] | 未追跡（参照時点） |
@@ -1381,3 +1389,5 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 | Issue #548: Collection annotation builtin provenance | [設計書](../../superpowers/specs/2026-09-15-issue-548-annotation-builtins-design.md) [^issue-548-design] |
 
 [^issue-548-design]: [Issue #548: Collection annotation builtin provenance](../../superpowers/specs/2026-09-15-issue-548-annotation-builtins-design.md)。
+
+[^issue-545]: [Issue #545: 暗黙例外の finally 入口](../../superpowers/specs/2026-09-15-issue-545-implicit-finally-design.md)。

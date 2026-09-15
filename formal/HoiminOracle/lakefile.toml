@@ -137,3 +137,7 @@ root = "ValidPythonAuditMain"
 [[lean_exe]]
 name = "generate_collection_annotation"
 root = "CollectionAnnotationAuditMain"
+
+[[lean_exe]]
+name = "generate_implicit_finally"
+root = "ImplicitFinallyAuditMain"
