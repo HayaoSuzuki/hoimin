@@ -14,12 +14,12 @@ sources:
   resource: ../../superpowers/reports/2026-09-15-issue-545-implicit-finally-review.md
   revision: f11013542ccd735ab9741b5079c0b39a517df256
   working_tree: untracked
-  sha256: 04a697f4a1c037c5759f8d92b3185cace24cfa2775645d3035750ef649b483a3
+  sha256: 1f24068440027fb9084264b25b9f9294421da130d4e939ea2532bc4e47099c60
 - id: implementation
   resource: ../../../crates/hoimin-cli/src/analyzer/rust.rs
   revision: f11013542ccd735ab9741b5079c0b39a517df256
   working_tree: modified
-  sha256: 8159fe087096a5d01bf392bdcd85f80ab8e8616a3a888be1767aa1a0a2427a10
+  sha256: 1a31757e7932ce7fa0fe8407fed27558414def841a7ad23459c623cf9f018e70
 - id: model
   resource: ../../../formal/HoiminOracle/ImplicitFinallyAuditMain.lean
   revision: f11013542ccd735ab9741b5079c0b39a517df256

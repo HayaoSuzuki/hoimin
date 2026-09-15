@@ -5185,6 +5185,52 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
         exits
     }
 
+    #[cfg_attr(
+        not(test),
+        expect(
+            clippy::unused_self,
+            reason = "test builds select handler-cleanup omissions"
+        )
+    )]
+    fn clear_handler_target(&self, name: &str, exits: &mut ControlFlowExits) {
+        let invalidate = |state: &mut KnownImports| state.invalidate(name);
+        #[cfg(test)]
+        let omitted_category = match self.test_mutation {
+            Some(BindingFlowTestMutation::OmitHandlerFallthroughCleanup) => {
+                Some(ExitCategory::Fallthrough)
+            }
+            Some(BindingFlowTestMutation::OmitHandlerBreakCleanup) => Some(ExitCategory::Break),
+            Some(BindingFlowTestMutation::OmitHandlerContinueCleanup) => {
+                Some(ExitCategory::Continue)
+            }
+            Some(BindingFlowTestMutation::OmitHandlerTerminateCleanup) => {
+                Some(ExitCategory::Terminate)
+            }
+            _ => None,
+        };
+        #[cfg(not(test))]
+        let omitted_category = None;
+        if let Some(state) = &mut exits.fallthrough
+            && omitted_category != Some(ExitCategory::Fallthrough)
+        {
+            invalidate(state);
+        }
+        for (category, states) in [
+            (ExitCategory::Break, &mut exits.breaks),
+            (ExitCategory::Continue, &mut exits.continues),
+            (ExitCategory::Terminate, &mut exits.terminates),
+        ] {
+            if omitted_category != Some(category) {
+                for state in states {
+                    invalidate(state);
+                }
+            }
+        }
+        if let Some(state) = &mut exits.implicit_raises {
+            state.invalidate(name);
+        }
+    }
+
     fn visit_try(&mut self, statement: &'ast ruff_python_ast::StmtTry) -> ControlFlowExits {
         let track_implicit_exceptions = self.track_implicit_exceptions;
         self.track_implicit_exceptions |= !statement.finalbody.is_empty();
@@ -5235,46 +5281,7 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
             }
             let mut handler_exits = self.visit_suite_from(imports, &handler.body);
             if let Some(name) = &handler.name {
-                let invalidate = |state: &mut KnownImports| state.invalidate(name.as_str());
-                #[cfg(test)]
-                let omitted_category = match self.test_mutation {
-                    Some(BindingFlowTestMutation::OmitHandlerFallthroughCleanup) => {
-                        Some(ExitCategory::Fallthrough)
-                    }
-                    Some(BindingFlowTestMutation::OmitHandlerBreakCleanup) => {
-                        Some(ExitCategory::Break)
-                    }
-                    Some(BindingFlowTestMutation::OmitHandlerContinueCleanup) => {
-                        Some(ExitCategory::Continue)
-                    }
-                    Some(BindingFlowTestMutation::OmitHandlerTerminateCleanup) => {
-                        Some(ExitCategory::Terminate)
-                    }
-                    _ => None,
-                };
-                #[cfg(not(test))]
-                let omitted_category = None;
-                if let Some(state) = &mut handler_exits.fallthrough
-                    && omitted_category != Some(ExitCategory::Fallthrough)
-                {
-                    invalidate(state);
-                }
-                for (category, states) in [
-                    (ExitCategory::Break, &mut handler_exits.breaks),
-                    (ExitCategory::Continue, &mut handler_exits.continues),
-                    (ExitCategory::Terminate, &mut handler_exits.terminates),
-                ] {
-                    if omitted_category != Some(category) {
-                        for state in states {
-                            invalidate(state);
-                        }
-                    }
-                }
-            }
-            if let Some(name) = &handler.name {
-                if let Some(state) = &mut handler_exits.implicit_raises {
-                    state.invalidate(name.as_str());
-                }
+                self.clear_handler_target(name.as_str(), &mut handler_exits);
             }
             #[cfg(test)]
             self.mutate_multiple_handler_exits(&mut handler_exits);

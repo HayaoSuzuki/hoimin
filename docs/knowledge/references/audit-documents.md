@@ -9,7 +9,7 @@ sources:
   resource: ../../superpowers/reports/2026-09-15-issue-545-implicit-finally-review.md
   revision: f11013542ccd735ab9741b5079c0b39a517df256
   working_tree: untracked
-  sha256: 04a697f4a1c037c5759f8d92b3185cace24cfa2775645d3035750ef649b483a3
+  sha256: 1f24068440027fb9084264b25b9f9294421da130d4e939ea2532bc4e47099c60
 - id: issue-491-rust-cost-review
   resource: ../../superpowers/reports/2026-09-14-issue-491-rust-cost-review.md
   working_tree: untracked

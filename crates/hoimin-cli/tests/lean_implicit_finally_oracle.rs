@@ -54,8 +54,9 @@ async fn implicit_finally_matches_lean_public_plan() {
         for candidate in manifest.candidates {
             assert_eq!(candidate.original, "Sequence[int]");
             assert_eq!(candidate.replacement, "list[int]");
-            let start = candidate.span.start as usize;
-            let end = start + candidate.span.length as usize;
+            let start = usize::try_from(candidate.span.start).expect("span start fits usize");
+            let length = usize::try_from(candidate.span.length).expect("span length fits usize");
+            let end = start.checked_add(length).expect("span end fits usize");
             assert_eq!(&case.source[start..end], candidate.original);
         }
         observed += 1;

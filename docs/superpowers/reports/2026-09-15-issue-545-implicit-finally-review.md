@@ -116,3 +116,11 @@ Lean は `mayRaise` が custom 状態から始まる任意の後続列で候補�
 CIの28件のunittestで、新しい生成器がテスト側の登録表にないことを検出した。登録表とworkflowの順序を合わせ、生成器の `--sensitivity` を追加して再実行した結果、28件すべて成功（10.698秒）。最終Leanはbuild 4.238秒、鮮度1.137秒、感度0.184秒で成功し、感度出力は `drop_implicit_entry=true` となった。
 
 OKFの最終検査はPyYAML 6.0.3で行う。21 MarkdownのYAML/予約ファイル構造、今回追加した7出典の脚注・実在・ハッシュ、変更した導線、設計書と報告の登録を確認した。過去の全出典ハッシュや外部URLの到達性は再検査していない。
+
+## PR公開後の品質ゲート修正と5回の再点検
+
+1. CIのClippy失敗をローカルで再現。visit_tryの109行と入れ子ifが原因で、意味の回帰ではないことを確認した。
+2. handler名の終了時無効化を `clear_handler_target` に抽出し、正常/abrupt/暗黙例外の全分類とtest-onlyの意図的欠落を保持した。
+3. 自己参照はtest-only変異の選択に必要であるため、production限定のunused_self expectationに理由を明記した。
+4. 全targetの検査で公開adapterのu64→usize castも検出。checked conversionとchecked additionに変更し、範囲が表現できない場合を明示的に失敗させた。
+5. workspace all-targets/all-features Clippy成功、analyzer225件成功（3既存ignored）、公開Lean6 fixtureの1テスト成功、fmtを確認した。
