@@ -25,7 +25,9 @@ fn observe(root: &Path, harness: &str) -> String {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    String::from_utf8(output.stdout).unwrap()
+    String::from_utf8(output.stdout)
+        .unwrap()
+        .replace("\r\n", "\n")
 }
 
 async fn assert_plan(source: &str, operator: &str, original: &str, replacement: &str) {

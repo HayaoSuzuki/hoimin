@@ -990,7 +990,23 @@ mod portable {
         let signal = handler
             .handle(run_python(
                 72,
-                "import os,signal\nsignal.signal(signal.SIGXCPU, signal.SIG_DFL)\nsignal.pthread_sigmask(signal.SIG_UNBLOCK, {signal.SIGXCPU})\nos.kill(os.getpid(), signal.SIGXCPU)",
+                r#"
+import os, resource, signal, sys
+
+# Test native signal classification without waiting for a host crash collector.
+resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+if sys.platform == "linux":
+    # Linux ignores RLIMIT_CORE when core_pattern pipes to a collector.
+    import ctypes
+    libc = ctypes.CDLL(None, use_errno=True)
+    pr_set_dumpable = 4
+    result = libc.prctl(pr_set_dumpable, *[ctypes.c_ulong(0)] * 4)
+    assert result == 0, os.strerror(ctypes.get_errno())
+
+signal.signal(signal.SIGXCPU, signal.SIG_DFL)
+signal.pthread_sigmask(signal.SIG_UNBLOCK, {signal.SIGXCPU})
+os.kill(os.getpid(), signal.SIGXCPU)
+"#,
                 limits(Duration::from_secs(5), 64),
             ))
             .await

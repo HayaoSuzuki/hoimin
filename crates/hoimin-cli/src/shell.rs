@@ -8885,7 +8885,7 @@ mod tests {
         ])
     }
 
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[tokio::test(start_paused = true)]
     async fn total_timeout_bounds_paused_materialization_at_first_shutdown_deadline() {
         let project = tempfile::tempdir().unwrap();
         let config = paused_materialization_config(&project, "200ms");
@@ -8893,15 +8893,18 @@ mod tests {
             RunControl::with_materialization_pause_and_shutdown_grace(0, Duration::from_millis(80));
         let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
         let (release_tx, release_rx) = std::sync::mpsc::sync_channel(0);
+        // The blocking controller also prevents the paused clock from auto-advancing
+        // while filesystem setup is still running.
         let controller = tokio::task::spawn_blocking(move || {
             pause_controller
-                .wait_until_entered(Duration::from_secs(2))
+                .wait_until_entered(Duration::from_secs(5))
                 .expect("worker 0 did not enter materialization");
             let release = pause_controller.release_guard();
             let _ = entered_tx.send(());
             let _ = release_rx.recv();
             drop(release);
         });
+        let started = tokio::time::Instant::now();
         let mut run = Box::pin(run_loop_with_control(
             config,
             Vec::new(),
@@ -8912,6 +8915,11 @@ mod tests {
             result = &mut run => panic!("run finished before materialization paused: {result:?}"),
             result = entered_rx => result.expect("pause controller stopped before entry"),
         }
+        assert_eq!(started.elapsed(), Duration::ZERO);
+        // Reach the run deadline only after the fixture is ready, then retain a
+        // real-time bound on shutdown even while the blocking controller is live.
+        tokio::time::advance(Duration::from_millis(200)).await;
+        tokio::time::resume();
         let result = tokio::time::timeout(Duration::from_millis(500), &mut run).await;
         release_tx.send(()).unwrap();
         controller.await.unwrap();

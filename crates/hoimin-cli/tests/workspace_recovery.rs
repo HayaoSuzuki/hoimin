@@ -6,7 +6,9 @@ use std::fs;
 use std::path::Path;
 
 use camino::{Utf8Path, Utf8PathBuf};
-use hoimin_cli::workspace::{CopyOptions, WorkspaceError, WorkspaceHandler, WorkspacePlan};
+#[cfg(unix)]
+use hoimin_cli::workspace::WorkspacePlan;
+use hoimin_cli::workspace::{CopyOptions, WorkspaceError, WorkspaceHandler};
 use hoimin_core::{
     BudgetLedger, EffectFailure, EffectId, IntegrityCheckpoint, Preflight, ReservationId,
     ResetWorker, RunBudgets, VerifyOriginals, release_workspace_copy, reserve_workspace_copy,
@@ -292,6 +294,8 @@ fn cleanup_reports_reservation_only_after_worker_directory_is_deleted() {
     assert_eq!(ledger.reserved(hoimin_core::BudgetKind::Copy), 0);
 }
 
+// Windows retained directory handles deny deletion until cleanup releases them.
+#[cfg(unix)]
 #[test]
 fn cleanup_releases_state_when_the_temporary_wrapper_was_already_removed() {
     let project = tempfile::tempdir().unwrap();

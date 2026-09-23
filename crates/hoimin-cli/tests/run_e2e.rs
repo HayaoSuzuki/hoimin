@@ -4472,8 +4472,35 @@ fn session_directory_alias(target: &Path, alias: &Path) {
     #[cfg(unix)]
     std::os::unix::fs::symlink(target, alias).unwrap();
     #[cfg(windows)]
-    std::os::windows::fs::symlink_dir(target, alias)
-        .expect("session alias regression requires directory symlink support");
+    {
+        let result = match std::os::windows::fs::symlink_dir(target, alias) {
+            Ok(()) => Ok(()),
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::PermissionDenied | io::ErrorKind::Unsupported
+                ) || error.raw_os_error() == Some(1314) =>
+            {
+                // Directory aliases also work as junctions, without symlink privileges.
+                let output = std::process::Command::new("cmd.exe")
+                    .args(["/D", "/C", "mklink", "/J"])
+                    .arg(alias)
+                    .arg(target)
+                    .output()
+                    .expect("create session alias junction");
+                if output.status.success() {
+                    Ok(())
+                } else {
+                    Err(io::Error::other(format!(
+                        "failed to create session alias junction: {}",
+                        String::from_utf8_lossy(&output.stderr)
+                    )))
+                }
+            }
+            Err(error) => Err(error),
+        };
+        result.expect("session alias regression requires a directory alias");
+    }
 }
 
 #[cfg(any(unix, windows))]
