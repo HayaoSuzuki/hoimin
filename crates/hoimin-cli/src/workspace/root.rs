@@ -1197,6 +1197,34 @@ impl WorkerRoot {
     }
 }
 
+pub(super) fn open_cleanup_directory(path: &Path) -> io::Result<File> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        use windows_sys::Win32::Storage::FileSystem::{
+            FILE_FLAG_BACKUP_SEMANTICS, FILE_GENERIC_READ, FILE_SHARE_READ, FILE_SHARE_WRITE,
+            FILE_WRITE_ATTRIBUTES,
+        };
+
+        // Retain attribute-write access before worker code makes the wrapper readonly.
+        // As with ordinary retained directories, deny delete sharing to pin its identity.
+        let directory = std::fs::OpenOptions::new()
+            .access_mode(FILE_GENERIC_READ | FILE_WRITE_ATTRIBUTES)
+            .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+            .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
+            .open(path)?;
+        if !directory.metadata()?.is_dir() {
+            return Err(io::Error::new(
+                io::ErrorKind::NotADirectory,
+                "cleanup wrapper is not a directory",
+            ));
+        }
+        Ok(directory)
+    }
+    #[cfg(not(windows))]
+    open_retained_directory(path)
+}
+
 pub(super) fn open_retained_directory(path: &Path) -> io::Result<File> {
     let directory =
         cap_primitives::fs::open_ambient_dir(path, cap_primitives::ambient_authority())?;

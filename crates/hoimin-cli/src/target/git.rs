@@ -734,6 +734,9 @@ mod tests {
     #[tokio::test]
     async fn current_worktree_record_rejects_a_literal_backslash_path() {
         let directory = tempfile::tempdir().unwrap();
+        // Windows interprets the backslash as a separator when creating the fixture.
+        #[cfg(windows)]
+        std::fs::create_dir(directory.path().join("literal")).unwrap();
         std::fs::write(directory.path().join(r"literal\work.py"), "x = 1\n").unwrap();
         let root = Utf8PathBuf::from_path_buf(directory.path().to_path_buf()).unwrap();
 
@@ -746,6 +749,11 @@ mod tests {
         .await
         .unwrap_err();
 
-        assert!(error.to_string().contains(r"literal\work.py"), "{error}");
+        assert!(
+            error
+                .to_string()
+                .contains(r"unsupported literal backslash: literal\work.py"),
+            "{error}"
+        );
     }
 }

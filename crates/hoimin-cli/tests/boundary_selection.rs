@@ -13,7 +13,11 @@ fn python() -> PathBuf {
         .unwrap()
         .parent()
         .unwrap()
-        .join(".venv/bin/python")
+        .join(if cfg!(windows) {
+            ".venv/Scripts/python.exe"
+        } else {
+            ".venv/bin/python"
+        })
 }
 
 async fn cli(args: &[String]) -> Output {
@@ -59,8 +63,8 @@ async fn literal_selector_fixture_respects_run_overflow_and_partial_verify() {
         assert_eq!(
             plan_output.status.code(),
             Some(if limit == 1 { 4 } else { 0 }),
-            "{:?}",
-            plan_output.stderr
+            "{}",
+            String::from_utf8_lossy(&plan_output.stderr)
         );
         let plan: Value = serde_json::from_slice(&plan_output.stdout).unwrap();
         assert_eq!(plan["truncated"], limit == 1);
@@ -89,8 +93,8 @@ async fn literal_selector_fixture_respects_run_overflow_and_partial_verify() {
         assert_eq!(
             run_output.status.code(),
             Some(if limit == 1 { 4 } else { 0 }),
-            "{:?}",
-            run_output.stderr
+            "{}",
+            String::from_utf8_lossy(&run_output.stderr)
         );
         let run: Value = serde_json::from_slice(&run_output.stdout).unwrap();
         let run_mutants = run["mutants"].as_array().unwrap();
@@ -130,8 +134,8 @@ async fn literal_selector_fixture_respects_run_overflow_and_partial_verify() {
         assert_eq!(
             verify_output.status.code(),
             Some(if limit == 1 { 4 } else { 0 }),
-            "{:?}",
-            verify_output.stderr
+            "{}",
+            String::from_utf8_lossy(&verify_output.stderr)
         );
         let verify: Value = serde_json::from_slice(&verify_output.stdout).unwrap();
         assert_eq!(
