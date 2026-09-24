@@ -420,3 +420,21 @@ The repair uses an independent branch and includes the 1.98.1 update. Its
 [implementation plan and review evidence](../plans/2026-09-24-rust-toolchain-smoke.md)
 record the original failure and subsequent checks; the earlier measurements
 in this document remain historical evidence.
+
+## 2026-09-24 amendment: Action pins and structural workflow contracts
+
+PRs #579/#580/#581 expose the same duplication in action SHA expectations.
+The workflow files own exact commit pins. Tests validate a full 40-character
+hexadecimal SHA before comparing each step's action identity independently of
+the revision. Other step fields and the artifact-only release structure remain
+exact; changes to repository identity, inputs, permissions, scripts, shells or
+environments are not hidden by reference normalization. Raw automatic/manual
+step comparisons still require matching versions where the job contract calls
+for identical steps.
+
+The combined repair updates cache to v4.3.0, checkout to v6.1.0 and setup-uv to
+v8.3.2, including canary and boundary jobs omitted from the original proposals.
+Only those dependency revisions change. The [combined implementation plan](
+../plans/2026-09-24-actions-update-contracts.md) records reviews and test results.
+These structural tests do not prove the runtime behavior of third-party code;
+the actual GitHub jobs provide that execution evidence.

@@ -61,6 +61,18 @@ gh workflow run non-linux-ci.yml --ref <REF>
 Do not dispatch it for intermediate commits. The tag-triggered release workflow
 is separate from this validation policy.
 
+## Pinned workflow actions
+
+Workflow files are the source of exact GitHub Action commit pins. Keep each
+remote action on a full 40-character SHA. Add version comments when updating
+pins so dependency tooling can identify the release. Contract tests validate
+the pin format and expected action identity,
+then check job behavior independently of the particular commit. Do not copy
+current SHAs into test expectations. Changes to permissions, inputs, commands,
+shells, environments and the artifact-only release policy still require their
+existing contract checks. See the [combined update plan and review evidence](
+superpowers/plans/2026-09-24-actions-update-contracts.md).
+
 ## Pinned Rust toolchain
 
 `rust-toolchain.toml` is the source of the exact stable Rust version used for
