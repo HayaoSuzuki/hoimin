@@ -8192,3 +8192,146 @@ fn with_suppression_makes_bare_raise_successor_reachable() {
         assert_eq!(actual.terminates.len(), 1, "possible propagation: {source}");
     }
 }
+
+#[test]
+fn evaluation_order_preserves_only_pre_binding_builtin_lookups() {
+    let cases = [
+        ("tuple target", "any, slots[any([])] = custom, 7", 0),
+        ("chained target", "any = slots[any([])] = custom", 0),
+        ("RHS walrus", "slots[any([])] = (any := custom)", 0),
+        ("destination target", "all, slots[any([])] = custom, 7", 0),
+        ("destination RHS", "slots[any([])] = (all := custom)", 0),
+        (
+            "starred source",
+            "sink(flag=any([]), *[(any := custom)])",
+            0,
+        ),
+        (
+            "starred destination",
+            "sink(flag=any([]), *[(all := custom)])",
+            0,
+        ),
+        (
+            "nested target",
+            "(any, (slots[any([])], other)) = custom, (7, 8)",
+            0,
+        ),
+        (
+            "starred target",
+            "any, *rest, slots[any([])] = custom, 1, 7",
+            0,
+        ),
+        ("list target", "[any, slots[any([])]] = custom, 7", 0),
+        (
+            "augassign RHS follows target",
+            "slots[(any := custom)] += any([])",
+            0,
+        ),
+        (
+            "augassign destination in target",
+            "slots[(all := custom)] += any([])",
+            0,
+        ),
+        ("RHS positive", "any, slots[0] = any([]), 7", 1),
+        ("chained RHS positive", "any = slots[0] = any([])", 1),
+        (
+            "ordinary assignment target follows RHS",
+            "slots[any([])] = (all := custom)",
+            0,
+        ),
+        (
+            "augassign target precedes RHS",
+            "slots[any([])] += (all := custom)",
+            1,
+        ),
+        ("callable precedes arguments", "any([(all := custom)])", 1),
+        (
+            "keyword follows positional positive",
+            "sink(any([]), flag=(all := custom))",
+            1,
+        ),
+        (
+            "try partial stores",
+            "try:\n    any, slots[any([])] = custom, 7\nexcept Exception:\n    pass\nobserved = any([])",
+            0,
+        ),
+        (
+            "try failure before store keeps RHS",
+            "try:\n    any, slots[0] = any([]), 7\nexcept Exception:\n    pass",
+            1,
+        ),
+    ];
+    for (label, body, expected) in cases {
+        let source = format!(
+            "def custom(values): return 'custom'\ndef sink(*args, **kwargs): return kwargs\nslots = {{False: 0}}\n{body}\n"
+        );
+        let output = analyze(&source);
+        let candidates = output
+            .candidates
+            .iter()
+            .filter(|candidate| candidate.operator == "collection_any_all")
+            .collect::<Vec<_>>();
+        assert_eq!(candidates.len(), expected, "{label}: {candidates:#?}");
+    }
+}
+
+#[test]
+fn evaluation_order_applies_to_other_builtin_pairs_and_class_suites() {
+    for (operator, source, destination) in [
+        ("collection_list_tuple", "list", "tuple"),
+        ("structure_sorted_reversed", "sorted", "reversed"),
+    ] {
+        let positive = analyze(&format!("{destination}, other = {source}([]), 7\n"));
+        assert_eq!(
+            positive
+                .candidates
+                .iter()
+                .filter(|candidate| candidate.operator == operator && candidate.original == source)
+                .count(),
+            1
+        );
+        for binding in [source, destination] {
+            for body in [
+                format!("{binding}, slots[{source}([])] = custom, 7"),
+                format!("slots[{source}([])] = ({binding} := custom)"),
+                format!("sink(flag={source}([]), *[({binding} := custom)])"),
+            ] {
+                for indent in [false, true] {
+                    let source = if indent {
+                        format!("class Example:\n    {body}\n")
+                    } else {
+                        format!("{body}\n")
+                    };
+                    let output = analyze(&source);
+                    assert!(
+                        output
+                            .candidates
+                            .iter()
+                            .all(|candidate| candidate.operator != operator
+                                || !matches!(candidate.original.as_str(), "list" | "sorted")),
+                        "{source}: {:#?}",
+                        output.candidates
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn evaluation_order_retains_lookups_before_later_deletions() {
+    for body in [
+        "del slots[any([])], all",
+        "del (slots[any([])], all)",
+        "def any(value=any([])):\n    pass",
+        "class any:\n    value = any([])",
+    ] {
+        let output = analyze(body);
+        let candidates = output
+            .candidates
+            .iter()
+            .filter(|candidate| candidate.operator == "collection_any_all")
+            .collect::<Vec<_>>();
+        assert_eq!(candidates.len(), 1, "{body}: {candidates:#?}");
+    }
+}

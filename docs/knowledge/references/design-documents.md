@@ -10,6 +10,12 @@ sources:
   revision: 282e941e4c1a5a23303d30beca881d7bbfde7763
   working_tree: clean
   sha256: 7ff74c9749274839e3cbe0ceb737544de0dd3b5fb5eef90aae17e3ff461269be
+
+- id: issue-560-design
+  resource: ../../superpowers/specs/2026-09-24-issue-560-evaluation-order.md
+  revision: ffb65c051014f3d9601df2deb0bfeb5ff55c7c38
+  working_tree: clean
+  sha256: fec8835b826fb48eee6f58471f0e0d679cb0dcefe0a574b4bd1476051d99546e
 - id: issue-549-design
   resource: ../../superpowers/specs/2026-09-15-issue-549-slice-tuple-design.md
   revision: f11013542ccd735ab9741b5079c0b39a517df256
@@ -1450,3 +1456,11 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 | Issue 556: import facts after context-manager suppression | [設計書](../../superpowers/specs/2026-09-24-issue-556-with-suppression.md) [^issue-556-design] |
 
 [^issue-556-design]: [Issue 556: import facts after context-manager suppression](../../superpowers/specs/2026-09-24-issue-556-with-suppression.md)。
+
+# Issue #560
+
+| 原文の先頭見出し | 原文 |
+| --- | --- |
+| Issue 560: builtin resolution in evaluation order | [原文](../../superpowers/specs/2026-09-24-issue-560-evaluation-order.md) [^issue-560-design] |
+
+[^issue-560-design]: [Issue 560: builtin resolution in evaluation order](../../superpowers/specs/2026-09-24-issue-560-evaluation-order.md)。

@@ -724,7 +724,7 @@ enum NameScopeKind {
     Module,
     Function,
     Class,
-    Comprehension { outward_effect_after: usize },
+    Comprehension,
     TypeParameters,
 }
 
@@ -1012,6 +1012,7 @@ impl NameScope {
 
 struct NameOccurrence {
     scope: ScopeId,
+    event: usize,
     temporarily_shadowed: bool,
 }
 
@@ -1041,7 +1042,7 @@ impl NameResolutionIndex {
         if occurrence.temporarily_shadowed {
             return NameResolution::Shadowed;
         }
-        let resolution = self.resolve_scope(occurrence.scope, name, true, offset);
+        let resolution = self.resolve_scope(occurrence.scope, name, true, occurrence.event);
         if resolution == NameResolution::DefinitelyBuiltin
             && self
                 .back_edge_bindings
@@ -1096,7 +1097,7 @@ impl NameResolutionIndex {
                     parent(false)
                 }
             }
-            NameScopeKind::Function | NameScopeKind::Comprehension { .. } => {
+            NameScopeKind::Function | NameScopeKind::Comprehension => {
                 if scope.locals.contains(name) {
                     NameResolution::Shadowed
                 } else if scope.wildcard {
@@ -1122,13 +1123,13 @@ impl NameResolutionIndex {
         scope_id: ScopeId,
         name: &str,
         direct: bool,
-        offset: usize,
+        event: usize,
     ) -> NameResolution {
         let scope = &self.scopes[scope_id.0];
         // Descendant lexical lookup skips the whole class scope, including
         // directives, while retaining enclosing function/type-parameter bindings.
         if scope.kind == NameScopeKind::Class && !direct {
-            return self.resolve_parent(scope.parent, name, offset);
+            return self.resolve_parent(scope.parent, name, event);
         }
         if scope.kind != NameScopeKind::Module && scope.globals.contains(name) {
             return self.resolve_module(name);
@@ -1139,20 +1140,20 @@ impl NameResolutionIndex {
         match scope.kind {
             NameScopeKind::Module => {
                 if direct {
-                    Self::resolve_ordered_at(scope, name, offset)
+                    Self::resolve_ordered_at(scope, name, event)
                 } else if scope.wildcard || scope.possible_bindings.contains(name) {
                     NameResolution::Unknown
                 } else {
                     NameResolution::DefinitelyBuiltin
                 }
             }
-            NameScopeKind::Function | NameScopeKind::Comprehension { .. } => {
+            NameScopeKind::Function | NameScopeKind::Comprehension => {
                 if scope.locals.contains(name) {
                     NameResolution::Shadowed
                 } else if scope.wildcard {
                     NameResolution::Unknown
                 } else {
-                    self.resolve_parent(scope.parent, name, offset)
+                    self.resolve_parent(scope.parent, name, event)
                 }
             }
             NameScopeKind::TypeParameters => {
@@ -1164,35 +1165,35 @@ impl NameResolutionIndex {
                     scope
                         .parent
                         .map_or(NameResolution::DefinitelyBuiltin, |parent| {
-                            self.resolve_scope(parent, name, true, offset)
+                            self.resolve_scope(parent, name, true, event)
                         })
                 } else {
                     // Function/comprehension bodies capture type parameters, but do
                     // not acquire annotation-scope access to ordinary class locals.
-                    self.resolve_parent(scope.parent, name, offset)
+                    self.resolve_parent(scope.parent, name, event)
                 }
             }
-            NameScopeKind::Class => match Self::resolve_ordered_at(scope, name, offset) {
+            NameScopeKind::Class => match Self::resolve_ordered_at(scope, name, event) {
                 NameResolution::DefinitelyBuiltin => {
-                    self.resolve_class_parent(scope.parent, name, offset)
+                    self.resolve_class_parent(scope.parent, name, event)
                 }
                 resolution => resolution,
             },
         }
     }
 
-    fn resolve_ordered_at(scope: &NameScope, name: &str, offset: usize) -> NameResolution {
+    fn resolve_ordered_at(scope: &NameScope, name: &str, event: usize) -> NameResolution {
         scope
             .ordered
             .get(name)
             .map_or(NameResolution::DefinitelyBuiltin, |history| {
-                history.resolve_at(offset)
+                history.resolve_at(event)
             })
     }
 
-    fn resolve_parent(&self, parent: Option<ScopeId>, name: &str, offset: usize) -> NameResolution {
+    fn resolve_parent(&self, parent: Option<ScopeId>, name: &str, event: usize) -> NameResolution {
         parent.map_or(NameResolution::DefinitelyBuiltin, |parent| {
-            self.resolve_scope(parent, name, false, offset)
+            self.resolve_scope(parent, name, false, event)
         })
     }
 
@@ -1200,13 +1201,13 @@ impl NameResolutionIndex {
         &self,
         mut parent: Option<ScopeId>,
         name: &str,
-        offset: usize,
+        event: usize,
     ) -> NameResolution {
         while let Some(scope_id) = parent {
             let scope = &self.scopes[scope_id.0];
             match scope.kind {
                 NameScopeKind::Module => {
-                    return self.resolve_scope(scope_id, name, true, offset);
+                    return self.resolve_scope(scope_id, name, true, event);
                 }
                 NameScopeKind::Class => parent = scope.parent,
                 NameScopeKind::TypeParameters => {
@@ -1215,8 +1216,8 @@ impl NameResolutionIndex {
                     }
                     parent = scope.parent;
                 }
-                NameScopeKind::Function | NameScopeKind::Comprehension { .. } => {
-                    return self.resolve_scope(scope_id, name, false, offset);
+                NameScopeKind::Function | NameScopeKind::Comprehension => {
+                    return self.resolve_scope(scope_id, name, false, event);
                 }
             }
         }
@@ -1243,7 +1244,7 @@ impl NameResolutionIndex {
             let scope = &self.scopes[scope_id.0];
             if matches!(
                 scope.kind,
-                NameScopeKind::Function | NameScopeKind::Comprehension { .. }
+                NameScopeKind::Function | NameScopeKind::Comprehension
             ) && scope.locals.contains(name)
             {
                 return NameResolution::Shadowed;
@@ -1262,6 +1263,7 @@ struct NameResolutionBuilder {
     index: NameResolutionIndex,
     current: ScopeId,
     conditional_depth: usize,
+    event: usize,
     temporary_shadowed: Vec<(ScopeId, HashSet<String>)>,
     loop_back_edges: Vec<LoopBackEdgeContext>,
 }
@@ -1282,9 +1284,16 @@ impl NameResolutionBuilder {
             },
             current: ScopeId(0),
             conditional_depth: 0,
+            event: 0,
             temporary_shadowed: Vec::new(),
             loop_back_edges: Vec::new(),
         }
+    }
+
+    // Source offsets identify sites; this clock orders their evaluation and stores.
+    fn next_event(&mut self) -> usize {
+        self.event += 1;
+        self.event
     }
 
     fn new_scope(&mut self, kind: NameScopeKind) -> ScopeId {
@@ -1371,7 +1380,7 @@ impl NameResolutionBuilder {
             match scope.kind {
                 NameScopeKind::Module => return scope_id == owner,
                 NameScopeKind::Class | NameScopeKind::TypeParameters => parent = scope.parent,
-                NameScopeKind::Function | NameScopeKind::Comprehension { .. } => return false,
+                NameScopeKind::Function | NameScopeKind::Comprehension => return false,
             }
         }
         false
@@ -1412,42 +1421,71 @@ impl NameResolutionBuilder {
         }
     }
 
-    fn record_target(&mut self, target: &Expr, offset: usize) {
+    fn record_target(&mut self, target: &Expr) {
         let mut names = Vec::new();
         Self::target_names(target, &mut names);
         for name in names {
-            self.record_binding(&name, offset);
+            self.record_binding(&name);
         }
     }
 
-    fn record_named_target(&mut self, target: &Expr, offset: usize) {
+    fn visit_assignment_target(&mut self, target: &Expr) {
+        match target {
+            Expr::Name(name) => self.record_binding(name.id.as_str()),
+            Expr::Tuple(tuple) => {
+                for element in &tuple.elts {
+                    self.visit_assignment_target(element);
+                }
+            }
+            Expr::List(list) => {
+                for element in &list.elts {
+                    self.visit_assignment_target(element);
+                }
+            }
+            Expr::Starred(starred) => self.visit_assignment_target(&starred.value),
+            _ => self.visit_expr(target),
+        }
+    }
+
+    fn visit_delete_target(&mut self, target: &Expr) {
+        match target {
+            Expr::Name(name) => self.record_unknown(name.id.as_str()),
+            Expr::Tuple(tuple) => {
+                for element in &tuple.elts {
+                    self.visit_delete_target(element);
+                }
+            }
+            Expr::List(list) => {
+                for element in &list.elts {
+                    self.visit_delete_target(element);
+                }
+            }
+            Expr::Starred(starred) => self.visit_delete_target(&starred.value),
+            _ => self.visit_expr(target),
+        }
+    }
+
+    fn record_named_target(&mut self, target: &Expr) {
         let mut destination = self.current;
-        let mut effect_after = offset;
-        while let NameScopeKind::Comprehension {
-            outward_effect_after,
-        } = self.index.scopes[destination.0].kind
-        {
-            effect_after = effect_after.max(outward_effect_after);
+        while self.index.scopes[destination.0].kind == NameScopeKind::Comprehension {
             destination = self.index.scopes[destination.0]
                 .parent
                 .expect("comprehensions have a containing scope");
         }
-        // Publish outward writes only after the eager first iterable. Nested
-        // bodies use the outermost completion boundary. Still record static
-        // locals and loop backedges immediately.
-        // Comprehension bodies can run zero times, or later for generators.
-        // Function locals are still static; record_binding handles that and
-        // the containing scope's global/nonlocal declarations.
+        // The first iterable was already evaluated before entering this scope.
+        // Bodies can run zero times or later for generators, so outward writes
+        // remain conditional; static locals and backedges are recorded as usual.
         let conditional = destination != self.current;
         self.conditional_depth += usize::from(conditional);
-        self.in_scope(destination, |this| this.record_target(target, effect_after));
+        self.in_scope(destination, |this| this.record_target(target));
         self.conditional_depth -= usize::from(conditional);
     }
 
-    fn record_binding(&mut self, name: &str, offset: usize) {
+    fn record_binding(&mut self, name: &str) {
         if !tracked_resolution_name(name) {
             return;
         }
+        let event = self.next_event();
         let globals = self.index.scopes[self.current.0].globals.contains(name);
         let nonlocals = self.index.scopes[self.current.0].nonlocals.contains(name);
         if globals {
@@ -1459,7 +1497,7 @@ impl NameResolutionBuilder {
                 .ordered
                 .entry(name.to_owned())
                 .or_default()
-                .push((offset, BindingEffect::Unknown));
+                .push((event, BindingEffect::Unknown));
             return;
         }
         if nonlocals {
@@ -1470,13 +1508,13 @@ impl NameResolutionBuilder {
         scope.possible_bindings.insert(name.to_owned());
         match scope.kind {
             NameScopeKind::Function
-            | NameScopeKind::Comprehension { .. }
+            | NameScopeKind::Comprehension
             | NameScopeKind::TypeParameters => {
                 scope.locals.insert(name.to_owned());
             }
             NameScopeKind::Module | NameScopeKind::Class => {
                 scope.ordered.entry(name.to_owned()).or_default().push((
-                    offset,
+                    event,
                     if self.conditional_depth == 0 {
                         BindingEffect::Bind
                     } else {
@@ -1487,10 +1525,11 @@ impl NameResolutionBuilder {
         }
     }
 
-    fn record_unknown(&mut self, name: &str, offset: usize) {
+    fn record_unknown(&mut self, name: &str) {
         if !tracked_resolution_name(name) {
             return;
         }
+        let event = self.next_event();
         self.record_loop_back_edge_binding(self.current, name);
         let scope = &mut self.index.scopes[self.current.0];
         scope.possible_bindings.insert(name.to_owned());
@@ -1499,13 +1538,13 @@ impl NameResolutionBuilder {
                 .ordered
                 .entry(name.to_owned())
                 .or_default()
-                .push((offset, BindingEffect::Unknown));
+                .push((event, BindingEffect::Unknown));
         } else {
             scope.locals.insert(name.to_owned());
         }
     }
 
-    fn record_alias(&mut self, alias: &ruff_python_ast::Alias, from_import: bool, offset: usize) {
+    fn record_alias(&mut self, alias: &ruff_python_ast::Alias, from_import: bool) {
         let local = alias.asname.as_ref().map_or_else(
             || {
                 if from_import {
@@ -1517,6 +1556,7 @@ impl NameResolutionBuilder {
             ruff_python_ast::Identifier::as_str,
         );
         if local == "*" {
+            let event = self.next_event();
             for name in MUTABLE_BUILTINS.iter().chain(EXCEPTION_NAMES) {
                 self.record_loop_back_edge_binding(self.current, name);
             }
@@ -1529,22 +1569,23 @@ impl NameResolutionBuilder {
                         .ordered
                         .entry((*name).to_owned())
                         .or_default()
-                        .push((offset, BindingEffect::Unknown));
+                        .push((event, BindingEffect::Unknown));
                 }
             }
         } else {
-            self.record_binding(local, offset);
+            self.record_binding(local);
         }
     }
 
-    fn record_dynamic_uncertainty(&mut self, offset: usize) {
-        self.record_scope_wildcard(self.current, offset);
+    fn record_dynamic_uncertainty(&mut self) {
+        self.record_scope_wildcard(self.current);
         if self.current != ScopeId(0) {
-            self.record_scope_wildcard(ScopeId(0), offset);
+            self.record_scope_wildcard(ScopeId(0));
         }
     }
 
-    fn record_scope_wildcard(&mut self, scope_id: ScopeId, offset: usize) {
+    fn record_scope_wildcard(&mut self, scope_id: ScopeId) {
+        let event = self.next_event();
         for name in MUTABLE_BUILTINS.iter().chain(EXCEPTION_NAMES) {
             self.record_loop_back_edge_binding(scope_id, name);
         }
@@ -1557,7 +1598,7 @@ impl NameResolutionBuilder {
                     .ordered
                     .entry((*name).to_owned())
                     .or_default()
-                    .push((offset, BindingEffect::Unknown));
+                    .push((event, BindingEffect::Unknown));
             }
         }
     }
@@ -1577,10 +1618,12 @@ impl NameResolutionBuilder {
     }
 
     fn record_resolution_site(&mut self, offset: usize, temporarily_shadowed: bool) {
+        let event = self.next_event();
         self.index.occurrences.insert(
             offset,
             NameOccurrence {
                 scope: self.current,
+                event,
                 temporarily_shadowed,
             },
         );
@@ -1599,7 +1642,6 @@ impl NameResolutionBuilder {
     fn visit_comprehension_expression(
         &mut self,
         generators: &[ruff_python_ast::Comprehension],
-        outward_effect_after: usize,
         result: impl FnOnce(&mut Self),
     ) {
         let Some((first, rest)) = generators.split_first() else {
@@ -1607,9 +1649,7 @@ impl NameResolutionBuilder {
             return;
         };
         self.visit_expr(&first.iter);
-        let scope = self.new_scope(NameScopeKind::Comprehension {
-            outward_effect_after,
-        });
+        let scope = self.new_scope(NameScopeKind::Comprehension);
         for generator in generators {
             let mut names = Vec::new();
             Self::target_names(&generator.target, &mut names);
@@ -1647,10 +1687,8 @@ impl<'ast> Visitor<'ast> for NameResolutionBuilder {
         reason = "the exhaustive statement-binding pass keeps evaluation order and scope entry visible in one match"
     )]
     fn visit_stmt(&mut self, statement: &'ast Stmt) {
-        let end = usize::from(statement.range().end());
         match statement {
             Stmt::FunctionDef(definition) => {
-                self.record_binding(definition.name.as_str(), end);
                 for decorator in &definition.decorator_list {
                     self.visit_decorator(decorator);
                 }
@@ -1674,10 +1712,10 @@ impl<'ast> Visitor<'ast> for NameResolutionBuilder {
                     }
                     this.in_scope(scope, |this| this.visit_body(&definition.body));
                 });
+                self.record_binding(definition.name.as_str());
                 return;
             }
             Stmt::ClassDef(definition) => {
-                self.record_binding(definition.name.as_str(), end);
                 for decorator in &definition.decorator_list {
                     self.visit_decorator(decorator);
                 }
@@ -1688,40 +1726,53 @@ impl<'ast> Visitor<'ast> for NameResolutionBuilder {
                     let scope = this.new_scope(NameScopeKind::Class);
                     this.in_scope(scope, |this| this.visit_body(&definition.body));
                 });
+                self.record_binding(definition.name.as_str());
                 return;
             }
             Stmt::Import(import) => {
                 for alias in &import.names {
-                    self.record_alias(alias, false, end);
+                    self.record_alias(alias, false);
                 }
             }
             Stmt::ImportFrom(import) => {
                 for alias in &import.names {
-                    self.record_alias(alias, true, end);
+                    self.record_alias(alias, true);
                 }
             }
             Stmt::Assign(assign) => {
+                self.visit_expr(&assign.value);
                 for target in &assign.targets {
-                    self.record_target(target, end);
+                    self.visit_assignment_target(target);
                 }
+                return;
             }
-            Stmt::AugAssign(assign) => self.record_target(&assign.target, end),
-            Stmt::AnnAssign(assign) => self.record_target(&assign.target, end),
+            Stmt::AugAssign(assign) => {
+                // Python evaluates the target only once, before the RHS.
+                self.visit_expr(&assign.target);
+                self.visit_expr(&assign.value);
+                self.record_target(&assign.target);
+                return;
+            }
+            Stmt::AnnAssign(assign) => {
+                if let Some(value) = &assign.value {
+                    self.visit_expr(value);
+                }
+                self.visit_assignment_target(&assign.target);
+                self.visit_annotation(&assign.annotation);
+                return;
+            }
             Stmt::TypeAlias(alias) => {
-                self.record_target(&alias.name, end);
+                self.record_target(&alias.name);
                 self.in_type_parameters(alias.type_params.as_deref(), |this| {
                     this.visit_annotation(&alias.value);
                 });
                 return;
             }
             Stmt::Delete(delete) => {
-                let mut names = Vec::new();
                 for target in &delete.targets {
-                    Self::target_names(target, &mut names);
+                    self.visit_delete_target(target);
                 }
-                for name in names {
-                    self.record_unknown(&name, end);
-                }
+                return;
             }
             Stmt::Global(global) => {
                 for name in &global.names {
@@ -1745,11 +1796,7 @@ impl<'ast> Visitor<'ast> for NameResolutionBuilder {
                 self.visit_expr(&statement_for.iter);
                 self.conditional_depth += 1;
                 self.in_loop_back_edge(|this| {
-                    this.record_target(
-                        &statement_for.target,
-                        usize::from(statement_for.iter.range().end()),
-                    );
-                    this.visit_expr(&statement_for.target);
+                    this.visit_assignment_target(&statement_for.target);
                     this.visit_body(&statement_for.body);
                 });
                 self.visit_body(&statement_for.orelse);
@@ -1761,8 +1808,7 @@ impl<'ast> Visitor<'ast> for NameResolutionBuilder {
                 for item in &statement_with.items {
                     self.visit_expr(&item.context_expr);
                     if let Some(target) = &item.optional_vars {
-                        self.record_target(target, usize::from(item.context_expr.range().end()));
-                        self.visit_expr(target);
+                        self.visit_assignment_target(target);
                     }
                 }
                 self.visit_body(&statement_with.body);
@@ -1791,20 +1837,21 @@ impl<'ast> Visitor<'ast> for NameResolutionBuilder {
     }
 
     fn visit_expr(&mut self, expression: &'ast Expr) {
-        if let Expr::Call(call) = expression
-            && matches!(
-                call.func.as_ref(),
-                Expr::Name(name)
-                    if matches!(name.id.as_str(), "exec" | "globals" | "locals" | "vars")
-            )
-        {
-            self.record_dynamic_uncertainty(usize::from(call.range.end()));
-        }
         match expression {
             Expr::Name(name) => self.record_occurrence(name),
+            Expr::Call(call) => {
+                // Ruff visits the callable, positional/starred args, then keywords.
+                visitor::walk_expr(self, expression);
+                if matches!(call.func.as_ref(), Expr::Name(name)
+                    if matches!(name.id.as_str(), "exec" | "globals" | "locals" | "vars"))
+                {
+                    self.record_dynamic_uncertainty();
+                }
+                return;
+            }
             Expr::Named(named) => {
                 self.visit_expr(&named.value);
-                self.record_named_target(&named.target, usize::from(named.range.end()));
+                self.record_named_target(&named.target);
                 self.visit_expr(&named.target);
                 return;
             }
@@ -1820,44 +1867,28 @@ impl<'ast> Visitor<'ast> for NameResolutionBuilder {
                 return;
             }
             Expr::ListComp(comprehension) => {
-                self.visit_comprehension_expression(
-                    &comprehension.generators,
-                    usize::from(comprehension.range.end()),
-                    |this| {
-                        this.visit_expr(&comprehension.elt);
-                    },
-                );
+                self.visit_comprehension_expression(&comprehension.generators, |this| {
+                    this.visit_expr(&comprehension.elt);
+                });
                 return;
             }
             Expr::SetComp(comprehension) => {
-                self.visit_comprehension_expression(
-                    &comprehension.generators,
-                    usize::from(comprehension.range.end()),
-                    |this| {
-                        this.visit_expr(&comprehension.elt);
-                    },
-                );
+                self.visit_comprehension_expression(&comprehension.generators, |this| {
+                    this.visit_expr(&comprehension.elt);
+                });
                 return;
             }
             Expr::DictComp(comprehension) => {
-                self.visit_comprehension_expression(
-                    &comprehension.generators,
-                    usize::from(comprehension.range.end()),
-                    |this| {
-                        this.visit_expr(&comprehension.key);
-                        this.visit_expr(&comprehension.value);
-                    },
-                );
+                self.visit_comprehension_expression(&comprehension.generators, |this| {
+                    this.visit_expr(&comprehension.key);
+                    this.visit_expr(&comprehension.value);
+                });
                 return;
             }
             Expr::Generator(comprehension) => {
-                self.visit_comprehension_expression(
-                    &comprehension.generators,
-                    usize::from(comprehension.range.end()),
-                    |this| {
-                        this.visit_expr(&comprehension.elt);
-                    },
-                );
+                self.visit_comprehension_expression(&comprehension.generators, |this| {
+                    this.visit_expr(&comprehension.elt);
+                });
                 return;
             }
             _ => {}
@@ -1877,10 +1908,7 @@ impl<'ast> Visitor<'ast> for NameResolutionBuilder {
         };
         if tracked_resolution_name(name.as_str()) {
             let kind = self.index.scopes[self.current.0].kind;
-            if matches!(
-                kind,
-                NameScopeKind::Function | NameScopeKind::Comprehension { .. }
-            ) {
+            if matches!(kind, NameScopeKind::Function | NameScopeKind::Comprehension) {
                 self.add_local(self.current, name.as_str());
             } else {
                 self.index.scopes[self.current.0]
@@ -1897,26 +1925,25 @@ impl<'ast> Visitor<'ast> for NameResolutionBuilder {
     }
 
     fn visit_pattern(&mut self, pattern: &'ast Pattern) {
-        let offset = usize::from(pattern.range().end());
+        visitor::walk_pattern(self, pattern);
         match pattern {
             Pattern::MatchMapping(mapping) => {
                 if let Some(rest) = &mapping.rest {
-                    self.record_binding(rest.as_str(), offset);
+                    self.record_binding(rest.as_str());
                 }
             }
             Pattern::MatchStar(star) => {
                 if let Some(name) = &star.name {
-                    self.record_binding(name.as_str(), offset);
+                    self.record_binding(name.as_str());
                 }
             }
             Pattern::MatchAs(as_pattern) => {
                 if let Some(name) = &as_pattern.name {
-                    self.record_binding(name.as_str(), offset);
+                    self.record_binding(name.as_str());
                 }
             }
             _ => {}
         }
-        visitor::walk_pattern(self, pattern);
     }
 }
 

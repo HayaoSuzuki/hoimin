@@ -10,6 +10,22 @@ sources:
   revision: 282e941e4c1a5a23303d30beca881d7bbfde7763
   working_tree: clean
   sha256: 7ff74c9749274839e3cbe0ceb737544de0dd3b5fb5eef90aae17e3ff461269be
+
+- id: issue-560-design
+  resource: ../../superpowers/specs/2026-09-24-issue-560-evaluation-order.md
+  revision: ffb65c051014f3d9601df2deb0bfeb5ff55c7c38
+  working_tree: clean
+  sha256: fec8835b826fb48eee6f58471f0e0d679cb0dcefe0a574b4bd1476051d99546e
+- id: issue-560-code
+  resource: ../../../crates/hoimin-cli/src/analyzer/rust.rs
+  revision: ffb65c051014f3d9601df2deb0bfeb5ff55c7c38
+  working_tree: modified
+  sha256: 5cb3f6e12b1feaea31fb367e2c6fae940a9794ce22303e47bae2103f0475e5c9
+- id: issue-560-tests
+  resource: ../../../crates/hoimin-cli/tests/builtin_evaluation_order.rs
+  revision: ffb65c051014f3d9601df2deb0bfeb5ff55c7c38
+  working_tree: untracked
+  sha256: 9775e388b7c951d7bcacea8a228e24af94d0864e240310f6fa5c377f6bc5b5b1
 - id: nullable-gates-audit
   resource: ../../audits/2026-09-15-nullable-gates/README.md
   working_tree: untracked
@@ -312,7 +328,7 @@ ASTの深さ検査より前に、Ruffによる構文解析がスタックを使�
 
 # 名前束縛履歴の照会（Issue #482）
 
-module/classの名前束縛eventはvisitorの挿入順を意味順として保持する。各名前の履歴をoffset範囲と累積解決変換を持つ木へ構築し、通常のsource順履歴では参照位置までの状態を対数node訪問で求める。非単調offsetと同一offsetでも左右を挿入順に合成し、従来の全走査foldと一致させる。[^issue-482]
+Issue #482の設計では、module/classの束縛履歴をソースoffsetで索引化し、visitorの挿入順に解決変換を合成した。Issue #560では、この照会キーを評価イベント番号へ変更する。累積した束縛状態の二分探索と、従来の履歴foldとの一致を確認するテストは維持する。[^issue-482][^issue-560-code]
 
 [^issue-482]: [Issue #482: Name history index](../../superpowers/specs/2026-09-14-issue-482-name-history-index-design.md)。
 
@@ -441,3 +457,13 @@ Issue #556の修正では、通常のwithとasync withの本体で例外状態�
 2026-09-24の#559修正では、集合抽象型の対応をtyping.AbstractSetとcollections.abc.Setへ訂正した。module importと直接importの両方で別名と双方向の候補を扱い、置換先の修飾名には参照元モジュールのメンバー名を使う。typing.Setはこの抽象型の組合せへ追加しない。#558の遅延評価は別Issueとして扱う。[^issue-559-repair]
 
 [^issue-559-repair]: [修正設計](../../superpowers/specs/2026-09-24-issue-559-design.md)。
+
+## 組込み名の評価イベント（Issue #560）
+
+名前の出現位置はソースのバイトoffsetで識別し、束縛状態は別に記録した評価イベント番号で照会する。代入は右辺を評価してからtargetへ左から順に格納し、入れ子のtargetでも格納の間に後続式を評価する。呼出しは位置引数・starred引数をkeyword引数より先に評価する。sourceまたはdestinationの綴りがその時点で束縛済みなら、組込み名の置換候補を生成しない。[^issue-560-design][^issue-560-code]
+
+拡張代入はtargetを一度評価してから右辺を評価するため、通常の代入とは順序が異なる。右辺で格納前に参照する組込み名の候補と、拡張代入のtarget内で先に参照する候補は保持する。例外で後続targetの格納が停止し得る場合は、既存の条件付き束縛を使って参照先を保守的に判定する。公開plan/runテストでは、CPythonで元入力の値を確認し、候補数・spanと誤ったkilled計上の抑制を照合する。任意の例外到達経路を判定する保証は含まない。[^issue-560-code][^issue-560-tests]
+
+[^issue-560-design]: [Issue 560: builtin resolution in evaluation order](../../superpowers/specs/2026-09-24-issue-560-evaluation-order.md)。
+[^issue-560-code]: [NameResolutionBuilderの実装](../../../crates/hoimin-cli/src/analyzer/rust.rs)。
+[^issue-560-tests]: [公開plan/runの評価順序テスト](../../../crates/hoimin-cli/tests/builtin_evaluation_order.rs)。

@@ -5,6 +5,16 @@ description: 5e631efのbuiltin解決における文字位置と評価順序の�
 status: draft
 catalog_revision: 5e631ef
 sources:
+  - id: issue-560-review
+    resource: ../../superpowers/reports/2026-09-24-issue-560-review.md
+    revision: ffb65c051014f3d9601df2deb0bfeb5ff55c7c38
+    working_tree: modified
+    sha256: a96d2f42bd974491c68dfa0bf9bee040b6c43725ad70ec515536ebc412dbb146
+  - id: issue-560-tests
+    resource: ../../../crates/hoimin-cli/tests/builtin_evaluation_order.rs
+    revision: ffb65c051014f3d9601df2deb0bfeb5ff55c7c38
+    working_tree: untracked
+    sha256: 9775e388b7c951d7bcacea8a228e24af94d0864e240310f6fa5c377f6bc5b5b1
   - id: report
     resource: ../../audits/2026-09-15-evaluation-order/README.md
     working_tree: untracked
@@ -13,7 +23,7 @@ sources:
     working_tree: untracked
 ---
 
-# 確認した問題
+# 2026-09-15に確認した問題
 
 多重代入の後続targetやstarred引数を評価するとき、既に再代入された名前を組込みと誤認する問題を[#560](https://github.com/tokyogas-tech/hoimin/issues/560)に起票した。名前解決がソースoffsetを評価時点として扱うことが原因である。sourceとdestination両方に影響する。[^report]
 
@@ -27,7 +37,16 @@ Lean生成7入力のstrict照合はdebug/releaseとも2 match / 5 mismatch、実
 
 # 再確認の契機
 
-NameResolutionBuilderの束縛記録やresolve_ordered_at、method replacement helperを変更するときに正例・負例と計測を再実行する。性能修正では、未選択の親callの子にある選択済み演算子の探索を維持する。修正後の正式CIへの対応付けは未実施である。
+NameResolutionBuilderの束縛記録やresolve_ordered_at、method replacement helperを変更するときに正例・負例と計測を再実行する。性能修正では、未選択の親callの子にある選択済み演算子の探索を維持する。未選択methodの確保に関する修正後の正式CIへの対応付けは、この文書では確認していない。
 
 [^report]: [追加監査と再現手順](../../audits/2026-09-15-evaluation-order/README.md)。
 [^model]: [OrderModel.lean](../../audits/2026-09-15-evaluation-order/OrderModel.lean)。
+
+# Issue #560の修正と2026-09-24の検証
+
+名前の出現位置と評価イベント番号を分離し、右辺の評価、targetへの逐次格納、位置引数・starred引数からkeyword引数への評価順序で組込み名を照会する実装へ変更した。先行する右辺の参照と拡張代入のtarget内の参照は保持する。設計・計画・実装・テストをそれぞれ3回自己レビューし、削除対象にも逐次評価が必要であることを追加確認した。[^issue-560-review]
+
+公開plan/runの2テストは修正前の実装で失敗し、修正後に成功した。公開planの入力には、先行targetの格納後に入れ子の展開が失敗する例と、最初の格納前に失敗する例を含む。後者は到達経路を精密に判定せず、候補を保守的に抑制する。これらはRust・CPythonの回帰検証であり、上記のLeanモデルを使った全実装の証明や、#561の確保量の再計測ではない。[^issue-560-tests][^issue-560-review]
+
+[^issue-560-review]: [Issue 560 review log](../../superpowers/reports/2026-09-24-issue-560-review.md)。
+[^issue-560-tests]: [公開plan/runの評価順序テスト](../../../crates/hoimin-cli/tests/builtin_evaluation_order.rs)。
