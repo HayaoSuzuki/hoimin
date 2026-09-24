@@ -7,10 +7,12 @@ allows Any, object, TypeVar, strings, Annotated, Callable, Literal, and Protocol
 
 ## Design
 
-Add element-wise recursion for Tuple in `contains_disallowed_annotation`, using
+Add element-wise recursion for Tuple and List, and recurse through Starred in `contains_disallowed_annotation`, using
 `any` to reject the enclosing annotation if any element is disallowed. Preserve
 existing recursion through subscripts and unions, alias resolution, and leaf
-rules. An all-clean tuple remains eligible. This gate applies to nullable add,
+rules. An all-clean tuple remains eligible. CPython 3.14 evaluates `dict[*(str, Any)]` and
+`dict[*[str, Any]]` as ordinary dictionary type arguments, so unpacking cannot
+bypass the gate. List-valued arguments also retain recursive descendant checks. This gate applies to nullable add,
 nullable remove, and all five collection/iterable operators through
 `annotation_replacements`; all seven operators need positive and negative checks.
 

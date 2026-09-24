@@ -42,7 +42,8 @@ analyzer/nullable-audit/design-index OKF pages.
   `cargo test -p hoimin-cli --test lean_nullable_gate_oracle` to observe RED.
 - [ ] Add the tuple branch:
   `Expr::Tuple(tuple) => tuple.elts.iter().any(|item|
-  contains_disallowed_annotation(item, imports))`.
+  contains_disallowed_annotation(item, imports))`; use the same rule for List
+  elements and recurse through `Starred.value`.
 - [ ] Rerun the focused tests to GREEN; update developer and OKF contracts.
 - [ ] Perform three separate implementation reviews and three test reviews;
   retain concrete checks/findings in `docs/reviews/2026-09-24-issue-565.md`.
