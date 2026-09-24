@@ -44,24 +44,29 @@ EXPECTED_WHEEL_METADATA = WheelMetadata(
 
 ISOLATED_ENVIRONMENT_REMOVALS = ("PYTHONPATH", "PYTHONHOME", "VIRTUAL_ENV")
 FIXTURE_SOURCE = "def add(left, right):\n    return left + right\n"
-FIXTURE_TEST = "from src.calc import add\n\n\ndef test_add():\n    assert add(2, 1) == 3\n"
+FIXTURE_TEST = (
+    "from src.calc import add\n\n\ndef test_add():\n    assert add(2, 1) == 3\n"
+)
 
 
-def run(argv: list[str], *, cwd: Path, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
-    completed = subprocess.run(
+def run(
+    argv: list[str], *, cwd: Path, env: dict[str, str]
+) -> subprocess.CompletedProcess[str]:
+    # Commands are assembled by this smoke helper from trusted local artifacts.
+    completed = subprocess.run(  # noqa: S603
         argv,
         cwd=cwd,
         env=env,
         stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
         text=True,
         shell=False,
         timeout=COMMAND_TIMEOUT_SECONDS,
         check=False,
     )
     assert completed.returncode == 0, (
-        f"command failed ({completed.returncode}): {argv!r}\nstdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
+        f"command failed ({completed.returncode}): {argv!r}\n"
+        f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
     )
     return completed
 
@@ -97,19 +102,23 @@ def is_compatible_wheel(
         _, _, _, tags = parse_wheel_filename(wheel.name)
     except InvalidWheelFilename:
         return False
-    runtime_tags = frozenset(sys_tags()) if supported_tags is None else frozenset(supported_tags)
+    runtime_tags = (
+        frozenset(sys_tags()) if supported_tags is None else frozenset(supported_tags)
+    )
     platforms = {tag.platform for tag in tags & runtime_tags}
     normalized_machine = machine.lower()
     if system == "win32":
         return normalized_machine in {"amd64", "x86_64"} and "win_amd64" in platforms
     if system.startswith("linux"):
         return normalized_machine in {"amd64", "x86_64"} and any(
-            platform_tag.endswith("_x86_64") and platform_tag.startswith(("linux_", "manylinux", "musllinux"))
+            platform_tag.endswith("_x86_64")
+            and platform_tag.startswith(("linux_", "manylinux", "musllinux"))
             for platform_tag in platforms
         )
     if system == "darwin":
         return normalized_machine == "arm64" and any(
-            platform_tag.startswith("macosx_") and platform_tag.endswith("_arm64") for platform_tag in platforms
+            platform_tag.startswith("macosx_") and platform_tag.endswith("_arm64")
+            for platform_tag in platforms
         )
     return False
 
@@ -120,7 +129,8 @@ def project_identity() -> tuple[str, Version]:
     return canonicalize_name(project["name"]), Version(project["version"])
 
 
-def select_compatible_wheel(
+# Keep each wheel identity and platform constraint explicit at call sites.
+def select_compatible_wheel(  # noqa: PLR0913
     wheels: list[Path],
     *,
     system: str,
@@ -130,7 +140,11 @@ def select_compatible_wheel(
     supported_tags: Collection[Tag] | None = None,
 ) -> Path:
     normalized_name = canonicalize_name(expected_name)
-    version = Version(expected_version) if isinstance(expected_version, str) else expected_version
+    version = (
+        Version(expected_version)
+        if isinstance(expected_version, str)
+        else expected_version
+    )
     compatible = []
     for wheel in wheels:
         try:
@@ -149,7 +163,10 @@ def select_compatible_wheel(
         ):
             compatible.append(wheel)
     names = [wheel.name for wheel in wheels]
-    assert compatible, f"no current compatible wheel for {normalized_name} {version} on {system}/{machine}: {names}"
+    assert compatible, (
+        f"no current compatible wheel for {normalized_name} {version} on "
+        f"{system}/{machine}: {names}"
+    )
     assert len(compatible) == 1, (
         f"multiple current compatible wheels for {normalized_name} {version} on "
         f"{system}/{machine}: {[wheel.name for wheel in compatible]}"
@@ -193,8 +210,12 @@ def wheel_path(
 
 def wheel_metadata(wheel: Path) -> WheelMetadata:
     with zipfile.ZipFile(wheel) as archive:
-        metadata_files = sorted(name for name in archive.namelist() if name.endswith(".dist-info/METADATA"))
-        assert len(metadata_files) == 1, f"expected exactly one METADATA member in {wheel}: {metadata_files}"
+        metadata_files = sorted(
+            name for name in archive.namelist() if name.endswith(".dist-info/METADATA")
+        )
+        assert len(metadata_files) == 1, (
+            f"expected exactly one METADATA member in {wheel}: {metadata_files}"
+        )
         parsed = Parser().parsestr(archive.read(metadata_files[0]).decode("utf-8"))
 
     return WheelMetadata(
@@ -206,9 +227,9 @@ def wheel_metadata(wheel: Path) -> WheelMetadata:
 
 
 def validate_wheel_metadata(metadata: WheelMetadata) -> None:
-    assert metadata.requires_python.replace(" ", "") == (EXPECTED_WHEEL_METADATA.requires_python), (
-        f"unexpected Requires-Python: {metadata.requires_python!r}"
-    )
+    assert metadata.requires_python.replace(" ", "") == (
+        EXPECTED_WHEEL_METADATA.requires_python
+    ), f"unexpected Requires-Python: {metadata.requires_python!r}"
     assert metadata.requires_dist == EXPECTED_WHEEL_METADATA.requires_dist, (
         f"unexpected Requires-Dist: {metadata.requires_dist!r}"
     )
@@ -257,7 +278,9 @@ def main() -> int:
     )
     validate_wheel_metadata(wheel_metadata(wheel))
 
-    with tempfile.TemporaryDirectory(prefix="hoimin-wheel-smoke-") as temporary_directory:
+    with tempfile.TemporaryDirectory(
+        prefix="hoimin-wheel-smoke-"
+    ) as temporary_directory:
         temporary_root = Path(temporary_directory)
         environment = isolated_environment(os.environ)
         is_windows = os.name == "nt"
@@ -286,7 +309,9 @@ def main() -> int:
             env=environment,
         )
         executable = environment_hoimin(environment_root, is_windows=is_windows)
-        version = run([str(executable), "--version"], cwd=temporary_root, env=environment)
+        version = run(
+            [str(executable), "--version"], cwd=temporary_root, env=environment
+        )
         assert (version.stdout + version.stderr).strip().startswith("hoimin ")
 
         fixture = temporary_root / "project"

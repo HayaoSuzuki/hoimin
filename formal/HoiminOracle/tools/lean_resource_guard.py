@@ -1,6 +1,7 @@
 """Run one Lean command with wall-clock and process-tree RSS limits."""
 
 import argparse
+import contextlib
 import json
 import os
 import signal
@@ -36,18 +37,19 @@ def parse_arguments() -> argparse.Namespace:
 
 def process_table() -> dict[int, tuple[int, int, int]]:
     completed = subprocess.run(
-        ["ps", "-axo", "pid=,ppid=,pgid=,rss="],
+        ["ps", "-axo", "pid=,ppid=,pgid=,rss="],  # noqa: S607 - Resolve the developer tool from PATH.
         check=False,
         capture_output=True,
         text=True,
     )
     if completed.returncode != 0:
-        raise RuntimeError(f"ps failed with exit code {completed.returncode}")
+        msg = f"ps failed with exit code {completed.returncode}"
+        raise RuntimeError(msg)
 
     rows: dict[int, tuple[int, int, int]] = {}
     for line in completed.stdout.splitlines():
         fields = line.split()
-        if len(fields) != 4:
+        if len(fields) != 4:  # noqa: PLR2004 - ps emits pid, ppid, pgid and RSS.
             continue
         pid, parent_pid, process_group_id, rss_kib = map(int, fields)
         rows[pid] = (parent_pid, process_group_id, rss_kib)
@@ -99,16 +101,12 @@ def wait_for_process_group_exit(
 
 
 def terminate_process_group(process: subprocess.Popen[bytes]) -> None:
-    try:
+    with contextlib.suppress(ProcessLookupError):
         os.killpg(process.pid, signal.SIGTERM)
-    except ProcessLookupError:
-        pass
 
     if not wait_for_process_group_exit(process, 1.0):
-        try:
+        with contextlib.suppress(ProcessLookupError):
             os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
         wait_for_process_group_exit(process, 1.0)
     process.wait()
 
@@ -124,7 +122,8 @@ def write_stats(path: Path, stats: dict[str, int | str]) -> None:
     temporary_path.replace(path)
 
 
-def run(arguments: argparse.Namespace) -> int:
+# Keep child cleanup, exit classification and stats publication in one scope.
+def run(arguments: argparse.Namespace) -> int:  # noqa: C901
     started_at = time.monotonic()
     peak_rss_kib = 0
     timeout_ms = round(arguments.timeout_seconds * 1000)
@@ -144,14 +143,14 @@ def run(arguments: argparse.Namespace) -> int:
                 },
             )
         except OSError as error:
-            print(f"failed to write resource stats: {error}", file=sys.stderr)
+            print(f"failed to write resource stats: {error}", file=sys.stderr)  # noqa: T201 - CLI status or failure diagnostics.
         return MONITOR_ERROR_EXIT
     reason = "monitor_error"
     public_exit_code = MONITOR_ERROR_EXIT
     process: subprocess.Popen[bytes] | None = None
 
     try:
-        process = subprocess.Popen(arguments.command, start_new_session=True)
+        process = subprocess.Popen(arguments.command, start_new_session=True)  # noqa: S603 - Trusted CLI/test arguments; no shell execution.
         while True:
             child_exit_code = process.poll()
             elapsed_seconds = time.monotonic() - started_at
@@ -197,7 +196,7 @@ def run(arguments: argparse.Namespace) -> int:
     try:
         write_stats(arguments.stats, stats)
     except OSError as error:
-        print(f"failed to write resource stats: {error}", file=sys.stderr)
+        print(f"failed to write resource stats: {error}", file=sys.stderr)  # noqa: T201 - CLI status or failure diagnostics.
         return MONITOR_ERROR_EXIT
     return public_exit_code
 

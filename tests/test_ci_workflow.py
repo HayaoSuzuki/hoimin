@@ -12,7 +12,6 @@ from pathlib import Path
 
 import yaml
 
-
 ROOT = Path(__file__).resolve().parents[1]
 CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 NON_LINUX_CI_WORKFLOW = ROOT / ".github" / "workflows" / "non-linux-ci.yml"
@@ -23,9 +22,7 @@ RUST_TOOLCHAIN = ROOT / "rust-toolchain.toml"
 LEAN_ORACLE = ROOT / "formal" / "HoiminOracle"
 LEAN_LAKEFILE = LEAN_ORACLE / "lakefile.toml"
 LEAN_TOOLCHAIN = LEAN_ORACLE / "lean-toolchain"
-STABLE_CANARY_WORKFLOW = (
-    ROOT / ".github" / "workflows" / "rust-stable-canary.yml"
-)
+STABLE_CANARY_WORKFLOW = ROOT / ".github" / "workflows" / "rust-stable-canary.yml"
 REPOSITORY_RUST_JOBS = {
     "boundary-contracts",
     "quality",
@@ -52,9 +49,7 @@ MANUAL_NON_LINUX_MATRIX_JOBS = {
 MANUAL_NON_LINUX_JOB_NAMES = {
     "quality": "Manual quality (${{ matrix.os }})",
     "rust": "Manual Rust (${{ matrix.os }})",
-    "core-dependency-purity": (
-        "Manual core dependency purity (windows-latest)"
-    ),
+    "core-dependency-purity": ("Manual core dependency purity (windows-latest)"),
     "wheel-smoke": "Manual wheel smoke (${{ matrix.os }})",
 }
 CHECKOUT_ACTION = "actions/checkout"
@@ -90,9 +85,7 @@ LEAN_CORPUS_BY_EXECUTABLE = {
     "generate_bounded_candidate_discovery": (
         "corpus/bounded-candidate-discovery.jsonl"
     ),
-    "generate_mutation_score_exit_policy": (
-        "corpus/mutation-score-exit-policy.jsonl"
-    ),
+    "generate_mutation_score_exit_policy": ("corpus/mutation-score-exit-policy.jsonl"),
     "generate_output_retention": "corpus/output-retention.jsonl",
     "generate_candidate_span": "corpus/candidate-span-preservation.jsonl",
     "generate_changed_target": "corpus/changed-target-composition.jsonl",
@@ -104,7 +97,6 @@ LEAN_CORPUS_BY_EXECUTABLE = {
     "generate_performance_cost": "corpus/performance-cost.jsonl",
     "generate_valid_python": "corpus/valid-python.jsonl",
     "generate_collection_annotation": "corpus/collection-annotation.jsonl",
-
     "generate_implicit_finally": "corpus/implicit-finally.jsonl",
     "generate_with_suppression": "corpus/with-suppression.jsonl",
     "generate_deferred_annotation": "corpus/deferred-annotation.jsonl",
@@ -129,16 +121,12 @@ TAG_VALIDATION_COMMAND = (
     "assert tag == f'v{py}' == f'v{cargo}', (tag, py, cargo)\""
 )
 WHEEL_SMOKE_COMMAND = "uv run --frozen python tests/wheel_smoke.py"
-MANUAL_NON_LINUX_CI_COMMAND = (
-    "gh workflow run non-linux-ci.yml --ref <REF>"
-)
+MANUAL_NON_LINUX_CI_COMMAND = "gh workflow run non-linux-ci.yml --ref <REF>"
 EXPECTED_RELEASE_JOBS = {
     "validate-tag": {
         "runs-on": "ubuntu-latest",
         "steps": [
-            {
-                "uses": CHECKOUT_ACTION
-            },
+            {"uses": CHECKOUT_ACTION},
             {
                 "uses": SETUP_PYTHON_ACTION,
                 "with": {"python-version": "3.14"},
@@ -154,9 +142,7 @@ EXPECTED_RELEASE_JOBS = {
         "needs": "validate-tag",
         "runs-on": "windows-latest",
         "steps": [
-            {
-                "uses": CHECKOUT_ACTION
-            },
+            {"uses": CHECKOUT_ACTION},
             {
                 "uses": SETUP_PYTHON_ACTION,
                 "with": {"python-version": "3.14"},
@@ -170,8 +156,7 @@ EXPECTED_RELEASE_JOBS = {
                 "with": {
                     "command": "build",
                     "args": (
-                        "--release --locked --compatibility pypi "
-                        "--no-default-features"
+                        "--release --locked --compatibility pypi --no-default-features"
                     ),
                     "maturin-version": PINNED_MATURIN_VERSION,
                     "target": "x86_64-pc-windows-msvc",
@@ -191,9 +176,7 @@ EXPECTED_RELEASE_JOBS = {
         "needs": "validate-tag",
         "runs-on": "ubuntu-latest",
         "steps": [
-            {
-                "uses": CHECKOUT_ACTION
-            },
+            {"uses": CHECKOUT_ACTION},
             {
                 "uses": SETUP_PYTHON_ACTION,
                 "with": {"python-version": "3.14"},
@@ -207,8 +190,7 @@ EXPECTED_RELEASE_JOBS = {
                 "with": {
                     "command": "build",
                     "args": (
-                        "--release --locked --compatibility pypi "
-                        "--no-default-features"
+                        "--release --locked --compatibility pypi --no-default-features"
                     ),
                     "maturin-version": PINNED_MATURIN_VERSION,
                     "target": "x86_64-unknown-linux-gnu",
@@ -289,8 +271,9 @@ if call_count == int(os.environ.get("LEAN_FAIL_AT", "0")):
                 "RUNNER_TEMP": str(runner_temp),
             }
         )
-        completed = subprocess.run(
-            ["bash", "-euo", "pipefail", "-c", script],
+        # Execute the checked-in workflow under the test's controlled fake PATH.
+        completed = subprocess.run(  # noqa: S603
+            ["bash", "-euo", "pipefail", "-c", script],  # noqa: S607
             cwd=temporary,
             env=environment,
             check=False,
@@ -319,6 +302,7 @@ def lean_module_sources() -> dict[str, Path]:
         for source in sources
     }
 
+
 def trigger_events(workflow: str) -> set[str]:
     start = workflow.index("on:\n") + len("on:\n")
     end = workflow.index("\npermissions:", start)
@@ -338,7 +322,9 @@ def job_event_conditions(workflow: str) -> set[str]:
             if expression in {"|", "|-", ">", ">-"}:
                 continuation = []
                 for candidate in lines[index + 1 :]:
-                    if candidate and len(candidate) - len(candidate.lstrip()) <= 4:
+                    if candidate and len(candidate) - len(candidate.lstrip()) <= len(
+                        "    "
+                    ):
                         break
                     continuation.append(candidate.strip())
                 expression = " ".join(continuation)
@@ -365,9 +351,12 @@ def workflow_contract(workflow: str) -> dict:
                 re.fullmatch(
                     r"([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)@[0-9a-fA-F]{40}", reference
                 )
-                if isinstance(reference, str) else None
+                if isinstance(reference, str)
+                else None
             )
-            assert match is not None, f"action must use a full commit SHA: {reference!r}"
+            assert match is not None, (
+                f"action must use a full commit SHA: {reference!r}"
+            )
             step["uses"] = match[1]
     return decoded
 
@@ -389,7 +378,9 @@ def assert_artifact_only_release(test: unittest.TestCase, workflow: str) -> None
             )
             maturin_versions.add(version)
             inputs["maturin-version"] = PINNED_MATURIN_VERSION
-    test.assertEqual(len(maturin_versions), 1, "release builds must share one maturin pin")
+    test.assertEqual(
+        len(maturin_versions), 1, "release builds must share one maturin pin"
+    )
     test.assertEqual(decoded, EXPECTED_RELEASE_WORKFLOW)
 
 
@@ -409,17 +400,28 @@ def assert_repository_rust_toolchain(test: unittest.TestCase, toolchain: dict) -
 class WorkflowActionPinContractTests(unittest.TestCase):
     def test_every_workflow_uses_known_actions_with_full_commit_pins(self) -> None:
         allowed = {
-            CHECKOUT_ACTION, SETUP_PYTHON_ACTION, SETUP_UV_ACTION,
-            LEAN_CACHE_ACTION, UPLOAD_ARTIFACT_ACTION, MATURIN_ACTION,
+            CHECKOUT_ACTION,
+            SETUP_PYTHON_ACTION,
+            SETUP_UV_ACTION,
+            LEAN_CACHE_ACTION,
+            UPLOAD_ARTIFACT_ACTION,
+            MATURIN_ACTION,
         }
-        paths = sorted(path for path in (ROOT / ".github" / "workflows").iterdir()
-                       if path.suffix in {".yml", ".yaml"})
+        paths = sorted(
+            path
+            for path in (ROOT / ".github" / "workflows").iterdir()
+            if path.suffix in {".yml", ".yaml"}
+        )
         self.assertTrue(paths)
         for path in paths:
             with self.subTest(workflow=path.name):
                 decoded = workflow_contract(path.read_text(encoding="utf-8"))
-                actions = [step["uses"] for job in decoded["jobs"].values()
-                           for step in job.get("steps", []) if "uses" in step]
+                actions = [
+                    step["uses"]
+                    for job in decoded["jobs"].values()
+                    for step in job.get("steps", [])
+                    if "uses" in step
+                ]
                 self.assertTrue(actions)
                 for action in actions:
                     self.assertIn(action, allowed)
@@ -448,24 +450,39 @@ class WorkflowActionPinContractTests(unittest.TestCase):
 
     def test_rejects_unpinned_or_malformed_action_references(self) -> None:
         for reference in (
-            "actions/checkout", "actions/checkout@v6", "actions/checkout@main",
-            "actions/checkout@" + "1" * 39, "actions/checkout@" + "1" * 41,
+            "actions/checkout",
+            "actions/checkout@v6",
+            "actions/checkout@main",
+            "actions/checkout@" + "1" * 39,
+            "actions/checkout@" + "1" * 41,
             "actions/checkout@" + "g" * 40,
             "actions/checkout@" + "1" * 40 + "\n",
             "actions/checkout@" + "1" * 40 + "@main",
-            "${{ inputs.action }}", "./local-action", None, True, ["actions/checkout"],
+            "${{ inputs.action }}",
+            "./local-action",
+            None,
+            True,
+            ["actions/checkout"],
         ):
             with self.subTest(reference=reference):
-                workflow = yaml.safe_dump({"jobs": {"test": {"steps": [{"uses": reference}]}}})
+                workflow = yaml.safe_dump(
+                    {"jobs": {"test": {"steps": [{"uses": reference}]}}}
+                )
                 with self.assertRaisesRegex(AssertionError, "full commit SHA"):
                     workflow_contract(workflow)
 
     def test_normalizes_only_step_action_references(self) -> None:
         action = "actions/checkout@" + "1" * 40
-        document = {"jobs": {"test": {"steps": [
-            {"uses": action, "with": {"ref": action}},
-            {"run": "echo " + action, "env": {"USES": action}},
-        ]}}}
+        document = {
+            "jobs": {
+                "test": {
+                    "steps": [
+                        {"uses": action, "with": {"ref": action}},
+                        {"run": "echo " + action, "env": {"USES": action}},
+                    ]
+                }
+            }
+        }
         observed = workflow_contract(yaml.safe_dump(document))
         document["jobs"]["test"]["steps"][0]["uses"] = CHECKOUT_ACTION
         self.assertEqual(observed, document)
@@ -485,10 +502,25 @@ class RepositoryRustToolchainContractTests(unittest.TestCase):
 
     def test_rejects_floating_incomplete_and_nonstable_versions(self) -> None:
         for channel in (
-            "stable", "beta", "nightly", "nightly-2026-07-27", "1", "1.98",
-            "1.98.*", "1.98.1-beta.1", "1.98.1+build", "v1.98.1",
-            "1.98.1-x86_64-unknown-linux-gnu", "01.98.1", "1.098.1", "1.98.01",
-            " 1.98.1", "1.98.1 ", "1.98.1\n", "", "１.98.1",
+            "stable",
+            "beta",
+            "nightly",
+            "nightly-2026-07-27",
+            "1",
+            "1.98",
+            "1.98.*",
+            "1.98.1-beta.1",
+            "1.98.1+build",
+            "v1.98.1",
+            "1.98.1-x86_64-unknown-linux-gnu",
+            "01.98.1",
+            "1.098.1",
+            "1.98.01",
+            " 1.98.1",
+            "1.98.1 ",
+            "1.98.1\n",
+            "",
+            "１.98.1",
         ):
             with self.subTest(channel=channel):
                 toolchain = tomllib.loads(RUST_TOOLCHAIN.read_text(encoding="utf-8"))
@@ -512,6 +544,39 @@ class RepositoryRustToolchainContractTests(unittest.TestCase):
                     assert_repository_rust_toolchain(self, toolchain)
 
 
+class PythonQualityWorkflowContractTests(unittest.TestCase):
+    def test_quality_checks_use_frozen_dev_tools_without_editing_sources(self) -> None:
+        for path in (CI_WORKFLOW, NON_LINUX_CI_WORKFLOW):
+            with self.subTest(workflow=path.name):
+                jobs = workflow_contract(path.read_text(encoding="utf-8"))["jobs"]
+                steps = jobs["quality"]["steps"]
+                python_setup = next(
+                    step for step in steps if step.get("uses") == SETUP_PYTHON_ACTION
+                )
+                self.assertEqual(python_setup["with"]["python-version"], "3.14")
+                self.assertTrue(
+                    any(step.get("uses") == SETUP_UV_ACTION for step in steps)
+                )
+                commands = [step["run"] for step in steps if "run" in step]
+                sync = "uv sync --frozen --no-install-project"
+                checks = [
+                    "uv run --frozen --no-sync ruff format --check .",
+                    "uv run --frozen --no-sync ruff check --no-fix .",
+                ]
+                for command in checks:
+                    self.assertIn(command, commands)
+                    self.assertLess(commands.index(sync), commands.index(command))
+                wheel_commands = [
+                    step["run"]
+                    for step in jobs["wheel-smoke"]["steps"]
+                    if "run" in step
+                ]
+                self.assertIn("uv run --frozen pytest -q", wheel_commands)
+                self.assertFalse(
+                    any("unittest discover" in cmd for cmd in wheel_commands)
+                )
+
+
 class CiRustJobContractTests(unittest.TestCase):
     def test_rust_jobs_install_only_their_classified_toolchain(self) -> None:
         workflow = CI_WORKFLOW.read_text(encoding="utf-8")
@@ -526,16 +591,9 @@ class CiRustJobContractTests(unittest.TestCase):
         self.assertNotIn("rustup default", workflow)
         self.assertNotIn("rustup run", workflow)
         self.assertNotIn("rustup update", workflow)
-        all_steps = [
-            step
-            for job in decoded["jobs"].values()
-            for step in job["steps"]
-        ]
+        all_steps = [step for job in decoded["jobs"].values() for step in job["steps"]]
         self.assertFalse(
-            any(
-                "toolchain" in step.get("uses", "").lower()
-                for step in all_steps
-            )
+            any("toolchain" in step.get("uses", "").lower() for step in all_steps)
         )
         install_commands = [
             line.strip()
@@ -548,10 +606,7 @@ class CiRustJobContractTests(unittest.TestCase):
             ["rustup toolchain install"] * len(REPOSITORY_RUST_JOBS)
             + [
                 "rustup toolchain install 1.88 --profile minimal",
-                (
-                    "rustup toolchain install nightly-2026-07-27 "
-                    "--profile minimal"
-                ),
+                ("rustup toolchain install nightly-2026-07-27 --profile minimal"),
             ],
         )
         self.assertCountEqual(
@@ -636,8 +691,9 @@ if args[0] == "run":
             cached_toolchain = temporary / "cached-toolchain"
             if cached:
                 cached_toolchain.touch()
-            return subprocess.run(
-                ["bash", "-euo", "pipefail", "-c", script],
+            # The workflow script and fake elan executable are controlled fixtures.
+            return subprocess.run(  # noqa: S603
+                ["bash", "-euo", "pipefail", "-c", script],  # noqa: S607
                 cwd=ROOT,
                 env={
                     **os.environ,
@@ -733,22 +789,23 @@ if args[0] == "run":
         for call in calls:
             arguments = call["argv"]
             self.assertEqual(arguments[0], "tools/lean_resource_guard.py")
-            self.assertEqual(arguments[1:7], [
-                "--timeout-seconds",
-                "30",
-                "--rss-limit-mib",
-                "2048",
-                "--sample-ms",
-                "250",
-            ])
+            self.assertEqual(
+                arguments[1:7],
+                [
+                    "--timeout-seconds",
+                    "30",
+                    "--rss-limit-mib",
+                    "2048",
+                    "--sample-ms",
+                    "250",
+                ],
+            )
             self.assertEqual(arguments[7], "--stats")
             stats_paths.append(arguments[8])
             self.assertEqual(arguments[9], "--")
             guarded_commands.append(arguments[10:])
         self.assertEqual(len(stats_paths), len(set(stats_paths)))
-        self.assertTrue(
-            all("/runner/lean-audit/" in path for path in stats_paths)
-        )
+        self.assertTrue(all("/runner/lean-audit/" in path for path in stats_paths))
 
         sources = lean_module_sources()
         module_count = len(sources)
@@ -784,8 +841,14 @@ if args[0] == "run":
         self.assertEqual(
             remaining.pop(0),
             [
-                "lake", "env", "lean", "-j1", "-DElab.async=false",
-                "--run", "ResourceCleanupAuditMain.lean", "4",
+                "lake",
+                "env",
+                "lean",
+                "-j1",
+                "-DElab.async=false",
+                "--run",
+                "ResourceCleanupAuditMain.lean",
+                "4",
             ],
         )
         lakefile = tomllib.loads(LEAN_LAKEFILE.read_text(encoding="utf-8"))
@@ -793,9 +856,7 @@ if args[0] == "run":
         self.assertEqual(executable_names, list(LEAN_CORPUS_BY_EXECUTABLE))
         expected_gates: list[list[str]] = []
         for executable, corpus in LEAN_CORPUS_BY_EXECUTABLE.items():
-            expected_gates.append(
-                ["lake", "exe", executable, "--", "--check", corpus]
-            )
+            expected_gates.append(["lake", "exe", executable, "--", "--check", corpus])
             if executable in LEAN_SENSITIVITY_EXECUTABLES:
                 expected_gates.append(
                     ["lake", "exe", executable, "--", "--sensitivity"]
@@ -823,9 +884,9 @@ if args[0] == "run":
 
     def test_resource_cleanup_failure_stops_before_corpus_checks(self) -> None:
         workflow = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))
-        script = named_step(
-            workflow["jobs"]["lean-audit"], "Run bounded Lean audit"
-        )["run"]
+        script = named_step(workflow["jobs"]["lean-audit"], "Run bounded Lean audit")[
+            "run"
+        ]
         resource_gate = len(lean_module_sources()) + 2
 
         completed, calls = lean_gate_invocations(self, script, fail_at=resource_gate)
@@ -835,10 +896,17 @@ if args[0] == "run":
         self.assertEqual(
             calls[-1]["argv"][10:],
             [
-                "lake", "env", "lean", "-j1", "-DElab.async=false",
-                "--run", "ResourceCleanupAuditMain.lean", "4",
+                "lake",
+                "env",
+                "lean",
+                "-j1",
+                "-DElab.async=false",
+                "--run",
+                "ResourceCleanupAuditMain.lean",
+                "4",
             ],
         )
+
 
 class PlatformExecutionPolicyContractTests(unittest.TestCase):
     def test_automatic_ci_hosted_matrices_are_linux_only(self) -> None:
@@ -931,31 +999,60 @@ class PlatformExecutionPolicyContractTests(unittest.TestCase):
         self.assertEqual(purity["runs-on"], "windows-latest")
 
     def test_windows_resource_scope_runs_native_acceptance_independently(self) -> None:
-        jobs = workflow_contract(NON_LINUX_CI_WORKFLOW.read_text(encoding="utf-8"))["jobs"]
+        jobs = workflow_contract(NON_LINUX_CI_WORKFLOW.read_text(encoding="utf-8"))[
+            "jobs"
+        ]
         self.assertIn("windows-resource-scope", jobs)
-        self.assertEqual(jobs["windows-resource-scope"], {
-            "name": "Manual Windows resource scope",
-            "runs-on": "windows-latest",
-            "timeout-minutes": 20,
-            "steps": [
-                {"uses": CHECKOUT_ACTION},
-                {"uses": SETUP_PYTHON_ACTION, "with": {"python-version": "3.14"}},
-                {"uses": SETUP_UV_ACTION, "with": {"enable-cache": True}},
-                {"name": "Install repository Rust toolchain", "run": "rustup toolchain install"},
-                {"run": "uv sync --frozen"},
-                {"run": "cargo clippy -p hoimin-cli --lib --test process_handler --test windows_resource_scope --all-features -- -D warnings"},
-                {"run": "cargo test -p hoimin-cli --all-features --lib resource::windows::tests -- --nocapture"},
-                {"run": "cargo test -p hoimin-cli --all-features --test process_handler job_object -- --nocapture"},
-                {"run": "cargo test -p hoimin-cli --all-features --test windows_resource_scope -- --nocapture"},
-            ],
-        })
+        self.assertEqual(
+            jobs["windows-resource-scope"],
+            {
+                "name": "Manual Windows resource scope",
+                "runs-on": "windows-latest",
+                "timeout-minutes": 20,
+                "steps": [
+                    {"uses": CHECKOUT_ACTION},
+                    {"uses": SETUP_PYTHON_ACTION, "with": {"python-version": "3.14"}},
+                    {"uses": SETUP_UV_ACTION, "with": {"enable-cache": True}},
+                    {
+                        "name": "Install repository Rust toolchain",
+                        "run": "rustup toolchain install",
+                    },
+                    {"run": "uv sync --frozen"},
+                    {
+                        "run": (
+                            "cargo clippy -p hoimin-cli --lib --test process_handler "
+                            "--test windows_resource_scope "
+                            "--all-features -- -D warnings"
+                        )
+                    },
+                    {
+                        "run": (
+                            "cargo test -p hoimin-cli --all-features "
+                            "--lib resource::windows::tests -- --nocapture"
+                        )
+                    },
+                    {
+                        "run": (
+                            "cargo test -p hoimin-cli --all-features "
+                            "--test process_handler job_object -- --nocapture"
+                        )
+                    },
+                    {
+                        "run": (
+                            "cargo test -p hoimin-cli --all-features "
+                            "--test windows_resource_scope -- --nocapture"
+                        )
+                    },
+                ],
+            },
+        )
 
     def test_windows_metrics_destinations_runs_native_acceptance_independently(
         self,
     ) -> None:
-        jobs = workflow_contract(
-            NON_LINUX_CI_WORKFLOW.read_text(encoding="utf-8")
-        )["jobs"]
+        jobs = workflow_contract(NON_LINUX_CI_WORKFLOW.read_text(encoding="utf-8"))[
+            "jobs"
+        ]
 
         self.assertIn("windows-metrics-destinations", jobs)
         self.assertEqual(
@@ -1076,21 +1173,27 @@ class ToolchainReleaseDocumentationContractTests(unittest.TestCase):
         self.assertIn("major.minor.patch", guide)
         self.assertIn("does not raise the minimum supported Rust version", guide)
         expected_commands = [
+            "uv sync --frozen --no-install-project",
+            "uv run --frozen --no-sync ruff format --check .",
+            "uv run --frozen --no-sync ruff check --no-fix .",
             "cargo fmt --all -- --check",
             "cargo fmt --manifest-path vendor/ruff_python_parser/Cargo.toml -- --check",
             "cargo clippy --workspace --all-targets --all-features -- -D warnings",
-            "cargo clippy --locked -p littrs-ruff-python-parser --lib --no-deps -- -D warnings",
+            (
+                "cargo clippy --locked -p littrs-ruff-python-parser "
+                "--lib --no-deps -- -D warnings"
+            ),
             "cargo test --workspace",
             "cargo test -p hoimin-cli --test run_e2e",
             "cargo test -p hoimin-core --features contracts",
             "cargo test -p hoimin-cli --features contracts",
-            "uv run --frozen python -m unittest discover -s tests -p 'test_*.py' -v",
+            "uv run --frozen pytest -q",
             "uvx maturin build --release",
             "uv run --frozen python tests/wheel_smoke.py",
         ]
         fence = chr(96) * 3
         prefix = (
-            "Run the Rust quality gate locally with the same commands used in CI:"
+            "Run the quality gates locally with the same commands used in CI:"
             f"\n\n{fence}console\n"
         )
         start = guide.index(prefix) + len(prefix)
@@ -1110,7 +1213,9 @@ class ToolchainReleaseDocumentationContractTests(unittest.TestCase):
 
 
 class ShuffleWorkflowContractTests(unittest.TestCase):
-    def test_msrv_job_matches_the_manifest_and_checks_the_locked_workspace(self) -> None:
+    def test_msrv_job_matches_the_manifest_and_checks_the_locked_workspace(
+        self,
+    ) -> None:
         workflow = CI_WORKFLOW.read_text(encoding="utf-8")
         manifest = tomllib.loads(CARGO_MANIFEST.read_text(encoding="utf-8"))
         msrv = manifest["workspace"]["package"]["rust-version"]
@@ -1132,9 +1237,9 @@ class ShuffleWorkflowContractTests(unittest.TestCase):
         workflow = CI_WORKFLOW.read_text(encoding="utf-8")
         wheel_smoke = job_block(workflow, "wheel-smoke")
 
-        unit_tests = "uv run --frozen python -m unittest discover"
+        unit_tests = "uv run --frozen pytest -q"
         reset = (
-            "python -c \"import shutil; "
+            'python -c "import shutil; '
             "shutil.rmtree('target/wheels', ignore_errors=True)\""
         )
         build = "uvx maturin build --release"
@@ -1167,7 +1272,9 @@ class ShuffleWorkflowContractTests(unittest.TestCase):
             r"-Z unstable-options --shuffle$",
         )
 
-    def test_stable_quality_matrix_and_release_workflow_remain_nightly_free(self) -> None:
+    def test_stable_quality_matrix_and_release_workflow_remain_nightly_free(
+        self,
+    ) -> None:
         workflow = CI_WORKFLOW.read_text(encoding="utf-8")
         quality = job_block(workflow, "quality")
         release = RELEASE_WORKFLOW.read_text(encoding="utf-8")
@@ -1247,16 +1354,30 @@ class ReleaseWorkflowContractTests(unittest.TestCase):
             with self.subTest(version=version):
                 updated, count = re.subn(
                     r"maturin-version: v[0-9]+\.[0-9]+\.[0-9]+",
-                    "maturin-version: " + version, workflow,
+                    "maturin-version: " + version,
+                    workflow,
                 )
                 self.assertEqual(count, 2)
                 assert_artifact_only_release(self, updated)
 
     def test_rejects_invalid_or_missing_maturin_pins(self) -> None:
         for version in (
-            "latest", "v1", "v1.15", "1.15.0", "v01.15.0", "v1.015.0",
-            "v1.15.00", "v1.15.0rc1", "v1.15.0\n", " v1.15.0",
-            "${{ inputs.maturin }}", "", None, True, 1, ["v1.15.0"],
+            "latest",
+            "v1",
+            "v1.15",
+            "1.15.0",
+            "v01.15.0",
+            "v1.015.0",
+            "v1.15.00",
+            "v1.15.0rc1",
+            "v1.15.0\n",
+            " v1.15.0",
+            "${{ inputs.maturin }}",
+            "",
+            None,
+            True,
+            1,
+            ["v1.15.0"],
         ):
             with self.subTest(version=version):
                 document = yaml.safe_load(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
@@ -1279,7 +1400,8 @@ class ReleaseWorkflowContractTests(unittest.TestCase):
             with self.subTest(change=change):
                 document = yaml.safe_load(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
                 step = next(
-                    step for step in document["jobs"]["windows-wheel"]["steps"]
+                    step
+                    for step in document["jobs"]["windows-wheel"]["steps"]
                     if step.get("uses", "").startswith(MATURIN_ACTION + "@")
                 )
                 if change == "version":
@@ -1362,7 +1484,8 @@ class ReleaseWorkflowContractTests(unittest.TestCase):
             "quoted uses key": workflow.replace(
                 "      - run: uv run --frozen python tests/wheel_smoke.py\n",
                 "      - run: uv run --frozen python tests/wheel_smoke.py\n"
-                '      - "uses": attacker/publish@0123456789abcdef0123456789abcdef01234567\n',
+                '      - "uses": attacker/publish@'
+                "0123456789abcdef0123456789abcdef01234567\n",
                 1,
             ),
             "explicit mapping uses key": workflow.replace(
@@ -1409,6 +1532,5 @@ class ReleaseWorkflowContractTests(unittest.TestCase):
         }
 
         for case, hostile_workflow in hostile_workflows.items():
-            with self.subTest(case=case):
-                with self.assertRaises(AssertionError):
-                    assert_artifact_only_release(self, hostile_workflow)
+            with self.subTest(case=case), self.assertRaises(AssertionError):
+                assert_artifact_only_release(self, hostile_workflow)

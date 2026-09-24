@@ -454,3 +454,22 @@ compatible range in pyproject.toml or the lockfile. The [implementation plan](
 ../plans/2026-09-24-maturin-release-contract.md) records the reproduction, review
 and platform-specific validation. A local build does not execute the hosted
 Windows/Linux release jobs or publish artifacts.
+
+## 2026-09-24 amendment: Python development quality gates
+
+Ruff and pytest now join the frozen development dependency group. Ruff enables
+ALL rules with the documented kraken-hub-derived exceptions, targets Python 3.14,
+and formats maintained Python sources at 88 columns. Historical audit material,
+vendor/generated code and mutation fixture projects are excluded. Existing
+unittest-style assertions remain and pytest uses strict collection/execution.
+
+Automatic Linux and manual non-Linux quality jobs install dev tools without
+building the project, then run non-mutating format/lint checks. The wheel smoke
+jobs run pytest before resetting and building wheel artifacts. The Lean boundary
+audit retains unittest, avoiding a new dev-dependency installation in that job.
+Rust toolchain, platform-trigger and artifact-only release contracts are unchanged.
+
+The [Python quality plan](../plans/2026-09-24-python-quality.md) records reviews,
+collection/behavior checks and actual command results. Development dependencies
+do not become wheel runtime dependencies; wheel metadata and isolated smoke
+validation check that boundary.

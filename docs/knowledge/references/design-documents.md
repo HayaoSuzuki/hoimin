@@ -334,9 +334,9 @@ sources:
   working_tree: clean
 - id: doc-023
   resource: ../../superpowers/specs/2026-08-24-rust-toolchain-reproducibility-design.md
-  revision: 649a8079dddd86ece52e92caa418d0152b0ccfde
+  revision: 09e766b5abde5aa0f3624638eecddb7f9c4c70c9
   working_tree: modified
-  sha256: 237cc890c63db294a4cb22c01e6b03bc1a2342eeccc5bc6e1ae38fef5adc78b2
+  sha256: 005385848ea03c71e184f707554511f5f8c697ebbe8b0b1f6a3700aabc2d3aab
 - id: doc-024
   resource: ../../superpowers/specs/2026-08-17-issue-334-timeout-instant-overflow-design.md
   revision: a7daea0b557cd435c1e55b540392fbdd116348e1

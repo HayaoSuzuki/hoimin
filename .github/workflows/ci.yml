@@ -21,6 +21,15 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.14'
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          enable-cache: true
+      - run: uv sync --frozen --no-install-project
+      - run: uv run --frozen --no-sync ruff format --check .
+      - run: uv run --frozen --no-sync ruff check --no-fix .
       - name: Install repository Rust toolchain
         run: rustup toolchain install
       - run: cargo fmt --all -- --check
@@ -72,7 +81,7 @@ jobs:
         with:
           name: performance-gates-${{ matrix.os }}
           path: ${{ runner.temp }}/performance-gates
-      - run: uv run --frozen python -m unittest tests/test_skills.py
+      - run: uv run --frozen pytest -q tests/test_skills.py
 
   lean-audit:
     needs: quality
@@ -460,7 +469,7 @@ jobs:
           enable-cache: true
       - name: Install repository Rust toolchain
         run: rustup toolchain install
-      - run: uv run --frozen python -m unittest discover -s tests -p 'test_*.py' -v
+      - run: uv run --frozen pytest -q
       - name: Reset wheel artifact directory
         run: python -c "import shutil; shutil.rmtree('target/wheels', ignore_errors=True)"
       - run: uvx maturin build --release

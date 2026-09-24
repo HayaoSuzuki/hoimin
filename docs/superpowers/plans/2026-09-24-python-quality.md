@@ -63,3 +63,63 @@ Linux-only automatic execution, pinned actions and artifact-only releases.
 3. Verification: use frozen dev dependencies and the actual root commands;
    check collection and unchanged subprocess/fixture behavior. Document any
    additional scoped ignore so the requested strictness remains reviewable.
+
+## Implementation self-reviews
+
+1. Configuration: reviewed the resolved lock diff and reference policy. Only Ruff,
+   pytest and their missing transitive dependencies were added; existing versions
+   stayed unchanged. Ruff 0.16.8 / pytest 9.1.1 are locked. ALL remains enabled;
+   only standalone-module and legacy unittest conventions receive extra scoped
+   exceptions. Ruff discovery includes all 12 maintained Python modules.
+2. Behavioral preservation: reviewed annotations, imports and equivalent style
+   changes across the tools. Differential generation for 29 fixture shapes at
+   sizes 1/2/4 produced 87 identical file/metadata pairs. Existing assertion ASTs
+   and embedded strings were preserved. Process cleanup, exit classification,
+   Windows ctypes layouts and source fixtures retain their semantics. No new
+   production behavior justified a mutation-testing campaign.
+3. Integration: automatic/manual quality steps remain equal and Python tests
+   still precede wheel reset/build/smoke. Lint runs with `--no-fix` and format
+   with `--check`; dev-only sync avoids a build for these checks. The Lean
+   boundary job deliberately retains standard-library unittest. Rust sources,
+   platform triggers, compiler pins and artifact-only release rules are unchanged.
+
+## Test self-reviews
+
+1. Collection and regression: pytest initially collected all 103 existing tests.
+   The new workflow contract failed before the CI changes, including both missing
+   quality setups and the old test command/documentation. After integration,
+   all 104 tests and 227 subtests passed under Python 3.14.7. Process-inspection
+   tests require normal `ps` access; restricted-sandbox failures disappeared
+   under the approved test execution environment.
+2. Strictness and read-only checks: temporary probes confirmed F821 and formatting
+   violations fail without changing source bytes; explicit fixture paths are
+   excluded. Pytest excludes fixture projects and rejects unknown markers,
+   unknown configuration keys and empty parameter sets. These probes used the
+   actual copied project configuration and locked tool executables.
+3. Packaging: a fresh macOS ARM64 release wheel built successfully with maturin
+   1.15.0 (`--release --locked --compatibility pypi --no-default-features`). The
+   updated wheel smoke script passed against that wheel, including metadata
+   checks for absent runtime dependencies and isolated installation/execution.
+   This does not claim native Windows execution of the ctypes helper.
+
+## Final verification and independent review
+
+- `uv lock --check` and `uv sync --frozen --no-install-project`: passed.
+- `uv run --frozen --no-sync ruff format --check .`: passed.
+- `uv run --frozen --no-sync ruff check --no-fix .`: passed.
+- `uv run --frozen --no-sync pytest -q`: 104 passed, 227 subtests passed.
+- Fresh release wheel build and `python tests/wheel_smoke.py`: both exit 0.
+- `git diff --check`: passed.
+- OKF: 25 YAML concept headers/four reserved indexes checked; catalog source IDs,
+  local paths and footnotes checked; amended design's SHA-256 matches. Only the
+  relevant source record was refreshed; historical audit evidence was retained.
+- Independent whole-diff review: no findings. The reviewer checked code/config,
+  CI consistency, Windows version compatibility and source coverage, and ran the
+  new workflow contract test (one test/two subtests). Parent verification covers
+  the full suite, wheel, fixture comparisons and documentation checks above.
+
+Design and plan were committed before implementation in `09e766b`. No native
+Windows/macOS CI workflow was dispatched and no PR was merged automatically.
+
+The exact CI invocation `uv run --frozen pytest -q` also passed all 104 tests and
+227 subtests, including uv's editable project build/synchronization.
