@@ -17,9 +17,10 @@ GUARD = ROOT / "formal" / "HoiminOracle" / "tools" / "lean_resource_guard.py"
 
 
 class LeanResourceGuardSetupTests(unittest.TestCase):
-    def test_rejects_unsupported_process_groups_before_spawning(self):
+    def test_rejects_unsupported_process_groups_before_spawning(self) -> None:
         spec = importlib.util.spec_from_file_location("lean_resource_guard", GUARD)
-        assert spec is not None and spec.loader is not None
+        assert spec is not None
+        assert spec.loader is not None
         guard = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(guard)
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -46,11 +47,14 @@ class LeanResourceGuardSetupTests(unittest.TestCase):
     "Lean RSS guard requires POSIX process groups and ps",
 )
 class LeanResourceGuardTests(unittest.TestCase):
-    def run_guard(self, *command: str, timeout: float, rss_limit_mib: int):
+    def run_guard(
+        self, *command: str, timeout: float, rss_limit_mib: int
+    ) -> tuple[subprocess.CompletedProcess[bytes], dict[str, object]]:
         temporary_directory = tempfile.TemporaryDirectory()
         self.addCleanup(temporary_directory.cleanup)
         stats = Path(temporary_directory.name) / "stats.json"
-        completed = subprocess.run(
+        # Execute the repository guard with controlled Python test programs.
+        completed = subprocess.run(  # noqa: S603
             [
                 sys.executable,
                 str(GUARD),
@@ -70,7 +74,7 @@ class LeanResourceGuardTests(unittest.TestCase):
         )
         return completed, json.loads(stats.read_text())
 
-    def test_terminates_process_group_at_rss_limit(self):
+    def test_terminates_process_group_at_rss_limit(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             marker = Path(temporary_directory) / "child.pid"
             allocating_child = (
@@ -99,7 +103,7 @@ class LeanResourceGuardTests(unittest.TestCase):
             else:
                 self.fail(f"guard left child process {child_pid} alive")
 
-    def test_terminates_process_group_at_timeout(self):
+    def test_terminates_process_group_at_timeout(self) -> None:
         completed, stats = self.run_guard(
             sys.executable,
             "-c",
@@ -111,7 +115,7 @@ class LeanResourceGuardTests(unittest.TestCase):
         self.assertEqual(completed.returncode, 124)
         self.assertEqual(stats["reason"], "timeout")
 
-    def test_propagates_normal_child_exit(self):
+    def test_propagates_normal_child_exit(self) -> None:
         completed, stats = self.run_guard(
             sys.executable,
             "-c",
@@ -123,7 +127,7 @@ class LeanResourceGuardTests(unittest.TestCase):
         self.assertEqual(completed.returncode, 7)
         self.assertEqual(stats["reason"], "child_exit")
 
-    def test_rejects_root_exit_that_leaves_a_descendant(self):
+    def test_rejects_root_exit_that_leaves_a_descendant(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             marker = Path(temporary_directory) / "descendant.pid"
             descendant = (

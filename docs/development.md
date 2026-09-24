@@ -27,9 +27,12 @@ The report schema retains its existing `mode` and singular `mechanism` fields.
 
 ## Local quality gate
 
-Run the Rust quality gate locally with the same commands used in CI:
+Run the quality gates locally with the same commands used in CI:
 
 ```console
+uv sync --frozen --no-install-project
+uv run --frozen --no-sync ruff format --check .
+uv run --frozen --no-sync ruff check --no-fix .
 cargo fmt --all -- --check
 cargo fmt --manifest-path vendor/ruff_python_parser/Cargo.toml -- --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
@@ -38,10 +41,72 @@ cargo test --workspace
 cargo test -p hoimin-cli --test run_e2e
 cargo test -p hoimin-core --features contracts
 cargo test -p hoimin-cli --features contracts
-uv run --frozen python -m unittest discover -s tests -p 'test_*.py' -v
+uv run --frozen pytest
 uvx maturin build --release
 uv run --frozen python tests/wheel_smoke.py
 ```
+
+## Python formatting, lint and tests
+
+Ruff and pytest are development dependencies managed by `uv.lock`. For Python
+checks alone, `uv sync --frozen --no-install-project` installs the tools without
+building the Rust executable. Run `uv run --frozen --no-sync pytest` in that
+environment; the full quality gate above also builds and validates the wheel.
+
+To apply formatting or safe lint fixes explicitly:
+
+```console
+uv run --frozen --no-sync ruff format .
+uv run --frozen --no-sync ruff check --fix .
+```
+
+Ruff targets Python 3.14, uses an 88-column formatter, and enables `ALL` rules.
+The exclusions in `pyproject.toml` follow the supplied kraken-hub policy for
+docstrings, assertions, formatter conflicts and selected style rules. Additional
+per-file exceptions preserve standalone script modules and existing unittest
+assertions. Required subprocess execution, CLI output and existing orchestration
+complexity have individual documented suppressions; adding a suppression requires
+the same explanation. Unused imports are reported rather than automatically
+removed, and unsafe fixes are not enabled.
+
+Maintained Python files under `tests/`, `tools/`, `formal/HoiminOracle/tools/`
+and `crates/hoimin-cli/tests/support/` are checked. Vendored code, historical
+documentation/audits, generated output, worktrees and mutation fixture projects
+are excluded so formatting cannot rewrite test inputs or recorded evidence.
+Pytest uses strict mode and collects from `tests/`, excluding fixture projects;
+existing unittest tests keep their assertions and run under pytest. The separate
+Lean boundary audit retains its standard-library unittest command because that
+job does not install Python development dependencies.
+
+Automatic Linux and manual non-Linux quality jobs run the same read-only Ruff
+checks. Their wheel smoke jobs execute the Python suite with pytest before
+building the wheel. See the [design, implementation plan and review record](
+superpowers/plans/2026-09-24-python-quality.md).
+
+### Coverage and randomized test order
+
+The dev group also includes `pytest-cov` and `pytest-randomly`. The latter
+automatically randomizes test order and seeds Python's random generator. Use
+pytest without `-q` to see the chosen seed in its session header. To reproduce
+an order-dependent failure, pass the reported seed or reuse the last local seed:
+
+```console
+uv run --frozen pytest --randomly-seed=12345
+uv run --frozen pytest --randomly-seed=last
+```
+
+To measure branch coverage of the Python tools:
+
+```console
+uv run --frozen pytest --cov=tools --cov-branch --cov-report=term-missing
+```
+
+Coverage is opt-in and has no minimum percentage gate. This command measures
+`tools/` in the pytest process; it does not measure the Rust implementation or
+every subprocess. Generated coverage data and common report outputs are ignored
+by Git. See the [pytest-cov configuration guide](
+https://pytest-cov.readthedocs.io/en/latest/config.html) and
+[pytest-randomly usage](https://github.com/pytest-dev/pytest-randomly#usage).
 
 ## CI platform execution policy
 

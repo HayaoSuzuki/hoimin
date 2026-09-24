@@ -47,9 +47,9 @@ def runtime_tags_for(system: str) -> frozenset[Tag]:
 class StandaloneContractTests(unittest.TestCase):
     def test_windows_quality_and_wheel_smoke_remain_in_manual_ci(self) -> None:
         repository_root = Path(__file__).resolve().parents[1]
-        manual_ci = (
-            repository_root / ".github/workflows/non-linux-ci.yml"
-        ).read_text(encoding="utf-8")
+        manual_ci = (repository_root / ".github/workflows/non-linux-ci.yml").read_text(
+            encoding="utf-8"
+        )
         for job in ("quality", "wheel-smoke"):
             with self.subTest(job=job):
                 section = re.search(
@@ -62,7 +62,9 @@ class StandaloneContractTests(unittest.TestCase):
 
     def test_documentation_requires_build_before_standalone_smoke(self) -> None:
         repository_root = Path(__file__).resolve().parents[1]
-        development = (repository_root / "docs/development.md").read_text(encoding="utf-8")
+        development = (repository_root / "docs/development.md").read_text(
+            encoding="utf-8"
+        )
         readme = (repository_root / "README.md").read_text(encoding="utf-8")
         development_build_command = "uvx maturin build --release"
         readme_build_command = "uv run maturin build --release"
@@ -91,13 +93,13 @@ class StandaloneContractTests(unittest.TestCase):
             environment = os.environ.copy()
             environment.pop("HOIMIN_WHEEL", None)
 
-            completed = subprocess.run(
+            # Execute an unchanged copy of the repository smoke helper.
+            completed = subprocess.run(  # noqa: S603
                 [sys.executable, str(script)],
                 cwd=temporary_root,
                 env=environment,
                 stdin=subprocess.DEVNULL,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                capture_output=True,
                 text=True,
                 check=False,
             )
@@ -289,7 +291,9 @@ class WheelSelectionTests(unittest.TestCase):
             Path("hoimin-0.1.0-cp314-abi3-manylinux_2_17_x86_64.whl"),
         ]
 
-        with self.assertRaisesRegex(AssertionError, "multiple current compatible wheels"):
+        with self.assertRaisesRegex(
+            AssertionError, "multiple current compatible wheels"
+        ):
             select_compatible_wheel(
                 wheels,
                 system="linux",
@@ -302,7 +306,10 @@ class WheelSelectionTests(unittest.TestCase):
     def test_uses_the_explicit_wheel_override(self) -> None:
         with TemporaryDirectory() as temporary_directory:
             # Arrange
-            override = Path(temporary_directory) / "hoimin-0.1.0-cp314-cp314-manylinux_2_17_x86_64.whl"
+            override = (
+                Path(temporary_directory)
+                / "hoimin-0.1.0-cp314-cp314-manylinux_2_17_x86_64.whl"
+            )
             override.touch()
 
             # Act
@@ -319,7 +326,10 @@ class WheelSelectionTests(unittest.TestCase):
 
     def test_rejects_a_stale_explicit_wheel_override(self) -> None:
         with TemporaryDirectory() as temporary_directory:
-            override = Path(temporary_directory) / "hoimin-0.9.0-cp314-cp314-manylinux_2_17_x86_64.whl"
+            override = (
+                Path(temporary_directory)
+                / "hoimin-0.9.0-cp314-cp314-manylinux_2_17_x86_64.whl"
+            )
             override.touch()
 
             with self.assertRaisesRegex(AssertionError, "no current compatible wheel"):
@@ -337,7 +347,9 @@ class WheelSelectionTests(unittest.TestCase):
             missing = Path(temporary_directory) / "missing.whl"
 
             # Act
-            error = self.assertRaisesRegex(AssertionError, "HOIMIN_WHEEL does not exist")
+            error = self.assertRaisesRegex(
+                AssertionError, "HOIMIN_WHEEL does not exist"
+            )
 
             # Assert
             with error:
@@ -369,8 +381,12 @@ class WheelSelectionTests(unittest.TestCase):
         with TemporaryDirectory() as temporary_directory:
             # Arrange
             wheel_directory = Path(temporary_directory)
-            stale = wheel_directory / "hoimin-0.0.9-cp314-cp314-manylinux_2_17_x86_64.whl"
-            current = wheel_directory / "hoimin-0.1.0-cp314-cp314-manylinux_2_17_x86_64.whl"
+            stale = (
+                wheel_directory / "hoimin-0.0.9-cp314-cp314-manylinux_2_17_x86_64.whl"
+            )
+            current = (
+                wheel_directory / "hoimin-0.1.0-cp314-cp314-manylinux_2_17_x86_64.whl"
+            )
             incompatible = wheel_directory / "hoimin-0.1.0-cp314-cp314-win_amd64.whl"
             stale.touch()
             current.touch()
@@ -412,7 +428,9 @@ class WheelMetadataTests(unittest.TestCase):
                     requires_python=">=3.14, <3.15",
                     requires_dist=None,
                     license_expression="MIT",
-                    project_urls=["Repository, https://github.com/tokyogas-tech/hoimin"],
+                    project_urls=[
+                        "Repository, https://github.com/tokyogas-tech/hoimin"
+                    ],
                 ),
             )
 
@@ -424,7 +442,9 @@ class WheelMetadataTests(unittest.TestCase):
                 pass
 
             # Act
-            error = self.assertRaisesRegex(AssertionError, "expected exactly one METADATA")
+            error = self.assertRaisesRegex(
+                AssertionError, "expected exactly one METADATA"
+            )
 
             # Assert
             with error:
@@ -439,7 +459,9 @@ class WheelMetadataTests(unittest.TestCase):
                 archive.writestr("two.dist-info/METADATA", "License-Expression: MIT\n")
 
             # Act
-            error = self.assertRaisesRegex(AssertionError, "expected exactly one METADATA")
+            error = self.assertRaisesRegex(
+                AssertionError, "expected exactly one METADATA"
+            )
 
             # Assert
             with error:
@@ -468,7 +490,9 @@ class WheelMetadataTests(unittest.TestCase):
                     requires_python=">=3.13,<3.15",
                     requires_dist=None,
                     license_expression="MIT",
-                    project_urls=["Repository, https://github.com/tokyogas-tech/hoimin"],
+                    project_urls=[
+                        "Repository, https://github.com/tokyogas-tech/hoimin"
+                    ],
                 ),
             ),
             (
@@ -477,7 +501,9 @@ class WheelMetadataTests(unittest.TestCase):
                     requires_python=">=3.14,<3.15",
                     requires_dist=["pytest"],
                     license_expression="MIT",
-                    project_urls=["Repository, https://github.com/tokyogas-tech/hoimin"],
+                    project_urls=[
+                        "Repository, https://github.com/tokyogas-tech/hoimin"
+                    ],
                 ),
             ),
             (
@@ -486,7 +512,9 @@ class WheelMetadataTests(unittest.TestCase):
                     requires_python=">=3.14,<3.15",
                     requires_dist=None,
                     license_expression="Apache-2.0",
-                    project_urls=["Repository, https://github.com/tokyogas-tech/hoimin"],
+                    project_urls=[
+                        "Repository, https://github.com/tokyogas-tech/hoimin"
+                    ],
                 ),
             ),
             (
@@ -580,7 +608,10 @@ class SmokeFixtureTests(unittest.TestCase):
             )
             self.assertEqual(
                 (root / "tests" / "test_calc.py").read_text(),
-                "from src.calc import add\n\n\ndef test_add():\n    assert add(2, 1) == 3\n",
+                (
+                    "from src.calc import add\n\n\ndef test_add():\n"
+                    "    assert add(2, 1) == 3\n"
+                ),
             )
 
 
@@ -588,7 +619,9 @@ class CommandAndResultTests(unittest.TestCase):
     def test_run_returns_a_successful_completed_process(self) -> None:
         # Arrange
         argv = ["hoimin", "--version"]
-        completed = subprocess.CompletedProcess(argv, 0, stdout="hoimin 0.1.0\n", stderr="")
+        completed = subprocess.CompletedProcess(
+            argv, 0, stdout="hoimin 0.1.0\n", stderr=""
+        )
         with patch("wheel_smoke.subprocess.run", return_value=completed) as mocked_run:
             # Act
             actual = run(argv, cwd=Path("work"), env={"PYTHONNOUSERSITE": "1"})
@@ -600,8 +633,7 @@ class CommandAndResultTests(unittest.TestCase):
                 cwd=Path("work"),
                 env={"PYTHONNOUSERSITE": "1"},
                 stdin=subprocess.DEVNULL,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                capture_output=True,
                 text=True,
                 shell=False,
                 timeout=COMMAND_TIMEOUT_SECONDS,
@@ -611,12 +643,15 @@ class CommandAndResultTests(unittest.TestCase):
     def test_run_reports_command_output_for_a_failure(self) -> None:
         # Arrange
         argv = ["hoimin", "run"]
-        completed = subprocess.CompletedProcess(argv, 7, stdout="command output", stderr="command error")
+        completed = subprocess.CompletedProcess(
+            argv, 7, stdout="command output", stderr="command error"
+        )
         with patch("wheel_smoke.subprocess.run", return_value=completed):
             # Act
             error = self.assertRaisesRegex(
                 AssertionError,
-                r"(?s)command failed \(7\): .*stdout:\ncommand output\nstderr:\ncommand error",
+                r"(?s)command failed \(7\): .*stdout:\ncommand output"
+                r"\nstderr:\ncommand error",
             )
 
             # Assert
@@ -627,11 +662,15 @@ class CommandAndResultTests(unittest.TestCase):
         cases = (
             (
                 "stdout",
-                subprocess.CompletedProcess(["hoimin"], 0, stdout="--python", stderr=""),
+                subprocess.CompletedProcess(
+                    ["hoimin"], 0, stdout="--python", stderr=""
+                ),
             ),
             (
                 "stderr",
-                subprocess.CompletedProcess(["hoimin"], 0, stdout="", stderr="--python"),
+                subprocess.CompletedProcess(
+                    ["hoimin"], 0, stdout="", stderr="--python"
+                ),
             ),
         )
 
