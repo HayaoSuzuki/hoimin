@@ -8286,3 +8286,168 @@ fn evaluation_order_retains_lookups_before_later_deletions() {
         assert_eq!(candidates.len(), 1, "{body}: {candidates:#?}");
     }
 }
+
+#[test]
+fn nullable_builtin_provenance_rejects_shadowing_and_retains_builtins() {
+    for (name, annotation) in [
+        ("str", "str"),
+        ("int", "int"),
+        ("float", "float"),
+        ("bool", "bool"),
+        ("bytes", "bytes"),
+        ("list", "list[int]"),
+        ("set", "set[int]"),
+        ("dict", "dict[str, int]"),
+    ] {
+        for (source, expected) in [
+            (format!("value: {annotation}\n"), 1),
+            (format!("{name} = custom\nvalue: {annotation}\n"), 0),
+            (format!("value: {annotation}\n{name} = custom\n"), 0),
+            (format!("class {name}: pass\nvalue: {annotation}\n"), 0),
+            (
+                format!("if condition:\n    {name} = custom\nvalue: {annotation}\n"),
+                0,
+            ),
+            (
+                format!("class Owner:\n    value: {annotation}\n    {name} = custom\n"),
+                0,
+            ),
+            (
+                format!(
+                    "def outer():\n    {name} = custom\n    def inner(value: {annotation}): pass\n"
+                ),
+                0,
+            ),
+            (
+                format!("def function(value: {annotation}):\n    {name} = custom\n"),
+                1,
+            ),
+            (
+                format!("def function():\n    {name} = custom\n    value: {annotation}\n"),
+                0,
+            ),
+            (
+                format!("def function[{name}](value: {annotation}): pass\n"),
+                0,
+            ),
+            (
+                format!("class Owner[{name}]:\n    value: {annotation}\n"),
+                0,
+            ),
+            (format!("from custom import *\nvalue: {annotation}\n"), 0),
+            (format!("exec('pass')\nvalue: {annotation}\n"), 0),
+        ] {
+            let output = analyze_types(&source);
+            let candidates = output
+                .candidates
+                .iter()
+                .filter(|candidate| candidate.operator == "type_nullable_add")
+                .collect::<Vec<_>>();
+            assert_eq!(candidates.len(), expected, "{source}: {candidates:#?}");
+        }
+    }
+}
+
+#[test]
+fn nullable_builtin_provenance_checks_nested_arguments_and_preserves_import_aliases() {
+    for (source, expected) in [
+        ("int = custom\nvalue: list[int]\n", 0),
+        ("str = custom\nvalue: dict[str, int]\n", 0),
+        ("float = custom\nvalue: list[dict[str, float]]\n", 0),
+        ("list = custom\nvalue: dict[str, list[int]]\n", 0),
+        (
+            "from typing import Sequence\nint = custom\nvalue: Sequence[int]\n",
+            0,
+        ),
+        ("from typing import Sequence as list\nvalue: list[int]\n", 1),
+        (
+            "from typing import Mapping as dict\nvalue: dict[str, int]\n",
+            1,
+        ),
+        (
+            "class Owner:\n    int = custom\n    def method(value: int): pass\n",
+            0,
+        ),
+        (
+            "class Owner:\n    int = custom\n    def method():\n        value: int\n",
+            1,
+        ),
+        ("def function(int):\n    value: int\n", 0),
+        ("def function(int: int) -> int: pass\n", 2),
+        ("def function():\n    global int\n    value: int\n", 1),
+        (
+            "int = custom\ndef function():\n    global int\n    value: int\n",
+            0,
+        ),
+        (
+            "def outer():\n    int = custom\n    def inner():\n        nonlocal int\n        value: int\n",
+            0,
+        ),
+        (
+            "class Outer:\n    int = custom\n    class Inner:\n        value: int\n",
+            1,
+        ),
+        ("class Owner[int]:\n    def method(value: int): pass\n", 0),
+        (
+            "class Owner:\n    int = custom\n    def method[T](value: int): pass\n",
+            0,
+        ),
+        (
+            "from typing import Sequence as list\nint = custom\nvalue: list[int]\n",
+            0,
+        ),
+    ] {
+        let output = analyze_types(source);
+        let candidates = output
+            .candidates
+            .iter()
+            .filter(|candidate| candidate.operator == "type_nullable_add")
+            .collect::<Vec<_>>();
+        assert_eq!(candidates.len(), expected, "{source}: {candidates:#?}");
+    }
+}
+
+#[test]
+fn nullable_builtin_provenance_does_not_change_removal_or_collection_guards() {
+    let output = analyze_types(
+        "from typing import Optional, Sequence\nint = custom\noptional: Optional[int]\nunion: int | None\ncollection: list[int]\n",
+    );
+    assert_eq!(
+        output
+            .candidates
+            .iter()
+            .filter(|candidate| candidate.operator == "type_nullable_remove")
+            .count(),
+        2
+    );
+    assert_eq!(
+        output
+            .candidates
+            .iter()
+            .filter(|candidate| candidate.operator == "type_list_sequence")
+            .count(),
+        1
+    );
+    assert!(
+        output
+            .candidates
+            .iter()
+            .all(|candidate| candidate.operator != "type_nullable_add")
+    );
+}
+
+#[test]
+fn nullable_builtin_provenance_checks_starred_and_list_arguments() {
+    for annotation in ["dict[*(str, int)]", "dict[*[str, int]]", "list[[int]]"] {
+        for (prefix, expected) in [("", 1), ("int = custom\n", 0)] {
+            let source = format!("{prefix}value: {annotation}\n");
+            let output = analyze_types(&source);
+            let candidates = output
+                .candidates
+                .iter()
+                .filter(|candidate| candidate.operator == "type_nullable_add")
+                .collect::<Vec<_>>();
+            assert_eq!(candidates.len(), expected, "{source}: {candidates:#?}");
+        }
+    }
+}

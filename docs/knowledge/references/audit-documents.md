@@ -16,6 +16,11 @@ sources:
   revision: a49467ded359416a6ee743536100634f1cced3e2
   working_tree: modified
   sha256: 789a38f0bf2997640843c500aaea6fcf83108334087716adb7904c65c3841d38
+- id: issue-564-review
+  resource: ../../superpowers/reports/2026-09-24-issue-564-review.md
+  revision: f6f5d96c099fb880884b2b7cb29717ff33d70d75
+  working_tree: modified
+  sha256: a7d9fc90f5b4b7fb15420f969cf99b85120f20cd97b7a6562811960d4c435a92
 - id: followup-lean-promotion
   resource: ../../superpowers/reports/2026-09-15-followup-lean-promotion.md
   working_tree: untracked
@@ -1091,3 +1096,10 @@ sources:
 | Issue #558 review and verification record | [レビューと検証結果](../../superpowers/reports/2026-09-24-issue-558-review.md) [^issue-558-review] |
 
 [^issue-558-review]: [Issue #558 review and verification record](../../superpowers/reports/2026-09-24-issue-558-review.md)。
+# Issue #564
+
+| 原文の先頭見出し | 原文 |
+| --- | --- |
+| Issue 564 review log | [原文](../../superpowers/reports/2026-09-24-issue-564-review.md) [^issue-564-review] |
+
+[^issue-564-review]: [Issue 564 review log](../../superpowers/reports/2026-09-24-issue-564-review.md)。
