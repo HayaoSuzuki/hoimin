@@ -5,6 +5,11 @@ description: docs/superpowers/specs内の全Markdownを先頭見出しと出典�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-556-design
+  resource: ../../superpowers/specs/2026-09-24-issue-556-with-suppression.md
+  revision: 282e941e4c1a5a23303d30beca881d7bbfde7763
+  working_tree: clean
+  sha256: 7ff74c9749274839e3cbe0ceb737544de0dd3b5fb5eef90aae17e3ff461269be
 - id: issue-549-design
   resource: ../../superpowers/specs/2026-09-15-issue-549-slice-tuple-design.md
   revision: f11013542ccd735ab9741b5079c0b39a517df256
@@ -1437,3 +1442,11 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 | Issue 559: provider-correct abstract set annotations | [設計書](../../superpowers/specs/2026-09-24-issue-559-design.md) [^issue-559-repair] |
 
 [^issue-559-repair]: [修正設計](../../superpowers/specs/2026-09-24-issue-559-design.md)。
+
+# Issue #556
+
+| 原文の先頭見出し | 原文 |
+| --- | --- |
+| Issue 556: import facts after context-manager suppression | [設計書](../../superpowers/specs/2026-09-24-issue-556-with-suppression.md) [^issue-556-design] |
+
+[^issue-556-design]: [Issue 556: import facts after context-manager suppression](../../superpowers/specs/2026-09-24-issue-556-with-suppression.md)。

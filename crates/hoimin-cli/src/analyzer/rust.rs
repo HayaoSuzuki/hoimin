@@ -4457,7 +4457,9 @@ struct ControlFlowExits {
     fallthrough: Option<KnownImports>,
     breaks: Vec<KnownImports>,
     continues: Vec<KnownImports>,
+    // Successful returns cannot be suppressed by a context manager.
     terminates: Vec<KnownImports>,
+    raises: Vec<KnownImports>,
     implicit_raises: Option<KnownImports>,
 }
 
@@ -4473,6 +4475,7 @@ enum ExitCategory {
     Break,
     Continue,
     Terminate,
+    Raise,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -4501,6 +4504,7 @@ impl ControlFlowExits {
         self.breaks.extend(other.breaks);
         self.continues.extend(other.continues);
         self.terminates.extend(other.terminates);
+        self.raises.extend(other.raises);
         self.merge_implicit(other.implicit_raises);
     }
 }
@@ -4717,7 +4721,10 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
             }
             ExitCategory::Break => projection.states.extend(exits.breaks.iter().cloned()),
             ExitCategory::Continue => projection.states.extend(exits.continues.iter().cloned()),
-            ExitCategory::Terminate => projection.states.extend(exits.terminates.iter().cloned()),
+            ExitCategory::Terminate => projection
+                .states
+                .extend(exits.terminates.iter().chain(&exits.raises).cloned()),
+            ExitCategory::Raise => projection.states.extend(exits.raises.iter().cloned()),
         }
     }
 
@@ -4747,6 +4754,7 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
         states.append(&mut exits.breaks);
         states.append(&mut exits.continues);
         states.append(&mut exits.terminates);
+        states.append(&mut exits.raises);
         exits.fallthrough = KnownImports::intersection(states);
     }
 
@@ -4769,15 +4777,22 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
         &self,
         joined: &mut ControlFlowExits,
         terminates: Vec<KnownImports>,
+        raises: Vec<KnownImports>,
     ) {
         if self.test_mutation != Some(BindingFlowTestMutation::DropBodyTerminates) {
             joined.terminates.extend(terminates);
+            joined.raises.extend(raises);
         }
     }
 
     #[cfg(not(test))]
-    fn merge_try_body_terminates(joined: &mut ControlFlowExits, terminates: Vec<KnownImports>) {
+    fn merge_try_body_terminates(
+        joined: &mut ControlFlowExits,
+        terminates: Vec<KnownImports>,
+        raises: Vec<KnownImports>,
+    ) {
         joined.terminates.extend(terminates);
+        joined.raises.extend(raises);
     }
 
     fn try_handler_imports(mut incoming: KnownImports, body: &[Stmt]) -> KnownImports {
@@ -5159,10 +5174,12 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
         let mut exits = ControlFlowExits {
             fallthrough: KnownImports::intersection(after_loop),
             terminates: body_exits.terminates,
+            raises: body_exits.raises,
             implicit_raises: body_exits.implicit_raises,
             ..ControlFlowExits::default()
         };
         exits.terminates.extend(orelse_exits.terminates);
+        exits.raises.extend(orelse_exits.raises);
         exits.merge_implicit(orelse_exits.implicit_raises);
         exits.merge_implicit(repeated_exceptions);
         exits
@@ -5293,25 +5310,47 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
     }
 
     fn visit_with(&mut self, statement: &'ast ruff_python_ast::StmtWith) -> ControlFlowExits {
-        for item in &statement.items {
+        let mut suppressed_entries = Vec::new();
+        for (index, item) in statement.items.iter().enumerate() {
             NamedBindingInvalidator::visit(&mut self.imports, &item.context_expr);
+            if index > 0 {
+                // An earlier manager may suppress evaluation/entry failure of
+                // this item. The first manager cannot suppress its own entry.
+                suppressed_entries.push(self.imports.clone());
+            }
             if let Some(target) = &item.optional_vars {
                 self.imports.invalidate_target(target);
+                if !matches!(target.as_ref(), Expr::Name(_)) {
+                    // Target binding happens after entry and may fail partway.
+                    suppressed_entries.push(self.imports.clone());
+                }
             }
         }
+        let enclosing_tracking = std::mem::replace(&mut self.track_implicit_exceptions, true);
         let mut exits = self.visit_suite_flow(&statement.body);
-        if self.track_implicit_exceptions {
-            // __exit__/__aexit__ also runs on break, continue, and termination.
-            let states = exits
-                .fallthrough
-                .iter()
-                .chain(&exits.breaks)
-                .chain(&exits.continues)
-                .chain(&exits.terminates)
-                .cloned()
-                .collect::<Vec<_>>();
-            exits.merge_implicit(states);
+        self.track_implicit_exceptions = enclosing_tracking;
+        suppressed_entries.extend(exits.raises.iter().cloned());
+        suppressed_entries.extend(exits.implicit_raises.iter().cloned());
+
+        // __exit__/__aexit__ runs on every completion, including abrupt exits.
+        // Only an outer manager can suppress an inner manager's exit failure.
+        let exit_entries = exits
+            .fallthrough
+            .iter()
+            .chain(&exits.breaks)
+            .chain(&exits.continues)
+            .chain(&exits.terminates)
+            .chain(&exits.raises)
+            .cloned()
+            .collect::<Vec<_>>();
+        if statement.items.len() > 1 {
+            suppressed_entries.extend(exit_entries.iter().cloned());
         }
+        // Preserve possible propagation to enclosing managers/finally as well.
+        exits.merge_implicit(suppressed_entries.iter().cloned());
+        exits.merge_implicit(exit_entries);
+        suppressed_entries.extend(exits.fallthrough.take());
+        exits.fallthrough = KnownImports::intersection(suppressed_entries);
         exits
     }
 
@@ -5349,6 +5388,7 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
             (ExitCategory::Break, &mut exits.breaks),
             (ExitCategory::Continue, &mut exits.continues),
             (ExitCategory::Terminate, &mut exits.terminates),
+            (ExitCategory::Terminate, &mut exits.raises),
         ] {
             if omitted_category != Some(category) {
                 for state in states {
@@ -5381,9 +5421,9 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
         joined.breaks.extend(body_exits.breaks);
         joined.continues.extend(body_exits.continues);
         #[cfg(test)]
-        self.merge_try_body_terminates(&mut joined, body_exits.terminates);
+        self.merge_try_body_terminates(&mut joined, body_exits.terminates, body_exits.raises);
         #[cfg(not(test))]
-        Self::merge_try_body_terminates(&mut joined, body_exits.terminates);
+        Self::merge_try_body_terminates(&mut joined, body_exits.terminates, body_exits.raises);
         for (handler_index, except_handler) in statement.handlers.iter().enumerate() {
             let ruff_python_ast::ExceptHandler::ExceptHandler(handler) = except_handler;
             let mut imports = handler_imports.clone();
@@ -5449,6 +5489,7 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
         annotation_entries.extend(exits.breaks.iter().cloned());
         annotation_entries.extend(exits.continues.iter().cloned());
         annotation_entries.extend(exits.terminates.iter().cloned());
+        annotation_entries.extend(exits.raises.iter().cloned());
         annotation_entries.extend(exits.implicit_raises.iter().cloned());
         let Some(annotation_entry) = KnownImports::intersection(annotation_entries) else {
             let _ = self.visit_suite_from(self.imports.clone(), finalbody);
@@ -5471,6 +5512,7 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
             (ExitCategory::Break, exits.breaks),
             (ExitCategory::Continue, exits.continues),
             (ExitCategory::Terminate, exits.terminates),
+            (ExitCategory::Raise, exits.raises),
         ] {
             for imports in entries {
                 self.route_finally_entry(
@@ -5515,11 +5557,13 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
                 ExitCategory::Break => result.breaks.push(imports),
                 ExitCategory::Continue => result.continues.push(imports),
                 ExitCategory::Terminate => result.terminates.push(imports),
+                ExitCategory::Raise => result.raises.push(imports),
             }
         }
         result.breaks.extend(final_exits.breaks);
         result.continues.extend(final_exits.continues);
         result.terminates.extend(final_exits.terminates);
+        result.raises.extend(final_exits.raises);
         result.merge_implicit(final_exits.implicit_raises);
     }
 
@@ -5609,6 +5653,7 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
                 flattened.append(&mut case_exits.breaks);
                 flattened.append(&mut case_exits.continues);
                 flattened.append(&mut case_exits.terminates);
+                flattened.append(&mut case_exits.raises);
                 case_exits.fallthrough = KnownImports::intersection(flattened);
                 case_exits
             } else {
@@ -5683,7 +5728,15 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
                     ..ControlFlowExits::default()
                 }
             }
-            Stmt::Return(_) | Stmt::Raise(_) => {
+            Stmt::Raise(_) => {
+                visitor::walk_stmt(self, statement);
+                NamedBindingInvalidator::visit_statement(&mut self.imports, statement);
+                ControlFlowExits {
+                    raises: vec![self.imports.clone()],
+                    ..ControlFlowExits::default()
+                }
+            }
+            Stmt::Return(_) => {
                 visitor::walk_stmt(self, statement);
                 NamedBindingInvalidator::visit_statement(&mut self.imports, statement);
                 ControlFlowExits {
@@ -5880,7 +5933,15 @@ fn normalize_binding_flow_exits(exits: &ControlFlowExits) -> BindingFlowTestSnap
             .collect(),
         breaks: normalize_binding_flow_states(&exits.breaks),
         continues: normalize_binding_flow_states(&exits.continues),
-        terminates: normalize_binding_flow_states(&exits.terminates),
+        // The existing oracle schema groups explicit raise and return together.
+        terminates: normalize_binding_flow_states(
+            &exits
+                .terminates
+                .iter()
+                .chain(&exits.raises)
+                .cloned()
+                .collect::<Vec<_>>(),
+        ),
     }
 }
 
