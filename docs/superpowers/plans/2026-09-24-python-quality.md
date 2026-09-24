@@ -123,3 +123,36 @@ Windows/macOS CI workflow was dispatched and no PR was merged automatically.
 
 The exact CI invocation `uv run --frozen pytest -q` also passed all 104 tests and
 227 subtests, including uv's editable project build/synchronization.
+
+## Follow-up design: pytest-cov and pytest-randomly
+
+The requested plugins extend this still-open PR. Add dev-only
+`pytest-cov>=7,<8` and `pytest-randomly>=4,<5`, matching the reference project's
+major-version policy, and refresh the lock without upgrading unrelated packages.
+pytest-randomly automatically shuffles existing tests. Keep coverage opt-in and
+show an explicit branch-coverage command for `tools/`; no arbitrary percentage
+threshold, subprocess instrumentation or additional CI jobs are introduced.
+Document seed reproduction and ignore generated coverage artifacts.
+
+### Follow-up plan
+
+1. Commit this design/plan, then add both dev dependencies and regenerate the lock.
+2. Run the full suite with two recorded seeds, one with branch coverage; verify
+   randomized collection is repeatable for one seed and differs for another.
+3. Check Ruff/format/frozen lock, update the developer guide and PR description,
+   commit and push to the existing branch.
+
+### Follow-up design self-reviews
+
+1. Scope: dev-only plugins preserve the executable wheel's dependency boundary.
+2. Reproduction: enable plugin defaults and document numeric/last seed replay;
+   no fixed default seed hides order dependencies.
+3. Evidence: the explicit coverage command measures Python tools only, not Rust
+   code or every subprocess; avoid presenting that report as whole-product coverage.
+
+### Follow-up plan self-reviews
+
+1. Keep the existing open PR/worktree and preserve unrelated locked versions.
+2. Multiple seeds and collection comparisons exercise actual plugin integration.
+3. Coverage output remains local/ignored; installing the plugins does not silently
+   add a threshold or change the automatic platform execution policy.
