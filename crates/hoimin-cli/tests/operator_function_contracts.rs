@@ -146,8 +146,9 @@ fn assert_python_output(name: &str, phase: &str, output: &Output, expected: &str
         "{name} {phase} failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
+    // Python's text stdout uses CRLF on Windows; these contracts compare text values.
     assert_eq!(
-        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stdout).replace("\r\n", "\n"),
         expected,
         "{name} {phase} stdout"
     );
@@ -1182,7 +1183,11 @@ async fn parenthesized_exception_removals_preserve_intended_catch_sets() {
                 "{}",
                 String::from_utf8_lossy(&output.stderr)
             );
-            outcomes.insert(String::from_utf8(output.stdout).unwrap());
+            outcomes.insert(
+                String::from_utf8(output.stdout)
+                    .unwrap()
+                    .replace("\r\n", "\n"),
+            );
         }
         assert_eq!(
             outcomes,

@@ -350,15 +350,18 @@ impl OwnedWorkspaceDirectory {
 
     fn open_cleanup_handle(&self) -> Result<Option<File>, WorkspaceError> {
         match self {
-            Self::Temporary(temp) => root::open_retained_directory(temp.path())
-                .map(Some)
-                .map_err(|error| {
-                    WorkspaceError::io(
-                        "open cleanup wrapper",
-                        Utf8Path::from_path(temp.path()).unwrap_or(Utf8Path::new("<temporary>")),
-                        error,
-                    )
-                }),
+            Self::Temporary(temp) => {
+                root::open_cleanup_directory(temp.path())
+                    .map(Some)
+                    .map_err(|error| {
+                        WorkspaceError::io(
+                            "open cleanup wrapper",
+                            Utf8Path::from_path(temp.path())
+                                .unwrap_or(Utf8Path::new("<temporary>")),
+                            error,
+                        )
+                    })
+            }
             Self::Managed(_) => Ok(None),
         }
     }
@@ -550,7 +553,9 @@ impl WorkerWorkspace {
         let wrapper_error_path = Utf8PathBuf::from_path_buf(self.temp.path().to_owned())
             .unwrap_or_else(|_| self.root.path().to_owned());
         if let Some(wrapper) = self.cleanup_wrapper.as_ref() {
-            self.root.clear_for_cleanup()?;
+            self.root
+                .clear_for_cleanup()
+                .map_err(worker_cleanup_error)?;
             make_cleanup_wrapper_accessible(wrapper, &wrapper_error_path)?;
             self.root.close();
             self.cleanup_wrapper = None;
@@ -1692,6 +1697,35 @@ mod task_tests {
     };
 
     use super::{CopyOptions, WorkspaceHandler};
+
+    #[cfg(windows)]
+    #[test]
+    fn temporary_cleanup_handle_restores_readonly_while_pinning_the_wrapper() {
+        let parent = tempfile::tempdir().unwrap();
+        let owner =
+            super::OwnedWorkspaceDirectory::Temporary(tempfile::tempdir_in(parent.path()).unwrap());
+        let path = owner.path();
+        let wrapper = owner.open_cleanup_handle().unwrap().unwrap();
+        let original_permissions = wrapper.metadata().unwrap().permissions();
+        let mut readonly = original_permissions.clone();
+        readonly.set_readonly(true);
+        std::fs::set_permissions(path, readonly).unwrap();
+
+        let restored =
+            super::make_cleanup_wrapper_accessible(&wrapper, Utf8Path::from_path(path).unwrap());
+        let still_readonly = wrapper.metadata().unwrap().permissions().readonly();
+        std::fs::set_permissions(path, original_permissions).unwrap();
+        restored.unwrap();
+        assert!(!still_readonly);
+
+        let renamed = parent.path().join("renamed");
+        assert!(
+            std::fs::rename(path, &renamed).is_err(),
+            "the cleanup handle must prevent wrapper replacement"
+        );
+        drop(wrapper);
+        std::fs::rename(path, &renamed).unwrap();
+    }
 
     #[test]
     fn unavailable_import_root_retains_cleanup_without_publishing_worker() {
