@@ -62,6 +62,7 @@ SETUP_PYTHON_ACTION = "actions/setup-python"
 SETUP_UV_ACTION = "astral-sh/setup-uv"
 LEAN_CACHE_ACTION = "actions/cache"
 MATURIN_ACTION = "PyO3/maturin-action"
+PINNED_MATURIN_VERSION = "<pinned-maturin-version>"
 LEAN_ELAN_VERSION = "v4.1.2"
 LEAN_CORPUS_BY_EXECUTABLE = {
     "generate": "corpus/state-machine.jsonl",
@@ -172,7 +173,7 @@ EXPECTED_RELEASE_JOBS = {
                         "--release --locked --compatibility pypi "
                         "--no-default-features"
                     ),
-                    "maturin-version": "v1.14.1",
+                    "maturin-version": PINNED_MATURIN_VERSION,
                     "target": "x86_64-pc-windows-msvc",
                 },
             },
@@ -209,7 +210,7 @@ EXPECTED_RELEASE_JOBS = {
                         "--release --locked --compatibility pypi "
                         "--no-default-features"
                     ),
-                    "maturin-version": "v1.14.1",
+                    "maturin-version": PINNED_MATURIN_VERSION,
                     "target": "x86_64-unknown-linux-gnu",
                     "manylinux": "2014",
                 },
@@ -373,7 +374,22 @@ def workflow_contract(workflow: str) -> dict:
 
 def assert_artifact_only_release(test: unittest.TestCase, workflow: str) -> None:
     decoded = workflow_contract(workflow)
-    test.assertIsInstance(decoded, dict)
+    maturin_versions = set()
+    for job in decoded["jobs"].values():
+        for step in job.get("steps", []):
+            if step.get("uses") != MATURIN_ACTION:
+                continue
+            inputs = step.get("with", {})
+            test.assertIsInstance(inputs, dict)
+            version = inputs.get("maturin-version")
+            test.assertIsInstance(version, str)
+            test.assertRegex(
+                version,
+                r"\Av(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\Z",
+            )
+            maturin_versions.add(version)
+            inputs["maturin-version"] = PINNED_MATURIN_VERSION
+    test.assertEqual(len(maturin_versions), 1, "release builds must share one maturin pin")
     test.assertEqual(decoded, EXPECTED_RELEASE_WORKFLOW)
 
 
@@ -1225,6 +1241,56 @@ jobs:
 
 
 class ReleaseWorkflowContractTests(unittest.TestCase):
+    def test_accepts_updated_matching_maturin_pins(self) -> None:
+        workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+        for version in ("v1.99.0", "v2.0.1"):
+            with self.subTest(version=version):
+                updated, count = re.subn(
+                    r"maturin-version: v[0-9]+\.[0-9]+\.[0-9]+",
+                    "maturin-version: " + version, workflow,
+                )
+                self.assertEqual(count, 2)
+                assert_artifact_only_release(self, updated)
+
+    def test_rejects_invalid_or_missing_maturin_pins(self) -> None:
+        for version in (
+            "latest", "v1", "v1.15", "1.15.0", "v01.15.0", "v1.015.0",
+            "v1.15.00", "v1.15.0rc1", "v1.15.0\n", " v1.15.0",
+            "${{ inputs.maturin }}", "", None, True, 1, ["v1.15.0"],
+        ):
+            with self.subTest(version=version):
+                document = yaml.safe_load(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
+                for job in document["jobs"].values():
+                    for step in job["steps"]:
+                        if step.get("uses", "").startswith(MATURIN_ACTION + "@"):
+                            step["with"]["maturin-version"] = version
+                with self.assertRaises(AssertionError):
+                    assert_artifact_only_release(self, yaml.safe_dump(document))
+        document = yaml.safe_load(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
+        for job in document["jobs"].values():
+            for step in job["steps"]:
+                if step.get("uses", "").startswith(MATURIN_ACTION + "@"):
+                    del step["with"]["maturin-version"]
+        with self.assertRaises(AssertionError):
+            assert_artifact_only_release(self, yaml.safe_dump(document))
+
+    def test_rejects_mismatched_maturin_pins_and_other_input_changes(self) -> None:
+        for change in ("version", "args", "extra input"):
+            with self.subTest(change=change):
+                document = yaml.safe_load(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
+                step = next(
+                    step for step in document["jobs"]["windows-wheel"]["steps"]
+                    if step.get("uses", "").startswith(MATURIN_ACTION + "@")
+                )
+                if change == "version":
+                    step["with"]["maturin-version"] = "v9.99.0"
+                elif change == "args":
+                    step["with"]["args"] += " --features unexpected"
+                else:
+                    step["with"]["unexpected-version"] = "v1.15.0"
+                with self.assertRaises(AssertionError):
+                    assert_artifact_only_release(self, yaml.safe_dump(document))
+
     def test_version_tags_build_artifacts_without_publication_credentials(
         self,
     ) -> None:

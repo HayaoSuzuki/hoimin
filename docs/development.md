@@ -73,6 +73,13 @@ shells, environments and the artifact-only release policy still require their
 existing contract checks. See the [combined update plan and review evidence](
 superpowers/plans/2026-09-24-actions-update-contracts.md).
 
+The release workflow also owns the exact `maturin-version` input. Both platform
+builds must use the same canonical `vMAJOR.MINOR.PATCH` pin. Release contract tests
+validate this format and agreement without duplicating the current version;
+all other inputs and publication restrictions remain exact. See the
+[maturin update plan and validation](
+superpowers/plans/2026-09-24-maturin-release-contract.md).
+
 ## Pinned Rust toolchain
 
 `rust-toolchain.toml` is the source of the exact stable Rust version used for
