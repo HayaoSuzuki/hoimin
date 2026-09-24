@@ -10,6 +10,12 @@ sources:
   revision: ffb65c051014f3d9601df2deb0bfeb5ff55c7c38
   working_tree: modified
   sha256: a96d2f42bd974491c68dfa0bf9bee040b6c43725ad70ec515536ebc412dbb146
+
+- id: issue-558-review
+  resource: ../../superpowers/reports/2026-09-24-issue-558-review.md
+  revision: a49467ded359416a6ee743536100634f1cced3e2
+  working_tree: modified
+  sha256: 10ad9832250ba6bdd7dd7f9a7723852fac4eb25075cc9b0eb33380530e649af1
 - id: followup-lean-promotion
   resource: ../../superpowers/reports/2026-09-15-followup-lean-promotion.md
   working_tree: untracked
@@ -1077,3 +1083,11 @@ sources:
 | Issue 560 review log | [原文](../../superpowers/reports/2026-09-24-issue-560-review.md) [^issue-560-review] |
 
 [^issue-560-review]: [Issue 560 review log](../../superpowers/reports/2026-09-24-issue-560-review.md)。
+
+## 2026-09-24: #558の遅延注釈の修正
+
+| 原文の先頭見出し | 原文 |
+| --- | --- |
+| Issue #558 review and verification record | [レビューと検証結果](../../superpowers/reports/2026-09-24-issue-558-review.md) [^issue-558-review] |
+
+[^issue-558-review]: [Issue #558 review and verification record](../../superpowers/reports/2026-09-24-issue-558-review.md)。

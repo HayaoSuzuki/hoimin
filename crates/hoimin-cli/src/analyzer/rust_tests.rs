@@ -5283,36 +5283,27 @@ fn typing_import_rebinding_linear() {
         (
             "unaliased import assignment and restoration",
             "from typing import Sequence\nbefore: list[str]\nSequence = local_sequence\nafter: list[str]\nfrom typing import Sequence as Sequence\nrestored: list[str]\n",
-            vec![
-                (36, 9, 2, None, "Sequence[str]"),
-                (139, 9, 6, None, "Sequence[str]"),
-            ],
+            vec![(139, 9, 6, None, "Sequence[str]")],
         ),
         (
             "direct alias assignment and restoration",
             "from typing import Sequence as Seq\nbefore: list[str]\nSeq = local_sequence\nafter: list[str]\nfrom typing import Sequence as Seq\nrestored: list[str]\n",
-            vec![(43, 9, 2, None, "Seq[str]"), (136, 9, 6, None, "Seq[str]")],
+            vec![(136, 9, 6, None, "Seq[str]")],
         ),
         (
             "delete rebinding",
             "from typing import Sequence\nbefore: list[str]\ndel Sequence\nafter: list[str]\n",
-            vec![(36, 9, 2, None, "Sequence[str]")],
+            vec![],
         ),
         (
             "function definition rebinding and restoration",
             "from typing import Sequence\nbefore: list[str]\ndef Sequence():\n    pass\nafter: list[str]\nfrom typing import Sequence\nrestored: list[str]\n",
-            vec![
-                (36, 9, 2, None, "Sequence[str]"),
-                (126, 9, 7, None, "Sequence[str]"),
-            ],
+            vec![(126, 9, 7, None, "Sequence[str]")],
         ),
         (
             "class definition rebinding and restoration",
             "from typing import Sequence\nbefore: list[str]\nclass Sequence:\n    pass\nafter: list[str]\nfrom typing import Sequence\nrestored: list[str]\n",
-            vec![
-                (36, 9, 2, None, "Sequence[str]"),
-                (126, 9, 7, None, "Sequence[str]"),
-            ],
+            vec![(126, 9, 7, None, "Sequence[str]")],
         ),
     ] {
         let output = analyze_types(source);
@@ -5343,18 +5334,12 @@ fn typing_module_alias_rebinding_linear() {
         (
             "module alias assignment and restoration",
             "import typing as t\nbefore: list[str]\nt = local_typing\nafter: list[str]\nimport typing as t\nrestored: list[str]\n",
-            vec![
-                (27, 9, 2, None, "t.Sequence[str]"),
-                (100, 9, 6, None, "t.Sequence[str]"),
-            ],
+            vec![(100, 9, 6, None, "t.Sequence[str]")],
         ),
         (
             "unsupported competing module import and restoration",
             "import typing as t\nbefore: list[str]\nimport local as t\nafter: list[str]\nimport typing as t\nrestored: list[str]\n",
-            vec![
-                (27, 9, 2, None, "t.Sequence[str]"),
-                (101, 9, 6, None, "t.Sequence[str]"),
-            ],
+            vec![(101, 9, 6, None, "t.Sequence[str]")],
         ),
         (
             "wildcard import also invalidates deferred builtin provenance",
@@ -5488,8 +5473,6 @@ fn typing_import_rebinding_scope() {
     assert_eq!(
         actual,
         vec![
-            (49, 13, 3, Some("Sequence"), "Sequence[str]", "list[str]"),
-            (67, 13, 3, Some("Sequence"), "Sequence[str]", "list[str]"),
             (
                 327,
                 9,
@@ -5503,14 +5486,6 @@ fn typing_import_rebinding_scope() {
                 9,
                 18,
                 Some("nested_outer"),
-                "list[str]",
-                "Sequence[str]"
-            ),
-            (
-                494,
-                9,
-                23,
-                Some("nested_outer.Nested"),
                 "list[str]",
                 "Sequence[str]"
             ),
@@ -5570,7 +5545,6 @@ fn typing_import_rebinding_scope() {
                 "list[str]",
                 "Sequence[str]"
             ),
-            (1786, 9, 77, None, "list[str]", "Sequence[str]"),
         ]
     );
     for candidate in &output.candidates {
@@ -5632,10 +5606,7 @@ fn typing_import_rebinding_control_flow() {
                 "    from typing import Sequence\n",
                 "after_identical: list[str]\n",
             ),
-            vec![
-                (36, 2, None, "Sequence[str]"),
-                (243, 11, None, "Sequence[str]"),
-            ],
+            vec![(243, 11, None, "Sequence[str]")],
         ),
         (
             "returning branch is not a continuation exit",
@@ -5669,10 +5640,7 @@ fn typing_import_rebinding_control_flow() {
                 "from typing import Sequence\n",
                 "untouched: list[str]\n",
             ),
-            vec![
-                (93, 4, None, "Sequence[str]"),
-                (261, 11, None, "Sequence[str]"),
-            ],
+            vec![(261, 11, None, "Sequence[str]")],
         ),
         (
             "try joins normal handlers else and applies finally",
@@ -5700,10 +5668,7 @@ fn typing_import_rebinding_control_flow() {
                 "    from typing import Sequence\n",
                 "after_finally: list[str]\n",
             ),
-            vec![
-                (300, 14, None, "Sequence[str]"),
-                (471, 22, None, "Sequence[str]"),
-            ],
+            vec![(471, 22, None, "Sequence[str]")],
         ),
         (
             "with and except targets bind before their suites",
@@ -5744,10 +5709,7 @@ fn typing_import_rebinding_control_flow() {
                 "from typing import Sequence\n",
                 "untouched: list[str]\n",
             ),
-            vec![
-                (233, 10, None, "Sequence[str]"),
-                (412, 17, None, "Sequence[str]"),
-            ],
+            vec![(412, 17, None, "Sequence[str]")],
         ),
         (
             "named expression binding precedes branch suites",
@@ -5991,14 +5953,7 @@ fn typing_import_rebinding_annotated_assignment_execution_order() {
         "from typing import Sequence\n",
         "untouched: list[str]\n",
     );
-    assert_type_list_sequence_sites(
-        source,
-        &[
-            (157, 9, 6, None, "Sequence[str]"),
-            (435, 9, 16, Some("ClassValueless"), "Sequence[str]"),
-            (569, 9, 21, None, "Sequence[str]"),
-        ],
-    );
+    assert_type_list_sequence_sites(source, &[(569, 9, 21, None, "Sequence[str]")]);
 }
 
 #[test]
@@ -6067,9 +6022,7 @@ fn typing_import_rebinding_class_external_writes_project_to_target_scope() {
         source,
         &[
             (281, 9, 12, Some("DirectReimport.method"), "Sequence[str]"),
-            (314, 9, 13, None, "Sequence[str]"),
             (581, 9, 26, Some("AliasReimport.method"), "t.Sequence[str]"),
-            (613, 9, 27, None, "t.Sequence[str]"),
             (
                 980,
                 9,
@@ -6086,7 +6039,6 @@ fn typing_import_rebinding_class_external_writes_project_to_target_scope() {
                 "t.Sequence[str]",
             ),
             (1354, 9, 56, Some("alias_outer"), "t.Sequence[str]"),
-            (1403, 9, 58, None, "Sequence[str]"),
         ],
     );
 }
@@ -6134,7 +6086,6 @@ fn typing_import_rebinding_nested_class_globals_preserve_function_fallback() {
                 "t.Sequence[str]",
             ),
             (417, 9, 18, Some("alias_outer"), "t.Sequence[str]"),
-            (466, 9, 20, None, "Sequence[str]"),
         ],
     );
 }

@@ -13,7 +13,7 @@ mod analyzer {
 mod rust;
 
 use camino::Utf8Path;
-use hoimin_core::{ByteSpan, MutationOperator, MutationOperatorSelection, MutationProfile};
+use hoimin_core::{MutationOperator, MutationOperatorSelection, MutationProfile};
 use ruff_python_parser::parse_module;
 
 #[test]
@@ -42,37 +42,9 @@ fn typing_import_rebinding_inventory_is_site_aware() {
         source,
     );
 
-    assert_eq!(
-        output.candidates,
-        vec![
-            AnalyzerCandidate {
-                path: Utf8Path::new("pkg/typing_rebinding.py").to_path_buf(),
-                span: ByteSpan {
-                    start: 43,
-                    length: 9,
-                },
-                original: "list[str]".to_owned(),
-                replacement: "Sequence[str]".to_owned(),
-                operator: "type_list_sequence".to_owned(),
-                line: 2,
-                column: 15,
-                symbol: None,
-            },
-            AnalyzerCandidate {
-                path: Utf8Path::new("pkg/typing_rebinding.py").to_path_buf(),
-                span: ByteSpan {
-                    start: 128,
-                    length: 9,
-                },
-                original: "list[str]".to_owned(),
-                replacement: "t.Sequence[str]".to_owned(),
-                operator: "type_list_sequence".to_owned(),
-                line: 6,
-                column: 14,
-                symbol: None,
-            },
-        ]
-    );
+    // Python 3.14 defers these module annotations: both imported spellings
+    // are rebound before their values need to be evaluated.
+    assert!(output.candidates.is_empty());
 
     for candidate in &output.candidates {
         let start = usize::try_from(candidate.span.start).unwrap();

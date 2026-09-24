@@ -13,9 +13,15 @@ cached annotations and restored imports; no interpreter-version option exists.
 snapshot alone cannot establish provenance at a deferred evaluation. Keep that
 flow analysis and add a second condition: an imported spelling must have no later
 binding in the lexical scopes visible to the annotation. Reuse the scope tree in
-`NameResolutionIndex`, recording binding offsets for imported names. Both source
-resolution and destination selection use this condition. A removed module alias
-must not fall back to its literal spelling (`typing.Sequence`).
+`NameResolutionIndex`, recording evaluation-event positions for imported names. Annotation byte offsets
+identify sites; stability compares binding events with the site event. This uses
+the event ordering introduced by the stacked #560 change. Both source
+resolution and destination selection use this condition lazily through an
+annotation import view; scalar annotations do not scan unrelated imports. A removed module alias
+must not fall back to its literal spelling (`typing.Sequence`). Before operator
+eligibility, inspect referenced annotation AST names and reject any unstable
+import, including names inside nested type arguments. Losing provenance must not
+erase a known prohibition such as `typing.Any` and admit a new candidate.
 
 This is preferable to replacing snapshots with the final module environment:
 annotations can be evaluated and cached before the final statement. A precise
@@ -36,13 +42,17 @@ runtime evaluated. See the official [annotation semantics](https://docs.python.o
 and [lazy evaluation](https://docs.python.org/3.14/reference/executionmodel.html#lazy-evaluation).
 
 The analyzer does not infer a target interpreter. Apply the deferred safety
-condition uniformly, retaining source-order provenance as a necessary condition.
+condition uniformly to runtime annotations, retaining source-order provenance as
+a necessary condition. Function-local variable annotations, which Python never
+evaluates, retain the original source-order candidate policy.
 A later rebind conservatively suppresses a candidate even when an earlier cache
 access makes it safe, or a later reimport restores the binding before first use.
 An import restored before the annotation remains usable when no later binding
 exists. Stable imports, aliases, and unrelated-scope writes remain usable. This
 supersedes #264's claim that later rebinding can never affect earlier candidates.
-No general proof of arbitrary external namespace mutation, custom annotation
+Callable global/nonlocal writes conservatively exclude the affected imported
+name irrespective of textual order; valueless class/module annotations do not
+create a local binding. No general proof of arbitrary external namespace mutation, custom annotation
 functions, dynamic imports or all Python execution schedules is claimed.
 
 ## Validation

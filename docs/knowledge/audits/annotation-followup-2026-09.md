@@ -5,6 +5,11 @@ description: 5e631efにおけるtyping aliasの遅延評価と集合ABCの綴り
 status: draft
 catalog_revision: 5e631ef
 sources:
+  - id: issue-558-design
+    resource: ../../superpowers/specs/2026-09-24-issue-558-deferred-imports-design.md
+    revision: a49467ded359416a6ee743536100634f1cced3e2
+    working_tree: modified
+    sha256: 5ce8d07b9fa810c34577123b722408a7b4621039f30269935dee7101f6271997
   - id: report
     resource: ../../audits/2026-09-15-annotation-followup/README.md
     working_tree: untracked
@@ -30,6 +35,12 @@ Lean生成の10入力を公開planで照合し、debug/releaseそれぞれ4 matc
 
 モデルでは初回注釈評価後の値保持を任意長の操作列について証明し、provider別の置換先メンバーの存在を確認した。有限探索は3イベント、深さ0〜4。10fixtureの候補組比較はstrict、全列と任意長の定理はmodel-onlyとして区別する。Rust実装全体や任意のPython評価時期の証明ではない。[^model][^report]
 
+# #558の修正範囲（2026-09-24）
+
+#558では、宣言位置のimport情報だけでなく、注釈から見えるscopeの後続束縛を確認するように変更した。置換元・置換先の再代入とクラスの後続束縛を除外し、不変のimportは維持する。公開runの回帰テストでは、元注釈が`set[int]`となる入力で不適切な候補をkilledに計上しないことを確認する。[^issue-558-design]
+
+初回評価済みキャッシュと、注釈より後のimport復元は、正しい候補も保守的に除外する。関数内変数の注釈は実行時評価されないため従来のsource-order条件を維持する。上記の監査結果は`5e631ef`の履歴であり、この修正の実行結果に読み替えない。#559のcollections.abc.Setの綴りは、併合元の修正に含まれる。[^issue-558-design]
+
 # 再確認の契機
 
 AnnotationCollectorの評価時期、KnownImports、collection_replacements、spelling_for、既知の型名一覧を変更するときに、監査の正例・負例を再実行する。修正時には#264のdefinition-time契約との違い、future annotations、旧Pythonの扱いを整理し、正式CIへの回帰ケース追加を記録する。
@@ -42,3 +53,5 @@ AnnotationCollectorの評価時期、KnownImports、collection_replacements、sp
 2026-09-24の#559修正では、集合抽象型の対応をtyping.AbstractSetとcollections.abc.Setへ訂正した。module importと直接importの両方で別名と双方向の候補を扱い、置換先の修飾名には参照元モジュールのメンバー名を使う。typing.Setはこの抽象型の組合せへ追加しない。#558の遅延評価は別Issueとして扱う。[^issue-559-repair]
 
 [^issue-559-repair]: [修正設計](../../superpowers/specs/2026-09-24-issue-559-design.md)。
+
+[^issue-558-design]: [Issue #558: imported names in deferred annotations](../../superpowers/specs/2026-09-24-issue-558-deferred-imports-design.md)。
