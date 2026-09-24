@@ -41,7 +41,7 @@ cargo test --workspace
 cargo test -p hoimin-cli --test run_e2e
 cargo test -p hoimin-core --features contracts
 cargo test -p hoimin-cli --features contracts
-uv run --frozen pytest -q
+uv run --frozen pytest
 uvx maturin build --release
 uv run --frozen python tests/wheel_smoke.py
 ```
@@ -50,7 +50,7 @@ uv run --frozen python tests/wheel_smoke.py
 
 Ruff and pytest are development dependencies managed by `uv.lock`. For Python
 checks alone, `uv sync --frozen --no-install-project` installs the tools without
-building the Rust executable. Run `uv run --frozen --no-sync pytest -q` in that
+building the Rust executable. Run `uv run --frozen --no-sync pytest` in that
 environment; the full quality gate above also builds and validates the wheel.
 
 To apply formatting or safe lint fixes explicitly:
@@ -82,6 +82,31 @@ Automatic Linux and manual non-Linux quality jobs run the same read-only Ruff
 checks. Their wheel smoke jobs execute the Python suite with pytest before
 building the wheel. See the [design, implementation plan and review record](
 superpowers/plans/2026-09-24-python-quality.md).
+
+### Coverage and randomized test order
+
+The dev group also includes `pytest-cov` and `pytest-randomly`. The latter
+automatically randomizes test order and seeds Python's random generator. Use
+pytest without `-q` to see the chosen seed in its session header. To reproduce
+an order-dependent failure, pass the reported seed or reuse the last local seed:
+
+```console
+uv run --frozen pytest --randomly-seed=12345
+uv run --frozen pytest --randomly-seed=last
+```
+
+To measure branch coverage of the Python tools:
+
+```console
+uv run --frozen pytest --cov=tools --cov-branch --cov-report=term-missing
+```
+
+Coverage is opt-in and has no minimum percentage gate. This command measures
+`tools/` in the pytest process; it does not measure the Rust implementation or
+every subprocess. Generated coverage data and common report outputs are ignored
+by Git. See the [pytest-cov configuration guide](
+https://pytest-cov.readthedocs.io/en/latest/config.html) and
+[pytest-randomly usage](https://github.com/pytest-dev/pytest-randomly#usage).
 
 ## CI platform execution policy
 

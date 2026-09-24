@@ -571,7 +571,7 @@ class PythonQualityWorkflowContractTests(unittest.TestCase):
                     for step in jobs["wheel-smoke"]["steps"]
                     if "run" in step
                 ]
-                self.assertIn("uv run --frozen pytest -q", wheel_commands)
+                self.assertIn("uv run --frozen pytest", wheel_commands)
                 self.assertFalse(
                     any("unittest discover" in cmd for cmd in wheel_commands)
                 )
@@ -1187,7 +1187,7 @@ class ToolchainReleaseDocumentationContractTests(unittest.TestCase):
             "cargo test -p hoimin-cli --test run_e2e",
             "cargo test -p hoimin-core --features contracts",
             "cargo test -p hoimin-cli --features contracts",
-            "uv run --frozen pytest -q",
+            "uv run --frozen pytest",
             "uvx maturin build --release",
             "uv run --frozen python tests/wheel_smoke.py",
         ]
@@ -1237,7 +1237,7 @@ class ShuffleWorkflowContractTests(unittest.TestCase):
         workflow = CI_WORKFLOW.read_text(encoding="utf-8")
         wheel_smoke = job_block(workflow, "wheel-smoke")
 
-        unit_tests = "uv run --frozen pytest -q"
+        unit_tests = "uv run --frozen pytest"
         reset = (
             'python -c "import shutil; '
             "shutil.rmtree('target/wheels', ignore_errors=True)\""

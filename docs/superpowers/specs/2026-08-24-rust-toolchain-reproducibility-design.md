@@ -473,3 +473,8 @@ The [Python quality plan](../plans/2026-09-24-python-quality.md) records reviews
 collection/behavior checks and actual command results. Development dependencies
 do not become wheel runtime dependencies; wheel metadata and isolated smoke
 validation check that boundary.
+
+The same dev group includes pytest-cov and pytest-randomly. Normal pytest runs
+randomize test order; CI retains the session header so its seed can be replayed.
+The development guide documents opt-in branch coverage for `tools/`, with no
+percentage gate and no claim of Rust or complete subprocess coverage.

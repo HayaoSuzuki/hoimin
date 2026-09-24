@@ -60,7 +60,7 @@ jobs:
         with:
           name: performance-gates-${{ matrix.os }}
           path: ${{ runner.temp }}/performance-gates
-      - run: uv run --frozen pytest -q tests/test_skills.py
+      - run: uv run --frozen pytest tests/test_skills.py
 
   core-dependency-purity:
     name: Manual core dependency purity (windows-latest)
@@ -92,7 +92,7 @@ jobs:
           enable-cache: true
       - name: Install repository Rust toolchain
         run: rustup toolchain install
-      - run: uv run --frozen pytest -q
+      - run: uv run --frozen pytest
       - name: Reset wheel artifact directory
         run: python -c "import shutil; shutil.rmtree('target/wheels', ignore_errors=True)"
       - run: uvx maturin build --release

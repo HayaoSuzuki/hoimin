@@ -156,3 +156,32 @@ Document seed reproduction and ignore generated coverage artifacts.
 2. Multiple seeds and collection comparisons exercise actual plugin integration.
 3. Coverage output remains local/ignored; installing the plugins does not silently
    add a threshold or change the automatic platform execution policy.
+
+### Follow-up implementation self-reviews
+
+1. Dependency boundary: only pytest-cov 7.1.0, pytest-randomly 4.1.0 and coverage
+   7.16.1 were added to the lock. All previous package versions remain unchanged;
+   the project runtime dependency list remains empty.
+2. Reproduction: removed quiet flags from automatic/manual CI pytest commands
+   and corresponding contract expectations so every run prints its random seed.
+   Developer commands likewise show the header. No default fixed seed was added.
+3. Output and scope: coverage is explicitly requested for tools only, generated
+   data/report paths are ignored, and no threshold or subprocess patch is enabled.
+   Updated the related design source and verified its catalog revision/link/hash.
+
+### Follow-up test self-reviews
+
+1. Full suite: seed 12345 with coverage passed all 104 tests; seed 67890 without
+   coverage also passed all 104 tests. Both plugin names/versions and seed appear
+   in session headers. The tools-only branch report totals 75% (423 statements,
+   178 branches); it is not product-wide or subprocess coverage.
+2. Order behavior: three collection runs with seeds 12345/67890/12345 contained
+   the same 104 test IDs. The first and third order matched exactly; the second
+   differed. No tests disappeared under randomization.
+3. Integration: uv lock check, Ruff lint/format and diff whitespace checks passed.
+   Git ignores all four documented coverage output patterns. Production code and
+   wheel build metadata are unchanged, so a repeated wheel build was unnecessary.
+
+Incremental independent review found no blocking issues. Its suggestion to show
+seed output in the Python-only developer command was applied. Validation above
+belongs to this follow-up, distinct from the earlier wheel/fixture evidence.
