@@ -20,7 +20,7 @@ sources:
   resource: ../../../crates/hoimin-cli/src/analyzer/rust.rs
   revision: aefa2a8
   working_tree: modified
-  sha256: 53afe9c03c6010e49c6e13f67ed2780c14b8e58c93d436858d01b96ba473f8a5
+  sha256: 0d93c8c393d50ca9793ade1ce487504138b13aa3845557481ce94f89662959be
 - id: issue-560-tests
   resource: ../../../crates/hoimin-cli/tests/builtin_evaluation_order.rs
   revision: ffb65c051014f3d9601df2deb0bfeb5ff55c7c38
@@ -31,7 +31,7 @@ sources:
   resource: ../../superpowers/specs/2026-09-24-issue-558-deferred-imports-design.md
   revision: a49467ded359416a6ee743536100634f1cced3e2
   working_tree: modified
-  sha256: 5ce8d07b9fa810c34577123b722408a7b4621039f30269935dee7101f6271997
+  sha256: 05fb86175690ff023986ef0bb2f0df2552ee8801ceab86910d01487db483ff6f
 - id: nullable-gates-audit
   resource: ../../audits/2026-09-15-nullable-gates/README.md
   working_tree: untracked
@@ -477,6 +477,8 @@ Issue #556の修正では、通常のwithとasync withの本体で例外状態�
 ## #558の遅延注釈の名前解決
 
 #558の修正では、注釈位置のimport状態に加えて、評価時に参照するscopeの後続束縛を確認する。typingとcollections.abcの置換元・置換先に共通の条件を適用し、由来を確認できない綴りは候補に使わない。変更のないimport、注釈より前のimport復元、別scopeの独立したimportは維持する。[^issue-558-design]
+
+条件分岐の合流でimport情報が失われた場合も、import名の履歴と参照先scopeを使って不確かな参照を除外する。関数内変数のsource-order例外には、既知のimport情報が必要である。[^issue-558-design]
 
 評価済みキャッシュの後の再代入と、注釈より後かつ初回参照前のimport復元は、安全な場合でも保守的に除外する。Pythonの版を推定せず、future annotations、遅延type alias、generic bound/defaultにもこの条件を適用する。実行時に評価されない関数内変数の注釈は従来のsource-order条件を維持する。collections.abc.Setの綴りは、併合元の#559で修正済みである。[^issue-558-design]
 

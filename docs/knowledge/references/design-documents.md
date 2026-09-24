@@ -21,7 +21,7 @@ sources:
   resource: ../../superpowers/specs/2026-09-24-issue-558-deferred-imports-design.md
   revision: a49467ded359416a6ee743536100634f1cced3e2
   working_tree: modified
-  sha256: 5ce8d07b9fa810c34577123b722408a7b4621039f30269935dee7101f6271997
+  sha256: 05fb86175690ff023986ef0bb2f0df2552ee8801ceab86910d01487db483ff6f
 - id: issue-549-design
   resource: ../../superpowers/specs/2026-09-15-issue-549-slice-tuple-design.md
   revision: f11013542ccd735ab9741b5079c0b39a517df256

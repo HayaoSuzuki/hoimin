@@ -15,7 +15,7 @@ sources:
   resource: ../../superpowers/reports/2026-09-24-issue-558-review.md
   revision: a49467ded359416a6ee743536100634f1cced3e2
   working_tree: modified
-  sha256: 10ad9832250ba6bdd7dd7f9a7723852fac4eb25075cc9b0eb33380530e649af1
+  sha256: 789a38f0bf2997640843c500aaea6fcf83108334087716adb7904c65c3841d38
 - id: followup-lean-promotion
   resource: ../../superpowers/reports/2026-09-15-followup-lean-promotion.md
   working_tree: untracked

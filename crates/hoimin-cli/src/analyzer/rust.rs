@@ -1025,6 +1025,7 @@ struct NameResolutionIndex {
     occurrences: HashMap<usize, NameOccurrence>,
     back_edge_bindings: HashMap<usize, HashSet<String>>,
     unevaluated_annotations: HashSet<usize>,
+    imported_names: HashSet<String>,
 }
 
 impl NameResolutionIndex {
@@ -1051,6 +1052,7 @@ impl NameResolutionIndex {
                 history.finalize();
             }
         }
+        builder.index.imported_names = builder.imported_names;
         builder.index
     }
 
@@ -1082,10 +1084,15 @@ impl NameResolutionIndex {
             })
     }
 
-    fn annotation_import_stable(&self, offset: usize, name: &str) -> bool {
+    fn annotation_import_stable(
+        &self,
+        offset: usize,
+        name: &str,
+        source_order_known: bool,
+    ) -> bool {
         #[cfg(test)]
         ANNOTATION_IMPORT_LOOKUPS.set(ANNOTATION_IMPORT_LOOKUPS.get().saturating_add(1));
-        if self.unevaluated_annotations.contains(&offset) {
+        if source_order_known && self.unevaluated_annotations.contains(&offset) {
             return true;
         }
         let Some(site) = self.occurrences.get(&offset) else {
@@ -1128,7 +1135,9 @@ impl NameResolutionIndex {
             // Stop at the namespace that owns the source-order import. An outer
             // namespace's later write cannot replace this local binding.
             if scope.locals.contains(name) || scope.import_writes.contains_key(name) {
-                return true;
+                // A control-flow join may have discarded the import snapshot.
+                // Its visible binding is then uncertain even without later writes.
+                return source_order_known;
             }
             direct &= scope.kind == NameScopeKind::TypeParameters;
             current = scope.parent;
@@ -1378,6 +1387,7 @@ impl NameResolutionBuilder {
                 occurrences: HashMap::new(),
                 back_edge_bindings: HashMap::new(),
                 unevaluated_annotations: HashSet::new(),
+                imported_names: HashSet::new(),
             },
             imported_names: HashSet::new(),
             nonlocal_import_writes: Vec::new(),
@@ -6406,8 +6416,12 @@ struct AnnotationImports<'a> {
 
 impl AnnotationImports<'_> {
     fn stable_name(&self, local: &str) -> bool {
-        !(self.known.direct.contains_key(local) || self.known.modules.contains_key(local))
-            || self.resolution.annotation_import_stable(self.offset, local)
+        let known = self.known.direct.contains_key(local) || self.known.modules.contains_key(local);
+        if !known && !self.resolution.imported_names.contains(local) {
+            return true;
+        }
+        self.resolution
+            .annotation_import_stable(self.offset, local, known)
     }
 
     fn contains_unstable_reference(&self, annotation: &Expr) -> bool {
@@ -6435,7 +6449,8 @@ impl AnnotationImports<'_> {
 
     fn spelling_for(&self, source: &str, targets: &[&str]) -> Option<String> {
         self.known.spelling_for_where(source, targets, |local| {
-            self.resolution.annotation_import_stable(self.offset, local)
+            self.resolution
+                .annotation_import_stable(self.offset, local, true)
         })
     }
 }

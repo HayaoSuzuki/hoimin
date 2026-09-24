@@ -327,3 +327,53 @@ async fn deferred_unstable_imports_cannot_hide_prohibited_descendants() {
     }
     assert!(failures.is_empty(), "{}", failures.join("\n---\n"));
 }
+
+#[tokio::test]
+async fn conditional_import_provenance_loss_stays_ineligible() {
+    for (binding, root, annotation, expected) in [
+        (
+            "import typing",
+            "typing",
+            "list[typing.Any]",
+            "list[typing.Any]",
+        ),
+        ("import typing as q", "q", "list[q.Any]", "list[typing.Any]"),
+        (
+            "import typing as q",
+            "q",
+            "list[q.Literal[1]]",
+            "list[typing.Literal[1]]",
+        ),
+    ] {
+        let source = format!(
+            "{binding}\ncondition = False\ncustom = type('Custom', (), {{'Any': int, 'Literal': list}})\nif condition:\n    {root} = custom\ndef f(x: {annotation}): pass\n"
+        );
+        evaluate(&source, "f.__annotations__['x']", expected);
+        let manifest: PlanManifest = serde_json::from_value(
+            invoke_operator(&source, "plan", "pass\n", "type_nullable_add").await,
+        )
+        .unwrap();
+        assert!(manifest.candidates.is_empty(), "{source}");
+    }
+    for source in [
+        "import typing as q\ndef f(x: q.Sequence[int]): pass\n",
+        "def unrelated():\n    import typing as int\ndef f(x: int): pass\n",
+        "def f():\n    import typing as q\n    x: q.Sequence[int]\n    q = object()\n",
+    ] {
+        let manifest: PlanManifest = serde_json::from_value(
+            invoke_operator(source, "plan", "pass\n", "type_nullable_add").await,
+        )
+        .unwrap();
+        assert_eq!(manifest.candidates.len(), 1, "{source}");
+    }
+}
+
+#[tokio::test]
+async fn local_conditional_import_provenance_loss_stays_ineligible() {
+    let source = "def f():\n    import typing as q\n    if condition:\n        q = custom\n    x: list[q.Any]\n";
+    let manifest: PlanManifest = serde_json::from_value(
+        invoke_operator(source, "plan", "pass\n", "type_nullable_add").await,
+    )
+    .unwrap();
+    assert!(manifest.candidates.is_empty());
+}

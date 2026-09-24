@@ -9,7 +9,7 @@ sources:
     resource: ../../superpowers/specs/2026-09-24-issue-558-deferred-imports-design.md
     revision: a49467ded359416a6ee743536100634f1cced3e2
     working_tree: modified
-    sha256: 5ce8d07b9fa810c34577123b722408a7b4621039f30269935dee7101f6271997
+    sha256: 05fb86175690ff023986ef0bb2f0df2552ee8801ceab86910d01487db483ff6f
   - id: report
     resource: ../../audits/2026-09-15-annotation-followup/README.md
     working_tree: untracked
@@ -38,6 +38,8 @@ Lean生成の10入力を公開planで照合し、debug/releaseそれぞれ4 matc
 # #558の修正範囲（2026-09-24）
 
 #558では、宣言位置のimport情報だけでなく、注釈から見えるscopeの後続束縛を確認するように変更した。置換元・置換先の再代入とクラスの後続束縛を除外し、不変のimportは維持する。公開runの回帰テストでは、元注釈が`set[int]`となる入力で不適切な候補をkilledに計上しないことを確認する。[^issue-558-design]
+
+注釈より前の条件付き再代入でimport情報が合流時に失われる場合も除外する。名前の履歴は参照された綴りだけを調べ、別の関数内だけに存在する同名importは通常の組込み型候補を抑制しない。[^issue-558-design]
 
 初回評価済みキャッシュと、注釈より後のimport復元は、正しい候補も保守的に除外する。関数内変数の注釈は実行時評価されないため従来のsource-order条件を維持する。上記の監査結果は`5e631ef`の履歴であり、この修正の実行結果に読み替えない。#559のcollections.abc.Setの綴りは、併合元の修正に含まれる。[^issue-558-design]
 

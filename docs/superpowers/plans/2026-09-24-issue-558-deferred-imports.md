@@ -45,3 +45,7 @@ restoration/cache conservatism must be explicit; unrelated locals must stay vali
 
 Design/plan review details are recorded in the issue-specific review report.
 Execution is authorized by the user; implement inline without an approval pause.
+
+- [x] Independent final review: reproduce conditional pre-site import provenance
+  loss, retain imported spelling history without cloning/scanning maps, and test
+  qualified prohibited descendants, local annotations and sibling-scope positives.

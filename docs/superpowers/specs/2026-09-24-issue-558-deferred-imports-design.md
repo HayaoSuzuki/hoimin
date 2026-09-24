@@ -64,3 +64,10 @@ executes representative sources and retained replacements. Public run must repor
 zero killed candidates for the reported invalid pair. Existing analyzer and
 formal-oracle tests retain their binding-flow assertions; any candidate expectation
 that depended on eager lookup is explicitly reconciled with this contract.
+
+A control-flow join can discard a formerly imported name before an annotation.
+The resolver retains imported spelling history independently from the trusted
+snapshot, and rejects a referenced name with a visible binding owner when that
+snapshot is absent. This also applies to unevaluated local annotations: the
+source-order exception requires a known import. An import confined to a sibling
+scope does not by itself invalidate an otherwise unbound builtin spelling.
