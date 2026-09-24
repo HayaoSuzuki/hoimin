@@ -63,11 +63,16 @@ is separate from this validation policy.
 
 ## Pinned Rust toolchain
 
-`rust-toolchain.toml` pins the repository development and blocking CI
-toolchain to Rust 1.98.0, including rustfmt and Clippy. Run `rustup toolchain
+`rust-toolchain.toml` is the source of the exact stable Rust version used for
+repository development and blocking CI, including rustfmt and Clippy. Run `rustup toolchain
 install` from the repository root to install that exact declaration. The
 weekly latest-stable canary reports upcoming compatibility issues without
 changing the blocking toolchain.
+
+The workflow contract test requires a complete `major.minor.patch` stable pin,
+the minimal profile, and both components. It does not duplicate the current
+version number, so a patch or minor update does not require changing the test.
+Wheel package versions must still match the package metadata exactly.
 
 Updating this pin is a deliberate compatibility change: update
 `rust-toolchain.toml`, run every quality-gate command above, and review the
