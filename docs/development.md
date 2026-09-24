@@ -698,6 +698,16 @@ Hoimin's Python mutation testing remains available through `hoimin plan` and
 `hoimin verify`; see the repository's Python mutation-testing skills for target
 selection and resource limits.
 
+## Abstract set annotation providers
+
+Collection annotation pairs use provider-specific abstract names:
+`typing.AbstractSet` and `collections.abc.Set` both pair with builtin `set`.
+Plain/aliased module imports and direct/aliased member imports are supported;
+`typing.Set` is not the abstract counterpart. Replacement spellings retain the
+resolved module provider, including unaliased `collections.abc`. Existing
+source and destination shadowing checks still apply. Tests evaluate generated
+annotations under CPython 3.14 in addition to reparsing their source.
+
 ## Worker import roots
 
 `RawRunConfig.import_roots` normalizes to an ordered, duplicate-free list in

@@ -890,6 +890,11 @@ sources:
   revision: 51b4a4b61f9e9e10a621eb3574e5caad28e8111c
   working_tree: clean
 
+- id: issue-559-repair
+  resource: ../../superpowers/specs/2026-09-24-issue-559-design.md
+  revision: 98e78166b43940df38a8bb8099c9c6af6004ba5a
+  working_tree: clean
+
 ---
 
 # 収録一覧
@@ -1424,3 +1429,11 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 | Issue 563: copy-policy resume compatibility | [設計書](../../superpowers/specs/2026-09-24-issue-563-design.md) [^issue-563-repair] |
 
 [^issue-563-repair]: [修正設計](../../superpowers/specs/2026-09-24-issue-563-design.md)。
+
+## 2026-09-24: Issue #559
+
+| 原文の先頭見出し | 原文 |
+| --- | --- |
+| Issue 559: provider-correct abstract set annotations | [設計書](../../superpowers/specs/2026-09-24-issue-559-design.md) [^issue-559-repair] |
+
+[^issue-559-repair]: [修正設計](../../superpowers/specs/2026-09-24-issue-559-design.md)。
