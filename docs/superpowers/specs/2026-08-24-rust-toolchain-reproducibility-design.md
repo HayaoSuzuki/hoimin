@@ -404,3 +404,19 @@ preserves the boundary.
 They address a different failure family and were designed before the main
 quality gate was understood. Combining them prevents independent review and
 makes a passing result ambiguous.
+
+## 2026-09-24 amendment: validate pin shape, not a copied version
+
+PR #578's Rust 1.98.1 update exposed a redundant `1.98.0` equality in the
+workflow contract tests. The exact stable version remains pinned in
+`rust-toolchain.toml`; tests now validate a canonical numeric
+`major.minor.patch` declaration, minimal profile, and clippy/rustfmt components.
+They reject floating channels, incomplete versions and prerelease/suffixed
+values without duplicating the current release. Future exact release updates
+still run all compatibility gates. Package/wheel version equality and MSRV
+remain separate contracts.
+
+The repair uses an independent branch and includes the 1.98.1 update. Its
+[implementation plan and review evidence](../plans/2026-09-24-rust-toolchain-smoke.md)
+record the original failure and subsequent checks; the earlier measurements
+in this document remain historical evidence.

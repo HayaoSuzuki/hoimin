@@ -403,22 +403,58 @@ def assert_artifact_only_release(test: unittest.TestCase, workflow: str) -> None
     test.assertEqual(decoded, EXPECTED_RELEASE_WORKFLOW)
 
 
+def assert_repository_rust_toolchain(test: unittest.TestCase, toolchain: dict) -> None:
+    test.assertEqual(set(toolchain), {"toolchain"})
+    declaration = toolchain["toolchain"]
+    test.assertEqual(set(declaration), {"channel", "profile", "components"})
+    # The manifest owns the version; this contract checks reproducible pinning.
+    test.assertRegex(
+        declaration["channel"],
+        r"\A(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\Z",
+    )
+    test.assertEqual(declaration["profile"], "minimal")
+    test.assertCountEqual(declaration["components"], ["clippy", "rustfmt"])
+
+
 class RepositoryRustToolchainContractTests(unittest.TestCase):
     def test_repository_toolchain_is_exact_and_complete(self) -> None:
         toolchain = tomllib.loads(RUST_TOOLCHAIN.read_text(encoding="utf-8"))
+        assert_repository_rust_toolchain(self, toolchain)
 
-        self.assertEqual(set(toolchain), {"toolchain"})
-        declaration = toolchain["toolchain"]
-        self.assertEqual(
-            set(declaration),
-            {"channel", "profile", "components"},
-        )
-        self.assertEqual(declaration["channel"], "1.98.0")
-        self.assertEqual(declaration["profile"], "minimal")
-        self.assertCountEqual(
-            declaration["components"],
-            ["clippy", "rustfmt"],
-        )
+    def test_accepts_updated_exact_stable_versions(self) -> None:
+        for channel in ("1.98.0", "1.98.1", "1.98.10", "1.99.0", "2.0.0"):
+            with self.subTest(channel=channel):
+                toolchain = tomllib.loads(RUST_TOOLCHAIN.read_text(encoding="utf-8"))
+                toolchain["toolchain"]["channel"] = channel
+                assert_repository_rust_toolchain(self, toolchain)
+
+    def test_rejects_floating_incomplete_and_nonstable_versions(self) -> None:
+        for channel in (
+            "stable", "beta", "nightly", "nightly-2026-07-27", "1", "1.98",
+            "1.98.*", "1.98.1-beta.1", "1.98.1+build", "v1.98.1",
+            "1.98.1-x86_64-unknown-linux-gnu", "01.98.1", "1.098.1", "1.98.01",
+            " 1.98.1", "1.98.1 ", "1.98.1\n", "", "１.98.1",
+        ):
+            with self.subTest(channel=channel):
+                toolchain = tomllib.loads(RUST_TOOLCHAIN.read_text(encoding="utf-8"))
+                toolchain["toolchain"]["channel"] = channel
+                with self.assertRaises(AssertionError):
+                    assert_repository_rust_toolchain(self, toolchain)
+
+    def test_retains_profile_components_and_declaration_checks(self) -> None:
+        for field, value in (
+            ("profile", "default"),
+            ("components", ["clippy"]),
+            ("components", ["rustfmt"]),
+            ("components", ["clippy", "rustfmt", "rust-src"]),
+            ("components", ["clippy", "rustfmt", "rustfmt"]),
+            ("targets", ["x86_64-unknown-linux-gnu"]),
+        ):
+            with self.subTest(field=field, value=value):
+                toolchain = tomllib.loads(RUST_TOOLCHAIN.read_text(encoding="utf-8"))
+                toolchain["toolchain"][field] = value
+                with self.assertRaises(AssertionError):
+                    assert_repository_rust_toolchain(self, toolchain)
 
 
 class CiRustJobContractTests(unittest.TestCase):
@@ -982,7 +1018,7 @@ class ToolchainReleaseDocumentationContractTests(unittest.TestCase):
 
         self.assertIn("## Pinned Rust toolchain", guide)
         self.assertIn("rust-toolchain.toml", guide)
-        self.assertIn("1.98.0", guide)
+        self.assertIn("major.minor.patch", guide)
         self.assertIn("does not raise the minimum supported Rust version", guide)
         expected_commands = [
             "cargo fmt --all -- --check",
