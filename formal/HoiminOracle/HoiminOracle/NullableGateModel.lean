@@ -45,4 +45,23 @@ theorem blocked_descendant_never_eligible (trusted : Bool) {tree : Tree}
 
 theorem safe_pair_preserved : eligible true (.pair (.atom true) (.atom true)) = true := by rfl
 
+def brokenLeftOnly : Tree → Bool
+  | .atom supported => supported
+  | .one child => brokenLeftOnly child
+  | .pair left _ => brokenLeftOnly left
+
+theorem tuple_bypass_detected :
+    clean (.pair (.atom true) (.atom false)) ≠
+      brokenTuple (.pair (.atom true) (.atom false)) := by decide
+
+theorem left_only_bypass_detected :
+    clean (.pair (.atom true) (.atom false)) ≠
+      brokenLeftOnly (.pair (.atom true) (.atom false)) := by decide
+
+theorem blocked_key_rejected :
+    eligible true (.pair (.atom false) (.atom true)) = false := by rfl
+
+theorem third_descendant_rejected :
+    eligible true (.one (.pair (.atom true) (.pair (.atom true) (.atom false)))) = false := by rfl
+
 end NullableGate

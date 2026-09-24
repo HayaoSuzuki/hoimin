@@ -15,6 +15,27 @@ sources:
     revision: f6f5d96c099fb880884b2b7cb29717ff33d70d75
     working_tree: clean
     sha256: bad1dd2514554710dd6b388caa74e6833e63bfd77119e6c0104bc2d7b25cd3a4
+
+  - id: issue-565-design
+    resource: ../../superpowers/specs/2026-09-24-issue-565-annotation-descendants.md
+    revision: 75c1ddfd59a1c2ebf1bc9de05efb33c571c7c328
+    working_tree: clean
+    sha256: b13589887e2a7fc2f3386c0d284825582139503f3deab0504e79c13d7cb76f8f
+  - id: issue-565-model
+    resource: ../../../formal/HoiminOracle/HoiminOracle/NullableGateModel.lean
+    revision: 75c1ddfd59a1c2ebf1bc9de05efb33c571c7c328
+    working_tree: clean
+    sha256: d55bbd0f28c1e25e9fa55afb4f53d52938804f88336b8531e947d8db3c57503f
+  - id: issue-565-implementation
+    resource: ../../../crates/hoimin-cli/src/analyzer/rust.rs
+    revision: 75c1ddfd59a1c2ebf1bc9de05efb33c571c7c328
+    working_tree: clean
+    sha256: e979b73edd09d07dc625ffe282a8ff709e30dcdb9f86ca76134bbd8d703db69b
+  - id: issue-565-tests
+    resource: ../../../crates/hoimin-cli/tests/lean_nullable_gate_oracle.rs
+    revision: 75c1ddfd59a1c2ebf1bc9de05efb33c571c7c328
+    working_tree: clean
+    sha256: ac025b363720f97b814b0e578f886f7ae182a3093e0e7298f5da95370f8060f3
   - id: report
     resource: ../../audits/2026-09-15-nullable-gates/README.md
     working_tree: untracked
@@ -37,9 +58,22 @@ Leanは名前のtrusted条件と型引数の木を分離し、候補許可には
 
 Lean生成15入力はdebug/releaseとも4 match / 11 mismatch / 実行基盤エラー0だった。名前再束縛4件では変異後の注釈評価が例外となり、型引数内部7件では設計上の対象外候補を生成した。既存テスト25件は成功した。15fixtureはstrict、全木と一般定理はmodel-onlyである。型チェッカーのbaseline・スコアやRust全体の証明は含まない。[^report]
 
+# Issue #565の修正と正式テストへの追加（2026-09-24）
+
+共通の対象外判定がTuple・Listの全要素とStarredの値へ再帰するよう変更した。key/valueの両側、深い型引数、別名import、3番目の要素、unpackを含む負例と正例を追加した。単純なtuple全体を拒否せず、対象内の引数だけなら従来の候補を保持する。[^issue-565-design][^issue-565-implementation]
+
+既存の任意深さの子孫拒否定理を維持し、key側・3番目の子孫の拒否と、左の子だけを検査する規則の反例を追加した。有限検査は従来どおり深さ0〜2で、2・8・74個の木を扱う。これはモデル内の構造的性質であり、Rust実装やPythonの型システム全体の証明ではない。[^issue-565-model]
+
+Leanから生成する65入力すべてを公開CLIでstrictに照合する。構造検査と七つの型演算子に関する61入力に、#564の名前再束縛4入力を含める。CPython 3.14では元注釈の評価と生成候補のコンパイルを確認する。#564を併合する前はその4入力をreport-onlyで観測していたが、併合後は期待値を変更せずstrictへ移行し、report-only指定を拒否する。型チェッカーのscore、任意の実行可能な注釈式、Windows/Linuxの実行比較は今回の確認範囲に含めない。[^issue-565-tests][^issue-565-design]
+
+[^issue-565-design]: [Issue 565: recursively exclude disallowed annotation arguments](../../superpowers/specs/2026-09-24-issue-565-annotation-descendants.md)。
+[^issue-565-model]: [正式検証用のNullableGateModel](../../../formal/HoiminOracle/HoiminOracle/NullableGateModel.lean)。
+[^issue-565-implementation]: [注釈判定の実装](../../../crates/hoimin-cli/src/analyzer/rust.rs)。
+[^issue-565-tests]: [公開CLI対応テスト](../../../crates/hoimin-cli/tests/lean_nullable_gate_oracle.rs)。
+
 # 再確認の契機
 
-nullable_add_allowed、is_supported_annotation、contains_disallowed_annotation、名前解決の追跡対象を変更するときに再実行する。通常のint/list/dictと、単一型引数の除外を保持する。#565の実装修正と正式CIへのケース移行は、この文書では確認していない。
+nullable_add_allowed、is_supported_annotation、contains_disallowed_annotation、名前解決の追跡対象を変更するときに再実行する。通常のint/list/dictと、単一型引数の除外を保持する。監査時点では実装修正と正式CIへのケース移行は未実施だった。
 
 [^report]: [監査報告と再現手順](../../audits/2026-09-15-nullable-gates/README.md)。
 [^model]: [GateModel.lean](../../audits/2026-09-15-nullable-gates/GateModel.lean)。

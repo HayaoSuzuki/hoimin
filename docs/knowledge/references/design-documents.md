@@ -27,6 +27,12 @@ sources:
   revision: f6f5d96c099fb880884b2b7cb29717ff33d70d75
   working_tree: clean
   sha256: a0237a6eca382f65069b6a15eb7681c155f6b94f468d8b09725cff7a9f514f8e
+
+- id: issue-565-design
+  resource: ../../superpowers/specs/2026-09-24-issue-565-annotation-descendants.md
+  revision: 75c1ddfd59a1c2ebf1bc9de05efb33c571c7c328
+  working_tree: clean
+  sha256: b13589887e2a7fc2f3386c0d284825582139503f3deab0504e79c13d7cb76f8f
 - id: issue-549-design
   resource: ../../superpowers/specs/2026-09-15-issue-549-slice-tuple-design.md
   revision: f11013542ccd735ab9741b5079c0b39a517df256
@@ -1491,3 +1497,11 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 | Issue 564: nullable annotation builtin provenance | [原文](../../superpowers/specs/2026-09-24-issue-564-nullable-provenance.md) [^issue-564-design] |
 
 [^issue-564-design]: [Issue 564: nullable annotation builtin provenance](../../superpowers/specs/2026-09-24-issue-564-nullable-provenance.md)。
+
+# Issue #565
+
+| 原文の先頭見出し | 原文 |
+| --- | --- |
+| Issue 565: recursively exclude disallowed annotation arguments | [設計書](../../superpowers/specs/2026-09-24-issue-565-annotation-descendants.md) [^issue-565-design] |
+
+[^issue-565-design]: [Issue 565: recursively exclude disallowed annotation arguments](../../superpowers/specs/2026-09-24-issue-565-annotation-descendants.md)。

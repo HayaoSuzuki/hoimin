@@ -494,6 +494,21 @@ The analyzer emits a `split`/`rsplit` swap only when the call supplies a
 second positional argument or the named `maxsplit` keyword. Calls that omit
 `maxsplit` produce identical string results, so the analyzer skips them.
 
+All type operators share the disallowed-descendant gate. It recursively checks
+subscript arguments, unions, tuple/list elements, and starred argument unpacking.
+An excluded type (including Any, object, TypeVar, a string forward reference,
+Annotated, Callable, Literal, or Protocol) in either mapping argument or a nested
+argument suppresses the whole annotation's type mutations. Clean multi-argument
+and unpacked annotations remain eligible; this structural check does not establish
+that a builtin-spelled name is unshadowed.
+
+The Lean NullableGate model proves blocked-descendant rejection for arbitrary
+model depth. Its generated corpus is checked through public CLI plan in
+`tests/lean_nullable_gate_oracle.rs`; all 65 rows are strict and cover structural
+eligibility, all seven type operators, and the four name-rebinding cases fixed
+by issue #564. The adapter rejects report-only modes. Regenerate and check the corpus through
+`generate_nullable_gate`; do not change expected pairs in the Rust adapter.
+
 Type-annotation collection records an import-state snapshot at each annotation
 site in source order. Signature annotations use their enclosing state, while a
 function body predeclares Python-local names before its body is visited. Nested
