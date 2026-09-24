@@ -50,6 +50,47 @@ fn config_with_metrics(path: &str) -> RunConfig {
 }
 
 #[test]
+fn copy_policy_changes_resume_compatibility() {
+    let make = |includes: &[&str], excludes: &[&str]| {
+        let mut config = config_with_metrics("metrics.json");
+        config.selection.includes = includes.iter().map(|s| (*s).to_owned()).collect();
+        config.selection.excludes = excludes.iter().map(|s| (*s).to_owned()).collect();
+        fingerprint(&FingerprintInput::from_config(
+            &config,
+            Vec::new(),
+            Vec::new(),
+            ResourceMode::BestEffort,
+        ))
+    };
+    let empty = make(&[], &[]);
+    let included = make(&["strict.flag"], &[]);
+    let excluded = make(&[], &["strict.flag"]);
+    assert_ne!(
+        empty, included,
+        "include addition/removal must invalidate reuse"
+    );
+    assert_ne!(
+        empty, excluded,
+        "exclude addition/removal must invalidate reuse"
+    );
+    assert_ne!(
+        included, excluded,
+        "include and exclude are different policies"
+    );
+    assert_eq!(included, make(&["strict.flag"], &[]));
+    assert_ne!(
+        make(&["*.flag", "!strict.flag"], &[]),
+        make(&["!strict.flag", "*.flag"], &[])
+    );
+    assert_ne!(
+        make(&[], &["*.flag", "!strict.flag"]),
+        make(&[], &["!strict.flag", "*.flag"])
+    );
+    assert_ne!(make(&["ab", "c"], &[]), make(&["a", "bc"], &[]));
+    assert_ne!(make(&["a"], &["b"]), make(&["a", "b"], &[]));
+}
+
+#[test]
 fn resume_decides_one_stored_result_without_collecting_the_run() {
     for status in [MutationStatus::Killed, MutationStatus::Survived] {
         assert_eq!(
@@ -704,6 +745,8 @@ fn arbitrary_fingerprint_input() -> impl Strategy<Value = FingerprintInput> {
             )| {
                 FingerprintInput {
                     import_roots: Vec::new(),
+                    includes: Vec::new(),
+                    excludes: Vec::new(),
                     sources,
                     fingerprint_inputs,
                     targets,
@@ -786,6 +829,8 @@ proptest! {
 fn fixture_input() -> FingerprintInput {
     FingerprintInput {
         import_roots: Vec::new(),
+        includes: Vec::new(),
+        excludes: Vec::new(),
         sources: vec![
             SourceHash {
                 path: "src/a.py".into(),
@@ -882,7 +927,7 @@ fn mutate_min_free_space(v: &mut RawRunLimits) {
 
 #[test]
 fn import_root_changes_and_precedence_change_fingerprint() {
-    assert_eq!(hoimin_core::FINGERPRINT_SCHEMA_VERSION, 7);
+    assert_eq!(hoimin_core::FINGERPRINT_SCHEMA_VERSION, 8);
     let original = fixture_input();
     let mut configured = original.clone();
     configured.import_roots = vec!["src".into(), "vendor".into()];

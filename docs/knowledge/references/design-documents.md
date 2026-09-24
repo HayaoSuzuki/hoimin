@@ -885,6 +885,11 @@ sources:
   resource: ../../superpowers/specs/2026-09-11-issue-481-comprehension-bindings-design.md
   working_tree: untracked
   sha256: 499b6d9c2814c81f12562ecbaa2728c8763a535077a69fecef9c01797db415dd
+- id: issue-563-repair
+  resource: ../../superpowers/specs/2026-09-24-issue-563-design.md
+  revision: 51b4a4b61f9e9e10a621eb3574e5caad28e8111c
+  working_tree: clean
+
 ---
 
 # 収録一覧
@@ -1411,3 +1416,11 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 [^issue-547-design]: [原文](../../superpowers/specs/2026-09-15-issue-547-import-transfer-design.md)。
 
 [^issue-546-design]: [Issue #546: 入れ子ループの転送結果の再利用](../../superpowers/specs/2026-09-15-issue-546-loop-transfer-design.md)。
+
+## 2026-09-24: Issue #563
+
+| 原文の先頭見出し | 原文 |
+| --- | --- |
+| Issue 563: copy-policy resume compatibility | [設計書](../../superpowers/specs/2026-09-24-issue-563-design.md) [^issue-563-repair] |
+
+[^issue-563-repair]: [修正設計](../../superpowers/specs/2026-09-24-issue-563-design.md)。

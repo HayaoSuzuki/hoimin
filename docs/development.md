@@ -705,7 +705,10 @@ selection and resource limits.
 config validators reject escaped or non-normalized paths from persisted data.
 Historical run configs decode a missing list as empty. Plan schema 4 requires
 regeneration of earlier manifests before any baseline runs; fingerprint schema
-7 frames the ordered roots under field tag 9, preventing old-session reuse.
+8 frames the ordered roots under field tag 9 and the ordered include/exclude
+copy patterns under tags 10/11, preventing old-session reuse. Patterns retain
+their exact spelling and order because negated overrides can change matching
+precedence. Operational jobs/max-output settings still do not affect compatibility.
 Users must start a new session and pay the baseline and mutant execution cost.
 
 `WorkspaceHandler::with_import_roots` preserves the existing constructor and
