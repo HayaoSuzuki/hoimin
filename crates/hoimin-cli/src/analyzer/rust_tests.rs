@@ -6343,6 +6343,33 @@ fn type_annotations_resolve_unaliased_and_aliased_collections_abc_modules() {
         ]
     );
 }
+
+#[test]
+fn qualified_annotation_spelling_uses_the_matching_provider_member() {
+    let mut imports = super::KnownImports::default();
+    imports
+        .modules
+        .insert("abc".into(), "collections.abc".into());
+    imports.modules.insert("t".into(), "typing".into());
+    imports
+        .modules
+        .insert("collections".into(), "collections".into());
+    let targets = &["typing.AbstractSet", "collections.abc.Set"];
+    for (source, expected) in [
+        ("abc.Sequence", "abc.Set"),
+        ("t.Sequence", "t.AbstractSet"),
+        ("collections.abc.Sequence", "collections.abc.Set"),
+    ] {
+        assert_eq!(
+            imports.spelling_for(source, targets).as_deref(),
+            Some(expected)
+        );
+    }
+    assert_eq!(
+        imports.spelling_for("collections.other.Sequence", targets),
+        None
+    );
+}
 #[test]
 fn type_annotations_emit_reverse_collection_and_iterable_mutations() {
     let source = "from typing import AbstractSet, Iterable, Iterator, Mapping, Sequence\n\nforward_list: list[str]\nreverse_sequence: Sequence[str]\nforward_set: set[str]\nreverse_set: AbstractSet[str]\nforward_dict: dict[str, int]\nreverse_mapping: Mapping[str, int]\nforward_iterable: Iterable[str]\nreverse_iterator: Iterator[str]\n";

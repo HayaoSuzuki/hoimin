@@ -180,6 +180,11 @@ sources:
   resource: ../../superpowers/specs/2026-09-11-issue-481-comprehension-bindings-design.md
   working_tree: untracked
   sha256: 499b6d9c2814c81f12562ecbaa2728c8763a535077a69fecef9c01797db415dd
+- id: issue-559-repair
+  resource: ../../superpowers/specs/2026-09-24-issue-559-design.md
+  revision: 98e78166b43940df38a8bb8099c9c6af6004ba5a
+  working_tree: clean
+
 ---
 
 # 構文と名前解決の契約
@@ -397,7 +402,7 @@ Issue #547の設計では、型注釈collectorの通常の文から次の文へ�
 
 # 遅延注釈と集合ABCの綴り（Issue #558/#559）
 
-`5e631ef`では、型注釈のtyping aliasに定義時のimport状態を使うため、3.14の初回評価前の再代入を見落とす。また、collections.abcの集合抽象型はSetであるのに、AbstractSetという候補を生成する。両件の実行観測、初回評価キャッシュのモデル証明、型名の対応は[追加監査](../audits/annotation-followup-2026-09.md)を参照する。製品修正は未実施。[^annotation-followup]
+`5e631ef`では、型注釈のtyping aliasに定義時のimport状態を使うため、3.14の初回評価前の再代入を見落とす。また、collections.abcの集合抽象型はSetであるのに、AbstractSetという候補を生成する。両件の実行観測、初回評価キャッシュのモデル証明、型名の対応は[追加監査](../audits/annotation-followup-2026-09.md)を参照する。この監査時点では製品修正は未実施だった。[^annotation-followup]
 
 [^annotation-followup]: [遅延注釈とcollections.abc.Set](../../audits/2026-09-15-annotation-followup/README.md)。
 
@@ -418,3 +423,9 @@ Issue #547の設計では、型注釈collectorの通常の文から次の文へ�
 `5e631ef`ではnullable追加で名前の再束縛を見落とし（#564）、複数型引数のtuple内部で対象外要素の検査を省いていた（#565）。[監査の証拠と限界](../audits/nullable-gates-2026-09.md)に、15入力の照合と名前条件・子孫の再帰条件のLean証明を記録した。修正時には通常の組込み型と対象内だけの複数型引数を保持する。[^nullable-gates-audit]
 
 [^nullable-gates-audit]: [nullable型変異の適用条件](../../audits/2026-09-15-nullable-gates/README.md)。
+
+## 2026-09-24: Issue #559の修正
+
+2026-09-24の#559修正では、集合抽象型の対応をtyping.AbstractSetとcollections.abc.Setへ訂正した。module importと直接importの両方で別名と双方向の候補を扱い、置換先の修飾名には参照元モジュールのメンバー名を使う。typing.Setはこの抽象型の組合せへ追加しない。#558の遅延評価は別Issueとして扱う。[^issue-559-repair]
+
+[^issue-559-repair]: [修正設計](../../superpowers/specs/2026-09-24-issue-559-design.md)。

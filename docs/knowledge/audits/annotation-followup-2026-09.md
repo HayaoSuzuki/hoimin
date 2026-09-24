@@ -11,6 +11,11 @@ sources:
   - id: model
     resource: ../../audits/2026-09-15-annotation-followup/AnnotationModel.lean
     working_tree: untracked
+  - id: issue-559-repair
+    resource: ../../superpowers/specs/2026-09-24-issue-559-design.md
+    revision: 98e78166b43940df38a8bb8099c9c6af6004ba5a
+    working_tree: clean
+
 ---
 
 # 確認した問題
@@ -31,3 +36,9 @@ AnnotationCollectorの評価時期、KnownImports、collection_replacements、sp
 
 [^report]: [追加監査・再現手順](../../audits/2026-09-15-annotation-followup/README.md)。
 [^model]: [AnnotationModel.lean](../../audits/2026-09-15-annotation-followup/AnnotationModel.lean)。
+
+## 2026-09-24: Issue #559の修正
+
+2026-09-24の#559修正では、集合抽象型の対応をtyping.AbstractSetとcollections.abc.Setへ訂正した。module importと直接importの両方で別名と双方向の候補を扱い、置換先の修飾名には参照元モジュールのメンバー名を使う。typing.Setはこの抽象型の組合せへ追加しない。#558の遅延評価は別Issueとして扱う。[^issue-559-repair]
+
+[^issue-559-repair]: [修正設計](../../superpowers/specs/2026-09-24-issue-559-design.md)。

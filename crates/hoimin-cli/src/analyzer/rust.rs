@@ -3760,7 +3760,8 @@ impl KnownImports {
             self.invalidate(local);
             if let Some(module_name) = module_name
                 && matches!(module_name, "typing" | "collections.abc")
-                && is_known_type_name(imported)
+                && (is_known_type_name(imported)
+                    || (module_name == "collections.abc" && imported == "Set"))
             {
                 self.direct
                     .insert(local.to_owned(), format!("{module_name}.{imported}"));
@@ -3832,22 +3833,26 @@ impl KnownImports {
 
     fn spelling_for(&self, source: &str, targets: &[&str]) -> Option<String> {
         if let Some((prefix, _)) = source.rsplit_once('.') {
-            let imported_module = self.modules.iter().any(|(local, module)| {
-                (prefix == local
-                    || prefix
-                        .strip_prefix(local)
-                        .is_some_and(|suffix| suffix.starts_with('.')))
-                    && targets
-                        .iter()
-                        .any(|target| target.starts_with(module.as_str()))
-            });
-            return imported_module.then(|| {
-                let (_, name) = targets
-                    .first()
-                    .and_then(|target| target.rsplit_once('.'))
-                    .expect("abstract type targets contain a qualified name");
-                format!("{prefix}.{name}")
-            });
+            return self
+                .modules
+                .iter()
+                .filter_map(|(local, module)| {
+                    let suffix = if prefix == local {
+                        ""
+                    } else {
+                        prefix.strip_prefix(local)?.strip_prefix('.')?
+                    };
+                    let resolved_prefix = if suffix.is_empty() {
+                        module.clone()
+                    } else {
+                        format!("{module}.{suffix}")
+                    };
+                    targets.iter().find_map(|target| {
+                        let (target_module, member) = target.rsplit_once('.')?;
+                        (target_module == resolved_prefix).then(|| format!("{prefix}.{member}"))
+                    })
+                })
+                .min();
         }
         let direct = self
             .direct
@@ -6333,7 +6338,7 @@ fn is_supported_annotation(annotation: &Expr, imports: &KnownImports) -> bool {
                     | "typing.Sequence"
                     | "collections.abc.Sequence"
                     | "typing.AbstractSet"
-                    | "collections.abc.AbstractSet"
+                    | "collections.abc.Set"
                     | "typing.Mapping"
                     | "collections.abc.Mapping"
             )
@@ -6419,13 +6424,10 @@ fn collection_replacements(
             replacements
         }
         "set" if builtin("set") => imports
-            .spelling_for(
-                &base,
-                &["typing.AbstractSet", "collections.abc.AbstractSet"],
-            )
+            .spelling_for(&base, &["typing.AbstractSet", "collections.abc.Set"])
             .map(|name| vec![replacement(name, MutationOperator::TypeSetAbstractSet)])
             .unwrap_or_default(),
-        "typing.AbstractSet" | "collections.abc.AbstractSet" if builtin("set") => {
+        "typing.AbstractSet" | "collections.abc.Set" if builtin("set") => {
             vec![replacement(
                 "set".to_owned(),
                 MutationOperator::TypeSetAbstractSet,
