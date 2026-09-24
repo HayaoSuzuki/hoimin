@@ -8451,3 +8451,90 @@ fn nullable_builtin_provenance_checks_starred_and_list_arguments() {
         }
     }
 }
+
+#[test]
+fn annotation_descendants_reject_blocked_leaves_at_every_argument_position() {
+    let prefix = "from typing import Any, Any as A, Annotated as Ann, Callable as Call, Literal as Lit, Protocol as Proto, TypeVar\nimport typing as t\nT = TypeVar('T')\n";
+    for leaf in [
+        "Any",
+        "A",
+        "t.Any",
+        "object",
+        "T",
+        "'Foo'",
+        "Ann[int, 'tag']",
+        "Call[[int], str]",
+        "Lit[1]",
+        "Proto",
+    ] {
+        for annotation in [
+            format!("dict[{leaf}, int]"),
+            format!("dict[str, {leaf}]"),
+            format!("list[dict[str, list[dict[int, {leaf}]]]]"),
+            format!("list[tuple[int, str, {leaf}]]"),
+            format!("dict[*(str, {leaf})]"),
+            format!("dict[*[str, {leaf}]]"),
+            format!("list[[{leaf}]]"),
+        ] {
+            let source = format!("{prefix}value: {annotation}\n");
+            let actual = analyze_with_only_operator(&source, MutationOperator::TypeNullableAdd);
+            assert!(
+                actual.candidates.is_empty(),
+                "{source}: {:?}",
+                actual.candidates
+            );
+        }
+    }
+    for annotation in [
+        "dict[str, int]",
+        "dict[int, str]",
+        "list[dict[str, list[dict[int, bytes]]]]",
+        "list[tuple[int, str, bytes]]",
+        "t.Mapping[str, int]",
+        "dict[*(str, int)]",
+        "dict[*[str, int]]",
+        "list[[int]]",
+    ] {
+        let source = format!("{prefix}value: {annotation}\n");
+        let actual = analyze_with_only_operator(&source, MutationOperator::TypeNullableAdd);
+        assert_eq!(actual.candidates.len(), 1, "{source}");
+        assert_eq!(
+            actual.candidates[0].replacement,
+            format!("{annotation} | None")
+        );
+    }
+}
+
+#[test]
+fn annotation_descendants_gate_every_type_operator() {
+    let prefix =
+        "from typing import Any, Optional, Sequence, AbstractSet, Mapping, Iterable, Iterator\n";
+    for (annotation, operator) in [
+        ("dict[str, LEAF]", MutationOperator::TypeNullableAdd),
+        (
+            "Optional[dict[str, LEAF]]",
+            MutationOperator::TypeNullableRemove,
+        ),
+        ("list[dict[str, LEAF]]", MutationOperator::TypeListSequence),
+        (
+            "set[tuple[str, LEAF]]",
+            MutationOperator::TypeSetAbstractSet,
+        ),
+        ("dict[str, LEAF]", MutationOperator::TypeMapping),
+        (
+            "Iterable[dict[str, LEAF]]",
+            MutationOperator::TypeIterableIterator,
+        ),
+        (
+            "Sequence[dict[str, LEAF]]",
+            MutationOperator::TypeSequenceIterable,
+        ),
+    ] {
+        for (leaf, expected) in [("Any", 0), ("int", 1)] {
+            let annotation = annotation.replace("LEAF", leaf);
+            let source = format!("{prefix}value: {annotation}\n");
+            let actual = analyze_with_only_operator(&source, operator);
+            assert_eq!(actual.candidates.len(), expected, "{operator:?}: {source}");
+        }
+    }
+}

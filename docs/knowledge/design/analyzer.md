@@ -42,6 +42,12 @@ sources:
   revision: f6f5d96c099fb880884b2b7cb29717ff33d70d75
   working_tree: clean
   sha256: 977b7f871450b831854909f1d8d96a53992922f5688ffa103d5e7a94527e2b8a
+
+- id: issue-565-design
+  resource: ../../superpowers/specs/2026-09-24-issue-565-annotation-descendants.md
+  revision: 962dc1b628bb1aad30a0ae9fe0859887f5fbf535
+  working_tree: clean
+  sha256: c511129d0c628d271aab30dabc37a77dd7ff88f496e026791ce9da2449a8f6c6
 - id: nullable-gates-audit
   resource: ../../audits/2026-09-15-nullable-gates/README.md
   working_tree: untracked
@@ -501,3 +507,11 @@ nullable追加では、str/int/float/bool/bytesの名前とlist/set/dictの型�
 
 [^issue-564-design]: [Issue 564: nullable annotation builtin provenance](../../superpowers/specs/2026-09-24-issue-564-nullable-provenance.md)。
 [^issue-564-code]: [nullable追加の名前解決](../../../crates/hoimin-cli/src/analyzer/rust.rs)。
+
+### 複数型引数とunpackの再帰検査（Issue #565）
+
+型演算子の共通除外条件は、Tuple・Listの全要素とStarredの値を再帰的に検査する。dictのkey/value、複数段の型引数、tuple/listのunpackにAnyなどの対象外要素が含まれる場合、注釈全体の候補を除く。対象内だけの複数引数やunpackは保持する。この条件はnullable追加・削除と五つのcollection/iterable演算子に共通する。[^issue-565-design]
+
+Leanの子孫検査モデルと公開planの対応を通常の回帰テストへ追加する。名前の再束縛に関する#564はこの変更の対象外とし、その4入力は期待値を保持したreport-onlyとして区別する。検証範囲と過去の不一致は[監査記録](../audits/nullable-gates-2026-09.md)を参照する。[^issue-565-design]
+
+[^issue-565-design]: [Issue 565: recursively exclude disallowed annotation arguments](../../superpowers/specs/2026-09-24-issue-565-annotation-descendants.md)。

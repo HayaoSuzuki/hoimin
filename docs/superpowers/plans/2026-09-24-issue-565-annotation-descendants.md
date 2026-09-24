@@ -28,25 +28,25 @@ Files: `crates/hoimin-cli/src/analyzer/rust.rs`, `rust_tests.rs`,
 `formal/HoiminOracle/corpus/nullable-gate.jsonl`, `docs/development.md`, and the
 analyzer/nullable-audit/design-index OKF pages.
 
-- [ ] Add analyzer tests for blocked leaves in `dict[bad,int]`, `dict[str,bad]`,
+- [x] Add analyzer tests for blocked leaves in `dict[bad,int]`, `dict[str,bad]`,
   nested `list[dict[str,bad]]`, aliases, and `list[tuple[int,int,bad]]`. Compare
   literal expected counts using `analyze_with_only_operator`. Add positive controls
   for each matching shape and test all seven type operators.
-- [ ] Extend formal fixtures and witnesses. Run bounded Lean model build,
+- [x] Extend formal fixtures and witnesses. Run bounded Lean model build,
   generator sensitivity, generation and freshness commands. Keep original
   untrusted-name cases report-only with unchanged expected pairs.
-- [ ] Add a strict serde corpus parser and public plan adapter; assert source
+- [x] Add a strict serde corpus parser and public plan adapter; assert source
   annotation evaluation and replacement compilation under CPython >=3.14.
   Expected observations are `Vec<(String,String)>` from the generated corpus.
-- [ ] Run `cargo test -p hoimin-cli --lib annotation_descendants` and
+- [x] Run `cargo test -p hoimin-cli --lib annotation_descendants` and
   `cargo test -p hoimin-cli --test lean_nullable_gate_oracle` to observe RED.
-- [ ] Add the tuple branch:
+- [x] Add the tuple branch:
   `Expr::Tuple(tuple) => tuple.elts.iter().any(|item|
   contains_disallowed_annotation(item, imports))`; use the same rule for List
   elements and recurse through `Starred.value`.
-- [ ] Rerun the focused tests to GREEN; update developer and OKF contracts.
-- [ ] Perform three separate implementation reviews and three test reviews;
+- [x] Rerun the focused tests to GREEN; update developer and OKF contracts.
+- [x] Perform three separate implementation reviews and three test reviews;
   retain concrete checks/findings in `docs/reviews/2026-09-24-issue-565.md`.
-- [ ] Run full workspace tests, `cargo fmt --all -- --check`, and
+- [x] Run full workspace tests, `cargo fmt --all -- --check`, and
   `cargo clippy --workspace --all-targets --all-features -- -D warnings`.
   Validate OKF YAML, links, new source metadata and scope. Commit the verified fix.

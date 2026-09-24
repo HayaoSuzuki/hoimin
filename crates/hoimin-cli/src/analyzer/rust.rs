@@ -6756,6 +6756,15 @@ fn contains_disallowed_annotation(annotation: &Expr, imports: &AnnotationImports
                 Some("typing.Annotated" | "typing.Callable" | "typing.Literal" | "typing.Protocol")
             ) || contains_disallowed_annotation(subscript.slice.as_ref(), imports)
         }
+        Expr::Tuple(tuple) => tuple
+            .elts
+            .iter()
+            .any(|element| contains_disallowed_annotation(element, imports)),
+        Expr::List(list) => list
+            .elts
+            .iter()
+            .any(|element| contains_disallowed_annotation(element, imports)),
+        Expr::Starred(starred) => contains_disallowed_annotation(starred.value.as_ref(), imports),
         Expr::BinOp(binary) if binary.op == Operator::BitOr => {
             contains_disallowed_annotation(binary.left.as_ref(), imports)
                 || contains_disallowed_annotation(binary.right.as_ref(), imports)
