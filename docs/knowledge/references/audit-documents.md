@@ -5,6 +5,11 @@ description: docs/auditsとdocs/superpowers/reports内の全Markdownを追跡状
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-560-review
+  resource: ../../superpowers/reports/2026-09-24-issue-560-review.md
+  revision: ffb65c051014f3d9601df2deb0bfeb5ff55c7c38
+  working_tree: modified
+  sha256: a96d2f42bd974491c68dfa0bf9bee040b6c43725ad70ec515536ebc412dbb146
 - id: followup-lean-promotion
   resource: ../../superpowers/reports/2026-09-15-followup-lean-promotion.md
   working_tree: untracked
@@ -1064,3 +1069,11 @@ sources:
 6モデル・33定理・58入力の正式プロジェクトとCIへの組み込み、および実装との対応の限界を記録した。[^followup-lean-promotion]
 
 [^followup-lean-promotion]: [追加監査のLeanモデルを正式な検証へ組み込む](../../superpowers/reports/2026-09-15-followup-lean-promotion.md)。
+
+# Issue #560
+
+| 原文の先頭見出し | 原文 |
+| --- | --- |
+| Issue 560 review log | [原文](../../superpowers/reports/2026-09-24-issue-560-review.md) [^issue-560-review] |
+
+[^issue-560-review]: [Issue 560 review log](../../superpowers/reports/2026-09-24-issue-560-review.md)。
