@@ -50,6 +50,7 @@ thread_local! {
     static COLLECTION_REPLACEMENT_BYTES: Cell<usize> = const { Cell::new(0) };
     static COLLECTION_REPLACEMENT_BUILDS: Cell<usize> = const { Cell::new(0) };
     static CANDIDATE_ORIGINAL_COPIES: Cell<usize> = const { Cell::new(0) };
+    static ANNOTATION_IMPORT_LOOKUPS: Cell<usize> = const { Cell::new(0) };
     static ANNOTATION_RECORDS: Cell<usize> = const { Cell::new(0) };
     static ANNOTATION_IMPORT_SNAPSHOT_CLONES: Cell<usize> = const { Cell::new(0) };
 }
@@ -993,6 +994,7 @@ struct NameScope {
     nonlocals: HashSet<String>,
     ordered: HashMap<String, OrderedBindingHistory>,
     wildcard: bool,
+    import_writes: HashMap<String, usize>,
 }
 
 impl NameScope {
@@ -1006,6 +1008,7 @@ impl NameScope {
             nonlocals: HashSet::new(),
             ordered: HashMap::new(),
             wildcard: false,
+            import_writes: HashMap::new(),
         }
     }
 }
@@ -1021,17 +1024,35 @@ struct NameResolutionIndex {
     scopes: Vec<NameScope>,
     occurrences: HashMap<usize, NameOccurrence>,
     back_edge_bindings: HashMap<usize, HashSet<String>>,
+    unevaluated_annotations: HashSet<usize>,
+    imported_names: HashSet<String>,
 }
 
 impl NameResolutionIndex {
     fn from_module(module: &ModModule) -> Self {
         let mut builder = NameResolutionBuilder::new();
+        let mut names = ImportedNames::default();
+        names.visit_body(&module.body);
+        builder.imported_names = names.0;
         builder.visit_body(&module.body);
+        // Resolve nonlocal destinations after all enclosing locals are known.
+        for (origin, name) in &builder.nonlocal_import_writes {
+            let mut parent = builder.index.scopes[origin.0].parent;
+            while let Some(id) = parent {
+                let scope = &mut builder.index.scopes[id.0];
+                if scope.kind == NameScopeKind::Function && scope.locals.contains(name) {
+                    scope.import_writes.insert(name.clone(), usize::MAX);
+                    break;
+                }
+                parent = scope.parent;
+            }
+        }
         for scope in &mut builder.index.scopes {
             for history in scope.ordered.values_mut() {
                 history.finalize();
             }
         }
+        builder.index.imported_names = builder.imported_names;
         builder.index
     }
 
@@ -1061,6 +1082,67 @@ impl NameResolutionIndex {
             .map_or(NameResolution::Unknown, |site| {
                 self.resolve_annotation_scope(site.scope, name, true)
             })
+    }
+
+    fn annotation_import_stable(
+        &self,
+        offset: usize,
+        name: &str,
+        source_order_known: bool,
+    ) -> bool {
+        #[cfg(test)]
+        ANNOTATION_IMPORT_LOOKUPS.set(ANNOTATION_IMPORT_LOOKUPS.get().saturating_add(1));
+        if source_order_known && self.unevaluated_annotations.contains(&offset) {
+            return true;
+        }
+        let Some(site) = self.occurrences.get(&offset) else {
+            return false;
+        };
+        let mut current = Some(site.scope);
+        let mut direct = true;
+        while let Some(id) = current {
+            let scope = &self.scopes[id.0];
+            if scope.kind == NameScopeKind::Class && !direct {
+                current = scope.parent;
+                continue;
+            }
+            if scope.kind != NameScopeKind::Module && scope.globals.contains(name) {
+                current = Some(ScopeId(0));
+                direct = false;
+                continue;
+            }
+            if scope.nonlocals.contains(name) {
+                current = scope.parent;
+                while let Some(parent) = current {
+                    let enclosing = &self.scopes[parent.0];
+                    if enclosing.kind == NameScopeKind::Function && enclosing.locals.contains(name)
+                    {
+                        break;
+                    }
+                    current = enclosing.parent;
+                }
+                direct = false;
+                continue;
+            }
+            if scope.wildcard
+                || scope
+                    .import_writes
+                    .get(name)
+                    .is_some_and(|last| *last >= site.event)
+            {
+                return false;
+            }
+            // Stop at the namespace that owns the source-order import. An outer
+            // namespace's later write cannot replace this local binding.
+            if scope.locals.contains(name) || scope.import_writes.contains_key(name) {
+                // A control-flow join may have discarded the import snapshot.
+                // Its visible binding is then uncertain even without later writes.
+                return source_order_known;
+            }
+            direct &= scope.kind == NameScopeKind::TypeParameters;
+            current = scope.parent;
+        }
+        true
     }
 
     fn resolve_annotation_scope(
@@ -1259,7 +1341,26 @@ fn tracked_resolution_name(name: &str) -> bool {
     MUTABLE_BUILTINS.contains(&name) || EXCEPTION_NAMES.contains(&name)
 }
 
+#[derive(Default)]
+struct ImportedNames(HashSet<String>);
+
+impl<'ast> Visitor<'ast> for ImportedNames {
+    fn visit_stmt(&mut self, statement: &'ast Stmt) {
+        let mut imports = KnownImports::default();
+        match statement {
+            Stmt::Import(import) => imports.transfer_import(import),
+            Stmt::ImportFrom(import) => imports.transfer_import_from(import),
+            _ => {}
+        }
+        self.0.extend(imports.direct.into_keys());
+        self.0.extend(imports.modules.into_keys());
+        visitor::walk_stmt(self, statement);
+    }
+}
+
 struct NameResolutionBuilder {
+    imported_names: HashSet<String>,
+    nonlocal_import_writes: Vec<(ScopeId, String)>,
     index: NameResolutionIndex,
     current: ScopeId,
     conditional_depth: usize,
@@ -1275,13 +1376,21 @@ struct LoopBackEdgeContext {
 }
 
 impl NameResolutionBuilder {
+    fn tracks(&self, name: &str) -> bool {
+        tracked_resolution_name(name) || self.imported_names.contains(name)
+    }
+
     fn new() -> Self {
         Self {
             index: NameResolutionIndex {
                 scopes: vec![NameScope::new(NameScopeKind::Module, None)],
                 occurrences: HashMap::new(),
                 back_edge_bindings: HashMap::new(),
+                unevaluated_annotations: HashSet::new(),
+                imported_names: HashSet::new(),
             },
+            imported_names: HashSet::new(),
+            nonlocal_import_writes: Vec::new(),
             current: ScopeId(0),
             conditional_depth: 0,
             event: 0,
@@ -1395,7 +1504,7 @@ impl NameResolutionBuilder {
     }
 
     fn add_local(&mut self, scope: ScopeId, name: &str) {
-        if tracked_resolution_name(name) {
+        if self.tracks(name) {
             self.index.scopes[scope.0].locals.insert(name.to_owned());
             self.index.scopes[scope.0]
                 .possible_bindings
@@ -1481,11 +1590,35 @@ impl NameResolutionBuilder {
         self.conditional_depth -= usize::from(conditional);
     }
 
+    fn record_import_write(&mut self, name: &str, event: usize) {
+        if !self.imported_names.contains(name) {
+            return;
+        }
+        let scope = &self.index.scopes[self.current.0];
+        let mut destination = self.current;
+        let mut effective_event = event;
+        if scope.globals.contains(name) {
+            destination = ScopeId(0);
+            // A function may execute after an annotation anywhere in the file.
+            effective_event = usize::MAX;
+        } else if scope.nonlocals.contains(name) {
+            self.nonlocal_import_writes
+                .push((self.current, name.to_owned()));
+            return;
+        }
+        self.index.scopes[destination.0]
+            .import_writes
+            .entry(name.to_owned())
+            .and_modify(|last| *last = (*last).max(effective_event))
+            .or_insert(effective_event);
+    }
+
     fn record_binding(&mut self, name: &str) {
-        if !tracked_resolution_name(name) {
+        if !self.tracks(name) {
             return;
         }
         let event = self.next_event();
+        self.record_import_write(name, event);
         let globals = self.index.scopes[self.current.0].globals.contains(name);
         let nonlocals = self.index.scopes[self.current.0].nonlocals.contains(name);
         if globals {
@@ -1526,10 +1659,11 @@ impl NameResolutionBuilder {
     }
 
     fn record_unknown(&mut self, name: &str) {
-        if !tracked_resolution_name(name) {
+        if !self.tracks(name) {
             return;
         }
         let event = self.next_event();
+        self.record_import_write(name, event);
         self.record_loop_back_edge_binding(self.current, name);
         let scope = &mut self.index.scopes[self.current.0];
         scope.possible_bindings.insert(name.to_owned());
@@ -1754,10 +1888,25 @@ impl<'ast> Visitor<'ast> for NameResolutionBuilder {
                 return;
             }
             Stmt::AnnAssign(assign) => {
+                let function_local =
+                    self.index.scopes[self.current.0].kind == NameScopeKind::Function;
+                if function_local {
+                    self.index
+                        .unevaluated_annotations
+                        .insert(usize::from(assign.annotation.range().start()));
+                }
                 if let Some(value) = &assign.value {
                     self.visit_expr(value);
                 }
-                self.visit_assignment_target(&assign.target);
+                if let (None, Expr::Name(name)) = (&assign.value, assign.target.as_ref()) {
+                    // Valueless module/class annotations do not bind imported
+                    // names. Keep the existing builtin and static-local policy.
+                    if tracked_resolution_name(name.id.as_str()) || function_local {
+                        self.record_binding(name.id.as_str());
+                    }
+                } else {
+                    self.visit_assignment_target(&assign.target);
+                }
                 self.visit_annotation(&assign.annotation);
                 return;
             }
@@ -1776,7 +1925,7 @@ impl<'ast> Visitor<'ast> for NameResolutionBuilder {
             }
             Stmt::Global(global) => {
                 for name in &global.names {
-                    if tracked_resolution_name(name.as_str()) {
+                    if self.tracks(name.as_str()) {
                         self.index.scopes[self.current.0]
                             .globals
                             .insert(name.to_string());
@@ -1785,7 +1934,7 @@ impl<'ast> Visitor<'ast> for NameResolutionBuilder {
             }
             Stmt::Nonlocal(nonlocal) => {
                 for name in &nonlocal.names {
-                    if tracked_resolution_name(name.as_str()) {
+                    if self.tracks(name.as_str()) {
                         self.index.scopes[self.current.0]
                             .nonlocals
                             .insert(name.to_string());
@@ -1906,7 +2055,7 @@ impl<'ast> Visitor<'ast> for NameResolutionBuilder {
             self.visit_body(&handler.body);
             return;
         };
-        if tracked_resolution_name(name.as_str()) {
+        if self.tracks(name.as_str()) {
             let kind = self.index.scopes[self.current.0].kind;
             if matches!(kind, NameScopeKind::Function | NameScopeKind::Comprehension) {
                 self.add_local(self.current, name.as_str());
@@ -1922,6 +2071,8 @@ impl<'ast> Visitor<'ast> for NameResolutionBuilder {
         } else {
             self.visit_body(&handler.body);
         }
+        let event = self.next_event();
+        self.record_import_write(name.as_str(), event);
     }
 
     fn visit_pattern(&mut self, pattern: &'ast Pattern) {
@@ -3842,8 +3993,10 @@ impl KnownImports {
                         parts.push(name.clone());
                     } else if let Some(module) = self.modules.get(first) {
                         parts.push(module.clone());
-                    } else {
+                    } else if parts.is_empty() {
                         parts.push(first.to_owned());
+                    } else {
+                        return None;
                     }
                     break;
                 }
@@ -3858,7 +4011,17 @@ impl KnownImports {
         Some(parts.join("."))
     }
 
+    #[cfg(test)]
     fn spelling_for(&self, source: &str, targets: &[&str]) -> Option<String> {
+        self.spelling_for_where(source, targets, |_| true)
+    }
+
+    fn spelling_for_where(
+        &self,
+        source: &str,
+        targets: &[&str],
+        allowed: impl Fn(&str) -> bool,
+    ) -> Option<String> {
         if let Some((prefix, _)) = source.rsplit_once('.') {
             return self
                 .modules
@@ -3876,7 +4039,8 @@ impl KnownImports {
                     };
                     targets.iter().find_map(|target| {
                         let (target_module, member) = target.rsplit_once('.')?;
-                        (target_module == resolved_prefix).then(|| format!("{prefix}.{member}"))
+                        (target_module == resolved_prefix && allowed(local))
+                            .then(|| format!("{prefix}.{member}"))
                     })
                 })
                 .min();
@@ -3884,17 +4048,19 @@ impl KnownImports {
         let direct = self
             .direct
             .iter()
-            .filter(|(_, resolved)| targets.contains(&resolved.as_str()))
+            .filter(|(local, resolved)| targets.contains(&resolved.as_str()) && allowed(local))
             .map(|(local, _)| local.clone())
             .min();
         direct.or_else(|| {
             self.modules
                 .iter()
                 .flat_map(|(local, module)| {
+                    let allowed = &allowed;
                     targets.iter().filter_map(move |target| {
                         target
                             .strip_prefix(module)
                             .and_then(|suffix| suffix.strip_prefix('.'))
+                            .filter(|_| allowed(local))
                             .map(|suffix| format!("{local}.{suffix}"))
                     })
                 })
@@ -6242,6 +6408,71 @@ pub(super) fn binding_flow_loop_head_snapshot_at_marker(
     observed.ok_or_else(|| "infrastructure-error: selected loop produced no head".to_owned())
 }
 
+struct AnnotationImports<'a> {
+    known: &'a KnownImports,
+    resolution: &'a NameResolutionIndex,
+    offset: usize,
+}
+
+impl AnnotationImports<'_> {
+    fn stable_name(&self, local: &str) -> bool {
+        let known = self.known.direct.contains_key(local) || self.known.modules.contains_key(local);
+        if !known && !self.resolution.imported_names.contains(local) {
+            return true;
+        }
+        self.resolution
+            .annotation_import_stable(self.offset, local, known)
+    }
+
+    fn contains_unstable_reference(&self, annotation: &Expr) -> bool {
+        let mut checker = ReferencedImportChecker {
+            imports: self,
+            unstable: false,
+        };
+        checker.visit_expr(annotation);
+        checker.unstable
+    }
+
+    fn resolved_name(&self, expression: &Expr) -> Option<String> {
+        let mut root = expression;
+        while let Expr::Attribute(attribute) = root {
+            root = attribute.value.as_ref();
+        }
+        if let Expr::Name(name) = root {
+            let local = name.id.as_str();
+            if !self.stable_name(local) {
+                return None;
+            }
+        }
+        self.known.resolved_name(expression)
+    }
+
+    fn spelling_for(&self, source: &str, targets: &[&str]) -> Option<String> {
+        self.known.spelling_for_where(source, targets, |local| {
+            self.resolution
+                .annotation_import_stable(self.offset, local, true)
+        })
+    }
+}
+
+struct ReferencedImportChecker<'a, 'imports> {
+    imports: &'a AnnotationImports<'imports>,
+    unstable: bool,
+}
+
+impl<'ast> Visitor<'ast> for ReferencedImportChecker<'_, '_> {
+    fn visit_expr(&mut self, expression: &'ast Expr) {
+        if self.unstable {
+            return;
+        }
+        if let Expr::Name(name) = expression {
+            self.unstable = !self.imports.stable_name(name.id.as_str());
+        } else {
+            visitor::walk_expr(self, expression);
+        }
+    }
+}
+
 fn type_annotation_candidates(
     module: &ModModule,
     source: &str,
@@ -6257,7 +6488,13 @@ fn type_annotation_candidates(
         return candidates.finish();
     }
     AnnotationCollector::visit_each(module, &mut |annotation, symbol, imports| {
-        for (replacement, operator) in annotation_replacements(annotation, source, facts, imports) {
+        let checked = AnnotationImports {
+            known: imports,
+            resolution: &facts.name_resolution,
+            offset: usize::from(annotation.range().start()),
+        };
+        for (replacement, operator) in annotation_replacements(annotation, source, facts, &checked)
+        {
             let range = annotation.range();
             let start = usize::from(range.start());
             let end = usize::from(range.end());
@@ -6282,9 +6519,13 @@ fn annotation_replacements(
     annotation: &Expr,
     source: &str,
     facts: &AstFacts<'_>,
-    imports: &KnownImports,
+    imports: &AnnotationImports<'_>,
 ) -> Vec<(String, MutationOperator)> {
-    if contains_disallowed_annotation(annotation, imports) {
+    // Missing provenance must not erase a prohibition such as nested typing.Any.
+    // Inspect referenced AST names only; unrelated imported names are not scanned.
+    if imports.contains_unstable_reference(annotation)
+        || contains_disallowed_annotation(annotation, imports)
+    {
         return Vec::new();
     }
     let mut replacements = Vec::new();
@@ -6308,7 +6549,7 @@ fn nullable_removal(
     annotation: &Expr,
     source: &str,
     facts: &AstFacts<'_>,
-    imports: &KnownImports,
+    imports: &AnnotationImports<'_>,
 ) -> Option<String> {
     if let Expr::BinOp(binary) = annotation
         && binary.op == Operator::BitOr
@@ -6404,13 +6645,13 @@ fn range_contains_annotation_trivia(source: &str, range: TextRange, facts: &AstF
     source[previous_end..end].contains(['\n', '\r', '#'])
 }
 
-fn nullable_add_allowed(annotation: &Expr, imports: &KnownImports) -> bool {
+fn nullable_add_allowed(annotation: &Expr, imports: &AnnotationImports<'_>) -> bool {
     !contains_disallowed_annotation(annotation, imports)
         && !is_nullable(annotation, imports)
         && is_supported_annotation(annotation, imports)
 }
 
-fn is_supported_annotation(annotation: &Expr, imports: &KnownImports) -> bool {
+fn is_supported_annotation(annotation: &Expr, imports: &AnnotationImports<'_>) -> bool {
     match annotation {
         Expr::Name(name) => matches!(name.id.as_str(), "str" | "int" | "float" | "bool" | "bytes"),
         Expr::Subscript(subscript) => matches!(
@@ -6435,17 +6676,17 @@ fn is_supported_annotation(annotation: &Expr, imports: &KnownImports) -> bool {
     }
 }
 
-fn is_nullable(annotation: &Expr, imports: &KnownImports) -> bool {
+fn is_nullable(annotation: &Expr, imports: &AnnotationImports<'_>) -> bool {
     matches!(annotation, Expr::BinOp(binary) if binary.op == Operator::BitOr && (is_none(binary.left.as_ref()) || is_none(binary.right.as_ref())))
         || matches!(annotation, Expr::Subscript(subscript) if imports.resolved_name(subscript.value.as_ref()).as_deref() == Some("typing.Optional"))
 }
 
-fn contains_disallowed_annotation(annotation: &Expr, imports: &KnownImports) -> bool {
+fn contains_disallowed_annotation(annotation: &Expr, imports: &AnnotationImports<'_>) -> bool {
     match annotation {
         Expr::StringLiteral(_) => true,
         Expr::Name(name) => {
             !matches!(name.id.as_str(), "str" | "int" | "float" | "bool" | "bytes")
-                || imports.type_vars.contains(name.id.as_str())
+                || imports.known.type_vars.contains(name.id.as_str())
                 || imports.resolved_name(annotation).as_deref() == Some("typing.Any")
         }
         Expr::Attribute(_) => matches!(
@@ -6470,7 +6711,7 @@ fn collection_replacements(
     annotation: &Expr,
     source: &str,
     facts: &AstFacts<'_>,
-    imports: &KnownImports,
+    imports: &AnnotationImports<'_>,
 ) -> Vec<(String, MutationOperator)> {
     let Expr::Subscript(subscript) = annotation else {
         return Vec::new();
@@ -6573,6 +6814,40 @@ fn is_none(expression: &Expr) -> bool {
 #[cfg(test)]
 mod performance_cost_tests {
     use super::*;
+
+    #[test]
+    fn scalar_annotations_do_not_scan_unrelated_imports() {
+        use std::fmt::Write as _;
+        for imports in [8, 32, 128] {
+            for annotations in [8, 32, 128] {
+                let mut source = String::new();
+                for index in 0..imports {
+                    writeln!(source, "import typing as t{index}").unwrap();
+                }
+                source.push_str(&"x: int\n".repeat(annotations));
+                let mut operators = MutationOperatorSelection::default();
+                operators.include(MutationOperator::TypeNullableAdd);
+                ANNOTATION_IMPORT_LOOKUPS.set(0);
+                let output = analyze_source(
+                    &AnalyzeRequest {
+                        path: Utf8Path::new("subject.py"),
+                        lines: &[],
+                        symbols: &[],
+                        operators: &operators,
+                        profile: MutationProfile::Full,
+                        max_candidates: 10_000,
+                    },
+                    &source,
+                );
+                assert_eq!(output.candidates.len(), annotations);
+                assert_eq!(
+                    ANNOTATION_IMPORT_LOOKUPS.get(),
+                    0,
+                    "scalar annotation lookup work depends on {imports} unused imports and {annotations} annotations"
+                );
+            }
+        }
+    }
 
     #[test]
     fn straight_line_import_transfer_copy_cost_is_independent_of_annotations() {

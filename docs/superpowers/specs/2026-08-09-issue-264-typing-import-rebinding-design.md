@@ -1,5 +1,18 @@
 # Issue 264 Typing Import Rebinding Design
 
+## Timing correction in issue #558
+
+The source-order environments below remain necessary import-provenance facts.
+They are not sufficient for Python 3.14 deferred annotations: a later visible
+binding can invalidate both an imported source and a destination spelling.
+[Issue #558's timing contract](2026-09-24-issue-558-deferred-imports-design.md)
+supersedes the earlier claim that later binding never affects earlier candidates.
+The analyzer also applies this conservative policy to future annotations, lazy
+aliases and generic bounds/defaults, without inferring an interpreter version.
+Function-local variable annotations are never runtime-evaluated and retain the
+source-order policy. Stable imports and restoration before a site remain usable;
+cache-before-rebind and restoration after a site are conservative exclusions.
+
 ## Goal
 
 Prevent type-annotation mutation candidates from using a `typing` or

@@ -16,6 +16,12 @@ sources:
   revision: ffb65c051014f3d9601df2deb0bfeb5ff55c7c38
   working_tree: clean
   sha256: fec8835b826fb48eee6f58471f0e0d679cb0dcefe0a574b4bd1476051d99546e
+
+- id: issue-558-design
+  resource: ../../superpowers/specs/2026-09-24-issue-558-deferred-imports-design.md
+  revision: a49467ded359416a6ee743536100634f1cced3e2
+  working_tree: modified
+  sha256: 05fb86175690ff023986ef0bb2f0df2552ee8801ceab86910d01487db483ff6f
 - id: issue-549-design
   resource: ../../superpowers/specs/2026-09-15-issue-549-slice-tuple-design.md
   revision: f11013542ccd735ab9741b5079c0b39a517df256
@@ -497,8 +503,9 @@ sources:
   working_tree: clean
 - id: doc-068
   resource: ../../superpowers/specs/2026-08-09-issue-264-typing-import-rebinding-design.md
-  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
-  working_tree: clean
+  revision: a49467ded359416a6ee743536100634f1cced3e2
+  working_tree: modified
+  sha256: bf1993e2da6d91bd65dce1a84c053183541078b4c45fe8368574be7e71a7e5b7
 - id: doc-069
   resource: ../../superpowers/specs/2026-08-09-issue-263-pep695-type-positions-design.md
   revision: a7daea0b557cd435c1e55b540392fbdd116348e1
@@ -1464,3 +1471,11 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 | Issue 560: builtin resolution in evaluation order | [原文](../../superpowers/specs/2026-09-24-issue-560-evaluation-order.md) [^issue-560-design] |
 
 [^issue-560-design]: [Issue 560: builtin resolution in evaluation order](../../superpowers/specs/2026-09-24-issue-560-evaluation-order.md)。
+
+# Issue #558
+
+| 原文の先頭見出し | 原文 |
+| --- | --- |
+| Issue #558: imported names in deferred annotations | [設計書](../../superpowers/specs/2026-09-24-issue-558-deferred-imports-design.md) [^issue-558-design] |
+
+[^issue-558-design]: [Issue #558: imported names in deferred annotations](../../superpowers/specs/2026-09-24-issue-558-deferred-imports-design.md)。

@@ -35,6 +35,7 @@ structure OracleCase where
   fuel : Nat := 8
   sourceTarget : Target := .builtin
   target : Target
+  deferredDestinationStable : Bool := true
   expectedPresent : Bool := false
   original : String := "list[str]"
   replacement : String
@@ -46,7 +47,7 @@ def caseResult (item : OracleCase) : Exits :=
   eval item.fuel item.program item.initial
 
 def caseExpectedPresent (item : OracleCase) : Bool :=
-  match (caseResult item).fallthrough with
+  item.deferredDestinationStable && match (caseResult item).fallthrough with
   | none => false
   | some environment =>
       allowsCandidate environment item.sourceTarget item.target
@@ -335,7 +336,8 @@ def cases : List OracleCase := [
     initial := resolvedEnv classDirectBeforeCandidate
     program := .scoped classDirectBeforeCandidate .skip
     target := .typing
-    expectedPresent := true
+    deferredDestinationStable := false
+    expectedPresent := false
     replacement := "Sequence[str]"
     symbol := some "Before"
   },
@@ -690,3 +692,16 @@ def boundedAuditPasses (depth : Nat) : Bool :=
   fixedCasesPass && sensitivityPasses && stateCount depth <= 1024
 
 end HoiminOracle.BindingFlow
+
+-- #558: source-order provenance alone does not prove a deferred annotation pair.
+example :
+    ((HoiminOracle.BindingFlow.cases.find? fun item =>
+      item.id == "typing_class_before_binding").map
+      HoiminOracle.BindingFlow.caseExpectedPresent) = some false := by
+  native_decide
+
+-- A broken consumer using only declaration-time facts admits the same witness.
+example : HoiminOracle.BindingFlow.allowsCandidate
+    (HoiminOracle.BindingFlow.resolvedEnv
+      HoiminOracle.BindingFlow.classDirectBeforeCandidate) .builtin .typing = true := by
+  native_decide
