@@ -787,6 +787,22 @@ mod tests {
         let coordinator = ManagedRootCoordinator::open(parent).unwrap();
         let root = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
         let published = root.path().to_owned();
+        // Model the shared file description retained by a concurrently forked child.
+        // Closing the owner's descriptor alone must not establish this fixture's
+        // unlocked premise: the child can hold its copy until exec.
+        #[cfg(unix)]
+        let _inherited_lease = root
+            .lease
+            .lock()
+            .unwrap()
+            .as_deref()
+            .unwrap()
+            .try_clone()
+            .unwrap();
+        {
+            let lease = root.lease.lock().unwrap();
+            fs2::FileExt::unlock(lease.as_deref().unwrap()).unwrap();
+        }
         drop(root);
         let future = std::time::SystemTime::now() + std::time::Duration::from_secs(25 * 60 * 60);
 
