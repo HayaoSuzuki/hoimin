@@ -2,5 +2,26 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "config:recommended"
+  ],
+  "minimumReleaseAge": "7 days",
+  "internalChecksFilter": "strict",
+  "packageRules": [
+    {
+      "description": "Wait 3 days for Rust development dependencies",
+      "matchManagers": ["cargo"],
+      "matchDepTypes": ["dev-dependencies"],
+      "minimumReleaseAge": "3 days"
+    },
+    {
+      "description": "Wait 3 days for Python development dependencies",
+      "matchManagers": ["pep621"],
+      "matchDepTypes": ["dependency-groups"],
+      "minimumReleaseAge": "3 days"
+    },
+    {
+      "description": "Wait 3 days for GitHub Actions updates",
+      "matchManagers": ["github-actions"],
+      "minimumReleaseAge": "3 days"
+    }
   ]
 }
