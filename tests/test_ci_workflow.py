@@ -57,18 +57,11 @@ MANUAL_NON_LINUX_JOB_NAMES = {
     ),
     "wheel-smoke": "Manual wheel smoke (${{ matrix.os }})",
 }
-CHECKOUT_ACTION = (
-    "actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10"
-)
-SETUP_PYTHON_ACTION = (
-    "actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1"
-)
-SETUP_UV_ACTION = (
-    "astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b"
-)
-LEAN_CACHE_ACTION = (
-    "actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809"
-)
+CHECKOUT_ACTION = "actions/checkout"
+SETUP_PYTHON_ACTION = "actions/setup-python"
+SETUP_UV_ACTION = "astral-sh/setup-uv"
+LEAN_CACHE_ACTION = "actions/cache"
+MATURIN_ACTION = "PyO3/maturin-action"
 LEAN_ELAN_VERSION = "v4.1.2"
 LEAN_CORPUS_BY_EXECUTABLE = {
     "generate": "corpus/state-machine.jsonl",
@@ -124,10 +117,7 @@ LEAN_SENSITIVITY_EXECUTABLES = {
     for name in LEAN_CORPUS_BY_EXECUTABLE
     if name not in {"generate", "generate_budget", "generate_workspace"}
 }
-UPLOAD_ARTIFACT_ACTION = (
-    "actions/upload-artifact@"
-    "ea165f8d65b6e75b540449e92b4886f43607fa02"
-)
+UPLOAD_ARTIFACT_ACTION = "actions/upload-artifact"
 TAG_VALIDATION_COMMAND = (
     'python -c "import os, pathlib, tomllib; '
     "py=tomllib.loads(pathlib.Path('pyproject.toml').read_text())"
@@ -146,16 +136,10 @@ EXPECTED_RELEASE_JOBS = {
         "runs-on": "ubuntu-latest",
         "steps": [
             {
-                "uses": (
-                    "actions/checkout@"
-                    "df4cb1c069e1874edd31b4311f1884172cec0e10"
-                )
+                "uses": CHECKOUT_ACTION
             },
             {
-                "uses": (
-                    "actions/setup-python@"
-                    "ece7cb06caefa5fff74198d8649806c4678c61a1"
-                ),
+                "uses": SETUP_PYTHON_ACTION,
                 "with": {"python-version": "3.14"},
             },
             {
@@ -170,30 +154,18 @@ EXPECTED_RELEASE_JOBS = {
         "runs-on": "windows-latest",
         "steps": [
             {
-                "uses": (
-                    "actions/checkout@"
-                    "df4cb1c069e1874edd31b4311f1884172cec0e10"
-                )
+                "uses": CHECKOUT_ACTION
             },
             {
-                "uses": (
-                    "actions/setup-python@"
-                    "ece7cb06caefa5fff74198d8649806c4678c61a1"
-                ),
+                "uses": SETUP_PYTHON_ACTION,
                 "with": {"python-version": "3.14"},
             },
             {
-                "uses": (
-                    "astral-sh/setup-uv@"
-                    "08807647e7069bb48b6ef5acd8ec9567f424441b"
-                ),
+                "uses": SETUP_UV_ACTION,
                 "with": {"enable-cache": True},
             },
             {
-                "uses": (
-                    "PyO3/maturin-action@"
-                    "e83996d129638aa358a18fbd1dfb82f0b0fb5d3b"
-                ),
+                "uses": MATURIN_ACTION,
                 "with": {
                     "command": "build",
                     "args": (
@@ -206,10 +178,7 @@ EXPECTED_RELEASE_JOBS = {
             },
             {"run": WHEEL_SMOKE_COMMAND},
             {
-                "uses": (
-                    "actions/upload-artifact@"
-                    "ea165f8d65b6e75b540449e92b4886f43607fa02"
-                ),
+                "uses": UPLOAD_ARTIFACT_ACTION,
                 "with": {
                     "name": "wheels-windows-x86_64",
                     "path": "target/wheels/*.whl",
@@ -222,30 +191,18 @@ EXPECTED_RELEASE_JOBS = {
         "runs-on": "ubuntu-latest",
         "steps": [
             {
-                "uses": (
-                    "actions/checkout@"
-                    "df4cb1c069e1874edd31b4311f1884172cec0e10"
-                )
+                "uses": CHECKOUT_ACTION
             },
             {
-                "uses": (
-                    "actions/setup-python@"
-                    "ece7cb06caefa5fff74198d8649806c4678c61a1"
-                ),
+                "uses": SETUP_PYTHON_ACTION,
                 "with": {"python-version": "3.14"},
             },
             {
-                "uses": (
-                    "astral-sh/setup-uv@"
-                    "08807647e7069bb48b6ef5acd8ec9567f424441b"
-                ),
+                "uses": SETUP_UV_ACTION,
                 "with": {"enable-cache": True},
             },
             {
-                "uses": (
-                    "PyO3/maturin-action@"
-                    "e83996d129638aa358a18fbd1dfb82f0b0fb5d3b"
-                ),
+                "uses": MATURIN_ACTION,
                 "with": {
                     "command": "build",
                     "args": (
@@ -259,10 +216,7 @@ EXPECTED_RELEASE_JOBS = {
             },
             {"run": WHEEL_SMOKE_COMMAND},
             {
-                "uses": (
-                    "actions/upload-artifact@"
-                    "ea165f8d65b6e75b540449e92b4886f43607fa02"
-                ),
+                "uses": UPLOAD_ARTIFACT_ACTION,
                 "with": {
                     "name": "wheels-linux-x86_64",
                     "path": "target/wheels/*.whl",
@@ -397,8 +351,28 @@ def job_event_conditions(workflow: str) -> set[str]:
     return events
 
 
-def assert_artifact_only_release(test: unittest.TestCase, workflow: str) -> None:
+def workflow_contract(workflow: str) -> dict:
+    """Check immutable action pins, then compare behavior independently of SHA."""
     decoded = yaml.safe_load(workflow)
+    assert isinstance(decoded, dict), "workflow must be a mapping"
+    for job in decoded["jobs"].values():
+        for step in job.get("steps", []):
+            if "uses" not in step:
+                continue
+            reference = step["uses"]
+            match = (
+                re.fullmatch(
+                    r"([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)@[0-9a-fA-F]{40}", reference
+                )
+                if isinstance(reference, str) else None
+            )
+            assert match is not None, f"action must use a full commit SHA: {reference!r}"
+            step["uses"] = match[1]
+    return decoded
+
+
+def assert_artifact_only_release(test: unittest.TestCase, workflow: str) -> None:
+    decoded = workflow_contract(workflow)
     test.assertIsInstance(decoded, dict)
     test.assertEqual(decoded, EXPECTED_RELEASE_WORKFLOW)
 
@@ -414,6 +388,71 @@ def assert_repository_rust_toolchain(test: unittest.TestCase, toolchain: dict) -
     )
     test.assertEqual(declaration["profile"], "minimal")
     test.assertCountEqual(declaration["components"], ["clippy", "rustfmt"])
+
+
+class WorkflowActionPinContractTests(unittest.TestCase):
+    def test_every_workflow_uses_known_actions_with_full_commit_pins(self) -> None:
+        allowed = {
+            CHECKOUT_ACTION, SETUP_PYTHON_ACTION, SETUP_UV_ACTION,
+            LEAN_CACHE_ACTION, UPLOAD_ARTIFACT_ACTION, MATURIN_ACTION,
+        }
+        paths = sorted(path for path in (ROOT / ".github" / "workflows").iterdir()
+                       if path.suffix in {".yml", ".yaml"})
+        self.assertTrue(paths)
+        for path in paths:
+            with self.subTest(workflow=path.name):
+                decoded = workflow_contract(path.read_text(encoding="utf-8"))
+                actions = [step["uses"] for job in decoded["jobs"].values()
+                           for step in job.get("steps", []) if "uses" in step]
+                self.assertTrue(actions)
+                for action in actions:
+                    self.assertIn(action, allowed)
+
+    def test_accepts_updated_pins_without_changing_release_contract(self) -> None:
+        workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+        for commit in ("1" * 40, "abcdef0123" * 4, "ABCDEF0123" * 4):
+            with self.subTest(commit=commit):
+                updated = re.sub(r"(?<=@)[0-9a-f]{40}", commit, workflow)
+                self.assertNotEqual(updated, workflow)
+                assert_artifact_only_release(self, updated)
+
+    def test_rejects_different_actions_even_with_full_pins(self) -> None:
+        workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+        for original, replacement in (
+            (CHECKOUT_ACTION, "attacker/checkout"),
+            (SETUP_UV_ACTION, "astral-sh/setup-uv-fork"),
+            (UPLOAD_ARTIFACT_ACTION, LEAN_CACHE_ACTION),
+        ):
+            with self.subTest(action=original, replacement=replacement):
+                changed = workflow.replace(original + "@", replacement + "@", 1)
+                self.assertNotEqual(changed, workflow)
+                workflow_contract(changed)  # Pin syntax is valid; identity must fail.
+                with self.assertRaises(AssertionError):
+                    assert_artifact_only_release(self, changed)
+
+    def test_rejects_unpinned_or_malformed_action_references(self) -> None:
+        for reference in (
+            "actions/checkout", "actions/checkout@v6", "actions/checkout@main",
+            "actions/checkout@" + "1" * 39, "actions/checkout@" + "1" * 41,
+            "actions/checkout@" + "g" * 40,
+            "actions/checkout@" + "1" * 40 + "\n",
+            "actions/checkout@" + "1" * 40 + "@main",
+            "${{ inputs.action }}", "./local-action", None, True, ["actions/checkout"],
+        ):
+            with self.subTest(reference=reference):
+                workflow = yaml.safe_dump({"jobs": {"test": {"steps": [{"uses": reference}]}}})
+                with self.assertRaisesRegex(AssertionError, "full commit SHA"):
+                    workflow_contract(workflow)
+
+    def test_normalizes_only_step_action_references(self) -> None:
+        action = "actions/checkout@" + "1" * 40
+        document = {"jobs": {"test": {"steps": [
+            {"uses": action, "with": {"ref": action}},
+            {"run": "echo " + action, "env": {"USES": action}},
+        ]}}}
+        observed = workflow_contract(yaml.safe_dump(document))
+        document["jobs"]["test"]["steps"][0]["uses"] = CHECKOUT_ACTION
+        self.assertEqual(observed, document)
 
 
 class RepositoryRustToolchainContractTests(unittest.TestCase):
@@ -614,7 +653,7 @@ if args[0] == "run":
         self.assertEqual(completed.returncode, 23, completed.stderr)
 
     def test_job_uses_pinned_tools_repository_toolchain_and_cache(self) -> None:
-        workflow = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))
+        workflow = workflow_contract(CI_WORKFLOW.read_text(encoding="utf-8"))
         job = workflow["jobs"]["lean-audit"]
 
         self.assertEqual(job["needs"], "quality")
@@ -876,7 +915,7 @@ class PlatformExecutionPolicyContractTests(unittest.TestCase):
         self.assertEqual(purity["runs-on"], "windows-latest")
 
     def test_windows_resource_scope_runs_native_acceptance_independently(self) -> None:
-        jobs = yaml.safe_load(NON_LINUX_CI_WORKFLOW.read_text(encoding="utf-8"))["jobs"]
+        jobs = workflow_contract(NON_LINUX_CI_WORKFLOW.read_text(encoding="utf-8"))["jobs"]
         self.assertIn("windows-resource-scope", jobs)
         self.assertEqual(jobs["windows-resource-scope"], {
             "name": "Manual Windows resource scope",
@@ -898,7 +937,7 @@ class PlatformExecutionPolicyContractTests(unittest.TestCase):
     def test_windows_metrics_destinations_runs_native_acceptance_independently(
         self,
     ) -> None:
-        jobs = yaml.safe_load(
+        jobs = workflow_contract(
             NON_LINUX_CI_WORKFLOW.read_text(encoding="utf-8")
         )["jobs"]
 
@@ -952,7 +991,7 @@ class PlatformExecutionPolicyContractTests(unittest.TestCase):
 class LatestStableCanaryContractTests(unittest.TestCase):
     def test_latest_stable_canary_is_isolated_and_environment_complete(self) -> None:
         workflow = STABLE_CANARY_WORKFLOW.read_text(encoding="utf-8")
-        decoded = yaml.safe_load(workflow)
+        decoded = workflow_contract(workflow)
 
         self.assertEqual(
             set(decoded),
@@ -1208,7 +1247,7 @@ class ReleaseWorkflowContractTests(unittest.TestCase):
             ),
             "unexpected action": workflow.replace(
                 UPLOAD_ARTIFACT_ACTION,
-                "attacker/publish@0123456789abcdef",
+                "attacker/publish",
                 1,
             ),
             "job environment": workflow.replace(
@@ -1257,14 +1296,14 @@ class ReleaseWorkflowContractTests(unittest.TestCase):
             "quoted uses key": workflow.replace(
                 "      - run: uv run --frozen python tests/wheel_smoke.py\n",
                 "      - run: uv run --frozen python tests/wheel_smoke.py\n"
-                '      - "uses": attacker/publish@0123456789abcdef\n',
+                '      - "uses": attacker/publish@0123456789abcdef0123456789abcdef01234567\n',
                 1,
             ),
             "explicit mapping uses key": workflow.replace(
                 "      - run: uv run --frozen python tests/wheel_smoke.py\n",
                 "      - run: uv run --frozen python tests/wheel_smoke.py\n"
                 "      - ? uses\n"
-                "        : attacker/publish@0123456789abcdef\n",
+                "        : attacker/publish@0123456789abcdef0123456789abcdef01234567\n",
                 1,
             ),
             "escaped OIDC permission key": workflow.replace(
