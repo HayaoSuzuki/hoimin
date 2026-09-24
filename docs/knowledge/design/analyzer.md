@@ -5,6 +5,11 @@ description: 構文・名前解決・変更するバイト範囲・候補保持�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-556-design
+  resource: ../../superpowers/specs/2026-09-24-issue-556-with-suppression.md
+  revision: 282e941e4c1a5a23303d30beca881d7bbfde7763
+  working_tree: clean
+  sha256: 7ff74c9749274839e3cbe0ceb737544de0dd3b5fb5eef90aae17e3ff461269be
 - id: nullable-gates-audit
   resource: ../../audits/2026-09-15-nullable-gates/README.md
   working_tree: untracked
@@ -396,9 +401,16 @@ Issue #547の設計では、型注釈collectorの通常の文から次の文へ�
 
 # withの例外抑制とfinallyの走査（Issue #556/#557）
 
-`5e631ef`の追加監査で、with本体の例外が抑制された後のimport合流に欠落を確認した。finallyの暗黙例外入口とは別に、例外から正常継続への変換が必要となる。finallyには記録無効でも記録用走査を行う経路が残り、入れ子のrelease計測で時間がほぼ倍増した。両件とも未修正であり、[監査の証拠と限界](../audits/with-finally-2026-09.md)を参照する。[^with-finally-audit]
+`5e631ef`の追加監査で、with本体の例外が抑制された後のimport合流に欠落を確認した。finallyの暗黙例外入口とは別に、例外から正常継続への変換が必要となる。finallyには記録無効でも記録用走査を行う経路が残り、入れ子のrelease計測で時間がほぼ倍増した。これらは監査時点の観測であり、[監査の証拠と修正後の確認範囲](../audits/with-finally-2026-09.md)を参照する。[^with-finally-audit]
 
 [^with-finally-audit]: [withの例外抑制とfinallyの解析コスト](../../audits/2026-09-15-with-finally/README.md)。
+
+Issue #556の修正では、通常のwithとasync withの本体で例外状態を収集し、抑制後の正常継続へ合流する。managerの実体が不明な場合も抑制経路を考慮する。明示raiseと、成功したreturn・break・continueは別々に保持し、finallyが終了方法を置き換えた場合も区別する。[^issue-556-design]
+
+複数itemでは、先に入ったmanagerが後続itemの開始失敗や内側の終了処理の失敗を抑制し得る。最初のmanager自身の開始失敗は、そのmanagerの正常継続へ合流しない。import失敗と任意の動的hookは従来どおり対象外であり、importだけの本体やcallより前のimportの正例を保持する。#557の解析コストはこの修正の対象外である。[^issue-556-design]
+
+[^issue-556-design]: [Issue 556: import facts after context-manager suppression](../../superpowers/specs/2026-09-24-issue-556-with-suppression.md)。
+
 
 # 遅延注釈と集合ABCの綴り（Issue #558/#559）
 

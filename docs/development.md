@@ -510,6 +510,23 @@ environment per flow instead of one snapshot per expression. Class globals/nonlo
 conservatively invalidated without leaking class-local environments. Import
 failures and arbitrary dynamic hooks remain outside this analysis.
 
+Synchronous and asynchronous `with` statements also collect body exceptions, even
+without an enclosing `finally`. Any manager, including a dynamic or custom
+manager, may suppress an exception; the normal successor therefore intersects
+body fallthrough with possible suppressed exception states. Explicit raises stay
+separate from successful return, break, and continue, which are not suppressed.
+Exceptions while evaluating return values can still be suppressed. A falling
+finally resumes the original exit category; an abrupt finally replaces it.
+
+Multiple with items follow nested-manager ordering. The first manager cannot
+suppress its own entry failure, but an entered manager can suppress failures in
+later manager entry, target binding, or an inner manager's exit. Partial target
+bindings invalidate affected names conservatively. Possible unsuppressed
+exceptions remain available to enclosing handlers and finally blocks. Import
+failures remain excluded, so an unconditional import before a later call, or an
+import-only body with a simple target, retains eligible typing candidates.
+
+
 The supported structural shapes are exact: `append(value)` ↔
 `extend([value])` only when the inverse list literal has one non-starred
 element; `mapping.get(key)` ↔ `mapping[key]` only for a simple name or

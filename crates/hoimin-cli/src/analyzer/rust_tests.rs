@@ -8019,3 +8019,176 @@ fn implicit_finally_covers_pattern_capture_before_guard_failure() {
             .is_empty()
     );
 }
+
+#[test]
+fn with_suppression_joins_only_reachable_exception_states() {
+    let cases = [
+        (
+            "call before import",
+            "Sequence = set\nwith manager:\n    hazard()\n    from typing import Sequence\nvalue: Sequence[int]\n",
+            0,
+        ),
+        (
+            "import before call",
+            "Sequence = set\nwith manager:\n    from typing import Sequence\n    hazard()\nvalue: Sequence[int]\n",
+            1,
+        ),
+        (
+            "normal import",
+            "Sequence = set\nwith manager:\n    from typing import Sequence\nvalue: Sequence[int]\n",
+            1,
+        ),
+        (
+            "explicit raise",
+            "Sequence = set\nwith manager:\n    raise KeyError\n    from typing import Sequence\nvalue: Sequence[int]\n",
+            0,
+        ),
+        (
+            "bare raise",
+            "from typing import Sequence\nwith manager:\n    raise\n    Sequence = set\nvalue: Sequence[int]\n",
+            1,
+        ),
+        (
+            "second manager entry",
+            "Sequence = set\nwith first, second:\n    from typing import Sequence\nvalue: Sequence[int]\n",
+            0,
+        ),
+        (
+            "second manager preserves established import",
+            "from typing import Sequence\nwith first, second:\n    pass\nvalue: Sequence[int]\n",
+            1,
+        ),
+        (
+            "partial target binding",
+            "from typing import Sequence\nwith manager as (Sequence, (x, y)):\n    from typing import Sequence\nvalue: Sequence[int]\n",
+            0,
+        ),
+        (
+            "infallible target binding",
+            "Sequence = set\nwith manager as target:\n    from typing import Sequence\nvalue: Sequence[int]\n",
+            1,
+        ),
+        (
+            "async manager",
+            "async def f():\n    Sequence = set\n    async with manager:\n        await hazard()\n        from typing import Sequence\n    value: Sequence[int]\n",
+            0,
+        ),
+        (
+            "async positive",
+            "async def f():\n    Sequence = set\n    async with manager:\n        from typing import Sequence\n        await hazard()\n    value: Sequence[int]\n",
+            1,
+        ),
+    ];
+    for (label, source, expected) in cases {
+        let actual = analyze_with_only_operator(source, MutationOperator::TypeListSequence);
+        assert_eq!(actual.candidates.len(), expected, "{label}\n{source}");
+    }
+}
+
+#[test]
+fn with_suppression_preserves_nested_flow_and_deferred_boundaries() {
+    let cases = [
+        (
+            "finally restores import",
+            "Sequence = set\nwith manager:\n    try:\n        hazard()\n    finally:\n        from typing import Sequence\nvalue: Sequence[int]\n",
+            1,
+        ),
+        (
+            "finally preserves exception",
+            "Sequence = set\nwith manager:\n    try:\n        hazard()\n        from typing import Sequence\n    finally:\n        pass\nvalue: Sequence[int]\n",
+            0,
+        ),
+        (
+            "handler raises",
+            "Sequence = set\nwith manager:\n    try:\n        pass\n    except KeyError:\n        raise\n    from typing import Sequence\nvalue: Sequence[int]\n",
+            0,
+        ),
+        (
+            "nested with",
+            "Sequence = set\nwith outer:\n    with inner:\n        from typing import Sequence\nvalue: Sequence[int]\n",
+            0,
+        ),
+        (
+            "bare raise through finally",
+            "from typing import Sequence\nwith manager:\n    try:\n        raise\n    finally:\n        pass\n    Sequence = set\nvalue: Sequence[int]\n",
+            1,
+        ),
+        (
+            "bare raise through loop",
+            "from typing import Sequence\nwith manager:\n    while condition:\n        raise\n    Sequence = set\nvalue: Sequence[int]\n",
+            0,
+        ),
+        (
+            "handler target cleanup",
+            "from typing import Sequence\nwith manager:\n    try:\n        pass\n    except KeyError as Sequence:\n        raise\nvalue: Sequence[int]\n",
+            0,
+        ),
+        (
+            "inner exit raises during return",
+            "from typing import Sequence\nwith first, second:\n    Sequence = 0\n    return\nvalue: Sequence[int]\n",
+            0,
+        ),
+        (
+            "deferred lambda",
+            "Sequence = set\nwith manager:\n    later = lambda: hazard()\n    from typing import Sequence\nvalue: Sequence[int]\n",
+            1,
+        ),
+        (
+            "deferred function",
+            "Sequence = set\nwith manager:\n    def later():\n        hazard()\n    from typing import Sequence\nvalue: Sequence[int]\n",
+            1,
+        ),
+        (
+            "return expression raises",
+            "def f():\n    Sequence = set\n    with manager:\n        return hazard()\n        from typing import Sequence\n    value: Sequence[int]\n",
+            0,
+        ),
+    ];
+    for (label, source, expected) in cases {
+        let actual = analyze_with_only_operator(source, MutationOperator::TypeListSequence);
+        assert_eq!(actual.candidates.len(), expected, "{label}\n{source}");
+    }
+}
+
+#[test]
+fn with_suppression_preserves_successful_abrupt_categories() {
+    for abrupt in ["return", "break", "continue"] {
+        let source = format!("from typing import Sequence\nwith manager:\n    {abrupt}\n");
+        let actual = binding_flow_test_snapshot(&source);
+        assert!(actual.fallthrough.is_empty(), "{abrupt}: {actual:?}");
+        let states = match abrupt {
+            "return" => actual.terminates,
+            "break" => actual.breaks,
+            _ => actual.continues,
+        };
+        assert_eq!(
+            states,
+            vec![vec!["direct:Sequence=typing.Sequence".to_owned()]]
+        );
+        let overridden = format!(
+            "from typing import Sequence\nwith manager:\n    try:\n        raise\n    finally:\n        {abrupt}\n"
+        );
+        let actual = binding_flow_test_snapshot(&overridden);
+        assert!(
+            actual.fallthrough.is_empty(),
+            "finally {abrupt}: {actual:?}"
+        );
+    }
+}
+
+#[test]
+fn with_suppression_makes_bare_raise_successor_reachable() {
+    for body in [
+        "    raise\n",
+        "    try:\n        raise\n    finally:\n        pass\n",
+    ] {
+        let source = format!("from typing import Sequence\nwith manager:\n{body}");
+        let actual = binding_flow_test_snapshot(&source);
+        assert_eq!(
+            actual.fallthrough,
+            vec![vec!["direct:Sequence=typing.Sequence".to_owned()]],
+            "{source}"
+        );
+        assert_eq!(actual.terminates.len(), 1, "possible propagation: {source}");
+    }
+}
