@@ -86,7 +86,7 @@ def operatorFixtures : List (String × String × Fixture) :=
 
 def renderFixture (operator replacement : String) (f : Fixture) : String :=
   (Json.mkObj [("schema", toJson (1 : Nat)), ("id", toJson f.id),
-    ("mode", toJson (if f.trusted then "strict" else "report-only")),
+    ("mode", toJson ("strict" : String)),
     ("source", toJson f.source), ("operator", toJson operator),
     ("pairs", toJson (if eligible f.trusted f.tree then [(f.annotation, replacement)] else []))]).compress ++ "\n"
 

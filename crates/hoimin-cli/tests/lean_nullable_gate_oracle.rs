@@ -10,7 +10,6 @@ const CORPUS: &str = include_str!("../../../formal/HoiminOracle/corpus/nullable-
 #[serde(rename_all = "kebab-case")]
 enum Mode {
     Strict,
-    ReportOnly,
 }
 
 #[derive(Debug, Deserialize)]
@@ -127,32 +126,21 @@ async fn check_python(case: &Case, mutants: &[String]) {
 }
 
 #[test]
-fn nullable_gate_parser_keeps_known_name_gaps_explicit() {
+fn nullable_gate_parser_requires_every_row_to_be_strict() {
     let rows = cases();
-    let report_only: BTreeSet<_> = rows
-        .iter()
-        .filter(|case| case.mode == Mode::ReportOnly)
-        .map(|case| case.id.as_str())
-        .collect();
-    assert_eq!(
-        report_only,
-        BTreeSet::from([
-            "shadow_int_number",
-            "shadow_str_number",
-            "shadow_int_class",
-            "shadow_list_mapping",
-        ])
-    );
-    let mut invalid: serde_json::Value =
-        serde_json::from_str(CORPUS.lines().next().unwrap()).unwrap();
-    invalid["mode"] = serde_json::json!("strcit");
-    assert!(serde_json::from_value::<Case>(invalid).is_err());
+    assert_eq!(rows.len(), 65);
+    assert!(rows.iter().all(|case| case.mode == Mode::Strict));
+    for mode in ["strcit", "report-only"] {
+        let mut invalid: serde_json::Value =
+            serde_json::from_str(CORPUS.lines().next().unwrap()).unwrap();
+        invalid["mode"] = serde_json::json!(mode);
+        assert!(serde_json::from_value::<Case>(invalid).is_err());
+    }
 }
 
 #[tokio::test]
 async fn nullable_gate_public_plan_matches_strict_lean_rows() {
     let mut matches = 0;
-    let mut known_mismatches = 0;
     for case in cases() {
         let plan = plan(&case).await;
         let mut observed = Vec::new();
@@ -176,22 +164,12 @@ async fn nullable_gate_public_plan_matches_strict_lean_rows() {
         observed.sort();
         let mut expected = case.pairs.clone();
         expected.sort();
-        if case.mode == Mode::Strict {
-            assert_eq!(
-                observed, expected,
-                "semantic mismatch: {}\n{}",
-                case.id, case.source
-            );
-            matches += 1;
-        } else if observed != expected {
-            known_mismatches += 1;
-            eprintln!(
-                "report-only #564 {}: expected={expected:?}, actual={observed:?}",
-                case.id
-            );
-        }
+        assert_eq!(
+            observed, expected,
+            "semantic mismatch: {}\n{}",
+            case.id, case.source
+        );
+        matches += 1;
     }
-    eprintln!(
-        "strict matches={matches}; known #564 mismatches={known_mismatches}; infrastructure errors=0"
-    );
+    eprintln!("strict matches={matches}; infrastructure errors=0");
 }

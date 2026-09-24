@@ -30,9 +30,9 @@ sources:
 
 - id: issue-565-design
   resource: ../../superpowers/specs/2026-09-24-issue-565-annotation-descendants.md
-  revision: 962dc1b628bb1aad30a0ae9fe0859887f5fbf535
-  working_tree: clean
-  sha256: c511129d0c628d271aab30dabc37a77dd7ff88f496e026791ce9da2449a8f6c6
+  revision: 81f5c7809a1381fa2bfdc1ff10bccd7d72db3aa0
+  working_tree: modified
+  sha256: b13589887e2a7fc2f3386c0d284825582139503f3deab0504e79c13d7cb76f8f
 - id: issue-549-design
   resource: ../../superpowers/specs/2026-09-15-issue-549-slice-tuple-design.md
   revision: f11013542ccd735ab9741b5079c0b39a517df256

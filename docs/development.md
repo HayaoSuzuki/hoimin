@@ -504,9 +504,9 @@ that a builtin-spelled name is unshadowed.
 
 The Lean NullableGate model proves blocked-descendant rejection for arbitrary
 model depth. Its generated corpus is checked through public CLI plan in
-`tests/lean_nullable_gate_oracle.rs`; strict rows cover structural eligibility
-and all seven type operators. The four name-rebinding rows remain explicitly
-report-only for issue #564. Regenerate and check the corpus through
+`tests/lean_nullable_gate_oracle.rs`; all 65 rows are strict and cover structural
+eligibility, all seven type operators, and the four name-rebinding cases fixed
+by issue #564. The adapter rejects report-only modes. Regenerate and check the corpus through
 `generate_nullable_gate`; do not change expected pairs in the Rust adapter.
 
 Type-annotation collection records an import-state snapshot at each annotation

@@ -1,7 +1,7 @@
-{"id":"shadow_int_number","mode":"report-only","operator":"type_nullable_add","pairs":[],"schema":1,"source":"int=7\nx:int\n"}
-{"id":"shadow_str_number","mode":"report-only","operator":"type_nullable_add","pairs":[],"schema":1,"source":"str=7\nx:str\n"}
-{"id":"shadow_int_class","mode":"report-only","operator":"type_nullable_add","pairs":[],"schema":1,"source":"class Meta(type):\n def __or__(cls, other): raise RuntimeError('custom union')\nclass int(metaclass=Meta): pass\nx:int\n"}
-{"id":"shadow_list_mapping","mode":"report-only","operator":"type_nullable_add","pairs":[],"schema":1,"source":"list={int:7}\nx:list[int]\n"}
+{"id":"shadow_int_number","mode":"strict","operator":"type_nullable_add","pairs":[],"schema":1,"source":"int=7\nx:int\n"}
+{"id":"shadow_str_number","mode":"strict","operator":"type_nullable_add","pairs":[],"schema":1,"source":"str=7\nx:str\n"}
+{"id":"shadow_int_class","mode":"strict","operator":"type_nullable_add","pairs":[],"schema":1,"source":"class Meta(type):\n def __or__(cls, other): raise RuntimeError('custom union')\nclass int(metaclass=Meta): pass\nx:int\n"}
+{"id":"shadow_list_mapping","mode":"strict","operator":"type_nullable_add","pairs":[],"schema":1,"source":"list={int:7}\nx:list[int]\n"}
 {"id":"dict_any","mode":"strict","operator":"type_nullable_add","pairs":[],"schema":1,"source":"from typing import Any\nx:dict[str,Any]\n"}
 {"id":"dict_object","mode":"strict","operator":"type_nullable_add","pairs":[],"schema":1,"source":"x:dict[str,object]\n"}
 {"id":"dict_typevar","mode":"strict","operator":"type_nullable_add","pairs":[],"schema":1,"source":"from typing import TypeVar\nT=TypeVar('T')\nx:dict[str,T]\n"}

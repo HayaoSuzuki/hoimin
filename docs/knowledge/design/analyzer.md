@@ -45,9 +45,9 @@ sources:
 
 - id: issue-565-design
   resource: ../../superpowers/specs/2026-09-24-issue-565-annotation-descendants.md
-  revision: 962dc1b628bb1aad30a0ae9fe0859887f5fbf535
-  working_tree: clean
-  sha256: c511129d0c628d271aab30dabc37a77dd7ff88f496e026791ce9da2449a8f6c6
+  revision: 81f5c7809a1381fa2bfdc1ff10bccd7d72db3aa0
+  working_tree: modified
+  sha256: b13589887e2a7fc2f3386c0d284825582139503f3deab0504e79c13d7cb76f8f
 - id: nullable-gates-audit
   resource: ../../audits/2026-09-15-nullable-gates/README.md
   working_tree: untracked
@@ -512,6 +512,6 @@ nullable追加では、str/int/float/bool/bytesの名前とlist/set/dictの型�
 
 型演算子の共通除外条件は、Tuple・Listの全要素とStarredの値を再帰的に検査する。dictのkey/value、複数段の型引数、tuple/listのunpackにAnyなどの対象外要素が含まれる場合、注釈全体の候補を除く。対象内だけの複数引数やunpackは保持する。この条件はnullable追加・削除と五つのcollection/iterable演算子に共通する。[^issue-565-design]
 
-Leanの子孫検査モデルと公開planの対応を通常の回帰テストへ追加する。名前の再束縛に関する#564はこの変更の対象外とし、その4入力は期待値を保持したreport-onlyとして区別する。検証範囲と過去の不一致は[監査記録](../audits/nullable-gates-2026-09.md)を参照する。[^issue-565-design]
+Leanの子孫検査モデルと公開planの対応を通常の回帰テストへ追加する。名前の再束縛に関する#564の修正を併合し、その4入力も期待値を保持したstrict検証へ移行する。65入力すべてを照合し、report-only指定は拒否する。検証範囲と過去の不一致は[監査記録](../audits/nullable-gates-2026-09.md)を参照する。[^issue-565-design]
 
 [^issue-565-design]: [Issue 565: recursively exclude disallowed annotation arguments](../../superpowers/specs/2026-09-24-issue-565-annotation-descendants.md)。

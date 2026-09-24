@@ -29,9 +29,11 @@ rule. Keep finite sensitivity enumeration at depths 0, 1, 2, under bounded Lean
 execution. Extend the Lean-generated corpus with dictionary key/value positions,
 nesting, direct/module aliases, three-argument descendants, and shared operators.
 
-The four existing untrusted-name fixtures remain in the corpus with an explicit
-report-only mode for #564. Their expectations remain unchanged. New Rust tests
-validate the whole schema and execute every strict row through the public CLI,
+The four existing untrusted-name fixtures retain their expectations. During
+standalone development they were report-only for the separate #564 fix. After
+stacking onto #564, all 65 rows must be strict and the parser must reject
+report-only modes. Rust tests validate the whole schema and execute every row
+through the public CLI,
 comparing exact original/replacement pairs. Do not hide infrastructure failures
 as semantic mismatches. CPython 3.14 must compile/evaluate strict source annotations
 and compile each generated replacement. Name/provenance and full Python typing

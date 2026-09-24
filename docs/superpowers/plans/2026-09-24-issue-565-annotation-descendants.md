@@ -17,7 +17,7 @@ the semantic gate.
 
 Test blocked dictionary keys as well as values, deep subscript/tuple combinations,
 aliased forbidden constructors, a third tuple element, and all seven consumers.
-Preserve #564 expectations without making known name-resolution gaps strict.
+Preserve #564 expectations; promote those rows to strict after stacking its fix.
 
 ## Task 1: recursive gate and oracle correspondence
 
@@ -34,7 +34,8 @@ analyzer/nullable-audit/design-index OKF pages.
   for each matching shape and test all seven type operators.
 - [x] Extend formal fixtures and witnesses. Run bounded Lean model build,
   generator sensitivity, generation and freshness commands. Keep original
-  untrusted-name cases report-only with unchanged expected pairs.
+  untrusted-name cases unchanged; their standalone report-only mode becomes
+  strict after stacking #564.
 - [x] Add a strict serde corpus parser and public plan adapter; assert source
   annotation evaluation and replacement compilation under CPython >=3.14.
   Expected observations are `Vec<(String,String)>` from the generated corpus.
@@ -50,3 +51,11 @@ analyzer/nullable-audit/design-index OKF pages.
 - [x] Run full workspace tests, `cargo fmt --all -- --check`, and
   `cargo clippy --workspace --all-targets --all-features -- -D warnings`.
   Validate OKF YAML, links, new source metadata and scope. Commit the verified fix.
+
+## Stack integration
+
+- [x] Preserve predecessor code and tests when rebasing; retain both sets of OKF entries.
+- [x] Promote all 65 corpus rows to strict, reject report-only parser input, and
+  preserve every expected pair.
+- [ ] Run final stacked workspace tests, CI clippy, formatting, bounded Lean checks,
+  and OKF checks; record exact results and rewritten source revisions.
