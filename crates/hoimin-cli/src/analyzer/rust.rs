@@ -2480,6 +2480,11 @@ impl<'ast> Visitor<'ast> for AstFacts<'_> {
 }
 
 const MUTABLE_BUILTINS: &[&str] = &[
+    "str",
+    "int",
+    "float",
+    "bool",
+    "bytes",
     "any",
     "all",
     "list",
@@ -6531,7 +6536,7 @@ fn annotation_replacements(
     let mut replacements = Vec::new();
     if let Some(replacement) = nullable_removal(annotation, source, facts, imports) {
         replacements.push((replacement, MutationOperator::TypeNullableRemove));
-    } else if nullable_add_allowed(annotation, imports) {
+    } else if nullable_add_allowed(annotation, facts, imports) {
         let range = annotation.range();
         replacements.push((
             format!(
@@ -6645,10 +6650,62 @@ fn range_contains_annotation_trivia(source: &str, range: TextRange, facts: &AstF
     source[previous_end..end].contains(['\n', '\r', '#'])
 }
 
-fn nullable_add_allowed(annotation: &Expr, imports: &AnnotationImports<'_>) -> bool {
+fn nullable_add_allowed(
+    annotation: &Expr,
+    facts: &AstFacts<'_>,
+    imports: &AnnotationImports<'_>,
+) -> bool {
     !contains_disallowed_annotation(annotation, imports)
         && !is_nullable(annotation, imports)
         && is_supported_annotation(annotation, imports)
+        && annotation_builtins_are_unshadowed(annotation, facts, imports)
+}
+
+// Provenance is separate from the supported-syntax gate: tuple traversal here
+// checks builtin names, without deciding which other type arguments are allowed.
+fn annotation_builtins_are_unshadowed(
+    annotation: &Expr,
+    facts: &AstFacts<'_>,
+    imports: &AnnotationImports<'_>,
+) -> bool {
+    let builtin = |expression: &Expr, name| {
+        facts
+            .name_resolution
+            .annotation_resolution(usize::from(expression.range().start()), name)
+            == NameResolution::DefinitelyBuiltin
+    };
+    match annotation {
+        Expr::Name(name)
+            if matches!(name.id.as_str(), "str" | "int" | "float" | "bool" | "bytes") =>
+        {
+            builtin(annotation, name.id.as_str())
+        }
+        Expr::Subscript(subscript) => {
+            let resolved = imports.resolved_name(&subscript.value);
+            let constructor_allowed = match resolved.as_deref() {
+                Some(name @ ("list" | "set" | "dict")) => builtin(&subscript.value, name),
+                _ => true,
+            };
+            constructor_allowed
+                && annotation_builtins_are_unshadowed(&subscript.slice, facts, imports)
+        }
+        Expr::Tuple(tuple) => tuple
+            .elts
+            .iter()
+            .all(|element| annotation_builtins_are_unshadowed(element, facts, imports)),
+        Expr::List(list) => list
+            .elts
+            .iter()
+            .all(|element| annotation_builtins_are_unshadowed(element, facts, imports)),
+        Expr::Starred(starred) => {
+            annotation_builtins_are_unshadowed(&starred.value, facts, imports)
+        }
+        Expr::BinOp(binary) if binary.op == Operator::BitOr => {
+            annotation_builtins_are_unshadowed(&binary.left, facts, imports)
+                && annotation_builtins_are_unshadowed(&binary.right, facts, imports)
+        }
+        _ => true,
+    }
 }
 
 fn is_supported_annotation(annotation: &Expr, imports: &AnnotationImports<'_>) -> bool {

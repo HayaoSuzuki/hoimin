@@ -22,6 +22,11 @@ sources:
   revision: a49467ded359416a6ee743536100634f1cced3e2
   working_tree: modified
   sha256: 05fb86175690ff023986ef0bb2f0df2552ee8801ceab86910d01487db483ff6f
+- id: issue-564-design
+  resource: ../../superpowers/specs/2026-09-24-issue-564-nullable-provenance.md
+  revision: c1ce10402df3a26ce0c9e3eb1e7d524fcf4c2aca
+  working_tree: clean
+  sha256: a0237a6eca382f65069b6a15eb7681c155f6b94f468d8b09725cff7a9f514f8e
 - id: issue-549-design
   resource: ../../superpowers/specs/2026-09-15-issue-549-slice-tuple-design.md
   revision: f11013542ccd735ab9741b5079c0b39a517df256
@@ -1479,3 +1484,10 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 | Issue #558: imported names in deferred annotations | [設計書](../../superpowers/specs/2026-09-24-issue-558-deferred-imports-design.md) [^issue-558-design] |
 
 [^issue-558-design]: [Issue #558: imported names in deferred annotations](../../superpowers/specs/2026-09-24-issue-558-deferred-imports-design.md)。
+# Issue #564
+
+| 原文の先頭見出し | 原文 |
+| --- | --- |
+| Issue 564: nullable annotation builtin provenance | [原文](../../superpowers/specs/2026-09-24-issue-564-nullable-provenance.md) [^issue-564-design] |
+
+[^issue-564-design]: [Issue 564: nullable annotation builtin provenance](../../superpowers/specs/2026-09-24-issue-564-nullable-provenance.md)。

@@ -32,6 +32,16 @@ sources:
   revision: a49467ded359416a6ee743536100634f1cced3e2
   working_tree: modified
   sha256: 05fb86175690ff023986ef0bb2f0df2552ee8801ceab86910d01487db483ff6f
+- id: issue-564-design
+  resource: ../../superpowers/specs/2026-09-24-issue-564-nullable-provenance.md
+  revision: c1ce10402df3a26ce0c9e3eb1e7d524fcf4c2aca
+  working_tree: clean
+  sha256: a0237a6eca382f65069b6a15eb7681c155f6b94f468d8b09725cff7a9f514f8e
+- id: issue-564-code
+  resource: ../../../crates/hoimin-cli/src/analyzer/rust.rs
+  revision: c1ce10402df3a26ce0c9e3eb1e7d524fcf4c2aca
+  working_tree: modified
+  sha256: 76e562a3d14c772f35735cfe865995b13cc18cc4674cbae88e34fcab1edf331d
 - id: nullable-gates-audit
   resource: ../../audits/2026-09-15-nullable-gates/README.md
   working_tree: untracked
@@ -483,3 +493,11 @@ Issue #556の修正では、通常のwithとasync withの本体で例外状態�
 評価済みキャッシュの後の再代入と、注釈より後かつ初回参照前のimport復元は、安全な場合でも保守的に除外する。Pythonの版を推定せず、future annotations、遅延type alias、generic bound/defaultにもこの条件を適用する。実行時に評価されない関数内変数の注釈は従来のsource-order条件を維持する。collections.abc.Setの綴りは、併合元の#559で修正済みである。[^issue-558-design]
 
 [^issue-558-design]: [Issue #558: imported names in deferred annotations](../../superpowers/specs/2026-09-24-issue-558-deferred-imports-design.md)。
+## nullable追加の組込み型の参照先（Issue #564）
+
+nullable追加では、str/int/float/bool/bytesの名前とlist/set/dictの型構成子について、注釈scopeで組込み型を参照すると確認できる場合だけ候補を生成する。型引数内の組込み名も同じ条件で確認する。module/classの後続束縛、外側の関数local、型パラメータによって参照先が不確かになる場合は抑制する。関数自身の引数・本体のlocalは、その関数headerの注釈を隠さない。[^issue-564-design][^issue-564-code]
+
+標準ライブラリのimport aliasは既存の名前対応で判定するため、`Sequence as list`のような綴りも保持する。nullable除去とcollection変異の条件は変更しない。複数型引数内の対象外構文を検査する#565と、typing aliasの後続再代入を扱う#558は別の変更として扱う。[^issue-564-design]
+
+[^issue-564-design]: [Issue 564: nullable annotation builtin provenance](../../superpowers/specs/2026-09-24-issue-564-nullable-provenance.md)。
+[^issue-564-code]: [nullable追加の名前解決](../../../crates/hoimin-cli/src/analyzer/rust.rs)。

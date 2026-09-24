@@ -17,7 +17,7 @@ No dependencies or public schema changes. Use annotation scope, preserve functio
 ## Task 2: provenance gate
 
 - Extend `MUTABLE_BUILTINS` with str/int/float/bool/bytes so every binding form and dynamic uncertainty uses existing resolver tracking.
-- Change `nullable_add_allowed(annotation, imports)` to `nullable_add_allowed(annotation, facts, imports)` and add an independent recursive builtin-provenance predicate. `annotation_resolution(name.range().start(), name.id)` must equal DefinitelyBuiltin for scalar atoms and bare builtin collection constructors. Resolve imported constructor spellings first; recurse into subscript arguments and tuple/union children only to check builtin provenance.
+- Change `nullable_add_allowed(annotation, imports)` to `nullable_add_allowed(annotation, facts, imports)` and add an independent recursive builtin-provenance predicate. `annotation_resolution(name.range().start(), name.id)` must equal DefinitelyBuiltin for scalar atoms and bare builtin collection constructors. Resolve imported constructor spellings first; recurse into subscript arguments and tuple/list/starred/union children only to check builtin provenance.
 - Keep collection_replacements, nullable_removal, and contains_disallowed_annotation behavior unchanged. Run focused tests and the library suite.
 
 ## Task 3: verification and documentation
