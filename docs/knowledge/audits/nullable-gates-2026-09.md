@@ -18,23 +18,23 @@ sources:
 
   - id: issue-565-design
     resource: ../../superpowers/specs/2026-09-24-issue-565-annotation-descendants.md
-    revision: 81f5c7809a1381fa2bfdc1ff10bccd7d72db3aa0
-    working_tree: modified
+    revision: 75c1ddfd59a1c2ebf1bc9de05efb33c571c7c328
+    working_tree: clean
     sha256: b13589887e2a7fc2f3386c0d284825582139503f3deab0504e79c13d7cb76f8f
   - id: issue-565-model
     resource: ../../../formal/HoiminOracle/HoiminOracle/NullableGateModel.lean
-    revision: 81f5c7809a1381fa2bfdc1ff10bccd7d72db3aa0
+    revision: 75c1ddfd59a1c2ebf1bc9de05efb33c571c7c328
     working_tree: clean
     sha256: d55bbd0f28c1e25e9fa55afb4f53d52938804f88336b8531e947d8db3c57503f
   - id: issue-565-implementation
     resource: ../../../crates/hoimin-cli/src/analyzer/rust.rs
-    revision: 81f5c7809a1381fa2bfdc1ff10bccd7d72db3aa0
+    revision: 75c1ddfd59a1c2ebf1bc9de05efb33c571c7c328
     working_tree: clean
-    sha256: d35ff1b8a1066c620a1a3aa538c6af782ac7c9156d310312f4cdc18cc7dd193a
+    sha256: e979b73edd09d07dc625ffe282a8ff709e30dcdb9f86ca76134bbd8d703db69b
   - id: issue-565-tests
     resource: ../../../crates/hoimin-cli/tests/lean_nullable_gate_oracle.rs
-    revision: 81f5c7809a1381fa2bfdc1ff10bccd7d72db3aa0
-    working_tree: modified
+    revision: 75c1ddfd59a1c2ebf1bc9de05efb33c571c7c328
+    working_tree: clean
     sha256: ac025b363720f97b814b0e578f886f7ae182a3093e0e7298f5da95370f8060f3
   - id: report
     resource: ../../audits/2026-09-15-nullable-gates/README.md

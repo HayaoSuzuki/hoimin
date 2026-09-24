@@ -45,8 +45,8 @@ sources:
 
 - id: issue-565-design
   resource: ../../superpowers/specs/2026-09-24-issue-565-annotation-descendants.md
-  revision: 81f5c7809a1381fa2bfdc1ff10bccd7d72db3aa0
-  working_tree: modified
+  revision: 75c1ddfd59a1c2ebf1bc9de05efb33c571c7c328
+  working_tree: clean
   sha256: b13589887e2a7fc2f3386c0d284825582139503f3deab0504e79c13d7cb76f8f
 - id: nullable-gates-audit
   resource: ../../audits/2026-09-15-nullable-gates/README.md

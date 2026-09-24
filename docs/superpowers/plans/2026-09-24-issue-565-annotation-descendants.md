@@ -57,5 +57,5 @@ analyzer/nullable-audit/design-index OKF pages.
 - [x] Preserve predecessor code and tests when rebasing; retain both sets of OKF entries.
 - [x] Promote all 65 corpus rows to strict, reject report-only parser input, and
   preserve every expected pair.
-- [ ] Run final stacked workspace tests, CI clippy, formatting, bounded Lean checks,
+- [x] Run final stacked workspace tests, CI clippy, formatting, bounded Lean checks,
   and OKF checks; record exact results and rewritten source revisions.
