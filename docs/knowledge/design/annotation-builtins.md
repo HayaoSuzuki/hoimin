@@ -7,13 +7,13 @@ catalog_revision: f11013542ccd735ab9741b5079c0b39a517df256
 sources:
 - id: issue-564-design
   resource: ../../superpowers/specs/2026-09-24-issue-564-nullable-provenance.md
-  revision: c1ce10402df3a26ce0c9e3eb1e7d524fcf4c2aca
+  revision: f6f5d96c099fb880884b2b7cb29717ff33d70d75
   working_tree: clean
   sha256: a0237a6eca382f65069b6a15eb7681c155f6b94f468d8b09725cff7a9f514f8e
 - id: issue-564-tests
   resource: ../../../crates/hoimin-cli/tests/nullable_builtin_provenance.rs
-  revision: c1ce10402df3a26ce0c9e3eb1e7d524fcf4c2aca
-  working_tree: untracked
+  revision: f6f5d96c099fb880884b2b7cb29717ff33d70d75
+  working_tree: clean
   sha256: bad1dd2514554710dd6b388caa74e6833e63bfd77119e6c0104bc2d7b25cd3a4
 - id: issue-548-design
   resource: ../../superpowers/specs/2026-09-15-issue-548-annotation-builtins-design.md

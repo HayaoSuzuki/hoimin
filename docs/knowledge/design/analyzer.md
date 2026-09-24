@@ -34,14 +34,14 @@ sources:
   sha256: 05fb86175690ff023986ef0bb2f0df2552ee8801ceab86910d01487db483ff6f
 - id: issue-564-design
   resource: ../../superpowers/specs/2026-09-24-issue-564-nullable-provenance.md
-  revision: c1ce10402df3a26ce0c9e3eb1e7d524fcf4c2aca
+  revision: f6f5d96c099fb880884b2b7cb29717ff33d70d75
   working_tree: clean
   sha256: a0237a6eca382f65069b6a15eb7681c155f6b94f468d8b09725cff7a9f514f8e
 - id: issue-564-code
   resource: ../../../crates/hoimin-cli/src/analyzer/rust.rs
-  revision: c1ce10402df3a26ce0c9e3eb1e7d524fcf4c2aca
-  working_tree: modified
-  sha256: 76e562a3d14c772f35735cfe865995b13cc18cc4674cbae88e34fcab1edf331d
+  revision: f6f5d96c099fb880884b2b7cb29717ff33d70d75
+  working_tree: clean
+  sha256: 977b7f871450b831854909f1d8d96a53992922f5688ffa103d5e7a94527e2b8a
 - id: nullable-gates-audit
   resource: ../../audits/2026-09-15-nullable-gates/README.md
   working_tree: untracked

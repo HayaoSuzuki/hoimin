@@ -7,13 +7,13 @@ catalog_revision: 5e631ef
 sources:
   - id: issue-564-review
     resource: ../../superpowers/reports/2026-09-24-issue-564-review.md
-    revision: c1ce10402df3a26ce0c9e3eb1e7d524fcf4c2aca
+    revision: f6f5d96c099fb880884b2b7cb29717ff33d70d75
     working_tree: modified
-    sha256: 02295dbe32519ee3671cceb9226770ddbf44167cbaa1eda76b338715396bb9d9
+    sha256: a7d9fc90f5b4b7fb15420f969cf99b85120f20cd97b7a6562811960d4c435a92
   - id: issue-564-tests
     resource: ../../../crates/hoimin-cli/tests/nullable_builtin_provenance.rs
-    revision: c1ce10402df3a26ce0c9e3eb1e7d524fcf4c2aca
-    working_tree: untracked
+    revision: f6f5d96c099fb880884b2b7cb29717ff33d70d75
+    working_tree: clean
     sha256: bad1dd2514554710dd6b388caa74e6833e63bfd77119e6c0104bc2d7b25cd3a4
   - id: report
     resource: ../../audits/2026-09-15-nullable-gates/README.md
