@@ -74,6 +74,11 @@ sources:
   revision: 6f6cc91a2a190a4fba8d94a3b1e66caa1f761d5d
   working_tree: modified
   sha256: 5a4e7f914fc2bb31c1a038a63735aa91405fa10a0a531f7cd39189a07b26f9f2
+- id: issue-563-repair
+  resource: ../../superpowers/specs/2026-09-24-issue-563-design.md
+  revision: 51b4a4b61f9e9e10a621eb3574e5caad28e8111c
+  working_tree: clean
+
 ---
 
 # 実行単位ごとの所有権
@@ -172,3 +177,9 @@ macOSで、並列数1・2、root内外の別名、大小文字の別名、実際
 `5e631ef`ではinclude/excludeがfingerprintへ含まれず、コピーされる補助ファイルが変わっても旧条件のkilled/survivedを再利用した（#563）。[監査の証拠と限界](../audits/resume-copy-2026-09.md)に、設定変更の4反例と据置き・出力上限変更の正例を記録した。修正時にはコピー設定の比較方法とfingerprint schemaの更新を決める。[^resume-copy-audit]
 
 [^resume-copy-audit]: [コピー方針とsession再開](../../audits/2026-09-15-resume-copy/README.md)。
+
+## 2026-09-24: Issue #563の修正
+
+2026-09-24の#563修正では、include/excludeの順序付きリストをfingerprintへ追加し、schemaを8へ進めた。パターンの表記と順序を保持するため、同じ意味でも異なる表記の設定では新規runになる場合がある。旧fingerprintの結果を新しいrunへ混在させず、jobs/max-outputだけの変更は従来どおり互換とする。[^issue-563-repair]
+
+[^issue-563-repair]: [修正設計](../../superpowers/specs/2026-09-24-issue-563-design.md)。

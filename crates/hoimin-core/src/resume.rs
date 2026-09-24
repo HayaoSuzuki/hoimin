@@ -9,7 +9,7 @@ use crate::{
     TargetSlice,
 };
 
-pub const FINGERPRINT_SCHEMA_VERSION: u8 = 7;
+pub const FINGERPRINT_SCHEMA_VERSION: u8 = 8;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SourceHash {
@@ -23,6 +23,8 @@ pub struct FingerprintInput {
     pub fingerprint_inputs: Vec<FingerprintInputFile>,
     pub targets: Vec<TargetSlice>,
     pub import_roots: Vec<Utf8PathBuf>,
+    pub includes: Vec<String>,
+    pub excludes: Vec<String>,
     pub operators: Vec<String>,
     pub profile: MutationProfile,
     pub test_argv: Vec<CommandArg>,
@@ -40,6 +42,8 @@ impl FingerprintInput {
     ) -> Self {
         Self {
             import_roots: config.import_roots.clone(),
+            includes: config.selection.includes.clone(),
+            excludes: config.selection.excludes.clone(),
             sources,
             fingerprint_inputs: config.fingerprint_inputs.clone(),
             targets,
@@ -97,7 +101,19 @@ pub fn fingerprint(input: &FingerprintInput) -> RunFingerprint {
         roots.bytes(root.as_str().as_bytes());
     }
     encoder.field(9, &roots.bytes);
+    // Override patterns can contain negations: preserve matching precedence.
+    encoder.field(10, &encode_patterns(&input.includes));
+    encoder.field(11, &encode_patterns(&input.excludes));
     RunFingerprint(*blake3::hash(&encoder.bytes).as_bytes())
+}
+
+fn encode_patterns(patterns: &[String]) -> Vec<u8> {
+    let mut out = Encoder::new();
+    out.count(patterns.len());
+    for pattern in patterns {
+        out.bytes(pattern.as_bytes());
+    }
+    out.bytes
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

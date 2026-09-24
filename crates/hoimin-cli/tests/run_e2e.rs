@@ -1795,6 +1795,104 @@ async fn concurrent_real_cli_runs_refuse_live_session_ownership() {
 }
 
 #[tokio::test]
+async fn copy_policy_changes_do_not_reuse_old_verdicts() {
+    let _parallel_test_guard = parallel_project_test_guard().await;
+    for (use_include, before_present, after_present) in [
+        (false, true, false),
+        (false, false, true),
+        (true, true, false),
+        (true, false, true),
+        (false, true, true),
+        (false, false, false),
+    ] {
+        let project = tempfile::tempdir().unwrap();
+        let sessions = tempfile::tempdir().unwrap();
+        let database = sessions.path().join("saved.sqlite3");
+        write_parallel_project(project.path());
+        std::fs::write(project.path().join("strict.flag"), "strict\n").unwrap();
+        if use_include {
+            std::fs::write(project.path().join(".ignore"), "strict.flag\n").unwrap();
+        }
+        let options = |present| {
+            let mut options = vec!["--jobs", "1", "--fingerprint-file", "strict.flag"];
+            if use_include {
+                options.extend(["--include", "src/**"]);
+                if present {
+                    options.extend(["--include", "strict.flag"]);
+                }
+            } else if !present {
+                options.extend(["--exclude", "strict.flag"]);
+            }
+            options
+        };
+        let command = "from pathlib import Path; from src.calc import total; assert not Path('strict.flag').exists() or total(1, 2, 3, 4, 5) == 15";
+        let first = run_project_with_session_options(
+            project.path(),
+            &database,
+            false,
+            1,
+            command,
+            &options(before_present),
+        )
+        .await;
+        let resumed = run_project_with_session_options(
+            project.path(),
+            &database,
+            true,
+            1,
+            command,
+            &options(after_present),
+        )
+        .await;
+        let fresh = run_project_with_session_options(
+            project.path(),
+            &sessions.path().join("fresh.sqlite3"),
+            false,
+            1,
+            command,
+            &options(after_present),
+        )
+        .await;
+        for run in [&first, &resumed, &fresh] {
+            assert_eq!(run.exit_code, 4, "{}", run.stderr);
+            assert_eq!(
+                run.document["baseline"]["termination"],
+                serde_json::json!({"Exit": 0})
+            );
+        }
+        assert_eq!(
+            first.statuses[0],
+            if before_present { "killed" } else { "survived" }
+        );
+        assert_eq!(
+            fresh.statuses[0],
+            if after_present { "killed" } else { "survived" }
+        );
+        assert_eq!(
+            resumed.statuses, fresh.statuses,
+            "include={use_include}, presence {before_present}->{after_present}"
+        );
+        assert_eq!(
+            first.document["mutants"][0]["candidate"]["id"],
+            resumed.document["mutants"][0]["candidate"]["id"]
+        );
+        if before_present == after_present {
+            assert_eq!(
+                first.document["run"]["run_id"],
+                resumed.document["run"]["run_id"]
+            );
+            assert!(resumed.document["mutants"][0]["termination"].is_null());
+        } else {
+            assert_ne!(
+                first.document["run"]["run_id"],
+                resumed.document["run"]["run_id"]
+            );
+            assert!(!resumed.document["mutants"][0]["termination"].is_null());
+        }
+    }
+}
+
+#[tokio::test]
 async fn fingerprint_include_change_starts_a_distinct_session_run() {
     let project = tempfile::tempdir().unwrap();
     let sessions = tempfile::tempdir().unwrap();
