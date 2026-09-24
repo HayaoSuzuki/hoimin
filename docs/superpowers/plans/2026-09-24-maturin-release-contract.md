@@ -39,17 +39,17 @@ Files: `.github/workflows/release.yml`, `tests/test_ci_workflow.py`,
 Interface: retain `assert_artifact_only_release(test, workflow)`; its version
 normalization is release-specific, leaving `workflow_contract` unchanged.
 
-- [ ] Baseline: `python -m unittest discover -s tests -p test_ci_workflow.py`.
-- [ ] Change both workflow versions, add acceptance/invalid/mismatch/input tests,
+- [x] Baseline: `python -m unittest discover -s tests -p test_ci_workflow.py`.
+- [x] Change both workflow versions, add acceptance/invalid/mismatch/input tests,
   and run the workflow suite. Expect release comparisons against the old pin to
   fail while invalid values and mismatched build inputs remain rejected.
-- [ ] In the release assertion, inspect matching maturin steps, validate with
+- [x] In the release assertion, inspect matching maturin steps, validate with
   `v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)`, collect versions,
   normalize that one value to a fixture marker, and require one shared version.
-- [ ] Run all Python tests; verify workflow diff changes only two versions.
+- [x] Run all Python tests; verify workflow diff changes only two versions.
   Build a wheel using maturin 1.15.0 and run the existing smoke script locally.
   Record the platform; GitHub-hosted Windows/Linux release jobs are not local tests.
-- [ ] Update documentation/source metadata, perform three implementation/test
+- [x] Update documentation/source metadata, perform three implementation/test
   self-reviews and one independent review, commit and open a replacement PR.
 
 ## Design self-reviews
@@ -69,3 +69,55 @@ normalization is release-specific, leaving `workflow_contract` unchanged.
    leading zeroes, inconsistent pins and an unrelated extra input.
 3. Evidence: full Python coverage plus an actual pinned-maturin build/smoke test;
    no production Python changes, so hoimin mutation targeting is inapplicable.
+
+
+## Implementation self-reviews
+
+1. Inspected the workflow diff: exactly two maturin version substitutions; no
+   changes to build arguments, actions, permissions, platform targets or locks.
+2. Inspected normalization: restricted to the release assertion and known maturin
+   steps. Type/format validation precedes set insertion and normalization; missing
+   inputs fail, and existing structural equality rejects added/removed steps.
+3. Verified shared version enforcement and preservation of all other input keys.
+   Canonical future versions pass without updating expected fixture constants.
+
+## Test self-reviews
+
+1. Baseline: all 36 workflow tests passed on latest main. After updating the
+   workflow and adding three tests, 39 tests produced six expected failing
+   assertions against the old version. An initial test fixture job-name typo was
+   corrected before that clean reproduction; there were no errors in the final
+   RED run. After repair, all 103 Python tests passed (Python 3.14.7).
+2. Inspected rejection cases for malformed/missing/non-string values, differing
+   platform versions, changed args and extra inputs. Existing identity, SHA and
+   disguised publication tests remain passing. A fresh reviewer ran 39 workflow
+   tests plus additional boundary and hostile-input probes, with no findings.
+3. Built a real macOS ARM64 wheel with `uvx --from maturin==1.15.0 maturin build
+   --release --locked --compatibility pypi --no-default-features` (exit 0), then ran
+   `python tests/wheel_smoke.py` against it (exit 0). This is local build/install/
+   command evidence; hosted Windows/Linux release execution remains untested.
+
+## Documentation and completion evidence
+
+Updated the development guide and existing reproducibility design amendment;
+refreshed only its source entry in the OKF catalog. Parsed 25 concept headers and
+four reserved indexes, checked catalog source IDs/footnotes/local paths and the
+amended source hash. `git diff --check` passed. Independent code review had no
+findings; parent verification covers documentation and local wheel compatibility.
+
+The design and plan were committed before implementation in `649a807`.
+
+## Renovate PR triage
+
+- #579/#580/#581: closed after verifying their exact 37 pins already exist on main
+  via merged #585 (`5105a23`). No branch deletion or version suppression config
+  was added.
+- #586: requested Renovate rebase via its checkbox; new head `c4f7d40` includes
+  current main `e043613`. Its only diff is one cache SHA/version comment. All
+  100 Python tests passed, and parsed workflow behavior is identical to main.
+- #587: same rebase procedure; new head `3d1a3ac` includes `e043613`. All 23
+  checkout references across five workflows are updated. All 100 Python tests
+  passed; parsed workflow behavior is identical to main. Both PRs remain open
+  for review with refreshed GitHub CI.
+- #583: replaced by this independent branch because main still needed the
+  maturin-specific contract correction; original bot branch remains untouched.

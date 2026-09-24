@@ -438,3 +438,19 @@ Only those dependency revisions change. The [combined implementation plan](
 ../plans/2026-09-24-actions-update-contracts.md) records reviews and test results.
 These structural tests do not prove the runtime behavior of third-party code;
 the actual GitHub jobs provide that execution evidence.
+
+## 2026-09-24 amendment: Maturin release version contract
+
+PR #583 still fails after taking current main because the release fixture repeats
+the old maturin version. The workflow owns that exact pin, just as it owns Action
+revisions. Release contract assertions validate a canonical `vMAJOR.MINOR.PATCH`
+string and require the Windows/Linux builds to agree, then normalize only the
+`maturin-version` input of `PyO3/maturin-action`. Other inputs, including build
+arguments and target platforms, remain exact. Missing/floating versions,
+inconsistent platform versions and unrelated input changes remain failures.
+
+The repair updates both release jobs to maturin v1.15.0 without changing the
+compatible range in pyproject.toml or the lockfile. The [implementation plan](
+../plans/2026-09-24-maturin-release-contract.md) records the reproduction, review
+and platform-specific validation. A local build does not execute the hosted
+Windows/Linux release jobs or publish artifacts.
