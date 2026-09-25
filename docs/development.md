@@ -977,6 +977,16 @@ calling it. The core resolver validates and combines selectors; it does not trea
 pattern strings as literal filenames or independently implement glob matching.
 The CLI uses `target::fs::discover_explicit` for this filtering.
 
+Explicit source discovery walks from the project root but prunes entries outside
+the union of selected source subtrees and exact/line paths plus their ancestors.
+Both normal and include-restoration walks use this scope; original source order
+still controls symbol lookup. A root source retains broad discovery. Non-Python
+records inside a selected source remain available to resolution. Malformed names
+or traversal errors solely inside pruned unrelated subtrees are outside this
+request; selected-path and root errors remain visible, as with exact selectors.
+The source-scaling regression counts actual walker visits and retained records:
+unrelated descendant file counts do not affect either, while root-level sibling
+enumeration can still grow. It does not impose an elapsed-time or RSS threshold.
 
 ## Explicit inherited environment fingerprints
 

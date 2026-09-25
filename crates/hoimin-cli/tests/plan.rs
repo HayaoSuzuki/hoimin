@@ -25,6 +25,48 @@ use hoimin_core::{
 
 const TEST_MIN_FREE_SPACE: &str = "1B";
 
+#[tokio::test]
+async fn source_scoped_plan_preserves_candidates_as_unrelated_files_grow() {
+    let mut reference = None;
+    for count in [0, 1_000, 5_000] {
+        let project = Project::new();
+        std::fs::create_dir(project.path.join("unrelated")).unwrap();
+        for index in 0..count {
+            std::fs::write(
+                project.path.join("unrelated").join(format!("{index}.txt")),
+                b"x",
+            )
+            .unwrap();
+        }
+        let marker = project.path.join("baseline-ran");
+        for exact in [false, true] {
+            let mut args = plan_args(&project, ["--operators", "binary_add_sub"], &marker);
+            if exact {
+                let source = args
+                    .iter()
+                    .position(|argument| argument == "--source")
+                    .unwrap();
+                args[source] = "--file".into();
+                args[source + 1] = "src/calc.py".into();
+            }
+            let mut stdout = Vec::new();
+            let mut stderr = Vec::new();
+            let exit = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+            assert_eq!(exit, 0, "{}", String::from_utf8_lossy(&stderr));
+            assert!(stderr.is_empty());
+            let value: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+            assert_eq!(value["diagnostics"], serde_json::json!([]));
+            assert_eq!(value["candidates"].as_array().unwrap().len(), 1);
+            if let Some(expected) = &reference {
+                assert_eq!(&value["candidates"], expected);
+            } else {
+                reference = Some(value["candidates"].clone());
+            }
+            assert!(!marker.exists());
+        }
+    }
+}
+
 #[cfg(unix)]
 struct TestChild(std::process::Child);
 
