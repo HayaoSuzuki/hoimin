@@ -1,2 +1,3 @@
 # Preserve malformed bytes and exact LF/CRLF/CR inputs on every checkout.
 seeds/** binary
+reproducers/**/*.bin binary

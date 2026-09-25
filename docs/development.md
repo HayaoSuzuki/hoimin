@@ -133,7 +133,6 @@ committed seeds, including non-UTF-8 bytes. Keep that order so fuzzing does not
 write generated inputs into `seeds/`. Corpus, artifacts, coverage, and build
 outputs are ignored. Increase `-max_total_time` for longer local runs. The limit
 applies to fuzzing time, not compilation; `-timeout` bounds an individual input.
-This initial setup has no scheduled CI job.
 
 Replay and minimize a reported failure, using its actual artifact path:
 
@@ -156,6 +155,41 @@ cargo clippy --locked --manifest-path fuzz/Cargo.toml --bins -- -D warnings
 ```
 
 See the [cargo-fuzz documentation](https://rust-fuzz.github.io/book/cargo-fuzz.html).
+
+### Bounded CI fuzzing
+
+The automatic CI workflow runs `Fuzz (bounded)` on Linux after `quality`, in
+parallel with the existing test jobs. Its **nine-minute job timeout includes
+setup, compilation, fuzzing, and artifact/cache handling**. The longest test
+jobs in main runs [36142375064](https://github.com/tokyogas-tech/hoimin/actions/runs/36142375064),
+[36142944345](https://github.com/tokyogas-tech/hoimin/actions/runs/36142944345), and
+[36158455427](https://github.com/tokyogas-tech/hoimin/actions/runs/36158455427)
+took 11m18s, 11m35s, and 12m09s: nine minutes is approximately 74–80% of those
+durations. This is a fixed budget; revisit it when normal test durations change.
+
+The first step sets an eight-minute active deadline, leaving approximately one
+minute for uploading diagnostics and saving small caches. `tools/ci_fuzz.py`
+deducts elapsed setup time, installs the optional Python dependencies, builds
+all fuzz targets, tests the generator, and generates 50 examples with each
+hypothesmith strategy. It divides the remaining time among all targets in
+`fuzz/Cargo.toml`, reserving ten seconds per target for startup and shutdown.
+An exhausted budget, a failed command, or a target timeout fails the job; an
+unexecuted target is never counted as a pass. Subprocess timeouts kill the
+process group, including compiler and fuzzer children.
+
+The cargo-fuzz executable and discovered corpus are cached. Large compiled
+target directories are not cached, keeping post-job work small. CI builds use
+16 codegen units to reduce compilation time. Both generation and fuzzing use
+a seed derived from the workflow run ID. The `fuzz-report` artifact retains
+per-stage command logs, a JSON summary with timings and completed targets, and
+any crash inputs for seven days. Artifact upload runs even after failure,
+although cancellation or the hard job timeout can interrupt it. Use the saved
+crash input for replay; the seed alone does not reproduce a time-bounded run
+against an evolving corpus.
+
+The initial local validation found an unresolved parser panic; its input and
+replay instructions are retained in [fuzz/reproducers](../fuzz/reproducers/README.md).
+GitHub Actions execution and cold Linux build timing have not yet been verified.
 
 ### Generate Python inputs with hypothesmith
 

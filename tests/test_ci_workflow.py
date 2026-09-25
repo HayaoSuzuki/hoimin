@@ -33,7 +33,7 @@ REPOSITORY_RUST_JOBS = {
     "linux-best-effort",
     "linux-cgroup-v2-hard",
 }
-COMPATIBILITY_RUST_JOBS = {"msrv", "rust-shuffle"}
+COMPATIBILITY_RUST_JOBS = {"msrv", "rust-shuffle", "fuzz"}
 LEAN_JOBS = {"lean-audit"}
 AUTOMATIC_LINUX_MATRIX_JOBS = {
     "quality",
@@ -619,6 +619,7 @@ class CiRustJobContractTests(unittest.TestCase):
             + [
                 "rustup toolchain install 1.88 --profile minimal",
                 ("rustup toolchain install nightly-2026-07-27 --profile minimal"),
+                ("rustup toolchain install nightly-2026-07-27 --profile minimal"),
             ],
         )
         self.assertCountEqual(
@@ -626,7 +627,7 @@ class CiRustJobContractTests(unittest.TestCase):
                 r"(?m)\b(?:cargo|rustc|rustdoc) \+([^\s]+)",
                 workflow,
             ),
-            ["1.88", "nightly-2026-07-27"],
+            ["1.88", "nightly-2026-07-27", "nightly-2026-07-27"],
         )
         for job_name in REPOSITORY_RUST_JOBS:
             job = job_block(workflow, job_name)
