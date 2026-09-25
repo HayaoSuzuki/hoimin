@@ -240,6 +240,7 @@ async fn completions_command_writes_shell_script_to_stdout() {
         stdout.contains("_hoimin"),
         "missing hoimin completion function"
     );
+    assert!(stdout.contains("--changed-context"));
 }
 
 #[tokio::test]

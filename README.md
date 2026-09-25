@@ -81,6 +81,7 @@ At least one target selector is required:
 - `--line PATH:START-END` selects an inclusive line range and may be repeated.
 - `--symbol MODULE:QUALNAME` selects a function, method, or class resolved below `--source` and may be repeated.
 - `--changed` restricts selection to staged, unstaged, and untracked Git changes. It requires `--source`.
+- `--changed-context N` includes up to N neighboring lines on each side of Git changes. It requires `--changed`, defaults to 0, and accepts integers from 0 through 1073741823. With N > 0, a pure deletion selects up to N surviving lines on each side of the deletion boundary. Ranges are clipped at the current file boundaries; empty and deleted files contribute no lines. Untracked files still select their complete contents.
 - `--diff-base REV` uses the merge base of `REV` and `HEAD` for `--changed`. It is invalid without `--changed`.
 
 An explicit `--symbol` must name an existing function or class definition in the
@@ -124,7 +125,7 @@ not guaranteed, and Python `-E`/`-I` ignores PYTHONPATH. Setting inherited
 project path to the worker. Neither approach edits the original source or venv.
 Saved plans preserve import-root order; `verify` inherits it without a flag.
 
-`--root DIR` resolves relative paths and defaults to the current directory. Combining explicit selectors with `--changed` intersects each explicit target with changed lines. When that target also has a symbol selector, a candidate must be both on a changed line and inside the selected symbol. A `--symbol` requires `--source`; when `--source` is present, file and line paths must be inside a source root.
+`--root DIR` resolves relative paths and defaults to the current directory. Combining explicit selectors with `--changed` intersects each explicit target with changed lines and any `--changed-context` neighborhood. Context never expands an explicit line or symbol selector. When that target also has a symbol selector, a candidate must be both in that Git selection and inside the selected symbol. The `changed_line` ranking reason and its 200-point boost apply to this entire selection, including context lines; the reason does not assert that the candidate itself was edited. Plans save the context setting, and `verify` reuses it. A `--symbol` requires `--source`; when `--source` is present, file and line paths must be inside a source root.
 
 Target, fingerprint, and copied-workspace paths use a portable `/`-separated representation. Native Windows path inputs are normalized to that form. On Unix, a concrete filename containing a literal backslash is rejected before collection because it cannot be represented unambiguously. Backslashes in glob options retain their existing escape syntax; the concrete paths matched by a glob are validated after walking.
 

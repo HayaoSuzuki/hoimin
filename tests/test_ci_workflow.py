@@ -89,6 +89,7 @@ LEAN_CORPUS_BY_EXECUTABLE = {
     "generate_output_retention": "corpus/output-retention.jsonl",
     "generate_candidate_span": "corpus/candidate-span-preservation.jsonl",
     "generate_changed_target": "corpus/changed-target-composition.jsonl",
+    "generate_changed_context": "corpus/changed-context.jsonl",
     "generate_process_output": "corpus/process-output-outcome.jsonl",
     "generate_timeout_limit": "corpus/timeout-limit.jsonl",
     "generate_disk_guard": "corpus/disk-guard-lifecycle.jsonl",

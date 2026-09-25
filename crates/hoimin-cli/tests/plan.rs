@@ -3916,6 +3916,100 @@ async fn verify_preview_output_failure_returns_error_without_execution() {
     assert!(!marker.exists());
 }
 
+#[tokio::test]
+async fn changed_context_discovers_neighbor_operators_and_survives_verify() {
+    for (before, after, expected_line) in [
+        (
+            "def add(left, right):\n    return (\n        left +\n        right\n    )\n",
+            "def add(left, right):\n    return (\n        left +\n        abs(right)\n    )\n",
+            3,
+        ),
+        (
+            "def add(left, right):\n    assert right >= 0\n    return left + right\n",
+            "def add(left, right):\n    return left + right\n",
+            2,
+        ),
+    ] {
+        let sibling = "\ndef other(left, right):\n    return left + right\n";
+        let project = Project::new_with_source(&format!("{before}{sibling}"));
+        run_git(&project.path, &["init", "--quiet"]);
+        run_git(&project.path, &["add", "."]);
+        run_git(
+            &project.path,
+            &[
+                "-c",
+                "user.name=Fixture",
+                "-c",
+                "user.email=fixture@example.invalid",
+                "commit",
+                "--quiet",
+                "-m",
+                "base",
+            ],
+        );
+        std::fs::write(
+            project.path.join("src/calc.py"),
+            format!("{after}{sibling}"),
+        )
+        .unwrap();
+        for context in ["0", "1", "1073741823"] {
+            let marker = project.path.join("test-command-ran");
+            let args = plan_args(
+                &project,
+                [
+                    "--changed",
+                    "--changed-context",
+                    context,
+                    "--symbol",
+                    "calc:add",
+                    "--operators",
+                    "binary_add_sub",
+                    "--diff-base",
+                    "HEAD",
+                ],
+                &marker,
+            );
+            let mut stdout = Vec::new();
+            let mut stderr = Vec::new();
+            assert_eq!(
+                hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await,
+                0,
+                "{}",
+                String::from_utf8_lossy(&stderr)
+            );
+            let manifest: PlanManifest = serde_json::from_slice(&stdout).unwrap();
+            assert_eq!(manifest.candidates.len(), usize::from(context != "0"));
+            if context != "0" {
+                let candidate = &manifest.candidates[0];
+                assert_eq!(candidate.line, expected_line);
+                let value = serde_json::to_value(candidate).unwrap();
+                assert!(
+                    value["ranking_reasons"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|reason| reason["code"] == "changed_line" && reason["score"] == 200)
+                );
+                let plan_path = project.path.join("saved-plan.json");
+                std::fs::write(&plan_path, stdout).unwrap();
+                let verified = prepare_verify(
+                    &plan_path,
+                    std::slice::from_ref(&candidate.id),
+                    OutputFormat::Json,
+                )
+                .await
+                .unwrap();
+                assert_eq!(
+                    verified.config.selection.changed_context,
+                    context.parse::<u32>().unwrap()
+                );
+                assert_eq!(verified.config.selection.symbols.len(), 1);
+            }
+            assert!(!marker.exists());
+        }
+    }
+}
+
 async fn metrics_manifest_fixture(
     project: &Project,
     marker: &Path,
