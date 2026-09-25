@@ -153,6 +153,16 @@ sources:
   resource: ../../superpowers/specs/2026-09-12-issue-513-parser-recursion-design.md
   working_tree: untracked
   sha256: 5f9dbe6895760a0675c9a74e3a98207327832450e33433ac869e118125485dc8
+- id: issue-598-design
+  resource: ../../superpowers/specs/2026-09-25-issue-598-prepared-namespace-design.md
+  revision: 61957866feae3cc5cd62cd026b677314e34957ea
+  working_tree: clean
+  sha256: b7740711d779a855a25dc8d658aa7df63be244f0059eda9bbdfbf87f7ec39ecf
+- id: issue-598-report
+  resource: ../../superpowers/reports/2026-09-25-issue-598-prepared-namespace.md
+  revision: 61957866feae3cc5cd62cd026b677314e34957ea
+  working_tree: modified
+  sha256: 9cc6842eefa4850aa0d57c979507dbf7abc77eb9b7fc5219d14c537566674143
 - id: issue-515
   resource: ../../superpowers/specs/2026-09-12-issue-515-class-directives-design.md
   working_tree: untracked
@@ -289,6 +299,17 @@ Issue486では、generic function／classの型パラメータが導入する束
 関数のdecoratorや通常の引数defaultは型パラメータの外側で評価され、annotationやgeneric classの基底・keywordでは適切なannotation scopeを考慮する。class直下のannotationからの名前参照と、通常のmethodが外側のclass変数を参照できない規則も区別する。既存のtype positionでruntime候補を生成しない契約を保ち、候補が残る境界とCPythonの束縛観測を照合する。[^issue-486]
 
 Issue515では、methodや内包表記から外側の束縛を探す際、途中のclassにあるglobal／nonlocal宣言もclass変数とともに読み飛ばす。class本体での直接参照と、method自身の宣言は引き続き考慮する。型パラメータと通常の外側の関数変数について、参照先の観測と候補の有無を照合する。共有Leanモデルのclass探索にも同じ順序の不整合があったため、その修正と通常のclosureの照合を設計に含める。[^issue-515]
+
+# 準備済みクラス名前空間（Issue #598）
+
+基底クラスまたはkeyword引数があるclassでは、metaclassの `__prepare__` が独自の名前空間を渡し得るため、class名前空間を読む組込み名を確定しない。この条件は継承metaclass、基底の展開、`**keywords` にも適用する。引数のないclassと空の `()` は従来の候補を維持する。`class C(object)` や `metaclass=type` も保守的に除外する。[^issue-598-design]
+
+method・closure・内包表記の本体はclassを読み飛ばし、`global` は宣言した名前ごとにmoduleを参照する。内包表記の最初のiterable、関数default、classを参照できる型注釈は準備済み名前空間の判定を受ける。型注釈の組込み名とimport aliasの参照先は別経路であり、後者の `annotation_import_stable` は今回の保証対象に含めない。[^issue-598-design]
+
+Leanから生成した39入力について、CPythonの両名の参照先と公開planの候補を照合した。独自名前空間へのanyのみ・allのみ・両方の注入は、公開runでもkilled件数に入らない。独自metaclassが空のdictを返す入力は、実行時には組込みでも静的には候補を抑制する。モデルの証明、実装との照合、適用範囲は検証報告に分けて記録した。[^issue-598-report]
+
+[^issue-598-design]: [Prepared class namespace name resolution (#598)](../../superpowers/specs/2026-09-25-issue-598-prepared-namespace-design.md)。
+[^issue-598-report]: [Prepared namespace verification and review (#598)](../../superpowers/reports/2026-09-25-issue-598-prepared-namespace.md)。
 
 # Mapping patternのキー変異とコンパイル制約
 

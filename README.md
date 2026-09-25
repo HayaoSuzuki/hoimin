@@ -359,6 +359,13 @@ historical `type_mapping` name remains accepted as an alias for
 `type_dict_mapping`.
 
 Builtin call and exception pairs require both names to resolve to builtins.
+Class bodies with bases or keyword arguments may use a metaclass-prepared
+namespace, so class-visible builtin names are treated as uncertain. This also
+applies to builtin names in class-visible type annotations. Bare classes and
+empty `()` headers retain ordinary lookup; methods and closures skip the class
+namespace, and explicit `global` declarations bypass it per name. Even known
+`object` bases or `metaclass=type` are conservatively excluded at class-visible
+sites. Import-alias provenance in annotations is a separate analysis.
 PEP 695 type parameters can shadow either name in generic function and class
 bodies, including nested closures and comprehensions. Function defaults and
 decorators use the enclosing scope; generic class bases and keywords can see

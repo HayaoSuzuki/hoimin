@@ -183,7 +183,7 @@ value = list(()) # keep
         r"class Outer:
     all = object()
     class Inner[T](any(())):
-        value = any(()) # keep
+        value = any(()) # prepared namespace
         def method(self):
             return any(()) # keep
     def generic[T](self, arg=any(())):
@@ -202,12 +202,14 @@ value = any(()) # keep
 }
 
 #[tokio::test]
+// Nonempty class headers leave body namespaces uncertain (#598), even when
+// generic parameter lookup itself is safe. Header and method controls remain.
 async fn generic_headers_preserve_ordered_and_temporary_outer_bindings() {
     for source in [
-        "class Early[T](list(items)): # keep\n    value = list(items) # keep\ntuple = object()\nclass Late[T](list(items)):\n    value = list(items)\n",
+        "class Early[T](list(items)): # keep\n    value = list(items) # prepared namespace\ntuple = object()\nclass Late[T](list(items)):\n    value = list(items)\n",
         "for item in items:\n    class C[T](list(items)):\n        value = list(items)\n    tuple = object()\n",
         "try:\n    work()\nexcept Exception as list:\n    class C[T](list(items)):\n        value = list(items)\nvalue = list(items) # keep\n",
-        "class Outer:\n    try:\n        work()\n    except Exception as list:\n        class C[T](list(items)):\n            value = list(items) # keep\n",
+        "class Outer:\n    try:\n        work()\n    except Exception as list:\n        class C[T](list(items)):\n            value = list(items) # prepared namespace\n",
     ] {
         assert_plan(source, "collection_list_tuple", "list", "tuple").await;
     }
@@ -266,7 +268,7 @@ value = list(items) # keep
         return any(items) # keep
     values = [any(items) for item in items] # keep
 class C[tuple](any(items), marker=42): # keep
-    value = any(items) # keep
+    value = any(items) # prepared namespace
     def method(self):
         return any(items) # keep
 value = any(items) # keep
@@ -276,7 +278,7 @@ value = any(items) # keep
         "all",
     )
     .await;
-    assert_plan("def f[tuple](arg=42, *, kw=list(items)): # keep\n    return list(items)\nclass C[T](marker=list(items)): # keep\n    value = list(items) # keep\n", "collection_list_tuple", "list", "tuple").await;
+    assert_plan("def f[tuple](arg=42, *, kw=list(items)): # keep\n    return list(items)\nclass C[T](marker=list(items)): # keep\n    value = list(items) # prepared namespace\n", "collection_list_tuple", "list", "tuple").await;
 }
 
 #[tokio::test]

@@ -123,11 +123,15 @@ fn command(root: &Path, case: &Case, mode: &str) -> Vec<OsString> {
     if mode == "run" {
         args.extend(["--format".into(), "json".into()]);
     }
-    let check = format!(
-        "import json, subject; assert list(subject.observed) == json.loads({:?}); assert subject.result == json.loads({:?})",
-        serde_json::to_string(&case.runtime_builtin).unwrap(),
-        case.runtime_result.to_string(),
-    );
+    let identities = serde_json::to_string(&case.runtime_builtin).unwrap();
+    let check = if mode == "run" {
+        format!(
+            "import json, subject; assert list(subject.observed) == json.loads({identities:?}); assert subject.result == json.loads({:?})",
+            case.runtime_result.to_string(),
+        )
+    } else {
+        format!("import json, subject; assert list(subject.observed) == json.loads({identities:?})")
+    };
     args.extend([
         "--".into(),
         python().into_os_string(),
