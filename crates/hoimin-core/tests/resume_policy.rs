@@ -752,6 +752,8 @@ fn arbitrary_fingerprint_input() -> impl Strategy<Value = FingerprintInput> {
                     excludes: Vec::new(),
                     sources,
                     fingerprint_inputs,
+                    fingerprint_env: Vec::new(),
+                    fingerprint_env_hash: None,
                     targets,
                     operators,
                     profile: if focused {
@@ -862,6 +864,8 @@ fn fixture_input() -> FingerprintInput {
         test_argv: vec![CommandArg::Unix(vec![0xff, 0, b'x'])],
         limits: (&fixture_raw_limits()).try_into().unwrap(),
         resource_mode: ResourceMode::Hard,
+        fingerprint_env: Vec::new(),
+        fingerprint_env_hash: None,
         fingerprint_inputs: vec![
             FingerprintInputFile {
                 path: "pyproject.toml".into(),
@@ -931,7 +935,7 @@ fn mutate_min_free_space(v: &mut RawRunLimits) {
 
 #[test]
 fn import_root_changes_and_precedence_change_fingerprint() {
-    assert_eq!(hoimin_core::FINGERPRINT_SCHEMA_VERSION, 10);
+    assert_eq!(hoimin_core::FINGERPRINT_SCHEMA_VERSION, 11);
     let original = fixture_input();
     let mut configured = original.clone();
     configured.import_roots = vec!["src".into(), "vendor".into()];

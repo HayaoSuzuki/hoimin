@@ -443,6 +443,8 @@ pub struct RawRunConfig {
     pub excludes: Vec<String>,
     pub fingerprint_includes: Vec<String>,
     pub fingerprint_files: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fingerprint_env: Vec<String>,
     pub operators: Vec<String>,
     pub exclude_operators: Vec<String>,
     pub allow_best_effort_memory: bool,
@@ -535,7 +537,11 @@ pub struct RunConfig {
     pub import_roots: Vec<Utf8PathBuf>,
     pub fingerprint_includes: Vec<String>,
     pub fingerprint_files: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fingerprint_env: Vec<String>,
     pub fingerprint_inputs: Vec<FingerprintInputFile>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fingerprint_env_hash: Option<String>,
     pub limits: RunLimits,
     pub test_argv: Vec<CommandArg>,
     pub output: OutputConfig,
@@ -561,7 +567,11 @@ pub struct PlanConfig {
     pub fingerprint_includes: Vec<String>,
     #[serde(default)]
     pub fingerprint_files: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fingerprint_env: Vec<String>,
     pub fingerprint_inputs: Vec<FingerprintInputFile>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fingerprint_env_hash: Option<String>,
 }
 
 impl RunConfig {
@@ -572,6 +582,11 @@ impl RunConfig {
     /// Returns [`ConfigError`] when selection, mutation operators, runtime resume state, the test
     /// command, or limits are invalid.
     pub fn validate(&self) -> Result<(), ConfigError> {
+        crate::fingerprint_env::validate_fingerprint_env(
+            &self.fingerprint_env,
+            self.fingerprint_env_hash.as_deref(),
+            false,
+        )?;
         validate_selection(&self.selection)?;
         validate_import_roots(&self.import_roots)?;
         validate_operators(&self.operators)?;
@@ -596,6 +611,8 @@ impl RunConfig {
             profile: self.profile,
             fingerprint_includes: self.fingerprint_includes,
             fingerprint_files: self.fingerprint_files,
+            fingerprint_env: self.fingerprint_env,
+            fingerprint_env_hash: self.fingerprint_env_hash,
             fingerprint_inputs: self.fingerprint_inputs,
         }
     }
@@ -609,6 +626,11 @@ impl PlanConfig {
     /// Returns [`ConfigError`] when selection, mutation operators, the test command, or limits are
     /// invalid.
     pub fn validate(&self) -> Result<(), ConfigError> {
+        crate::fingerprint_env::validate_fingerprint_env(
+            &self.fingerprint_env,
+            self.fingerprint_env_hash.as_deref(),
+            true,
+        )?;
         validate_selection(&self.selection)?;
         validate_import_roots(&self.import_roots)?;
         validate_operators(&self.operators)?;
@@ -624,6 +646,8 @@ impl PlanConfig {
             import_roots: self.import_roots,
             fingerprint_includes: self.fingerprint_includes,
             fingerprint_files: self.fingerprint_files,
+            fingerprint_env: self.fingerprint_env,
+            fingerprint_env_hash: self.fingerprint_env_hash,
             fingerprint_inputs: self.fingerprint_inputs,
             limits: self.limits,
             test_argv: self.test_argv,
@@ -649,6 +673,12 @@ pub struct FingerprintInputFile {
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum ConfigError {
+    #[error("fingerprint.env.invalid_name: --fingerprint-env requires [A-Za-z_][A-Za-z0-9_]*")]
+    InvalidFingerprintEnvName,
+    #[error("fingerprint.env.non_normalized: names must be canonical, sorted, and unique")]
+    NonNormalizedFingerprintEnv,
+    #[error("fingerprint.env.invalid_hash: selected names require a lowercase 64-hex digest")]
+    InvalidFingerprintEnvHash,
     #[error(
         "invalid --import-root {path}: expected a project-root-relative directory without escaping parent components"
     )]
@@ -944,6 +974,8 @@ impl TryFrom<RawRunConfig> for RunConfig {
             import_roots: normalize_import_roots(&raw.import_roots)?,
             fingerprint_includes: raw.fingerprint_includes,
             fingerprint_files: raw.fingerprint_files,
+            fingerprint_env: crate::normalize_fingerprint_env_names(&raw.fingerprint_env)?,
+            fingerprint_env_hash: None,
             fingerprint_inputs: Vec::new(),
             limits,
             test_argv: raw.test_argv,

@@ -4,6 +4,7 @@ pub mod analyzer;
 mod baseline_output;
 pub mod cli;
 mod copy_policy;
+mod fingerprint_env;
 pub mod fingerprint_inputs;
 mod interrupt;
 mod metrics;
