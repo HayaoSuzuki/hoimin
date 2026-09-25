@@ -135,6 +135,7 @@ impl OperatorImports {
             cancelled,
             cancelled_observed: false,
             depth: 0,
+            function_scope: false,
             trusted: HashMap::new(),
             bindings: HashMap::new(),
             module_names: HashSet::new(),
@@ -375,6 +376,7 @@ struct ImportScan<'a, F> {
     cancelled: &'a F,
     cancelled_observed: bool,
     depth: usize,
+    function_scope: bool,
     trusted: HashMap<String, ImportedBinding>,
     bindings: HashMap<String, usize>,
     module_names: HashSet<String>,
@@ -417,6 +419,7 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for ImportScan<'_, F> {
         if self.stop() {
             return;
         }
+        let previous_function_scope = self.function_scope;
         match statement {
             Stmt::Import(import) => {
                 for alias in &import.names {
@@ -463,8 +466,22 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for ImportScan<'_, F> {
                     }
                 }
             }
-            Stmt::FunctionDef(definition) => self.bind(definition.name.as_str()),
+            Stmt::AnnAssign(assign)
+                if assign.value.is_none()
+                    && matches!(assign.target.as_ref(), Expr::Name(_))
+                    && !self.function_scope =>
+            {
+                // Declaration-only names do not overwrite a runtime import.
+                // Keep annotation traversal and all complex-target evaluation.
+                self.visit_annotation(&assign.annotation);
+                return;
+            }
+            Stmt::FunctionDef(definition) => {
+                self.bind(definition.name.as_str());
+                self.function_scope = true;
+            }
             Stmt::ClassDef(definition) => {
+                self.function_scope = false;
                 self.bind(definition.name.as_str());
                 self.class_ranges.push((
                     usize::from(definition.range().start()),
@@ -486,6 +503,7 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for ImportScan<'_, F> {
         self.depth += 1;
         visitor::walk_stmt(self, statement);
         self.depth -= 1;
+        self.function_scope = previous_function_scope;
     }
 
     fn visit_expr(&mut self, expression: &'ast Expr) {

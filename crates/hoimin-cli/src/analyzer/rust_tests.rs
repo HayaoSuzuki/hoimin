@@ -427,7 +427,7 @@ fn operator_function_uncertain_bindings_and_namespaces_are_excluded() {
         "op = other",
         "del op",
         "op += other",
-        "op: object",
+        "op: object = other",
         "op, x = pair",
         "def f(op): pass",
         "def f(*op): pass",
@@ -8536,5 +8536,120 @@ fn annotation_descendants_gate_every_type_operator() {
             let actual = analyze_with_only_operator(&source, operator);
             assert_eq!(actual.candidates.len(), expected, "{operator:?}: {source}");
         }
+    }
+}
+
+#[test]
+fn declaration_only_preserves_collection_sources_and_destinations() {
+    for (source_name, destination, operator) in [
+        ("any", "all", "collection_any_all"),
+        ("all", "any", "collection_any_all"),
+        ("list", "tuple", "collection_list_tuple"),
+        ("tuple", "list", "collection_list_tuple"),
+        ("min", "max", "collection_min_max"),
+        ("max", "min", "collection_min_max"),
+    ] {
+        for declared in [source_name, destination] {
+            for source in [
+                format!("{declared}: int\n{declared}: object\nobserved = {source_name}(values)\n"),
+                format!("class C:\n {declared}: int\n observed = {source_name}(values)\n"),
+                format!("{declared}: int\ndef f():\n return {source_name}(values)\n"),
+                format!(
+                    "def f():\n class C:\n  {declared}: int\n  observed = {source_name}(values)\n"
+                ),
+            ] {
+                let output = analyze(&source);
+                let candidates: Vec<_> = output
+                    .candidates
+                    .iter()
+                    .filter(|candidate| candidate.operator == operator)
+                    .collect();
+                assert_eq!(candidates.len(), 1, "{source}");
+                assert_eq!(candidates[0].original, source_name, "{source}");
+                assert_eq!(candidates[0].replacement, destination, "{source}");
+                apply_candidate_and_reparse(&source, candidates[0]);
+            }
+        }
+    }
+}
+
+#[test]
+fn declaration_only_retains_builtin_shadows_and_target_effects() {
+    for source in [
+        "def f():\n any: int\n return any([])\n",
+        "def f():\n result = any([])\n any: int\n return result\n",
+        "def f():\n all: int\n return any([])\n",
+        "any = custom\nany: int\nresult = any([])\n",
+        "all = custom\nall: int\nresult = any([])\n",
+        "any: object = custom\nresult = any([])\n",
+        "any = custom\nclass C:\n any: int\n result = any([])\n",
+        "class C:\n any = custom\n any: int\n result = any([])\n",
+        "any: int\nexec(code)\nresult = any([])\n",
+        "(any := custom).member: int\nresult = any([])\n",
+        "container[(all := custom)]: int\nresult = any([])\n",
+        "container[exec(code)]: int\nresult = any([])\n",
+        "def f():\n class C:\n  pass\n any: int\n return any([])\n",
+    ] {
+        assert!(parse_module(source).is_ok(), "{source}");
+        let output = analyze(source);
+        assert!(
+            output
+                .candidates
+                .iter()
+                .all(|candidate| candidate.operator != "collection_any_all"),
+            "{source}"
+        );
+    }
+}
+
+#[test]
+fn declaration_only_preserves_operator_aliases_in_module_and_class_scopes() {
+    for source in [
+        "import operator as op\nop: object\nop: object\nresult = op.add(2, 1)\n",
+        "import operator as op\nresult = op.add(2, 1)\nop: object\n",
+        "from operator import add as fn\nfn: object\nresult = fn(2, 1)\n",
+        "import operator as op\nclass C:\n op: object\nresult = op.add(2, 1)\n",
+        "import operator as op\ndef f():\n class C:\n  op: object\n return op.add(2, 1)\n",
+        "import operator as op\ndef f():\n pass\nop: object\nresult = op.add(2, 1)\n",
+        "import operator as op\nif condition:\n op: object\nresult = op.add(2, 1)\n",
+    ] {
+        assert!(parse_module(source).is_ok(), "{source}");
+        let output = analyze(source);
+        let candidates: Vec<_> = output
+            .candidates
+            .iter()
+            .filter(|candidate| candidate.operator == "operator_function")
+            .collect();
+        assert_eq!(candidates.len(), 1, "{source}");
+        assert!(candidates[0].replacement.ends_with("sub"), "{source}");
+        apply_candidate_and_reparse(source, candidates[0]);
+    }
+}
+
+#[test]
+fn declaration_only_retains_operator_alias_guards_and_target_effects() {
+    for source in [
+        "import operator as op\nclass C:\n op: object\n result = op.add(2, 1)\n",
+        "import operator as op\ndef f():\n op: object\n return op.add(2, 1)\n",
+        "import operator as op\ndef f():\n result = op.add(2, 1)\n op: object\n return result\n",
+        "import operator as op\ndef f():\n class C:\n  pass\n op: object\n return op.add(2, 1)\n",
+        "import operator as op\nop: object = custom\nresult = op.add(2, 1)\n",
+        "import operator as op\nop = custom\nop: object\nresult = op.add(2, 1)\n",
+        "import operator as op\nop: object\nexec(code)\nresult = op.add(2, 1)\n",
+        "import operator as op\n(op := custom).member: int\nresult = op.add(2, 1)\n",
+        "import operator as op\ncontainer[(op := custom)]: int\nresult = op.add(2, 1)\n",
+        "import operator as op\ncontainer[exec(code)]: int\nresult = op.add(2, 1)\n",
+        "if condition:\n import operator as op\nop: object\nresult = op.add(2, 1)\n",
+        "def f():\n import operator as op\n op: object\n return op.add(2, 1)\n",
+    ] {
+        assert!(parse_module(source).is_ok(), "{source}");
+        let output = analyze(source);
+        assert!(
+            output
+                .candidates
+                .iter()
+                .all(|candidate| candidate.operator != "operator_function"),
+            "{source}"
+        );
     }
 }

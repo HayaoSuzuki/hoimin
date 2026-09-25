@@ -26,7 +26,7 @@ okf_version: "0.2"
 
 - [コピー方針とsession再開](audits/resume-copy-2026-09.md) - #563の旧判定再利用、Leanと公開CLI・SQLiteの照合。
 
-- [値なし注釈と候補精度](audits/declaration-only-2026-09.md) - #562の改善案、関数ローカル宣言との区別と14入力の照合。
+- [値なし注釈と候補精度](audits/declaration-only-2026-09.md) - 値なし注釈の束縛保持、関数ローカル宣言との区別、公開planとCPythonの14入力回帰検証。
 
 - [評価順序と未選択methodの確保](audits/evaluation-order-2026-09.md) - #560/#561の再現、Leanの順序モデルと確保要求の実測。
 

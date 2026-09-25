@@ -5,6 +5,21 @@ description: 実行時の再代入と関数ローカル宣言を区別する候�
 status: draft
 catalog_revision: 5e631ef
 sources:
+  - id: issue-562-design
+    resource: ../../superpowers/specs/2026-09-25-issue-562-declaration-only-design.md
+    revision: 3fedcb1bfdbd464600052416c3086662698805f8
+    working_tree: clean
+    sha256: 993b396d274da71197f29a4bbd07126bb49c0ece5a23df46217d93e6f6389874
+  - id: issue-562-tests
+    resource: ../../../crates/hoimin-cli/tests/declaration_only_annotations.rs
+    revision: 3fedcb1bfdbd464600052416c3086662698805f8
+    working_tree: clean
+    sha256: 1f5062bd20e30ddc3dec175608c8324ce0dc8672c11a669468d38be483b7041f
+  - id: issue-562-review
+    resource: ../../superpowers/reviews/2026-09-25-issue-562.md
+    revision: 3fedcb1bfdbd464600052416c3086662698805f8
+    working_tree: clean
+    sha256: 7de08a6682841e1c47db2d82710486b0e847d3384fc8909ddc39138377a71c7a
   - id: report
     resource: ../../audits/2026-09-15-declaration-only/README.md
     working_tree: untracked
@@ -27,7 +42,19 @@ Lean生成14入力を公開planで照合し、debug/releaseとも7 match / 7 mis
 
 # 再確認の契機
 
-NameResolutionBuilder、operator用ImportScan、AnnAssignの扱いを変更するときに再実行する。属性・subscript targetの評価副作用、関数のローカル宣言、実際の再代入の抑制を保持する必要がある。提案の実装修正と正式CIへのケース移行は未実施である。
+NameResolutionBuilder、operator用ImportScan、AnnAssignの扱いを変更するときに再実行する。属性・subscript targetの評価副作用、関数のローカル宣言、実際の再代入の抑制を保持する必要がある。監査時点では提案の実装修正と正式CIへのケース移行は未実施だった。後続修正は以下に記録する。
 
 [^report]: [監査報告と再現手順](../../audits/2026-09-15-declaration-only/README.md)。
 [^model]: [DeclarationModel.lean](../../audits/2026-09-15-declaration-only/DeclarationModel.lean)。
+
+# Issue #562の修正（2026-09-25）
+
+module/class内の名前への値なし注釈では、既知の組込み参照と無条件module importの参照先を保持する。関数内では値なし注釈もローカル宣言となるため、従来どおり候補を抑制する。値を伴う代入、既存のshadowing、動的namespaceの抑制も保持し、属性・subscript targetの評価式を走査する。class内のoperator参照に対する既存のメタクラス対策は変更しない。[^issue-562-design]
+
+正式な公開planテストは、既存のLean生成14入力について候補の組を照合し、置換範囲を確認する。元コードと生成候補をCPython 3.14で実行し、候補がある入力では観測値の変化も確認する。解析器の単体テストには繰り返し宣言、source/destinationの両方、入れ子scope、既存束縛、複雑なtargetの副作用を加えた。実行結果と各3回のセルフレビューは作業記録を参照する。[^issue-562-tests][^issue-562-review]
+
+この修正は候補精度の改善であり、任意のPythonプログラムに対する候補の完全性やRust実装全体の正しさを証明するものではない。上記の7 match / 7 mismatchは旧版の結果として保持する。
+
+[^issue-562-design]: [修正設計](../../superpowers/specs/2026-09-25-issue-562-declaration-only-design.md)。
+[^issue-562-tests]: [回帰テスト](../../../crates/hoimin-cli/tests/declaration_only_annotations.rs)。
+[^issue-562-review]: [レビューと検証記録](../../superpowers/reviews/2026-09-25-issue-562.md)。

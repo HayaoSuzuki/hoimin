@@ -478,11 +478,16 @@ jobs:
   linux-best-effort:
     needs: quality
     runs-on: ubuntu-latest
+    env:
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
+      CARGO_INCREMENTAL: "0"
+      CARGO_BUILD_JOBS: "2"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install repository Rust toolchain
         run: rustup toolchain install
-      - run: cargo test -p hoimin-cli linux_policy::unavailable_cgroup_requires_explicit_best_effort_opt_in
+      - run: cargo test -p hoimin-cli --test process_handler linux_policy::unavailable_cgroup_requires_explicit_best_effort_opt_in -- --exact
 
   linux-cgroup-v2-hard:
     needs: quality

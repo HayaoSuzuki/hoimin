@@ -23,6 +23,12 @@ sources:
   working_tree: clean
   sha256: fec8835b826fb48eee6f58471f0e0d679cb0dcefe0a574b4bd1476051d99546e
 
+- id: issue-562-design
+  resource: ../../superpowers/specs/2026-09-25-issue-562-declaration-only-design.md
+  revision: 3fedcb1bfdbd464600052416c3086662698805f8
+  working_tree: clean
+  sha256: 993b396d274da71197f29a4bbd07126bb49c0ece5a23df46217d93e6f6389874
+
 - id: issue-558-design
   resource: ../../superpowers/specs/2026-09-24-issue-558-deferred-imports-design.md
   revision: a49467ded359416a6ee743536100634f1cced3e2
@@ -1497,6 +1503,14 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 | Issue 560: builtin resolution in evaluation order | [原文](../../superpowers/specs/2026-09-24-issue-560-evaluation-order.md) [^issue-560-design] |
 
 [^issue-560-design]: [Issue 560: builtin resolution in evaluation order](../../superpowers/specs/2026-09-24-issue-560-evaluation-order.md)。
+
+# Issue #562
+
+| 原文の先頭見出し | 原文 |
+| --- | --- |
+| Preserve runtime bindings across declaration-only annotations | [設計書](../../superpowers/specs/2026-09-25-issue-562-declaration-only-design.md) [^issue-562-design] |
+
+[^issue-562-design]: [Preserve runtime bindings across declaration-only annotations](../../superpowers/specs/2026-09-25-issue-562-declaration-only-design.md)。
 
 # Issue #558
 
