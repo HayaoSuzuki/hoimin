@@ -1000,6 +1000,7 @@ struct NameScope {
     ordered: HashMap<String, OrderedBindingHistory>,
     wildcard: bool,
     may_have_prepared_namespace: bool,
+    private_prefix: Option<String>,
     import_writes: HashMap<String, usize>,
 }
 
@@ -1015,8 +1016,28 @@ impl NameScope {
             ordered: HashMap::new(),
             wildcard: false,
             may_have_prepared_namespace: false,
+            private_prefix: None,
             import_writes: HashMap::new(),
         }
+    }
+
+    fn ambiguous_private_import(&self, name: &str) -> bool {
+        self.private_prefix.as_ref().is_some_and(|prefix| {
+            !name.ends_with("__")
+                && (name.starts_with("__")
+                    || name
+                        .strip_prefix(prefix)
+                        .is_some_and(|suffix| suffix.starts_with("__")))
+        })
+    }
+
+    fn mangled_import_name(&self, name: &str) -> Option<String> {
+        if !name.starts_with("__") || name.ends_with("__") {
+            return None;
+        }
+        self.private_prefix
+            .as_ref()
+            .map(|prefix| format!("{prefix}{name}"))
     }
 }
 
@@ -1099,12 +1120,17 @@ impl NameResolutionIndex {
     ) -> bool {
         #[cfg(test)]
         ANNOTATION_IMPORT_LOOKUPS.set(ANNOTATION_IMPORT_LOOKUPS.get().saturating_add(1));
-        if source_order_known && self.unevaluated_annotations.contains(&offset) {
-            return true;
-        }
         let Some(site) = self.occurrences.get(&offset) else {
             return false;
         };
+        // The flow snapshot uses AST spellings, so it cannot certify a private
+        // import root or its transformed spelling, including lexical descendants.
+        if self.scopes[site.scope.0].ambiguous_private_import(name) {
+            return false;
+        }
+        if source_order_known && self.unevaluated_annotations.contains(&offset) {
+            return true;
+        }
         let mut current = Some(site.scope);
         let mut direct = true;
         while let Some(id) = current {
@@ -1399,7 +1425,11 @@ struct LoopBackEdgeContext {
 
 impl NameResolutionBuilder {
     fn tracks(&self, name: &str) -> bool {
-        tracked_resolution_name(name) || self.imported_names.contains(name)
+        tracked_resolution_name(name)
+            || self.imported_names.contains(name)
+            || self.index.scopes[self.current.0]
+                .mangled_import_name(name)
+                .is_some_and(|mangled| self.imported_names.contains(&mangled))
     }
 
     fn new() -> Self {
@@ -1429,9 +1459,12 @@ impl NameResolutionBuilder {
 
     fn new_scope(&mut self, kind: NameScopeKind) -> ScopeId {
         let id = ScopeId(self.index.scopes.len());
-        self.index
-            .scopes
-            .push(NameScope::new(kind, Some(self.current)));
+        let mut scope = NameScope::new(kind, Some(self.current));
+        // Compiler private context survives ordinary lexical class skipping.
+        scope
+            .private_prefix
+            .clone_from(&self.index.scopes[self.current.0].private_prefix);
+        self.index.scopes.push(scope);
         id
     }
 
@@ -1613,6 +1646,11 @@ impl NameResolutionBuilder {
     }
 
     fn record_import_write(&mut self, name: &str, event: usize) {
+        if let Some(mangled) = self.index.scopes[self.current.0].mangled_import_name(name) {
+            // Raw flow snapshots cannot see this equivalent spelling. Reject the
+            // transformed import key even when the write precedes the annotation.
+            self.record_import_write(&mangled, usize::MAX);
+        }
         if !self.imported_names.contains(name) {
             return;
         }
@@ -1880,6 +1918,9 @@ impl<'ast> Visitor<'ast> for NameResolutionBuilder {
                         this.visit_arguments(arguments);
                     }
                     let scope = this.new_scope(NameScopeKind::Class);
+                    let class = definition.name.as_str().trim_start_matches('_');
+                    this.index.scopes[scope.0].private_prefix =
+                        (!class.is_empty()).then(|| format!("_{class}"));
                     // Bases can select an inherited metaclass; keywords can supply
                     // one indirectly. Only an empty header guarantees a plain namespace.
                     this.index.scopes[scope.0].may_have_prepared_namespace = definition
@@ -1957,6 +1998,11 @@ impl<'ast> Visitor<'ast> for NameResolutionBuilder {
                         self.index.scopes[self.current.0]
                             .globals
                             .insert(name.to_string());
+                        if let Some(mangled) =
+                            self.index.scopes[self.current.0].mangled_import_name(name.as_str())
+                        {
+                            self.index.scopes[self.current.0].globals.insert(mangled);
+                        }
                     }
                 }
             }
@@ -1966,6 +2012,11 @@ impl<'ast> Visitor<'ast> for NameResolutionBuilder {
                         self.index.scopes[self.current.0]
                             .nonlocals
                             .insert(name.to_string());
+                        if let Some(mangled) =
+                            self.index.scopes[self.current.0].mangled_import_name(name.as_str())
+                        {
+                            self.index.scopes[self.current.0].nonlocals.insert(mangled);
+                        }
                     }
                 }
             }

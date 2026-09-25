@@ -376,7 +376,15 @@ module alias remains unshadowed at the annotation site. If no safe spelling is
 available, the candidate is skipped. Class-visible annotation imports and module
 aliases are also excluded when the class may have a prepared namespace, including
 explicit class imports and `nonlocal` references. Lexical descendants skip the
-class namespace; explicit `global` declarations bypass it for each declared name.
+class namespace; explicit `global` declarations bypass it for each declared name. Private
+import aliases and their mangled spelling (such as `__Seq` and `_C__Seq` inside
+class `C`) are conservatively excluded at both endpoints, including methods and
+nested functions that retain that compiler context. Leading underscores in class
+names are stripped; trailing-dunder aliases and underscore-only class names do
+not trigger mangling. Actual private writes to an explicitly mangled import name
+also invalidate its provenance in the destination namespace. Clean private
+aliases may therefore produce fewer candidates; ordinary aliases retain their
+existing behavior.
 
 The `operator_function` selector recognizes the documented callable pairs
 `eq`/`ne`, `lt`/`le`, `gt`/`ge`, `add`/`sub`, `mul`/`truediv`,

@@ -8876,3 +8876,157 @@ fn prepared_annotation_import_qualified_alias_is_checked() {
         );
     }
 }
+
+#[test]
+fn private_annotation_import_endpoints_and_spelling_boundaries() {
+    for class in ["C", "_C", "___"] {
+        for alias in ["Alias", "__Alias", "__Alias__"] {
+            for destination in [false, true] {
+                let (outer, inner, original) = if destination {
+                    ("Sequence", "Iterable", "Sequence[int]".to_owned())
+                } else {
+                    ("Iterable", "Sequence", format!("{alias}[int]"))
+                };
+                let source = format!(
+                    "from typing import {outer}\nclass {class}:\n    from typing import {inner} as {alias}\n    value: {original}\n"
+                );
+                let expected = usize::from(class == "___" || alias != "__Alias");
+                let output = analyze_types(&source);
+                assert_eq!(
+                    output
+                        .candidates
+                        .iter()
+                        .filter(|c| c.operator == "type_sequence_iterable")
+                        .count(),
+                    expected,
+                    "{source}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn private_annotation_import_tracks_reverse_writes_and_directives() {
+    let mut unexpected = Vec::new();
+    for source in [
+        "from typing import Iterable\nclass C:\n    from typing import Sequence as __Alias\n    _C__Alias = tuple\n    value: __Alias[int]\n",
+        "from typing import Sequence\nclass C:\n    from typing import Iterable as __Alias\n    _C__Alias = tuple\n    value: Sequence[int]\n",
+        "from typing import Iterable\nclass C:\n    from typing import Sequence as _C__Alias\n    __Alias = tuple\n    value: _C__Alias[int]\n",
+        "from typing import Sequence\nclass C:\n    from typing import Iterable as _C__Alias\n    __Alias = tuple\n    value: Sequence[int]\n",
+        "from typing import Sequence as _C__Alias, Iterable\nclass C:\n    global __Alias\n    __Alias = tuple\nvalue: _C__Alias[int]\n",
+        "from typing import Sequence, Iterable as _C__Alias\nclass C:\n    global _C__Alias\n    __Alias = tuple\nvalue: Sequence[int]\n",
+        "from typing import Iterable\nclass C:\n    def factory():\n        from typing import Sequence as _C__Alias\n        def write():\n            nonlocal __Alias\n            __Alias = tuple\n        write()\n        def inner(value: _C__Alias[int]): pass\n",
+        "from typing import Sequence, Iterable\nclass C:\n    import typing as __t\n    _C__t = object()\n    value: __t.Sequence[int]\n",
+    ] {
+        let output = analyze_types(source);
+        if output
+            .candidates
+            .iter()
+            .any(|c| c.operator == "type_sequence_iterable")
+        {
+            unexpected.push(source);
+        }
+    }
+    assert!(unexpected.is_empty(), "unsafe candidates: {unexpected:#?}");
+}
+
+#[test]
+fn private_annotation_import_keeps_context_and_unrelated_scopes_separate() {
+    for (source, expected) in [
+        (
+            "from typing import Sequence as __Alias, Iterable\nvalue: __Alias[int]\n",
+            1,
+        ),
+        (
+            "from typing import Sequence as _C__Alias, Iterable\nclass C:\n    __Alias = tuple\nvalue: _C__Alias[int]\n",
+            1,
+        ),
+        (
+            "from typing import Iterable\nclass Outer:\n    class ___:\n        from typing import Sequence as __Alias\n        value: __Alias[int]\n",
+            1,
+        ),
+        (
+            "from typing import Iterable\nclass C:\n    def factory():\n        from typing import Sequence as __Alias\n        def inner(value: __Alias[int]): pass\n",
+            0,
+        ),
+        (
+            "from typing import Iterable\nclass C:\n    def factory():\n        from typing import Sequence as _C__Alias\n        def inner(value: _C__Alias[int]): pass\n",
+            0,
+        ),
+    ] {
+        let output = analyze_types(source);
+        assert_eq!(
+            output
+                .candidates
+                .iter()
+                .filter(|c| c.operator == "type_sequence_iterable")
+                .count(),
+            expected,
+            "{source}"
+        );
+    }
+}
+
+#[test]
+fn private_annotation_import_parameter_bindings_shadow_canonical_roots() {
+    let source = "from typing import Sequence as _C__Alias, Iterable\nclass C:\n    def factory(__Alias):\n        def inner(value: _C__Alias[int]): pass\n        return inner\n";
+    let output = analyze_types(source);
+    assert!(
+        output
+            .candidates
+            .iter()
+            .all(|c| c.operator != "type_sequence_iterable"),
+        "{source}"
+    );
+}
+
+#[test]
+fn private_annotation_import_shared_type_operators_reject_private_sources() {
+    for (imported, annotation) in [
+        ("Sequence", "__Alias[int]"),
+        ("Mapping", "__Alias[str, int]"),
+        ("AbstractSet", "__Alias[int]"),
+        ("Iterable", "__Alias[int]"),
+        ("Optional", "__Alias[int]"),
+    ] {
+        let source = format!(
+            "from typing import Iterable, Iterator\nclass C:\n    from typing import {imported} as __Alias\n    value: {annotation}\n"
+        );
+        let output = analyze_types(&source);
+        assert!(
+            output.candidates.is_empty(),
+            "{source}: {:?}",
+            output.candidates
+        );
+    }
+}
+
+#[test]
+fn private_annotation_import_gate_preserves_header_context() {
+    for (source, expected) in [
+        (
+            "from typing import Sequence as __Alias, Iterable\nclass C[T: __Alias[int]]: pass\n",
+            1,
+        ),
+        (
+            "from typing import Sequence as _Other__Alias, Iterable\nclass C:\n    value: _Other__Alias[int]\n",
+            1,
+        ),
+        (
+            "from typing import Iterable\nclass C:\n    def factory():\n        from typing import Sequence as _C__Alias\n        __Alias = tuple\n        value: _C__Alias[int]\n",
+            0,
+        ),
+    ] {
+        let output = analyze_types(source);
+        assert_eq!(
+            output
+                .candidates
+                .iter()
+                .filter(|c| c.operator == "type_sequence_iterable")
+                .count(),
+            expected,
+            "{source}"
+        );
+    }
+}
