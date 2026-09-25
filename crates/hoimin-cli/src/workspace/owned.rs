@@ -2233,10 +2233,25 @@ mod tests {
         let root = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
         let active = format!("{}{}", super::ACTIVE_PREFIX, root.run_id);
         let staging = format!("{}{}", super::STAGING_PREFIX, root.run_id);
+        // Model a parallel test's fork retaining the shared lease description until exec.
+        #[cfg(unix)]
+        let _inherited_lease = root
+            .lease
+            .lock()
+            .unwrap()
+            .as_deref()
+            .unwrap()
+            .try_clone()
+            .unwrap();
         // A crash closes the process-owned heartbeat capability before the janitor observes
         // the lease-only staging state.
         drop(root.heartbeat.lock().unwrap().take());
         root.dir.remove_file(super::HEARTBEAT_FILE).unwrap();
+        // Establish the abandoned, unlocked fixture even while a fork retains its copy.
+        {
+            let lease = root.lease.lock().unwrap();
+            fs2::FileExt::unlock(lease.as_deref().unwrap()).unwrap();
+        }
         drop(root);
         coordinator
             .dir

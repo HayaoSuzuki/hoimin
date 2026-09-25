@@ -121,3 +121,64 @@ changed. Cross-platform runtime behavior remains subject to platform testing.
    to the branch, with source links and hashes for the documented implementation.
 3. Reviewed the PR description against the observed checks and stated macOS-only
    runtime validation. The PR targets `main` and leaves merging to the maintainer.
+
+## CI follow-up: lease-only staging fixture
+
+[The randomized-order job](https://github.com/tokyogas-tech/hoimin/actions/runs/36173808132/job/108200081395)
+failed in `lease_only_staging_root_is_reclaimed_after_a_day` with zero reclaimed
+roots, one preserved root, and no diagnostic detail. Its shuffle seed was
+`1790361566959896000`. The other non-skipped jobs on that revision passed.
+
+### Investigation self-review
+
+1. Traced the empty-detail preservation paths. A busy lease takes this path;
+   failing the stale-age check would instead append a diagnostic detail.
+2. Compared the fixture with `unlocked_lease_with_a_heartbeat_at_least_twenty_four_hours_old_is_reclaimed`.
+   That existing test explicitly unlocks its lease because a parallel fork can
+   retain the shared file description until exec. Closing only the owner's
+   descriptor does not establish an unlocked fixture in that interval.
+3. Kept a Unix `try_clone()` alive through reclamation to model this condition.
+   Before adding the explicit unlock, the targeted test failed locally with the
+   same zero-reclaimed, one-preserved, empty-detail report as CI.
+
+### Fix self-review
+
+1. The fixture now explicitly unlocks the lease before dropping its owner. This
+   establishes the abandoned-root premise without changing production locking,
+   cleanup deadlines, or the requirement to preserve genuinely locked roots.
+2. The cloned descriptor remains alive until after the reclamation assertions,
+   so removing the explicit unlock deterministically reproduces the failure on
+   Unix. The assertions still exercise actual directory reclamation.
+3. Checked platform boundaries: the clone is Unix-only, and the cross-platform
+   unlock follows the existing stale-heartbeat fixture. This test checks cleanup
+   of an unlocked abandoned root, not automatic lock release after a real crash.
+
+A separate read-only review approved the fix with no findings. The targeted test
+passed after the fix on macOS arm64.
+
+### Validation self-review
+
+1. Compared the targeted red/green output: the retained-descriptor case failed
+   before explicit unlock and passed afterward, without weakening the reclamation
+   assertion or introducing retries.
+2. Ran `cargo +nightly-2026-07-27 test --workspace -- -Z unstable-options --shuffle-seed 1790361566959896000`
+   on macOS arm64. The whole workspace passed, including 739 library tests and
+   seven telemetry integration tests; 12 existing library tests were ignored.
+   The same seed does not imply identical Linux/macOS ordering because the
+   platform-specific test sets differ. Nightly emitted three deprecation warnings
+   for existing `fetch_update` calls outside this change.
+3. Confirmed `cargo clippy --workspace --all-targets --all-features -- -D warnings`,
+   `cargo fmt --all -- --check`, and `git diff --check` passed. Linux confirmation
+   for the follow-up remains the responsibility of the new PR workflow run.
+
+### Documentation and publication self-review
+
+1. Checked the explanation against the retained-descriptor reproduction and the
+   existing unlocked-heartbeat fixture. The CI interleaving was inferred from the
+   failure and deterministic reproduction, not captured in a process trace.
+2. Reviewed `docs/knowledge/design/runtime-lifecycle.md`: its production cleanup
+   contract is unchanged. Updated this report and its audit-catalog source hash;
+   retained unrelated historical evidence. Checked OKF structure, links, and hashes.
+3. Reviewed the staged scope and PR explanation. This follow-up contains only the
+   test fixture and review documentation, on the existing topic branch. Local
+   results are distinguished from the pending Linux CI rerun.

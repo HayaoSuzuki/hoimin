@@ -7,9 +7,9 @@ catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
 - id: tracing-progress-report
   resource: ../../superpowers/reports/2026-09-26-tracing-progress.md
-  revision: 3912d73220917308ce6a966ad2b57ec9b566490c
+  revision: f43ccffdee2996c8fd53da2d8be230045e7d5ab7
   working_tree: modified
-  sha256: cb7cd2484d0c749d88c7ab9d0fd5353eb35a6a1bf15d20d0fa8a88c6a6fc46fa
+  sha256: 820ea106b8bfab603dfabf01e0105b4d0cf7ae0f2902a6eb80b88297e44c2ce9
 - id: proptest-boundaries-report
   resource: ../../superpowers/reports/2026-09-26-proptest-boundaries.md
   revision: b1641ee51911c4bdcb3704f32ee4dedbba2fb9b8
