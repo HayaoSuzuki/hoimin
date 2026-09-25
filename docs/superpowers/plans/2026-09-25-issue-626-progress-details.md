@@ -16,28 +16,28 @@ Default output/state/exit remain unchanged; no candidate body clones or history 
 
 ## Task 1: regression-first public contract
 
-- [ ] Add public CLI tests in `crates/hoimin-cli/tests/progress.rs`: actual run strong/weak reports expose regression/improvement ID and positions; `--details --format json` selects v2; without details retain v1. Run these first and record expected unknown-option RED.
-- [ ] Add fixture tests for cap 0/1/default, stable reversed candidate order, multiple status types, same-content different IDs, duplicate ID/content ambiguity, unusable middle/trailing inputs and original indices, JSON/JSONL equivalence, quoted paths, and malformed CLI limit use.
+- [x] Add public CLI tests in `crates/hoimin-cli/tests/progress.rs`: actual run strong/weak reports expose regression/improvement ID and positions; `--details --format json` selects v2; without details retain v1. Run these first and record expected unknown-option RED.
+- [x] Add fixture tests for cap 0/1/default, stable reversed candidate order, multiple status types, same-content different IDs, duplicate ID/content ambiguity, unusable middle/trailing inputs and original indices, JSON/JSONL equivalence, quoted paths, and malformed CLI limit use.
 
 ## Task 2: comparison and presentation
 
-- [ ] Add `details: bool` and `details_limit: usize` to parsed progress arguments, default 100 and explicit requires-details validation.
-- [ ] Add `progress/details.rs` metadata and bounded borrowed collector. Consume only counted changed conclusive pairs, require equal IDs with unique occurrence in both reports. Keep lexicographically smallest N IDs; compute omitted and unidentified separately.
-- [ ] Extend private accumulator comparison entry point with an optional limit returning details while retaining existing `advance` and public `compare_reports` behavior. In `progress::run`, enable it only for the final pair and preserve barrier handling.
-- [ ] Extend renderer with optional details: default schema/version/fields unchanged, opt-in v2 adds final-pair details with original input indices. Append quoted human lines and limit/omission/identity constraint summaries.
-- [ ] Add separate closed v2 JSON schema and README CLI/output contract. Validate v1/v2 with the repository JSON schema test helper.
+- [x] Add `details: bool` and `details_limit: usize` to parsed progress arguments, default 100 and explicit requires-details validation.
+- [x] Add `progress/details.rs` metadata and bounded borrowed collector. Consume only counted changed conclusive pairs, require equal IDs with unique occurrence in both reports. Keep lexicographically smallest N IDs; compute omitted and unidentified separately.
+- [x] Extend private accumulator comparison entry point with an optional limit returning details while retaining existing `advance` and public `compare_reports` behavior. In `progress::run`, enable it only for the final pair and preserve barrier handling.
+- [x] Extend renderer with optional details: default schema/version/fields unchanged, opt-in v2 adds final-pair details with original input indices. Append quoted human lines and limit/omission/identity constraint summaries.
+- [x] Add separate closed v2 JSON schema and README CLI/output contract. Validate v1/v2 with the repository JSON schema test helper.
 
 ## Task 3: Lean correspondence and memory
 
-- [ ] Extend existing ProgressDecision model/cases/generator with identified transitions and final-pair detail expectations at limit 1. Exclude content-only unequal IDs and ambiguous/inconclusive joins. Add positive/negative/broken-witness checks and generate corpus; never hand-edit generated expectations.
-- [ ] Request root Lean slot, run each command under 20-second/2-GiB guard, record resource bounds, run corpus freshness/sensitivity. Extend existing Rust adapter to exercise the real public CLI with `--details --details-limit 1` and compare generated detail fields plus unchanged aggregate semantics.
-- [ ] Add meaningful heap regression proving details do not copy 256-KiB candidate bodies and remain bounded across long history at fixed cap; run alongside existing progress heap tests.
+- [x] Extend existing ProgressDecision model/cases/generator with identified transitions and final-pair detail expectations at limit 1. Exclude content-only unequal IDs and ambiguous/inconclusive joins. Add positive/negative/broken-witness checks and generate corpus; never hand-edit generated expectations.
+- [x] Request root Lean slot, run each command under 20-second/2-GiB guard, record resource bounds, run corpus freshness/sensitivity. Extend existing Rust adapter to exercise the real public CLI with `--details --details-limit 1` and compare generated detail fields plus unchanged aggregate semantics.
+- [x] Add meaningful heap regression proving details do not copy 256-KiB candidate bodies and remain bounded across long history at fixed cap; run alongside existing progress heap tests.
 
 ## Task 4: review and completion
 
-- [ ] Perform and record three implementation reviews (identity/classification; schema/adjacency/error output; resource/ordering) and three test reviews (sensitivity; malformed/negative/format parity; coverage/measurement limitations).
-- [ ] Obtain independent read-only review from a peer, address findings, run focused tests and full workspace, exact all-target/all-feature CI clippy plus locked vendor parser clippy and both fmt checks.
-- [ ] Commit implementation, tests, schema, generated expectations, and review evidence. Root handles publication unless explicitly delegated.
+- [x] Perform and record three implementation reviews (identity/classification; schema/adjacency/error output; resource/ordering) and three test reviews (sensitivity; malformed/negative/format parity; coverage/measurement limitations).
+- [x] Obtain independent read-only review from a peer, address findings, run focused tests and full workspace, exact all-target/all-feature CI clippy plus locked vendor parser clippy and both fmt checks.
+- [x] Commit implementation, tests, schema, generated expectations, and review evidence. Root handles publication unless explicitly delegated.
 
 ## Plan review passes
 

@@ -97,6 +97,30 @@ private def comparisonJson (comparison : PairObservation) : Lean.Json :=
     ("state", .str (pairStateName comparison.state))
   ]
 
+private def transitionStatusName : Status → String
+  | .killed => "killed"
+  | .survived => "survived"
+  | .inconclusive => "inconclusive"
+
+private def detailJson (item : OracleCase) : Lean.Json :=
+  let detail := latestDetails (item.reports.map OracleReport.toModel) 1
+  Lean.Json.mkObj [
+    ("available", Lean.toJson detail.available),
+    ("eligibility", match detail.pairEligibility with
+      | some value => .str (eligibilityName value)
+      | none => .null),
+    ("previous_input", Lean.toJson (item.reports.length - 2)),
+    ("current_input", Lean.toJson (item.reports.length - 1)),
+    ("omitted", Lean.toJson detail.omitted),
+    ("unidentified", Lean.toJson detail.unidentified),
+    ("transitions", .arr (detail.shown.toArray.map fun entry => Lean.Json.mkObj [
+      ("candidate_id", Lean.toJson entry.candidateId),
+      ("previous_status", .str (transitionStatusName entry.before)),
+      ("current_status", .str (transitionStatusName entry.after)),
+      ("classification", .str (if entry.after == .killed then "improvement" else "regression"))
+    ]))
+  ]
+
 private def caseJson (item : OracleCase) : Lean.Json :=
   let expected := item.observed
   Lean.Json.mkObj [
@@ -109,7 +133,8 @@ private def caseJson (item : OracleCase) : Lean.Json :=
       ("latest_state", .str (latestStateName expected.latest)),
       ("consecutive_stalls", Lean.toJson expected.consecutiveStalls),
       ("saturated", Lean.toJson (expected.latest == .saturated)),
-      ("comparisons", .arr (expected.comparisons.toArray.map comparisonJson))
+      ("comparisons", .arr (expected.comparisons.toArray.map comparisonJson)),
+      ("details", detailJson item)
     ])
   ]
 
@@ -218,7 +243,7 @@ private def reportPairCount : Nat := reportDomain.length * reportDomain.length
 private def historyCount : Nat := (tracesUpTo 4).length * 3
 
 private def ensureAudit : IO (Except UInt32 Unit) := do
-  unless sensitivityPasses do
+  unless sensitivityPasses && detailSensitivity do
     IO.eprintln "progress decision audit did not distinguish every broken variant"
     return .error 2
   unless fixedCasesPass do
@@ -258,7 +283,8 @@ private def printSensitivity : IO UInt32 := do
   IO.println s!"matching_id_join_detected={matchingJoinSensitivity}"
   IO.println s!"duplicate_content_detected={duplicateContentSensitivity}"
   IO.println s!"inconclusive_exclusion_detected={inconclusiveSensitivity}"
-  return if sensitivityPasses then 0 else 2
+  IO.println s!"detail_identity_cap_adjacency_detected={detailSensitivity}"
+  return if sensitivityPasses && detailSensitivity then 0 else 2
 
 private def printCases : IO UInt32 := do
   for item in progressDecisionCases do
@@ -269,7 +295,7 @@ private def printStats : IO UInt32 := do
   match ← ensureAudit with
   | .error code => return code
   | .ok () =>
-      IO.println "schema=1"
+      IO.println "schema=2"
       IO.println "max_history_length=4"
       IO.println "patience_min=1"
       IO.println "patience_max=3"

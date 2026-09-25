@@ -6,7 +6,10 @@ use std::{
 use camino::Utf8Path;
 use hoimin_core::{MutantFinished, MutationCandidate, MutationStatus};
 
-use super::{InputReport, UsableReport};
+use super::{
+    InputReport, UsableReport,
+    details::{Changes, Collector},
+};
 
 #[derive(Debug, PartialEq)]
 pub struct ProgressResult {
@@ -37,15 +40,24 @@ impl ProgressAccumulator {
         previous: &InputReport,
         current: &InputReport,
     ) -> Option<CandidateSetEligibility> {
+        self.advance_with_details(previous, current, None).0
+    }
+
+    pub(crate) fn advance_with_details(
+        &mut self,
+        previous: &InputReport,
+        current: &InputReport,
+        limit: Option<usize>,
+    ) -> (Option<CandidateSetEligibility>, Changes) {
         let (InputReport::Usable(previous), InputReport::Usable(current)) = (previous, current)
         else {
             self.result.consecutive_stalls = 0;
             self.result.latest = ProgressState::Indeterminate;
-            return None;
+            return (None, Changes::default());
         };
 
         let eligibility = candidate_set_eligibility(previous, current);
-        let comparison = compare_usable_reports(previous, current, eligibility);
+        let (comparison, changes) = compare_usable_reports(previous, current, eligibility, limit);
         match comparison.state {
             ProgressState::Improving => {
                 self.result.consecutive_stalls = 0;
@@ -71,7 +83,7 @@ impl ProgressAccumulator {
             ProgressState::Saturated => unreachable!("individual comparisons cannot saturate"),
         }
         self.result.comparisons.push(comparison);
-        Some(eligibility)
+        (Some(eligibility), changes)
     }
 
     pub(crate) fn into_result(self) -> ProgressResult {
@@ -155,7 +167,9 @@ fn compare_usable_reports(
     previous: &UsableReport,
     current: &UsableReport,
     candidate_set_eligibility: CandidateSetEligibility,
-) -> Comparison {
+    limit: Option<usize>,
+) -> (Comparison, Changes) {
+    let mut details = limit.map(|limit| Collector::new(limit, previous, current));
     let previous = index_mutants(&previous.mutants, candidate_set_eligibility);
     let current = index_mutants(&current.mutants, candidate_set_eligibility);
     let ambiguous: HashSet<_> = previous
@@ -200,15 +214,14 @@ fn compare_usable_reports(
         }
 
         comparable_common += 1;
-        match mutant.status {
-            MutationStatus::Killed => previous_killed += 1,
-            MutationStatus::Survived => previous_survived += 1,
-            _ => unreachable!("inconclusive mutants are excluded above"),
-        }
-        match next.status {
-            MutationStatus::Killed => current_killed += 1,
-            MutationStatus::Survived => current_survived += 1,
-            _ => unreachable!("inconclusive mutants are excluded above"),
+        previous_killed += usize::from(mutant.status == MutationStatus::Killed);
+        previous_survived += usize::from(mutant.status == MutationStatus::Survived);
+        current_killed += usize::from(next.status == MutationStatus::Killed);
+        current_survived += usize::from(next.status == MutationStatus::Survived);
+        if mutant.status != next.status
+            && let Some(details) = details.as_mut()
+        {
+            details.observe(mutant, next);
         }
         match (mutant.status, next.status) {
             (MutationStatus::Survived, MutationStatus::Killed) => improvements += 1,
@@ -243,20 +256,23 @@ fn compare_usable_reports(
         improvements,
     );
 
-    Comparison {
-        common,
-        added,
-        removed,
-        ambiguous: ambiguous.len(),
-        inconclusive: inconclusive.len(),
-        improvements,
-        regressions,
-        carried_survivors,
-        previous_score,
-        current_score,
-        score_delta,
-        state,
-    }
+    (
+        Comparison {
+            common,
+            added,
+            removed,
+            ambiguous: ambiguous.len(),
+            inconclusive: inconclusive.len(),
+            improvements,
+            regressions,
+            carried_survivors,
+            previous_score,
+            current_score,
+            score_delta,
+            state,
+        },
+        details.map_or_else(Changes::default, Collector::finish),
+    )
 }
 
 pub(crate) fn candidate_set_eligibility(
@@ -349,4 +365,137 @@ fn is_inconclusive(status: MutationStatus) -> bool {
 fn score(killed: usize, survived: usize) -> Option<f64> {
     let denominator = killed + survived;
     (denominator > 0).then(|| killed as f64 / denominator as f64)
+}
+
+#[cfg(test)]
+mod detail_tests {
+    use super::*;
+
+    fn report(entries: &[(&str, &str, MutationStatus)]) -> UsableReport {
+        let value: serde_json::Value = serde_json::from_str(include_str!(
+            "../../tests/golden/reports/schema-v3-current.json"
+        ))
+        .unwrap();
+        let template: MutantFinished = serde_json::from_value(value["mutants"][0].clone()).unwrap();
+        UsableReport {
+            source: "internal.json".into(),
+            mutants: entries
+                .iter()
+                .map(|(id, body, status)| {
+                    let mut event = template.clone();
+                    event.candidate.id = (*id).to_owned();
+                    event.candidate.original = (*body).to_owned();
+                    event.status = *status;
+                    event
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn detail_exclusions_follow_real_ambiguous_and_inconclusive_comparison_paths() {
+        use MutationStatus::{Error, Killed, NotRun, OutOfMemory, ProcessLimit, Survived, Timeout};
+        for status in [Timeout, Error, NotRun, OutOfMemory, ProcessLimit] {
+            let before = report(&[("a", "body", Survived)]);
+            let after = report(&[("a", "body", status)]);
+            let (comparison, changes) = compare_usable_reports(
+                &before,
+                &after,
+                candidate_set_eligibility(&before, &after),
+                Some(100),
+            );
+            assert_eq!(comparison.inconclusive, 1);
+            assert_eq!(changes.transitions.len(), 0);
+            assert_eq!(changes.unidentified, 0);
+        }
+        // Content fallback is ambiguous, including the otherwise identical ID.
+        let before = report(&[("a", "body", Killed), ("b", "body", Killed)]);
+        let after = report(&[("a", "body", Survived)]);
+        let (comparison, changes) = compare_usable_reports(
+            &before,
+            &after,
+            candidate_set_eligibility(&before, &after),
+            Some(100),
+        );
+        assert_eq!(comparison.ambiguous, 1);
+        assert!(changes.transitions.is_empty());
+        // Duplicate IDs with distinct content can count a change but cannot identify it.
+        let before = report(&[("a", "body1", Killed), ("a", "body2", Killed)]);
+        let after = report(&[("a", "body1", Survived)]);
+        let (comparison, changes) = compare_usable_reports(
+            &before,
+            &after,
+            candidate_set_eligibility(&before, &after),
+            Some(100),
+        );
+        assert_eq!(comparison.regressions, 1);
+        assert_eq!(changes.unidentified, 1);
+        assert!(changes.transitions.is_empty());
+    }
+
+    #[test]
+    fn internal_details_match_lean_generated_inconclusive_and_duplicate_cases() {
+        let corpus = include_str!("../../../../formal/HoiminOracle/corpus/progress-decision.jsonl");
+        for line in corpus.lines() {
+            let case: serde_json::Value = serde_json::from_str(line).unwrap();
+            if case["mode"] == "strict" {
+                continue;
+            }
+            let reports = case["reports"].as_array().unwrap();
+            let build = |value: &serde_json::Value| {
+                let owned: Vec<_> = value["mutants"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|entry| {
+                        (
+                            format!("candidate-{}", entry["candidate_id"].as_u64().unwrap()),
+                            format!("body-{}", entry["content_key"].as_u64().unwrap()),
+                            serde_json::from_value::<MutationStatus>(entry["status"].clone())
+                                .unwrap(),
+                        )
+                    })
+                    .collect();
+                let borrowed: Vec<_> = owned
+                    .iter()
+                    .map(|(id, body, status)| (id.as_str(), body.as_str(), *status))
+                    .collect();
+                report(&borrowed)
+            };
+            let previous = build(&reports[reports.len() - 2]);
+            let current = build(&reports[reports.len() - 1]);
+            let (_, changes) = compare_usable_reports(
+                &previous,
+                &current,
+                candidate_set_eligibility(&previous, &current),
+                Some(1),
+            );
+            let actual = serde_json::to_value(changes).unwrap();
+            let expected = &case["expected"]["details"];
+            assert_eq!(actual["omitted"], expected["omitted"], "{}", case["id"]);
+            assert_eq!(
+                actual["unidentified"], expected["unidentified"],
+                "{}",
+                case["id"]
+            );
+            assert_eq!(
+                actual["transitions"].as_array().unwrap().len(),
+                expected["transitions"].as_array().unwrap().len()
+            );
+            for (actual, expected) in actual["transitions"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .zip(expected["transitions"].as_array().unwrap())
+            {
+                assert_eq!(
+                    actual["id"],
+                    format!("candidate-{}", expected["candidate_id"].as_u64().unwrap())
+                );
+                for field in ["previous_status", "current_status", "classification"] {
+                    assert_eq!(actual[field], expected[field]);
+                }
+            }
+        }
+    }
 }

@@ -303,6 +303,14 @@ struct RawProgressArgs {
     #[arg(long, value_enum, default_value_t = ProgressOutputFormat::Human)]
     format: ProgressOutputFormat,
 
+    /// Show identified changes in the final adjacent input pair (JSON selects schema v2).
+    #[arg(long)]
+    details: bool,
+
+    /// Maximum transition details to show; zero reports only omission counts.
+    #[arg(long, default_value_t = 100, requires = "details")]
+    details_limit: usize,
+
     /// Ordered run report files to compare.
     #[arg(required = true, num_args = 2.., value_name = "REPORT")]
     reports: Vec<PathBuf>,
@@ -348,6 +356,8 @@ pub struct RunArgs {
 
 #[derive(Debug)]
 pub struct ProgressArgs {
+    pub details: bool,
+    pub details_limit: usize,
     pub reports: Vec<PathBuf>,
     pub patience: NonZeroUsize,
     pub format: ProgressOutputFormat,
@@ -534,6 +544,8 @@ impl TryFrom<Command> for ParsedCommand {
                 }))
             }
             Command::Progress(raw) => Ok(Self::Progress(ProgressArgs {
+                details: raw.details,
+                details_limit: raw.details_limit,
                 reports: raw.reports,
                 patience: raw.patience,
                 format: raw.format,

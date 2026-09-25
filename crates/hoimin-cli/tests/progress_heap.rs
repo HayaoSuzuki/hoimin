@@ -50,6 +50,14 @@ fn progress_heap_peak_is_independent_of_history_length() {
         }
         if mutants == 2_000 {
             let (long_peak, _) = measure_history(&path, 16, mutants);
+            let (details_peak, detailed) = measure_history_with_details(&path, 16, mutants, true);
+            assert!(
+                details_peak <= short_peak + 512 * 1024,
+                "details retained history: short={short_peak} details={details_peak}"
+            );
+            assert_eq!(detailed["details"]["previous_input"], 14);
+            assert_eq!(detailed["details"]["current_input"], 15);
+            assert_eq!(detailed["details"]["transitions"], json!([]));
             eprintln!(
                 "progress-peak mutants={mutants} report_bytes={bytes} history=16 peak={long_peak}"
             );
@@ -62,8 +70,19 @@ fn progress_heap_peak_is_independent_of_history_length() {
 }
 
 fn measure_history(path: &Path, history: usize, mutants: usize) -> (usize, Value) {
+    measure_history_with_details(path, history, mutants, false)
+}
+
+fn measure_history_with_details(
+    path: &Path,
+    history: usize,
+    mutants: usize,
+    details: bool,
+) -> (usize, Value) {
     let reports = std::iter::repeat_n(path.to_path_buf(), history).collect();
     let args = ProgressArgs {
+        details,
+        details_limit: 100,
         reports,
         patience: NonZeroUsize::new(3).unwrap(),
         format: ProgressOutputFormat::Json,
