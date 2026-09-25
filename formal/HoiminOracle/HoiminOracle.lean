@@ -76,6 +76,7 @@ import HoiminOracle.ChangedTargetCases
 import HoiminOracle.ChangedContextModel
 import HoiminOracle.ChangedContextProofs
 import HoiminOracle.ChangedContextCases
+import HoiminOracle.ChangedLinesModel
 import HoiminOracle.ProcessOutputModel
 import HoiminOracle.ProcessOutputProofs
 import HoiminOracle.ProcessOutputCases

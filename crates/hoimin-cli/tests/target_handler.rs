@@ -1160,3 +1160,108 @@ async fn changed_context_expands_current_lines_and_intersects_explicit_ranges() 
         }
     }
 }
+
+#[tokio::test]
+async fn changed_cr_rows_are_translated_before_explicit_python_line_intersection() {
+    let repo = FixtureRepo::new();
+    repo.write(
+        "src/calc.py",
+        b"# header\rdef f():\r    return 1 - 2\ndef g():\n    return 3 + 4\n",
+    );
+    repo.commit_all("initial");
+    repo.write(
+        "src/calc.py",
+        b"# header\rdef f():\r    return 1 + 2\ndef g():\n    return 3 + 4\n",
+    );
+    assert_eq!(
+        repo.changed_lines(None).await.changed[&Utf8PathBuf::from("src/calc.py")],
+        [LineRange { start: 1, end: 3 }]
+    );
+    for (line, selected) in [(3, true), (5, false)] {
+        let targets = TargetHandler::resolve(&Selection {
+            root: repo.root(),
+            sources: vec!["src".into()],
+            changed: true,
+            lines: vec![LineSelection {
+                path: "src/calc.py".into(),
+                range: LineRange {
+                    start: line,
+                    end: line,
+                },
+            }],
+            ..Selection::default()
+        })
+        .await
+        .unwrap();
+        assert_eq!(!targets.is_empty(), selected);
+        if selected {
+            assert_eq!(
+                targets[0].lines,
+                [LineRange {
+                    start: line,
+                    end: line
+                }]
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn changed_cr_deletion_context_preserves_surviving_byte_coverage() {
+    let repo = FixtureRepo::new();
+    repo.write(
+        "src/calc.py",
+        b"left = 1 + 2\r# left\nremoved = 3\n# right\rright = 4 + 5\n",
+    );
+    repo.commit_all("initial");
+    repo.write(
+        "src/calc.py",
+        b"left = 1 + 2\r# left\n# right\rright = 4 + 5\n",
+    );
+    for context in [0, 1] {
+        let targets = TargetHandler::resolve(&Selection {
+            root: repo.root(),
+            sources: vec!["src".into()],
+            changed: true,
+            changed_context: context,
+            ..Selection::default()
+        })
+        .await
+        .unwrap();
+        if context == 0 {
+            assert!(targets.is_empty());
+        } else {
+            assert_eq!(targets[0].lines, [LineRange { start: 1, end: 4 }]);
+        }
+    }
+}
+
+#[tokio::test]
+async fn changed_mixed_rows_preserve_rename_binary_and_text_attribute_behavior() {
+    let repo = FixtureRepo::new();
+    repo.write(".gitattributes", "*.py text eol=lf\n");
+    let header = format!("# {}\r\n", "unchanged ".repeat(32));
+    repo.write(
+        "src/old.py",
+        format!("{header}# longer unchanged comment\rdef f():\r    return 1 - 2\r\n"),
+    );
+    repo.write("src/binary.py", b"old\0binary\n");
+    repo.commit_all("initial");
+    repo.git(&["mv", "src/old.py", "src/new.py"]);
+    repo.write(
+        "src/new.py",
+        format!("{header}# longer unchanged comment\rdef f():\r    return 1 + 2\r\n"),
+    );
+    repo.write("src/binary.py", b"new\0binary\n");
+    let patch = repo.git(&["diff", "--find-renames", "-l0", "HEAD"]);
+    assert!(
+        patch.contains("rename from src/old.py"),
+        "fixture premise: {patch}"
+    );
+    let changed = repo.changed_lines(None).await.changed;
+    assert_eq!(changed.len(), 1);
+    assert_eq!(
+        changed[&Utf8PathBuf::from("src/new.py")],
+        [LineRange { start: 2, end: 4 }]
+    );
+}

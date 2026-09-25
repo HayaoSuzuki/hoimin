@@ -3,9 +3,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use camino::{Utf8Path, Utf8PathBuf};
 use hoimin_core::{
     EffectFailed, EffectId, LineRange, TargetError, TargetSlice, intersect_changed,
-    normalize_changed,
+    logical_path_equality_key, normalize_changed,
 };
 use tokio::process::Command;
+
+mod lines;
 
 use crate::{
     portable_path,
@@ -81,7 +83,7 @@ pub(crate) async fn resolve_changed_scoped(
         "-l0",
         "--relative",
     ];
-    if let Some(base) = diff_base {
+    let patch_ranges = if let Some(base) = diff_base {
         let base = resolve_commit(root, base).await?;
         diff_args.push("--merge-base");
         diff_args.push(&base);
@@ -91,6 +93,7 @@ pub(crate) async fn resolve_changed_scoped(
         parse_diff(&output, &mut changed, &mut excluded)?;
         let output = run_git(root, &numstat_args).await?;
         parse_binary_numstat(&output, &mut excluded)?;
+        true
     } else if head_exists(root).await? {
         diff_args.push("HEAD");
         numstat_args.push("HEAD");
@@ -98,11 +101,18 @@ pub(crate) async fn resolve_changed_scoped(
         parse_diff(&output, &mut changed, &mut excluded)?;
         let output = run_git(root, &numstat_args).await?;
         parse_binary_numstat(&output, &mut excluded)?;
+        true
     } else {
         let indexed = run_git(root, &["ls-files", "-z"]).await?;
         collect_current_worktree_paths(root, &indexed, &mut changed, eligible_targets).await?;
-    }
+        false
+    };
     changed.retain(|path, _| !excluded.contains(path));
+    // Unborn-indexed ranges already use Python physical rows, like untracked files.
+    if patch_ranges {
+        changed =
+            translate_current_ranges(root, normalize_changed(changed), eligible_targets).await?;
+    }
 
     let untracked = run_git(root, &["ls-files", "--others", "--exclude-standard", "-z"]).await?;
     collect_current_worktree_paths(root, &untracked, &mut changed, eligible_targets).await?;
@@ -430,26 +440,13 @@ async fn collect_current_worktree_paths(
             WorkerRoot::open(root).map_err(|error| TargetError::GitFailed(error.to_string()))?;
         let mut current = BTreeMap::<Utf8PathBuf, Vec<LineRange>>::new();
         for path in paths {
-            let contents = match worker_root.read(&path) {
-                Ok(contents) => contents,
-                Err(WorkspaceError::InvalidPath { .. }) => continue,
-                Err(error) => match worker_root.is_missing(&path) {
-                    Ok(true) => continue,
-                    Ok(false) => return Err(TargetError::GitFailed(error.to_string())),
-                    Err(missing_error) => {
-                        return Err(TargetError::GitFailed(missing_error.to_string()));
-                    }
-                },
+            let Some(contents) = read_current_source(&worker_root, &path)? else {
+                continue;
             };
             if contents.contains(&0) || contents.is_empty() {
                 continue;
             }
-            let mut line_count = usize::from(!contents.ends_with(b"\n"));
-            for byte in &contents {
-                line_count += usize::from(*byte == b'\n');
-            }
-            let end = u32::try_from(line_count)
-                .map_err(|_| TargetError::GitFailed("Python file has too many lines".into()))?;
+            let end = lines::physical_line_count(&contents)?;
             current
                 .entry(path)
                 .or_default()
@@ -463,6 +460,53 @@ async fn collect_current_worktree_paths(
         changed.entry(path).or_default().extend(ranges);
     }
     Ok(())
+}
+
+fn read_current_source(root: &WorkerRoot, path: &Utf8Path) -> Result<Option<Vec<u8>>, TargetError> {
+    match root.read(path) {
+        Ok(contents) => Ok(Some(contents)),
+        Err(WorkspaceError::InvalidPath { .. }) => Ok(None),
+        Err(error) => match root.is_missing(path) {
+            Ok(true) => Ok(None),
+            Ok(false) => Err(TargetError::GitFailed(error.to_string())),
+            Err(missing_error) => Err(TargetError::GitFailed(missing_error.to_string())),
+        },
+    }
+}
+
+async fn translate_current_ranges(
+    root: &Utf8Path,
+    mut changed: BTreeMap<Utf8PathBuf, Vec<LineRange>>,
+    eligible_targets: Option<&[TargetSlice]>,
+) -> Result<BTreeMap<Utf8PathBuf, Vec<LineRange>>, TargetError> {
+    if let Some(targets) = eligible_targets {
+        let keys = targets
+            .iter()
+            .map(|target| logical_path_equality_key(&target.path).into_owned())
+            .collect::<BTreeSet<_>>();
+        changed.retain(|path, _| keys.contains(logical_path_equality_key(path).as_ref()));
+    }
+    if changed.is_empty() {
+        return Ok(changed);
+    }
+    let root = root.to_owned();
+    tokio::task::spawn_blocking(move || {
+        let reader =
+            WorkerRoot::open(root).map_err(|error| TargetError::GitFailed(error.to_string()))?;
+        let mut physical = BTreeMap::new();
+        for (path, ranges) in changed {
+            let Some(contents) = read_current_source(&reader, &path)? else {
+                continue;
+            };
+            if contents.is_empty() || contents.contains(&0) {
+                continue;
+            }
+            physical.insert(path, lines::translate(&contents, &ranges)?);
+        }
+        Ok(physical)
+    })
+    .await
+    .map_err(|error| TargetError::GitFailed(error.to_string()))?
 }
 
 fn is_python(path: &Utf8Path) -> bool {

@@ -119,6 +119,10 @@ name = "generate_changed_context"
 root = "ChangedContextAuditMain"
 
 [[lean_exe]]
+name = "generate_changed_lines"
+root = "ChangedLinesAuditMain"
+
+[[lean_exe]]
 name = "generate_process_output"
 root = "ProcessOutputAuditMain"
 
