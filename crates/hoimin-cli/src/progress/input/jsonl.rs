@@ -2,18 +2,8 @@ use std::io::BufRead;
 use std::path::Path;
 
 use hoimin_core::{OutputEvent, REPORT_SCHEMA_VERSION, ReportSequence, RunStarted};
-use serde::Deserialize;
 
 use super::{ProgressError, ProgressRunEvent, RunReportDocument, invalid_structure};
-
-pub(super) fn is_event(line: &[u8]) -> bool {
-    #[derive(Deserialize)]
-    struct Kind {
-        #[serde(rename = "kind")]
-        _kind: String,
-    }
-    serde_json::from_slice::<Kind>(line).is_ok()
-}
 
 /// Reuses storage for one nonblank physical line, including a final line
 /// without a newline. No event-history buffer is retained.

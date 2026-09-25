@@ -30,27 +30,27 @@
 **Files:** new `crates/hoimin-cli/src/progress/input/dispatch.rs`; external benchmark artifacts in `/tmp/hoimin-batch-604-632/625-benchmark`.
 **Interfaces:** public `progress::read_report` unchanged; private probe returns optional format/schema evidence.
 
-- [ ] Build unchanged release, generate public run JSON/JSONL report, and preserve a linked baseline read_report executable plus same input bytes.
-- [ ] Write probe tests with a counting Read and 256-KiB body. First implement the full-map baseline behavior; assert less than 128 consumed bytes and observe actual body-size failure.
-- [ ] Add parser integration cases before optimizing: field order, schema eras, opaque config, malformed suffixes and duplicate fields.
+- [x] Build unchanged release, generate public run JSON/JSONL report, and preserve a linked baseline read_report executable plus same input bytes.
+- [x] Write probe tests with a counting Read and 256-KiB body. First implement the full-map baseline behavior; assert less than 128 consumed bytes and observe actual body-size failure.
+- [x] Add parser integration cases before optimizing: field order, schema eras, opaque config, malformed suffixes and duplicate fields.
 
 ### Task 2: Prefix dispatch
 
 **Files:** `progress/input.rs`, `progress/input/jsonl.rs`, new `progress/input/dispatch.rs`, `tests/progress.rs`.
 **Interfaces:** `probe` distinguishes document/event and u32 schema; read_report still returns InputReport/ProgressError.
 
-- [ ] Stop the probe at sufficient top-level evidence using captured result and explicit serde stop error; never accept a report on probe success alone.
-- [ ] Replace full Kind/ReportHeader probes with combined evidence while retaining first-line and document fallback behavior.
-- [ ] Run deterministic gate and progress/heap/Lean-consumer regressions; expect pass with fixed prefix reads and unchanged semantic acceptance.
-- [ ] Rebuild release, link the same public timing probe, assert identical serialized mutant output and measure three rounds of 31 post-warmup reads per implementation.
+- [x] Stop the probe at sufficient top-level evidence using captured result and explicit serde stop error; never accept a report on probe success alone.
+- [x] Replace full Kind/ReportHeader probes with combined evidence while retaining first-line and document fallback behavior.
+- [x] Run deterministic gate and progress/heap/Lean-consumer regressions; expect pass with fixed prefix reads and unchanged semantic acceptance.
+- [x] Rebuild release, link the same public timing probe, assert identical serialized-mutant digests and measure three rounds of 31 post-warmup reads per implementation.
 
 ### Task 3: Reviews and verification
 
 **Files:** `docs/reviews/2026-09-25-issue-625-progress-dispatch.md`, this plan.
 
-- [ ] Record three implementation and test self-reviews with findings; obtain independent reviewer via root/team.
-- [ ] Run full workspace, exact CI workspace/parser clippy, workspace/vendor fmt and diff check.
-- [ ] Record release timings, sample protocol, semantic equality, limitations and final commit. Do not push or merge.
+- [x] Record three implementation and test self-reviews with findings; obtain independent reviewer via root/team.
+- [x] Run full workspace, exact CI workspace/parser clippy, workspace/vendor fmt and diff check.
+- [x] Record release timings, sample protocol, semantic equality, limitations and final commit. Do not push or merge.
 
 ## Plan self-reviews
 

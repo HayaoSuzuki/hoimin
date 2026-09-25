@@ -18,7 +18,7 @@ Add a deterministic probe read-count gate with a large candidate body: the prefi
 
 Public regressions cover v2/v3 documents with every top-level field first/last, compact and pretty encodings, reordered JSONL headers, unknown/duplicate fields and trailing malformed data, and opaque configuration. Existing progress/heap/Lean consumer tests continue to apply.
 
-Build release once before edits, generate 24 survivors with 256-KiB literals using public run, and link an external read_report probe. Reuse the exact report file and identical timing loop (two warmups, 31 samples, three rounds) after the change. Compare serialized mutants byte-for-byte and report medians and limitations, not a guaranteed speedup for ordinary reports.
+Build release once before edits, generate 24 survivors with 256-KiB literals using public run, and link an external read_report probe. Reuse the exact report file and identical timing loop (two warmups, 31 samples, three rounds) after the change. Compare serialized-mutant BLAKE3 digests across benchmark executables and complete mutant values in integration fixtures and report medians and limitations, not a guaranteed speedup for ordinary reports.
 
 ## Design self-reviews
 
