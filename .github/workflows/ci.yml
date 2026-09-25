@@ -138,6 +138,7 @@ jobs:
             HoiminOracle.BoundedCandidateDiscoveryModel
             HoiminOracle.BudgetModel
             HoiminOracle.CandidateRankingModel
+            HoiminOracle.PagingModel
             HoiminOracle.CandidateSpanModel
             HoiminOracle.ChangedTargetModel
             HoiminOracle.CleanupCapabilityModel
@@ -221,6 +222,7 @@ jobs:
             BoundedCandidateDiscoveryAuditMain
             BudgetMain
             CandidateRankingAuditMain
+            PagingAuditMain
             CandidateSpanAuditMain
             ChangedTargetAuditMain
             CleanupCapabilityAuditMain
@@ -333,6 +335,7 @@ jobs:
             'generate_resume_copy|corpus/resume-copy.jsonl|sensitivity'
             'generate_nullable_gate|corpus/nullable-gate.jsonl|sensitivity'
             'generate_prepared_namespace|corpus/prepared-namespace.jsonl|sensitivity'
+            'generate_paging|corpus/paging.jsonl|sensitivity'
           )
           for entry in "${generators[@]}"; do
             IFS='|' read -r executable corpus sensitivity <<< "$entry"
