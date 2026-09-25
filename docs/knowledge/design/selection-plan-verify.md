@@ -67,10 +67,26 @@ sources:
   resource: ../../superpowers/specs/2026-09-14-issue-456-validation-context-design.md
   working_tree: untracked
   sha256: a3f08279a0c60e016cef85ba37827f2b3be4fd5006bbb2068cce2c75bdf8991b
+- id: issue-600-design
+  resource: ../../superpowers/specs/2026-09-25-issue-600-target-membership-design.md
+  revision: fb7f1f1a44d94a8ea6e5e19dfba8efbb6dc656c1
+  working_tree: clean
+  sha256: cd568b65781ba9aee5262f8452e8516d707fcdd74081097fcca9855cd5a86aa9
+
 - id: issue-456-review
   resource: ../../superpowers/reports/2026-09-14-issue-456-validation-context-review.md
   working_tree: untracked
   sha256: 5042ef83fb71837543be9fb358b2453931bdf70ce77f6033381e5756632b09f0
+- id: issue-600-review
+  resource: ../../superpowers/reports/2026-09-25-issue-600-target-membership-review.md
+  working_tree: untracked
+  sha256: d4823d9add9a31d43a0cd1e80be6126b0593b80e1ca5638e44f9f766dcb593fc
+- id: issue-600-code
+  resource: ../../../crates/hoimin-cli/src/plan.rs
+  working_tree: clean
+  revision: 5c5dbea5b97eb1a4a58be3e90c272ba86c61ab33
+  sha256: 6c25091c136ce679c1d1b1d4530977afefa016c79322fcd5cd858c35c71fb44f
+
 - id: issue-456-code
   resource: ../../../crates/hoimin-cli/src/plan.rs
   working_tree: modified
@@ -224,6 +240,20 @@ fileまたはlineだけを指定した場合、rootからの探索は指定フ�
 [^issue-456-review]: [2026-09-14-issue-456-validation-context-review.md](../../superpowers/reports/2026-09-14-issue-456-validation-context-review.md)。
 
 [^issue-456-code]: [plan.rs](../../../crates/hoimin-cli/src/plan.rs)。
+
+# verifyの対象所属索引（Issue #600）
+
+要求候補が選択対象に含まれるかの確認には、対象一覧から一度作る `HashSet<&Utf8Path>` を使う。キーに `Utf8Path` を借用することで、従来のパス成分による同値性を保つ。文字列への変換、大小文字の統一、ファイルシステム上の実体への解決は行わない。IDの存在確認、対象所属、ファイル読取り、descriptorとstable IDの検証という順序も維持する。[^issue-600-design][^issue-600-code]
+
+対象数Fの索引構築と要求候補数Cの検索により、従来の候補ごとの全対象走査を除く。ハッシュ集合の通常の前提では所属確認はO(F+C)となるが、パス長とハッシュ衝突の費用、候補検証や再発見、verify全体の計算量を含む保証ではない。保存形式、ランキング、strict/diverseの選択は変更しない。[^issue-600-design]
+
+操作回数の回帰テスト、パス同値性と複数エラーの順序確認、公開API・CLIの観測結果と限界は検証記録を参照する。[^issue-600-review]
+
+[^issue-600-design]: [Issue #600: Index verify target membership](../../superpowers/specs/2026-09-25-issue-600-target-membership-design.md)。
+
+[^issue-600-review]: [Issue #600: Target membership review and measurements](../../superpowers/reports/2026-09-25-issue-600-target-membership-review.md)。
+
+[^issue-600-code]: [plan.rs](../../../crates/hoimin-cli/src/plan.rs)。
 
 # 固定バッチの範囲選択（Issue #454）
 

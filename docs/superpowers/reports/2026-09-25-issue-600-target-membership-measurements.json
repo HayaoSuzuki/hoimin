@@ -1,0 +1,343 @@
+{
+  "metadata": {
+    "binary": "/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-600/target/release/hoimin",
+    "sha256": "4ad6d8c92cb916c7c1fce9f6075e67957a0afac7b2c01cbb8e842915838c1dd2",
+    "platform": "macOS-15.7.7-arm64-arm-64bit",
+    "python": "3.12.6",
+    "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+    "fixture_base": "/tmp/hoimin-perf-audit",
+    "base_revision": "5c5dbea5b97eb1a4a58be3e90c272ba86c61ab33",
+    "working_tree": "modified",
+    "production_source_sha256": "6c25091c136ce679c1d1b1d4530977afefa016c79322fcd5cd858c35c71fb44f",
+    "working_tree_note": "Production code clean at implementation commit; documentation changes uncommitted during measurement.",
+    "api_validation": "Every call succeeded and asserted verification_selection.selected == 10000."
+  },
+  "api_records": [
+    {
+      "files": 1000,
+      "position": "first",
+      "repeat": 0,
+      "seconds": 0.1454915
+    },
+    {
+      "files": 1000,
+      "position": "last",
+      "repeat": 0,
+      "seconds": 0.130423042
+    },
+    {
+      "files": 1000,
+      "position": "last",
+      "repeat": 1,
+      "seconds": 0.107330375
+    },
+    {
+      "files": 1000,
+      "position": "first",
+      "repeat": 1,
+      "seconds": 0.11483
+    },
+    {
+      "files": 1000,
+      "position": "first",
+      "repeat": 2,
+      "seconds": 0.129133292
+    },
+    {
+      "files": 1000,
+      "position": "last",
+      "repeat": 2,
+      "seconds": 0.112966084
+    },
+    {
+      "files": 4000,
+      "position": "first",
+      "repeat": 0,
+      "seconds": 0.29872375
+    },
+    {
+      "files": 4000,
+      "position": "last",
+      "repeat": 0,
+      "seconds": 0.287497167
+    },
+    {
+      "files": 4000,
+      "position": "last",
+      "repeat": 1,
+      "seconds": 0.220570167
+    },
+    {
+      "files": 4000,
+      "position": "first",
+      "repeat": 1,
+      "seconds": 0.218606125
+    },
+    {
+      "files": 4000,
+      "position": "first",
+      "repeat": 2,
+      "seconds": 0.306601
+    },
+    {
+      "files": 4000,
+      "position": "last",
+      "repeat": 2,
+      "seconds": 0.243515167
+    },
+    {
+      "files": 10000,
+      "position": "first",
+      "repeat": 0,
+      "seconds": 0.709277416
+    },
+    {
+      "files": 10000,
+      "position": "last",
+      "repeat": 0,
+      "seconds": 0.745698792
+    },
+    {
+      "files": 10000,
+      "position": "last",
+      "repeat": 1,
+      "seconds": 0.6984715
+    },
+    {
+      "files": 10000,
+      "position": "first",
+      "repeat": 1,
+      "seconds": 0.54100675
+    },
+    {
+      "files": 10000,
+      "position": "first",
+      "repeat": 2,
+      "seconds": 0.49380675
+    },
+    {
+      "files": 10000,
+      "position": "last",
+      "repeat": 2,
+      "seconds": 0.651819333
+    }
+  ],
+  "cli_records": [
+    {
+      "files": 1000,
+      "position": "first",
+      "repeat": 0,
+      "seconds": 0.9597127080196515,
+      "exit_code": 3,
+      "baseline_termination": {
+        "Exit": 1
+      },
+      "mutants": 0,
+      "selected": 10000
+    },
+    {
+      "files": 1000,
+      "position": "last",
+      "repeat": 0,
+      "seconds": 0.6907677910057828,
+      "exit_code": 3,
+      "baseline_termination": {
+        "Exit": 1
+      },
+      "mutants": 0,
+      "selected": 10000
+    },
+    {
+      "files": 1000,
+      "position": "last",
+      "repeat": 1,
+      "seconds": 0.6859135830309242,
+      "exit_code": 3,
+      "baseline_termination": {
+        "Exit": 1
+      },
+      "mutants": 0,
+      "selected": 10000
+    },
+    {
+      "files": 1000,
+      "position": "first",
+      "repeat": 1,
+      "seconds": 0.731969166896306,
+      "exit_code": 3,
+      "baseline_termination": {
+        "Exit": 1
+      },
+      "mutants": 0,
+      "selected": 10000
+    },
+    {
+      "files": 1000,
+      "position": "first",
+      "repeat": 2,
+      "seconds": 0.674011416034773,
+      "exit_code": 3,
+      "baseline_termination": {
+        "Exit": 1
+      },
+      "mutants": 0,
+      "selected": 10000
+    },
+    {
+      "files": 1000,
+      "position": "last",
+      "repeat": 2,
+      "seconds": 0.6525140420999378,
+      "exit_code": 3,
+      "baseline_termination": {
+        "Exit": 1
+      },
+      "mutants": 0,
+      "selected": 10000
+    },
+    {
+      "files": 4000,
+      "position": "first",
+      "repeat": 0,
+      "seconds": 2.578918999992311,
+      "exit_code": 3,
+      "baseline_termination": {
+        "Exit": 1
+      },
+      "mutants": 0,
+      "selected": 10000
+    },
+    {
+      "files": 4000,
+      "position": "last",
+      "repeat": 0,
+      "seconds": 2.4176613331073895,
+      "exit_code": 3,
+      "baseline_termination": {
+        "Exit": 1
+      },
+      "mutants": 0,
+      "selected": 10000
+    },
+    {
+      "files": 4000,
+      "position": "last",
+      "repeat": 1,
+      "seconds": 2.5372180830454454,
+      "exit_code": 3,
+      "baseline_termination": {
+        "Exit": 1
+      },
+      "mutants": 0,
+      "selected": 10000
+    },
+    {
+      "files": 4000,
+      "position": "first",
+      "repeat": 1,
+      "seconds": 2.5736768329516053,
+      "exit_code": 3,
+      "baseline_termination": {
+        "Exit": 1
+      },
+      "mutants": 0,
+      "selected": 10000
+    },
+    {
+      "files": 4000,
+      "position": "first",
+      "repeat": 2,
+      "seconds": 2.446176249999553,
+      "exit_code": 3,
+      "baseline_termination": {
+        "Exit": 1
+      },
+      "mutants": 0,
+      "selected": 10000
+    },
+    {
+      "files": 4000,
+      "position": "last",
+      "repeat": 2,
+      "seconds": 2.5836490830406547,
+      "exit_code": 3,
+      "baseline_termination": {
+        "Exit": 1
+      },
+      "mutants": 0,
+      "selected": 10000
+    },
+    {
+      "files": 10000,
+      "position": "first",
+      "repeat": 0,
+      "seconds": 6.337298666941933,
+      "exit_code": 3,
+      "baseline_termination": {
+        "Exit": 1
+      },
+      "mutants": 0,
+      "selected": 10000
+    },
+    {
+      "files": 10000,
+      "position": "last",
+      "repeat": 0,
+      "seconds": 5.801520208013244,
+      "exit_code": 3,
+      "baseline_termination": {
+        "Exit": 1
+      },
+      "mutants": 0,
+      "selected": 10000
+    },
+    {
+      "files": 10000,
+      "position": "last",
+      "repeat": 1,
+      "seconds": 6.311480709002353,
+      "exit_code": 3,
+      "baseline_termination": {
+        "Exit": 1
+      },
+      "mutants": 0,
+      "selected": 10000
+    },
+    {
+      "files": 10000,
+      "position": "first",
+      "repeat": 1,
+      "seconds": 6.50610883301124,
+      "exit_code": 3,
+      "baseline_termination": {
+        "Exit": 1
+      },
+      "mutants": 0,
+      "selected": 10000
+    },
+    {
+      "files": 10000,
+      "position": "first",
+      "repeat": 2,
+      "seconds": 7.385619249893352,
+      "exit_code": 3,
+      "baseline_termination": {
+        "Exit": 1
+      },
+      "mutants": 0,
+      "selected": 10000
+    },
+    {
+      "files": 10000,
+      "position": "last",
+      "repeat": 2,
+      "seconds": 6.449651209055446,
+      "exit_code": 3,
+      "baseline_termination": {
+        "Exit": 1
+      },
+      "mutants": 0,
+      "selected": 10000
+    }
+  ]
+}

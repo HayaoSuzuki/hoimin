@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::Path;
 
 use camino::{Utf8Path, Utf8PathBuf};
@@ -722,6 +722,8 @@ fn record_map(records: &[FingerprintInputFile]) -> BTreeMap<Utf8PathBuf, String>
 struct ValidationStats {
     contexts: usize,
     source_bytes: usize,
+    target_path_visits: usize,
+    membership_queries: usize,
 }
 
 async fn validate_requested_candidates(
@@ -796,13 +798,28 @@ async fn validate_requested_descriptors(
             by_path.entry(&candidate.path).or_default().push(candidate);
         }
     }
+    // Keep component-based path equality, including equivalent path spellings.
+    let selected_paths: HashSet<&Utf8Path> = targets
+        .iter()
+        .map(|target| {
+            #[cfg(test)]
+            if let Some(stats) = stats.as_deref_mut() {
+                stats.target_path_visits += 1;
+            }
+            target.path.as_path()
+        })
+        .collect();
     let mut requested_paths = BTreeSet::new();
     let mut results = BTreeMap::new();
     for candidate_id in requested_ids {
         let candidate = candidates.get(candidate_id.as_str()).ok_or_else(|| {
             PlanError::CandidateInvalid(format!("candidate id is not in the plan: {candidate_id}"))
         })?;
-        if !targets.iter().any(|target| target.path == candidate.path) {
+        #[cfg(test)]
+        if let Some(stats) = stats.as_deref_mut() {
+            stats.membership_queries += 1;
+        }
+        if !selected_paths.contains(candidate.path.as_path()) {
             return Err(PlanError::CandidateInvalid(format!(
                 "candidate target is not selected: {}",
                 candidate.path
