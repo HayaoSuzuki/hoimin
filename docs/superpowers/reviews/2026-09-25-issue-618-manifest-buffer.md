@@ -27,3 +27,9 @@ Cargo uses the assigned `target/batch-verify` cache with one build job, no dev/t
 ## Independent review
 
 The coordinator independently reviewed the production drop and the allocator/public test and found no blockers. Review covered owned deserialization, allocation uniqueness, realloc identity, the blocking gate's release on RED failure, bounded waits, preview identity/body/rank correspondence and absent execution marker. This evidence establishes early buffer release; it does not measure RSS or overall prepare peak.
+
+## Rebase verification
+
+Rebased unpublished implementation `a5183a6` and design `34d10f7` onto main `d2277bf`, yielding `d1ad63e` and `22d371e`. Both range-diff entries are unchanged (`=`); no conflicts occurred.
+
+After cleaning only core/CLI artifacts, fresh lifetime/plan tests passed 87 tests with 1 ignored (1 lifetime and 86 plan tests). Both exact CI clippy commands, both format checks and diff checks passed on this final base. The complete 2367-test workspace result above belongs to the pre-rebase implementation; final-base checks cover the input lifetime and existing public plan validation behavior. No source changes followed these checks.
