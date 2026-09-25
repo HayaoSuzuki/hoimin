@@ -86,6 +86,7 @@ At least one target selector is required:
 - `--symbol MODULE:QUALNAME` selects a function, method, or class resolved below `--source` and may be repeated.
 - `--changed` restricts selection to staged, unstaged, and untracked Git changes. It requires `--source`.
   Git change ranges are mapped to Python physical lines (LF, CRLF, or CR) before intersection with `--line`. A Git LF-delimited line can contain several CR-delimited Python lines; original source bytes are preserved.
+  For ordinary tracked changes, Git patch output is restricted to resolved targets in bounded literal-path batches. A selected rename or copy keeps the full rename-aware diff to preserve Git's original pairing and line ranges; the metadata inventory still covers the repository.
 - `--changed-context N` includes up to N neighboring lines on each side of Git changes. It requires `--changed`, defaults to 0, and accepts integers from 0 through 1073741823. With N > 0, a pure deletion selects up to N surviving lines on each side of the deletion boundary. Ranges are clipped at the current file boundaries; empty and deleted files contribute no lines. Untracked files still select their complete contents.
 - `--diff-base REV` uses the merge base of `REV` and `HEAD` for `--changed`. It is invalid without `--changed`.
 
