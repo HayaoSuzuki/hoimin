@@ -9,6 +9,7 @@ use tokio::process::Command;
 
 mod lines;
 mod paths;
+mod tracked;
 
 use paths::GitPathScope;
 
@@ -90,18 +91,26 @@ pub(crate) async fn resolve_changed_scoped(
         diff_args.push(&base);
         numstat_args.push("--merge-base");
         numstat_args.push(&base);
-        let output = run_git(root, &diff_args).await?;
-        parse_diff(&output, &mut changed, &mut excluded, &scope)?;
-        let output = run_git(root, &numstat_args).await?;
-        parse_binary_numstat(&output, &mut excluded, &scope)?;
+        (changed, excluded) = tracked::collect(
+            root,
+            &diff_args,
+            &numstat_args,
+            &scope,
+            eligible_targets.is_some(),
+        )
+        .await?;
         true
     } else if head_exists(root).await? {
         diff_args.push("HEAD");
         numstat_args.push("HEAD");
-        let output = run_git(root, &diff_args).await?;
-        parse_diff(&output, &mut changed, &mut excluded, &scope)?;
-        let output = run_git(root, &numstat_args).await?;
-        parse_binary_numstat(&output, &mut excluded, &scope)?;
+        (changed, excluded) = tracked::collect(
+            root,
+            &diff_args,
+            &numstat_args,
+            &scope,
+            eligible_targets.is_some(),
+        )
+        .await?;
         true
     } else {
         let indexed = run_git(root, &["ls-files", "-z"]).await?;
@@ -163,7 +172,19 @@ async fn ensure_git_worktree(root: &Utf8Path) -> Result<(), TargetError> {
 }
 
 async fn run_git(root: &Utf8Path, args: &[&str]) -> Result<Vec<u8>, TargetError> {
-    let output = Command::new("git")
+    let mut command = Command::new("git");
+    if args.first() == Some(&"--literal-pathspecs") {
+        // These options conflict with explicit literal mode; they must not change
+        // the meaning of paths already selected by the target resolver.
+        for name in [
+            "GIT_GLOB_PATHSPECS",
+            "GIT_NOGLOB_PATHSPECS",
+            "GIT_ICASE_PATHSPECS",
+        ] {
+            command.env_remove(name);
+        }
+    }
+    let output = command
         .args(args)
         .current_dir(root)
         .output()
