@@ -1,6 +1,6 @@
 # Issue 604 review and verification record
 
-Design and plan were committed as `b56a217` before test/product changes, followed by the pre-implementation coordinate correction `45a1f2a`. Base is Issue 606 commit `86ab31d`. Their three self-review passes are recorded in the design and plan. User authorization covers implementation and commits; parent handles independent review/publication.
+Design and plan were committed as `b56a217` before test/product changes, followed by the pre-implementation coordinate correction `45a1f2a`. The initial base was Issue 606 commit `86ab31d`; the post-merge rebase is recorded below. Their three self-review passes are recorded in the design and plan. User authorization covers implementation and commits; parent handles independent review/publication.
 
 ## Implementation self-reviews
 
@@ -30,3 +30,19 @@ Resource flags: `CARGO_TARGET_DIR=/Users/hayao/RustroverProjects/hoimin/target/b
 ## Independent review
 
 The Issue 609 implementer independently reviewed the diff while the full suite ran. Parent relayed no blocking findings: detail fields copied from the same validated candidate, unchanged ID/selection ordering, closed schema 2 with column minimum 0, debug escaping and literal multiline fixtures, and dry-run marker checks were assessed.
+
+## Rebase after Issue 606 merged
+
+Rebased the unpublished branch onto `origin/main` at `efe35318` (PR 636), excluding the old Issue 606 branch tip `86ab31d`. No conflicts occurred. `git range-diff 86ab31d..737a15e origin/main..HEAD` reported all three patches unchanged: `b56a217` → `be2d9e3`, `45a1f2a` → `d298054`, and `737a15e` → `0b296ab`. This keeps only Issue 604 changes above the merged main history.
+
+The shared Cargo cache was reserved by the coordinator for Issue 632. After its explicit release, `cargo clean -p hoimin-core -p hoimin-cli` in the assigned cache removed 37 files (219.3 MiB) before rebuilding, preventing stale local package artifacts from another worktree.
+
+Post-rebase verification:
+
+- `cargo test -p hoimin-cli --test plan --test cli_config --test selection_heap --test lean_paging_oracle -- --test-threads=1`: exit 0; 144 passed, 0 failed, 1 ignored. This includes all preview and plan public-CLI cases, plus the merged offset selection allocation and paging correspondence tests.
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`: exit 0.
+- `cargo clippy --locked -p littrs-ruff-python-parser --lib --no-deps -- -D warnings`: exit 0.
+- Workspace and vendored-parser `cargo fmt ... -- --check`: exit 0.
+- `git diff --check`: exit 0.
+
+The earlier full-workspace result above belongs to the original branch base; the checks listed here were freshly run on the rebased commits. No product or test changes were needed during rebase.
