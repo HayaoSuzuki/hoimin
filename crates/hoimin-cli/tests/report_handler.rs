@@ -24,6 +24,7 @@ struct SharedWriter(Arc<Mutex<WriterState>>);
 struct WriterState {
     bytes: Vec<u8>,
     flushes: usize,
+    writes: usize,
 }
 
 #[test]
@@ -429,7 +430,9 @@ fn assert_event_optionals(events: &[OutputEvent], current: bool) {
 
 impl Write for SharedWriter {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.0.lock().unwrap().bytes.extend_from_slice(buf);
+        let mut state = self.0.lock().unwrap();
+        state.writes += 1;
+        state.bytes.extend_from_slice(buf);
         Ok(buf.len())
     }
 
@@ -1893,5 +1896,191 @@ fn test_resource_control() -> hoimin_core::ResourceControl {
     hoimin_core::ResourceControl {
         mode: hoimin_core::ResourceMode::Hard,
         mechanism: "test_supplied_hard".into(),
+    }
+}
+
+#[test]
+fn json_diagnostics_coalesce_writes_without_changing_bytes_or_event_flushes() {
+    let spool = tempfile::tempdir().unwrap();
+    for format in [OutputFormat::Json, OutputFormat::Jsonl] {
+        for unit in ["x", "x\n", "\"\\\n\t\r\u{0000}é"] {
+            for size in [16 * 1024, 1024 * 1024] {
+                let message = unit.repeat(size / unit.len());
+                let stderr = SharedWriter::default();
+                let stdout = SharedWriter::default();
+                let mut handler =
+                    ReportHandler::new(format, stdout.clone(), stderr.clone(), spool.path())
+                        .unwrap();
+                let event = OutputEvent::Diagnostic(Diagnostic::new(
+                    "run",
+                    1,
+                    "error",
+                    "baseline.output",
+                    message.clone(),
+                ));
+                let expected = serde_json::to_string(&event).unwrap() + "\n";
+                let ack = handler
+                    .handle(EmitOutput {
+                        id: EffectId(42),
+                        event,
+                    })
+                    .unwrap();
+                assert_eq!(ack.id, EffectId(42));
+                let state = stderr.0.lock().unwrap();
+                assert_eq!(state.bytes, expected.as_bytes());
+                assert_eq!(state.flushes, 1);
+                let value: serde_json::Value = serde_json::from_slice(&state.bytes).unwrap();
+                assert_eq!(value["message"], message);
+                let bound = expected.len().div_ceil(4096) + 8;
+                eprintln!(
+                    "diagnostic format={format:?} payload={} encoded={} writes={} bound={bound}",
+                    message.len(),
+                    expected.len(),
+                    state.writes
+                );
+                assert!(
+                    state.writes <= bound,
+                    "unbuffered diagnostic writes={} bound={bound}",
+                    state.writes
+                );
+                drop(state);
+                assert!(stdout.text().is_empty());
+                assert_eq!(stdout.flushes(), 0);
+            }
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+enum DiagnosticFault {
+    PartialError,
+    Zero,
+    Interrupted,
+    Flush,
+}
+
+#[derive(Clone)]
+struct DiagnosticFaultWriter {
+    mode: DiagnosticFault,
+    state: Arc<Mutex<WriterState>>,
+}
+
+impl Write for DiagnosticFaultWriter {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        let mut state = self.state.lock().unwrap();
+        state.writes += 1;
+        match (self.mode, state.writes) {
+            (DiagnosticFault::PartialError, 1) => {
+                let n = bytes.len().min(4);
+                state.bytes.extend_from_slice(&bytes[..n]);
+                return Ok(n);
+            }
+            (DiagnosticFault::PartialError, 2) => {
+                return Err(io::Error::other("transient diagnostic error"));
+            }
+            (DiagnosticFault::Zero, _) => return Ok(0),
+            (DiagnosticFault::Interrupted, 1) => return Err(io::ErrorKind::Interrupted.into()),
+            _ => {}
+        }
+        state.bytes.extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        self.state.lock().unwrap().flushes += 1;
+        if matches!(self.mode, DiagnosticFault::Flush) {
+            Err(io::Error::other("diagnostic flush error"))
+        } else {
+            Ok(())
+        }
+    }
+}
+
+#[test]
+fn buffered_diagnostic_failures_do_not_acknowledge_or_retry_on_drop() {
+    let spool = tempfile::tempdir().unwrap();
+    for format in [OutputFormat::Json, OutputFormat::Jsonl] {
+        for mode in [
+            DiagnosticFault::PartialError,
+            DiagnosticFault::Zero,
+            DiagnosticFault::Flush,
+        ] {
+            for message in ["small".to_owned(), "x\n".repeat(16384)] {
+                let state = Arc::new(Mutex::new(WriterState::default()));
+                let writer = DiagnosticFaultWriter {
+                    mode,
+                    state: state.clone(),
+                };
+                let mut handler =
+                    ReportHandler::new(format, io::sink(), writer, spool.path()).unwrap();
+                let failure = handler
+                    .handle(EmitOutput {
+                        id: EffectId(77),
+                        event: OutputEvent::Diagnostic(Diagnostic::new(
+                            "run",
+                            1,
+                            "error",
+                            "baseline.output",
+                            message,
+                        )),
+                    })
+                    .unwrap_err();
+                assert_eq!(failure.id, EffectId(77));
+                assert!(
+                    matches!(failure.failure, EffectFailure::ReportIo { ref operation, .. } if operation == "write JSON Lines event")
+                );
+                drop(handler);
+                let state = state.lock().unwrap();
+                match mode {
+                    DiagnosticFault::PartialError => {
+                        assert_eq!(state.writes, 2, "retried after write error: {format:?}");
+                        assert!(state.bytes.len() <= 4);
+                        assert_eq!(state.flushes, 0);
+                    }
+                    DiagnosticFault::Zero => {
+                        assert_eq!(state.writes, 1);
+                        assert!(state.bytes.is_empty());
+                    }
+                    DiagnosticFault::Flush => assert_eq!(state.flushes, 1),
+                    DiagnosticFault::Interrupted => unreachable!(),
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn buffered_diagnostics_retry_interrupted_writes_and_flush_each_record() {
+    let spool = tempfile::tempdir().unwrap();
+    for format in [OutputFormat::Json, OutputFormat::Jsonl] {
+        let state = Arc::new(Mutex::new(WriterState::default()));
+        let writer = DiagnosticFaultWriter {
+            mode: DiagnosticFault::Interrupted,
+            state: state.clone(),
+        };
+        let mut handler = ReportHandler::new(format, io::sink(), writer, spool.path()).unwrap();
+        let mut expected = String::new();
+        for sequence in 1..=3 {
+            let event = OutputEvent::Diagnostic(Diagnostic::new(
+                "run",
+                sequence,
+                "error",
+                "baseline.output",
+                format!("record-{sequence}\n"),
+            ));
+            expected += &(serde_json::to_string(&event).unwrap() + "\n");
+            assert_eq!(
+                handler
+                    .handle(EmitOutput {
+                        id: EffectId(sequence),
+                        event
+                    })
+                    .unwrap()
+                    .id,
+                EffectId(sequence)
+            );
+            let observed = state.lock().unwrap();
+            assert_eq!(observed.bytes, expected.as_bytes());
+            assert_eq!(observed.flushes, usize::try_from(sequence).unwrap());
+        }
     }
 }

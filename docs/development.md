@@ -948,3 +948,11 @@ Run `cargo test -p hoimin-core --test source_encoding --test candidate_policy`
 and `cargo test -p hoimin-cli --test source_encoding --test plan` for codec
 changes. The CLI encoding fixture observes CPython worker bytes and values;
 existing UTF-8 Lean/source-index proofs do not establish codec correspondence.
+
+## Target discovery inventory
+
+`hoimin_core::resolve_explicit` consumes an inventory already filtered by discovery.
+Callers apply include/exclude globs, ignore rules and built-in copy exclusions before
+calling it. The core resolver validates and combines selectors; it does not treat
+pattern strings as literal filenames or independently implement glob matching.
+The CLI uses `target::fs::discover_explicit` for this filtering.
