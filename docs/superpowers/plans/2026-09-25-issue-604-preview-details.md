@@ -11,7 +11,7 @@ No new execution, analysis, selection rules, dependencies, or plan/run schemas. 
 
 ## Review focus
 
-- Same-line mutations have distinct 1-based columns and operator/text tuples.
+- Same-line mutations have distinct 0-based columns and operator/text tuples.
 - Explicit candidate order follows discovery, not argument or rank order.
 - Strict/diverse and offsets retain existing saved-rank selection semantics.
 - Multiline, quoted, tabbed and backslash-containing text stays one human row and round-trips in JSON/JSONL.
@@ -39,9 +39,9 @@ Interface: existing `VerifyPreview::new` receives validated `PlanManifest`; `Pre
 ## Task 2: contract documentation and final gates
 
 Files: `docs/json-schema/verify-preview.schema.json`, `README.md`, this plan, and `docs/superpowers/reviews/2026-09-25-issue-604-preview-details.md`.
-Interface: schema `schema_version.const = 2`; candidate required/property lists match actual public output. `column` is integer minimum 1, `operator` string minimum length 1, both mutation texts strings with empty values allowed.
+Interface: schema `schema_version.const = 2`; candidate required/property lists match actual public output. `column` is integer minimum 0, `operator` string minimum length 1, both mutation texts strings with empty values allowed.
 
-- [ ] Update schema and README to explain new fields, 1-based column, quoted human strings, and the version-1 migration requirement. Compare the public candidate object's keys with the schema's required and property keys in the integration test.
+- [ ] Update schema and README to explain new fields, 0-based column, quoted human strings, and the version-1 migration requirement. Compare the public candidate object's keys with the schema's required and property keys in the integration test.
 - [ ] Perform three separate implementation and test self-reviews and record concrete findings/fixes; design/plan reviews are below/in the spec.
 - [ ] Run workspace tests, workspace/vendor formatting checks, workspace all-target/all-feature clippy and parser clippy. Expected: pass; report any environment failures by name. No Python logic changes or Lean commands are planned.
 - [ ] Commit verified code/tests/schema/docs/review evidence. Parent handles independent review and publication.
@@ -51,3 +51,5 @@ Interface: schema `schema_version.const = 2`; candidate required/property lists 
 1. Requirement coverage: a schema-only test would miss real selection/output behavior. Add public subprocess cases and retain existing rank/discovery/offset comparison tests.
 2. Escaping oracle: deriving the expected escaped string using the production formatter would hide the bug. Require literal escaped output and actual physical line counts, alongside parsed JSON text equality.
 3. Compatibility and resource review: the old version assertion must change alongside the schema; empty replacement strings must remain legal. No new dependency is needed for key/required-list comparison. Full workspace checks use the existing assigned cache and flags. Task interfaces match the design; no unresolved placeholder remains.
+
+Pre-implementation correction from the RED fixture audit: the manifest stores 0-based columns (the comparison operators are at 17/31, while line is 2). Preserve that value exactly and use schema minimum 0; do not convert it to a display-only 1-based coordinate. This supersedes the initial draft’s column-base assumption.
