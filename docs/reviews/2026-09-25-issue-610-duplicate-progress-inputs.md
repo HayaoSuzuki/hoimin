@@ -33,3 +33,9 @@ Design/plan commit `29ff92a` preceded code and test changes. The spec and plan e
 The issue-605 reviewer found a regular-file-to-FIFO race between path metadata and a blocking confirmation open. This was a blocker despite confirmation being best-effort. Added an opener regression using a FIFO with no writer; it failed in 1 second with a blocking opener and releases that opener for clean test shutdown. Corrected Unix confirmation to use O_NONBLOCK and inspect descriptor metadata, eliminating the path-check/open race. Nonregular descriptors and open errors suppress only optional byte evidence. The remaining review found bounded buffers, full parser bytes, deferred warnings, barriers and schema preservation sound.
 
 The issue-605 reviewer re-reviewed the nonblocking opener and the deadline/rescue regression, confirmed the blocker resolved, and reported no remaining findings. Final workspace verification includes the fix.
+
+## Rebase onto merged main
+
+After issue 609 merged, rebased the unpublished branch onto `d4aa1e1` with `git rebase --onto origin/main fix/issue-609-progress-keys`. No conflicts occurred. Rebased design commit is `7a7fc73`; implementation is `38c0d33`. `git range-diff` reports both patches identical to the original `29ff92a` / `2d3eb70` changes. The new base additionally contains issue 631's selection allocation fix, which does not modify progress.
+
+Rebase verification passed: duplicate units 5; progress integration 78; history, JSONL and comparison heap gates 3; Lean progress oracle consumers 7. Exact CI workspace all-target/all-feature clippy and parser clippy commands both exited 0, as did workspace/vendor fmt and `git diff --check`. Logs are `/tmp/hoimin-batch-604-632/610-rebase-{unit,focused,clippy,parser-clippy}.log`. No new integration concern or failure justified repeating the already successful full workspace suite. Root handles publication; this agent did not push or create a PR.
