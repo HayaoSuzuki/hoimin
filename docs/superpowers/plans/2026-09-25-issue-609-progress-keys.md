@@ -31,10 +31,10 @@
 
 **Interfaces:** consumes public `compare_reports(&[InputReport], NonZeroUsize) -> ProgressResult`; public output unchanged.
 
-- [ ] Build small and large pairs before measurement, keeping candidate count fixed. Measure unique, duplicate and inconclusive fallback plus matching IDs in one isolated allocator test. Assert literal counters and `large_peak <= small_peak + 64 * 1024`.
-- [ ] Run `cargo test -p hoimin-cli --test progress_compare_heap -- --nocapture`; expect allocation-bound failure on owned keys and record peak values.
-- [ ] Replace owned key fields with `&Utf8Path`, `&str`, `Option<&str>`, derive Copy and propagate report lifetimes. Replace key clones with copy/dereference and `.cloned()` with `.copied()`.
-- [ ] Run the same command; expect all cases pass with bounded peak growth.
+- [x] Build small and large pairs before measurement, keeping candidate count fixed. Measure unique, duplicate and inconclusive fallback plus matching IDs in one isolated allocator test. Assert literal counters and `large_peak <= small_peak + 64 * 1024`.
+- [x] Run `cargo test -p hoimin-cli --test progress_compare_heap -- --nocapture`; expect allocation-bound failure on owned keys and record peak values.
+- [x] Replace owned key fields with `&Utf8Path`, `&str`, `Option<&str>`, derive Copy and propagate report lifetimes. Replace key clones with copy/dereference and `.cloned()` with `.copied()`.
+- [x] Run the same command; expect all cases pass with bounded peak growth.
 
 ### Task 2: Semantic and public-path regressions
 
@@ -42,18 +42,18 @@
 
 **Interfaces:** existing `usable`, `mutant_with_id`, `run_progress` helpers; no production API changes.
 
-- [ ] Add table-driven fallback tests altering each identity field separately. Expect common=0, added=1, removed=1; a control with only ID/location changes expects common=1 and indeterminate. Check None versus empty symbol.
-- [ ] Add duplicate/inconclusive unions with distinct IDs and literal full Comparison expectations, including scores.
-- [ ] Add public run→progress test for both JSON and JSONL, with unchanged saved run outputs and a leading-comment source shift. Expect common candidates retained, all survived, indeterminate and changed-ID warning.
-- [ ] Run progress integration tests and existing Lean progress oracle consumers; expect existing semantics preserved.
+- [x] Add table-driven fallback tests altering each identity field separately. Expect common=0, added=1, removed=1; a control with only ID/location changes expects common=1 and indeterminate. Check None versus empty symbol.
+- [x] Add duplicate/inconclusive unions with distinct IDs and literal full Comparison expectations, including scores.
+- [x] Add public run→progress test for both JSON and JSONL, with unchanged saved run outputs and a leading-comment source shift. Expect common candidates retained, all survived, indeterminate and changed-ID warning.
+- [x] Run progress integration tests and existing Lean progress oracle consumers; expect existing semantics preserved.
 
 ### Task 3: Review, workspace verification and commits
 
 **Files:** create `docs/reviews/2026-09-25-issue-609-progress-keys.md`; update this checklist.
 
-- [ ] Perform three implementation and three test self-reviews, each recording findings, changes and remaining limits.
-- [ ] Run `cargo test --workspace`, `cargo fmt --all -- --check`, vendor fmt, `cargo clippy --workspace --all-targets --all-features -- -D warnings` and parser clippy; expect success. Run Python CI formatting/lint and pytest where available and report environment failures accurately.
-- [ ] Review diff and commit implementation/tests/evidence. Root handles independent review and publication.
+- [x] Perform three implementation and three test self-reviews, each recording findings, changes and remaining limits.
+- [x] Run `cargo test --workspace`, `cargo fmt --all -- --check`, vendor fmt, `cargo clippy --workspace --all-targets --all-features -- -D warnings` and parser clippy; expect success. Run Python CI formatting/lint and pytest where available and report environment failures accurately.
+- [x] Review diff and commit implementation/tests/evidence. Root handles independent review and publication.
 
 ## Plan self-reviews
 
