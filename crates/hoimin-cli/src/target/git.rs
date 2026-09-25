@@ -8,11 +8,11 @@ use hoimin_core::{
 use tokio::process::Command;
 
 mod lines;
+mod paths;
 
-use crate::{
-    portable_path,
-    workspace::{WorkerRoot, WorkspaceError},
-};
+use paths::GitPathScope;
+
+use crate::workspace::{WorkerRoot, WorkspaceError};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResolveGitChanges {
@@ -54,6 +54,7 @@ pub(crate) async fn resolve_changed_scoped(
     context: u32,
 ) -> Result<BTreeMap<Utf8PathBuf, Vec<LineRange>>, TargetError> {
     ensure_git_worktree(root).await?;
+    let scope = GitPathScope::new(eligible_targets);
     let mut changed = BTreeMap::<Utf8PathBuf, Vec<LineRange>>::new();
     let mut excluded = BTreeSet::new();
     // Git clips context to current-file bounds and includes both sides of deletion gaps.
@@ -90,17 +91,17 @@ pub(crate) async fn resolve_changed_scoped(
         numstat_args.push("--merge-base");
         numstat_args.push(&base);
         let output = run_git(root, &diff_args).await?;
-        parse_diff(&output, &mut changed, &mut excluded)?;
+        parse_diff(&output, &mut changed, &mut excluded, &scope)?;
         let output = run_git(root, &numstat_args).await?;
-        parse_binary_numstat(&output, &mut excluded)?;
+        parse_binary_numstat(&output, &mut excluded, &scope)?;
         true
     } else if head_exists(root).await? {
         diff_args.push("HEAD");
         numstat_args.push("HEAD");
         let output = run_git(root, &diff_args).await?;
-        parse_diff(&output, &mut changed, &mut excluded)?;
+        parse_diff(&output, &mut changed, &mut excluded, &scope)?;
         let output = run_git(root, &numstat_args).await?;
-        parse_binary_numstat(&output, &mut excluded)?;
+        parse_binary_numstat(&output, &mut excluded, &scope)?;
         true
     } else {
         let indexed = run_git(root, &["ls-files", "-z"]).await?;
@@ -184,6 +185,7 @@ fn parse_diff(
     output: &[u8],
     changed: &mut BTreeMap<Utf8PathBuf, Vec<LineRange>>,
     excluded: &mut BTreeSet<Utf8PathBuf>,
+    scope: &GitPathScope,
 ) -> Result<(), TargetError> {
     #[derive(Clone, Copy, Eq, PartialEq)]
     enum PatchState {
@@ -206,14 +208,14 @@ fn parse_diff(
         {
             let raw_path = std::str::from_utf8(raw_path)
                 .map_err(|_| TargetError::GitFailed("Git diff path is not valid UTF-8".into()))?;
-            old_path = parse_patch_path(raw_path)?;
+            old_path = parse_patch_path(raw_path, scope)?;
             state = PatchState::AwaitingNewHeader;
         } else if state == PatchState::AwaitingNewHeader
             && let Some(raw_path) = line.strip_prefix(b"+++ ")
         {
             let raw_path = std::str::from_utf8(raw_path)
                 .map_err(|_| TargetError::GitFailed("Git diff path is not valid UTF-8".into()))?;
-            path = parse_patch_path(raw_path)?;
+            path = parse_patch_path(raw_path, scope)?;
             if path.is_none()
                 && let Some(old_path) = &old_path
                 && is_python(old_path)
@@ -238,6 +240,7 @@ fn parse_diff(
 fn parse_binary_numstat(
     output: &[u8],
     excluded: &mut BTreeSet<Utf8PathBuf>,
+    scope: &GitPathScope,
 ) -> Result<(), TargetError> {
     let mut records = output.split(|byte| *byte == 0);
     while let Some(record) = records.next() {
@@ -264,11 +267,11 @@ fn parse_binary_numstat(
                 ));
             }
             if binary {
-                insert_binary_numstat_path(old_path, excluded)?;
-                insert_binary_numstat_path(new_path, excluded)?;
+                insert_binary_numstat_path(old_path, excluded, scope)?;
+                insert_binary_numstat_path(new_path, excluded, scope)?;
             }
         } else if binary {
-            insert_binary_numstat_path(path, excluded)?;
+            insert_binary_numstat_path(path, excluded, scope)?;
         }
     }
     Ok(())
@@ -277,19 +280,19 @@ fn parse_binary_numstat(
 fn insert_binary_numstat_path(
     raw_path: &[u8],
     excluded: &mut BTreeSet<Utf8PathBuf>,
+    scope: &GitPathScope,
 ) -> Result<(), TargetError> {
     let path = std::str::from_utf8(raw_path)
         .map_err(|_| TargetError::GitFailed("Git numstat path is not valid UTF-8".into()))?;
-    let path =
-        portable_path::from_git(path).map_err(|error| TargetError::GitFailed(error.to_string()))?;
-    let path = Utf8PathBuf::from(path);
-    if is_python(&path) {
+    if let Some(path) = scope.resolve(path)?
+        && is_python(&path)
+    {
         excluded.insert(path);
     }
     Ok(())
 }
 
-fn parse_patch_path(value: &str) -> Result<Option<Utf8PathBuf>, TargetError> {
+fn parse_patch_path(value: &str, scope: &GitPathScope) -> Result<Option<Utf8PathBuf>, TargetError> {
     let value = value.split_once('\t').map_or(value, |(path, _)| path);
     let decoded = if value.starts_with('"') {
         decode_git_quoted(value)?
@@ -303,9 +306,7 @@ fn parse_patch_path(value: &str) -> Result<Option<Utf8PathBuf>, TargetError> {
         .strip_prefix("a/")
         .or_else(|| decoded.strip_prefix("b/"))
         .unwrap_or(&decoded);
-    let relative = portable_path::from_git(relative)
-        .map_err(|error| TargetError::GitFailed(error.to_string()))?;
-    Ok(Some(Utf8PathBuf::from(relative)))
+    scope.resolve(relative)
 }
 
 fn decode_git_quoted(value: &str) -> Result<String, TargetError> {
@@ -390,20 +391,15 @@ async fn collect_current_worktree_paths(
     changed: &mut BTreeMap<Utf8PathBuf, Vec<LineRange>>,
     eligible_targets: Option<&[TargetSlice]>,
 ) -> Result<(), TargetError> {
+    let scope = GitPathScope::new(eligible_targets);
     let paths = output
         .split(|byte| *byte == 0)
         .filter(|path| !path.is_empty())
         .filter_map(|raw_path| {
             let path = std::str::from_utf8(raw_path)
                 .map_err(|_| TargetError::GitFailed("Git path is not valid UTF-8".into()));
-            let path = path.and_then(|path| {
-                let path = portable_path::from_git(path)
-                    .map_err(|error| TargetError::GitFailed(error.to_string()))?;
-                let path = Utf8PathBuf::from(path);
-                Ok(path)
-            });
-            match path {
-                Ok(path) if is_python(&path) => Some(Ok(path)),
+            match path.and_then(|path| scope.resolve(path)) {
+                Ok(Some(path)) if is_python(&path) => Some(Ok(path)),
                 Ok(_) => None,
                 Err(error) => Some(Err(error)),
             }
@@ -524,8 +520,57 @@ mod tests {
     use proptest::prelude::*;
 
     use super::{
-        collect_current_worktree_paths, decode_git_quoted, parse_binary_numstat, parse_diff,
+        GitPathScope, collect_current_worktree_paths, decode_git_quoted, parse_binary_numstat,
+        parse_diff,
     };
+
+    #[test]
+    fn scoped_patch_filtering_preserves_header_body_boundaries() {
+        let scope = GitPathScope::new(Some(&[hoimin_core::TargetSlice {
+            path: "selected/good.py".into(),
+            lines: Vec::new(),
+            symbols: Vec::new(),
+        }]));
+        let diff = b"diff --git ignored ignored\n--- \"a/data/bad\\\\name.py\"\n+++ \"b/data/bad\\\\name.py\"\n@@ -1 +1 @@\n+++ b/selected/good.py\n@@ -9 +9 @@\ndiff --git ignored ignored\n--- a/selected/good.py\n+++ b/selected/good.py\n@@ -2 +2 @@\n";
+        let mut changed = BTreeMap::new();
+        let mut excluded = BTreeSet::new();
+        parse_diff(diff, &mut changed, &mut excluded, &scope).unwrap();
+        assert_eq!(
+            changed,
+            BTreeMap::from([(
+                "selected/good.py".into(),
+                vec![LineRange { start: 2, end: 2 }]
+            )])
+        );
+        assert!(excluded.is_empty());
+    }
+
+    #[test]
+    fn scoped_binary_renames_filter_each_name_independently() {
+        let scope = GitPathScope::new(Some(&[hoimin_core::TargetSlice {
+            path: "selected/good.py".into(),
+            lines: Vec::new(),
+            symbols: Vec::new(),
+        }]));
+        for record in [
+            b"-\t-\t\0data/bad\\old.py\0selected/good.py\0".as_slice(),
+            b"-\t-\t\0selected/good.py\0data/bad\\new.py\0".as_slice(),
+        ] {
+            let mut excluded = BTreeSet::new();
+            parse_binary_numstat(record, &mut excluded, &scope).unwrap();
+            assert_eq!(excluded, BTreeSet::from(["selected/good.py".into()]));
+        }
+    }
+
+    #[test]
+    fn empty_scope_does_not_hide_structural_or_encoding_errors() {
+        let scope = GitPathScope::new(Some(&[]));
+        for path in [r#""b/bad\400.py""#, r#""b/bad\377.py""#, r#""b/bad\q.py""#] {
+            assert!(super::parse_patch_path(path, &scope).is_err());
+        }
+        assert!(parse_binary_numstat(b"-\t-\t\0old.py\0", &mut BTreeSet::new(), &scope).is_err());
+        assert!(parse_binary_numstat(b"-\t-\tbad\xff.py\0", &mut BTreeSet::new(), &scope).is_err());
+    }
 
     #[derive(Clone, Debug)]
     struct GeneratedHunk {
@@ -691,7 +736,7 @@ mod tests {
         let mut changed = BTreeMap::new();
         let mut excluded = BTreeSet::new();
 
-        parse_diff(diff, &mut changed, &mut excluded).unwrap();
+        parse_diff(diff, &mut changed, &mut excluded, &GitPathScope::default()).unwrap();
 
         assert_eq!(
             changed,
@@ -713,7 +758,7 @@ mod tests {
             let mut changed = BTreeMap::new();
             let mut excluded = BTreeSet::new();
 
-            parse_diff(rendered.as_bytes(), &mut changed, &mut excluded)?;
+            parse_diff(rendered.as_bytes(), &mut changed, &mut excluded, &GitPathScope::default())?;
 
             // pins: issue #101
             prop_assert_eq!(changed, expected);
@@ -739,7 +784,12 @@ mod tests {
     fn binary_numstat_collects_both_rename_paths() {
         let mut excluded = BTreeSet::new();
 
-        parse_binary_numstat(b"-\t-\t\0old and name.py\0new and name.py\0", &mut excluded).unwrap();
+        parse_binary_numstat(
+            b"-\t-\t\0old and name.py\0new and name.py\0",
+            &mut excluded,
+            &GitPathScope::default(),
+        )
+        .unwrap();
 
         assert_eq!(
             excluded,
@@ -752,7 +802,12 @@ mod tests {
 
     #[test]
     fn binary_numstat_rejects_an_incomplete_rename_record() {
-        let error = parse_binary_numstat(b"-\t-\t\0old.py\0", &mut BTreeSet::new()).unwrap_err();
+        let error = parse_binary_numstat(
+            b"-\t-\t\0old.py\0",
+            &mut BTreeSet::new(),
+            &GitPathScope::default(),
+        )
+        .unwrap_err();
 
         assert!(
             error
@@ -763,8 +818,12 @@ mod tests {
 
     #[test]
     fn binary_numstat_rejects_a_literal_backslash_path() {
-        let error =
-            parse_binary_numstat(b"-\t-\tliteral\\binary.py\0", &mut BTreeSet::new()).unwrap_err();
+        let error = parse_binary_numstat(
+            b"-\t-\tliteral\\binary.py\0",
+            &mut BTreeSet::new(),
+            &GitPathScope::default(),
+        )
+        .unwrap_err();
 
         assert!(error.to_string().contains(r"literal\binary.py"), "{error}");
     }
@@ -773,7 +832,13 @@ mod tests {
     fn quoted_patch_header_rejects_a_decoded_literal_backslash_path() {
         let diff = b"diff --git ignored ignored\n--- \"a/literal\\\\calc.py\"\n+++ \"b/literal\\\\calc.py\"\n@@ -1 +1 @@\n";
 
-        let error = parse_diff(diff, &mut BTreeMap::new(), &mut BTreeSet::new()).unwrap_err();
+        let error = parse_diff(
+            diff,
+            &mut BTreeMap::new(),
+            &mut BTreeSet::new(),
+            &GitPathScope::default(),
+        )
+        .unwrap_err();
 
         assert!(error.to_string().contains(r"literal\calc.py"), "{error}");
     }
