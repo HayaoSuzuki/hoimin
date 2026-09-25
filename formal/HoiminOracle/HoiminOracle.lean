@@ -9,6 +9,7 @@ import HoiminOracle.BudgetCases
 import HoiminOracle.SessionModel
 import HoiminOracle.SessionProofs
 import HoiminOracle.SessionCases
+import HoiminOracle.SourceOrderModel
 import HoiminOracle.WorkspaceModel
 import HoiminOracle.WorkspaceProofs
 import HoiminOracle.WorkspaceCases

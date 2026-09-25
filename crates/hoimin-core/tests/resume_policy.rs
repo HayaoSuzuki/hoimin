@@ -745,6 +745,7 @@ fn arbitrary_fingerprint_input() -> impl Strategy<Value = FingerprintInput> {
             )| {
                 FingerprintInput {
                     import_roots: Vec::new(),
+                    source_roots: Vec::new(),
                     includes: Vec::new(),
                     excludes: Vec::new(),
                     sources,
@@ -829,6 +830,7 @@ proptest! {
 fn fixture_input() -> FingerprintInput {
     FingerprintInput {
         import_roots: Vec::new(),
+        source_roots: Vec::new(),
         includes: Vec::new(),
         excludes: Vec::new(),
         sources: vec![
@@ -927,7 +929,7 @@ fn mutate_min_free_space(v: &mut RawRunLimits) {
 
 #[test]
 fn import_root_changes_and_precedence_change_fingerprint() {
-    assert_eq!(hoimin_core::FINGERPRINT_SCHEMA_VERSION, 8);
+    assert_eq!(hoimin_core::FINGERPRINT_SCHEMA_VERSION, 9);
     let original = fixture_input();
     let mut configured = original.clone();
     configured.import_roots = vec!["src".into(), "vendor".into()];
@@ -942,6 +944,30 @@ fn import_root_changes_and_precedence_change_fingerprint() {
     configured.import_roots = vec!["ab".into(), "c".into()];
     changed.import_roots = vec!["a".into(), "bc".into()];
     assert_ne!(fingerprint(&configured), fingerprint(&changed));
+}
+
+#[test]
+fn configured_source_root_order_changes_fingerprint() {
+    let make = |roots: &[&str]| {
+        let config = RunConfig::try_from(RawRunConfig {
+            sources: roots.iter().map(|root| (*root).into()).collect(),
+            test_argv: vec![CommandArg::Unix(b"python".to_vec())],
+            ..RawRunConfig::default()
+        })
+        .unwrap();
+        FingerprintInput::from_config(&config, vec![], vec![], ResourceMode::Hard)
+    };
+    let ab = make(&["a", "b"]);
+    let ba = make(&["b", "a"]);
+    assert_ne!(fingerprint(&ab), fingerprint(&ba));
+    assert_eq!(fingerprint(&ab), fingerprint(&make(&["a", "b"])));
+    assert_ne!(
+        fingerprint(&make(&["ab", "c"])),
+        fingerprint(&make(&["a", "bc"]))
+    );
+    let mut imported = make(&["a", "b"]);
+    imported.import_roots = vec!["a".into(), "b".into()];
+    assert_ne!(fingerprint(&ab), fingerprint(&imported));
 }
 
 #[test]

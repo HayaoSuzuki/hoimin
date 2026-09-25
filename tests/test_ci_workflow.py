@@ -63,6 +63,7 @@ LEAN_CORPUS_BY_EXECUTABLE = {
     "generate": "corpus/state-machine.jsonl",
     "generate_budget": "corpus/budget-cleanup.jsonl",
     "generate_session": "corpus/session-recovery.jsonl",
+    "generate_source_order": "corpus/source-order.jsonl",
     "generate_shutdown": "corpus/shutdown-orchestration.jsonl",
     "generate_workspace": "corpus/workspace-lifecycle.jsonl",
     "generate_result_lifecycle": "corpus/result-lifecycle.jsonl",

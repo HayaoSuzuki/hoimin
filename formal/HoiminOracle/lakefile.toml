@@ -19,6 +19,10 @@ name = "generate_session"
 root = "SessionAuditMain"
 
 [[lean_exe]]
+name = "generate_source_order"
+root = "SourceOrderAuditMain"
+
+[[lean_exe]]
 name = "generate_shutdown"
 root = "ShutdownAuditMain"
 

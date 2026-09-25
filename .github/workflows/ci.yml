@@ -139,6 +139,7 @@ jobs:
             HoiminOracle.BudgetModel
             HoiminOracle.CandidateRankingModel
             HoiminOracle.PagingModel
+            HoiminOracle.SourceOrderModel
             HoiminOracle.CandidateSpanModel
             HoiminOracle.ChangedTargetModel
             HoiminOracle.ChangedContextModel
@@ -227,6 +228,7 @@ jobs:
             BudgetMain
             CandidateRankingAuditMain
             PagingAuditMain
+            SourceOrderAuditMain
             CandidateSpanAuditMain
             ChangedTargetAuditMain
             ChangedContextAuditMain
@@ -302,6 +304,7 @@ jobs:
             'generate|corpus/state-machine.jsonl|check-only'
             'generate_budget|corpus/budget-cleanup.jsonl|check-only'
             'generate_session|corpus/session-recovery.jsonl|sensitivity'
+            'generate_source_order|corpus/source-order.jsonl|sensitivity'
             'generate_shutdown|corpus/shutdown-orchestration.jsonl|sensitivity'
             'generate_workspace|corpus/workspace-lifecycle.jsonl|check-only'
             'generate_result_lifecycle|corpus/result-lifecycle.jsonl|sensitivity'

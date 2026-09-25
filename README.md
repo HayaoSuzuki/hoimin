@@ -652,17 +652,18 @@ diagnostics.
 
 ## Sessions and resume
 
-No database is created by default. `--session PATH` stores a run in SQLite and commits each mutant result independently. `--resume` requires `--session` and looks up the newest compatible incomplete run. Compatibility includes ordered import roots, source and configuration fingerprints, test argv, verdict-affecting limits, resource policy, and the operator set. Profile selection is part of session compatibility, so a focused run never resumes results from a full run and vice versa. `--jobs` and `--max-output` are operational settings and may change when resuming; reports record their current values, and reused results do not import output retained under the earlier limit. Completed `killed` and `survived` results can be reused; `timeout`, `out_of_memory`, `process_limit`, `error`, and `not_run` are run again under the current settings. An incompatible or already complete run is not silently mixed with new results.
+No database is created by default. `--session PATH` stores a run in SQLite and commits each mutant result independently. `--resume` requires `--session` and looks up the newest compatible incomplete run. Compatibility includes ordered import roots and source roots, source and configuration fingerprints, test argv, verdict-affecting limits, resource policy, and the operator set. Profile selection is part of session compatibility, so a focused run never resumes results from a full run and vice versa. `--jobs` and `--max-output` are operational settings and may change when resuming; reports record their current values, and reused results do not import output retained under the earlier limit. Completed `killed` and `survived` results can be reused; `timeout`, `out_of_memory`, `process_limit`, `error`, and `not_run` are run again under the current settings. An incompatible or already complete run is not silently mixed with new results.
 
 Plan schema version 4 stores the independent import roots (ranking rule version
-4). Regenerate older plans before verification. Fingerprint schema version 8
-includes their ordered list and the ordered `--include` / `--exclude` copy
-patterns, including empty lists for default invocations. Changing either copy
+4). Regenerate older plans before verification. Fingerprint schema version 9
+includes ordered import roots and source roots and the ordered `--include` / `--exclude` copy
+patterns, including empty lists for default invocations. Changing source-root order or either copy
 pattern list starts a new run even when explicit fingerprint-file bytes match.
 Pattern spelling and order are preserved; equivalent but differently spelled
 patterns may conservatively start a new run. Identical patterns remain compatible.
-Older session fingerprints cannot be resumed; start a new session and rerun the
-baseline and mutants. Existing saved results are not rewritten.
+Older session fingerprints cannot be resumed; a new run executes the baseline
+and mutants. The same session database can be retained; existing saved results
+are not rewritten.
 
 The active session database, its `-wal`, `-shm`, and `-journal` sidecars, and its `.<database-name>.hoimin-locks` directory are excluded from worker copies, copy-size accounting, and original-workspace integrity checks. Explicit `--include` patterns cannot restore these artifacts. Other database fixtures and similarly named files follow the normal copy rules and remain protected by integrity checks. Relative `--session` paths are resolved from the invoking working directory; existing database and parent-directory aliases resolve to the same active artifacts. Session ownership locking still prevents concurrent use of the same run.
 

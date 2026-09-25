@@ -1,0 +1,82 @@
+{
+  "schema": 1,
+  "issue": 622,
+  "cases": 8,
+  "roots": 2,
+  "orders": 2,
+  "phases": 2,
+  "runs": {
+    "lean-build": {
+      "elapsed_ms": 7838,
+      "exit_code": 0,
+      "peak_rss_kib": 1286288,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    "lean-generate": {
+      "elapsed_ms": 6395,
+      "exit_code": 0,
+      "peak_rss_kib": 1233072,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    "lean-check": {
+      "elapsed_ms": 6327,
+      "exit_code": 0,
+      "peak_rss_kib": 1276928,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    "lean-sensitivity": {
+      "elapsed_ms": 1105,
+      "exit_code": 0,
+      "peak_rss_kib": 1293952,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    "lean-entrypoint": {
+      "elapsed_ms": 6835,
+      "exit_code": 0,
+      "peak_rss_kib": 1286560,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    "native-check": {
+      "elapsed_ms": 2812,
+      "exit_code": 0,
+      "peak_rss_kib": 729936,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    "native-sensitivity": {
+      "elapsed_ms": 295,
+      "exit_code": 0,
+      "peak_rss_kib": 4464,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    "native-stats": {
+      "elapsed_ms": 313,
+      "exit_code": 0,
+      "peak_rss_kib": 2192,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    }
+  }
+}

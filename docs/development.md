@@ -836,11 +836,14 @@ annotations under CPython 3.14 in addition to reparsing their source.
 config validators reject escaped or non-normalized paths from persisted data.
 Historical run configs decode a missing list as empty. Plan schema 4 requires
 regeneration of earlier manifests before any baseline runs; fingerprint schema
-8 frames the ordered roots under field tag 9 and the ordered include/exclude
-copy patterns under tags 10/11, preventing old-session reuse. Patterns retain
+9 frames the ordered import roots under field tag 9, the ordered include/exclude
+copy patterns under tags 10/11, and configured source roots under tag 12,
+preventing old-session reuse. Source file hashes retain their set semantics;
+source-root order separately captures worker Python import precedence. Patterns retain
 their exact spelling and order because negated overrides can change matching
 precedence. Operational jobs/max-output settings still do not affect compatibility.
-Users must start a new session and pay the baseline and mutant execution cost.
+Older fingerprints start a new run with baseline and mutant execution; the
+existing session database and its saved results can be retained.
 
 `WorkspaceHandler::with_import_roots` preserves the existing constructor and
 copy lifecycle. The owned blocking worker-materialization task checks that explicit roots
