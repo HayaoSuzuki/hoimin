@@ -193,7 +193,7 @@ fn serialized_plan_verify_inherits_import_roots_and_preserves_plan() {
     assert!(output.status.success(), "{output:?}");
     assert!(!project.log.exists());
     let plan: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(plan["schema_version"], 4);
+    assert_eq!(plan["schema_version"], 5);
     assert_eq!(plan["ranking_rule_version"], 4);
     assert_eq!(plan["normalized_config"]["import_roots"], json!(["src"]));
     assert_eq!(plan["candidates"].as_array().unwrap().len(), 1);

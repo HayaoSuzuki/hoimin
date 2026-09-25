@@ -205,3 +205,7 @@ root = "PreparedAnnotationImportAuditMain"
 [[lean_exe]]
 name = "generate_private_annotation_import"
 root = "PrivateAnnotationImportAuditMain"
+
+[[lean_exe]]
+name = "generate_environment_fingerprint"
+root = "EnvironmentFingerprintAuditMain"
