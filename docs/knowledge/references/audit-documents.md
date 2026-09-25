@@ -288,6 +288,11 @@ sources:
   working_tree: modified
   revision: da6b9cf5fd6eff71438c503b0b99a15571b5e696
   sha256: 903abf4a3d7010cd791a463fb8d1393583440e1150464ec4ec07bc28e85ad1f9
+- id: issue-598-report
+  resource: ../../superpowers/reports/2026-09-25-issue-598-prepared-namespace.md
+  revision: 61957866feae3cc5cd62cd026b677314e34957ea
+  working_tree: modified
+  sha256: 9cc6842eefa4850aa0d57c979507dbf7abc77eb9b7fc5219d14c537566674143
 - id: issue-453-report
   resource: ../../superpowers/reports/2026-09-14-issue-453-scoped-discovery.md
   sha256: 00388a47831d5139281558dc112b82d72504de76c4e2f3df00adfd1ad742433b
@@ -710,6 +715,7 @@ sources:
 | [2026-09-14-issue-467-jsonl-progress-review.md](../../superpowers/reports/2026-09-14-issue-467-jsonl-progress-review.md) | Issue 467 JSONL progress implementation and review [^issue-467-review] | 未追跡 |
 | [2026-09-14-issue-480-source-encoding-review.md](../../superpowers/reports/2026-09-14-issue-480-source-encoding-review.md) | Issue #480: source encoding review [^issue-480-report-index] | 追跡済み |
 | [2026-09-14-issue-476-symbol-diagnostics-review.md](../../superpowers/reports/2026-09-14-issue-476-symbol-diagnostics-review.md) | Issue #476: symbol diagnostics review [^issue-476-report-index] | 未追跡 |
+| [2026-09-25-issue-598-prepared-namespace.md](../../superpowers/reports/2026-09-25-issue-598-prepared-namespace.md) | Prepared namespace verification and review (#598) [^issue-598-report] | 追跡済み |
 | [2026-09-14-issue-453-scoped-discovery.md](../../superpowers/reports/2026-09-14-issue-453-scoped-discovery.md) | Issue 453 scoped discovery report [^issue-453-report] | 未追跡 |
 | [2026-09-14-issue-475-range-normalization.md](../../superpowers/reports/2026-09-14-issue-475-range-normalization.md) | Issue 475 range normalization report [^issue-475-report] | 未追跡 |
 | [2026-09-14-issue-474-selector-index.md](../../superpowers/reports/2026-09-14-issue-474-selector-index.md) | Issue 474 explicit selector index report [^issue-474-report] | 未追跡 |
@@ -896,6 +902,8 @@ sources:
 [^doc-088]: [issues.md](../../audits/2026-07-rust-codebase/issues.md)。
 [^doc-089]: [findings.md](../../audits/2026-07-rust-codebase/findings.md)。
 [^doc-090]: [coverage.md](../../audits/2026-07-rust-codebase/coverage.md)。
+
+[^issue-598-report]: [Prepared namespace verification and review (#598)](../../superpowers/reports/2026-09-25-issue-598-prepared-namespace.md)。
 
 [^issue-453-report]: [Issue 453 scoped discovery report](../../superpowers/reports/2026-09-14-issue-453-scoped-discovery.md)。
 [^doc-091]: [README.md](../../audits/2026-07-rust-codebase/README.md)。

@@ -8653,3 +8653,148 @@ fn declaration_only_retains_operator_alias_guards_and_target_effects() {
         );
     }
 }
+
+#[test]
+fn prepared_namespace_blocks_direct_builtin_pairs_and_exceptions() {
+    for header in [
+        "(metaclass=Meta)",
+        "(Base)",
+        "(*bases)",
+        "(**keywords)",
+        "(object)",
+        "(metaclass=type)",
+    ] {
+        for (expression, operator) in [
+            ("any([])", "collection_any_all"),
+            ("all([])", "collection_any_all"),
+            ("list(values)", "collection_list_tuple"),
+            ("set(values)", "collection_set_frozenset"),
+            ("min(values)", "collection_min_max"),
+            ("sorted(values)", "structure_sorted_reversed"),
+        ] {
+            let source = format!("class Subject{header}:\n    observed = {expression}\n");
+            assert!(
+                analyze(&source)
+                    .candidates
+                    .iter()
+                    .all(|c| c.operator != operator),
+                "{source}"
+            );
+        }
+        let source = format!(
+            "class Subject{header}:\n    try: pass\n    except ValueError: pass\n    raise TypeError()\n"
+        );
+        assert!(
+            analyze(&source)
+                .candidates
+                .iter()
+                .all(|c| c.operator != "exception_type_pair"),
+            "{source}"
+        );
+    }
+}
+
+#[test]
+fn prepared_namespace_preserves_lookup_bypasses_and_plain_classes() {
+    for (source, expected) in [
+        ("class Subject:\n    observed = any([])\n", 1),
+        ("class Subject():\n    observed = any([])\n", 1),
+        (
+            "class Subject(metaclass=Meta):\n    global any, all\n    observed = any([])\n",
+            1,
+        ),
+        (
+            "class Subject(metaclass=Meta):\n    global any\n    observed = any([])\n",
+            0,
+        ),
+        (
+            "class Subject(metaclass=Meta):\n    global all\n    observed = any([])\n",
+            0,
+        ),
+        (
+            "class Subject(metaclass=Meta):\n    def method(self): return any([])\n",
+            1,
+        ),
+        (
+            "class Subject(metaclass=Meta):\n    def method(self):\n        def closure(): return any([])\n        return closure()\n",
+            1,
+        ),
+        (
+            "class Subject(metaclass=Meta):\n    observed = [any([]) for _ in [1]]\n",
+            1,
+        ),
+        (
+            "class Subject(metaclass=Meta):\n    observed = [x for x in [any([])]]\n",
+            0,
+        ),
+        (
+            "class Subject(metaclass=Meta):\n    def method(value=any([])): pass\n",
+            0,
+        ),
+        (
+            "class Subject(metaclass=Meta):\n    @decorator(any([]))\n    def method(): pass\n",
+            0,
+        ),
+        (
+            "class Subject(metaclass=Meta):\n    class Nested:\n        observed = any([])\n",
+            1,
+        ),
+        (
+            "class Subject(metaclass=Meta):\n    class Nested(Base):\n        def method(self): return any([])\n",
+            1,
+        ),
+        ("class Subject(factory(any([]))): pass\n", 1),
+        ("class Subject[T](factory(any([]))): pass\n", 1),
+        ("class Subject[any](factory(any([]))): pass\n", 0),
+        (
+            "def outer():\n    any = custom\n    class Subject(metaclass=Meta):\n        nonlocal any\n        observed = any([])\n",
+            0,
+        ),
+    ] {
+        let output = analyze(source);
+        let candidates: Vec<_> = output
+            .candidates
+            .iter()
+            .filter(|c| c.operator == "collection_any_all")
+            .collect();
+        assert_eq!(candidates.len(), expected, "{source}");
+        for candidate in candidates {
+            assert_eq!(candidate.original, "any");
+            assert_eq!(candidate.replacement, "all");
+            let start = usize::try_from(candidate.span.start).unwrap();
+            assert_eq!(&source[start..start + 3], "any");
+        }
+    }
+}
+
+#[test]
+fn prepared_namespace_blocks_class_visible_builtin_annotations() {
+    for (source, expected) in [
+        ("class Subject:\n    value: int\n", 1),
+        ("class Subject(metaclass=Meta):\n    value: int\n", 0),
+        (
+            "class Subject(Base):\n    def method(self, value: int): pass\n",
+            0,
+        ),
+        (
+            "class Subject(Base):\n    def method[T](self, value: int): pass\n",
+            0,
+        ),
+        (
+            "class Subject(Base):\n    def method(self):\n        value: int\n",
+            1,
+        ),
+        ("class Subject(Base):\n    global int\n    value: int\n", 1),
+    ] {
+        let output = analyze_types(source);
+        assert_eq!(
+            output
+                .candidates
+                .iter()
+                .filter(|c| c.operator == "type_nullable_add")
+                .count(),
+            expected,
+            "{source}"
+        );
+    }
+}

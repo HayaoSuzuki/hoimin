@@ -999,6 +999,7 @@ struct NameScope {
     nonlocals: HashSet<String>,
     ordered: HashMap<String, OrderedBindingHistory>,
     wildcard: bool,
+    may_have_prepared_namespace: bool,
     import_writes: HashMap<String, usize>,
 }
 
@@ -1013,6 +1014,7 @@ impl NameScope {
             nonlocals: HashSet::new(),
             ordered: HashMap::new(),
             wildcard: false,
+            may_have_prepared_namespace: false,
             import_writes: HashMap::new(),
         }
     }
@@ -1171,6 +1173,11 @@ impl NameResolutionIndex {
         if scope.kind != NameScopeKind::Module && scope.globals.contains(name) {
             return self.resolve_module(name);
         }
+        // A custom prepared mapping can provide either endpoint, including names
+        // absent from AST bindings. Globals and lexical class-skip were handled above.
+        if scope.may_have_prepared_namespace {
+            return NameResolution::Unknown;
+        }
         if scope.nonlocals.contains(name) {
             return self.resolve_nonlocal(scope.parent, name);
         }
@@ -1220,6 +1227,11 @@ impl NameResolutionIndex {
         }
         if scope.kind != NameScopeKind::Module && scope.globals.contains(name) {
             return self.resolve_module(name);
+        }
+        // A custom prepared mapping can provide either endpoint, including names
+        // absent from AST bindings. Globals and lexical class-skip were handled above.
+        if scope.may_have_prepared_namespace {
+            return NameResolution::Unknown;
         }
         if scope.nonlocals.contains(name) {
             return self.resolve_nonlocal(scope.parent, name);
@@ -1863,6 +1875,12 @@ impl<'ast> Visitor<'ast> for NameResolutionBuilder {
                         this.visit_arguments(arguments);
                     }
                     let scope = this.new_scope(NameScopeKind::Class);
+                    // Bases can select an inherited metaclass; keywords can supply
+                    // one indirectly. Only an empty header guarantees a plain namespace.
+                    this.index.scopes[scope.0].may_have_prepared_namespace = definition
+                        .arguments
+                        .as_ref()
+                        .is_some_and(|args| !args.args.is_empty() || !args.keywords.is_empty());
                     this.in_scope(scope, |this| this.visit_body(&definition.body));
                 });
                 self.record_binding(definition.name.as_str());

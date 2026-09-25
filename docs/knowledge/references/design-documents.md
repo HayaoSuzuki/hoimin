@@ -199,6 +199,11 @@ sources:
   resource: ../../superpowers/specs/2026-09-12-issue-513-parser-recursion-design.md
   working_tree: untracked
   sha256: 5f9dbe6895760a0675c9a74e3a98207327832450e33433ac869e118125485dc8
+- id: issue-598-design
+  resource: ../../superpowers/specs/2026-09-25-issue-598-prepared-namespace-design.md
+  revision: 61957866feae3cc5cd62cd026b677314e34957ea
+  working_tree: clean
+  sha256: b7740711d779a855a25dc8d658aa7df63be244f0059eda9bbdfbf87f7ec39ecf
 - id: issue-515
   resource: ../../superpowers/specs/2026-09-12-issue-515-class-directives-design.md
   working_tree: untracked
@@ -979,6 +984,7 @@ sources:
 | [2026-09-14-issue-453-scoped-discovery-design.md](../../superpowers/specs/2026-09-14-issue-453-scoped-discovery-design.md) | Issue 453: Scope discovery for exact selectors [^issue-453-index] | 未追跡 |
 | [2026-09-14-issue-475-range-normalization-design.md](../../superpowers/specs/2026-09-14-issue-475-range-normalization-design.md) | Issue 475: Normalize explicit selector groups once [^issue-475-index] | 未追跡 |
 | [2026-09-14-issue-474-selector-index-design.md](../../superpowers/specs/2026-09-14-issue-474-selector-index-design.md) | Issue 474: Explicit selector file index [^issue-474-index] | 未追跡 |
+| [2026-09-25-issue-598-prepared-namespace-design.md](../../superpowers/specs/2026-09-25-issue-598-prepared-namespace-design.md) | Prepared class namespace name resolution (#598) [^issue-598-design] | 追跡済み |
 | [2026-09-12-issue-515-class-directives-design.md](../../superpowers/specs/2026-09-12-issue-515-class-directives-design.md) | Issue 515: Skip enclosing class directives during lexical lookup [^issue-515] | 未追跡 |
 | [2026-09-12-issue-514-comprehension-effect-order-design.md](../../superpowers/specs/2026-09-12-issue-514-comprehension-effect-order-design.md) | Issue 514: Preserve first-iterable lookup before comprehension body effects [^issue-514] | 未追跡 |
 | [2026-09-12-issue-516-session-ownership-identities-design.md](../../superpowers/specs/2026-09-12-issue-516-session-ownership-identities-design.md) | Issue 516: Share active session ownership-tree identities [^issue-516] | 未追跡 |
@@ -1400,6 +1406,8 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 [^issue-474-index]: [Issue 474: Explicit selector file index](../../superpowers/specs/2026-09-14-issue-474-selector-index-design.md)。
 
 [^issue-513]: [2026-09-12-issue-513-parser-recursion-design.md](../../superpowers/specs/2026-09-12-issue-513-parser-recursion-design.md)。
+[^issue-598-design]: [Prepared class namespace name resolution (#598)](../../superpowers/specs/2026-09-25-issue-598-prepared-namespace-design.md)。
+
 [^issue-515]: [Issue515 class directive design](../../superpowers/specs/2026-09-12-issue-515-class-directives-design.md)。
 [^issue-514]: [Issue514 comprehension effect order design](../../superpowers/specs/2026-09-12-issue-514-comprehension-effect-order-design.md)。
 [^issue-516]: [Issue 516: Share active session ownership-tree identities](../../superpowers/specs/2026-09-12-issue-516-session-ownership-identities-design.md)。
