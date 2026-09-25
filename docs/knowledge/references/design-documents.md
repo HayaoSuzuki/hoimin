@@ -7,9 +7,9 @@ catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
 - id: proptest-boundaries-design
   resource: ../../superpowers/specs/2026-09-26-proptest-boundaries-design.md
-  revision: 2ff26c9b7259072574b0f9874946177332ea5463
+  revision: 69e09da75ba5505cc6f750af2f6da131774dd070
   working_tree: clean
-  sha256: 6807769ad03c04b244ffcb76645fb56143d3743e2ac4ada2a6b1a31a8cf11be3
+  sha256: 315a8ada6e192ca6b23f7ad9627c616a60c5395837a6ce080dd1ec047c6fa2b2
 - id: issue-557-design
   resource: ../../superpowers/specs/2026-09-25-issue-557-finally-traversal.md
   revision: f071781e20bc87c13b537ecd620e5ed06e9cd1f6

@@ -2015,8 +2015,40 @@ mod tests {
         assert!(coordinator.dir.symlink_metadata(&deleting).is_err());
     }
 
-    #[test]
-    fn live_managed_child_keeps_the_root_lease_after_the_owner_is_dropped() {
+    #[tokio::test]
+    async fn live_managed_child_keeps_the_root_lease_after_the_owner_is_dropped() {
+        const COMPLETED: &str = "hoimin managed-child lease assertions completed";
+        const CHILD_MARKER: &str = "HOIMIN_ISOLATED_MANAGED_CHILD_LEASE_TEST";
+        if std::env::var_os(CHILD_MARKER).as_deref() != Some(std::ffi::OsStr::new("1")) {
+            // Other parallel tests can fork while this fixture owns its lease.
+            // Their inherited descriptor retains flock until exec, even after
+            // our last local Arc<File> is dropped. Create the fixture only in
+            // a dedicated process with no unrelated tests spawning children.
+            let output = tokio::process::Command::new(std::env::current_exe().unwrap())
+                .arg("--exact")
+                .arg("workspace::owned::tests::live_managed_child_keeps_the_root_lease_after_the_owner_is_dropped")
+                .arg("--test-threads=1")
+                .arg("--nocapture")
+                .env(CHILD_MARKER, "1")
+                .kill_on_drop(true)
+                .output();
+            let output = tokio::time::timeout(std::time::Duration::from_secs(30), output)
+                .await
+                .expect("isolated managed-child lease test timed out")
+                .expect("isolated managed-child lease test failed to start");
+            assert!(
+                output.status.success(),
+                "isolated managed-child lease test failed: {}\nstdout:\n{}\nstderr:\n{}",
+                output.status,
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr),
+            );
+            assert!(
+                String::from_utf8_lossy(&output.stdout).contains(COMPLETED),
+                "isolated managed-child lease test did not complete its assertions: {output:?}",
+            );
+            return;
+        }
         let parent = tempfile::tempdir().unwrap();
         let parent = Utf8Path::from_path(parent.path()).unwrap();
         let coordinator = ManagedRootCoordinator::open(parent).unwrap();
@@ -2028,13 +2060,15 @@ mod tests {
 
         let live = ManagedRunRoot::reclaim_abandoned(&coordinator, std::time::SystemTime::now());
 
-        assert_eq!(live.reclaimed_roots, 0);
+        assert_eq!(live.reclaimed_roots, 0, "{live:?}");
+        assert_eq!(live.preserved_roots, 1, "{live:?}");
         assert!(published.exists());
 
         drop(child);
         let settled = ManagedRunRoot::reclaim_abandoned(&coordinator, std::time::SystemTime::now());
-        assert_eq!(settled.reclaimed_roots, 1);
+        assert_eq!(settled.reclaimed_roots, 1, "{settled:?}");
         assert!(!published.exists());
+        println!("{COMPLETED}");
     }
 
     #[test]
