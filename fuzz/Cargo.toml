@@ -1,0 +1,65 @@
+[package]
+name = "hoimin-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+# Keep libFuzzer and its nightly build separate from the shipping workspace.
+[workspace]
+members = ["."]
+resolver = "3"
+
+[dependencies]
+hoimin-core = { path = "../crates/hoimin-core" }
+libfuzzer-sys = "0.4"
+camino = "1.1"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0", features = ["raw_value"] }
+thiserror = "2.0"
+num-bigint = "0.5.0"
+num-traits = "0.2.19"
+ruff_python_parser = { version = "0.6.2", package = "littrs-ruff-python-parser" }
+ruff_python_ast = { version = "0.6.2", package = "littrs-ruff-python-ast" }
+ruff_text_size = { version = "0.6.2", package = "littrs-ruff-text-size" }
+
+# The analyzer targets must use the same parser patch as the shipping workspace.
+[patch.crates-io]
+littrs-ruff-python-parser = { path = "../vendor/ruff_python_parser" }
+
+[[bin]]
+name = "source_encoding"
+path = "fuzz_targets/source_encoding.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "source_index"
+path = "fuzz_targets/source_index.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "candidate_validation"
+path = "fuzz_targets/candidate_validation.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "analyzer_protocol"
+path = "fuzz_targets/analyzer_protocol.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "python_analyzer"
+path = "fuzz_targets/python_analyzer.rs"
+test = false
+doc = false
+bench = false

@@ -79,6 +79,84 @@ and terminal I/O errors; they do not explore every possible read schedule or OS
 filesystem race. Properties compare against materialized scalar/line observations,
 whole-slice equality, and one-shot hashes. They are finite tests, not proofs.
 
+## Coverage-guided fuzzing
+
+`fuzz/` is a separate Cargo workspace with its own committed lockfile. It depends
+on `hoimin-core` by path; libFuzzer does not enter the shipping workspace or the
+ordinary `cargo test --workspace` run. The targets supplement proptest:
+
+- `source_encoding`: arbitrary bytes exercise encoding declarations and malformed
+  input. Successful decodes must preserve bytes on re-encoding and match scalar
+  boundary maps. Explicit Latin-1 and valid UTF-8 variants must decode successfully.
+- `source_index`: UTF-8 text is checked against a sequential scalar walk for every
+  byte offset, including split scalars, EOF, mixed LF/CRLF/CR, and a leading BOM.
+- `candidate_validation`: constructs valid UTF-8 and Latin-1 candidates with
+  independently calculated spans and coordinates, then checks rejection of nine
+  single-field corruptions and unencodable Latin-1 replacements. The first five
+  input bytes choose the codec and two little-endian scalar boundary indices;
+  the remaining bytes supply the source payload.
+- `analyzer_protocol`: parses arbitrary JSONL, checks observed summary counts,
+  and constructs valid records to exercise wrong effect IDs, missing/mismatched
+  summaries, decreasing candidate offsets, records after summary, and byte limits.
+- `python_analyzer`: runs the production Python analyzer with all mutation
+  operators and either the full or focused profile (selected by input length
+  parity). Checks immediate cancellation, candidate validation, ordering, the
+  32-candidate cap, and prefix preservation when that cap is reduced to one.
+  Syntax errors and supported depth-limit errors are valid outcomes.
+
+The last two targets compile the production analyzer modules directly using
+`#[path]`, so no fuzz-only API is added to the shipping crate. Keep their dependency
+declarations in `fuzz/Cargo.toml` aligned with `crates/hoimin-cli/Cargo.toml` and
+retain the root workspace's vendored Ruff parser patch in the fuzz workspace.
+These are in-memory checks; CLI discovery, file I/O, subprocesses, and mutation
+execution are outside their scope. The three newer targets reject inputs larger
+than 4096 bytes to bound per-input work, including during artifact replay.
+
+Install cargo-fuzz and the pinned nightly (the locked libfuzzer-sys version
+requires a C++17 compiler).
+These commands run from the repository root. The normal Rust toolchain stays
+unchanged:
+
+```console
+cargo install cargo-fuzz --version 0.13.2 --locked
+rustup toolchain install nightly-2026-07-27 --profile minimal
+cargo +nightly-2026-07-27 fuzz build
+for target in source_encoding source_index candidate_validation analyzer_protocol python_analyzer; do
+  mkdir -p "fuzz/corpus/$target"
+  cargo +nightly-2026-07-27 fuzz run "$target" "fuzz/corpus/$target" "fuzz/seeds/$target" -- -max_total_time=30 -max_len=4096 -timeout=5 -rss_limit_mb=1024 || break
+done
+```
+
+AddressSanitizer, debug assertions, and overflow checks use cargo-fuzz's defaults.
+The first corpus directory receives newly discovered inputs; the second contains
+committed seeds, including non-UTF-8 bytes. Keep that order so fuzzing does not
+write generated inputs into `seeds/`. Corpus, artifacts, coverage, and build
+outputs are ignored. Increase `-max_total_time` for longer local runs. The limit
+applies to fuzzing time, not compilation; `-timeout` bounds an individual input.
+This initial setup has no scheduled CI job.
+
+Replay and minimize a reported failure, using its actual artifact path:
+
+```console
+cargo +nightly-2026-07-27 fuzz run source_encoding fuzz/artifacts/source_encoding/crash-<hash>
+cargo +nightly-2026-07-27 fuzz tmin source_encoding fuzz/artifacts/source_encoding/crash-<hash>
+```
+
+Retain the minimized input in the target's `seeds/` directory and add a normal
+Rust regression test with the fix. A bounded successful run is evidence only for
+the inputs executed. The Python target checks candidate structure and retention,
+not whether every replacement has the intended Python runtime semantics. Cookie
+error classification and OS/process behavior are not exhaustively checked.
+
+Formatting and lint checks for the separate workspace are explicit:
+
+```console
+cargo fmt --manifest-path fuzz/Cargo.toml -- --check
+cargo clippy --locked --manifest-path fuzz/Cargo.toml --bins -- -D warnings
+```
+
+See the [cargo-fuzz documentation](https://rust-fuzz.github.io/book/cargo-fuzz.html).
+
 ## Python formatting, lint and tests
 
 Ruff and pytest are development dependencies managed by `uv.lock`. For Python
