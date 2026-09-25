@@ -187,8 +187,11 @@ although cancellation or the hard job timeout can interrupt it. Use the saved
 crash input for replay; the seed alone does not reproduce a time-bounded run
 against an evolving corpus.
 
-The initial local validation found an unresolved parser panic; its input and
-replay instructions are retained in [fuzz/reproducers](../fuzz/reproducers/README.md).
+The initial local validation found a parser panic on a nested unterminated
+f/t-string inside a format specification. It is fixed in the vendored parser;
+the minimized inputs are seeds `fstring-format-spec-recovery` and
+`tstring-format-spec-recovery`, and `foreign_middle_token_in_a_format_spec_is_invalid_syntax`
+in `crates/hoimin-cli/tests/rust_analyzer.rs` is the ordinary regression test.
 GitHub Actions execution and cold Linux build timing have not yet been verified.
 
 ### Generate Python inputs with hypothesmith

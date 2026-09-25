@@ -1587,7 +1587,6 @@ impl<'src> Parser<'src> {
         string_kind: InterpolatedStringKind,
     ) -> ast::InterpolatedStringElements {
         let mut elements = vec![];
-        let middle_token_kind = string_kind.middle_token();
 
         self.parse_list(
             RecoveryContextKind::InterpolatedStringElements(elements_kind),
@@ -1596,10 +1595,22 @@ impl<'src> Parser<'src> {
                     TokenKind::Lbrace => ast::InterpolatedStringElement::from(
                         parser.parse_interpolated_element(flags, string_kind),
                     ),
-                    tok if tok == middle_token_kind => {
+                    // Both middle tokens are accepted, matching the FIRST set of a
+                    // format specification. The lexer tracks the innermost f/t-string,
+                    // so recovering from an unterminated nested string of the other
+                    // kind leaves it emitting that kind's middle token while the parser
+                    // is back in this string's format specification. The token still
+                    // carries literal text, so it is kept as a literal element.
+
+                    // test_err f_string_format_spec_with_foreign_middle_token
+                    // f"{:{t"{m""m
+
+                    // test_err t_string_format_spec_with_foreign_middle_token
+                    // # parse_options: {"target-version": "3.14"}
+                    // t"{:{f"{m""m
+                    tok @ (TokenKind::FStringMiddle | TokenKind::TStringMiddle) => {
                         let range = parser.current_token_range();
-                        let TokenValue::InterpolatedStringMiddle(value) =
-                            parser.bump_value(middle_token_kind)
+                        let TokenValue::InterpolatedStringMiddle(value) = parser.bump_value(tok)
                         else {
                             unreachable!()
                         };
