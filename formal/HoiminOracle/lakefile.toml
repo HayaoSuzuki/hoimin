@@ -171,5 +171,9 @@ name = "generate_prepared_namespace"
 root = "PreparedNamespaceAuditMain"
 
 [[lean_exe]]
+name = "generate_paging"
+root = "PagingAuditMain"
+
+[[lean_exe]]
 name = "generate_source_order"
 root = "SourceOrderAuditMain"

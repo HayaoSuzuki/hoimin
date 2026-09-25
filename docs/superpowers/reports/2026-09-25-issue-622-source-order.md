@@ -40,3 +40,9 @@ lake exe generate_source_order -- --stats
 ```
 
 Generation uses `lake env lean -j1 -DElab.async=false --run SourceOrderAuditMain.lean --output corpus/source-order.jsonl`. All commands succeeded; each theorem retains 10000 heartbeats and all process guards remain 20 seconds / 2048 MiB. No timeout, memory breach or limit increase occurred. Resource measurements are recorded in the adjacent `2026-09-25-issue-622-source-order-resources.json`.
+
+### CI portability review
+
+Linux CI failed early with exit 2. The suspected cause is a fixture disk-reserve assumption: the adapter requested 10 GiB free space even though source-order semantics need only tiny files. A local control with an intentionally unreachable reserve returned exit 2 and `filesystem.reserve.reached`, matching the CI's early exit shape; the CI assertion previously omitted stdout and therefore hid the report diagnostic. The adapter now follows other public Lean adapters with `--min-free-space 1B`, and failed assertions include both output streams. This changes only the test fixture, not production defaults or disk enforcement. Reviewed fixture isolation, eight-case semantic coverage, and useful failure diagnostics separately.
+
+Independent review of the CI fixture correction found no blocker: all eight order/reuse/status cases remain asserted. Original CI stdout was unavailable, so disk reserve remains an inference until the rerun confirms it. The corrected adapter passes locally.

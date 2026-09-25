@@ -138,6 +138,7 @@ jobs:
             HoiminOracle.BoundedCandidateDiscoveryModel
             HoiminOracle.BudgetModel
             HoiminOracle.CandidateRankingModel
+            HoiminOracle.PagingModel
             HoiminOracle.SourceOrderModel
             HoiminOracle.CandidateSpanModel
             HoiminOracle.ChangedTargetModel
@@ -222,6 +223,7 @@ jobs:
             BoundedCandidateDiscoveryAuditMain
             BudgetMain
             CandidateRankingAuditMain
+            PagingAuditMain
             SourceOrderAuditMain
             CandidateSpanAuditMain
             ChangedTargetAuditMain
@@ -335,6 +337,7 @@ jobs:
             'generate_resume_copy|corpus/resume-copy.jsonl|sensitivity'
             'generate_nullable_gate|corpus/nullable-gate.jsonl|sensitivity'
             'generate_prepared_namespace|corpus/prepared-namespace.jsonl|sensitivity'
+            'generate_paging|corpus/paging.jsonl|sensitivity'
             'generate_source_order|corpus/source-order.jsonl|sensitivity'
           )
           for entry in "${generators[@]}"; do

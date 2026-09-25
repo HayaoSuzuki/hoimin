@@ -191,3 +191,57 @@ fn fixed_batch_diverse_slices_the_global_order_across_files_and_tiers() {
     assert!(select(6, 1).is_empty());
     assert!(select(usize::MAX, usize::MAX).is_empty());
 }
+
+#[test]
+fn pages_preserve_policy_order_at_tier_and_integer_boundaries() {
+    let candidates = vec![
+        candidate("A1", "a.py", 1, 100),
+        candidate("A2", "a.py", 2, 100),
+        candidate("B1", "b.py", 3, 100),
+        candidate("A3", "a.py", 4, 70),
+        candidate("B2", "b.py", 5, 70),
+        candidate("B3", "b.py", 6, 70),
+    ];
+    for (policy, order) in [
+        (
+            TopSelectionPolicy::Strict,
+            ["A1", "A2", "B1", "A3", "B2", "B3"],
+        ),
+        (
+            TopSelectionPolicy::Diverse,
+            ["A1", "B1", "A2", "A3", "B2", "B3"],
+        ),
+    ] {
+        for offset in [0, 1, 2, 3, 5, 6, 7, usize::MAX] {
+            for count in [1, 2, 4, usize::MAX] {
+                let actual = super::selection::select_top_candidate_ids_at(
+                    &candidates,
+                    NonZeroUsize::new(count).unwrap(),
+                    policy,
+                    offset,
+                );
+                let expected = order
+                    .iter()
+                    .skip(offset)
+                    .take(count)
+                    .copied()
+                    .collect::<Vec<_>>();
+                assert_eq!(actual, expected, "{policy:?} offset={offset} count={count}");
+                assert_eq!(
+                    actual.capacity(),
+                    actual.len(),
+                    "{policy:?} offset={offset} count={count}"
+                );
+            }
+        }
+        assert!(
+            super::selection::select_top_candidate_ids_at(
+                &[],
+                NonZeroUsize::new(usize::MAX).unwrap(),
+                policy,
+                0,
+            )
+            .is_empty()
+        );
+    }
+}

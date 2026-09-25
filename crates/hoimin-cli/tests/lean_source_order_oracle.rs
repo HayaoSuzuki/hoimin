@@ -100,7 +100,7 @@ impl Fixture {
                 "1",
                 "--allow-best-effort-memory",
                 "--min-free-space",
-                "10GiB",
+                "1B",
                 "--session",
             ])
             .arg(self.directory.path().join(database))
@@ -118,7 +118,8 @@ impl Fixture {
         assert_eq!(
             output.status.code(),
             Some(case.exit),
-            "{case:?}: {}",
+            "{case:?}: stdout={} stderr={}",
+            String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
         let report: Value = serde_json::from_slice(&output.stdout).unwrap();
