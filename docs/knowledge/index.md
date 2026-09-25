@@ -32,7 +32,7 @@ okf_version: "0.2"
 
 - [遅延注釈とcollections.abc.Setの追加監査](audits/annotation-followup-2026-09.md) - #558/#559の再現、キャッシュ保持の証明と型名の照合。
 
-- [withの例外抑制とfinallyの解析コスト](audits/with-finally-2026-09.md) - #556/#557の再現、モデル証明、公開CLIの対応範囲。
+- [withの例外抑制とfinallyの解析コスト](audits/with-finally-2026-09.md) - with抑制の修正と、#557のfinally重複走査削減・訪問回数ゲート。
 
 - [暗黙例外と finally](audits/implicit-finally.md) - typing 由来の合流、Lean 小モデル、公開 plan の対応範囲。
 
