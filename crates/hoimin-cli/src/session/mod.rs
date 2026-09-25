@@ -129,6 +129,44 @@ pub struct SessionHandler {
     persist_after_reads: Option<Arc<Barrier>>,
 }
 
+fn validate_resume_budget(
+    id: EffectId,
+    stored_limit: rusqlite::types::Value,
+    requested: std::num::NonZeroUsize,
+) -> Result<Vec<u8>, EffectFailed> {
+    let stored_limit = match stored_limit {
+        rusqlite::types::Value::Blob(bytes) => bytes,
+        rusqlite::types::Value::Null => {
+            return Err(EffectFailed::other(
+                id,
+                "session.resume.incompatible",
+                "incomplete session has no persisted mutant budget; start a new session",
+            ));
+        }
+        _ => {
+            return Err(EffectFailed {
+                id,
+                failure: corrupt("invalid persisted mutant budget type"),
+            });
+        }
+    };
+    let stored_bytes: [u8; 8] = stored_limit
+        .as_slice()
+        .try_into()
+        .map_err(|_| EffectFailed {
+            id,
+            failure: corrupt("invalid persisted mutant budget length"),
+        })?;
+    let stored_budget = u64::from_be_bytes(stored_bytes);
+    if stored_budget == 0 || stored_budget > requested.get() as u64 {
+        return Err(EffectFailed {
+            id,
+            failure: corrupt("invalid persisted mutant budget"),
+        });
+    }
+    Ok(stored_limit)
+}
+
 impl SessionHandler {
     /// Opens and configures the `SQLite` database at `path`.
     ///
@@ -155,20 +193,29 @@ impl SessionHandler {
     /// # Errors
     ///
     /// Returns [`EffectFailed`] when the session database cannot be read or contains a corrupt
-    /// run identifier.
+    /// run identifier or persisted budget.
     pub fn load(&mut self, request: &LoadSession) -> Result<SessionLoaded, EffectFailed> {
         let id = request.id;
+        let limit = (request.max_mutants.get() as u64).to_be_bytes();
         let run_id = self
             .connection
             .query_row(
-                "SELECT run_id FROM runs
-                 WHERE fingerprint=?1 AND complete=0 ORDER BY id DESC LIMIT 1",
-                [request.fingerprint.as_bytes().as_slice()],
-                |row| row.get::<_, Option<String>>(0),
+                "SELECT run_id, max_mutants FROM runs
+                 WHERE fingerprint=?1 AND complete=0
+                   AND (max_mutants<=?2 OR typeof(max_mutants)!='blob'
+                        OR length(max_mutants)!=8 OR max_mutants=zeroblob(8))
+                 ORDER BY id DESC LIMIT 1",
+                params![request.fingerprint.as_bytes().as_slice(), limit.as_slice()],
+                |row| {
+                    Ok((
+                        row.get::<_, Option<String>>(0)?,
+                        row.get::<_, rusqlite::types::Value>(1)?,
+                    ))
+                },
             )
             .optional()
             .map_err(|error| failed(id, "session.read", "load resume run", &error))?;
-        let Some(run_id) = run_id else {
+        let Some((run_id, stored_limit)) = run_id else {
             let latest_schema = self
                 .connection
                 .query_row(
@@ -202,6 +249,7 @@ impl SessionHandler {
             id,
             failure: corrupt("NULL run ID"),
         })?;
+        let stored_limit = validate_resume_budget(id, stored_limit, request.max_mutants)?;
         let ownership = if self.ownerships.contains_key(&run_id) {
             None
         } else {
@@ -209,14 +257,18 @@ impl SessionHandler {
         };
         let eligible = self
             .connection
-            .query_row(
-                "SELECT 1 FROM runs WHERE run_id=?1 AND fingerprint=?2 AND complete=0",
-                params![run_id, request.fingerprint.as_bytes().as_slice()],
-                |_| Ok(()),
+            .execute(
+                "UPDATE runs SET max_mutants=?3
+                 WHERE run_id=?1 AND fingerprint=?2 AND complete=0 AND max_mutants=?4",
+                params![
+                    run_id,
+                    request.fingerprint.as_bytes().as_slice(),
+                    limit.as_slice(),
+                    stored_limit.as_slice()
+                ],
             )
-            .optional()
             .map_err(|error| failed(id, "session.read", "re-read resume run", &error))?
-            .is_some();
+            == 1;
         if !eligible {
             return Ok(SessionLoaded { id, resume: None });
         }
@@ -317,8 +369,13 @@ impl SessionHandler {
             )
             .and_then(|_| {
                 transaction.execute(
-                    "INSERT INTO runs(run_id, fingerprint, complete) VALUES (?1, ?2, 0)",
-                    params![request.run_id, request.fingerprint.as_bytes().as_slice()],
+                    "INSERT INTO runs(run_id, fingerprint, complete, max_mutants)
+                     VALUES (?1, ?2, 0, ?3)",
+                    params![
+                        request.run_id,
+                        request.fingerprint.as_bytes().as_slice(),
+                        (request.max_mutants.get() as u64).to_be_bytes().as_slice(),
+                    ],
                 )
             })
             .map_err(|error| failed(id, "session.begin", "insert run", &error))?;
@@ -1048,6 +1105,7 @@ mod dispatch_tests {
         for run_id in ["persisted-run", "competing-run"] {
             owner
                 .begin(BeginSession {
+                    max_mutants: std::num::NonZeroUsize::new(100).unwrap(),
                     id: EffectId(1),
                     run_id: run_id.to_owned(),
                     fingerprint: RunFingerprint::from_bytes([1; 32]),
@@ -1122,6 +1180,7 @@ mod dispatch_tests {
         blocker.execute_batch("BEGIN IMMEDIATE").unwrap();
         let dispatcher = SessionDispatcher::open(path).await.unwrap();
         let operation = dispatcher.begin(BeginSession {
+            max_mutants: std::num::NonZeroUsize::new(100).unwrap(),
             id: EffectId(91),
             run_id: "blocked".to_owned(),
             fingerprint: RunFingerprint::from_bytes([9; 32]),

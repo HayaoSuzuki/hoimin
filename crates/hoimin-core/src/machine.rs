@@ -682,6 +682,7 @@ impl RunState {
             id,
             run_id: self.run_id.clone(),
             fingerprint,
+            max_mutants: self.config.limits.max_mutants,
         })])
     }
 
@@ -1432,7 +1433,11 @@ pub fn transition(
                 let fingerprint = state.fingerprint.ok_or(MachineError::MissingFingerprint)?;
                 if state.config.resume {
                     let id = state.allocate_id()?;
-                    vec![RunEffect::LoadSession(LoadSession { id, fingerprint })]
+                    vec![RunEffect::LoadSession(LoadSession {
+                        id,
+                        fingerprint,
+                        max_mutants: state.config.limits.max_mutants,
+                    })]
                 } else {
                     state.begin_session_effects()?
                 }

@@ -44,6 +44,7 @@ pub struct ReadCandidate {
 pub struct LoadSession {
     pub id: EffectId,
     pub fingerprint: RunFingerprint,
+    pub max_mutants: std::num::NonZeroUsize,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -59,6 +60,7 @@ pub struct BeginSession {
     pub id: EffectId,
     pub run_id: String,
     pub fingerprint: RunFingerprint,
+    pub max_mutants: std::num::NonZeroUsize,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

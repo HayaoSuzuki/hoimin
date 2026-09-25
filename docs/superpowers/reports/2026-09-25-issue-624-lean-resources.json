@@ -1,0 +1,47 @@
+{
+  "624-lean-model-v1.json": {
+    "elapsed_ms": 7351,
+    "exit_code": 0,
+    "peak_rss_kib": 1253632,
+    "reason": "child_exit",
+    "rss_limit_kib": 2097152,
+    "schema": 1,
+    "timeout_ms": 20000
+  },
+  "624-lean-generate-v1.json": {
+    "elapsed_ms": 2312,
+    "exit_code": 0,
+    "peak_rss_kib": 714848,
+    "reason": "child_exit",
+    "rss_limit_kib": 2097152,
+    "schema": 1,
+    "timeout_ms": 20000
+  },
+  "624-lean-check-v1.json": {
+    "elapsed_ms": 573,
+    "exit_code": 0,
+    "peak_rss_kib": 42928,
+    "reason": "child_exit",
+    "rss_limit_kib": 2097152,
+    "schema": 1,
+    "timeout_ms": 20000
+  },
+  "624-lean-sensitivity-v1.json": {
+    "elapsed_ms": 292,
+    "exit_code": 0,
+    "peak_rss_kib": 2400,
+    "reason": "child_exit",
+    "rss_limit_kib": 2097152,
+    "schema": 1,
+    "timeout_ms": 20000
+  },
+  "624-lean-main-v1.json": {
+    "elapsed_ms": 1115,
+    "exit_code": 0,
+    "peak_rss_kib": 1205152,
+    "reason": "child_exit",
+    "rss_limit_kib": 2097152,
+    "schema": 1,
+    "timeout_ms": 20000
+  }
+}

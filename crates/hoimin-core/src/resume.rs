@@ -9,7 +9,7 @@ use crate::{
     TargetSlice,
 };
 
-pub const FINGERPRINT_SCHEMA_VERSION: u8 = 9;
+pub const FINGERPRINT_SCHEMA_VERSION: u8 = 10;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SourceHash {
@@ -280,7 +280,7 @@ fn encode_argv(argv: &[CommandArg]) -> Vec<u8> {
 
 fn encode_compatibility_limits(limits: &RunLimits) -> Vec<u8> {
     let mut out = Encoder::new();
-    out.u64(limits.max_mutants.get() as u64);
+    // The session owner separately checks and records monotone max-mutants changes.
     out.u64(limits.max_candidates.get() as u64);
     out.duration(limits.analyzer_timeout.get());
     out.duration(limits.baseline_timeout.get());

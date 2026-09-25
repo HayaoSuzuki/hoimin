@@ -200,6 +200,7 @@ jobs:
             HoiminOracle.BindingFlowCases
             HoiminOracle.BoundedCandidateDiscoveryCases
             HoiminOracle.BudgetCases
+            HoiminOracle.ResumeBudgetModel
             HoiminOracle.CandidateRankingCases
             HoiminOracle.CandidateSpanCases
             HoiminOracle.ChangedTargetCases
@@ -230,6 +231,7 @@ jobs:
             ComprehensionBindingAuditMain
             BoundedCandidateDiscoveryAuditMain
             BudgetMain
+            ResumeBudgetAuditMain
             CandidateRankingAuditMain
             PagingAuditMain
             SourceOrderAuditMain
@@ -311,6 +313,7 @@ jobs:
           generators=(
             'generate|corpus/state-machine.jsonl|check-only'
             'generate_budget|corpus/budget-cleanup.jsonl|check-only'
+            'generate_resume_budget|corpus/resume-budget.jsonl|sensitivity'
             'generate_session|corpus/session-recovery.jsonl|sensitivity'
             'generate_source_order|corpus/source-order.jsonl|sensitivity'
             'generate_shutdown|corpus/shutdown-orchestration.jsonl|sensitivity'

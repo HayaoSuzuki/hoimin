@@ -6,6 +6,7 @@ import HoiminOracle.ShutdownCases
 import HoiminOracle.BudgetModel
 import HoiminOracle.BudgetProofs
 import HoiminOracle.BudgetCases
+import HoiminOracle.ResumeBudgetModel
 import HoiminOracle.SessionModel
 import HoiminOracle.SessionProofs
 import HoiminOracle.SessionCases

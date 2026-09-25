@@ -836,7 +836,7 @@ annotations under CPython 3.14 in addition to reparsing their source.
 config validators reject escaped or non-normalized paths from persisted data.
 Historical run configs decode a missing list as empty. Plan schema 4 requires
 regeneration of earlier manifests before any baseline runs; fingerprint schema
-9 frames the ordered import roots under field tag 9, the ordered include/exclude
+10 frames the ordered import roots under field tag 9, the ordered include/exclude
 copy patterns under tags 10/11, and configured source roots under tag 12,
 preventing old-session reuse. Source file hashes retain their set semantics;
 source-root order separately captures worker Python import precedence. Patterns retain
@@ -948,6 +948,25 @@ Run `cargo test -p hoimin-core --test source_encoding --test candidate_policy`
 and `cargo test -p hoimin-cli --test source_encoding --test plan` for codec
 changes. The CLI encoding fixture observes CPython worker bytes and values;
 existing UTF-8 Lean/source-index proofs do not establish codec correspondence.
+
+## Resume budget compatibility
+
+Fingerprint schema 10 omits only `max_mutants` from verdict compatibility.
+SQLite schema 4 persists each run's accepted limit as a positive eight-byte
+big-endian unsigned value. Legacy rows retain NULL and remain non-resumable;
+the migration does not rewrite candidate/results. Selection finds the newest
+compatible incomplete run whose accepted limit does not exceed the requested
+limit. After acquiring the existing run ownership lock, a conditional update
+checks the exact validated old budget before reserving the new limit. Invalid
+budget blobs fail as `session.corrupt`. Scheduler accounting still charges
+reused results against the cumulative limit.
+
+`generate_resume_budget` produces 108 bounded strict cases consumed through
+public SessionHandler operations in `session_handler`. Lean proves no decreases
+and monotonic eligibility; it does not model SQLite locking or the scheduler.
+Public CLI tests cover baseline execution, cumulative reuse/execution, completion,
+and equality with fresh execution. The existing migration oracle's abstract
+current version maps to SQLite 4; its current migration step includes v3 and v4.
 
 ## Target discovery inventory
 
