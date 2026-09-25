@@ -31,3 +31,5 @@ Bounds:2×2×3×2=24 strict cases, no trace search. New proofs use10,000 heartbe
 Results are appended after final verification. Initial focused public2 tests and later public/oracle/symlink/CLI5 tests passed. Existing workspace/disk/heap/Lean workspace groups passed; the first full run's import-root compatibility assertion was diagnosed and corrected with a positive control, not hidden.
 
 Full workspace after import-root controls: 2383 passed, 0 failed, 22 ignored across 106 groups. Both CI Clippy/fmt gates and Python CI registry40 passed. Contracts-enabled empty-directory/workspace tests passed; final targeted rerun includes the generated-child assertion and updated registry placement.
+
+After clean rebase onto main195773a: contracts-enabled directory/import-root/workspace46 tests passed, both exact CI Clippy/fmt gates and Python registry40 passed. No implementation conflicts occurred.
