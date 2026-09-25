@@ -31,18 +31,18 @@
 
 **Interfaces:** retain `select_top_candidate_ids_at(&[RankedPlanCandidate], NonZeroUsize, TopSelectionPolicy, usize) -> Vec<String>` and prefix wrapper. Add private borrowed `DiverseCandidates<'a>: Iterator<Item = &'a RankedPlanCandidate>`.
 
-- [ ] Run baseline: `cargo test -p hoimin-cli --lib plan::selection_tests`. Expected: existing tests pass.
-- [ ] Add literal page assertions for strict `[A1,A2,B1,A3,B2,B3]` and diverse `[A1,B1,A2,A3,B2,B3]`, including page boundaries and empty inputs. Add an isolated heap test over 1024 candidates with 4096-byte IDs; for both policies measure offsets 0, 512, 1023 with count 1. Require page capacity 1 and peak below 512 KiB. A test-local eager cloned prefix must exceed the guard at the final offset.
-- [ ] Run `cargo test -p hoimin-cli --test selection_heap`. Expected: failure on current discarded prefix allocation/capacity, with semantic IDs unchanged.
-- [ ] Implement the borrowed iterator and page collection:
+- [x] Run baseline: `cargo test -p hoimin-cli --lib plan::selection_tests`. Expected: existing tests pass.
+- [x] Add literal page assertions for strict `[A1,A2,B1,A3,B2,B3]` and diverse `[A1,B1,A2,A3,B2,B3]`, including page boundaries and empty inputs. Add an isolated heap test over 1024 candidates with 4096-byte IDs; for both policies measure offsets 0, 512, 1023 with count 1. Require page capacity 1, peak below 512 KiB, and allocation-call count equal to offset zero. Retain a streaming clone-before-skip broken control to show that low peak alone is insufficient. A test-local eager cloned prefix must exceed the guard at the final offset.
+- [x] Run `cargo test -p hoimin-cli --test selection_heap`. Expected: failure on current discarded prefix allocation/capacity, with semantic IDs unchanged.
+- [x] Implement the borrowed iterator and page collection:
   ```rust
   let limit = count.get().min(candidates.len() - offset);
   let mut selected = Vec::with_capacity(limit);
   selected.extend(ordered.skip(offset).take(limit).map(|candidate| candidate.id.clone()));
   ```
   Guard offset before subtraction. Strict `ordered` is `candidates.iter()`. Diverse owns only reference queues. Prefix selection delegates to offset zero.
-- [ ] Run selection unit tests and heap integration test. Expected: all pass, including dense-file existing tests and broken allocation control.
-- [ ] Review implementation and tests separately in three passes: ordering/ownership, boundaries/sensitivity, integration/maintenance. Record findings and actions in the report and commit the change.
+- [x] Run selection unit tests and heap integration test. Expected: all pass, including dense-file existing tests and broken allocation control.
+- [x] Review implementation and tests separately in three passes: ordering/ownership, boundaries/sensitivity, integration/maintenance. Record findings and actions in the report and commit the change.
 
 ### Task 2: durable public paging oracle
 
@@ -50,16 +50,21 @@
 
 **Interfaces:** consumes unchanged public plan/verify CLI and emits schema-1 cases with identity, strict correspondence mode, policy, offset/count, accepted/exit, expected IDs and complete order. Adapter maps stable IDs to source file/line roles only; it does not calculate expected order.
 
-- [ ] Promote `/tmp/hoimin-round13-paging-oracle/Paging.lean` into the existing formal library layout. Preserve `slice_prefix`, three broken witnesses, asymmetric ranking fixture and 59 cases. Generator supports `--output`, `--check`, `--sensitivity` and `--stats`, following existing executables.
-- [ ] Add public Rust adapter: create `a.py` with `True/False/+` and `b.py` with `True/+/+`, plan six retained candidates, save unchanged manifest, invoke dry-run verify per corpus row, compare IDs, errors, rank, selection order and requested/retained counts. Reject malformed schema/mode/policy, duplicate identities and missing matrix cases. Count-zero must identify parser rejection; out-of-range must identify offset rejection.
-- [ ] Add generator/library modules to existing guarded CI and register `generate_paging|corpus/paging.jsonl|sensitivity`.
-- [ ] Ask parent for the exclusive Lean slot. Run guarded module build and generator output/check/sensitivity commands one at a time. Expected: theorem checks pass, 59 generated cases, exact corpus freshness and all broken controls detected. Record elapsed/RSS limits; no unbounded search.
-- [ ] Run `cargo test -p hoimin-cli --test lean_paging_oracle`. Expected: valid corpus and 59 public CLI matches (64-bit runner).
-- [ ] Run `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and one final `cargo test --workspace` with the shared Python venv available. Expected: all checks pass; record any environmental failures explicitly.
-- [ ] Complete third-round reviews with actual final evidence, update checked steps, commit all work and hand branch to parent for independent review and PR publication.
+- [x] Promote `/tmp/hoimin-round13-paging-oracle/Paging.lean` into the existing formal library layout. Preserve `slice_prefix`, three broken witnesses, asymmetric ranking fixture and 59 cases. Generator supports `--output`, `--check`, `--sensitivity` and `--stats`, following existing executables.
+- [x] Add public Rust adapter: create `a.py` with `True/False/+` and `b.py` with `True/+/+`, plan six retained candidates, save unchanged manifest, invoke dry-run verify per corpus row, compare IDs, errors, rank, selection order and requested/retained counts. Reject malformed schema/mode/policy, duplicate identities and missing matrix cases. Count-zero must identify parser rejection; out-of-range must identify offset rejection.
+- [x] Add generator/library modules to existing guarded CI and register `generate_paging|corpus/paging.jsonl|sensitivity`.
+- [x] Ask parent for the exclusive Lean slot. Run guarded module build and generator output/check/sensitivity commands one at a time. Expected: theorem checks pass, 59 generated cases, exact corpus freshness and all broken controls detected. Record elapsed/RSS limits; no unbounded search.
+- [x] Run `cargo test -p hoimin-cli --test lean_paging_oracle`. Expected: valid corpus and 59 public CLI matches (64-bit runner).
+- [x] Run `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, and one final `cargo test --workspace` with the shared Python venv available. Expected: all checks pass; record any environmental failures explicitly.
+- [x] Complete third-round reviews with actual final evidence, update checked steps, commit all work and hand branch to parent for independent review and PR publication.
 
 ## Plan self-review
 
 1. **Spec coverage:** mapped both policies and each offset/count boundary to Task 1; mapped public diagnostics and Lean CI freshness to Task 2. Added page-crossing-tier and dense-file focus explicitly.
 2. **Sensitivity review:** capacity-only evidence missed transient ownership. Added allocator peak with long IDs and retained broken eager-prefix control; this guards shrinking-after-cloning too.
 3. **Interface and execution review:** existing CI requires `--check`/`--sensitivity` rather than bare JSON output. Added compatible generator interface and schema validation; explicit exclusive Lean coordination prevents concurrent resource-heavy commands. Worktree-local tests need the root Python environment linked or on PATH, with no environment installation.
+
+
+## Execution outcome
+
+Implemented and verified; detailed review and test evidence is in `docs/superpowers/reports/2026-09-25-issue-631-offset-allocation.md`. All 2290 workspace tests passed (22 existing ignored). Exact CI workspace clippy with all features passed. An additional default-feature lint command exposed the unchanged core oracle helper's 127-line `observed_error` function; its adapter is excluded by the `contracts` feature. The unrelated file was not modified. Independent review had no blocking findings; its peak-only sensitivity caveat was closed with allocation-call counting and a witnessed production mutation failure. Parent agent owns publication.

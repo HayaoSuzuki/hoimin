@@ -16,7 +16,7 @@ The Lean model promotes the six-candidate audit from `/tmp/hoimin-round13-paging
 
 ## Three test self-review passes
 
-1. **Regression sensitivity:** baseline eight selection tests passed. Added allocator test before implementation and observed real RED for both policies. A capacity-only guard would miss shrink-after-clone; the test therefore bounds peak requested heap and retains an eager-prefix-then-shrink broken control. Fixture creation and expected-ID calculations happen outside measurement. Separate binary prevents unrelated tests from sharing the allocator interval.
+1. **Regression sensitivity:** baseline eight selection tests passed. Added allocator test before implementation and observed real RED for both policies. A capacity-only guard would miss shrink-after-clone; the test therefore bounds peak requested heap and retains an eager-prefix-then-shrink broken control. Independent review identified that a streaming clone/drop could keep a small peak; the final test also counts successful alloc/zeroed/realloc calls and requires every fixed one-tier page to match offset zero. A streaming clone-before-skip broken control has a small peak but over 1024 allocation calls, proving the counter detects that variant. Fixture creation and expected-ID calculations happen outside measurement. Separate binary prevents unrelated tests from sharing the allocator interval.
 2. **Boundary/independence:** literal strict/diverse orders cover tier-crossing pages, round-robin continuation, out-of-range offsets, and integer maxima. Existing dense-file/singleton tests remain. Added exact returned capacity checks to the boundary matrix, including empty pages, and checked allocator expected positions independently for eight equal files. The public adapter consumes Lean IDs without reproducing the ordering algorithm.
 3. **Schema/public behavior:** reviewed all 59 matrix coordinates and corpus rejection tests (missing/duplicate cases, unknown mode/policy/schema, invalid IDs/order/exit). Rejection cases require their specific diagnostics so arbitrary exit 2 cannot pass. Rank and selection-order checks cover projection preservation. Clippy identified an overlong adapter function; split fixture creation and result assertions into helpers without weakening assertions.
 
@@ -29,7 +29,30 @@ The Lean model promotes the six-candidate audit from `/tmp/hoimin-round13-paging
 - Guarded Lean model build: 4.443 seconds, peak 680,816 KiB; corpus generation 2.809 seconds, 683,120 KiB; freshness 3.042 seconds, 683,856 KiB; sensitivity 0.578 seconds, 613,184 KiB; stats 0.582 seconds, 626,208 KiB. Limits: 20 seconds, 2048 MiB, 10000 heartbeats per theorem, one process at a time. No bound increase or abandoned larger search.
 - Infrastructure: initial sandboxed resource guard exited 126 (`monitor_error`) before compilation because process monitoring was restricted; the same guarded command succeeded with approved process access. This was not a model mismatch. Clippy's initial long-function finding was repaired by extracting test helpers.
 
-Final workspace checks and observed post-change allocation values are recorded below after execution.
+Final checks:
+
+- `cargo test --workspace` exited 0: **2290 passed, 0 failed, 22 ignored**, across 96 suite summaries. This run used the unchanged production implementation and covered the public oracle. The subsequent test-only allocation-counter strengthening passed its focused rerun.
+- `cargo fmt --all -- --check` and `git diff --check` passed.
+- Exact CI lint `cargo clippy --workspace --all-targets --all-features -- -D warnings` passed. Scoped CLI lint with and without `--all-features` also passed.
+- The additional default-feature command `cargo clippy --workspace --all-targets -- -D warnings` did **not** pass: the pre-existing `crates/hoimin-core/tests/lean_report_sequence_oracle.rs:372` function `observed_error` has 127 lines against the `clippy::too_many_lines` limit of 100. The file has no diff against either branch base `43989c2` or `origin/main`. It was left unchanged. The helper belongs to a `#[cfg(not(feature = "contracts"))]` module, explaining why the exact CI command with all features succeeds. The initial findings in this branch's tests were repaired; the full-workspace failure is reported rather than suppressed.
+- Temporarily moving the production strict clone before skip made the strengthened heap test fail on **514 and 1025 allocation calls**, versus 2 at offset zero, while peak stayed 4120 bytes and capacity stayed 1. Restoring the production source byte-for-byte made the test pass. The final source contains no injected mutation.
+
+Final allocator measurements use 1024 synthetic candidates, eight equal-size files, one score tier, and 4096-byte IDs; they are not whole-CLI memory measurements:
+
+| Policy | Offset | Additional peak requested bytes | Allocation calls | Returned capacity |
+| --- | ---: | ---: | ---: | ---: |
+| strict | 0 | 4120 | 2 | 1 |
+| strict | 512 | 4120 | 2 | 1 |
+| strict | 1023 | 4120 | 2 | 1 |
+| diverse | 0 | 12568 | 55 | 1 |
+| diverse | 512 | 12568 | 55 | 1 |
+| diverse | 1023 | 8880 | 55 | 1 |
+
+The eager-prefix controls still allocate over 4 MiB; the streaming clone/drop control stays under the peak threshold but exceeds 1024 allocation calls. Thus both retained-prefix and short-lived-discarded-clone regressions have executable sensitivity controls. There are no retained semantic mismatches or unresolved ownership decisions.
+
+## Independent review
+
+A fresh reviewer examined production ordering/ownership, clipping, all 59 corpus cases, allocator sensitivity and formal CI integration; no blocking findings. The parent agent separately reviewed the production diff. The reviewer correctly limited the claim to bounded public correspondence and observed that peak-only guards miss short-lived clones. The latter finding was addressed by allocation-call counting and an additional streaming broken control before final handoff.
 
 ## Reproduction
 
@@ -40,7 +63,7 @@ CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 CARGO_B
 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 CARGO_BUILD_JOBS=2 cargo test -p hoimin-cli --test selection_heap -- --nocapture
 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 CARGO_BUILD_JOBS=2 cargo test -p hoimin-cli --test lean_paging_oracle
 cargo fmt --all -- --check
-CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 CARGO_BUILD_JOBS=2 cargo clippy --workspace --all-targets -- -D warnings
+CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 CARGO_BUILD_JOBS=2 cargo clippy --workspace --all-targets --all-features -- -D warnings
 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 CARGO_BUILD_JOBS=2 cargo test --workspace
 ```
 
