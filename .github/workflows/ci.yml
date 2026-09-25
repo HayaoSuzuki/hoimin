@@ -143,6 +143,7 @@ jobs:
             HoiminOracle.CandidateSpanModel
             HoiminOracle.ChangedTargetModel
             HoiminOracle.ChangedContextModel
+            HoiminOracle.ChangedLinesModel
             HoiminOracle.CleanupCapabilityModel
             HoiminOracle.DiskGuardModel
             HoiminOracle.FactIndexModel
@@ -233,6 +234,7 @@ jobs:
             CandidateSpanAuditMain
             ChangedTargetAuditMain
             ChangedContextAuditMain
+            ChangedLinesAuditMain
             CleanupCapabilityAuditMain
             DiskGuardAuditMain
             HoiminOracle.AnnotationScopeCases
@@ -330,6 +332,7 @@ jobs:
             'generate_candidate_span|corpus/candidate-span-preservation.jsonl|sensitivity'
             'generate_changed_target|corpus/changed-target-composition.jsonl|sensitivity'
             'generate_changed_context|corpus/changed-context.jsonl|sensitivity'
+            'generate_changed_lines|corpus/changed-lines.jsonl|sensitivity'
             'generate_process_output|corpus/process-output-outcome.jsonl|sensitivity'
             'generate_timeout_limit|corpus/timeout-limit.jsonl|sensitivity'
             'generate_disk_guard|corpus/disk-guard-lifecycle.jsonl|sensitivity'
