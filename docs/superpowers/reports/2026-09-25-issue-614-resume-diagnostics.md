@@ -40,3 +40,5 @@ Final pre-integration checks: targeted report/progress/oracle/public tests124 pa
 Rebased the two unpublished Issue614 commits onto c684749, excluding parent624 at2cf6bad. Resolved only append conflicts in progress tests and four Lean registries, retaining both main's regression/environment coverage and this Issue's schema/diagnostic coverage. No production conflict required changing selection semantics. Current environment fingerprinting and schema11 SQLite tests are included in final integration tests.
 
 Integrated tests: 170 passed/1 ignored, exact workspace Clippy passed, workflow registry40 passed, formatting/diff checks passed. Guarded Lean corpus freshness passed again after rebase. Vendored parser remains unchanged from the previously passing exact vendor gate.
+
+Final documentation cross-check corrected the progress input overview to list JSON v2/v3/v4 and JSONL v3/v4, consistent with the tested reader and session section. Reviewed all README schema references; this documentation-only correction changes no implementation or test contract. `git diff --check` passed.

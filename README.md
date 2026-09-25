@@ -517,8 +517,8 @@ same execution saved as JSON and JSONL, or with different whitespace, is not
 detected as a copy. Copy confirmation is best-effort if files change or become
 unreadable after validation; reports should remain unchanged during comparison.
 
-Inputs may mix JSON documents (schema v2/v3) and current-schema JSONL event
-streams saved from `hoimin run --format jsonl`. Detection uses content, not
+Inputs may mix JSON documents (schema v2/v3/v4) and JSONL event streams
+(schema v3/v4) saved from `hoimin run --format jsonl`. Detection uses content, not
 filename. For example:
 
 ```console
