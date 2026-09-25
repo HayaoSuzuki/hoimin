@@ -14,6 +14,7 @@ use thiserror::Error;
 
 use super::duplicate::{DuplicateInput, FingerprintReader};
 
+mod dispatch;
 mod jsonl;
 
 #[derive(Debug)]
@@ -160,11 +161,6 @@ struct RunReportDocument {
 }
 
 #[derive(Deserialize)]
-struct ReportHeader {
-    schema_version: u32,
-}
-
-#[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct LegacyV2ReportDocument {
     schema_version: u32,
@@ -217,7 +213,8 @@ fn read_buffered_report(
 ) -> Result<InputReport, ProgressError> {
     let mut bytes = Vec::new();
     jsonl::read_line(path, &mut reader, &mut bytes)?;
-    if jsonl::is_event(&bytes) {
+    let header = dispatch::probe(&bytes);
+    if header.is_some_and(|header| header.format == dispatch::Format::Jsonl) {
         return validate_document(path, jsonl::read_document(path, reader, bytes)?);
     }
     reader
@@ -226,12 +223,9 @@ fn read_buffered_report(
             path: path.to_path_buf(),
             source,
         })?;
-    let header =
-        serde_json::from_slice::<ReportHeader>(&bytes).map_err(|source| ProgressError::Parse {
-            path: path.to_path_buf(),
-            source,
-        })?;
-    if header.schema_version == 2 {
+    // Pretty documents may not expose both discriminators on the first line.
+    let header = header.or_else(|| dispatch::probe(&bytes));
+    if header.is_some_and(|header| header.schema_version == 2) {
         return read_legacy_v2(path, &bytes);
     }
     let document = serde_json::from_slice::<RunReportDocument>(&bytes).map_err(|source| {

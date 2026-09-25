@@ -23,3 +23,9 @@ The verify-lane reviewer independently inspected production callers, both discov
 Full workspace: 2290 passed, 0 failed, 22 ignored across 96 test groups. Exact CI all-target/all-feature workspace Clippy and locked parser Clippy passed, as did workspace/vendor formatting and diff checks. Lean peak was 1,285,616 KiB and the longest guarded command took 9,128 ms, below the unchanged 2,048-MiB / 20-second bounds.
 
 Before publication, rebased onto main `efe3531`; resolved additive Lean registry conflicts by retaining both paging and glob-selection entries in matching order. Workflow contract tests passed 40/40 and the glob/paging/plan integration group passed 85 tests (1 ignored). Formatting and diff checks passed. No production conflict occurred.
+
+## Published-branch integration with main `559219e`
+
+Merged main into the published branch without rewriting history after issues 622 and 632 landed. The only conflicts were two CI model/entrypoint lists; retained both changed-context and glob-selection entries. Reviewed the automatically merged target code and all four registry sites: the glob-filtered discovery contract, changed-context selection and source-order compatibility additions are all preserved.
+
+Fresh validation used the assigned cache after cleaning only core/CLI artifacts: workflow contract tests 40/40; `cargo test -p hoimin-cli --test lean_glob_selection_oracle --test plan -- --test-threads=1` passed with 1 ignored; exact CI workspace/all-target/all-feature clippy, locked parser clippy, workspace/vendor format checks and diff checks all passed. No Lean command or new semantic change was needed for this registry merge.

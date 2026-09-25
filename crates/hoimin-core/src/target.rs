@@ -6,6 +6,9 @@ use thiserror::Error;
 
 use crate::{LineRange, TargetSlice, contract_ensure};
 
+/// Keeps `2 * context` within a signed 32-bit C long in older Git versions.
+pub const MAX_CHANGED_CONTEXT: u32 = (i32::MAX as u32) / 2;
+
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Selection {
     pub root: Utf8PathBuf,
@@ -14,6 +17,8 @@ pub struct Selection {
     pub lines: Vec<LineSelection>,
     pub symbols: Vec<SymbolSelection>,
     pub changed: bool,
+    #[serde(default)]
+    pub changed_context: u32,
     pub diff_base: Option<String>,
     pub includes: Vec<String>,
     pub excludes: Vec<String>,

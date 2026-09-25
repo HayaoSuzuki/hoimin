@@ -22,6 +22,7 @@ pub struct RankingReason {
 pub enum RankingReasonCode {
     ExplicitLine,
     ExplicitSymbol,
+    /// Candidate belongs to the Git selection, including requested context lines.
     ChangedLine,
     HighValueControl,
     ExceptionHandling,

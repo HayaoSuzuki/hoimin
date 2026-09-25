@@ -139,8 +139,10 @@ jobs:
             HoiminOracle.BudgetModel
             HoiminOracle.CandidateRankingModel
             HoiminOracle.PagingModel
+            HoiminOracle.SourceOrderModel
             HoiminOracle.CandidateSpanModel
             HoiminOracle.ChangedTargetModel
+            HoiminOracle.ChangedContextModel
             HoiminOracle.GlobSelectionModel
             HoiminOracle.CleanupCapabilityModel
             HoiminOracle.DiskGuardModel
@@ -170,6 +172,7 @@ jobs:
             HoiminOracle.CandidateSpanProofs
             HoiminOracle.Cases
             HoiminOracle.ChangedTargetProofs
+            HoiminOracle.ChangedContextProofs
             HoiminOracle.CleanupCapabilityProofs
             HoiminOracle.CompoundPatternGuardModel
             HoiminOracle.DiskGuardCases
@@ -197,6 +200,7 @@ jobs:
             HoiminOracle.CandidateRankingCases
             HoiminOracle.CandidateSpanCases
             HoiminOracle.ChangedTargetCases
+            HoiminOracle.ChangedContextCases
             HoiminOracle.CleanupCapabilityCases
             HoiminOracle.CompoundPatternGuardProofs
             HoiminOracle.DiskGuardProofs
@@ -225,8 +229,10 @@ jobs:
             BudgetMain
             CandidateRankingAuditMain
             PagingAuditMain
+            SourceOrderAuditMain
             CandidateSpanAuditMain
             ChangedTargetAuditMain
+            ChangedContextAuditMain
             GlobSelectionAuditMain
             CleanupCapabilityAuditMain
             DiskGuardAuditMain
@@ -300,6 +306,7 @@ jobs:
             'generate|corpus/state-machine.jsonl|check-only'
             'generate_budget|corpus/budget-cleanup.jsonl|check-only'
             'generate_session|corpus/session-recovery.jsonl|sensitivity'
+            'generate_source_order|corpus/source-order.jsonl|sensitivity'
             'generate_shutdown|corpus/shutdown-orchestration.jsonl|sensitivity'
             'generate_workspace|corpus/workspace-lifecycle.jsonl|check-only'
             'generate_glob_selection|corpus/glob-selection.jsonl|sensitivity'
@@ -323,6 +330,7 @@ jobs:
             'generate_output_retention|corpus/output-retention.jsonl|sensitivity'
             'generate_candidate_span|corpus/candidate-span-preservation.jsonl|sensitivity'
             'generate_changed_target|corpus/changed-target-composition.jsonl|sensitivity'
+            'generate_changed_context|corpus/changed-context.jsonl|sensitivity'
             'generate_process_output|corpus/process-output-outcome.jsonl|sensitivity'
             'generate_timeout_limit|corpus/timeout-limit.jsonl|sensitivity'
             'generate_disk_guard|corpus/disk-guard-lifecycle.jsonl|sensitivity'

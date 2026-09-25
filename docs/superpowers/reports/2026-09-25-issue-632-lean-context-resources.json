@@ -1,0 +1,88 @@
+{
+  "schema": 1,
+  "issue": 632,
+  "cases": 44,
+  "context_values": [
+    0,
+    1,
+    2,
+    1073741823
+  ],
+  "maximum_file_lines": 8,
+  "maximum_hunks": 2,
+  "sensitivity_families": 5,
+  "runs": {
+    "build-model": {
+      "elapsed_ms": 3046,
+      "exit_code": 0,
+      "peak_rss_kib": 611904,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    "build-proofs": {
+      "elapsed_ms": 3080,
+      "exit_code": 0,
+      "peak_rss_kib": 612688,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    "build-cases": {
+      "elapsed_ms": 6732,
+      "exit_code": 0,
+      "peak_rss_kib": 1267504,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    "build-entrypoint": {
+      "elapsed_ms": 6071,
+      "exit_code": 0,
+      "peak_rss_kib": 1248912,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    "generate": {
+      "elapsed_ms": 5598,
+      "exit_code": 0,
+      "peak_rss_kib": 1270544,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    "ci-freshness": {
+      "elapsed_ms": 2200,
+      "exit_code": 0,
+      "peak_rss_kib": 782560,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    "sensitivity": {
+      "elapsed_ms": 564,
+      "exit_code": 0,
+      "peak_rss_kib": 54544,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    },
+    "stats": {
+      "elapsed_ms": 291,
+      "exit_code": 0,
+      "peak_rss_kib": 2752,
+      "reason": "child_exit",
+      "rss_limit_kib": 2097152,
+      "schema": 1,
+      "timeout_ms": 20000
+    }
+  }
+}

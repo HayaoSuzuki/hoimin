@@ -1082,3 +1082,81 @@ async fn exclusion_case_rules_follow_the_platform_for_walks_and_selectors() {
         }
     }
 }
+
+#[tokio::test]
+async fn changed_context_expands_current_lines_and_intersects_explicit_ranges() {
+    for (before, after, context, expected) in [
+        (
+            "a = 1\nb = 2\nc = 3\nd = 4\n",
+            "a = 1\nb = 20\nc = 3\nd = 4\n",
+            0,
+            vec![LineRange { start: 2, end: 2 }],
+        ),
+        (
+            "a = 1\nb = 2\nc = 3\nd = 4\n",
+            "a = 1\nb = 20\nc = 3\nd = 4\n",
+            1,
+            vec![LineRange { start: 1, end: 3 }],
+        ),
+        ("a = 1\nb = 2\nc = 3\n", "a = 1\nc = 3\n", 0, vec![]),
+        (
+            "a = 1\nb = 2\nc = 3\n",
+            "a = 1\nc = 3\n",
+            1,
+            vec![LineRange { start: 1, end: 2 }],
+        ),
+        (
+            "a = 1\nb = 2\nc = 3\n",
+            "b = 2\nc = 3\n",
+            1,
+            vec![LineRange { start: 1, end: 1 }],
+        ),
+        (
+            "a = 1\nb = 2\nc = 3\n",
+            "a = 1\nb = 2\n",
+            1,
+            vec![LineRange { start: 2, end: 2 }],
+        ),
+        ("a = 1\n", "", 1, vec![]),
+        (
+            "a = 1\nb = 2\nc = 3\n",
+            "a = 1\nb = 20\nc = 3\n",
+            1_073_741_823,
+            vec![LineRange { start: 1, end: 3 }],
+        ),
+    ] {
+        let repo = FixtureRepo::new();
+        repo.write("src/calc.py", before);
+        repo.write("src/unchanged.py", "untouched = 1\n");
+        repo.commit_all("initial");
+        repo.write("src/calc.py", after);
+        let mut value = serde_json::to_value(Selection {
+            root: repo.root(),
+            sources: vec!["src".into()],
+            changed: true,
+            ..Selection::default()
+        })
+        .unwrap();
+        value["changed_context"] = serde_json::json!(context);
+        let mut selection: Selection = serde_json::from_value(value).unwrap();
+        let targets = TargetHandler::resolve(&selection).await.unwrap();
+        if expected.is_empty() {
+            assert!(targets.is_empty(), "context={context}: {targets:?}");
+        } else {
+            assert_eq!(targets.len(), 1);
+            assert_eq!(targets[0].path, "src/calc.py");
+            assert_eq!(targets[0].lines, expected);
+        }
+        selection.lines = vec![LineSelection {
+            path: "src/calc.py".into(),
+            range: LineRange { start: 2, end: 2 },
+        }];
+        let restricted = TargetHandler::resolve(&selection).await.unwrap();
+        let includes_second = expected.iter().any(|r| r.start <= 2 && r.end >= 2);
+        if includes_second {
+            assert_eq!(restricted[0].lines, vec![LineRange { start: 2, end: 2 }]);
+        } else {
+            assert!(restricted.is_empty());
+        }
+    }
+}

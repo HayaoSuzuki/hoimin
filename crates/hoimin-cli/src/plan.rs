@@ -719,17 +719,53 @@ fn ensure_exact_records(
     current: &[FingerprintInputFile],
     kind: RecordMismatch,
 ) -> Result<(), PlanError> {
-    if record_map(expected) == record_map(current) {
+    let expected = record_map(expected);
+    let current = record_map(current);
+    if expected == current {
         return Ok(());
     }
+    let details = record_change_details(&expected, &current);
     match kind {
-        RecordMismatch::Source => Err(PlanError::SourceChanged(
-            "planned target source records do not match the current workspace".to_owned(),
-        )),
-        RecordMismatch::FingerprintInput => Err(PlanError::FingerprintInputChanged(
-            "planned fingerprint input records do not match the current workspace".to_owned(),
-        )),
+        RecordMismatch::Source => Err(PlanError::SourceChanged(format!(
+            "planned target source records do not match the current workspace: {details}"
+        ))),
+        RecordMismatch::FingerprintInput => Err(PlanError::FingerprintInputChanged(format!(
+            "planned fingerprint input records do not match the current workspace: {details}"
+        ))),
     }
+}
+
+fn record_change_details(
+    expected: &BTreeMap<Utf8PathBuf, String>,
+    current: &BTreeMap<Utf8PathBuf, String>,
+) -> String {
+    const DISPLAY_LIMIT: usize = 10;
+    let changes: BTreeMap<_, _> = expected
+        .iter()
+        .filter_map(|(path, hash)| match current.get(path) {
+            None => Some((path, "removed")),
+            Some(current_hash) if current_hash != hash => Some((path, "modified")),
+            Some(_) => None,
+        })
+        .chain(
+            current
+                .keys()
+                .filter(|path| !expected.contains_key(*path))
+                .map(|path| (path, "added")),
+        )
+        .collect();
+    let mut details: Vec<_> = changes
+        .iter()
+        .take(DISPLAY_LIMIT)
+        .map(|(path, change)| format!("{change} {:?}", path.as_str()))
+        .collect();
+    if changes.len() > DISPLAY_LIMIT {
+        details.push(format!(
+            "{} additional paths omitted",
+            changes.len() - DISPLAY_LIMIT
+        ));
+    }
+    details.join("; ")
 }
 
 fn record_map(records: &[FingerprintInputFile]) -> BTreeMap<Utf8PathBuf, String> {
