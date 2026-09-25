@@ -430,3 +430,22 @@ fn exact_missing_file_beneath_symlinked_parent_does_not_probe_outside() {
 
     assert_error_prefix(&error, "fingerprint.file.unsupported_file");
 }
+
+#[test]
+fn binary_hashes_cover_empty_and_stream_buffer_boundaries() {
+    let fixture = fixture_root(&[]);
+    for size in [0, 1, 65_535, 65_536, 65_537, 131_079] {
+        let bytes: Vec<u8> = (0_u8..=255).cycle().take(size).collect();
+        std::fs::write(fixture.root.join("binary.dat"), &bytes).unwrap();
+        let expected = blake3::hash(&bytes).to_hex().to_string();
+        for (patterns, files) in [
+            (vec![], vec!["binary.dat".into()]),
+            (vec!["*.dat".into()], vec![]),
+        ] {
+            let records = resolve(&fixture.root, &patterns, &files).unwrap();
+            assert_eq!(records.len(), 1);
+            assert_eq!(records[0].path, "binary.dat");
+            assert_eq!(records[0].hash, expected, "size={size}");
+        }
+    }
+}
