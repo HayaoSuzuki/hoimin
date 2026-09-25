@@ -754,6 +754,7 @@ fn assert_exact_outcome(
         }
         (ContendedOperation::Load, ContendedOutcome::Load(Ok(actual))) => {
             let expected = SessionLoaded {
+                fresh_reason: None,
                 id,
                 resume: Some(SessionResumeRef {
                     run_id: run_id.to_owned(),

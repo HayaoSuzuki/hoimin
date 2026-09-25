@@ -21,57 +21,74 @@ pub(super) fn write_mutant_diagnostics(
 
 pub(super) fn write_event(writer: &mut impl Write, event: &OutputEvent) -> io::Result<()> {
     match event {
-        OutputEvent::RunStarted(value) => match value.normalized_config.as_ref() {
-            Some(config) => {
-                let patterns = config.fingerprint_includes.join(", ");
-                let inputs = config
-                    .fingerprint_inputs
-                    .iter()
-                    .map(|input| format!("{}={}", input.path, input.hash))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                writeln!(
-                    writer,
-                    "run started: {} (profile: {})",
-                    value.run_id,
-                    config.profile.as_str(),
-                )?;
-                if !config.fingerprint_includes.is_empty() {
-                    writeln!(writer, "fingerprint includes: [{patterns}]")?;
-                }
-                if !config.fingerprint_files.is_empty() {
+        OutputEvent::RunStarted(value) => {
+            match value.normalized_config.as_ref() {
+                Some(config) => {
+                    let patterns = config.fingerprint_includes.join(", ");
+                    let inputs = config
+                        .fingerprint_inputs
+                        .iter()
+                        .map(|input| format!("{}={}", input.path, input.hash))
+                        .collect::<Vec<_>>()
+                        .join(", ");
                     writeln!(
                         writer,
-                        "fingerprint files: [{}]",
-                        config.fingerprint_files.join(", ")
+                        "run started: {} (profile: {})",
+                        value.run_id,
+                        config.profile.as_str(),
                     )?;
+                    if !config.fingerprint_includes.is_empty() {
+                        writeln!(writer, "fingerprint includes: [{patterns}]")?;
+                    }
+                    if !config.fingerprint_files.is_empty() {
+                        writeln!(
+                            writer,
+                            "fingerprint files: [{}]",
+                            config.fingerprint_files.join(", ")
+                        )?;
+                    }
+                    if !config.fingerprint_inputs.is_empty() {
+                        writeln!(writer, "fingerprint inputs: [{inputs}]")?;
+                    }
+                    if let Some(selection) = &value.verification_selection {
+                        let mode = match selection.mode {
+                            VerificationSelectionMode::CandidateIds => "candidate_ids",
+                            VerificationSelectionMode::Top => "top",
+                        };
+                        let scope = match selection.scope {
+                            VerificationSelectionScope::ExplicitCandidates => "explicit_candidates",
+                            VerificationSelectionScope::RetainedCandidates => "retained_candidates",
+                        };
+                        let policy = match selection.policy {
+                            VerificationSelectionPolicy::ExplicitCandidates => {
+                                "explicit_candidates"
+                            }
+                            VerificationSelectionPolicy::Strict => "strict",
+                            VerificationSelectionPolicy::FileRoundRobinV1 => "file_round_robin_v1",
+                        };
+                        writeln!(
+                            writer,
+                            "verification selection: mode={mode} policy={policy} requested={} selected={} scope={scope} plan_truncated={}",
+                            selection.requested, selection.selected, selection.plan_truncated
+                        )?;
+                    }
                 }
-                if !config.fingerprint_inputs.is_empty() {
-                    writeln!(writer, "fingerprint inputs: [{inputs}]")?;
-                }
-                if let Some(selection) = &value.verification_selection {
-                    let mode = match selection.mode {
-                        VerificationSelectionMode::CandidateIds => "candidate_ids",
-                        VerificationSelectionMode::Top => "top",
-                    };
-                    let scope = match selection.scope {
-                        VerificationSelectionScope::ExplicitCandidates => "explicit_candidates",
-                        VerificationSelectionScope::RetainedCandidates => "retained_candidates",
-                    };
-                    let policy = match selection.policy {
-                        VerificationSelectionPolicy::ExplicitCandidates => "explicit_candidates",
-                        VerificationSelectionPolicy::Strict => "strict",
-                        VerificationSelectionPolicy::FileRoundRobinV1 => "file_round_robin_v1",
-                    };
-                    writeln!(
+                None => writeln!(writer, "run started: {}", value.run_id)?,
+            }
+            if let Some(outcome) = value.resume {
+                match outcome {
+                    hoimin_core::ResumeOutcome::Resumed => {
+                        writeln!(writer, "resume: continuing saved run")?;
+                    }
+                    hoimin_core::ResumeOutcome::Fresh { reason } => writeln!(
                         writer,
-                        "verification selection: mode={mode} policy={policy} requested={} selected={} scope={scope} plan_truncated={}",
-                        selection.requested, selection.selected, selection.plan_truncated
-                    )?;
+                        "resume: starting new run [{}]: {}",
+                        reason.code(),
+                        reason.explanation()
+                    )?,
                 }
             }
-            None => writeln!(writer, "run started: {}", value.run_id)?,
-        },
+        }
         OutputEvent::BaselineFinished(value) => {
             writeln!(
                 writer,

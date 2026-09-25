@@ -518,8 +518,8 @@ same execution saved as JSON and JSONL, or with different whitespace, is not
 detected as a copy. Copy confirmation is best-effort if files change or become
 unreadable after validation; reports should remain unchanged during comparison.
 
-Inputs may mix JSON documents (schema v2/v3) and current-schema JSONL event
-streams saved from `hoimin run --format jsonl`. Detection uses content, not
+Inputs may mix JSON documents (schema v2/v3/v4) and JSONL event streams
+(schema v3/v4) saved from `hoimin run --format jsonl`. Detection uses content, not
 filename. For example:
 
 ```console
@@ -725,6 +725,11 @@ behavior: those writers cannot be forcibly cancelled and can delay return or
 diagnostics.
 
 ## Sessions and resume
+
+Run JSON/JSONL now emit schema 4; consumers validating the closed schema must update. `progress` continues to read historical schema-2 JSON and schema-3 JSON/JSONL, and rejects mixed-version reports. When `--resume` is requested, JSON and JSONL include `run_started.resume` (the `run.resume` field in a JSON report): `{"status":"resumed"}` or `{"status":"fresh","reason":"CODE"}`. Human output also explains whether the saved run is continuing or a new run is starting. Runs without `--resume` omit this field.
+
+A compatible incomplete run always wins, even if newer runs are incompatible. If an eligible row appears only during the later history inspection, `candidate_changed` takes precedence. Otherwise reasons use this precedence: `budget_decreased` (matching incomplete runs require a higher `--max-mutants`), `matching_run_complete`, `fingerprint_mismatch` (other incomplete history), `no_incomplete_run` (only nonmatching complete history), then `no_prior_run`. `candidate_changed` means session history changed during resume selection; `no_compatible_run` is a fallback for older completion events without diagnostic details. These codes describe observed history, not which configuration field or file changed. Existing old-schema, corrupt-data, database-read, and ownership errors remain errors.
+
 
 No database is created by default. `--session PATH` stores a run in SQLite and commits each mutant result independently. `--resume` requires `--session` and looks up the newest compatible incomplete run. Compatibility includes ordered import roots and source roots, source and configuration fingerprints, test argv, verdict-affecting limits, resource policy, and the operator set. Profile selection is part of session compatibility, so a focused run never resumes results from a full run and vice versa. `--jobs` and `--max-output` are operational settings and may change when resuming; reports record their current values, and reused results do not import output retained under the earlier limit. Completed `killed` and `survived` results can be reused; `timeout`, `out_of_memory`, `process_limit`, `error`, and `not_run` are run again under the current settings. An incompatible or already complete run is not silently mixed with new results.
 

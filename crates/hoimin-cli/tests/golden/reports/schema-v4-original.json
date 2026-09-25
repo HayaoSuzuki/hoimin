@@ -1,0 +1,187 @@
+{
+  "baseline": {
+    "elapsed_ms": 11,
+    "kind": "baseline_finished",
+    "output": {
+      "observed": 34,
+      "retained": 21,
+      "token": "golden-baseline-output"
+    },
+    "resource_mode": "hard",
+    "run_id": "schema-v4-original",
+    "schema_version": 4,
+    "sequence": 2,
+    "termination": {
+      "Exit": 0
+    }
+  },
+  "mutants": [
+    {
+      "candidate": {
+        "column": 17,
+        "file_hash": "golden-file-hash",
+        "id": "golden-mutant",
+        "line": 2,
+        "operator": "binary_add_sub",
+        "original": "+",
+        "path": "src/example.py",
+        "replacement": "-",
+        "sequence": 0,
+        "span": {
+          "length": 1,
+          "start": 4
+        },
+        "symbol": "calculate"
+      },
+      "elapsed_ms": 13,
+      "kind": "mutant_finished",
+      "output": {
+        "observed": 89,
+        "retained": 55,
+        "token": "golden-mutant-output"
+      },
+      "resource_mode": "hard",
+      "run_id": "schema-v4-original",
+      "schema_version": 4,
+      "sequence": 4,
+      "status": "killed",
+      "termination": {
+        "Exit": 7
+      }
+    }
+  ],
+  "run": {
+    "kind": "run_started",
+    "normalized_config": {
+      "allow_best_effort_memory": false,
+      "fingerprint_files": [],
+      "fingerprint_includes": [],
+      "fingerprint_inputs": [],
+      "import_roots": [],
+      "limits": {
+        "analyzer_timeout": {
+          "nanos": 0,
+          "secs": 30
+        },
+        "baseline_timeout": {
+          "nanos": 0,
+          "secs": 60
+        },
+        "jobs": 1,
+        "max_candidates": 10000,
+        "max_copy_size": 1073741824,
+        "max_memory": 1073741824,
+        "max_mutants": 100,
+        "max_output": 1048576,
+        "max_processes": 64,
+        "max_workspace_size": 8589934592,
+        "min_free_space": 10737418240,
+        "mutant_timeout": "auto",
+        "total_timeout": {
+          "nanos": 0,
+          "secs": 300
+        }
+      },
+      "operators": [
+        "binary_add_sub"
+      ],
+      "output": {
+        "format": "json",
+        "metrics": "metrics.json"
+      },
+      "profile": "full",
+      "resume": false,
+      "root": ".",
+      "selection": {
+        "changed": true,
+        "changed_context": 0,
+        "diff_base": "golden-base",
+        "excludes": [],
+        "files": [],
+        "includes": [],
+        "lines": [],
+        "root": ".",
+        "sources": [
+          "src"
+        ],
+        "symbols": []
+      },
+      "session": {
+        "path": "session.sqlite3"
+      },
+      "test_argv": [
+        {
+          "unix": [
+            112,
+            121,
+            116,
+            104,
+            111,
+            110
+          ]
+        },
+        {
+          "unix": [
+            45,
+            109
+          ]
+        },
+        {
+          "unix": [
+            112,
+            121,
+            116,
+            101,
+            115,
+            116
+          ]
+        }
+      ]
+    },
+    "resource_control": {
+      "mechanism": "golden-control",
+      "mode": "hard"
+    },
+    "run_id": "schema-v4-original",
+    "schema_version": 4,
+    "sequence": 1,
+    "versions": {
+      "hoimin": "golden-hoimin",
+      "os": "golden-os"
+    }
+  },
+  "schema_version": 4,
+  "summary": {
+    "complete": true,
+    "counts": {
+      "error": 0,
+      "inconclusive": 0,
+      "killed": 1,
+      "not_run": 0,
+      "out_of_memory": 0,
+      "process_limit": 0,
+      "score": 1.0,
+      "survived": 0,
+      "timeout": 0
+    },
+    "disk": {
+      "cleanup": [],
+      "configured_max_owned_bytes": 8589934592,
+      "configured_min_free_bytes": 10737418240,
+      "enforcement": [],
+      "filesystems": [],
+      "maximum_measurement_ms": 0,
+      "minimum_available_bytes": null,
+      "peak_owned_bytes": 0,
+      "removed_logical_bytes": null,
+      "sample_count": 0,
+      "stale_roots_reclaimed": 0,
+      "stop": null
+    },
+    "exit_code": 0,
+    "kind": "run_finished",
+    "run_id": "schema-v4-original",
+    "schema_version": 4,
+    "sequence": 6
+  }
+}

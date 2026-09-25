@@ -56,6 +56,7 @@ fn input_dispatch_preserves_document_field_orders_and_opaque_config() {
         "schema-v2-original.json",
         "schema-v2-current.json",
         "schema-v3-current.json",
+        "schema-v4-current.json",
     ] {
         let source = repo_root()
             .join("crates/hoimin-cli/tests/golden/reports")
@@ -3812,5 +3813,60 @@ async fn regression_exit_never_overrides_stdout_or_stderr_errors() {
         .await;
         assert_eq!(status, 2);
         assert!(out.is_empty());
+    }
+}
+
+#[test]
+fn progress_accepts_historical_v3_and_current_v4_but_rejects_mixed_json_and_jsonl() {
+    let fixture = tempfile::tempdir().unwrap();
+    for version in [3, 4] {
+        let source = repo_root().join(format!(
+            "crates/hoimin-cli/tests/golden/reports/schema-v{version}-current.json"
+        ));
+        assert!(matches!(read_report(&source), Ok(InputReport::Usable(_))));
+        let mut value: Value = serde_json::from_slice(&std::fs::read(source).unwrap()).unwrap();
+        value["baseline"]["schema_version"] = json!(if version == 3 { 4 } else { 3 });
+        assert!(read_report(&write_json(&fixture, "mixed.json", &value)).is_err());
+        let source = repo_root().join(format!(
+            "crates/hoimin-cli/tests/golden/events/schema-v{version}-current.jsonl"
+        ));
+        assert!(matches!(read_report(&source), Ok(InputReport::Usable(_))));
+        let text = std::fs::read_to_string(source).unwrap();
+        let mut lines = text
+            .lines()
+            .map(|line| serde_json::from_str::<Value>(line).unwrap())
+            .collect::<Vec<_>>();
+        for index in [1, 4] {
+            lines[index]["schema_version"] = json!(if version == 3 { 4 } else { 3 });
+            let path = fixture.path().join("mixed.jsonl");
+            std::fs::write(
+                &path,
+                lines
+                    .iter()
+                    .map(|v| v.to_string() + "\n")
+                    .collect::<String>(),
+            )
+            .unwrap();
+            assert!(read_report(&path).is_err());
+            lines[index]["schema_version"] = json!(version);
+        }
+    }
+}
+
+#[test]
+fn progress_resume_metadata_rejects_null_and_old_schema_fields() {
+    let fixture = tempfile::tempdir().unwrap();
+    for version in [2, 3, 4] {
+        let source = repo_root().join(format!(
+            "crates/hoimin-cli/tests/golden/reports/schema-v{version}-current.json"
+        ));
+        let original: Value = serde_json::from_slice(&std::fs::read(source).unwrap()).unwrap();
+        let mut value = original.clone();
+        value["run"]["resume"] = Value::Null;
+        assert!(read_report(&write_json(&fixture, "null.json", &value)).is_err());
+        if version < 4 {
+            value["run"]["resume"] = json!({"status":"resumed"});
+            assert!(read_report(&write_json(&fixture, "old-field.json", &value)).is_err());
+        }
     }
 }

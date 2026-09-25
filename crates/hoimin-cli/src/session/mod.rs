@@ -243,7 +243,11 @@ impl SessionHandler {
                     ));
                 }
             }
-            return Ok(SessionLoaded { id, resume: None });
+            return Ok(SessionLoaded {
+                id,
+                resume: None,
+                fresh_reason: Some(self.fresh_resume_reason(request)?),
+            });
         };
         let run_id = run_id.ok_or_else(|| EffectFailed {
             id,
@@ -270,15 +274,63 @@ impl SessionHandler {
             .map_err(|error| failed(id, "session.read", "re-read resume run", &error))?
             == 1;
         if !eligible {
-            return Ok(SessionLoaded { id, resume: None });
+            return Ok(SessionLoaded {
+                id,
+                resume: None,
+                fresh_reason: Some(hoimin_core::ResumeFreshReason::CandidateChanged),
+            });
         }
         if let Some(ownership) = ownership {
             self.ownerships.insert(run_id.clone(), ownership);
         }
         Ok(SessionLoaded {
+            fresh_reason: None,
             id,
             resume: Some(SessionResumeRef { run_id }),
         })
+    }
+
+    fn fresh_resume_reason(
+        &self,
+        request: &LoadSession,
+    ) -> Result<hoimin_core::ResumeFreshReason, EffectFailed> {
+        let limit = (request.max_mutants.get() as u64).to_be_bytes();
+        let (eligible, budget_decreased, matching_complete, incomplete, any): (
+            bool,
+            bool,
+            bool,
+            bool,
+            bool,
+        ) = self
+            .connection
+            .query_row(
+                "SELECT
+                EXISTS(SELECT 1 FROM runs WHERE fingerprint=?1 AND complete=0 AND max_mutants<=?2),
+                EXISTS(SELECT 1 FROM runs WHERE fingerprint=?1 AND complete=0 AND max_mutants>?2),
+                EXISTS(SELECT 1 FROM runs WHERE fingerprint=?1 AND complete=1),
+                EXISTS(SELECT 1 FROM runs WHERE complete=0),
+                EXISTS(SELECT 1 FROM runs)",
+                params![request.fingerprint.as_bytes().as_slice(), limit.as_slice()],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                    ))
+                },
+            )
+            .map_err(|error| {
+                failed(request.id, "session.read", "inspect resume history", &error)
+            })?;
+        Ok(classify_fresh_history((
+            eligible,
+            budget_decreased,
+            matching_complete,
+            incomplete,
+            any,
+        )))
     }
 
     /// Looks up a stored mutant result for an owned, incomplete run.
@@ -1198,5 +1250,45 @@ mod dispatch_tests {
         let started = operation.await.unwrap();
         assert_eq!(started.id, EffectId(91));
         assert_eq!(started.run_id, "blocked");
+    }
+}
+
+fn classify_fresh_history(
+    (eligible, budget_decreased, matching_complete, incomplete, any): (
+        bool,
+        bool,
+        bool,
+        bool,
+        bool,
+    ),
+) -> hoimin_core::ResumeFreshReason {
+    use hoimin_core::ResumeFreshReason;
+    if eligible {
+        ResumeFreshReason::CandidateChanged
+    } else if budget_decreased {
+        ResumeFreshReason::BudgetDecreased
+    } else if matching_complete {
+        ResumeFreshReason::MatchingRunComplete
+    } else if incomplete {
+        ResumeFreshReason::FingerprintMismatch
+    } else if any {
+        ResumeFreshReason::NoIncompleteRun
+    } else {
+        ResumeFreshReason::NoPriorRun
+    }
+}
+
+#[cfg(test)]
+mod resume_history_tests {
+    #[test]
+    fn an_eligible_row_appearing_after_candidate_selection_is_not_reported_as_mismatch() {
+        for budget in [false, true] {
+            for completed in [false, true] {
+                assert_eq!(
+                    super::classify_fresh_history((true, budget, completed, true, true)),
+                    hoimin_core::ResumeFreshReason::CandidateChanged
+                );
+            }
+        }
     }
 }

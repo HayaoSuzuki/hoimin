@@ -33,7 +33,7 @@ fn original_schema_v3_report_fixture_matches_the_published_schema() {
     let event_schema = read_schema(&root.join("docs/json-schema/run-event.schema.json"));
     let result_schema = read_schema(&root.join("docs/json-schema/run-result.schema.json"));
     let report =
-        read_schema(&root.join("crates/hoimin-cli/tests/golden/reports/schema-v3-original.json"));
+        read_schema(&root.join("crates/hoimin-cli/tests/golden/reports/schema-v4-original.json"));
 
     assert_schema_valid(&result_schema, &report, &event_schema);
     assert_report_optionals(&report, false);
@@ -109,7 +109,7 @@ fn current_report_golden_matches_typed_semantic_regeneration() {
     let root = repo_root();
     let event_schema = read_schema(&root.join("docs/json-schema/run-event.schema.json"));
     let result_schema = read_schema(&root.join("docs/json-schema/run-result.schema.json"));
-    let path = root.join("crates/hoimin-cli/tests/golden/reports/schema-v3-current.json");
+    let path = root.join("crates/hoimin-cli/tests/golden/reports/schema-v4-current.json");
     let checked_bytes = std::fs::read(&path).unwrap();
     let checked: GoldenReportDocument = serde_json::from_slice(&checked_bytes).unwrap();
     let checked_value: serde_json::Value = serde_json::from_slice(&checked_bytes).unwrap();
@@ -129,8 +129,8 @@ fn report_event_goldens_are_typed_complete_sequences() {
     let event_schema = read_schema(&repo.join("docs/json-schema/run-event.schema.json"));
     let root = repo.join("crates/hoimin-cli/tests/golden/events");
     for (name, current) in [
-        ("schema-v3-original.jsonl", false),
-        ("schema-v3-current.jsonl", true),
+        ("schema-v4-original.jsonl", false),
+        ("schema-v4-current.jsonl", true),
     ] {
         let text = std::fs::read_to_string(root.join(name)).unwrap();
         let checked = text
@@ -155,7 +155,7 @@ fn report_event_goldens_are_typed_complete_sequences() {
 fn current_event_golden_matches_typed_semantic_regeneration() {
     let root = repo_root();
     let event_schema = read_schema(&root.join("docs/json-schema/run-event.schema.json"));
-    let path = root.join("crates/hoimin-cli/tests/golden/events/schema-v3-current.jsonl");
+    let path = root.join("crates/hoimin-cli/tests/golden/events/schema-v4-current.jsonl");
     let text = std::fs::read_to_string(path).unwrap();
     let first: serde_json::Value = serde_json::from_str(text.lines().next().unwrap()).unwrap();
     assert_canonical_normalized_config(&first);
@@ -188,12 +188,12 @@ fn raw_goldens_reject_unknown_fields_before_typed_comparison() {
     let event_schema = read_schema(&root.join("docs/json-schema/run-event.schema.json"));
     let result_schema = read_schema(&root.join("docs/json-schema/run-result.schema.json"));
     let mut report =
-        read_schema(&root.join("crates/hoimin-cli/tests/golden/reports/schema-v3-current.json"));
+        read_schema(&root.join("crates/hoimin-cli/tests/golden/reports/schema-v4-current.json"));
     report["unexpected"] = serde_json::json!(true);
     assert_schema_invalid(&result_schema, &report, &event_schema);
 
     let line = std::fs::read_to_string(
-        root.join("crates/hoimin-cli/tests/golden/events/schema-v3-current.jsonl"),
+        root.join("crates/hoimin-cli/tests/golden/events/schema-v4-current.jsonl"),
     )
     .unwrap();
     let mut event: serde_json::Value = serde_json::from_str(line.lines().next().unwrap()).unwrap();
@@ -204,16 +204,16 @@ fn raw_goldens_reject_unknown_fields_before_typed_comparison() {
 #[test]
 fn raw_goldens_reject_duplicate_known_fields_before_value_parsing() {
     let root = repo_root();
-    let report_path = root.join("crates/hoimin-cli/tests/golden/reports/schema-v3-current.json");
+    let report_path = root.join("crates/hoimin-cli/tests/golden/reports/schema-v4-current.json");
     let report = std::fs::read_to_string(report_path).unwrap();
     let duplicate_report = report.replacen(
-        "\"schema_version\": 3,",
-        "\"schema_version\": 3,\n  \"schema_version\": 3,",
+        "\"schema_version\": 4,",
+        "\"schema_version\": 4,\n  \"schema_version\": 4,",
         1,
     );
     assert!(serde_json::from_str::<GoldenReportDocument>(&duplicate_report).is_err());
 
-    let event_path = root.join("crates/hoimin-cli/tests/golden/events/schema-v3-current.jsonl");
+    let event_path = root.join("crates/hoimin-cli/tests/golden/events/schema-v4-current.jsonl");
     let events = std::fs::read_to_string(event_path).unwrap();
     let first = events.lines().next().unwrap();
     let duplicate_event = first.replacen(
@@ -229,6 +229,14 @@ fn raw_goldens_reject_duplicate_known_fields_before_value_parsing() {
     reason = "The complete compatibility constructor keeps every serialized optional visible together."
 )]
 fn all_optional_report_events(current: bool) -> Vec<OutputEvent> {
+    all_optional_report_events_at(current, REPORT_SCHEMA_VERSION)
+}
+
+#[allow(
+    clippy::too_many_lines,
+    reason = "Complete typed golden sequence spanning all event kinds"
+)]
+fn all_optional_report_events_at(current: bool, version: u32) -> Vec<OutputEvent> {
     let mut config = hoimin_cli::cli::parse_config_from([
         "hoimin",
         "run",
@@ -260,13 +268,17 @@ fn all_optional_report_events(current: bool) -> Vec<OutputEvent> {
     config.output.metrics = Some("metrics.json".into());
     config.session.as_mut().unwrap().path = "session.sqlite3".into();
     let verification_selection = current.then(documented_verification_selection);
-    let run_id = if current {
-        "schema-v3-current"
-    } else {
-        "schema-v3-original"
-    };
+    let run_id_text = format!(
+        "schema-v{version}-{}",
+        if current { "current" } else { "original" }
+    );
+    let run_id = run_id_text.as_str();
+    config.resume = current && version >= 4;
     let mut started = RunStarted::minimal(run_id, 1, test_resource_control());
     started.normalized_config = Some(config);
+    started.resume = (current && version >= 4).then_some(hoimin_core::ResumeOutcome::Fresh {
+        reason: hoimin_core::ResumeFreshReason::NoPriorRun,
+    });
     "golden-os".clone_into(&mut started.versions.os);
     "golden-hoimin".clone_into(&mut started.versions.hoimin);
     "golden-control".clone_into(&mut started.resource_control.mechanism);
@@ -344,6 +356,13 @@ fn all_optional_report_events(current: bool) -> Vec<OutputEvent> {
             verification_selection,
         }),
     ]
+    .into_iter()
+    .map(|event| {
+        let mut value = serde_json::to_value(event).unwrap();
+        value["schema_version"] = serde_json::json!(version);
+        serde_json::from_value(value).unwrap()
+    })
+    .collect()
 }
 
 fn render_json_report(events: &[OutputEvent]) -> Vec<u8> {
@@ -960,6 +979,12 @@ fn assert_schema_invalid(
     );
 }
 
+fn event_schema_pointer(reference: &str) -> Option<&str> {
+    reference
+        .strip_prefix("run-event.schema.json#")
+        .or_else(|| reference.strip_prefix("run-event-v3.schema.json#"))
+}
+
 fn validate_schema(
     schema: &serde_json::Value,
     instance: &serde_json::Value,
@@ -970,7 +995,7 @@ fn validate_schema(
     if let Some(reference) = schema.get("$ref").and_then(serde_json::Value::as_str) {
         let (root, pointer) = if let Some(pointer) = reference.strip_prefix('#') {
             (active_root, pointer)
-        } else if let Some(pointer) = reference.strip_prefix("run-event.schema.json#") {
+        } else if let Some(pointer) = event_schema_pointer(reference) {
             (event_root, pointer)
         } else {
             return Err(format!("{path}: unsupported schema reference {reference}"));
@@ -2081,6 +2106,116 @@ fn buffered_diagnostics_retry_interrupted_writes_and_flush_each_record() {
             let observed = state.lock().unwrap();
             assert_eq!(observed.bytes, expected.as_bytes());
             assert_eq!(observed.flushes, usize::try_from(sequence).unwrap());
+        }
+    }
+}
+
+#[test]
+fn historical_schema_three_goldens_remain_typed_and_validate_the_archived_contract() {
+    let root = repo_root();
+    let schema = read_schema(&root.join("docs/json-schema/run-event-v3.schema.json"));
+    let result_schema = read_schema(&root.join("docs/json-schema/run-result-v3.schema.json"));
+    for era in ["original", "current"] {
+        let value = read_schema(&root.join(format!(
+            "crates/hoimin-cli/tests/golden/reports/schema-v3-{era}.json"
+        )));
+        assert_schema_valid(&result_schema, &value, &schema);
+    }
+    for (name, current) in [
+        ("schema-v3-original.jsonl", false),
+        ("schema-v3-current.jsonl", true),
+    ] {
+        let text = std::fs::read_to_string(
+            root.join("crates/hoimin-cli/tests/golden/events")
+                .join(name),
+        )
+        .unwrap();
+        let events: Vec<OutputEvent> = text
+            .lines()
+            .map(|line| {
+                let value: serde_json::Value = serde_json::from_str(line).unwrap();
+                assert_schema_valid(&schema, &value, &schema);
+                serde_json::from_str(line).unwrap()
+            })
+            .collect();
+        assert_eq!(events, all_optional_report_events_at(current, 3));
+    }
+}
+
+#[tokio::test]
+async fn public_resume_reports_validate_schema_four_in_json_and_jsonl() {
+    let repo = repo_root();
+    let event_schema = read_schema(&repo.join("docs/json-schema/run-event.schema.json"));
+    let result_schema = read_schema(&repo.join("docs/json-schema/run-result.schema.json"));
+    let python = repo.join(if cfg!(windows) {
+        ".venv/Scripts/python.exe"
+    } else {
+        ".venv/bin/python"
+    });
+    for format in ["json", "jsonl"] {
+        let fixture = tempfile::tempdir().unwrap();
+        let root = fixture.path().join("project");
+        std::fs::create_dir(&root).unwrap();
+        std::fs::write(root.join("calc.py"), "value = 1 + 2\nother = 4 + 5\n").unwrap();
+        for resumed in [false, true] {
+            let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"));
+            command
+                .args(["run", "--root"])
+                .arg(&root)
+                .args([
+                    "--file",
+                    "calc.py",
+                    "--operators",
+                    "binary_add_sub",
+                    "--max-mutants",
+                    "1",
+                    "--allow-best-effort-memory",
+                    "--min-free-space",
+                    "1B",
+                    "--resume",
+                    "--format",
+                    format,
+                    "--session",
+                ])
+                .arg(fixture.path().join("session.db"))
+                .env("TMPDIR", fixture.path())
+                .env("TMP", fixture.path())
+                .env("TEMP", fixture.path())
+                .arg("--")
+                .arg(&python)
+                .args(["-c", "import calc; assert calc.value == 3"])
+                .kill_on_drop(true);
+            let output = tokio::time::timeout(std::time::Duration::from_secs(30), command.output())
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(
+                output.status.code(),
+                Some(4),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert!(output.stderr.is_empty());
+            let expected = if resumed {
+                serde_json::json!({"status":"resumed"})
+            } else {
+                serde_json::json!({"status":"fresh","reason":"no_prior_run"})
+            };
+            if format == "json" {
+                let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+                assert_schema_valid(&result_schema, &document, &event_schema);
+                assert_eq!(document["schema_version"], 4);
+                assert_eq!(document["run"]["resume"], expected);
+            } else {
+                let text = String::from_utf8(output.stdout).unwrap();
+                for (index, line) in text.lines().enumerate() {
+                    let event: serde_json::Value = serde_json::from_str(line).unwrap();
+                    assert_schema_valid(&event_schema, &event, &event_schema);
+                    if index == 0 {
+                        assert_eq!(event["resume"], expected);
+                    }
+                }
+            }
         }
     }
 }

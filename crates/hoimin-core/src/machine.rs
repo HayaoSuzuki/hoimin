@@ -190,6 +190,7 @@ pub struct RunState {
     output_sequence: u64,
     fingerprint: Option<RunFingerprint>,
     session_run_id: Option<String>,
+    resume_outcome: Option<crate::ResumeOutcome>,
     diagnostic_output_id: Option<EffectId>,
     run_started_output_id: Option<EffectId>,
     pending_failure: Option<EffectFailed>,
@@ -245,6 +246,7 @@ impl RunState {
             output_sequence: 0,
             fingerprint: None,
             session_run_id: None,
+            resume_outcome: None,
             diagnostic_output_id: None,
             run_started_output_id: None,
             pending_failure: None,
@@ -693,6 +695,7 @@ impl RunState {
         let mut run_started =
             RunStarted::minimal(self.run_id.clone(), sequence, self.resource_control.clone());
         run_started.normalized_config = Some(self.config.clone());
+        run_started.resume = self.resume_outcome;
         run_started
             .verification_selection
             .clone_from(&self.verification_selection);
@@ -1411,6 +1414,15 @@ pub fn transition(
             state.preflight_effects()?
         }
         RunEvent::SessionLoaded(value) if state.phase == RunPhase::Preflight => {
+            state.resume_outcome = Some(if value.resume.is_some() {
+                crate::ResumeOutcome::Resumed
+            } else {
+                crate::ResumeOutcome::Fresh {
+                    reason: value
+                        .fresh_reason
+                        .unwrap_or(crate::ResumeFreshReason::NoCompatibleRun),
+                }
+            });
             if let Some(resume) = value.resume {
                 state.run_id.clone_from(&resume.run_id);
                 state.session_run_id = Some(resume.run_id);

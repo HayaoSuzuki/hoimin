@@ -84,7 +84,7 @@ pub enum ProgressError {
         source: serde_json::Error,
     },
     #[error(
-        "unsupported schema version {found} in progress report {path}; expected {REPORT_SCHEMA_VERSION}"
+        "unsupported schema version {found} in progress report {path}; expected 3 or {REPORT_SCHEMA_VERSION} (schema 2 JSON is supported separately)"
     )]
     UnsupportedSchema { path: PathBuf, found: u32 },
     #[error("invalid structure in progress report {path}: {message}")]
@@ -128,6 +128,14 @@ struct ProgressRunStarted {
     resource_control: ResourceControl,
     #[serde(default, rename = "verification_selection")]
     _verification_selection: Option<VerificationSelection>,
+    #[serde(default, deserialize_with = "present_resume")]
+    resume: Option<hoimin_core::ResumeOutcome>,
+}
+
+fn present_resume<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<hoimin_core::ResumeOutcome>, D::Error> {
+    hoimin_core::ResumeOutcome::deserialize(deserializer).map(Some)
 }
 
 impl ProgressRunEvent {
@@ -294,6 +302,12 @@ fn read_legacy_v2(path: &Path, bytes: &[u8]) -> Result<InputReport, ProgressErro
     }
     let run = decode_legacy_event::<ProgressRunStarted>(path, &document.run, "run_started")?;
     validate_legacy_version(path, run.schema_version)?;
+    if run.resume.is_some() {
+        return Err(invalid_structure(
+            path,
+            "resume metadata requires report schema 4",
+        ));
+    }
     if !run.normalized_config.is_null() && !run.normalized_config.is_object() {
         return Err(invalid_structure(
             path,
@@ -443,17 +457,27 @@ fn validate_schema_versions(
     path: &Path,
     document: &RunReportDocument,
 ) -> Result<(), ProgressError> {
+    let started = document.run.value();
+    if started.schema_version < 4 && started.resume.is_some() {
+        return Err(invalid_structure(
+            path,
+            "resume metadata requires report schema 4",
+        ));
+    }
     let versions = std::iter::once(document.schema_version)
         .chain(std::iter::once(document.run.schema_version()))
         .chain(document.baseline.iter().map(OutputEvent::schema_version))
         .chain(document.mutants.iter().map(OutputEvent::schema_version))
         .chain(std::iter::once(document.summary.schema_version()));
     for found in versions {
-        if found != REPORT_SCHEMA_VERSION {
+        if !matches!(found, 3 | REPORT_SCHEMA_VERSION) {
             return Err(ProgressError::UnsupportedSchema {
                 path: path.to_path_buf(),
                 found,
             });
+        }
+        if found != document.schema_version {
+            return Err(invalid_structure(path, "report schema versions must match"));
         }
     }
     Ok(())

@@ -232,6 +232,8 @@ jobs:
             BoundedCandidateDiscoveryAuditMain
             BudgetMain
             ResumeBudgetAuditMain
+            HoiminOracle.ResumeDiagnosticModel
+            ResumeDiagnosticAuditMain
             CandidateRankingAuditMain
             PagingAuditMain
             SourceOrderAuditMain
@@ -365,6 +367,7 @@ jobs:
             'generate_prepared_annotation_import|corpus/prepared-annotation-import.jsonl|sensitivity'
             'generate_private_annotation_import|corpus/private-annotation-import.jsonl|sensitivity'
             'generate_environment_fingerprint|corpus/environment-fingerprint.jsonl|sensitivity'
+            'generate_resume_diagnostic|corpus/resume-diagnostic.jsonl|sensitivity'
           )
           for entry in "${generators[@]}"; do
             IFS='|' read -r executable corpus sensitivity <<< "$entry"
