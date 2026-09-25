@@ -159,6 +159,20 @@ where
             .map_err(write_error)?;
         }
     }
+    for (index, input) in inputs.iter().enumerate() {
+        if let Some(duplicate) = &input.duplicate {
+            writeln!(
+                stderr,
+                "warning: progress input {} ({}) repeats input {} ({}): {}; comparisons are unchanged",
+                index + 1,
+                input.source.display(),
+                duplicate.previous + 1,
+                inputs[duplicate.previous].source.display(),
+                duplicate.reason.label(),
+            )
+            .map_err(write_error)?;
+        }
+    }
     Ok(())
 }
 

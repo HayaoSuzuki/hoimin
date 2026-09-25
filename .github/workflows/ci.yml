@@ -162,6 +162,7 @@ jobs:
             HoiminOracle.WorkspaceModel
             HoiminOracle.AnnotationScopeModel
             HoiminOracle.PreparedNamespaceModel
+            HoiminOracle.PreparedAnnotationImportModel
             HoiminOracle.BindingFlowProofs
             HoiminOracle.BoundedCandidateDiscoveryProofs
             HoiminOracle.BudgetProofs
@@ -254,6 +255,7 @@ jobs:
             WorkspaceAuditMain
             AnnotationScopeAuditMain
             PreparedNamespaceAuditMain
+            PreparedAnnotationImportAuditMain
             CompoundPatternGuardAuditMain
             ExceptionMatchBindingAuditMain
             HoiminOracle.ExceptStarFlowCases
@@ -298,6 +300,7 @@ jobs:
             'generate|corpus/state-machine.jsonl|check-only'
             'generate_budget|corpus/budget-cleanup.jsonl|check-only'
             'generate_session|corpus/session-recovery.jsonl|sensitivity'
+            'generate_source_order|corpus/source-order.jsonl|sensitivity'
             'generate_shutdown|corpus/shutdown-orchestration.jsonl|sensitivity'
             'generate_workspace|corpus/workspace-lifecycle.jsonl|check-only'
             'generate_result_lifecycle|corpus/result-lifecycle.jsonl|sensitivity'
@@ -338,7 +341,7 @@ jobs:
             'generate_nullable_gate|corpus/nullable-gate.jsonl|sensitivity'
             'generate_prepared_namespace|corpus/prepared-namespace.jsonl|sensitivity'
             'generate_paging|corpus/paging.jsonl|sensitivity'
-            'generate_source_order|corpus/source-order.jsonl|sensitivity'
+            'generate_prepared_annotation_import|corpus/prepared-annotation-import.jsonl|sensitivity'
           )
           for entry in "${generators[@]}"; do
             IFS='|' read -r executable corpus sensitivity <<< "$entry"

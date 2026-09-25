@@ -19,6 +19,10 @@ name = "generate_session"
 root = "SessionAuditMain"
 
 [[lean_exe]]
+name = "generate_source_order"
+root = "SourceOrderAuditMain"
+
+[[lean_exe]]
 name = "generate_shutdown"
 root = "ShutdownAuditMain"
 
@@ -175,5 +179,5 @@ name = "generate_paging"
 root = "PagingAuditMain"
 
 [[lean_exe]]
-name = "generate_source_order"
-root = "SourceOrderAuditMain"
+name = "generate_prepared_annotation_import"
+root = "PreparedAnnotationImportAuditMain"

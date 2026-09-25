@@ -28,6 +28,10 @@ struct PreviewCandidate {
     selection_order: usize,
     path: Utf8PathBuf,
     line: u32,
+    column: u32,
+    operator: String,
+    original: String,
+    replacement: String,
 }
 
 impl VerifyPreview {
@@ -58,11 +62,15 @@ impl VerifyPreview {
                     selection_order: index + 1,
                     path: candidate.path.clone(),
                     line: candidate.line,
+                    column: candidate.column,
+                    operator: candidate.operator.clone(),
+                    original: candidate.original.clone(),
+                    replacement: candidate.replacement.clone(),
                 }
             })
             .collect();
         Self {
-            schema_version: 1,
+            schema_version: 2,
             kind: "verify_preview",
             plan_schema_version: manifest.schema_version,
             ranking_rule_version: manifest.ranking_rule_version,
@@ -111,12 +119,16 @@ impl VerifyPreview {
         for candidate in &self.candidates {
             writeln!(
                 writer,
-                "{}: {} rank={} {}:{}",
+                "{}: {} rank={} {}:{}:{} operator={} {:?} -> {:?}",
                 candidate.selection_order,
                 candidate.id,
                 candidate.rank,
                 candidate.path,
-                candidate.line
+                candidate.line,
+                candidate.column,
+                candidate.operator,
+                candidate.original,
+                candidate.replacement
             )?;
         }
         Ok(())
