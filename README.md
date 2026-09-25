@@ -611,6 +611,29 @@ When a baseline fails or reaches its process timeout, `run` and `verify` copy it
 
 The final summary's `complete` is `false` when any mutant is inconclusive or the run fails or is interrupted. It is `true` only when every selected mutant is `killed` or `survived` and no run-level failure occurred; a successful run with no candidates is also complete. Therefore, an exit code of `4` always has `complete: false`.
 
+Run `hoimin progress --details before.json after.json` to identify improvements and
+regressions in the **final adjacent input pair**. Details include candidate ID,
+operator, previous/current status and source positions (one-based lines, zero-based
+columns). Human output quotes and escapes strings. `--details-limit N` sets the
+maximum displayed changes (default 100; zero shows only omission counts), ordered
+lexicographically by candidate ID.
+
+The detail fields `previous_input` and `current_input` are zero-based indices into
+the original inputs. An unusable final pair yields `available: false`; an earlier
+comparison is never substituted. `eligibility` states whether the candidate sets
+match, differ, or contain duplicate IDs. Only changes counted by the comparison
+with an identical ID unique in both inputs appear as details. Inconclusive and
+ambiguous matches are excluded. `omitted` counts identified changes beyond the
+limit; `unidentified` counts aggregate changes whose identity cannot be established,
+such as content-only matches with different IDs. All aggregate counts and decisions
+remain independent of the display limit.
+
+`--details --format json` explicitly selects
+[progress schema v2](docs/json-schema/progress-result-v2.schema.json), which adds a
+`details` object. Without `--details`, human output,
+[progress schema v1](docs/json-schema/progress-result.schema.json), and exit status
+retain their existing behavior.
+
 ### Operational metrics
 
 Run metrics are an opt-in operational sidecar, separate from the run JSON. Write them by passing a destination to `--metrics`:

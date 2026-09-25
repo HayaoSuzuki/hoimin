@@ -269,6 +269,16 @@ async fn real_run_reports_expose_exact_regression_through_progress() {
     assert_eq!(progress["comparisons"][0]["previous_score"], 1.0);
     assert_eq!(progress["comparisons"][0]["current_score"], 0.0);
     assert_eq!(progress["comparisons"][0]["score_delta"], -1.0);
+    let detailed = progress_details(&[before.clone(), after.clone()], "json", 100).await;
+    let entry = &detailed["details"]["transitions"][0];
+    assert_eq!(entry["id"], before_mutants[0]["candidate"]["id"]);
+    assert_eq!(entry["path"], "src/calc.py");
+    assert_eq!(entry["line"], 2);
+    assert_eq!(entry["column"], 16);
+    assert_eq!(entry["previous_status"], "killed");
+    assert_eq!(entry["current_status"], "survived");
+    let improvement = progress_details(&[after, before], "human", 100).await;
+    assert!(improvement.as_str().unwrap().contains("survived -> killed"));
 }
 
 #[tokio::test]
@@ -3303,4 +3313,301 @@ fn jsonl_not_run_requires_start_and_preceding_baseline() {
         read_report(&path).is_err(),
         "not_run before baseline is invalid"
     );
+}
+
+async fn progress_details(reports: &[PathBuf], format: &str, limit: usize) -> Value {
+    let mut args = vec![
+        "hoimin".to_owned(),
+        "progress".to_owned(),
+        "--details".to_owned(),
+        "--details-limit".to_owned(),
+        limit.to_string(),
+        "--format".to_owned(),
+        format.to_owned(),
+    ];
+    args.extend(reports.iter().map(|path| path.to_str().unwrap().to_owned()));
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    if format == "json" {
+        serde_json::from_slice(&stdout).unwrap()
+    } else {
+        json!(String::from_utf8(stdout).unwrap())
+    }
+}
+
+fn detail_report(statuses: &[(&str, MutationStatus)]) -> Value {
+    let mut report = valid_report();
+    let template = report["mutants"][0].clone();
+    report["mutants"] = Value::Array(
+        statuses
+            .iter()
+            .enumerate()
+            .map(|(index, (id, status))| {
+                let mut event = template.clone();
+                event["sequence"] = json!(index + 3);
+                event["candidate"]["sequence"] = json!(index + 1);
+                event["candidate"]["id"] = json!(id);
+                event["candidate"]["original"] = json!(id);
+                event["status"] = serde_json::to_value(status).unwrap();
+                event["termination"] =
+                    json!({"Exit": i32::from(*status != MutationStatus::Survived)});
+                event
+            })
+            .collect(),
+    );
+    let statuses: Vec<_> = statuses.iter().map(|(_, status)| *status).collect();
+    let counts = hoimin_core::summarize(&statuses);
+    report["summary"]["sequence"] = json!(statuses.len() + 3);
+    report["summary"]["counts"] = serde_json::to_value(counts).unwrap();
+    report["summary"]["exit_code"] = json!(i32::from(statuses.contains(&MutationStatus::Survived)));
+    report
+}
+
+#[tokio::test]
+async fn details_identify_both_directions_and_preserve_default_schema() {
+    let fixture = tempfile::tempdir().unwrap();
+    let before = write_json(
+        &fixture,
+        "before.json",
+        &detail_report(&[("a", MutationStatus::Killed)]),
+    );
+    let after = write_json(
+        &fixture,
+        "after.json",
+        &detail_report(&[("a", MutationStatus::Survived)]),
+    );
+    let reports = [before, after];
+    let (code, original, stderr) = run_progress(&reports, "json").await;
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    let original: Value = serde_json::from_slice(&original).unwrap();
+    let detailed = progress_details(&reports, "json", 100).await;
+    assert_eq!(detailed["schema_version"], 2);
+    assert_eq!(original["schema_version"], 1);
+    assert!(original.get("details").is_none());
+    for field in [
+        "inputs",
+        "comparisons",
+        "latest",
+        "patience",
+        "consecutive_stalls",
+    ] {
+        assert_eq!(detailed[field], original[field], "{field}");
+    }
+    let detail = &detailed["details"];
+    assert_eq!(detail["previous_input"], 0);
+    assert_eq!(detail["current_input"], 1);
+    assert_eq!(detail["available"], true);
+    assert_eq!(detail["eligibility"], "matching");
+    assert_eq!(detail["omitted"], 0);
+    assert_eq!(detail["unidentified"], 0);
+    assert_eq!(
+        detail["transitions"][0],
+        json!({"id":"a", "path":"src/example.py", "line":1,
+        "column":0, "previous_path":"src/example.py", "previous_line":1, "previous_column":0,
+        "operator":"integer_literal", "classification":"regression", "previous_status":"killed", "current_status":"survived"})
+    );
+    let reverse = progress_details(&[reports[1].clone(), reports[0].clone()], "json", 100).await;
+    assert_eq!(
+        reverse["details"]["transitions"][0]["classification"],
+        "improvement"
+    );
+    assert_eq!(
+        reverse["details"]["transitions"][0]["previous_status"],
+        "survived"
+    );
+    assert_eq!(
+        reverse["details"]["transitions"][0]["current_status"],
+        "killed"
+    );
+}
+
+#[tokio::test]
+async fn details_cap_and_order_do_not_change_aggregate_counts() {
+    let fixture = tempfile::tempdir().unwrap();
+    let before = write_json(
+        &fixture,
+        "before.json",
+        &detail_report(&[
+            ("2", MutationStatus::Killed),
+            ("10", MutationStatus::Survived),
+            ("a", MutationStatus::Killed),
+        ]),
+    );
+    let after = write_json(
+        &fixture,
+        "after.json",
+        &detail_report(&[
+            ("a", MutationStatus::Survived),
+            ("10", MutationStatus::Killed),
+            ("2", MutationStatus::Survived),
+        ]),
+    );
+    for limit in [0, 1, 2, 100] {
+        let detailed = progress_details(&[before.clone(), after.clone()], "json", limit).await;
+        assert_eq!(detailed["comparisons"][0]["improvements"], 1);
+        assert_eq!(detailed["comparisons"][0]["regressions"], 2);
+        let entries = detailed["details"]["transitions"].as_array().unwrap();
+        let ids: Vec<_> = entries
+            .iter()
+            .map(|entry| entry["id"].as_str().unwrap())
+            .collect();
+        assert_eq!(ids, ["10", "2", "a"][..limit.min(3)]);
+        assert_eq!(detailed["details"]["omitted"], 3 - limit.min(3));
+    }
+}
+
+#[tokio::test]
+async fn details_do_not_identify_content_only_matches_or_stale_pairs() {
+    let fixture = tempfile::tempdir().unwrap();
+    let before_doc = detail_report(&[("a", MutationStatus::Killed)]);
+    let mut after_doc = detail_report(&[("a", MutationStatus::Survived)]);
+    after_doc["mutants"][0]["candidate"]["id"] = json!("different");
+    let before = write_json(&fixture, "before.json", &before_doc);
+    let after = write_json(&fixture, "after.json", &after_doc);
+    let mut unusable = before_doc.clone();
+    unusable["summary"]["complete"] = json!(false);
+    unusable["summary"]["exit_code"] = json!(4);
+    let gap = write_json(&fixture, "gap.json", &unusable);
+    let detailed = progress_details(&[before.clone(), after.clone()], "json", 100).await;
+    assert_eq!(detailed["latest"]["state"], "indeterminate");
+    assert_eq!(detailed["comparisons"][0]["regressions"], 1);
+    assert_eq!(detailed["details"]["eligibility"], "different");
+    assert_eq!(detailed["details"]["unidentified"], 1);
+    assert_eq!(detailed["details"]["transitions"], json!([]));
+    let trailing =
+        progress_details(&[before.clone(), after.clone(), gap.clone()], "json", 100).await;
+    assert_eq!(trailing["details"]["previous_input"], 1);
+    assert_eq!(trailing["details"]["current_input"], 2);
+    assert_eq!(trailing["details"]["available"], false);
+    assert!(trailing["details"]["eligibility"].is_null());
+    assert_eq!(trailing["details"]["transitions"], json!([]));
+    let middle = progress_details(&[before.clone(), gap, before, after], "json", 100).await;
+    assert_eq!(middle["details"]["previous_input"], 2);
+    assert_eq!(middle["details"]["current_input"], 3);
+}
+
+#[tokio::test]
+async fn details_schema_jsonl_and_quoted_locations_are_consistent() {
+    let fixture = tempfile::tempdir().unwrap();
+    let mut before_doc = detail_report(&[("a", MutationStatus::Killed)]);
+    let mut after_doc = detail_report(&[("a", MutationStatus::Survived)]);
+    before_doc["mutants"][0]["candidate"]["line"] = json!(9);
+    for doc in [&mut before_doc, &mut after_doc] {
+        doc["mutants"][0]["candidate"]["path"] = json!("src/a\n\"b.py");
+    }
+    let before = write_json(&fixture, "before.json", &before_doc);
+    let after = write_json(&fixture, "after.json", &after_doc);
+    let actual = progress_details(&[before.clone(), after.clone()], "json", 100).await;
+    let schema = read_schema(&repo_root().join("docs/json-schema/progress-result-v2.schema.json"));
+    assert_schema_valid(&schema, &actual);
+    assert_schema_invalid(
+        &read_schema(&repo_root().join("docs/json-schema/progress-result.schema.json")),
+        &actual,
+    );
+    for pointer in ["/details", "/details/transitions/0"] {
+        let mut invalid = actual.clone();
+        invalid
+            .pointer_mut(pointer)
+            .unwrap()
+            .as_object_mut()
+            .unwrap()
+            .insert("unknown".to_owned(), json!(true));
+        assert_schema_invalid(&schema, &invalid);
+    }
+    let mut invalid = actual.clone();
+    invalid["details"]["transitions"][0]["current_status"] = json!("timeout");
+    assert_schema_invalid(&schema, &invalid);
+    let human = progress_details(&[before, after], "human", 100).await;
+    let lines: Vec<_> = human
+        .as_str()
+        .unwrap()
+        .lines()
+        .filter(|line| line.starts_with("  regression:"))
+        .collect();
+    assert_eq!(lines.len(), 1);
+    assert!(lines[0].contains("src/a\\n\\\"b.py"));
+    assert!(lines[0].contains("previous=\"src/a\\n\\\"b.py\":9:0"));
+    let mut paths = Vec::new();
+    for (name, doc) in [("before.jsonl", before_doc), ("after.jsonl", after_doc)] {
+        let path = fixture.path().join(name);
+        let events = jsonl_events(&doc);
+        let text = events
+            .iter()
+            .map(|event| serde_json::to_string(event).unwrap() + "\n")
+            .collect::<String>();
+        std::fs::write(&path, text).unwrap();
+        paths.push(path);
+    }
+    let jsonl = progress_details(&paths, "json", 100).await;
+    assert_eq!(actual["details"], jsonl["details"]);
+}
+
+#[tokio::test]
+async fn details_limit_requires_opt_in_and_nonnegative_integer() {
+    for options in [
+        vec!["--details-limit", "1"],
+        vec!["--details", "--details-limit", "-1"],
+        vec!["--details", "--details-limit", "no"],
+    ] {
+        let mut args = vec!["hoimin", "progress"];
+        args.extend(options);
+        args.extend(["before.json", "after.json"]);
+        let mut out = Vec::new();
+        let mut err = Vec::new();
+        assert_eq!(hoimin_cli::run_with_io(args, &mut out, &mut err).await, 2);
+        assert!(out.is_empty());
+        assert!(!err.is_empty());
+    }
+}
+
+#[tokio::test]
+async fn details_default_cap_and_partial_sets_are_explicit() {
+    let fixture = tempfile::tempdir().unwrap();
+    let ids: Vec<_> = (0..101).map(|i| format!("id-{i:03}")).collect();
+    let before_entries: Vec<_> = ids
+        .iter()
+        .map(|id| (id.as_str(), MutationStatus::Killed))
+        .collect();
+    let after_entries: Vec<_> = ids
+        .iter()
+        .map(|id| (id.as_str(), MutationStatus::Survived))
+        .collect();
+    let before = write_json(&fixture, "before.json", &detail_report(&before_entries));
+    let after = write_json(&fixture, "after.json", &detail_report(&after_entries));
+    let mut out = Vec::new();
+    let mut err = Vec::new();
+    let code = hoimin_cli::run_with_io(
+        [
+            "hoimin",
+            "progress",
+            "--details",
+            "--format",
+            "json",
+            before.to_str().unwrap(),
+            after.to_str().unwrap(),
+        ],
+        &mut out,
+        &mut err,
+    )
+    .await;
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&err));
+    let value: Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(value["details"]["limit"], 100);
+    assert_eq!(value["details"]["omitted"], 1);
+    assert_eq!(
+        value["details"]["transitions"].as_array().unwrap().len(),
+        100
+    );
+    assert_eq!(value["details"]["transitions"][99]["id"], "id-099");
+    let after = write_json(
+        &fixture,
+        "partial.json",
+        &detail_report(&after_entries[..1]),
+    );
+    let value = progress_details(&[before, after], "json", 100).await;
+    assert_eq!(value["details"]["eligibility"], "different");
+    assert_eq!(value["details"]["transitions"][0]["id"], "id-000");
+    assert_eq!(value["latest"]["state"], "indeterminate");
 }

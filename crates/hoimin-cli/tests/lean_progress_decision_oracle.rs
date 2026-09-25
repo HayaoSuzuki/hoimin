@@ -45,6 +45,28 @@ struct ExpectedHistory {
     consecutive_stalls: u64,
     saturated: bool,
     comparisons: Vec<ExpectedComparison>,
+    details: ExpectedDetails,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ExpectedDetails {
+    available: bool,
+    eligibility: Option<String>,
+    previous_input: usize,
+    current_input: usize,
+    omitted: usize,
+    unidentified: usize,
+    transitions: Vec<ExpectedTransition>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ExpectedTransition {
+    candidate_id: u64,
+    previous_status: String,
+    current_status: String,
+    classification: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -101,7 +123,7 @@ fn parse_corpus() -> Result<Vec<OracleCase>, String> {
 }
 
 fn validate_case(item: &OracleCase) -> Result<(), String> {
-    if item.schema != 1 || item.id.is_empty() || item.patience == 0 {
+    if item.schema != 2 || item.id.is_empty() || item.patience == 0 {
         return Err(format!(
             "{} has an invalid schema, id, or patience",
             item.id
@@ -323,7 +345,7 @@ fn write_reports(fixture: &tempfile::TempDir, item: &OracleCase) -> Vec<PathBuf>
         .collect()
 }
 
-async fn public_progress(item: &OracleCase) -> Result<Value, String> {
+async fn public_progress(item: &OracleCase, details: bool) -> Result<Value, String> {
     let fixture = tempfile::tempdir().map_err(|error| error.to_string())?;
     let reports = write_reports(&fixture, item);
     let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"));
@@ -332,6 +354,9 @@ async fn public_progress(item: &OracleCase) -> Result<Value, String> {
         .arg(item.patience.to_string())
         .args(&reports)
         .kill_on_drop(true);
+    if details {
+        command.args(["--details", "--details-limit", "1"]);
+    }
     let output = tokio::time::timeout(Duration::from_secs(30), command.output())
         .await
         .map_err(|_| format!("infrastructure-error case={}: CLI timed out", item.id))?
@@ -514,7 +539,7 @@ fn lean_progress_decision_corpus_is_valid() {
 async fn public_progress_matches_every_strict_lean_case() {
     let cases = parse_corpus().expect("valid Lean corpus");
     for item in cases.iter().filter(|item| item.mode == "strict") {
-        let actual = public_progress(item)
+        let actual = public_progress(item, false)
             .await
             .unwrap_or_else(|error| panic!("{error}"));
         assert_case_matches(item, &actual);
@@ -599,5 +624,62 @@ fn internal_comparison_fixtures_preserve_inconclusive_semantics() {
         let patience = NonZeroUsize::new(usize::try_from(item.patience).unwrap()).unwrap();
         let actual = compare_reports(&inputs, patience);
         assert_case_matches(item, &comparison_result_as_cli_json(&actual));
+    }
+}
+
+#[tokio::test]
+async fn public_progress_details_match_generated_latest_pair_expectations() {
+    for item in parse_corpus()
+        .unwrap()
+        .iter()
+        .filter(|item| item.mode == "strict")
+    {
+        let actual = public_progress(item, true)
+            .await
+            .unwrap_or_else(|error| panic!("{error}"));
+        assert_case_matches(item, &actual);
+        assert_eq!(actual["schema_version"], 2);
+        let detail = &actual["details"];
+        let expected = &item.expected.details;
+        assert_eq!(detail["available"], expected.available, "{}", item.id);
+        assert_eq!(
+            detail["eligibility"],
+            json!(expected.eligibility),
+            "{}",
+            item.id
+        );
+        for (key, value) in [
+            ("previous_input", expected.previous_input),
+            ("current_input", expected.current_input),
+            ("omitted", expected.omitted),
+            ("unidentified", expected.unidentified),
+        ] {
+            assert_eq!(detail[key], value, "{} {key}", item.id);
+        }
+        let entries = detail["transitions"].as_array().unwrap();
+        assert_eq!(entries.len(), expected.transitions.len(), "{}", item.id);
+        for (entry, transition) in entries.iter().zip(&expected.transitions) {
+            assert_eq!(
+                entry["id"],
+                format!("candidate-{}", transition.candidate_id),
+                "{}",
+                item.id
+            );
+            assert_eq!(
+                entry["previous_status"], transition.previous_status,
+                "{}",
+                item.id
+            );
+            assert_eq!(
+                entry["current_status"], transition.current_status,
+                "{}",
+                item.id
+            );
+            assert_eq!(
+                entry["classification"], transition.classification,
+                "{}",
+                item.id
+            );
+        }
     }
 }
