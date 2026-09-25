@@ -22,3 +22,15 @@ Design review 3: checked coverage ownership; full workspace tests remain in Rust
 Plan review 1: the narrow command is tied to the verified Rust test location, and the resource settings are job-local.
 Plan review 2: native execution of the new invocation proves selection is nonempty; existing workflow tests protect job reachability, toolchain and action contracts.
 Plan review 3: both PR heads need the same fix; keep separate commits, avoid rebase/force push, and use fresh Linux CI as the final check. The existing OKF product/audit claims do not change; this follow-up records CI execution scope only.
+
+## Implementation reviews
+
+1. Compared both workflow diffs: only linux-best-effort changes; the integration target and exact name match process_handler.rs. No test or policy assertion was removed.
+2. Parsed the YAML and compared the four environment values with the successful rust job; all match, remain strings, and apply only to this job. Existing actions, runner, dependencies and toolchain installation are preserved.
+3. Checked both branches carry identical workflow bytes, and their complete workspace/contract jobs still have their original commands. The fix reduces unnecessary link work without attributing SIGBUS to an unmeasured memory/disk cause.
+
+## Test reviews and local results
+
+1. Existing workflow contract suite: `.venv/bin/python -m unittest tests.test_ci_workflow` passed all 40 tests in each worktree. The initial pytest entry point was unavailable locally; native unittest runs the same checked-in TestCase classes without installing dependencies.
+2. Ran `cargo test --offline -p hoimin-cli --test process_handler linux_policy::unavailable_cgroup_requires_explicit_best_effort_opt_in -- --exact` with the job's build environment in each worktree. Both selected exactly one test, which passed (26 filtered out locally). The log contains only the intended test binary.
+3. Rechecked nonempty selection, YAML structure, the named Rust test location, and the identical resource settings rather than treating a zero-test Cargo success as evidence. Local execution is macOS; fresh GitHub Linux CI after push is the final platform check. `git diff --check` passed. No production Python changed, so mutation testing is not applicable.
