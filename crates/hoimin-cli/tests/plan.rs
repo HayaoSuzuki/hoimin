@@ -3505,6 +3505,16 @@ async fn symbol_definition_invalid_syntax_is_not_diagnosed_as_missing() {
     assert!(!marker.exists());
 }
 
+fn preview_started_ids(stdout: &[u8]) -> Vec<String> {
+    stdout
+        .split(|&byte| byte == b'\n')
+        .filter(|line| !line.is_empty())
+        .map(|line| serde_json::from_slice::<serde_json::Value>(line).unwrap())
+        .filter(|event| event["kind"] == "mutant_started")
+        .map(|event| event["mutant_id"].as_str().unwrap().to_owned())
+        .collect()
+}
+
 async fn preview_cli(path: &Path, args: &[&str], temporary: &Path) -> std::process::Output {
     tokio::time::timeout(
         std::time::Duration::from_secs(30),
@@ -3544,6 +3554,12 @@ async fn verify_preview_public_cli_preserves_policy_range_and_execution_order_wi
     let (path, manifest) =
         write_plan_manifest_with_marker(&project, &["--jobs", "1"], &marker).await;
     assert_eq!(manifest.candidates.len(), 6);
+    assert!(
+        manifest.candidates[..5]
+            .iter()
+            .all(|candidate| candidate.score == manifest.candidates[0].score
+                && candidate.score > manifest.candidates[5].score)
+    );
     let before = std::fs::read(&path).unwrap();
     for (policy, offset, top, positions) in [
         ("strict", "0", "6", vec![0, 1, 2, 3, 4, 5]),
@@ -3571,7 +3587,11 @@ async fn verify_preview_public_cli_preserves_policy_range_and_execution_order_wi
             "{}",
             String::from_utf8_lossy(&output.stderr)
         );
-        assert_eq!(output.stdout.iter().filter(|&&b| b == b'\n').count(), 1);
+        assert_eq!(
+            std::str::from_utf8(&output.stdout).unwrap().lines().count(),
+            1
+        );
+        assert!(output.stdout.ends_with(b"\n"));
         let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
         assert_eq!(value["kind"], "verify_preview");
         assert_eq!(value["schema_version"], 1);
@@ -3610,18 +3630,7 @@ async fn verify_preview_public_cli_preserves_policy_range_and_execution_order_wi
             "{}",
             String::from_utf8_lossy(&run.stderr)
         );
-        let events = run
-            .stdout
-            .split(|&b| b == b'\n')
-            .filter(|line| !line.is_empty())
-            .map(|line| serde_json::from_slice::<serde_json::Value>(line).unwrap())
-            .collect::<Vec<_>>();
-        let actual = events
-            .iter()
-            .filter(|event| event["kind"] == "mutant_started")
-            .map(|event| event["mutant_id"].as_str().unwrap())
-            .collect::<Vec<_>>();
-        assert_eq!(actual, expected);
+        assert_eq!(preview_started_ids(&run.stdout), expected);
         assert!(
             marker.exists(),
             "normal verify must exercise the marker negative control"
@@ -3677,22 +3686,11 @@ async fn verify_preview_explicit_ids_follow_discovery_not_rank_argument_or_saved
         })
     );
     assert!(!marker.exists());
+    assert!(!project.path.join("session.sqlite3").exists());
+    assert_eq!(std::fs::read_dir(temporary.path()).unwrap().count(), 0);
     let run = preview_cli(&path, &args, temporary.path()).await;
     assert_eq!(run.status.code(), Some(1));
-    let events = run
-        .stdout
-        .split(|&b| b == b'\n')
-        .filter(|line| !line.is_empty())
-        .map(|line| serde_json::from_slice::<serde_json::Value>(line).unwrap())
-        .collect::<Vec<_>>();
-    assert_eq!(
-        events
-            .iter()
-            .filter(|event| event["kind"] == "mutant_started")
-            .map(|event| event["mutant_id"].as_str().unwrap())
-            .collect::<Vec<_>>(),
-        expected
-    );
+    assert_eq!(preview_started_ids(&run.stdout), expected);
 }
 
 #[tokio::test]
@@ -3701,6 +3699,25 @@ async fn verify_preview_truncated_formats_borrowed_dispatch_and_runtime_boundary
     let (path, mut manifest, marker) =
         write_plan_manifest(&project, &["--max-candidates", "1"]).await;
     assert!(manifest.truncated);
+    let execution_tmp = tempfile::tempdir().unwrap();
+    let preview = preview_cli(&path, &["--top", "99", "--dry-run"], execution_tmp.path()).await;
+    assert!(preview.status.success());
+    let preview: serde_json::Value = serde_json::from_slice(&preview.stdout).unwrap();
+    assert!(!marker.exists());
+    let run = preview_cli(
+        &path,
+        &["--top", "99", "--format", "jsonl"],
+        execution_tmp.path(),
+    )
+    .await;
+    assert_eq!(
+        run.status.code(),
+        Some(2),
+        "truncated execution remains incomplete"
+    );
+    assert_eq!(preview_started_ids(&run.stdout), preview_ids(&preview));
+    assert!(marker.exists());
+    std::fs::remove_file(&marker).unwrap();
     // Runtime disk checks must not run, while plan/config validation still does.
     manifest.normalized_config.limits.min_free_space = std::num::NonZeroU64::new(u64::MAX).unwrap();
     write_json(&path, &serde_json::to_value(&manifest).unwrap());
@@ -3727,6 +3744,10 @@ async fn verify_preview_truncated_formats_borrowed_dispatch_and_runtime_boundary
         assert_eq!(stdout, output.stdout);
         if format == "human" {
             let text = String::from_utf8(stdout).unwrap();
+            assert!(text.contains(&format!(
+                "{}:{}",
+                manifest.candidates[0].path, manifest.candidates[0].line
+            )));
             for required in [
                 "verify preview",
                 "requested=99",
@@ -3785,6 +3806,9 @@ async fn verify_preview_rejects_metrics_without_touching_existing_destination() 
 async fn verify_preview_invalid_inputs_match_normal_validation_before_runtime() {
     for invalid in [
         "empty",
+        "empty_diverse",
+        "malformed",
+        "missing",
         "schema",
         "rank",
         "descriptor",
@@ -3794,7 +3818,7 @@ async fn verify_preview_invalid_inputs_match_normal_validation_before_runtime() 
         "limit",
         "unknown",
     ] {
-        let project = if invalid == "empty" {
+        let project = if invalid.starts_with("empty") {
             Project::new_with_source("pass\n")
         } else {
             Project::new()
@@ -3808,12 +3832,18 @@ async fn verify_preview_invalid_inputs_match_normal_validation_before_runtime() 
             "descriptor" => value["candidates"][0]["replacement"] = "invalid".into(),
             "source" => std::fs::write(project.path.join("src/calc.py"), "pass\n").unwrap(),
             "fingerprint" => {
-                std::fs::write(project.path.join("config.toml"), "changed = true\n").unwrap()
+                std::fs::write(project.path.join("config.toml"), "changed = true\n").unwrap();
             }
             "limit" => value["normalized_config"]["limits"]["max_mutants"] = 1.into(),
             _ => (),
         }
         write_json(&path, &value);
+        if invalid == "malformed" {
+            std::fs::write(&path, "{invalid JSON").unwrap();
+        }
+        if invalid == "missing" {
+            std::fs::remove_file(&path).unwrap();
+        }
         let mut args = if invalid == "unknown" {
             vec!["--candidate", "m1_missing"]
         } else {
@@ -3821,6 +3851,9 @@ async fn verify_preview_invalid_inputs_match_normal_validation_before_runtime() 
         };
         if invalid == "offset" {
             args.extend(["--offset", "2"]);
+        }
+        if invalid == "empty_diverse" {
+            args.extend(["--selection-policy", "diverse"]);
         }
         let temporary = tempfile::tempdir().unwrap();
         let normal = preview_cli(&path, &args, temporary.path()).await;

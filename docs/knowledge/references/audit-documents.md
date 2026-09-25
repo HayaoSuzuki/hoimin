@@ -225,6 +225,12 @@ sources:
   resource: ../../superpowers/reports/2026-09-14-issue-454-fixed-batches-review.md
   working_tree: untracked
   sha256: bddc76fea5ffd3dd176b09048deb6a155b7d16b4a63059589c79ee274486c485
+- id: issue-599-review
+  resource: ../../superpowers/reports/2026-09-25-issue-599-verify-preview-review.md
+  revision: 99655f08bb941db0e9e888f3b5d373ec6f11440e
+  working_tree: modified
+  sha256: 6a59477d7d35940654e5c2b404be8fa03d1000d0f64c5fc1723eb09327586726
+
 - id: issue-458-review
   resource: ../../superpowers/reports/2026-09-14-issue-458-verify-metrics-review.md
   revision: 6a6e233
@@ -941,6 +947,13 @@ sources:
 - [Issue 454 fixed-batch review](../../superpowers/reports/2026-09-14-issue-454-fixed-batches-review.md) — 固定バッチ選択と確認範囲。[^issue-454-review]
 
 [^issue-454-review]: [Issue 454 fixed-batch review](../../superpowers/reports/2026-09-14-issue-454-fixed-batches-review.md)。
+
+# Issue 599
+
+- [Issue 599: Verify preview review and verification](../../superpowers/reports/2026-09-25-issue-599-verify-preview-review.md) — verifyの実行前previewと検証範囲。[^issue-599-review]
+
+[^issue-599-review]: [Issue 599: Verify preview review and verification](../../superpowers/reports/2026-09-25-issue-599-verify-preview-review.md)。
+
 # Issue 458
 
 - [Issue 458 review record](../../superpowers/reports/2026-09-14-issue-458-verify-metrics-review.md) — verifyのmetrics出力と確認範囲。[^issue-458-review]

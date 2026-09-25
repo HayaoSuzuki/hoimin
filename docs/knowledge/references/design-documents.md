@@ -93,6 +93,12 @@ sources:
   resource: ../../superpowers/specs/2026-09-14-issue-454-fixed-batches-design.md
   working_tree: untracked
   sha256: 10e05c4a8d518d5334e191a2999d2bd9f5c198569a3db650969f51adcc097dd1
+- id: issue-599-design
+  resource: ../../superpowers/specs/2026-09-25-issue-599-verify-preview-design.md
+  revision: 99655f08bb941db0e9e888f3b5d373ec6f11440e
+  working_tree: clean
+  sha256: c024231b308a39d92f38fe7035630d6f364be449c80f98267197933fcf286d93
+
 - id: issue-458-design
   resource: ../../superpowers/specs/2026-09-14-issue-458-verify-metrics-design.md
   working_tree: untracked
@@ -1434,6 +1440,13 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 - [Issue 454: Fixed verify batches](../../superpowers/specs/2026-09-14-issue-454-fixed-batches-design.md) — 固定バッチ選択と確認範囲。[^issue-454-design]
 
 [^issue-454-design]: [Issue 454: Fixed verify batches](../../superpowers/specs/2026-09-14-issue-454-fixed-batches-design.md)。
+
+# Issue 599
+
+- [Issue 599: Verify selection preview](../../superpowers/specs/2026-09-25-issue-599-verify-preview-design.md) — verifyの実行前previewと検証範囲。[^issue-599-design]
+
+[^issue-599-design]: [Issue 599: Verify selection preview](../../superpowers/specs/2026-09-25-issue-599-verify-preview-design.md)。
+
 # Issue 458
 
 - [Issue 458: Verify operational metrics](../../superpowers/specs/2026-09-14-issue-458-verify-metrics-design.md) — verifyのmetrics出力と確認範囲。[^issue-458-design]

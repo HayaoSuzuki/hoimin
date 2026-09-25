@@ -10,6 +10,24 @@ sources:
   working_tree: untracked
   sha256: 10e05c4a8d518d5334e191a2999d2bd9f5c198569a3db650969f51adcc097dd1
 
+- id: issue-599
+  resource: ../../superpowers/specs/2026-09-25-issue-599-verify-preview-design.md
+  revision: 99655f08bb941db0e9e888f3b5d373ec6f11440e
+  working_tree: clean
+  sha256: c024231b308a39d92f38fe7035630d6f364be449c80f98267197933fcf286d93
+
+- id: issue-599-preview
+  resource: ../../../crates/hoimin-cli/src/plan/preview.rs
+  revision: 99655f08bb941db0e9e888f3b5d373ec6f11440e
+  working_tree: clean
+  sha256: 75fcd7faf4cf52262f120bb68912ae33f7e9728c3ed12eb1b329593e6d3c725b
+
+- id: issue-599-schema
+  resource: ../../json-schema/verify-preview.schema.json
+  revision: 99655f08bb941db0e9e888f3b5d373ec6f11440e
+  working_tree: untracked
+  sha256: 8bdb3d181c6acfc34c99253135b14a07c5367b60f05e1f92f7e4908b533246e4
+
 - id: issue-458
   resource: ../../superpowers/specs/2026-09-14-issue-458-verify-metrics-design.md
   working_tree: untracked
@@ -234,6 +252,18 @@ offsetは0始まりでtopとの併用を必須とし、候補ID指定とは併�
 JSON/JSONLのmutant記録に実際の候補IDを残す。バッチの再実行では範囲と選択規則を保存し、同じID集合のレポートだけでprogress履歴を作る。異なるバッチのscoreや飽和判定は合成しない。[^issue-454]
 
 [^issue-454]: [Issue 454: Fixed verify batches](../../superpowers/specs/2026-09-14-issue-454-fixed-batches-design.md)。
+
+# 実行前の候補preview（Issue #599）
+
+`verify PLAN --dry-run` は通常のverifyと同じplan・ソース・fingerprint・候補の検証を行い、選択結果を出力して終了する。baselineと変異テスト、workerコピー、session作成、実行metricsは発生しない。`--metrics` との併用は拒否する。有効なpreviewはtruncated planでも終了コード0、入力不正は2となる。実行時の資源確保までは確認しない。[^issue-599]
+
+JSONとJSONLは、独立したschema 1の `verify_preview` オブジェクトを1件出力する。`candidates` 配列は選択順で、各行にID、保存rank、バッチ内の `selection_order`、path、lineを含む。rank・選択順・行番号は1始まりである。top指定の `offset` は0始まり、明示ID指定ではnullとなる。既存の選択metadataに加え、保持数を `retained_candidates` に記録する。[^issue-599-preview][^issue-599-schema]
+
+strict/diverseの順序は既存の選択結果を使い、明示IDは候補の再発見順を使う。引数の順序や編集可能な保存sequenceには依存しない。選択順は実行予定の順序であり、並列workerの完了順や資源不足時の実行完了を保証しない。truncated planのpreviewは保持済み候補だけを対象とする。変異結果がないためprogress履歴には使わない。[^issue-599][^issue-599-preview]
+
+[^issue-599]: [Issue 599: Verify selection preview](../../superpowers/specs/2026-09-25-issue-599-verify-preview-design.md)。
+[^issue-599-preview]: [preview.rs](../../../crates/hoimin-cli/src/plan/preview.rs)。
+[^issue-599-schema]: [verify-preview.schema.json](../../json-schema/verify-preview.schema.json)。
 
 # verifyの運用metrics（Issue #458）
 

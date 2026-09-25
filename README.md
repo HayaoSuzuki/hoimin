@@ -513,6 +513,34 @@ the policy between batches can change membership. The JSON/JSONL mutant records
 retain the actual selected candidate IDs; save the range/policy commands with
 those reports for reruns.
 
+Preview a batch before running its tests:
+
+```console
+hoimin verify plan.json --top 20 --offset 100 --selection-policy diverse --dry-run > preview.json
+```
+
+`--dry-run` performs the same plan, source, fingerprint and candidate validation
+as verification, then exits without baseline or mutation tests, worker copies,
+sessions or execution metrics. It conflicts with `--metrics`. A valid preview
+exits with code 0, including for a truncated plan; invalid selections and stale
+plans exit with code 2. Runtime resource availability is checked when executing.
+
+The [preview schema](docs/json-schema/verify-preview.schema.json) is independent
+of run reports: `kind` is `verify_preview` and `schema_version` is 1. JSON and
+JSONL each contain one object; `--format human` prints metadata and candidate rows.
+The ordered `candidates` array gives each candidate's `id`, saved `rank`,
+`selection_order`, `path` and `line`. Rank, line and batch selection order start
+at 1. `verification_selection` records mode, policy, requested/selected counts,
+scope and `plan_truncated`; `offset` starts at 0 for top selection and is null
+for explicit IDs. `retained_candidates` is the count saved in the plan.
+
+Top selection follows the chosen strict/diverse order. Explicit `--candidate`
+selection follows discovery order, with duplicates removed. Selection order
+specifies the intended scheduling order; parallel completion and early runtime
+stops may differ. A truncated preview covers only retained candidates. Save
+preview JSON separately from run reports: it contains no mutation outcomes and
+cannot be used as `progress` history.
+
 Offset is zero-based, requires `--top`, and cannot accompany `--candidate`.
 An empty plan or an offset at/beyond its retained length fails before baseline.
 A range extending beyond the end selects the available suffix. Truncated plans
