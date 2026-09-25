@@ -618,7 +618,7 @@ fn rejects_missing_or_non_python_file() {
 }
 
 #[test]
-fn explicit_exclude_wins_over_include() {
+fn resolver_consumes_inventory_after_discovery_exclusion() {
     let selection = Selection {
         root: Utf8PathBuf::from("project"),
         sources: vec![Utf8PathBuf::from("pkg")],
@@ -626,13 +626,34 @@ fn explicit_exclude_wins_over_include() {
         excludes: vec!["pkg/generated.py".into()],
         ..Selection::default()
     };
-    let discovered = [
-        DiscoveredFile::python("pkg/a.py"),
-        DiscoveredFile::python("pkg/generated.py"),
-    ];
+    // Discovery owns glob precedence; the excluded file is absent from its result.
+    let discovered = [DiscoveredFile::python("pkg/a.py")];
     let targets = resolve_explicit(&selection, &discovered).unwrap();
     assert_eq!(targets.len(), 1);
     assert_eq!(targets[0].path, "pkg/a.py");
+}
+
+#[test]
+fn discovered_bracket_filename_is_not_reinterpreted_as_a_literal_exclude() {
+    for selector in ["source", "file", "line"] {
+        let mut selection = Selection {
+            root: "project".into(),
+            excludes: vec!["src/[ab].py".into()],
+            ..Selection::default()
+        };
+        match selector {
+            "source" => selection.sources.push("src".into()),
+            "file" => selection.files.push("src/[ab].py".into()),
+            _ => selection.lines.push(LineSelection {
+                path: "src/[ab].py".into(),
+                range: LineRange { start: 1, end: 1 },
+            }),
+        }
+        let targets =
+            resolve_explicit(&selection, &[DiscoveredFile::python("src/[ab].py")]).unwrap();
+        assert_eq!(targets.len(), 1, "{selector}");
+        assert_eq!(targets[0].path, "src/[ab].py");
+    }
 }
 
 #[test]

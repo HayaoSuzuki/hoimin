@@ -967,3 +967,11 @@ and monotonic eligibility; it does not model SQLite locking or the scheduler.
 Public CLI tests cover baseline execution, cumulative reuse/execution, completion,
 and equality with fresh execution. The existing migration oracle's abstract
 current version maps to SQLite 4; its current migration step includes v3 and v4.
+
+## Target discovery inventory
+
+`hoimin_core::resolve_explicit` consumes an inventory already filtered by discovery.
+Callers apply include/exclude globs, ignore rules and built-in copy exclusions before
+calling it. The core resolver validates and combines selectors; it does not treat
+pattern strings as literal filenames or independently implement glob matching.
+The CLI uses `target::fs::discover_explicit` for this filtering.

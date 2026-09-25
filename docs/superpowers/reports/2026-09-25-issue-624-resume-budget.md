@@ -34,3 +34,19 @@ Final results are recorded below after the final commands complete. Earlier inte
 Final workspace: 2327 passed, 0 failed, 22 ignored across 101 result groups. Exact workspace Clippy passed. Final malformed storage includes high-sorting one/nine-byte blobs and INTEGER/TEXT/REAL values, preserving the original database value on failure.
 
 After clean rebase onto main421f5ef: related Rust tests 86 passed, 1 ignored. Both exact CI Clippy/fmt gates and Python workflow contracts40 passed. No rebase conflicts or production changes followed those checks.
+
+## Published branch integration
+
+Merged main `195773a` into the published branch. The sole conflict was adjacent
+additions in `docs/development.md`; both the resume-budget and target-discovery
+sections remain. Reviewed the automatically merged CI, Lean module/executable,
+and Python corpus registries to confirm both features remain registered. No new
+production changes were introduced during conflict resolution.
+
+After cleaning the shared cache's local workspace crates, the session-handler,
+resume-budget, Lean session/schema-migration/candidate-span adapters and core
+resume-policy tests passed: 75 passed, 0 failed, 1 ignored. Python CI workflow
+contracts passed all 40 tests via unittest (pytest is not installed in this
+worktree's environment). Both exact CI Clippy commands, both formatting checks,
+and `git diff --check` passed. The full workspace suite was not repeated for this
+documentation-only conflict resolution; its previous result is recorded above.
