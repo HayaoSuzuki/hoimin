@@ -729,7 +729,7 @@ cargo test -p hoimin-cli --lib analyzer::rust::rust_tests::comprehension_excepti
 
 ## Extending plan ranking
 
-Plan manifests use schema version 4 and ranking rule version 4. The schema
+Plan manifests use schema version 5 and ranking rule version 4. The schema
 version describes the manifest's serialized shape; the ranking rule version
 describes the category and scoring semantics used to order its candidates.
 Change the ranking rule version whenever those semantics change, even when the
@@ -834,16 +834,17 @@ annotations under CPython 3.14 in addition to reparsing their source.
 `RawRunConfig.import_roots` normalizes to an ordered, duplicate-free list in
 `RunConfig` and `PlanConfig`, separate from `Selection.sources`. The normalized
 config validators reject escaped or non-normalized paths from persisted data.
-Historical run configs decode a missing list as empty. Plan schema 4 requires
+Historical run configs decode a missing list as empty. Plan schema 5 requires
 regeneration of earlier manifests before any baseline runs; fingerprint schema
-10 frames the ordered import roots under field tag 9, the ordered include/exclude
+11 frames the ordered import roots under field tag 9, the ordered include/exclude
 copy patterns under tags 10/11, and configured source roots under tag 12,
 preventing old-session reuse. Source file hashes retain their set semantics;
 source-root order separately captures worker Python import precedence. Patterns retain
 their exact spelling and order because negated overrides can change matching
 precedence. Operational jobs/max-output settings still do not affect compatibility.
-Older fingerprints start a new run with baseline and mutant execution; the
-existing session database and its saved results can be retained.
+An older incomplete fingerprint can produce `session.resume.incompatible` under
+the existing selection policy; start a new run without resume or use another
+session path. Existing data is retained.
 
 `WorkspaceHandler::with_import_roots` preserves the existing constructor and
 copy lifecycle. The owned blocking worker-materialization task checks that explicit roots
@@ -986,3 +987,31 @@ request; selected-path and root errors remain visible, as with exact selectors.
 The source-scaling regression counts actual walker visits and retained records:
 unrelated descendant file counts do not affect either, while root-level sibling
 enumeration can still grow. It does not impose an elapsed-time or RSS threshold.
+
+## Explicit inherited environment fingerprints
+
+`--fingerprint-env` accepts portable ASCII identifiers only. Core config
+normalization sorts/deduplicates names and uppercases them on Windows; Unix
+preserves case. The CLI captures each selected inherited native value during
+preparation, before worker environment rewriting. Its incremental BLAKE3 encoding
+contains a domain/version tag, platform tag, entry count, framed name, presence
+byte, and framed native value. Unset and empty are distinct; Windows stores UTF-16
+units in little-endian order, and Unix uses raw bytes.
+
+Only normalized names and the digest are retained in config. New serde fields
+default to untracked when absent and are omitted when empty. Plan schema5 validates
+canonical names and a matching digest presence/format, then verify compares the
+current captured digest before project work or baseline execution. Fingerprint
+schema11 binds the names and digest under field13; SQLite schema4 and budget
+selection are unchanged. Captured plaintext is not added to persistence or output;
+digests are not an encryption or low-entropy secrecy guarantee.
+
+`EnvironmentFingerprintModel` generates 32 strict cases for tracking on/off and
+four before/after values (absent, empty, one, zero). Its proofs cover tracked
+fresh-equivalence, unchanged reuse, untracked compatibility, and injective abstract
+presence encoding. `lean_environment_fingerprint_oracle` executes real CLI runs
+with isolated SQLite databases and checks model-generated verdict/reuse/budget/
+termination/exit observations. Hash collisions, arbitrary native bytes, Windows
+OS behavior, and concurrent environment mutation are outside the finite model.
+Native/framing/platform config tests and public plan/verify/privacy controls cover
+those implementation boundaries where stated; tests do not mutate global env.

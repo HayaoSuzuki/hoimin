@@ -299,6 +299,8 @@ jobs:
             ResumeCopyAuditMain
             HoiminOracle.NullableGateModel
             NullableGateAuditMain
+            HoiminOracle.EnvironmentFingerprintModel
+            EnvironmentFingerprintAuditMain
             HoiminOracle
             MultipleHandlerJoinAuditMain
             NestedMatchExitAuditMain
@@ -362,6 +364,7 @@ jobs:
             'generate_paging|corpus/paging.jsonl|sensitivity'
             'generate_prepared_annotation_import|corpus/prepared-annotation-import.jsonl|sensitivity'
             'generate_private_annotation_import|corpus/private-annotation-import.jsonl|sensitivity'
+            'generate_environment_fingerprint|corpus/environment-fingerprint.jsonl|sensitivity'
           )
           for entry in "${generators[@]}"; do
             IFS='|' read -r executable corpus sensitivity <<< "$entry"

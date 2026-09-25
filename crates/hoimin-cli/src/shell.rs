@@ -2259,14 +2259,21 @@ async fn session<Stdout, Stderr>(
     Ok(context.session.as_ref().expect("initialized above").clone())
 }
 
-/// Resolves filesystem-backed records that participate in a run fingerprint.
+#[derive(Debug, thiserror::Error)]
+pub enum PrepareRunConfigError {
+    #[error(transparent)]
+    Config(#[from] hoimin_core::ConfigError),
+    #[error(transparent)]
+    File(#[from] crate::fingerprint_inputs::FingerprintInputError),
+}
+
+/// Resolves declared filesystem and inherited-environment fingerprint inputs.
 ///
 /// # Errors
 ///
 /// Returns an error when a configured fingerprint input pattern cannot be resolved.
-pub fn prepare_run_config(
-    mut config: RunConfig,
-) -> Result<RunConfig, crate::fingerprint_inputs::FingerprintInputError> {
+pub fn prepare_run_config(mut config: RunConfig) -> Result<RunConfig, PrepareRunConfigError> {
+    config.fingerprint_env_hash = crate::fingerprint_env::capture(&config.fingerprint_env)?;
     config.fingerprint_inputs = crate::fingerprint_inputs::resolve(
         &config.root,
         &config.fingerprint_includes,

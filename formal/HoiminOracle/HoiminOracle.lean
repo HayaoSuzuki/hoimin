@@ -108,3 +108,4 @@ import HoiminOracle.PreparedNamespaceModel
 import HoiminOracle.PagingModel
 import HoiminOracle.PreparedAnnotationImportModel
 import HoiminOracle.PrivateAnnotationImportModel
+import HoiminOracle.EnvironmentFingerprintModel

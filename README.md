@@ -80,6 +80,7 @@ In a persistent installation, replace the launch prefix with `hoimin`. Everythin
 At least one target selector is required:
 
 - `--source DIR` selects Python files below a source root and may be repeated. `--source .` selects every discovered Python file below the configured root. An absolute `--source` path exactly equal to an absolute `--root` has the same effect.
+- Each explicit `--source` must exist. Missing sources fail with exit 2 before baseline execution in `run`, `plan`, and saved-plan `verify`, including when combined with valid sources or `--changed`. Existing empty directories and valid selections filtered to zero candidates still succeed. A regular Python file is also accepted as a source. This existence check does not change the discovery policy for symbolic links.
 - `--file PATH` selects an entire Python file and may be repeated.
 - `--line PATH:START-END` selects an inclusive line range and may be repeated.
 - `--symbol MODULE:QUALNAME` selects a function, method, or class resolved below `--source` and may be repeated.
@@ -140,6 +141,23 @@ Target discovery and worker copying always exclude `.git`, `.venv`, `venv`, `env
 `--fingerprint-file PATH` records exactly one regular file at the specified `--root`-relative path and may be repeated. Every path component must remain beneath `--root`; symlink and reparse-point components are rejected instead of followed. It does not search nested directories, and characters such as `*`, `?`, and `[` are treated literally. Use it for a root-level configuration file without also selecting files with the same name in nested worktrees.
 
 `--fingerprint-include GLOB` records every matching file as an explicit session-fingerprint input. A basename-only glob such as `pyproject.toml` can match that name at any depth. Both fingerprint options only invalidate compatible-run reuse: they do not control worker copying, select mutation targets, or implicitly watch files. Use `--include GLOB` independently when a fingerprinted input must also be copied into each worker; no files are implicitly watched.
+
+`--fingerprint-env NAME` tracks an inherited environment variable for resume compatibility
+and may be repeated in `run` or `plan`. Names must match
+`[A-Za-z_][A-Za-z0-9_]*`: Unix names are case-sensitive; Windows names normalize
+to uppercase. Name order and duplicate declarations do not matter. A selected
+variable becoming unset, empty, or a different value changes compatibility;
+unselected variables retain their existing behavior. Values are hashed using
+native Unix bytes or Windows UTF-16 code units without lossy Unicode conversion.
+
+Capture occurs during command preparation, before worker `PYTHONPATH` and
+metadata rewriting. Only the selected names and a digest enter normalized config,
+reports, sessions, and plan manifests; this option does not add captured values
+in plaintext. Hashing does not guarantee secrecy for low-entropy values.
+`verify` reads the names saved by `plan` and rejects a changed inherited snapshot
+with `plan.fingerprint_env.changed` before its baseline runs. Regenerate the plan
+after an intentional environment change. Concurrent environment mutation by an
+embedding caller is outside this snapshot contract.
 
 For example, when a test needs an ignored fixture input copied into its worker:
 
@@ -204,6 +222,7 @@ The defaults are:
 | `--profile full` / `--profile focused` | `full` | candidate-selection profile |
 | `--fingerprint-include GLOB` | none | invalidates compatible session reuse; does not copy worker files |
 | `--fingerprint-file PATH` | none | fingerprints one exact root-relative file; does not copy worker files |
+| `--fingerprint-env NAME` | none | fingerprints an explicitly selected inherited variable; repeatable |
 
 By default, there are no include/exclude overrides or SQLite session, and `--changed`, `--resume`, and `--allow-best-effort-memory` are disabled.
 
@@ -718,16 +737,18 @@ SQLite session schema 4 preserves older rows but does not invent their missing
 historical budget. Start a new session run when an old incomplete run reports
 `session.resume.incompatible`; completed results remain available in the database.
 
-Plan schema version 4 stores the independent import roots (ranking rule version
-4). Regenerate older plans before verification. Fingerprint schema version 10
+Plan schema version 5 stores explicit environment names/digest and independent
+import roots (ranking rule version 4). Regenerate older plans before verification.
+Fingerprint schema version 11
 includes ordered import roots and source roots and the ordered `--include` / `--exclude` copy
 patterns, including empty lists for default invocations. Changing source-root order or either copy
 pattern list starts a new run even when explicit fingerprint-file bytes match.
 Pattern spelling and order are preserved; equivalent but differently spelled
 patterns may conservatively start a new run. Identical patterns remain compatible.
-Older session fingerprints cannot be resumed; a new run executes the baseline
-and mutants. The same session database can be retained; existing saved results
-are not rewritten.
+If the latest incomplete run uses an older fingerprint schema and no compatible
+run exists, `--resume` retains the `session.resume.incompatible` error. Start a
+new run without `--resume`, or use a new session path; existing saved results are
+not rewritten.
 
 The active session database, its `-wal`, `-shm`, and `-journal` sidecars, and its `.<database-name>.hoimin-locks` directory are excluded from worker copies, copy-size accounting, and original-workspace integrity checks. Explicit `--include` patterns cannot restore these artifacts. Other database fixtures and similarly named files follow the normal copy rules and remain protected by integrity checks. Relative `--session` paths are resolved from the invoking working directory; existing database and parent-directory aliases resolve to the same active artifacts. Session ownership locking still prevents concurrent use of the same run.
 

@@ -74,3 +74,20 @@ commits had unchanged range-diff entries, with no conflicts. Cleaned local crate
 artifacts before repeating discovery unit tests, the full plan and public
 source-discovery integration binaries, both exact CI Clippy commands, and both
 format checks; all passed. The full-workspace count above predates this rebase.
+
+## Published-branch integration
+
+Merged main `9f112ba` after Issues 619, 628, and 629 landed. The only conflict
+was adjacent additions in docs/development.md; retained both the source-discovery
+contract and environment-fingerprint documentation. Reviewed the automatic plan
+test merge: its difference from main is still exactly the Issue 627 test. The
+discovery implementation and correspondence tests are unchanged from the reviewed
+published branch; no new production behavior was introduced by resolution.
+
+After cleaning local crate artifacts, discovery unit tests and the source_discovery,
+plan, missing_source, target_handler, and fingerprint_env_plan integration binaries
+passed: 154 passed, 0 failed, 2 ignored. Both exact CI Clippy commands, both format
+checks, and git diff --check passed. These checks cover discovery composition with
+the newly merged missing-source diagnostic, environment snapshot verification,
+and streaming workspace implementation. The earlier full-workspace result remains
+the full-suite evidence; this integration used focused tests and static checks.

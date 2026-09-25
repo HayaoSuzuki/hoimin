@@ -17,6 +17,7 @@ impl TargetHandler {
     ///
     /// Returns an error when filesystem or Git target discovery fails.
     pub async fn resolve(selection: &Selection) -> Result<Vec<TargetSlice>, TargetError> {
+        validate_sources(selection)?;
         for path in selection
             .files
             .iter()
@@ -67,6 +68,21 @@ impl TargetHandler {
             .map(|targets| TargetsResolved { id, targets })
             .map_err(|error| EffectFailed::other(id, "target.resolve", error.to_string()))
     }
+}
+
+fn validate_sources(selection: &Selection) -> Result<(), TargetError> {
+    for source in &selection.sources {
+        let relative = normalize_logical_path(&selection.root, source)?;
+        if let Err(error) = std::fs::metadata(selection.root.join(relative)) {
+            let message = if error.kind() == std::io::ErrorKind::NotFound {
+                format!("source {source:?} does not exist")
+            } else {
+                format!("cannot inspect source {source:?}: {error}")
+            };
+            return Err(TargetError::DiscoveryFailed(message));
+        }
+    }
+    Ok(())
 }
 
 fn validate_symbols(selection: &Selection, targets: &[TargetSlice]) -> Result<(), TargetError> {

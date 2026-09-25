@@ -872,6 +872,7 @@ async fn changed_pins_hunk_boundaries_under_hostile_config() {
 #[tokio::test]
 async fn rejects_non_repository() {
     let root = tempfile::tempdir().unwrap();
+    fs::create_dir(root.path().join("pkg")).unwrap();
     let selection = Selection {
         root: Utf8PathBuf::from_path_buf(root.path().to_path_buf()).unwrap(),
         sources: vec![Utf8PathBuf::from("pkg")],
@@ -888,6 +889,7 @@ async fn rejects_non_repository() {
 #[tokio::test]
 async fn rejects_bare_repository_as_git_repository_required() {
     let root = tempfile::tempdir().unwrap();
+    fs::create_dir(root.path().join("pkg")).unwrap();
     let output = Command::new("git")
         .args(["init", "--bare", "--quiet"])
         .current_dir(root.path())
@@ -1263,5 +1265,79 @@ async fn changed_mixed_rows_preserve_rename_binary_and_text_attribute_behavior()
     assert_eq!(
         changed[&Utf8PathBuf::from("src/new.py")],
         [LineRange { start: 2, end: 4 }]
+    );
+}
+
+#[tokio::test]
+async fn source_existence_uses_lexical_paths_and_preserves_file_sources() {
+    let project = tempfile::tempdir().unwrap();
+    let root = Utf8PathBuf::from_path_buf(project.path().to_owned()).unwrap();
+    fs::create_dir(root.join("src")).unwrap();
+    fs::write(root.join("src/calc.py"), "value = 1 + 2\n").unwrap();
+    for source in [
+        Utf8PathBuf::from("."),
+        root.clone(),
+        Utf8PathBuf::from("absent/../src"),
+        root.join("src"),
+        Utf8PathBuf::from("src/calc.py"),
+    ] {
+        let selection = Selection {
+            root: root.clone(),
+            sources: vec![source.clone()],
+            ..Selection::default()
+        };
+        let targets = TargetHandler::resolve(&selection).await.unwrap();
+        assert_eq!(targets.len(), 1, "source={source}");
+        assert_eq!(targets[0].path, "src/calc.py");
+    }
+    let outside = Selection {
+        root: root.clone(),
+        sources: vec!["../outside".into()],
+        ..Selection::default()
+    };
+    assert!(matches!(
+        TargetHandler::resolve(&outside).await,
+        Err(TargetError::PathOutsideRoot(_))
+    ));
+    let missing = Selection {
+        root,
+        sources: vec!["bad\nsource".into()],
+        ..Selection::default()
+    };
+    let error = TargetHandler::resolve(&missing)
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("bad\\nsource"), "{error}");
+    assert!(!error.contains('\n'));
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn dangling_source_links_are_missing_without_enabling_link_discovery() {
+    let project = tempfile::tempdir().unwrap();
+    let root = Utf8PathBuf::from_path_buf(project.path().to_owned()).unwrap();
+    fs::create_dir(root.join("actual")).unwrap();
+    fs::write(root.join("actual/calc.py"), "value = 1 + 2\n").unwrap();
+    std::os::unix::fs::symlink("actual", root.join("linked")).unwrap();
+    std::os::unix::fs::symlink("absent", root.join("dangling")).unwrap();
+    let selection = |source: &str| Selection {
+        root: root.clone(),
+        sources: vec![source.into()],
+        ..Selection::default()
+    };
+    assert!(
+        TargetHandler::resolve(&selection("linked"))
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    let error = TargetHandler::resolve(&selection("dangling"))
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(
+        error.contains("dangling") && error.contains("does not exist"),
+        "{error}"
     );
 }

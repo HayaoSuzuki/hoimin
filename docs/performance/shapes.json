@@ -872,7 +872,7 @@
         "hoimin-cli",
         "--test",
         "workspace_preflight_heap",
-        "preflight_peak_tracks_entries_and_largest_file_not_worker_copies",
+        "preflight_peak_tracks_entries_not_file_bytes_or_worker_copies",
         "--",
         "--exact"
       ]

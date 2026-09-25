@@ -38,7 +38,7 @@ mod validation_tests;
 use ranking::{RANKING_RULE_VERSION, rank_candidates, validate_ranking, validate_ranking_against};
 pub use ranking::{RankedPlanCandidate, RankingReason, RankingReasonCode};
 
-pub const PLAN_SCHEMA_VERSION: u32 = 4;
+pub const PLAN_SCHEMA_VERSION: u32 = 5;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -122,6 +122,10 @@ pub enum PlanError {
     SourceChanged(String),
     #[error("plan.fingerprint_input.changed: {0}")]
     FingerprintInputChanged(String),
+    #[error(
+        "plan.fingerprint_env.changed: selected inherited environment differs; regenerate the plan"
+    )]
+    FingerprintEnvChanged,
     #[error("plan.workspace: {0}")]
     Workspace(String),
     #[error("plan.candidate.invalid: {0}")]
@@ -354,10 +358,7 @@ async fn prepare_verify_selection_inner(
         .map_err(|error| PlanError::ManifestInvalid(error.to_string()))?;
     drop(bytes);
     validate_header(&manifest)?;
-    manifest
-        .normalized_config
-        .validate()
-        .map_err(|error| PlanError::ManifestInvalid(error.to_string()))?;
+    validate_current_plan_config(&manifest.normalized_config)?;
 
     let (selection, selection_scope, verification_selection) =
         resolve_verify_selection(&manifest, requested_selection)?;
@@ -438,6 +439,19 @@ async fn prepare_verify_selection_inner(
         selection_scope,
         plan_truncated: manifest.truncated,
     })
+}
+
+fn validate_current_plan_config(config: &hoimin_core::PlanConfig) -> Result<(), PlanError> {
+    config
+        .validate()
+        .map_err(|error| PlanError::ManifestInvalid(error.to_string()))?;
+    let current = crate::fingerprint_env::capture(&config.fingerprint_env)
+        .map_err(|error| PlanError::ManifestInvalid(error.to_string()))?;
+    if current == config.fingerprint_env_hash {
+        Ok(())
+    } else {
+        Err(PlanError::FingerprintEnvChanged)
+    }
 }
 
 fn resolve_verify_selection(

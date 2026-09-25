@@ -9,7 +9,7 @@ use crate::{
     TargetSlice,
 };
 
-pub const FINGERPRINT_SCHEMA_VERSION: u8 = 10;
+pub const FINGERPRINT_SCHEMA_VERSION: u8 = 11;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SourceHash {
@@ -21,6 +21,8 @@ pub struct SourceHash {
 pub struct FingerprintInput {
     pub sources: Vec<SourceHash>,
     pub fingerprint_inputs: Vec<FingerprintInputFile>,
+    pub fingerprint_env: Vec<String>,
+    pub fingerprint_env_hash: Option<String>,
     pub targets: Vec<TargetSlice>,
     pub import_roots: Vec<Utf8PathBuf>,
     pub source_roots: Vec<Utf8PathBuf>,
@@ -48,6 +50,8 @@ impl FingerprintInput {
             excludes: config.selection.excludes.clone(),
             sources,
             fingerprint_inputs: config.fingerprint_inputs.clone(),
+            fingerprint_env: config.fingerprint_env.clone(),
+            fingerprint_env_hash: config.fingerprint_env_hash.clone(),
             targets,
             operators: config.operators.names(),
             profile: config.profile,
@@ -113,6 +117,16 @@ pub fn fingerprint(input: &FingerprintInput) -> RunFingerprint {
         source_roots.bytes(root.as_str().as_bytes());
     }
     encoder.field(12, &source_roots.bytes);
+    let mut environment = Encoder::new();
+    environment.bytes(&encode_patterns(&input.fingerprint_env));
+    match &input.fingerprint_env_hash {
+        None => environment.raw(&[0]),
+        Some(hash) => {
+            environment.raw(&[1]);
+            environment.bytes(hash.as_bytes());
+        }
+    }
+    encoder.field(13, &environment.bytes);
     RunFingerprint(*blake3::hash(&encoder.bytes).as_bytes())
 }
 

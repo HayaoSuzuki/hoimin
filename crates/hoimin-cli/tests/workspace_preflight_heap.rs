@@ -100,7 +100,7 @@ fn observe_with_eager_read(files: usize, file_bytes: usize, workers: u32, broken
 }
 
 #[test]
-fn preflight_peak_tracks_entries_and_largest_file_not_worker_copies() {
+fn preflight_peak_tracks_entries_not_file_bytes_or_worker_copies() {
     // Warm allocator/runtime and filesystem setup before comparisons.
     observe(1, 1, 1);
     observe(0, 0, 0);
@@ -121,7 +121,7 @@ fn preflight_peak_tracks_entries_and_largest_file_not_worker_copies() {
         );
         let byte_peak = observe(8, scale * 1024 * 1024, 1);
         assert!(
-            byte_peak <= small + scale * 1024 * 1024 + 256 * 1024,
+            byte_peak <= small + 256 * 1024,
             "file bytes growth: scale {scale} peak {byte_peak}, baseline {small}"
         );
         let worker_peak = observe(8, 64 * 1024, u32::try_from(scale).unwrap());

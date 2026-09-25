@@ -160,12 +160,15 @@ fn current_session_golden_matches_semantic_regeneration() {
     assert_eq!(schema_sql(&checked), schema_sql(&regenerated));
     let checked_rows = logical_rows(&checked);
     let regenerated_rows = logical_rows(&regenerated);
-    assert_eq!(checked_rows[0].1[1], Value::Integer(10));
+    assert_eq!(
+        checked_rows[0].1[1],
+        Value::Integer(i64::from(hoimin_core::FINGERPRINT_SCHEMA_VERSION))
+    );
     assert_eq!(
         regenerated_rows[0].1[1],
         Value::Integer(i64::from(hoimin_core::FINGERPRINT_SCHEMA_VERSION))
     );
-    assert_eq!(&checked_rows[1..], &regenerated_rows[1..]);
+    assert_eq!(checked_rows, regenerated_rows);
 }
 
 fn assert_golden_session_rows(connection: &Connection, original_version: i64) {
@@ -329,7 +332,11 @@ fn expected_logical_rows(original_version: i64) -> Vec<(String, Vec<Value>)> {
             "fingerprints".to_owned(),
             vec![
                 Value::Text(fingerprint.clone()),
-                Value::Integer(if original_version >= 4 { 10 } else { 4 }),
+                Value::Integer(if original_version >= 4 {
+                    i64::from(hoimin_core::FINGERPRINT_SCHEMA_VERSION)
+                } else {
+                    4
+                }),
             ],
         ),
         (
