@@ -177,6 +177,12 @@ sources:
   resource: ../../superpowers/specs/2026-09-14-issue-456-validation-context-design.md
   working_tree: untracked
   sha256: a3f08279a0c60e016cef85ba37827f2b3be4fd5006bbb2068cce2c75bdf8991b
+- id: issue-600-design
+  resource: ../../superpowers/specs/2026-09-25-issue-600-target-membership-design.md
+  revision: fb7f1f1a44d94a8ea6e5e19dfba8efbb6dc656c1
+  working_tree: clean
+  sha256: cd568b65781ba9aee5262f8452e8516d707fcdd74081097fcca9855cd5a86aa9
+
 - id: issue-457
   resource: ../../superpowers/specs/2026-09-14-issue-457-fingerprint-shared-walk-design.md
   revision: 67b82d65bfa6f4c13b7476531161c1852be50381
@@ -1419,8 +1425,11 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 | 原文 | 内容 |
 | --- | --- |
 | [Issue #456: verify のファイル単位の候補検証](../../superpowers/specs/2026-09-14-issue-456-validation-context-design.md) | 前処理の共有、診断順とソース所有権。[^issue-456] |
+| [Issue #600: Index verify target membership](../../superpowers/specs/2026-09-25-issue-600-target-membership-design.md) | パス同値性と診断順を保つ対象所属索引。[^issue-600-design] |
 
 [^issue-456]: [2026-09-14-issue-456-validation-context-design.md](../../superpowers/specs/2026-09-14-issue-456-validation-context-design.md)。
+
+[^issue-600-design]: [Issue #600: Index verify target membership](../../superpowers/specs/2026-09-25-issue-600-target-membership-design.md)。
 
 [^issue-491-operation-cost-design]: [2026-09-14-issue-491-operation-cost-design.md](../../superpowers/specs/2026-09-14-issue-491-operation-cost-design.md)。
 [^issue-489-specs]: [2026-09-14-issue-489-valid-python-corpus-design.md](../../superpowers/specs/2026-09-14-issue-489-valid-python-corpus-design.md)。

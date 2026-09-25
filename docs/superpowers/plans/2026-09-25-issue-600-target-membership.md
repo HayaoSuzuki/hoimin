@@ -33,13 +33,13 @@
 
 **Interfaces:** Preserve `validate_requested_descriptors` and its return type `Result<BTreeSet<Utf8PathBuf>, PlanError>`. Extend test-only `ValidationStats` with `target_path_visits` and `membership_queries`.
 
-- [ ] Add counters to existing code: increment `membership_queries` after successful candidate lookup; increment `target_path_visits` inside `targets.iter().any(...)` before `target.path == candidate.path`.
-- [ ] Add the cost regression in `validation_tests.rs`: for `count in [1,4,16]` and `target_count in [1,8,64]`, create valid candidates with the existing `candidates("src/z.py", count, 0)` fixture, write its source, prepend `target_count-1` unused targets, then call `validate_requested_descriptors`. Assert `stats.target_path_visits == target_count`, `stats.membership_queries == count`, `stats.contexts == 1`, and returned paths equal `{src/z.py}`. This is the expected RED assertion for count > 1.
-- [ ] Run `CARGO_BUILD_JOBS=2 cargo test -p hoimin-cli --lib target_membership --offline --locked`; save the failing assertion in `/tmp/hoimin-issue-600-validation-red.log`.
-- [ ] Add equality matrix: candidate `src/calc.py`; accepted targets `src/calc.py`, `src//calc.py`, `src/./calc.py`, `src/calc.py/`; rejected targets `src/Calc.py`, `./src/calc.py`, `src/other/../calc.py`. For accepted cases assert the original candidate path and one context; rejected cases assert exact unselected message and zero contexts. Include duplicate equivalent targets.
-- [ ] Add pairwise error-order matrix across unknown ID, unselected, absent selected source, bad original descriptor, and bad stable ID. Assign both the candidate IDs and their map keys `a` and `b` to control request order (the descriptor failure runs before stable-ID validation; the stable-ID case intentionally uses the changed ID); assert exact diagnostics except OS-dependent read-error suffix, whose path prefix is checked. Repeat each pair in both orders. Include a valid prefix sharing a later invalid file using existing ID-based interleaving fixture.
-- [ ] Run the compatibility tests against the old scan to establish unchanged baseline semantics.
-- [ ] Implement the index:
+- [x] Add counters to existing code: increment `membership_queries` after successful candidate lookup; increment `target_path_visits` inside `targets.iter().any(...)` before `target.path == candidate.path`.
+- [x] Add the cost regression in `validation_tests.rs`: for `count in [1,4,16]` and `target_count in [1,8,64]`, create valid candidates with the existing `candidates("src/z.py", count, 0)` fixture, write its source, prepend `target_count-1` unused targets, then call `validate_requested_descriptors`. Assert `stats.target_path_visits == target_count`, `stats.membership_queries == count`, `stats.contexts == 1`, and returned paths equal `{src/z.py}`. This is the expected RED assertion for count > 1.
+- [x] Run `CARGO_BUILD_JOBS=2 cargo test -p hoimin-cli --lib target_membership --offline --locked`; save the failing assertion in `/tmp/hoimin-issue-600-validation-red.log`.
+- [x] Add equality matrix: candidate `src/calc.py`; accepted targets `src/calc.py`, `src//calc.py`, `src/./calc.py`, `src/calc.py/`; rejected targets `src/Calc.py`, `./src/calc.py`, `src/other/../calc.py`. For accepted cases assert the original candidate path and one context; rejected cases assert exact unselected message and zero contexts. Include duplicate equivalent targets.
+- [x] Add pairwise error-order matrix across unknown ID, unselected, absent selected source, bad original descriptor, and bad stable ID. Assign both the candidate IDs and their map keys `a` and `b` to control request order (the descriptor failure runs before stable-ID validation; the stable-ID case intentionally uses the changed ID); assert exact diagnostics except OS-dependent read-error suffix, whose path prefix is checked. Repeat each pair in both orders. Include a valid prefix sharing a later invalid file using existing ID-based interleaving fixture.
+- [x] Run the compatibility tests against the old scan to establish unchanged baseline semantics.
+- [x] Implement the index:
 
 ```rust
 let selected_paths: HashSet<&Utf8Path> = targets.iter().map(|target| {
@@ -55,9 +55,9 @@ if !selected_paths.contains(candidate.path.as_path()) {
 }
 ```
 
-- [ ] Run `CARGO_BUILD_JOBS=2 cargo test -p hoimin-cli --lib plan:: --offline --locked` and `CARGO_BUILD_JOBS=2 cargo test -p hoimin-cli --test plan --offline --locked`; retain GREEN evidence.
-- [ ] Review implementation three separate times: ordering/equality, lifetime/allocation/cost, and final complete diff. Review tests three separate times: independent expected outcomes, counter sensitivity and path edges, then cross-file and empty/duplicate coverage. Fix actual findings and record each pass in the report.
-- [ ] Commit implementation and tests after required verification.
+- [x] Run `CARGO_BUILD_JOBS=2 cargo test -p hoimin-cli --lib plan:: --offline --locked` and `CARGO_BUILD_JOBS=2 cargo test -p hoimin-cli --test plan --offline --locked`; retain GREEN evidence.
+- [x] Review implementation three separate times: ordering/equality, lifetime/allocation/cost, and final complete diff. Review tests three separate times: independent expected outcomes, counter sensitivity and path edges, then cross-file and empty/duplicate coverage. Fix actual findings and record each pass in the report.
+- [x] Commit implementation and tests after required verification.
 
 ### Task 2: Observe public performance and publish evidence
 
@@ -65,13 +65,13 @@ if !selected_paths.contains(candidate.path.as_path()) {
 
 **Interfaces:** Existing `/tmp/hoimin-perf-audit` fixtures and public `prepare_verify_selection`/CLI only; new outputs under `/tmp/hoimin-issue-600-benchmark`.
 
-- [ ] Build with `CARGO_BUILD_JOBS=2 cargo build --release -p hoimin-cli --offline --locked`.
-- [ ] Adapt the existing public preparation harness only to link this worktree's library and save outputs into the new directory. Reuse all six old plans, three alternating repetitions, `TopSelectionPolicy::Strict`, count 10,000. Assert every call succeeds.
-- [ ] Run public `verify PLAN --top 10000` for the same alternating repetitions. Assert exit 3, baseline `{"Exit":1}`, zero mutants, and selected count 10,000. Save JSON/stderr, elapsed values, platform, Rust version and SHA-256 of the binary. Compare medians with historical observations without claiming controlled before/after ratios.
-- [ ] Run `cargo fmt --check`, `CARGO_BUILD_JOBS=2 cargo test --workspace --offline --locked`, `CARGO_BUILD_JOBS=2 cargo test -p hoimin-core --features contracts --offline --locked`, and `CARGO_BUILD_JOBS=2 cargo test -p hoimin-cli --features contracts --offline --locked` with logs in `/tmp`. Investigate failures rather than counting them as passes.
-- [ ] Record all 12 review passes and RED/GREEN evidence, measured operation counts, benchmark results and limitations. Do not infer Linux/Windows runtime guarantees from macOS.
-- [ ] Add source records (revision/status/hash), matching footnotes and source-list entries for design/report; update the existing selection concept rather than creating a duplicate topic.
-- [ ] Validate OKF YAML/reserved-file structure, local links, source IDs/footnotes, new hashes and index coverage. Commit documentation, send root commits/results; root owns push and PR.
+- [x] Build with `CARGO_BUILD_JOBS=2 cargo build --release -p hoimin-cli --offline --locked`.
+- [x] Adapt the existing public preparation harness only to link this worktree's library and save outputs into the new directory. Reuse all six old plans, three alternating repetitions, `TopSelectionPolicy::Strict`, count 10,000. Assert every call succeeds.
+- [x] Run public `verify PLAN --top 10000` for the same alternating repetitions. Assert exit 3, baseline `{"Exit":1}`, zero mutants, and selected count 10,000. Save JSON/stderr, elapsed values, platform, Rust version and SHA-256 of the binary. Compare medians with historical observations without claiming controlled before/after ratios.
+- [x] Run `cargo fmt --check`, `CARGO_BUILD_JOBS=2 cargo test --workspace --offline --locked`, `CARGO_BUILD_JOBS=2 cargo test -p hoimin-core --features contracts --offline --locked`,, `CARGO_BUILD_JOBS=2 cargo test -p hoimin-cli --features contracts --offline --locked`, and `CARGO_BUILD_JOBS=2 cargo clippy --workspace --all-targets --all-features --offline --locked -- -D warnings` with logs in `/tmp`. Investigate failures rather than counting them as passes.
+- [x] Record all 12 review passes and RED/GREEN evidence, measured operation counts, benchmark results and limitations. Do not infer Linux/Windows runtime guarantees from macOS.
+- [x] Add source records (revision/status/hash), matching footnotes and source-list entries for design/report; update the existing selection concept rather than creating a duplicate topic.
+- [x] Validate OKF YAML/reserved-file structure, local links, source IDs/footnotes, new hashes and index coverage. Commit documentation, send root commits/results; root owns push and PR.
 
 ## Plan self-review
 

@@ -301,6 +301,11 @@ sources:
   resource: ../../superpowers/reports/2026-09-14-issue-456-validation-context-review.md
   working_tree: untracked
   sha256: 5042ef83fb71837543be9fb358b2453931bdf70ce77f6033381e5756632b09f0
+- id: issue-600-review
+  resource: ../../superpowers/reports/2026-09-25-issue-600-target-membership-review.md
+  working_tree: untracked
+  sha256: d4823d9add9a31d43a0cd1e80be6126b0593b80e1ca5638e44f9f766dcb593fc
+
 - id: issue-460-audit
   resource: ../../superpowers/reports/2026-09-11-issue-460-progress-result-audit.md
   working_tree: untracked
@@ -904,8 +909,11 @@ sources:
 | 原文 | 内容 |
 | --- | --- |
 | [Issue #456: 候補検証の前処理共有と検証記録](../../superpowers/reports/2026-09-14-issue-456-validation-context-review.md) | 操作回数、release計測、各工程の3回のセルフレビュー。[^issue-456-review] |
+| [Issue #600: Target membership review and measurements](../../superpowers/reports/2026-09-25-issue-600-target-membership-review.md) | 操作回数、パス同値性、診断順と公開API/CLIの計測。[^issue-600-review] |
 
 [^issue-456-review]: [2026-09-14-issue-456-validation-context-review.md](../../superpowers/reports/2026-09-14-issue-456-validation-context-review.md)。
+
+[^issue-600-review]: [Issue #600: Target membership review and measurements](../../superpowers/reports/2026-09-25-issue-600-target-membership-review.md)。
 
 # 2026-09-14 統合時に補完した報告
 
