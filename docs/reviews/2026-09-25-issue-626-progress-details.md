@@ -56,3 +56,7 @@ cargo fmt --manifest-path vendor/ruff_python_parser/Cargo.toml -- --check
 Logs and resource JSON: `/tmp/hoimin-batch-604-632/626-*`. No Python source changed; Python lint/testing remains CI-owned. The shared virtual environment was not modified.
 
 Final pre-rebase verification: full `cargo test --workspace` exited 0, workspace all-target/all-feature clippy with warnings denied passed, locked vendor parser clippy passed, both fmt checks and `git diff --check` passed. Progress integration includes 84 passing tests, plus two internal detail comparison tests, four Lean decision consumer tests, and the separate heap regression.
+
+## Final integration on main
+
+Rebased the unpublished branch onto main `35bd5cf` (merged issue 625) without conflicts. `git range-diff` confirmed both patches unchanged: design `ad8373f`, implementation `c255212`. On the rebased tree, progress units 10, public progress 87, Lean input/decision consumers 8, and four progress/detail/JSONL heap tests passed. Both exact CI clippy commands, both fmt checks, and diff checks passed. The full workspace run above remains the baseline evidence; the rebase changed only upstream integration context and introduced no new implementation edits.
