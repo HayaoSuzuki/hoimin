@@ -41,3 +41,9 @@ After the full suite, implementation commit `b41c4f4` and its precommitted desig
 - Both exact CI clippy commands, both fmt checks and `git diff --check` passed on the final base.
 
 The complete workspace result above belongs to the pre-rebase implementation; final-base checks cover ranking, memory and public saved-plan behavior. No source changes followed these checks.
+
+## Published-branch merge verification
+
+Merged main `d2277bf` into the published branch without rewriting history. The only conflict was an additive test insertion in `tests/plan.rs`; retained both the ranking/public-preview test and the stale-plan helper/tests. Production ranking merged automatically, retaining the changed-context documentation and unchanged borrowed validation.
+
+After cleaning only core/CLI artifacts in the assigned cache, ranking unit tests passed 13/13 and the plan/heap group passed 88 tests with 1 ignored. Both exact CI clippy commands, both fmt checks and diff checks passed. The merge paused at the user's request before conflict resolution, then resumed with explicit authorization; no checks were running during the pause.

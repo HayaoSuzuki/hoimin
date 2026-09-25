@@ -84,6 +84,7 @@ At least one target selector is required:
 - `--line PATH:START-END` selects an inclusive line range and may be repeated.
 - `--symbol MODULE:QUALNAME` selects a function, method, or class resolved below `--source` and may be repeated.
 - `--changed` restricts selection to staged, unstaged, and untracked Git changes. It requires `--source`.
+- `--changed-context N` includes up to N neighboring lines on each side of Git changes. It requires `--changed`, defaults to 0, and accepts integers from 0 through 1073741823. With N > 0, a pure deletion selects up to N surviving lines on each side of the deletion boundary. Ranges are clipped at the current file boundaries; empty and deleted files contribute no lines. Untracked files still select their complete contents.
 - `--diff-base REV` uses the merge base of `REV` and `HEAD` for `--changed`. It is invalid without `--changed`.
 
 An explicit `--symbol` must name an existing function or class definition in the
@@ -127,11 +128,11 @@ not guaranteed, and Python `-E`/`-I` ignores PYTHONPATH. Setting inherited
 project path to the worker. Neither approach edits the original source or venv.
 Saved plans preserve import-root order; `verify` inherits it without a flag.
 
-`--root DIR` resolves relative paths and defaults to the current directory. Combining explicit selectors with `--changed` intersects each explicit target with changed lines. When that target also has a symbol selector, a candidate must be both on a changed line and inside the selected symbol. A `--symbol` requires `--source`; when `--source` is present, file and line paths must be inside a source root.
+`--root DIR` resolves relative paths and defaults to the current directory. Combining explicit selectors with `--changed` intersects each explicit target with changed lines and any `--changed-context` neighborhood. Context never expands an explicit line or symbol selector. When that target also has a symbol selector, a candidate must be both in that Git selection and inside the selected symbol. The `changed_line` ranking reason and its 200-point boost apply to this entire selection, including context lines; the reason does not assert that the candidate itself was edited. Plans save the context setting, and `verify` reuses it. A `--symbol` requires `--source`; when `--source` is present, file and line paths must be inside a source root.
 
 Target, fingerprint, and copied-workspace paths use a portable `/`-separated representation. Native Windows path inputs are normalized to that form. On Unix, a concrete filename containing a literal backslash is rejected before collection because it cannot be represented unambiguously. Backslashes in glob options retain their existing escape syntax; the concrete paths matched by a glob are validated after walking.
 
-`--include GLOB` can restore ignored or hidden files. `--exclude GLOB` adds exclusions and wins when both match. Both options may be repeated.
+`--include GLOB` can restore ignored or hidden files. `--exclude GLOB` adds exclusions and wins when both match. Both options may be repeated. Exclude patterns are interpreted only as globs: for example, `src/[ab].py` excludes `a.py` and `b.py`, not a file literally named `[ab].py`.
 
 Target discovery and worker copying always exclude `.git`, `.venv`, `venv`, `env`, `__pycache__`, `.pytest_cache`, `.mypy_cache`, `.ruff_cache`, `.pyre`, `.pytype`, `.tox`, and `.nox` below the project root. Names are compared case-insensitively on Windows and exactly on other platforms. Includes cannot restore these entries. Automatic source scans omit them; explicit `--file` and `--line` selectors inside them fail during target resolution with the path and remediation. Choose source outside the excluded directory. The project root itself remains usable even if its name is on this list. Ignore files apply in non-Git roots too; hidden mutation targets still require an include.
 
@@ -379,7 +380,15 @@ module alias remains unshadowed at the annotation site. If no safe spelling is
 available, the candidate is skipped. Class-visible annotation imports and module
 aliases are also excluded when the class may have a prepared namespace, including
 explicit class imports and `nonlocal` references. Lexical descendants skip the
-class namespace; explicit `global` declarations bypass it for each declared name.
+class namespace; explicit `global` declarations bypass it for each declared name. Private
+import aliases and their mangled spelling (such as `__Seq` and `_C__Seq` inside
+class `C`) are conservatively excluded at both endpoints, including methods and
+nested functions that retain that compiler context. Leading underscores in class
+names are stripped; trailing-dunder aliases and underscore-only class names do
+not trigger mangling. Actual private writes to an explicitly mangled import name
+also invalidate its provenance in the destination namespace. Clean private
+aliases may therefore produce fewer candidates; ordinary aliases retain their
+existing behavior.
 
 The `operator_function` selector recognizes the documented callable pairs
 `eq`/`ne`, `lt`/`le`, `gt`/`ge`, `add`/`sub`, `mul`/`truediv`,
@@ -549,6 +558,14 @@ sessions or execution metrics. It conflicts with `--metrics`. A valid preview
 exits with code 0, including for a truncated plan; invalid selections and stale
 plans exit with code 2. Runtime resource availability is checked when executing.
 
+When saved source or fingerprint input records differ from the workspace,
+verification reports `modified`, `added` or `removed` with quoted root-relative
+paths. Normal verification and dry-run show the same diagnostic before tests
+run, with empty stdout and exit code 2. Details are sorted by path, limited to
+ten paths, and followed by the number of additional paths omitted. Control
+characters in paths are escaped. Earlier discovery or read errors retain their
+own diagnostic rather than being classified as record differences.
+
 The [preview schema](docs/json-schema/verify-preview.schema.json) is independent
 of run reports: `kind` is `verify_preview` and `schema_version` is 2. JSON and
 JSONL each contain one object; `--format human` prints metadata and candidate rows.
@@ -596,6 +613,29 @@ When a baseline fails or reaches its process timeout, `run` and `verify` copy it
 `--format json` emits one document. `--format jsonl` emits flushed lifecycle events; diagnostics are JSON Lines on stderr. Public JSON contracts are versioned in [`run-result.schema.json`](docs/json-schema/run-result.schema.json) and [`run-event.schema.json`](docs/json-schema/run-event.schema.json). Event kinds are `run_started`, `baseline_finished`, `mutant_started`, `mutant_finished`, `diagnostic`, and `run_finished`. Parallel events are emitted in completion order; candidate sequence numbers allow stable reordering.
 
 The final summary's `complete` is `false` when any mutant is inconclusive or the run fails or is interrupted. It is `true` only when every selected mutant is `killed` or `survived` and no run-level failure occurred; a successful run with no candidates is also complete. Therefore, an exit code of `4` always has `complete: false`.
+
+Run `hoimin progress --details before.json after.json` to identify improvements and
+regressions in the **final adjacent input pair**. Details include candidate ID,
+operator, previous/current status and source positions (one-based lines, zero-based
+columns). Human output quotes and escapes strings. `--details-limit N` sets the
+maximum displayed changes (default 100; zero shows only omission counts), ordered
+lexicographically by candidate ID.
+
+The detail fields `previous_input` and `current_input` are zero-based indices into
+the original inputs. An unusable final pair yields `available: false`; an earlier
+comparison is never substituted. `eligibility` states whether the candidate sets
+match, differ, or contain duplicate IDs. Only changes counted by the comparison
+with an identical ID unique in both inputs appear as details. Inconclusive and
+ambiguous matches are excluded. `omitted` counts identified changes beyond the
+limit; `unidentified` counts aggregate changes whose identity cannot be established,
+such as content-only matches with different IDs. All aggregate counts and decisions
+remain independent of the display limit.
+
+`--details --format json` explicitly selects
+[progress schema v2](docs/json-schema/progress-result-v2.schema.json), which adds a
+`details` object. Without `--details`, human output,
+[progress schema v1](docs/json-schema/progress-result.schema.json), and exit status
+retain their existing behavior.
 
 ### Operational metrics
 
@@ -654,17 +694,18 @@ diagnostics.
 
 ## Sessions and resume
 
-No database is created by default. `--session PATH` stores a run in SQLite and commits each mutant result independently. `--resume` requires `--session` and looks up the newest compatible incomplete run. Compatibility includes ordered import roots, source and configuration fingerprints, test argv, verdict-affecting limits, resource policy, and the operator set. Profile selection is part of session compatibility, so a focused run never resumes results from a full run and vice versa. `--jobs` and `--max-output` are operational settings and may change when resuming; reports record their current values, and reused results do not import output retained under the earlier limit. Completed `killed` and `survived` results can be reused; `timeout`, `out_of_memory`, `process_limit`, `error`, and `not_run` are run again under the current settings. An incompatible or already complete run is not silently mixed with new results.
+No database is created by default. `--session PATH` stores a run in SQLite and commits each mutant result independently. `--resume` requires `--session` and looks up the newest compatible incomplete run. Compatibility includes ordered import roots and source roots, source and configuration fingerprints, test argv, verdict-affecting limits, resource policy, and the operator set. Profile selection is part of session compatibility, so a focused run never resumes results from a full run and vice versa. `--jobs` and `--max-output` are operational settings and may change when resuming; reports record their current values, and reused results do not import output retained under the earlier limit. Completed `killed` and `survived` results can be reused; `timeout`, `out_of_memory`, `process_limit`, `error`, and `not_run` are run again under the current settings. An incompatible or already complete run is not silently mixed with new results.
 
 Plan schema version 4 stores the independent import roots (ranking rule version
-4). Regenerate older plans before verification. Fingerprint schema version 8
-includes their ordered list and the ordered `--include` / `--exclude` copy
-patterns, including empty lists for default invocations. Changing either copy
+4). Regenerate older plans before verification. Fingerprint schema version 9
+includes ordered import roots and source roots and the ordered `--include` / `--exclude` copy
+patterns, including empty lists for default invocations. Changing source-root order or either copy
 pattern list starts a new run even when explicit fingerprint-file bytes match.
 Pattern spelling and order are preserved; equivalent but differently spelled
 patterns may conservatively start a new run. Identical patterns remain compatible.
-Older session fingerprints cannot be resumed; start a new session and rerun the
-baseline and mutants. Existing saved results are not rewritten.
+Older session fingerprints cannot be resumed; a new run executes the baseline
+and mutants. The same session database can be retained; existing saved results
+are not rewritten.
 
 The active session database, its `-wal`, `-shm`, and `-journal` sidecars, and its `.<database-name>.hoimin-locks` directory are excluded from worker copies, copy-size accounting, and original-workspace integrity checks. Explicit `--include` patterns cannot restore these artifacts. Other database fixtures and similarly named files follow the normal copy rules and remain protected by integrity checks. Relative `--session` paths are resolved from the invoking working directory; existing database and parent-directory aliases resolve to the same active artifacts. Session ownership locking still prevents concurrent use of the same run.
 

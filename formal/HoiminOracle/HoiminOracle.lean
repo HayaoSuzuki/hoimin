@@ -9,9 +9,11 @@ import HoiminOracle.BudgetCases
 import HoiminOracle.SessionModel
 import HoiminOracle.SessionProofs
 import HoiminOracle.SessionCases
+import HoiminOracle.SourceOrderModel
 import HoiminOracle.WorkspaceModel
 import HoiminOracle.WorkspaceProofs
 import HoiminOracle.WorkspaceCases
+import HoiminOracle.GlobSelectionModel
 import HoiminOracle.ScopeResolutionModel
 import HoiminOracle.ScopeResolutionProofs
 import HoiminOracle.BindingFlowModel
@@ -71,6 +73,9 @@ import HoiminOracle.CandidateSpanCases
 import HoiminOracle.ChangedTargetModel
 import HoiminOracle.ChangedTargetProofs
 import HoiminOracle.ChangedTargetCases
+import HoiminOracle.ChangedContextModel
+import HoiminOracle.ChangedContextProofs
+import HoiminOracle.ChangedContextCases
 import HoiminOracle.ProcessOutputModel
 import HoiminOracle.ProcessOutputProofs
 import HoiminOracle.ProcessOutputCases
@@ -99,3 +104,4 @@ import HoiminOracle.PreparedNamespaceModel
 
 import HoiminOracle.PagingModel
 import HoiminOracle.PreparedAnnotationImportModel
+import HoiminOracle.PrivateAnnotationImportModel

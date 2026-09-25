@@ -63,8 +63,10 @@ LEAN_CORPUS_BY_EXECUTABLE = {
     "generate": "corpus/state-machine.jsonl",
     "generate_budget": "corpus/budget-cleanup.jsonl",
     "generate_session": "corpus/session-recovery.jsonl",
+    "generate_source_order": "corpus/source-order.jsonl",
     "generate_shutdown": "corpus/shutdown-orchestration.jsonl",
     "generate_workspace": "corpus/workspace-lifecycle.jsonl",
+    "generate_glob_selection": "corpus/glob-selection.jsonl",
     "generate_result_lifecycle": "corpus/result-lifecycle.jsonl",
     "generate_candidate_ranking": "corpus/candidate-ranking.jsonl",
     "generate_schema_migration": "corpus/schema-migration-concurrency.jsonl",
@@ -89,6 +91,7 @@ LEAN_CORPUS_BY_EXECUTABLE = {
     "generate_output_retention": "corpus/output-retention.jsonl",
     "generate_candidate_span": "corpus/candidate-span-preservation.jsonl",
     "generate_changed_target": "corpus/changed-target-composition.jsonl",
+    "generate_changed_context": "corpus/changed-context.jsonl",
     "generate_process_output": "corpus/process-output-outcome.jsonl",
     "generate_timeout_limit": "corpus/timeout-limit.jsonl",
     "generate_disk_guard": "corpus/disk-guard-lifecycle.jsonl",
@@ -107,6 +110,7 @@ LEAN_CORPUS_BY_EXECUTABLE = {
     "generate_prepared_namespace": "corpus/prepared-namespace.jsonl",
     "generate_paging": "corpus/paging.jsonl",
     "generate_prepared_annotation_import": "corpus/prepared-annotation-import.jsonl",
+    "generate_private_annotation_import": "corpus/private-annotation-import.jsonl",
 }
 LEAN_SENSITIVITY_EXECUTABLES = {
     name

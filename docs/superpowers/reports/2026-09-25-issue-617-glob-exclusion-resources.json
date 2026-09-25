@@ -1,0 +1,56 @@
+{
+  "lean-model": {
+    "elapsed_ms": 7504,
+    "exit_code": 0,
+    "peak_rss_kib": 1285616,
+    "reason": "child_exit",
+    "rss_limit_kib": 2097152,
+    "schema": 1,
+    "timeout_ms": 20000
+  },
+  "lean-generate": {
+    "elapsed_ms": 6887,
+    "exit_code": 0,
+    "peak_rss_kib": 1214528,
+    "reason": "child_exit",
+    "rss_limit_kib": 2097152,
+    "schema": 1,
+    "timeout_ms": 20000
+  },
+  "native": {
+    "elapsed_ms": 9128,
+    "exit_code": 0,
+    "peak_rss_kib": 1270560,
+    "reason": "child_exit",
+    "rss_limit_kib": 2097152,
+    "schema": 1,
+    "timeout_ms": 20000
+  },
+  "check": {
+    "elapsed_ms": 2742,
+    "exit_code": 0,
+    "peak_rss_kib": 791360,
+    "reason": "child_exit",
+    "rss_limit_kib": 2097152,
+    "schema": 1,
+    "timeout_ms": 20000
+  },
+  "sensitivity": {
+    "elapsed_ms": 563,
+    "exit_code": 0,
+    "peak_rss_kib": 56704,
+    "reason": "child_exit",
+    "rss_limit_kib": 2097152,
+    "schema": 1,
+    "timeout_ms": 20000
+  },
+  "stats": {
+    "elapsed_ms": 291,
+    "exit_code": 0,
+    "peak_rss_kib": 2320,
+    "reason": "child_exit",
+    "rss_limit_kib": 2097152,
+    "schema": 1,
+    "timeout_ms": 20000
+  }
+}

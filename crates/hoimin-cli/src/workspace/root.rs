@@ -238,13 +238,36 @@ impl WorkerRoot {
     }
 
     pub(crate) fn read(&self, path: &Utf8Path) -> Result<Vec<u8>, WorkspaceError> {
+        self.with_read_file(path, |mut file| {
+            let mut contents = Vec::new();
+            file.read_to_end(&mut contents)
+                .map_err(|error| WorkspaceError::io("read worker file", path, error))?;
+            Ok(contents)
+        })
+    }
+
+    pub(crate) fn hash(&self, path: &Utf8Path) -> Result<blake3::Hash, WorkspaceError> {
+        self.with_read_file(path, |file| {
+            let mut hasher = blake3::Hasher::new();
+            hasher
+                .update_reader(file)
+                .map_err(|error| WorkspaceError::io("read worker file", path, error))?;
+            Ok(hasher.finalize())
+        })
+    }
+
+    fn with_read_file<T>(
+        &self,
+        path: &Utf8Path,
+        consume: impl FnOnce(File) -> Result<T, WorkspaceError>,
+    ) -> Result<T, WorkspaceError> {
         let (parent, name) = self.open_parent(path, false)?;
         #[cfg(test)]
         parent_opened("read", path);
         Self::reject_non_file(&parent, &name, path, "read worker file")?;
         #[cfg(windows)]
         {
-            match windows::read(&parent, &name, path) {
+            match windows::open_read(&parent, &name, path).and_then(consume) {
                 Ok(contents) => Ok(contents),
                 Err(_) if Self::entry_is_non_file(&parent, &name) => {
                     Err(WorkspaceError::InvalidPath {
@@ -261,7 +284,7 @@ impl WorkerRoot {
                 .read(true)
                 .follow(FollowSymlinks::No)
                 .custom_flags(libc::O_NONBLOCK);
-            let mut file = match cap_primitives::fs::open(&parent, Path::new(&name), &options) {
+            let file = match cap_primitives::fs::open(&parent, Path::new(&name), &options) {
                 Ok(file) => file,
                 Err(error) => {
                     if Self::entry_is_non_file(&parent, &name) {
@@ -280,10 +303,7 @@ impl WorkerRoot {
                     path: path.to_owned(),
                 });
             }
-            let mut contents = Vec::new();
-            file.read_to_end(&mut contents)
-                .map_err(|error| WorkspaceError::io("read worker file", path, error))?;
-            Ok(contents)
+            consume(file)
         }
     }
 
@@ -1808,6 +1828,10 @@ mod tests {
             root.read(Utf8Path::new("fifo.py")),
             Err(WorkspaceError::InvalidPath { .. })
         ));
+        assert!(matches!(
+            root.hash(Utf8Path::new("fifo.py")),
+            Err(WorkspaceError::InvalidPath { .. })
+        ));
     }
 
     #[test]
@@ -1909,6 +1933,37 @@ mod tests {
         let result = operation.join().unwrap();
 
         assert_eq!(result.unwrap(), b"worker");
+        #[cfg(windows)]
+        if matches!(replacement, ParentReplacement::Denied) {
+            assert_eq!(
+                fs::read(fixture.worker.join("swap/target")).unwrap(),
+                b"worker"
+            );
+            return;
+        }
+        let outside_permissions = replacement.permissions();
+        let outside = fixture.worker.join("swap/target");
+        assert_eq!(fs::read(&outside).unwrap(), b"outside",);
+        assert_eq!(permission_fingerprint(&outside), outside_permissions);
+    }
+
+    #[test]
+    fn parent_replacement_hash_uses_the_opened_parent() {
+        let fixture = RootFixture::new();
+        fs::create_dir(fixture.worker.join("swap")).unwrap();
+        fs::write(fixture.worker.join("swap/target"), b"worker").unwrap();
+        let root = WorkerRoot::open(fixture.worker_path()).unwrap();
+        let (hook, opened, resume) = PausedParent::new("read", "swap/target");
+        let thread_hook = Arc::clone(&hook);
+        let operation = thread::spawn(move || {
+            let _guard = install_workspace_race_hook(thread_hook);
+            root.hash(Utf8Path::new("swap/target"))
+        });
+
+        let replacement = PausedParent::replace_parent(&fixture.worker, &opened, &resume);
+        let result = operation.join().unwrap();
+
+        assert_eq!(result.unwrap(), blake3::hash(b"worker"));
         #[cfg(windows)]
         if matches!(replacement, ParentReplacement::Denied) {
             assert_eq!(

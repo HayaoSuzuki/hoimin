@@ -42,20 +42,23 @@ pub(crate) async fn resolve_changed(
     root: &Utf8Path,
     diff_base: Option<&str>,
 ) -> Result<BTreeMap<Utf8PathBuf, Vec<LineRange>>, TargetError> {
-    resolve_changed_scoped(root, diff_base, None).await
+    resolve_changed_scoped(root, diff_base, None, 0).await
 }
 
 pub(crate) async fn resolve_changed_scoped(
     root: &Utf8Path,
     diff_base: Option<&str>,
     eligible_targets: Option<&[TargetSlice]>,
+    context: u32,
 ) -> Result<BTreeMap<Utf8PathBuf, Vec<LineRange>>, TargetError> {
     ensure_git_worktree(root).await?;
     let mut changed = BTreeMap::<Utf8PathBuf, Vec<LineRange>>::new();
     let mut excluded = BTreeSet::new();
+    // Git clips context to current-file bounds and includes both sides of deletion gaps.
+    let unified = format!("--unified={context}");
     let mut diff_args = vec![
         "diff",
-        "--unified=0",
+        &unified,
         "--no-color",
         "--no-ext-diff",
         "--no-textconv",

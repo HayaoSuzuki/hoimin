@@ -6,7 +6,9 @@ use camino::Utf8PathBuf;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::{ByteSpan, DecodedPythonSource, SourceEncodingError, decode_python_source};
+use crate::{
+    ByteSpan, DecodedPythonSource, PythonSourceEncoding, SourceEncodingError, decode_python_source,
+};
 
 pub const CANDIDATE_SCHEMA_VERSION: u32 = 1;
 const MUTANT_ID_DOMAIN: &[u8] = b"hoimin.mutant-id.v1\0";
@@ -95,7 +97,41 @@ pub struct CandidateValidationContext<'source> {
     source: &'source [u8],
     decoded: Result<DecodedPythonSource<'source>, SourceEncodingError>,
     file_hash: String,
-    source_index: Option<PythonSourceIndex>,
+    source_index: Option<CandidateSourceIndex>,
+}
+
+#[derive(Debug)]
+enum CandidateSourceIndex {
+    Unicode(PythonSourceIndex),
+    // Every Latin-1 raw byte is one scalar: raw columns need no corrections.
+    Latin1(Vec<u32>),
+}
+
+impl CandidateSourceIndex {
+    fn new(
+        source: &[u8],
+        decoded: &DecodedPythonSource<'_>,
+    ) -> Result<Self, CandidateValidationError> {
+        // Preserve the decoded-size limit previously enforced by PythonSourceIndex.
+        u32::try_from(decoded.text().len())
+            .map_err(|_| CandidateValidationError::SourceTooLarge)?;
+        if decoded.encoding() == PythonSourceEncoding::Latin1 {
+            Ok(Self::Latin1(python_line_starts(source)?))
+        } else {
+            PythonSourceIndex::new(decoded.text()).map(Self::Unicode)
+        }
+    }
+
+    fn line_and_column(&self, raw: usize, decoded: usize) -> Option<(u32, u32)> {
+        match self {
+            Self::Unicode(index) => index.line_and_column(decoded),
+            Self::Latin1(starts) => {
+                let raw = u32::try_from(raw).ok()?;
+                let line = starts.partition_point(|start| *start <= raw) - 1;
+                Some((one_based_line(line)?, raw - starts[line]))
+            }
+        }
+    }
 }
 
 impl<'source> CandidateValidationContext<'source> {
@@ -108,7 +144,7 @@ impl<'source> CandidateValidationContext<'source> {
         let source_index = decoded
             .as_ref()
             .ok()
-            .map(|decoded| PythonSourceIndex::new(decoded.text()))
+            .map(|decoded| CandidateSourceIndex::new(source, decoded))
             .transpose()?;
         Ok(Self {
             source,
@@ -445,7 +481,7 @@ pub fn validate_candidate_with_context(
     let (line, column) = context
         .source_index
         .as_ref()
-        .and_then(|index| index.line_and_column(decoded_start))
+        .and_then(|index| index.line_and_column(start, decoded_start))
         .ok_or(CandidateValidationError::LocationMismatch)?;
     if candidate.line != line || candidate.column != column {
         return Err(CandidateValidationError::LocationMismatch);

@@ -35,7 +35,7 @@ inductive OracleReport
   deriving Repr, DecidableEq, BEq
 
 structure OracleCase where
-  schema : Nat := 1
+  schema : Nat := 2
   id : String
   mode : String := "strict"
   patience : Nat
@@ -125,7 +125,7 @@ def validMode (mode : String) : Bool :=
   mode == "strict" || mode == "internal-fixture" || mode == "model-only"
 
 def caseSafe (item : OracleCase) : Bool :=
-  item.schema == 1 && validMode item.mode && item.patience > 0 &&
+  item.schema == 2 && validMode item.mode && item.patience > 0 &&
     item.reports.length > 0
 
 def firstComparison? (item : OracleCase) : Option PairObservation :=

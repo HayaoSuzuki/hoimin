@@ -46,13 +46,13 @@ pub fn resolve(
     let mut selected = resolve_patterns(root, patterns)?.selected;
     for file in files {
         let path = resolve_exact(file)?;
-        let bytes = workspace::read_root_relative(root, &path).map_err(|error| match error {
+        let digest = workspace::hash_root_relative(root, &path).map_err(|error| match error {
             RootRelativeReadError::NotFound => FingerprintInputError::NotFound(file.clone()),
             RootRelativeReadError::Other(error) => {
                 FingerprintInputError::ExactUnsupportedFile(format!("{path}: {error}"))
             }
         })?;
-        selected.insert(path, Some(blake3::hash(&bytes)));
+        selected.insert(path, Some(digest));
     }
 
     selected
@@ -60,16 +60,14 @@ pub fn resolve(
         .map(|(path, exact_digest)| {
             let digest = exact_digest.map_or_else(
                 || {
-                    workspace::read_root_relative(root, &path)
-                        .map_err(|error| match error {
-                            RootRelativeReadError::NotFound => {
-                                FingerprintInputError::UnsupportedFile(format!("{path}: not found"))
-                            }
-                            RootRelativeReadError::Other(error) => {
-                                FingerprintInputError::UnsupportedFile(format!("{path}: {error}"))
-                            }
-                        })
-                        .map(|bytes| blake3::hash(&bytes))
+                    workspace::hash_root_relative(root, &path).map_err(|error| match error {
+                        RootRelativeReadError::NotFound => {
+                            FingerprintInputError::UnsupportedFile(format!("{path}: not found"))
+                        }
+                        RootRelativeReadError::Other(error) => {
+                            FingerprintInputError::UnsupportedFile(format!("{path}: {error}"))
+                        }
+                    })
                 },
                 Ok,
             )?;

@@ -1,10 +1,13 @@
 use camino::{Utf8Component, Utf8Path, Utf8PathBuf};
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use thiserror::Error;
 
 use crate::{LineRange, TargetSlice, contract_ensure};
+
+/// Keeps `2 * context` within a signed 32-bit C long in older Git versions.
+pub const MAX_CHANGED_CONTEXT: u32 = (i32::MAX as u32) / 2;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Selection {
@@ -14,6 +17,8 @@ pub struct Selection {
     pub lines: Vec<LineSelection>,
     pub symbols: Vec<SymbolSelection>,
     pub changed: bool,
+    #[serde(default)]
+    pub changed_context: u32,
     pub diff_base: Option<String>,
     pub includes: Vec<String>,
     pub excludes: Vec<String>,
@@ -114,6 +119,11 @@ pub enum TargetError {
     DiscoveryFailed(String),
 }
 
+/// Resolves selectors against an already policy-filtered discovery inventory.
+///
+/// Callers must apply include/exclude globs, ignore rules and built-in exclusions
+/// during discovery. This pure resolver does not reinterpret those patterns.
+///
 /// # Errors
 ///
 /// Returns [`TargetError`] when a requested path, line range, or symbol cannot
@@ -127,11 +137,6 @@ pub fn resolve_explicit(
         .iter()
         .map(|path| normalize_logical(&selection.root, path))
         .collect::<Result<Vec<_>, _>>()?;
-    let excludes: BTreeSet<_> = selection
-        .excludes
-        .iter()
-        .map(|value| path_key(value))
-        .collect();
     let available: BTreeMap<_, _> = discovered
         .iter()
         .filter_map(|file| {
@@ -139,7 +144,6 @@ pub fn resolve_explicit(
                 .ok()
                 .map(|path| (path, file.is_python))
         })
-        .filter(|(path, _)| !excludes.contains(&path_key(path.as_str())))
         .collect();
     let available_python: BTreeMap<String, Utf8PathBuf> = available
         .iter()

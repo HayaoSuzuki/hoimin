@@ -16,7 +16,7 @@ use hoimin_core::{
     name = "hoimin",
     version,
     about = "Bounded mutation testing for focused Python changes",
-    after_help = "Run contract:\n  hoimin run [TARGETS] [SAFETY/OUTPUT/SESSION OPTIONS] -- <TEST_ARGV>...\n\nTarget selectors:\n  --root --source --file --line --symbol --changed --diff-base\nCopy options:\n  --include --exclude\nMutation options:\n  --operators --exclude-operators --profile\nSafety options:\n  --jobs --max-mutants --max-candidates --analyzer-timeout\n  --baseline-timeout --mutant-timeout --total-timeout --max-memory\n  --max-output --max-copy-size --max-workspace-size --min-free-space\n  --max-processes --allow-best-effort-memory\nOutput/session options:\n  --format <json|jsonl|human> --metrics <PATH> --session --resume"
+    after_help = "Run contract:\n  hoimin run [TARGETS] [SAFETY/OUTPUT/SESSION OPTIONS] -- <TEST_ARGV>...\n\nTarget selectors:\n  --root --source --file --line --symbol --changed --changed-context --diff-base\nCopy options:\n  --include --exclude\nMutation options:\n  --operators --exclude-operators --profile\nSafety options:\n  --jobs --max-mutants --max-candidates --analyzer-timeout\n  --baseline-timeout --mutant-timeout --total-timeout --max-memory\n  --max-output --max-copy-size --max-workspace-size --min-free-space\n  --max-processes --allow-best-effort-memory\nOutput/session options:\n  --format <json|jsonl|human> --metrics <PATH> --session --resume"
 )]
 struct RootCli {
     #[command(subcommand)]
@@ -106,6 +106,10 @@ struct RawMutationArgs {
     /// Restrict targets to changed Git lines.
     #[arg(long)]
     changed: bool,
+
+    /// Include N neighboring lines around Git changes (0..=1073741823).
+    #[arg(long, value_name = "N", default_value_t = 0, requires = "changed", value_parser = clap::value_parser!(u32).range(0..=i64::from(hoimin_core::MAX_CHANGED_CONTEXT)))]
+    changed_context: u32,
 
     /// Compare changed lines with the merge-base of REV and HEAD.
     #[arg(long, value_name = "REV")]
@@ -303,6 +307,14 @@ struct RawProgressArgs {
     #[arg(long, value_enum, default_value_t = ProgressOutputFormat::Human)]
     format: ProgressOutputFormat,
 
+    /// Show identified changes in the final adjacent input pair (JSON selects schema v2).
+    #[arg(long)]
+    details: bool,
+
+    /// Maximum transition details to show; zero reports only omission counts.
+    #[arg(long, default_value_t = 100, requires = "details")]
+    details_limit: usize,
+
     /// Ordered run report files to compare.
     #[arg(required = true, num_args = 2.., value_name = "REPORT")]
     reports: Vec<PathBuf>,
@@ -317,6 +329,7 @@ pub struct RunArgs {
     pub line: Vec<String>,
     pub symbol: Vec<String>,
     pub changed: bool,
+    pub changed_context: u32,
     pub diff_base: Option<String>,
     pub include: Vec<String>,
     pub fingerprint_includes: Vec<String>,
@@ -348,6 +361,8 @@ pub struct RunArgs {
 
 #[derive(Debug)]
 pub struct ProgressArgs {
+    pub details: bool,
+    pub details_limit: usize,
     pub reports: Vec<PathBuf>,
     pub patience: NonZeroUsize,
     pub format: ProgressOutputFormat,
@@ -534,6 +549,8 @@ impl TryFrom<Command> for ParsedCommand {
                 }))
             }
             Command::Progress(raw) => Ok(Self::Progress(ProgressArgs {
+                details: raw.details,
+                details_limit: raw.details_limit,
                 reports: raw.reports,
                 patience: raw.patience,
                 format: raw.format,
@@ -592,6 +609,7 @@ fn run_args_from_mutation(
         line: raw.line,
         symbol: raw.symbol,
         changed: raw.changed,
+        changed_context: raw.changed_context,
         diff_base: raw.diff_base,
         include: raw.include,
         fingerprint_includes: raw.fingerprint_include,
@@ -715,6 +733,7 @@ fn raw_config(args: RunArgs) -> Result<RawRunConfig, CliError> {
         lines,
         symbols,
         changed: args.changed,
+        changed_context: args.changed_context,
         diff_base: args.diff_base,
         includes: args.include,
         excludes: args.exclude,

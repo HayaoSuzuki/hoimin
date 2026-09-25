@@ -231,4 +231,89 @@ def foldPairStepsWithPatience
 def compareHistory (reports : List Report) (patience : Nat) : HistoryObservation :=
   foldPairStepsWithPatience (pairSteps reports) patience
 
+structure Transition where
+  candidateId : Nat
+  before : Status
+  after : Status
+  deriving Repr, DecidableEq, BEq
+
+def identifiedTransitions (previous current : List Mutant) : List Transition :=
+  let mode := joinMode (eligibility previous current)
+  let ambiguous := ambiguousKeys mode previous current
+  let transitions := (keys mode previous).filterMap fun key =>
+    if ambiguous.contains key then none
+    else match findByKey? mode key previous, findByKey? mode key current with
+    | some before, some after =>
+      if before.candidateId == after.candidateId &&
+          (candidateIds previous).count before.candidateId == 1 &&
+          (candidateIds current).count after.candidateId == 1 &&
+          isConclusive before.status && isConclusive after.status && before.status != after.status
+      then some { candidateId := before.candidateId, before := before.status, after := after.status }
+      else none
+    | _, _ => none
+  transitions.mergeSort (fun left right => left.candidateId ≤ right.candidateId)
+
+structure DetailObservation where
+  available : Bool := false
+  pairEligibility : Option Eligibility := none
+  shown : List Transition := []
+  omitted : Nat := 0
+  unidentified : Nat := 0
+  deriving Repr, DecidableEq, BEq
+
+def pairDetails (previous current : Report) (limit : Nat) : DetailObservation :=
+  match previous, current with
+  | .usable before, .usable after =>
+    let changes := identifiedTransitions before after
+    let counts := (comparePair before after).counts
+    { available := true, pairEligibility := some (eligibility before after)
+      shown := changes.take limit, omitted := changes.length - limit
+      unidentified := counts.improvements + counts.regressions - changes.length }
+  | _, _ => {}
+
+def latestDetails (reports : List Report) (limit : Nat) : DetailObservation :=
+  match reports.reverse with
+  | current :: previous :: _ => pairDetails previous current limit
+  | _ => {}
+
+private def killedZero : Report := .usable [{candidateId := 0, contentKey := 0, status := .killed}]
+private def survivedZero : Report := .usable [{candidateId := 0, contentKey := 0, status := .survived}]
+private def survivedOther : Report := .usable [{candidateId := 1, contentKey := 0, status := .survived}]
+
+-- Deliberately broken variants: treat a content-only join as identified, ignore
+-- the cap, or remove unusable inputs before selecting the latest adjacency.
+def detailSensitivity : Bool :=
+  (pairDetails killedZero survivedOther 1).shown.length !=
+    (comparePair [{candidateId := 0, contentKey := 0, status := .killed}]
+      [{candidateId := 1, contentKey := 0, status := .survived}]).counts.regressions &&
+  (pairDetails killedZero survivedZero 0).shown != (pairDetails killedZero survivedZero 1).shown &&
+  latestDetails [killedZero, survivedZero, .unusable] 1 !=
+    latestDetails [killedZero, survivedZero] 1
+
+set_option maxHeartbeats 10000 in
+example : detailSensitivity = true := by native_decide
+
+set_option maxHeartbeats 10000 in
+example : (pairDetails killedZero survivedOther 1).unidentified = 1 := by native_decide
+
+set_option maxHeartbeats 10000 in
+example : identifiedTransitions
+    [{candidateId := 0, contentKey := 0, status := .killed}]
+    [{candidateId := 0, contentKey := 0, status := .inconclusive}] = [] := by native_decide
+
+set_option maxHeartbeats 10000 in
+example : identifiedTransitions
+    [{candidateId := 0, contentKey := 0, status := .killed},
+     {candidateId := 0, contentKey := 1, status := .killed}]
+    [{candidateId := 0, contentKey := 0, status := .survived}] = [] := by native_decide
+
+set_option maxHeartbeats 10000 in
+example : (pairDetails killedZero survivedZero 0).omitted = 1 := by native_decide
+
+set_option maxHeartbeats 10000 in
+example : identifiedTransitions
+    [{ candidateId := 0, contentKey := 0, status := .killed }]
+    [{ candidateId := 0, contentKey := 0, status := .survived }] =
+    [{ candidateId := 0, before := .killed, after := .survived }] := by native_decide
+
 end HoiminOracle.ProgressDecision

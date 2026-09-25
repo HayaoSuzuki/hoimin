@@ -3589,6 +3589,107 @@ async fn verify_ranking_large_bodies_preserves_public_preview_and_checks_unselec
     assert!(!marker.exists());
 }
 
+async fn stale_cli_diagnostic(path: &Path, temporary: &Path, marker: &Path) -> String {
+    let normal = preview_cli(path, &["--top", "1"], temporary).await;
+    let preview = preview_cli(path, &["--top", "1", "--dry-run"], temporary).await;
+    for output in [&normal, &preview] {
+        assert_eq!(output.status.code(), Some(2), "{output:?}");
+        assert!(output.stdout.is_empty(), "{output:?}");
+    }
+    assert_eq!(normal.stderr, preview.stderr);
+    assert!(!marker.exists());
+    String::from_utf8(normal.stderr).unwrap()
+}
+
+#[tokio::test]
+async fn verify_stale_details_report_all_six_changes_before_tests_in_both_modes() {
+    for fingerprint in [false, true] {
+        for change in ["modified", "added", "removed"] {
+            let project =
+                Project::new_with_sources(&[("a.py", "x = 1 + 2\n"), ("b.py", "x = 3 + 4\n")]);
+            std::fs::create_dir(project.path.join("config")).unwrap();
+            std::fs::write(project.path.join("config/a.toml"), "value = 1\n").unwrap();
+            std::fs::write(project.path.join("config/b.toml"), "value = 2\n").unwrap();
+            let temporary = tempfile::tempdir().unwrap();
+            let marker = temporary.path().join("marker");
+            let (path, _) = write_plan_manifest_with_marker(
+                &project,
+                &["--fingerprint-include", "config/*.toml"],
+                &marker,
+            )
+            .await;
+            let (directory, extension, code, records) = if fingerprint {
+                ("config", "toml", "fingerprint_input", "fingerprint input")
+            } else {
+                ("src", "py", "source", "target source")
+            };
+            let name = if change == "added" { "c" } else { "b" };
+            let relative = format!("{directory}/{name}.{extension}");
+            if change == "removed" {
+                std::fs::remove_file(project.path.join(&relative)).unwrap();
+            } else {
+                std::fs::write(project.path.join(&relative), "value = 9 + 10\n").unwrap();
+            }
+            let diagnostic = stale_cli_diagnostic(&path, temporary.path(), &marker).await;
+            assert_eq!(
+                diagnostic,
+                format!(
+                    "plan.{code}.changed: planned {records} records do not match the current workspace: {change} \"{relative}\"\n"
+                )
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn verify_stale_details_preserve_resolution_failures_and_source_priority() {
+    for failure in ["missing", "unreadable", "symbol", "both"] {
+        let project = Project::new();
+        let temporary = tempfile::tempdir().unwrap();
+        let marker = temporary.path().join("marker");
+        let mut options = vec!["--fingerprint-file", "config.toml"];
+        if failure == "symbol" {
+            options.extend(["--symbol", "calc:only_add"]);
+        }
+        let (path, _) = write_plan_manifest_with_marker(&project, &options, &marker).await;
+        if matches!(failure, "missing" | "unreadable") {
+            std::fs::remove_file(project.path.join("config.toml")).unwrap();
+            if failure == "unreadable" {
+                std::fs::create_dir(project.path.join("config.toml")).unwrap();
+            }
+        } else {
+            std::fs::write(project.path.join("src/calc.py"), "x = 1 + 2\n").unwrap();
+            std::fs::write(project.path.join("config.toml"), "changed = true\n").unwrap();
+        }
+        let diagnostic = stale_cli_diagnostic(&path, temporary.path(), &marker).await;
+        match failure {
+            "missing" => assert!(
+                diagnostic
+                    .starts_with("plan.fingerprint_input.changed: fingerprint.file.not_found:"),
+                "{diagnostic}"
+            ),
+            "unreadable" => assert!(
+                diagnostic.starts_with(
+                    "plan.fingerprint_input.changed: fingerprint.file.unsupported_file:"
+                ),
+                "{diagnostic}"
+            ),
+            "symbol" => assert!(
+                diagnostic.contains("symbol definition not found: only_add"),
+                "{diagnostic}"
+            ),
+            "both" => assert_eq!(
+                diagnostic,
+                "plan.source.changed: planned target source records do not match the current workspace: modified \"src/calc.py\"\n"
+            ),
+            _ => unreachable!(),
+        }
+        if failure != "both" {
+            assert!(!diagnostic.contains("records do not match"), "{diagnostic}");
+        }
+    }
+}
+
 fn preview_ids(value: &serde_json::Value) -> Vec<&str> {
     value["candidates"]
         .as_array()
@@ -3972,6 +4073,100 @@ async fn verify_preview_output_failure_returns_error_without_execution() {
     assert_eq!(code, 2);
     assert!(String::from_utf8_lossy(&stderr).contains("preview destination failed"));
     assert!(!marker.exists());
+}
+
+#[tokio::test]
+async fn changed_context_discovers_neighbor_operators_and_survives_verify() {
+    for (before, after, expected_line) in [
+        (
+            "def add(left, right):\n    return (\n        left +\n        right\n    )\n",
+            "def add(left, right):\n    return (\n        left +\n        abs(right)\n    )\n",
+            3,
+        ),
+        (
+            "def add(left, right):\n    assert right >= 0\n    return left + right\n",
+            "def add(left, right):\n    return left + right\n",
+            2,
+        ),
+    ] {
+        let sibling = "\ndef other(left, right):\n    return left + right\n";
+        let project = Project::new_with_source(&format!("{before}{sibling}"));
+        run_git(&project.path, &["init", "--quiet"]);
+        run_git(&project.path, &["add", "."]);
+        run_git(
+            &project.path,
+            &[
+                "-c",
+                "user.name=Fixture",
+                "-c",
+                "user.email=fixture@example.invalid",
+                "commit",
+                "--quiet",
+                "-m",
+                "base",
+            ],
+        );
+        std::fs::write(
+            project.path.join("src/calc.py"),
+            format!("{after}{sibling}"),
+        )
+        .unwrap();
+        for context in ["0", "1", "1073741823"] {
+            let marker = project.path.join("test-command-ran");
+            let args = plan_args(
+                &project,
+                [
+                    "--changed",
+                    "--changed-context",
+                    context,
+                    "--symbol",
+                    "calc:add",
+                    "--operators",
+                    "binary_add_sub",
+                    "--diff-base",
+                    "HEAD",
+                ],
+                &marker,
+            );
+            let mut stdout = Vec::new();
+            let mut stderr = Vec::new();
+            assert_eq!(
+                hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await,
+                0,
+                "{}",
+                String::from_utf8_lossy(&stderr)
+            );
+            let manifest: PlanManifest = serde_json::from_slice(&stdout).unwrap();
+            assert_eq!(manifest.candidates.len(), usize::from(context != "0"));
+            if context != "0" {
+                let candidate = &manifest.candidates[0];
+                assert_eq!(candidate.line, expected_line);
+                let value = serde_json::to_value(candidate).unwrap();
+                assert!(
+                    value["ranking_reasons"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|reason| reason["code"] == "changed_line" && reason["score"] == 200)
+                );
+                let plan_path = project.path.join("saved-plan.json");
+                std::fs::write(&plan_path, stdout).unwrap();
+                let verified = prepare_verify(
+                    &plan_path,
+                    std::slice::from_ref(&candidate.id),
+                    OutputFormat::Json,
+                )
+                .await
+                .unwrap();
+                assert_eq!(
+                    verified.config.selection.changed_context,
+                    context.parse::<u32>().unwrap()
+                );
+                assert_eq!(verified.config.selection.symbols.len(), 1);
+            }
+            assert!(!marker.exists());
+        }
+    }
 }
 
 async fn metrics_manifest_fixture(

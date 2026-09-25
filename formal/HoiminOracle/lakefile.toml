@@ -19,12 +19,20 @@ name = "generate_session"
 root = "SessionAuditMain"
 
 [[lean_exe]]
+name = "generate_source_order"
+root = "SourceOrderAuditMain"
+
+[[lean_exe]]
 name = "generate_shutdown"
 root = "ShutdownAuditMain"
 
 [[lean_exe]]
 name = "generate_workspace"
 root = "WorkspaceAuditMain"
+
+[[lean_exe]]
+name = "generate_glob_selection"
+root = "GlobSelectionAuditMain"
 
 [[lean_exe]]
 name = "generate_result_lifecycle"
@@ -107,6 +115,10 @@ name = "generate_changed_target"
 root = "ChangedTargetAuditMain"
 
 [[lean_exe]]
+name = "generate_changed_context"
+root = "ChangedContextAuditMain"
+
+[[lean_exe]]
 name = "generate_process_output"
 root = "ProcessOutputAuditMain"
 
@@ -177,3 +189,7 @@ root = "PagingAuditMain"
 [[lean_exe]]
 name = "generate_prepared_annotation_import"
 root = "PreparedAnnotationImportAuditMain"
+
+[[lean_exe]]
+name = "generate_private_annotation_import"
+root = "PrivateAnnotationImportAuditMain"

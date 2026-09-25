@@ -9,7 +9,7 @@ use crate::{
     TargetSlice,
 };
 
-pub const FINGERPRINT_SCHEMA_VERSION: u8 = 8;
+pub const FINGERPRINT_SCHEMA_VERSION: u8 = 9;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SourceHash {
@@ -23,6 +23,7 @@ pub struct FingerprintInput {
     pub fingerprint_inputs: Vec<FingerprintInputFile>,
     pub targets: Vec<TargetSlice>,
     pub import_roots: Vec<Utf8PathBuf>,
+    pub source_roots: Vec<Utf8PathBuf>,
     pub includes: Vec<String>,
     pub excludes: Vec<String>,
     pub operators: Vec<String>,
@@ -42,6 +43,7 @@ impl FingerprintInput {
     ) -> Self {
         Self {
             import_roots: config.import_roots.clone(),
+            source_roots: config.selection.sources.clone(),
             includes: config.selection.includes.clone(),
             excludes: config.selection.excludes.clone(),
             sources,
@@ -104,6 +106,13 @@ pub fn fingerprint(input: &FingerprintInput) -> RunFingerprint {
     // Override patterns can contain negations: preserve matching precedence.
     encoder.field(10, &encode_patterns(&input.includes));
     encoder.field(11, &encode_patterns(&input.excludes));
+    // Source roots also define Python import precedence; file hashes are a set.
+    let mut source_roots = Encoder::new();
+    source_roots.count(input.source_roots.len());
+    for root in &input.source_roots {
+        source_roots.bytes(root.as_str().as_bytes());
+    }
+    encoder.field(12, &source_roots.bytes);
     RunFingerprint(*blake3::hash(&encoder.bytes).as_bytes())
 }
 
