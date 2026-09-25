@@ -546,6 +546,14 @@ sessions or execution metrics. It conflicts with `--metrics`. A valid preview
 exits with code 0, including for a truncated plan; invalid selections and stale
 plans exit with code 2. Runtime resource availability is checked when executing.
 
+When saved source or fingerprint input records differ from the workspace,
+verification reports `modified`, `added` or `removed` with quoted root-relative
+paths. Normal verification and dry-run show the same diagnostic before tests
+run, with empty stdout and exit code 2. Details are sorted by path, limited to
+ten paths, and followed by the number of additional paths omitted. Control
+characters in paths are escaped. Earlier discovery or read errors retain their
+own diagnostic rather than being classified as record differences.
+
 The [preview schema](docs/json-schema/verify-preview.schema.json) is independent
 of run reports: `kind` is `verify_preview` and `schema_version` is 2. JSON and
 JSONL each contain one object; `--format human` prints metadata and candidate rows.

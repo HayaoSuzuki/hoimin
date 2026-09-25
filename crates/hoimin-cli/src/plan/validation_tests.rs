@@ -6,6 +6,94 @@ use hoimin_core::{ByteSpan, MutationCandidate, TargetSlice, validate_candidate};
 
 use super::{PlanError, ValidationStats, candidate_descriptor, validate_requested_descriptors};
 
+fn fingerprint_records(entries: &[(&str, &str)]) -> Vec<hoimin_core::FingerprintInputFile> {
+    entries
+        .iter()
+        .map(|(path, hash)| hoimin_core::FingerprintInputFile {
+            path: (*path).into(),
+            hash: (*hash).into(),
+        })
+        .collect()
+}
+
+#[test]
+fn stale_record_details_classify_sort_and_escape_both_record_kinds() {
+    let expected = fingerprint_records(&[
+        ("z.py", "old"),
+        ("same.py", "same"),
+        ("a.py", "old"),
+        ("controls\n\r\t\"\\\u{1b}.py", "old"),
+    ]);
+    let current = fingerprint_records(&[("m.py", "new"), ("same.py", "same"), ("a.py", "new")]);
+    for (kind, prefix) in [
+        (
+            super::RecordMismatch::Source,
+            "plan.source.changed: planned target source records",
+        ),
+        (
+            super::RecordMismatch::FingerprintInput,
+            "plan.fingerprint_input.changed: planned fingerprint input records",
+        ),
+    ] {
+        let error = super::ensure_exact_records(&expected, &current, kind)
+            .unwrap_err()
+            .to_string();
+        assert_eq!(
+            error,
+            format!(
+                "{prefix} do not match the current workspace: modified \"a.py\"; removed \"controls\\n\\r\\t\\\"\\\\\\u{{1b}}.py\"; added \"m.py\"; removed \"z.py\""
+            )
+        );
+        assert_eq!(error.lines().count(), 1);
+        let mut reordered = expected.clone();
+        reordered.reverse();
+        assert_eq!(
+            super::ensure_exact_records(&reordered, &current, kind)
+                .unwrap_err()
+                .to_string(),
+            error
+        );
+        assert!(super::ensure_exact_records(&expected, &reordered, kind).is_ok());
+        assert!(super::ensure_exact_records(&[], &[], kind).is_ok());
+    }
+}
+
+#[test]
+fn stale_record_details_bound_display_and_count_omitted_paths() {
+    for count in [1, 10, 11, 13] {
+        let current: Vec<_> = (0..count)
+            .rev()
+            .map(|index| hoimin_core::FingerprintInputFile {
+                path: format!("src/{index:02}.py").into(),
+                hash: "current".into(),
+            })
+            .collect();
+        for (saved, live, label) in [
+            (&[][..], current.as_slice(), "added"),
+            (current.as_slice(), &[][..], "removed"),
+        ] {
+            let error = super::ensure_exact_records(saved, live, super::RecordMismatch::Source)
+                .unwrap_err()
+                .to_string();
+            let displayed = (0..count.min(10))
+                .map(|index| format!("{label} \"src/{index:02}.py\""))
+                .collect::<Vec<_>>()
+                .join("; ");
+            let omitted = if count > 10 {
+                format!("; {} additional paths omitted", count - 10)
+            } else {
+                String::new()
+            };
+            assert_eq!(
+                error,
+                format!(
+                    "plan.source.changed: planned target source records do not match the current workspace: {displayed}{omitted}"
+                )
+            );
+        }
+    }
+}
+
 fn candidates(path: &str, count: usize, bytes: usize) -> (Vec<u8>, Vec<MutationCandidate>) {
     let mut source = "x = 1 + 2\n".repeat(count);
     if source.len() < bytes {
