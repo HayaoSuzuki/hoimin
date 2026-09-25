@@ -31,3 +31,13 @@ The assigned `target/batch-verify` cache uses one build job, disabled dev/test d
 ## Independent review
 
 The coordinating agent reviewed the production diff and new tests, including the untracked allocator binary, and reported no blockers. Review confirmed shared reason generation, all-row metadata checks before ordering, stable equal-key behavior, preserved private unknown-operator behavior, all comparator dimensions, the valid public-plan allocator fixture and clone sensitivity control, and rejection of an unselected tampered row. No production source changes followed that review; only test fixture string construction was adjusted for clippy.
+
+## Rebase verification
+
+After the full suite, implementation commit `b41c4f4` and its precommitted design were rebased onto main `35bd5cf`, yielding implementation `c9b7488` and design `6143f4b`. Rebase had no conflicts and both range-diff entries are unchanged (`=`).
+
+- Fresh ranking unit tests: 13 passed, exit 0.
+- Fresh `cargo test -p hoimin-cli --test ranking_heap --test plan -- --test-threads=1`: 85 passed, 0 failed, 1 ignored across two binaries, exit 0. This includes all existing plan validation/tampering/preview tests and the allocator regression.
+- Both exact CI clippy commands, both fmt checks and `git diff --check` passed on the final base.
+
+The complete workspace result above belongs to the pre-rebase implementation; final-base checks cover ranking, memory and public saved-plan behavior. No source changes followed these checks.
