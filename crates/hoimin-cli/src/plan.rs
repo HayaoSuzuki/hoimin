@@ -158,6 +158,7 @@ async fn discover_plan_targets(
     analyzer_timeout: std::time::Duration,
     #[cfg(test)] control: Option<DiscoveryControl>,
 ) -> Result<Discovery, hoimin_core::EffectFailed> {
+    crate::live_progress::stage("analyzing sources");
     #[cfg(test)]
     {
         discover_targets_with_control(
@@ -191,6 +192,7 @@ async fn discover_plan_targets(
 ///
 /// Returns an error before manifest serialization when fingerprint inputs, targets, sources, or
 /// analysis cannot be resolved successfully.
+#[tracing::instrument(name = "plan", level = "debug", skip_all)]
 pub async fn create(config: RunConfig) -> Result<PlanOutput, PlanError> {
     create_inner(
         config,
@@ -212,12 +214,14 @@ async fn create_inner(
     config: RunConfig,
     #[cfg(test)] control: Option<DiscoveryControl>,
 ) -> Result<PlanOutput, PlanError> {
+    crate::live_progress::stage("preparing plan");
     resource::validate_plan_resource_policy(config.allow_best_effort_memory)?;
     let config = shell::prepare_run_config(config)
         .map_err(|error| PlanError::FingerprintInput(error.to_string()))?;
     let targets = TargetHandler::resolve(&config.selection)
         .await
         .map_err(|error| PlanError::TargetResolution(error.to_string()))?;
+    crate::live_progress::stage("reading sources");
     let sources = source_records(&config.root, &targets).await?;
     let discovery = discover_plan_targets(
         &config.root,
@@ -243,6 +247,12 @@ async fn create_inner(
                 .map_or_else(|| "unknown source".to_owned(), ToString::to_string),
         ));
     }
+    crate::live_progress::stage("ranking candidates");
+    tracing::debug!(
+        candidates = discovery.candidates.len(),
+        truncated = discovery.truncated,
+        "analysis completed"
+    );
     let diagnostics = discovery.diagnostics.iter().map(plan_diagnostic).collect();
     let truncated = discovery.truncated;
     let candidates = rank_candidates(&config.selection, &targets, discovery.candidates);
@@ -295,11 +305,13 @@ pub async fn prepare_verify(
 ///
 /// Returns an error when the manifest, selection, sources, or planned candidates are invalid,
 /// including a top-N selection from a plan with no retained candidates.
+#[tracing::instrument(name = "verify_plan", level = "debug", skip_all)]
 pub async fn prepare_verify_selection(
     manifest_path: impl AsRef<Path>,
     requested_selection: &VerifySelection,
     format: OutputFormat,
 ) -> Result<VerifiedPlan, PlanError> {
+    crate::live_progress::stage("validating saved plan");
     prepare_verify_selection_inner(
         manifest_path.as_ref(),
         requested_selection,

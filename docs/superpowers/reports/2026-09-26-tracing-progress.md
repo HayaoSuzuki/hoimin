@@ -30,6 +30,94 @@ submit a pull request. Perform at least three self-review passes per stage.
 
 `cargo test -p hoimin-cli --test report_handler`: 29 passed.
 
-## Implementation and validation
+## Implementation self-review
 
-Results will be recorded after the corresponding review passes and checks.
+1. **Stages and counts:** reviewed state transitions, including persisted and
+   reused results. Compare completed counts before and after each accepted state
+   transition, including synthetic result acknowledgements. Counts exclude
+   `not_run`. Keep elapsed time across stage changes. Help and completions do not
+   start a progress snapshot.
+2. **Concurrency and lifetime:** reviewed every added span and task boundary.
+   Use `instrument` for async functions, `in_current_span` for spawned process
+   futures, and scoped spans inside blocking closures. Tests confirm run ID and
+   mutant ID survive both nested process tasks. A blocked-sink test confirms
+   publishers and guard shutdown remain bounded; queue pressure and oversized
+   records drop whole messages.
+3. **Compatibility and diagnostics:** reviewed binary-only initialization,
+   launcher bypass, terminal detection, filter fallback, and final guard release.
+   Tested redirected JSON/JSONL stdout with logging enabled, default quiet stderr,
+   invalid/disabled filters, and real PTY progress with `RUST_LOG=off`. Instrumented
+   fields omit source contents, configuration, environment, and test argv.
+
+## Focused validation
+
+- Before implementation: two new behavioral tests failed because the binary
+  emitted neither debug logs nor terminal progress; two compatibility tests passed.
+- After implementation: three binary unit tests and five integration tests passed,
+  including PTY output, process span correlation, and blocked-sink shutdown.
+
+## Additional review and regression fixes
+
+A separate read-only reviewer found two issues. Both regressions failed before
+their fixes and passed afterward:
+
+- Reused results update the summary when their output is acknowledged. Comparing
+  summary counts captures this update before the next live mutant starts.
+- Buffered JSON diagnostics can span multiple writes. Owned handlers detect
+  standard stderr before type erasure and hold its reentrant lock for the complete
+  diagnostic record. Custom library writers keep their synchronization policy.
+
+The focused re-review approved both fixes with no remaining Critical or Important
+finding. A further self-review caught a stage boundary: target resolution and
+workspace preflight share a core phase. The CLI now restores the workspace stage
+when target resolution completes; a regression failed before this correction.
+
+## Validation self-review
+
+1. **Behavioral evidence:** checked the red/green results and final focused runs:
+   seven CLI integration tests, three binary unit tests, and the diagnostic
+   serialization regression. The integration tests cover real PTY output, reused
+   result timing, process span context, redirected records, filter fallback, and
+   a saturated stderr transport while the execution deadline expires.
+2. **Regression scope:** reviewed report goldens, owned-output failure handling,
+   resumed sessions, and the workspace test results. Report tests retain 29 passing
+   cases. The full workspace run and final toolchain checks are recorded below.
+3. **Release and documentation:** checked binary-only subscriber initialization,
+   launcher bypass, Cargo.lock changes, MSRV, lint output, and the README examples.
+   Existing untracked IDE files are outside the change. Linux and Windows runtime
+   behavior was not exercised locally; local execution used macOS arm64.
+
+## Documentation self-review
+
+1. Compared README and OKF claims to the terminal/filter branches and count logic.
+   Explicitly distinguished tracing JSON records from versioned diagnostic events.
+2. Checked source identifiers, relative paths, source hashes, and the new report's
+   entry in the audit catalog. Retained historical source metadata and draft status.
+3. Reviewed Japanese paragraphs and evidence limits. Historical `progress`
+   comparisons, live execution display, and diagnostic logging remain distinct.
+
+## Final checks (macOS arm64, 2026-09-26)
+
+| Check | Result |
+| --- | --- |
+| `cargo test --workspace` | Passed, no failures |
+| Final `cargo test -p hoimin-cli --test telemetry --lib --bin hoimin` | 739 library tests, 3 binary tests, 7 telemetry integration tests passed; 12 existing ignored library tests |
+| `cargo clippy --workspace --all-targets --all-features -- -D warnings` | Passed |
+| `cargo +1.88 check --workspace --all-targets --all-features --locked --target-dir /tmp/hoimin-tracing-msrv` | Passed |
+| `cargo fmt --all -- --check` and `git diff --check` | Passed |
+| OKF YAML/reserved files, local links, reachability | 29 pages passed |
+| Added OKF source hashes and footnote correspondence | 3 sources matched |
+
+The final focused run covers the target-resolution stage correction made during
+the workspace run. No Python implementation, executable schema, or Lean model
+changed. Cross-platform runtime behavior remains subject to platform testing.
+
+## Publication self-review
+
+1. Confirmed the topic branch forked from `main` at `56c51a8`; fetched `origin/main`
+   still points to that commit. Reviewed the change scope and excluded pre-existing
+   `.DS_Store`, `.idea/`, and `.serena/` files.
+2. Checked that the README, updated knowledge pages, and this review record belong
+   to the branch, with source links and hashes for the documented implementation.
+3. Reviewed the PR description against the observed checks and stated macOS-only
+   runtime validation. The PR targets `main` and leaves merging to the maintainer.

@@ -5,6 +5,16 @@ description: 保存・復旧の権限、スキーマ移行、結果の生成側�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: tracing-readme
+  resource: ../../../README.md
+  revision: 3912d73220917308ce6a966ad2b57ec9b566490c
+  working_tree: modified
+  sha256: a50c7c1f6329eaf5581ece30a9c8c91231c3bfe6ee557ed036d140e828a318b6
+- id: tracing-runtime
+  resource: ../../../crates/hoimin-cli/src/telemetry.rs
+  revision: 3912d73220917308ce6a966ad2b57ec9b566490c
+  working_tree: untracked
+  sha256: 394031b25745c4c532e6dabbf6f33eb6a7487d3a952593e00861cce25544abf6
 - id: resume-copy-audit
   resource: ../../audits/2026-09-15-resume-copy/README.md
   working_tree: untracked
@@ -183,3 +193,17 @@ macOSで、並列数1・2、root内外の別名、大小文字の別名、実際
 2026-09-24の#563修正では、include/excludeの順序付きリストをfingerprintへ追加し、schemaを8へ進めた。パターンの表記と順序を保持するため、同じ意味でも異なる表記の設定では新規runになる場合がある。旧fingerprintの結果を新しいrunへ混在させず、jobs/max-outputだけの変更は従来どおり互換とする。[^issue-563-repair]
 
 [^issue-563-repair]: [修正設計](../../superpowers/specs/2026-09-24-issue-563-design.md)。
+
+
+## 実行中の進捗と診断ログ（2026-09-26）
+
+`run`・`plan`・`verify` は、標準エラー出力（stderr）が端末なら、処理段階・完了件数・経過時間を約1秒ごとに表示する。完了件数には保存済み結果の再利用を含め、`not_run` を除く。候補を作るだけの `plan` では完了件数は0となる。stderrをリダイレクトすると進捗表示は止まり、stdoutには選択した形式の結果を出力する。保存済みレポートを比較する `progress` コマンドは、この実行中表示の対象に含めない。[^tracing-readme]
+
+診断ログは `RUST_LOG=hoimin_cli=debug` などで有効にする。端末stderrではテキスト、リダイレクト先ではJSON Linesを使う。有効時には既存の診断イベントとtracingのログが同じstderrに出るため、読取り側は両形式を区別する必要がある。tracingのログにはrun-eventのスキーマを適用しない。未指定・空文字・無効なフィルター・`off` ではログを出さず、端末の進捗表示は続ける。[^tracing-readme][^tracing-runtime]
+
+CLIはログを容量制限付きキューから別スレッドへ渡す。キューが満杯の場合や1レコードが64 KiBを超える場合は、レコード全体を破棄する。終了時の出力待ちは最大250 msとするため、診断ログの完全な保存は保証しない。変異結果の集計にはレポートを使う。ライブラリを組み込む場合は、呼出し側でtracing subscriberを設定する。[^tracing-runtime]
+
+端末判定、フィルター、完了件数、stderrの書込み単位を変える場合は、通常実行・再開・出力先の詰まりを再検証する。今回の実行結果とOSの範囲は[レビュー記録](../../superpowers/reports/2026-09-26-tracing-progress.md)を参照する。
+
+[^tracing-readme]: [利用方法](../../../README.md)。
+[^tracing-runtime]: [CLIの診断出力](../../../crates/hoimin-cli/src/telemetry.rs)。

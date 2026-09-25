@@ -10,6 +10,42 @@ hoimin is a bounded mutation-testing CLI for focused Python changes. Its Rust an
 uvx hoimin run --root . --file src/calc.py --format json -- python -m pytest -q
 ```
 
+### Live progress and debugging
+
+When stderr is a terminal, `run`, `plan`, and `verify` show a progress line once
+per second during execution, plus a final line. Each line shows the current stage,
+completed mutant count, and elapsed wall time, including time spent waiting for
+tests. For example:
+
+```text
+hoimin: running baseline | 0 completed | elapsed 2s
+hoimin: testing mutants | 3 completed | elapsed 8s
+hoimin: finished | 4 completed | elapsed 10s
+```
+
+Completed counts include reused results and exclude candidates that were not run.
+`plan` discovers candidates without executing mutants, so its completed count is
+zero. Redirecting stderr disables live progress; stdout keeps its selected report
+format. The `hoimin progress` command compares saved reports and has no live display.
+
+Enable diagnostic logs with `RUST_LOG`:
+
+```console
+RUST_LOG=hoimin_cli=debug hoimin run --root . --file src/calc.py --format json -- python -m pytest -q > result.json 2> debug.jsonl
+```
+
+Logs use text on terminal stderr and JSON Lines on redirected stderr. With logging
+enabled, redirected stderr can contain both tracing records and existing diagnostic
+events; tracing records do not use the versioned run-event schema. Filter by module,
+such as `RUST_LOG=hoimin_cli::process=debug`, to inspect process execution. Run,
+worker, and mutant identifiers connect logs from concurrent test processes.
+
+Logging is off by default. `RUST_LOG=off`, an empty value, or an invalid filter
+disables it without disabling terminal progress. Library callers choose their own
+tracing subscriber. Diagnostic output uses a bounded queue: a slow sink can lose
+log records, and shutdown waits at most 250 ms to flush. These logs supplement
+the run reports; use the reports for complete mutation results.
+
 ### Plan and verify with an agent
 
 Create a ranked plan before improving tests, then verify its highest-ranked retained candidates:

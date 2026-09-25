@@ -16,7 +16,9 @@ impl TargetHandler {
     /// # Errors
     ///
     /// Returns an error when filesystem or Git target discovery fails.
+    #[tracing::instrument(name = "resolve_targets", level = "debug", skip_all)]
     pub async fn resolve(selection: &Selection) -> Result<Vec<TargetSlice>, TargetError> {
+        crate::live_progress::stage("resolving targets");
         validate_sources(selection)?;
         for path in selection
             .files
@@ -33,6 +35,7 @@ impl TargetHandler {
         let discovered = fs::discover_explicit(selection)
             .map_err(|error| TargetError::DiscoveryFailed(error.to_string()))?;
         let explicit = resolve_explicit(selection, &discovered)?;
+        tracing::debug!(targets = explicit.len(), "resolved explicit targets");
         validate_symbols(selection, &explicit)?;
         if !selection.changed {
             return Ok(explicit);

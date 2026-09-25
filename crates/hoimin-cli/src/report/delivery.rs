@@ -103,6 +103,8 @@ impl<Stdout: Write + Send + 'static, Stderr: Write + Send + 'static>
                 stdout: Box::new(handler.stdout),
                 stderr: Box::new(handler.stderr),
                 json: handler.json,
+                lock_stdio_stderr: std::any::TypeId::of::<Stderr>()
+                    == std::any::TypeId::of::<std::io::Stderr>(),
             }),
             task: None,
             owner: Some(owner),
@@ -202,6 +204,83 @@ fn delivery_failed(id: EffectId, message: impl Into<String>) -> EffectFailed {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn owned_stdio_diagnostic_holds_stderr_lock_across_buffer_flushes() {
+        use std::sync::mpsc;
+        use std::time::Duration;
+
+        struct ProbeWriter {
+            begin: Option<mpsc::SyncSender<()>>,
+            acquired: mpsc::Receiver<()>,
+            interleaved: Arc<AtomicBool>,
+            bytes: Arc<Mutex<Vec<u8>>>,
+        }
+        impl Write for ProbeWriter {
+            fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+                if let Some(begin) = self.begin.take() {
+                    begin.send(()).unwrap();
+                    let acquired = self
+                        .acquired
+                        .recv_timeout(Duration::from_millis(100))
+                        .is_ok();
+                    self.interleaved.store(acquired, Ordering::Release);
+                }
+                self.bytes.lock().unwrap().extend_from_slice(bytes);
+                Ok(bytes.len())
+            }
+            fn flush(&mut self) -> io::Result<()> {
+                Ok(())
+            }
+        }
+
+        let (begin_tx, begin_rx) = mpsc::sync_channel(1);
+        let (acquired_tx, acquired_rx) = mpsc::sync_channel(1);
+        let contender = std::thread::spawn(move || {
+            begin_rx.recv().unwrap();
+            let _lock = io::stderr().lock();
+            let _ = acquired_tx.send(());
+        });
+        let handler = ReportHandler::with_mutant_spool(
+            hoimin_core::OutputFormat::Json,
+            io::sink(),
+            io::stderr(),
+            io::Cursor::new(Vec::new()),
+        );
+        let mut delivery = ReportDelivery::Inline(handler).into_owned(Arc::new(()));
+        let ReportDelivery::Owned(driver) = &mut delivery else {
+            panic!("owned delivery");
+        };
+        let handler = driver.handler.as_mut().unwrap();
+        let interleaved = Arc::new(AtomicBool::new(false));
+        let captured = Arc::new(Mutex::new(Vec::new()));
+        // Preserve production stdio selection, but observe each serialized fragment
+        // without writing a large diagnostic into the test harness's stderr.
+        handler.stderr = Box::new(ProbeWriter {
+            begin: Some(begin_tx),
+            acquired: acquired_rx,
+            interleaved: Arc::clone(&interleaved),
+            bytes: Arc::clone(&captured),
+        });
+        handler
+            .handle(EmitOutput {
+                id: EffectId(1),
+                event: hoimin_core::OutputEvent::Diagnostic(hoimin_core::Diagnostic::new(
+                    "run",
+                    1,
+                    "warning",
+                    "baseline.output",
+                    "x".repeat(32 * 1024),
+                )),
+            })
+            .unwrap();
+        contender.join().unwrap();
+        serde_json::from_slice::<serde_json::Value>(&captured.lock().unwrap()).unwrap();
+        assert!(
+            !interleaved.load(Ordering::Acquire),
+            "another stderr writer entered mid-record"
+        );
+    }
+
     use std::sync::{Mutex, mpsc};
     use std::time::Duration;
 
