@@ -53,44 +53,11 @@ pub(crate) fn rank_candidates(
     targets: &[TargetSlice],
     candidates: Vec<MutationCandidate>,
 ) -> Vec<RankedPlanCandidate> {
-    let explicit_lines = LineSelectionIndex::new(&selection.root, &selection.lines);
-    let selected_symbols = targets
-        .iter()
-        .filter(|target| !target.symbols.is_empty())
-        .fold(
-            HashMap::<&Utf8Path, HashSet<&str>>::new(),
-            |mut selected_symbols, target| {
-                selected_symbols
-                    .entry(target.path.as_path())
-                    .or_default()
-                    .extend(target.symbols.iter().map(String::as_str));
-                selected_symbols
-            },
-        );
+    let context = RankingContext::new(selection, targets);
     let mut ranked = candidates
         .into_iter()
         .map(|candidate| {
-            let mut ranking_reasons = Vec::new();
-            if explicit_lines.contains(&candidate.path, candidate.line) {
-                ranking_reasons.push(reason(RankingReasonCode::ExplicitLine));
-            }
-            if selected_symbols
-                .get(candidate.path.as_path())
-                .is_some_and(|symbols| {
-                    candidate
-                        .symbol
-                        .as_deref()
-                        .is_some_and(|symbol| matches_selected_symbol(symbols, symbol))
-                })
-            {
-                ranking_reasons.push(reason(RankingReasonCode::ExplicitSymbol));
-            }
-            if selection.changed {
-                ranking_reasons.push(reason(RankingReasonCode::ChangedLine));
-            }
-            if let Some(code) = operator_reason(&candidate.operator) {
-                ranking_reasons.push(reason(code));
-            }
+            let ranking_reasons = context.reasons(&candidate);
             let score = ranking_reasons.iter().map(|reason| reason.score).sum();
             RankedPlanCandidate {
                 candidate,
@@ -105,6 +72,64 @@ pub(crate) fn rank_candidates(
         candidate.rank = index + 1;
     }
     ranked
+}
+
+struct RankingContext<'a> {
+    explicit_lines: LineSelectionIndex,
+    selected_symbols: HashMap<&'a Utf8Path, HashSet<&'a str>>,
+    changed: bool,
+}
+
+impl<'a> RankingContext<'a> {
+    fn new(selection: &Selection, targets: &'a [TargetSlice]) -> Self {
+        let selected_symbols = targets
+            .iter()
+            .filter(|target| !target.symbols.is_empty())
+            .fold(
+                HashMap::<&Utf8Path, HashSet<&str>>::new(),
+                |mut selected_symbols, target| {
+                    selected_symbols
+                        .entry(target.path.as_path())
+                        .or_default()
+                        .extend(target.symbols.iter().map(String::as_str));
+                    selected_symbols
+                },
+            );
+        Self {
+            explicit_lines: LineSelectionIndex::new(&selection.root, &selection.lines),
+            selected_symbols,
+            changed: selection.changed,
+        }
+    }
+
+    fn reasons(&self, candidate: &MutationCandidate) -> Vec<RankingReason> {
+        let mut reasons = Vec::new();
+        if self
+            .explicit_lines
+            .contains(&candidate.path, candidate.line)
+        {
+            reasons.push(reason(RankingReasonCode::ExplicitLine));
+        }
+        if self
+            .selected_symbols
+            .get(candidate.path.as_path())
+            .is_some_and(|symbols| {
+                candidate
+                    .symbol
+                    .as_deref()
+                    .is_some_and(|symbol| matches_selected_symbol(symbols, symbol))
+            })
+        {
+            reasons.push(reason(RankingReasonCode::ExplicitSymbol));
+        }
+        if self.changed {
+            reasons.push(reason(RankingReasonCode::ChangedLine));
+        }
+        if let Some(code) = operator_reason(&candidate.operator) {
+            reasons.push(reason(code));
+        }
+        reasons
+    }
 }
 
 fn matches_selected_symbol(selected: &HashSet<&str>, mut symbol: &str) -> bool {
@@ -173,16 +198,22 @@ pub(crate) fn validate_ranking_against(
     targets: &[TargetSlice],
     candidates: &[RankedPlanCandidate],
 ) -> Result<(), String> {
-    let expected = rank_candidates(
-        selection,
-        targets,
-        candidates
-            .iter()
-            .map(|candidate| candidate.candidate.clone())
-            .collect(),
-    );
-    if expected != candidates {
-        return Err("candidate ranking differs from the deterministic ranking rules".to_owned());
+    let context = RankingContext::new(selection, targets);
+    for (index, candidate) in candidates.iter().enumerate() {
+        let reasons = context.reasons(candidate);
+        let score: u32 = reasons.iter().map(|reason| reason.score).sum();
+        // A stable re-sort is unchanged exactly when metadata is correct and
+        // adjacent entries are ordered; equal keys retain their input order.
+        if candidate.rank != index + 1
+            || candidate.score != score
+            || candidate.ranking_reasons != reasons
+            || (index > 0
+                && candidate_order(&candidates[index - 1], candidate) == Ordering::Greater)
+        {
+            return Err(
+                "candidate ranking differs from the deterministic ranking rules".to_owned(),
+            );
+        }
     }
     Ok(())
 }

@@ -1,5 +1,6 @@
 use std::collections::BTreeSet;
 use std::ffi::OsString;
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 #[cfg(unix)]
 use std::time::{Duration, Instant};
@@ -3529,6 +3530,63 @@ async fn preview_cli(path: &Path, args: &[&str], temporary: &Path) -> std::proce
     .await
     .expect("verify subprocess deadline")
     .unwrap()
+}
+
+#[tokio::test]
+async fn verify_ranking_large_bodies_preserves_public_preview_and_checks_unselected_entries() {
+    let payload = "x".repeat(4096);
+    let mut source = String::new();
+    for index in 0..64 {
+        writeln!(source, "record_{index} = ['{payload}']").unwrap();
+    }
+    let project = Project::new_with_source(&source);
+    let temporary = tempfile::tempdir().unwrap();
+    let marker = temporary.path().join("test-command-ran");
+    let mut args = plan_args(&project, ["--operators", "collection_list_tuple"], &marker);
+    insert_test_min_free_space(&mut args);
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    assert_eq!(
+        hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await,
+        0,
+        "{stderr:?}"
+    );
+    let manifest: PlanManifest = serde_json::from_slice(&stdout).unwrap();
+    assert_eq!(manifest.candidates.len(), 64);
+    let path = project.path.join("plan.json");
+    std::fs::write(&path, stdout).unwrap();
+    for count in [1, 7] {
+        let output = preview_cli(
+            &path,
+            &["--top", &count.to_string(), "--dry-run"],
+            temporary.path(),
+        )
+        .await;
+        assert!(output.status.success(), "{output:?}");
+        let preview: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        let rows = preview["candidates"].as_array().unwrap();
+        assert_eq!(rows.len(), count);
+        for (row, candidate) in rows.iter().zip(&manifest.candidates) {
+            assert_eq!(row["id"], candidate.id);
+            assert_eq!(row["rank"], candidate.rank);
+            assert_eq!(row["original"], candidate.original);
+            assert_eq!(row["replacement"], candidate.replacement);
+        }
+        assert!(!marker.exists());
+    }
+    let mut tampered = serde_json::to_value(&manifest).unwrap();
+    tampered["candidates"][63]["score"] = serde_json::json!(70);
+    tampered["candidates"][63]["ranking_reasons"] =
+        serde_json::json!([{"code": "arithmetic", "score": 70}]);
+    write_json(&path, &tampered);
+    let output = preview_cli(&path, &["--top", "1", "--dry-run"], temporary.path()).await;
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(output.stderr).unwrap(),
+        "plan.manifest.invalid: candidate ranking differs from the deterministic ranking rules\n"
+    );
+    assert!(!marker.exists());
 }
 
 fn preview_ids(value: &serde_json::Value) -> Vec<&str> {
