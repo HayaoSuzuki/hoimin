@@ -62,21 +62,21 @@ pub(crate) fn source_content_metrics() -> SourceContentMetrics {
 }
 
 #[cfg(test)]
-pub(crate) fn record_source_content_read(bytes: usize) {
+pub(crate) fn record_source_content_read(bytes: u64) {
     SOURCE_CONTENT_METRICS.with(|metrics| {
         let mut current = metrics.get();
         current.reads += 1;
-        current.read_bytes += bytes as u64;
+        current.read_bytes += bytes;
         metrics.set(current);
     });
 }
 
 #[cfg(test)]
-pub(crate) fn record_source_content_hash(bytes: usize) {
+pub(crate) fn record_source_content_hash(bytes: u64) {
     SOURCE_CONTENT_METRICS.with(|metrics| {
         let mut current = metrics.get();
         current.hashes += 1;
-        current.hash_bytes += bytes as u64;
+        current.hash_bytes += bytes;
         metrics.set(current);
     });
 }
@@ -176,47 +176,42 @@ pub fn build_manifest(
     root: &Utf8Path,
     options: &CopyOptions,
 ) -> Result<(WorkspaceManifest, Vec<WorkspaceDiagnostic>), WorkspaceError> {
-    build_manifest_with_contents(root, options, |_, _| Ok(()))
+    build_manifest_with_contents(root, options, |path, mut file| {
+        hash_contents(path, &mut file, |_| Ok(()))
+    })
 }
 
 pub(crate) fn build_manifest_with_contents(
     root: &Utf8Path,
     options: &CopyOptions,
-    mut observe: impl FnMut(&ManifestEntry, &[u8]) -> Result<(), WorkspaceError>,
+    mut process: impl FnMut(&Utf8Path, fs::File) -> Result<ManifestEntry, WorkspaceError>,
 ) -> Result<(WorkspaceManifest, Vec<WorkspaceDiagnostic>), WorkspaceError> {
     #[cfg(test)]
     BUILD_METRICS.with(|metrics| {
         let (builds, bytes) = metrics.get();
         metrics.set((builds + 1, bytes));
     });
+    let source_root = super::WorkerRoot::open(root.to_owned())?;
     let mut entries = BTreeMap::<Utf8PathBuf, ManifestEntry>::new();
     let mut directories = BTreeSet::new();
-    let symlinks = walk_selected_entries(root, options, &mut |path, native_path, is_directory| {
-        if is_directory {
-            insert_directory_ancestors(&mut directories, &path);
-            return Ok(());
-        }
-        if let Some(parent) = path.parent() {
-            insert_directory_ancestors(&mut directories, parent);
-        }
-        let bytes = fs::read(native_path)
-            .map_err(|error| WorkspaceError::io("read manifest file", &path, error))?;
-        #[cfg(test)]
-        record_source_content_read(bytes.len());
-        #[cfg(test)]
-        BUILD_METRICS.with(|metrics| {
-            let (builds, total_bytes) = metrics.get();
-            metrics.set((builds, total_bytes + bytes.len() as u64));
-        });
-        let size = u64::try_from(bytes.len()).map_err(|_| WorkspaceError::CopySizeOverflow)?;
-        let blake3 = blake3::hash(&bytes);
-        #[cfg(test)]
-        record_source_content_hash(bytes.len());
-        let entry = ManifestEntry { path, size, blake3 };
-        observe(&entry, &bytes)?;
-        entries.insert(entry.path.clone(), entry);
-        Ok(())
-    })?;
+    let symlinks =
+        walk_selected_entries(root, options, &mut |path, _native_path, is_directory| {
+            if is_directory {
+                insert_directory_ancestors(&mut directories, &path);
+                return Ok(());
+            }
+            if let Some(parent) = path.parent() {
+                insert_directory_ancestors(&mut directories, parent);
+            }
+            let entry = source_root.with_read_file(&path, |file| process(&path, file))?;
+            #[cfg(test)]
+            BUILD_METRICS.with(|metrics| {
+                let (builds, total_bytes) = metrics.get();
+                metrics.set((builds, total_bytes + entry.size));
+            });
+            entries.insert(entry.path.clone(), entry);
+            Ok(())
+        })?;
 
     let logical_bytes = entries.values().try_fold(0_u64, |total, entry| {
         total
@@ -234,6 +229,28 @@ pub(crate) fn build_manifest_with_contents(
             .map(|path| WorkspaceDiagnostic::SymlinkSkipped { path })
             .collect(),
     ))
+}
+
+pub(super) fn hash_contents(
+    path: &Utf8Path,
+    reader: &mut impl std::io::Read,
+    mut consume: impl FnMut(&[u8]) -> Result<(), WorkspaceError>,
+) -> Result<ManifestEntry, WorkspaceError> {
+    let mut hasher = blake3::Hasher::new();
+    let size = super::stream::chunks(reader, path, "read manifest file", |bytes| {
+        hasher.update(bytes);
+        consume(bytes)
+    })?;
+    #[cfg(test)]
+    {
+        record_source_content_read(size);
+        record_source_content_hash(size);
+    }
+    Ok(ManifestEntry {
+        path: path.to_owned(),
+        size,
+        blake3: hasher.finalize(),
+    })
 }
 
 pub(crate) fn inventory_logical_bytes(
