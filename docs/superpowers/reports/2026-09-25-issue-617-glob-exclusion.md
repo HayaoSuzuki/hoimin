@@ -21,3 +21,5 @@ The verify-lane reviewer independently inspected production callers, both discov
 ## Executed validation
 
 Full workspace: 2290 passed, 0 failed, 22 ignored across 96 test groups. Exact CI all-target/all-feature workspace Clippy and locked parser Clippy passed, as did workspace/vendor formatting and diff checks. Lean peak was 1,285,616 KiB and the longest guarded command took 9,128 ms, below the unchanged 2,048-MiB / 20-second bounds.
+
+Before publication, rebased onto main `efe3531`; resolved additive Lean registry conflicts by retaining both paging and glob-selection entries in matching order. Workflow contract tests passed 40/40 and the glob/paging/plan integration group passed 85 tests (1 ignored). Formatting and diff checks passed. No production conflict occurred.
