@@ -51,3 +51,7 @@ Two separately linked probes call the actual unchanged/optimized `hoimin_cli::ru
 | failure-lines | jsonl | 29,211 → 193 | 1,077,356 | 0.195610 → 0.157036 |
 
 The short-line case reduces writer calls by roughly 4,094× (1,052,150/257); this is the deterministic performance evidence. Plain-payload medians were slower after the change despite fewer writes. Timings include process/baseline work, use only three local samples, and run alongside other development; they are observed medians, not a general speed guarantee. Environment: macOS arm64, Rust 1.98.1, release thin LTO, one Cargo job. The probe/measurement scripts preserve arguments and expected payload checks in the artifact directory above.
+
+## Final integration
+
+Rebased onto main `c7b7a5b` without conflicts; range-diff confirms the patches are unchanged (design `87ecee9`, implementation `6c36084`). On the rebased tree, baseline-output 4, diagnostic heap 1, report-handler 27 and report heap 1 tests passed. Both exact CI clippy commands, both fmt checks and diff checks passed. The full workspace result above remains applicable to the unchanged implementation; CI checks the final PR merge context.
