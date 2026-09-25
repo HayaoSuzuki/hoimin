@@ -103,7 +103,7 @@ where
                 OutputFormat::Human => human::write_event(&mut self.stderr, &event)
                     .map_err(|error| human_failed(id, &error))?,
                 OutputFormat::Json | OutputFormat::Jsonl => {
-                    jsonl::write_event(&mut self.stderr, &event)
+                    jsonl::write_buffered_event(&mut self.stderr, &event)
                         .map_err(|error| serialization_failed(id, &error))?;
                 }
             }

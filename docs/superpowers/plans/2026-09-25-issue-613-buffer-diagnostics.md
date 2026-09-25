@@ -16,22 +16,22 @@ Preserve schema, stdout/human routes, newline/event flush and effect-ID error ma
 
 ## Task 1: measured RED and error contracts
 
-- [ ] Add counted-writer regression in `crates/hoimin-cli/tests/report_handler.rs` for both JSON formats and plain/newline/quote/backslash/control-heavy payloads. Assert exact serde bytes, parsed message, one flush per acknowledged event, and at most payload-bytes/4KiB plus small constant underlying writes. Run and record the unbuffered write-count RED.
-- [ ] Add fault writers for partial-progress then error, write-zero, Interrupted-then-success, and flush failure; assert error kind/effect ID and no writes after the first non-interrupted error, including handler destruction.
-- [ ] Build unchanged release and retain a public run_with_io probe for same baseline workloads before changing production, if available within the existing cache.
+- [x] Add counted-writer regression in `crates/hoimin-cli/tests/report_handler.rs` for both JSON formats and plain/newline/quote/backslash/control-heavy payloads. Assert exact serde bytes, parsed message, one flush per acknowledged event, and at most payload-bytes/4KiB plus small constant underlying writes. Run and record the unbuffered write-count RED.
+- [x] Add fault writers for partial-progress then error, write-zero, Interrupted-then-success, and flush failure; assert error kind/effect ID and no writes after the first non-interrupted error, including handler destruction.
+- [x] Build unchanged release and retain a public run_with_io probe for same baseline workloads before changing production, if available within the existing cache.
 
 ## Task 2: fixed buffering and bounded-memory evidence
 
-- [ ] Implement `write_buffered_event(writer, event)` using `BufWriter::with_capacity(8 * 1024, writer)`, existing `write_event`, and unconditional `into_parts`. Route only diagnostic JSON/JSONL stderr through it.
-- [ ] Run focused report tests GREEN. Add a single-test heap binary measuring serialization after constructing/moving payloads outside the measured interval; compare 16-KiB and 1-MiB diagnostic messages with a fixed overhead limit.
-- [ ] Demonstrate allocation-test sensitivity using a temporary whole-event serialization Vec, remove it, and rerun GREEN. Confirm large escaped messages retain exact output and constant extra allocation.
-- [ ] Rebuild release and repeat the same public baseline probe; record underlying Write calls, output reconstruction, status3 and timings, without claiming syscall counts.
+- [x] Implement `write_buffered_event(writer, event)` using `BufWriter::with_capacity(8 * 1024, writer)`, existing `write_event`, and unconditional `into_parts`. Route only diagnostic JSON/JSONL stderr through it.
+- [x] Run focused report tests GREEN. Add a single-test heap binary measuring serialization after constructing/moving payloads outside the measured interval; compare 16-KiB and 1-MiB diagnostic messages with a fixed overhead limit.
+- [x] Demonstrate allocation-test sensitivity using a temporary whole-event serialization Vec, remove it, and rerun GREEN. Confirm large escaped messages retain exact output and constant extra allocation.
+- [x] Rebuild release and repeat the same public baseline probe; record underlying Write calls, output reconstruction, status3 and timings, without claiming syscall counts.
 
 ## Task 3: review and final checks
 
-- [ ] Three implementation reviews: precise buffering scope; error/acknowledgement/drop flow; memory/lifetime/event order. Three test reviews: meaningful RED; writer failure sensitivity; public baseline and format parity/measurement limitations. Record concrete findings.
-- [ ] Independent read-only review, then full workspace, exact workspace all-feature/all-target clippy, locked vendor parser clippy, both fmt and diff checks. Existing relevant Lean consumers only; no Lean command needed.
-- [ ] Commit code/tests/evidence, rebase onto latest main if necessary, rerun integration checks, and publish an independent gh stack PR with Closes613. Root owns CI/merge.
+- [x] Three implementation reviews: precise buffering scope; error/acknowledgement/drop flow; memory/lifetime/event order. Three test reviews: meaningful RED; writer failure sensitivity; public baseline and format parity/measurement limitations. Record concrete findings.
+- [x] Independent read-only review, then full workspace, exact workspace all-feature/all-target clippy, locked vendor parser clippy, both fmt and diff checks. Existing relevant Lean consumers only; no Lean command needed.
+- [x] Commit code/tests/evidence, rebase onto latest main if necessary, rerun integration checks, and publish an independent gh stack PR with Closes613. Root owns CI/merge.
 
 ## Plan review passes
 
