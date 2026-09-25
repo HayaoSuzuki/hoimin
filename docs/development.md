@@ -46,6 +46,39 @@ uvx maturin build --release
 uv run --frozen python tests/wheel_smoke.py
 ```
 
+## Property-based boundary tests
+
+Proptest is already a development dependency in both Rust crates. The
+`boundary_property_` tests complement fixed examples and Lean correspondence
+cases with generated encoding boundaries, mixed-newline selections, and
+streaming copy/hash/comparison inputs. They run in the normal `cargo test
+--workspace` suite; no separate CI service or dependency is needed.
+
+Run just these properties, or increase their case count with a reproducible seed:
+
+```console
+cargo test -p hoimin-core --test source_encoding_properties
+cargo test -p hoimin-cli --lib boundary_property_
+PROPTEST_CASES=1024 PROPTEST_RNG_SEED=20260926 cargo test -p hoimin-core --test source_encoding_properties
+PROPTEST_CASES=1024 PROPTEST_RNG_SEED=20260926 cargo test -p hoimin-cli --lib boundary_property_
+```
+
+The default is 256 successful generated cases per property. Keep the default
+random seed in ordinary CI runs to explore new combinations. On failure,
+proptest shrinks the input (these properties cap shrinking at 2048 iterations),
+prints the failing input, and persists a regression seed. Commit real regression
+files alongside the fix and retain a literal regression test when the discovered
+case expresses an important contract. Replay uses the same input strategy;
+changing the strategy can change what a persisted seed generates. See the
+[proptest failure persistence documentation](https://proptest-rs.github.io/proptest/proptest/failure-persistence.html).
+
+Input sizes are bounded. Stream tests use arbitrary small byte vectors and
+repeated generated patterns around one and two 64 KiB buffers. Their readers use
+independent fixed fragment sizes, optional single interruptions before progress,
+and terminal I/O errors; they do not explore every possible read schedule or OS
+filesystem race. Properties compare against materialized scalar/line observations,
+whole-slice equality, and one-shot hashes. They are finite tests, not proofs.
+
 ## Python formatting, lint and tests
 
 Ruff and pytest are development dependencies managed by `uv.lock`. For Python

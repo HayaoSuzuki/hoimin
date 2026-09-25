@@ -1,6 +1,9 @@
 //! Convert Git LF rows to Python physical rows by visiting the same raw bytes.
 use hoimin_core::{LineRange, TargetError};
 
+#[cfg(test)]
+mod property_tests;
+
 struct LineCursor<'a> {
     source: &'a [u8],
     offset: usize,

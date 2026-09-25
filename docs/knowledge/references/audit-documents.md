@@ -5,6 +5,10 @@ description: docs/auditsとdocs/superpowers/reports内の全Markdownを追跡状
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: proptest-boundaries-report
+  resource: ../../superpowers/reports/2026-09-26-proptest-boundaries.md
+  working_tree: untracked
+  sha256: 70f9043be9405cb02ea6d79d68f09e1ca1a4e8f5eee23169c45cce467eb2e259
 - id: issue-561-results
   resource: ../../audits/2026-09-15-evaluation-order/issue-561-results.md
   revision: d2b8e83f054c13eacfceac84e37803fbe71512de
@@ -699,6 +703,7 @@ sources:
 
 | 原文 | 先頭見出し | 作成時の状態 |
 | --- | --- | --- |
+| [2026-09-26-proptest-boundaries.md](../../superpowers/reports/2026-09-26-proptest-boundaries.md) | Proptest boundary coverage: review and evidence [^proptest-boundaries-report] | 未追跡（参照時点） |
 | [2026-09-15-issue-549-slice-tuple.md](../../superpowers/reports/2026-09-15-issue-549-slice-tuple.md) | Issue #549: Slice tuple修正の検証 [^issue-549-report] | 未追跡（参照時点） |
 
 | [2026-09-15-issue-545-implicit-finally-review.md](../../superpowers/reports/2026-09-15-issue-545-implicit-finally-review.md) | Issue #545: 暗黙例外と finally の検証記録 [^issue-545] | 追跡済み |
@@ -1145,3 +1150,5 @@ sources:
 | Issue #561 method replacement allocation results | [測定結果と再現手順](../../audits/2026-09-15-evaluation-order/issue-561-results.md) [^issue-561-results] |
 
 [^issue-561-results]: [Issue #561 method replacement allocation results](../../audits/2026-09-15-evaluation-order/issue-561-results.md)。
+
+[^proptest-boundaries-report]: [Proptest boundary coverage: review and evidence](../../superpowers/reports/2026-09-26-proptest-boundaries.md)。

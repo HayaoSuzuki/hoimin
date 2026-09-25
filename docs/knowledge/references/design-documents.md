@@ -5,6 +5,11 @@ description: docs/superpowers/specs内の全Markdownを先頭見出しと出典�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: proptest-boundaries-design
+  resource: ../../superpowers/specs/2026-09-26-proptest-boundaries-design.md
+  revision: 2ff26c9b7259072574b0f9874946177332ea5463
+  working_tree: clean
+  sha256: 6807769ad03c04b244ffcb76645fb56143d3743e2ac4ada2a6b1a31a8cf11be3
 - id: issue-557-design
   resource: ../../superpowers/specs/2026-09-25-issue-557-finally-traversal.md
   revision: f071781e20bc87c13b537ecd620e5ed06e9cd1f6
@@ -970,6 +975,7 @@ sources:
 
 | 原文 | 先頭見出し | 作成時の状態 |
 | --- | --- | --- |
+| [2026-09-26-proptest-boundaries-design.md](../../superpowers/specs/2026-09-26-proptest-boundaries-design.md) | Proptest boundary coverage design [^proptest-boundaries-design] | 追跡済み |
 | [2026-09-15-issue-549-slice-tuple-design.md](../../superpowers/specs/2026-09-15-issue-549-slice-tuple-design.md) | Issue #549: Sliceを含むtupleの候補除外 [^issue-549-design] | 未追跡（参照時点） |
 
 | [2026-09-15-issue-545-implicit-finally-design.md](../../superpowers/specs/2026-09-15-issue-545-implicit-finally-design.md) | Issue #545: 暗黙例外の finally 入口 [^issue-545] | 追跡済み |
@@ -1578,3 +1584,5 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 | Issue 565: recursively exclude disallowed annotation arguments | [設計書](../../superpowers/specs/2026-09-24-issue-565-annotation-descendants.md) [^issue-565-design] |
 
 [^issue-565-design]: [Issue 565: recursively exclude disallowed annotation arguments](../../superpowers/specs/2026-09-24-issue-565-annotation-descendants.md)。
+
+[^proptest-boundaries-design]: [Proptest boundary coverage design](../../superpowers/specs/2026-09-26-proptest-boundaries-design.md)。
