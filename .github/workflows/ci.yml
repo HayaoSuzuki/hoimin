@@ -140,6 +140,7 @@ jobs:
             HoiminOracle.CandidateRankingModel
             HoiminOracle.CandidateSpanModel
             HoiminOracle.ChangedTargetModel
+            HoiminOracle.ChangedContextModel
             HoiminOracle.CleanupCapabilityModel
             HoiminOracle.DiskGuardModel
             HoiminOracle.FactIndexModel
@@ -167,6 +168,7 @@ jobs:
             HoiminOracle.CandidateSpanProofs
             HoiminOracle.Cases
             HoiminOracle.ChangedTargetProofs
+            HoiminOracle.ChangedContextProofs
             HoiminOracle.CleanupCapabilityProofs
             HoiminOracle.CompoundPatternGuardModel
             HoiminOracle.DiskGuardCases
@@ -194,6 +196,7 @@ jobs:
             HoiminOracle.CandidateRankingCases
             HoiminOracle.CandidateSpanCases
             HoiminOracle.ChangedTargetCases
+            HoiminOracle.ChangedContextCases
             HoiminOracle.CleanupCapabilityCases
             HoiminOracle.CompoundPatternGuardProofs
             HoiminOracle.DiskGuardProofs
@@ -223,6 +226,7 @@ jobs:
             CandidateRankingAuditMain
             CandidateSpanAuditMain
             ChangedTargetAuditMain
+            ChangedContextAuditMain
             CleanupCapabilityAuditMain
             DiskGuardAuditMain
             HoiminOracle.AnnotationScopeCases
@@ -316,6 +320,7 @@ jobs:
             'generate_output_retention|corpus/output-retention.jsonl|sensitivity'
             'generate_candidate_span|corpus/candidate-span-preservation.jsonl|sensitivity'
             'generate_changed_target|corpus/changed-target-composition.jsonl|sensitivity'
+            'generate_changed_context|corpus/changed-context.jsonl|sensitivity'
             'generate_process_output|corpus/process-output-outcome.jsonl|sensitivity'
             'generate_timeout_limit|corpus/timeout-limit.jsonl|sensitivity'
             'generate_disk_guard|corpus/disk-guard-lifecycle.jsonl|sensitivity'

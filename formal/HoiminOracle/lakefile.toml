@@ -169,3 +169,7 @@ root = "NullableGateAuditMain"
 [[lean_exe]]
 name = "generate_prepared_namespace"
 root = "PreparedNamespaceAuditMain"
+
+[[lean_exe]]
+name = "generate_changed_context"
+root = "ChangedContextAuditMain"
