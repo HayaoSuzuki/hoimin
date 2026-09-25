@@ -24,3 +24,31 @@ Add an active exact operation-count gate to docs/performance/shapes.json and exp
 - Class global fallback/method annotations must retain callback facts and exits.
 - Full candidate descriptors and ordering must match, not only counts.
 - Depth gates count executed statements, not inferred or theoretical visits.
+
+## Executable checklist (review refinement)
+
+**Goal:** Remove transfer-only nested-finally annotation replays while preserving descriptors and exit semantics.
+**Architecture:** Gate only the merged-entry recording pass; keep per-entry transfer routes.
+**Tech stack:** Rust, Ruff AST, cargo tests, existing Lean corpora, release CLI.
+
+- [ ] Task 1: run `cargo test --offline -p hoimin-cli --lib nested_finally_transfer_tests -- --nocapture`; expect `record_disabled_finally_visits_leaf_once` to report two visits at depth1, and `nested_finally_bounds_actual_statement_and_annotation_visits` to exceed the leaf bound at depth2.
+  Representative independent assertions:
+  ```rust
+  assert_eq!(LOOP_ANNOTATION_VISITS.get(), 1);
+  assert!(leaves <= depth + 1);
+  assert!(statements <= (depth + 1).pow(2) + 1 + usize::from(!wrapper.is_empty()));
+  ```
+- [ ] Task 2: wrap annotation_entries construction through its visit_suite_from in a recording condition. Test builds additionally admit a thread-local old-path sensitivity switch:
+  ```rust
+  let record_annotations = self.record_annotations;
+  #[cfg(test)]
+  let record_annotations = record_annotations || REDUNDANT_FINALLY_RECORDING.get();
+  if record_annotations {
+      // Existing merged-entry construction and recording visit, unchanged.
+  }
+  ```
+  Run the same command; expect all depth gates green. Add `old_finally_replay_exceeds_bound_with_identical_candidates`, `finally_routing_preserves_callbacks_and_all_exit_categories` and `empty_entry_finally_records_only_when_enabled`.
+- [ ] Task 3: `cargo test --offline -p hoimin-cli --features contracts --lib nested_finally_transfer_tests`; then `cargo test --offline -p hoimin-cli --features contracts --test lean_implicit_finally_oracle --test lean_binding_flow_oracle --test lean_nested_try_flow_oracle --test lean_annotation_scope_oracle`. Expect zero failures.
+- [ ] Task 3: `cargo test --offline --workspace`, `cargo fmt --all -- --check`, `cargo clippy --offline -p hoimin-cli --all-targets -- -D warnings`, `python3 tools/performance_shapes.py check`, `git diff --check`. Expect exit0; report any infrastructure limitations explicitly.
+- [ ] Task 3: `cargo build --offline --release -p hoimin-cli`, followed by the issue reproduction over depths16–20 against saved before/after binaries. Expect one identical candidate array for every run; record each median and no timing threshold.
+- [ ] Record three implementation/test review passes, then commit verified code/docs. Parent publishes PR.
