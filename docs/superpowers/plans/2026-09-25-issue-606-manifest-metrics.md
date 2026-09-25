@@ -23,7 +23,7 @@ Files: `crates/hoimin-cli/tests/plan.rs`, `src/plan.rs`, `src/shell.rs`, `src/me
 
 Interfaces: `VerifiedPlan` produces `pub(crate) manifest_inputs: Vec<PathBuf>`; `validate_metrics_destination(config, targets, protected_inputs: &[PathBuf], id)` consumes the paths; shared `run_verified` sets `ShellContext.metrics_protected_inputs` and retains the existing selection and fingerprint behavior. Existing public selected-loop APIs stay compatible.
 
-- [ ] Add real CLI collision tests with fixtures made by `write_plan_manifest_with_marker`, using both selectors and normal/failing commands. For each case:
+- [x] Add real CLI collision tests with fixtures made by `write_plan_manifest_with_marker`, using both selectors and normal/failing commands. For each case:
   ```rust
   assert_eq!(output.status.code(), Some(2));
   assert!(String::from_utf8_lossy(&output.stderr).contains("metrics.destination.collision"));
@@ -31,11 +31,11 @@ Interfaces: `VerifiedPlan` produces `pub(crate) manifest_inputs: Vec<PathBuf>`; 
   assert!(!marker.exists());
   ```
   Cover absolute, relative, dot, dot-dot, parent symlink, native case alias, and supplied symlink/target destinations. Add positive tests for new/existing metrics and separate hardlink/symlink aliases, including failed-baseline sidecars.
-- [ ] Run `cargo test -p hoimin-cli --test plan verify_metrics_manifest -- --test-threads=1`. Expected: collision tests fail because metrics is accepted and baseline runs.
-- [ ] Store the absolute and canonical manifest paths during plan preparation. Extend inspector protected paths with `protected.extend_from_slice(protected_inputs)`. Add paths to shell context/preflight task and use a shared verified runner for owned and borrowed output dispatch. Update README protection list.
-- [ ] Repeat targeted command. Expected: all manifest cases pass; safe aliases still replace only the alias.
-- [ ] Run `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace -- --test-threads=1` under the assigned resource environment. Expected: pass; record any environmental exceptions precisely.
-- [ ] Perform three implementation and three test self-review passes; record findings and fixes with actual RED/GREEN and suite evidence. Commit implementation/tests/review evidence.
+- [x] Run `cargo test -p hoimin-cli --test plan verify_metrics_manifest -- --test-threads=1`. Expected: collision tests fail because metrics is accepted and baseline runs.
+- [x] Store the absolute and canonical manifest paths during plan preparation. Extend inspector protected paths with `protected.extend_from_slice(protected_inputs)`. Add paths to shell context/preflight task and use a shared verified runner for owned and borrowed output dispatch. Update README protection list.
+- [x] Repeat targeted command. Expected: all manifest cases pass; safe aliases still replace only the alias.
+- [x] Run `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace -- --test-threads=1` under the assigned resource environment. Expected: pass; record any environmental exceptions precisely.
+- [x] Perform three implementation and three test self-review passes; record findings and fixes with actual RED/GREEN and suite evidence. Commit implementation/tests/review evidence.
 
 ## Plan self-reviews
 

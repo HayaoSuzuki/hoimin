@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use camino::{Utf8Path, Utf8PathBuf};
 use hoimin_core::{
@@ -72,6 +72,7 @@ pub struct PlanOutput {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct VerifiedPlan {
+    pub(crate) manifest_inputs: Vec<PathBuf>,
     pub preview: VerifyPreview,
     pub config: RunConfig,
     pub(crate) fingerprint_copy_inputs: BTreeSet<Utf8PathBuf>,
@@ -321,15 +322,23 @@ async fn prepare_verify_with_discovery_control(
     .await
 }
 
+fn read_manifest(path: &Path) -> Result<(Vec<PathBuf>, Vec<u8>), PlanError> {
+    // Protect both the requested entry (which may be a final symlink) and
+    // the file read through it. Keep invocation paths out of the saved config.
+    (|| -> std::io::Result<_> {
+        let inputs = vec![std::path::absolute(path)?, std::fs::canonicalize(path)?];
+        Ok((inputs, std::fs::read(path)?))
+    })()
+    .map_err(|error| PlanError::ManifestInvalid(format!("{}: {error}", path.display())))
+}
+
 async fn prepare_verify_selection_inner(
     manifest_path: &Path,
     requested_selection: &VerifySelection,
     format: OutputFormat,
     #[cfg(test)] control: Option<DiscoveryControl>,
 ) -> Result<VerifiedPlan, PlanError> {
-    let bytes = std::fs::read(manifest_path).map_err(|error| {
-        PlanError::ManifestInvalid(format!("{}: {error}", manifest_path.display()))
-    })?;
+    let (manifest_inputs, bytes) = read_manifest(manifest_path)?;
     let value: serde_json::Value = serde_json::from_slice(&bytes)
         .map_err(|error| PlanError::ManifestInvalid(error.to_string()))?;
     let schema_version = value
@@ -419,6 +428,7 @@ async fn prepare_verify_selection_inner(
         verification_selection.clone(),
     );
     Ok(VerifiedPlan {
+        manifest_inputs,
         preview,
         config,
         fingerprint_copy_inputs,

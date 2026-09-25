@@ -3905,3 +3905,186 @@ async fn verify_preview_output_failure_returns_error_without_execution() {
     assert!(String::from_utf8_lossy(&stderr).contains("preview destination failed"));
     assert!(!marker.exists());
 }
+
+async fn metrics_manifest_fixture(
+    project: &Project,
+    marker: &Path,
+    baseline_fails: bool,
+) -> (PathBuf, PlanManifest) {
+    let mut args = plan_args(project, ["--jobs", "1"], marker);
+    insert_test_min_free_space(&mut args);
+    if baseline_fails {
+        args.last_mut().unwrap().push("; raise SystemExit(1)");
+    }
+    let ParsedCommand::Plan(plan) = parse_from(args).unwrap() else {
+        panic!("expected plan arguments");
+    };
+    let output = create(plan.into_run_config().unwrap()).await.unwrap();
+    let path = project.path.join("plan.json");
+    write_json(&path, &serde_json::to_value(&output.manifest).unwrap());
+    (path, output.manifest)
+}
+
+#[tokio::test]
+async fn verify_metrics_manifest_collisions_reject_before_baseline_in_public_cli() {
+    for baseline_fails in [false, true] {
+        let project = Project::new();
+        let coordinator = tempfile::tempdir().unwrap();
+        let marker = coordinator.path().join("marker");
+        let (path, manifest) = metrics_manifest_fixture(&project, &marker, baseline_fails).await;
+        let original = std::fs::read(&path).unwrap();
+        std::fs::create_dir(project.path.join("child")).unwrap();
+        let mut cases = vec![
+            (path.clone(), path.clone()),
+            (PathBuf::from("plan.json"), PathBuf::from("plan.json")),
+            (PathBuf::from("./plan.json"), path.clone()),
+            (path.clone(), PathBuf::from("./plan.json")),
+            (PathBuf::from("child/../plan.json"), path.clone()),
+            (path.clone(), PathBuf::from("child/../plan.json")),
+        ];
+        let case_alias = project.path.join("PLAN.JSON");
+        if case_alias.exists() {
+            cases.push((path.clone(), case_alias.clone()));
+            cases.push((case_alias, path.clone()));
+        }
+        #[cfg(unix)]
+        {
+            let parent_alias = coordinator.path().join("project-alias");
+            std::os::unix::fs::symlink(&project.path, &parent_alias).unwrap();
+            cases.push((path.clone(), parent_alias.join("plan.json")));
+            cases.push((parent_alias.join("plan.json"), path.clone()));
+            let input_alias = project.path.join("input-alias.json");
+            std::os::unix::fs::symlink(&path, &input_alias).unwrap();
+            cases.push((input_alias.clone(), input_alias.clone()));
+            cases.push((input_alias, path.clone()));
+        }
+        for selection in [
+            ["--top", "1"],
+            ["--candidate", manifest.candidates[0].candidate.id.as_str()],
+        ] {
+            for (input, destination) in &cases {
+                let output = std::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
+                    .current_dir(&project.path)
+                    .arg("verify")
+                    .arg(input)
+                    .args(selection)
+                    .arg("--metrics")
+                    .arg(destination)
+                    .output()
+                    .unwrap();
+                assert_eq!(
+                    output.status.code(),
+                    Some(2),
+                    "input={input:?}, destination={destination:?}, selection={selection:?}, failing={baseline_fails}: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+                assert!(
+                    String::from_utf8_lossy(&output.stderr)
+                        .contains("metrics.destination.collision")
+                );
+                assert_eq!(std::fs::read(&path).unwrap(), original);
+                assert!(
+                    !marker.exists(),
+                    "baseline executed before collision rejection"
+                );
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn verify_metrics_manifest_collision_is_also_rejected_with_borrowed_writers() {
+    let project = Project::new();
+    let coordinator = tempfile::tempdir().unwrap();
+    let marker = coordinator.path().join("marker");
+    let (path, manifest) = metrics_manifest_fixture(&project, &marker, false).await;
+    let original = std::fs::read(&path).unwrap();
+    for selection in [
+        ["--top", "1"],
+        ["--candidate", manifest.candidates[0].candidate.id.as_str()],
+    ] {
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let exit = hoimin_cli::run_with_io(
+            [
+                "hoimin",
+                "verify",
+                path.to_str().unwrap(),
+                selection[0],
+                selection[1],
+                "--metrics",
+                path.to_str().unwrap(),
+            ],
+            &mut stdout,
+            &mut stderr,
+        )
+        .await;
+        assert_eq!(exit, 2, "{}", String::from_utf8_lossy(&stderr));
+        assert!(String::from_utf8_lossy(&stderr).contains("metrics.destination.collision"));
+        assert_eq!(std::fs::read(&path).unwrap(), original);
+        assert!(!marker.exists());
+    }
+}
+
+#[tokio::test]
+async fn verify_metrics_manifest_distinct_entries_remain_replaceable() {
+    for baseline_fails in [false, true] {
+        let project = Project::new();
+        let coordinator = tempfile::tempdir().unwrap();
+        let marker = coordinator.path().join("marker");
+        let (path, manifest) = metrics_manifest_fixture(&project, &marker, baseline_fails).await;
+        let original = std::fs::read(&path).unwrap();
+        for selection in [
+            ["--top", "1"],
+            ["--candidate", manifest.candidates[0].candidate.id.as_str()],
+        ] {
+            let outputs = tempfile::tempdir().unwrap();
+            let new = outputs.path().join("new.json");
+            let existing = outputs.path().join("existing.json");
+            std::fs::write(&existing, "old metrics").unwrap();
+            let hardlink = outputs.path().join("hardlink.json");
+            std::fs::hard_link(&path, &hardlink).unwrap();
+            let destinations = vec![new, existing, hardlink];
+            #[cfg(unix)]
+            let destinations = {
+                let mut destinations = destinations;
+                let symlink = outputs.path().join("symlink.json");
+                std::os::unix::fs::symlink(&path, &symlink).unwrap();
+                destinations.push(symlink);
+                destinations
+            };
+            for destination in destinations {
+                if marker.exists() {
+                    std::fs::remove_file(&marker).unwrap();
+                }
+                let output = std::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
+                    .current_dir(outputs.path())
+                    .arg("verify")
+                    .arg(&path)
+                    .args(selection)
+                    .arg("--metrics")
+                    .arg(&destination)
+                    .output()
+                    .unwrap();
+                assert_eq!(
+                    output.status.code(),
+                    Some(if baseline_fails { 3 } else { 1 }),
+                    "{}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+                assert!(marker.exists());
+                assert_eq!(std::fs::read(&path).unwrap(), original);
+                assert!(
+                    !std::fs::symlink_metadata(&destination)
+                        .unwrap()
+                        .file_type()
+                        .is_symlink()
+                );
+                let metrics: hoimin_core::RunMetrics =
+                    serde_json::from_slice(&std::fs::read(destination).unwrap()).unwrap();
+                metrics.validate().unwrap();
+                assert_eq!(metrics.executed, u64::from(!baseline_fails));
+            }
+        }
+    }
+}

@@ -736,6 +736,7 @@ enum BlockingEffect {
         request: hoimin_core::Preflight,
         config: Box<RunConfig>,
         copied_at_start: BTreeSet<Utf8PathBuf>,
+        metrics_protected_inputs: Vec<std::path::PathBuf>,
         targets: Vec<TargetSlice>,
         resource_mode: ResourceMode,
     },
@@ -807,14 +808,17 @@ impl BlockingEffect {
                 request,
                 mut config,
                 copied_at_start,
+                metrics_protected_inputs,
                 targets,
                 resource_mode,
             } => {
                 let mut run_fingerprint = None;
                 let mut metrics_destination = None;
-                let validation = validate_metrics_destination(&config, &targets, id).map(|value| {
-                    metrics_destination = Some(value);
-                });
+                let validation =
+                    validate_metrics_destination(&config, &targets, &metrics_protected_inputs, id)
+                        .map(|value| {
+                            metrics_destination = Some(value);
+                        });
                 let preflight = validation.and_then(|()| {
                     prepare_session_artifacts(&mut config)
                         .map_err(|error| EffectFailed::other(id, "session.path", error))
@@ -986,6 +990,7 @@ where
                 request,
                 config: Box::new(context.config.clone()),
                 copied_at_start: context.fingerprint_copy_inputs.clone(),
+                metrics_protected_inputs: context.metrics_protected_inputs.clone(),
                 targets,
                 resource_mode: context.process.mode(),
             });
@@ -1867,6 +1872,7 @@ pub struct ShellContext<Stdout, Stderr> {
     report_versions: ReportVersions,
     blocking_secondary_errors: Vec<String>,
     metrics_destination: MetricsDestination,
+    metrics_protected_inputs: Vec<std::path::PathBuf>,
     // Keep this last so every handler/root clone is dropped before an armed rollback.
     setup_rollback: Option<SetupRollback>,
 }
@@ -1915,6 +1921,7 @@ where
             },
             blocking_secondary_errors: Vec::new(),
             metrics_destination: MetricsDestination::Disabled,
+            metrics_protected_inputs: Vec::new(),
             setup_rollback: Some(rollback),
         }
     }
@@ -2471,6 +2478,15 @@ where
     Stdout: Write + Send + 'static,
     Stderr: Write + Send + 'static,
 {
+    run_verified(verified, stdout, stderr, Some(ReportDelivery::into_owned)).await
+}
+
+pub(crate) async fn run_verified<Stdout: Write, Stderr: Write>(
+    verified: crate::plan::VerifiedPlan,
+    stdout: Stdout,
+    stderr: Stderr,
+    owned_report: Option<OwnedReportFactory<Stdout, Stderr>>,
+) -> Result<i32, String> {
     if verified.config.session.is_some() || verified.config.resume {
         return Err("selected candidate execution does not support sessions or resume".to_owned());
     }
@@ -2483,17 +2499,24 @@ where
         }
     };
     let control = RunControl::new();
-    let context = prepare_loop_context(&verified.config, stdout, stderr, &control).await?;
-    Ok(Box::pin(run_loop_context(
+    let mut context = prepare_loop_context(&verified.config, stdout, stderr, &control).await?;
+    context.metrics_protected_inputs = verified.manifest_inputs;
+    let result = Box::pin(run_loop_context(
         verified.config,
         context,
         control,
         selection,
         Some(verified.fingerprint_copy_inputs),
-        Some(ReportDelivery::into_owned),
+        owned_report,
     ))
-    .await
-    .unwrap_or(2))
+    .await;
+    // Owned report delivery already emits loop failures; borrowed callers
+    // retain the error so their dispatch layer can print the diagnostic.
+    if owned_report.is_some() {
+        Ok(result.unwrap_or(2))
+    } else {
+        result
+    }
 }
 
 async fn run_loop_prepared<Stdout, Stderr>(

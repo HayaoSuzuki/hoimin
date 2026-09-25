@@ -33,12 +33,13 @@ struct DirectoryEntries {
 pub(crate) fn validate_metrics_destination(
     config: &RunConfig,
     targets: &[TargetSlice],
+    protected_inputs: &[PathBuf],
     id: EffectId,
 ) -> Result<MetricsDestination, EffectFailed> {
     let Some(output) = &config.output.metrics else {
         return Ok(MetricsDestination::Disabled);
     };
-    match inspect(config, targets, output.as_std_path()) {
+    match inspect(config, targets, protected_inputs, output.as_std_path()) {
         Ok(Ok(path)) => Ok(MetricsDestination::Ready(path)),
         Ok(Err(protected)) => Err(EffectFailed::other(
             id,
@@ -69,6 +70,7 @@ fn directory_only_syntax(path: &Path, windows_separators: bool) -> bool {
 fn inspect(
     config: &RunConfig,
     targets: &[TargetSlice],
+    protected_inputs: &[PathBuf],
     output: &Path,
 ) -> io::Result<Result<PathBuf, PathBuf>> {
     if directory_only_syntax(output, cfg!(windows)) {
@@ -86,6 +88,7 @@ fn inspect(
             .iter()
             .map(|input| config.root.join(&input.path).into_std_path_buf()),
     );
+    protected.extend_from_slice(protected_inputs);
     let mut lock_trees = Vec::new();
     let mut uncertainty = None;
     if let Some(session) = &config.session {
