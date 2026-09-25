@@ -90,3 +90,7 @@ The corpus retains 18 runtime-allowed inputs, 14 statically emitted pairs and fo
 - Guarded model, generation, native freshness, sensitivity and stats: pass. Stats explicitly report 36 cases, 3 classes, 3 aliases, 2 endpoints, 2 overwrite choices, max_writes=2, transitions=0.
 
 No unresolved semantic mismatch or deferred implementation finding remains in this scope. The explicit implementation decision is conservative exclusion of canonical private spellings under their matching active compiler context, supported by the private-parameter RED→GREEN regression. Parent owns independent review, publication and remote CI. Artifacts remain in `/tmp/hoimin-611-*` and the worktree formal build cache.
+
+## Final integration and independent review
+
+The verify-lane reviewer independently checked class-prefix inheritance/reset, generic class headers, the gate before unevaluated-scope shortcuts, raw/canonical aliases, canonical writes and global/nonlocal routing. No blocker was found. After parent #605 merged, rebased only #611 onto main `bf09c91` without conflicts. Both private/prepared annotation public oracle suites and exact all-target/all-feature workspace Clippy, formatting and diff checks passed. CI generator registry tests passed 40/40.
