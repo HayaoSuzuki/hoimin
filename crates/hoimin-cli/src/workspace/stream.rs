@@ -4,6 +4,9 @@ use camino::Utf8Path;
 
 use super::WorkspaceError;
 
+#[cfg(test)]
+mod property_tests;
+
 pub(super) const BUFFER_BYTES: usize = 64 * 1024;
 
 pub(super) fn chunks(
