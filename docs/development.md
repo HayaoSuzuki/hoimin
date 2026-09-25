@@ -27,6 +27,31 @@ The report schema retains its existing `mode` and singular `mechanism` fields.
 
 ## Local quality gate
 
+Install [prek](https://github.com/j178/prek) and enable the Git pre-commit hook
+once per checkout:
+
+```console
+uv tool install prek
+prek install
+prek run --all-files
+```
+
+The hooks in [`prek.toml`](../prek.toml) run the same Rust formatting and Clippy
+checks as CI, including the vendored parser. They use Cargo from `PATH` and
+the toolchain (with rustfmt and Clippy) pinned in `rust-toolchain.toml`.
+Formatting is checked without rewriting files; run `cargo fmt --all` or
+`cargo fmt --manifest-path vendor/ruff_python_parser/Cargo.toml` to fix it.
+
+Hooks run when staged changes include Rust sources, Cargo manifests or lockfiles,
+Rust toolchain, Cargo, rustfmt or Clippy configuration, or `prek.toml`.
+Documentation-only changes skip them. Each hook checks its entire workspace
+once, in sequence. The separate `fuzz/` workspace uses the explicit checks
+documented below and does not trigger these hooks.
+
+Run `prek validate-config prek.toml` after changing the hook configuration.
+Use `prek run --all-files` for all four Rust checks, or
+`prek run cargo-clippy --all-files` for the workspace Clippy check alone.
+
 Run the quality gates locally with the same commands used in CI:
 
 ```console
@@ -78,6 +103,171 @@ independent fixed fragment sizes, optional single interruptions before progress,
 and terminal I/O errors; they do not explore every possible read schedule or OS
 filesystem race. Properties compare against materialized scalar/line observations,
 whole-slice equality, and one-shot hashes. They are finite tests, not proofs.
+
+## Coverage-guided fuzzing
+
+`fuzz/` is a separate Cargo workspace with its own committed lockfile. It depends
+on `hoimin-core` by path; libFuzzer does not enter the shipping workspace or the
+ordinary `cargo test --workspace` run. The targets supplement proptest:
+
+- `source_encoding`: arbitrary bytes exercise encoding declarations and malformed
+  input. Successful decodes must preserve bytes on re-encoding and match scalar
+  boundary maps. Explicit Latin-1 and valid UTF-8 variants must decode successfully.
+- `source_index`: UTF-8 text is checked against a sequential scalar walk for every
+  byte offset, including split scalars, EOF, mixed LF/CRLF/CR, and a leading BOM.
+- `candidate_validation`: constructs valid UTF-8 and Latin-1 candidates with
+  independently calculated spans and coordinates, then checks rejection of nine
+  single-field corruptions and unencodable Latin-1 replacements. The first five
+  input bytes choose the codec and two little-endian scalar boundary indices;
+  the remaining bytes supply the source payload.
+- `analyzer_protocol`: parses arbitrary JSONL, checks observed summary counts,
+  and constructs valid records to exercise wrong effect IDs, missing/mismatched
+  summaries, decreasing candidate offsets, records after summary, and byte limits.
+- `python_analyzer`: runs the production Python analyzer with all mutation
+  operators and either the full or focused profile (selected by input length
+  parity). Checks immediate cancellation, candidate validation, ordering, the
+  32-candidate cap, and prefix preservation when that cap is reduced to one.
+  Syntax errors and supported depth-limit errors are valid outcomes.
+
+The last two targets compile the production analyzer modules directly using
+`#[path]`, so no fuzz-only API is added to the shipping crate. Keep their dependency
+declarations in `fuzz/Cargo.toml` aligned with `crates/hoimin-cli/Cargo.toml` and
+retain the root workspace's vendored Ruff parser patch in the fuzz workspace.
+These are in-memory checks; CLI discovery, file I/O, subprocesses, and mutation
+execution are outside their scope. The three newer targets reject inputs larger
+than 4096 bytes to bound per-input work, including during artifact replay.
+
+Install cargo-fuzz and the pinned nightly (the locked libfuzzer-sys version
+requires a C++17 compiler).
+These commands run from the repository root. The normal Rust toolchain stays
+unchanged:
+
+```console
+cargo install cargo-fuzz --version 0.13.2 --locked
+rustup toolchain install nightly-2026-07-27 --profile minimal
+cargo +nightly-2026-07-27 fuzz build
+for target in source_encoding source_index candidate_validation analyzer_protocol python_analyzer; do
+  mkdir -p "fuzz/corpus/$target"
+  cargo +nightly-2026-07-27 fuzz run "$target" "fuzz/corpus/$target" "fuzz/seeds/$target" -- -max_total_time=30 -max_len=4096 -timeout=5 -rss_limit_mb=1024 || break
+done
+```
+
+AddressSanitizer, debug assertions, and overflow checks use cargo-fuzz's defaults.
+The first corpus directory receives newly discovered inputs; the second contains
+committed seeds, including non-UTF-8 bytes. Keep that order so fuzzing does not
+write generated inputs into `seeds/`. Corpus, artifacts, coverage, and build
+outputs are ignored. Increase `-max_total_time` for longer local runs. The limit
+applies to fuzzing time, not compilation; `-timeout` bounds an individual input.
+
+Replay and minimize a reported failure, using its actual artifact path:
+
+```console
+cargo +nightly-2026-07-27 fuzz run source_encoding fuzz/artifacts/source_encoding/crash-<hash>
+cargo +nightly-2026-07-27 fuzz tmin source_encoding fuzz/artifacts/source_encoding/crash-<hash>
+```
+
+Retain the minimized input in the target's `seeds/` directory and add a normal
+Rust regression test with the fix. A bounded successful run is evidence only for
+the inputs executed. The Python target checks candidate structure and retention,
+not whether every replacement has the intended Python runtime semantics. Cookie
+error classification and OS/process behavior are not exhaustively checked.
+
+Formatting and lint checks for the separate workspace are explicit:
+
+```console
+cargo fmt --manifest-path fuzz/Cargo.toml -- --check
+cargo clippy --locked --manifest-path fuzz/Cargo.toml --bins -- -D warnings
+```
+
+See the [cargo-fuzz documentation](https://rust-fuzz.github.io/book/cargo-fuzz.html).
+
+### Bounded CI fuzzing
+
+The automatic CI workflow runs `Fuzz (bounded)` on Linux after `quality`, in
+parallel with the existing test jobs. Its **nine-minute job timeout includes
+setup, compilation, fuzzing, and artifact/cache handling**. The longest test
+jobs in main runs [36142375064](https://github.com/tokyogas-tech/hoimin/actions/runs/36142375064),
+[36142944345](https://github.com/tokyogas-tech/hoimin/actions/runs/36142944345), and
+[36158455427](https://github.com/tokyogas-tech/hoimin/actions/runs/36158455427)
+took 11m18s, 11m35s, and 12m09s: nine minutes is approximately 74–80% of those
+durations. This is a fixed budget; revisit it when normal test durations change.
+
+The first step sets an eight-minute active deadline, leaving approximately one
+minute for uploading diagnostics and saving small caches. `tools/ci_fuzz.py`
+deducts elapsed setup time, installs the optional Python dependencies, builds
+all fuzz targets, tests the generator, and generates 50 examples with each
+hypothesmith strategy. It divides the remaining time among all targets in
+`fuzz/Cargo.toml`, reserving ten seconds per target for startup and shutdown.
+An exhausted budget, a failed command, or a target timeout fails the job; an
+unexecuted target is never counted as a pass. Subprocess timeouts kill the
+process group, including compiler and fuzzer children.
+
+The cargo-fuzz executable and discovered corpus are cached. Large compiled
+target directories are not cached, keeping post-job work small. CI builds use
+16 codegen units to reduce compilation time. Both generation and fuzzing use
+a seed derived from the workflow run ID. The `fuzz-report` artifact retains
+per-stage command logs, a JSON summary with timings and completed targets, and
+any crash inputs for seven days. Artifact upload runs even after failure,
+although cancellation or the hard job timeout can interrupt it. Use the saved
+crash input for replay; the seed alone does not reproduce a time-bounded run
+against an evolving corpus.
+
+The initial local validation found a parser panic on a nested unterminated
+f/t-string inside a format specification. It is fixed in the vendored parser;
+the minimized inputs are seeds `fstring-format-spec-recovery` and
+`tstring-format-spec-recovery`, and `foreign_middle_token_in_a_format_spec_is_invalid_syntax`
+in `crates/hoimin-cli/tests/rust_analyzer.rs` is the ordinary regression test.
+GitHub Actions execution and cold Linux build timing have not yet been verified.
+
+### Generate Python inputs with hypothesmith
+
+The optional `fuzz` dependency group pins hypothesmith 0.3.3. The lockfile also
+records Hypothesis, LibCST, and Lark; these dependencies are not installed by the
+ordinary dev-only sync. Run from the repository root:
+
+```console
+uv sync --frozen --group fuzz --no-install-project
+uv run --frozen --no-sync python tools/hypothesmith_corpus.py --examples 100 --seed 20260926 --strategy grammar
+uv run --frozen --no-sync python tools/hypothesmith_corpus.py --examples 100 --seed 20260926 --strategy libcst
+cargo +nightly-2026-07-27 fuzz run python_analyzer fuzz/corpus/python_analyzer fuzz/seeds/python_analyzer -- -max_total_time=30 -max_len=4096 -timeout=5 -rss_limit_mb=1024
+```
+
+The generator writes to `fuzz/corpus/python_analyzer` by default; `--output DIR`
+selects another directory. `grammar` uses `from_grammar()` and `libcst` uses
+`from_node()`, both with automatic complexity targeting enabled. `--examples`
+is the Hypothesis example budget, not a promised number of distinct files.
+Whitespace-only, invalid, and oversized examples are counted and skipped; repeated
+inputs are deduplicated by SHA-256. UTF-8 bytes and physical newlines are preserved.
+`--max-bytes` defaults to 4096 and accepts values from 1 through 4096, matching the
+Rust target's limit. This bounds saved inputs, not generator memory or wall time.
+
+Generated source is compiled for syntax validation by CPython, never executed.
+The tool reports JSON on stdout with the seed, strategy, limits, Python/library
+versions, and written/existing/skipped counts. Exit 0 means at least one usable
+input was written or already present; exit 1 means no usable input was collected;
+invalid options or missing optional dependencies exit 2. Generation errors remain
+failures, even if earlier examples were already saved.
+
+Reuse the same seed, options, interpreter, and locked dependencies for replay;
+generation is not stable across dependency upgrades. Change the seed to explore
+different inputs. Corpus files and Hypothesis caches are ignored; promote a
+discovered regression to a committed seed and a normal regression test.
+
+Both strategies were exercised on CPython 3.14.7 with Hypothesis 6.168.1,
+LibCST 1.9.0, and Lark 1.3.1. That does not establish coverage of every Python 3.14
+syntax form. The existing Rust fuzz target permits syntax diagnostics because
+libFuzzer can turn a valid seed into invalid Python; this integration is not an
+assertion that CPython and the Rust parser accept identical languages.
+
+Run generator tests with the optional dependencies enabled:
+
+```console
+uv run --frozen --group fuzz --no-install-project pytest tests/test_hypothesmith_corpus.py
+```
+
+Without that group, only the two real-generator integration cases are skipped;
+the byte-preservation, size-boundary, syntax-rejection, and CLI validation tests
+still run. See the [hypothesmith project](https://github.com/Zac-HD/hypothesmith).
 
 ## Python formatting, lint and tests
 

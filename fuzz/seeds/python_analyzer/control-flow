@@ -1,0 +1,8 @@
+def f(x):
+    try:
+        with x:
+            return True
+    except Exception:
+        return False
+    finally:
+        x.close()

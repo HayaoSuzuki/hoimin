@@ -1,0 +1,2 @@
+{"kind":"candidate","effect_id":7,"path":"input.py","span":{"start":1,"length":1},"original":"+","replacement":"-","operator":"binary_add_sub","line":1,"column":1,"symbol":null}
+{"kind":"summary","effect_id":7,"candidate_count":1,"diagnostic_count":0,"truncated":false}

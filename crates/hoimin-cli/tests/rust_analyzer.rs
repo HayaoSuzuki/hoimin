@@ -164,3 +164,55 @@ fn repeated_depth_rejections_reclaim_ast_allocations() {
         .join()
         .unwrap();
 }
+
+/// Recovering from an unterminated nested string of the other interpolation
+/// kind returns the parser to the enclosing format specification while the
+/// lexer still emits the nested string's middle token. Both middle tokens are
+/// in that specification's FIRST set, so the element list must accept either
+/// one; treating the foreign token as unreachable aborted the whole process.
+/// `cargo fuzz run python_analyzer` found the f-string case.
+#[test]
+fn foreign_middle_token_in_a_format_spec_is_invalid_syntax() {
+    let mut operators = MutationOperatorSelection::all_legacy();
+    for name in MutationOperatorSelection::valid_names() {
+        for operator in MutationOperatorSelection::parse_selector(name)
+            .expect("a public valid operator name parses")
+        {
+            operators.include(operator);
+        }
+    }
+    for source in [
+        r#"f"{:{t"{m""m"#,
+        r#"t"{:{f"{m""m"#,
+        "f\"{:{t\"{m\"\"m\n",
+        "t\"{:{f\"{m\"\"m\n",
+    ] {
+        assert!(
+            parse_module(source).is_err(),
+            "{source:?} is invalid Python"
+        );
+        for profile in [MutationProfile::Full, MutationProfile::Focused] {
+            let output = rust::analyze_source(
+                &rust::AnalyzeRequest {
+                    path: Utf8Path::new("pkg/format_spec.py"),
+                    lines: &[],
+                    symbols: &[],
+                    operators: &operators,
+                    profile,
+                    max_candidates: 10_000,
+                },
+                source,
+            );
+            assert!(output.candidates.is_empty(), "{source:?}");
+            assert_eq!(
+                output
+                    .diagnostics
+                    .iter()
+                    .map(|diagnostic| diagnostic.code)
+                    .collect::<Vec<_>>(),
+                vec![AnalyzerDiagnosticCode::InvalidSyntax],
+                "{source:?}"
+            );
+        }
+    }
+}

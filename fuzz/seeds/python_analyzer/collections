@@ -1,0 +1,2 @@
+def f(x: list[int | None]):
+    return [v for v in x if v is not None][1:-1]

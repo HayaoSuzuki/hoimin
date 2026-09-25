@@ -37,6 +37,10 @@ dev = [
     "ruff>=0.16.1,<0.17",
     "ty>=0.0.61",
 ]
+fuzz = [
+    "hypothesis>=6.93,<7",
+    "hypothesmith==0.3.3",
+]
 
 [tool.ruff]
 target-version = "py314"
@@ -76,5 +80,5 @@ minversion = "9.0"
 strict = true
 empty_parameter_set_mark = "fail_at_collect"
 testpaths = ["tests"]
-norecursedirs = ["fixtures"]
+norecursedirs = ["fixtures", ".hypothesis"]
 pythonpath = [".", "tests"]

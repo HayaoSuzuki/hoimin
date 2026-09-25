@@ -1,0 +1,2 @@
+﻿def 日本(x):
+    return "😀" if x else ""

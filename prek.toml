@@ -1,0 +1,36 @@
+# Run the Rust quality checks from CI using the pinned repository toolchain.
+default_stages = ["pre-commit"]
+files = '(\.rs$|(^|/)Cargo\.(toml|lock)$|(^|/)\.?rustfmt\.toml$|(^|/)\.?clippy\.toml$|^rust-toolchain(\.toml)?$|^\.cargo/|^prek\.toml$)'
+# The fuzz workspace has separate checks documented in docs/development.md.
+exclude = '^fuzz/'
+
+[[repos]]
+repo = "local"
+
+[[repos.hooks]]
+id = "cargo-fmt"
+name = "cargo fmt (workspace)"
+language = "system"
+entry = "cargo fmt --all -- --check"
+pass_filenames = false
+
+[[repos.hooks]]
+id = "cargo-fmt-vendor"
+name = "cargo fmt (vendored parser)"
+language = "system"
+entry = "cargo fmt --manifest-path vendor/ruff_python_parser/Cargo.toml -- --check"
+pass_filenames = false
+
+[[repos.hooks]]
+id = "cargo-clippy"
+name = "cargo clippy (workspace)"
+language = "system"
+entry = "cargo clippy --workspace --all-targets --all-features -- -D warnings"
+pass_filenames = false
+
+[[repos.hooks]]
+id = "cargo-clippy-vendor"
+name = "cargo clippy (vendored parser)"
+language = "system"
+entry = "cargo clippy --locked -p littrs-ruff-python-parser --lib --no-deps -- -D warnings"
+pass_filenames = false
