@@ -160,6 +160,7 @@ jobs:
             HoiminOracle.WorkspaceModel
             HoiminOracle.AnnotationScopeModel
             HoiminOracle.PreparedNamespaceModel
+            HoiminOracle.PreparedAnnotationImportModel
             HoiminOracle.BindingFlowProofs
             HoiminOracle.BoundedCandidateDiscoveryProofs
             HoiminOracle.BudgetProofs
@@ -250,6 +251,7 @@ jobs:
             WorkspaceAuditMain
             AnnotationScopeAuditMain
             PreparedNamespaceAuditMain
+            PreparedAnnotationImportAuditMain
             CompoundPatternGuardAuditMain
             ExceptionMatchBindingAuditMain
             HoiminOracle.ExceptStarFlowCases
@@ -333,6 +335,7 @@ jobs:
             'generate_resume_copy|corpus/resume-copy.jsonl|sensitivity'
             'generate_nullable_gate|corpus/nullable-gate.jsonl|sensitivity'
             'generate_prepared_namespace|corpus/prepared-namespace.jsonl|sensitivity'
+            'generate_prepared_annotation_import|corpus/prepared-annotation-import.jsonl|sensitivity'
           )
           for entry in "${generators[@]}"; do
             IFS='|' read -r executable corpus sensitivity <<< "$entry"

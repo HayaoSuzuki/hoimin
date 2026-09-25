@@ -28,15 +28,15 @@ Files: `crates/hoimin-cli/src/analyzer/rust_tests.rs`, `rust.rs`.
 Consumes: `analyze_types(source)` and existing `may_have_prepared_namespace`.
 Produces: guarded `annotation_import_stable(offset, name, source_order_known)`.
 
-- [ ] Add a table test selecting only `type_sequence_iterable`, with plain/module/lexical/both-global positives and prepared class/method/generic method/one-global/nonlocal/explicit-import/qualified-alias negatives. Assert exact count and endpoint text.
-- [ ] Run `cargo test -p hoimin-cli --lib prepared_annotation_import`; expected RED: prepared class still emits a pair.
-- [ ] Insert after global redirect and before nonlocal handling:
+- [x] Add a table test selecting only `type_sequence_iterable`, with plain/module/lexical/both-global positives and prepared class/method/generic method/one-global/nonlocal/explicit-import/qualified-alias negatives. Assert exact count and endpoint text.
+- [x] Run `cargo test -p hoimin-cli --lib prepared_annotation_import`; expected RED: prepared class still emits a pair.
+- [x] Insert after global redirect and before nonlocal handling:
   ```rust
   if scope.may_have_prepared_namespace {
       return false;
   }
   ```
-- [ ] Run focused tests; expected GREEN, existing builtin tests unchanged.
+- [x] Run focused tests; expected GREEN, existing builtin tests unchanged.
 
 ## Task 2: Maintained public oracle
 
@@ -44,16 +44,16 @@ Files: new `formal/HoiminOracle/HoiminOracle/PreparedAnnotationImportModel.lean`
 Consumes: existing public `run_with_io`, `PlanManifest` and guarded CI conventions.
 Produces: deterministic schema-1 corpus with identities, runtime allowed, static count and optional run check.
 
-- [ ] Preserve all 16 issue matrix inputs, add boundary controls and original integer-destination reproducer. Model formulas:
+- [x] Preserve all 16 issue matrix inputs, add boundary controls and original integer-destination reproducer. Model formulas:
   ```lean
   def identity (visible injected : Bool) : Bool := !(visible && injected)
   def allowed (sv dv a b : Bool) : Bool := identity sv a && identity dv b
   def eligible (sv dv ordinary : Bool) : Bool := (!sv || ordinary) && (!dv || ordinary)
   ```
-- [ ] Prove soundness under ordinary => no injection; preserve fixed source-only, destination-only, and lexical-class-capture witnesses. Run guarded generation/freshness/sensitivity after root grants the slot.
-- [ ] Adapter validates schema/mode/closed IDs/unique markers. For each isolated case run Python identity probe then public plan; compare target count, pair, byte span, line and symbol. Assert any emitted pair satisfies Lean runtime allowed. Run baseline and public run for the original integer-destination example; assert complete, zero killed and no mutants.
-- [ ] Observe public adapter RED against baseline resolver (temporarily revert only guard if Task 1 is already green), restore guard and observe GREEN. Record infrastructure errors separately.
-- [ ] Register model, executable and generated-corpus checks in existing Lean CI lists; generated values never edited by hand.
+- [x] Prove soundness under ordinary => no injection; preserve fixed source-only, destination-only, and lexical-class-capture witnesses. Run guarded generation/freshness/sensitivity after root grants the slot.
+- [x] Adapter validates schema/mode/closed IDs/unique markers. For each isolated case run Python identity probe then public plan; compare target count, pair, byte span, line and symbol. Assert any emitted pair satisfies Lean runtime allowed. Run baseline and public run for the original integer-destination example; assert complete, zero killed and no mutants.
+- [x] Observe public adapter RED against baseline resolver (temporarily revert only guard if Task 1 is already green), restore guard and observe GREEN. Record infrastructure errors separately.
+- [x] Register model, executable and generated-corpus checks in existing Lean CI lists; generated values never edited by hand.
 
 ## Task 3: Review and final gates
 
@@ -61,6 +61,6 @@ Files: `docs/superpowers/reports/2026-09-25-issue-605-prepared-annotation-import
 Consumes: Task 1 shared predicate and Task 2 corpus/adapter.
 Produces: self-contained evidence and final implementation commit.
 
-- [ ] Review implementation three times: lookup precedence, shared source/destination and alias consumers, scope construction/compatibility. Review tests three times: runtime premises, adapter rejection/sensitivity, CI/freshness/coverage. Record actual findings and fixes.
-- [ ] Run `cargo test --workspace`; expected all nonignored tests pass. Run `cargo fmt --all -- --check`, vendor fmt, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, vendor parser clippy; expected exit 0.
-- [ ] Record exact commands, RED/GREEN results, Lean cost/bounds, exclusions and correspondence status. Commit all implementation and evidence; return commit IDs to root for independent review.
+- [x] Review implementation three times: lookup precedence, shared source/destination and alias consumers, scope construction/compatibility. Review tests three times: runtime premises, adapter rejection/sensitivity, CI/freshness/coverage. Record actual findings and fixes.
+- [x] Run `cargo test --workspace`; expected all nonignored tests pass. Run `cargo fmt --all -- --check`, vendor fmt, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, vendor parser clippy; expected exit 0.
+- [x] Record exact commands, RED/GREEN results, Lean cost/bounds, exclusions and correspondence status. Commit all implementation and evidence; return commit IDs to root for independent review.

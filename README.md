@@ -365,7 +365,7 @@ applies to builtin names in class-visible type annotations. Bare classes and
 empty `()` headers retain ordinary lookup; methods and closures skip the class
 namespace, and explicit `global` declarations bypass it per name. Even known
 `object` bases or `metaclass=type` are conservatively excluded at class-visible
-sites. Import-alias provenance in annotations is a separate analysis.
+sites.
 PEP 695 type parameters can shadow either name in generic function and class
 bodies, including nested closures and comprehensions. Function defaults and
 decorators use the enclosing scope; generic class bases and keywords can see
@@ -373,7 +373,10 @@ the type parameters. Runtime mutations remain excluded from type positions.
 
 Import-dependent type replacements are emitted only when their direct name or
 module alias remains unshadowed at the annotation site. If no safe spelling is
-available, the candidate is skipped.
+available, the candidate is skipped. Class-visible annotation imports and module
+aliases are also excluded when the class may have a prepared namespace, including
+explicit class imports and `nonlocal` references. Lexical descendants skip the
+class namespace; explicit `global` declarations bypass it for each declared name.
 
 The `operator_function` selector recognizes the documented callable pairs
 `eq`/`ne`, `lt`/`le`, `gt`/`ge`, `add`/`sub`, `mul`/`truediv`,
