@@ -55,7 +55,7 @@ fn discover_explicit_with_stats(
 ) -> Result<Vec<DiscoveredFile>, FsTargetError> {
     let root = selection.root.as_std_path();
     let mut files = BTreeMap::<Utf8PathBuf, DiscoveredFile>::new();
-    let scope = ExactPathScope::new(selection).map(Arc::new);
+    let scope = DiscoveryScope::new(selection).map(Arc::new);
 
     let excludes = build_overrides(root, &[], &selection.excludes)?;
     let mut normal = WalkBuilder::new(root);
@@ -96,16 +96,29 @@ struct DiscoveryStats {
 }
 
 #[derive(Debug)]
-struct ExactPathScope {
+struct DiscoveryScope {
+    sources: BTreeSet<String>,
     files: BTreeSet<String>,
     directories: BTreeSet<String>,
     native_files: BTreeSet<PathBuf>,
     native_directories: BTreeSet<PathBuf>,
 }
 
-impl ExactPathScope {
+impl DiscoveryScope {
     fn new(selection: &Selection) -> Option<Self> {
-        if !selection.sources.is_empty() || !selection.symbols.is_empty() {
+        if selection.sources.is_empty() && !selection.symbols.is_empty() {
+            return None;
+        }
+        let normalized_sources = selection
+            .sources
+            .iter()
+            .map(|path| normalize_logical_path(&selection.root, path))
+            .collect::<Result<Vec<_>, _>>()
+            .ok()?;
+        if normalized_sources
+            .iter()
+            .any(|path| path.as_str().is_empty())
+        {
             return None;
         }
         let normalized_files = selection
@@ -115,7 +128,7 @@ impl ExactPathScope {
             .map(|path| normalize_logical_path(&selection.root, path))
             .collect::<Result<Vec<_>, _>>()
             .ok()?;
-        if normalized_files.is_empty() {
+        if normalized_files.is_empty() && normalized_sources.is_empty() {
             return None;
         }
         let files = normalized_files
@@ -128,7 +141,7 @@ impl ExactPathScope {
             .collect();
         let mut directories = BTreeSet::new();
         let mut native_directories = BTreeSet::new();
-        for file in &normalized_files {
+        for file in normalized_files.iter().chain(&normalized_sources) {
             let mut directory = file.parent();
             while let Some(path) = directory {
                 directories.insert(logical_path_equality_key(path).into_owned());
@@ -137,11 +150,40 @@ impl ExactPathScope {
             }
         }
         Some(Self {
+            sources: normalized_sources
+                .iter()
+                .map(|path| logical_path_equality_key(path).into_owned())
+                .collect(),
             files,
             directories,
             native_files,
             native_directories,
         })
+    }
+
+    fn in_source(&self, mut key: &str) -> bool {
+        if self.sources.is_empty() {
+            return false;
+        }
+        loop {
+            if self.sources.contains(key) {
+                return true;
+            }
+            let Some((parent, _)) = key.rsplit_once('/') else {
+                return false;
+            };
+            key = parent;
+        }
+    }
+
+    fn native_in_source(&self, native: &Path) -> bool {
+        // A malformed child still belongs to a selected valid ancestor. Use the
+        // normal platform key on UTF-8 ancestors, even when the child is not portable.
+        !self.sources.is_empty()
+            && native.ancestors().filter_map(Path::to_str).any(|path| {
+                self.sources
+                    .contains(logical_path_equality_key(camino::Utf8Path::new(path)).as_ref())
+            })
     }
 
     fn keeps(&self, entry: &DirEntry, root: &Path, stats: &DiscoveryStats) -> bool {
@@ -154,6 +196,9 @@ impl ExactPathScope {
             let Ok(native) = entry.path().strip_prefix(root) else {
                 return false;
             };
+            if self.native_in_source(native) {
+                return true;
+            }
             return if entry.file_type().is_some_and(|kind| kind.is_dir()) {
                 self.native_directories.contains(native)
             } else {
@@ -163,6 +208,9 @@ impl ExactPathScope {
         #[cfg(test)]
         stats.scope_key_lookups.fetch_add(1, Ordering::Relaxed);
         let key = logical_path_equality_key(&path);
+        if self.in_source(&key) {
+            return true;
+        }
         if entry.file_type().is_some_and(|kind| kind.is_dir()) {
             self.directories.contains(key.as_ref())
         } else {
@@ -173,12 +221,12 @@ impl ExactPathScope {
 
 struct ScopeFilter {
     root: PathBuf,
-    scope: Option<Arc<ExactPathScope>>,
+    scope: Option<Arc<DiscoveryScope>>,
     stats: DiscoveryStats,
 }
 
 impl ScopeFilter {
-    fn new(root: &Path, scope: Option<Arc<ExactPathScope>>, stats: DiscoveryStats) -> Self {
+    fn new(root: &Path, scope: Option<Arc<DiscoveryScope>>, stats: DiscoveryStats) -> Self {
         Self {
             root: root.to_owned(),
             scope,
@@ -273,6 +321,91 @@ mod tests {
     use super::*;
     use hoimin_core::{LineRange, LineSelection};
     use std::fs;
+
+    #[test]
+    fn source_subtrees_prune_unrelated_descendants_and_records() {
+        for count in [0, 1_000, 5_000] {
+            let temp = tempfile::tempdir().unwrap();
+            fs::create_dir_all(temp.path().join("selected")).unwrap();
+            fs::create_dir_all(temp.path().join("unrelated")).unwrap();
+            fs::write(temp.path().join("selected/app.py"), "value = 1 + 2\n").unwrap();
+            fs::write(temp.path().join("selected/data.bin"), b"fixture").unwrap();
+            for index in 0..count {
+                fs::write(
+                    temp.path().join("unrelated").join(format!("{index}.txt")),
+                    b"x",
+                )
+                .unwrap();
+            }
+            let selection = Selection {
+                root: Utf8PathBuf::from_path_buf(temp.path().to_owned()).unwrap(),
+                sources: vec!["selected".into()],
+                ..Selection::default()
+            };
+            let broad = Selection {
+                sources: vec![".".into()],
+                ..selection.clone()
+            };
+            let broad_stats = DiscoveryStats::default();
+            let broad_files = discover_explicit_with_stats(&broad, &broad_stats).unwrap();
+            assert_eq!(broad_files.len(), count + 2);
+            let stats = DiscoveryStats::default();
+            let files = discover_explicit_with_stats(&selection, &stats).unwrap();
+            assert_eq!(
+                hoimin_core::resolve_explicit(&selection, &files).unwrap(),
+                hoimin_core::resolve_explicit(&selection, &broad_files).unwrap()
+            );
+            eprintln!(
+                "unrelated={count} visited={} records={} broad_visited={} broad_records={}",
+                stats.visited_entries.load(Ordering::Relaxed),
+                stats.collected_records.load(Ordering::Relaxed),
+                broad_stats.visited_entries.load(Ordering::Relaxed),
+                broad_stats.collected_records.load(Ordering::Relaxed)
+            );
+            assert_eq!(files.len(), 2, "unrelated records must not be retained");
+            assert!(
+                stats.visited_entries.load(Ordering::Relaxed) <= 5,
+                "unrelated descendants must not be visited"
+            );
+            assert_eq!(stats.collected_records.load(Ordering::Relaxed), 2);
+        }
+    }
+
+    #[test]
+    fn source_include_walk_prunes_other_ignored_subtrees() {
+        let temp = tempfile::tempdir().unwrap();
+        fs::write(temp.path().join(".gitignore"), "ignored/\n").unwrap();
+        fs::create_dir_all(temp.path().join("ignored/selected")).unwrap();
+        fs::create_dir_all(temp.path().join("ignored/unrelated")).unwrap();
+        fs::write(temp.path().join("ignored/selected/app.py"), "x = 1\n").unwrap();
+        for index in 0..1_000 {
+            fs::write(
+                temp.path()
+                    .join("ignored/unrelated")
+                    .join(format!("{index}.txt")),
+                b"x",
+            )
+            .unwrap();
+        }
+        let selection = Selection {
+            root: Utf8PathBuf::from_path_buf(temp.path().to_owned()).unwrap(),
+            sources: vec!["ignored/selected".into()],
+            includes: vec!["ignored/**".into()],
+            ..Selection::default()
+        };
+        let stats = DiscoveryStats::default();
+        assert_eq!(
+            discover_explicit_with_stats(&selection, &stats).unwrap(),
+            [DiscoveredFile::python("ignored/selected/app.py")]
+        );
+        assert_eq!(stats.collected_records.load(Ordering::Relaxed), 1);
+        assert!(stats.visited_entries.load(Ordering::Relaxed) < 12);
+        let broad = Selection {
+            sources: vec![".".into()],
+            ..selection
+        };
+        assert_eq!(discover_explicit(&broad).unwrap().len(), 1_001);
+    }
 
     #[test]
     fn exact_file_prunes_unrelated_subtrees_and_records() {
