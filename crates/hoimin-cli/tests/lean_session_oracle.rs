@@ -490,6 +490,7 @@ impl Driver {
         id: u64,
     ) -> Result<EventOutcome, String> {
         let request = BeginSession {
+            max_mutants: std::num::NonZeroUsize::new(100).unwrap(),
             id: EffectId(id),
             run_id: run_id(run)?.to_owned(),
             fingerprint: fingerprint(fingerprint_name)?,
@@ -515,6 +516,7 @@ impl Driver {
         id: u64,
     ) -> Result<EventOutcome, String> {
         let request = LoadSession {
+            max_mutants: std::num::NonZeroUsize::new(100).unwrap(),
             id: EffectId(id),
             fingerprint: fingerprint(fingerprint_name)?,
         };

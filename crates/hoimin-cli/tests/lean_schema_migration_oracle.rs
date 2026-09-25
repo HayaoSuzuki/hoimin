@@ -10,8 +10,8 @@ use serde::Deserialize;
 
 const CORPUS: &str =
     include_str!("../../../formal/HoiminOracle/corpus/schema-migration-concurrency.jsonl");
-const CURRENT_VERSION: i64 = 3;
-const FUTURE_VERSION: i64 = 4;
+const CURRENT_VERSION: i64 = 4;
+const FUTURE_VERSION: i64 = 5;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -254,7 +254,7 @@ fn prepare_fixture(item: &OracleCase, path: &Path) -> Result<(), String> {
                 .execute_batch(
                     "CREATE TABLE future_schema_marker(value TEXT NOT NULL);
                      INSERT INTO future_schema_marker(value) VALUES ('preserve me');
-                     PRAGMA user_version=4;",
+                     PRAGMA user_version=5;",
                 )
                 .map_err(|error| error.to_string())
         }

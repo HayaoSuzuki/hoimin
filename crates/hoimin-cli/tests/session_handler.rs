@@ -65,14 +65,14 @@ fn all_optional_session_rows(schema_version: i64) -> GoldenSessionRows {
         diagnostic_level: "warning",
         diagnostic_code: "fixture.warning",
         diagnostic_message: "fixture diagnostic",
-        termination: (schema_version == 3).then_some(("exit", 7)),
+        termination: (schema_version >= 3).then_some(("exit", 7)),
     }
 }
 
 #[test]
 fn golden_session_schema_eras_migrate_without_semantic_loss() {
     let root = repo_root().join("crates/hoimin-cli/tests/golden/sessions");
-    for version in 1..=3 {
+    for version in 1..=4 {
         let source = root.join(format!("schema-v{version}.sqlite3"));
         let temp = tempfile::tempdir().unwrap();
         let migrated_path = temp.path().join("session.sqlite3");
@@ -84,27 +84,40 @@ fn golden_session_schema_eras_migrate_without_semantic_loss() {
         drop(before);
 
         let mut handler = SessionHandler::open(&migrated_path).unwrap();
-        let resumed = handler
-            .load(&LoadSession {
-                id: EffectId(89),
-                fingerprint: RunFingerprint::from_bytes([1; 32]),
-            })
-            .unwrap();
-        assert_eq!(resumed.resume.unwrap().run_id, "golden-run");
-        let loaded = handler
-            .lookup(&lookup_request(90, "golden-run", "golden-mutant"))
-            .unwrap();
-        assert_eq!(
-            loaded.result,
-            Some(StoredResult {
-                mutant_id: "golden-mutant".to_owned(),
-                status: MutationStatus::Killed,
-            })
-        );
+        let resumed = handler.load(&LoadSession {
+            max_mutants: std::num::NonZeroUsize::new(100).unwrap(),
+            id: EffectId(89),
+            fingerprint: RunFingerprint::from_bytes([1; 32]),
+        });
+        if version < 4 {
+            assert_eq!(
+                resumed.unwrap_err().failure.code(),
+                "session.resume.incompatible"
+            );
+        } else {
+            assert_eq!(resumed.unwrap().resume.unwrap().run_id, "golden-run");
+            let loaded = handler
+                .lookup(&lookup_request(90, "golden-run", "golden-mutant"))
+                .unwrap();
+            assert_eq!(
+                loaded.result,
+                Some(StoredResult {
+                    mutant_id: "golden-mutant".into(),
+                    status: MutationStatus::Killed,
+                })
+            );
+        }
         drop(handler);
 
         let migrated = Connection::open(&migrated_path).unwrap();
-        assert_eq!(user_version(&migrated), 3);
+        assert_eq!(user_version(&migrated), 4);
+        let budget: Option<Vec<u8>> = migrated
+            .query_row("SELECT max_mutants FROM runs", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(
+            budget,
+            (version == 4).then(|| 100u64.to_be_bytes().to_vec())
+        );
         assert_golden_session_rows(&migrated, version);
     }
 }
@@ -130,7 +143,7 @@ fn golden_session_corpus_rejects_extra_legacy_rows() {
 #[test]
 fn current_session_golden_matches_semantic_regeneration() {
     let checked_path =
-        repo_root().join("crates/hoimin-cli/tests/golden/sessions/schema-v3.sqlite3");
+        repo_root().join("crates/hoimin-cli/tests/golden/sessions/schema-v4.sqlite3");
     let temp = tempfile::tempdir().unwrap();
     let checked_copy = temp.path().join("checked.sqlite3");
     std::fs::copy(&checked_path, &checked_copy).unwrap();
@@ -142,12 +155,12 @@ fn current_session_golden_matches_semantic_regeneration() {
 
     let checked = Connection::open(checked_copy).unwrap();
     let regenerated = Connection::open(regenerated_path).unwrap();
-    assert_eq!(user_version(&checked), 3);
-    assert_eq!(user_version(&regenerated), 3);
+    assert_eq!(user_version(&checked), 4);
+    assert_eq!(user_version(&regenerated), 4);
     assert_eq!(schema_sql(&checked), schema_sql(&regenerated));
     let checked_rows = logical_rows(&checked);
     let regenerated_rows = logical_rows(&regenerated);
-    assert_eq!(checked_rows[0].1[1], Value::Integer(4));
+    assert_eq!(checked_rows[0].1[1], Value::Integer(10));
     assert_eq!(
         regenerated_rows[0].1[1],
         Value::Integer(i64::from(hoimin_core::FINGERPRINT_SCHEMA_VERSION))
@@ -314,7 +327,10 @@ fn expected_logical_rows(original_version: i64) -> Vec<(String, Vec<Value>)> {
     vec![
         (
             "fingerprints".to_owned(),
-            vec![Value::Text(fingerprint.clone()), Value::Integer(4)],
+            vec![
+                Value::Text(fingerprint.clone()),
+                Value::Integer(if original_version >= 4 { 10 } else { 4 }),
+            ],
         ),
         (
             "runs".to_owned(),
@@ -600,6 +616,7 @@ fn spawn_contended_operation(
                 ContendedOutcome::Finish(handler.finish(finish_request(id.0, &run_id)))
             }
             ContendedOperation::Load => ContendedOutcome::Load(handler.load(&LoadSession {
+                max_mutants: std::num::NonZeroUsize::new(100).unwrap(),
                 id,
                 fingerprint: RunFingerprint::from_bytes([1; 32]),
             })),
@@ -754,6 +771,7 @@ fn migrates_schema_enables_wal_and_echoes_typed_completion_events() {
 
     let started = handler
         .begin(BeginSession {
+            max_mutants: std::num::NonZeroUsize::new(100).unwrap(),
             id: EffectId(1),
             run_id: "run-1".to_owned(),
             fingerprint,
@@ -779,6 +797,7 @@ fn migrates_schema_enables_wal_and_echoes_typed_completion_events() {
 
     let loaded = handler
         .load(&LoadSession {
+            max_mutants: std::num::NonZeroUsize::new(100).unwrap(),
             id: EffectId(3),
             fingerprint,
         })
@@ -804,7 +823,7 @@ fn migrates_schema_enables_wal_and_echoes_typed_completion_events() {
         observer
             .query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
             .unwrap(),
-        3
+        4
     );
     assert_eq!(
         observer
@@ -861,6 +880,7 @@ fn timeout_can_be_replaced_then_resumed_and_completed_end_to_end() {
 
     let loaded = handler
         .load(&LoadSession {
+            max_mutants: std::num::NonZeroUsize::new(100).unwrap(),
             id: EffectId(4),
             fingerprint,
         })
@@ -883,6 +903,7 @@ fn timeout_can_be_replaced_then_resumed_and_completed_end_to_end() {
     assert!(
         handler
             .load(&LoadSession {
+                max_mutants: std::num::NonZeroUsize::new(100).unwrap(),
                 id: EffectId(9),
                 fingerprint,
             })
@@ -959,6 +980,7 @@ fn load_selects_only_the_newest_compatible_incomplete_run() {
     handler.begin(begin_request(2, "new")).unwrap();
     handler
         .begin(BeginSession {
+            max_mutants: std::num::NonZeroUsize::new(100).unwrap(),
             id: EffectId(3),
             run_id: "other".to_owned(),
             fingerprint: RunFingerprint::from_bytes([2; 32]),
@@ -969,6 +991,7 @@ fn load_selects_only_the_newest_compatible_incomplete_run() {
 
     let loaded = handler
         .load(&LoadSession {
+            max_mutants: std::num::NonZeroUsize::new(100).unwrap(),
             id: EffectId(6),
             fingerprint: wanted,
         })
@@ -978,6 +1001,7 @@ fn load_selects_only_the_newest_compatible_incomplete_run() {
     assert!(
         handler
             .load(&LoadSession {
+                max_mutants: std::num::NonZeroUsize::new(100).unwrap(),
                 id: EffectId(7),
                 fingerprint: RunFingerprint::from_bytes([9; 32]),
             })
@@ -1001,6 +1025,7 @@ fn explicit_resume_rejects_the_previous_fingerprint_schema() {
 
     let failed = handler
         .load(&LoadSession {
+            max_mutants: std::num::NonZeroUsize::new(100).unwrap(),
             id: EffectId(2),
             fingerprint: RunFingerprint::from_bytes([9; 32]),
         })
@@ -1022,6 +1047,7 @@ fn a_live_run_cannot_be_resumed_by_another_handler() {
 
     let failed = contender
         .load(&LoadSession {
+            max_mutants: std::num::NonZeroUsize::new(100).unwrap(),
             id: EffectId(2),
             fingerprint,
         })
@@ -1052,6 +1078,7 @@ fn non_owner_finish_is_rejected_without_changing_run_state() {
     assert_eq!(failed.failure.code(), "session.finish.owner");
     let still_active = contender
         .load(&LoadSession {
+            max_mutants: std::num::NonZeroUsize::new(100).unwrap(),
             id: EffectId(3),
             fingerprint,
         })
@@ -1061,6 +1088,7 @@ fn non_owner_finish_is_rejected_without_changing_run_state() {
     drop(owner);
     let loaded = contender
         .load(&LoadSession {
+            max_mutants: std::num::NonZeroUsize::new(100).unwrap(),
             id: EffectId(4),
             fingerprint,
         })
@@ -1116,6 +1144,7 @@ fn non_owner_lookup_requires_successful_load_for_the_requested_run() {
     other.fingerprint = RunFingerprint::from_bytes([2; 32]);
     contender.begin(other).unwrap();
     let load = LoadSession {
+        max_mutants: std::num::NonZeroUsize::new(100).unwrap(),
         id: EffectId(4),
         fingerprint: RunFingerprint::from_bytes([1; 32]),
     };
@@ -1161,6 +1190,7 @@ fn former_owner_result_operations_require_reacquisition_after_finish() {
         })
         .unwrap();
     let load = LoadSession {
+        max_mutants: std::num::NonZeroUsize::new(100).unwrap(),
         id: EffectId(3),
         fingerprint: RunFingerprint::from_bytes([1; 32]),
     };
@@ -1246,6 +1276,7 @@ fn incomplete_finish_releases_run_ownership_for_resume() {
 
     let loaded = resumer
         .load(&LoadSession {
+            max_mutants: std::num::NonZeroUsize::new(100).unwrap(),
             id: EffectId(3),
             fingerprint,
         })
@@ -1266,6 +1297,7 @@ fn dropping_handler_releases_run_ownership_for_resume() {
     let mut resumer = SessionHandler::open(&path).unwrap();
     let loaded = resumer
         .load(&LoadSession {
+            max_mutants: std::num::NonZeroUsize::new(100).unwrap(),
             id: EffectId(2),
             fingerprint,
         })
@@ -1287,6 +1319,7 @@ fn completed_finish_releases_ownership_and_removes_run_from_resume() {
     assert!(
         observer
             .load(&LoadSession {
+                max_mutants: std::num::NonZeroUsize::new(100).unwrap(),
                 id: EffectId(3),
                 fingerprint,
             })
@@ -1306,6 +1339,7 @@ fn different_runs_can_be_owned_concurrently() {
     first.begin(begin_request(1, "first")).unwrap();
     second
         .begin(BeginSession {
+            max_mutants: std::num::NonZeroUsize::new(100).unwrap(),
             id: EffectId(2),
             run_id: "second".to_owned(),
             fingerprint: RunFingerprint::from_bytes([2; 32]),
@@ -1316,6 +1350,7 @@ fn different_runs_can_be_owned_concurrently() {
     for (id, fingerprint) in [(3, [1; 32]), (4, [2; 32])] {
         let failed = contender
             .load(&LoadSession {
+                max_mutants: std::num::NonZeroUsize::new(100).unwrap(),
                 id: EffectId(id),
                 fingerprint: RunFingerprint::from_bytes(fingerprint),
             })
@@ -1353,6 +1388,7 @@ fn process_death_releases_run_ownership_for_immediate_resume() {
 
     let mut contender = SessionHandler::open(&path).unwrap();
     let contention = contender.load(&LoadSession {
+        max_mutants: std::num::NonZeroUsize::new(100).unwrap(),
         id: EffectId(2),
         fingerprint: RunFingerprint::from_bytes([1; 32]),
     });
@@ -1365,6 +1401,7 @@ fn process_death_releases_run_ownership_for_immediate_resume() {
     );
     let resumed = contender
         .load(&LoadSession {
+            max_mutants: std::num::NonZeroUsize::new(100).unwrap(),
             id: EffectId(3),
             fingerprint: RunFingerprint::from_bytes([1; 32]),
         })
@@ -1629,6 +1666,7 @@ fn lookup_rejects_corrupt_status_candidate_mismatch_and_completed_runs() {
     let mut handler = SessionHandler::open(&null_path).unwrap();
     let resumed = handler
         .load(&LoadSession {
+            max_mutants: std::num::NonZeroUsize::new(100).unwrap(),
             id: EffectId(13),
             fingerprint: RunFingerprint::from_bytes([0; 32]),
         })
@@ -1659,6 +1697,7 @@ fn rejects_unknown_future_schema_and_releases_temporary_database_on_drop() {
 
 fn begin_request(id: u64, run_id: &str) -> BeginSession {
     BeginSession {
+        max_mutants: std::num::NonZeroUsize::new(100).unwrap(),
         id: EffectId(id),
         run_id: run_id.to_owned(),
         fingerprint: RunFingerprint::from_bytes([1; 32]),
@@ -1735,8 +1774,8 @@ fn lookup_request(id: u64, run_id: &str, mutant_id: &str) -> LookupStoredResult 
 fn create_nullable_corrupt_database(path: &std::path::Path) {
     let db = Connection::open(path).unwrap();
     db.execute_batch(
-        "PRAGMA user_version=3;
-         CREATE TABLE runs (id INTEGER PRIMARY KEY, run_id TEXT, fingerprint BLOB, complete INTEGER);
+        "PRAGMA user_version=4;
+         CREATE TABLE runs (id INTEGER PRIMARY KEY, run_id TEXT, fingerprint BLOB, complete INTEGER, max_mutants BLOB);
          CREATE TABLE results (
              run_id TEXT, mutant_id TEXT, status TEXT,
              termination_kind TEXT, termination_exit_code INTEGER
@@ -1744,7 +1783,7 @@ fn create_nullable_corrupt_database(path: &std::path::Path) {
          CREATE TABLE fingerprints (digest BLOB PRIMARY KEY, schema_version INTEGER);
          CREATE TABLE candidates (run_id TEXT, mutant_id TEXT);
          CREATE TABLE diagnostics (id INTEGER PRIMARY KEY, run_id TEXT, level TEXT, code TEXT, message TEXT);
-         INSERT INTO runs(id, run_id, fingerprint, complete) VALUES (1, 'run-null', zeroblob(32), 0);
+         INSERT INTO runs(id, run_id, fingerprint, complete, max_mutants) VALUES (1, 'run-null', zeroblob(32), 0, x'0000000000000064');
          INSERT INTO results(run_id, mutant_id, status) VALUES ('run-null', 'm-null', NULL);",
     )
     .unwrap();
@@ -1868,4 +1907,220 @@ fn session_lock_trees_propagate_existing_alias_resolution_failure() {
     let error = artifacts.lock_trees().unwrap_err();
     assert_eq!(error.raw_os_error(), native_error.raw_os_error());
     assert!(!directory.path().join("session.db").exists());
+}
+
+#[test]
+fn resume_budget_is_monotone_and_selects_latest_eligible_incomplete_run() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("budgets.sqlite");
+    let mut handler = SessionHandler::open(&path).unwrap();
+    for (name, budget) in [("older", 1), ("newer", 3)] {
+        let mut request = begin_request(1, name);
+        request.max_mutants = std::num::NonZeroUsize::new(budget).unwrap();
+        handler.begin(request).unwrap();
+    }
+    let load = |budget| LoadSession {
+        id: EffectId(2),
+        fingerprint: RunFingerprint::from_bytes([1; 32]),
+        max_mutants: std::num::NonZeroUsize::new(budget).unwrap(),
+    };
+    let initial = handler.load(&load(2)).unwrap();
+    assert_eq!(initial.resume.unwrap().run_id, "older");
+    assert!(handler.load(&load(1)).unwrap().resume.is_none());
+    assert_eq!(
+        handler.load(&load(2)).unwrap().resume.unwrap().run_id,
+        "older"
+    );
+    assert_eq!(
+        handler.load(&load(3)).unwrap().resume.unwrap().run_id,
+        "newer"
+    );
+    let connection = Connection::open(&path).unwrap();
+    let budget: Vec<u8> = connection
+        .query_row(
+            "SELECT max_mutants FROM runs WHERE run_id='older'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(budget, 2_u64.to_be_bytes());
+    handler
+        .finish(FinishSession {
+            id: EffectId(3),
+            run_id: "newer".into(),
+            complete: true,
+        })
+        .unwrap();
+    assert_eq!(
+        handler.load(&load(4)).unwrap().resume.unwrap().run_id,
+        "older"
+    );
+}
+
+#[test]
+fn persisted_budget_preserves_unsigned_range_and_rejects_malformed_storage() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("budget-range.sqlite");
+    let mut handler = SessionHandler::open(&path).unwrap();
+    let mut begin = begin_request(1, "wide");
+    begin.max_mutants = std::num::NonZeroUsize::new(usize::MAX / 2 + 1).unwrap();
+    handler.begin(begin).unwrap();
+    let request = LoadSession {
+        id: EffectId(2),
+        fingerprint: RunFingerprint::from_bytes([1; 32]),
+        max_mutants: std::num::NonZeroUsize::new(usize::MAX).unwrap(),
+    };
+    assert_eq!(
+        handler.load(&request).unwrap().resume.unwrap().run_id,
+        "wide"
+    );
+    let connection = Connection::open(&path).unwrap();
+    let budget: Vec<u8> = connection
+        .query_row("SELECT max_mutants FROM runs", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(budget, (usize::MAX as u64).to_be_bytes());
+    for malformed in ["zeroblob(8)", "zeroblob(7)", "1", "'100'"] {
+        assert!(
+            connection
+                .execute(&format!("UPDATE runs SET max_mutants={malformed}"), [])
+                .is_err()
+        );
+    }
+    connection
+        .execute("UPDATE runs SET max_mutants=NULL", [])
+        .unwrap();
+    let failure = handler.load(&request).unwrap_err();
+    assert_eq!(failure.failure.code(), "session.resume.incompatible");
+}
+
+#[test]
+fn corrupt_persisted_budget_is_rejected_without_repair() {
+    for malformed in [
+        Value::Blob(vec![]),
+        Value::Blob(vec![0]),
+        Value::Blob(vec![0; 8]),
+        Value::Blob(vec![0; 9]),
+        Value::Blob(vec![255]),
+        Value::Blob(vec![255; 9]),
+        Value::Integer(1),
+        Value::Text("100".into()),
+        Value::Real(1.5),
+    ] {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("corrupt-budget.sqlite");
+        let mut handler = SessionHandler::open(&path).unwrap();
+        handler.begin(begin_request(1, "corrupt-budget")).unwrap();
+        let connection = Connection::open(&path).unwrap();
+        connection
+            .execute_batch("PRAGMA ignore_check_constraints=ON")
+            .unwrap();
+        connection
+            .execute("UPDATE runs SET max_mutants=?1", [&malformed])
+            .unwrap();
+        let request = LoadSession {
+            id: EffectId(2),
+            fingerprint: RunFingerprint::from_bytes([1; 32]),
+            max_mutants: std::num::NonZeroUsize::new(100).unwrap(),
+        };
+        assert_eq!(
+            handler.load(&request).unwrap_err().failure.code(),
+            "session.corrupt"
+        );
+        let after: Value = connection
+            .query_row("SELECT max_mutants FROM runs", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(after, malformed);
+    }
+}
+
+#[test]
+fn lean_resume_budget_cases_match_persistent_selection_and_reuse() {
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    #[allow(clippy::struct_excessive_bools)] // Exact independent Lean wire contract.
+    struct Case {
+        schema: u8,
+        id: String,
+        mode: String,
+        old_budget: usize,
+        new_budget: usize,
+        complete: bool,
+        compatible: bool,
+        status: String,
+        eligible: bool,
+        reuse: bool,
+    }
+    let cases = include_str!("../../../formal/HoiminOracle/corpus/resume-budget.jsonl")
+        .lines()
+        .map(|line| serde_json::from_str::<Case>(line).unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(cases.len(), 108);
+    let mut ids = HashSet::new();
+    for case in cases {
+        assert_eq!(case.schema, 1);
+        assert_eq!(
+            case.id,
+            format!(
+                "{}-{}-{}-{}-{}",
+                case.old_budget, case.new_budget, case.complete, case.compatible, case.status
+            )
+        );
+        assert!(ids.insert(case.id.clone()));
+        assert_eq!(case.mode, "strict");
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("oracle.sqlite");
+        let mut handler = SessionHandler::open(&path).unwrap();
+        let mut begin = begin_request(1, "oracle");
+        begin.max_mutants = std::num::NonZeroUsize::new(case.old_budget).unwrap();
+        handler.begin(begin).unwrap();
+        let status = match case.status.as_str() {
+            "killed" => MutationStatus::Killed,
+            "survived" => MutationStatus::Survived,
+            "timeout" => MutationStatus::Timeout,
+            other => panic!("unknown status {other}"),
+        };
+        handler
+            .persist(&persist_with_status(2, "oracle", "mutant", status))
+            .unwrap();
+        handler
+            .finish(FinishSession {
+                id: EffectId(3),
+                run_id: "oracle".into(),
+                complete: case.complete,
+            })
+            .unwrap();
+        drop(handler);
+        let mut handler = SessionHandler::open(&path).unwrap();
+        let resumed = handler
+            .load(&LoadSession {
+                id: EffectId(4),
+                fingerprint: RunFingerprint::from_bytes([if case.compatible { 1 } else { 2 }; 32]),
+                max_mutants: std::num::NonZeroUsize::new(case.new_budget).unwrap(),
+            })
+            .unwrap()
+            .resume;
+        assert_eq!(resumed.is_some(), case.eligible);
+        let stored = resumed.map(|reference| {
+            assert_eq!(reference.run_id, "oracle");
+            handler
+                .lookup(&lookup_request(5, &reference.run_id, "mutant"))
+                .unwrap()
+                .result
+                .unwrap()
+        });
+        assert_eq!(
+            resume_policy(stored.as_ref()) == ResumeDecision::Reuse,
+            case.reuse
+        );
+        let db = Connection::open(&path).unwrap();
+        let budget: Vec<u8> = db
+            .query_row("SELECT max_mutants FROM runs", [], |row| row.get(0))
+            .unwrap();
+        let expected = if case.eligible {
+            case.new_budget
+        } else {
+            case.old_budget
+        };
+        assert_eq!(budget, (expected as u64).to_be_bytes());
+    }
 }

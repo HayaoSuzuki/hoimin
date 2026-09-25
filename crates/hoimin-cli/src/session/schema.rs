@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use rusqlite::{Connection, ErrorCode, Transaction, TransactionBehavior};
 use thiserror::Error;
 
-pub(crate) const SCHEMA_VERSION: i64 = 3;
+pub(crate) const SCHEMA_VERSION: i64 = 4;
 
 #[derive(Debug, Error)]
 pub enum SchemaError {
@@ -49,8 +49,21 @@ fn configure_observed(
     if version <= 2 {
         migrate_v3(&transaction)?;
     }
+    if version <= 3 {
+        migrate_v4(&transaction)?;
+    }
     transaction.commit()?;
     Ok(())
+}
+
+fn migrate_v4(transaction: &Transaction<'_>) -> Result<(), rusqlite::Error> {
+    transaction.execute_batch(
+        "ALTER TABLE runs ADD COLUMN max_mutants BLOB
+         CHECK(max_mutants IS NULL OR
+               (typeof(max_mutants)='blob' AND length(max_mutants)=8
+                AND max_mutants > zeroblob(8)));
+         PRAGMA user_version=4;",
+    )
 }
 
 fn enable_wal(connection: &Connection, timeout: Duration) -> Result<(), SchemaError> {
@@ -241,7 +254,7 @@ mod tests {
         for _ in 0..2 {
             let mut connection = Connection::open(&path).unwrap();
             configure(&mut connection).unwrap();
-            assert_eq!(user_version(&connection), 3);
+            assert_eq!(user_version(&connection), 4);
             assert_eq!(
                 connection
                     .query_row("SELECT message FROM diagnostics WHERE id=7", [], |row| {
@@ -356,7 +369,7 @@ mod tests {
 
         configure(&mut connection).unwrap();
 
-        assert_eq!(user_version(&connection), 3);
+        assert_eq!(user_version(&connection), 4);
         assert_eq!(
             connection
                 .query_row(
@@ -436,20 +449,51 @@ mod tests {
     }
 
     #[test]
+    fn failed_budget_upgrade_rolls_back_prior_migration_steps() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        create_v1_fixture(&mut connection, true);
+        let transaction = connection.transaction().unwrap();
+        migrate_v2(&transaction).unwrap();
+        transaction.commit().unwrap();
+        connection
+            .execute_batch("ALTER TABLE runs ADD COLUMN max_mutants BLOB")
+            .unwrap();
+        assert!(configure(&mut connection).is_err());
+        assert_eq!(user_version(&connection), 2);
+        assert_eq!(connection.query_row(
+            "SELECT count(*) FROM pragma_table_info('results') WHERE name='termination_kind'",
+            [], |row| row.get::<_, i64>(0)).unwrap(), 0);
+        assert_eq!(
+            connection
+                .query_row("SELECT status FROM results", [], |row| row
+                    .get::<_, String>(0))
+                .unwrap(),
+            "killed"
+        );
+        assert_eq!(
+            connection
+                .query_row("SELECT count(*) FROM diagnostics", [], |row| row
+                    .get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+    }
+
+    #[test]
     fn future_version_is_rejected_without_modifying_the_database() {
         let mut connection = Connection::open_in_memory().unwrap();
         connection
             .execute_batch(
                 "CREATE TABLE future_schema_marker(value TEXT);
-                 PRAGMA user_version=4;",
+                 PRAGMA user_version=5;",
             )
             .unwrap();
 
         assert!(matches!(
             configure(&mut connection),
-            Err(SchemaError::FutureVersion(4))
+            Err(SchemaError::FutureVersion(5))
         ));
-        assert_eq!(user_version(&connection), 4);
+        assert_eq!(user_version(&connection), 5);
         assert_eq!(
             connection
                 .query_row(

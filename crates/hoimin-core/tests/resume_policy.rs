@@ -221,8 +221,8 @@ fn edited_pair(
             after.sources[0].path = format!("changed/{}", before.sources[0].path).into();
         }
         FingerprintEdit::NumericLimit => {
-            after.limits.max_mutants =
-                NonZeroUsize::new(before.limits.max_mutants.get() + 1).unwrap();
+            after.limits.max_candidates =
+                NonZeroUsize::new(before.limits.max_candidates.get() + 1).unwrap();
         }
         FingerprintEdit::ArgvByte => match &mut after.test_argv[0] {
             CommandArg::Unix(bytes) => bytes[0] ^= 1,
@@ -519,8 +519,10 @@ fn every_verdict_or_safety_limit_changes_the_fingerprint() {
     let original = fixture_input();
     let expected = fingerprint(&original);
     for (name, mutate) in [
-        ("max_mutants", mutate_max_mutants as fn(&mut RawRunLimits)),
-        ("max_candidates", mutate_max_candidates),
+        (
+            "max_candidates",
+            mutate_max_candidates as fn(&mut RawRunLimits),
+        ),
         ("analyzer_timeout", mutate_analyzer_timeout),
         ("baseline_timeout", mutate_baseline_timeout),
         ("mutant_timeout", mutate_mutant_timeout),
@@ -929,7 +931,7 @@ fn mutate_min_free_space(v: &mut RawRunLimits) {
 
 #[test]
 fn import_root_changes_and_precedence_change_fingerprint() {
-    assert_eq!(hoimin_core::FINGERPRINT_SCHEMA_VERSION, 9);
+    assert_eq!(hoimin_core::FINGERPRINT_SCHEMA_VERSION, 10);
     let original = fixture_input();
     let mut configured = original.clone();
     configured.import_roots = vec!["src".into(), "vendor".into()];
@@ -987,4 +989,14 @@ fn equivalent_normalized_import_roots_have_the_same_fingerprint() {
         fingerprint(&make(&["src", "vendor", "."]))
     );
     assert_eq!(make(&[]).import_roots, Vec::<camino::Utf8PathBuf>::new());
+}
+
+#[test]
+fn mutant_budget_is_checked_separately_from_fingerprint_compatibility() {
+    let original = fixture_input();
+    let mut raw = fixture_raw_limits();
+    mutate_max_mutants(&mut raw);
+    let mut changed = original.clone();
+    changed.limits = (&raw).try_into().unwrap();
+    assert_eq!(fingerprint(&original), fingerprint(&changed));
 }

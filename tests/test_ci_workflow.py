@@ -62,6 +62,7 @@ LEAN_ELAN_VERSION = "v4.1.2"
 LEAN_CORPUS_BY_EXECUTABLE = {
     "generate": "corpus/state-machine.jsonl",
     "generate_budget": "corpus/budget-cleanup.jsonl",
+    "generate_resume_budget": "corpus/resume-budget.jsonl",
     "generate_session": "corpus/session-recovery.jsonl",
     "generate_source_order": "corpus/source-order.jsonl",
     "generate_shutdown": "corpus/shutdown-orchestration.jsonl",

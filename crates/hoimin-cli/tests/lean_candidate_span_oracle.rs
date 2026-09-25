@@ -309,6 +309,7 @@ fn serde_spool_machine_and_session_preserve_the_lean_identity_projection() {
     let mut session = SessionHandler::open(database).unwrap();
     session
         .begin(BeginSession {
+            max_mutants: std::num::NonZeroUsize::new(100).unwrap(),
             id: EffectId(4),
             run_id: "candidate-span".to_owned(),
             fingerprint: RunFingerprint::from_bytes([7; 32]),

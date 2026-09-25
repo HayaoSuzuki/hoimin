@@ -693,8 +693,18 @@ diagnostics.
 
 No database is created by default. `--session PATH` stores a run in SQLite and commits each mutant result independently. `--resume` requires `--session` and looks up the newest compatible incomplete run. Compatibility includes ordered import roots and source roots, source and configuration fingerprints, test argv, verdict-affecting limits, resource policy, and the operator set. Profile selection is part of session compatibility, so a focused run never resumes results from a full run and vice versa. `--jobs` and `--max-output` are operational settings and may change when resuming; reports record their current values, and reused results do not import output retained under the earlier limit. Completed `killed` and `survived` results can be reused; `timeout`, `out_of_memory`, `process_limit`, `error`, and `not_run` are run again under the current settings. An incompatible or already complete run is not silently mixed with new results.
 
+`--max-mutants` may stay the same or increase when resuming an incomplete run.
+The limit counts reused results as well as newly executed mutants: increasing
+1 to 3 can reuse the first result and execute the next two. The database records
+the latest accepted limit, and a lower limit cannot resume that run. A baseline
+still runs on every invocation. Other verdict-affecting limits must remain compatible.
+
+SQLite session schema 4 preserves older rows but does not invent their missing
+historical budget. Start a new session run when an old incomplete run reports
+`session.resume.incompatible`; completed results remain available in the database.
+
 Plan schema version 4 stores the independent import roots (ranking rule version
-4). Regenerate older plans before verification. Fingerprint schema version 9
+4). Regenerate older plans before verification. Fingerprint schema version 10
 includes ordered import roots and source roots and the ordered `--include` / `--exclude` copy
 patterns, including empty lists for default invocations. Changing source-root order or either copy
 pattern list starts a new run even when explicit fingerprint-file bytes match.
