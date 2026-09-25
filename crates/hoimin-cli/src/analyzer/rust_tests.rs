@@ -8798,3 +8798,81 @@ fn prepared_namespace_blocks_class_visible_builtin_annotations() {
         );
     }
 }
+
+#[test]
+fn prepared_annotation_import_stability_respects_scope_and_directives() {
+    let imports = "from typing import Sequence, Iterable\n";
+    for (body, expected) in [
+        ("value: Sequence[int]\n", 1),
+        ("class Subject:\n    value: Sequence[int]\n", 1),
+        ("class Subject():\n    value: Sequence[int]\n", 1),
+        (
+            "class Subject(metaclass=Meta):\n    value: Sequence[int]\n",
+            0,
+        ),
+        (
+            "class Subject(Base):\n    def method(value: Sequence[int]): pass\n",
+            0,
+        ),
+        (
+            "class Subject(Base):\n    def method[T](value: Sequence[int]): pass\n",
+            0,
+        ),
+        (
+            "class Subject(Base):\n    def factory():\n        def inner(value: Sequence[int]): pass\n",
+            1,
+        ),
+        (
+            "class Subject(Base):\n    global Sequence, Iterable\n    value: Sequence[int]\n",
+            1,
+        ),
+        (
+            "class Subject(Base):\n    global Sequence\n    value: Sequence[int]\n",
+            0,
+        ),
+        (
+            "class Subject(Base):\n    global Iterable\n    value: Sequence[int]\n",
+            0,
+        ),
+        (
+            "class Subject(Base):\n    from typing import Sequence, Iterable\n    value: Sequence[int]\n",
+            0,
+        ),
+        (
+            "def outer():\n    from typing import Sequence, Iterable\n    class Subject(Base):\n        nonlocal Sequence, Iterable\n        value: Sequence[int]\n",
+            0,
+        ),
+    ] {
+        let source = format!("{imports}{body}");
+        let output = analyze_types(&source);
+        let candidates: Vec<_> = output
+            .candidates
+            .iter()
+            .filter(|c| c.operator == "type_sequence_iterable")
+            .collect();
+        assert_eq!(candidates.len(), expected, "{source}");
+        for candidate in candidates {
+            assert_eq!(candidate.original, "Sequence[int]");
+            assert_eq!(candidate.replacement, "Iterable[int]");
+        }
+    }
+}
+
+#[test]
+fn prepared_annotation_import_qualified_alias_is_checked() {
+    for (directive, expected) in [("", 0), ("    global t\n", 1)] {
+        let source = format!(
+            "import typing as t\nclass Subject(metaclass=Meta):\n{directive}    value: t.Sequence[int]\n"
+        );
+        let output = analyze_types(&source);
+        assert_eq!(
+            output
+                .candidates
+                .iter()
+                .filter(|c| c.operator == "type_sequence_iterable")
+                .count(),
+            expected,
+            "{source}"
+        );
+    }
+}

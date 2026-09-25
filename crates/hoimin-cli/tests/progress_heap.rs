@@ -75,7 +75,9 @@ fn measure_history(path: &Path, history: usize, mutants: usize) -> (usize, Value
     let result = progress::run(args, &mut stdout, &mut stderr);
     let peak = heap_tracking::finish();
     assert_eq!(result.unwrap(), 0);
-    assert!(stderr.is_empty(), "{}", String::from_utf8_lossy(&stderr));
+    let warnings = String::from_utf8(stderr).unwrap();
+    assert_eq!(warnings.lines().count(), history - 1);
+    assert!(warnings.lines().all(|line| line.contains("same path")));
     // Capture allocations are legitimate compact O(history) output, but parsing
     // and semantic assertions run after the measured interval.
     let document: Value = serde_json::from_slice(&stdout).unwrap();

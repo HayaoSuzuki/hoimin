@@ -107,6 +107,10 @@ name = "generate_changed_target"
 root = "ChangedTargetAuditMain"
 
 [[lean_exe]]
+name = "generate_changed_context"
+root = "ChangedContextAuditMain"
+
+[[lean_exe]]
 name = "generate_process_output"
 root = "ProcessOutputAuditMain"
 
@@ -175,5 +179,5 @@ name = "generate_paging"
 root = "PagingAuditMain"
 
 [[lean_exe]]
-name = "generate_changed_context"
-root = "ChangedContextAuditMain"
+name = "generate_prepared_annotation_import"
+root = "PreparedAnnotationImportAuditMain"

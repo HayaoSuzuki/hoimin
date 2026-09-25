@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::fs::File;
-use std::io::{BufReader, Read};
+use std::io::{BufRead, BufReader};
 
 use std::path::{Path, PathBuf};
 
@@ -11,6 +11,8 @@ use hoimin_core::{
 };
 use serde::Deserialize;
 use thiserror::Error;
+
+use super::duplicate::{DuplicateInput, FingerprintReader};
 
 mod jsonl;
 
@@ -27,6 +29,7 @@ pub enum InputReport {
 pub(super) struct InputDisposition {
     pub(super) source: PathBuf,
     pub(super) reason: Option<UnusableReason>,
+    pub(super) duplicate: Option<DuplicateInput>,
 }
 
 impl From<&InputReport> for InputDisposition {
@@ -35,10 +38,12 @@ impl From<&InputReport> for InputDisposition {
             InputReport::Usable(report) => Self {
                 source: report.source.clone(),
                 reason: None,
+                duplicate: None,
             },
             InputReport::Unusable { source, reason } => Self {
                 source: source.clone(),
                 reason: Some(*reason),
+                duplicate: None,
             },
         }
     }
@@ -188,11 +193,28 @@ struct LegacyV2RunSummary {
 ///
 /// Returns an error when the report cannot be read, parsed, or structurally validated.
 pub fn read_report(path: &Path) -> Result<InputReport, ProgressError> {
-    let file = File::open(path).map_err(|source| ProgressError::Read {
+    read_buffered_report(path, BufReader::new(open_report(path)?))
+}
+
+pub(super) fn read_report_with_fingerprint(
+    path: &Path,
+) -> Result<(InputReport, blake3::Hash), ProgressError> {
+    let mut reader = FingerprintReader::new(open_report(path)?);
+    let report = read_buffered_report(path, BufReader::new(&mut reader))?;
+    Ok((report, reader.fingerprint()))
+}
+
+fn open_report(path: &Path) -> Result<File, ProgressError> {
+    File::open(path).map_err(|source| ProgressError::Read {
         path: path.to_path_buf(),
         source,
-    })?;
-    let mut reader = BufReader::new(file);
+    })
+}
+
+fn read_buffered_report(
+    path: &Path,
+    mut reader: impl BufRead,
+) -> Result<InputReport, ProgressError> {
     let mut bytes = Vec::new();
     jsonl::read_line(path, &mut reader, &mut bytes)?;
     if jsonl::is_event(&bytes) {

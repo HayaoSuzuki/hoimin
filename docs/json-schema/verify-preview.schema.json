@@ -16,7 +16,7 @@
   ],
   "properties": {
     "schema_version": {
-      "const": 1
+      "const": 2
     },
     "kind": {
       "const": "verify_preview"
@@ -93,7 +93,11 @@
           "rank",
           "selection_order",
           "path",
-          "line"
+          "line",
+          "column",
+          "operator",
+          "original",
+          "replacement"
         ],
         "properties": {
           "id": {
@@ -115,6 +119,20 @@
           "line": {
             "type": "integer",
             "minimum": 1
+          },
+          "column": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "operator": {
+            "type": "string",
+            "minLength": 1
+          },
+          "original": {
+            "type": "string"
+          },
+          "replacement": {
+            "type": "string"
           }
         }
       }

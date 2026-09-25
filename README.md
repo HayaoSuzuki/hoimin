@@ -366,7 +366,7 @@ applies to builtin names in class-visible type annotations. Bare classes and
 empty `()` headers retain ordinary lookup; methods and closures skip the class
 namespace, and explicit `global` declarations bypass it per name. Even known
 `object` bases or `metaclass=type` are conservatively excluded at class-visible
-sites. Import-alias provenance in annotations is a separate analysis.
+sites.
 PEP 695 type parameters can shadow either name in generic function and class
 bodies, including nested closures and comprehensions. Function defaults and
 decorators use the enclosing scope; generic class bases and keywords can see
@@ -374,7 +374,10 @@ the type parameters. Runtime mutations remain excluded from type positions.
 
 Import-dependent type replacements are emitted only when their direct name or
 module alias remains unshadowed at the annotation site. If no safe spelling is
-available, the candidate is skipped.
+available, the candidate is skipped. Class-visible annotation imports and module
+aliases are also excluded when the class may have a prepared namespace, including
+explicit class imports and `nonlocal` references. Lexical descendants skip the
+class namespace; explicit `global` declarations bypass it for each declared name.
 
 The `operator_function` selector recognizes the documented callable pairs
 `eq`/`ne`, `lt`/`le`, `gt`/`ge`, `add`/`sub`, `mul`/`truediv`,
@@ -463,6 +466,17 @@ hoimin run --profile focused --root . --source src -- python -m pytest -q
 
 Compare ordered run reports to track mutation-testing progress. Inputs are oldest-to-newest, and `--patience` defaults to three consecutive comparable stalls.
 
+Repeated input paths and byte-identical copies produce warnings on stderr, in
+both human and JSON output modes. Warnings identify the repeated input and an
+earlier input, with `same path` or `identical bytes` as the reason. Inputs remain
+in order: self-comparisons still count as stalls and can reach saturation, and
+unusable reports still break the stall chain. No strict rejection is applied.
+Different reports that share a run ID (for example, before and after resume)
+are not duplicates on that basis. Copy detection compares raw bytes, so the
+same execution saved as JSON and JSONL, or with different whitespace, is not
+detected as a copy. Copy confirmation is best-effort if files change or become
+unreadable after validation; reports should remain unchanged during comparison.
+
 Inputs may mix JSON documents (schema v2/v3) and current-schema JSONL event
 streams saved from `hoimin run --format jsonl`. Detection uses content, not
 filename. For example:
@@ -534,11 +548,20 @@ exits with code 0, including for a truncated plan; invalid selections and stale
 plans exit with code 2. Runtime resource availability is checked when executing.
 
 The [preview schema](docs/json-schema/verify-preview.schema.json) is independent
-of run reports: `kind` is `verify_preview` and `schema_version` is 1. JSON and
+of run reports: `kind` is `verify_preview` and `schema_version` is 2. JSON and
 JSONL each contain one object; `--format human` prints metadata and candidate rows.
 The ordered `candidates` array gives each candidate's `id`, saved `rank`,
-`selection_order`, `path` and `line`. Rank, line and batch selection order start
-at 1. `verification_selection` records mode, policy, requested/selected counts,
+`selection_order`, `path`, `line`, `column`, `operator`, `original` and `replacement`.
+Details come from the same validated plan candidate. Rank, line and batch selection
+order start at 1; column is the plan's 0-based Python source column. Human rows
+show `path:line:column operator=NAME "original" -> "replacement"`; mutation text
+is quoted and escaped so newlines, tabs, quotes and backslashes stay within one row.
+
+The closed version-1 preview schema does not accept these added fields. Clients
+that accept only preview version 1 must update to version 2; the CLI emits version 2
+without a legacy-output option. Saved plan and run-report schema versions are unchanged.
+
+`verification_selection` records mode, policy, requested/selected counts,
 scope and `plan_truncated`; `offset` starts at 0 for top selection and is null
 for explicit IDs. `retained_candidates` is the count saved in the plan.
 

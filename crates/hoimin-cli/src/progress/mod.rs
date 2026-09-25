@@ -1,4 +1,5 @@
 mod compare;
+mod duplicate;
 mod input;
 mod render;
 
@@ -7,7 +8,8 @@ use std::io::Write;
 use crate::cli::ProgressArgs;
 use compare::ProgressAccumulator;
 pub use compare::{Comparison, ProgressResult, ProgressState, compare_reports};
-use input::InputDisposition;
+use duplicate::DuplicateInputs;
+use input::{InputDisposition, read_report_with_fingerprint};
 pub use input::{InputReport, ProgressError, UnusableReason, UsableReport, read_report};
 
 /// Reads, compares, and renders ordered mutation run reports.
@@ -33,9 +35,12 @@ where
     let mut eligibilities = Vec::with_capacity(reports.len().saturating_sub(1));
     let mut accumulator = ProgressAccumulator::new(patience);
     let mut previous = None;
+    let mut duplicates = DuplicateInputs::default();
     for path in reports {
-        let current = read_report(&path)?;
-        inputs.push(InputDisposition::from(&current));
+        let (current, fingerprint) = read_report_with_fingerprint(&path)?;
+        let mut disposition = InputDisposition::from(&current);
+        disposition.duplicate = duplicates.observe(&path, fingerprint, &inputs);
+        inputs.push(disposition);
         if let Some(previous) = previous.as_ref()
             && let Some(eligibility) = accumulator.advance(previous, &current)
         {
