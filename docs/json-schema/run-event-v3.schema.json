@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/tokyogas-tech/hoimin/main/docs/json-schema/run-event.schema.json",
+  "$id": "https://raw.githubusercontent.com/tokyogas-tech/hoimin/main/docs/json-schema/run-event-v3.schema.json",
   "title": "hoimin run JSON Lines event",
   "oneOf": [
     { "$ref": "#/$defs/runStarted" },
@@ -13,26 +13,7 @@
   "$defs": {
     "schemaVersion": {
       "type": "integer",
-      "const": 4
-    },
-    "resumeOutcome": {
-      "oneOf": [
-        {
-          "type": "object",
-          "required": ["status"],
-          "properties": { "status": { "const": "resumed" } },
-          "additionalProperties": false
-        },
-        {
-          "type": "object",
-          "required": ["status", "reason"],
-          "properties": {
-            "status": { "const": "fresh" },
-            "reason": { "type": "string", "enum": ["no_prior_run", "matching_run_complete", "budget_decreased", "fingerprint_mismatch", "no_incomplete_run", "candidate_changed", "no_compatible_run"] }
-          },
-          "additionalProperties": false
-        }
-      ]
+      "const": 3
     },
     "resourceMode": {
       "type": "string",
@@ -366,7 +347,7 @@
         "run_id": { "type": "string" },
         "normalized_config": {
           "type": ["object", "null"],
-          "description": "Normalized invocation config, including ordered import_roots and optional fingerprint_env names plus fingerprint_env_hash when present; captured environment values are not included. New config fields may be added without changing the run-event schema version.",
+          "description": "Normalized invocation config, including ordered import_roots when present. New config fields may be added without changing the run-event schema version.",
           "additionalProperties": true
         },
         "versions": {
@@ -387,7 +368,6 @@
           },
           "additionalProperties": false
         },
-        "resume": { "$ref": "#/$defs/resumeOutcome" },
         "verification_selection": { "$ref": "#/$defs/verificationSelection" }
       },
       "additionalProperties": false

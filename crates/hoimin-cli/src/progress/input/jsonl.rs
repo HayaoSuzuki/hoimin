@@ -65,6 +65,9 @@ pub(super) fn read_document(
     while read_line(path, &mut reader, &mut line)? {
         let event: OutputEvent = serde_json::from_slice(&line).map_err(parse_error)?;
         check_schema(path, event.schema_version())?;
+        if event.schema_version() != run.schema_version() {
+            return Err(invalid_structure(path, "report schema versions must match"));
+        }
         sequence
             .validate(&event)
             .and_then(|()| sequence.observe(&event))
@@ -111,7 +114,7 @@ pub(super) fn read_document(
 }
 
 fn check_schema(path: &Path, found: u32) -> Result<(), ProgressError> {
-    if found == REPORT_SCHEMA_VERSION {
+    if matches!(found, 3 | REPORT_SCHEMA_VERSION) {
         Ok(())
     } else {
         Err(ProgressError::UnsupportedSchema {

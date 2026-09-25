@@ -4185,6 +4185,7 @@ impl ScheduleHarness {
                 checkpoint: verify.checkpoint,
             }),
             RunEffect::LoadSession(load) => RunEvent::SessionLoaded(SessionLoaded {
+                fresh_reason: None,
                 id: load.id,
                 resume: None,
             }),
@@ -4752,6 +4753,7 @@ fn waiting_for_materialization_verification_with(config: RunConfig) -> (RunState
             (state, effects) = transition(
                 state,
                 RunEvent::SessionLoaded(SessionLoaded {
+                    fresh_reason: None,
                     id,
                     resume: Some(SessionResumeRef {
                         run_id: "session-run".to_owned(),

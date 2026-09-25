@@ -1,21 +1,21 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/tokyogas-tech/hoimin/main/docs/json-schema/run-result.schema.json",
+  "$id": "https://raw.githubusercontent.com/tokyogas-tech/hoimin/main/docs/json-schema/run-result-v3.schema.json",
   "title": "hoimin run JSON result",
   "type": "object",
   "required": ["schema_version", "run", "baseline", "mutants", "summary"],
   "properties": {
     "schema_version": {
       "type": "integer",
-      "const": 4
+      "const": 3
     },
     "run": {
-      "$ref": "run-event.schema.json#/$defs/runStarted"
+      "$ref": "run-event-v3.schema.json#/$defs/runStarted"
     },
     "baseline": {
       "oneOf": [
         {
-          "$ref": "run-event.schema.json#/$defs/baselineFinished"
+          "$ref": "run-event-v3.schema.json#/$defs/baselineFinished"
         },
         {
           "type": "null"
@@ -25,11 +25,11 @@
     "mutants": {
       "type": "array",
       "items": {
-        "$ref": "run-event.schema.json#/$defs/mutantFinished"
+        "$ref": "run-event-v3.schema.json#/$defs/mutantFinished"
       }
     },
     "summary": {
-      "$ref": "run-event.schema.json#/$defs/runFinished"
+      "$ref": "run-event-v3.schema.json#/$defs/runFinished"
     }
   },
   "additionalProperties": false

@@ -9,7 +9,7 @@ use crate::{
     contract_ensure,
 };
 
-pub const REPORT_SCHEMA_VERSION: u32 = 3;
+pub const REPORT_SCHEMA_VERSION: u32 = 4;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct DiskRunSummary {
@@ -405,8 +405,57 @@ pub struct VerificationSelection {
     pub plan_truncated: bool,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ResumeFreshReason {
+    NoPriorRun,
+    MatchingRunComplete,
+    BudgetDecreased,
+    FingerprintMismatch,
+    NoIncompleteRun,
+    CandidateChanged,
+    NoCompatibleRun,
+}
+
+impl ResumeFreshReason {
+    #[must_use]
+    pub const fn code(self) -> &'static str {
+        match self {
+            Self::NoPriorRun => "no_prior_run",
+            Self::MatchingRunComplete => "matching_run_complete",
+            Self::BudgetDecreased => "budget_decreased",
+            Self::FingerprintMismatch => "fingerprint_mismatch",
+            Self::NoIncompleteRun => "no_incomplete_run",
+            Self::CandidateChanged => "candidate_changed",
+            Self::NoCompatibleRun => "no_compatible_run",
+        }
+    }
+
+    #[must_use]
+    pub const fn explanation(self) -> &'static str {
+        match self {
+            Self::NoPriorRun => "no saved runs",
+            Self::MatchingRunComplete => "a matching run is already complete",
+            Self::BudgetDecreased => "matching incomplete runs require a larger max-mutants budget",
+            Self::FingerprintMismatch => "incomplete runs have a different fingerprint",
+            Self::NoIncompleteRun => "saved runs are complete and none match this fingerprint",
+            Self::CandidateChanged => "session history changed during resume selection",
+            Self::NoCompatibleRun => "no compatible incomplete run is available",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum ResumeOutcome {
+    Resumed,
+    Fresh { reason: ResumeFreshReason },
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct RunStarted {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resume: Option<ResumeOutcome>,
     pub schema_version: u32,
     pub sequence: u64,
     pub run_id: String,
@@ -425,6 +474,7 @@ impl RunStarted {
         resource_control: ResourceControl,
     ) -> Self {
         Self {
+            resume: None,
             schema_version: REPORT_SCHEMA_VERSION,
             sequence,
             run_id: run_id.into(),

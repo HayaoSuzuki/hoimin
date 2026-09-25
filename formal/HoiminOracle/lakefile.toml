@@ -209,3 +209,7 @@ root = "PrivateAnnotationImportAuditMain"
 [[lean_exe]]
 name = "generate_environment_fingerprint"
 root = "EnvironmentFingerprintAuditMain"
+
+[[lean_exe]]
+name = "generate_resume_diagnostic"
+root = "ResumeDiagnosticAuditMain"

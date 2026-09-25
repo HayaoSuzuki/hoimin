@@ -12,3 +12,9 @@
 1. Failure reproduction: public assertions must observe absent metadata on the old CLI, and prove run IDs/reused termination/exit unchanged. Separate reason correctness from model output propagation.
 2. Test matrix: cover no-history, same-complete, unrelated-incomplete, completed-other, budget decrease, precedence collisions and an older eligible match. Keep existing corruption and ownership tests. Lean adapter must use real load with strict corpus fields, not reproduce expected logic in Rust.
 3. Execution: no global environment mutation; independent temp roots, bounded subprocesses, controlled Python. One shared Cargo lane; Lean under20s/2GiB and10k heartbeat proofs. Snapshot parent624 is2cf6bad; avoid rewriting published parent and rebase only this Issue before publication.
+
+## Revised plan reviews after independent findings
+
+1. Add report schema4, archived3 contracts, v4 typed regeneration and public schema assertions before claiming compatibility.
+2. Extend progress version admission to3/4 while checking per-document and per-stream version equality, including diagnostic events; keep2 adapter separate.
+3. Add history-eligible fact classification and a deterministic pure-classifier test for the between-query race; SQLite oracle covers steady-state selection, with no claim of schedule control.

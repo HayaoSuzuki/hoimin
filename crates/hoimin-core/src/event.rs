@@ -62,6 +62,8 @@ pub struct CandidateLoaded {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SessionLoaded {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fresh_reason: Option<crate::ResumeFreshReason>,
     pub id: EffectId,
     pub resume: Option<SessionResumeRef>,
 }
