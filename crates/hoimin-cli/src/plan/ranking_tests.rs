@@ -778,3 +778,94 @@ fn duplicate_reason(entries: &mut [RankedPlanCandidate]) {
     let reason = entries[0].ranking_reasons[0].clone();
     entries[0].ranking_reasons.push(reason);
 }
+
+fn assert_previous_ranking_contract(
+    selection: &Selection,
+    targets: &[TargetSlice],
+    candidates: &[RankedPlanCandidate],
+) {
+    let expected = rank_candidates(
+        selection,
+        targets,
+        candidates.iter().map(|row| row.candidate.clone()).collect(),
+    ) == candidates;
+    let actual = validate_ranking_against(selection, targets, candidates);
+    assert_eq!(actual.is_ok(), expected);
+    if !expected {
+        assert_eq!(
+            actual.unwrap_err(),
+            "candidate ranking differs from the deterministic ranking rules"
+        );
+    }
+}
+
+#[test]
+fn ranking_semantic_validation_preserves_metadata_and_order_contract() {
+    let (selection, targets, valid) = mixed_selector_ranking();
+    assert_previous_ranking_contract(&selection, &targets, &[]);
+    assert_previous_ranking_contract(&selection, &targets, &valid);
+    for mutate in [
+        set_zero_rank,
+        duplicate_rank,
+        increment_score,
+        increment_reason_score,
+        duplicate_reason,
+    ] {
+        let mut tampered = valid.clone();
+        mutate(&mut tampered);
+        assert_previous_ranking_contract(&selection, &targets, &tampered);
+    }
+    for position in 0..valid.len() {
+        let mut tampered = valid.clone();
+        tampered[position].ranking_reasons = vec![reason(RankingReasonCode::TypeAnnotation, 50)];
+        tampered[position].score = 50;
+        assert_previous_ranking_contract(&selection, &targets, &tampered);
+    }
+    let tied = rank_candidates(
+        &Selection::default(),
+        &[],
+        vec![
+            candidate("a", "a.py", 1, 0, "binary_add_sub", None),
+            candidate("b", "a.py", 1, 0, "binary_add_sub", None),
+            candidate("b", "a.py", 1, 0, "unary_sign", None),
+            candidate("b", "a.py", 1, 1, "unary_sign", None),
+            candidate("b", "a.py", 2, 1, "unary_sign", None),
+            candidate("b", "b.py", 2, 1, "unary_sign", None),
+        ],
+    );
+    let default = Selection::default();
+    for (context, resolved, sorted) in [
+        (&selection, targets.as_slice(), valid.as_slice()),
+        (&default, &[][..], tied.as_slice()),
+    ] {
+        for position in 1..sorted.len() {
+            let mut reordered = sorted.to_vec();
+            reordered.swap(position - 1, position);
+            for (index, row) in reordered.iter_mut().enumerate() {
+                row.rank = index + 1;
+            }
+            assert_previous_ranking_contract(context, resolved, &reordered);
+            assert!(validate_ranking_against(context, resolved, &reordered).is_err());
+        }
+    }
+}
+
+#[test]
+fn ranking_semantic_validation_preserves_stable_equal_key_ties() {
+    for operator in ["binary_add_sub", "unknown_operator"] {
+        let first = candidate("same", "same.py", 1, 0, operator, None);
+        let mut second = first.clone();
+        second.original = "different body".into();
+        second.replacement = "different replacement".into();
+        second.sequence = 2;
+        let ranked = rank_candidates(&Selection::default(), &[], vec![first, second]);
+        assert_previous_ranking_contract(&Selection::default(), &[], &ranked);
+        assert!(validate_ranking_against(&Selection::default(), &[], &ranked).is_ok());
+        let mut reversed = ranked;
+        reversed.swap(0, 1);
+        reversed[0].rank = 1;
+        reversed[1].rank = 2;
+        assert_previous_ranking_contract(&Selection::default(), &[], &reversed);
+        assert!(validate_ranking_against(&Selection::default(), &[], &reversed).is_ok());
+    }
+}

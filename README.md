@@ -30,6 +30,9 @@ The scores are transparent ordering heuristics for focusing effort; they do not
 claim that a higher-ranked mutant is more likely to reveal a defect, and
 lower-ranked candidates remain valid. `verify` uses the saved ranks and never re-ranks
 against changed source or Git state.
+Before running or previewing a batch, verification checks every retained
+candidate's saved ranking against the plan's rules and resolved selectors.
+This check borrows candidate bodies instead of copying all original/replacement text.
 
 Ranking rule version 4 awards the explicit-symbol bonus to a selected symbol
 and its dot-delimited descendants in the same file. For example, selecting
