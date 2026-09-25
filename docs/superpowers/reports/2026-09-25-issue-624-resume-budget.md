@@ -32,3 +32,5 @@ All108 cases are strict. General Nat theorems prove no decreases and monotonic e
 Final results are recorded below after the final commands complete. Earlier intentional RED logs include increased-budget incompatibility, unchecked corrupt-byte repair, and high-sorting malformed-byte omission. An intermediate full run exposed stale schema constants, which were corrected before final validation. Independent reviews covered production/persistence and public tests/Lean correspondence; all reported semantic findings were addressed.
 
 Final workspace: 2327 passed, 0 failed, 22 ignored across 101 result groups. Exact workspace Clippy passed. Final malformed storage includes high-sorting one/nine-byte blobs and INTEGER/TEXT/REAL values, preserving the original database value on failure.
+
+After clean rebase onto main421f5ef: related Rust tests 86 passed, 1 ignored. Both exact CI Clippy/fmt gates and Python workflow contracts40 passed. No rebase conflicts or production changes followed those checks.
