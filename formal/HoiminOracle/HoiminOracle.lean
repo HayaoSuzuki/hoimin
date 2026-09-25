@@ -13,6 +13,7 @@ import HoiminOracle.SourceOrderModel
 import HoiminOracle.WorkspaceModel
 import HoiminOracle.WorkspaceProofs
 import HoiminOracle.WorkspaceCases
+import HoiminOracle.GlobSelectionModel
 import HoiminOracle.ScopeResolutionModel
 import HoiminOracle.ScopeResolutionProofs
 import HoiminOracle.BindingFlowModel

@@ -66,6 +66,7 @@ LEAN_CORPUS_BY_EXECUTABLE = {
     "generate_source_order": "corpus/source-order.jsonl",
     "generate_shutdown": "corpus/shutdown-orchestration.jsonl",
     "generate_workspace": "corpus/workspace-lifecycle.jsonl",
+    "generate_glob_selection": "corpus/glob-selection.jsonl",
     "generate_result_lifecycle": "corpus/result-lifecycle.jsonl",
     "generate_candidate_ranking": "corpus/candidate-ranking.jsonl",
     "generate_schema_migration": "corpus/schema-migration-concurrency.jsonl",

@@ -143,6 +143,7 @@ jobs:
             HoiminOracle.CandidateSpanModel
             HoiminOracle.ChangedTargetModel
             HoiminOracle.ChangedContextModel
+            HoiminOracle.GlobSelectionModel
             HoiminOracle.CleanupCapabilityModel
             HoiminOracle.DiskGuardModel
             HoiminOracle.FactIndexModel
@@ -233,6 +234,7 @@ jobs:
             CandidateSpanAuditMain
             ChangedTargetAuditMain
             ChangedContextAuditMain
+            GlobSelectionAuditMain
             CleanupCapabilityAuditMain
             DiskGuardAuditMain
             HoiminOracle.AnnotationScopeCases
@@ -309,6 +311,7 @@ jobs:
             'generate_source_order|corpus/source-order.jsonl|sensitivity'
             'generate_shutdown|corpus/shutdown-orchestration.jsonl|sensitivity'
             'generate_workspace|corpus/workspace-lifecycle.jsonl|check-only'
+            'generate_glob_selection|corpus/glob-selection.jsonl|sensitivity'
             'generate_result_lifecycle|corpus/result-lifecycle.jsonl|sensitivity'
             'generate_candidate_ranking|corpus/candidate-ranking.jsonl|sensitivity'
             'generate_schema_migration|corpus/schema-migration-concurrency.jsonl|sensitivity'
