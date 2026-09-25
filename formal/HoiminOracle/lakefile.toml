@@ -185,3 +185,7 @@ root = "PagingAuditMain"
 [[lean_exe]]
 name = "generate_prepared_annotation_import"
 root = "PreparedAnnotationImportAuditMain"
+
+[[lean_exe]]
+name = "generate_private_annotation_import"
+root = "PrivateAnnotationImportAuditMain"

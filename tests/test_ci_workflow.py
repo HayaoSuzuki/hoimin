@@ -109,6 +109,7 @@ LEAN_CORPUS_BY_EXECUTABLE = {
     "generate_prepared_namespace": "corpus/prepared-namespace.jsonl",
     "generate_paging": "corpus/paging.jsonl",
     "generate_prepared_annotation_import": "corpus/prepared-annotation-import.jsonl",
+    "generate_private_annotation_import": "corpus/private-annotation-import.jsonl",
 }
 LEAN_SENSITIVITY_EXECUTABLES = {
     name
