@@ -65,6 +65,7 @@ LEAN_CORPUS_BY_EXECUTABLE = {
     "generate_session": "corpus/session-recovery.jsonl",
     "generate_shutdown": "corpus/shutdown-orchestration.jsonl",
     "generate_workspace": "corpus/workspace-lifecycle.jsonl",
+    "generate_glob_selection": "corpus/glob-selection.jsonl",
     "generate_result_lifecycle": "corpus/result-lifecycle.jsonl",
     "generate_candidate_ranking": "corpus/candidate-ranking.jsonl",
     "generate_schema_migration": "corpus/schema-migration-concurrency.jsonl",
@@ -106,7 +107,7 @@ LEAN_CORPUS_BY_EXECUTABLE = {
     "generate_nullable_gate": "corpus/nullable-gate.jsonl",
     "generate_prepared_namespace": "corpus/prepared-namespace.jsonl",
     "generate_paging": "corpus/paging.jsonl",
-    "generate_glob_selection": "corpus/glob-selection.jsonl",
+    "generate_prepared_annotation_import": "corpus/prepared-annotation-import.jsonl",
 }
 LEAN_SENSITIVITY_EXECUTABLES = {
     name

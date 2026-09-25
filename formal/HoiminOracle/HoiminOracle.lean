@@ -12,6 +12,7 @@ import HoiminOracle.SessionCases
 import HoiminOracle.WorkspaceModel
 import HoiminOracle.WorkspaceProofs
 import HoiminOracle.WorkspaceCases
+import HoiminOracle.GlobSelectionModel
 import HoiminOracle.ScopeResolutionModel
 import HoiminOracle.ScopeResolutionProofs
 import HoiminOracle.BindingFlowModel
@@ -98,4 +99,4 @@ import HoiminOracle.NullableGateModel
 import HoiminOracle.PreparedNamespaceModel
 
 import HoiminOracle.PagingModel
-import HoiminOracle.GlobSelectionModel
+import HoiminOracle.PreparedAnnotationImportModel

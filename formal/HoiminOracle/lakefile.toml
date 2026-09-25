@@ -27,6 +27,10 @@ name = "generate_workspace"
 root = "WorkspaceAuditMain"
 
 [[lean_exe]]
+name = "generate_glob_selection"
+root = "GlobSelectionAuditMain"
+
+[[lean_exe]]
 name = "generate_result_lifecycle"
 root = "ResultLifecycleAuditMain"
 
@@ -175,5 +179,5 @@ name = "generate_paging"
 root = "PagingAuditMain"
 
 [[lean_exe]]
-name = "generate_glob_selection"
-root = "GlobSelectionAuditMain"
+name = "generate_prepared_annotation_import"
+root = "PreparedAnnotationImportAuditMain"
