@@ -1,6 +1,6 @@
 # Issue 620: bounded tracked Git diff scoping
 
-Design/plan and three reviews each were committed before implementation as `de41fe7`, based on main `99c27dc`. The initial global name/status inventory keeps Git's original rename decisions while avoiding patch bodies. Ordinary eligible paths then use bounded literal patch/numstat batches with rename detection disabled. Selected rename/copy or unusual statuses and oversized single paths retain the legacy full diff. Unscoped callers retain the original algorithm.
+Design/plan and three reviews each were committed before implementation as `de41fe7` (rebased to `67a3e61`), based on main `99c27dc`. The initial global name/status inventory keeps Git's original rename decisions while avoiding patch bodies. Ordinary eligible paths then use bounded literal patch/numstat batches with rename detection disabled. Selected rename/copy or unusual statuses and oversized single paths retain the legacy full diff. Unscoped callers retain the original algorithm.
 
 ## RED → GREEN and correspondence
 
@@ -48,3 +48,5 @@ Root-only RSS excludes Git's own memory; retained wait4 observations include chi
 Full locked workspace tests: 2,427 passed, 0 failed, 22 ignored across 112 result entries (`620-workspace.log`). The focused 73 public target/changed/oracle tests passed, including all seven new integration tests. The final full run includes the two new inventory/batching unit tests after removal of the redundant argv-shape test. Workspace all-target/all-feature Clippy and the exact vendor Clippy command passed; final format/Clippy checks and any main-integration results are recorded below before publication.
 
 Final pre-integration checks passed: `cargo clippy --workspace --all-targets --all-features -- -D warnings`, `cargo clippy --locked -p littrs-ruff-python-parser --lib --no-deps -- -D warnings`, `cargo fmt --all --check`, `cargo fmt --manifest-path vendor/ruff_python_parser/Cargo.toml -- --check`, and `git diff --check`. The first vendor-format invocation used a nonexistent directory named after the package; rerunning with the CI manifest path succeeded.
+
+The unpublished branch was then rebased without conflicts onto main `c684749`, including the new explicit-source existence validation. The integration check passed 78 related public tests, 22 Git parser/planner unit tests, and all 40 Python CI-workflow contract tests. Both exact Clippy and fmt gates passed again, along with diff whitespace. Logs are `620-main-integration.log`, `620-main-parser.log`, `620-main-python-ci.log`, `620-main-clippy.log` and `620-main-vendor-clippy.log`. No unrelated full-suite rerun was needed after this clean integration.

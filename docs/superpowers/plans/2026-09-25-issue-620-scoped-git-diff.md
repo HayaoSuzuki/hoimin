@@ -35,7 +35,9 @@ Cover source/destination rename competition; literal pathspec metacharacters; Wi
 - [x] Build retained optimized release and rerun original measurement script; compare all candidate identity fields across matched manifests and report actual patch bytes, sampled Hoimin RSS and time medians, including noise/cost limitations.
 - [x] Perform three test reviews: independent real Git premises/byte counts; semantic cross-product and legacy fallback; fixture isolation/timeouts and performance claim limits.
 - [x] Run full workspace and exact workspace/vendor Clippy and fmt gates, diff whitespace; request independent root review. Existing Lean-generated changed-selection suites run as Rust public tests; no duplicate formal model or Python production mutation campaign.
-- [ ] Record review/evidence report, commit implementation/tests separately, integrate newer main only as needed with related checks, publish using gh stack and hand off PR/head. Root owns CI/merge/cleanup.
+- [x] Record review/evidence report, commit implementation/tests separately, and integrate newer main with related checks.
+
+Publication follows the final evidence commit using gh stack; hand off PR/head to root, which owns CI/merge/cleanup.
 
 ## Plan reviews before code
 
