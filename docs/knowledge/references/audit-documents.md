@@ -5,6 +5,11 @@ description: docs/auditsとdocs/superpowers/reports内の全Markdownを追跡状
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-561-results
+  resource: ../../audits/2026-09-15-evaluation-order/issue-561-results.md
+  revision: d2b8e83f054c13eacfceac84e37803fbe71512de
+  working_tree: clean
+  sha256: 406f91ee9b3b28ec33d2285fbae0047042dd53bd8dc9a7535a252f5f3708275f
 - id: issue-560-review
   resource: ../../superpowers/reports/2026-09-24-issue-560-review.md
   revision: ffb65c051014f3d9601df2deb0bfeb5ff55c7c38
@@ -1103,3 +1108,11 @@ sources:
 | Issue 564 review log | [原文](../../superpowers/reports/2026-09-24-issue-564-review.md) [^issue-564-review] |
 
 [^issue-564-review]: [Issue 564 review log](../../superpowers/reports/2026-09-24-issue-564-review.md)。
+
+# Issue #561
+
+| 原文の先頭見出し | 原文 |
+| --- | --- |
+| Issue #561 method replacement allocation results | [測定結果と再現手順](../../audits/2026-09-15-evaluation-order/issue-561-results.md) [^issue-561-results] |
+
+[^issue-561-results]: [Issue #561 method replacement allocation results](../../audits/2026-09-15-evaluation-order/issue-561-results.md)。

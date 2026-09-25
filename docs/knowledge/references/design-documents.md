@@ -11,6 +11,12 @@ sources:
   working_tree: clean
   sha256: 7ff74c9749274839e3cbe0ceb737544de0dd3b5fb5eef90aae17e3ff461269be
 
+- id: issue-561-design
+  resource: ../../superpowers/specs/2026-09-25-issue-561-method-replacements.md
+  revision: d2b8e83f054c13eacfceac84e37803fbe71512de
+  working_tree: clean
+  sha256: a7f402b5fbedc5a56144dc5b1ccf8ea92e0f24a725fd5c632680db85c9c1f370
+
 - id: issue-560-design
   resource: ../../superpowers/specs/2026-09-24-issue-560-evaluation-order.md
   revision: ffb65c051014f3d9601df2deb0bfeb5ff55c7c38
@@ -1475,6 +1481,14 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 | Issue 556: import facts after context-manager suppression | [設計書](../../superpowers/specs/2026-09-24-issue-556-with-suppression.md) [^issue-556-design] |
 
 [^issue-556-design]: [Issue 556: import facts after context-manager suppression](../../superpowers/specs/2026-09-24-issue-556-with-suppression.md)。
+
+# Issue #561
+
+| 原文の先頭見出し | 原文 |
+| --- | --- |
+| Issue #561: gate method replacement construction | [設計書](../../superpowers/specs/2026-09-25-issue-561-method-replacements.md) [^issue-561-design] |
+
+[^issue-561-design]: [Issue #561: gate method replacement construction](../../superpowers/specs/2026-09-25-issue-561-method-replacements.md)。
 
 # Issue #560
 

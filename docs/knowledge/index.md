@@ -28,7 +28,7 @@ okf_version: "0.2"
 
 - [値なし注釈と候補精度](audits/declaration-only-2026-09.md) - #562の改善案、関数ローカル宣言との区別と14入力の照合。
 
-- [評価順序と未選択methodの確保](audits/evaluation-order-2026-09.md) - #560/#561の再現、Leanの順序モデルと確保要求の実測。
+- [評価順序と未選択methodの確保](audits/evaluation-order-2026-09.md) - #560の評価順序、#561の未選択method置換の省略と累積確保要求の検証。
 
 - [遅延注釈とcollections.abc.Setの追加監査](audits/annotation-followup-2026-09.md) - #558/#559の再現、キャッシュ保持の証明と型名の照合。
 

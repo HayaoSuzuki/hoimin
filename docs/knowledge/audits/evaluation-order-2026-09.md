@@ -5,6 +5,26 @@ description: 5e631efのbuiltin解決における文字位置と評価順序の�
 status: draft
 catalog_revision: 5e631ef
 sources:
+  - id: issue-561-design
+    resource: ../../superpowers/specs/2026-09-25-issue-561-method-replacements.md
+    revision: d2b8e83f054c13eacfceac84e37803fbe71512de
+    working_tree: clean
+    sha256: a7f402b5fbedc5a56144dc5b1ccf8ea92e0f24a725fd5c632680db85c9c1f370
+  - id: issue-561-tests
+    resource: ../../../crates/hoimin-cli/src/analyzer/rust/method_replacement_tests.rs
+    revision: d2b8e83f054c13eacfceac84e37803fbe71512de
+    working_tree: clean
+    sha256: 2f7432f828036471d1553f7cfee193146dac60d5c64507b2dcbef8550f52da41
+  - id: issue-561-compatibility
+    resource: ../../../crates/hoimin-cli/tests/method_replacement_selection.rs
+    revision: d2b8e83f054c13eacfceac84e37803fbe71512de
+    working_tree: clean
+    sha256: 967f008657ee014e41e398320c4f4a8eb4859f82747c8bc918f2f4ba92724048
+  - id: issue-561-review
+    resource: ../../superpowers/reviews/2026-09-25-issue-561.md
+    revision: d2b8e83f054c13eacfceac84e37803fbe71512de
+    working_tree: clean
+    sha256: 53033fb14da337f31360eaaadd4cde5a7478a804047dadc2fb0f7dc3363622e0
   - id: issue-560-review
     resource: ../../superpowers/reports/2026-09-24-issue-560-review.md
     revision: ffb65c051014f3d9601df2deb0bfeb5ff55c7c38
@@ -37,7 +57,7 @@ Lean生成7入力のstrict照合はdebug/releaseとも2 match / 5 mismatch、実
 
 # 再確認の契機
 
-NameResolutionBuilderの束縛記録やresolve_ordered_at、method replacement helperを変更するときに正例・負例と計測を再実行する。性能修正では、未選択の親callの子にある選択済み演算子の探索を維持する。未選択methodの確保に関する修正後の正式CIへの対応付けは、この文書では確認していない。
+NameResolutionBuilderの束縛記録やresolve_ordered_at、method replacement helperを変更するときに正例・負例と計測を再実行する。性能修正では、未選択の親callの子にある選択済み演算子の探索を維持する。監査時点では未選択methodの確保に対する正式CIの回帰検証は未確認だった。後続修正を以下に記録する。
 
 [^report]: [追加監査と再現手順](../../audits/2026-09-15-evaluation-order/README.md)。
 [^model]: [OrderModel.lean](../../audits/2026-09-15-evaluation-order/OrderModel.lean)。
@@ -50,3 +70,16 @@ NameResolutionBuilderの束縛記録やresolve_ordered_at、method replacement h
 
 [^issue-560-review]: [Issue 560 review log](../../superpowers/reports/2026-09-24-issue-560-review.md)。
 [^issue-560-tests]: [公開plan/runの評価順序テスト](../../../crates/hoimin-cli/tests/builtin_evaluation_order.rs)。
+
+# Issue #561の修正（2026-09-25）
+
+呼出し全体の置換文字列を作る前に、対応する演算子が選択されているか確認する。対象はappend/insert、append/extend、get/subscript、sort/reverseの各方向である。appendの2系統は個別に判定し、subscriptの判定はindex/slice候補の収集後に置く。未選択の親呼出しでも子式の探索を続ける。[^issue-561-design]
+
+回帰テストは7か所のhelper入口と、呼出しの複製・mappingの文字列整形箇所を計数する。未選択時のゼロだけでなく、選択時とhelper直接呼出しの計数も検査する。公開解析APIのテストは修正前に保存した候補の全フィールド・ID・順序と比較し、上限0から全候補数を超える値まで打ち切り結果を照合する。[^issue-561-tests][^issue-561-compatibility]
+
+独立したallocator probeによる修正前後の累積確保要求量と、各3回のセルフレビュー・テスト結果は作業記録に示す。カウンタの操作数、allocatorへの累積要求、同時保持量、経過時間は別の指標として扱う。この修正でpeak RSSや一般的な速度改善率は主張しない。[^issue-561-review]
+
+[^issue-561-design]: [修正設計](../../superpowers/specs/2026-09-25-issue-561-method-replacements.md)。
+[^issue-561-tests]: [回帰テスト](../../../crates/hoimin-cli/src/analyzer/rust/method_replacement_tests.rs)。
+[^issue-561-compatibility]: [公開解析APIの候補互換性テスト](../../../crates/hoimin-cli/tests/method_replacement_selection.rs)。
+[^issue-561-review]: [レビューと検証記録](../../superpowers/reviews/2026-09-25-issue-561.md)。
