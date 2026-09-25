@@ -352,6 +352,7 @@ async fn prepare_verify_selection_inner(
     }
     let manifest: PlanManifest = serde_json::from_value(value)
         .map_err(|error| PlanError::ManifestInvalid(error.to_string()))?;
+    drop(bytes);
     validate_header(&manifest)?;
     manifest
         .normalized_config
