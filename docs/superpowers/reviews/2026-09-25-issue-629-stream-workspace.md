@@ -82,3 +82,11 @@ low-priority observation remains within the existing Windows callback semantics:
 if the source entry concurrently becomes non-regular, its error reclassification
 can report InvalidPath even when the processing callback failed while writing.
 No stronger concurrent-path diagnostic guarantee is claimed by this change.
+
+After Issue 616 merged, rebased only the two Issue 629 commits onto main `99c27dc`.
+No conflicts occurred and both range-diff entries were unchanged. Cleaned local
+workspace artifacts before verification: contracts-enabled workspace tests passed
+170 (3 ignored), and seven related public/allocator integration binaries passed
+47. Both exact CI Clippy commands and both formatting checks passed again. The
+full-workspace count above predates this rebase; this final run verifies the
+streaming implementation against the newly merged main changes.
