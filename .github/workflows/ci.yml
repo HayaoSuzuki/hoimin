@@ -145,6 +145,7 @@ jobs:
             HoiminOracle.ChangedContextModel
             HoiminOracle.GlobSelectionModel
             HoiminOracle.CleanupCapabilityModel
+            HoiminOracle.EmptyDirectoryModel
             HoiminOracle.DiskGuardModel
             HoiminOracle.FactIndexModel
             HoiminOracle.Model
@@ -236,6 +237,7 @@ jobs:
             ChangedContextAuditMain
             GlobSelectionAuditMain
             CleanupCapabilityAuditMain
+            EmptyDirectoryAuditMain
             DiskGuardAuditMain
             HoiminOracle.AnnotationScopeCases
             HoiminOracle.CompoundPatternGuardCases
@@ -337,6 +339,7 @@ jobs:
             'generate_timeout_limit|corpus/timeout-limit.jsonl|sensitivity'
             'generate_disk_guard|corpus/disk-guard-lifecycle.jsonl|sensitivity'
             'generate_cleanup_capability|corpus/cleanup-capability.jsonl|sensitivity'
+            'generate_empty_directory|corpus/empty-directory.jsonl|sensitivity'
             'generate_comprehension_bindings|corpus/comprehension-bindings.jsonl|sensitivity'
             'generate_performance_cost|corpus/performance-cost.jsonl|sensitivity'
             'generate_valid_python|corpus/valid-python.jsonl|sensitivity'

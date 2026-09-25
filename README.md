@@ -286,7 +286,16 @@ Measure your own suite rather than treating these values as a sizing formula. If
 contain `out_of_memory`, lower `--jobs` or raise `--max-memory`. If they contain `timeout`,
 lower `--jobs` or raise `--mutant-timeout`.
 
-hoimin copies regular files into isolated workers. It does not follow or copy symlinks; each skipped symlink produces a diagnostic. The original tree is checked for changes and workers are reset between mutants.
+hoimin copies regular files and selected directories, including empty fixture
+directories, into isolated workers. Removed directories are restored between
+mutants, including directories replaced by files or links. Directory selection
+uses the same ignore, include, exclude, default-protection and session-artifact
+rules as file copying. A children-only exclusion such as `fixtures/**` can leave
+the selected parent `fixtures` empty; exclude `fixtures` itself to remove the
+whole tree. Exact directory permissions are not copied, and directories do not
+add to logical file-byte budgets. Hoimin does not follow or copy symlinks; each
+skipped symlink produces a diagnostic. Original integrity checks include selected
+directory presence as well as file contents.
 
 These controls reduce accidental resource exhaustion. hoimin executes user-selected Python and test programs and is **not a security boundary** for untrusted code.
 

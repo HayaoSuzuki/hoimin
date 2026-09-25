@@ -1,0 +1,47 @@
+{
+  "616-lean-check.json": {
+    "elapsed_ms": 582,
+    "exit_code": 0,
+    "peak_rss_kib": 36976,
+    "reason": "child_exit",
+    "rss_limit_kib": 2097152,
+    "schema": 1,
+    "timeout_ms": 20000
+  },
+  "616-lean-generate.json": {
+    "elapsed_ms": 2349,
+    "exit_code": 0,
+    "peak_rss_kib": 703072,
+    "reason": "child_exit",
+    "rss_limit_kib": 2097152,
+    "schema": 1,
+    "timeout_ms": 20000
+  },
+  "616-lean-sensitivity.json": {
+    "elapsed_ms": 306,
+    "exit_code": 0,
+    "peak_rss_kib": 3072,
+    "reason": "child_exit",
+    "rss_limit_kib": 2097152,
+    "schema": 1,
+    "timeout_ms": 20000
+  },
+  "616-lean-main.json": {
+    "elapsed_ms": 1474,
+    "exit_code": 0,
+    "peak_rss_kib": 1098624,
+    "reason": "child_exit",
+    "rss_limit_kib": 2097152,
+    "schema": 1,
+    "timeout_ms": 20000
+  },
+  "616-lean-model.json": {
+    "elapsed_ms": 8448,
+    "exit_code": 0,
+    "peak_rss_kib": 1274352,
+    "reason": "child_exit",
+    "rss_limit_kib": 2097152,
+    "schema": 1,
+    "timeout_ms": 20000
+  }
+}

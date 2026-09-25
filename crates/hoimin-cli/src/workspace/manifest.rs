@@ -91,10 +91,17 @@ pub struct ManifestEntry {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WorkspaceManifest {
     entries: Vec<ManifestEntry>,
+    directories: Vec<Utf8PathBuf>,
     logical_bytes: u64,
 }
 
 impl WorkspaceManifest {
+    /// Selected directories, including the ancestors of copied files and directories.
+    #[must_use]
+    pub fn directories(&self) -> &[Utf8PathBuf] {
+        &self.directories
+    }
+
     #[must_use]
     pub fn entries(&self) -> &[ManifestEntry] {
         &self.entries
@@ -114,7 +121,8 @@ impl WorkspaceManifest {
     }
 
     pub(crate) fn content_matches(&self, other: &Self) -> bool {
-        self.entries.len() == other.entries.len()
+        self.directories == other.directories
+            && self.entries.len() == other.entries.len()
             && self
                 .entries
                 .iter()
@@ -127,6 +135,12 @@ impl WorkspaceManifest {
     }
 
     pub(crate) fn first_content_difference(&self, other: &Self) -> Option<Utf8PathBuf> {
+        let left_dirs = self.directories.iter().collect::<BTreeSet<_>>();
+        let right_dirs = other.directories.iter().collect::<BTreeSet<_>>();
+        if let Some(path) = left_dirs.symmetric_difference(&right_dirs).next() {
+            return Some((*path).clone());
+        }
+
         let left = self
             .entries
             .iter()
@@ -144,6 +158,17 @@ impl WorkspaceManifest {
                 _ => true,
             })
             .map(|path| (*path).clone())
+    }
+}
+
+fn insert_directory_ancestors(directories: &mut BTreeSet<Utf8PathBuf>, path: &Utf8Path) {
+    let mut current = Some(path);
+    while let Some(directory) = current {
+        if directory.as_str().is_empty() || directories.contains(directory) {
+            break;
+        }
+        directories.insert(directory.to_owned());
+        current = directory.parent();
     }
 }
 
@@ -165,7 +190,15 @@ pub(crate) fn build_manifest_with_contents(
         metrics.set((builds + 1, bytes));
     });
     let mut entries = BTreeMap::<Utf8PathBuf, ManifestEntry>::new();
-    let symlinks = walk_selected_files(root, options, &mut |path, native_path| {
+    let mut directories = BTreeSet::new();
+    let symlinks = walk_selected_entries(root, options, &mut |path, native_path, is_directory| {
+        if is_directory {
+            insert_directory_ancestors(&mut directories, &path);
+            return Ok(());
+        }
+        if let Some(parent) = path.parent() {
+            insert_directory_ancestors(&mut directories, parent);
+        }
         let bytes = fs::read(native_path)
             .map_err(|error| WorkspaceError::io("read manifest file", &path, error))?;
         #[cfg(test)]
@@ -193,6 +226,7 @@ pub(crate) fn build_manifest_with_contents(
     Ok((
         WorkspaceManifest {
             entries: entries.into_values().collect(),
+            directories: directories.into_iter().collect(),
             logical_bytes,
         },
         symlinks
@@ -207,7 +241,10 @@ pub(crate) fn inventory_logical_bytes(
     options: &CopyOptions,
 ) -> Result<u64, WorkspaceError> {
     let mut sizes = BTreeMap::<Utf8PathBuf, u64>::new();
-    walk_selected_files(root, options, &mut |path, native_path| {
+    walk_selected_entries(root, options, &mut |path, native_path, is_directory| {
+        if is_directory {
+            return Ok(());
+        }
         let size = fs::metadata(native_path)
             .map_err(|error| WorkspaceError::io("read inventory metadata", &path, error))?
             .len();
@@ -221,10 +258,10 @@ pub(crate) fn inventory_logical_bytes(
     })
 }
 
-fn walk_selected_files(
+fn walk_selected_entries(
     root: &Utf8Path,
     options: &CopyOptions,
-    visit: &mut impl FnMut(Utf8PathBuf, &Path) -> Result<(), WorkspaceError>,
+    visit: &mut impl FnMut(Utf8PathBuf, &Path, bool) -> Result<(), WorkspaceError>,
 ) -> Result<BTreeSet<Utf8PathBuf>, WorkspaceError> {
     let metadata =
         fs::metadata(root).map_err(|error| WorkspaceError::io("read root", root, error))?;
@@ -249,7 +286,7 @@ fn walk_selected_files(
         .follow_links(false)
         .overrides(normal_overrides)
         .filter_entry(selection_filter(root, options));
-    collect(normal, root, &mut symlinks, visit)?;
+    collect(normal, root, &mut symlinks, None, visit)?;
 
     if !options.includes.is_empty() {
         let include_overrides =
@@ -263,9 +300,15 @@ fn walk_selected_files(
             .git_exclude(false)
             .parents(false)
             .follow_links(false)
-            .overrides(include_overrides)
+            .overrides(include_overrides.clone())
             .filter_entry(selection_filter(root, options));
-        collect(included, root, &mut symlinks, visit)?;
+        collect(
+            included,
+            root,
+            &mut symlinks,
+            Some(&include_overrides),
+            visit,
+        )?;
     }
 
     Ok(symlinks)
@@ -336,7 +379,8 @@ fn collect(
     builder: WalkBuilder,
     root: &Utf8Path,
     symlinks: &mut BTreeSet<Utf8PathBuf>,
-    visit: &mut impl FnMut(Utf8PathBuf, &Path) -> Result<(), WorkspaceError>,
+    included: Option<&ignore::overrides::Override>,
+    visit: &mut impl FnMut(Utf8PathBuf, &Path, bool) -> Result<(), WorkspaceError>,
 ) -> Result<(), WorkspaceError> {
     for result in builder.build() {
         let entry = result.map_err(|error| WorkspaceError::Walk(error.to_string()))?;
@@ -351,10 +395,13 @@ fn collect(
             symlinks.insert(path);
             continue;
         }
-        if !file_type.is_file() {
-            continue;
+        if file_type.is_dir() {
+            if included.is_none_or(|rules| rules.matched(entry.path(), true).is_whitelist()) {
+                visit(path, entry.path(), true)?;
+            }
+        } else if file_type.is_file() {
+            visit(path, entry.path(), false)?;
         }
-        visit(path, entry.path())?;
     }
     Ok(())
 }

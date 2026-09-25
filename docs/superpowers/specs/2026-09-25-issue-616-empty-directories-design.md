@@ -6,7 +6,7 @@ Normal walking records accepted directories. The explicit include walk records o
 
 Create selected directories in the private snapshot and fresh worker. Reset removes stray entries and file/link replacements of expected directories, then recreates directory paths through retained-root no-follow operations before restoring files. Contract checks compare both file and directory inventories. Original integrity checks include selected directory presence. Empty directories add no logical bytes, copy allowance, or workspace-byte charge; filesystem overhead remains outside byte accounting.
 
-A small Lean set model covers selected/excluded directories, ancestor closure, and reset idempotence. Public WorkspacePlan/WorkerWorkspace adapters exercise absent/file/link/extra states; platform-specific symlinks are separated from portable fixtures. This proves finite selection/reset observations, not operating-system race safety. Existing retained-root race tests continue to cover that boundary.
+A small Lean state model covers selected/excluded directory presence and reset idempotence. Ancestor closure and include traversal are checked by Rust public tests. Public WorkspacePlan/WorkerWorkspace adapters exercise absent/file/link/extra states; platform-specific symlinks are separated from portable fixtures. This proves finite selection/reset observations, not operating-system race safety. Existing retained-root race tests continue to cover that boundary.
 
 ## Design self-review
 

@@ -135,6 +135,10 @@ name = "generate_cleanup_capability"
 root = "CleanupCapabilityAuditMain"
 
 [[lean_exe]]
+name = "generate_empty_directory"
+root = "EmptyDirectoryAuditMain"
+
+[[lean_exe]]
 name = "generate_comprehension_bindings"
 root = "ComprehensionBindingAuditMain"
 
