@@ -50,6 +50,129 @@ fn golden_schema_v2_report_eras_are_usable() {
 }
 
 #[test]
+fn input_dispatch_preserves_document_field_orders_and_opaque_config() {
+    let fixture = tempfile::tempdir().unwrap();
+    for golden in [
+        "schema-v2-original.json",
+        "schema-v2-current.json",
+        "schema-v3-current.json",
+    ] {
+        let source = repo_root()
+            .join("crates/hoimin-cli/tests/golden/reports")
+            .join(golden);
+        let mut document: Value = serde_json::from_slice(&std::fs::read(&source).unwrap()).unwrap();
+        document["run"]["normalized_config"] =
+            json!({"kind": "run_finished", "schema_version": 999, "mutants": ["opaque"]});
+        let expected_path = write_json(&fixture, "expected.json", &document);
+        let InputReport::Usable(expected) = read_report(&expected_path).unwrap() else {
+            panic!("usable fixture")
+        };
+        let expected = serde_json::to_value(expected.mutants).unwrap();
+        let mut keys = ["schema_version", "run", "baseline", "mutants", "summary"];
+        for _ in 0..keys.len() {
+            for pretty in [false, true] {
+                let separator = if pretty { ",\n" } else { "," };
+                let fields = keys
+                    .iter()
+                    .map(|key| format!("\"{key}\":{}", document[key]))
+                    .collect::<Vec<_>>()
+                    .join(separator);
+                let bytes = if pretty {
+                    format!("{{\n{fields}\n}}\n")
+                } else {
+                    format!("{{{fields}}}\n")
+                };
+                let path = fixture.path().join("reordered.json");
+                std::fs::write(&path, bytes).unwrap();
+                let InputReport::Usable(actual) = read_report(&path).unwrap() else {
+                    panic!("usable reordered input")
+                };
+                assert_eq!(
+                    serde_json::to_value(actual.mutants).unwrap(),
+                    expected,
+                    "{golden}: {keys:?}, pretty={pretty}"
+                );
+            }
+            keys.rotate_left(1);
+        }
+    }
+}
+
+#[test]
+fn input_dispatch_preserves_reordered_jsonl_headers() {
+    let fixture = tempfile::tempdir().unwrap();
+    let mut document = valid_report();
+    document["run"]["normalized_config"] = json!({"schema_version": 2, "kind": "not-an-event"});
+    let events = jsonl_events(&document);
+    let mut keys = events[0].as_object().unwrap().keys().collect::<Vec<_>>();
+    for _ in 0..keys.len() {
+        let header = keys
+            .iter()
+            .map(|key| format!("\"{key}\":{}", events[0][*key]))
+            .collect::<Vec<_>>()
+            .join(",");
+        let rest = events
+            .iter()
+            .skip(1)
+            .map(Value::to_string)
+            .collect::<Vec<_>>()
+            .join("\n");
+        let path = fixture.path().join("reordered.jsonl");
+        std::fs::write(&path, format!("{{{header}}}\n{rest}\n")).unwrap();
+        let InputReport::Usable(actual) = read_report(&path).unwrap() else {
+            panic!("usable JSONL")
+        };
+        assert_eq!(actual.mutants.len(), 1);
+        assert_eq!(actual.mutants[0].candidate.id, "mutant-1");
+        keys.rotate_left(1);
+    }
+}
+
+#[test]
+fn input_dispatch_never_accepts_a_valid_prefix_with_an_invalid_suffix() {
+    let fixture = tempfile::tempdir().unwrap();
+    let document = valid_report();
+    let fields = ["schema_version", "run", "baseline", "mutants", "summary"]
+        .iter()
+        .map(|key| format!("\"{key}\":{}", document[key]))
+        .collect::<Vec<_>>()
+        .join(",");
+    for bytes in [
+        format!("{{{fields},\"schema_version\":3}}"),
+        format!("{{{fields},\"run\":{}}}", document["run"]),
+        format!("{{{fields},\"unexpected\":true}}"),
+        format!("{{{fields},\"kind\":\"run_started\"}}"),
+        format!("{{{fields}}} {{}}"),
+        format!("{{{fields}"),
+    ] {
+        let path = fixture.path().join("invalid.json");
+        std::fs::write(&path, bytes).unwrap();
+        assert!(read_report(&path).is_err());
+    }
+    let events = jsonl_events(&document);
+    let header = events[0].to_string();
+    let prefix = header.strip_suffix('}').unwrap();
+    let rest = events
+        .iter()
+        .skip(1)
+        .map(Value::to_string)
+        .collect::<Vec<_>>()
+        .join("\n");
+    for invalid_header in [
+        format!("{prefix},\"schema_version\":3}}"),
+        format!("{prefix},\"kind\":\"run_started\"}}"),
+        format!("{prefix},\"run_id\":\"run-1\"}}"),
+        format!("{prefix},\"unexpected\":true}}"),
+        format!("{header} {{}}"),
+        prefix.to_owned(),
+    ] {
+        let path = fixture.path().join("invalid.jsonl");
+        std::fs::write(&path, format!("{invalid_header}\n{rest}\n")).unwrap();
+        assert!(read_report(&path).is_err());
+    }
+}
+
+#[test]
 fn current_report_requires_disk_summary() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("missing-disk.json");
