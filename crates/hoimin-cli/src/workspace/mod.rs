@@ -9,6 +9,7 @@ mod mutation;
 mod owned;
 mod reset;
 mod root;
+mod stream;
 
 #[cfg(test)]
 use std::cell::Cell;
@@ -398,18 +399,49 @@ fn worker_cleanup_error(error: WorkspaceError) -> WorkspaceError {
 
 #[derive(Debug)]
 pub(crate) struct DiskSnapshot {
+    // Close the retained directory before its owner removes it (notably on Windows).
+    reader: WorkerRoot,
     _owner: OwnedWorkspaceDirectory,
+    #[cfg(test)]
     root: Utf8PathBuf,
     files: BTreeMap<Utf8PathBuf, SnapshotFile>,
 }
 
-impl DiskSnapshot {
-    fn read(&self, path: &Utf8Path) -> Result<Vec<u8>, WorkspaceError> {
-        let bytes = fs::read(self.root.join(path))
-            .map_err(|error| WorkspaceError::io("read shared snapshot", path, error))?;
+struct SnapshotReader(File);
+
+impl std::io::Read for SnapshotReader {
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        let count = std::io::Read::read(&mut self.0, buffer)?;
         #[cfg(test)]
-        record_reset_snapshot_bytes(bytes.len());
-        Ok(bytes)
+        record_reset_snapshot_bytes(count);
+        Ok(count)
+    }
+}
+
+impl std::io::Seek for SnapshotReader {
+    fn seek(&mut self, position: std::io::SeekFrom) -> std::io::Result<u64> {
+        std::io::Seek::seek(&mut self.0, position)
+    }
+}
+
+impl DiskSnapshot {
+    fn with_file<T>(
+        &self,
+        path: &Utf8Path,
+        consume: impl FnOnce(&mut SnapshotReader) -> Result<T, WorkspaceError>,
+    ) -> Result<T, WorkspaceError> {
+        let file = self
+            .reader
+            .with_read_file(path, Ok)
+            .map_err(|error| match error {
+                WorkspaceError::Io { path, message, .. } => WorkspaceError::Io {
+                    operation: "read shared snapshot",
+                    path,
+                    message,
+                },
+                error => error,
+            })?;
+        consume(&mut SnapshotReader(file))
     }
 }
 
@@ -1969,6 +2001,7 @@ mod task_tests {
         let original_snapshot = std::mem::replace(
             &mut worker.snapshot,
             std::sync::Arc::new(super::DiskSnapshot {
+                reader: super::WorkerRoot::open(replacement_root.clone()).unwrap(),
                 _owner: replacement_snapshot.into(),
                 root: replacement_root,
                 files: std::collections::BTreeMap::new(),

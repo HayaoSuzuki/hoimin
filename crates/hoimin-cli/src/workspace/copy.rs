@@ -3,6 +3,7 @@ use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::convert::Infallible;
 use std::fs;
+use std::io::Write;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -69,7 +70,9 @@ impl Drop for PendingOwnedWorkspace {
 
 #[derive(Debug)]
 struct PendingDiskSnapshot {
+    reader: WorkerRoot,
     owner: PendingOwnedWorkspace,
+    #[cfg(test)]
     root: Utf8PathBuf,
     files: BTreeMap<Utf8PathBuf, SnapshotFile>,
 }
@@ -77,7 +80,9 @@ struct PendingDiskSnapshot {
 impl PendingDiskSnapshot {
     fn finish(self) -> DiskSnapshot {
         DiskSnapshot {
+            reader: self.reader,
             _owner: self.owner.finish(),
+            #[cfg(test)]
             root: self.root,
             files: self.files,
         }
@@ -663,40 +668,51 @@ impl WorkspacePlan {
                         message: "shared snapshot is missing a manifest entry".to_owned(),
                     }
                 })?;
-                let bytes = self.snapshot.read(&entry.path)?;
-                #[cfg(test)]
-                self.materialization_metrics
-                    .record_snapshot_read(bytes.len());
-                let amount =
-                    u64::try_from(bytes.len()).map_err(|_| WorkspaceError::CopySizeOverflow)?;
-                self.allowance.charge(amount)?;
-                charged = charged
-                    .checked_add(amount)
-                    .ok_or(WorkspaceError::CopySizeOverflow)?;
-
-                #[cfg(feature = "contracts")]
-                {
-                    #[cfg(test)]
-                    self.materialization_metrics
-                        .record_snapshot_hash(bytes.len());
-                    if amount != entry.size || blake3::hash(&bytes) != entry.blake3 {
-                        return Err(WorkspaceError::WorkspaceRestore {
-                            path: entry.path.clone(),
-                            message: "shared snapshot does not match its manifest".to_owned(),
-                        });
-                    }
-                }
-                let destination = root_path.join(&entry.path);
-                if let Some(parent) = destination.parent() {
-                    fs::create_dir_all(parent).map_err(|error| {
-                        WorkspaceError::io("create worker directory", parent, error)
-                    })?;
-                }
-                fs::write(&destination, &bytes)
-                    .map_err(|error| WorkspaceError::io("copy worker file", &entry.path, error))?;
-                fs::set_permissions(&destination, snapshot.permissions.clone()).map_err(
-                    |error| WorkspaceError::io("copy worker permissions", &entry.path, error),
-                )?;
+                self.snapshot.with_file(&entry.path, |reader| {
+                    root.with_write_file(&entry.path, |output| {
+                        #[cfg(feature = "contracts")]
+                        let mut hasher = blake3::Hasher::new();
+                        let amount = super::stream::chunks(
+                            reader,
+                            &entry.path,
+                            "read shared snapshot",
+                            |bytes| {
+                                #[cfg(test)]
+                                self.materialization_metrics
+                                    .record_snapshot_read(bytes.len());
+                                let amount = bytes.len() as u64;
+                                self.allowance.charge(amount)?;
+                                charged = charged
+                                    .checked_add(amount)
+                                    .ok_or(WorkspaceError::CopySizeOverflow)?;
+                                #[cfg(feature = "contracts")]
+                                {
+                                    hasher.update(bytes);
+                                    #[cfg(test)]
+                                    self.materialization_metrics
+                                        .record_snapshot_hash(bytes.len());
+                                }
+                                output.write_all(bytes).map_err(|error| {
+                                    WorkspaceError::io("copy worker file", &entry.path, error)
+                                })
+                            },
+                        )?;
+                        #[cfg(feature = "contracts")]
+                        if amount != entry.size || hasher.finalize() != entry.blake3 {
+                            return Err(WorkspaceError::WorkspaceRestore {
+                                path: entry.path.clone(),
+                                message: "shared snapshot does not match its manifest".to_owned(),
+                            });
+                        }
+                        #[cfg(not(feature = "contracts"))]
+                        let _ = amount;
+                        output
+                            .set_permissions(snapshot.permissions.clone())
+                            .map_err(|error| {
+                                WorkspaceError::io("copy worker permissions", &entry.path, error)
+                            })
+                    })
+                })?;
             }
             Ok(())
         })();
@@ -738,6 +754,7 @@ fn enforce_owned_limit(
 }
 
 struct SnapshotWriter<'a> {
+    #[cfg(test)]
     original_root: &'a Utf8Path,
     snapshot_root: &'a Utf8Path,
     owned_copies: u64,
@@ -754,7 +771,10 @@ impl<'a> SnapshotWriter<'a> {
         owned_copies: u64,
         max_owned_bytes: Option<u64>,
     ) -> Self {
+        #[cfg(not(test))]
+        let _ = original_root;
         Self {
+            #[cfg(test)]
             original_root,
             snapshot_root,
             owned_copies,
@@ -765,63 +785,93 @@ impl<'a> SnapshotWriter<'a> {
         }
     }
 
-    fn write(&mut self, entry: &super::ManifestEntry, bytes: &[u8]) -> Result<(), WorkspaceError> {
-        if let Some(first) = self.first_entries.get(&entry.path) {
-            if first != entry {
+    fn write_stream(
+        &mut self,
+        path: &Utf8Path,
+        mut source: fs::File,
+    ) -> Result<super::ManifestEntry, WorkspaceError> {
+        let metadata = source
+            .metadata()
+            .map_err(|error| WorkspaceError::io("read original metadata", path, error))?;
+        self.write_reader(path, &mut source, metadata.len(), metadata.permissions())
+    }
+
+    fn write_reader(
+        &mut self,
+        path: &Utf8Path,
+        reader: &mut impl std::io::Read,
+        initial_size: u64,
+        permissions: fs::Permissions,
+    ) -> Result<super::ManifestEntry, WorkspaceError> {
+        if let Some(first) = self.first_entries.get(path) {
+            let entry = super::manifest::hash_contents(path, reader, |_| Ok(()))?;
+            if first != &entry {
                 return Err(WorkspaceError::OriginalChanged {
-                    path: entry.path.clone(),
+                    path: path.to_owned(),
                 });
             }
-            let permissions = fs::metadata(self.original_root.join(&entry.path))
-                .map_err(|error| WorkspaceError::io("read original metadata", &entry.path, error))?
-                .permissions();
             self.files
-                .insert(entry.path.clone(), SnapshotFile::new(permissions));
-            return Ok(());
+                .insert(path.to_owned(), SnapshotFile::new(permissions));
+            return Ok(entry);
         }
-
-        let next_logical_bytes = self
+        let planned = self
             .logical_bytes
-            .checked_add(entry.size)
+            .checked_add(initial_size)
             .ok_or(WorkspaceError::CopySizeOverflow)?;
-        enforce_owned_limit(next_logical_bytes, self.owned_copies, self.max_owned_bytes)?;
-        let source = self.original_root.join(&entry.path);
-        let permissions = fs::metadata(&source)
-            .map_err(|error| WorkspaceError::io("read original metadata", &entry.path, error))?
-            .permissions();
-        let destination = self.snapshot_root.join(&entry.path);
+        enforce_owned_limit(planned, self.owned_copies, self.max_owned_bytes)?;
+        let destination = self.snapshot_root.join(path);
         if let Some(parent) = destination.parent() {
             fs::create_dir_all(parent).map_err(|error| {
                 WorkspaceError::io("create shared snapshot directory", parent, error)
             })?;
         }
-        match fs::symlink_metadata(&destination) {
-            Ok(_) => {
-                return Err(WorkspaceError::SnapshotPathCollision {
-                    path: entry.path.clone(),
-                });
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => {
-                return Err(WorkspaceError::io(
-                    "inspect shared snapshot destination",
-                    &entry.path,
-                    error,
-                ));
-            }
-        }
-        fs::write(&destination, bytes)
-            .map_err(|error| WorkspaceError::io("write shared snapshot", &entry.path, error))?;
+        let mut output = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&destination)
+            .map_err(|error| {
+                if error.kind() == std::io::ErrorKind::AlreadyExists {
+                    WorkspaceError::SnapshotPathCollision {
+                        path: path.to_owned(),
+                    }
+                } else {
+                    WorkspaceError::io("write shared snapshot", path, error)
+                }
+            })?;
+        let mut next_bytes = self.logical_bytes;
+        let entry = super::manifest::hash_contents(path, reader, |bytes| {
+            next_bytes = next_bytes
+                .checked_add(bytes.len() as u64)
+                .ok_or(WorkspaceError::CopySizeOverflow)?;
+            enforce_owned_limit(next_bytes, self.owned_copies, self.max_owned_bytes)?;
+            output
+                .write_all(bytes)
+                .map_err(|error| WorkspaceError::io("write shared snapshot", path, error))
+        })?;
         #[cfg(test)]
         SNAPSHOT_WRITE_METRICS.with(|metrics| {
             let (writes, written_bytes) = metrics.get();
-            metrics.set((writes + 1, written_bytes + bytes.len() as u64));
+            metrics.set((writes + 1, written_bytes + entry.size));
         });
-        self.logical_bytes = next_logical_bytes;
-        self.first_entries.insert(entry.path.clone(), entry.clone());
+        self.logical_bytes = next_bytes;
+        self.first_entries.insert(path.to_owned(), entry.clone());
         self.files
-            .insert(entry.path.clone(), SnapshotFile::new(permissions));
-        Ok(())
+            .insert(path.to_owned(), SnapshotFile::new(permissions));
+        Ok(entry)
+    }
+
+    #[cfg(test)]
+    fn write(&mut self, entry: &super::ManifestEntry, bytes: &[u8]) -> Result<(), WorkspaceError> {
+        let permissions = fs::metadata(self.original_root.join(&entry.path))
+            .unwrap()
+            .permissions();
+        self.write_reader(
+            &entry.path,
+            &mut std::io::Cursor::new(bytes),
+            bytes.len() as u64,
+            permissions,
+        )
+        .map(|_| ())
     }
 
     fn finish(self) -> (u64, BTreeMap<Utf8PathBuf, SnapshotFile>) {
@@ -876,8 +926,8 @@ fn create_pending_disk_snapshot(
     let mut writer = SnapshotWriter::new(original_root, &root, owned_copies, max_owned_bytes);
 
     let (manifest, diagnostics) =
-        build_manifest_with_contents(original_root, options, |entry, bytes| {
-            writer.write(entry, bytes)
+        build_manifest_with_contents(original_root, options, |path, file| {
+            writer.write_stream(path, file)
         })?;
     let (logical_bytes, files) = writer.finish();
     for directory in manifest.directories() {
@@ -894,7 +944,9 @@ fn create_pending_disk_snapshot(
         manifest,
         diagnostics,
         PendingDiskSnapshot {
+            reader: WorkerRoot::open(root.clone())?,
             owner: temp,
+            #[cfg(test)]
             root,
             files,
         },
@@ -1132,6 +1184,71 @@ mod tests {
 
         assert_eq!(manifest.logical_bytes(), 3);
         assert_eq!(fs::read(snapshot.root.join("target.py")).unwrap(), b"123");
+    }
+
+    #[test]
+    fn stream_growth_checks_the_owned_limit_before_writing_the_next_chunk() {
+        let source = tempfile::tempdir().unwrap();
+        fs::write(source.path().join("data"), b"x").unwrap();
+        let source_root = Utf8Path::from_path(source.path()).unwrap();
+        let snapshot = tempfile::tempdir().unwrap();
+        let snapshot_root = Utf8Path::from_path(snapshot.path()).unwrap();
+        let block = super::super::stream::BUFFER_BYTES;
+        let bytes = vec![b'x'; 2 * block];
+        let permissions = fs::metadata(source_root.join("data"))
+            .unwrap()
+            .permissions();
+        let limit = 2 * (block as u64 + 1);
+        let mut writer = SnapshotWriter::new(source_root, snapshot_root, 2, Some(limit));
+        let error = writer
+            .write_reader(
+                Utf8Path::new("data"),
+                &mut std::io::Cursor::new(&bytes),
+                1,
+                permissions,
+            )
+            .unwrap_err();
+        assert_eq!(
+            error,
+            WorkspaceError::OwnedWorkspaceLimit {
+                planned: 4 * block as u64,
+                limit
+            }
+        );
+        assert_eq!(
+            fs::metadata(snapshot_root.join("data")).unwrap().len(),
+            block as u64
+        );
+        assert!(writer.first_entries.is_empty());
+        assert!(writer.files.is_empty());
+        assert_eq!(writer.logical_bytes, 0);
+    }
+
+    #[test]
+    fn streaming_materialization_releases_partial_charges_and_allows_retry() {
+        let source = tempfile::tempdir().unwrap();
+        let block = super::super::stream::BUFFER_BYTES;
+        let original = vec![b'x'; block + 1];
+        fs::write(source.path().join("data"), &original).unwrap();
+        let root = Utf8Path::from_path(source.path()).unwrap();
+        let plan = WorkspacePlan::preflight(root, EffectId(1), 1, CopyOptions::default()).unwrap();
+        let mut ledger = BudgetLedger::new(RunBudgets {
+            memory: 1,
+            copy: plan.aggregate_bytes(),
+            processes: 1,
+        });
+        let grant = reserve_workspace_copy(&mut ledger, &plan.completed()).unwrap();
+        let request = grant.create_worker(EffectId(2), 0).unwrap();
+        fs::write(plan.snapshot.root.join("data"), vec![b'x'; 2 * block]).unwrap();
+        assert!(matches!(
+            plan.create_worker(&request),
+            Err(WorkspaceError::CopyAllowanceExceeded { .. })
+        ));
+        assert_eq!(plan.observed_copy_bytes(), 0);
+        fs::write(plan.snapshot.root.join("data"), &original).unwrap();
+        let worker = plan.create_worker(&request).unwrap();
+        assert_eq!(plan.observed_copy_bytes(), original.len() as u64);
+        assert_eq!(worker.read("data").unwrap(), original);
     }
 
     #[test]

@@ -1,4 +1,5 @@
 use std::collections::BTreeSet;
+use std::io::Seek;
 
 use super::root::WorkerEntryKind;
 use super::{WorkerWorkspace, WorkspaceError};
@@ -67,16 +68,28 @@ impl WorkerWorkspace {
             self.root.ensure_directory(directory)?;
         }
         for (path, snapshot) in &self.snapshot.files {
-            let bytes = self.snapshot.read(path)?;
-            if existing_files.contains(path)
-                && self
-                    .root
-                    .snapshot_matches(path, &bytes, snapshot.permission_fingerprint)?
-            {
-                continue;
-            }
-            self.root
-                .restore(path, &bytes, snapshot.permissions.clone())?;
+            self.snapshot.with_file(path, |reader| {
+                let expected_size = self
+                    .manifest
+                    .entry(path)
+                    .expect("snapshot is in manifest")
+                    .size;
+                if existing_files.contains(path)
+                    && self.root.snapshot_matches_reader(
+                        path,
+                        reader,
+                        expected_size,
+                        snapshot.permission_fingerprint,
+                    )?
+                {
+                    return Ok(());
+                }
+                reader
+                    .rewind()
+                    .map_err(|error| WorkspaceError::io("rewind shared snapshot", path, error))?;
+                self.root
+                    .restore_from(path, reader, snapshot.permissions.clone())
+            })?;
         }
 
         #[cfg(feature = "contracts")]
@@ -121,14 +134,24 @@ impl WorkerWorkspace {
             return Ok(false);
         }
         for (path, snapshot) in &self.snapshot.files {
-            let bytes = self.snapshot.read(path)?;
-            if !self
-                .root
-                .snapshot_matches(path, &bytes, snapshot.permission_fingerprint)?
-            {
+            let matches = self.snapshot.with_file(path, |reader| {
+                let expected_size = self
+                    .manifest
+                    .entry(path)
+                    .expect("snapshot is in manifest")
+                    .size;
+                self.root.snapshot_matches_reader(
+                    path,
+                    reader,
+                    expected_size,
+                    snapshot.permission_fingerprint,
+                )
+            })?;
+            if !matches {
                 return Ok(false);
             }
         }
+
         Ok(true)
     }
 }
@@ -237,7 +260,7 @@ mod tests {
     }
 
     #[test]
-    fn reset_reads_each_snapshot_and_worker_file_once() {
+    fn reset_rereads_only_changed_snapshot_contents_for_restoration() {
         const PADDING_BYTES: usize = 1024 * 1024;
         let (_project, mut worker, _snapshot_permissions) =
             changed_worker_with_padding(PADDING_BYTES);
@@ -253,7 +276,7 @@ mod tests {
             ResetIoMetrics {
                 tree_walks: 1,
                 worker_bytes: fixture_bytes,
-                snapshot_bytes: fixture_bytes,
+                snapshot_bytes: fixture_bytes + b"original\n".len() as u64,
             }
         );
         #[cfg(feature = "contracts")]
@@ -262,7 +285,7 @@ mod tests {
             ResetIoMetrics {
                 tree_walks: 2,
                 worker_bytes: 2 * fixture_bytes,
-                snapshot_bytes: 2 * fixture_bytes,
+                snapshot_bytes: 2 * fixture_bytes + b"original\n".len() as u64,
             }
         );
     }

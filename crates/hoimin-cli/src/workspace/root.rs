@@ -1,6 +1,5 @@
 use std::ffi::OsString;
 use std::fs::File;
-#[cfg(unix)]
 use std::io::Write;
 use std::io::{self, Read};
 use std::path::{Component, Path, PathBuf};
@@ -263,7 +262,7 @@ impl WorkerRoot {
         })
     }
 
-    fn with_read_file<T>(
+    pub(super) fn with_read_file<T>(
         &self,
         path: &Utf8Path,
         consume: impl FnOnce(File) -> Result<T, WorkspaceError>,
@@ -394,10 +393,31 @@ impl WorkerRoot {
         path: &Utf8Path,
         contents: &[u8],
     ) -> Result<(), WorkspaceError> {
+        Self::write_entry_with(parent, name, path, |file| {
+            file.write_all(contents)
+                .map_err(|error| WorkspaceError::io("write worker file", path, error))
+        })
+    }
+
+    pub(super) fn with_write_file<T>(
+        &self,
+        path: &Utf8Path,
+        write: impl FnOnce(&mut File) -> Result<T, WorkspaceError>,
+    ) -> Result<T, WorkspaceError> {
+        let (parent, name) = self.open_parent(path, true)?;
+        Self::write_entry_with(&parent, &name, path, write)
+    }
+
+    fn write_entry_with<T>(
+        parent: &File,
+        name: &OsString,
+        path: &Utf8Path,
+        write: impl FnOnce(&mut File) -> Result<T, WorkspaceError>,
+    ) -> Result<T, WorkspaceError> {
         #[cfg(windows)]
         {
             make_directory_writable(parent, path)?;
-            windows::write(parent, name, path, contents)
+            windows::write_with(parent, name, path, write)
         }
         #[cfg(unix)]
         {
@@ -441,8 +461,7 @@ impl WorkerRoot {
                 });
             }
             make_file_writable(&file, path)?;
-            file.write_all(contents)
-                .map_err(|error| WorkspaceError::io("write worker file", path, error))
+            write(&mut file)
         }
     }
 
@@ -915,10 +934,20 @@ impl WorkerRoot {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn restore(
         &self,
         path: &Utf8Path,
         contents: &[u8],
+        permissions: std::fs::Permissions,
+    ) -> Result<(), WorkspaceError> {
+        self.restore_from(path, &mut io::Cursor::new(contents), permissions)
+    }
+
+    pub(super) fn restore_from(
+        &self,
+        path: &Utf8Path,
+        reader: &mut impl Read,
         permissions: std::fs::Permissions,
     ) -> Result<(), WorkspaceError> {
         let (parent, name) = self.open_parent(path, true)?;
@@ -932,38 +961,36 @@ impl WorkerRoot {
             path.components().count(),
             None,
         )?;
-        Self::write_entry(&parent, &name, path, contents)?;
-        #[cfg(windows)]
-        {
-            windows::set_permissions(&parent, &name, path, permissions)
-        }
-        #[cfg(unix)]
-        {
-            let mut options = cap_primitives::fs::OpenOptions::new();
-            options
-                .read(true)
-                .follow(FollowSymlinks::No)
-                .custom_flags(libc::O_NONBLOCK);
-            let file = cap_primitives::fs::open(&parent, Path::new(&name), &options)
-                .map_err(|error| Self::map_entry_error("open restored file", path, error))?;
-            if !file
-                .metadata()
-                .map_err(|error| WorkspaceError::io("inspect restored file", path, error))?
-                .is_file()
-            {
-                return Err(WorkspaceError::InvalidPath {
-                    path: path.to_owned(),
-                });
-            }
+        Self::write_entry_with(&parent, &name, path, |file| {
+            super::stream::chunks(reader, path, "read shared snapshot", |bytes| {
+                file.write_all(bytes)
+                    .map_err(|error| WorkspaceError::io("write worker file", path, error))
+            })?;
             file.set_permissions(permissions)
                 .map_err(|error| WorkspaceError::io("restore worker permissions", path, error))
-        }
+        })
     }
 
+    #[cfg(test)]
     pub(crate) fn snapshot_matches(
         &self,
         path: &Utf8Path,
         expected: &[u8],
+        expected_permissions: super::PermissionFingerprint,
+    ) -> Result<bool, WorkspaceError> {
+        self.snapshot_matches_reader(
+            path,
+            &mut io::Cursor::new(expected),
+            expected.len() as u64,
+            expected_permissions,
+        )
+    }
+
+    pub(super) fn snapshot_matches_reader(
+        &self,
+        path: &Utf8Path,
+        expected: &mut impl Read,
+        expected_size: u64,
         expected_permissions: super::PermissionFingerprint,
     ) -> Result<bool, WorkspaceError> {
         let (parent, name) = self.open_parent(path, false)?;
@@ -979,41 +1006,36 @@ impl WorkerRoot {
             return Ok(false);
         }
         // A size mismatch proves inequality; matching metadata never proves equal contents.
-        if metadata.len() != expected.len() as u64 {
+        if metadata.len() != expected_size {
             return Ok(false);
         }
         #[cfg(windows)]
-        {
-            let (bytes, permissions) = windows::snapshot(&parent, &name, path)?;
-            #[cfg(test)]
-            super::record_reset_worker_bytes(bytes.len());
-            Ok(bytes == expected
-                && super::permission_fingerprint(&permissions) == expected_permissions)
-        }
+        let mut file = windows::open_read(&parent, &name, path)?;
         #[cfg(unix)]
-        {
+        let mut file = {
             let mut options = cap_primitives::fs::OpenOptions::new();
             options
                 .read(true)
                 .follow(FollowSymlinks::No)
                 .custom_flags(libc::O_NONBLOCK);
-            let mut file = cap_primitives::fs::open(&parent, Path::new(&name), &options)
-                .map_err(|error| Self::map_entry_error("verify restored file", path, error))?;
-            let file_metadata = file
-                .metadata()
-                .map_err(|error| WorkspaceError::io("verify restored file", path, error))?;
-            if !file_metadata.is_file() || file_metadata.len() != expected.len() as u64 {
-                return Ok(false);
-            }
-            let mut bytes = Vec::new();
-            file.read_to_end(&mut bytes)
-                .map_err(|error| WorkspaceError::io("verify restored file", path, error))?;
-            #[cfg(test)]
-            super::record_reset_worker_bytes(bytes.len());
-            Ok(bytes == expected
-                && super::permission_fingerprint(&file_metadata.permissions())
-                    == expected_permissions)
+            cap_primitives::fs::open(&parent, Path::new(&name), &options)
+                .map_err(|error| Self::map_entry_error("verify restored file", path, error))?
+        };
+        let file_metadata = file
+            .metadata()
+            .map_err(|error| WorkspaceError::io("verify restored file", path, error))?;
+        if !file_metadata.is_file() || file_metadata.len() != expected_size {
+            return Ok(false);
         }
+        let equal = super::stream::equal(expected, &mut file, |_, count| {
+            #[cfg(test)]
+            super::record_reset_worker_bytes(count);
+            #[cfg(not(test))]
+            let _ = count;
+        })
+        .map_err(|error| WorkspaceError::io("verify restored file", path, error))?;
+        Ok(equal
+            && super::permission_fingerprint(&file_metadata.permissions()) == expected_permissions)
     }
 
     fn components(path: &Utf8Path) -> Result<Vec<&str>, WorkspaceError> {

@@ -54,7 +54,9 @@ GitHub Actions の `Performance measurements` は手動実行専用。選んだr
 
 [今回のrelease計測](2026-09-14-issue-491-expanded-measurement.json)は29形状×3サイズ×3反復×2実行ファイルの522回を記録する。出力document bytes、同一binary内のN/2N/4N比、baselineとの比を保存し、未観測RSSはnullのままとする。既存198回の監査とは別の実行である。詳しい環境・digest・感度検証は[入力軸の報告](../superpowers/reports/2026-09-14-issue-491-input-axis-review.md)に記載した。
 
-preflightのallocator peakはmanifest entriesに加え、既存hasherの最大1ファイル分のbufferを許容する。作成前に全ファイルをworker数だけ保持する対照は同じ上界を超える。許容する入力比例メモリをCLI全体の定数メモリ保証へ読み替えない。
+preflight・worker作成・resetの内容バッファは固定長で、最大ファイルサイズに比例するヒープを保持しない。manifest entriesなどのメタデータはファイル数・ディレクトリ数に比例する。専用allocatorゲートは単一ファイル1/8/32MiBの各段階を測定し、実際の全内容読取りを対照にする。これはCLI全体の定数メモリやRSSの保証ではない。
+
+resetは同サイズの全バイト比較を維持し、未変更ファイルを再作成しない。同サイズの変更を検出した場合は、同じsnapshotハンドルを巻き戻して復元するため、そのファイルのsnapshot読取り量は最大2倍になる。サイズ不一致ではworker内容を読まず復元する。contractsの事後検証は別途1回比較する。ソースからsnapshotとhashを作る読取り、およびpreflightの最終再検証は各1回のままである。
 
 
 progressのallocatorゲートは同じ関数名のまま、1reportの内容500/1,000/2,000件と履歴2/4/8を独立に増やす。元の2,000件×16履歴も保持する。実際のreport bytesを記録し、各reportサイズで履歴2に対する追加peakを512KiB以下に制限する。全入力が利用可能で、候補対応数、score、差分、停滞判断が正しいことを同時に検査する。実際に全履歴のparsed reportを保持する対照は同じ上界を超える。この通常ゲートの追加確認を522回のrelease実測に含めない。

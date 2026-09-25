@@ -1,6 +1,6 @@
 use std::ffi::{OsStr, OsString, c_void};
 use std::fs::File;
-use std::io::{self, Read, Write};
+use std::io;
 use std::mem::{size_of, zeroed};
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
 use std::os::windows::fs::MetadataExt;
@@ -42,38 +42,6 @@ pub(super) fn open_read(
     open_final(parent, name, logical_path, WindowsFinalOperation::Read)
 }
 
-pub(super) fn snapshot(
-    parent: &File,
-    name: &OsString,
-    logical_path: &Utf8Path,
-) -> Result<(Vec<u8>, std::fs::Permissions), WorkspaceError> {
-    let mut file = open_final(parent, name, logical_path, WindowsFinalOperation::Read)?;
-    let permissions = file
-        .metadata()
-        .map_err(|error| WorkspaceError::io("verify restored file", logical_path, error))?
-        .permissions();
-    let mut contents = Vec::new();
-    file.read_to_end(&mut contents)
-        .map_err(|error| WorkspaceError::io("verify restored file", logical_path, error))?;
-    Ok((contents, permissions))
-}
-
-pub(super) fn set_permissions(
-    parent: &File,
-    name: &OsString,
-    logical_path: &Utf8Path,
-    permissions: std::fs::Permissions,
-) -> Result<(), WorkspaceError> {
-    let file = open_final(
-        parent,
-        name,
-        logical_path,
-        WindowsFinalOperation::InspectForWrite,
-    )?;
-    file.set_permissions(permissions)
-        .map_err(|error| WorkspaceError::io("restore worker permissions", logical_path, error))
-}
-
 pub(super) fn open_mutation_file(
     parent: &File,
     name: &OsString,
@@ -108,12 +76,12 @@ pub(super) fn reopen_mutation_file(
     }
 }
 
-pub(super) fn write(
+pub(super) fn write_with<T>(
     parent: &File,
     name: &OsString,
     logical_path: &Utf8Path,
-    contents: &[u8],
-) -> Result<(), WorkspaceError> {
+    write: impl FnOnce(&mut File) -> Result<T, WorkspaceError>,
+) -> Result<T, WorkspaceError> {
     if let Some(file) = open_final_if_present(
         parent,
         name,
@@ -125,8 +93,7 @@ pub(super) fn write(
     let mut file = open_final(parent, name, logical_path, WindowsFinalOperation::Write)?;
     file.set_len(0)
         .map_err(|error| WorkspaceError::io("truncate worker file", logical_path, error))?;
-    file.write_all(contents)
-        .map_err(|error| WorkspaceError::io("write worker file", logical_path, error))
+    write(&mut file)
 }
 
 pub(super) fn remove_file(
