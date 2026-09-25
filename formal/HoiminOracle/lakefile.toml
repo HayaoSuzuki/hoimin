@@ -165,3 +165,7 @@ root = "ResumeCopyAuditMain"
 [[lean_exe]]
 name = "generate_nullable_gate"
 root = "NullableGateAuditMain"
+
+[[lean_exe]]
+name = "generate_prepared_namespace"
+root = "PreparedNamespaceAuditMain"

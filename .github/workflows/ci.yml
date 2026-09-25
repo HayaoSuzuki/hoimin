@@ -159,6 +159,7 @@ jobs:
             HoiminOracle.TopBudgetProjectionModel
             HoiminOracle.WorkspaceModel
             HoiminOracle.AnnotationScopeModel
+            HoiminOracle.PreparedNamespaceModel
             HoiminOracle.BindingFlowProofs
             HoiminOracle.BoundedCandidateDiscoveryProofs
             HoiminOracle.BudgetProofs
@@ -248,6 +249,7 @@ jobs:
             TopBudgetProjectionAuditMain
             WorkspaceAuditMain
             AnnotationScopeAuditMain
+            PreparedNamespaceAuditMain
             CompoundPatternGuardAuditMain
             ExceptionMatchBindingAuditMain
             HoiminOracle.ExceptStarFlowCases
@@ -299,6 +301,7 @@ jobs:
             'generate_schema_migration|corpus/schema-migration-concurrency.jsonl|sensitivity'
             'generate_binding_flow|corpus/binding-flow-joins.jsonl|sensitivity'
             'generate_annotation_scope|corpus/annotation-scope-correspondence.jsonl|sensitivity'
+            'generate_prepared_namespace|corpus/prepared-namespace.jsonl|sensitivity'
             'generate_exception_match_binding|corpus/exception-match-binding-correspondence.jsonl|sensitivity'
             'generate_top_budget_projection|corpus/top-budget-projection.jsonl|sensitivity'
             'generate_progress_decision|corpus/progress-decision.jsonl|sensitivity'

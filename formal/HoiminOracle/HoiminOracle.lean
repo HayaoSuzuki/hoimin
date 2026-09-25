@@ -94,3 +94,5 @@ import HoiminOracle.EvaluationOrderModel
 import HoiminOracle.DeclarationOnlyModel
 import HoiminOracle.ResumeCopyModel
 import HoiminOracle.NullableGateModel
+
+import HoiminOracle.PreparedNamespaceModel

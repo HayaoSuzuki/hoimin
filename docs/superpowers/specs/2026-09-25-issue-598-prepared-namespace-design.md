@@ -26,7 +26,7 @@ Integrate model import, generator target, committed corpus freshness and sensiti
 
 ## Compatibility and exclusions
 
-No CLI/schema/dependency changes. Global monkeypatching of builtins or `__build_class__`, arbitrary dynamic module changes, proving custom metaclass safety, and precision recovery for known base classes are excluded. Existing annotation behavior outside shared builtin resolution is unchanged. Runtime annotation probes use repository CPython 3.14; no claim is made for unexecuted interpreters or operating systems.
+No CLI/schema/dependency changes. Global monkeypatching of builtins or `__build_class__`, arbitrary dynamic module changes, proving custom metaclass safety, and precision recovery for known base classes are excluded. Existing annotation behavior outside shared builtin resolution is unchanged. In particular, import-alias provenance through `annotation_import_stable` is a separate path: this fix does not certify prepared mappings that inject typing/module aliases. Runtime annotation probes use repository CPython 3.14; no claim is made for unexecuted interpreters or operating systems.
 
 ## Completion
 
