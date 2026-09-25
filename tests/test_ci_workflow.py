@@ -105,6 +105,7 @@ LEAN_CORPUS_BY_EXECUTABLE = {
     "generate_resume_copy": "corpus/resume-copy.jsonl",
     "generate_nullable_gate": "corpus/nullable-gate.jsonl",
     "generate_prepared_namespace": "corpus/prepared-namespace.jsonl",
+    "generate_changed_context": "corpus/changed-context.jsonl",
 }
 LEAN_SENSITIVITY_EXECUTABLES = {
     name

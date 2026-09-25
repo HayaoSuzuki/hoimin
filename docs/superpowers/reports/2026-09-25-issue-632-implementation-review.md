@@ -25,3 +25,10 @@ Design and plan each received three self-reviews before their initial commit (`7
 - Local execution logs: `/tmp/issue632-workspace.log`, `/tmp/issue632-final-focused.log`, `/tmp/issue632-clippy.log`. These temporary logs are evidence locations for this checkout; the committed tests are reproducible without them.
 
 These checks establish the stated selection contract for the tested Git/Python fixtures. They do not prove Git internals, CR-only line coordinate behavior, or arbitrary semantic influence beyond the configured neighborhood.
+
+
+## CI contract follow-up
+
+The remote wheel smoke job exposed a missing entry in `tests/test_ci_workflow.py`'s closed Lean executable-to-corpus registry. Local unittest reproduction failed exactly one of 40 workflow contract tests; product Rust and Lean execution were unaffected. Added the new generator in lakefile order. Review pass 1 compared the executable and corpus names with lakefile and CI. Pass 2 checked that the default sensitivity set includes the generator and its supported flag. Pass 3 checked the one-entry diff and reran all 40 workflow tests. The registration repair does not change production Python; mutation testing is not applicable to this test-only registry.
+
+The first registry repair exposed a second contract assertion: the CI generator list must follow lakefile order, not merely contain the same entries. Moved the new generator gate to the end, matching lakefile and the closed registry. No Lean compilation or proof order changed.

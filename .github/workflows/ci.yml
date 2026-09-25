@@ -320,7 +320,6 @@ jobs:
             'generate_output_retention|corpus/output-retention.jsonl|sensitivity'
             'generate_candidate_span|corpus/candidate-span-preservation.jsonl|sensitivity'
             'generate_changed_target|corpus/changed-target-composition.jsonl|sensitivity'
-            'generate_changed_context|corpus/changed-context.jsonl|sensitivity'
             'generate_process_output|corpus/process-output-outcome.jsonl|sensitivity'
             'generate_timeout_limit|corpus/timeout-limit.jsonl|sensitivity'
             'generate_disk_guard|corpus/disk-guard-lifecycle.jsonl|sensitivity'
@@ -338,6 +337,7 @@ jobs:
             'generate_resume_copy|corpus/resume-copy.jsonl|sensitivity'
             'generate_nullable_gate|corpus/nullable-gate.jsonl|sensitivity'
             'generate_prepared_namespace|corpus/prepared-namespace.jsonl|sensitivity'
+            'generate_changed_context|corpus/changed-context.jsonl|sensitivity'
           )
           for entry in "${generators[@]}"; do
             IFS='|' read -r executable corpus sensitivity <<< "$entry"
