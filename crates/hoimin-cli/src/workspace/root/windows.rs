@@ -34,16 +34,12 @@ use super::{
     windows_final_name_units_are_valid,
 };
 
-pub(super) fn read(
+pub(super) fn open_read(
     parent: &File,
     name: &OsString,
     logical_path: &Utf8Path,
-) -> Result<Vec<u8>, WorkspaceError> {
-    let mut file = open_final(parent, name, logical_path, WindowsFinalOperation::Read)?;
-    let mut contents = Vec::new();
-    file.read_to_end(&mut contents)
-        .map_err(|error| WorkspaceError::io("read worker file", logical_path, error))?;
-    Ok(contents)
+) -> Result<File, WorkspaceError> {
+    open_final(parent, name, logical_path, WindowsFinalOperation::Read)
 }
 
 pub(super) fn snapshot(

@@ -74,8 +74,20 @@ impl RootRelativeReader {
     }
 
     pub(crate) fn read(&self, path: &Utf8Path) -> Result<Vec<u8>, RootRelativeReadError> {
-        match self.root.read(path) {
-            Ok(bytes) => Ok(bytes),
+        self.classify_read(path, self.root.read(path))
+    }
+
+    fn hash(&self, path: &Utf8Path) -> Result<blake3::Hash, RootRelativeReadError> {
+        self.classify_read(path, self.root.hash(path))
+    }
+
+    fn classify_read<T>(
+        &self,
+        path: &Utf8Path,
+        result: Result<T, WorkspaceError>,
+    ) -> Result<T, RootRelativeReadError> {
+        match result {
+            Ok(value) => Ok(value),
             Err(error) => match self.root.is_missing(path) {
                 Ok(true) => Err(RootRelativeReadError::NotFound),
                 Ok(false) | Err(_) => Err(RootRelativeReadError::Other(error)),
@@ -84,11 +96,11 @@ impl RootRelativeReader {
     }
 }
 
-pub(crate) fn read_root_relative(
+pub(crate) fn hash_root_relative(
     root: &Utf8Path,
     path: &Utf8Path,
-) -> Result<Vec<u8>, RootRelativeReadError> {
-    RootRelativeReader::open(root.to_owned())?.read(path)
+) -> Result<blake3::Hash, RootRelativeReadError> {
+    RootRelativeReader::open(root.to_owned())?.hash(path)
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]

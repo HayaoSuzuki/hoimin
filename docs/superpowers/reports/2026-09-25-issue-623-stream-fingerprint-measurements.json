@@ -1,0 +1,380 @@
+[
+  {
+    "stage": "red",
+    "mib": 1,
+    "mode": "exact",
+    "repeat": 0,
+    "heap_peak_bytes": 1049225
+  },
+  {
+    "stage": "red",
+    "mib": 1,
+    "mode": "exact",
+    "repeat": 1,
+    "heap_peak_bytes": 1049225
+  },
+  {
+    "stage": "red",
+    "mib": 1,
+    "mode": "exact",
+    "repeat": 2,
+    "heap_peak_bytes": 1049225
+  },
+  {
+    "stage": "red",
+    "mib": 1,
+    "mode": "glob",
+    "repeat": 0,
+    "heap_peak_bytes": 1049309
+  },
+  {
+    "stage": "red",
+    "mib": 1,
+    "mode": "glob",
+    "repeat": 1,
+    "heap_peak_bytes": 1049293
+  },
+  {
+    "stage": "red",
+    "mib": 1,
+    "mode": "glob",
+    "repeat": 2,
+    "heap_peak_bytes": 1049293
+  },
+  {
+    "stage": "red",
+    "mib": 1,
+    "mode": "overlap",
+    "repeat": 0,
+    "heap_peak_bytes": 1049302
+  },
+  {
+    "stage": "red",
+    "mib": 1,
+    "mode": "overlap",
+    "repeat": 1,
+    "heap_peak_bytes": 1049302
+  },
+  {
+    "stage": "red",
+    "mib": 1,
+    "mode": "overlap",
+    "repeat": 2,
+    "heap_peak_bytes": 1049302
+  },
+  {
+    "stage": "red",
+    "mib": 16,
+    "mode": "exact",
+    "repeat": 0,
+    "heap_peak_bytes": 16777865
+  },
+  {
+    "stage": "red",
+    "mib": 16,
+    "mode": "exact",
+    "repeat": 1,
+    "heap_peak_bytes": 16777865
+  },
+  {
+    "stage": "red",
+    "mib": 16,
+    "mode": "exact",
+    "repeat": 2,
+    "heap_peak_bytes": 16777865
+  },
+  {
+    "stage": "red",
+    "mib": 16,
+    "mode": "glob",
+    "repeat": 0,
+    "heap_peak_bytes": 16777933
+  },
+  {
+    "stage": "red",
+    "mib": 16,
+    "mode": "glob",
+    "repeat": 1,
+    "heap_peak_bytes": 16777933
+  },
+  {
+    "stage": "red",
+    "mib": 16,
+    "mode": "glob",
+    "repeat": 2,
+    "heap_peak_bytes": 16777933
+  },
+  {
+    "stage": "red",
+    "mib": 16,
+    "mode": "overlap",
+    "repeat": 0,
+    "heap_peak_bytes": 16777942
+  },
+  {
+    "stage": "red",
+    "mib": 16,
+    "mode": "overlap",
+    "repeat": 1,
+    "heap_peak_bytes": 16777942
+  },
+  {
+    "stage": "red",
+    "mib": 16,
+    "mode": "overlap",
+    "repeat": 2,
+    "heap_peak_bytes": 16777942
+  },
+  {
+    "stage": "red",
+    "mib": 64,
+    "mode": "exact",
+    "repeat": 0,
+    "heap_peak_bytes": 67109513
+  },
+  {
+    "stage": "red",
+    "mib": 64,
+    "mode": "exact",
+    "repeat": 1,
+    "heap_peak_bytes": 67109513
+  },
+  {
+    "stage": "red",
+    "mib": 64,
+    "mode": "exact",
+    "repeat": 2,
+    "heap_peak_bytes": 67109513
+  },
+  {
+    "stage": "red",
+    "mib": 64,
+    "mode": "glob",
+    "repeat": 0,
+    "heap_peak_bytes": 67109581
+  },
+  {
+    "stage": "red",
+    "mib": 64,
+    "mode": "glob",
+    "repeat": 1,
+    "heap_peak_bytes": 67109581
+  },
+  {
+    "stage": "red",
+    "mib": 64,
+    "mode": "glob",
+    "repeat": 2,
+    "heap_peak_bytes": 67109581
+  },
+  {
+    "stage": "red",
+    "mib": 64,
+    "mode": "overlap",
+    "repeat": 0,
+    "heap_peak_bytes": 67109590
+  },
+  {
+    "stage": "red",
+    "mib": 64,
+    "mode": "overlap",
+    "repeat": 1,
+    "heap_peak_bytes": 67109590
+  },
+  {
+    "stage": "red",
+    "mib": 64,
+    "mode": "overlap",
+    "repeat": 2,
+    "heap_peak_bytes": 67109590
+  },
+  {
+    "stage": "green",
+    "mib": 1,
+    "mode": "exact",
+    "repeat": 0,
+    "heap_peak_bytes": 905
+  },
+  {
+    "stage": "green",
+    "mib": 1,
+    "mode": "exact",
+    "repeat": 1,
+    "heap_peak_bytes": 905
+  },
+  {
+    "stage": "green",
+    "mib": 1,
+    "mode": "exact",
+    "repeat": 2,
+    "heap_peak_bytes": 905
+  },
+  {
+    "stage": "green",
+    "mib": 1,
+    "mode": "glob",
+    "repeat": 0,
+    "heap_peak_bytes": 9533
+  },
+  {
+    "stage": "green",
+    "mib": 1,
+    "mode": "glob",
+    "repeat": 1,
+    "heap_peak_bytes": 9517
+  },
+  {
+    "stage": "green",
+    "mib": 1,
+    "mode": "glob",
+    "repeat": 2,
+    "heap_peak_bytes": 9517
+  },
+  {
+    "stage": "green",
+    "mib": 1,
+    "mode": "overlap",
+    "repeat": 0,
+    "heap_peak_bytes": 9517
+  },
+  {
+    "stage": "green",
+    "mib": 1,
+    "mode": "overlap",
+    "repeat": 1,
+    "heap_peak_bytes": 9517
+  },
+  {
+    "stage": "green",
+    "mib": 1,
+    "mode": "overlap",
+    "repeat": 2,
+    "heap_peak_bytes": 9517
+  },
+  {
+    "stage": "green",
+    "mib": 16,
+    "mode": "exact",
+    "repeat": 0,
+    "heap_peak_bytes": 905
+  },
+  {
+    "stage": "green",
+    "mib": 16,
+    "mode": "exact",
+    "repeat": 1,
+    "heap_peak_bytes": 905
+  },
+  {
+    "stage": "green",
+    "mib": 16,
+    "mode": "exact",
+    "repeat": 2,
+    "heap_peak_bytes": 905
+  },
+  {
+    "stage": "green",
+    "mib": 16,
+    "mode": "glob",
+    "repeat": 0,
+    "heap_peak_bytes": 9517
+  },
+  {
+    "stage": "green",
+    "mib": 16,
+    "mode": "glob",
+    "repeat": 1,
+    "heap_peak_bytes": 9517
+  },
+  {
+    "stage": "green",
+    "mib": 16,
+    "mode": "glob",
+    "repeat": 2,
+    "heap_peak_bytes": 9517
+  },
+  {
+    "stage": "green",
+    "mib": 16,
+    "mode": "overlap",
+    "repeat": 0,
+    "heap_peak_bytes": 9517
+  },
+  {
+    "stage": "green",
+    "mib": 16,
+    "mode": "overlap",
+    "repeat": 1,
+    "heap_peak_bytes": 9517
+  },
+  {
+    "stage": "green",
+    "mib": 16,
+    "mode": "overlap",
+    "repeat": 2,
+    "heap_peak_bytes": 9517
+  },
+  {
+    "stage": "green",
+    "mib": 64,
+    "mode": "exact",
+    "repeat": 0,
+    "heap_peak_bytes": 905
+  },
+  {
+    "stage": "green",
+    "mib": 64,
+    "mode": "exact",
+    "repeat": 1,
+    "heap_peak_bytes": 905
+  },
+  {
+    "stage": "green",
+    "mib": 64,
+    "mode": "exact",
+    "repeat": 2,
+    "heap_peak_bytes": 905
+  },
+  {
+    "stage": "green",
+    "mib": 64,
+    "mode": "glob",
+    "repeat": 0,
+    "heap_peak_bytes": 9517
+  },
+  {
+    "stage": "green",
+    "mib": 64,
+    "mode": "glob",
+    "repeat": 1,
+    "heap_peak_bytes": 9517
+  },
+  {
+    "stage": "green",
+    "mib": 64,
+    "mode": "glob",
+    "repeat": 2,
+    "heap_peak_bytes": 9517
+  },
+  {
+    "stage": "green",
+    "mib": 64,
+    "mode": "overlap",
+    "repeat": 0,
+    "heap_peak_bytes": 9517
+  },
+  {
+    "stage": "green",
+    "mib": 64,
+    "mode": "overlap",
+    "repeat": 1,
+    "heap_peak_bytes": 9517
+  },
+  {
+    "stage": "green",
+    "mib": 64,
+    "mode": "overlap",
+    "repeat": 2,
+    "heap_peak_bytes": 9517
+  }
+]
