@@ -44,3 +44,9 @@ The standalone probes call the public linked `read_report`; no copy of productio
 For this compact JSON fixture, measured median time fell 18.78%. Per-round JSON medians were 9.205/9.294/10.059 ms before and 7.886/7.838/7.224 ms after. This is a local warm-file measurement during other development activity, not a guaranteed CLI speedup or ordinary-project result. The JSONL control remains streaming; its timing variation is not attributed entirely to dispatch. No RSS or memory reduction is claimed.
 
 Serialized-mutant BLAKE3 digest matched across every JSON read and both executables: `1902b1e9ef605025d1896d977c8e884fa19424698225b3d134a2d3062b9972c3`. JSONL had its own consistent digest (its independently generated run metadata differs). Reproducible probes, generation script, unchanged report files and all raw samples are in `/tmp/hoimin-batch-604-632/625-benchmark/` in the implementation environment. Durable deterministic traversal and semantic regressions are committed with the implementation.
+
+## Integration with merged issue 610
+
+Merged origin/main bf09c91 into the published branch without rewriting commits. The only conflict was the import/module block in `input.rs`: retained both the dispatch module and duplicate fingerprint reader imports. Git placed dispatch into the shared `read_buffered_report` automatically, so ordinary public reads and fingerprinted CLI reads both use the same typed parser; raw input hashing still wraps all file bytes and no report reread was introduced.
+
+After integration: progress input/duplicate unit tests 8, public progress 81, existing Lean consumers 7, and three progress heap tests passed. Both exact CI clippy commands passed; workspace and vendor parser fmt and diff checks passed. An initial vendor fmt command used an incorrect directory name; rerunning the exact CI path `vendor/ruff_python_parser/Cargo.toml` passed. No Lean process was launched.

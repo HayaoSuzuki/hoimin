@@ -173,3 +173,7 @@ root = "PreparedNamespaceAuditMain"
 [[lean_exe]]
 name = "generate_paging"
 root = "PagingAuditMain"
+
+[[lean_exe]]
+name = "generate_prepared_annotation_import"
+root = "PreparedAnnotationImportAuditMain"

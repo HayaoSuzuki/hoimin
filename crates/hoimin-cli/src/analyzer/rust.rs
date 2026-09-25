@@ -1118,6 +1118,11 @@ impl NameResolutionIndex {
                 direct = false;
                 continue;
             }
+            // Prepared mappings can override either endpoint, even an explicit
+            // class import or nonlocal. Lexical skips and globals bypassed them above.
+            if scope.may_have_prepared_namespace {
+                return false;
+            }
             if scope.nonlocals.contains(name) {
                 current = scope.parent;
                 while let Some(parent) = current {
