@@ -19,3 +19,5 @@ Design and plan were committed before production changes (`c20b7c7`), each with 
 New resolver peak heap was 905 bytes for exact mode at every size and repeat, and at most 9,533 bytes for glob/overlap (normally 9,517), compared with whole-file growth before the change. This excludes the fixed stack buffer and is a Rust allocator measurement, not process RSS. No speed improvement is claimed. The committed JSON contains all observations.
 
 Full workspace: 2300 passed, 0 failed, 22 ignored across 98 test groups. Both exact CI Clippy commands, workspace/vendor formatting and diff checks passed.
+
+Rebased onto main `bf09c91` without conflicts before publication. Fingerprint binary/heap and public plan integration tests, exact all-target/all-feature workspace Clippy, formatting and diff checks passed on the final base.
