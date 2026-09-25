@@ -16,22 +16,22 @@ Default code0 and all output bytes/schemas remain unchanged. Check past regressi
 
 ## Task 1: public RED and implementation
 
-- [ ] Add public CLI regression-gate tests in `tests/progress.rs` for all latest states, recovery/barrier histories, set mismatch, human/JSON/details parity and malformed trailing input. Observe unknown-option RED before code.
-- [ ] Extend the real strong/weak run fixture to verify opt-in exit1 and unchanged candidate/report results.
-- [ ] Add `fail_on_regression: bool` to raw/public ProgressArgs and parser conversion; default false. Destructure it in progress::run and return `i32::from(fail_on_regression && result.latest == ProgressState::Regressing)` after render success. Update direct argument constructors with false.
-- [ ] Add failing stdout and stderr writer tests through run_with_io, preserving error2 even with a latest regression. Run focused tests GREEN.
+- [x] Add public CLI regression-gate tests in `tests/progress.rs` for all latest states, recovery/barrier histories, set mismatch, human/JSON/details parity and malformed trailing input. Observe unknown-option RED before code.
+- [x] Extend the real strong/weak run fixture to verify opt-in exit1 and unchanged candidate/report results.
+- [x] Add `fail_on_regression: bool` to raw/public ProgressArgs and parser conversion; default false. Destructure it in progress::run and return `i32::from(fail_on_regression && result.latest == ProgressState::Regressing)` after render success. Update direct argument constructors with false.
+- [x] Add failing stdout and stderr writer tests through run_with_io, preserving error2 even with a latest regression. Run focused tests GREEN.
 
 ## Task 2: Lean correspondence and documentation
 
-- [ ] Add pure progress exit function and default/only-regression/error precedence lemmas, plus broken historical-regression witnesses. First use an intentionally missing always0 model and observe RED, then implement the defined gate.
-- [ ] Add regression-then-recovery and regression-then-unusable cases; add ordinary/opt-in exit expectations to generated corpus schema3. Extend existing typed Rust adapter to record actual subprocess exit and classify code mismatches separately from infrastructure failures.
-- [ ] Request global Lean slot; run model/native/generator/freshness/sensitivity under20sec/2GiB with no domain increase. Run public CLI consumers, retaining all aggregate/detail assertions.
-- [ ] Update progress README/help: opt-in1 for latest regression, indeterminate0, errors2, previous jq policy still usable. No JSON schema edits.
+- [x] Add pure progress exit function and default/only-regression/error precedence lemmas, plus broken historical-regression witnesses. First use an intentionally missing always0 model and observe RED, then implement the defined gate.
+- [x] Add regression-then-recovery and regression-then-unusable cases; add ordinary/opt-in exit expectations to generated corpus schema3. Extend existing typed Rust adapter to record actual subprocess exit and classify code mismatches separately from infrastructure failures.
+- [x] Request global Lean slot; run model/native/generator/freshness/sensitivity under20sec/2GiB with no domain increase. Run public CLI consumers, retaining all aggregate/detail assertions.
+- [x] Update progress README/help: opt-in1 for latest regression, indeterminate0, errors2, previous jq policy still usable. No JSON schema edits.
 
 ## Task 3: review and verification
 
-- [ ] Three implementation self-reviews (latest/error precedence; output/schema preservation; parser/API/defaults) and three test self-reviews (meaningful RED; all state/fault branches; model correspondence boundaries). Record findings.
-- [ ] Independent read-only review; full workspace and exact CI clippy2/fmt2/diff checks. Use batch-progress cache with debug0/incremental0/jobs1.
+- [x] Three implementation self-reviews (latest/error precedence; output/schema preservation; parser/API/defaults) and three test self-reviews (meaningful RED; all state/fault branches; model correspondence boundaries). Record findings.
+- [x] Independent read-only review; full workspace and exact CI clippy2/fmt2/diff checks. Use batch-progress cache with debug0/incremental0/jobs1.
 - [ ] Commit implementation/evidence, rebase on latest main if needed, focused integration recheck, and publish independent gh stack PR with Closes630. Root handlesCI/merge.
 
 ## Plan review passes

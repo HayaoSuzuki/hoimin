@@ -131,6 +131,9 @@ private def caseJson (item : OracleCase) : Lean.Json :=
     ("reports", .arr (item.reports.toArray.map reportJson)),
     ("expected", Lean.Json.mkObj [
       ("latest_state", .str (latestStateName expected.latest)),
+      ("default_exit_code", Lean.toJson (progressExitCode false false expected.latest)),
+      ("regression_exit_code", Lean.toJson (progressExitCode true false expected.latest)),
+      ("error_exit_code", Lean.toJson (progressExitCode true true expected.latest)),
       ("consecutive_stalls", Lean.toJson expected.consecutiveStalls),
       ("saturated", Lean.toJson (expected.latest == .saturated)),
       ("comparisons", .arr (expected.comparisons.toArray.map comparisonJson)),
@@ -243,7 +246,7 @@ private def reportPairCount : Nat := reportDomain.length * reportDomain.length
 private def historyCount : Nat := (tracesUpTo 4).length * 3
 
 private def ensureAudit : IO (Except UInt32 Unit) := do
-  unless sensitivityPasses && detailSensitivity do
+  unless sensitivityPasses && detailSensitivity && exitSensitivity do
     IO.eprintln "progress decision audit did not distinguish every broken variant"
     return .error 2
   unless fixedCasesPass do
@@ -284,7 +287,8 @@ private def printSensitivity : IO UInt32 := do
   IO.println s!"duplicate_content_detected={duplicateContentSensitivity}"
   IO.println s!"inconclusive_exclusion_detected={inconclusiveSensitivity}"
   IO.println s!"detail_identity_cap_adjacency_detected={detailSensitivity}"
-  return if sensitivityPasses && detailSensitivity then 0 else 2
+  IO.println s!"regression_exit_detected={exitSensitivity}"
+  return if sensitivityPasses && detailSensitivity && exitSensitivity then 0 else 2
 
 private def printCases : IO UInt32 := do
   for item in progressDecisionCases do
@@ -295,7 +299,7 @@ private def printStats : IO UInt32 := do
   match ← ensureAudit with
   | .error code => return code
   | .ok () =>
-      IO.println "schema=2"
+      IO.println "schema=3"
       IO.println "max_history_length=4"
       IO.println "patience_min=1"
       IO.println "patience_max=3"

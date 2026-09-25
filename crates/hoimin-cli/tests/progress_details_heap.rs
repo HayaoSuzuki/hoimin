@@ -74,6 +74,7 @@ fn detail_allocations_do_not_scale_with_candidate_body_size() {
         }
         let measure = |details| {
             let args = ProgressArgs {
+                fail_on_regression: false,
                 reports: paths.to_vec(),
                 patience: NonZeroUsize::new(3).unwrap(),
                 format: ProgressOutputFormat::Json,

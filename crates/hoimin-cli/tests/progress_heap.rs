@@ -81,6 +81,7 @@ fn measure_history_with_details(
 ) -> (usize, Value) {
     let reports = std::iter::repeat_n(path.to_path_buf(), history).collect();
     let args = ProgressArgs {
+        fail_on_regression: false,
         details,
         details_limit: 100,
         reports,

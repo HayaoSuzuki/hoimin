@@ -277,6 +277,13 @@ async fn real_run_reports_expose_exact_regression_through_progress() {
     assert_eq!(entry["column"], 16);
     assert_eq!(entry["previous_status"], "killed");
     assert_eq!(entry["current_status"], "survived");
+    command.arg("--fail-on-regression");
+    let gated = bounded_output(&mut command, Duration::from_secs(30))
+        .await
+        .unwrap();
+    assert_eq!(gated.status.code(), Some(1));
+    assert_eq!(gated.stdout, output.stdout);
+    assert_eq!(gated.stderr, output.stderr);
     let improvement = progress_details(&[after, before], "human", 100).await;
     assert!(improvement.as_str().unwrap().contains("survived -> killed"));
 }
@@ -3610,4 +3617,200 @@ async fn details_default_cap_and_partial_sets_are_explicit() {
     assert_eq!(value["details"]["eligibility"], "different");
     assert_eq!(value["details"]["transitions"][0]["id"], "id-000");
     assert_eq!(value["latest"]["state"], "indeterminate");
+}
+
+fn regression_gate_args(
+    reports: &[PathBuf],
+    format: &str,
+    details: bool,
+    gate: bool,
+) -> Vec<String> {
+    let mut args = vec![
+        "hoimin".to_owned(),
+        "progress".to_owned(),
+        "--format".to_owned(),
+        format.to_owned(),
+    ];
+    if details {
+        args.push("--details".to_owned());
+    }
+    if gate {
+        args.push("--fail-on-regression".to_owned());
+    }
+    args.extend(reports.iter().map(|path| path.to_str().unwrap().to_owned()));
+    args
+}
+
+async fn progress_with_gate(
+    reports: &[PathBuf],
+    format: &str,
+    details: bool,
+    gate: bool,
+) -> (i32, Vec<u8>, Vec<u8>) {
+    let mut out = Vec::new();
+    let mut err = Vec::new();
+    let status = hoimin_cli::run_with_io(
+        regression_gate_args(reports, format, details, gate),
+        &mut out,
+        &mut err,
+    )
+    .await;
+    (status, out, err)
+}
+
+#[tokio::test]
+async fn regression_exit_uses_latest_state_and_preserves_all_output() {
+    let fixture = tempfile::tempdir().unwrap();
+    let killed = write_json(
+        &fixture,
+        "killed.json",
+        &detail_report(&[("a", MutationStatus::Killed)]),
+    );
+    let survived = write_json(
+        &fixture,
+        "survived.json",
+        &detail_report(&[("a", MutationStatus::Survived)]),
+    );
+    let mut gap_doc = detail_report(&[("a", MutationStatus::Killed)]);
+    gap_doc["summary"]["complete"] = json!(false);
+    gap_doc["summary"]["exit_code"] = json!(4);
+    let gap = write_json(&fixture, "gap.json", &gap_doc);
+    let mut different_doc = detail_report(&[("a", MutationStatus::Survived)]);
+    different_doc["mutants"][0]["candidate"]["id"] = json!("different");
+    let different = write_json(&fixture, "different.json", &different_doc);
+    for (reports, state, expected_exit) in [
+        (vec![killed.clone(), survived.clone()], "regressing", 1),
+        (vec![survived.clone(), killed.clone()], "improving", 0),
+        (vec![killed.clone(), killed.clone()], "stalled", 0),
+        (vec![killed.clone(); 4], "saturated", 0),
+        (vec![killed.clone(), different], "indeterminate", 0),
+        (
+            vec![killed.clone(), survived.clone(), killed.clone()],
+            "improving",
+            0,
+        ),
+        (
+            vec![killed.clone(), survived.clone(), gap.clone()],
+            "indeterminate",
+            0,
+        ),
+        (vec![gap, killed.clone(), survived.clone()], "regressing", 1),
+    ] {
+        for format in ["human", "json"] {
+            for details in [false, true] {
+                let plain = progress_with_gate(&reports, format, details, false).await;
+                assert_eq!(plain.0, 0, "{}", String::from_utf8_lossy(&plain.2));
+                let gated = progress_with_gate(&reports, format, details, true).await;
+                assert_eq!(
+                    gated.0,
+                    expected_exit,
+                    "{state} {format} details={details}: {}",
+                    String::from_utf8_lossy(&gated.2)
+                );
+                assert_eq!(gated.1, plain.1);
+                assert_eq!(gated.2, plain.2);
+                if format == "json" {
+                    let doc: Value = serde_json::from_slice(&gated.1).unwrap();
+                    assert_eq!(doc["latest"]["state"], state);
+                } else {
+                    assert!(
+                        String::from_utf8_lossy(&gated.1).contains(&format!("state: {state}\n"))
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn regression_exit_does_not_hide_trailing_invalid_input() {
+    let fixture = tempfile::tempdir().unwrap();
+    let killed = write_json(
+        &fixture,
+        "killed.json",
+        &detail_report(&[("a", MutationStatus::Killed)]),
+    );
+    let survived = write_json(
+        &fixture,
+        "survived.json",
+        &detail_report(&[("a", MutationStatus::Survived)]),
+    );
+    let invalid = fixture.path().join("invalid.json");
+    std::fs::write(&invalid, "{").unwrap();
+    for format in ["human", "json"] {
+        let (status, out, err) = progress_with_gate(
+            &[
+                killed.clone(),
+                killed.clone(),
+                survived.clone(),
+                invalid.clone(),
+            ],
+            format,
+            true,
+            true,
+        )
+        .await;
+        assert_eq!(status, 2);
+        assert!(out.is_empty());
+        let err = String::from_utf8(err).unwrap();
+        assert!(err.contains("could not parse progress report"), "{err}");
+        assert!(
+            !err.contains("same path"),
+            "warnings must wait for validation: {err}"
+        );
+    }
+}
+
+struct GateFailingWriter;
+impl std::io::Write for GateFailingWriter {
+    fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+        Err(std::io::Error::other("gate fixture write failure"))
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Err(std::io::Error::other("gate fixture flush failure"))
+    }
+}
+
+#[tokio::test]
+async fn regression_exit_never_overrides_stdout_or_stderr_errors() {
+    let fixture = tempfile::tempdir().unwrap();
+    let killed = write_json(
+        &fixture,
+        "killed.json",
+        &detail_report(&[("a", MutationStatus::Killed)]),
+    );
+    let survived = write_json(
+        &fixture,
+        "survived.json",
+        &detail_report(&[("a", MutationStatus::Survived)]),
+    );
+    for format in ["human", "json"] {
+        let mut error = Vec::new();
+        let status = hoimin_cli::run_with_io(
+            regression_gate_args(&[killed.clone(), survived.clone()], format, true, true),
+            &mut GateFailingWriter,
+            &mut error,
+        )
+        .await;
+        assert_eq!(status, 2);
+        assert!(
+            String::from_utf8(error)
+                .unwrap()
+                .contains("gate fixture write failure")
+        );
+        let mut out = Vec::new();
+        let status = hoimin_cli::run_with_io(
+            regression_gate_args(
+                &[killed.clone(), killed.clone(), survived.clone()],
+                format,
+                true,
+                true,
+            ),
+            &mut out,
+            &mut GateFailingWriter,
+        )
+        .await;
+        assert_eq!(status, 2);
+        assert!(out.is_empty());
+    }
 }
