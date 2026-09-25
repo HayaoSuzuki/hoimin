@@ -1,5 +1,30 @@
 use std::ffi::OsString;
 
+// Each CLI process owns a distinct managed-root namespace. Concurrent tests must
+// not let another invocation's abandoned-root cleanup claim this test's removal.
+async fn run_isolated(args: Vec<OsString>, stdout: &mut Vec<u8>, stderr: &mut Vec<u8>) -> i32 {
+    let runtime_temp = tempfile::tempdir().unwrap();
+    let output = tokio::time::timeout(
+        std::time::Duration::from_secs(30),
+        tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
+            .args(args.into_iter().skip(1))
+            .env("TMPDIR", runtime_temp.path())
+            .env("TMP", runtime_temp.path())
+            .env("TEMP", runtime_temp.path())
+            .kill_on_drop(true)
+            .output(),
+    )
+    .await
+    .expect("isolated disk evidence CLI deadline")
+    .unwrap();
+    *stdout = output.stdout;
+    *stderr = output.stderr;
+    output
+        .status
+        .code()
+        .expect("disk evidence process exit code")
+}
+
 fn successful_command() -> Vec<OsString> {
     #[cfg(unix)]
     {
@@ -53,7 +78,7 @@ async fn public_runtime_emits_measured_disk_and_cleanup_evidence() {
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
 
-    let exit = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+    let exit = run_isolated(args, &mut stdout, &mut stderr).await;
 
     assert!(
         matches!(exit, 0 | 1),
@@ -69,13 +94,16 @@ async fn public_runtime_emits_measured_disk_and_cleanup_evidence() {
             .as_array()
             .is_some_and(|items| !items.is_empty())
     );
-    assert!(disk["cleanup"].as_array().unwrap().iter().any(|record| {
-        record["root_id"] == "execution"
-            && record["status"] == "clean"
-            && record["removed_entries"]
-                .as_u64()
-                .is_some_and(|value| value > 0)
-    }));
+    assert!(
+        disk["cleanup"].as_array().unwrap().iter().any(|record| {
+            record["root_id"] == "execution"
+                && record["status"] == "clean"
+                && record["removed_entries"]
+                    .as_u64()
+                    .is_some_and(|value| value > 0)
+        }),
+        "{disk}"
+    );
     assert!(disk["cleanup"].as_array().unwrap().iter().any(|record| {
         record["root_id"] == "delivery" && record["status"] == "cleanup_after_delivery"
     }));
@@ -103,7 +131,7 @@ async fn public_initial_reserve_failure_uses_the_typed_report_path_before_dispat
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
 
-    let exit = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+    let exit = run_isolated(args, &mut stdout, &mut stderr).await;
 
     assert_ne!(exit, 0, "stderr={:?}", String::from_utf8_lossy(&stderr));
     let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
@@ -137,7 +165,7 @@ async fn public_jsonl_runtime_emits_disk_evidence() {
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
 
-    let exit = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+    let exit = run_isolated(args, &mut stdout, &mut stderr).await;
 
     assert!(
         matches!(exit, 0 | 1),
@@ -180,7 +208,7 @@ async fn public_human_runtime_emits_disk_policy_evidence() {
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
 
-    let exit = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+    let exit = run_isolated(args, &mut stdout, &mut stderr).await;
 
     assert!(
         matches!(exit, 0 | 1),

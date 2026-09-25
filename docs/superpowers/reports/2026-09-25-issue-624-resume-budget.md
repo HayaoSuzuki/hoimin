@@ -50,3 +50,10 @@ contracts passed all 40 tests via unittest (pytest is not installed in this
 worktree's environment). Both exact CI Clippy commands, both formatting checks,
 and `git diff --check` passed. The full workspace suite was not repeated for this
 documentation-only conflict resolution; its previous result is recorded above.
+
+
+## Random-order CI fixture follow-up
+
+CI job108066563696 failed the pre-existing disk_shutdown cleanup assertion with seed1790338697481129144. That assertion jointly requires execution status clean and removed_entries>0; the old failure did not print the disk record, so the exact observed record is unknown. Thirty local repetitions of the original four tests passed. Independent source review identified shared temp-root/coordinator state and a plausible owner/janitor window that can return Clean with zero owner removals; this is an inference, not a reproduced production defect.
+
+Isolated each disk evidence test in an actual CLI subprocess with its own TMPDIR/TMP/TEMP namespace, a30s deadline and kill-on-drop. The strict status/removal/sample assertions are unchanged and now print the disk record on failure. Reviewed (1) child-only environment and temp lifetime, (2) original argument/output/exit observations, and (3) timeout/reaping plus Unix/Windows temp selection. No runtime or cleanup production code changed. Stable focused4 tests and30 isolated repetitions/120 tests passed; pinned nightly2026-07-27 with the exact failing shuffle seed passed4 tests. Exact workspace Clippy passed. Linux CI remains the final platform verification.
