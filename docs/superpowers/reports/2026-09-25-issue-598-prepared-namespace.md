@@ -17,3 +17,7 @@ Baseline: `4e3bc2a97cad2e4ce8ae2b11c970fc2f5dff9bb2`. Worktree: issue-598. Revie
 ## Execution
 
 Pending implementation. Root reported baseline `cargo test --workspace`: 2265 passed, 22 ignored across 94 suites; this agent has not rerun that baseline.
+
+Task 1 RED: `cargo test -p hoimin-cli --lib prepared_namespace -- --nocapture` failed all three regressions on the unchanged resolver (direct custom class, builtin annotation, source-only global declaration). After the resolver fix, a test also counted the tuple-literal mutation inside `list(())`; replaced arguments with `values` to isolate the callable mutation. This was a fixture defect, not a resolver defect. Task 1 GREEN: `CARGO_BUILD_JOBS=2 cargo test -p hoimin-cli --lib` passed 683 tests, 12 ignored. No baseline tests required expectation changes.
+
+Lean RED: a model returning `true` for all namespace trust failed `trusted true false = false` by `decide` (3.640 s, 592736 KiB peak RSS). The corrected model and explicit-premise soundness theorem built in 5.468 s, 625520 KiB peak RSS. Both used 20 s / 2048 MiB guards and heartbeat 10000; no bound was increased. The first sandboxed guard attempt failed to inspect the process table (infrastructure error); subsequent authorized guarded runs used process-table access.
