@@ -437,6 +437,7 @@ pub struct RawRunConfig {
     pub lines: Vec<LineSelection>,
     pub symbols: Vec<crate::SymbolSelection>,
     pub changed: bool,
+    pub changed_context: u32,
     pub diff_base: Option<String>,
     pub includes: Vec<String>,
     pub excludes: Vec<String>,
@@ -667,6 +668,10 @@ pub enum ConfigError {
     MissingSelector,
     #[error("--diff-base requires --changed")]
     DiffBaseRequiresChanged,
+    #[error("--changed-context requires --changed")]
+    ChangedContextRequiresChanged,
+    #[error("--changed-context {context} exceeds the supported maximum {maximum}")]
+    ChangedContextTooLarge { context: u32, maximum: u32 },
     #[error("--changed requires --source")]
     ChangedRequiresSource,
     #[error("--symbol requires --source")]
@@ -814,6 +819,15 @@ fn validate_selection(selection: &Selection) -> Result<(), ConfigError> {
     if !has_selector {
         return Err(ConfigError::MissingSelector);
     }
+    if selection.changed_context > crate::MAX_CHANGED_CONTEXT {
+        return Err(ConfigError::ChangedContextTooLarge {
+            context: selection.changed_context,
+            maximum: crate::MAX_CHANGED_CONTEXT,
+        });
+    }
+    if selection.changed_context != 0 && !selection.changed {
+        return Err(ConfigError::ChangedContextRequiresChanged);
+    }
     if selection.diff_base.is_some() && !selection.changed {
         return Err(ConfigError::DiffBaseRequiresChanged);
     }
@@ -896,6 +910,7 @@ impl TryFrom<RawRunConfig> for RunConfig {
             lines: raw.lines,
             symbols: raw.symbols,
             changed: raw.changed,
+            changed_context: raw.changed_context,
             diff_base: raw.diff_base,
             includes: raw.includes,
             excludes: raw.excludes,

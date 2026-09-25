@@ -862,6 +862,7 @@ fn root_help_exposes_the_run_contract() {
         "run",
         "--file",
         "--changed",
+        "--changed-context",
         "--jobs",
         "--max-memory",
         "--max-workspace-size",
@@ -1560,5 +1561,65 @@ fn run_help_explains_windows_per_root_resource_scope() {
         "jobs multiplies",
     ] {
         assert!(help.contains(contract), "missing {contract}: {help}");
+    }
+}
+
+#[test]
+fn changed_context_parses_for_run_and_plan_and_checks_bounds() {
+    for command in ["run", "plan"] {
+        for context in ["0", "1", "1073741823"] {
+            let command_line = [
+                "hoimin",
+                command,
+                "--source",
+                "src",
+                "--changed",
+                "--changed-context",
+                context,
+                "--",
+                "python",
+            ];
+            let config = if command == "run" {
+                parse_config_from(command_line).unwrap()
+            } else {
+                let ParsedCommand::Plan(args) = parse_from(command_line).unwrap() else {
+                    panic!("expected plan")
+                };
+                args.into_run_config().unwrap()
+            };
+            assert_eq!(
+                serde_json::to_value(config).unwrap()["selection"]["changed_context"],
+                context.parse::<u32>().unwrap()
+            );
+        }
+        for context in ["-1", "1073741824", "4294967296", "abc"] {
+            assert!(
+                parse_from([
+                    "hoimin",
+                    command,
+                    "--source",
+                    "src",
+                    "--changed",
+                    "--changed-context",
+                    context,
+                    "--",
+                    "python"
+                ])
+                .is_err()
+            );
+        }
+        assert!(
+            parse_from([
+                "hoimin",
+                command,
+                "--source",
+                "src",
+                "--changed-context",
+                "0",
+                "--",
+                "python"
+            ])
+            .is_err()
+        );
     }
 }

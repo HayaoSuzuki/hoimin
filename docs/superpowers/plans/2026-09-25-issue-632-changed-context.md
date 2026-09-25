@@ -19,31 +19,32 @@ Default/historical compatibility, deletion gap off-by-one, supported numeric ran
 
 ### Task 1: Regression tests (RED)
 
-- [ ] Add CLI parsing assertions for the new option, requires-changed and numeric bounds.
-- [ ] Add core deserialization/validation/round-trip tests using JSON to avoid coupling failures to a missing Rust field.
-- [ ] Run those tests and record the expected missing-feature failures before implementation.
+- [x] Add CLI parsing assertions for the new option, requires-changed and numeric bounds.
+- [x] Add core deserialization/validation/round-trip tests using JSON to avoid coupling failures to a missing Rust field.
+- [x] Run those tests and record the expected missing-feature failures before implementation.
 
 ### Task 2: Rust implementation (GREEN)
 
-- [ ] Add bounded `changed_context` propagation in cli.rs, core/config.rs and core/target.rs with legacy serde default.
-- [ ] Pass context into the internal Git resolver; format --unified=N and preserve all other diff flags.
-- [ ] Add real Git boundary/intersection tests and public plan/verify persistence coverage.
-- [ ] Document CLI use, bound, deletion behavior and changed_line ranking meaning in README.
+- [x] Add bounded `changed_context` propagation in cli.rs, core/config.rs and core/target.rs with legacy serde default.
+- [x] Pass context into the internal Git resolver; format --unified=N and preserve all other diff flags.
+- [x] Add real Git boundary/intersection tests and public plan/verify persistence coverage.
+- [x] Document CLI use, bound, deletion behavior and changed_line ranking meaning in README.
 
 ### Task 3: Formal integration
 
-- [ ] Root contributes independent Nat interval model, proofs, executable cases, sensitivity checks and committed JSONL corpus under formal/HoiminOracle.
-- [ ] Wire Lean generator/freshness into CI and test the corpus against public plan behavior, including maximum context and deletion cases.
+- [x] Root contributes independent Nat interval model, proofs, executable cases, sensitivity checks and committed JSONL corpus under formal/HoiminOracle.
+- [x] Wire Lean generator/freshness into CI and test the corpus against public plan behavior, including maximum context and deletion cases.
 
 ### Task 4: Review, verify and commit
 
-- [ ] Implementation review 1: trace CLI through raw config, normalized config, Git, ranking and verify.
-- [ ] Implementation review 2: inspect boundary handling and compatibility with historical manifests and public effect API.
-- [ ] Implementation review 3: inspect final diff for scope, resource behavior and platform assumptions.
-- [ ] Test review 1: map each issue acceptance criterion to executable coverage.
-- [ ] Test review 2: verify tests use actual Git and independent expected intervals, not mirrored parsing.
-- [ ] Test review 3: check negative cases and run workspace tests, formatting and clippy after final edits.
-- [ ] Commit implementation and evidence; root performs independent review and creates PR through gh-stack.
+- [x] Implementation review 1: trace CLI through raw config, normalized config, Git, ranking and verify.
+- [x] Implementation review 2: inspect boundary handling and compatibility with historical manifests and public effect API.
+- [x] Implementation review 3: inspect final diff for scope, resource behavior and platform assumptions.
+- [x] Test review 1: map each issue acceptance criterion to executable coverage.
+- [x] Test review 2: verify tests use actual Git and independent expected intervals, not mirrored parsing.
+- [x] Test review 3: check negative cases and run workspace tests, formatting and clippy after final edits.
+- [x] Commit implementation and evidence.
+- [ ] Root performs final independent review and creates PR through gh-stack.
 
 ## Plan self-review
 

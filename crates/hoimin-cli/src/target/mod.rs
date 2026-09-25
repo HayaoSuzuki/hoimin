@@ -41,6 +41,7 @@ impl TargetHandler {
             &selection.root,
             selection.diff_base.as_deref(),
             Some(&explicit),
+            selection.changed_context,
         )
         .await?;
         if explicit.is_empty()
