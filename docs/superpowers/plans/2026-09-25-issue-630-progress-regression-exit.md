@@ -32,7 +32,9 @@ Default code0 and all output bytes/schemas remain unchanged. Check past regressi
 
 - [x] Three implementation self-reviews (latest/error precedence; output/schema preservation; parser/API/defaults) and three test self-reviews (meaningful RED; all state/fault branches; model correspondence boundaries). Record findings.
 - [x] Independent read-only review; full workspace and exact CI clippy2/fmt2/diff checks. Use batch-progress cache with debug0/incremental0/jobs1.
-- [ ] Commit implementation/evidence, rebase on latest main if needed, focused integration recheck, and publish independent gh stack PR with Closes630. Root handlesCI/merge.
+- [x] Commit implementation/evidence, rebase on latest main if needed, and complete focused integration recheck.
+
+Publication uses an independent gh stack PR with Closes630; root handles CI/merge.
 
 ## Plan review passes
 

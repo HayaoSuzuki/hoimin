@@ -27,3 +27,7 @@ Design and implementation plan were committed before implementation in `1c78dfc`
 - Full workspace: 2,380 passed, 22 ignored across 105 test groups; exit 0. Both exact CI formatting checks and both exact CI clippy commands passed; `git diff --check` passed.
 
 No Python source changed. Python lint is not applicable to this patch; existing Python-backed public run fixtures are included in the Rust suite.
+
+## Final integration
+
+Rebased the unpublished branch from `421f5ef` onto merged main `195773a`. `git range-diff` confirms the design and implementation patches are identical (`7e2cc51` and `6e0f2cf`). The base changes are independent glob-exclusion and diagnostic buffering work; no progress-model integration conflict occurred. After rebasing, all 97 focused progress/oracle/heap tests, both exact CI clippy commands, both formatting checks, and the whitespace check passed. The full workspace result above is from the pre-rebase implementation; the patch-identical integration did not require repeating that suite or Lean generation.
