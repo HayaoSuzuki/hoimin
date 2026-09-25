@@ -48,6 +48,10 @@ thread_local! {
     static BROKEN_EAGER_REPLACEMENT: Cell<bool> = const { Cell::new(false) };
     static IMPORT_CLONE_CALLS: Cell<usize> = const { Cell::new(0) };
     static IMPORT_CLONE_ENTRIES: Cell<usize> = const { Cell::new(0) };
+    // append→insert, insert→append, append→extend, extend→append, get→[], rename, []→get.
+    static METHOD_REPLACEMENT_HELPER_ENTRIES: Cell<[usize; 7]> = const { Cell::new([0; 7]) };
+    // String construction boundaries, not allocator requests or live bytes.
+    static METHOD_REPLACEMENT_ALLOCATIONS: Cell<usize> = const { Cell::new(0) };
     static COLLECTION_REPLACEMENT_BYTES: Cell<usize> = const { Cell::new(0) };
     static COLLECTION_REPLACEMENT_BUILDS: Cell<usize> = const { Cell::new(0) };
     static CANDIDATE_ORIGINAL_COPIES: Cell<usize> = const { Cell::new(0) };
@@ -2695,7 +2699,13 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         let same_contract = has_supported_same_contract_arguments(call);
         let exact_one = has_exact_positional_arguments(call, 1);
         match name {
-            "append" if has_supported_append_insert_arguments(call) => {
+            "append"
+                if self
+                    .request
+                    .operators
+                    .contains(MutationOperator::CollectionAppendInsert)
+                    && has_supported_append_insert_arguments(call) =>
+            {
                 if let Some(replacement) =
                     append_to_insert_replacement(self.source, call, self.facts)
                 {
@@ -2707,7 +2717,11 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                 }
             }
             "insert"
-                if has_exact_positional_arguments(call, 2)
+                if self
+                    .request
+                    .operators
+                    .contains(MutationOperator::CollectionAppendInsert)
+                    && has_exact_positional_arguments(call, 2)
                     && is_zero_literal(&call.arguments.args[0]) =>
             {
                 if let Some(replacement) =
@@ -2764,7 +2778,13 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
     fn collect_structural_method_call(&mut self, call: &ExprCall, name: &str) {
         let exact_one = has_exact_positional_arguments(call, 1);
         match name {
-            "append" if has_supported_append_insert_arguments(call) => {
+            "append"
+                if self
+                    .request
+                    .operators
+                    .contains(MutationOperator::StructureAppendExtend)
+                    && has_supported_append_insert_arguments(call) =>
+            {
                 if let Some(replacement) = append_to_extend_replacement(self.source, call) {
                     self.add_candidate(
                         call.range(),
@@ -2773,7 +2793,13 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                     );
                 }
             }
-            "extend" if exact_one => {
+            "extend"
+                if self
+                    .request
+                    .operators
+                    .contains(MutationOperator::StructureAppendExtend)
+                    && exact_one =>
+            {
                 if let Some(replacement) =
                     extend_to_append_replacement(self.source, call, self.facts)
                 {
@@ -2785,7 +2811,11 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                 }
             }
             "get"
-                if exact_one
+                if self
+                    .request
+                    .operators
+                    .contains(MutationOperator::StructureMappingGetSubscript)
+                    && exact_one
                     && !self.has_trailing_argument_comma(call)
                     && is_supported_mapping_key(&call.arguments.args[0])
                     && matches!(call.func.as_ref(), Expr::Attribute(attribute) if is_simple_receiver(attribute.value.as_ref())) =>
@@ -2800,7 +2830,13 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                     );
                 }
             }
-            "sort" | "reverse" if has_exact_positional_arguments(call, 0) => {
+            "sort" | "reverse"
+                if self
+                    .request
+                    .operators
+                    .contains(MutationOperator::StructureSortReverse)
+                    && has_exact_positional_arguments(call, 0) =>
+            {
                 if let Some(replacement) = renamed_method_call_replacement(
                     self.source,
                     call,
@@ -2827,7 +2863,11 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             Expr::Slice(slice) => self.collect_slice_neighbors(slice),
             expression => self.collect_index_neighbors(expression),
         }
-        if !is_simple_receiver(subscript.value.as_ref())
+        if !self
+            .request
+            .operators
+            .contains(MutationOperator::StructureMappingGetSubscript)
+            || !is_simple_receiver(subscript.value.as_ref())
             || !is_supported_mapping_key(subscript.slice.as_ref())
         {
             return;
@@ -3312,6 +3352,12 @@ fn append_to_insert_replacement(
     call: &ExprCall,
     facts: &AstFacts<'_>,
 ) -> Option<String> {
+    #[cfg(test)]
+    METHOD_REPLACEMENT_HELPER_ENTRIES.with(|counter| {
+        let mut entries = counter.get();
+        entries[0] += 1;
+        counter.set(entries);
+    });
     let Expr::Attribute(attribute) = call.func.as_ref() else {
         return None;
     };
@@ -3331,6 +3377,12 @@ fn insert_to_append_replacement(
     call: &ExprCall,
     facts: &AstFacts<'_>,
 ) -> Option<String> {
+    #[cfg(test)]
+    METHOD_REPLACEMENT_HELPER_ENTRIES.with(|counter| {
+        let mut entries = counter.get();
+        entries[1] += 1;
+        counter.set(entries);
+    });
     let Expr::Attribute(attribute) = call.func.as_ref() else {
         return None;
     };
@@ -3359,6 +3411,12 @@ fn insert_to_append_replacement(
 }
 
 fn append_to_extend_replacement(source: &str, call: &ExprCall) -> Option<String> {
+    #[cfg(test)]
+    METHOD_REPLACEMENT_HELPER_ENTRIES.with(|counter| {
+        let mut entries = counter.get();
+        entries[2] += 1;
+        counter.set(entries);
+    });
     let Expr::Attribute(attribute) = call.func.as_ref() else {
         return None;
     };
@@ -3379,6 +3437,12 @@ fn extend_to_append_replacement(
     call: &ExprCall,
     facts: &AstFacts<'_>,
 ) -> Option<String> {
+    #[cfg(test)]
+    METHOD_REPLACEMENT_HELPER_ENTRIES.with(|counter| {
+        let mut entries = counter.get();
+        entries[3] += 1;
+        counter.set(entries);
+    });
     let Expr::Attribute(attribute) = call.func.as_ref() else {
         return None;
     };
@@ -3431,6 +3495,12 @@ fn mapping_get_to_subscript_replacement(
     call: &ExprCall,
     facts: &AstFacts<'_>,
 ) -> Option<String> {
+    #[cfg(test)]
+    METHOD_REPLACEMENT_HELPER_ENTRIES.with(|counter| {
+        let mut entries = counter.get();
+        entries[4] += 1;
+        counter.set(entries);
+    });
     let Expr::Attribute(attribute) = call.func.as_ref() else {
         return None;
     };
@@ -3442,6 +3512,8 @@ fn mapping_get_to_subscript_replacement(
     .unwrap_or_else(|| attribute.value.range());
     let receiver = source_text(source, receiver_range)?;
     let key = source_text(source, call.arguments.inner_range())?;
+    #[cfg(test)]
+    METHOD_REPLACEMENT_ALLOCATIONS.set(METHOD_REPLACEMENT_ALLOCATIONS.get() + 1);
     Some(format!("{receiver}[{key}]"))
 }
 
@@ -3450,6 +3522,12 @@ fn subscript_to_mapping_get_replacement(
     subscript: &ExprSubscript,
     facts: &AstFacts<'_>,
 ) -> Option<String> {
+    #[cfg(test)]
+    METHOD_REPLACEMENT_HELPER_ENTRIES.with(|counter| {
+        let mut entries = counter.get();
+        entries[6] += 1;
+        counter.set(entries);
+    });
     let receiver_range = ruff_python_ast::token::parenthesized_range(
         subscript.value.as_ref().into(),
         subscript.into(),
@@ -3468,6 +3546,8 @@ fn subscript_to_mapping_get_replacement(
         source,
         TextRange::new(opening.range().end(), closing.range().start()),
     )?;
+    #[cfg(test)]
+    METHOD_REPLACEMENT_ALLOCATIONS.set(METHOD_REPLACEMENT_ALLOCATIONS.get() + 1);
     Some(format!("{receiver}.get({key})"))
 }
 
@@ -3476,6 +3556,12 @@ fn renamed_method_call_replacement(
     call: &ExprCall,
     replacement: &str,
 ) -> Option<String> {
+    #[cfg(test)]
+    METHOD_REPLACEMENT_HELPER_ENTRIES.with(|counter| {
+        let mut entries = counter.get();
+        entries[5] += 1;
+        counter.set(entries);
+    });
     let Expr::Attribute(attribute) = call.func.as_ref() else {
         return None;
     };
@@ -3518,7 +3604,10 @@ fn replace_within_call<const N: usize>(
     let call_range = call.range();
     let call_start = usize::from(call_range.start());
     let call_end = usize::from(call_range.end());
-    let mut replacement = source.get(call_start..call_end)?.to_owned();
+    let original = source.get(call_start..call_end)?;
+    #[cfg(test)]
+    METHOD_REPLACEMENT_ALLOCATIONS.set(METHOD_REPLACEMENT_ALLOCATIONS.get() + 1);
+    let mut replacement = original.to_owned();
     let mut edits = edits;
     edits.sort_unstable_by_key(|(range, _)| range.start());
     for (range, text) in edits.into_iter().rev() {
@@ -6885,6 +6974,10 @@ fn expression_source(expression: &Expr, source: &str) -> String {
 fn is_none(expression: &Expr) -> bool {
     matches!(expression, Expr::NoneLiteral(_))
 }
+
+#[cfg(test)]
+#[path = "rust/method_replacement_tests.rs"]
+mod method_replacement_tests;
 
 #[cfg(test)]
 mod performance_cost_tests {

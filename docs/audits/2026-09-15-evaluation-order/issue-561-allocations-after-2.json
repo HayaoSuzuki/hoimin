@@ -1,0 +1,70 @@
+{
+  "base": "65865ea with issue-561 selection guards",
+  "profile": "debug (debuginfo=0)",
+  "rows": [
+    {
+      "method": "ignore",
+      "depth": 1,
+      "source_bytes": 500022,
+      "large_calls": 2,
+      "cumulative_large_bytes": 1000022,
+      "elapsed_us": 27778
+    },
+    {
+      "method": "append",
+      "depth": 1,
+      "source_bytes": 500022,
+      "large_calls": 2,
+      "cumulative_large_bytes": 1000022,
+      "elapsed_us": 27755
+    },
+    {
+      "method": "ignore",
+      "depth": 8,
+      "source_bytes": 500106,
+      "large_calls": 2,
+      "cumulative_large_bytes": 1000106,
+      "elapsed_us": 26912
+    },
+    {
+      "method": "append",
+      "depth": 8,
+      "source_bytes": 500106,
+      "large_calls": 2,
+      "cumulative_large_bytes": 1000106,
+      "elapsed_us": 28235
+    },
+    {
+      "method": "ignore",
+      "depth": 16,
+      "source_bytes": 500202,
+      "large_calls": 2,
+      "cumulative_large_bytes": 1000202,
+      "elapsed_us": 27028
+    },
+    {
+      "method": "append",
+      "depth": 16,
+      "source_bytes": 500202,
+      "large_calls": 2,
+      "cumulative_large_bytes": 1000202,
+      "elapsed_us": 27610
+    },
+    {
+      "method": "ignore",
+      "depth": 32,
+      "source_bytes": 500394,
+      "large_calls": 2,
+      "cumulative_large_bytes": 1000394,
+      "elapsed_us": 27431
+    },
+    {
+      "method": "append",
+      "depth": 32,
+      "source_bytes": 500394,
+      "large_calls": 2,
+      "cumulative_large_bytes": 1000394,
+      "elapsed_us": 27309
+    }
+  ]
+}

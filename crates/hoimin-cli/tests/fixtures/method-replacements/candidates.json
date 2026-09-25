@@ -1,0 +1,226 @@
+[
+  {
+    "id": "m1_3faeba4770789066e291b3ecd51b9b44ba6301f757a68a2ff7e8bde823ca82ab",
+    "sequence": 1,
+    "path": "subject.py",
+    "span": {
+      "start": 32,
+      "length": 18
+    },
+    "original": "obj.append((item))",
+    "replacement": "obj.insert(0, (item))",
+    "operator": "collection_append_insert",
+    "line": 2,
+    "column": 4,
+    "symbol": "mutate",
+    "file_hash": "16ac2a06b53d2af97cf2bf0c467a0cdb9bf59b9fc74f3f32efec5987e19eb56d"
+  },
+  {
+    "id": "m1_c1234cb8cb784d95700cf0479e7e5916813eb55976bc23fe4ad6c5a9604b1d67",
+    "sequence": 2,
+    "path": "subject.py",
+    "span": {
+      "start": 32,
+      "length": 18
+    },
+    "original": "obj.append((item))",
+    "replacement": "obj.extend([(item)])",
+    "operator": "structure_append_extend",
+    "line": 2,
+    "column": 4,
+    "symbol": "mutate",
+    "file_hash": "16ac2a06b53d2af97cf2bf0c467a0cdb9bf59b9fc74f3f32efec5987e19eb56d"
+  },
+  {
+    "id": "m1_3711e8af8064ce99aa85b7866ff9d81a32cafba35121543e9b33e91cc9e1e126",
+    "sequence": 3,
+    "path": "subject.py",
+    "span": {
+      "start": 55,
+      "length": 21
+    },
+    "original": "obj.insert(0, (item))",
+    "replacement": "obj.append((item))",
+    "operator": "collection_append_insert",
+    "line": 3,
+    "column": 4,
+    "symbol": "mutate",
+    "file_hash": "16ac2a06b53d2af97cf2bf0c467a0cdb9bf59b9fc74f3f32efec5987e19eb56d"
+  },
+  {
+    "id": "m1_b44ab2a36df036c891d03cb7f4e6874da3aac8d734a7b6244a11ca9708e227a9",
+    "sequence": 4,
+    "path": "subject.py",
+    "span": {
+      "start": 81,
+      "length": 19
+    },
+    "original": "obj.extend([item,])",
+    "replacement": "obj.append(item)",
+    "operator": "structure_append_extend",
+    "line": 4,
+    "column": 4,
+    "symbol": "mutate",
+    "file_hash": "16ac2a06b53d2af97cf2bf0c467a0cdb9bf59b9fc74f3f32efec5987e19eb56d"
+  },
+  {
+    "id": "m1_03c66390106e2924179b0c46e8b5bdde59b9502afb521b4a14500435d47084aa",
+    "sequence": 5,
+    "path": "subject.py",
+    "span": {
+      "start": 105,
+      "length": 14
+    },
+    "original": "obj.get((key))",
+    "replacement": "obj[(key)]",
+    "operator": "structure_mapping_get_subscript",
+    "line": 5,
+    "column": 4,
+    "symbol": "mutate",
+    "file_hash": "16ac2a06b53d2af97cf2bf0c467a0cdb9bf59b9fc74f3f32efec5987e19eb56d"
+  },
+  {
+    "id": "m1_90778fd8cf546e3f519da96c09163adc4e71760e79174dbf6df0650663d20439",
+    "sequence": 6,
+    "path": "subject.py",
+    "span": {
+      "start": 124,
+      "length": 10
+    },
+    "original": "obj.sort()",
+    "replacement": "obj.reverse()",
+    "operator": "structure_sort_reverse",
+    "line": 6,
+    "column": 4,
+    "symbol": "mutate",
+    "file_hash": "16ac2a06b53d2af97cf2bf0c467a0cdb9bf59b9fc74f3f32efec5987e19eb56d"
+  },
+  {
+    "id": "m1_3c00439fec4133168130c69102fd8d3904cc59535a72871c7ba0ad03081b0e71",
+    "sequence": 7,
+    "path": "subject.py",
+    "span": {
+      "start": 139,
+      "length": 13
+    },
+    "original": "obj.reverse()",
+    "replacement": "obj.sort()",
+    "operator": "structure_sort_reverse",
+    "line": 7,
+    "column": 4,
+    "symbol": "mutate",
+    "file_hash": "16ac2a06b53d2af97cf2bf0c467a0cdb9bf59b9fc74f3f32efec5987e19eb56d"
+  },
+  {
+    "id": "m1_79b3d4d44959e77efcdf80f3753a2456145c46ba39aa38c9fcdde2715edb4493",
+    "sequence": 8,
+    "path": "subject.py",
+    "span": {
+      "start": 157,
+      "length": 10
+    },
+    "original": "obj[(key)]",
+    "replacement": "obj.get((key))",
+    "operator": "structure_mapping_get_subscript",
+    "line": 8,
+    "column": 4,
+    "symbol": "mutate",
+    "file_hash": "16ac2a06b53d2af97cf2bf0c467a0cdb9bf59b9fc74f3f32efec5987e19eb56d"
+  },
+  {
+    "id": "m1_ff2f637387e971c0ae746b3b47994f4421e845c1b549911cd1c626f2b56fd0d8",
+    "sequence": 9,
+    "path": "subject.py",
+    "span": {
+      "start": 172,
+      "length": 17
+    },
+    "original": "obj.append(1 + 2)",
+    "replacement": "obj.insert(0, 1 + 2)",
+    "operator": "collection_append_insert",
+    "line": 9,
+    "column": 4,
+    "symbol": "mutate",
+    "file_hash": "16ac2a06b53d2af97cf2bf0c467a0cdb9bf59b9fc74f3f32efec5987e19eb56d"
+  },
+  {
+    "id": "m1_215375ce4c4d7d654c6e673de47adfe72fa789e5a79f02d0f28dbe26914c9923",
+    "sequence": 10,
+    "path": "subject.py",
+    "span": {
+      "start": 172,
+      "length": 17
+    },
+    "original": "obj.append(1 + 2)",
+    "replacement": "obj.extend([1 + 2])",
+    "operator": "structure_append_extend",
+    "line": 9,
+    "column": 4,
+    "symbol": "mutate",
+    "file_hash": "16ac2a06b53d2af97cf2bf0c467a0cdb9bf59b9fc74f3f32efec5987e19eb56d"
+  },
+  {
+    "id": "m1_e48110ebcac469467619c61e2ebd17acd32e6d55a1becf2529567548a454e534",
+    "sequence": 11,
+    "path": "subject.py",
+    "span": {
+      "start": 185,
+      "length": 1
+    },
+    "original": "+",
+    "replacement": "-",
+    "operator": "binary_add_sub",
+    "line": 9,
+    "column": 17,
+    "symbol": "mutate",
+    "file_hash": "16ac2a06b53d2af97cf2bf0c467a0cdb9bf59b9fc74f3f32efec5987e19eb56d"
+  },
+  {
+    "id": "m1_bd59a050bcb39ff7e457fe61621d79b67a9d85e64ab001f3f378f931bd5d6c7b",
+    "sequence": 12,
+    "path": "subject.py",
+    "span": {
+      "start": 194,
+      "length": 23
+    },
+    "original": "obj.sort().append('é')",
+    "replacement": "obj.sort().insert(0, 'é')",
+    "operator": "collection_append_insert",
+    "line": 10,
+    "column": 4,
+    "symbol": "mutate",
+    "file_hash": "16ac2a06b53d2af97cf2bf0c467a0cdb9bf59b9fc74f3f32efec5987e19eb56d"
+  },
+  {
+    "id": "m1_0e8082e9f5195e287347c231610c61ef2fd5839adfb280e446cc0a36c7608077",
+    "sequence": 13,
+    "path": "subject.py",
+    "span": {
+      "start": 194,
+      "length": 23
+    },
+    "original": "obj.sort().append('é')",
+    "replacement": "obj.sort().extend(['é'])",
+    "operator": "structure_append_extend",
+    "line": 10,
+    "column": 4,
+    "symbol": "mutate",
+    "file_hash": "16ac2a06b53d2af97cf2bf0c467a0cdb9bf59b9fc74f3f32efec5987e19eb56d"
+  },
+  {
+    "id": "m1_c31aac6b310b9a2b743c2abda8d78f3783e0770d1ed66ff95cb9380ff4b30873",
+    "sequence": 14,
+    "path": "subject.py",
+    "span": {
+      "start": 194,
+      "length": 10
+    },
+    "original": "obj.sort()",
+    "replacement": "obj.reverse()",
+    "operator": "structure_sort_reverse",
+    "line": 10,
+    "column": 4,
+    "symbol": "mutate",
+    "file_hash": "16ac2a06b53d2af97cf2bf0c467a0cdb9bf59b9fc74f3f32efec5987e19eb56d"
+  }
+]
