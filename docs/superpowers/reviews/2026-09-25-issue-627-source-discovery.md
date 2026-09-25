@@ -68,3 +68,9 @@ and ancestor membership, normalized-root fallback, preserved symbol source order
 or native selected-descendant diagnostics. The requested source-file, prefix,
 overlap/normalization, ignore/include, outside-file, malformed-name, and complete
 public candidate-array cases are covered as described above.
+
+Rebased the unpublished branch onto main `2498cc1` after the full suite. Both
+commits had unchanged range-diff entries, with no conflicts. Cleaned local crate
+artifacts before repeating discovery unit tests, the full plan and public
+source-discovery integration binaries, both exact CI Clippy commands, and both
+format checks; all passed. The full-workspace count above predates this rebase.
