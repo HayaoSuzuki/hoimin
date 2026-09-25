@@ -38,6 +38,7 @@ use operator_functions::OperatorImports;
 
 #[cfg(test)]
 thread_local! {
+    static REDUNDANT_FINALLY_RECORDING: Cell<bool> = const { Cell::new(false) };
     static DISABLE_LOOP_TRANSFER_REUSE: Cell<bool> = const { Cell::new(false) };
     static LOOP_STATEMENT_VISITS: Cell<usize> = const { Cell::new(0) };
     static LOOP_ANNOTATION_VISITS: Cell<usize> = const { Cell::new(0) };
@@ -5682,18 +5683,26 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
             return exits;
         }
 
-        let mut annotation_entries = Vec::new();
-        annotation_entries.extend(exits.fallthrough.iter().cloned());
-        annotation_entries.extend(exits.breaks.iter().cloned());
-        annotation_entries.extend(exits.continues.iter().cloned());
-        annotation_entries.extend(exits.terminates.iter().cloned());
-        annotation_entries.extend(exits.raises.iter().cloned());
-        annotation_entries.extend(exits.implicit_raises.iter().cloned());
-        let Some(annotation_entry) = KnownImports::intersection(annotation_entries) else {
-            let _ = self.visit_suite_from(self.imports.clone(), finalbody);
-            return ControlFlowExits::default();
-        };
-        let _ = self.visit_suite_from(annotation_entry, finalbody);
+        // Transfer-only callers still route every exit below, but have no
+        // annotations to record from the merged entry. Replaying that walk
+        // here would double the work at every nested finally.
+        let record_annotations = self.record_annotations;
+        #[cfg(test)]
+        let record_annotations = record_annotations || REDUNDANT_FINALLY_RECORDING.get();
+        if record_annotations {
+            let mut annotation_entries = Vec::new();
+            annotation_entries.extend(exits.fallthrough.iter().cloned());
+            annotation_entries.extend(exits.breaks.iter().cloned());
+            annotation_entries.extend(exits.continues.iter().cloned());
+            annotation_entries.extend(exits.terminates.iter().cloned());
+            annotation_entries.extend(exits.raises.iter().cloned());
+            annotation_entries.extend(exits.implicit_raises.iter().cloned());
+            let Some(annotation_entry) = KnownImports::intersection(annotation_entries) else {
+                let _ = self.visit_suite_from(self.imports.clone(), finalbody);
+                return ControlFlowExits::default();
+            };
+            let _ = self.visit_suite_from(annotation_entry, finalbody);
+        }
 
         let mut result = ControlFlowExits::default();
         let mut fallthrough = Vec::new();
@@ -7425,3 +7434,7 @@ mod performance_cost_tests {
 #[cfg(test)]
 #[path = "rust/loop_transfer_tests.rs"]
 mod nested_loop_transfer_tests;
+
+#[cfg(test)]
+#[path = "rust/finally_transfer_tests.rs"]
+mod nested_finally_transfer_tests;

@@ -5,6 +5,12 @@ description: docs/superpowers/specs内の全Markdownを先頭見出しと出典�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-557-design
+  resource: ../../superpowers/specs/2026-09-25-issue-557-finally-traversal.md
+  revision: f071781e20bc87c13b537ecd620e5ed06e9cd1f6
+  working_tree: clean
+  sha256: a2b984813077de46a2efac8105cc689f42641d23c87c24fb4f26c269672f8f6d
+
 - id: issue-556-design
   resource: ../../superpowers/specs/2026-09-24-issue-556-with-suppression.md
   revision: 282e941e4c1a5a23303d30beca881d7bbfde7763
@@ -1467,6 +1473,14 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 | Issue 559: provider-correct abstract set annotations | [設計書](../../superpowers/specs/2026-09-24-issue-559-design.md) [^issue-559-repair] |
 
 [^issue-559-repair]: [修正設計](../../superpowers/specs/2026-09-24-issue-559-design.md)。
+
+# Issue #557
+
+| 原文の先頭見出し | 原文 |
+| --- | --- |
+| Issue #557: avoid redundant finally annotation traversal | [設計書](../../superpowers/specs/2026-09-25-issue-557-finally-traversal.md) [^issue-557-design] |
+
+[^issue-557-design]: [Issue #557: avoid redundant finally annotation traversal](../../superpowers/specs/2026-09-25-issue-557-finally-traversal.md)。
 
 # Issue #556
 

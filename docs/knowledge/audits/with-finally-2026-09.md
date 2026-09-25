@@ -5,6 +5,21 @@ description: 5e631efで確認した抑制後のimport誤認とfinally二重走�
 status: draft
 catalog_revision: 5e631ef
 sources:
+  - id: issue-557-design
+    resource: ../../superpowers/specs/2026-09-25-issue-557-finally-traversal.md
+    revision: f071781e20bc87c13b537ecd620e5ed06e9cd1f6
+    working_tree: clean
+    sha256: a2b984813077de46a2efac8105cc689f42641d23c87c24fb4f26c269672f8f6d
+  - id: issue-557-tests
+    resource: ../../../crates/hoimin-cli/src/analyzer/rust/finally_transfer_tests.rs
+    revision: f071781e20bc87c13b537ecd620e5ed06e9cd1f6
+    working_tree: clean
+    sha256: 88e229c3d09e03c30001f2f71090540d9f18eb4cb49f56dd7cda0279f285301e
+  - id: issue-557-review
+    resource: ../../superpowers/reviews/2026-09-25-issue-557.md
+    revision: f071781e20bc87c13b537ecd620e5ed06e9cd1f6
+    working_tree: clean
+    sha256: 4ad3ea7059e45d4a56d1ba819c0d9266e0d6de5ef46356bc3319be4c562ef96c
   - id: issue-556-design
     resource: ../../superpowers/specs/2026-09-24-issue-556-with-suppression.md
     revision: 282e941e4c1a5a23303d30beca881d7bbfde7763
@@ -64,3 +79,15 @@ macOSの公開CLIテストでは、既存Lean corpusの5入力に独自manager�
 [^audit]: [監査報告・再現コマンド](../../audits/2026-09-15-with-finally/README.md)。
 [^model]: [WithModel.lean](../../audits/2026-09-15-with-finally/WithModel.lean)。
 [^implementation]: [解析器](../../../crates/hoimin-cli/src/analyzer/rust.rs)。
+
+# Issue #557の修正（2026-09-25）
+
+注釈を記録しない転送処理では、`apply_finally`の注釈記録用走査を省略する。終了経路ごとの転送と、finallyによるreturn・break・continue・raiseの上書きは従来の処理を使う。複数の入口を合流した記録結果を転送に流用する変更や、キャッシュの追加は行っていない。[^issue-557-design]
+
+回帰テストは実際の文・注釈訪問回数を数え、module/class/functionの入れ子finallyを検査する。記録を無効にした単一経路では最深部の注釈への訪問が1回になる。旧走査を復元するテスト用切替で回数制限の感度を確認し、候補の内容と順序、記録されたimport状態、明示・暗黙の終了経路を比較する。入力形状別の性能ゲートにも登録した。[^issue-557-tests][^issue-557-review]
+
+深さ16〜20のrelease計測と候補比較の結果は作業記録に示す。訪問回数の上限はこのfixtureに対する検査であり、任意の複数終了経路を持つプログラムの計算量保証ではない。過去のLean定理は二重走査モデルについての証明として保持し、今回のRust計測や時間測定と区別する。[^issue-557-review]
+
+[^issue-557-design]: [修正設計](../../superpowers/specs/2026-09-25-issue-557-finally-traversal.md)。
+[^issue-557-tests]: [回帰テスト](../../../crates/hoimin-cli/src/analyzer/rust/finally_transfer_tests.rs)。
+[^issue-557-review]: [レビューと検証記録](../../superpowers/reviews/2026-09-25-issue-557.md)。
