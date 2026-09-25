@@ -3544,8 +3544,8 @@ fn preview_ids(value: &serde_json::Value) -> Vec<&str> {
 async fn verify_preview_public_cli_preserves_policy_range_and_execution_order_without_side_effects()
 {
     let project = Project::new_with_sources(&[
-        ("a.py", "a = 1 == 2\nb = 3 == 4\n"),
-        ("b.py", "a = 1 == 2\nb = 3 == 4\n"),
+        ("a.py", "a = 1 == 2; b = 3 == 4\n"),
+        ("b.py", "a = 1 == 2; b = 3 == 4\n"),
         ("c.py", "a = 1 == 2\n"),
         ("d.py", "a = 1 + 2\n"),
     ]);
@@ -3594,7 +3594,7 @@ async fn verify_preview_public_cli_preserves_policy_range_and_execution_order_wi
         assert!(output.stdout.ends_with(b"\n"));
         let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
         assert_eq!(value["kind"], "verify_preview");
-        assert_eq!(value["schema_version"], 1);
+        assert_eq!(value["schema_version"], 2);
         assert_eq!(value["plan_schema_version"], 4);
         assert_eq!(value["ranking_rule_version"], 4);
         assert_eq!(value["offset"], offset.parse::<usize>().unwrap());
@@ -3618,6 +3618,10 @@ async fn verify_preview_public_cli_preserves_policy_range_and_execution_order_wi
             assert_eq!(row["rank"], manifest.candidates[position].rank);
             assert_eq!(row["path"], manifest.candidates[position].path.as_str());
             assert_eq!(row["line"], manifest.candidates[position].line);
+            assert_eq!(
+                row,
+                &preview_candidate_value(&manifest.candidates[position], index + 1)
+            );
         }
         assert!(!marker.exists());
         assert!(!project.path.join("session.sqlite3").exists());
@@ -3677,6 +3681,12 @@ async fn verify_preview_explicit_ids_follow_discovery_not_rank_argument_or_saved
         manifest.candidates[0].id.as_str(),
     ];
     assert_eq!(preview_ids(&value), expected);
+    for (index, position) in [1, 0].into_iter().enumerate() {
+        assert_eq!(
+            value["candidates"][index],
+            preview_candidate_value(&manifest.candidates[position], index + 1)
+        );
+    }
     assert!(value["offset"].is_null());
     assert_eq!(
         value["verification_selection"],
@@ -4086,5 +4096,221 @@ async fn verify_metrics_manifest_distinct_entries_remain_replaceable() {
                 assert_eq!(metrics.executed, u64::from(!baseline_fails));
             }
         }
+    }
+}
+
+fn preview_candidate_value(candidate: &RankedPlanCandidate, order: usize) -> serde_json::Value {
+    serde_json::json!({
+        "id": candidate.id,
+        "rank": candidate.rank,
+        "selection_order": order,
+        "path": candidate.path,
+        "line": candidate.line,
+        "column": candidate.column,
+        "operator": candidate.operator,
+        "original": candidate.original,
+        "replacement": candidate.replacement,
+    })
+}
+
+fn assert_same_line_preview_output(
+    text: &str,
+    format: &str,
+    expected: &[&RankedPlanCandidate],
+    schema: &serde_json::Value,
+) {
+    if format == "human" {
+        let rows: Vec<_> = text.lines().skip(1).collect();
+        assert_eq!(rows.len(), expected.len());
+        for (index, candidate) in expected.iter().enumerate() {
+            assert_eq!(
+                rows[index],
+                format!(
+                    "{}: {} rank={} {}:2:{} operator={} \"{}\" -> \"{}\"",
+                    index + 1,
+                    candidate.id,
+                    candidate.rank,
+                    candidate.path,
+                    candidate.column,
+                    candidate.operator,
+                    candidate.original,
+                    candidate.replacement
+                )
+            );
+        }
+    } else {
+        assert_eq!(text.lines().count(), 1);
+        let value: serde_json::Value = serde_json::from_str(text).unwrap();
+        assert_eq!(value["schema_version"], 2);
+        assert_eq!(
+            value["schema_version"],
+            schema["properties"]["schema_version"]["const"]
+        );
+        assert_eq!(
+            value["candidates"].as_array().unwrap().len(),
+            expected.len()
+        );
+        for (index, candidate) in expected.iter().enumerate() {
+            let row = &value["candidates"][index];
+            assert_eq!(row, &preview_candidate_value(candidate, index + 1));
+            let row_schema = &schema["properties"]["candidates"]["items"];
+            let fields: BTreeSet<_> = row
+                .as_object()
+                .unwrap()
+                .keys()
+                .map(String::as_str)
+                .collect();
+            assert_eq!(
+                fields,
+                row_schema["required"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|v| v.as_str().unwrap())
+                    .collect()
+            );
+            assert_eq!(
+                fields,
+                row_schema["properties"]
+                    .as_object()
+                    .unwrap()
+                    .keys()
+                    .map(String::as_str)
+                    .collect()
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn verify_preview_details_distinguish_same_line_mutations_in_all_formats() {
+    let project =
+        Project::new_with_source("def acceptable(value):\n    return value > 0 and value < 10\n");
+    let coordinator = tempfile::tempdir().unwrap();
+    let marker = coordinator.path().join("marker");
+    let (path, manifest) =
+        write_plan_manifest_with_marker(&project, &["--jobs", "1"], &marker).await;
+    let before = std::fs::read(&path).unwrap();
+    assert_eq!(manifest.candidates.len(), 3);
+    let at_column = |column| {
+        manifest
+            .candidates
+            .iter()
+            .find(|c| c.column == column)
+            .unwrap()
+    };
+    let left = at_column(17);
+    let boolean = at_column(21);
+    let right = at_column(31);
+    for (candidate, operator, original, replacement) in [
+        (left, "compare_order", ">", ">="),
+        (boolean, "boolean_and_or", "and", "or"),
+        (right, "compare_order", "<", "<="),
+    ] {
+        assert_eq!(candidate.line, 2);
+        assert_eq!(candidate.operator, operator);
+        assert_eq!(candidate.original, original);
+        assert_eq!(candidate.replacement, replacement);
+    }
+    let schema: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../docs/json-schema/verify-preview.schema.json"
+    ))
+    .unwrap();
+    for (selection, expected) in [
+        (
+            vec!["--top", "3"],
+            manifest.candidates.iter().collect::<Vec<_>>(),
+        ),
+        (
+            vec![
+                "--top",
+                "2",
+                "--offset",
+                "1",
+                "--selection-policy",
+                "diverse",
+            ],
+            manifest.candidates[1..].iter().collect(),
+        ),
+        (
+            vec![
+                "--candidate",
+                right.id.as_str(),
+                "--candidate",
+                boolean.id.as_str(),
+                "--candidate",
+                left.id.as_str(),
+                "--candidate",
+                left.id.as_str(),
+            ],
+            vec![left, boolean, right],
+        ),
+    ] {
+        for format in ["json", "jsonl", "human"] {
+            let temporary = tempfile::tempdir().unwrap();
+            let mut args = selection.clone();
+            args.extend(["--dry-run", "--format", format]);
+            let output = preview_cli(&path, &args, temporary.path()).await;
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let text = String::from_utf8(output.stdout).unwrap();
+            assert_same_line_preview_output(&text, format, &expected, &schema);
+            assert!(!marker.exists());
+            assert!(!project.path.join("session.sqlite3").exists());
+            assert_eq!(std::fs::read_dir(temporary.path()).unwrap().count(), 0);
+            assert_eq!(std::fs::read(&path).unwrap(), before);
+        }
+    }
+}
+
+#[tokio::test]
+async fn verify_preview_details_escape_multiline_quoted_text_without_extra_rows() {
+    let project = Project::new_with_source("[\n\t\"a\\\\b\", 'say \"hi\"',\n]\n");
+    let coordinator = tempfile::tempdir().unwrap();
+    let marker = coordinator.path().join("marker");
+    let (path, manifest) = write_plan_manifest_with_marker(
+        &project,
+        &["--operators", "collection_list_tuple", "--jobs", "1"],
+        &marker,
+    )
+    .await;
+    assert_eq!(manifest.candidates.len(), 1);
+    let candidate = &manifest.candidates[0];
+    assert_eq!(candidate.column, 0);
+    assert_eq!(candidate.original, "[\n\t\"a\\\\b\", 'say \"hi\"',\n]");
+    assert_eq!(candidate.replacement, "(\n\t\"a\\\\b\", 'say \"hi\"',\n)");
+    for format in ["human", "json", "jsonl"] {
+        let temporary = tempfile::tempdir().unwrap();
+        let output = preview_cli(
+            &path,
+            &["--top", "1", "--dry-run", "--format", format],
+            temporary.path(),
+        )
+        .await;
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let text = String::from_utf8(output.stdout).unwrap();
+        if format == "human" {
+            assert_eq!(text.lines().count(), 2);
+            assert!(!text.contains('\t'));
+            assert!(text.lines().nth(1).unwrap().ends_with(
+                r#"operator=collection_list_tuple "[\n\t\"a\\\\b\", 'say \"hi\"',\n]" -> "(\n\t\"a\\\\b\", 'say \"hi\"',\n)""#
+            ), "{text}");
+        } else {
+            assert_eq!(text.lines().count(), 1);
+            let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+            assert_eq!(
+                value["candidates"][0],
+                preview_candidate_value(candidate, 1)
+            );
+        }
+        assert!(!marker.exists());
+        assert_eq!(std::fs::read_dir(temporary.path()).unwrap().count(), 0);
     }
 }

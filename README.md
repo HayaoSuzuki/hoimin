@@ -533,11 +533,20 @@ exits with code 0, including for a truncated plan; invalid selections and stale
 plans exit with code 2. Runtime resource availability is checked when executing.
 
 The [preview schema](docs/json-schema/verify-preview.schema.json) is independent
-of run reports: `kind` is `verify_preview` and `schema_version` is 1. JSON and
+of run reports: `kind` is `verify_preview` and `schema_version` is 2. JSON and
 JSONL each contain one object; `--format human` prints metadata and candidate rows.
 The ordered `candidates` array gives each candidate's `id`, saved `rank`,
-`selection_order`, `path` and `line`. Rank, line and batch selection order start
-at 1. `verification_selection` records mode, policy, requested/selected counts,
+`selection_order`, `path`, `line`, `column`, `operator`, `original` and `replacement`.
+Details come from the same validated plan candidate. Rank, line and batch selection
+order start at 1; column is the plan's 0-based Python source column. Human rows
+show `path:line:column operator=NAME "original" -> "replacement"`; mutation text
+is quoted and escaped so newlines, tabs, quotes and backslashes stay within one row.
+
+The closed version-1 preview schema does not accept these added fields. Clients
+that accept only preview version 1 must update to version 2; the CLI emits version 2
+without a legacy-output option. Saved plan and run-report schema versions are unchanged.
+
+`verification_selection` records mode, policy, requested/selected counts,
 scope and `plan_truncated`; `offset` starts at 0 for top selection and is null
 for explicit IDs. `retained_candidates` is the count saved in the plan.
 

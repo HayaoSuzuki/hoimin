@@ -22,11 +22,11 @@ No new execution, analysis, selection rules, dependencies, or plan/run schemas. 
 Files: `crates/hoimin-cli/tests/plan.rs`, `crates/hoimin-cli/src/plan/preview.rs`.
 Interface: existing `VerifyPreview::new` receives validated `PlanManifest`; `PreviewCandidate` adds `column: u32` and `operator`, `original`, `replacement: String`. Public writer interface and selection APIs do not change.
 
-- [ ] Extend policy/offset and explicit-ID tests to compare added fields against the same selected manifest candidate. Use same-line fixtures where possible and require schema 2.
-- [ ] Add a public CLI all-format test with `return value > 0 and value < 10`, asserting columns 17, 21, 31 and matching details/order for strict, diverse/offset and explicit IDs. Retain manifest bytes, marker absence and empty temporary runtime directory checks.
-- [ ] Add a public CLI multiline list-to-tuple test with tabs, quotes and backslashes. Assert exact text in machine output, two physical human lines (header plus candidate), and a literal escaped row suffix.
-- [ ] Run `cargo test -p hoimin-cli --test plan verify_preview -- --test-threads=1`. Expected: new details/schema/escaped-row assertions fail on current output.
-- [ ] Extend the projection:
+- [x] Extend policy/offset and explicit-ID tests to compare added fields against the same selected manifest candidate. Use same-line fixtures where possible and require schema 2.
+- [x] Add a public CLI all-format test with `return value > 0 and value < 10`, asserting columns 17, 21, 31 and matching details/order for strict, diverse/offset and explicit IDs. Retain manifest bytes, marker absence and empty temporary runtime directory checks.
+- [x] Add a public CLI multiline list-to-tuple test with tabs, quotes and backslashes. Assert exact text in machine output, two physical human lines (header plus candidate), and a literal escaped row suffix.
+- [x] Run `cargo test -p hoimin-cli --test plan verify_preview -- --test-threads=1`. Expected: new details/schema/escaped-row assertions fail on current output.
+- [x] Extend the projection:
   ```rust
   column: candidate.column,
   operator: candidate.operator.clone(),
@@ -34,17 +34,17 @@ Interface: existing `VerifyPreview::new` receives validated `PlanManifest`; `Pre
   replacement: candidate.replacement.clone(),
   ```
   Set `schema_version: 2`; use `{}:{}:{} operator={} {:?} -> {:?}` in human rows with path, line, column, operator, original and replacement.
-- [ ] Repeat targeted command. Expected: all preview tests pass with no execution marker or runtime directories from dry-run.
+- [x] Repeat targeted command. Expected: all preview tests pass with no execution marker or runtime directories from dry-run.
 
 ## Task 2: contract documentation and final gates
 
 Files: `docs/json-schema/verify-preview.schema.json`, `README.md`, this plan, and `docs/superpowers/reviews/2026-09-25-issue-604-preview-details.md`.
 Interface: schema `schema_version.const = 2`; candidate required/property lists match actual public output. `column` is integer minimum 0, `operator` string minimum length 1, both mutation texts strings with empty values allowed.
 
-- [ ] Update schema and README to explain new fields, 0-based column, quoted human strings, and the version-1 migration requirement. Compare the public candidate object's keys with the schema's required and property keys in the integration test.
-- [ ] Perform three separate implementation and test self-reviews and record concrete findings/fixes; design/plan reviews are below/in the spec.
-- [ ] Run workspace tests, workspace/vendor formatting checks, workspace all-target/all-feature clippy and parser clippy. Expected: pass; report any environment failures by name. No Python logic changes or Lean commands are planned.
-- [ ] Commit verified code/tests/schema/docs/review evidence. Parent handles independent review and publication.
+- [x] Update schema and README to explain new fields, 0-based column, quoted human strings, and the version-1 migration requirement. Compare the public candidate object's keys with the schema's required and property keys in the integration test.
+- [x] Perform three separate implementation and test self-reviews and record concrete findings/fixes; design/plan reviews are below/in the spec.
+- [x] Run workspace tests, workspace/vendor formatting checks, workspace all-target/all-feature clippy and parser clippy. Expected: pass; report any environment failures by name. No Python logic changes or Lean commands are planned.
+- [x] Commit verified code/tests/schema/docs/review evidence. Parent handles independent review and publication.
 
 ## Plan self-reviews
 
