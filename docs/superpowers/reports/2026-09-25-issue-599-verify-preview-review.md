@@ -62,4 +62,13 @@ Audited the tests against the acceptance criteria and schema fields. Added expli
 - OKF: **29 Markdown pages** passed YAML and reserved-file checks; **5 new source records** passed hash, link and matching-footnote checks. All links in the three edited concept/catalog pages resolve. Confirmed the root index directly links the selection contract and both catalogs; a preliminary check incorrectly assumed a design-subindex link, and the corrected traversal check passed.
 - Root-run Python gates on this branch: Ruff formatting **19 files unchanged**, Ruff check **passed**, pytest **104 passed** (11.55 s). Root used the isolated locked quality environment and the known process-monitor permission escalation. Logs: `/tmp/hoimin-599-ruff-format.log`, `/tmp/hoimin-599-ruff-check.log`, `/tmp/hoimin-599-pytest.log`.
 
-All three design, plan, implementation and test review passes are recorded above (12 total). No unresolved implementation finding or deferred minor remains from these self-reviews. Root handles final independent review, wheel verification, push and PR; this report does not assert those later actions have already completed.
+All three design, plan, implementation and test review passes are recorded above (12 total). No unresolved implementation finding or deferred minor remains from these self-reviews. The root agent handles push and PR; the independent review and additional gates below completed after this implementation handoff.
+
+
+## Independent review and additional root-run gates
+
+The final independent reviewer approved the complete change with no findings. The root agent built the macOS arm64 release wheel with maturin and ran `tests/wheel_smoke.py`; both commands exited successfully. Logs: `/tmp/hoimin-599-wheel-build.log` and `/tmp/hoimin-599-wheel-smoke.log`. The built wheel is `hoimin-0.1.0-py3-none-macosx_11_0_arm64.whl`.
+
+The unchanged vendored parser passed its formatting check and dedicated Clippy check in the root baseline. The Clippy log is `/tmp/hoimin-vendor-clippy.log`; this branch does not modify the parser.
+
+Root-run `CARGO_BUILD_JOBS=2 cargo test --workspace --all-features` completed with **2256 passed, 0 failed, 22 ignored**, across 94 summary blocks. This includes the core and CLI contracts feature gates. Feature-dependent test configuration explains the different count from the default workspace run. Log: `/tmp/hoimin-599-contracts.log`. No production or test code changed after these final gates; this follow-up records evidence only.

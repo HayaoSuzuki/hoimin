@@ -227,9 +227,9 @@ sources:
   sha256: bddc76fea5ffd3dd176b09048deb6a155b7d16b4a63059589c79ee274486c485
 - id: issue-599-review
   resource: ../../superpowers/reports/2026-09-25-issue-599-verify-preview-review.md
-  revision: 99655f08bb941db0e9e888f3b5d373ec6f11440e
+  revision: 69ab89d33a91ec2b14e73d4ccfdc5ae0a3f6ea1f
   working_tree: modified
-  sha256: 6a59477d7d35940654e5c2b404be8fa03d1000d0f64c5fc1723eb09327586726
+  sha256: f6f806e9ad82eca7b1aeaca96da29c2a1f31f91a3c04998b0c87cc3bd17fcb88
 
 - id: issue-458-review
   resource: ../../superpowers/reports/2026-09-14-issue-458-verify-metrics-review.md
