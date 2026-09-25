@@ -19,9 +19,29 @@ fn args(root: &Path, log: &Path) -> Vec<OsString> {
 
 #[tokio::test]
 async fn latin1_plan_run_verify_preserve_raw_spans_ids_and_worker_bytes() {
+    let source = b"# coding: latin-1\nbefore = True; caf\xe9 = 'ol\xe9'; after = False\nitems = ['caf\xe9']\n";
+    assert_latin1_flow(source, 2).await;
+}
+
+#[tokio::test]
+async fn dense_latin1_plan_run_verify_preserve_all_python_line_endings() {
+    for ending in [b"\n".as_slice(), b"\r\n", b"\r"] {
+        let mut source = b"# coding: latin-1".to_vec();
+        source.extend_from_slice(ending);
+        source.extend_from_slice(b"# ");
+        source.extend(std::iter::repeat_n(0xe9, 4096));
+        source.extend_from_slice(ending);
+        source.extend_from_slice(b"before = True; caf\xe9 = 'ol\xe9'; after = False");
+        source.extend_from_slice(ending);
+        source.extend_from_slice(b"items = ['caf\xe9']");
+        source.extend_from_slice(ending);
+        assert_latin1_flow(&source, 3).await;
+    }
+}
+
+async fn assert_latin1_flow(source: &[u8], first_candidate_line: u32) {
     let project = tempfile::tempdir().unwrap();
     let output = tempfile::tempdir().unwrap();
-    let source = b"# coding: latin-1\nbefore = True; caf\xe9 = 'ol\xe9'; after = False\nitems = ['caf\xe9']\n";
     std::fs::write(project.path().join("calc.py"), source).unwrap();
     let log = output.path().join("executions.jsonl");
     let plan_args = args(project.path(), &log);
@@ -61,10 +81,13 @@ async fn latin1_plan_run_verify_preserve_raw_spans_ids_and_worker_bytes() {
         assert_eq!(candidate.span.length, original.len() as u64);
         let line_start = source[..start]
             .iter()
-            .rposition(|byte| *byte == b'\n')
+            .rposition(|byte| matches!(byte, b'\n' | b'\r'))
             .map_or(0, |position| position + 1);
         assert_eq!(candidate.column as usize, start - line_start);
-        assert_eq!(candidate.line, if original[0] == b'[' { 3 } else { 2 });
+        assert_eq!(
+            candidate.line,
+            first_candidate_line + u32::from(original[0] == b'[')
+        );
         assert_eq!(candidate.file_hash, blake3::hash(source).to_hex().as_str());
         let mut bytes = source[..start].to_vec();
         bytes.extend_from_slice(replacement);
@@ -104,22 +127,23 @@ async fn latin1_plan_run_verify_preserve_raw_spans_ids_and_worker_bytes() {
                 .collect::<BTreeSet<_>>(),
             planned_ids
         );
-        let observed = std::fs::read_to_string(&log)
-            .unwrap()
-            .lines()
-            .map(|line| serde_json::from_str::<Vec<u8>>(line).unwrap())
-            .collect::<Vec<_>>();
-        assert_eq!(observed.len(), 4);
-        assert_eq!(
-            observed.into_iter().collect::<BTreeSet<_>>(),
-            expected_files
-        );
+        assert_worker_files(&log, &expected_files);
         assert_eq!(
             std::fs::read(project.path().join("calc.py")).unwrap(),
             source
         );
         std::fs::remove_file(&log).unwrap();
     }
+}
+
+fn assert_worker_files(log: &Path, expected: &BTreeSet<Vec<u8>>) {
+    let observed = std::fs::read_to_string(log)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str::<Vec<u8>>(line).unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(observed.len(), 4);
+    assert_eq!(&observed.into_iter().collect::<BTreeSet<_>>(), expected);
 }
 
 #[tokio::test]

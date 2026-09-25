@@ -48,8 +48,9 @@ pub struct DecodedPythonSource<'source> {
     text: Cow<'source, str>,
     encoding: PythonSourceEncoding,
     raw_len: usize,
-    // Latin-1 non-ASCII byte positions, in raw and decoded coordinates.
-    expanded: Vec<(usize, usize)>,
+    // Latin-1 non-ASCII raw byte positions. Entry i ends at decoded offset
+    // raw_start + i + 2, so a second coordinate would duplicate information.
+    expanded: Vec<usize>,
 }
 
 impl DecodedPythonSource<'_> {
@@ -69,7 +70,9 @@ impl DecodedPythonSource<'_> {
         if !self.text.is_char_boundary(offset) {
             return None;
         }
-        let extra = self.expanded.partition_point(|(_, end)| *end <= offset);
+        let extra = partition_index(self.expanded.len(), |index| {
+            self.expanded[index] + index + 2 <= offset
+        });
         offset.checked_sub(extra)
     }
 
@@ -79,10 +82,24 @@ impl DecodedPythonSource<'_> {
         if offset > self.raw_len {
             return None;
         }
-        let extra = self.expanded.partition_point(|(start, _)| *start < offset);
+        let extra = self.expanded.partition_point(|start| *start < offset);
         let decoded = offset.checked_add(extra)?;
         self.text.is_char_boundary(decoded).then_some(decoded)
     }
+}
+
+fn partition_index(length: usize, mut before: impl FnMut(usize) -> bool) -> usize {
+    let mut left = 0;
+    let mut right = length;
+    while left < right {
+        let middle = left + (right - left) / 2;
+        if before(middle) {
+            left = middle + 1;
+        } else {
+            right = middle;
+        }
+    }
+    left
 }
 
 /// Decodes Python source without changing physical newlines or a leading UTF-8 BOM.
@@ -151,7 +168,7 @@ pub fn decode_python_source(source: &[u8]) -> Result<DecodedPythonSource<'_>, So
             for (offset, byte) in source.iter().copied().enumerate() {
                 decoded.push(char::from(byte));
                 if !byte.is_ascii() {
-                    expanded.push((offset, decoded.len()));
+                    expanded.push(offset);
                 }
             }
             Cow::Owned(decoded)
@@ -211,4 +228,25 @@ fn encoding_cookie(mut source: &[u8]) -> Option<&str> {
         source = &source[next..];
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::partition_index;
+
+    #[test]
+    fn derived_coordinate_search_stays_logarithmic_for_arbitrary_queries() {
+        for length in [0usize, 1, 1_024, 65_536, 524_256] {
+            for boundary in [length, 0, length / 2, length.saturating_sub(1)] {
+                let mut comparisons = 0;
+                let found = partition_index(length, |index| {
+                    comparisons += 1;
+                    index < boundary
+                });
+                assert_eq!(found, boundary);
+                let limit = if length == 0 { 0 } else { length.ilog2() + 1 };
+                assert!(comparisons <= limit);
+            }
+        }
+    }
 }

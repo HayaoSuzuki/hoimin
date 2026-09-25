@@ -1,6 +1,93 @@
 use hoimin_core::{ByteSpan, CandidateDescriptor, validate_candidate};
 
 #[test]
+fn latin1_mapping_matches_scalar_widths_for_every_byte_and_boundary() {
+    use hoimin_core::decode_python_source;
+    for stride in [1, 2, 17] {
+        let mut source = b"# coding: latin-1\n".to_vec();
+        for byte in 0..=u8::MAX {
+            source.extend(std::iter::repeat_n(b'a', stride - 1));
+            source.push(byte);
+        }
+        let decoded = decode_python_source(&source).unwrap();
+        let mut expected = 0;
+        for raw in 0..=source.len() {
+            assert_eq!(decoded.raw_to_utf8(raw), Some(expected));
+            assert_eq!(decoded.utf8_to_raw(expected), Some(raw));
+            if let Some(byte) = source.get(raw) {
+                let width = char::from(*byte).len_utf8();
+                for interior in 1..width {
+                    assert_eq!(decoded.utf8_to_raw(expected + interior), None);
+                }
+                expected += width;
+            }
+        }
+        assert_eq!(decoded.raw_to_utf8(usize::MAX), None);
+        assert_eq!(decoded.utf8_to_raw(usize::MAX), None);
+        assert_eq!(
+            decoded.encoding().encode(decoded.text()).unwrap().as_ref(),
+            source
+        );
+    }
+}
+
+#[test]
+fn latin1_validation_locations_match_decoded_unicode_index_at_every_boundary() {
+    use hoimin_core::{
+        CandidateIdentity, CandidateValidationContext, CandidateValidationError, PythonSourceIndex,
+        stable_mutant_id, validate_candidate_with_context,
+    };
+    for ending in [b"\n".as_slice(), b"\r\n", b"\r", b"\r\n\r\n\n\r"] {
+        let mut source = b"# coding: latin-1\n".to_vec();
+        for payload in [b"\xe9\xff\x85\xa0x".as_slice(), b"", b"a\xe9b\xff"] {
+            source.extend_from_slice(payload);
+            source.extend_from_slice(ending);
+        }
+        let context = CandidateValidationContext::new(&source).unwrap();
+        let decoded = source.iter().copied().map(char::from).collect::<String>();
+        let index = PythonSourceIndex::new(&decoded).unwrap();
+        let mut utf8 = 0;
+        for raw in 0..=source.len() {
+            let (line, column) = index.line_and_column(utf8).unwrap();
+            let candidate = CandidateDescriptor {
+                schema_version: 1,
+                path: "source.py".into(),
+                span: ByteSpan {
+                    start: raw as u64,
+                    length: 0,
+                },
+                original: String::new(),
+                replacement: "a".into(),
+                operator: "test".into(),
+                line,
+                column,
+                symbol: None,
+                file_hash: context.file_hash().into(),
+            };
+            assert_eq!(
+                validate_candidate_with_context(&context, &candidate),
+                Ok(stable_mutant_id(&CandidateIdentity::from(&candidate)))
+            );
+            let mut wrong = candidate.clone();
+            wrong.column += 1;
+            assert_eq!(
+                validate_candidate_with_context(&context, &wrong),
+                Err(CandidateValidationError::LocationMismatch)
+            );
+            wrong = candidate;
+            wrong.line += 1;
+            assert_eq!(
+                validate_candidate_with_context(&context, &wrong),
+                Err(CandidateValidationError::LocationMismatch)
+            );
+            if let Some(byte) = source.get(raw) {
+                utf8 += char::from(*byte).len_utf8();
+            }
+        }
+    }
+}
+
+#[test]
 fn latin1_candidate_uses_original_bytes_and_unicode_metadata() {
     let source = b"# coding: latin-1\nvalue = ['caf\xe9']\n";
     let candidate = CandidateDescriptor {
