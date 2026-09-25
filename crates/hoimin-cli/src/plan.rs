@@ -23,6 +23,9 @@ use crate::resource::{self, ResourceError};
 use crate::shell;
 use crate::target::TargetHandler;
 
+mod preview;
+pub use preview::VerifyPreview;
+
 mod ranking;
 #[cfg(test)]
 mod ranking_tests;
@@ -69,6 +72,7 @@ pub struct PlanOutput {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct VerifiedPlan {
+    pub preview: VerifyPreview,
     pub config: RunConfig,
     pub(crate) fingerprint_copy_inputs: BTreeSet<Utf8PathBuf>,
     pub selection: ResolvedVerifySelection,
@@ -395,7 +399,7 @@ async fn prepare_verify_selection_inner(
         .filter(|record| copy_manifest.entry(&record.path).is_some())
         .map(|record| record.path.clone())
         .collect();
-    validate_requested_candidates(
+    let discovered_ids = validate_requested_candidates(
         &manifest,
         &candidate_ids,
         &config,
@@ -407,7 +411,15 @@ async fn prepare_verify_selection_inner(
     )
     .await?;
 
+    let preview = VerifyPreview::new(
+        &manifest,
+        requested_selection,
+        &selection,
+        &discovered_ids,
+        verification_selection.clone(),
+    );
     Ok(VerifiedPlan {
+        preview,
         config,
         fingerprint_copy_inputs,
         verification_selection,
@@ -731,7 +743,7 @@ async fn validate_requested_candidates(
     targets: &[TargetSlice],
     #[cfg(test)] control: Option<DiscoveryControl>,
     #[cfg(test)] stats: Option<&mut ValidationStats>,
-) -> Result<(), PlanError> {
+) -> Result<Vec<String>, PlanError> {
     let candidates = manifest
         .candidates
         .iter()
@@ -780,7 +792,12 @@ async fn validate_requested_candidates(
             )));
         }
     }
-    Ok(())
+    Ok(discovery
+        .candidates
+        .iter()
+        .filter(|candidate| requested_ids.contains(&candidate.id))
+        .map(|candidate| candidate.id.clone())
+        .collect())
 }
 
 async fn validate_requested_descriptors(

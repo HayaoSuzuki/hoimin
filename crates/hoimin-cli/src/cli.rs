@@ -243,7 +243,7 @@ struct RawPlanArgs {
     after_help = "Execution and resource settings come from PLAN and cannot be overridden. Disk safety limits --max-workspace-size and --min-free-space are inherited from PLAN. Create a new plan to change them."
 )]
 struct RawVerifyArgs {
-    /// Path to a version-3 plan manifest.
+    /// Path to a version-4 plan manifest.
     #[arg(value_name = "PLAN")]
     manifest: PathBuf,
 
@@ -275,6 +275,10 @@ struct RawVerifyArgs {
         value_name = "POLICY"
     )]
     selection_policy: Option<TopSelectionPolicy>,
+
+    /// Validate and preview selected candidates without executing tests.
+    #[arg(long, conflicts_with = "metrics")]
+    dry_run: bool,
 
     /// Write execution metrics to PATH, relative to the invocation directory.
     #[arg(long, value_name = "PATH")]
@@ -389,6 +393,7 @@ pub enum VerifySelection {
 
 #[derive(Debug)]
 pub struct VerifyArgs {
+    pub dry_run: bool,
     pub metrics: Option<Utf8PathBuf>,
     pub manifest: PathBuf,
     pub selection: VerifySelection,
@@ -521,6 +526,7 @@ impl TryFrom<Command> for ParsedCommand {
                     None => VerifySelection::CandidateIds(raw.candidate_ids),
                 };
                 Ok(Self::Verify(VerifyArgs {
+                    dry_run: raw.dry_run,
                     metrics: raw.metrics.map(metrics_path).transpose()?,
                     manifest: raw.manifest,
                     selection,

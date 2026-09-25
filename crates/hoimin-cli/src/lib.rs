@@ -40,6 +40,10 @@ where
         Ok(cli::ParsedCommand::Verify(args)) => {
             match plan::prepare_verify_selection(&args.manifest, &args.selection, args.format).await
             {
+                Ok(verified) if args.dry_run => verified
+                    .preview
+                    .write(args.format, &mut std::io::stdout())
+                    .map(|()| 0),
                 Ok(mut verified) => {
                     verified.config.output.metrics = args.metrics;
                     shell::run_owned_verified(verified, std::io::stdout(), std::io::stderr()).await
@@ -144,6 +148,13 @@ async fn run_parsed_with_io<Stdout: std::io::Write, Stderr: std::io::Write>(
         Ok(cli::ParsedCommand::Verify(args)) => {
             match plan::prepare_verify_selection(&args.manifest, &args.selection, args.format).await
             {
+                Ok(verified) if args.dry_run => match verified.preview.write(args.format, stdout) {
+                    Ok(()) => 0,
+                    Err(error) => {
+                        let _ = writeln!(stderr, "{error}");
+                        2
+                    }
+                },
                 Ok(mut verified) => {
                     verified.config.output.metrics = args.metrics;
                     let verification_selection = verified.verification_selection;

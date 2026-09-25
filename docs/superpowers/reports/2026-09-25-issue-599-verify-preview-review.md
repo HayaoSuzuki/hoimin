@@ -15,3 +15,15 @@
 ## Execution evidence
 
 Design and implementation plan prepared before production or test implementation. Implementation and test review results will be appended as the work is performed; no success is asserted in advance.
+
+## Implementation review 1: dispatch and artifact boundary
+
+Read the complete diff for CLI parsing, both dispatch paths and shared preparation. Both dry-run arms return before shell calls and metrics assignment. Public tests exercise real subprocesses, an empty dedicated TMPDIR, unchanged plan bytes and an external test marker; normal verification then creates the marker as a negative control. Truncated preview also succeeds with an impossible runtime free-space reserve, proving it does not reach worker preflight. Six focused tests pass after implementation.
+
+## Test review 1: ordering expectations and valid fixtures
+
+The initial explicit-order test changed saved sequences to 0 and 99; execution showed existing validation requires a permutation of 1..=N. This tested malformed input rather than order independence. Replaced those numbers with a valid reversed permutation (1 and 2 in saved-rank order), preserving disagreement with discovery order. Strict/diverse expected positions are hand-written; normal `mutant_started` order is separately compared. Six focused tests now pass. This corrects the fixture, not the production validation contract.
+
+## RED/GREEN evidence
+
+`CARGO_BUILD_JOBS=2 cargo test -p hoimin-cli --test plan verify_preview -- --nocapture`: initial two public tests failed with `unexpected argument '--dry-run'`; expanded six-test run failed all six before production changes. After implementation and valid sequence-fixture correction, 6 passed, 0 failed (73 filtered). Logs: `/tmp/issue599-red.log` and `/tmp/issue599-green.log` in the execution workspace. No Python production or automated test code changed.
