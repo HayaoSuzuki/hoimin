@@ -653,6 +653,9 @@ impl WorkspacePlan {
         let mut charged = 0_u64;
 
         let result = (|| {
+            for directory in self.manifest.directories() {
+                root.ensure_directory(directory)?;
+            }
             for entry in self.manifest.entries() {
                 let snapshot = self.snapshot.files.get(&entry.path).ok_or_else(|| {
                     WorkspaceError::WorkspaceRestore {
@@ -877,6 +880,11 @@ fn create_pending_disk_snapshot(
             writer.write(entry, bytes)
         })?;
     let (logical_bytes, files) = writer.finish();
+    for directory in manifest.directories() {
+        fs::create_dir_all(root.join(directory)).map_err(|error| {
+            WorkspaceError::io("create shared snapshot directory", directory, error)
+        })?;
+    }
 
     if logical_bytes != manifest.logical_bytes() {
         return Err(WorkspaceError::CopySizeOverflow);

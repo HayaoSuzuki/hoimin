@@ -237,6 +237,13 @@ impl WorkerRoot {
             .expect("worker root capability is open")
     }
 
+    pub(crate) fn ensure_directory(&self, path: &Utf8Path) -> Result<(), WorkspaceError> {
+        // Opening a synthetic child's parent creates and checks every directory component;
+        // no child file is created, and all opens retain the existing no-follow policy.
+        self.open_parent(&path.join(".hoimin-directory-probe"), true)
+            .map(|_| ())
+    }
+
     pub(crate) fn read(&self, path: &Utf8Path) -> Result<Vec<u8>, WorkspaceError> {
         self.with_read_file(path, |mut file| {
             let mut contents = Vec::new();

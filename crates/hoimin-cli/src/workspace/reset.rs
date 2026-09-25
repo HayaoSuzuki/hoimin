@@ -1,7 +1,5 @@
 use std::collections::BTreeSet;
 
-use camino::Utf8PathBuf;
-
 use super::root::WorkerEntryKind;
 use super::{WorkerWorkspace, WorkspaceError};
 
@@ -29,7 +27,7 @@ impl WorkerWorkspace {
 
     fn reset_from_snapshot(&self) -> Result<(), WorkspaceError> {
         let existing = self.root.entries()?;
-        let required_directories = required_directories(self.snapshot.files.keys());
+        let required_directories = self.manifest.directories().iter().collect::<BTreeSet<_>>();
         let existing_files = existing
             .iter()
             .filter(|entry| entry.kind == WorkerEntryKind::File)
@@ -45,7 +43,7 @@ impl WorkerWorkspace {
                     if entry
                         .logical_path
                         .as_ref()
-                        .is_none_or(|path| !required_directories.contains(path))
+                        .is_none_or(|path| !required_directories.contains(&path))
                     {
                         remove()?;
                     }
@@ -65,6 +63,9 @@ impl WorkerWorkspace {
             }
         }
 
+        for directory in self.manifest.directories() {
+            self.root.ensure_directory(directory)?;
+        }
         for (path, snapshot) in &self.snapshot.files {
             let bytes = self.snapshot.read(path)?;
             if existing_files.contains(path)
@@ -102,6 +103,14 @@ impl WorkerWorkspace {
         if entries.iter().any(|entry| entry.logical_path.is_none()) {
             return Ok(false);
         }
+        let actual_directories = entries
+            .iter()
+            .filter(|entry| entry.kind == WorkerEntryKind::Directory)
+            .filter_map(|entry| entry.logical_path.as_ref())
+            .collect::<BTreeSet<_>>();
+        if actual_directories != self.manifest.directories().iter().collect() {
+            return Ok(false);
+        }
         let actual_files = entries
             .iter()
             .filter(|entry| entry.kind != WorkerEntryKind::Directory)
@@ -122,23 +131,6 @@ impl WorkerWorkspace {
         }
         Ok(true)
     }
-}
-
-fn required_directories<'a>(
-    snapshot_paths: impl Iterator<Item = &'a Utf8PathBuf>,
-) -> BTreeSet<Utf8PathBuf> {
-    let mut directories = BTreeSet::new();
-    for file in snapshot_paths {
-        let mut parent = file.parent();
-        while let Some(path) = parent {
-            if path.as_str().is_empty() {
-                break;
-            }
-            directories.insert(path.to_owned());
-            parent = path.parent();
-        }
-    }
-    directories
 }
 
 #[cfg(test)]

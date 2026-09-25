@@ -211,7 +211,7 @@ fn serialized_plan_verify_inherits_import_roots_and_preserves_plan() {
 fn unavailable_copied_import_roots_fail_before_baseline() {
     for (root, options) in [
         ("missing", vec![]),
-        ("imports", vec!["--exclude", "imports/**"]),
+        ("imports", vec!["--exclude", "imports"]),
         ("check.py", vec![]),
     ] {
         let project = Project::new();
@@ -269,4 +269,20 @@ fn old_or_forged_plans_fail_before_baseline() {
         assert!(!rejected.status.success(), "{rejected:?}");
         assert!(!project.log.exists());
     }
+}
+
+#[test]
+fn empty_selected_import_root_survives_children_only_exclusion() {
+    let project = Project::new();
+    fs::create_dir(project.root.join("imports")).unwrap();
+    fs::write(project.root.join("imports/helper.py"), "value = 1\n").unwrap();
+    let output = project.execute(
+        "run",
+        &["--file", "src/pkg/calc.py"],
+        &["--import-root", "imports", "--exclude", "imports/**"],
+        false,
+    );
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["baseline"]["termination"]["Exit"], 0, "{output:?}");
+    assert!(project.log.exists());
 }
