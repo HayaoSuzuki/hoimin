@@ -27,6 +27,31 @@ The report schema retains its existing `mode` and singular `mechanism` fields.
 
 ## Local quality gate
 
+Install [prek](https://github.com/j178/prek) and enable the Git pre-commit hook
+once per checkout:
+
+```console
+uv tool install prek
+prek install
+prek run --all-files
+```
+
+The hooks in [`prek.toml`](../prek.toml) run the same Rust formatting and Clippy
+checks as CI, including the vendored parser. They use Cargo from `PATH` and
+the toolchain (with rustfmt and Clippy) pinned in `rust-toolchain.toml`.
+Formatting is checked without rewriting files; run `cargo fmt --all` or
+`cargo fmt --manifest-path vendor/ruff_python_parser/Cargo.toml` to fix it.
+
+Hooks run when staged changes include Rust sources, Cargo manifests or lockfiles,
+Rust toolchain, Cargo, rustfmt or Clippy configuration, or `prek.toml`.
+Documentation-only changes skip them. Each hook checks its entire workspace
+once, in sequence. The separate `fuzz/` workspace uses the explicit checks
+documented below and does not trigger these hooks.
+
+Run `prek validate-config prek.toml` after changing the hook configuration.
+Use `prek run --all-files` for all four Rust checks, or
+`prek run cargo-clippy --all-files` for the workspace Clippy check alone.
+
 Run the quality gates locally with the same commands used in CI:
 
 ```console
