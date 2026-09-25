@@ -23,3 +23,9 @@ Design and implementation plan were committed as `1bd3324` before production edi
 - Both exact CI Clippy commands passed. Full workspace: 2393 passed, zero failed, 22 ignored across 110 groups.
 
 Lean not added: this changes an OS existence observation and error ordering, not a pure transition policy. Filesystem and public-process tests directly exercise the claim.
+
+## Integration and independent review
+
+Rebased the two unpublished commits onto main99c27dc. The only conflict was independent test additions at target_handler's end: retained both the incoming changed-line tests and this Issue's source tests, along with the two valid-source Git fixture corrections. Final related tests: 140 passed/1 ignored; exact workspace Clippy passed again. Vendor Clippy had already passed and vendor code is unchanged; both formatting checks and diff check passed.
+
+Independent read-only review by batch_analyzer_605 found no blockers: lexical normalization, pre-discovery ordering, mixed sources, normal empty/file compatibility, diagnostic escaping, link policy, and public baseline checks were inspected. It confirmed the Git fixture adjustment preserves each test's intended premise. No runtime Windows validation is claimed locally.
