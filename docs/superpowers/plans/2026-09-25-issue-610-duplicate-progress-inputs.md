@@ -23,38 +23,38 @@
 - Same run ID can describe different resumed reports; compare whole bytes.
 - Different fingerprints from independent runs must not warn merely for equal mutants.
 - Digest collisions and differences after a buffer boundary must not claim equality.
-- Optional duplicate confirmation must not reopen nonregular files or add read errors to successful parsing.
+- Optional duplicate confirmation must not block opening or read nonregular files or add read errors to successful parsing.
 
 ### Task 1: Add behavioral regressions
 
 **Files:** `crates/hoimin-cli/tests/progress.rs`, `crates/hoimin-cli/tests/progress_heap.rs`.
 **Interfaces:** existing public CLI helpers and `progress::run`; output remains schema 1.
 
-- [ ] Test four repeated paths and copied bytes, both human/JSON, requiring one warning per repeated position plus unchanged saturated/3 stalls.
-- [ ] Test independent run IDs with equal results and same-ID reports with changed metadata/result/completion, expecting no duplicate warning.
-- [ ] Test repeated reports around an unusable barrier, and a malformed final input with empty stdout and no duplicate warning.
-- [ ] Run `cargo test --offline --locked -p hoimin-cli --test progress duplicate_input`; expect missing-warning assertions to fail before implementation.
+- [x] Test four repeated paths and copied bytes, both human/JSON, requiring one warning per repeated position plus unchanged saturated/3 stalls.
+- [x] Test independent run IDs with equal results and same-ID reports with changed metadata/result/completion, expecting no duplicate warning.
+- [x] Test repeated reports around an unusable barrier, and a malformed final input with empty stdout and no duplicate warning.
+- [x] Run `cargo test --offline --locked -p hoimin-cli --test progress duplicate_input`; expect missing-warning assertions to fail before implementation.
 
 ### Task 2: Implement bounded evidence and warnings
 
 **Files:** `progress/input.rs`, new `progress/duplicate.rs`, `progress/mod.rs`, `progress/render.rs`, README.
 **Interfaces:** public read_report unchanged; internal read_report_with_fingerprint returns `(InputReport, blake3::Hash)`; duplicate evidence stores earlier index/reason, not report values.
 
-- [ ] Extract buffered-reader parser and implement Read wrapper updating BLAKE3 only for returned bytes.
-- [ ] Add tracker with first-path positions and digest buckets; exact regular-file comparison uses fixed buffers and errors suppress optional byte evidence.
-- [ ] Before tracker implementation, add unit tests forcing a digest bucket collision and differences after a buffer boundary. Expect absent implementation/behavior failure.
-- [ ] Store optional evidence in InputDisposition and render one-based current/earlier paths after existing diagnostics. Keep report comparison flow unchanged.
-- [ ] Document byte-only scope, stderr warnings, unchanged saturation and resume behavior.
-- [ ] Run regressions; update old copy-based fixtures' diagnostic expectations and history heap stderr assertion to intentional warning contract.
+- [x] Extract buffered-reader parser and implement Read wrapper updating BLAKE3 only for returned bytes.
+- [x] Add tracker with first-path positions and digest buckets; exact regular-file comparison uses fixed buffers and errors suppress optional byte evidence.
+- [x] Before tracker implementation, add unit tests forcing a digest bucket collision and differences after a buffer boundary. Expect absent implementation/behavior failure.
+- [x] Store optional evidence in InputDisposition and render one-based current/earlier paths after existing diagnostics. Keep report comparison flow unchanged.
+- [x] Document byte-only scope, stderr warnings, unchanged saturation and resume behavior.
+- [x] Run regressions; update old copy-based fixtures' diagnostic expectations and history heap stderr assertion to intentional warning contract.
 
 ### Task 3: Review and verify
 
 **Files:** new `docs/reviews/2026-09-25-issue-610-duplicate-progress-inputs.md`, this checklist.
 
-- [ ] Record three separate implementation and test self-reviews; root provides independent review.
-- [ ] Run progress, all existing heap gates, Lean progress oracle consumers, then full workspace; require exit 0 and record ignored cases.
-- [ ] Run workspace/vendor fmt and workspace all-target/all-feature plus vendor parser clippy with warnings denied.
-- [ ] Commit final code/tests/evidence; root publishes the two-branch progress stack.
+- [x] Record three separate implementation and test self-reviews; root provides independent review.
+- [x] Run progress, all existing heap gates, Lean progress oracle consumers, then full workspace; require exit 0 and record ignored cases.
+- [x] Run workspace/vendor fmt and workspace all-target/all-feature plus vendor parser clippy with warnings denied.
+- [x] Commit final code/tests/evidence; root publishes the two-branch progress stack.
 
 ## Plan self-reviews
 

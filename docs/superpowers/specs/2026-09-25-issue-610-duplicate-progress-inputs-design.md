@@ -12,7 +12,7 @@ The first version compares raw bytes. JSON versus JSONL, differing whitespace, a
 
 Keep the public read_report API and behavior. Extract its parser to accept a buffered reader. Add an internal reader that computes a BLAKE3 fingerprint while the same bytes are consumed and validated. The CLI uses this reader; public callers of read_report do not pay for hashing. JSONL stays streaming, and no additional report bodies are retained.
 
-A duplicate tracker stores first positions by path and candidate positions by digest. Digest matches are only a filter: reopen regular-file candidates and compare their bytes in fixed-size buffers before claiming identical bytes. This preserves equality even with digest collisions. Do not reopen nonregular files. Optional confirmation failures suppress that warning, preserving the successful read/validation result. Exact repeated paths do not need rereading. Store only compact duplicate evidence with input dispositions, without exposing it in JSON.
+A duplicate tracker stores first positions by path and candidate positions by digest. Digest matches are only a filter: reopen regular-file candidates and compare their bytes in fixed-size buffers before claiming identical bytes. This preserves equality even with digest collisions. On Unix, open candidates nonblocking and inspect the opened descriptor before reading; a regular-path-to-FIFO replacement must not stall optional detection. Reject nonregular descriptors. Optional confirmation failures suppress that warning, preserving the successful read/validation result. Exact repeated paths do not need rereading. Store only compact duplicate evidence with input dispositions, without exposing it in JSON.
 
 Alternatives: run-ID matching confuses resume with exact copies; normalized full-report matching would require a cross-format contract and more state; rereading/hashing every file separately would add avoidable I/O. The chosen single-pass fingerprint plus exact candidate confirmation bounds retained memory while satisfying the stated same-path/copy acceptance conditions.
 
@@ -23,5 +23,5 @@ Test same path four times, copied bytes, both output formats, changed run IDs wi
 ## Design self-reviews
 
 1. Identity: a digest alone is not exact equality and a run ID is reused on resume. Require exact streamed comparison after the digest filter; explicitly bound detection to bytes/path.
-2. Resource use: retaining complete files would undo streaming/history fixes. Hash the existing read, retain only digest/index/path, and compare candidate files with fixed buffers. Nonregular files must never be reopened for optional detection.
+2. Resource use: retaining complete files would undo streaming/history fixes. Hash the existing read, retain only digest/index/path, and compare candidate files with fixed buffers. Nonregular files must never be read or cause a blocking open during optional detection.
 3. Output/error compatibility: eager warnings would leak diagnostics before a later parse failure. Store evidence and append duplicate warnings at the existing deferred render boundary; preserve old warning order and every input position.

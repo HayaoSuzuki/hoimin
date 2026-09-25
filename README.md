@@ -462,6 +462,17 @@ hoimin run --profile focused --root . --source src -- python -m pytest -q
 
 Compare ordered run reports to track mutation-testing progress. Inputs are oldest-to-newest, and `--patience` defaults to three consecutive comparable stalls.
 
+Repeated input paths and byte-identical copies produce warnings on stderr, in
+both human and JSON output modes. Warnings identify the repeated input and an
+earlier input, with `same path` or `identical bytes` as the reason. Inputs remain
+in order: self-comparisons still count as stalls and can reach saturation, and
+unusable reports still break the stall chain. No strict rejection is applied.
+Different reports that share a run ID (for example, before and after resume)
+are not duplicates on that basis. Copy detection compares raw bytes, so the
+same execution saved as JSON and JSONL, or with different whitespace, is not
+detected as a copy. Copy confirmation is best-effort if files change or become
+unreadable after validation; reports should remain unchanged during comparison.
+
 Inputs may mix JSON documents (schema v2/v3) and current-schema JSONL event
 streams saved from `hoimin run --format jsonl`. Detection uses content, not
 filename. For example:

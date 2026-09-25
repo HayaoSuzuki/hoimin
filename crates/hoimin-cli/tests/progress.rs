@@ -1111,10 +1111,164 @@ proptest! {
 }
 
 #[tokio::test]
+async fn duplicate_input_paths_and_copies_warn_without_changing_saturation() {
+    let fixture = tempfile::tempdir().unwrap();
+    for jsonl in [false, true] {
+        let original = if jsonl {
+            write_jsonl(&fixture, &jsonl_events(&valid_report()))
+        } else {
+            write_json(&fixture, "original.json", &valid_report())
+        };
+        for copied in [false, true] {
+            let mut reports = vec![original.clone()];
+            for index in 1..4 {
+                let path = if copied {
+                    let copy = fixture.path().join(format!("copy-{index}"));
+                    std::fs::copy(&original, &copy).unwrap();
+                    copy
+                } else {
+                    original.clone()
+                };
+                reports.push(path);
+            }
+            for format in ["json", "human"] {
+                let (exit, stdout, stderr) = run_progress(&reports, format).await;
+                assert_eq!(exit, 0);
+                let warnings = String::from_utf8(stderr).unwrap();
+                assert_eq!(warnings.lines().count(), 3, "{warnings}");
+                for index in 2..=4 {
+                    assert!(
+                        warnings.contains(&format!(
+                            "progress input {index} ({})",
+                            reports[index - 1].display()
+                        )),
+                        "{warnings}"
+                    );
+                }
+                assert_eq!(
+                    warnings
+                        .matches(&format!("repeats input 1 ({})", original.display()))
+                        .count(),
+                    3
+                );
+                assert!(warnings.contains(if copied {
+                    "identical bytes"
+                } else {
+                    "same path"
+                }));
+                if format == "json" {
+                    let output: Value = serde_json::from_slice(&stdout).unwrap();
+                    assert_eq!(output["latest"]["state"], "saturated");
+                    assert_eq!(output["consecutive_stalls"], 3);
+                    assert_eq!(output["inputs"].as_array().unwrap().len(), 4);
+                    assert_eq!(output["comparisons"].as_array().unwrap().len(), 3);
+                } else {
+                    let output = String::from_utf8(stdout).unwrap();
+                    assert!(output.contains("state: saturated"));
+                    assert!(output.contains("stalls: 3"));
+                }
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn duplicate_input_detection_distinguishes_independent_and_resumed_reports() {
+    let fixture = tempfile::tempdir().unwrap();
+    let original = valid_report();
+    let first = write_json(&fixture, "first.json", &original);
+    let mut independent = original.clone();
+    for field in ["run", "baseline", "summary"] {
+        independent[field]["run_id"] = json!("independent-run");
+    }
+    for mutant in independent["mutants"].as_array_mut().unwrap() {
+        mutant["run_id"] = json!("independent-run");
+    }
+    let mut resumed = original.clone();
+    resumed["mutants"][0]["elapsed_ms"] = json!(42);
+    let mut incomplete = original.clone();
+    incomplete["summary"]["complete"] = json!(false);
+    incomplete["summary"]["exit_code"] = json!(4);
+    let mut changed_result = original.clone();
+    changed_result["mutants"][0]["status"] = json!("survived");
+    changed_result["mutants"][0]["termination"] = json!({"Exit": 0});
+    changed_result["summary"]["counts"]["killed"] = json!(0);
+    changed_result["summary"]["counts"]["survived"] = json!(1);
+    changed_result["summary"]["counts"]["score"] = json!(0.0);
+    changed_result["summary"]["exit_code"] = json!(1);
+    for (name, report, expected_state) in [
+        ("independent", independent, "stalled"),
+        ("resumed", resumed, "stalled"),
+        ("incomplete", incomplete, "indeterminate"),
+        ("changed-result", changed_result, "regressing"),
+    ] {
+        let next = write_json(&fixture, &format!("{name}.json"), &report);
+        let (exit, stdout, stderr) = run_progress(&[first.clone(), next], "json").await;
+        assert_eq!(exit, 0, "{}", String::from_utf8_lossy(&stderr));
+        assert!(
+            !String::from_utf8_lossy(&stderr).contains("repeats input"),
+            "{name}"
+        );
+        let output: Value = serde_json::from_slice(&stdout).unwrap();
+        assert_eq!(output["latest"]["state"], expected_state);
+    }
+    // Equivalent serializations are intentionally outside byte-only detection.
+    let jsonl = write_jsonl(&fixture, &jsonl_events(&original));
+    let (exit, _, stderr) = run_progress(&[first, jsonl], "json").await;
+    assert_eq!(exit, 0);
+    assert!(stderr.is_empty());
+}
+
+#[tokio::test]
+async fn duplicate_input_warnings_preserve_barriers_and_deferred_errors() {
+    let fixture = tempfile::tempdir().unwrap();
+    let first = write_json(&fixture, "first.json", &valid_report());
+    let mut incomplete = valid_report();
+    incomplete["summary"]["complete"] = json!(false);
+    incomplete["summary"]["exit_code"] = json!(4);
+    let barrier = write_json(&fixture, "incomplete.json", &incomplete);
+    let reports = vec![
+        first.clone(),
+        first.clone(),
+        barrier.clone(),
+        barrier,
+        first.clone(),
+        first,
+    ];
+    let (exit, stdout, stderr) = run_progress(&reports, "json").await;
+    assert_eq!(exit, 0);
+    let output: Value = serde_json::from_slice(&stdout).unwrap();
+    assert_eq!(output["latest"]["state"], "stalled");
+    assert_eq!(output["consecutive_stalls"], 1);
+    assert_eq!(output["comparisons"].as_array().unwrap().len(), 2);
+    let warnings = String::from_utf8(stderr).unwrap();
+    assert!(warnings.lines().next().unwrap().contains("incomplete run"));
+    assert_eq!(warnings.matches("repeats input").count(), 4);
+
+    let invalid = fixture.path().join("invalid.json");
+    std::fs::write(&invalid, "{").unwrap();
+    let mut reports = reports;
+    reports.push(invalid);
+    let (exit, stdout, stderr) = run_progress(&reports, "json").await;
+    assert_eq!(exit, 2);
+    assert!(stdout.is_empty());
+    assert!(!String::from_utf8_lossy(&stderr).contains("warning:"));
+}
+
+#[tokio::test]
 async fn output_json_exposes_agent_decision_fields() {
     let fixture = tempfile::tempdir().unwrap();
     let reports = (0..4)
-        .map(|index| write_json(&fixture, &format!("stalled-{index}.json"), &valid_report()))
+        .map(|index| {
+            let mut report = valid_report();
+            for field in ["run", "baseline", "summary"] {
+                report[field]["run_id"] = json!(format!("independent-{index}"));
+            }
+            for mutant in report["mutants"].as_array_mut().unwrap() {
+                mutant["run_id"] = json!(format!("independent-{index}"));
+            }
+            write_json(&fixture, &format!("stalled-{index}.json"), &report)
+        })
         .collect::<Vec<_>>();
 
     let (code, stdout, stderr) = run_progress(&reports, "json").await;
@@ -1146,7 +1300,9 @@ async fn output_human_includes_latest_comparison_fields() {
     let output = String::from_utf8(stdout).unwrap();
 
     assert_eq!(code, 0);
-    assert!(stderr.is_empty());
+    let warnings = String::from_utf8(stderr).unwrap();
+    assert_eq!(warnings.lines().count(), 1);
+    assert!(warnings.contains("identical bytes"));
     for field in [
         "state: stalled",
         "comparable score: 1.000000",
@@ -1298,9 +1454,11 @@ async fn output_defers_mixed_history_rendering_until_all_reports_are_valid() {
         incomplete.clone(),
     ];
     let expected_diagnostics = format!(
-        "warning: unusable progress report {}: missing baseline\nwarning: unusable progress report {}: incomplete run\nwarning: comparison 1 has different candidate ID sets; progress is indeterminate\n",
+        "warning: unusable progress report {}: missing baseline\nwarning: unusable progress report {}: incomplete run\nwarning: comparison 1 has different candidate ID sets; progress is indeterminate\nwarning: progress input 3 ({}) repeats input 1 ({}): identical bytes; comparisons are unchanged\n",
         missing_baseline.display(),
         incomplete.display(),
+        reports[2].display(),
+        first.display(),
     );
 
     let (code, stdout, stderr) = run_progress(&reports, "json").await;
@@ -1586,7 +1744,16 @@ async fn output_ambiguity_is_structured_and_warned_on_stderr() {
 async fn progress_json_document_matches_its_schema() {
     let fixture = tempfile::tempdir().unwrap();
     let reports = (0..4)
-        .map(|index| write_json(&fixture, &format!("stalled-{index}.json"), &valid_report()))
+        .map(|index| {
+            let mut report = valid_report();
+            for field in ["run", "baseline", "summary"] {
+                report[field]["run_id"] = json!(format!("independent-{index}"));
+            }
+            for mutant in report["mutants"].as_array_mut().unwrap() {
+                mutant["run_id"] = json!(format!("independent-{index}"));
+            }
+            write_json(&fixture, &format!("stalled-{index}.json"), &report)
+        })
         .collect::<Vec<_>>();
     let (code, stdout, _) = run_progress(&reports, "json").await;
     assert_eq!(code, 0);
