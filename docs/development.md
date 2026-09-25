@@ -157,6 +157,56 @@ cargo clippy --locked --manifest-path fuzz/Cargo.toml --bins -- -D warnings
 
 See the [cargo-fuzz documentation](https://rust-fuzz.github.io/book/cargo-fuzz.html).
 
+### Generate Python inputs with hypothesmith
+
+The optional `fuzz` dependency group pins hypothesmith 0.3.3. The lockfile also
+records Hypothesis, LibCST, and Lark; these dependencies are not installed by the
+ordinary dev-only sync. Run from the repository root:
+
+```console
+uv sync --frozen --group fuzz --no-install-project
+uv run --frozen --no-sync python tools/hypothesmith_corpus.py --examples 100 --seed 20260926 --strategy grammar
+uv run --frozen --no-sync python tools/hypothesmith_corpus.py --examples 100 --seed 20260926 --strategy libcst
+cargo +nightly-2026-07-27 fuzz run python_analyzer fuzz/corpus/python_analyzer fuzz/seeds/python_analyzer -- -max_total_time=30 -max_len=4096 -timeout=5 -rss_limit_mb=1024
+```
+
+The generator writes to `fuzz/corpus/python_analyzer` by default; `--output DIR`
+selects another directory. `grammar` uses `from_grammar()` and `libcst` uses
+`from_node()`, both with automatic complexity targeting enabled. `--examples`
+is the Hypothesis example budget, not a promised number of distinct files.
+Whitespace-only, invalid, and oversized examples are counted and skipped; repeated
+inputs are deduplicated by SHA-256. UTF-8 bytes and physical newlines are preserved.
+`--max-bytes` defaults to 4096 and accepts values from 1 through 4096, matching the
+Rust target's limit. This bounds saved inputs, not generator memory or wall time.
+
+Generated source is compiled for syntax validation by CPython, never executed.
+The tool reports JSON on stdout with the seed, strategy, limits, Python/library
+versions, and written/existing/skipped counts. Exit 0 means at least one usable
+input was written or already present; exit 1 means no usable input was collected;
+invalid options or missing optional dependencies exit 2. Generation errors remain
+failures, even if earlier examples were already saved.
+
+Reuse the same seed, options, interpreter, and locked dependencies for replay;
+generation is not stable across dependency upgrades. Change the seed to explore
+different inputs. Corpus files and Hypothesis caches are ignored; promote a
+discovered regression to a committed seed and a normal regression test.
+
+Both strategies were exercised on CPython 3.14.7 with Hypothesis 6.168.1,
+LibCST 1.9.0, and Lark 1.3.1. That does not establish coverage of every Python 3.14
+syntax form. The existing Rust fuzz target permits syntax diagnostics because
+libFuzzer can turn a valid seed into invalid Python; this integration is not an
+assertion that CPython and the Rust parser accept identical languages.
+
+Run generator tests with the optional dependencies enabled:
+
+```console
+uv run --frozen --group fuzz --no-install-project pytest tests/test_hypothesmith_corpus.py
+```
+
+Without that group, only the two real-generator integration cases are skipped;
+the byte-preservation, size-boundary, syntax-rejection, and CLI validation tests
+still run. See the [hypothesmith project](https://github.com/Zac-HD/hypothesmith).
+
 ## Python formatting, lint and tests
 
 Ruff and pytest are development dependencies managed by `uv.lock`. For Python
