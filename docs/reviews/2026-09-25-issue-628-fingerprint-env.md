@@ -38,3 +38,10 @@ Commands use `CARGO_TARGET_DIR=/Users/hayao/RustroverProjects/hoimin/target/batc
 From `formal/HoiminOracle`, serialize each Lean command through `python3 tools/lean_resource_guard.py --timeout-seconds 20 --rss-limit-mib 2048 --sample-ms 250 --stats /tmp/environment-<name>.json -- ...`: model target `lake build +HoiminOracle.EnvironmentFingerprintModel:o`, entry `lake build +EnvironmentFingerprintAuditMain:o`, then `lake exe generate_environment_fingerprint --check corpus/environment-fingerprint.jsonl`, `--sensitivity`, and `--stats`. The corpus is generated only with the executable's `--output` option.
 
 Run `cargo test -p hoimin-cli --test fingerprint_env --test fingerprint_env_plan --test lean_environment_fingerprint_oracle` for strict public behavior and correspondence. The implementation does not include the issue's temporary fingerprint-file workaround.
+
+
+## Final main integration
+
+After Issue624 merged, rebased only628's commits with `git rebase --onto origin/main 19ffb88`, onto main `2498cc1`. Range-diff confirmed identical design/implementation patches (`c8de9c6`/`c6c7ab1`). Integration tests passed141 cases/2 ignored, including environment, plan, import roots, real budget/session behavior and the32-case oracle; the merged CI registry passed40 tests.
+
+Main's earlier manifest-buffer drop added a line to the verification function and triggered the100-line clippy cap. Consolidated existing config validation and the new environment comparison in `validate_current_plan_config`, preserving their order after manifest-header validation and before selection/project work. After that extraction, all98 environment/plan/oracle tests passed (1 ignored), both exact CI clippy commands and both format checks passed, and the diff whitespace check passed. The full-workspace result above predates this patch-identical rebase and semantics-preserving extraction; the focused final integration checks address the changed boundary. Lean model/corpus contents did not change during integration.

@@ -28,7 +28,9 @@
 - [x] Update README/help/development and additive normalized-config schema documentation for grammar, platform/native rules, startup capture, hash privacy limit, run/plan/verify behavior, and version boundaries.
 - [x] Three implementation self-reviews (capture/encoding/privacy; prepared run/verify/persistence; platform/version contracts) and three test reviews (RED sensitivity; exact semantic/privacy controls; real oracle boundary). Record findings and obtain independent read-only review.
 - [x] Run focused config/fingerprint/session/plan/oracle tests, full workspace, exactCI clippy2/fmt2, and workflow Python unittest/lint as appropriate to registry changes. Record evidence without modifying shared environments.
-- [ ] Commit final changes, rebase onto latest main excluding624 if merged, perform risk-appropriate integration checks, and publish via gh stack. Root owns CI/merge/cleanup.
+- [x] Commit the implementation, rebase onto merged main excluding624, and complete focused integration checks.
+
+Publish an independent gh stack PR with Closes628; root owns CI/merge/cleanup.
 
 ## Plan self-reviews
 

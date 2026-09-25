@@ -358,12 +358,7 @@ async fn prepare_verify_selection_inner(
         .map_err(|error| PlanError::ManifestInvalid(error.to_string()))?;
     drop(bytes);
     validate_header(&manifest)?;
-    manifest
-        .normalized_config
-        .validate()
-        .map_err(|error| PlanError::ManifestInvalid(error.to_string()))?;
-
-    validate_environment_snapshot(&manifest.normalized_config)?;
+    validate_current_plan_config(&manifest.normalized_config)?;
 
     let (selection, selection_scope, verification_selection) =
         resolve_verify_selection(&manifest, requested_selection)?;
@@ -446,7 +441,10 @@ async fn prepare_verify_selection_inner(
     })
 }
 
-fn validate_environment_snapshot(config: &hoimin_core::PlanConfig) -> Result<(), PlanError> {
+fn validate_current_plan_config(config: &hoimin_core::PlanConfig) -> Result<(), PlanError> {
+    config
+        .validate()
+        .map_err(|error| PlanError::ManifestInvalid(error.to_string()))?;
     let current = crate::fingerprint_env::capture(&config.fingerprint_env)
         .map_err(|error| PlanError::ManifestInvalid(error.to_string()))?;
     if current == config.fingerprint_env_hash {
