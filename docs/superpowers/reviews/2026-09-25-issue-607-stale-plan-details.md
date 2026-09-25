@@ -30,3 +30,13 @@ Cargo uses the assigned `target/batch-verify` cache, one build job, disabled dev
 ## Independent review
 
 The coordinating agent independently reviewed the production diff and all four new tests and reported no blockers. Review covered exact map equality, change labels, borrowed keys, sorting/cap/count, escaping, preserved error prefixes, six public cases in both modes, early resolution errors and source precedence. Avoiding collection of all changed keys was noted as an optional future optimization, not an acceptance requirement.
+
+## Rebase verification
+
+After the full suite, implementation commit `8b57154` was rebased with its design commit onto main `bf09c91` (including issues 604, 605 and 610), yielding `1a983ab`. No conflicts occurred. Range-diff shows only README context changed from preview schema 1 to schema 2; the implementation and tests are preserved. Both issue 604 preview-detail regressions and both issue 607 public stale regressions remain present.
+
+- Fresh comparison unit tests: 2 passed, exit 0.
+- Fresh `cargo test -p hoimin-cli --test plan --test cli_config --test selection_heap --test lean_paging_oracle -- --test-threads=1`: 146 passed, 0 failed, 1 ignored across four binaries, exit 0.
+- Both exact CI clippy commands above and both fmt checks passed on the rebased branch, as did `git diff --check`.
+
+The complete workspace result above belongs to the pre-rebase implementation; the final-base checks cover shared verification, previews, CLI parsing, selection allocation and paging. No source changes followed these checks.
