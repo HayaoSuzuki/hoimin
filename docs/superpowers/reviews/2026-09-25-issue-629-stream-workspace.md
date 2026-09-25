@@ -90,3 +90,16 @@ workspace artifacts before verification: contracts-enabled workspace tests passe
 47. Both exact CI Clippy commands and both formatting checks passed again. The
 full-workspace count above predates this rebase; this final run verifies the
 streaming implementation against the newly merged main changes.
+
+## CI performance registry correction
+
+CI completed the Rust suite but rejected the performance gate: the registered
+preflight test still used its old name, so Cargo executed zero tests. Updated
+only that registry selector to the renamed bounded-buffer test. The reset test
+rename has no active registry reference; historical design commands remain intact.
+
+Reproduced evidence is the CI gate log with zero executed tests. After correction,
+the complete performance runner passed all 34 active gates, including exactly one
+preflight test. Registry validation (29 shapes), all 16 performance-runner Python
+tests, and git diff --check passed. No Python or Rust implementation changed, so
+this correction does not require another full Rust suite or mutation run.
