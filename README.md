@@ -80,6 +80,7 @@ In a persistent installation, replace the launch prefix with `hoimin`. Everythin
 At least one target selector is required:
 
 - `--source DIR` selects Python files below a source root and may be repeated. `--source .` selects every discovered Python file below the configured root. An absolute `--source` path exactly equal to an absolute `--root` has the same effect.
+- Each explicit `--source` must exist. Missing sources fail with exit 2 before baseline execution in `run`, `plan`, and saved-plan `verify`, including when combined with valid sources or `--changed`. Existing empty directories and valid selections filtered to zero candidates still succeed. A regular Python file is also accepted as a source. This existence check does not change the discovery policy for symbolic links.
 - `--file PATH` selects an entire Python file and may be repeated.
 - `--line PATH:START-END` selects an inclusive line range and may be repeated.
 - `--symbol MODULE:QUALNAME` selects a function, method, or class resolved below `--source` and may be repeated.
