@@ -85,3 +85,9 @@ The smallest reproducer is corpus row `integer-destination`: write `source` to `
 - `git diff --check`: pass.
 
 No unresolved semantic mismatch or deferred implementation finding remains in this scope. The only plan adjustment was the additional existing CI registry, validated RED→GREEN. Root owns independent code review, PR publication and remote CI; those are not claimed by this author report.
+
+## Published-branch main merge
+
+Merged main `efe3531` into the published #605 branch without rebasing. The only manual conflicts were the Lean root imports, lake executable list, CI generator list and Python executable registry. Retained both `generate_paging` and `generate_prepared_annotation_import`, ordered paging then prepared annotation consistently in lake/CI/Python registries; both model and executable build-list entries remain present.
+
+Post-merge gates: complete CLI library 690 passed / 12 ignored; paging oracle 2 passed; prepared annotation oracle 3 passed (26 runtime/plan fixtures and the original false-kill run); CI workflow contract 40 passed. Exact workspace/all-targets/all-features Clippy, workspace/vendor fmt, registry Ruff and `git diff --check` all pass. No production resolver edit was needed for the merge. Parent owns remote CI and PR merge.

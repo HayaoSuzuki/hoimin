@@ -96,4 +96,6 @@ import HoiminOracle.ResumeCopyModel
 import HoiminOracle.NullableGateModel
 
 import HoiminOracle.PreparedNamespaceModel
+
+import HoiminOracle.PagingModel
 import HoiminOracle.PreparedAnnotationImportModel

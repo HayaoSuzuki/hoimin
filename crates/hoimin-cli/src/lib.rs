@@ -86,10 +86,6 @@ where
     Box::pin(run_parsed_with_io(cli::parse_from(args), stdout, stderr)).await
 }
 
-#[expect(
-    clippy::too_many_lines,
-    reason = "top-level command dispatch keeps each CLI result and diagnostic path explicit"
-)]
 async fn run_parsed_with_io<Stdout: std::io::Write, Stderr: std::io::Write>(
     command: Result<cli::ParsedCommand, cli::CliError>,
     stdout: &mut Stdout,
@@ -157,31 +153,8 @@ async fn run_parsed_with_io<Stdout: std::io::Write, Stderr: std::io::Write>(
                 },
                 Ok(mut verified) => {
                     verified.config.output.metrics = args.metrics;
-                    let verification_selection = verified.verification_selection;
-                    let result = match verified.selection {
-                        plan::ResolvedVerifySelection::ExplicitCandidates(candidate_ids) => {
-                            shell::run_selected_loop_with_fingerprint_inputs(
-                                verified.config,
-                                candidate_ids,
-                                verification_selection,
-                                verified.fingerprint_copy_inputs,
-                                &mut *stdout,
-                                &mut *stderr,
-                            )
-                            .await
-                        }
-                        plan::ResolvedVerifySelection::RankedCandidates(candidate_ids) => {
-                            shell::run_ordered_selected_loop_with_fingerprint_inputs(
-                                verified.config,
-                                candidate_ids,
-                                verification_selection,
-                                verified.fingerprint_copy_inputs,
-                                &mut *stdout,
-                                &mut *stderr,
-                            )
-                            .await
-                        }
-                    };
+                    let result =
+                        shell::run_verified(verified, &mut *stdout, &mut *stderr, None).await;
                     match result {
                         Ok(code) => code,
                         Err(error) => {
