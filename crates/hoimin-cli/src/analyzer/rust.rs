@@ -1899,9 +1899,9 @@ impl<'ast> Visitor<'ast> for NameResolutionBuilder {
                     self.visit_expr(value);
                 }
                 if let (None, Expr::Name(name)) = (&assign.value, assign.target.as_ref()) {
-                    // Valueless module/class annotations do not bind imported
-                    // names. Keep the existing builtin and static-local policy.
-                    if tracked_resolution_name(name.id.as_str()) || function_local {
+                    // A module/class declaration leaves runtime bindings intact.
+                    // In a function it still declares a lexical local.
+                    if function_local {
                         self.record_binding(name.id.as_str());
                     }
                 } else {
