@@ -1,0 +1,381 @@
+{
+  "platform": "macOS-15.7.7-arm64-arm-64bit",
+  "python": "3.12.6 (v3.12.6:a4a2d2b0d85, Sep  6 2024, 16:08:03) [Clang 13.0.0 (clang-1300.0.29.30)]",
+  "baseline": "65865ea (production code unchanged through fe63c5b)",
+  "method": "Issue #557 reproduction; release CLI plan; CPython compile; three samples per depth; complete candidate arrays equal",
+  "before": [
+    {
+      "depth": 16,
+      "bytes": 1921,
+      "median_seconds": 0.08140220807399601,
+      "samples_seconds": [
+        0.3252302079927176,
+        0.08029983297456056,
+        0.08140220807399601
+      ],
+      "candidates": [
+        {
+          "id": "m1_3fbe57a17c246106728dc4227b1529a884ac7385e604d69513d133cd38f37cb0",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 1907,
+            "length": 13
+          },
+          "original": "Sequence[int]",
+          "replacement": "list[int]",
+          "operator": "type_list_sequence",
+          "line": 50,
+          "column": 71,
+          "symbol": null,
+          "file_hash": "0e44edecf66595d96006e85ab859bce8d003b581755d1e41876490963e6d3a87",
+          "rank": 1,
+          "score": 50,
+          "ranking_reasons": [
+            {
+              "code": "type_annotation",
+              "score": 50
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "depth": 17,
+      "bytes": 2140,
+      "median_seconds": 0.15607166604604572,
+      "samples_seconds": [
+        0.15607166604604572,
+        0.1658617090433836,
+        0.15325558301992714
+      ],
+      "candidates": [
+        {
+          "id": "m1_9cae0b3c6b5238138bb7aaa2e4c4391fcdc4bd5ba28ae173cd58f635e673d3d1",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 2126,
+            "length": 13
+          },
+          "original": "Sequence[int]",
+          "replacement": "list[int]",
+          "operator": "type_list_sequence",
+          "line": 53,
+          "column": 75,
+          "symbol": null,
+          "file_hash": "369f1145e83c95d7f5e069de325eb3d2256fb83275d01a1defb94bafffbe47a9",
+          "rank": 1,
+          "score": 50,
+          "ranking_reasons": [
+            {
+              "code": "type_annotation",
+              "score": 50
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "depth": 18,
+      "bytes": 2371,
+      "median_seconds": 0.31210350000765175,
+      "samples_seconds": [
+        0.3090492499759421,
+        0.3329975000815466,
+        0.31210350000765175
+      ],
+      "candidates": [
+        {
+          "id": "m1_41c6843582e59b07bfb7c530f25e6c4dea625d7e21e95bd891f600203cf79371",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 2357,
+            "length": 13
+          },
+          "original": "Sequence[int]",
+          "replacement": "list[int]",
+          "operator": "type_list_sequence",
+          "line": 56,
+          "column": 79,
+          "symbol": null,
+          "file_hash": "85d32a1c269bfbdbd8a6d156ddf464695e909401e5b62e923e51bfc120e230d3",
+          "rank": 1,
+          "score": 50,
+          "ranking_reasons": [
+            {
+              "code": "type_annotation",
+              "score": 50
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "depth": 19,
+      "bytes": 2614,
+      "median_seconds": 0.6010506669990718,
+      "samples_seconds": [
+        0.5959033749531955,
+        0.6010506669990718,
+        0.6015956250485033
+      ],
+      "candidates": [
+        {
+          "id": "m1_2233fd8932f0b147da215963a1f187ea325339192c1aec316b8f742fe84d8dc2",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 2600,
+            "length": 13
+          },
+          "original": "Sequence[int]",
+          "replacement": "list[int]",
+          "operator": "type_list_sequence",
+          "line": 59,
+          "column": 83,
+          "symbol": null,
+          "file_hash": "e5b1822c12f1c42d40846454bd0fd962292acf872c8f3434d901ba9747d9e058",
+          "rank": 1,
+          "score": 50,
+          "ranking_reasons": [
+            {
+              "code": "type_annotation",
+              "score": 50
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "depth": 20,
+      "bytes": 2869,
+      "median_seconds": 1.1876921660732478,
+      "samples_seconds": [
+        1.1885457079624757,
+        1.1768132499419153,
+        1.1876921660732478
+      ],
+      "candidates": [
+        {
+          "id": "m1_b1512fd46405bc93d55de2015345c82fd4f78408aa85eca878f4a7d1313c7766",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 2855,
+            "length": 13
+          },
+          "original": "Sequence[int]",
+          "replacement": "list[int]",
+          "operator": "type_list_sequence",
+          "line": 62,
+          "column": 87,
+          "symbol": null,
+          "file_hash": "11f9d827f289dbdbbfb21f5cb1392c113c52a46350022730688fc3c678318e9e",
+          "rank": 1,
+          "score": 50,
+          "ranking_reasons": [
+            {
+              "code": "type_annotation",
+              "score": 50
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "after": [
+    {
+      "depth": 16,
+      "bytes": 1921,
+      "median_seconds": 0.00717716699000448,
+      "samples_seconds": [
+        0.21678020805120468,
+        0.00717716699000448,
+        0.006358416983857751
+      ],
+      "candidates": [
+        {
+          "id": "m1_3fbe57a17c246106728dc4227b1529a884ac7385e604d69513d133cd38f37cb0",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 1907,
+            "length": 13
+          },
+          "original": "Sequence[int]",
+          "replacement": "list[int]",
+          "operator": "type_list_sequence",
+          "line": 50,
+          "column": 71,
+          "symbol": null,
+          "file_hash": "0e44edecf66595d96006e85ab859bce8d003b581755d1e41876490963e6d3a87",
+          "rank": 1,
+          "score": 50,
+          "ranking_reasons": [
+            {
+              "code": "type_annotation",
+              "score": 50
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "depth": 17,
+      "bytes": 2140,
+      "median_seconds": 0.010083499946631491,
+      "samples_seconds": [
+        0.010083499946631491,
+        0.012999625061638653,
+        0.007981333998031914
+      ],
+      "candidates": [
+        {
+          "id": "m1_9cae0b3c6b5238138bb7aaa2e4c4391fcdc4bd5ba28ae173cd58f635e673d3d1",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 2126,
+            "length": 13
+          },
+          "original": "Sequence[int]",
+          "replacement": "list[int]",
+          "operator": "type_list_sequence",
+          "line": 53,
+          "column": 75,
+          "symbol": null,
+          "file_hash": "369f1145e83c95d7f5e069de325eb3d2256fb83275d01a1defb94bafffbe47a9",
+          "rank": 1,
+          "score": 50,
+          "ranking_reasons": [
+            {
+              "code": "type_annotation",
+              "score": 50
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "depth": 18,
+      "bytes": 2371,
+      "median_seconds": 0.009065749938599765,
+      "samples_seconds": [
+        0.011719666072167456,
+        0.009065749938599765,
+        0.008973541902378201
+      ],
+      "candidates": [
+        {
+          "id": "m1_41c6843582e59b07bfb7c530f25e6c4dea625d7e21e95bd891f600203cf79371",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 2357,
+            "length": 13
+          },
+          "original": "Sequence[int]",
+          "replacement": "list[int]",
+          "operator": "type_list_sequence",
+          "line": 56,
+          "column": 79,
+          "symbol": null,
+          "file_hash": "85d32a1c269bfbdbd8a6d156ddf464695e909401e5b62e923e51bfc120e230d3",
+          "rank": 1,
+          "score": 50,
+          "ranking_reasons": [
+            {
+              "code": "type_annotation",
+              "score": 50
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "depth": 19,
+      "bytes": 2614,
+      "median_seconds": 0.007502750027924776,
+      "samples_seconds": [
+        0.007737583015114069,
+        0.006590417004190385,
+        0.007502750027924776
+      ],
+      "candidates": [
+        {
+          "id": "m1_2233fd8932f0b147da215963a1f187ea325339192c1aec316b8f742fe84d8dc2",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 2600,
+            "length": 13
+          },
+          "original": "Sequence[int]",
+          "replacement": "list[int]",
+          "operator": "type_list_sequence",
+          "line": 59,
+          "column": 83,
+          "symbol": null,
+          "file_hash": "e5b1822c12f1c42d40846454bd0fd962292acf872c8f3434d901ba9747d9e058",
+          "rank": 1,
+          "score": 50,
+          "ranking_reasons": [
+            {
+              "code": "type_annotation",
+              "score": 50
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "depth": 20,
+      "bytes": 2869,
+      "median_seconds": 0.011091457912698388,
+      "samples_seconds": [
+        0.02698916697409004,
+        0.00939495803322643,
+        0.011091457912698388
+      ],
+      "candidates": [
+        {
+          "id": "m1_b1512fd46405bc93d55de2015345c82fd4f78408aa85eca878f4a7d1313c7766",
+          "sequence": 1,
+          "path": "subject.py",
+          "span": {
+            "start": 2855,
+            "length": 13
+          },
+          "original": "Sequence[int]",
+          "replacement": "list[int]",
+          "operator": "type_list_sequence",
+          "line": 62,
+          "column": 87,
+          "symbol": null,
+          "file_hash": "11f9d827f289dbdbbfb21f5cb1392c113c52a46350022730688fc3c678318e9e",
+          "rank": 1,
+          "score": 50,
+          "ranking_reasons": [
+            {
+              "code": "type_annotation",
+              "score": 50
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "syntax_recheck": {
+    "python": "CPython 3.14.7 (repository .venv)",
+    "depths": [
+      16,
+      17,
+      18,
+      19,
+      20
+    ],
+    "result": "all compile() calls succeeded; timing driver remains CPython 3.12.6 as recorded above"
+  }
+}

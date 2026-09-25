@@ -85,3 +85,21 @@ and [review](../superpowers/reports/2026-09-15-issue-546-loop-transfer-review.md
 `audit-promoted-546` は監査原文と同じforループの深さ18／19／20、`audit-promoted-547` はimportとint注釈の数512／1,024／2,048を使う。どちらも型演算子選択・未選択で、候補なしと操作数の上限を検査する。台帳のactiveゲートとして通常CIから実行する。
 
 旧監査の時間・RSS測定は履歴として保持する。今回のゲートは訪問回数・clone回数・コピー要素数を対象とし、時間の閾値を設けない。詳細は[移行検証報告](../superpowers/reports/2026-09-15-audit-verification-promotion.md)を参照する。
+
+## Nested finally reanalysis (Issue #557)
+
+The `nested-finally-reanalysis` exact gate counts actual statement-flow and
+AnnAssign visits for nested `try: pass / finally` suites. It covers module,
+class and function bodies at depths 1, 2, 4, 8 and 16 through 20. With the type
+operator selected, one candidate remains and leaf visits are at most depth+1;
+statement visits are at most (depth+1)^2+1, plus one for the class/function
+wrapper. Without the type operator, both counters and the candidate count are
+zero. The gate detects redundant recording walks in transfer-only finally
+analysis without imposing a timing threshold.
+
+Separate tests restore the old walk to demonstrate sensitivity, compare full
+candidate descriptors/order, and preserve explicit/implicit exit routing.
+These bounds apply to the single-entry fixture, not arbitrary multiple exits
+or changing environments. Release observations and review results are in the
+[review](../superpowers/reviews/2026-09-25-issue-557.md), with the
+[design](../superpowers/specs/2026-09-25-issue-557-finally-traversal.md).

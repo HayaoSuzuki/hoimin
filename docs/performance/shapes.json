@@ -1007,6 +1007,34 @@
         "--",
         "--exact"
       ]
+    },
+    {
+      "id": "nested-finally-reanalysis",
+      "status": "active",
+      "metric": "operations",
+      "related_issue": 557,
+      "input_axis": "nested finally control-flow transfer reanalysis",
+      "depths": [
+        1,
+        2,
+        4,
+        8,
+        16,
+        17,
+        18,
+        19,
+        20
+      ],
+      "scope": "Module/class/function single-entry try/pass/finally; selected type operator leaves<=depth+1 and statements<=(depth+1)^2+1 (+one wrapper); one candidate; unselected zero visits/candidates. Not an arbitrary multi-exit bound.",
+      "args": [
+        "test",
+        "-p",
+        "hoimin-cli",
+        "--lib",
+        "analyzer::rust::nested_finally_transfer_tests::nested_finally_bounds_actual_statement_and_annotation_visits",
+        "--",
+        "--exact"
+      ]
     }
   ],
   "lean": {
