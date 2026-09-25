@@ -35,7 +35,7 @@ inductive OracleReport
   deriving Repr, DecidableEq, BEq
 
 structure OracleCase where
-  schema : Nat := 2
+  schema : Nat := 3
   id : String
   mode : String := "strict"
   patience : Nat
@@ -62,6 +62,10 @@ def oru (mutants : List OracleMutant) : OracleReport := .usable mutants
 def one (status : StatusTag) : OracleReport := oru [om 0 0 status]
 
 def progressDecisionCases : List OracleCase := [
+  { id := "regression_then_recovery", patience := 3,
+    reports := [one .killed, one .survived, one .killed] },
+  { id := "regression_then_unusable", patience := 3,
+    reports := [one .killed, one .survived, .unusable .incomplete] },
   { id := "patience_1_first_stall", patience := 1,
     reports := [one .killed, one .killed] },
   { id := "patience_2_two_stalls", patience := 2,
@@ -125,7 +129,7 @@ def validMode (mode : String) : Bool :=
   mode == "strict" || mode == "internal-fixture" || mode == "model-only"
 
 def caseSafe (item : OracleCase) : Bool :=
-  item.schema == 2 && validMode item.mode && item.patience > 0 &&
+  item.schema == 3 && validMode item.mode && item.patience > 0 &&
     item.reports.length > 0
 
 def firstComparison? (item : OracleCase) : Option PairObservation :=
@@ -134,6 +138,8 @@ def firstComparison? (item : OracleCase) : Option PairObservation :=
 def fixedExpectationSafe (item : OracleCase) : Bool :=
   let observed := item.observed
   match item.id with
+  | "regression_then_recovery" => observed.latest == .improving
+  | "regression_then_unusable" => observed.latest == .indeterminate
   | "patience_1_first_stall" =>
       observed.latest == .saturated && observed.consecutiveStalls == 1
   | "patience_2_two_stalls" =>

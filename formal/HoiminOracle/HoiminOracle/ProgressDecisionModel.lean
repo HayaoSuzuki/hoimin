@@ -316,4 +316,38 @@ example : identifiedTransitions
     [{ candidateId := 0, contentKey := 0, status := .survived }] =
     [{ candidateId := 0, before := .killed, after := .survived }] := by native_decide
 
+def progressExitCode (failOnRegression failed : Bool) (latest : LatestState) : Nat :=
+  if failed then 2
+  else if failOnRegression && latest == .regressing then 1
+  else 0
+
+set_option maxHeartbeats 10000 in
+theorem defaultExitZero (latest : LatestState) : progressExitCode false false latest = 0 := by
+  cases latest <;> decide
+
+set_option maxHeartbeats 10000 in
+theorem regressionExitOnly (latest : LatestState) :
+    progressExitCode true false latest = 1 ↔ latest = .regressing := by
+  cases latest <;> decide
+
+set_option maxHeartbeats 10000 in
+theorem failureExitDominates (flag : Bool) (latest : LatestState) :
+    progressExitCode flag true latest = 2 := by
+  cases flag <;> cases latest <;> decide
+
+-- Broken variants always return zero, fail on indeterminate, inspect an earlier
+-- regression, or allow a semantic regression to mask an infrastructure failure.
+def exitSensitivity : Bool :=
+  progressExitCode true false .regressing != 0 &&
+  progressExitCode true false .indeterminate != 1 &&
+  progressExitCode true true .regressing != 1 &&
+  progressExitCode true false (compareHistory [killedZero, survivedZero, killedZero] 3).latest != 1 &&
+  progressExitCode true false (compareHistory [killedZero, survivedZero, .unusable] 3).latest != 1
+
+set_option maxHeartbeats 10000 in
+example : exitSensitivity = true := by native_decide
+
+set_option maxHeartbeats 10000 in
+example : progressExitCode true false .regressing = 1 := by decide
+
 end HoiminOracle.ProgressDecision

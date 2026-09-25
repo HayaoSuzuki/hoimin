@@ -42,6 +42,9 @@ struct OracleMutant {
 #[serde(deny_unknown_fields)]
 struct ExpectedHistory {
     latest_state: String,
+    default_exit_code: i32,
+    regression_exit_code: i32,
+    error_exit_code: i32,
     consecutive_stalls: u64,
     saturated: bool,
     comparisons: Vec<ExpectedComparison>,
@@ -123,7 +126,7 @@ fn parse_corpus() -> Result<Vec<OracleCase>, String> {
 }
 
 fn validate_case(item: &OracleCase) -> Result<(), String> {
-    if item.schema != 2 || item.id.is_empty() || item.patience == 0 {
+    if item.schema != 3 || item.id.is_empty() || item.patience == 0 {
         return Err(format!(
             "{} has an invalid schema, id, or patience",
             item.id
@@ -345,9 +348,19 @@ fn write_reports(fixture: &tempfile::TempDir, item: &OracleCase) -> Vec<PathBuf>
         .collect()
 }
 
-async fn public_progress(item: &OracleCase, details: bool) -> Result<Value, String> {
+async fn public_output(
+    item: &OracleCase,
+    details: bool,
+    gate: bool,
+    malformed_suffix: bool,
+) -> Result<std::process::Output, String> {
     let fixture = tempfile::tempdir().map_err(|error| error.to_string())?;
-    let reports = write_reports(&fixture, item);
+    let mut reports = write_reports(&fixture, item);
+    if malformed_suffix {
+        let path = fixture.path().join("malformed.json");
+        std::fs::write(&path, "{").map_err(|error| error.to_string())?;
+        reports.push(path);
+    }
     let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"));
     command
         .args(["progress", "--format", "json", "--patience"])
@@ -357,7 +370,10 @@ async fn public_progress(item: &OracleCase, details: bool) -> Result<Value, Stri
     if details {
         command.args(["--details", "--details-limit", "1"]);
     }
-    let output = tokio::time::timeout(Duration::from_secs(30), command.output())
+    if gate {
+        command.arg("--fail-on-regression");
+    }
+    tokio::time::timeout(Duration::from_secs(30), command.output())
         .await
         .map_err(|_| format!("infrastructure-error case={}: CLI timed out", item.id))?
         .map_err(|error| {
@@ -365,8 +381,12 @@ async fn public_progress(item: &OracleCase, details: bool) -> Result<Value, Stri
                 "infrastructure-error case={}: spawn failed: {error}",
                 item.id
             )
-        })?;
-    if !output.status.success() {
+        })
+}
+
+async fn public_progress(item: &OracleCase, details: bool, gate: bool) -> Result<Value, String> {
+    let output = public_output(item, details, gate, false).await?;
+    if !matches!(output.status.code(), Some(0 | 1)) {
         return Err(format!(
             "infrastructure-error case={}: exit={:?} stderr={}",
             item.id,
@@ -374,6 +394,17 @@ async fn public_progress(item: &OracleCase, details: bool) -> Result<Value, Stri
             String::from_utf8_lossy(&output.stderr)
         ));
     }
+    let expected = if gate {
+        item.expected.regression_exit_code
+    } else {
+        item.expected.default_exit_code
+    };
+    assert_eq!(
+        output.status.code(),
+        Some(expected),
+        "semantic mismatch case={} gate={gate}",
+        item.id
+    );
     serde_json::from_slice(&output.stdout).map_err(|error| {
         format!(
             "infrastructure-error case={}: invalid JSON: {error}; stdout={}",
@@ -491,10 +522,10 @@ fn assert_case_matches(item: &OracleCase, actual: &Value) {
 #[test]
 fn lean_progress_decision_corpus_is_valid() {
     let cases = parse_corpus().expect("Lean corpus must satisfy the strict adapter schema");
-    assert_eq!(cases.len(), 24);
+    assert_eq!(cases.len(), 26);
     assert_eq!(
         cases.iter().filter(|item| item.mode == "strict").count(),
-        17
+        19
     );
     assert_eq!(
         cases
@@ -539,7 +570,7 @@ fn lean_progress_decision_corpus_is_valid() {
 async fn public_progress_matches_every_strict_lean_case() {
     let cases = parse_corpus().expect("valid Lean corpus");
     for item in cases.iter().filter(|item| item.mode == "strict") {
-        let actual = public_progress(item, false)
+        let actual = public_progress(item, false, false)
             .await
             .unwrap_or_else(|error| panic!("{error}"));
         assert_case_matches(item, &actual);
@@ -634,7 +665,7 @@ async fn public_progress_details_match_generated_latest_pair_expectations() {
         .iter()
         .filter(|item| item.mode == "strict")
     {
-        let actual = public_progress(item, true)
+        let actual = public_progress(item, true, false)
             .await
             .unwrap_or_else(|error| panic!("{error}"));
         assert_case_matches(item, &actual);
@@ -680,6 +711,33 @@ async fn public_progress_details_match_generated_latest_pair_expectations() {
                 "{}",
                 item.id
             );
+        }
+    }
+}
+
+#[tokio::test]
+async fn public_regression_exit_matches_lean_without_changing_output() {
+    for item in parse_corpus()
+        .unwrap()
+        .iter()
+        .filter(|item| item.mode == "strict")
+    {
+        for details in [false, true] {
+            let default = public_progress(item, details, false).await.unwrap();
+            let gated = public_progress(item, details, true).await.unwrap();
+            // Each invocation has temporary input paths; compare semantic output.
+            assert_case_matches(item, &gated);
+            assert_eq!(default["latest"], gated["latest"], "{}", item.id);
+            assert_eq!(default["details"], gated["details"], "{}", item.id);
+            let failed = public_output(item, details, true, true).await.unwrap();
+            assert_eq!(
+                failed.status.code(),
+                Some(item.expected.error_exit_code),
+                "{}",
+                item.id
+            );
+            assert!(failed.stdout.is_empty(), "{}", item.id);
+            assert!(!failed.stderr.is_empty(), "{}", item.id);
         }
     }
 }

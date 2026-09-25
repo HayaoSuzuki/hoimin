@@ -28,6 +28,7 @@ where
     Stderr: Write,
 {
     let ProgressArgs {
+        fail_on_regression,
         reports,
         patience,
         format,
@@ -75,5 +76,7 @@ where
         stdout,
         stderr,
     )?;
-    Ok(0)
+    Ok(i32::from(
+        fail_on_regression && result.latest == ProgressState::Regressing,
+    ))
 }
