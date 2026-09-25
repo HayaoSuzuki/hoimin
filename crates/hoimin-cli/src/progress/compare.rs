@@ -3,7 +3,7 @@ use std::{
     num::NonZeroUsize,
 };
 
-use camino::Utf8PathBuf;
+use camino::Utf8Path;
 use hoimin_core::{MutantFinished, MutationCandidate, MutationStatus};
 
 use super::{InputReport, UsableReport};
@@ -117,24 +117,24 @@ pub enum ProgressState {
     Indeterminate,
 }
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub(crate) struct MutantKey {
-    path: Utf8PathBuf,
-    original: String,
-    replacement: String,
-    operator: String,
-    symbol: Option<String>,
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(crate) struct MutantKey<'a> {
+    path: &'a Utf8Path,
+    original: &'a str,
+    replacement: &'a str,
+    operator: &'a str,
+    symbol: Option<&'a str>,
 }
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-enum ComparisonKey {
-    CandidateId(String),
-    Content(MutantKey),
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum ComparisonKey<'a> {
+    CandidateId(&'a str),
+    Content(MutantKey<'a>),
 }
 
 struct ReportMutants<'a> {
-    unique: HashMap<ComparisonKey, &'a MutantFinished>,
-    duplicates: HashSet<ComparisonKey>,
+    unique: HashMap<ComparisonKey<'a>, &'a MutantFinished>,
+    duplicates: HashSet<ComparisonKey<'a>>,
 }
 
 #[must_use]
@@ -161,7 +161,7 @@ fn compare_usable_reports(
     let ambiguous: HashSet<_> = previous
         .duplicates
         .union(&current.duplicates)
-        .cloned()
+        .copied()
         .collect();
 
     let mut common = 0;
@@ -183,7 +183,7 @@ fn compare_usable_reports(
         }
 
         if is_inconclusive(mutant.status) {
-            inconclusive.insert(key.clone());
+            inconclusive.insert(*key);
         }
 
         let Some(next) = current.unique.get(key) else {
@@ -193,7 +193,7 @@ fn compare_usable_reports(
         common += 1;
 
         if is_inconclusive(next.status) {
-            inconclusive.insert(key.clone());
+            inconclusive.insert(*key);
         }
         if !is_conclusive(mutant.status) || !is_conclusive(next.status) {
             continue;
@@ -224,7 +224,7 @@ fn compare_usable_reports(
             continue;
         }
         if is_inconclusive(mutant.status) {
-            inconclusive.insert(key.clone());
+            inconclusive.insert(*key);
         }
         if !previous.unique.contains_key(key) {
             added += 1;
@@ -310,14 +310,11 @@ fn index_mutants(
     for mutant in mutants {
         match eligibility {
             CandidateSetEligibility::Matching => {
-                unique.insert(
-                    ComparisonKey::CandidateId(mutant.candidate.id.clone()),
-                    mutant,
-                );
+                unique.insert(ComparisonKey::CandidateId(&mutant.candidate.id), mutant);
             }
             CandidateSetEligibility::Different | CandidateSetEligibility::Duplicate => {
                 let key = ComparisonKey::Content(key(&mutant.candidate));
-                if unique.insert(key.clone(), mutant).is_some() {
+                if unique.insert(key, mutant).is_some() {
                     duplicates.insert(key);
                 }
             }
@@ -327,13 +324,13 @@ fn index_mutants(
     ReportMutants { unique, duplicates }
 }
 
-fn key(candidate: &MutationCandidate) -> MutantKey {
+fn key(candidate: &MutationCandidate) -> MutantKey<'_> {
     MutantKey {
-        path: candidate.path.clone(),
-        original: candidate.original.clone(),
-        replacement: candidate.replacement.clone(),
-        operator: candidate.operator.clone(),
-        symbol: candidate.symbol.clone(),
+        path: &candidate.path,
+        original: &candidate.original,
+        replacement: &candidate.replacement,
+        operator: &candidate.operator,
+        symbol: candidate.symbol.as_deref(),
     }
 }
 

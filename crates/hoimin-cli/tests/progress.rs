@@ -148,6 +148,68 @@ async fn real_run_reports_expose_exact_regression_through_progress() {
     assert_eq!(progress["comparisons"][0]["score_delta"], -1.0);
 }
 
+#[tokio::test]
+async fn real_run_shifted_ids_preserve_content_fallback_for_json_and_jsonl() {
+    let project = tempfile::tempdir().unwrap();
+    let source = project.path().join("src");
+    std::fs::create_dir(&source).unwrap();
+    std::fs::write(source.join("__init__.py"), "").unwrap();
+    let code = "def add(left: int, right: int) -> int:\n    return left + right\n";
+    for format in ["json", "jsonl"] {
+        let mut reports = Vec::new();
+        for (phase, prefix) in [("before", ""), ("after", "# moved source\n")] {
+            std::fs::write(source.join("calc.py"), format!("{prefix}{code}")).unwrap();
+            let mut command = real_binary_command_with_format(project.path(), "pass", format);
+            let output = bounded_output(&mut command, Duration::from_secs(30))
+                .await
+                .unwrap();
+            assert_eq!(
+                output.status.code(),
+                Some(1),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let path = project.path().join(format!("{phase}.{format}"));
+            std::fs::write(&path, output.stdout).unwrap();
+            reports.push(path);
+        }
+        let [InputReport::Usable(before), InputReport::Usable(after)] = [
+            read_report(&reports[0]).unwrap(),
+            read_report(&reports[1]).unwrap(),
+        ] else {
+            panic!("public run reports must be usable")
+        };
+        assert_eq!(before.mutants.len(), 1);
+        assert_eq!(after.mutants.len(), 1);
+        assert_ne!(
+            before.mutants[0].candidate.id,
+            after.mutants[0].candidate.id
+        );
+        let (exit, stdout, stderr) = run_progress(&reports, "json").await;
+        assert_eq!(exit, 0);
+        let output: Value = serde_json::from_slice(&stdout).unwrap();
+        let comparison = &output["comparisons"][0];
+        assert_eq!(comparison["common"], 1);
+        assert_eq!(comparison["carried_survivors"], 1);
+        for field in [
+            "added",
+            "removed",
+            "ambiguous",
+            "inconclusive",
+            "improvements",
+            "regressions",
+        ] {
+            assert_eq!(comparison[field], 0, "{format}: {field}");
+        }
+        assert_eq!(comparison["previous_score"], 0.0);
+        assert_eq!(comparison["current_score"], 0.0);
+        assert_eq!(comparison["score_delta"], 0.0);
+        assert_eq!(output["latest"]["state"], "indeterminate");
+        assert_eq!(output["consecutive_stalls"], 0);
+        assert!(String::from_utf8_lossy(&stderr).contains("different candidate ID sets"));
+    }
+}
+
 #[cfg(unix)]
 #[tokio::test]
 async fn real_run_timeout_reaps_the_supervised_process_tree() {
@@ -676,6 +738,102 @@ fn matching_candidate_ids_pair_mutants_with_the_same_content_key() {
     assert_eq!(comparison.state, ProgressState::Regressing);
     assert_eq!(result.consecutive_stalls, 0);
     assert_eq!(result.latest, ProgressState::Regressing);
+}
+
+#[test]
+fn content_fallback_compares_every_identity_field_by_value() {
+    // Removing a field from the content key would incorrectly pair one of these.
+    for field in [
+        "path",
+        "original",
+        "replacement",
+        "operator",
+        "symbol",
+        "empty_symbol",
+    ] {
+        let mut before = mutant_with_id("before", "same", MutationStatus::Survived);
+        let mut after = mutant_with_id("after", "same", MutationStatus::Killed);
+        match field {
+            "path" => after.candidate.path = "other.py".into(),
+            "original" => after.candidate.original.push('x'),
+            "replacement" => after.candidate.replacement.push('x'),
+            "operator" => after.candidate.operator.push('x'),
+            "symbol" => after.candidate.symbol = Some("other".to_owned()),
+            "empty_symbol" => {
+                before.candidate.symbol = None;
+                after.candidate.symbol = Some(String::new());
+            }
+            _ => unreachable!(),
+        }
+        let comparison = compare_pair(&[before], &[after]);
+        assert_eq!(comparison.common, 0, "{field}");
+        assert_eq!(comparison.added, 1, "{field}");
+        assert_eq!(comparison.removed, 1, "{field}");
+        assert_eq!(comparison.improvements, 0, "{field}");
+        assert_eq!(comparison.previous_score, None, "{field}");
+        assert_eq!(comparison.current_score, None, "{field}");
+        assert_eq!(comparison.state, ProgressState::Indeterminate, "{field}");
+    }
+
+    // Independent allocations with equal values still match. These metadata
+    // fields do not belong to the fallback identity, even if all change.
+    let before = mutant_with_id("before", "same", MutationStatus::Survived);
+    let mut after = mutant_with_id("after", "same", MutationStatus::Killed);
+    after.candidate.sequence = 42;
+    after.candidate.span.start = 99;
+    after.candidate.span.length = 12;
+    after.candidate.line = 100;
+    after.candidate.column = 7;
+    after.candidate.file_hash = "changed".to_owned();
+    let comparison = compare_pair(&[before], &[after]);
+    assert_eq!(comparison.common, 1);
+    assert_eq!(comparison.added, 0);
+    assert_eq!(comparison.removed, 0);
+    assert_eq!(comparison.improvements, 1);
+    assert_eq!(comparison.previous_score, Some(0.0));
+    assert_eq!(comparison.current_score, Some(1.0));
+    assert_eq!(comparison.score_delta, Some(1.0));
+    assert_eq!(comparison.state, ProgressState::Indeterminate);
+}
+
+#[test]
+fn content_fallback_unions_ambiguous_and_inconclusive_keys() {
+    let before = vec![
+        mutant_with_id("a0", "both-duplicate", MutationStatus::Timeout),
+        mutant_with_id("a1", "both-duplicate", MutationStatus::Killed),
+        mutant_with_id("a2", "after-duplicate", MutationStatus::Timeout),
+        mutant_with_id("a3", "uncertain", MutationStatus::Timeout),
+        mutant_with_id("a4", "removed", MutationStatus::Error),
+        mutant_with_id("a5", "improvement", MutationStatus::Survived),
+        mutant_with_id("a6", "survivor", MutationStatus::Survived),
+    ];
+    let after = vec![
+        mutant_with_id("b0", "both-duplicate", MutationStatus::Error),
+        mutant_with_id("b1", "both-duplicate", MutationStatus::Survived),
+        mutant_with_id("b2", "after-duplicate", MutationStatus::Timeout),
+        mutant_with_id("b3", "after-duplicate", MutationStatus::Killed),
+        mutant_with_id("b4", "uncertain", MutationStatus::Error),
+        mutant_with_id("b5", "added", MutationStatus::NotRun),
+        mutant_with_id("b6", "improvement", MutationStatus::Killed),
+        mutant_with_id("b7", "survivor", MutationStatus::Survived),
+    ];
+    assert_eq!(
+        compare_pair(&before, &after),
+        Comparison {
+            common: 3,
+            added: 1,
+            removed: 1,
+            ambiguous: 2,
+            inconclusive: 3,
+            improvements: 1,
+            regressions: 0,
+            carried_survivors: 1,
+            previous_score: Some(0.0),
+            current_score: Some(0.5),
+            score_delta: Some(0.5),
+            state: ProgressState::Indeterminate,
+        }
+    );
 }
 
 #[test]
