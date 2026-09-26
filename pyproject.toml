@@ -32,10 +32,11 @@ dev = [
     "packaging>=26.0",
     "pytest>=9,<10",
     "pytest-cov>=7,<8",
+    "pytest-mock>=3.15.1,<4",
     "pytest-randomly>=5,<6",
     "pyyaml>=6.0.2,<7",
     "ruff>=0.16.1,<0.17",
-    "ty>=0.0.61",
+    "ty>=0.0.80",
 ]
 fuzz = [
     "hypothesis>=6.93,<7",
@@ -69,11 +70,11 @@ allowed-confusables = ["ノ"]
 [tool.ruff.lint.per-file-ignores]
 # These are standalone scripts/test modules, not importable Python packages.
 "tests/*.py" = ["INP001"]
+# Literal expected values keep test assertions readable.
+"tests/test_*.py" = ["PLR2004"]
 "tools/*.py" = ["INP001"]
 "formal/HoiminOracle/tools/*.py" = ["INP001"]
 "crates/hoimin-cli/tests/support/*.py" = ["INP001"]
-# Preserve existing unittest assertions while pytest supplies collection/execution.
-"tests/test_*.py" = ["PT009", "PT027"]
 
 [tool.pytest.ini_options]
 minversion = "9.0"
@@ -82,3 +83,23 @@ empty_parameter_set_mark = "fail_at_collect"
 testpaths = ["tests"]
 norecursedirs = ["fixtures", ".hypothesis"]
 pythonpath = [".", "tests"]
+
+[tool.ty.environment]
+python-version = "3.14"
+python-platform = "all"
+extra-paths = ["tests"]
+
+[tool.ty.src]
+include = ["tools", "tests", "formal/HoiminOracle/tools", "crates/hoimin-cli/tests/support"]
+exclude = ["tests/fixtures", "crates/hoimin-cli/tests/fixtures"]
+
+[tool.ty.rules]
+all = "error"
+
+[tool.ty.analysis]
+respect-type-ignore-comments = false
+strict-equality-semantics = true
+strict-generic-narrowing = true
+
+[tool.ty.terminal]
+error-on-warning = true

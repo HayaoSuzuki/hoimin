@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+from pytest_mock import MockerFixture
 
 from tools import ci_fuzz
 
@@ -79,15 +80,16 @@ def test_expired_deadline_never_starts_command(tmp_path: Path) -> None:
 
 
 def test_budget_uses_monotonic_time_after_initial_setup(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, mocker: MockerFixture
 ) -> None:
-    monkeypatch.setattr(ci_fuzz.time, "time", lambda: 1000)
-    monkeypatch.setattr(ci_fuzz.time, "monotonic", lambda: 100)
+    clock = mocker.patch.object(ci_fuzz, "time", autospec=True)
+    clock.time.return_value = 1000
+    clock.monotonic.return_value = 100
     campaign = ci_fuzz.Campaign(1080, tmp_path, seed=1)
     # Setup already consumed 400 of 480 seconds. A wall-clock correction must
     # not restore that time or extend the remaining 80 seconds.
-    monkeypatch.setattr(ci_fuzz.time, "time", lambda: 500)
-    monkeypatch.setattr(ci_fuzz.time, "monotonic", lambda: 130)
+    clock.time.return_value = 500
+    clock.monotonic.return_value = 130
     expected_remaining = 50
     assert campaign.remaining() == expected_remaining
 

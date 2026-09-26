@@ -1,159 +1,290 @@
 import hashlib
 import json
 import os
-import tempfile
-import unittest
+import signal
+import subprocess
 from pathlib import Path
-from unittest.mock import Mock, patch
+from typing import TextIO
+from unittest.mock import Mock
 
-from tools.boundary_contracts import REGISTRY, classify, execute, load_registry, main
+import pytest
+from pytest_mock import MockerFixture
+
+from tools.boundary_contracts import (
+    REGISTRY,
+    classify,
+    execute,
+    load_registry,
+    main,
+    observations,
+)
 
 
-class BoundaryRunnerTests(unittest.TestCase):
-    def test_only_exact_executed_test_is_a_match(self) -> None:
-        self.assertEqual(
-            classify(0, "test wanted ... ok\ntest result: ok. 1 passed;", "wanted"),
-            "match",
-        )
-        self.assertEqual(
-            classify(0, "test result: ok. 0 passed;", "wanted"), "infrastructure-error"
-        )
-        self.assertEqual(
-            classify(0, "test other ... ok", "wanted"), "infrastructure-error"
-        )
+@pytest.mark.parametrize(
+    ("returncode", "log", "expected"),
+    [
+        (0, "test wanted ... ok\ntest result: ok. 1 passed;", "match"),
+        (0, "test result: ok. 0 passed;", "infrastructure-error"),
+        (0, "test other ... ok", "infrastructure-error"),
+    ],
+    ids=["exact-test", "zero-tests", "different-test"],
+)
+def test_only_exact_executed_test_is_a_match(
+    returncode: int, log: str, expected: str
+) -> None:
+    assert classify(returncode, log, "wanted") == expected
 
-    def test_skip_and_crash_are_not_semantic_success(self) -> None:
-        self.assertEqual(
-            classify(0, "SKIP: backend unavailable\ntest wanted ... ok", "wanted"),
-            "unexecuted",
-        )
-        self.assertEqual(
-            classify(
-                0,
+
+@pytest.mark.parametrize(
+    ("returncode", "log", "expected"),
+    [
+        (0, "SKIP: backend unavailable\ntest wanted ... ok", "unexecuted"),
+        (
+            0,
+            (
                 'BOUNDARY_OBSERVATION {"status":"unexecuted"}\n'
-                "test wanted ... ok\ntest result: ok. 1 passed;",
-                "wanted",
+                "test wanted ... ok\ntest result: ok. 1 passed;"
             ),
             "unexecuted",
-        )
-        self.assertEqual(classify(-9, "", "wanted"), "infrastructure-error")
-        self.assertEqual(classify(101, "test wanted ... FAILED", "wanted"), "mismatch")
-        self.assertEqual(
-            classify(101, "error: compilation failed", "wanted"), "infrastructure-error"
-        )
+        ),
+        (-9, "", "infrastructure-error"),
+        (101, "test wanted ... FAILED", "mismatch"),
+        (101, "error: compilation failed", "infrastructure-error"),
+    ],
+    ids=[
+        "skip-message",
+        "unexecuted-observation",
+        "signal",
+        "test-failure",
+        "compilation-failure",
+    ],
+)
+def test_skip_and_crash_are_not_semantic_success(
+    returncode: int, log: str, expected: str
+) -> None:
+    assert classify(returncode, log, "wanted") == expected
 
-    def test_semantic_matrix_errors_override_outer_test_failure(self) -> None:
-        self.assertEqual(
-            classify(
-                101,
-                'BOUNDARY_OBSERVATION {"status":"infrastructure-error"}\n'
-                "test wanted ... FAILED",
-                "wanted",
-            ),
-            "infrastructure-error",
-        )
 
-    def test_captured_case_output_can_interrupt_the_named_test_line(self) -> None:
-        log = (
-            'test wanted ... BOUNDARY_OBSERVATION {"status":"match"}\n'
-            "ok\ntest result: ok. 1 passed;"
+def test_semantic_matrix_errors_override_outer_test_failure() -> None:
+    assert (
+        classify(
+            101,
+            'BOUNDARY_OBSERVATION {"status":"infrastructure-error"}\n'
+            "test wanted ... FAILED",
+            "wanted",
         )
-        self.assertEqual(classify(0, log, "wanted"), "match")
+        == "infrastructure-error"
+    )
 
-    def test_report_mode_preserves_failure_and_complete_unexecuted_rows(self) -> None:
-        rows = [
-            {
-                "id": case["id"],
-                "mode": case["mode"],
-                "status": "mismatch" if case["mode"] == "strict" else "unexecuted",
-            }
-            for case in load_registry()["cases"]
-        ]
-        report = {
-            "schema": 1,
-            "registry_sha256": hashlib.sha256(REGISTRY.read_bytes()).hexdigest(),
-            "rows": rows,
+
+def test_captured_case_output_can_interrupt_the_named_test_line() -> None:
+    log = (
+        'test wanted ... BOUNDARY_OBSERVATION {"status":"match"}\n'
+        "ok\ntest result: ok. 1 passed;"
+    )
+    assert classify(0, log, "wanted") == "match"
+
+
+def test_report_mode_preserves_failure_and_complete_unexecuted_rows(
+    tmp_path: Path,
+) -> None:
+    rows = [
+        {
+            "id": case["id"],
+            "mode": case["mode"],
+            "status": "mismatch" if case["mode"] == "strict" else "unexecuted",
         }
-        with tempfile.TemporaryDirectory() as tmp:
-            source = Path(tmp) / "captured.json"
-            source.write_text(json.dumps(report))
-            self.assertEqual(
-                main(["report", "--from-results", str(source), "--output", tmp]), 0
-            )
-            self.assertEqual(
-                json.loads((Path(tmp) / "report.json").read_text()), report
-            )
+        for case in load_registry()["cases"]
+    ]
+    report = {
+        "schema": 1,
+        "registry_sha256": hashlib.sha256(REGISTRY.read_bytes()).hexdigest(),
+        "rows": rows,
+        "extra_evidence": {"retained": [1, True, None]},
+    }
+    source = tmp_path / "captured.json"
+    source.write_text(json.dumps(report))
+    assert (
+        main(["report", "--from-results", str(source), "--output", str(tmp_path)]) == 0
+    )
+    assert json.loads((tmp_path / "report.json").read_text()) == report
 
-    def test_nested_mismatch_cannot_be_laundered_by_outer_success(self) -> None:
-        log = (
-            'test wanted ... BOUNDARY_OBSERVATION {"status":"mismatch"}\n'
-            "ok\ntest result: ok. 1 passed;"
+
+def test_nested_mismatch_cannot_be_laundered_by_outer_success() -> None:
+    log = (
+        'test wanted ... BOUNDARY_OBSERVATION {"status":"mismatch"}\n'
+        "ok\ntest result: ok. 1 passed;"
+    )
+    assert classify(0, log, "wanted") == "mismatch"
+
+
+def test_missing_strict_results_are_reported_as_unexecuted(tmp_path: Path) -> None:
+    assert main(["report", "--output", str(tmp_path)]) == 0
+    rows = json.loads((tmp_path / "report.json").read_text())["rows"]
+    assert rows
+    assert all(row["status"] == "unexecuted" for row in rows)
+
+
+def test_fixture_setup_failure_is_infrastructure_not_mismatch() -> None:
+    assert (
+        classify(
+            101,
+            "test wanted ... BOUNDARY_INFRASTRUCTURE: "
+            "permission fixture unavailable\nFAILED",
+            "wanted",
         )
-        self.assertEqual(classify(0, log, "wanted"), "mismatch")
+        == "infrastructure-error"
+    )
 
-    def test_missing_strict_results_are_reported_as_unexecuted(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            self.assertEqual(main(["report", "--output", tmp]), 0)
-            rows = json.loads((Path(tmp) / "report.json").read_text())["rows"]
-            self.assertTrue(rows)
-            self.assertTrue(all(row["status"] == "unexecuted" for row in rows))
 
-    def test_fixture_setup_failure_is_infrastructure_not_mismatch(self) -> None:
-        self.assertEqual(
-            classify(
-                101,
-                "test wanted ... BOUNDARY_INFRASTRUCTURE: "
-                "permission fixture unavailable\nFAILED",
-                "wanted",
-            ),
-            "infrastructure-error",
+@pytest.mark.parametrize("invalid_case", ["duplicate", "unknown-status"])
+def test_report_rejects_duplicate_or_unknown_status_rows(
+    tmp_path: Path, invalid_case: str
+) -> None:
+    rows = [
+        {"id": case["id"], "mode": case["mode"], "status": "unexecuted"}
+        for case in load_registry()["cases"]
+    ]
+    source = tmp_path / "captured.json"
+    invalid = (
+        [*rows, rows[0]]
+        if invalid_case == "duplicate"
+        else [rows[0] | {"status": "unknown"}, *rows[1:]]
+    )
+    source.write_text(
+        json.dumps(
+            {
+                "registry_sha256": hashlib.sha256(REGISTRY.read_bytes()).hexdigest(),
+                "rows": invalid,
+            }
         )
+    )
+    with pytest.raises(SystemExit) as error:
+        main(["report", "--from-results", str(source), "--output", str(tmp_path)])
+    assert error.value.code == 2
+    assert not (tmp_path / "report.json").exists()
 
-    def test_report_rejects_duplicate_or_unknown_status_rows(self) -> None:
-        rows = [
-            {"id": case["id"], "mode": case["mode"], "status": "unexecuted"}
-            for case in load_registry()["cases"]
-        ]
-        with tempfile.TemporaryDirectory() as tmp:
-            source = Path(tmp) / "captured.json"
-            for invalid in [
-                [*rows, rows[0]],
-                [rows[0] | {"status": "unknown"}, *rows[1:]],
-            ]:
-                source.write_text(
-                    json.dumps(
-                        {
-                            "registry_sha256": hashlib.sha256(
-                                REGISTRY.read_bytes()
-                            ).hexdigest(),
-                            "rows": invalid,
-                        }
-                    )
-                )
-                with self.assertRaises(SystemExit) as error:
-                    main(["report", "--from-results", str(source), "--output", tmp])
-                self.assertEqual(error.exception.code, 2)
-                self.assertFalse((Path(tmp) / "report.json").exists())
 
-    def test_strict_execution_removes_inherited_corpus_filters(self) -> None:
-        case = load_registry()["cases"][0]
+def test_strict_execution_removes_inherited_corpus_filters(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture
+) -> None:
+    case = load_registry()["cases"][0]
 
-        def spawn(_argv: list[str], **kwargs: object) -> Mock:
-            self.assertNotIn("HOIMIN_BOUNDARY_CASE", kwargs["env"])
-            self.assertNotIn("HOIMIN_SESSION_ORACLE_CASE", kwargs["env"])
-            self.assertEqual(kwargs["env"]["PATH"], os.environ["PATH"])
-            kwargs["stdout"].write(
-                f"test {case['test']} ... ok\ntest result: ok. 1 passed;"
-            )
-            kwargs["stdout"].flush()
-            return Mock(wait=Mock(return_value=0))
+    assert case["mode"] == "strict"
 
-        with (
-            tempfile.TemporaryDirectory() as tmp,
-            patch.dict(
-                os.environ,
-                {"HOIMIN_BOUNDARY_CASE": "one", "HOIMIN_SESSION_ORACLE_CASE": "one"},
-            ),
-            patch("tools.boundary_contracts.subprocess.Popen", side_effect=spawn),
-        ):
-            self.assertEqual(execute(case, Path(tmp))["status"], "match")
+    def spawn(
+        _argv: list[str],
+        *,
+        env: dict[str, str],
+        stdout: TextIO,
+        **_kwargs: object,
+    ) -> Mock:
+        assert "HOIMIN_BOUNDARY_CASE" not in env
+        assert "HOIMIN_SESSION_ORACLE_CASE" not in env
+        assert env["PATH"] == os.environ["PATH"]
+        stdout.write(f"test {case['test']} ... ok\ntest result: ok. 1 passed;")
+        stdout.flush()
+        return Mock(wait=Mock(return_value=0))
+
+    monkeypatch.setenv("HOIMIN_BOUNDARY_CASE", "one")
+    monkeypatch.setenv("HOIMIN_SESSION_ORACLE_CASE", "one")
+    mocker.patch("tools.boundary_contracts.subprocess.Popen", side_effect=spawn)
+    assert execute(case, tmp_path)["status"] == "match"
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("id", 1),
+        ("mode", "unknown"),
+        ("boundary", "boundary"),
+        ("sources", [1]),
+        ("package", None),
+        ("platforms", [1]),
+        ("timeout_seconds", "180"),
+        ("reason", 1),
+    ],
+)
+def test_registry_rejects_malformed_case_fields(
+    tmp_path: Path, field: str, value: object
+) -> None:
+    case = dict(load_registry()["cases"][0]) | {field: value}
+    source = tmp_path / "registry.json"
+    source.write_text(json.dumps({"schema": 1, "cases": [case]}))
+    with pytest.raises(AssertionError):
+        load_registry(source)
+
+
+@pytest.mark.parametrize(
+    "value",
+    [None, [], {"schema": 1, "cases": {}}, {"schema": "1", "cases": []}],
+)
+def test_registry_rejects_malformed_document(tmp_path: Path, value: object) -> None:
+    source = tmp_path / "registry.json"
+    source.write_text(json.dumps(value))
+    with pytest.raises(AssertionError):
+        load_registry(source)
+
+
+@pytest.mark.parametrize(
+    "rows",
+    [None, {}, [None], [{"id": 1, "status": "match"}], [{"id": "x"}]],
+)
+def test_report_rejects_malformed_rows(tmp_path: Path, rows: object) -> None:
+    source = tmp_path / "captured.json"
+    source.write_text(
+        json.dumps(
+            {
+                "registry_sha256": hashlib.sha256(REGISTRY.read_bytes()).hexdigest(),
+                "rows": rows,
+            }
+        )
+    )
+    with pytest.raises(SystemExit) as error:
+        main(["report", "--from-results", str(source), "--output", str(tmp_path)])
+    assert error.value.code == 2
+    assert not (tmp_path / "report.json").exists()
+
+
+def test_timeout_kills_process_group_and_reports_infrastructure_error(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    if not hasattr(os, "killpg") or not hasattr(signal, "SIGKILL"):
+        pytest.skip("process-group execution requires POSIX")
+    case = load_registry()["cases"][0]
+    child = Mock(pid=123, wait=Mock(side_effect=[subprocess.TimeoutExpired([], 1), 0]))
+    spawn = mocker.patch(
+        "tools.boundary_contracts.subprocess.Popen", return_value=child
+    )
+    kill = mocker.patch("tools.boundary_contracts.os.killpg")
+    row = execute(case, tmp_path)
+    spawn.assert_called_once()
+    kill.assert_called_once_with(123, signal.SIGKILL)
+    assert child.wait.call_args_list[-1].kwargs == {"timeout": 5}
+    assert row["status"] == "infrastructure-error"
+    assert row["reason"] == "external deadline expired; process group killed"
+
+
+def test_execution_without_process_group_support_is_unexecuted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture
+) -> None:
+    case = load_registry()["cases"][0]
+    monkeypatch.delattr("tools.boundary_contracts.os.killpg", raising=False)
+    spawn = mocker.patch("tools.boundary_contracts.subprocess.Popen")
+    row = execute(case, tmp_path)
+    assert row["status"] == "unexecuted"
+    assert row["reason"] == "native platform unavailable"
+    spawn.assert_not_called()
+
+
+@pytest.mark.parametrize("value", [None, [], {}, {"status": 1}])
+def test_observations_reject_malformed_records(value: object) -> None:
+    with pytest.raises(ValueError, match="boundary observation must be an object"):
+        observations("BOUNDARY_OBSERVATION " + json.dumps(value))
+
+
+def test_observations_preserve_additional_evidence() -> None:
+    value = {"status": "match", "evidence": {"nested": [None, 1, "detail"]}}
+    assert observations(
+        "test wanted ... BOUNDARY_OBSERVATION " + json.dumps(value)
+    ) == [value]

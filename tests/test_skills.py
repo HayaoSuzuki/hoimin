@@ -1,5 +1,6 @@
-import unittest
 from pathlib import Path
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILLS = {
@@ -139,69 +140,83 @@ SKILLS = {
 }
 
 
-class SkillContractTests(unittest.TestCase):
-    def test_mutation_skills_require_disk_safe_execution(self) -> None:
-        required = {
-            "hoimin-mutation-testing": (
-                "--jobs 1",
-                "--max-workspace-size 8GiB",
-                "--min-free-space 10GiB",
-                "Stop before `plan` or `verify`",
-                "Remove only that exact temporary directory",
-                "trap cleanup_temp_dir EXIT",
-                "trap 'exit 130' INT",
-            ),
-            "hoimin-mutation-improvement": (
-                "--jobs 1",
-                "--max-workspace-size 8GiB",
-                "--min-free-space 10GiB",
-                "Stop before `verify`",
-                "Remove only that exact temporary directory",
-            ),
-        }
-
-        for root in (ROOT / ".agents", ROOT / ".claude"):
-            for name, phrases in required.items():
-                skill = root / "skills" / name / "SKILL.md"
-                body = skill.read_text(encoding="utf-8")
-                for phrase in phrases:
-                    with self.subTest(root=root.name, skill=name, phrase=phrase):
-                        self.assertIn(phrase, body)
-
-    def test_macos_memory_policy_is_documented(self) -> None:
-        readme = (ROOT / "README.md").read_text(encoding="utf-8")
-        self.assertIn("--max-memory", readme)
-        self.assertIn("not enforced", readme)
-        for root in (ROOT / ".agents", ROOT / ".claude"):
-            skill = root / "skills" / "hoimin-mutation-testing" / "SKILL.md"
-            self.assertIn(
-                "--allow-best-effort-memory", skill.read_text(encoding="utf-8")
-            )
-
-    def test_skill_mirrors_and_required_workflows(self) -> None:
-        for name, contract in SKILLS.items():
-            codex = ROOT / ".agents" / "skills" / name / "SKILL.md"
-            claude = ROOT / ".claude" / "skills" / name / "SKILL.md"
-            self.assertTrue(codex.is_file(), codex)
-            self.assertTrue(claude.is_file(), claude)
-            self.assertEqual(codex.read_bytes(), claude.read_bytes(), name)
-
-            lines = codex.read_text(encoding="utf-8").splitlines()
-            self.assertGreaterEqual(len(lines), 4, name)
-            self.assertEqual(lines[0], "---", name)
-            closing = lines.index("---", 1)
-            frontmatter = dict(line.split(": ", 1) for line in lines[1:closing])
-            self.assertEqual(
-                frontmatter,
-                {"name": name, "description": contract["description"]},
-                name,
-            )
-            self.assertTrue(frontmatter["description"].startswith("Use when"), name)
-            body = "\n".join(lines[closing + 1 :])
-            for block in contract["required_blocks"]:
-                with self.subTest(name=name, block=block):
-                    self.assertIn(block, body)
+REQUIRED_DISK_SAFETY_PHRASES = {
+    "hoimin-mutation-testing": (
+        "--jobs 1",
+        "--max-workspace-size 8GiB",
+        "--min-free-space 10GiB",
+        "Stop before `plan` or `verify`",
+        "Remove only that exact temporary directory",
+        "trap cleanup_temp_dir EXIT",
+        "trap 'exit 130' INT",
+    ),
+    "hoimin-mutation-improvement": (
+        "--jobs 1",
+        "--max-workspace-size 8GiB",
+        "--min-free-space 10GiB",
+        "Stop before `verify`",
+        "Remove only that exact temporary directory",
+    ),
+}
 
 
-if __name__ == "__main__":
-    unittest.main()
+@pytest.mark.parametrize("root", [".agents", ".claude"])
+@pytest.mark.parametrize(
+    ("name", "phrase"),
+    [
+        (name, phrase)
+        for name, phrases in REQUIRED_DISK_SAFETY_PHRASES.items()
+        for phrase in phrases
+    ],
+)
+def test_mutation_skills_require_disk_safe_execution(
+    root: str, name: str, phrase: str
+) -> None:
+    skill = ROOT / root / "skills" / name / "SKILL.md"
+    assert phrase in skill.read_text(encoding="utf-8")
+
+
+def test_macos_memory_policy_is_documented() -> None:
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    assert "--max-memory" in readme
+    assert "not enforced" in readme
+
+
+@pytest.mark.parametrize("root", [".agents", ".claude"])
+def test_macos_memory_policy_is_documented_in_skills(root: str) -> None:
+    skill = ROOT / root / "skills" / "hoimin-mutation-testing" / "SKILL.md"
+    assert "--allow-best-effort-memory" in skill.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("name", SKILLS)
+def test_skill_mirrors_and_frontmatter(name: str) -> None:
+    contract = SKILLS[name]
+    codex = ROOT / ".agents" / "skills" / name / "SKILL.md"
+    claude = ROOT / ".claude" / "skills" / name / "SKILL.md"
+    assert codex.is_file(), codex
+    assert claude.is_file(), claude
+    assert codex.read_bytes() == claude.read_bytes()
+
+    lines = codex.read_text(encoding="utf-8").splitlines()
+    assert len(lines) >= 4
+    assert lines[0] == "---"
+    closing = lines.index("---", 1)
+    frontmatter = dict(line.split(": ", 1) for line in lines[1:closing])
+    assert frontmatter == {"name": name, "description": contract["description"]}
+    assert frontmatter["description"].startswith("Use when")
+
+
+@pytest.mark.parametrize(
+    ("name", "block"),
+    [
+        (name, block)
+        for name, contract in SKILLS.items()
+        for block in contract["required_blocks"]
+    ],
+)
+def test_skill_required_workflows(name: str, block: str) -> None:
+    skill = ROOT / ".agents" / "skills" / name / "SKILL.md"
+    lines = skill.read_text(encoding="utf-8").splitlines()
+    closing = lines.index("---", 1)
+    body = "\n".join(lines[closing + 1 :])
+    assert block in body
