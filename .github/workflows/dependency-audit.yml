@@ -1,0 +1,66 @@
+name: Dependency audit
+
+on:
+  pull_request:
+  merge_group:
+    types: [checks_requested]
+  push:
+    branches: [main]
+  schedule:
+    - cron: '23 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    name: Python dependency audit (${{ matrix.platform }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [linux, macos, windows]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.14'
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: '0.12.13'
+          enable-cache: false
+      - name: Audit all Python extras and dependency groups
+        run: uv audit --frozen --preview-features audit-command --python-platform "${{ matrix.platform }}"
+
+  rust:
+    name: Rust dependency audit (${{ matrix.lockfile }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        lockfile: [Cargo.lock, fuzz/Cargo.lock]
+    env:
+      CARGO_AUDIT_VERSION: '0.22.2'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install repository Rust toolchain
+        run: rustup toolchain install
+      - name: Cache cargo-audit executable
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/cargo-audit-tool
+          key: cargo-audit-${{ runner.os }}-${{ runner.arch }}-${{ env.CARGO_AUDIT_VERSION }}-${{ hashFiles('rust-toolchain.toml') }}
+      - name: Install cargo-audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          tool_root="$RUNNER_TEMP/cargo-audit-tool"
+          echo "$tool_root/bin" >> "$GITHUB_PATH"
+          if [[ ! -x "$tool_root/bin/cargo-audit" ]]; then
+            cargo install cargo-audit --version "$CARGO_AUDIT_VERSION" --locked --root "$tool_root"
+          fi
+      - name: Audit locked Rust dependencies
+        run: cargo audit --file "${{ matrix.lockfile }}"

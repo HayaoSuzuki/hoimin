@@ -72,6 +72,38 @@ uvx maturin build --release
 uv run --frozen python tests/wheel_smoke.py
 ```
 
+## Dependency vulnerability audits
+
+The `Dependency audit` workflow checks committed dependencies on pull requests,
+merge queues, pushes to `main`, and daily at 02:23 UTC. It can also be started
+manually. Python and Rust audits run independently, and a detected vulnerability
+or a failed advisory lookup fails the corresponding job.
+
+Python auditing uses uv 0.12.13 with the `audit-command` preview feature. It audits
+all extras and dependency groups, including development and fuzz dependencies,
+for Linux, macOS and Windows using separate target-platform selections on a
+Linux runner. These are dependency checks, not execution tests on those systems.
+`--frozen` preserves the committed `uv.lock`. Rust auditing uses cargo-audit 0.22.2
+and checks both the root workspace and the independent fuzz workspace against
+the current RustSec database. Known vulnerabilities fail the audit; cargo-audit's
+informational warnings retain their default severity.
+
+Run the same checks locally:
+
+```console
+uv audit --frozen --preview-features audit-command --python-platform linux
+uv audit --frozen --preview-features audit-command --python-platform macos
+uv audit --frozen --preview-features audit-command --python-platform windows
+cargo install cargo-audit --version 0.22.2 --locked
+cargo audit --file Cargo.lock
+cargo audit --file fuzz/Cargo.lock
+```
+
+Audits require access to the advisory services and detect known dependency
+vulnerabilities; they do not prove the absence of security defects. Renovate
+continues to propose dependency and lockfile updates separately. Review and fix
+findings instead of adding blanket exclusions or allowing failed audits to pass.
+
 ## Property-based boundary tests
 
 Proptest is already a development dependency in both Rust crates. The
