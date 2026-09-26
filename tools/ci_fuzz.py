@@ -93,6 +93,10 @@ class Campaign:
                 try:
                     stage["returncode"] = process.wait(timeout=limit)
                 except subprocess.TimeoutExpired as error:
+                    assert hasattr(os, "killpg"), "fuzz process groups require POSIX"
+                    assert hasattr(signal, "SIGKILL"), (
+                        "fuzz process groups require POSIX"
+                    )
                     os.killpg(process.pid, signal.SIGKILL)
                     process.wait()
                     stage["status"] = "timeout"

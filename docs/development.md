@@ -55,9 +55,10 @@ Use `prek run --all-files` for all four Rust checks, or
 Run the quality gates locally with the same commands used in CI:
 
 ```console
-uv sync --frozen --no-install-project
+uv sync --frozen --group fuzz --no-install-project
 uv run --frozen --no-sync ruff format --check .
 uv run --frozen --no-sync ruff check --no-fix .
+uv run --frozen --no-sync ty check
 cargo fmt --all -- --check
 cargo fmt --manifest-path vendor/ruff_python_parser/Cargo.toml -- --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
@@ -269,11 +270,12 @@ Without that group, only the two real-generator integration cases are skipped;
 the byte-preservation, size-boundary, syntax-rejection, and CLI validation tests
 still run. See the [hypothesmith project](https://github.com/Zac-HD/hypothesmith).
 
-## Python formatting, lint and tests
+## Python formatting, lint, types and tests
 
-Ruff and pytest are development dependencies managed by `uv.lock`. For Python
-checks alone, `uv sync --frozen --no-install-project` installs the tools without
-building the Rust executable. Run `uv run --frozen --no-sync pytest` in that
+Ruff, ty and pytest are development dependencies managed by `uv.lock`. For Python
+checks alone, `uv sync --frozen --group fuzz --no-install-project` installs the tools
+and the optional fuzz generators without building the Rust executable. Run
+`uv run --frozen --no-sync ty check` and `uv run --frozen --no-sync pytest` in that
 environment; the full quality gate above also builds and validates the wheel.
 
 To apply formatting or safe lint fixes explicitly:
@@ -296,6 +298,25 @@ Maintained Python files under `tests/`, `tools/`, `formal/HoiminOracle/tools/`
 and `crates/hoimin-cli/tests/support/` are checked. Vendored code, historical
 documentation/audits, generated output, worktrees and mutation fixture projects
 are excluded so formatting cannot rewrite test inputs or recorded evidence.
+
+The same maintained directories are included in ty's type checking. Run
+`uv run --frozen --no-sync ty check` from the repository root. The configuration
+targets Python 3.14 and all platforms, so availability of platform-specific APIs
+must be checked before use. All ty rules are enabled as errors, including checks
+for missing generic arguments, unsound assignments and returns, and unused or
+blanket ignore comments. Warnings also fail the check. Strict equality semantics
+and strict generic narrowing are enabled; `type: ignore` comments cannot suppress
+ty diagnostics. See the [ty configuration reference](
+https://docs.astral.sh/ty/reference/configuration/).
+
+JSON and YAML inputs need checked types at their boundaries. Preserve precise
+record types through helpers and tests instead of using `Any` or casts to bypass
+diagnostics. Ruff's existing annotation rules complement ty by requiring function
+annotations. This does not prove that every third-party or dynamically loaded
+value has a static type; runtime checks are still needed where data enters typed
+code. Mutation fixture projects are excluded because some deliberately contain
+type errors, and their acceptance tests run their own checker configuration.
+
 Pytest uses strict mode and collects from `tests/`, excluding fixture projects.
 Tests use module-level functions, plain `assert`, `pytest.raises`, and
 `pytest.mark.parametrize` for independent cases. Use `tmp_path` and fixtures for
@@ -308,7 +329,7 @@ Rust end-to-end tests run the sample project's pytest tests under
 pytest from the frozen uv environment.
 
 Automatic Linux and manual non-Linux quality jobs run the same read-only Ruff
-checks. Their wheel smoke jobs execute the Python suite with pytest before
+and ty checks. Their wheel smoke jobs execute the Python suite with pytest before
 building the wheel. See the [design, implementation plan and review record](
 superpowers/plans/2026-09-24-python-quality.md).
 

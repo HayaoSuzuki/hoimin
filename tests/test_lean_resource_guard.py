@@ -1,4 +1,3 @@
-import importlib.util
 import json
 import os
 import shutil
@@ -12,6 +11,8 @@ from types import SimpleNamespace
 import pytest
 from pytest_mock import MockerFixture
 
+from formal.HoiminOracle.tools import lean_resource_guard as guard
+
 ROOT = Path(__file__).resolve().parents[1]
 GUARD = ROOT / "formal" / "HoiminOracle" / "tools" / "lean_resource_guard.py"
 
@@ -19,14 +20,9 @@ GUARD = ROOT / "formal" / "HoiminOracle" / "tools" / "lean_resource_guard.py"
 def test_rejects_unsupported_process_groups_before_spawning(
     tmp_path: Path, mocker: MockerFixture
 ) -> None:
-    spec = importlib.util.spec_from_file_location("lean_resource_guard", GUARD)
-    assert spec is not None
-    assert spec.loader is not None
-    guard = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(guard)
     stats = tmp_path / "stats.json"
     marker = tmp_path / "spawned"
-    arguments = SimpleNamespace(
+    arguments = guard.Arguments(
         timeout_seconds=1.0,
         rss_limit_mib=8,
         sample_ms=25,
@@ -72,7 +68,10 @@ def run_guard(
         check=False,
         timeout=5,
     )
-    return completed, json.loads(stats.read_text())
+    document: object = json.loads(stats.read_text())
+    assert isinstance(document, dict)
+    assert all(isinstance(key, str) for key in document)
+    return completed, {str(key): value for key, value in document.items()}
 
 
 @requires_posix_guard
@@ -138,6 +137,7 @@ def test_propagates_normal_child_exit(tmp_path: Path) -> None:
 
 @requires_posix_guard
 def test_rejects_root_exit_that_leaves_a_descendant(tmp_path: Path) -> None:
+    assert hasattr(signal, "SIGKILL"), "process groups require POSIX"
     marker = tmp_path / "descendant.pid"
     descendant = (
         "import os,signal,time; "

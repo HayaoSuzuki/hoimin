@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from typing import NotRequired, TypedDict, TypeGuard
 
 ROOT = Path(__file__).resolve().parents[1]
 GROWTH_SIZE_COUNT = 3
@@ -18,9 +19,223 @@ MAX_REPEATS = 10
 MIN_SAMPLE_MS = 10
 MAX_SAMPLE_MS = 1000
 
-type JsonValue = (
-    bool | int | float | str | list[JsonValue] | dict[str, JsonValue] | None
-)
+
+class Shape(TypedDict):
+    id: str
+    fixture: str
+    dimension: str
+    sizes: list[int]
+    metric: str
+    status: str
+    growth_model: str
+
+
+class Gate(TypedDict):
+    id: str
+    status: str
+    metric: NotRequired[str]
+    args: NotRequired[list[str]]
+    issue: NotRequired[str]
+
+
+class GateRegistry(TypedDict):
+    gates: list[Gate]
+
+
+class Registry(GateRegistry):
+    schema_version: int
+    shapes: list[Shape]
+
+
+class ExpectedOutput(TypedDict):
+    mode: str
+    expected_candidates: int
+    truncated: bool
+
+
+class Fixture(ExpectedOutput):
+    name: str
+    size: int
+    operator: str
+    options: list[str]
+    selectors: list[str]
+    jobs: int
+    candidate_limit: int
+    plan_count: int
+    source_bytes: int
+    python_source_bytes: int
+    input_files: int
+    input_bytes: int
+
+
+class Observation(TypedDict):
+    candidates: int
+    truncated: bool
+
+
+class ResourceObservation(TypedDict):
+    reason: str
+    peak_rss_kib: int
+
+
+class ResourceStats(ResourceObservation):
+    elapsed_ms: int
+
+
+class Measurement(Observation):
+    argv: list[str]
+    elapsed_ms: int
+    sampled_tree_rss_bytes: int | None
+    sample_ms: int
+    exit_code: int
+    output_document_bytes: int
+
+
+class Run(Measurement):
+    shape: str
+    label: str
+    repeat: int
+    fixture: Fixture
+
+
+class Median(TypedDict):
+    shape: str
+    size: int
+    label: str
+    elapsed_ms: float
+    sampled_tree_rss_bytes: float | None
+    output_document_bytes: NotRequired[float]
+
+
+class Comparison(TypedDict):
+    shape: str
+    size: int
+    elapsed_ms_delta: float
+    elapsed_ratio: float | None
+    sampled_tree_rss_bytes_delta: float | None
+    sampled_tree_rss_ratio: float | None
+
+
+class Growth(TypedDict):
+    shape: str
+    label: str
+    base_size: int
+    size: int
+    elapsed_ratio: float | None
+    sampled_tree_rss_ratio: float | None
+    output_document_ratio: float | None
+
+
+class GateOutcome(TypedDict):
+    id: str
+    status: str
+    issue: NotRequired[str]
+    tests: NotRequired[int]
+
+
+class Binary(TypedDict):
+    path: str
+    sha256: str
+
+
+class Result(TypedDict):
+    schema_version: int
+    environment: dict[str, str]
+    runs: list[Run]
+    status: NotRequired[str]
+    error: NotRequired[str]
+    registry_sha256: NotRequired[str]
+    gates: NotRequired[list[GateOutcome]]
+    binaries: NotRequired[dict[str, Binary]]
+    medians: NotRequired[list[Median]]
+    comparisons: NotRequired[list[Comparison]]
+    growth: NotRequired[list[Growth]]
+
+
+class Arguments(argparse.Namespace):
+    mode: str
+    registry: Path
+    output: Path | None
+    baseline: Path | None
+    candidate: Path | None
+    shape: list[str] | None
+    repeats: int
+    sample_ms: int
+
+
+def is_object(value: object) -> TypeGuard[dict[str, object]]:
+    return isinstance(value, dict) and all(isinstance(key, str) for key in value)
+
+
+def load_object(path: Path) -> dict[str, object]:
+    document: object = json.loads(path.read_text())
+    if not is_object(document):
+        msg = "expected a JSON object"
+        raise ValueError(msg)
+    return document
+
+
+def is_list(value: object) -> TypeGuard[list[object]]:
+    return isinstance(value, list)
+
+
+def is_shape(value: object) -> TypeGuard[Shape]:
+    if not is_object(value):
+        return False
+    sizes = value.get("sizes")
+    return (
+        all(
+            isinstance(value.get(key), str)
+            for key in (
+                "id",
+                "fixture",
+                "dimension",
+                "metric",
+                "status",
+                "growth_model",
+            )
+        )
+        and is_list(sizes)
+        and all(isinstance(size, int) for size in sizes)
+    )
+
+
+def is_gate(value: object) -> TypeGuard[Gate]:
+    if not is_object(value):
+        return False
+    args = value.get("args", [])
+    return (
+        isinstance(value.get("id"), str)
+        and isinstance(value.get("status"), str)
+        and all(
+            isinstance(value[key], str) for key in ("metric", "issue") if key in value
+        )
+        and is_list(args)
+        and all(isinstance(arg, str) for arg in args)
+    )
+
+
+def is_resource_stats(value: object) -> TypeGuard[ResourceStats]:
+    return (
+        is_object(value)
+        and isinstance(value.get("reason"), str)
+        and isinstance(value.get("peak_rss_kib"), int)
+        and isinstance(value.get("elapsed_ms"), int)
+    )
+
+
+def is_registry(value: object) -> TypeGuard[Registry]:
+    if not is_object(value):
+        return False
+    shapes, gates = value.get("shapes"), value.get("gates")
+    return (
+        isinstance(value.get("schema_version"), int)
+        and is_list(shapes)
+        and all(is_shape(shape) for shape in shapes)
+        and is_list(gates)
+        and all(is_gate(gate) for gate in gates)
+    )
+
 
 DIMENSIONS = {
     "discovery",
@@ -86,7 +301,7 @@ METRICS = {"operations", "retained_heap", "peak_heap", "sampled_tree_rss", "time
 
 
 # Keep the complete registry contract together for auditability.
-def validate_registry(registry: dict[str, JsonValue]) -> dict[str, JsonValue]:  # noqa: C901, PLR0912
+def validate_registry(registry: Registry) -> Registry:  # noqa: C901, PLR0912
     if registry.get("schema_version") != 1:
         msg = "unsupported schema"
         raise ValueError(msg)
@@ -135,7 +350,7 @@ def validate_registry(registry: dict[str, JsonValue]) -> dict[str, JsonValue]:  
                 msg = "pending dependency required"
                 raise ValueError(msg)
         elif gate["status"] == "active":
-            args = gate["args"]
+            args = gate.get("args", [])
             if (
                 not args
                 or args[0] != "test"
@@ -150,8 +365,12 @@ def validate_registry(registry: dict[str, JsonValue]) -> dict[str, JsonValue]:  
     return registry
 
 
-def load_registry(path: Path) -> dict[str, JsonValue]:
-    return validate_registry(json.loads(path.read_text()))
+def load_registry(path: Path) -> Registry:
+    document: object = json.loads(path.read_text())
+    if not is_registry(document):
+        msg = "invalid registry structure"
+        raise ValueError(msg)
+    return validate_registry(document)
 
 
 def executed_tests(output: str) -> int:
@@ -169,7 +388,7 @@ def executed_tests(output: str) -> int:
 
 
 # Each branch materializes one registered benchmark shape.
-def make_fixture(name: str, size: int, root: Path) -> dict[str, JsonValue]:  # noqa: C901, PLR0912, PLR0915
+def make_fixture(name: str, size: int, root: Path) -> Fixture:  # noqa: C901, PLR0912, PLR0915
     if name not in SHAPES or type(size) is not int or not 1 <= size <= LIMITS[name]:
         msg = "unknown shape or out-of-bounds size"
         raise ValueError(msg)
@@ -312,8 +531,8 @@ class SemanticMismatch(ValueError):  # noqa: N818 - Preserve the public exceptio
 
 
 def validate_output(
-    document: dict[str, JsonValue], fixture: dict[str, JsonValue]
-) -> dict[str, JsonValue]:
+    document: dict[str, object], fixture: ExpectedOutput
+) -> Observation:
     if fixture["mode"] == "plan":
         records = document.get("candidates")
         if document.get("truncated") is not fixture["truncated"]:
@@ -321,7 +540,8 @@ def validate_output(
             raise SemanticMismatch(msg)
     else:
         records = document.get("mutants")
-        if document.get("summary", {}).get("complete") is not (
+        summary = document.get("summary", {})
+        if not is_object(summary) or summary.get("complete") is not (
             not fixture["truncated"]
         ):
             msg = "unexpected execution completeness"
@@ -332,7 +552,7 @@ def validate_output(
     return {"candidates": len(records), "truncated": fixture["truncated"]}
 
 
-def observed_rss(stats: dict[str, JsonValue]) -> int | None:
+def observed_rss(stats: ResourceObservation) -> int | None:
     if stats.get("reason") != "child_exit":
         msg = f"resource guard failed: {stats.get('reason')}"
         raise ValueError(msg)
@@ -341,11 +561,11 @@ def observed_rss(stats: dict[str, JsonValue]) -> int | None:
 
 def measure_once(
     binary: Path,
-    fixture: dict[str, JsonValue],
+    fixture: Fixture,
     root: Path,
     artifact: Path,
     sample_ms: int,
-) -> dict[str, JsonValue]:
+) -> Measurement:
     common = [
         "--root",
         str(root),
@@ -376,7 +596,7 @@ def measure_once(
             msg = "verify fixture plan failed"
             raise ValueError(msg)
         validate_output(
-            json.loads(manifest.read_text()),
+            load_object(manifest),
             {
                 "mode": "plan",
                 "expected_candidates": fixture["plan_count"],
@@ -416,7 +636,10 @@ def measure_once(
         completed = subprocess.run(  # noqa: S603 - Trusted CLI/test arguments; no shell execution.
             guard, stdout=out, stderr=err, timeout=40, check=False
         )
-    stats = json.loads(stats_path.read_text())
+    stats: object = json.loads(stats_path.read_text())
+    if not is_resource_stats(stats):
+        msg = "invalid resource observation"
+        raise ValueError(msg)
     rss = observed_rss(stats)
     expected_exit = (
         4 if fixture["truncated"] else (0 if fixture["mode"] == "plan" else 1)
@@ -424,9 +647,7 @@ def measure_once(
     if completed.returncode != expected_exit:
         msg = f"CLI exit {completed.returncode}; expected {expected_exit}"
         raise ValueError(msg)
-    observation = validate_output(
-        json.loads((artifact / "stdout.json").read_text()), fixture
-    )
+    observation = validate_output(load_object(artifact / "stdout.json"), fixture)
     return dict(
         argv=command,
         elapsed_ms=stats["elapsed_ms"],
@@ -438,10 +659,8 @@ def measure_once(
     )
 
 
-def run_gate(
-    registry: dict[str, JsonValue], artifact: Path
-) -> list[dict[str, JsonValue]]:
-    outcomes = []
+def run_gate(registry: GateRegistry, artifact: Path) -> list[GateOutcome]:
+    outcomes: list[GateOutcome] = []
     for gate in registry["gates"]:
         if gate["status"] == "pending":
             outcomes.append(
@@ -449,11 +668,11 @@ def run_gate(
             )
             continue
         log = artifact / f"{gate['id']}.log"
-        with log.open("w") as output:
+        with log.open("w") as log_output:
             completed = subprocess.run(  # noqa: S603 - Trusted CLI/test arguments; no shell execution.
                 ["cargo", *gate["args"]],  # noqa: S607 - Resolve the developer tool from PATH.
                 cwd=ROOT,
-                stdout=output,
+                stdout=log_output,
                 stderr=subprocess.STDOUT,
                 text=True,
                 timeout=300,
@@ -471,13 +690,13 @@ def run_gate(
 
 
 def summarize_comparisons(
-    medians: list[dict[str, JsonValue]],
-) -> list[dict[str, JsonValue]]:
+    medians: list[Median],
+) -> list[Comparison]:
     """Compare candidate medians with their matching baseline observations."""
-    grouped = {}
+    grouped: dict[tuple[str, int], dict[str, Median]] = {}
     for item in medians:
         grouped.setdefault((item["shape"], item["size"]), {})[item["label"]] = item
-    comparisons = []
+    comparisons: list[Comparison] = []
     for (shape, size), labels in grouped.items():
         if set(labels) != {"baseline", "candidate"}:
             msg = f"missing baseline or candidate median: {shape}/{size}"
@@ -504,7 +723,9 @@ def summarize_comparisons(
                 ),
                 "sampled_tree_rss_ratio": (
                     rss_candidate / rss_base
-                    if rss_base not in {None, 0} and rss_candidate is not None
+                    if rss_base is not None
+                    and rss_base != 0
+                    and rss_candidate is not None
                     else None
                 ),
             }
@@ -512,14 +733,22 @@ def summarize_comparisons(
     return comparisons
 
 
+def ratio(base: float | None, observed: float | None) -> float | None:
+    return (
+        observed / base
+        if base is not None and base != 0 and observed is not None
+        else None
+    )
+
+
 def summarize_growth(
-    medians: list[dict[str, JsonValue]],
-) -> list[dict[str, JsonValue]]:
+    medians: list[Median],
+) -> list[Growth]:
     """Report N-relative growth within each binary; RSS is not allocator peak."""
-    grouped = {}
+    grouped: dict[tuple[str, str], list[Median]] = {}
     for item in medians:
         grouped.setdefault((item["shape"], item["label"]), []).append(item)
-    growth = []
+    growth: list[Growth] = []
     for (shape, label), items in grouped.items():
         items.sort(key=lambda item: item["size"])
         sizes = [item["size"] for item in items]
@@ -532,23 +761,20 @@ def summarize_growth(
             raise ValueError(msg)
         first = items[0]
         for item in items[1:]:
-            row = {
+            row: Growth = {
                 "shape": shape,
                 "label": label,
                 "base_size": first["size"],
                 "size": item["size"],
+                "elapsed_ratio": ratio(first["elapsed_ms"], item["elapsed_ms"]),
+                "sampled_tree_rss_ratio": ratio(
+                    first["sampled_tree_rss_bytes"], item["sampled_tree_rss_bytes"]
+                ),
+                "output_document_ratio": ratio(
+                    first.get("output_document_bytes"),
+                    item.get("output_document_bytes"),
+                ),
             }
-            for source, field in [
-                ("elapsed_ms", "elapsed_ratio"),
-                ("sampled_tree_rss_bytes", "sampled_tree_rss_ratio"),
-                ("output_document_bytes", "output_document_ratio"),
-            ]:
-                base, observed = first.get(source), item.get(source)
-                row[field] = (
-                    observed / base
-                    if base not in (None, 0) and observed is not None
-                    else None
-                )
             growth.append(row)
     return growth
 
@@ -566,7 +792,7 @@ def main() -> int:  # noqa: C901, PLR0912, PLR0915
     parser.add_argument("--shape", action="append", choices=sorted(SHAPES))
     parser.add_argument("--repeats", type=int, default=3)
     parser.add_argument("--sample-ms", type=int, default=25)
-    args = parser.parse_args()
+    args = parser.parse_args(namespace=Arguments())
     if args.mode == "check":
         registry = load_registry(args.registry)
         print(f"validated {len(registry['shapes'])} shapes")  # noqa: T201 - CLI status or failure diagnostics.
@@ -579,7 +805,7 @@ def main() -> int:  # noqa: C901, PLR0912, PLR0915
     ):
         parser.error("repeats must be 3..10 and sample-ms 10..1000")
     args.output.mkdir(parents=True, exist_ok=False)
-    result = {"schema_version": 1, "environment": {}, "runs": []}
+    result: Result = {"schema_version": 1, "environment": {}, "runs": []}
     try:
         registry = load_registry(args.registry)
         result["environment"] = {
@@ -660,7 +886,13 @@ def main() -> int:  # noqa: C901, PLR0912, PLR0915
                                     document_bytes
                                 ),
                                 "sampled_tree_rss_bytes": (
-                                    statistics.median(rss_samples)
+                                    statistics.median(
+                                        [
+                                            value
+                                            for value in rss_samples
+                                            if value is not None
+                                        ]
+                                    )
                                     if all(value is not None for value in rss_samples)
                                     else None
                                 ),

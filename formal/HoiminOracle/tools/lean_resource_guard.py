@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from dataclasses import dataclass, field
 from pathlib import Path
 
 TIMEOUT_EXIT = 124
@@ -17,14 +18,24 @@ MONITOR_ERROR_EXIT = 126
 MONITOR_EXCEPTIONS = (OSError, RuntimeError, ValueError, subprocess.SubprocessError)
 
 
-def parse_arguments() -> argparse.Namespace:
+@dataclass
+class Arguments(argparse.Namespace):
+    timeout_seconds: float = 0.0
+    rss_limit_mib: int = 0
+    sample_ms: int = 0
+    stats: Path = Path()
+    command: list[str] = field(default_factory=list)
+
+
+def parse_arguments() -> Arguments:
     parser = argparse.ArgumentParser()
     parser.add_argument("--timeout-seconds", type=float, required=True)
     parser.add_argument("--rss-limit-mib", type=int, required=True)
     parser.add_argument("--sample-ms", type=int, required=True)
     parser.add_argument("--stats", type=Path, required=True)
     parser.add_argument("command", nargs=argparse.REMAINDER)
-    arguments = parser.parse_args()
+    arguments = Arguments()
+    parser.parse_args(namespace=arguments)
     if arguments.command[:1] == ["--"]:
         arguments.command = arguments.command[1:]
     if not arguments.command:
@@ -79,6 +90,7 @@ def process_group_members(
 
 
 def process_group_exists(process_group_id: int) -> bool:
+    assert hasattr(os, "killpg"), "process groups require POSIX"
     try:
         os.killpg(process_group_id, 0)
     except ProcessLookupError:
@@ -101,6 +113,8 @@ def wait_for_process_group_exit(
 
 
 def terminate_process_group(process: subprocess.Popen[bytes]) -> None:
+    assert hasattr(os, "killpg"), "process groups require POSIX"
+    assert hasattr(signal, "SIGKILL"), "process groups require POSIX"
     with contextlib.suppress(ProcessLookupError):
         os.killpg(process.pid, signal.SIGTERM)
 
@@ -123,7 +137,7 @@ def write_stats(path: Path, stats: dict[str, int | str]) -> None:
 
 
 # Keep child cleanup, exit classification and stats publication in one scope.
-def run(arguments: argparse.Namespace) -> int:  # noqa: C901
+def run(arguments: Arguments) -> int:  # noqa: C901
     started_at = time.monotonic()
     peak_rss_kib = 0
     timeout_ms = round(arguments.timeout_seconds * 1000)

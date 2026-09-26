@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tomllib
 from pathlib import Path
+from typing import TypedDict, TypeGuard
 
 import pytest
 import yaml
@@ -237,10 +238,55 @@ def job_block(workflow: str, job_name: str) -> str:
     return workflow[start:end]
 
 
+def is_string_mapping(value: object) -> TypeGuard[dict[str, object]]:
+    return isinstance(value, dict) and all(isinstance(key, str) for key in value)
+
+
+def mapping(value: object) -> dict[str, object]:
+    assert is_string_mapping(value), "expected a mapping with string keys"
+    return value
+
+
+def sequence(value: object) -> list[object]:
+    assert isinstance(value, list), "expected a list"
+    return list(value)
+
+
+def string(value: object) -> str:
+    assert isinstance(value, str), "expected a string"
+    return value
+
+
+def string_list(value: object) -> list[str]:
+    return [string(item) for item in sequence(value)]
+
+
+def workflow_document(workflow: str) -> dict[object, object]:
+    decoded: object = yaml.safe_load(workflow)
+    assert isinstance(decoded, dict), "workflow must be a mapping"
+    return dict(decoded.items())
+
+
+def workflow_jobs(document: dict[object, object]) -> dict[str, dict[str, object]]:
+    return {name: mapping(job) for name, job in mapping(document["jobs"]).items()}
+
+
+def job_steps(job: dict[str, object]) -> list[dict[str, object]]:
+    return [mapping(step) for step in sequence(job.get("steps", []))]
+
+
 def named_step(job: dict[str, object], name: str) -> dict[str, object]:
-    steps = job["steps"]
-    assert isinstance(steps, list)
-    return next(step for step in steps if step.get("name") == name)
+    return next(step for step in job_steps(job) if step.get("name") == name)
+
+
+class LeanCall(TypedDict):
+    argv: list[str]
+    cwd: str
+
+
+def lean_call(line: str) -> LeanCall:
+    call = mapping(json.loads(line))
+    return {"argv": string_list(call["argv"]), "cwd": string(call["cwd"])}
 
 
 def lean_gate_invocations(
@@ -248,7 +294,7 @@ def lean_gate_invocations(
     script: str,
     *,
     fail_at: int | None = None,
-) -> tuple[subprocess.CompletedProcess[str], list[dict[str, object]]]:
+) -> tuple[subprocess.CompletedProcess[str], list[LeanCall]]:
     temporary = tmp_path
     fake_bin = temporary / "bin"
     fake_bin.mkdir()
@@ -292,7 +338,7 @@ if call_count == int(os.environ.get("LEAN_FAIL_AT", "0")):
         timeout=10,
     )
     calls = (
-        [json.loads(line) for line in call_log.read_text().splitlines()]
+        [lean_call(line) for line in call_log.read_text().splitlines()]
         if call_log.exists()
         else []
     )
@@ -302,8 +348,11 @@ if call_count == int(os.environ.get("LEAN_FAIL_AT", "0")):
 
 
 def lean_module_sources() -> dict[str, Path]:
-    lakefile = tomllib.loads(LEAN_LAKEFILE.read_text(encoding="utf-8"))
-    executable_roots = {executable["root"] for executable in lakefile["lean_exe"]}
+    lakefile = mapping(tomllib.loads(LEAN_LAKEFILE.read_text(encoding="utf-8")))
+    executable_roots = {
+        string(mapping(executable)["root"])
+        for executable in sequence(lakefile["lean_exe"])
+    }
     sources = [LEAN_ORACLE / "HoiminOracle.lean"]
     sources.extend((LEAN_ORACLE / "HoiminOracle").glob("*.lean"))
     sources.extend(LEAN_ORACLE / f"{root}.lean" for root in executable_roots)
@@ -348,12 +397,11 @@ def job_event_conditions(workflow: str) -> set[str]:
     return events
 
 
-def workflow_contract(workflow: str) -> dict:
+def workflow_contract(workflow: str) -> dict[object, object]:
     """Check immutable action pins, then compare behavior independently of SHA."""
-    decoded = yaml.safe_load(workflow)
-    assert isinstance(decoded, dict), "workflow must be a mapping"
-    for job in decoded["jobs"].values():
-        for step in job.get("steps", []):
+    decoded = workflow_document(workflow)
+    for job in workflow_jobs(decoded).values():
+        for step in job_steps(job):
             if "uses" not in step:
                 continue
             reference = step["uses"]
@@ -374,12 +422,11 @@ def workflow_contract(workflow: str) -> dict:
 def assert_artifact_only_release(workflow: str) -> None:
     decoded = workflow_contract(workflow)
     maturin_versions = set()
-    for job in decoded["jobs"].values():
-        for step in job.get("steps", []):
+    for job in workflow_jobs(decoded).values():
+        for step in job_steps(job):
             if step.get("uses") != MATURIN_ACTION:
                 continue
-            inputs = step.get("with", {})
-            assert isinstance(inputs, dict)
+            inputs = mapping(step.get("with", {}))
             version = inputs.get("maturin-version")
             assert isinstance(version, str)
             assert (
@@ -395,20 +442,22 @@ def assert_artifact_only_release(workflow: str) -> None:
     assert decoded == EXPECTED_RELEASE_WORKFLOW
 
 
-def assert_repository_rust_toolchain(toolchain: dict) -> None:
+def assert_repository_rust_toolchain(toolchain: dict[str, object]) -> None:
     assert set(toolchain) == {"toolchain"}
-    declaration = toolchain["toolchain"]
+    declaration = mapping(toolchain["toolchain"])
     assert set(declaration) == {"channel", "profile", "components"}
     # The manifest owns the version; this contract checks reproducible pinning.
     assert (
         re.search(
             r"\A(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\Z",
-            declaration["channel"],
+            string(declaration["channel"]),
         )
         is not None
     )
     assert declaration["profile"] == "minimal"
-    assert sorted(declaration["components"]) == sorted(["clippy", "rustfmt"])
+    assert sorted(string_list(declaration["components"])) == sorted(
+        ["clippy", "rustfmt"]
+    )
 
 
 def workflow_paths() -> list[Path]:
@@ -435,8 +484,8 @@ def test_every_workflow_uses_known_actions_with_full_commit_pins(path: Path) -> 
     decoded = workflow_contract(path.read_text(encoding="utf-8"))
     actions = [
         step["uses"]
-        for job in decoded["jobs"].values()
-        for step in job.get("steps", [])
+        for job in workflow_jobs(decoded).values()
+        for step in job_steps(job)
         if "uses" in step
     ]
     assert actions
@@ -514,14 +563,14 @@ def test_normalizes_only_step_action_references() -> None:
 
 # Repository Rust Toolchain contracts.
 def test_repository_toolchain_is_exact_and_complete() -> None:
-    toolchain = tomllib.loads(RUST_TOOLCHAIN.read_text(encoding="utf-8"))
+    toolchain = mapping(tomllib.loads(RUST_TOOLCHAIN.read_text(encoding="utf-8")))
     assert_repository_rust_toolchain(toolchain)
 
 
 @pytest.mark.parametrize("channel", ["1.98.0", "1.98.1", "1.98.10", "1.99.0", "2.0.0"])
 def test_accepts_updated_exact_stable_versions(channel: str) -> None:
-    toolchain = tomllib.loads(RUST_TOOLCHAIN.read_text(encoding="utf-8"))
-    toolchain["toolchain"]["channel"] = channel
+    toolchain = mapping(tomllib.loads(RUST_TOOLCHAIN.read_text(encoding="utf-8")))
+    mapping(toolchain["toolchain"])["channel"] = channel
     assert_repository_rust_toolchain(toolchain)
 
 
@@ -550,8 +599,8 @@ def test_accepts_updated_exact_stable_versions(channel: str) -> None:
     ],
 )
 def test_rejects_floating_incomplete_and_nonstable_versions(channel: str) -> None:
-    toolchain = tomllib.loads(RUST_TOOLCHAIN.read_text(encoding="utf-8"))
-    toolchain["toolchain"]["channel"] = channel
+    toolchain = mapping(tomllib.loads(RUST_TOOLCHAIN.read_text(encoding="utf-8")))
+    mapping(toolchain["toolchain"])["channel"] = channel
     with pytest.raises(AssertionError):
         assert_repository_rust_toolchain(toolchain)
 
@@ -570,52 +619,73 @@ def test_rejects_floating_incomplete_and_nonstable_versions(channel: str) -> Non
 def test_retains_profile_components_and_declaration_checks(
     field: str, value: object
 ) -> None:
-    toolchain = tomllib.loads(RUST_TOOLCHAIN.read_text(encoding="utf-8"))
-    toolchain["toolchain"][field] = value
+    toolchain = mapping(tomllib.loads(RUST_TOOLCHAIN.read_text(encoding="utf-8")))
+    mapping(toolchain["toolchain"])[field] = value
     with pytest.raises(AssertionError):
         assert_repository_rust_toolchain(toolchain)
 
 
 # Python Quality Workflow contracts.
+def test_type_checks_keep_all_diagnostics_and_strict_analysis_enabled() -> None:
+    project = mapping(
+        tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    )
+    settings = mapping(mapping(project["tool"])["ty"])
+
+    assert settings["rules"] == {"all": "error"}
+    assert settings["analysis"] == {
+        "strict-equality-semantics": True,
+        "strict-generic-narrowing": True,
+        "respect-type-ignore-comments": False,
+    }
+    environment = mapping(settings["environment"])
+    assert environment["python-version"] == "3.14"
+    assert environment["python-platform"] == "all"
+    assert mapping(settings["terminal"])["error-on-warning"] is True
+    assert "overrides" not in settings
+
+
 @pytest.mark.parametrize(
     "path", [CI_WORKFLOW, NON_LINUX_CI_WORKFLOW], ids=lambda path: path.name
 )
 def test_quality_checks_use_frozen_dev_tools_without_editing_sources(
     path: Path,
 ) -> None:
-    jobs = workflow_contract(path.read_text(encoding="utf-8"))["jobs"]
-    steps = jobs["quality"]["steps"]
+    jobs = workflow_jobs(workflow_contract(path.read_text(encoding="utf-8")))
+    steps = job_steps(jobs["quality"])
     python_setup = next(
         step for step in steps if step.get("uses") == SETUP_PYTHON_ACTION
     )
-    assert python_setup["with"]["python-version"] == "3.14"
+    assert mapping(python_setup["with"])["python-version"] == "3.14"
     assert any(step.get("uses") == SETUP_UV_ACTION for step in steps)
-    commands = [step["run"] for step in steps if "run" in step]
-    sync = "uv sync --frozen --no-install-project"
+    commands = [string(step["run"]) for step in steps if "run" in step]
+    sync = "uv sync --frozen --group fuzz --no-install-project"
     checks = [
         "uv run --frozen --no-sync ruff format --check .",
         "uv run --frozen --no-sync ruff check --no-fix .",
+        "uv run --frozen --no-sync ty check",
     ]
     for command in checks:
         assert command in commands
         assert commands.index(sync) < commands.index(command)
+    assert commands.index(checks[-1]) == commands.index(checks[-2]) + 1
     wheel_commands = [
-        step["run"] for step in jobs["wheel-smoke"]["steps"] if "run" in step
+        string(step["run"]) for step in job_steps(jobs["wheel-smoke"]) if "run" in step
     ]
     assert "uv run --frozen pytest" in wheel_commands
     assert not any("unittest discover" in cmd for cmd in wheel_commands)
 
 
 def test_boundary_contracts_run_pytest_after_frozen_environment_sync() -> None:
-    jobs = workflow_contract(CI_WORKFLOW.read_text(encoding="utf-8"))["jobs"]
+    jobs = workflow_jobs(workflow_contract(CI_WORKFLOW.read_text(encoding="utf-8")))
     job = jobs["boundary-contracts"]
     adapter_step = named_step(job, "Adapter shape and runner classification")
     pytest_command = (
         "uv run --frozen --no-sync pytest tests/test_boundary_contracts.py -v"
     )
 
-    assert pytest_command in adapter_step["run"].splitlines()
-    steps = job["steps"]
+    assert pytest_command in string(adapter_step["run"]).splitlines()
+    steps = job_steps(job)
     sync_step = next(step for step in steps if step.get("run") == "uv sync --frozen")
     assert steps.index(sync_step) < steps.index(adapter_step)
 
@@ -623,10 +693,10 @@ def test_boundary_contracts_run_pytest_after_frozen_environment_sync() -> None:
 # CI Rust job contracts.
 def test_rust_jobs_install_only_their_classified_toolchain() -> None:
     workflow = CI_WORKFLOW.read_text(encoding="utf-8")
-    decoded = yaml.safe_load(workflow)
+    decoded = workflow_document(workflow)
 
     assert (
-        set(decoded["jobs"])
+        set(workflow_jobs(decoded))
         == REPOSITORY_RUST_JOBS | COMPATIBILITY_RUST_JOBS | LEAN_JOBS
     )
     assert "RUSTUP_TOOLCHAIN" not in workflow
@@ -634,12 +704,16 @@ def test_rust_jobs_install_only_their_classified_toolchain() -> None:
     assert "rustup default" not in workflow
     assert "rustup run" not in workflow
     assert "rustup update" not in workflow
-    all_steps = [step for job in decoded["jobs"].values() for step in job["steps"]]
-    assert not any("toolchain" in step.get("uses", "").lower() for step in all_steps)
+    all_steps = [
+        step for job in workflow_jobs(decoded).values() for step in job_steps(job)
+    ]
+    assert not any(
+        "toolchain" in string(step.get("uses", "")).lower() for step in all_steps
+    )
     install_commands = [
         line.strip()
         for step in all_steps
-        for line in step.get("run", "").splitlines()
+        for line in string(step.get("run", "")).splitlines()
         if line.strip().startswith("rustup toolchain install")
     ]
     assert sorted(install_commands) == sorted(
@@ -655,7 +729,7 @@ def test_rust_jobs_install_only_their_classified_toolchain() -> None:
     ) == sorted(["1.88", "nightly-2026-07-27", "nightly-2026-07-27"])
     for job_name in REPOSITORY_RUST_JOBS:
         job = job_block(workflow, job_name)
-        steps = decoded["jobs"][job_name]["steps"]
+        steps = job_steps(workflow_jobs(decoded)[job_name])
         install_indexes = [
             index
             for index, step in enumerate(steps)
@@ -666,7 +740,7 @@ def test_rust_jobs_install_only_their_classified_toolchain() -> None:
             for index, step in enumerate(steps)
             if re.search(
                 r"(?m)^(?:cargo|rustc|rustdoc|uvx maturin)\b",
-                step.get("run", ""),
+                string(step.get("run", "")),
             )
         ]
         assert len(install_indexes) == 1, job_name
@@ -684,10 +758,12 @@ def test_rust_jobs_install_only_their_classified_toolchain() -> None:
 def run_toolchain_setup(
     tmp_path: Path, *, cached: bool, install_fails: bool = False
 ) -> subprocess.CompletedProcess[str]:
-    workflow = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))
-    script = named_step(
-        workflow["jobs"]["lean-audit"], "Install pinned Lean toolchain"
-    )["run"]
+    workflow = workflow_document(CI_WORKFLOW.read_text(encoding="utf-8"))
+    script = string(
+        named_step(
+            workflow_jobs(workflow)["lean-audit"], "Install pinned Lean toolchain"
+        )["run"]
+    )
     temporary = tmp_path
     elan_bin = temporary / ".elan" / "bin"
     elan_bin.mkdir(parents=True)
@@ -758,39 +834,39 @@ def test_toolchain_setup_propagates_install_failure(tmp_path: Path) -> None:
 
 def test_job_uses_pinned_tools_repository_toolchain_and_cache() -> None:
     workflow = workflow_contract(CI_WORKFLOW.read_text(encoding="utf-8"))
-    job = workflow["jobs"]["lean-audit"]
+    job = workflow_jobs(workflow)["lean-audit"]
 
     assert job["needs"] == "quality"
     assert job["runs-on"] == "ubuntu-latest"
     assert job["timeout-minutes"] == 60
     assert "if" not in job
-    assert job["steps"][0] == {"uses": CHECKOUT_ACTION}
-    assert job["steps"][1] == {
+    assert job_steps(job)[0] == {"uses": CHECKOUT_ACTION}
+    assert job_steps(job)[1] == {
         "uses": SETUP_PYTHON_ACTION,
         "with": {"python-version": "3.14"},
     }
-    cache = job["steps"][2]
+    cache = job_steps(job)[2]
     assert cache["uses"] == LEAN_CACHE_ACTION
-    assert set(cache["with"]["path"].splitlines()) == {
+    assert set(string(mapping(cache["with"])["path"]).splitlines()) == {
         "~/.elan/toolchains",
         "formal/HoiminOracle/.lake",
     }
-    assert "formal/HoiminOracle/lean-toolchain" in cache["with"]["key"]
-    assert "formal/HoiminOracle/lakefile.toml" in cache["with"]["key"]
-    assert "formal/HoiminOracle/**/*.lean" in cache["with"]["key"]
+    assert "formal/HoiminOracle/lean-toolchain" in string(mapping(cache["with"])["key"])
+    assert "formal/HoiminOracle/lakefile.toml" in string(mapping(cache["with"])["key"])
+    assert "formal/HoiminOracle/**/*.lean" in string(mapping(cache["with"])["key"])
 
-    install = named_step(job, "Install pinned Lean toolchain")["run"]
+    install = string(named_step(job, "Install pinned Lean toolchain")["run"])
     assert f"releases/download/{LEAN_ELAN_VERSION}/" in install
     assert 'echo "$HOME/.elan/bin" >> "$GITHUB_PATH"' in install
     assert (
         LEAN_TOOLCHAIN.read_text(encoding="utf-8").strip() == "leanprover/lean4:v4.32.2"
     )
-    lakefile = tomllib.loads(LEAN_LAKEFILE.read_text(encoding="utf-8"))
+    lakefile = mapping(tomllib.loads(LEAN_LAKEFILE.read_text(encoding="utf-8")))
     assert lakefile["moreLeanArgs"] == ["-j1", "-DElab.async=false"]
-    artifact = job["steps"][-1]
+    artifact = job_steps(job)[-1]
     assert artifact["if"] == "always()"
     assert artifact["uses"] == UPLOAD_ARTIFACT_ACTION
-    assert artifact["with"] == {
+    assert mapping(artifact["with"]) == {
         "name": "lean-audit-stats",
         "path": "${{ runner.temp }}/lean-audit",
         "if-no-files-found": "warn",
@@ -799,12 +875,12 @@ def test_job_uses_pinned_tools_repository_toolchain_and_cache() -> None:
 
 
 def test_bounded_audit_covers_every_module_and_generator(tmp_path: Path) -> None:
-    workflow = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))
-    step = named_step(workflow["jobs"]["lean-audit"], "Run bounded Lean audit")
+    workflow = workflow_document(CI_WORKFLOW.read_text(encoding="utf-8"))
+    step = named_step(workflow_jobs(workflow)["lean-audit"], "Run bounded Lean audit")
 
     assert step["working-directory"] == "formal/HoiminOracle"
     assert step["shell"] == "bash"
-    completed, calls = lean_gate_invocations(tmp_path, step["run"])
+    completed, calls = lean_gate_invocations(tmp_path, string(step["run"]))
     assert completed.returncode == 0, completed.stderr
 
     guarded_commands: list[list[str]] = []
@@ -864,8 +940,10 @@ def test_bounded_audit_covers_every_module_and_generator(tmp_path: Path) -> None
         "ResourceCleanupAuditMain.lean",
         "4",
     ]
-    lakefile = tomllib.loads(LEAN_LAKEFILE.read_text(encoding="utf-8"))
-    executable_names = [item["name"] for item in lakefile["lean_exe"]]
+    lakefile = mapping(tomllib.loads(LEAN_LAKEFILE.read_text(encoding="utf-8")))
+    executable_names = [
+        string(mapping(item)["name"]) for item in sequence(lakefile["lean_exe"])
+    ]
     assert executable_names == list(LEAN_CORPUS_BY_EXECUTABLE)
     expected_gates: list[list[str]] = []
     for executable, corpus in LEAN_CORPUS_BY_EXECUTABLE.items():
@@ -880,11 +958,13 @@ def test_bounded_audit_covers_every_module_and_generator(tmp_path: Path) -> None
 
 
 def test_bounded_audit_stops_after_the_first_failed_gate(tmp_path: Path) -> None:
-    workflow = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))
-    script = named_step(
-        workflow["jobs"]["lean-audit"],
-        "Run bounded Lean audit",
-    )["run"]
+    workflow = workflow_document(CI_WORKFLOW.read_text(encoding="utf-8"))
+    script = string(
+        named_step(
+            workflow_jobs(workflow)["lean-audit"],
+            "Run bounded Lean audit",
+        )["run"]
+    )
 
     completed, calls = lean_gate_invocations(tmp_path, script, fail_at=4)
 
@@ -893,8 +973,12 @@ def test_bounded_audit_stops_after_the_first_failed_gate(tmp_path: Path) -> None
 
 
 def test_resource_cleanup_failure_stops_before_corpus_checks(tmp_path: Path) -> None:
-    workflow = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))
-    script = named_step(workflow["jobs"]["lean-audit"], "Run bounded Lean audit")["run"]
+    workflow = workflow_document(CI_WORKFLOW.read_text(encoding="utf-8"))
+    script = string(
+        named_step(workflow_jobs(workflow)["lean-audit"], "Run bounded Lean audit")[
+            "run"
+        ]
+    )
     resource_gate = len(lean_module_sources()) + 2
 
     completed, calls = lean_gate_invocations(tmp_path, script, fail_at=resource_gate)
@@ -916,8 +1000,8 @@ def test_resource_cleanup_failure_stops_before_corpus_checks(tmp_path: Path) -> 
 # Platform Execution Policy contracts.
 def test_automatic_ci_hosted_matrices_are_linux_only() -> None:
     workflow = CI_WORKFLOW.read_text(encoding="utf-8")
-    decoded = yaml.safe_load(workflow)
-    jobs = decoded["jobs"]
+    decoded = workflow_document(workflow)
+    jobs = workflow_jobs(decoded)
 
     assert trigger_events(workflow) == {
         "pull_request",
@@ -928,7 +1012,7 @@ def test_automatic_ci_hosted_matrices_are_linux_only() -> None:
     assert "windows-latest" not in workflow
     assert "macos-14" not in workflow
     for job_name in AUTOMATIC_LINUX_MATRIX_JOBS:
-        matrix = jobs[job_name]["strategy"]["matrix"]
+        matrix = mapping(jobs[job_name]["strategy"])["matrix"]
         assert matrix == {"os": ["ubuntu-latest"]}, job_name
 
     matrix_runner_jobs = {
@@ -950,7 +1034,7 @@ def test_automatic_ci_hosted_matrices_are_linux_only() -> None:
 
 def test_non_linux_ci_has_only_a_manual_trigger() -> None:
     workflow = NON_LINUX_CI_WORKFLOW.read_text(encoding="utf-8")
-    decoded = yaml.safe_load(workflow)
+    decoded = workflow_document(workflow)
 
     assert set(decoded) == {"name", True, "permissions", "jobs"}
     assert trigger_events(workflow) == {"workflow_dispatch"}
@@ -959,10 +1043,10 @@ def test_non_linux_ci_has_only_a_manual_trigger() -> None:
 
 
 def test_manual_non_linux_jobs_are_complete_and_independent() -> None:
-    automatic = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))
+    automatic = workflow_document(CI_WORKFLOW.read_text(encoding="utf-8"))
     workflow = NON_LINUX_CI_WORKFLOW.read_text(encoding="utf-8")
-    manual = yaml.safe_load(workflow)
-    jobs = manual["jobs"]
+    manual = workflow_document(workflow)
+    jobs = workflow_jobs(manual)
 
     assert set(jobs) == set(MANUAL_NON_LINUX_JOB_NAMES) | {
         "windows-resource-scope",
@@ -971,8 +1055,8 @@ def test_manual_non_linux_jobs_are_complete_and_independent() -> None:
     assert "ubuntu-latest" not in workflow
     for job_name, job in jobs.items():
         assert "if" not in job, job_name
-        for step in job.get("steps", []):
-            if step.get("uses", "").startswith("actions/upload-artifact@"):
+        for step in job_steps(job):
+            if string(step.get("uses", "")).startswith("actions/upload-artifact@"):
                 assert step.get("if") == "always()", job_name
             else:
                 assert "if" not in step, job_name
@@ -981,13 +1065,14 @@ def test_manual_non_linux_jobs_are_complete_and_independent() -> None:
         assert job["name"] == expected_name, job_name
         assert "needs" not in job, job_name
         assert "outputs" not in job, job_name
-        assert job["steps"] == automatic["jobs"][job_name]["steps"], job_name
+        assert job_steps(job) == job_steps(workflow_jobs(automatic)[job_name]), job_name
 
     for job_name, expected_os in MANUAL_NON_LINUX_MATRIX_JOBS.items():
         job = jobs[job_name]
-        assert job["strategy"] == {"fail-fast": False, "matrix": {"os": expected_os}}, (
-            job_name
-        )
+        assert mapping(job["strategy"]) == {
+            "fail-fast": False,
+            "matrix": {"os": expected_os},
+        }, job_name
         assert job["runs-on"] == "${{ matrix.os }}", job_name
 
     purity = jobs["core-dependency-purity"]
@@ -996,7 +1081,9 @@ def test_manual_non_linux_jobs_are_complete_and_independent() -> None:
 
 
 def test_windows_resource_scope_runs_native_acceptance_independently() -> None:
-    jobs = workflow_contract(NON_LINUX_CI_WORKFLOW.read_text(encoding="utf-8"))["jobs"]
+    jobs = workflow_jobs(
+        workflow_contract(NON_LINUX_CI_WORKFLOW.read_text(encoding="utf-8"))
+    )
     assert "windows-resource-scope" in jobs
     assert jobs["windows-resource-scope"] == {
         "name": "Manual Windows resource scope",
@@ -1041,7 +1128,9 @@ def test_windows_resource_scope_runs_native_acceptance_independently() -> None:
 
 
 def test_windows_metrics_destinations_runs_native_acceptance_independently() -> None:
-    jobs = workflow_contract(NON_LINUX_CI_WORKFLOW.read_text(encoding="utf-8"))["jobs"]
+    jobs = workflow_jobs(
+        workflow_contract(NON_LINUX_CI_WORKFLOW.read_text(encoding="utf-8"))
+    )
 
     assert "windows-metrics-destinations" in jobs
     assert jobs["windows-metrics-destinations"] == {
@@ -1090,13 +1179,13 @@ def test_latest_stable_canary_is_isolated_and_environment_complete() -> None:
     assert decoded["name"] == "Latest stable Rust canary"
     assert trigger_events(workflow) == {"schedule", "workflow_dispatch"}
     assert decoded["permissions"] == {"contents": "read"}
-    assert decoded[True]["schedule"] == [{"cron": "0 3 * * 1"}]
-    assert decoded[True]["workflow_dispatch"] is None
-    assert set(decoded["jobs"]) == {"stable"}
-    job = decoded["jobs"]["stable"]
+    assert mapping(decoded[True])["schedule"] == [{"cron": "0 3 * * 1"}]
+    assert mapping(decoded[True])["workflow_dispatch"] is None
+    assert set(workflow_jobs(decoded)) == {"stable"}
+    job = workflow_jobs(decoded)["stable"]
     assert set(job) == {"runs-on", "steps"}
     assert job["runs-on"] == "ubuntu-latest"
-    assert job["steps"] == [
+    assert job_steps(job) == [
         {"uses": CHECKOUT_ACTION},
         {"uses": SETUP_PYTHON_ACTION, "with": {"python-version": "3.14"}},
         {"uses": SETUP_UV_ACTION, "with": {"enable-cache": True}},
@@ -1136,9 +1225,10 @@ def test_development_guide_separates_pin_updates_from_msrv_updates() -> None:
     assert "major.minor.patch" in guide
     assert "does not raise the minimum supported Rust version" in guide
     expected_commands = [
-        "uv sync --frozen --no-install-project",
+        "uv sync --frozen --group fuzz --no-install-project",
         "uv run --frozen --no-sync ruff format --check .",
         "uv run --frozen --no-sync ruff check --no-fix .",
+        "uv run --frozen --no-sync ty check",
         "cargo fmt --all -- --check",
         "cargo fmt --manifest-path vendor/ruff_python_parser/Cargo.toml -- --check",
         "cargo clippy --workspace --all-targets --all-features -- -D warnings",
@@ -1179,8 +1269,8 @@ def test_development_guide_documents_one_shot_non_linux_ci() -> None:
 # Shuffle Workflow contracts.
 def test_msrv_job_matches_the_manifest_and_checks_the_locked_workspace() -> None:
     workflow = CI_WORKFLOW.read_text(encoding="utf-8")
-    manifest = tomllib.loads(CARGO_MANIFEST.read_text(encoding="utf-8"))
-    msrv = manifest["workspace"]["package"]["rust-version"]
+    manifest = mapping(tomllib.loads(CARGO_MANIFEST.read_text(encoding="utf-8")))
+    msrv = string(mapping(mapping(manifest["workspace"])["package"])["rust-version"])
     job = job_block(workflow, "msrv")
 
     assert re.search(r"(?m)^    needs: quality$", job) is not None
@@ -1340,39 +1430,40 @@ def test_accepts_updated_matching_maturin_pins(version: str) -> None:
     ],
 )
 def test_rejects_invalid_maturin_pins(version: object) -> None:
-    document = yaml.safe_load(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
-    for job in document["jobs"].values():
-        for step in job["steps"]:
-            if step.get("uses", "").startswith(MATURIN_ACTION + "@"):
-                step["with"]["maturin-version"] = version
+    document = workflow_document(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
+    for job in workflow_jobs(document).values():
+        for step in job_steps(job):
+            if string(step.get("uses", "")).startswith(MATURIN_ACTION + "@"):
+                mapping(step["with"])["maturin-version"] = version
     with pytest.raises(AssertionError):
         assert_artifact_only_release(yaml.safe_dump(document))
 
 
 def test_rejects_missing_maturin_pins() -> None:
-    document = yaml.safe_load(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
-    for job in document["jobs"].values():
-        for step in job["steps"]:
-            if step.get("uses", "").startswith(MATURIN_ACTION + "@"):
-                del step["with"]["maturin-version"]
+    document = workflow_document(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
+    for job in workflow_jobs(document).values():
+        for step in job_steps(job):
+            if string(step.get("uses", "")).startswith(MATURIN_ACTION + "@"):
+                del mapping(step["with"])["maturin-version"]
     with pytest.raises(AssertionError):
         assert_artifact_only_release(yaml.safe_dump(document))
 
 
 @pytest.mark.parametrize("change", ["version", "args", "extra input"])
 def test_rejects_mismatched_maturin_pins_and_other_input_changes(change: str) -> None:
-    document = yaml.safe_load(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
+    document = workflow_document(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
     step = next(
         step
-        for step in document["jobs"]["windows-wheel"]["steps"]
-        if step.get("uses", "").startswith(MATURIN_ACTION + "@")
+        for step in job_steps(workflow_jobs(document)["windows-wheel"])
+        if string(step.get("uses", "")).startswith(MATURIN_ACTION + "@")
     )
     if change == "version":
-        step["with"]["maturin-version"] = "v9.99.0"
+        mapping(step["with"])["maturin-version"] = "v9.99.0"
     elif change == "args":
-        step["with"]["args"] += " --features unexpected"
+        inputs = mapping(step["with"])
+        inputs["args"] = string(inputs["args"]) + " --features unexpected"
     else:
-        step["with"]["unexpected-version"] = "v1.15.0"
+        mapping(step["with"])["unexpected-version"] = "v1.15.0"
     with pytest.raises(AssertionError):
         assert_artifact_only_release(yaml.safe_dump(document))
 

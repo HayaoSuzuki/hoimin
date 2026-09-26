@@ -1,12 +1,23 @@
 import hashlib
 import json
 import os
+import signal
+import subprocess
 from pathlib import Path
+from typing import TextIO
+from unittest.mock import Mock
 
 import pytest
-from pytest_mock import MockerFixture, MockType
+from pytest_mock import MockerFixture
 
-from tools.boundary_contracts import REGISTRY, classify, execute, load_registry, main
+from tools.boundary_contracts import (
+    REGISTRY,
+    classify,
+    execute,
+    load_registry,
+    main,
+    observations,
+)
 
 
 @pytest.mark.parametrize(
@@ -89,6 +100,7 @@ def test_report_mode_preserves_failure_and_complete_unexecuted_rows(
         "schema": 1,
         "registry_sha256": hashlib.sha256(REGISTRY.read_bytes()).hexdigest(),
         "rows": rows,
+        "extra_evidence": {"retained": [1, True, None]},
     }
     source = tmp_path / "captured.json"
     source.write_text(json.dumps(report))
@@ -158,17 +170,121 @@ def test_strict_execution_removes_inherited_corpus_filters(
 ) -> None:
     case = load_registry()["cases"][0]
 
-    def spawn(_argv: list[str], **kwargs: object) -> MockType:
-        assert "HOIMIN_BOUNDARY_CASE" not in kwargs["env"]
-        assert "HOIMIN_SESSION_ORACLE_CASE" not in kwargs["env"]
-        assert kwargs["env"]["PATH"] == os.environ["PATH"]
-        kwargs["stdout"].write(
-            f"test {case['test']} ... ok\ntest result: ok. 1 passed;"
-        )
-        kwargs["stdout"].flush()
-        return mocker.Mock(wait=mocker.Mock(return_value=0))
+    assert case["mode"] == "strict"
+
+    def spawn(
+        _argv: list[str],
+        *,
+        env: dict[str, str],
+        stdout: TextIO,
+        **_kwargs: object,
+    ) -> Mock:
+        assert "HOIMIN_BOUNDARY_CASE" not in env
+        assert "HOIMIN_SESSION_ORACLE_CASE" not in env
+        assert env["PATH"] == os.environ["PATH"]
+        stdout.write(f"test {case['test']} ... ok\ntest result: ok. 1 passed;")
+        stdout.flush()
+        return Mock(wait=Mock(return_value=0))
 
     monkeypatch.setenv("HOIMIN_BOUNDARY_CASE", "one")
     monkeypatch.setenv("HOIMIN_SESSION_ORACLE_CASE", "one")
     mocker.patch("tools.boundary_contracts.subprocess.Popen", side_effect=spawn)
     assert execute(case, tmp_path)["status"] == "match"
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("id", 1),
+        ("mode", "unknown"),
+        ("boundary", "boundary"),
+        ("sources", [1]),
+        ("package", None),
+        ("platforms", [1]),
+        ("timeout_seconds", "180"),
+        ("reason", 1),
+    ],
+)
+def test_registry_rejects_malformed_case_fields(
+    tmp_path: Path, field: str, value: object
+) -> None:
+    case = dict(load_registry()["cases"][0]) | {field: value}
+    source = tmp_path / "registry.json"
+    source.write_text(json.dumps({"schema": 1, "cases": [case]}))
+    with pytest.raises(AssertionError):
+        load_registry(source)
+
+
+@pytest.mark.parametrize(
+    "value",
+    [None, [], {"schema": 1, "cases": {}}, {"schema": "1", "cases": []}],
+)
+def test_registry_rejects_malformed_document(tmp_path: Path, value: object) -> None:
+    source = tmp_path / "registry.json"
+    source.write_text(json.dumps(value))
+    with pytest.raises(AssertionError):
+        load_registry(source)
+
+
+@pytest.mark.parametrize(
+    "rows",
+    [None, {}, [None], [{"id": 1, "status": "match"}], [{"id": "x"}]],
+)
+def test_report_rejects_malformed_rows(tmp_path: Path, rows: object) -> None:
+    source = tmp_path / "captured.json"
+    source.write_text(
+        json.dumps(
+            {
+                "registry_sha256": hashlib.sha256(REGISTRY.read_bytes()).hexdigest(),
+                "rows": rows,
+            }
+        )
+    )
+    with pytest.raises(SystemExit) as error:
+        main(["report", "--from-results", str(source), "--output", str(tmp_path)])
+    assert error.value.code == 2
+    assert not (tmp_path / "report.json").exists()
+
+
+def test_timeout_kills_process_group_and_reports_infrastructure_error(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    if not hasattr(os, "killpg") or not hasattr(signal, "SIGKILL"):
+        pytest.skip("process-group execution requires POSIX")
+    case = load_registry()["cases"][0]
+    child = Mock(pid=123, wait=Mock(side_effect=[subprocess.TimeoutExpired([], 1), 0]))
+    spawn = mocker.patch(
+        "tools.boundary_contracts.subprocess.Popen", return_value=child
+    )
+    kill = mocker.patch("tools.boundary_contracts.os.killpg")
+    row = execute(case, tmp_path)
+    spawn.assert_called_once()
+    kill.assert_called_once_with(123, signal.SIGKILL)
+    assert child.wait.call_args_list[-1].kwargs == {"timeout": 5}
+    assert row["status"] == "infrastructure-error"
+    assert row["reason"] == "external deadline expired; process group killed"
+
+
+def test_execution_without_process_group_support_is_unexecuted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture
+) -> None:
+    case = load_registry()["cases"][0]
+    monkeypatch.delattr("tools.boundary_contracts.os.killpg", raising=False)
+    spawn = mocker.patch("tools.boundary_contracts.subprocess.Popen")
+    row = execute(case, tmp_path)
+    assert row["status"] == "unexecuted"
+    assert row["reason"] == "native platform unavailable"
+    spawn.assert_not_called()
+
+
+@pytest.mark.parametrize("value", [None, [], {}, {"status": 1}])
+def test_observations_reject_malformed_records(value: object) -> None:
+    with pytest.raises(ValueError, match="boundary observation must be an object"):
+        observations("BOUNDARY_OBSERVATION " + json.dumps(value))
+
+
+def test_observations_preserve_additional_evidence() -> None:
+    value = {"status": "match", "evidence": {"nested": [None, 1, "detail"]}}
+    assert observations(
+        "test wanted ... BOUNDARY_OBSERVATION " + json.dumps(value)
+    ) == [value]

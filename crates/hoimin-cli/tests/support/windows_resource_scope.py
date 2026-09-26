@@ -7,10 +7,13 @@ import subprocess
 import sys
 import time
 from ctypes import wintypes
+from importlib import import_module
 from pathlib import Path
 
 
 class BasicLimits(ctypes.Structure):
+    LimitFlags: int
+    ActiveProcessLimit: int
     _fields_ = [
         ("PerProcessUserTimeLimit", ctypes.c_int64),
         ("PerJobUserTimeLimit", ctypes.c_int64),
@@ -39,6 +42,9 @@ class IoCounters(ctypes.Structure):
 
 
 class ExtendedLimits(ctypes.Structure):
+    BasicLimitInformation: BasicLimits
+    JobMemoryLimit: int
+    PeakJobMemoryUsed: int
     _fields_ = [
         ("BasicLimitInformation", BasicLimits),
         ("IoInfo", IoCounters),
@@ -50,6 +56,7 @@ class ExtendedLimits(ctypes.Structure):
 
 
 class Accounting(ctypes.Structure):
+    ActiveProcesses: int
     _fields_ = [
         (name, ctypes.c_int64)
         for name in (
@@ -69,6 +76,7 @@ class Accounting(ctypes.Structure):
     ]
 
 
+assert hasattr(ctypes, "WinDLL"), "Job Object probe requires Windows"
 kernel = ctypes.WinDLL("kernel32", use_last_error=True)
 query = kernel.QueryInformationJobObject
 query.argtypes = [
@@ -82,6 +90,8 @@ query.restype = wintypes.BOOL
 
 
 def read_job[T: ctypes.Structure](kind: int, structure: type[T]) -> T:
+    assert hasattr(ctypes, "WinError"), "Job Object probe requires Windows"
+    assert hasattr(ctypes, "get_last_error"), "Job Object probe requires Windows"
     result = structure()
     returned = wintypes.DWORD()
     # NULL selects the calling process's immediate job, including nested jobs.
@@ -101,11 +111,17 @@ def publish(path: Path, value: dict[str, int]) -> None:
 
 
 def main() -> None:
-    import target  # noqa: PLC0415 - Load the mutated fixture only when executing.
-
-    if (target.first, target.second) == (11, 22):
+    # The Rust acceptance test creates target.py in the worker at runtime.
+    target = import_module("target")
+    assert hasattr(target, "first")
+    assert hasattr(target, "second")
+    first = target.first
+    second = target.second
+    assert isinstance(first, int)
+    assert isinstance(second, int)
+    if (first, second) == (11, 22):
         return  # The sequential baseline must not wait for the two-mutant barrier.
-    identity = "first" if target.first != 11 else "second"  # noqa: PLR2004 - Fixture baseline.
+    identity = "first" if first != 11 else "second"  # noqa: PLR2004 - Fixture baseline.
     mode, directory = sys.argv[1:]
     shared = Path(directory)
     child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])

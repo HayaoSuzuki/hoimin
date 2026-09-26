@@ -36,11 +36,12 @@ MACOS_RUNTIME_TAGS = frozenset({Tag("cp314", "cp314", "macosx_11_0_arm64")})
 
 
 def runtime_tags_for(system: str) -> frozenset[Tag]:
-    return {
+    tags = {
         "linux": LINUX_RUNTIME_TAGS,
         "win32": WINDOWS_RUNTIME_TAGS,
         "darwin": MACOS_RUNTIME_TAGS,
-    }.get(system, frozenset())
+    }
+    return tags.get(system, frozenset[Tag]())
 
 
 @pytest.mark.parametrize(

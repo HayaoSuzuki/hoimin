@@ -1,21 +1,18 @@
-import importlib.util
 import json
 import os
 import subprocess
 import sys
 import tempfile
+from copy import deepcopy
 from pathlib import Path
-from typing import Never
+from typing import BinaryIO, Never, TextIO
 
 import pytest
 from pytest_mock import MockerFixture
 
+from tools import performance_shapes as shapes
+
 ROOT = Path(__file__).resolve().parents[1]
-spec = importlib.util.spec_from_file_location(
-    "performance_shapes", ROOT / "tools/performance_shapes.py"
-)
-shapes = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(shapes)
 
 
 def test_registry_covers_all_dimensions_and_rejects_duplicates() -> None:
@@ -30,7 +27,7 @@ def test_registry_covers_all_dimensions_and_rejects_duplicates() -> None:
         "output",
         "workspace",
     }
-    duplicate = json.loads(json.dumps(registry))
+    duplicate = deepcopy(registry)
     duplicate["shapes"].append(duplicate["shapes"][0])
     with pytest.raises(ValueError, match="duplicate"):
         shapes.validate_registry(duplicate)
@@ -48,7 +45,18 @@ def test_registry_rejects_invalid_growth(
     field: str, value: object, message: str
 ) -> None:
     registry = shapes.load_registry(ROOT / "docs/performance/shapes.json")
-    registry["shapes"][0][field] = value
+    if field == "sizes":
+        assert isinstance(value, list)
+        assert all(isinstance(item, int) for item in value)
+        registry["shapes"][0]["sizes"] = [
+            item for item in value if isinstance(item, int)
+        ]
+    elif field == "metric":
+        assert isinstance(value, str)
+        registry["shapes"][0]["metric"] = value
+    else:
+        assert isinstance(value, str)
+        registry["shapes"][0]["status"] = value
     with pytest.raises(ValueError, match=message):
         shapes.validate_registry(registry)
 
@@ -134,7 +142,11 @@ def test_minimum_size_is_a_valid_fixture_for_every_shape(
 
 
 def test_output_validation_does_not_accept_empty_candidates() -> None:
-    fixture = {"mode": "plan", "expected_candidates": 1, "truncated": True}
+    fixture: shapes.ExpectedOutput = {
+        "mode": "plan",
+        "expected_candidates": 1,
+        "truncated": True,
+    }
     with pytest.raises(ValueError, match="unexpected candidate count"):
         shapes.validate_output({"candidates": [], "truncated": True}, fixture)
     assert (
@@ -173,7 +185,7 @@ def test_monitor_failure_is_not_success(reason: str) -> None:
 
 
 def test_comparisons_include_elapsed_and_nullable_rss_medians() -> None:
-    medians = [
+    medians: list[shapes.Median] = [
         {
             "shape": "ast",
             "size": 16,
@@ -281,17 +293,17 @@ def test_top1_checks_available_manifest_size_before_measurement(tmp_path: Path) 
 def test_timed_out_gate_keeps_partial_process_log(
     tmp_path: Path, mocker: MockerFixture
 ) -> None:
-    def timeout(command: list[str], **kwargs: object) -> Never:
-        output = kwargs["stdout"]
-        if hasattr(output, "write"):
-            output.write("partial compiler diagnostic\n")
-            output.flush()
+    def timeout(command: list[str], *, stdout: TextIO, **_kwargs: object) -> Never:
+        stdout.write("partial compiler diagnostic\n")
+        stdout.flush()
         raise subprocess.TimeoutExpired(
             command, 300, output="partial compiler diagnostic\n"
         )
 
     artifact = tmp_path
-    registry = {"gates": [{"id": "blocked", "status": "active", "args": ["test"]}]}
+    registry: shapes.GateRegistry = {
+        "gates": [{"id": "blocked", "status": "active", "args": ["test"]}]
+    }
     mocker.patch.object(shapes.subprocess, "run", side_effect=timeout)
     with pytest.raises(subprocess.TimeoutExpired):
         shapes.run_gate(registry, artifact)
@@ -363,8 +375,12 @@ def test_added_axes_selection_controls(tmp_path: Path) -> None:
 
 
 def test_partial_verify_has_explicit_incomplete_contract() -> None:
-    fixture = {"mode": "verify", "expected_candidates": 2, "truncated": True}
-    observed = {"mutants": [{}, {}], "summary": {"complete": False}}
+    fixture: shapes.ExpectedOutput = {
+        "mode": "verify",
+        "expected_candidates": 2,
+        "truncated": True,
+    }
+    observed: dict[str, object] = {"mutants": [{}, {}], "summary": {"complete": False}}
     assert shapes.validate_output(observed, fixture)["candidates"] == 2
     with pytest.raises(shapes.SemanticMismatch):
         shapes.validate_output({**observed, "summary": {"complete": True}}, fixture)
@@ -373,7 +389,7 @@ def test_partial_verify_has_explicit_incomplete_contract() -> None:
 
 
 def test_growth_compares_each_binary_across_n_2n_4n_separately() -> None:
-    medians = [
+    medians: list[shapes.Median] = [
         {
             "shape": "source",
             "label": label,
@@ -394,3 +410,83 @@ def test_growth_compares_each_binary_across_n_2n_4n_separately() -> None:
     assert all(r["sampled_tree_rss_ratio"] is None for r in candidate)
     with pytest.raises(ValueError, match="missing N/2N/4N medians"):
         shapes.summarize_growth(medians[:-1])
+
+
+@pytest.mark.parametrize(
+    "document",
+    [None, [], {"schema_version": 1, "shapes": [], "gates": [None]}],
+)
+def test_registry_load_rejects_invalid_document_structure(
+    tmp_path: Path, document: object
+) -> None:
+    path = tmp_path / "registry.json"
+    path.write_text(json.dumps(document))
+    with pytest.raises(ValueError, match="invalid registry structure"):
+        shapes.load_registry(path)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("sizes", [1, "2", 4]), ("fixture", None)],
+)
+def test_registry_load_rejects_invalid_shape_fields(
+    tmp_path: Path, field: str, value: object
+) -> None:
+    document = json.loads((ROOT / "docs/performance/shapes.json").read_text())
+    document["shapes"][0][field] = value
+    path = tmp_path / "registry.json"
+    path.write_text(json.dumps(document))
+    with pytest.raises(ValueError, match="invalid registry structure"):
+        shapes.load_registry(path)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("id", None), ("args", ["test", 1]), ("issue", 42)],
+)
+def test_registry_load_rejects_invalid_gate_fields(
+    tmp_path: Path, field: str, value: object
+) -> None:
+    document = json.loads((ROOT / "docs/performance/shapes.json").read_text())
+    document["gates"][0][field] = value
+    path = tmp_path / "registry.json"
+    path.write_text(json.dumps(document))
+    with pytest.raises(ValueError, match="invalid registry structure"):
+        shapes.load_registry(path)
+
+
+@pytest.mark.parametrize("document", [[], None, "text"])
+def test_cli_document_must_be_an_object(tmp_path: Path, document: object) -> None:
+    path = tmp_path / "stdout.json"
+    path.write_text(json.dumps(document))
+    with pytest.raises(ValueError, match="expected a JSON object"):
+        shapes.load_object(path)
+
+
+@pytest.mark.parametrize(
+    "stats",
+    [
+        None,
+        {"reason": 1, "peak_rss_kib": 12, "elapsed_ms": 10},
+        {"reason": "child_exit", "peak_rss_kib": "12", "elapsed_ms": 10},
+        {"reason": "child_exit", "peak_rss_kib": 12, "elapsed_ms": "10"},
+    ],
+)
+def test_measurement_rejects_malformed_resource_observations(
+    tmp_path: Path, mocker: MockerFixture, stats: object
+) -> None:
+    fixture = shapes.make_fixture("ast", 1, tmp_path / "project")
+    artifact = tmp_path / "artifact"
+    artifact.mkdir()
+
+    def run_guard(
+        command: list[str], *, stdout: BinaryIO, **_kwargs: object
+    ) -> subprocess.CompletedProcess[bytes]:
+        stats_path = Path(command[command.index("--stats") + 1])
+        stats_path.write_text(json.dumps(stats))
+        stdout.write(b'{"candidates": [{}], "truncated": false}')
+        return subprocess.CompletedProcess(command, 0)
+
+    mocker.patch.object(shapes.subprocess, "run", side_effect=run_guard)
+    with pytest.raises(ValueError, match="invalid resource observation"):
+        shapes.measure_once(Path("hoimin"), fixture, tmp_path / "project", artifact, 25)
