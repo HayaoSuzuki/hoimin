@@ -23,6 +23,7 @@ use hoimin_core::{
 use tempfile::TempDir;
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
+use tracing::Instrument;
 use uuid::Uuid;
 
 use crate::analyzer::{AnalyzerHandler, CandidateStore};
@@ -1121,7 +1122,8 @@ async fn run_blocking_io<T>(
 where
     T: Send + 'static,
 {
-    tokio::task::spawn_blocking(operation)
+    let span = tracing::Span::current();
+    tokio::task::spawn_blocking(move || span.in_scope(operation))
         .await
         .map_err(|error| EffectFailed::other(id, "shell.blocking_io", error.to_string()))
 }
@@ -2462,6 +2464,7 @@ where
     Stdout: Write + Send + 'static,
     Stderr: Write + Send + 'static,
 {
+    crate::live_progress::stage("preparing run");
     let config = prepare_run_config(config).map_err(|error| error.to_string())?;
     let context = prepare_loop_context(&config, stdout, stderr, &control).await?;
     Ok(Box::pin(run_loop_context(
@@ -2577,6 +2580,7 @@ async fn prepare_loop_context<Stdout: Write, Stderr: Write>(
     clippy::too_many_lines,
     reason = "the loop keeps cancellation, completion, and state-transition ordering in one auditable sequence"
 )]
+#[tracing::instrument(name = "mutation_run", level = "debug", skip_all, fields(run_id = tracing::field::Empty))]
 async fn run_loop_context<Stdout: Write, Stderr: Write>(
     config: RunConfig,
     mut context: ShellContext<Stdout, Stderr>,
@@ -2673,6 +2677,7 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
         let (next, initial) = transition(*state, RunEvent::StartRequested(StartRequested))
             .map_err(|error| error.to_string())?;
         *state = next;
+        crate::live_progress::observe(&state);
         track_diagnostic_run_id(&mut diagnostic_run_id, &state);
         let monitor = start_disk_monitor(&context, &control).await?;
         context.commit_setup();
@@ -4057,6 +4062,7 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
                 }
             }
             let previous_phase = state.phase();
+            let previous_completed = crate::live_progress::completed(&state);
             let accepted_mutant = matches!(&event, RunEvent::MutantFinished(_));
             let targets_resolved = matches!(&event, RunEvent::TargetsResolved(_));
             let preflight_completed = matches!(&event, RunEvent::PreflightCompleted(_));
@@ -4152,6 +4158,13 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
             }
             if accepted_mutant {
                 executed = executed.saturating_add(1);
+            }
+            if previous_phase != state.phase()
+                || targets_resolved
+                || previous_completed != crate::live_progress::completed(&state)
+                || analyzed_records.is_some()
+            {
+                crate::live_progress::observe(&state);
             }
             observe_accepted_transition(
                 &mut metrics,
@@ -4707,6 +4720,7 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
 }
 
 fn track_diagnostic_run_id(diagnostic_run_id: &mut String, state: &RunState) {
+    tracing::Span::current().record("run_id", state.run_id());
     diagnostic_run_id.clear();
     diagnostic_run_id.push_str(state.run_id());
 }
@@ -4884,22 +4898,25 @@ fn spawn_process(
     tasks: &mut JoinSet<()>,
     _dispatch: std::sync::MutexGuard<'_, ()>,
 ) {
-    tasks.spawn(async move {
-        let event = match process.run(request).await {
-            Ok(value) if baseline => RunEvent::BaselineFinished(value),
-            Ok(value) => RunEvent::MutantFinished(value),
-            Err(error) => RunEvent::EffectFailed(error),
-        };
-        let _ = sender
-            .send(ShellCompletion {
-                event,
-                process_task: true,
-                io_task: false,
-                process: Some((worker, !baseline)),
-                blocking: None,
-            })
-            .await;
-    });
+    tasks.spawn(
+        async move {
+            let event = match process.run(request).await {
+                Ok(value) if baseline => RunEvent::BaselineFinished(value),
+                Ok(value) => RunEvent::MutantFinished(value),
+                Err(error) => RunEvent::EffectFailed(error),
+            };
+            let _ = sender
+                .send(ShellCompletion {
+                    event,
+                    process_task: true,
+                    io_task: false,
+                    process: Some((worker, !baseline)),
+                    blocking: None,
+                })
+                .await;
+        }
+        .in_current_span(),
+    );
 }
 
 fn spawn_blocking_effect(
@@ -4907,31 +4924,36 @@ fn spawn_blocking_effect(
     sender: mpsc::Sender<ShellCompletion>,
     tasks: &mut JoinSet<()>,
 ) {
-    tasks.spawn(async move {
-        let id = task.id();
-        let (event, blocking) = match run_blocking_io(id, move || task.execute()).await {
-            Ok(completion) => {
-                let event = match &completion {
-                    BlockingEffectCompletion::Workspace(completion) => completion.event().clone(),
-                    BlockingEffectCompletion::Candidate(event)
-                    | BlockingEffectCompletion::OwnedWorkspace { event, .. } => {
-                        event.as_ref().clone()
-                    }
-                };
-                (event, Some(Box::new(completion)))
-            }
-            Err(error) => (RunEvent::EffectFailed(error), None),
-        };
-        let _ = sender
-            .send(ShellCompletion {
-                event,
-                process_task: false,
-                io_task: true,
-                process: None,
-                blocking,
-            })
-            .await;
-    });
+    tasks.spawn(
+        async move {
+            let id = task.id();
+            let (event, blocking) = match run_blocking_io(id, move || task.execute()).await {
+                Ok(completion) => {
+                    let event = match &completion {
+                        BlockingEffectCompletion::Workspace(completion) => {
+                            completion.event().clone()
+                        }
+                        BlockingEffectCompletion::Candidate(event)
+                        | BlockingEffectCompletion::OwnedWorkspace { event, .. } => {
+                            event.as_ref().clone()
+                        }
+                    };
+                    (event, Some(Box::new(completion)))
+                }
+                Err(error) => (RunEvent::EffectFailed(error), None),
+            };
+            let _ = sender
+                .send(ShellCompletion {
+                    event,
+                    process_task: false,
+                    io_task: true,
+                    process: None,
+                    blocking,
+                })
+                .await;
+        }
+        .in_current_span(),
+    );
 }
 
 #[expect(

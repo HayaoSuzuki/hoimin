@@ -16,6 +16,7 @@ use hoimin_core::{
 };
 use tokio::process::{Child, Command};
 use tokio::sync::Notify;
+use tracing::Instrument;
 use uuid::Uuid;
 
 use crate::resource::{ProcessSupervisor, ResourceBackend, ResourceError};
@@ -360,10 +361,13 @@ impl ProcessHandler {
     ///
     /// Returns an effect failure for cancellation, invalid arguments, resource setup, process I/O,
     /// termination, or output collection errors.
+    #[tracing::instrument(name = "test_process", level = "debug", skip_all, fields(effect_id = request.process.id.0, worker = request.process.worker, mutant_id = request.process.mutant_id.as_deref()))]
     pub async fn run(&self, request: ProcessRequest) -> Result<ProcessFinished, EffectFailed> {
         let id = request.process.id;
         let handler = self.clone();
-        match tokio::spawn(async move { handler.run_owned(request).await }).await {
+        tracing::debug!("starting test process");
+        match tokio::spawn(async move { handler.run_owned(request).await }.in_current_span()).await
+        {
             Ok(result) => result,
             Err(error) => Err(EffectFailed::other(
                 id,
@@ -615,6 +619,11 @@ impl ProcessHandler {
             output.retained <= process.limits.max_output_bytes
                 && output.retained <= output.observed,
             &output
+        );
+        tracing::debug!(
+            ?termination,
+            elapsed_ms = started.elapsed().as_millis(),
+            "test process finished"
         );
         Ok(ProcessFinished {
             id,

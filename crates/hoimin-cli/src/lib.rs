@@ -7,6 +7,7 @@ mod copy_policy;
 mod fingerprint_env;
 pub mod fingerprint_inputs;
 mod interrupt;
+mod live_progress;
 mod metrics;
 mod metrics_destination;
 pub mod plan;

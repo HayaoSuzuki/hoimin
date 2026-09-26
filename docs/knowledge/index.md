@@ -13,7 +13,7 @@ okf_version: "0.2"
 - [Python解析と候補](design/analyzer.md) - 構文・名前解決・変更するバイト範囲・入力規模。
 - [対象選択・plan・verify](design/selection-plan-verify.md) - ランキング、部分集合、保存形式の版の要確認事項。
 - [資源と終了処理](design/runtime-lifecycle.md) - OS別制限、後処理の所有権、レポート書込み。
-- [sessionとレポート](design/session-report.md) - DB所有権、移行、読取り時の整合性検証。
+- [sessionとレポート](design/session-report.md) - DB所有権、移行、読取り時の整合性検証、実行中の進捗と診断ログ。
 - [JSON mutant spool](design/json-report-spool.md) - record単位の書込みと失敗時のack・poison契約。
 
 - [fingerprint入力glob](design/fingerprint-inputs.md) - 複数include globの共有走査と入力順エラー。

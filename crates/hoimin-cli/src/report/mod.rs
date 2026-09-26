@@ -40,6 +40,7 @@ impl PreparedReport {
             stdout,
             stderr,
             json: self.json,
+            lock_stdio_stderr: false,
         }
     }
 }
@@ -49,6 +50,7 @@ pub struct ReportHandler<Stdout, Stderr> {
     stdout: Stdout,
     stderr: Stderr,
     json: Option<JsonReport>,
+    lock_stdio_stderr: bool,
 }
 
 impl<Stdout, Stderr> ReportHandler<Stdout, Stderr>
@@ -88,6 +90,7 @@ where
             stdout,
             stderr,
             json,
+            lock_stdio_stderr: false,
         }
     }
 
@@ -99,6 +102,11 @@ where
     pub fn handle(&mut self, request: EmitOutput) -> Result<OutputEmitted, EffectFailed> {
         let EmitOutput { id, event } = request;
         if matches!(event, OutputEvent::Diagnostic(_)) {
+            // Keep streaming serialization atomic with respect to the tracing
+            // output thread. Only owned CLI stdio uses this reentrant lock;
+            // arbitrary library writers retain their own synchronization policy.
+            let stderr = io::stderr();
+            let _record = self.lock_stdio_stderr.then(|| stderr.lock());
             match self.format {
                 OutputFormat::Human => human::write_event(&mut self.stderr, &event)
                     .map_err(|error| human_failed(id, &error))?,
@@ -131,6 +139,8 @@ where
             && let OutputEvent::MutantFinished(value) = &event
             && !value.diagnostics.is_empty()
         {
+            let stderr = io::stderr();
+            let _record = self.lock_stdio_stderr.then(|| stderr.lock());
             human::write_mutant_diagnostics(&mut self.stderr, &value.diagnostics)
                 .map_err(|error| human_failed(id, &error))?;
         }

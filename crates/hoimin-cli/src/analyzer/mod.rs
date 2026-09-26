@@ -113,7 +113,8 @@ pub async fn discover_targets(
         #[cfg(test)]
         None,
     );
-    tokio::task::spawn_blocking(move || discover_targets_blocking(work))
+    let span = tracing::Span::current();
+    tokio::task::spawn_blocking(move || span.in_scope(|| discover_targets_blocking(work)))
         .await
         .map_err(|error| EffectFailed::other(EffectId(0), "analyzer.task", error.to_string()))?
 }
@@ -167,6 +168,7 @@ pub(crate) async fn discover_targets_with_control(
     .await
 }
 
+#[tracing::instrument(name = "discover_candidates", level = "debug", skip_all, fields(files = targets.len(), max_candidates))]
 async fn discover_targets_inner(
     root: &Utf8Path,
     targets: &[TargetSlice],
@@ -204,7 +206,9 @@ async fn discover_targets_inner(
         #[cfg(test)]
         control,
     );
+    let span = tracing::Span::current();
     let mut task = tokio::task::spawn_blocking(move || {
+        let _entered = span.enter();
         let discovery = discover_targets_blocking(work);
         (tokio::time::Instant::now(), discovery)
     });
@@ -466,6 +470,7 @@ impl AnalyzerHandler {
             .await
     }
 
+    #[tracing::instrument(name = "analyze_file", level = "debug", skip_all, fields(effect_id = request.id.0, path = ?request.target.path))]
     pub(crate) async fn handle_with_cancellation(
         &mut self,
         request: AnalyzeFile,
@@ -500,7 +505,10 @@ impl AnalyzerHandler {
         #[cfg(test)]
         let analysis_hook = self.analysis_hook.clone();
         let candidate_spool_owner = self.candidate_spool_owner.clone();
+        let span = tracing::Span::current();
         let task = tokio::task::spawn_blocking(move || {
+            let _entered = span.enter();
+            tracing::debug!("analyzing file");
             let _candidate_spool_owner = candidate_spool_owner;
             #[cfg(test)]
             if let Some(hook) = analysis_hook {

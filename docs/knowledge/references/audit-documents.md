@@ -5,6 +5,11 @@ description: docs/auditsとdocs/superpowers/reports内の全Markdownを追跡状
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: tracing-progress-report
+  resource: ../../superpowers/reports/2026-09-26-tracing-progress.md
+  revision: f43ccffdee2996c8fd53da2d8be230045e7d5ab7
+  working_tree: modified
+  sha256: 820ea106b8bfab603dfabf01e0105b4d0cf7ae0f2902a6eb80b88297e44c2ce9
 - id: proptest-boundaries-report
   resource: ../../superpowers/reports/2026-09-26-proptest-boundaries.md
   revision: b1641ee51911c4bdcb3704f32ee4dedbba2fb9b8
@@ -1153,3 +1158,12 @@ sources:
 [^issue-561-results]: [Issue #561 method replacement allocation results](../../audits/2026-09-15-evaluation-order/issue-561-results.md)。
 
 [^proptest-boundaries-report]: [Proptest boundary coverage: review and evidence](../../superpowers/reports/2026-09-26-proptest-boundaries.md)。
+
+
+## 2026-09-26: 実行中の進捗とtracing
+
+| 原文の先頭見出し | 原文 |
+| --- | --- |
+| Tracing and terminal progress review | [レビューと検証結果](../../superpowers/reports/2026-09-26-tracing-progress.md) [^tracing-progress-report] |
+
+[^tracing-progress-report]: [Tracing and terminal progress review](../../superpowers/reports/2026-09-26-tracing-progress.md)。
