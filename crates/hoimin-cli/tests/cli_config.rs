@@ -547,7 +547,7 @@ fn verify_help_does_not_advertise_mutation_selection_options() {
 
 #[test]
 fn run_requires_a_selector_and_test_argv() {
-    let err = parse_from(["hoimin", "run", "--", "python", "-m", "unittest"]).unwrap_err();
+    let err = parse_from(["hoimin", "run", "--", "python", "-m", "pytest"]).unwrap_err();
     assert!(err.to_string().contains("target selector"));
 }
 
@@ -956,7 +956,7 @@ fn parse_run_config_parses_ranges_limits_and_output() {
         "--",
         "python",
         "-m",
-        "unittest",
+        "pytest",
     ])
     .unwrap();
 

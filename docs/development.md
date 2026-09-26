@@ -286,8 +286,8 @@ uv run --frozen --no-sync ruff check --fix .
 Ruff targets Python 3.14, uses an 88-column formatter, and enables `ALL` rules.
 The exclusions in `pyproject.toml` follow the supplied kraken-hub policy for
 docstrings, assertions, formatter conflicts and selected style rules. Additional
-per-file exceptions preserve standalone script modules and existing unittest
-assertions. Required subprocess execution, CLI output and existing orchestration
+per-file exceptions allow standalone script modules and literal expected values in
+test assertions. Required subprocess execution, CLI output and existing orchestration
 complexity have individual documented suppressions; adding a suppression requires
 the same explanation. Unused imports are reported rather than automatically
 removed, and unsafe fixes are not enabled.
@@ -296,10 +296,16 @@ Maintained Python files under `tests/`, `tools/`, `formal/HoiminOracle/tools/`
 and `crates/hoimin-cli/tests/support/` are checked. Vendored code, historical
 documentation/audits, generated output, worktrees and mutation fixture projects
 are excluded so formatting cannot rewrite test inputs or recorded evidence.
-Pytest uses strict mode and collects from `tests/`, excluding fixture projects;
-existing unittest tests keep their assertions and run under pytest. The separate
-Lean boundary audit retains its standard-library unittest command because that
-job does not install Python development dependencies.
+Pytest uses strict mode and collects from `tests/`, excluding fixture projects.
+Tests use module-level functions, plain `assert`, `pytest.raises`, and
+`pytest.mark.parametrize` for independent cases. Use `tmp_path` and fixtures for
+test setup. Use the `mocker` fixture from [pytest-mock](
+https://pytest-mock.readthedocs.io/en/latest/usage.html) for mocks and patches;
+pytest restores patches after each test. Use `monkeypatch` for environment
+variables and configuration values.
+Rust end-to-end tests run the sample project's pytest tests under
+`tests/fixtures/`. The boundary-contracts job also runs its Python checks with
+pytest from the frozen uv environment.
 
 Automatic Linux and manual non-Linux quality jobs run the same read-only Ruff
 checks. Their wheel smoke jobs execute the Python suite with pytest before

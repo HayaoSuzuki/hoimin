@@ -314,7 +314,7 @@ async fn oversized_runtime_timeouts_are_rejected_before_project_execution() {
 async fn maximum_total_timeout_completes_without_overflowing_finalization_grace() {
     let total_timeout = format!("{}s", hoimin_core::MAX_TIMEOUT.as_secs());
     let run = run_fixture_options_extra(
-        &["-m", "unittest", "discover", "-s", "tests"],
+        &["-m", "pytest", "-q", "tests"],
         None,
         false,
         &["--max-mutants", "1", "--total-timeout", &total_timeout],
@@ -329,13 +329,13 @@ async fn maximum_total_timeout_completes_without_overflowing_finalization_grace(
 }
 
 #[tokio::test]
-async fn unittest_command_produces_the_expected_mutant_statuses() {
-    let unittest = run_fixture(&["-m", "unittest", "discover", "-s", "tests"]).await;
+async fn pytest_command_produces_the_expected_mutant_statuses() {
+    let pytest = run_fixture(&["-m", "pytest", "-q", "tests"]).await;
 
-    assert_eq!(unittest.exit_code, 0);
-    assert_eq!(unittest.statuses, ["killed"]);
+    assert_eq!(pytest.exit_code, 0);
+    assert_eq!(pytest.statuses, ["killed"]);
     assert_eq!(
-        unittest.document["run"]["versions"],
+        pytest.document["run"]["versions"],
         serde_json::json!({
             "os": std::env::consts::OS,
             "hoimin": env!("CARGO_PKG_VERSION"),
@@ -1203,14 +1203,14 @@ fn validate_schema(
 async fn metrics_write_failure_warns_without_changing_run_result() {
     let directory = tempfile::tempdir().unwrap();
     let ordinary = run_fixture_options_extra(
-        &["-m", "unittest", "discover", "-s", "tests"],
+        &["-m", "pytest", "-q", "tests"],
         None,
         false,
         &["--jobs", "2", "--max-mutants", "2"],
     )
     .await;
     let failed = run_fixture_options_extra(
-        &["-m", "unittest", "discover", "-s", "tests"],
+        &["-m", "pytest", "-q", "tests"],
         None,
         false,
         &[
@@ -1351,7 +1351,7 @@ async fn import_only_match_negative_literal_has_no_unary_mutant_to_kill() {
 
 #[tokio::test]
 async fn session_is_not_created_when_the_option_is_absent_and_stdout_is_one_json_document() {
-    let run = run_fixture(&["-m", "unittest", "discover", "-s", "tests"]).await;
+    let run = run_fixture(&["-m", "pytest", "-q", "tests"]).await;
 
     assert!(!fixture_root().join(".hoimin.sqlite3").exists());
     assert_eq!(run.stdout.lines().count(), 1);
@@ -1389,9 +1389,8 @@ async fn fingerprint_include_unmatched_fails_before_creating_session() {
         OsString::from("--"),
         python.as_os_str().to_owned(),
         OsString::from("-m"),
-        OsString::from("unittest"),
-        OsString::from("discover"),
-        OsString::from("-s"),
+        OsString::from("pytest"),
+        OsString::from("-q"),
         OsString::from("tests"),
     ];
     let mut stdout = Vec::new();
@@ -1428,9 +1427,8 @@ async fn fingerprint_file_missing_fails_before_creating_session() {
         OsString::from("--"),
         python.as_os_str().to_owned(),
         OsString::from("-m"),
-        OsString::from("unittest"),
-        OsString::from("discover"),
-        OsString::from("-s"),
+        OsString::from("pytest"),
+        OsString::from("-q"),
         OsString::from("tests"),
     ];
     let mut stdout = Vec::new();
@@ -1450,7 +1448,7 @@ async fn fingerprint_file_missing_fails_before_creating_session() {
 #[tokio::test]
 async fn fingerprint_include_is_reported() {
     let options = ["--fingerprint-include", "pyproject.toml"];
-    let test_args = ["-m", "unittest", "discover", "-s", "tests"];
+    let test_args = ["-m", "pytest", "-q", "tests"];
 
     let json = run_fixture_options_extra(&test_args, None, false, &options).await;
     assert_eq!(json.exit_code, 0, "stderr={}", json.stderr);
@@ -1485,7 +1483,7 @@ async fn fingerprint_include_is_reported() {
 #[tokio::test]
 async fn fingerprint_file_is_reported() {
     let options = ["--fingerprint-file", "pyproject.toml"];
-    let test_args = ["-m", "unittest", "discover", "-s", "tests"];
+    let test_args = ["-m", "pytest", "-q", "tests"];
 
     let json = run_fixture_options_extra(&test_args, None, false, &options).await;
     assert_eq!(json.exit_code, 0, "stderr={}", json.stderr);
@@ -1555,12 +1553,7 @@ async fn shell_context_construction_performs_no_project_io() {
 async fn sqlite_session_saves_and_resumes_a_determinate_result_without_reexecution() {
     let directory = tempfile::tempdir().unwrap();
     let database = directory.path().join("session.sqlite3");
-    let first = run_fixture_with_session(
-        &["-m", "unittest", "discover", "-s", "tests"],
-        &database,
-        false,
-    )
-    .await;
+    let first = run_fixture_with_session(&["-m", "pytest", "-q", "tests"], &database, false).await;
     assert_eq!(
         first.exit_code, 0,
         "stderr={} stdout={}",
@@ -1573,12 +1566,7 @@ async fn sqlite_session_saves_and_resumes_a_determinate_result_without_reexecuti
         .unwrap();
     drop(connection);
 
-    let resumed = run_fixture_with_session(
-        &["-m", "unittest", "discover", "-s", "tests"],
-        &database,
-        true,
-    )
-    .await;
+    let resumed = run_fixture_with_session(&["-m", "pytest", "-q", "tests"], &database, true).await;
     assert_eq!(resumed.exit_code, 0);
     assert_eq!(resumed.statuses, ["killed"]);
     let resumed_run_id = resumed.document["run"]["run_id"].as_str().unwrap();
@@ -1600,7 +1588,7 @@ async fn sqlite_session_saves_and_resumes_a_determinate_result_without_reexecuti
 async fn sqlite_session_reuses_results_after_jobs_and_output_retention_change() {
     let directory = tempfile::tempdir().unwrap();
     let database = directory.path().join("session.sqlite3");
-    let command = ["-m", "unittest", "discover", "-s", "tests"];
+    let command = ["-m", "pytest", "-q", "tests"];
     let first = run_fixture_options_extra(
         &command,
         Some(&database),
@@ -1660,7 +1648,7 @@ async fn sqlite_session_reuses_results_after_jobs_and_output_retention_change() 
 async fn fresh_session_and_sessionless_results_preserve_the_same_termination() {
     let sessions = tempfile::tempdir().unwrap();
     let database = sessions.path().join("session.sqlite3");
-    let command = ["-m", "unittest", "discover", "-s", "tests"];
+    let command = ["-m", "pytest", "-q", "tests"];
 
     let sessionless = run_fixture_options(&command, None, false).await;
     let session = run_fixture_with_session(&command, &database, false).await;
@@ -2142,12 +2130,7 @@ fn readme_documents_agent_plan_workflow() {
 async fn sqlite_save_failure_reports_the_classification_but_leaves_no_partial_database_result() {
     let directory = tempfile::tempdir().unwrap();
     let database = directory.path().join("session.sqlite3");
-    let first = run_fixture_with_session(
-        &["-m", "unittest", "discover", "-s", "tests"],
-        &database,
-        false,
-    )
-    .await;
+    let first = run_fixture_with_session(&["-m", "pytest", "-q", "tests"], &database, false).await;
     assert_eq!(first.exit_code, 0, "{}", first.stderr);
     let connection = rusqlite::Connection::open(&database).unwrap();
     connection
@@ -2161,12 +2144,7 @@ async fn sqlite_save_failure_reports_the_classification_but_leaves_no_partial_da
         .unwrap();
     drop(connection);
 
-    let failed = run_fixture_with_session(
-        &["-m", "unittest", "discover", "-s", "tests"],
-        &database,
-        true,
-    )
-    .await;
+    let failed = run_fixture_with_session(&["-m", "pytest", "-q", "tests"], &database, true).await;
     assert_eq!(failed.exit_code, 2);
     assert_eq!(failed.document["summary"]["counts"]["killed"], 1);
     let mutants = failed.document["mutants"].as_array().unwrap();

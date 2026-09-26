@@ -469,7 +469,7 @@ jobs:
       - run: uv sync --frozen
       - name: Adapter shape and runner classification
         run: |
-          python -m unittest discover -s tests -p test_boundary_contracts.py -v
+          uv run --frozen --no-sync pytest tests/test_boundary_contracts.py -v
           cargo test -p hoimin-cli --test lean_progress_input_oracle shared_reader_fixture_encodings_preserve_fields_and_projection_premises -- --exact
       - name: Strict implemented boundary cases
         run: python tools/boundary_contracts.py strict --output "${{ runner.temp }}/boundary-contracts"
