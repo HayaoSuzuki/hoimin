@@ -42,14 +42,14 @@ jobs:
     needs: quality
     name: Fuzz (bounded)
     runs-on: ubuntu-latest
-    # Recent longest test jobs took 11m18s–12m09s; 9m is approximately 75%.
-    timeout-minutes: 9
+    # Recent longest test jobs took 11m18s–12m09s; 11m is approximately 91–98%.
+    timeout-minutes: 11
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_BUILD_JOBS: "2"
     steps:
       - name: Start fuzz budget including setup
-        run: echo "FUZZ_DEADLINE=$(( $(date +%s) + 480 ))" >> "$GITHUB_ENV"
+        run: echo "FUZZ_DEADLINE=$(( $(date +%s) + 600 ))" >> "$GITHUB_ENV"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:

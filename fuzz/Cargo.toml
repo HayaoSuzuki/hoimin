@@ -63,3 +63,17 @@ path = "fuzz_targets/python_analyzer.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "report_sequence"
+path = "fuzz_targets/report_sequence.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "target_resolution"
+path = "fuzz_targets/target_resolution.rs"
+test = false
+doc = false
+bench = false

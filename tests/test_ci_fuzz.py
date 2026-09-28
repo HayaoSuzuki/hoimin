@@ -14,7 +14,7 @@ from tools import ci_fuzz
 ROOT = Path(__file__).resolve().parents[1]
 FAILURE_CODE = 23
 MAX_SEED = 4294967295
-JOB_MINUTES = 9
+JOB_MINUTES = 11
 
 
 @pytest.fixture
@@ -142,6 +142,8 @@ def test_campaign_reports_all_targets_or_stops_at_failure(
             "candidate_validation",
             "analyzer_protocol",
             "python_analyzer",
+            "report_sequence",
+            "target_resolution",
         ]
         report = json.loads((report_dir / "summary.json").read_text())
         stages = {stage["name"]: stage for stage in report["stages"]}
@@ -260,6 +262,7 @@ def test_workflow_runs_fuzz_in_parallel_with_bounded_total_time() -> None:
     assert job["timeout-minutes"] == JOB_MINUTES
     assert workflow["permissions"] == {"contents": "read"}
     assert "FUZZ_DEADLINE" in job["steps"][0]["run"]
+    assert "+ 600" in job["steps"][0]["run"]
     uploads = [
         step
         for step in job["steps"]

@@ -161,14 +161,24 @@ ordinary `cargo test --workspace` run. The targets supplement proptest:
   parity). Checks immediate cancellation, candidate validation, ordering, the
   32-candidate cap, and prefix preservation when that cap is reduced to one.
   Syntax errors and supported depth-limit errors are valid outcomes.
+- `report_sequence`: deserializes arbitrary JSON event lines, round-trips valid
+  events, and feeds accepted events into the report lifecycle validator. It also
+  constructs a complete run with one mutant for every input and verifies result
+  classification, terminal-state rejection, and recovery after a rejected result.
+- `target_resolution`: exercises arbitrary path normalization and constructs
+  bounded discovery inventories with file, line, and symbol selectors. It checks
+  exact resolution against an independent reference model, line-index membership,
+  and changed-line normalization and intersection.
 
-The last two targets compile the production analyzer modules directly using
-`#[path]`, so no fuzz-only API is added to the shipping crate. Keep their dependency
-declarations in `fuzz/Cargo.toml` aligned with `crates/hoimin-cli/Cargo.toml` and
-retain the root workspace's vendored Ruff parser patch in the fuzz workspace.
-These are in-memory checks; CLI discovery, file I/O, subprocesses, and mutation
-execution are outside their scope. The three newer targets reject inputs larger
-than 4096 bytes to bound per-input work, including during artifact replay.
+The analyzer protocol and Python analyzer targets compile production analyzer
+modules directly using `#[path]`, so no fuzz-only API is added to the shipping
+crate. Keep their dependency declarations in `fuzz/Cargo.toml` aligned with
+`crates/hoimin-cli/Cargo.toml` and retain the root workspace's vendored Ruff
+parser patch in the fuzz workspace.
+These are in-memory checks; filesystem discovery, file I/O, subprocesses, and
+mutation execution are outside their scope. The five structured targets reject
+inputs larger than 4096 bytes to bound per-input work, including during artifact
+replay.
 
 Install cargo-fuzz and the pinned nightly (the locked libfuzzer-sys version
 requires a C++17 compiler).
@@ -179,7 +189,7 @@ unchanged:
 cargo install cargo-fuzz --version 0.13.2 --locked
 rustup toolchain install nightly-2026-07-27 --profile minimal
 cargo +nightly-2026-07-27 fuzz build
-for target in source_encoding source_index candidate_validation analyzer_protocol python_analyzer; do
+for target in source_encoding source_index candidate_validation analyzer_protocol python_analyzer report_sequence target_resolution; do
   mkdir -p "fuzz/corpus/$target"
   cargo +nightly-2026-07-27 fuzz run "$target" "fuzz/corpus/$target" "fuzz/seeds/$target" -- -max_total_time=30 -max_len=4096 -timeout=5 -rss_limit_mb=1024 || break
 done
@@ -217,15 +227,15 @@ See the [cargo-fuzz documentation](https://rust-fuzz.github.io/book/cargo-fuzz.h
 ### Bounded CI fuzzing
 
 The automatic CI workflow runs `Fuzz (bounded)` on Linux after `quality`, in
-parallel with the existing test jobs. Its **nine-minute job timeout includes
+parallel with the existing test jobs. Its **11-minute job timeout includes
 setup, compilation, fuzzing, and artifact/cache handling**. The longest test
 jobs in main runs [36142375064](https://github.com/tokyogas-tech/hoimin/actions/runs/36142375064),
 [36142944345](https://github.com/tokyogas-tech/hoimin/actions/runs/36142944345), and
 [36158455427](https://github.com/tokyogas-tech/hoimin/actions/runs/36158455427)
-took 11m18s, 11m35s, and 12m09s: nine minutes is approximately 74–80% of those
+took 11m18s, 11m35s, and 12m09s: 11 minutes is approximately 91–98% of those
 durations. This is a fixed budget; revisit it when normal test durations change.
 
-The first step sets an eight-minute active deadline, leaving approximately one
+The first step sets a ten-minute active deadline, leaving approximately one
 minute for uploading diagnostics and saving small caches. `tools/ci_fuzz.py`
 deducts elapsed setup time, installs the optional Python dependencies, builds
 all fuzz targets, tests the generator, and generates 50 examples with each
@@ -258,7 +268,7 @@ gh workflow run fuzz.yml --ref main -f seconds=300
 The scheduled workflow uses the same pinned nightly, cargo-fuzz version,
 Hypothesmith generators, seeds, and resource limits as bounded CI. It passes a
 fixed per-target duration to `tools/ci_fuzz.py` instead of dividing an
-eight-minute CI budget. A 55-minute active deadline leaves five minutes for
+ten-minute CI budget. A 55-minute active deadline leaves five minutes for
 cache and artifact steps before the workflow's 60-minute limit.
 
 Each run restores the latest corpus for its branch and saves the enlarged
