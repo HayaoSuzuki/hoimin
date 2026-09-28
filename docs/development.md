@@ -245,6 +245,28 @@ although cancellation or the hard job timeout can interrupt it. Use the saved
 crash input for replay; the seed alone does not reproduce a time-bounded run
 against an evolving corpus.
 
+### Scheduled fuzzing
+
+The `fuzz.yml` workflow runs every day at 18:17 UTC and gives each target 60
+seconds of mutation time. A manual run accepts 30, 60, or 300 seconds per
+target:
+
+```console
+gh workflow run fuzz.yml --ref main -f seconds=300
+```
+
+The scheduled workflow uses the same pinned nightly, cargo-fuzz version,
+Hypothesmith generators, seeds, and resource limits as bounded CI. It passes a
+fixed per-target duration to `tools/ci_fuzz.py` instead of dividing an
+eight-minute CI budget. A 55-minute active deadline leaves five minutes for
+cache and artifact steps before the workflow's 60-minute limit.
+
+Each run restores the latest corpus for its branch and saves the enlarged
+corpus under a new cache key. GitHub retains command logs, the JSON summary,
+and crash inputs as `fuzz-diagnostics` artifacts for 14 days. The save and
+upload steps run after a fuzzing failure; cancellation or the workflow timeout
+can still interrupt them.
+
 The initial local validation found a parser panic on a nested unterminated
 f/t-string inside a format specification. It is fixed in the vendored parser;
 the minimized inputs are seeds `fstring-format-spec-recovery` and

@@ -18,6 +18,14 @@ class FuzzError(Exception):
     """A failed stage or an exhausted budget; neither is successful fuzzing."""
 
 
+def positive_seconds(value: str) -> int:
+    seconds = int(value)
+    if seconds < 1:
+        msg = "seconds must be positive"
+        raise argparse.ArgumentTypeError(msg)
+    return seconds
+
+
 def fuzz_seconds(remaining: float, targets: int) -> int:
     seconds = int(remaining / targets) - STARTUP_MARGIN
     if seconds < 1:
@@ -111,7 +119,7 @@ class Campaign:
             self.save("running")
 
 
-def run_campaign(campaign: Campaign) -> None:
+def run_campaign(campaign: Campaign, *, seconds_per_target: int | None = None) -> None:
     manifest = tomllib.loads((ROOT / "fuzz/Cargo.toml").read_text(encoding="utf-8"))
     targets = [target["name"] for target in manifest["bin"]]
     reserve = len(targets) * (STARTUP_MARGIN + 1)
@@ -144,7 +152,11 @@ def run_campaign(campaign: Campaign) -> None:
             reserve=reserve,
         )
     for index, target in enumerate(targets):
-        seconds = fuzz_seconds(campaign.remaining(), len(targets) - index)
+        seconds = (
+            seconds_per_target
+            if seconds_per_target is not None
+            else fuzz_seconds(campaign.remaining(), len(targets) - index)
+        )
         corpus = f"fuzz/corpus/{target}"
         (ROOT / corpus).mkdir(parents=True, exist_ok=True)
         campaign.run(
@@ -176,10 +188,11 @@ def main() -> int:
     )
     parser.add_argument("--report", type=Path, required=True)
     parser.add_argument("--seed", type=int, required=True)
+    parser.add_argument("--seconds-per-target", type=positive_seconds)
     args = parser.parse_args()
     campaign = Campaign(args.deadline, args.report, seed=args.seed)
     try:
-        run_campaign(campaign)
+        run_campaign(campaign, seconds_per_target=args.seconds_per_target)
     except (FuzzError, OSError) as error:
         campaign.save("failure", str(error))
         print(str(error), flush=True)  # noqa: T201 -- CI failure diagnostic.

@@ -14,6 +14,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
+FUZZ_WORKFLOW = ROOT / ".github" / "workflows" / "fuzz.yml"
 NON_LINUX_CI_WORKFLOW = ROOT / ".github" / "workflows" / "non-linux-ci.yml"
 RELEASE_WORKFLOW = ROOT / ".github" / "workflows" / "release.yml"
 DEVELOPMENT_GUIDE = ROOT / "docs" / "development.md"
@@ -56,6 +57,8 @@ CHECKOUT_ACTION = "actions/checkout"
 SETUP_PYTHON_ACTION = "actions/setup-python"
 SETUP_UV_ACTION = "astral-sh/setup-uv"
 LEAN_CACHE_ACTION = "actions/cache"
+CACHE_RESTORE_ACTION = "actions/cache/restore"
+CACHE_SAVE_ACTION = "actions/cache/save"
 MATURIN_ACTION = "PyO3/maturin-action"
 PINNED_MATURIN_VERSION = "<pinned-maturin-version>"
 LEAN_ELAN_VERSION = "v4.1.2"
@@ -407,7 +410,8 @@ def workflow_contract(workflow: str) -> dict[object, object]:
             reference = step["uses"]
             match = (
                 re.fullmatch(
-                    r"([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)@[0-9a-fA-F]{40}", reference
+                    r"([A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)+)@[0-9a-fA-F]{40}",
+                    reference,
                 )
                 if isinstance(reference, str)
                 else None
@@ -478,6 +482,8 @@ def test_every_workflow_uses_known_actions_with_full_commit_pins(path: Path) -> 
         SETUP_PYTHON_ACTION,
         SETUP_UV_ACTION,
         LEAN_CACHE_ACTION,
+        CACHE_RESTORE_ACTION,
+        CACHE_SAVE_ACTION,
         UPLOAD_ARTIFACT_ACTION,
         MATURIN_ACTION,
     }
@@ -491,6 +497,74 @@ def test_every_workflow_uses_known_actions_with_full_commit_pins(path: Path) -> 
     assert actions
     for action in actions:
         assert action in allowed
+
+
+def test_scheduled_fuzz_runs_daily_with_selectable_per_target_time() -> None:
+    assert FUZZ_WORKFLOW.exists(), "scheduled fuzz workflow is missing"
+    workflow = workflow_contract(FUZZ_WORKFLOW.read_text(encoding="utf-8"))
+    assert workflow[True] == {
+        "schedule": [{"cron": "17 18 * * *"}],
+        "workflow_dispatch": {
+            "inputs": {
+                "seconds": {
+                    "description": "Fuzzing seconds per target",
+                    "type": "choice",
+                    "options": ["30", "60", "300"],
+                    "default": "60",
+                }
+            }
+        },
+    }
+    assert workflow["permissions"] == {"contents": "read"}
+    assert workflow["concurrency"] == {
+        "group": "fuzz-${{ github.ref }}",
+        "cancel-in-progress": False,
+    }
+
+    job = workflow_jobs(workflow)["fuzz"]
+    assert job["runs-on"] == "ubuntu-latest"
+    assert job["timeout-minutes"] == 60
+    restore = named_step(job, "Restore discovered corpus")
+    save = named_step(job, "Save discovered corpus")
+    artifacts = named_step(job, "Preserve fuzz diagnostics")
+    assert restore["uses"] == CACHE_RESTORE_ACTION
+    assert save["uses"] == CACHE_SAVE_ACTION
+    assert save["if"] == "always()"
+    cache_key = (
+        "fuzz-corpus-v1-${{ runner.os }}-${{ github.ref_name }}-"
+        "${{ github.run_id }}-${{ github.run_attempt }}"
+    )
+    restore_inputs = mapping(restore["with"])
+    save_inputs = mapping(save["with"])
+    assert restore_inputs == {
+        "path": "fuzz/corpus",
+        "key": cache_key,
+        "restore-keys": ("fuzz-corpus-v1-${{ runner.os }}-${{ github.ref_name }}-\n"),
+    }
+    assert save_inputs == {"path": "fuzz/corpus", "key": cache_key}
+    assert artifacts["uses"] == UPLOAD_ARTIFACT_ACTION
+    assert artifacts["if"] == "always()"
+    artifact_inputs = mapping(artifacts["with"])
+    assert string(artifact_inputs["path"]).splitlines() == [
+        "${{ runner.temp }}/fuzz-report",
+        "fuzz/artifacts",
+    ]
+    assert artifact_inputs["if-no-files-found"] == "ignore"
+    assert artifact_inputs["retention-days"] == 14
+    assert "+ 3300" in string(
+        named_step(job, "Start fuzz budget including setup")["run"]
+    )
+    assert (
+        named_step(job, "Install pinned fuzz toolchain")["run"]
+        == "rustup toolchain install nightly-2026-07-27 --profile minimal"
+    )
+    install = string(
+        named_step(job, "Install cargo-fuzz within remaining budget")["run"]
+    )
+    assert "cargo +nightly-2026-07-27 install cargo-fuzz" in install
+    assert "--version 0.13.2 --locked" in install
+    command = string(named_step(job, "Fuzz all targets")["run"])
+    assert "--seconds-per-target \"${{ inputs.seconds || '60' }}\"" in command
 
 
 @pytest.mark.parametrize("commit", ["1" * 40, "abcdef0123" * 4, "ABCDEF0123" * 4])
