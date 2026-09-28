@@ -1183,8 +1183,14 @@ def test_latest_stable_canary_is_isolated_and_environment_complete() -> None:
     assert mapping(decoded[True])["workflow_dispatch"] is None
     assert set(workflow_jobs(decoded)) == {"stable"}
     job = workflow_jobs(decoded)["stable"]
-    assert set(job) == {"runs-on", "steps"}
+    assert set(job) == {"runs-on", "env", "steps"}
     assert job["runs-on"] == "ubuntu-latest"
+    assert job["env"] == {
+        "CARGO_PROFILE_DEV_DEBUG": "0",
+        "CARGO_PROFILE_TEST_DEBUG": "0",
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_BUILD_JOBS": "2",
+    }
     assert job_steps(job) == [
         {"uses": CHECKOUT_ACTION},
         {"uses": SETUP_PYTHON_ACTION, "with": {"python-version": "3.14"}},
@@ -1203,6 +1209,10 @@ def test_latest_stable_canary_is_isolated_and_environment_complete() -> None:
                 "cargo +stable clippy --workspace --all-targets "
                 "--all-features -- -D warnings"
             )
+        },
+        {
+            "name": "Remove Clippy build artifacts",
+            "run": "cargo +stable clean",
         },
         {"run": "cargo +stable test --workspace"},
     ]

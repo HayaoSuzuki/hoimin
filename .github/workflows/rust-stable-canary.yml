@@ -11,6 +11,11 @@ permissions:
 jobs:
   stable:
     runs-on: ubuntu-latest
+    env:
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
+      CARGO_INCREMENTAL: "0"
+      CARGO_BUILD_JOBS: "2"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
@@ -24,4 +29,6 @@ jobs:
       - run: uv sync --frozen
       - run: cargo +stable fmt --all -- --check
       - run: cargo +stable clippy --workspace --all-targets --all-features -- -D warnings
+      - name: Remove Clippy build artifacts
+        run: cargo +stable clean
       - run: cargo +stable test --workspace
