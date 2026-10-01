@@ -126,110 +126,8 @@ LEAN_SENSITIVITY_EXECUTABLES = {
     if name not in {"generate", "generate_budget", "generate_workspace"}
 }
 UPLOAD_ARTIFACT_ACTION = "actions/upload-artifact"
-TAG_VALIDATION_COMMAND = (
-    'python -c "import os, pathlib, tomllib; '
-    "py=tomllib.loads(pathlib.Path('pyproject.toml').read_text())"
-    "['project']['version']; "
-    "cargo=tomllib.loads(pathlib.Path('Cargo.toml').read_text())"
-    "['workspace']['package']['version']; "
-    "tag=os.environ['TAG']; "
-    "assert tag == f'v{py}' == f'v{cargo}', (tag, py, cargo)\""
-)
 WHEEL_SMOKE_COMMAND = "uv run --frozen python tests/wheel_smoke.py"
 MANUAL_NON_LINUX_CI_COMMAND = "gh workflow run non-linux-ci.yml --ref <REF>"
-EXPECTED_RELEASE_JOBS = {
-    "validate-tag": {
-        "runs-on": "ubuntu-latest",
-        "steps": [
-            {"uses": CHECKOUT_ACTION},
-            {
-                "uses": SETUP_PYTHON_ACTION,
-                "with": {"python-version": "3.14"},
-            },
-            {
-                "name": "Require the tag to match package metadata",
-                "env": {"TAG": "${{ github.ref_name }}"},
-                "run": f"{TAG_VALIDATION_COMMAND}\n",
-            },
-        ],
-    },
-    "windows-wheel": {
-        "needs": "validate-tag",
-        "runs-on": "windows-latest",
-        "steps": [
-            {"uses": CHECKOUT_ACTION},
-            {
-                "uses": SETUP_PYTHON_ACTION,
-                "with": {"python-version": "3.14"},
-            },
-            {
-                "uses": SETUP_UV_ACTION,
-                "with": {"enable-cache": True},
-            },
-            {
-                "uses": MATURIN_ACTION,
-                "with": {
-                    "command": "build",
-                    "args": (
-                        "--release --locked --compatibility pypi --no-default-features"
-                    ),
-                    "maturin-version": PINNED_MATURIN_VERSION,
-                    "target": "x86_64-pc-windows-msvc",
-                },
-            },
-            {"run": WHEEL_SMOKE_COMMAND},
-            {
-                "uses": UPLOAD_ARTIFACT_ACTION,
-                "with": {
-                    "name": "wheels-windows-x86_64",
-                    "path": "target/wheels/*.whl",
-                },
-            },
-        ],
-    },
-    "linux-wheel": {
-        "needs": "validate-tag",
-        "runs-on": "ubuntu-latest",
-        "steps": [
-            {"uses": CHECKOUT_ACTION},
-            {
-                "uses": SETUP_PYTHON_ACTION,
-                "with": {"python-version": "3.14"},
-            },
-            {
-                "uses": SETUP_UV_ACTION,
-                "with": {"enable-cache": True},
-            },
-            {
-                "uses": MATURIN_ACTION,
-                "with": {
-                    "command": "build",
-                    "args": (
-                        "--release --locked --compatibility pypi --no-default-features"
-                    ),
-                    "maturin-version": PINNED_MATURIN_VERSION,
-                    "target": "x86_64-unknown-linux-gnu",
-                    "manylinux": "2014",
-                },
-            },
-            {"run": WHEEL_SMOKE_COMMAND},
-            {
-                "uses": UPLOAD_ARTIFACT_ACTION,
-                "with": {
-                    "name": "wheels-linux-x86_64",
-                    "path": "target/wheels/*.whl",
-                },
-            },
-        ],
-    },
-}
-EXPECTED_RELEASE_WORKFLOW = {
-    "name": "Release wheels",
-    # PyYAML's YAML 1.1 resolver decodes the unquoted `on` key as `True`.
-    True: {"push": {"tags": ["v*"]}},
-    "permissions": {"contents": "read"},
-    "jobs": EXPECTED_RELEASE_JOBS,
-}
 
 
 def job_block(workflow: str, job_name: str) -> str:
@@ -423,27 +321,136 @@ def workflow_contract(workflow: str) -> dict[object, object]:
     return decoded
 
 
-def assert_artifact_only_release(workflow: str) -> None:
+def assert_standalone_build(job: dict[str, object], target: str, platform: str) -> None:
+    native = named_step(job, "Build standalone executable")
+    assert native["run"] == (
+        "cargo build --release --locked --no-default-features --bin hoimin "
+        f"--target {target} --target-dir target/standalone"
+    )
+    executable = f"target/standalone/{target}/release/hoimin"
+    if platform.startswith("windows"):
+        executable += ".exe"
+    verify = named_step(job, "Verify standalone executable")
+    assert mapping(verify["env"])["BINARY"] == executable
+    package = named_step(job, "Package verified binaries and wheels")
+    assert f"--binary {executable}" in string(package["run"])
+
+
+def assert_github_release(workflow: str) -> None:
     decoded = workflow_contract(workflow)
+    assert set(decoded) == {"name", True, "permissions", "concurrency", "jobs"}
+    assert decoded["permissions"] == {"contents": "read"}
+    assert decoded[True] == {
+        "pull_request": {"branches": ["main"]},
+        "pull_request_target": {"branches": ["main"], "types": ["closed"]},
+        "workflow_dispatch": None,
+    }
+    assert decoded["concurrency"] == {
+        "group": (
+            "release-${{ github.event_name }}-"
+            "${{ github.event.pull_request.merge_commit_sha || github.sha }}"
+        ),
+        "cancel-in-progress": False,
+    }
+    jobs = workflow_jobs(decoded)
+    assert set(jobs) == {
+        "prepare",
+        "windows-wheel",
+        "linux-wheel",
+        "macos-wheel",
+        "publish",
+    }
+    # GitHub Releases does not need PyPI credentials or publishing commands.
+    assert "secrets" not in workflow
+    assert "id-token" not in workflow
+    assert "uv publish" not in workflow
     maturin_versions = set()
-    for job in workflow_jobs(decoded).values():
+    for name, runner, target, platform in (
+        ("windows-wheel", "windows-latest", "x86_64-pc-windows-msvc", "windows-x86_64"),
+        ("linux-wheel", "ubuntu-22.04", "x86_64-unknown-linux-gnu", "linux-x86_64"),
+        ("macos-wheel", "macos-14", "aarch64-apple-darwin", "macos-aarch64"),
+    ):
+        job = jobs[name]
+        assert set(job) == {"if", "needs", "runs-on", "timeout-minutes", "steps"}
+        assert job["if"] == "needs.prepare.outputs.version != ''"
+        assert job["needs"] == "prepare"
+        assert job["runs-on"] == runner
+        steps = job_steps(job)
+        assert_standalone_build(job, target, platform)
+        assert [step["uses"] for step in steps if "uses" in step] == [
+            CHECKOUT_ACTION,
+            SETUP_PYTHON_ACTION,
+            SETUP_UV_ACTION,
+            MATURIN_ACTION,
+            UPLOAD_ARTIFACT_ACTION,
+        ]
+        checkout = steps[0]
+        assert checkout["with"] == {
+            "ref": "${{ needs.prepare.outputs.commit }}",
+            "persist-credentials": False,
+        }
+        build = next(step for step in steps if step.get("uses") == MATURIN_ACTION)
+        inputs = mapping(build["with"])
+        version = inputs.get("maturin-version")
+        assert isinstance(version, str)
+        assert re.fullmatch(
+            r"v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", version
+        )
+        maturin_versions.add(version)
+        expected_inputs = {
+            "command": "build",
+            "args": "--release --locked --compatibility pypi --no-default-features",
+            "maturin-version": version,
+            "target": target,
+        }
+        if platform == "linux-x86_64":
+            expected_inputs["manylinux"] = "2014"
+        assert inputs == expected_inputs
+        smoke = next(step for step in steps if step.get("run") == WHEEL_SMOKE_COMMAND)
+        assert smoke == {"run": WHEEL_SMOKE_COMMAND}
+        assert steps.index(build) < steps.index(smoke) < len(steps) - 1
+        assert steps[-1] == {
+            "uses": UPLOAD_ARTIFACT_ACTION,
+            "with": {
+                "name": "release-" + platform,
+                "path": "dist/*",
+                "if-no-files-found": "error",
+            },
+        }
+    assert len(maturin_versions) == 1
+    prepare = jobs["prepare"]
+    assert prepare["permissions"] == {"contents": "write"}
+    assert (
+        prepare["if"] == "github.event_name != 'pull_request_target' || "
+        "github.event.pull_request.merged == true"
+    )
+    publish = jobs["publish"]
+    assert publish["permissions"] == {"contents": "write"}
+    assert publish["needs"] == [
+        "prepare",
+        "windows-wheel",
+        "linux-wheel",
+        "macos-wheel",
+    ]
+    assert publish["if"] == "needs.prepare.outputs.publish == 'true'"
+    assert all("environment" not in job and "env" not in job for job in jobs.values())
+    for job in (prepare, publish):
+        assert set(job) <= {
+            "if",
+            "needs",
+            "runs-on",
+            "permissions",
+            "outputs",
+            "steps",
+            "timeout-minutes",
+        }
         for step in job_steps(job):
-            if step.get("uses") != MATURIN_ACTION:
-                continue
-            inputs = mapping(step.get("with", {}))
-            version = inputs.get("maturin-version")
-            assert isinstance(version, str)
-            assert (
-                re.search(
-                    r"\Av(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\Z",
-                    version,
-                )
-                is not None
-            )
-            maturin_versions.add(version)
-            inputs["maturin-version"] = PINNED_MATURIN_VERSION
-    assert len(maturin_versions) == 1, "release builds must share one maturin pin"
-    assert decoded == EXPECTED_RELEASE_WORKFLOW
+            if "uses" in step:
+                assert step["uses"] in {
+                    CHECKOUT_ACTION,
+                    SETUP_PYTHON_ACTION,
+                    "actions/download-artifact",
+                }
 
 
 def assert_repository_rust_toolchain(toolchain: dict[str, object]) -> None:
@@ -485,6 +492,7 @@ def test_every_workflow_uses_known_actions_with_full_commit_pins(path: Path) -> 
         CACHE_RESTORE_ACTION,
         CACHE_SAVE_ACTION,
         UPLOAD_ARTIFACT_ACTION,
+        "actions/download-artifact",
         MATURIN_ACTION,
     }
     decoded = workflow_contract(path.read_text(encoding="utf-8"))
@@ -572,7 +580,7 @@ def test_accepts_updated_pins_without_changing_release_contract(commit: str) -> 
     workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
     updated = re.sub(r"(?<=@)[0-9a-f]{40}", commit, workflow)
     assert updated != workflow
-    assert_artifact_only_release(updated)
+    assert_github_release(updated)
 
 
 @pytest.mark.parametrize(
@@ -591,7 +599,7 @@ def test_rejects_different_actions_even_with_full_pins(
     assert changed != workflow
     workflow_contract(changed)  # Pin syntax is valid; identity must fail.
     with pytest.raises(AssertionError):
-        assert_artifact_only_release(changed)
+        assert_github_release(changed)
 
 
 @pytest.mark.parametrize(
@@ -1488,8 +1496,8 @@ def test_accepts_updated_matching_maturin_pins(version: str) -> None:
         "maturin-version: " + version,
         workflow,
     )
-    assert count == 2
-    assert_artifact_only_release(updated)
+    assert count == 3
+    assert_github_release(updated)
 
 
 @pytest.mark.parametrize(
@@ -1520,7 +1528,7 @@ def test_rejects_invalid_maturin_pins(version: object) -> None:
             if string(step.get("uses", "")).startswith(MATURIN_ACTION + "@"):
                 mapping(step["with"])["maturin-version"] = version
     with pytest.raises(AssertionError):
-        assert_artifact_only_release(yaml.safe_dump(document))
+        assert_github_release(yaml.safe_dump(document))
 
 
 def test_rejects_missing_maturin_pins() -> None:
@@ -1530,7 +1538,7 @@ def test_rejects_missing_maturin_pins() -> None:
             if string(step.get("uses", "")).startswith(MATURIN_ACTION + "@"):
                 del mapping(step["with"])["maturin-version"]
     with pytest.raises(AssertionError):
-        assert_artifact_only_release(yaml.safe_dump(document))
+        assert_github_release(yaml.safe_dump(document))
 
 
 @pytest.mark.parametrize("change", ["version", "args", "extra input"])
@@ -1549,13 +1557,51 @@ def test_rejects_mismatched_maturin_pins_and_other_input_changes(change: str) ->
     else:
         mapping(step["with"])["unexpected-version"] = "v1.15.0"
     with pytest.raises(AssertionError):
-        assert_artifact_only_release(yaml.safe_dump(document))
+        assert_github_release(yaml.safe_dump(document))
 
 
-def test_version_tags_build_artifacts_without_publication_credentials() -> None:
+def test_merged_prs_publish_only_to_github_releases() -> None:
     workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
 
-    assert_artifact_only_release(workflow)
+    assert_github_release(workflow)
+
+
+def test_release_version_preparation_uses_only_merged_base_commit() -> None:
+    workflow = workflow_document(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
+    jobs = workflow_jobs(workflow)
+    prepare = jobs["prepare"]
+    trusted_ref = "${{ github.event.pull_request.merge_commit_sha || github.sha }}"
+    publish_condition = (
+        "${{ github.event_name == 'pull_request_target' && "
+        "github.event.pull_request.merged == true }}"
+    )
+    assert mapping(job_steps(prepare)[0]["with"]) == {
+        "ref": trusted_ref,
+        "fetch-depth": 0,
+        "persist-credentials": publish_condition,
+    }
+    version = named_step(prepare, "Reserve release tag or choose preview version")
+    assert version["env"] == {"PUBLISH": publish_condition, "COMMIT": trusted_ref}
+    assert version["id"] == "version"
+    assert (
+        mapping(prepare["outputs"])["publish"] == "${{ steps.version.outputs.publish }}"
+    )
+    publisher = jobs["publish"]
+    assert mapping(job_steps(publisher)[0]["with"]) == {
+        "ref": "${{ needs.prepare.outputs.commit }}",
+        "persist-credentials": False,
+    }
+    download = next(
+        step
+        for step in job_steps(publisher)
+        if string(step.get("uses", "")).startswith("actions/download-artifact@")
+    )
+    # No other run or repository can supply the release artifacts.
+    assert download["with"] == {
+        "pattern": "release-*",
+        "merge-multiple": True,
+        "path": "dist",
+    }
 
 
 def hostile_release_workflows() -> dict[str, str]:
@@ -1582,13 +1628,13 @@ def hostile_release_workflows() -> dict[str, str]:
             1,
         ),
         "unexpected artifact name": workflow.replace(
-            "          name: wheels-windows-x86_64",
+            "          name: release-windows-x86_64",
             "          name: pypi-distribution",
             1,
         ),
         "unexpected artifact path": workflow.replace(
-            "          path: target/wheels/*.whl",
             "          path: dist/*",
+            "          path: target/wheels/*.whl",
             1,
         ),
         "publication secret": workflow.replace(
@@ -1677,8 +1723,8 @@ def hostile_release_workflows() -> dict[str, str]:
         for case, workflow in hostile_release_workflows().items()
     ],
 )
-def test_artifact_only_policy_rejects_disguised_publication_paths(
+def test_github_release_policy_rejects_disguised_publication_paths(
     hostile_workflow: str,
 ) -> None:
     with pytest.raises(AssertionError):
-        assert_artifact_only_release(hostile_workflow)
+        assert_github_release(hostile_workflow)
