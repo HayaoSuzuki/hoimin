@@ -1039,7 +1039,7 @@ impl WorkerRoot {
     }
 
     fn components(path: &Utf8Path) -> Result<Vec<&str>, WorkspaceError> {
-        if !hoimin_core::normalized_relative_path(path.as_str()) {
+        if !super::WORKSPACE_PATH_POLICY.allows(path.as_str()) {
             return Err(WorkspaceError::InvalidPath {
                 path: path.to_owned(),
             });

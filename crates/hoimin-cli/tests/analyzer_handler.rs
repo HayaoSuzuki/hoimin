@@ -797,6 +797,27 @@ async fn concrete_handler_reports_source_read_failure() {
     ));
 }
 
+#[cfg(unix)]
+#[tokio::test]
+async fn concrete_handler_rejects_colon_named_source_before_analysis() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = Utf8PathBuf::from_path_buf(directory.path().to_owned()).unwrap();
+    let path = "target:sample.py";
+    std::fs::write(root.join(path), "enabled = True\n").unwrap();
+    let result = handler(root)
+        .handle(
+            analysis_request(78, path, true, 10),
+            &MutationOperatorSelection::default(),
+            MutationProfile::Full,
+        )
+        .await;
+
+    assert!(matches!(
+        result,
+        Err(error) if error.id == EffectId(78) && error.failure.code() == "analyzer.source.read"
+    ));
+}
+
 #[tokio::test]
 async fn concrete_handler_truncates_at_candidate_limit() {
     let directory = tempfile::tempdir().unwrap();

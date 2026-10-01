@@ -7,6 +7,7 @@ mod lean_oracle_tests;
 mod manifest;
 mod mutation;
 mod owned;
+mod reader;
 mod reset;
 mod root;
 mod stream;
@@ -43,7 +44,14 @@ pub(crate) use owned::{
     CleanupRecord, ManagedChild, ManagedRootCoordinator, ManagedRunRoot, OwnerKind, ReclaimReport,
     truncate_diagnostic_detail,
 };
-pub(crate) use root::WorkerRoot;
+pub(crate) use reader::{PortableFileReadError, PortableFileReader, hash_portable_file};
+use root::WorkerRoot;
+
+const WORKSPACE_PATH_POLICY: hoimin_core::RelativePathPolicy = if cfg!(unix) {
+    hoimin_core::RelativePathPolicy::UnixWorkspace
+} else {
+    hoimin_core::RelativePathPolicy::Portable
+};
 
 pub(crate) fn build_validation_manifest(
     root: &Utf8Path,
@@ -55,54 +63,6 @@ pub(crate) fn build_validation_manifest(
 /// Each worker-tree level may retain a directory and iterator handle while it
 /// is being visited. Keep enough headroom for the process's other open files.
 pub(super) const MAX_WORKER_TREE_DEPTH: usize = 128;
-
-#[derive(Debug, thiserror::Error)]
-pub(crate) enum RootRelativeReadError {
-    #[error("root-relative file was not found")]
-    NotFound,
-    #[error(transparent)]
-    Other(#[from] WorkspaceError),
-}
-
-#[derive(Debug)]
-pub(crate) struct RootRelativeReader {
-    root: WorkerRoot,
-}
-
-impl RootRelativeReader {
-    pub(crate) fn open(root: Utf8PathBuf) -> Result<Self, WorkspaceError> {
-        WorkerRoot::open(root).map(|root| Self { root })
-    }
-
-    pub(crate) fn read(&self, path: &Utf8Path) -> Result<Vec<u8>, RootRelativeReadError> {
-        self.classify_read(path, self.root.read(path))
-    }
-
-    fn hash(&self, path: &Utf8Path) -> Result<blake3::Hash, RootRelativeReadError> {
-        self.classify_read(path, self.root.hash(path))
-    }
-
-    fn classify_read<T>(
-        &self,
-        path: &Utf8Path,
-        result: Result<T, WorkspaceError>,
-    ) -> Result<T, RootRelativeReadError> {
-        match result {
-            Ok(value) => Ok(value),
-            Err(error) => match self.root.is_missing(path) {
-                Ok(true) => Err(RootRelativeReadError::NotFound),
-                Ok(false) | Err(_) => Err(RootRelativeReadError::Other(error)),
-            },
-        }
-    }
-}
-
-pub(crate) fn hash_root_relative(
-    root: &Utf8Path,
-    path: &Utf8Path,
-) -> Result<blake3::Hash, RootRelativeReadError> {
-    RootRelativeReader::open(root.to_owned())?.hash(path)
-}
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct CopyOptions {

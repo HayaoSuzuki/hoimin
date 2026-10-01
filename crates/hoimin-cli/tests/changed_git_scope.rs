@@ -357,7 +357,7 @@ async fn literal_pathspecs_preserve_supported_names_and_existing_colon_rejection
     .await
     .unwrap();
     assert_eq!(actual, intersect_changed(&eligible, &historical.changed));
-    // WorkerRoot has always rejected colon-containing path components. Keep this
+    // Mutation targets reject colon-containing path components. Keep this
     // literal magic-looking name in Git's inventory to ensure it cannot exclude
     // the other valid selected paths; do not broaden the portable-path contract.
     assert_eq!(actual.len(), names.len() - 1);

@@ -6,7 +6,7 @@ use ignore::WalkBuilder;
 use ignore::overrides::{Override, OverrideBuilder};
 
 use crate::portable_path;
-use crate::workspace::{self, RootRelativeReadError, WorkspaceManifest};
+use crate::workspace::{self, PortableFileReadError, WorkspaceManifest};
 
 #[derive(Clone, Debug, thiserror::Error)]
 pub enum FingerprintInputError {
@@ -46,9 +46,9 @@ pub fn resolve(
     let mut selected = resolve_patterns(root, patterns)?.selected;
     for file in files {
         let path = resolve_exact(file)?;
-        let digest = workspace::hash_root_relative(root, &path).map_err(|error| match error {
-            RootRelativeReadError::NotFound => FingerprintInputError::NotFound(file.clone()),
-            RootRelativeReadError::Other(error) => {
+        let digest = workspace::hash_portable_file(root, &path).map_err(|error| match error {
+            PortableFileReadError::NotFound => FingerprintInputError::NotFound(file.clone()),
+            PortableFileReadError::Other(error) => {
                 FingerprintInputError::ExactUnsupportedFile(format!("{path}: {error}"))
             }
         })?;
@@ -60,11 +60,11 @@ pub fn resolve(
         .map(|(path, exact_digest)| {
             let digest = exact_digest.map_or_else(
                 || {
-                    workspace::hash_root_relative(root, &path).map_err(|error| match error {
-                        RootRelativeReadError::NotFound => {
+                    workspace::hash_portable_file(root, &path).map_err(|error| match error {
+                        PortableFileReadError::NotFound => {
                             FingerprintInputError::UnsupportedFile(format!("{path}: not found"))
                         }
-                        RootRelativeReadError::Other(error) => {
+                        PortableFileReadError::Other(error) => {
                             FingerprintInputError::UnsupportedFile(format!("{path}: {error}"))
                         }
                     })

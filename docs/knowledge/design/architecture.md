@@ -5,6 +5,46 @@ description: 元ソースへの変異適用を避け、状態遷移と入出力�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: relative-path-policy
+  resource: ../../../crates/hoimin-core/src/relative_path.rs
+  working_tree: untracked
+  sha256: 86f995f1ab938411b3a942d46ef3309c40ec7a0e74b05465cadb0fcdfd0f1882
+- id: workspace-path-selection
+  resource: ../../../crates/hoimin-cli/src/workspace/mod.rs
+  revision: b87a5a4a68d628679ac501573894fedb7149d5b6
+  working_tree: modified
+  sha256: 11c1696fc03fcf75f20359a788bcbf27d20b7dab10ba180ecca64e2ed6437d7f
+- id: portable-file-reader
+  resource: ../../../crates/hoimin-cli/src/workspace/reader.rs
+  working_tree: untracked
+  sha256: 53ae9eddd0e3c8e74f4de2c48e48d1c33c636ef98bed9428db7cd5dc59aecb0a
+- id: candidate-path-policy
+  resource: ../../../crates/hoimin-core/src/candidate.rs
+  revision: b87a5a4a68d628679ac501573894fedb7149d5b6
+  working_tree: modified
+  sha256: 0a03dc4eb5d5e1bcfcd96bb167e9818a30144f7634ecf8ba941b2596b3d94d7e
+- id: candidate-path-tests
+  resource: ../../../crates/hoimin-core/tests/candidate_policy.rs
+  revision: b87a5a4a68d628679ac501573894fedb7149d5b6
+  working_tree: modified
+  sha256: 876febae6c90fcbdc18e79d97ba1179fa5553871d1369d95f85405041d663d1e
+- id: workspace-path-policy
+  resource: ../../../README.md
+  revision: a3b78d913f57ffc89edf753f6ae36bd940873f1e
+  working_tree: clean
+- id: workspace-path-implementation
+  resource: ../../../crates/hoimin-cli/src/workspace/root.rs
+  revision: b87a5a4a68d628679ac501573894fedb7149d5b6
+  working_tree: modified
+  sha256: 3b65378aca980b10180bc4edc4fa0ae5e166b6ae170c9f7655f163df6ec31ed2
+- id: workspace-path-tests
+  resource: ../../../crates/hoimin-cli/tests/workspace_handler.rs
+  revision: a3b78d913f57ffc89edf753f6ae36bd940873f1e
+  working_tree: clean
+- id: workspace-path-e2e
+  resource: ../../../crates/hoimin-cli/tests/run_e2e.rs
+  revision: a3b78d913f57ffc89edf753f6ae36bd940873f1e
+  working_tree: clean
 - id: issue-466-revalidation
   resource: ../../superpowers/reports/2026-09-14-issue-466-revalidation.md
   working_tree: untracked
@@ -61,6 +101,20 @@ hoiminの初期設計では、一時領域に作ったテスト実行用のコ�
 
 別案として、実行時に選べる複数の変異を一つのソースへ埋め込む方式も検討した。こちらは例外発生時の呼出し履歴やモジュール実行の意味への影響が課題となり、初版の対象外とした。[^initial]
 
+# 作業コピーのファイル名
+
+Linux/macOSの作業コピーでは、ファイル名とディレクトリ名に `:` を許可する。従来は変異候補と共通のパス検査を使っていたため、`.dockerfiles/appconfig/app:env:conf-sample` のようなテスト対象外のファイルでも、コピー準備中に拒否してbaseline前に停止していた。コミット `a3b78d9` で作業コピー用の検査を分離した。Windowsではドライブ指定や代替データストリームとしての解釈を防ぐため、引き続き `:` を拒否する。空要素、`.`、`..`、絶対パス、バックスラッシュ、NULも作業コピーのパスとして拒否する。[^workspace-path-policy][^workspace-path-implementation]
+
+許可されたファイルはコピー、workerの復元、原本変更検出の対象となる。テストに不要なら `--exclude '.dockerfiles/**'` で明示的に除外できる。変異候補とfingerprint入力には、従来のOS共通のパス制約を適用する。[^workspace-path-policy][^workspace-path-tests]
+
+パスの字句検査はcoreの `RelativePathPolicy` に集約する。空要素、`.`、`..`、絶対パス、バックスラッシュ、NULの拒否は共通とし、`Portable` はさらに `:` を拒否する。`UnixWorkspace` は `:` を許可する。workspaceはOSに応じて方針を一度選び、ファイル操作と除外指定の検査で共有する。両方の方針を同一環境でテストするため、Windows向けのコロン拒否規則もmacOS上で検査できる。ただし、これはWindowsのファイル操作を実行する検証ではない。[^relative-path-policy][^workspace-path-selection]
+
+解析器・Git・fingerprintの読取りは、`Portable` を適用する `PortableFileReader` を通す。ファイル操作を担当する `WorkerRoot` はworkspace内部だけで使い、呼び出し元にportable用の検査を要求しない。変異候補と保存形式の検査に使う既存の `normalized_relative_path` も同じ方針へ委譲する。これにより、字句検査の共通部分と利用箇所ごとの許可範囲を分ける。字句検査だけでファイルシステム上の包含関係は保証できないため、ディレクトリハンドルを基準にした操作とsymlinkの拒否はファイル操作層で継続する。[^portable-file-reader][^relative-path-policy][^candidate-path-policy][^workspace-path-implementation]
+
+NULの拒否も共通化した。従来の変異候補検査がNULを含むパスを受理することを回帰テストで確認し、共通検査への委譲後に拒否することを確認した。変異候補とfingerprintの `:` 制約を今回緩めないのは、候補ID・保存形式・入力選択の互換性に変更を広げないためである。これらの形式で対応範囲を広げる場合は、作業コピーとは別に契約を検討する。[^candidate-path-policy][^candidate-path-tests]
+
+2026-10-01にmacOSで、追加した回帰テスト3件の修正前の失敗と修正後の成功を確認した。対象は `colon_paths_are_copied_restored_and_checked_for_original_changes`、`colon_paths_can_be_explicitly_excluded_from_copy_and_integrity_checks`、`baseline_and_mutants_can_read_colon_named_workspace_fixtures` である。コピー・復元・原本変更検出・明示除外と、実際のCLI経由でのbaselineおよび変異テストからのファイル読取りを確認した。LinuxとWindowsでは今回実行していない。パス検査やOS別のファイル操作を変更した場合は、この境界と回帰テストを再確認する。[^workspace-path-tests][^workspace-path-e2e]
+
 # 状態遷移と入出力の分離
 
 制御を担当する `hoimin-core` は、状態と完了通知（event）を受け取り、次の状態と実行要求（effect）を返す。入出力を担当する `hoimin-cli` はその要求を実行し、完了通知をcoreへ返す。この分離によって、状態遷移の判断をファイル操作やプロセス起動から独立して扱う。[^initial]
@@ -107,6 +161,10 @@ crateの依存、実行要求と完了通知、コピーへの変異適用、解
 Issue 477では、path-only `.pth` に登録した元のsrcディレクトリがworkerより先にimportされる問題を扱う。`--import-root src` はworkerのimport探索先を明示し、`--file`・`--line` の候補範囲を広げない。worker root、明示したimport root、source root、継承PYTHONPATHの順序を保つ。指定ディレクトリがコピーに存在しない場合はbaseline前に拒否する。正規パッケージのpath-only `.pth` を検証対象とし、独自finderや環境変数を無視するPython起動まで保証しない。[^issue-477]
 
 [^initial]: [2026-07-18-python-mutation-tool-design.md](../../superpowers/specs/2026-07-18-python-mutation-tool-design.md)。
+[^workspace-path-policy]: [README.md](../../../README.md)。
+[^workspace-path-implementation]: [workspace/root.rs](../../../crates/hoimin-cli/src/workspace/root.rs)。
+[^workspace-path-tests]: [workspace_handler.rs](../../../crates/hoimin-cli/tests/workspace_handler.rs)。
+[^workspace-path-e2e]: [run_e2e.rs](../../../crates/hoimin-cli/tests/run_e2e.rs)。
 [^migration]: [2026-07-19-remove-python-libcst-design.md](../../superpowers/specs/2026-07-19-remove-python-libcst-design.md)。
 [^core]: [Cargo.toml](../../../crates/hoimin-core/Cargo.toml)。
 [^machine]: [machine.rs](../../../crates/hoimin-core/src/machine.rs)。
@@ -127,3 +185,13 @@ Issue 477では、path-only `.pth` に登録した元のsrcディレクトリが
 基準コミット `8b33167` で削除と先行PR #527の包含、現在の呼出し元の不在を再確認した。受け入れ条件4項目は連携の廃止により対象外となる。`tools/performance_shapes.py` は現在存在するため、ディレクトリ全体の不在を判定条件にしない。今回の確認は構文互換性や性能改善の実測を保証しない。[^issue-466-revalidation]
 
 [^issue-466-revalidation]: [Issue 466 retirement revalidation and self-review](../../superpowers/reports/2026-09-14-issue-466-revalidation.md)。
+
+[^relative-path-policy]: [crates/hoimin-core/src/relative_path.rs](../../../crates/hoimin-core/src/relative_path.rs)。
+
+[^workspace-path-selection]: [crates/hoimin-cli/src/workspace/mod.rs](../../../crates/hoimin-cli/src/workspace/mod.rs)。
+
+[^portable-file-reader]: [crates/hoimin-cli/src/workspace/reader.rs](../../../crates/hoimin-cli/src/workspace/reader.rs)。
+
+[^candidate-path-policy]: [crates/hoimin-core/src/candidate.rs](../../../crates/hoimin-core/src/candidate.rs)。
+
+[^candidate-path-tests]: [crates/hoimin-core/tests/candidate_policy.rs](../../../crates/hoimin-core/tests/candidate_policy.rs)。
