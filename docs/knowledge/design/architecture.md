@@ -5,6 +5,22 @@ description: 元ソースへの変異適用を避け、状態遷移と入出力�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: workspace-path-policy
+  resource: ../../../README.md
+  revision: a3b78d913f57ffc89edf753f6ae36bd940873f1e
+  working_tree: clean
+- id: workspace-path-implementation
+  resource: ../../../crates/hoimin-cli/src/workspace/root.rs
+  revision: a3b78d913f57ffc89edf753f6ae36bd940873f1e
+  working_tree: clean
+- id: workspace-path-tests
+  resource: ../../../crates/hoimin-cli/tests/workspace_handler.rs
+  revision: a3b78d913f57ffc89edf753f6ae36bd940873f1e
+  working_tree: clean
+- id: workspace-path-e2e
+  resource: ../../../crates/hoimin-cli/tests/run_e2e.rs
+  revision: a3b78d913f57ffc89edf753f6ae36bd940873f1e
+  working_tree: clean
 - id: issue-466-revalidation
   resource: ../../superpowers/reports/2026-09-14-issue-466-revalidation.md
   working_tree: untracked
@@ -61,6 +77,14 @@ hoiminの初期設計では、一時領域に作ったテスト実行用のコ�
 
 別案として、実行時に選べる複数の変異を一つのソースへ埋め込む方式も検討した。こちらは例外発生時の呼出し履歴やモジュール実行の意味への影響が課題となり、初版の対象外とした。[^initial]
 
+# 作業コピーのファイル名
+
+Linux/macOSの作業コピーでは、ファイル名とディレクトリ名に `:` を許可する。従来は変異候補と共通のパス検査を使っていたため、`.dockerfiles/appconfig/app:env:conf-sample` のようなテスト対象外のファイルでも、コピー準備中に拒否してbaseline前に停止していた。コミット `a3b78d9` で作業コピー用の検査を分離した。Windowsではドライブ指定や代替データストリームとしての解釈を防ぐため、引き続き `:` を拒否する。空要素、`.`、`..`、絶対パス、バックスラッシュ、NULも作業コピーのパスとして拒否する。[^workspace-path-policy][^workspace-path-implementation]
+
+許可されたファイルはコピー、workerの復元、原本変更検出の対象となる。テストに不要なら `--exclude '.dockerfiles/**'` で明示的に除外できる。変異候補とfingerprint入力には、従来のOS共通のパス制約を適用する。[^workspace-path-policy][^workspace-path-tests]
+
+2026-10-01にmacOSで、追加した回帰テスト3件の修正前の失敗と修正後の成功を確認した。対象は `colon_paths_are_copied_restored_and_checked_for_original_changes`、`colon_paths_can_be_explicitly_excluded_from_copy_and_integrity_checks`、`baseline_and_mutants_can_read_colon_named_workspace_fixtures` である。コピー・復元・原本変更検出・明示除外と、実際のCLI経由でのbaselineおよび変異テストからのファイル読取りを確認した。LinuxとWindowsでは今回実行していない。パス検査やOS別のファイル操作を変更した場合は、この境界と回帰テストを再確認する。[^workspace-path-tests][^workspace-path-e2e]
+
 # 状態遷移と入出力の分離
 
 制御を担当する `hoimin-core` は、状態と完了通知（event）を受け取り、次の状態と実行要求（effect）を返す。入出力を担当する `hoimin-cli` はその要求を実行し、完了通知をcoreへ返す。この分離によって、状態遷移の判断をファイル操作やプロセス起動から独立して扱う。[^initial]
@@ -107,6 +131,10 @@ crateの依存、実行要求と完了通知、コピーへの変異適用、解
 Issue 477では、path-only `.pth` に登録した元のsrcディレクトリがworkerより先にimportされる問題を扱う。`--import-root src` はworkerのimport探索先を明示し、`--file`・`--line` の候補範囲を広げない。worker root、明示したimport root、source root、継承PYTHONPATHの順序を保つ。指定ディレクトリがコピーに存在しない場合はbaseline前に拒否する。正規パッケージのpath-only `.pth` を検証対象とし、独自finderや環境変数を無視するPython起動まで保証しない。[^issue-477]
 
 [^initial]: [2026-07-18-python-mutation-tool-design.md](../../superpowers/specs/2026-07-18-python-mutation-tool-design.md)。
+[^workspace-path-policy]: [README.md](../../../README.md)。
+[^workspace-path-implementation]: [workspace/root.rs](../../../crates/hoimin-cli/src/workspace/root.rs)。
+[^workspace-path-tests]: [workspace_handler.rs](../../../crates/hoimin-cli/tests/workspace_handler.rs)。
+[^workspace-path-e2e]: [run_e2e.rs](../../../crates/hoimin-cli/tests/run_e2e.rs)。
 [^migration]: [2026-07-19-remove-python-libcst-design.md](../../superpowers/specs/2026-07-19-remove-python-libcst-design.md)。
 [^core]: [Cargo.toml](../../../crates/hoimin-core/Cargo.toml)。
 [^machine]: [machine.rs](../../../crates/hoimin-core/src/machine.rs)。
