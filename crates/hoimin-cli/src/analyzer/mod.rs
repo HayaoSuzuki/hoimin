@@ -23,7 +23,7 @@ use hoimin_core::{
 use crate::process::ProcessCancellation;
 use crate::resource::ResourceBackend;
 use crate::workspace::ManagedChild;
-use crate::workspace::RootRelativeReader;
+use crate::workspace::PortableFileReader;
 #[cfg(test)]
 use tempfile::TempDir;
 
@@ -46,7 +46,7 @@ impl CandidateSpoolOwner {
 
 pub struct AnalyzerHandler {
     root_path: Utf8PathBuf,
-    root: Option<RootRelativeReader>,
+    root: Option<PortableFileReader>,
     store: Option<CandidateStore>,
     candidate_spool_owner: Option<CandidateSpoolOwner>,
     #[cfg(test)]
@@ -334,7 +334,7 @@ fn discover_targets_blocking(work: DiscoveryWork) -> Result<Discovery, EffectFai
         mut control,
     } = work;
     ensure_discovery_active(&cancellation)?;
-    let root = RootRelativeReader::open(root.clone()).map_err(|error| {
+    let root = PortableFileReader::open(root.clone()).map_err(|error| {
         EffectFailed::other(EffectId(0), "analyzer.source.read", error.to_string())
     })?;
     let mut discovery = Discovery {
@@ -541,11 +541,11 @@ impl AnalyzerHandler {
     fn read_source(
         &mut self,
         path: &Utf8Path,
-    ) -> Result<Vec<u8>, crate::workspace::RootRelativeReadError> {
+    ) -> Result<Vec<u8>, crate::workspace::PortableFileReadError> {
         if self.root.is_none() {
             self.root = Some(
-                RootRelativeReader::open(self.root_path.clone())
-                    .map_err(crate::workspace::RootRelativeReadError::Other)?,
+                PortableFileReader::open(self.root_path.clone())
+                    .map_err(crate::workspace::PortableFileReadError::Other)?,
             );
         }
         self.root

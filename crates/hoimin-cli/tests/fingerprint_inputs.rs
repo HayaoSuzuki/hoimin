@@ -166,6 +166,17 @@ fn exact_file_rejects_colons_in_every_component() {
     }
 }
 
+#[cfg(unix)]
+#[test]
+fn broad_glob_rejects_colon_named_fingerprint_files() {
+    for path in ["config:sample.toml", "config:local/sample.toml"] {
+        let fixture = fixture_root(&[(path, "setting = true\n")]);
+        let error = resolve(&fixture.root, &["**/*.toml".into()], &[]).unwrap_err();
+        assert_error_prefix(&error, "fingerprint.include.unsupported_file");
+        assert!(error.to_string().contains(path));
+    }
+}
+
 #[test]
 fn resolve_rejects_directories() {
     let fixture = fixture_root(&[("file.txt", "x")]);

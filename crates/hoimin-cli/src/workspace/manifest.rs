@@ -287,7 +287,7 @@ fn walk_selected_entries(
     }
     for exclusion in &options.literal_exclusions {
         let path = exclusion.path();
-        if !super::root::normalized_workspace_path(path.as_str()) {
+        if !super::WORKSPACE_PATH_POLICY.allows(path.as_str()) {
             return Err(WorkspaceError::InvalidPath {
                 path: path.to_owned(),
             });

@@ -152,6 +152,7 @@ fn candidate_paths_reject_absolute_parent_and_colon_components() {
         "pkg/../calc.py",
         "pkg:cache/calc.py",
         "pkg/calc.py:stream",
+        "pkg/calc\0.py",
     ] {
         let mut candidate = descriptor(source);
         candidate.path = Utf8PathBuf::from(invalid);

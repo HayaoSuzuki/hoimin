@@ -13,7 +13,7 @@ mod tracked;
 
 use paths::GitPathScope;
 
-use crate::workspace::{WorkerRoot, WorkspaceError};
+use crate::workspace::{PortableFileReadError, PortableFileReader, WorkspaceError};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResolveGitChanges {
@@ -453,11 +453,11 @@ async fn collect_current_worktree_paths(
     );
     let root = root.to_owned();
     let current = tokio::task::spawn_blocking(move || {
-        let worker_root =
-            WorkerRoot::open(root).map_err(|error| TargetError::GitFailed(error.to_string()))?;
+        let reader = PortableFileReader::open(root)
+            .map_err(|error| TargetError::GitFailed(error.to_string()))?;
         let mut current = BTreeMap::<Utf8PathBuf, Vec<LineRange>>::new();
         for path in paths {
-            let Some(contents) = read_current_source(&worker_root, &path)? else {
+            let Some(contents) = read_current_source(&reader, &path)? else {
                 continue;
             };
             if contents.contains(&0) || contents.is_empty() {
@@ -479,20 +479,17 @@ async fn collect_current_worktree_paths(
     Ok(())
 }
 
-fn read_current_source(root: &WorkerRoot, path: &Utf8Path) -> Result<Option<Vec<u8>>, TargetError> {
-    // Workspace fixtures can use native names, but Git mutation targets retain
-    // the portable candidate-path contract.
-    if !hoimin_core::normalized_relative_path(path.as_str()) {
-        return Ok(None);
-    }
+fn read_current_source(
+    root: &PortableFileReader,
+    path: &Utf8Path,
+) -> Result<Option<Vec<u8>>, TargetError> {
     match root.read(path) {
         Ok(contents) => Ok(Some(contents)),
-        Err(WorkspaceError::InvalidPath { .. }) => Ok(None),
-        Err(error) => match root.is_missing(path) {
-            Ok(true) => Ok(None),
-            Ok(false) => Err(TargetError::GitFailed(error.to_string())),
-            Err(missing_error) => Err(TargetError::GitFailed(missing_error.to_string())),
-        },
+        Err(
+            PortableFileReadError::NotFound
+            | PortableFileReadError::Other(WorkspaceError::InvalidPath { .. }),
+        ) => Ok(None),
+        Err(error) => Err(TargetError::GitFailed(error.to_string())),
     }
 }
 
@@ -513,8 +510,8 @@ async fn translate_current_ranges(
     }
     let root = root.to_owned();
     tokio::task::spawn_blocking(move || {
-        let reader =
-            WorkerRoot::open(root).map_err(|error| TargetError::GitFailed(error.to_string()))?;
+        let reader = PortableFileReader::open(root)
+            .map_err(|error| TargetError::GitFailed(error.to_string()))?;
         let mut physical = BTreeMap::new();
         for (path, ranges) in changed {
             let Some(contents) = read_current_source(&reader, &path)? else {

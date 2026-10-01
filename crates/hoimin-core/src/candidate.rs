@@ -489,15 +489,9 @@ pub fn validate_candidate_with_context(
     Ok(stable_mutant_id(&CandidateIdentity::from(candidate)))
 }
 
+#[must_use]
 pub fn normalized_relative_path(path: &str) -> bool {
-    if path.is_empty() || path.starts_with('/') || path.contains('\\') {
-        return false;
-    }
-    path.split('/').all(valid_path_part)
-}
-
-fn valid_path_part(part: &str) -> bool {
-    !part.is_empty() && part != "." && part != ".." && !part.contains(':')
+    crate::RelativePathPolicy::Portable.allows(path)
 }
 
 fn canonical_identity_path(path: &str) -> String {

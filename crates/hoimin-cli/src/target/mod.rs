@@ -92,7 +92,7 @@ fn validate_symbols(selection: &Selection, targets: &[TargetSlice]) -> Result<()
     if selection.symbols.is_empty() {
         return Ok(());
     }
-    let root = crate::workspace::RootRelativeReader::open(selection.root.clone())
+    let root = crate::workspace::PortableFileReader::open(selection.root.clone())
         .map_err(|error| TargetError::DiscoveryFailed(error.to_string()))?;
     let mut selectors = std::collections::BTreeMap::<&str, Vec<String>>::new();
     for symbol in &selection.symbols {
