@@ -259,6 +259,86 @@ fn reset_restores_same_size_arbitrary_worker_change() {
     assert_eq!(worker.read("pkg/b.py").unwrap(), b"second\n");
 }
 
+#[cfg(unix)]
+#[test]
+fn colon_paths_are_copied_restored_and_checked_for_original_changes() {
+    let project = FixtureProject::new();
+    let paths = [
+        ".dockerfiles/appconfig/app:env:conf-sample",
+        "fixtures:local/nested/data:sample.txt",
+    ];
+    for path in paths {
+        write_file(project.temp.path(), path, b"original fixture\n");
+    }
+    let plan = preflight_plan(project.root(), 1, CopyOptions::default());
+    let grant = grant_plan(&plan, plan.aggregate_bytes());
+    let mut worker = plan
+        .create_worker(&grant.create_worker(EffectId(901), 0).unwrap())
+        .unwrap();
+
+    for path in paths {
+        assert_eq!(worker.read(path).unwrap(), b"original fixture\n");
+        worker.write(path, b"changed fixture\n").unwrap();
+    }
+    worker.reset().unwrap();
+    for path in paths {
+        assert_eq!(worker.read(path).unwrap(), b"original fixture\n");
+        worker.remove(path).unwrap();
+    }
+    worker.reset().unwrap();
+    for path in paths {
+        assert_eq!(worker.read(path).unwrap(), b"original fixture\n");
+        write_file(project.temp.path(), path, b"changed original\n");
+        assert!(matches!(
+            plan.verify_originals(),
+            Err(WorkspaceError::OriginalChanged { path: changed }) if changed == path
+        ));
+        write_file(project.temp.path(), path, b"original fixture\n");
+        plan.verify_originals().unwrap();
+    }
+    let worker_path = worker.root().to_owned();
+    worker.try_cleanup().unwrap();
+    assert!(!worker_path.exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn colon_paths_can_be_explicitly_excluded_from_copy_and_integrity_checks() {
+    use hoimin_cli::workspace::LiteralExclusion::{File, Tree};
+
+    let project = FixtureProject::new();
+    let file = ".dockerfiles/appconfig/app:env:conf-sample";
+    let tree = "fixtures:local";
+    for literal in [false, true] {
+        write_file(project.temp.path(), file, b"fixture\n");
+        write_file(project.temp.path(), "fixtures:local/data.txt", b"fixture\n");
+        let options = if literal {
+            CopyOptions {
+                literal_exclusions: vec![File(file.into()), Tree(tree.into())],
+                includes: vec!["**".into()],
+                ..CopyOptions::default()
+            }
+        } else {
+            CopyOptions {
+                excludes: vec![file.into(), tree.into()],
+                includes: vec!["**".into()],
+                ..CopyOptions::default()
+            }
+        };
+        let plan = preflight_plan(project.root(), 1, options);
+        let grant = grant_plan(&plan, plan.aggregate_bytes());
+        let worker = plan
+            .create_worker(&grant.create_worker(EffectId(901), 0).unwrap())
+            .unwrap();
+        assert!(!worker.root().join(file).exists());
+        assert!(!worker.root().join(tree).exists());
+        assert_eq!(worker.read("pkg/a.py").unwrap(), b"original\n");
+        write_file(project.temp.path(), file, b"changed\n");
+        write_file(project.temp.path(), "fixtures:local/new.txt", b"new\n");
+        plan.verify_originals().unwrap();
+    }
+}
+
 #[cfg(target_os = "linux")]
 #[test]
 fn reset_removes_a_non_utf8_file_and_restores_manifest_content() {

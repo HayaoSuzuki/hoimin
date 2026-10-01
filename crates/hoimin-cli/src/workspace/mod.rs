@@ -75,11 +75,22 @@ impl RootRelativeReader {
     }
 
     pub(crate) fn read(&self, path: &Utf8Path) -> Result<Vec<u8>, RootRelativeReadError> {
+        Self::validate_portable_path(path)?;
         self.classify_read(path, self.root.read(path))
     }
 
     fn hash(&self, path: &Utf8Path) -> Result<blake3::Hash, RootRelativeReadError> {
+        Self::validate_portable_path(path)?;
         self.classify_read(path, self.root.hash(path))
+    }
+
+    fn validate_portable_path(path: &Utf8Path) -> Result<(), WorkspaceError> {
+        if !hoimin_core::normalized_relative_path(path.as_str()) {
+            return Err(WorkspaceError::InvalidPath {
+                path: path.to_owned(),
+            });
+        }
+        Ok(())
     }
 
     fn classify_read<T>(

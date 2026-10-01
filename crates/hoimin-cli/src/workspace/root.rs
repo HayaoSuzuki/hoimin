@@ -15,6 +15,17 @@ use cap_primitives::fs::OpenOptionsExt;
 
 use super::{MAX_WORKER_TREE_DEPTH, WorkspaceError};
 
+// Workspace fixtures need native filesystem names, independently of the stricter
+// portable paths used for mutation candidates. Colons are ordinary names on Unix;
+// on Windows they can identify drive prefixes or alternate data streams.
+pub(super) fn normalized_workspace_path(path: &str) -> bool {
+    !path.is_empty()
+        && !path.contains(['\\', '\0'])
+        && path.split('/').all(|part| {
+            !part.is_empty() && part != "." && part != ".." && (cfg!(unix) || !part.contains(':'))
+        })
+}
+
 #[cfg(test)]
 pub(super) trait WorkspaceRaceHook: Send + Sync {
     fn parent_opened(&self, operation: &'static str, path: &Utf8Path);
@@ -1039,7 +1050,7 @@ impl WorkerRoot {
     }
 
     fn components(path: &Utf8Path) -> Result<Vec<&str>, WorkspaceError> {
-        if !hoimin_core::normalized_relative_path(path.as_str()) {
+        if !normalized_workspace_path(path.as_str()) {
             return Err(WorkspaceError::InvalidPath {
                 path: path.to_owned(),
             });
@@ -1791,6 +1802,36 @@ mod tests {
                 directory =
                     cap_primitives::fs::open_dir_nofollow(&directory, Path::new(&name)).unwrap();
             }
+        }
+    }
+
+    #[test]
+    fn workspace_paths_keep_root_boundaries_and_platform_colon_rules() {
+        for path in ["pkg/file.txt", ".dockerfiles/appconfig/sample"] {
+            assert!(normalized_workspace_path(path), "{path}");
+        }
+        for path in [
+            "",
+            ".",
+            "..",
+            "../outside",
+            "/absolute",
+            "a//b",
+            "a/./b",
+            "a/../b",
+            "a/",
+            "a\\b",
+            "a\0b",
+        ] {
+            assert!(!normalized_workspace_path(path), "{path:?}");
+        }
+        for path in [
+            ".dockerfiles/appconfig/app:env:conf-sample",
+            "fixtures:local/file.txt",
+            "file:stream",
+            "C:/file.txt",
+        ] {
+            assert_eq!(normalized_workspace_path(path), cfg!(unix), "{path}");
         }
     }
 

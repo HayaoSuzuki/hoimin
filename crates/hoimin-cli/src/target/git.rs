@@ -480,6 +480,11 @@ async fn collect_current_worktree_paths(
 }
 
 fn read_current_source(root: &WorkerRoot, path: &Utf8Path) -> Result<Option<Vec<u8>>, TargetError> {
+    // Workspace fixtures can use native names, but Git mutation targets retain
+    // the portable candidate-path contract.
+    if !hoimin_core::normalized_relative_path(path.as_str()) {
+        return Ok(None);
+    }
     match root.read(path) {
         Ok(contents) => Ok(Some(contents)),
         Err(WorkspaceError::InvalidPath { .. }) => Ok(None),

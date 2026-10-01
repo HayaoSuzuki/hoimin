@@ -3025,6 +3025,51 @@ async fn run_missing_explicit_candidate(
     (error, stdout)
 }
 
+#[cfg(unix)]
+#[tokio::test]
+async fn baseline_and_mutants_can_read_colon_named_workspace_fixtures() {
+    let project = tempfile::tempdir().unwrap();
+    let sample = project
+        .path()
+        .join(".dockerfiles/appconfig/app:env:conf-sample");
+    std::fs::create_dir_all(sample.parent().unwrap()).unwrap();
+    std::fs::write(&sample, b"fixture\n").unwrap();
+    std::fs::write(project.path().join("target.py"), "enabled = True\n").unwrap();
+    let output = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
+        .args(["run", "--root"])
+        .arg(project.path())
+        .args([
+            "--file",
+            "target.py",
+            "--operators",
+            "boolean_literal",
+            "--min-free-space",
+            TEST_MIN_FREE_SPACE,
+            "--allow-best-effort-memory",
+            "--",
+        ])
+        .arg(python_executable())
+        .args([
+            "-c",
+            "from pathlib import Path; assert Path('.dockerfiles/appconfig/app:env:conf-sample').read_bytes() == b'fixture\\n'; from target import enabled; assert enabled",
+        ])
+        .kill_on_drop(true)
+        .output()
+        .await
+        .unwrap();
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        report["baseline"]["termination"]["Exit"],
+        0,
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(report["mutants"].as_array().unwrap().len(), 1);
+    assert_eq!(report["mutants"][0]["status"], "killed");
+    assert_eq!(report["summary"]["complete"], true);
+    assert_eq!(std::fs::read(sample).unwrap(), b"fixture\n");
+}
+
 async fn run_fixture(test_args: &[&str]) -> FixtureRun {
     run_fixture_options(test_args, None, false).await
 }
