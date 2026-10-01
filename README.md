@@ -815,6 +815,71 @@ uv run python tests/wheel_smoke.py
 
 Windows Job Object tests run on Windows and Linux hard-limit tests require a delegated cgroup v2 runner. The ordinary Linux CI job verifies the explicit best-effort path separately.
 
-Releases are built only from matching `v*` tags. Version tags build and retain wheel artifacts without publishing them to PyPI. Public distribution is not enabled.
+## GitHub Releases
 
-Before enabling public distribution, add a separate manually triggered workflow, protect its GitHub environment with required reviewers or equivalent rules, and register PyPI Trusted Publishing for only that workflow and environment. Grant `id-token: write` only to its publication job, and update the workflow contract tests in the same change.
+Merging a pull request into `main` starts `.github/workflows/release.yml`.
+It reserves a `vMAJOR.MINOR.PATCH` tag on the merged commit, builds and checks
+all three platforms, then publishes a [GitHub Release](https://github.com/tokyogas-tech/hoimin/releases)
+with generated release notes and `SHA256SUMS`:
+
+| Platform | Standalone executable archive | Python wheel |
+| --- | --- | --- |
+| Windows x86_64 | `hoimin-v<VERSION>-windows-x86_64.zip` | `win_amd64` |
+| Linux x86_64 | `hoimin-v<VERSION>-linux-x86_64.tar.gz` | manylinux2014 |
+| macOS Apple Silicon | `hoimin-v<VERSION>-macos-aarch64.tar.gz` | macOS arm64 |
+
+Extract the archive for your platform and put `hoimin` (or `hoimin.exe`) on
+`PATH`. The standalone Linux executable is built on Ubuntu 22.04; the wheel
+uses manylinux2014 for broader glibc compatibility. Standalone executables
+do not need Python to show help or analyze source; running Python tests still
+requires the target project's Python environment. Wheels require Python 3.14.
+Install a downloaded compatible wheel with `uv tool install ./<WHEEL>.whl`.
+Access to release downloads follows this repository's visibility.
+
+The first release uses the workspace version (currently `0.1.0`). Later
+merges increment the highest stable tag's patch version. Raising the workspace
+version can establish a higher minimum version for the next release; keep
+`Cargo.toml`, `pyproject.toml`, `Cargo.lock`, and `uv.lock` consistent when
+changing it. CI embeds the reserved version into those four files in its
+build checkout, without committing version changes back to `main`.
+
+Before reserving a new tag, CI checks that the commit descends from the
+highest stable tag's commit, fetching complete history when needed. A delayed
+run for an older or divergent commit is skipped without a tag, build, or
+release. Each reservation atomically creates the version tag and advances the
+`hoimin-release-state` branch to that commit, conditional on the previously
+observed branch SHA. A competing reservation rejects the entire push and forces
+a fresh history check, even if the runs chose different version numbers.
+Existing tags remain reusable, so retries of an older, already tagged release
+still work.
+
+The workflow creates `hoimin-release-state` on the first new reservation. Reserve
+that branch for automation: do not delete, rewind, or push application changes
+to it. Repository rules must allow the workflow to create/update this branch
+and create version tags. Version tags are never overwritten; if either update
+is rejected, the atomic push writes neither ref.
+All concurrent automated reservations must use this protocol; manually created
+tags or runs of an older workflow do not participate in its shared lease.
+
+PRs and manual runs build preview packages (`-dev.<RUN_ID>`) and retain them
+as Actions artifacts. They do not create tags or releases. For a manual check:
+
+```console
+gh workflow run release.yml --ref <BRANCH>
+```
+
+If a merged-PR run fails, rerun that Actions run. It reuses the tag for the
+same commit, resumes a draft release, and leaves an already published release
+unchanged. All three builds and wheel smoke tests must succeed before
+publication. Manually pushing a tag does not trigger this workflow.
+Publication explicitly uses GitHub's `make_latest=legacy` selection by version
+and date, so a delayed older release does not become `Latest` merely by finishing
+last. There is no separate client-side read/compare/update of `Latest` that could
+race with another run. The GitHub API owns that selection; local tests check the
+outgoing request, while hosted execution remains the integration check.
+
+PyPI publication is not enabled. Before enabling it, add a separate manually
+triggered workflow, protect its GitHub environment with required reviewers
+or equivalent rules, and register PyPI Trusted Publishing for only that
+workflow and environment. Grant `id-token: write` only to its publication job,
+and update the workflow contract tests in the same change.
