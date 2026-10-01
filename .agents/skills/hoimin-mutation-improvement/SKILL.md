@@ -9,6 +9,15 @@ Improve tests against explicitly selected planned candidates. A surviving candid
 behavioral contract to test; it does not justify changing production code only to make a mutant
 fail.
 
+## Use the same hoimin version
+
+Keep the hoimin version used to create the plan throughout the improvement loop.
+For setup on another project, follow
+[Release wheel setup](../hoimin-mutation-testing/release-wheel.md): download a
+prebuilt wheel with authenticated `gh` and use `uv tool install` or `uvx`.
+If the version must change, regenerate the plan. To validate unreleased changes
+to hoimin itself, use a build of the working tree.
+
 ## Keep one plan valid
 
 1. Keep `PLAN.json` and verify reports in a temporary directory outside the repository.
