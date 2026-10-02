@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import tomllib
@@ -59,8 +60,6 @@ SETUP_UV_ACTION = "astral-sh/setup-uv"
 LEAN_CACHE_ACTION = "actions/cache"
 CACHE_RESTORE_ACTION = "actions/cache/restore"
 CACHE_SAVE_ACTION = "actions/cache/save"
-MATURIN_ACTION = "PyO3/maturin-action"
-PINNED_MATURIN_VERSION = "<pinned-maturin-version>"
 LEAN_ELAN_VERSION = "v4.1.2"
 LEAN_CORPUS_BY_EXECUTABLE = {
     "generate": "corpus/state-machine.jsonl",
@@ -336,6 +335,36 @@ def assert_standalone_build(job: dict[str, object], target: str, platform: str) 
     assert f"--binary {executable}" in string(package["run"])
 
 
+def assert_wheel_build(job: dict[str, object], target: str, platform: str) -> str:
+    build = named_step(job, "Build wheel")
+    assert set(build) == {"name", "env", "shell", "run"}
+    assert build["shell"] == "bash"
+    assert set(mapping(build["env"])) == {"MATURIN_VERSION"}
+    version = mapping(build["env"])["MATURIN_VERSION"]
+    assert isinstance(version, str)
+    assert re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", version)
+    command = string(build["run"])
+    if platform == "linux-x86_64":
+        expected = (
+            'docker run --rm --volume "$PWD:/io" --workdir /io '
+            "--env CARGO_TARGET_DIR=/tmp/hoimin-wheel-target "
+            'ghcr.io/pyo3/maturin:v"$MATURIN_VERSION" '
+            "build --release --locked --compatibility manylinux2014 "
+            f"--no-default-features --target {target} --out target/wheels\n"
+            'sudo chown -R "$(id -u):$(id -g)" target/wheels'
+        )
+    else:
+        expected = (
+            'uvx --from "maturin==$MATURIN_VERSION" maturin build '
+            "--release --locked --compatibility pypi --no-default-features "
+            f"--target {target}"
+        )
+    assert shlex.split(command.replace("\\\n", ""), comments=True) == shlex.split(
+        expected
+    )
+    return version
+
+
 def assert_github_release(workflow: str) -> None:
     decoded = workflow_contract(workflow)
     assert set(decoded) == {"name", True, "permissions", "concurrency", "jobs"}
@@ -381,7 +410,6 @@ def assert_github_release(workflow: str) -> None:
             CHECKOUT_ACTION,
             SETUP_PYTHON_ACTION,
             SETUP_UV_ACTION,
-            MATURIN_ACTION,
             UPLOAD_ARTIFACT_ACTION,
         ]
         checkout = steps[0]
@@ -389,23 +417,8 @@ def assert_github_release(workflow: str) -> None:
             "ref": "${{ needs.prepare.outputs.commit }}",
             "persist-credentials": False,
         }
-        build = next(step for step in steps if step.get("uses") == MATURIN_ACTION)
-        inputs = mapping(build["with"])
-        version = inputs.get("maturin-version")
-        assert isinstance(version, str)
-        assert re.fullmatch(
-            r"v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", version
-        )
-        maturin_versions.add(version)
-        expected_inputs = {
-            "command": "build",
-            "args": "--release --locked --compatibility pypi --no-default-features",
-            "maturin-version": version,
-            "target": target,
-        }
-        if platform == "linux-x86_64":
-            expected_inputs["manylinux"] = "2014"
-        assert inputs == expected_inputs
+        maturin_versions.add(assert_wheel_build(job, target, platform))
+        build = named_step(job, "Build wheel")
         smoke = next(step for step in steps if step.get("run") == WHEEL_SMOKE_COMMAND)
         assert smoke == {"run": WHEEL_SMOKE_COMMAND}
         assert steps.index(build) < steps.index(smoke) < len(steps) - 1
@@ -493,7 +506,6 @@ def test_every_workflow_uses_known_actions_with_full_commit_pins(path: Path) -> 
         CACHE_SAVE_ACTION,
         UPLOAD_ARTIFACT_ACTION,
         "actions/download-artifact",
-        MATURIN_ACTION,
     }
     decoded = workflow_contract(path.read_text(encoding="utf-8"))
     actions = [
@@ -1488,12 +1500,12 @@ def test_delegated_cgroup_job_remains_main_only_opted_in_and_fail_closed() -> No
 
 
 # Release Workflow contracts.
-@pytest.mark.parametrize("version", ["v1.99.0", "v2.0.1"])
+@pytest.mark.parametrize("version", ["1.99.0", "2.0.1"])
 def test_accepts_updated_matching_maturin_pins(version: str) -> None:
     workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
     updated, count = re.subn(
-        r"maturin-version: v[0-9]+\.[0-9]+\.[0-9]+",
-        "maturin-version: " + version,
+        r'MATURIN_VERSION: "[0-9]+\.[0-9]+\.[0-9]+"',
+        f'MATURIN_VERSION: "{version}"',
         workflow,
     )
     assert count == 3
@@ -1506,13 +1518,13 @@ def test_accepts_updated_matching_maturin_pins(version: str) -> None:
         "latest",
         "v1",
         "v1.15",
-        "1.15.0",
-        "v01.15.0",
-        "v1.015.0",
-        "v1.15.00",
-        "v1.15.0rc1",
-        "v1.15.0\n",
-        " v1.15.0",
+        "v1.15.0",
+        "01.15.0",
+        "1.015.0",
+        "1.15.00",
+        "1.15.0rc1",
+        "1.15.0\n",
+        " 1.15.0",
         "${{ inputs.maturin }}",
         "",
         None,
@@ -1525,8 +1537,8 @@ def test_rejects_invalid_maturin_pins(version: object) -> None:
     document = workflow_document(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
     for job in workflow_jobs(document).values():
         for step in job_steps(job):
-            if string(step.get("uses", "")).startswith(MATURIN_ACTION + "@"):
-                mapping(step["with"])["maturin-version"] = version
+            if step.get("name") == "Build wheel":
+                mapping(step["env"])["MATURIN_VERSION"] = version
     with pytest.raises(AssertionError):
         assert_github_release(yaml.safe_dump(document))
 
@@ -1535,8 +1547,8 @@ def test_rejects_missing_maturin_pins() -> None:
     document = workflow_document(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
     for job in workflow_jobs(document).values():
         for step in job_steps(job):
-            if string(step.get("uses", "")).startswith(MATURIN_ACTION + "@"):
-                del mapping(step["with"])["maturin-version"]
+            if step.get("name") == "Build wheel":
+                del mapping(step["env"])["MATURIN_VERSION"]
     with pytest.raises(AssertionError):
         assert_github_release(yaml.safe_dump(document))
 
@@ -1547,15 +1559,45 @@ def test_rejects_mismatched_maturin_pins_and_other_input_changes(change: str) ->
     step = next(
         step
         for step in job_steps(workflow_jobs(document)["windows-wheel"])
-        if string(step.get("uses", "")).startswith(MATURIN_ACTION + "@")
+        if step.get("name") == "Build wheel"
     )
     if change == "version":
-        mapping(step["with"])["maturin-version"] = "v9.99.0"
+        mapping(step["env"])["MATURIN_VERSION"] = "9.99.0"
     elif change == "args":
-        inputs = mapping(step["with"])
-        inputs["args"] = string(inputs["args"]) + " --features unexpected"
+        step["run"] = string(step["run"]) + " --features unexpected"
     else:
-        mapping(step["with"])["unexpected-version"] = "v1.15.0"
+        mapping(step["env"])["UNEXPECTED_VERSION"] = "1.15.0"
+    with pytest.raises(AssertionError):
+        assert_github_release(yaml.safe_dump(document))
+
+
+@pytest.mark.parametrize(
+    "required",
+    [
+        "--compatibility manylinux2014",
+        "--env CARGO_TARGET_DIR=/tmp/hoimin-wheel-target",
+        '--volume "$PWD:/io"',
+        "--workdir /io",
+        "--out target/wheels",
+        'sudo chown -R "$(id -u):$(id -g)" target/wheels',
+    ],
+)
+def test_linux_wheel_requires_portable_isolated_container_build(required: str) -> None:
+    document = workflow_document(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
+    build = named_step(workflow_jobs(document)["linux-wheel"], "Build wheel")
+    original = string(build["run"])
+    assert required in original
+    build["run"] = original.replace(required, "")
+    with pytest.raises(AssertionError):
+        assert_github_release(yaml.safe_dump(document))
+
+
+@pytest.mark.parametrize("job_name", ["windows-wheel", "linux-wheel", "macos-wheel"])
+@pytest.mark.parametrize("option", ["--all-features", "--skip-auditwheel"])
+def test_wheel_build_rejects_extra_options(job_name: str, option: str) -> None:
+    document = workflow_document(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
+    build = named_step(workflow_jobs(document)[job_name], "Build wheel")
+    build["run"] = string(build["run"]).replace("--locked", f"--locked {option}")
     with pytest.raises(AssertionError):
         assert_github_release(yaml.safe_dump(document))
 
@@ -1699,8 +1741,8 @@ def hostile_release_workflows() -> dict[str, str]:
             )
         ),
         "Maturin publish command": workflow.replace(
-            "          command: build\n",
-            "          command: publish\n",
+            "maturin build",
+            "maturin publish",
             1,
         ),
         "top-level environment and default publishing shell": workflow.replace(
