@@ -169,6 +169,10 @@ jobs:
             build --release --locked --compatibility manylinux2014 \
             --no-default-features --target x86_64-unknown-linux-gnu --out target/wheels
           sudo chown -R "$(id -u):$(id -g)" target/wheels
+          # --rm removes the build container, but the large manylinux image remains.
+          # Reclaim it before smoke tests without lowering hoimin's 10 GiB reserve.
+          docker image rm ghcr.io/pyo3/maturin:v"$MATURIN_VERSION"
+          df -h . /tmp
       - run: uv sync --frozen --no-install-project
       - run: uv run --frozen --no-sync python tests/wheel_smoke.py
       - name: Package verified binaries and wheels

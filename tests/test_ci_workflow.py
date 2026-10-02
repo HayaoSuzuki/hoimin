@@ -351,7 +351,9 @@ def assert_wheel_build(job: dict[str, object], target: str, platform: str) -> st
             'ghcr.io/pyo3/maturin:v"$MATURIN_VERSION" '
             "build --release --locked --compatibility manylinux2014 "
             f"--no-default-features --target {target} --out target/wheels\n"
-            'sudo chown -R "$(id -u):$(id -g)" target/wheels'
+            'sudo chown -R "$(id -u):$(id -g)" target/wheels\n'
+            'docker image rm ghcr.io/pyo3/maturin:v"$MATURIN_VERSION"\n'
+            "df -h . /tmp"
         )
     else:
         expected = (
@@ -1584,6 +1586,7 @@ def test_rejects_mismatched_maturin_pins_and_other_input_changes(change: str) ->
         "--workdir /io",
         "--out target/wheels",
         'sudo chown -R "$(id -u):$(id -g)" target/wheels',
+        'docker image rm ghcr.io/pyo3/maturin:v"$MATURIN_VERSION"',
     ],
 )
 def test_linux_wheel_requires_portable_isolated_container_build(required: str) -> None:
