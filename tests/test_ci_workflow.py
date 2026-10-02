@@ -125,7 +125,7 @@ LEAN_SENSITIVITY_EXECUTABLES = {
     if name not in {"generate", "generate_budget", "generate_workspace"}
 }
 UPLOAD_ARTIFACT_ACTION = "actions/upload-artifact"
-WHEEL_SMOKE_COMMAND = "uv run --frozen python tests/wheel_smoke.py"
+WHEEL_SMOKE_COMMAND = "uv run --frozen --no-sync python tests/wheel_smoke.py"
 MANUAL_NON_LINUX_CI_COMMAND = "gh workflow run non-linux-ci.yml --ref <REF>"
 
 
@@ -421,6 +421,9 @@ def assert_github_release(workflow: str) -> None:
         build = named_step(job, "Build wheel")
         smoke = next(step for step in steps if step.get("run") == WHEEL_SMOKE_COMMAND)
         assert smoke == {"run": WHEEL_SMOKE_COMMAND}
+        assert steps[steps.index(smoke) - 1] == {
+            "run": "uv sync --frozen --no-install-project"
+        }
         assert steps.index(build) < steps.index(smoke) < len(steps) - 1
         assert steps[-1] == {
             "uses": UPLOAD_ARTIFACT_ACTION,
@@ -1346,7 +1349,8 @@ def test_development_guide_separates_pin_updates_from_msrv_updates() -> None:
         "cargo test -p hoimin-cli --features contracts",
         "uv run --frozen pytest",
         "uvx maturin build --release",
-        "uv run --frozen python tests/wheel_smoke.py",
+        "uv sync --frozen --no-install-project",
+        "uv run --frozen --no-sync python tests/wheel_smoke.py",
     ]
     fence = chr(96) * 3
     prefix = (
@@ -1400,7 +1404,7 @@ def test_wheel_smoke_build_starts_from_an_empty_artifact_directory() -> None:
         "shutil.rmtree('target/wheels', ignore_errors=True)\""
     )
     build = "uvx maturin build --release"
-    smoke = "uv run --frozen python tests/wheel_smoke.py"
+    smoke = "uv run --frozen --no-sync python tests/wheel_smoke.py"
 
     assert wheel_smoke.index(unit_tests) < wheel_smoke.index(reset)
     assert wheel_smoke.index(reset) < wheel_smoke.index(build)
@@ -1691,8 +1695,8 @@ def hostile_release_workflows() -> dict[str, str]:
             "permissions:\n  contents: read\n  id-token: write",
         ),
         "publisher run command": workflow.replace(
-            "      - run: uv run --frozen python tests/wheel_smoke.py\n",
-            "      - run: uv run --frozen python tests/wheel_smoke.py\n"
+            "      - run: uv run --frozen --no-sync python tests/wheel_smoke.py\n",
+            "      - run: uv run --frozen --no-sync python tests/wheel_smoke.py\n"
             "      - run: uv publish\n",
             1,
         ),
@@ -1708,15 +1712,15 @@ def hostile_release_workflows() -> dict[str, str]:
             "permissions: {contents: read, id-token: write}",
         ),
         "quoted uses key": workflow.replace(
-            "      - run: uv run --frozen python tests/wheel_smoke.py\n",
-            "      - run: uv run --frozen python tests/wheel_smoke.py\n"
+            "      - run: uv run --frozen --no-sync python tests/wheel_smoke.py\n",
+            "      - run: uv run --frozen --no-sync python tests/wheel_smoke.py\n"
             '      - "uses": attacker/publish@'
             "0123456789abcdef0123456789abcdef01234567\n",
             1,
         ),
         "explicit mapping uses key": workflow.replace(
-            "      - run: uv run --frozen python tests/wheel_smoke.py\n",
-            "      - run: uv run --frozen python tests/wheel_smoke.py\n"
+            "      - run: uv run --frozen --no-sync python tests/wheel_smoke.py\n",
+            "      - run: uv run --frozen --no-sync python tests/wheel_smoke.py\n"
             "      - ? uses\n"
             "        : attacker/publish@0123456789abcdef0123456789abcdef01234567\n",
             1,
@@ -1726,15 +1730,15 @@ def hostile_release_workflows() -> dict[str, str]:
             'permissions:\n  contents: read\n  "id\\u002dtoken": write',
         ),
         "publisher shell on expected smoke command": workflow.replace(
-            "      - run: uv run --frozen python tests/wheel_smoke.py\n",
-            "      - run: uv run --frozen python tests/wheel_smoke.py\n"
+            "      - run: uv run --frozen --no-sync python tests/wheel_smoke.py\n",
+            "      - run: uv run --frozen --no-sync python tests/wheel_smoke.py\n"
             "        shell: bash -c 'uv publish && bash \"$1\"' -- {0}\n",
             1,
         ),
         "literal publication token on expected smoke command": (
             workflow.replace(
-                "      - run: uv run --frozen python tests/wheel_smoke.py\n",
-                "      - run: uv run --frozen python tests/wheel_smoke.py\n"
+                "      - run: uv run --frozen --no-sync python tests/wheel_smoke.py\n",
+                "      - run: uv run --frozen --no-sync python tests/wheel_smoke.py\n"
                 "        env:\n"
                 "          UV_PUBLISH_TOKEN: pypi-hostile-token\n",
                 1,

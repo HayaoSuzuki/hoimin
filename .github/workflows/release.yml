@@ -105,7 +105,8 @@ jobs:
           uvx --from "maturin==$MATURIN_VERSION" maturin build \
             --release --locked --compatibility pypi --no-default-features \
             --target x86_64-pc-windows-msvc
-      - run: uv run --frozen python tests/wheel_smoke.py
+      - run: uv sync --frozen --no-install-project
+      - run: uv run --frozen --no-sync python tests/wheel_smoke.py
       - name: Package verified binaries and wheels
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
@@ -168,7 +169,8 @@ jobs:
             build --release --locked --compatibility manylinux2014 \
             --no-default-features --target x86_64-unknown-linux-gnu --out target/wheels
           sudo chown -R "$(id -u):$(id -g)" target/wheels
-      - run: uv run --frozen python tests/wheel_smoke.py
+      - run: uv sync --frozen --no-install-project
+      - run: uv run --frozen --no-sync python tests/wheel_smoke.py
       - name: Package verified binaries and wheels
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
@@ -226,7 +228,8 @@ jobs:
           uvx --from "maturin==$MATURIN_VERSION" maturin build \
             --release --locked --compatibility pypi --no-default-features \
             --target aarch64-apple-darwin
-      - run: uv run --frozen python tests/wheel_smoke.py
+      - run: uv sync --frozen --no-install-project
+      - run: uv run --frozen --no-sync python tests/wheel_smoke.py
       - name: Package verified binaries and wheels
         env:
           VERSION: ${{ needs.prepare.outputs.version }}

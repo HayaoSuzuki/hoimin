@@ -69,7 +69,8 @@ cargo test -p hoimin-core --features contracts
 cargo test -p hoimin-cli --features contracts
 uv run --frozen pytest
 uvx maturin build --release
-uv run --frozen python tests/wheel_smoke.py
+uv sync --frozen --no-install-project
+uv run --frozen --no-sync python tests/wheel_smoke.py
 ```
 
 ## Dependency vulnerability audits
@@ -494,6 +495,10 @@ that still supports the MSRV. If the project deliberately raises its MSRV,
 update `workspace.package.rust-version`, the `msrv` CI job, its workflow
 contract test, and this section in the same pull request. The pinned stable CI
 gate remains required in addition to the MSRV gate.
+
+Install the smoke script's dependencies with `uv sync --frozen --no-install-project`,
+then use `uv run --frozen --no-sync` to run it. This avoids rebuilding hoimin or
+replacing the wheel being tested.
 
 Before running the standalone wheel smoke script, you must build a release wheel
 first with `uvx maturin build --release`. Alternatively, set `HOIMIN_WHEEL`

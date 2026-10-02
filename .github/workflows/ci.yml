@@ -574,7 +574,8 @@ jobs:
       - name: Reset wheel artifact directory
         run: python -c "import shutil; shutil.rmtree('target/wheels', ignore_errors=True)"
       - run: uvx maturin build --release
-      - run: uv run --frozen python tests/wheel_smoke.py
+      - run: uv sync --frozen --no-install-project
+      - run: uv run --frozen --no-sync python tests/wheel_smoke.py
 
   linux-best-effort:
     needs: quality

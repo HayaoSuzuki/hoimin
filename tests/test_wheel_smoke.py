@@ -69,8 +69,8 @@ def test_documentation_requires_build_before_standalone_smoke() -> None:
     readme = (repository_root / "README.md").read_text(encoding="utf-8")
     development_build_command = "uvx maturin build --release"
     readme_build_command = "uv run maturin build --release"
-    development_smoke = "uv run --frozen python tests/wheel_smoke.py"
-    readme_smoke = "uv run python tests/wheel_smoke.py"
+    development_smoke = "uv run --frozen --no-sync python tests/wheel_smoke.py"
+    readme_smoke = "uv run --frozen --no-sync python tests/wheel_smoke.py"
     assert "must build a release wheel first" in " ".join(development.split())
     assert development.index(development_build_command) < development.index(
         development_smoke

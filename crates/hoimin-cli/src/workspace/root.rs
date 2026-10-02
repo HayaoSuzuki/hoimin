@@ -237,10 +237,15 @@ impl WorkerRoot {
     }
 
     pub(crate) fn ensure_directory(&self, path: &Utf8Path) -> Result<(), WorkspaceError> {
+        Self::components(path)?;
         // Opening a synthetic child's parent creates and checks every directory component;
         // no child file is created, and all opens retain the existing no-follow policy.
-        self.open_parent(&path.join(".hoimin-directory-probe"), true)
-            .map(|_| ())
+        // Keep the probe slash-separated even when native joins use backslashes.
+        self.open_parent(
+            &Self::logical_child_path(path, ".hoimin-directory-probe"),
+            true,
+        )
+        .map(|_| ())
     }
 
     pub(crate) fn read(&self, path: &Utf8Path) -> Result<Vec<u8>, WorkspaceError> {
@@ -1819,6 +1824,83 @@ mod tests {
 
         assert_eq!(name, OsStr::new("file.py"));
         assert!(fixture.worker.join("new/nested").is_dir());
+    }
+
+    #[test]
+    fn ensure_directory_creates_nested_paths_without_probe_files() {
+        let fixture = RootFixture::new();
+        let root = WorkerRoot::open(fixture.worker_path()).unwrap();
+
+        for path in ["src", "src/pkg/empty", "日本語/設定"] {
+            for _ in 0..2 {
+                root.ensure_directory(Utf8Path::new(path)).unwrap();
+                let directory = fixture.worker.join(path);
+                assert!(directory.is_dir());
+                assert!(!directory.join(".hoimin-directory-probe").exists());
+            }
+        }
+        root.write(Utf8Path::new("src/pkg/empty/module.py"), b"value = 1\n")
+            .unwrap();
+        assert_eq!(
+            root.read(Utf8Path::new("src/pkg/empty/module.py")).unwrap(),
+            b"value = 1\n"
+        );
+    }
+
+    #[test]
+    fn ensure_directory_rejects_non_normal_paths_before_creating_entries() {
+        let fixture = RootFixture::new();
+        let root = WorkerRoot::open(fixture.worker_path()).unwrap();
+
+        for path in [
+            "",
+            ".",
+            "..",
+            "../outside",
+            "/absolute",
+            "new/",
+            "new//nested",
+            "new/./nested",
+            "new/../nested",
+            "new\\nested",
+            "new\0nested",
+            "//server/share",
+            "C:\\nested",
+        ] {
+            let result = root.ensure_directory(Utf8Path::new(path));
+            assert!(
+                matches!(result, Err(WorkspaceError::InvalidPath { .. })),
+                "{path:?}: {result:?}"
+            );
+        }
+        #[cfg(windows)]
+        for path in ["C:/nested", "new:stream", "new/nested:stream"] {
+            assert!(matches!(
+                root.ensure_directory(Utf8Path::new(path)),
+                Err(WorkspaceError::InvalidPath { .. })
+            ));
+        }
+        assert_eq!(fs::read_dir(&fixture.worker).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn ensure_directory_rejects_linked_components() {
+        let fixture = RootFixture::new();
+        fixture.link_dir("outside", "linked").unwrap();
+        let root = WorkerRoot::open(fixture.worker_path()).unwrap();
+
+        for path in ["linked", "linked/nested"] {
+            assert!(matches!(
+                root.ensure_directory(Utf8Path::new(path)),
+                Err(WorkspaceError::InvalidPath { .. })
+            ));
+        }
+        assert_eq!(
+            fs::read_dir(fixture.worker.parent().unwrap().join("outside"))
+                .unwrap()
+                .count(),
+            0
+        );
     }
 
     #[test]
