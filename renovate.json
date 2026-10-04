@@ -13,20 +13,30 @@
   },
   "packageRules": [
     {
-      "description": "Wait 3 days for Rust development dependencies",
+      "description": "Group production dependencies after 7 days",
+      "matchManagers": ["cargo"],
+      "matchDepTypes": ["dependencies"],
+      "groupName": "production dependencies",
+      "minimumReleaseAge": "7 days"
+    },
+    {
+      "description": "Group Rust development dependencies after 3 days",
       "matchManagers": ["cargo"],
       "matchDepTypes": ["dev-dependencies"],
+      "groupName": "development dependencies",
       "minimumReleaseAge": "3 days"
     },
     {
-      "description": "Wait 3 days for Python development dependencies",
+      "description": "Group Python development dependencies after 3 days",
       "matchManagers": ["pep621"],
       "matchDepTypes": ["dependency-groups"],
+      "groupName": "development dependencies",
       "minimumReleaseAge": "3 days"
     },
     {
-      "description": "Wait 3 days for GitHub Actions updates",
+      "description": "Group GitHub Actions updates after 3 days",
       "matchManagers": ["github-actions"],
+      "groupName": "development dependencies",
       "minimumReleaseAge": "3 days"
     }
   ]
