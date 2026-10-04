@@ -153,9 +153,17 @@ async fn legitimate_empty_sources_still_succeed() {
             );
             let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
             if command == "plan" {
-                assert!(value["candidates"].as_array().unwrap().is_empty());
+                assert!(
+                    value["candidates"].as_array().unwrap().is_empty(),
+                    "unexpected candidates: {}",
+                    value["candidates"]
+                );
             } else {
-                assert!(value["mutants"].as_array().unwrap().is_empty());
+                assert!(
+                    value["mutants"].as_array().unwrap().is_empty(),
+                    "unexpected mutants: {}",
+                    value["mutants"]
+                );
                 assert!(project.evidence.path().join("baseline").exists());
             }
         }

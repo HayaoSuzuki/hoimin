@@ -25,7 +25,7 @@ fn resume_metadata_has_stable_tagged_encoding_and_legacy_events_default() {
             serde_json::from_value::<ResumeOutcome>(value).unwrap(),
             outcome
         );
-        assert!(!reason.explanation().is_empty());
+        assert_ne!(reason.explanation(), "");
     }
     assert!(
         serde_json::from_value::<ResumeOutcome>(json!({"status":"fresh","reason":"unknown"}))

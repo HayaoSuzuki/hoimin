@@ -334,7 +334,7 @@ fn parse_corpus() -> Vec<CorpusCase> {
     let mut ids = BTreeSet::new();
     for case in &cases {
         assert_eq!(case.schema, 1, "{} schema", case.id);
-        assert!(!case.id.is_empty());
+        assert_ne!(case.id, "");
         assert!(ids.insert(case.id.as_str()), "duplicate case {}", case.id);
         assert!(matches!(case.layer.as_str(), "policy" | "runtime"));
         assert!(matches!(

@@ -521,7 +521,7 @@ mod tests {
         let source = "True,".repeat(64_000);
         let index = PythonSourceIndex::new(&source).unwrap();
 
-        assert!(index.unicode_excess.is_empty());
+        assert_eq!(index.unicode_excess, Vec::new());
         for offset in (0..source.len()).step_by(5) {
             assert_eq!(
                 index.line_and_column(offset),

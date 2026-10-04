@@ -373,7 +373,11 @@ async fn invalid_syntax_warns_and_prevents_a_complete_zero_candidate_run() {
         "{diagnostic}"
     );
     assert_eq!(run.document["summary"]["complete"], false);
-    assert!(run.document["mutants"].as_array().unwrap().is_empty());
+    assert!(
+        run.document["mutants"].as_array().unwrap().is_empty(),
+        "unexpected mutants: {}",
+        run.document["mutants"]
+    );
     assert!(
         !run.stdout.contains("\"complete\":true"),
         "invalid syntax must not produce a complete zero-candidate report: {}",
@@ -613,7 +617,11 @@ async fn generic_type_parameter_destinations_cannot_create_false_kills() {
         assert_eq!(run.document["baseline"]["termination"]["Exit"], 0);
         assert_eq!(run.document["summary"]["complete"], true);
         assert_eq!(run.document["summary"]["counts"]["killed"], 0);
-        assert!(run.document["mutants"].as_array().unwrap().is_empty());
+        assert!(
+            run.document["mutants"].as_array().unwrap().is_empty(),
+            "unexpected mutants: {}",
+            run.document["mutants"]
+        );
         assert_eq!(std::fs::read_to_string(path).unwrap(), source);
     }
 }
@@ -1279,7 +1287,7 @@ async fn failing_baseline_runs_no_mutants_and_returns_three() {
     let run = run_fixture(&["-c", "raise SystemExit(1)"]).await;
 
     assert_eq!(run.exit_code, 3);
-    assert!(run.statuses.is_empty());
+    assert_eq!(run.statuses, Vec::<String>::new());
 }
 
 #[tokio::test]

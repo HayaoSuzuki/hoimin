@@ -566,7 +566,7 @@ async fn changed_target_with_an_empty_explicit_scope_does_not_read_untracked_fil
     .await
     .unwrap();
 
-    assert!(targets.is_empty());
+    assert_eq!(targets, Vec::new());
 }
 
 #[cfg(unix)]
@@ -1158,7 +1158,7 @@ async fn changed_context_expands_current_lines_and_intersects_explicit_ranges() 
         if includes_second {
             assert_eq!(restricted[0].lines, vec![LineRange { start: 2, end: 2 }]);
         } else {
-            assert!(restricted.is_empty());
+            assert_eq!(restricted, Vec::new());
         }
     }
 }
@@ -1231,7 +1231,7 @@ async fn changed_cr_deletion_context_preserves_surviving_byte_coverage() {
         .await
         .unwrap();
         if context == 0 {
-            assert!(targets.is_empty());
+            assert_eq!(targets, Vec::new());
         } else {
             assert_eq!(targets[0].lines, [LineRange { start: 1, end: 4 }]);
         }

@@ -151,5 +151,9 @@ async fn public_run_does_not_count_a_custom_callable_as_a_killed_mutant() {
     let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
     assert_eq!(report["summary"]["complete"], true);
     assert_eq!(report["summary"]["counts"]["killed"], 0);
-    assert!(report["mutants"].as_array().unwrap().is_empty());
+    assert!(
+        report["mutants"].as_array().unwrap().is_empty(),
+        "unexpected mutants: {}",
+        report["mutants"]
+    );
 }

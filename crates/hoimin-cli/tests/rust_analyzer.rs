@@ -44,7 +44,7 @@ fn typing_import_rebinding_inventory_is_site_aware() {
 
     // Python 3.14 defers these module annotations: both imported spellings
     // are rebound before their values need to be evaluated.
-    assert!(output.candidates.is_empty());
+    assert_eq!(output.candidates, Vec::new());
 
     for candidate in &output.candidates {
         let start = usize::try_from(candidate.span.start).unwrap();

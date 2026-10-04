@@ -53,7 +53,7 @@ async fn source_scoped_plan_preserves_candidates_as_unrelated_files_grow() {
             let mut stderr = Vec::new();
             let exit = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
             assert_eq!(exit, 0, "{}", String::from_utf8_lossy(&stderr));
-            assert!(stderr.is_empty());
+            assert_eq!(stderr, Vec::<u8>::new());
             let value: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
             assert_eq!(value["diagnostics"], serde_json::json!([]));
             assert_eq!(value["candidates"].as_array().unwrap().len(), 1);
@@ -169,7 +169,7 @@ async fn create_plan_emits_versioned_manifest_without_runtime_side_effects() {
     assert!(manifest["normalized_config"].get("resume").is_none());
     assert!(!workspace_marker.exists());
     assert!(!session_path.exists());
-    assert!(stderr.is_empty());
+    assert_eq!(stderr, Vec::<u8>::new());
 }
 
 #[tokio::test]
@@ -270,7 +270,7 @@ async fn explicit_class_symbol_ranks_and_verifies_its_method_before_an_unrelated
         "stderr={}",
         String::from_utf8_lossy(&plan_stderr)
     );
-    assert!(plan_stderr.is_empty());
+    assert_eq!(plan_stderr, Vec::<u8>::new());
     let manifest: PlanManifest = serde_json::from_slice(&plan_stdout).unwrap();
     assert_eq!(manifest.candidates.len(), 2);
     assert_eq!(
@@ -316,7 +316,7 @@ async fn explicit_class_symbol_ranks_and_verifies_its_method_before_an_unrelated
         "stderr={}",
         String::from_utf8_lossy(&verify_stderr)
     );
-    assert!(verify_stderr.is_empty());
+    assert_eq!(verify_stderr, Vec::<u8>::new());
     let report: serde_json::Value = serde_json::from_slice(&verify_stdout).unwrap();
     assert_eq!(
         report["baseline"]["termination"],
@@ -504,7 +504,7 @@ async fn cli_verify_rejects_a_bom_counted_column_before_baseline() {
     let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
 
     assert_eq!(code, 2);
-    assert!(stdout.is_empty());
+    assert_eq!(stdout, Vec::<u8>::new());
     assert_eq!(
         String::from_utf8(stderr).unwrap(),
         "plan.candidate.invalid: candidate line or column does not match its byte span\n",
@@ -709,7 +709,7 @@ async fn changed_plan_fifo_child() {
     .await;
 
     assert_eq!(exit, 0, "stderr={}", String::from_utf8_lossy(&stderr));
-    assert!(!stdout.is_empty());
+    assert_ne!(stdout, Vec::<u8>::new());
 }
 
 #[tokio::test]
@@ -750,8 +750,8 @@ async fn plan_invalid_syntax_returns_two_without_a_manifest() {
     let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
 
     assert_eq!(code, 2);
-    assert!(stdout.is_empty());
-    assert!(!stderr.is_empty());
+    assert_eq!(stdout, Vec::<u8>::new());
+    assert_ne!(stderr, Vec::<u8>::new());
     assert!(!marker.exists());
 }
 
@@ -1097,7 +1097,7 @@ async fn verify_prioritizes_invalid_normalized_config_over_requested_id_limits()
     value["normalized_config"]["limits"]["max_mutants"] = serde_json::json!(1);
     let tampered: PlanManifest = serde_json::from_value(value.clone()).unwrap();
     assert_eq!(tampered.normalized_config.limits.max_mutants.get(), 1);
-    assert!(tampered.normalized_config.test_argv.is_empty());
+    assert_eq!(tampered.normalized_config.test_argv, Vec::new());
     write_json(&path, &value);
 
     let error = prepare_verify(&path, &requested, OutputFormat::Json)
@@ -2021,7 +2021,7 @@ async fn assert_empty_top_selection_is_rejected(policy: &str) {
     let coordinator = tempfile::tempdir().unwrap();
     let marker = coordinator.path().join("test-command-ran");
     let (path, manifest) = write_plan_manifest_with_marker(&project, &[], &marker).await;
-    assert!(manifest.candidates.is_empty());
+    assert_eq!(manifest.candidates, Vec::new());
     assert!(!manifest.truncated);
     let original_plan = std::fs::read(&path).unwrap();
 
@@ -2174,7 +2174,7 @@ async fn verify_top_budget_shortfall_preserves_jsonl_stdout() {
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
         .collect::<Vec<_>>();
-    assert!(!lines.is_empty());
+    assert_ne!(lines, Vec::<&[u8]>::new());
     for line in lines {
         let _: serde_json::Value = serde_json::from_slice(line).unwrap();
         assert!(
@@ -2515,12 +2515,7 @@ fn python_executable() -> PathBuf {
 
 fn assert_selected_resource_policy(run: &serde_json::Value, baseline: &serde_json::Value) {
     assert_eq!(run["resource_control"]["mode"], baseline["resource_mode"]);
-    assert!(
-        !run["resource_control"]["mechanism"]
-            .as_str()
-            .unwrap()
-            .is_empty()
-    );
+    assert_ne!(run["resource_control"]["mechanism"].as_str().unwrap(), "");
     if cfg!(target_os = "macos") {
         assert_eq!(run["resource_control"]["mode"], "best_effort");
         assert_eq!(run["resource_control"]["mechanism"], "portable");
@@ -2585,7 +2580,7 @@ async fn plan_rejects_an_explicit_uncopyable_file_before_baseline() {
     let mut stderr = Vec::new();
     let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
     assert_eq!(code, 2);
-    assert!(stdout.is_empty());
+    assert_eq!(stdout, Vec::<u8>::new());
     let error = String::from_utf8(stderr).unwrap();
     assert!(error.contains("src/venv/dep.py"), "{error}");
     assert!(error.contains("outside"), "{error}");
@@ -2680,7 +2675,7 @@ async fn oversized_candidate_plan_fails_with_context_before_baseline() {
     let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
     // pins: issue #459 — plan used to succeed for a candidate the spool cannot encode.
     assert_eq!(code, 2);
-    assert!(stdout.is_empty());
+    assert_eq!(stdout, Vec::<u8>::new());
     assert!(!marker.exists());
     let error = String::from_utf8(stderr).unwrap();
     for detail in ["src/calc.py:1", "collection_list_tuple", "2097152"] {
@@ -2731,7 +2726,7 @@ async fn oversized_legacy_candidate_is_rejected_before_verify_baseline() {
     assert_eq!(code, 2);
     // pins: issue #459 — an old valid oversized plan used to start baseline first.
     assert!(!marker.exists());
-    assert!(stdout.is_empty());
+    assert_eq!(stdout, Vec::<u8>::new());
     let error = String::from_utf8(stderr).unwrap();
     for detail in ["src/calc.py:1", "collection_list_tuple", "2097152"] {
         assert!(error.contains(detail), "missing {detail}: {error}");
@@ -2791,7 +2786,7 @@ async fn candidate_record_limits_agree_for_plan_verify_and_direct_run() {
         if fits {
             assert_eq!(report["summary"]["counts"]["survived"], 1);
         } else {
-            assert!(report["mutants"].as_array().unwrap().is_empty());
+            assert!(report["mutants"].as_array().unwrap().is_empty(), "{report}");
             let error = String::from_utf8(stderr).unwrap();
             for detail in ["src/calc.py:1", "collection_list_tuple", "2097152"] {
                 assert!(error.contains(detail), "missing {detail}: {error}");
@@ -3139,7 +3134,7 @@ async fn verify_metrics_is_not_written_when_plan_validation_fails() {
     .await;
     assert_eq!(exit, 2);
     assert!(String::from_utf8_lossy(&stderr).contains("plan.source.changed"));
-    assert!(stdout.is_empty());
+    assert_eq!(stdout, Vec::<u8>::new());
     assert!(!marker.exists());
     assert_eq!(
         std::fs::read_to_string(metrics_path).unwrap(),
@@ -3450,7 +3445,7 @@ async fn symbol_definition_existing_empty_scopes_are_valid() {
             String::from_utf8_lossy(&stderr)
         );
         let manifest: PlanManifest = serde_json::from_slice(&stdout).unwrap();
-        assert!(manifest.candidates.is_empty());
+        assert_eq!(manifest.candidates, Vec::new());
         assert!(manifest.diagnostics.is_empty());
     }
 }
@@ -3477,7 +3472,7 @@ async fn symbol_definition_existing_unchanged_scope_is_valid() {
             String::from_utf8_lossy(&stderr)
         );
         let manifest: PlanManifest = serde_json::from_slice(&stdout).unwrap();
-        assert!(manifest.candidates.is_empty());
+        assert_eq!(manifest.candidates, Vec::new());
         assert!(manifest.diagnostics.is_empty());
     }
 }
@@ -3623,7 +3618,7 @@ async fn verify_ranking_large_bodies_preserves_public_preview_and_checks_unselec
     write_json(&path, &tampered);
     let output = preview_cli(&path, &["--top", "1", "--dry-run"], temporary.path()).await;
     assert_eq!(output.status.code(), Some(2));
-    assert!(output.stdout.is_empty());
+    assert_eq!(output.stdout, Vec::<u8>::new());
     assert_eq!(
         String::from_utf8(output.stderr).unwrap(),
         "plan.manifest.invalid: candidate ranking differs from the deterministic ranking rules\n"
@@ -4003,7 +3998,7 @@ async fn verify_preview_rejects_metrics_without_touching_existing_destination() 
     )
     .await;
     assert_eq!(output.status.code(), Some(2));
-    assert!(output.stdout.is_empty());
+    assert_eq!(output.stdout, Vec::<u8>::new());
     assert!(String::from_utf8_lossy(&output.stderr).contains("cannot be used with"));
     assert_eq!(
         std::fs::read_to_string(destination).unwrap(),

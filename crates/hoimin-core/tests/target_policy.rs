@@ -317,9 +317,9 @@ fn whole_file_and_subfile_selectors_resolve_sorted_targets() {
             .collect::<Vec<_>>(),
         ["pkg/a.py", "pkg/b.py", "pkg/c.py"]
     );
-    assert!(targets[0].lines.is_empty());
+    assert_eq!(targets[0].lines, Vec::new());
     assert_eq!(targets[1].lines, [LineRange { start: 4, end: 7 }]);
-    assert!(targets[2].lines.is_empty());
+    assert_eq!(targets[2].lines, Vec::new());
 }
 
 #[test]

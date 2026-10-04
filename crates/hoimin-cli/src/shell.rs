@@ -8442,7 +8442,7 @@ mod tests {
         drain.await.unwrap();
 
         assert_eq!(in_flight, 0);
-        assert!(warnings.is_empty());
+        assert_eq!(warnings, Vec::new());
         assert_eq!(
             context
                 .workspace()
@@ -8452,7 +8452,7 @@ mod tests {
                 .unwrap(),
             b"mutated!\n"
         );
-        assert!(metrics.unwrap().finish(0, 0).unwrap().workers.is_empty());
+        assert_eq!(metrics.unwrap().finish(0, 0).unwrap().workers, Vec::new());
     }
 
     #[tokio::test]
@@ -8491,7 +8491,7 @@ mod tests {
             "cancellation: shutdown grace expired after 2s (process tasks: 1, blocking I/O tasks: 1)"
         );
         assert_eq!(in_flight, 0);
-        assert!(warnings.is_empty());
+        assert_eq!(warnings, Vec::new());
     }
 
     #[tokio::test]
@@ -8567,7 +8567,7 @@ mod tests {
 
         assert!(error.starts_with("total timeout: shutdown grace expired after 2s"));
         assert_eq!(in_flight, 0);
-        assert!(warnings.is_empty());
+        assert_eq!(warnings, Vec::new());
         assert_eq!(
             context
                 .workspace()
@@ -8577,7 +8577,7 @@ mod tests {
                 .unwrap(),
             b"mutated!\n"
         );
-        assert!(metrics.unwrap().finish(1, 0).unwrap().workers.is_empty());
+        assert_eq!(metrics.unwrap().finish(1, 0).unwrap().workers, Vec::new());
     }
 
     #[tokio::test]
@@ -9388,9 +9388,9 @@ mod tests {
         let dispatch = accept_process_dispatch(&control, &mut metrics, &mut warnings, 0);
 
         assert!(dispatch.is_none());
-        assert!(warnings.is_empty());
+        assert_eq!(warnings, Vec::new());
         let metrics = metrics.unwrap().finish(0, 0).unwrap();
-        assert!(metrics.workers.is_empty());
+        assert_eq!(metrics.workers, Vec::new());
     }
 
     #[test]
@@ -9477,9 +9477,9 @@ mod tests {
         record_ready_processes(&effects, &mut metrics, &mut warnings);
         cancel_queued_effect(&effects[0], &mut metrics, &mut warnings);
 
-        assert!(warnings.is_empty());
+        assert_eq!(warnings, Vec::new());
         let metrics = metrics.unwrap().finish(0, 0).unwrap();
-        assert!(metrics.workers.is_empty());
+        assert_eq!(metrics.workers, Vec::new());
     }
 
     #[tokio::test]
@@ -9541,7 +9541,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(in_flight, 0);
-        assert!(warnings.is_empty());
+        assert_eq!(warnings, Vec::new());
         let metrics = metrics.unwrap().finish(2, 0).unwrap();
         assert_eq!(
             metrics
@@ -9570,7 +9570,7 @@ mod tests {
             false,
         );
 
-        assert!(warnings.is_empty());
+        assert_eq!(warnings, Vec::new());
         metrics
             .as_mut()
             .unwrap()
@@ -9608,7 +9608,7 @@ mod tests {
                 true,
             );
 
-            assert!(warnings.is_empty());
+            assert_eq!(warnings, Vec::new());
             let metrics = metrics.unwrap().finish(0, 0).unwrap();
             assert!(metrics.stages.iter().any(|metric| metric.name == stage));
             assert!(metrics.stages.iter().any(|metric| metric.name == "cleanup"));
@@ -9632,7 +9632,7 @@ mod tests {
             false,
         );
 
-        assert!(warnings.is_empty());
+        assert_eq!(warnings, Vec::new());
         let metrics = metrics.unwrap().finish(0, 0).unwrap();
         assert_eq!(metrics.stages.len(), 1);
         assert_eq!(metrics.stages[0].name, "cleanup");

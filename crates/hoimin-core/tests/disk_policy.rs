@@ -243,7 +243,7 @@ fn cleanup_outcome_without_owned_requested_root_is_rejected() {
         root: DiskRootId::Execution,
         outcome: DiskCleanupOutcome::Failed("not owned".into()),
     }));
-    assert!(lifecycle.snapshot().cleanup_failed.is_empty());
+    assert_eq!(lifecycle.snapshot().cleanup_failed, Vec::new());
 }
 
 #[test]

@@ -172,11 +172,11 @@ match value:
             profile: MutationProfile::Full,
             max_candidates: 1_000,
         };
-        assert!(
-            !analyze_source_cancellable(&request, source, || false)
+        assert_ne!(
+            analyze_source_cancellable(&request, source, || false)
                 .unwrap()
-                .candidates
-                .is_empty()
+                .candidates,
+            Vec::new()
         );
     }
 

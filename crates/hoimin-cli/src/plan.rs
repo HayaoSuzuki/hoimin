@@ -1179,7 +1179,7 @@ mod tests {
         let elapsed = started.elapsed();
 
         assert_eq!(output.manifest.candidates.len(), 7_680);
-        assert!(!manifest_json.is_empty());
+        assert_ne!(manifest_json, Vec::<u8>::new());
         std::hint::black_box(&manifest_json);
         println!(
             "source_bytes={} candidates={} manifest_bytes={} elapsed_ms={}",
@@ -1280,7 +1280,7 @@ mod tests {
             error.to_string(),
             "plan.discovery: analyzer.timeout: --analyzer-timeout expired after 20ms"
         );
-        assert!(stdout.is_empty());
+        assert_eq!(stdout, Vec::<u8>::new());
         release.send(()).unwrap();
     }
 

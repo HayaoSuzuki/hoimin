@@ -669,7 +669,7 @@ fn lean_oracle_regression_cleanup_is_emitted_once() {
     let (state, effects) = transition(state, RunEvent::DeadlineReached).unwrap();
 
     // pins: lean oracle cleanup_is_emitted_once
-    assert!(effects.is_empty());
+    assert_eq!(effects, Vec::new());
     assert_eq!(state.phase(), RunPhase::Cleaning);
     assert!(state.is_effect_pending(cleanup_id));
     assert!(!state.is_effect_retired(cleanup_id));
@@ -684,7 +684,7 @@ fn stop_signals_do_not_retire_normal_cleanup_or_change_success() {
 
         let (state, effects) = transition(state, stop).unwrap();
 
-        assert!(effects.is_empty());
+        assert_eq!(effects, Vec::new());
         assert_eq!(state.phase(), RunPhase::Cleaning);
         assert_eq!(state.exit_code(), 0);
         assert!(state.is_effect_pending(cleanup.id));
@@ -728,7 +728,7 @@ fn stop_signals_do_not_reopen_a_pending_final_report() {
 
         let (state, effects) = transition(state, stop).unwrap();
 
-        assert!(effects.is_empty());
+        assert_eq!(effects, Vec::new());
         assert_eq!(state.phase(), RunPhase::Finalize);
         assert_eq!(state.exit_code(), original_exit);
         assert!(!state.is_effect_retired(finished_id));
@@ -738,7 +738,7 @@ fn stop_signals_do_not_reopen_a_pending_final_report() {
             RunEvent::OutputEmitted(OutputEmitted { id: finished_id }),
         )
         .unwrap();
-        assert!(effects.is_empty());
+        assert_eq!(effects, Vec::new());
         assert_eq!(state.phase(), RunPhase::Finished);
         assert_eq!(state.exit_code(), original_exit);
     }
@@ -760,13 +760,13 @@ fn stop_signals_do_not_reopen_a_finished_run() {
             RunEvent::OutputEmitted(OutputEmitted { id: finished_id }),
         )
         .unwrap();
-        assert!(effects.is_empty());
+        assert_eq!(effects, Vec::new());
         assert_eq!(state.phase(), RunPhase::Finished);
         let original_exit = state.exit_code();
 
         let (state, effects) = transition(state, stop).unwrap();
 
-        assert!(effects.is_empty());
+        assert_eq!(effects, Vec::new());
         assert_eq!(state.phase(), RunPhase::Finished);
         assert_eq!(state.exit_code(), original_exit);
     }
@@ -1674,7 +1674,7 @@ fn assert_ordered_mid_collection_stop(stop: RunEvent, expected_exit_code: i32) {
         RunEvent::OutputEmitted(OutputEmitted { id: report_id }),
     )
     .unwrap();
-    assert!(effects.is_empty());
+    assert_eq!(effects, Vec::new());
     assert_eq!(state.phase(), RunPhase::Finished);
 }
 
@@ -2153,7 +2153,7 @@ fn assert_failed_cleanup_delivery_order(state: RunState, effects: &[RunEffect]) 
     )
     .unwrap();
     assert_eq!(report_failed.phase(), RunPhase::Finished);
-    assert!(failed_effects.is_empty());
+    assert_eq!(failed_effects, Vec::new());
     assert!(
         !effects
             .iter()
@@ -2182,7 +2182,7 @@ fn assert_failed_cleanup_delivery_order(state: RunState, effects: &[RunEffect]) 
     )
     .unwrap();
     assert_eq!(finish_failed.phase(), RunPhase::Finished);
-    assert!(failed_effects.is_empty());
+    assert_eq!(failed_effects, Vec::new());
 }
 
 #[test]
@@ -2789,7 +2789,7 @@ fn assert_persisting_stop_preserves_result(stop: RunEvent, expected_exit_code: i
         }),
     )
     .unwrap();
-    assert!(effects.is_empty());
+    assert_eq!(effects, Vec::new());
     assert_eq!(state.phase(), RunPhase::Finished);
 }
 
@@ -2950,7 +2950,7 @@ fn timeout_marks_the_session_and_final_report_incomplete() {
         }),
     )
     .unwrap();
-    assert!(effects.is_empty());
+    assert_eq!(effects, Vec::new());
 }
 
 #[test]
@@ -4690,7 +4690,7 @@ fn waiting_for_analysis_with(config: RunConfig) -> (RunState, Vec<RunEffect>) {
         RunEvent::OutputEmitted(OutputEmitted { id: output_id }),
     )
     .unwrap();
-    assert!(emitted.is_empty());
+    assert_eq!(emitted, Vec::new());
     (state, effects)
 }
 
@@ -5081,7 +5081,7 @@ fn waiting_for_selected_analysis(
         RunEvent::OutputEmitted(OutputEmitted { id: output_id }),
     )
     .unwrap();
-    assert!(emitted.is_empty());
+    assert_eq!(emitted, Vec::new());
     (state, effects)
 }
 

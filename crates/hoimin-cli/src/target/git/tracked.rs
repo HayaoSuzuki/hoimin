@@ -217,7 +217,7 @@ mod tests {
             let grouped = batches(names.clone());
             assert!(grouped.len() > 1);
             for batch in &grouped {
-                assert!(!batch.is_empty());
+                assert!(!batch.is_empty(), "tracked batch must not be empty");
                 assert!(batch.len() <= 128);
                 assert!(batch.iter().map(String::len).sum::<usize>() <= 8192);
             }

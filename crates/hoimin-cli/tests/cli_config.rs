@@ -1132,7 +1132,7 @@ fn run_preserves_repeated_fingerprint_include_patterns() {
         config.fingerprint_files,
         ["pyproject.toml", "config/settings[prod].toml"]
     );
-    assert!(config.fingerprint_inputs.is_empty());
+    assert_eq!(config.fingerprint_inputs, Vec::new());
 }
 
 #[test]
@@ -1515,7 +1515,7 @@ fn import_roots_are_ordered_normalized_and_independent_of_selection() {
             _ => panic!("unexpected command"),
         };
         assert_eq!(config.import_roots, ["vendor", "src", "."]);
-        assert!(config.selection.sources.is_empty());
+        assert_eq!(config.selection.sources, Vec::<camino::Utf8PathBuf>::new());
         assert_eq!(config.selection.files, ["src/pkg/a.py"]);
         config.validate().unwrap();
         assert!(parse_from(["hoimin", command, "--import-root", "src", "--", "python"]).is_err());

@@ -43,8 +43,8 @@ fn empty_metrics_use_the_current_schema_and_zero_counters() {
     assert_eq!(metrics.schema_version, METRICS_SCHEMA_VERSION);
     assert_eq!(metrics.run_id, "run-1");
     assert_eq!(metrics.elapsed_ms, 0);
-    assert!(metrics.stages.is_empty());
-    assert!(metrics.workers.is_empty());
+    assert_eq!(metrics.stages, Vec::new());
+    assert_eq!(metrics.workers, Vec::new());
     assert_eq!(metrics.discovered, 0);
     assert_eq!(metrics.executed, 0);
 }

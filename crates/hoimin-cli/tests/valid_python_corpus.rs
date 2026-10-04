@@ -661,7 +661,7 @@ fn valid_python_operator_inventory_requires_registration_and_positive_producers(
     let ids: BTreeSet<_> = cases.iter().map(|c| c.id.as_str()).collect();
     assert_eq!(ids.len(), cases.len());
     for r in registry {
-        assert!(!r.reason.is_empty());
+        assert_ne!(r.reason, "");
         assert!(matches!(r.status.as_str(), "covered" | "deferred"));
         assert_eq!(
             r.status == "covered",

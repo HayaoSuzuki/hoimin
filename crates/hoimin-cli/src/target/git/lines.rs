@@ -178,7 +178,7 @@ mod tests {
         ] {
             assert!(translate(source, &[range]).is_err());
         }
-        assert!(translate(b"", &[]).unwrap().is_empty());
+        assert_eq!(translate(b"", &[]).unwrap(), Vec::new());
         assert_eq!(row(u32::MAX as usize).unwrap(), u32::MAX);
         #[cfg(target_pointer_width = "64")]
         assert!(row(u32::MAX as usize + 1).is_err());

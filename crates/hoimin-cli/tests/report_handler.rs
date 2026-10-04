@@ -554,7 +554,7 @@ async fn documentation_contract() {
                         .all(|line| serde_json::from_slice::<serde_json::Value>(line).is_ok())
                 );
             }
-            OutputFormat::Human => assert!(!stdout.is_empty()),
+            OutputFormat::Human => assert_ne!(stdout, Vec::<u8>::new()),
         }
         documented_outputs.push((config.output.format, stdout, stderr));
     }
@@ -1969,7 +1969,7 @@ fn json_diagnostics_coalesce_writes_without_changing_bytes_or_event_flushes() {
                     state.writes
                 );
                 drop(state);
-                assert!(stdout.text().is_empty());
+                assert_eq!(stdout.text(), "");
                 assert_eq!(stdout.flushes(), 0);
             }
         }
@@ -2063,7 +2063,7 @@ fn buffered_diagnostic_failures_do_not_acknowledge_or_retry_on_drop() {
                     }
                     DiagnosticFault::Zero => {
                         assert_eq!(state.writes, 1);
-                        assert!(state.bytes.is_empty());
+                        assert_eq!(state.bytes, Vec::<u8>::new());
                     }
                     DiagnosticFault::Flush => assert_eq!(state.flushes, 1),
                     DiagnosticFault::Interrupted => unreachable!(),
@@ -2195,7 +2195,7 @@ async fn public_resume_reports_validate_schema_four_in_json_and_jsonl() {
                 "{}",
                 String::from_utf8_lossy(&output.stderr)
             );
-            assert!(output.stderr.is_empty());
+            assert_eq!(output.stderr, Vec::<u8>::new());
             let expected = if resumed {
                 serde_json::json!({"status":"resumed"})
             } else {

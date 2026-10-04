@@ -70,7 +70,7 @@ impl Fixture {
             "{}",
             String::from_utf8_lossy(&output.stderr)
         );
-        assert!(output.stderr.is_empty());
+        assert_eq!(output.stderr, Vec::<u8>::new());
         assert!(!self.marker.exists());
         serde_json::from_slice(&output.stdout).unwrap()
     }
@@ -119,7 +119,7 @@ async fn plan_tracks_environment_without_plaintext_and_verify_checks_before_base
         assert!(!String::from_utf8_lossy(&output.stderr).contains(secret));
         if changed {
             assert_eq!(output.status.code(), Some(2));
-            assert!(output.stdout.is_empty());
+            assert_eq!(output.stdout, Vec::<u8>::new());
             assert!(
                 String::from_utf8_lossy(&output.stderr).contains("plan.fingerprint_env.changed")
             );
@@ -168,7 +168,7 @@ async fn verify_rejects_inconsistent_environment_metadata_and_old_plan_schema() 
     for changed in cases {
         let output = fixture.verify(&changed, OsStr::new("value")).await;
         assert_eq!(output.status.code(), Some(2));
-        assert!(output.stdout.is_empty());
+        assert_eq!(output.stdout, Vec::<u8>::new());
         assert!(!fixture.marker.exists());
     }
 }

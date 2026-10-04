@@ -1509,7 +1509,7 @@ mod tests {
 
         assert_eq!(cleanup.status, hoimin_core::DiskCleanupStatus::Deferred);
         assert_eq!(reclaim.reclaimed_roots, 0);
-        assert!(!reclaim.details.is_empty());
+        assert_ne!(reclaim.details, Vec::<String>::new());
         assert!(started.elapsed() < std::time::Duration::from_secs(1));
         drop(held);
         assert_eq!(

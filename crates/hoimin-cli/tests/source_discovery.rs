@@ -97,7 +97,7 @@ fn source_unions_normalization_and_mixed_selectors_match_broad_discovery() {
             sources: vec![source],
             ..base.clone()
         };
-        assert!(!assert_broad_correspondence(&selection).unwrap().is_empty());
+        assert_ne!(assert_broad_correspondence(&selection).unwrap(), Vec::new());
     }
     let outside = Selection {
         sources: vec!["alpha".into()],

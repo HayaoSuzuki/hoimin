@@ -218,6 +218,10 @@ impl PortableSupervisor {
         }
     }
 
+    #[allow(
+        deprecated,
+        reason = "fetch_update preserves the Rust 1.88 MSRV; it was renamed in Rust 1.95"
+    )]
     pub(crate) fn classify(
         &mut self,
         termination: hoimin_core::ProcessTermination,
@@ -270,6 +274,10 @@ impl PortableSupervisor {
         suspended.assign(self.job as _, "assign spawned process to job")
     }
 
+    #[allow(
+        deprecated,
+        reason = "fetch_update preserves the Rust 1.88 MSRV; it was renamed in Rust 1.95"
+    )]
     pub(crate) fn terminate(&mut self, live_root_owned: bool) -> Result<bool, ResourceError> {
         if self.terminated {
             return Ok(self.tree_quiescent);

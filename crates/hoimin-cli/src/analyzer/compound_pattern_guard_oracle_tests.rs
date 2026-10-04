@@ -394,6 +394,6 @@ fn internal_rows_detect_broken_compound_pattern_transfers() {
         BindingFlowTestMutation::KeepLastOrPatternFailure,
     )
     .unwrap();
-    assert!(correct.is_empty());
+    assert_eq!(correct, Vec::<String>::new());
     assert_eq!(broken, vec!["direct:Sequence=typing.Sequence"]);
 }

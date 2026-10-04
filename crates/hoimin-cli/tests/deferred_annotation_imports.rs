@@ -375,5 +375,5 @@ async fn local_conditional_import_provenance_loss_stays_ineligible() {
         invoke_operator(source, "plan", "pass\n", "type_nullable_add").await,
     )
     .unwrap();
-    assert!(manifest.candidates.is_empty());
+    assert_eq!(manifest.candidates, Vec::new());
 }

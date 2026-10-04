@@ -1186,7 +1186,7 @@ fn compare_patience_one_saturates_on_the_first_stall() {
 fn compare_a_usable_unusable_usable_history_has_no_cross_gap_comparison() {
     let result = compare_reports(&[killed(), unusable(), killed()], nz(3));
 
-    assert!(result.comparisons.is_empty());
+    assert_eq!(result.comparisons, Vec::new());
     assert_eq!(result.consecutive_stalls, 0);
     assert_eq!(result.latest, ProgressState::Indeterminate);
 }
@@ -1357,7 +1357,7 @@ async fn duplicate_input_detection_distinguishes_independent_and_resumed_reports
     let jsonl = write_jsonl(&fixture, &jsonl_events(&original));
     let (exit, _, stderr) = run_progress(&[first, jsonl], "json").await;
     assert_eq!(exit, 0);
-    assert!(stderr.is_empty());
+    assert_eq!(stderr, Vec::<u8>::new());
 }
 
 #[tokio::test]
@@ -1392,7 +1392,7 @@ async fn duplicate_input_warnings_preserve_barriers_and_deferred_errors() {
     reports.push(invalid);
     let (exit, stdout, stderr) = run_progress(&reports, "json").await;
     assert_eq!(exit, 2);
-    assert!(stdout.is_empty());
+    assert_eq!(stdout, Vec::<u8>::new());
     assert!(!String::from_utf8_lossy(&stderr).contains("warning:"));
 }
 
@@ -1416,7 +1416,7 @@ async fn output_json_exposes_agent_decision_fields() {
     let value: Value = serde_json::from_slice(&stdout).unwrap();
 
     assert_eq!(code, 0);
-    assert!(stderr.is_empty());
+    assert_eq!(stderr, Vec::<u8>::new());
     assert_eq!(value["schema_version"], 1);
     assert_eq!(value["latest"]["state"], "saturated");
     assert_eq!(value["latest"]["consecutive_stalls"], 3);
@@ -1662,7 +1662,7 @@ async fn output_malformed_json_returns_exit_two() {
     let (code, stdout, stderr) = run_progress(&[malformed, valid], "json").await;
 
     assert_eq!(code, 2);
-    assert!(stdout.is_empty());
+    assert_eq!(stdout, Vec::<u8>::new());
     assert!(
         String::from_utf8(stderr)
             .unwrap()
@@ -1708,7 +1708,7 @@ async fn output_unreadable_path_returns_exit_two() {
     let (code, stdout, stderr) = run_progress(&[missing, valid], "json").await;
 
     assert_eq!(code, 2);
-    assert!(stdout.is_empty());
+    assert_eq!(stdout, Vec::<u8>::new());
     assert!(
         String::from_utf8(stderr)
             .unwrap()
@@ -1727,7 +1727,7 @@ async fn output_unsupported_schema_returns_exit_two() {
     let (code, stdout, stderr) = run_progress(&[unsupported, valid], "json").await;
 
     assert_eq!(code, 2);
-    assert!(stdout.is_empty());
+    assert_eq!(stdout, Vec::<u8>::new());
     assert!(
         String::from_utf8(stderr)
             .unwrap()
@@ -1746,7 +1746,7 @@ async fn output_invalid_structure_returns_exit_two() {
     let (code, stdout, stderr) = run_progress(&[invalid, valid], "json").await;
 
     assert_eq!(code, 2);
-    assert!(stdout.is_empty());
+    assert_eq!(stdout, Vec::<u8>::new());
     assert!(
         String::from_utf8(stderr)
             .unwrap()
@@ -1770,7 +1770,7 @@ async fn output_repeated_stable_identity_returns_exit_two() {
     let (code, stdout, stderr) = run_progress(&[invalid, valid], "json").await;
 
     assert_eq!(code, 2);
-    assert!(stdout.is_empty());
+    assert_eq!(stdout, Vec::<u8>::new());
     let diagnostic = String::from_utf8(stderr).unwrap();
     assert!(diagnostic.contains("invalid structure in progress report"));
     assert!(diagnostic.contains("mutant stable IDs must map to one candidate sequence"));
@@ -1787,7 +1787,7 @@ async fn output_inconsistent_summary_returns_exit_two() {
     let (code, stdout, stderr) = run_progress(&[invalid, valid], "json").await;
 
     assert_eq!(code, 2);
-    assert!(stdout.is_empty());
+    assert_eq!(stdout, Vec::<u8>::new());
     let diagnostic = String::from_utf8(stderr).unwrap();
     assert!(diagnostic.contains("invalid structure in progress report"));
     assert!(diagnostic.contains("summary counts must match mutant events"));
@@ -3214,7 +3214,7 @@ async fn jsonl_invalid_input_has_no_partial_progress_output() {
     let jsonl = write_jsonl(&fixture, &events);
     let (code, output, error) = run_progress(&[json, jsonl.clone()], "json").await;
     assert_eq!(code, 2);
-    assert!(output.is_empty());
+    assert_eq!(output, Vec::<u8>::new());
     let error = String::from_utf8(error).unwrap();
     assert!(error.contains(&jsonl.display().to_string()), "{error}");
     assert!(error.contains("run_finished"), "{error}");
@@ -3565,8 +3565,8 @@ async fn details_limit_requires_opt_in_and_nonnegative_integer() {
         let mut out = Vec::new();
         let mut err = Vec::new();
         assert_eq!(hoimin_cli::run_with_io(args, &mut out, &mut err).await, 2);
-        assert!(out.is_empty());
-        assert!(!err.is_empty());
+        assert_eq!(out, Vec::<u8>::new());
+        assert_ne!(err, Vec::<u8>::new());
     }
 }
 
@@ -3752,7 +3752,7 @@ async fn regression_exit_does_not_hide_trailing_invalid_input() {
         )
         .await;
         assert_eq!(status, 2);
-        assert!(out.is_empty());
+        assert_eq!(out, Vec::<u8>::new());
         let err = String::from_utf8(err).unwrap();
         assert!(err.contains("could not parse progress report"), "{err}");
         assert!(
@@ -3812,7 +3812,7 @@ async fn regression_exit_never_overrides_stdout_or_stderr_errors() {
         )
         .await;
         assert_eq!(status, 2);
-        assert!(out.is_empty());
+        assert_eq!(out, Vec::<u8>::new());
     }
 }
 

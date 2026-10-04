@@ -134,13 +134,13 @@ fn diverse_keeps_selecting_the_dense_file_after_singleton_files_exhaust() {
 
 #[test]
 fn diverse_returns_no_ids_for_empty_candidates() {
-    assert!(
+    assert_eq!(
         select_top_candidate_ids(
             &[],
             NonZeroUsize::new(1).unwrap(),
             TopSelectionPolicy::Diverse,
-        )
-        .is_empty()
+        ),
+        Vec::<String>::new()
     );
 }
 
@@ -188,8 +188,8 @@ fn fixed_batch_diverse_slices_the_global_order_across_files_and_tiers() {
     assert_eq!(select(2, 2), ["A2", "B2"]);
     assert_eq!(select(4, 2), ["A3", "C1"]);
     assert_eq!(select(5, usize::MAX), ["C1"]);
-    assert!(select(6, 1).is_empty());
-    assert!(select(usize::MAX, usize::MAX).is_empty());
+    assert_eq!(select(6, 1), Vec::<String>::new());
+    assert_eq!(select(usize::MAX, usize::MAX), Vec::<String>::new());
 }
 
 #[test]
@@ -234,14 +234,14 @@ fn pages_preserve_policy_order_at_tier_and_integer_boundaries() {
                 );
             }
         }
-        assert!(
+        assert_eq!(
             super::selection::select_top_candidate_ids_at(
                 &[],
                 NonZeroUsize::new(usize::MAX).unwrap(),
                 policy,
                 0,
-            )
-            .is_empty()
+            ),
+            Vec::<String>::new()
         );
     }
 }

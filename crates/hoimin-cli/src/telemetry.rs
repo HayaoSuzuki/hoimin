@@ -289,7 +289,7 @@ mod tests {
             finish(0);
             let mut output = Vec::new();
             render_progress(&mut output, &progress).unwrap();
-            assert!(output.is_empty());
+            assert_eq!(output, Vec::<u8>::new());
             tracing::info!(stage = "testing mutants", completed = 2_u64);
             progress.lock().unwrap().as_mut().unwrap().started =
                 Instant::now().checked_sub(Duration::from_secs(9)).unwrap();

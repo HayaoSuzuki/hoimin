@@ -1160,7 +1160,7 @@ mod tests {
 
         assert!(report.all_reaped);
         assert!(report.output_drains_joined);
-        assert!(report.secondary_errors.is_empty());
+        assert_eq!(report.secondary_errors, Vec::<String>::new());
     }
 
     #[test]

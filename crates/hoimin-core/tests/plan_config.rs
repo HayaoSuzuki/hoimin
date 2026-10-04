@@ -94,7 +94,7 @@ fn plan_config_defaults_missing_fingerprint_files() {
 
     let plan: PlanConfig = serde_json::from_value(value).unwrap();
 
-    assert!(plan.fingerprint_files.is_empty());
+    assert_eq!(plan.fingerprint_files, Vec::<String>::new());
 }
 
 #[test]
@@ -388,7 +388,7 @@ fn import_roots_round_trip_and_missing_historical_run_field_defaults_empty() {
     let mut old = serde_json::to_value(config).unwrap();
     old.as_object_mut().unwrap().remove("import_roots");
     let old: RunConfig = serde_json::from_value(old).unwrap();
-    assert!(old.import_roots.is_empty());
+    assert_eq!(old.import_roots, Vec::<camino::Utf8PathBuf>::new());
 }
 
 #[test]

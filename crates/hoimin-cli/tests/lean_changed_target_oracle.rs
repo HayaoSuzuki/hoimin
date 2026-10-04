@@ -383,10 +383,10 @@ async fn public_plan_uses_rename_destination_and_excludes_deleted_and_binary() {
         expected_lines(&rename)
     );
     assert_eq!(deleted.path.as_deref(), Some("pkg/deleted.py"));
-    assert!(deleted.eligible_lines.is_empty());
+    assert_eq!(deleted.eligible_lines, Vec::<u32>::new());
     assert!(observed_lines(&manifest, deleted.path.as_deref().unwrap()).is_empty());
     assert_eq!(binary.path.as_deref(), Some("pkg/binary.py"));
-    assert!(binary.eligible_lines.is_empty());
+    assert_eq!(binary.eligible_lines, Vec::<u32>::new());
     assert!(observed_lines(&manifest, binary.path.as_deref().unwrap()).is_empty());
     assert!(candidates(&manifest).iter().all(|candidate| {
         candidate["path"] != "pkg/old.py"

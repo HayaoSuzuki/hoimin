@@ -48,7 +48,7 @@ fn analyze_visits(source: &str, selected: bool) -> (usize, usize) {
         source,
     );
     assert!(output.diagnostics.is_empty(), "{:?}", output.diagnostics);
-    assert!(output.candidates.is_empty());
+    assert_eq!(output.candidates, Vec::new());
     assert!(!output.truncated);
     (LOOP_STATEMENT_VISITS.get(), LOOP_ANNOTATION_VISITS.get())
 }

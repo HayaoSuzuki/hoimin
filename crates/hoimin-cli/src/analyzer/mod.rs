@@ -1002,7 +1002,7 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(recovered, expected);
-        assert!(!recovered.candidates.is_empty());
+        assert_ne!(recovered.candidates, Vec::new());
     }
 
     #[test]

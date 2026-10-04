@@ -239,7 +239,7 @@ async fn retained_candidate_ids_spans_and_selection_are_stable() {
         assert_eq!(candidate["original"], original);
         assert_eq!(candidate["replacement"], replacement);
         assert_eq!(candidate["operator"], operator);
-        assert!(!candidate["id"].as_str().unwrap().is_empty());
+        assert_ne!(candidate["id"].as_str().unwrap(), "");
         let mut mutant = source.to_owned();
         mutant.replace_range(start..start + original.len(), replacement);
         compile(dir.path(), &mutant);

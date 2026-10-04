@@ -138,8 +138,8 @@ fn unmeasured_disk_summary_makes_no_enforcement_claim() {
         hoimin_core::DiskRunSummary::unmeasured(8 * 1024 * 1024 * 1024, 10 * 1024 * 1024 * 1024);
 
     assert_eq!(summary.sample_count, 0);
-    assert!(summary.filesystems.is_empty());
-    assert!(summary.enforcement.is_empty());
+    assert_eq!(summary.filesystems, Vec::new());
+    assert_eq!(summary.enforcement, Vec::new());
 }
 
 #[test]

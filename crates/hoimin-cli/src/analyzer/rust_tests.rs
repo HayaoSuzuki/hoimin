@@ -226,7 +226,7 @@ fn straight_line_import_transfer_preserves_selected_candidates_and_skips_unselec
                     MutationOperator::BooleanLiteral
                 };
                 let output = analyze_with_only_operator(&source, operator);
-                assert!(output.diagnostics.is_empty());
+                assert_eq!(output.diagnostics, Vec::new());
                 assert!(!output.truncated);
                 assert_eq!(output.candidates.len(), usize::from(selected));
                 if selected {
@@ -261,7 +261,7 @@ fn annotation_import_snapshots_are_not_retained_per_site() {
 
     reset_annotation_retention_stats();
     let unselected = analyze_with_only_operator(&source, MutationOperator::BooleanLiteral);
-    assert!(unselected.candidates.is_empty());
+    assert_eq!(unselected.candidates, Vec::new());
     assert_eq!(annotation_retention_stats(), (0, 0));
 
     reset_annotation_retention_stats();
@@ -1224,7 +1224,7 @@ fn eligibility_and_zero_limit_rows_match_real_analyzer_outputs() {
         usize::try_from(zero.limit).unwrap(),
         "value = left == right\n",
     );
-    assert!(output.candidates.is_empty());
+    assert_eq!(output.candidates, Vec::new());
     assert_eq!(output.truncated, zero.expected_truncated);
     assert_eq!(
         output.diagnostics[0].code,
@@ -1798,7 +1798,7 @@ fn except_star_exception_type_pairs_keep_shared_selection_and_profile_behavior()
         },
         source,
     );
-    assert!(summarize(&excluded).is_empty());
+    assert_eq!(summarize(&excluded), Vec::new());
 
     let arid_source = concat!(
         "if __name__ == \"__main__\":\n",
@@ -1816,13 +1816,13 @@ fn except_star_exception_type_pairs_keep_shared_selection_and_profile_behavior()
         .len(),
         1
     );
-    assert!(
+    assert_eq!(
         summarize(&analyze_with_profile(
             MutationProfile::Focused,
             10_000,
             arid_source,
-        ))
-        .is_empty()
+        )),
+        Vec::<(String, String, u32, Option<String>)>::new()
     );
 }
 
@@ -2033,10 +2033,22 @@ fn raise_exception_type_pairs_observe_extended_resolution_boundaries() {
         exception_lines("raise ValueError\nValueError = CustomValueError\nraise ValueError\n"),
         [1]
     );
-    assert!(exception_lines("from helpers import ValueError\nraise ValueError\n").is_empty());
-    assert!(exception_lines("from helpers import TypeError\nraise ValueError\n").is_empty());
-    assert!(exception_lines("def source(ValueError):\n    raise ValueError\n").is_empty());
-    assert!(exception_lines("def destination(TypeError):\n    raise ValueError\n").is_empty());
+    assert_eq!(
+        exception_lines("from helpers import ValueError\nraise ValueError\n"),
+        Vec::<u32>::new()
+    );
+    assert_eq!(
+        exception_lines("from helpers import TypeError\nraise ValueError\n"),
+        Vec::<u32>::new()
+    );
+    assert_eq!(
+        exception_lines("def source(ValueError):\n    raise ValueError\n"),
+        Vec::<u32>::new()
+    );
+    assert_eq!(
+        exception_lines("def destination(TypeError):\n    raise ValueError\n"),
+        Vec::<u32>::new()
+    );
     assert_eq!(
         exception_lines(concat!(
             "def comprehension(errors):\n",
@@ -2045,7 +2057,10 @@ fn raise_exception_type_pairs_observe_extended_resolution_boundaries() {
         )),
         [3]
     );
-    assert!(exception_lines("from helpers import *\nraise ValueError\n").is_empty());
+    assert_eq!(
+        exception_lines("from helpers import *\nraise ValueError\n"),
+        Vec::<u32>::new()
+    );
     assert_eq!(
         exception_lines(concat!(
             "raise ValueError\n",
@@ -4802,7 +4817,7 @@ fn bounded_collection_filters_focused_arid_candidates_before_prefix_capacity() {
     assert_eq!(focused.candidates[0].line, 101);
     assert_eq!(focused.candidates[0].operator, "binary_add_sub");
     assert!(!focused.truncated);
-    assert!(focused.diagnostics.is_empty());
+    assert_eq!(focused.diagnostics, Vec::new());
     assert_eq!(focused.retention.producer_peaks[0], 1);
 }
 
@@ -4810,7 +4825,7 @@ fn bounded_collection_filters_focused_arid_candidates_before_prefix_capacity() {
 fn bounded_collection_with_zero_limit_keeps_only_an_overflow_probe() {
     let output = analyze_with(Utf8Path::new("pkg/zero.py"), &[], &[], 0, "value = 1 + 2\n");
 
-    assert!(output.candidates.is_empty());
+    assert_eq!(output.candidates, Vec::new());
     assert!(output.truncated);
     assert_eq!(
         output.diagnostics[0].code,
@@ -4955,7 +4970,7 @@ fn omits_candidates_for_unselected_operators() {
         },
         "result = left + right\n",
     );
-    assert!(output.candidates.is_empty());
+    assert_eq!(output.candidates, Vec::new());
 }
 
 const MUTABLE_OPERATOR_TOKENS: &[&str] = &[
@@ -4990,7 +5005,7 @@ const NESTED_QUOTE_PAIRS: &[(&str, &str, &str)] = &[
 fn assert_only_trailing_expression_changes(literal_line: &str) {
     let source = format!("{literal_line}result = left + right\n");
     let output = analyze(&source);
-    assert!(output.diagnostics.is_empty());
+    assert_eq!(output.diagnostics, Vec::new());
     assert_eq!(output.candidates.len(), 1);
     let candidate = &output.candidates[0];
     assert_eq!(candidate.original, "+");
@@ -5006,10 +5021,9 @@ fn assert_only_trailing_expression_changes(literal_line: &str) {
 
 #[test]
 fn ordinary_string_literals_ignore_every_mutable_operator_token() {
-    assert!(
-        analyze("label = 'ordinary operator-free text'\n")
-            .candidates
-            .is_empty()
+    assert_eq!(
+        analyze("label = 'ordinary operator-free text'\n").candidates,
+        Vec::new()
     );
     for token in MUTABLE_OPERATOR_TOKENS {
         let source = format!("label = {token:?}\n");
@@ -6811,7 +6825,7 @@ fn filters_candidates_by_line_and_symbol() {
 #[test]
 fn reports_invalid_syntax_without_candidates() {
     let output = analyze("def broken(:\n");
-    assert!(output.candidates.is_empty());
+    assert_eq!(output.candidates, Vec::new());
     assert_eq!(
         output.diagnostics[0].code,
         AnalyzerDiagnosticCode::InvalidSyntax
@@ -7964,10 +7978,9 @@ fn implicit_finally_covers_name_container_format_and_partial_binding_failures() 
 #[test]
 fn implicit_finally_covers_pattern_capture_before_guard_failure() {
     let source = "from typing import Sequence\ntry:\n    match subject:\n        case Sequence if hazard():\n            pass\n    from typing import Sequence\nfinally:\n    value: Sequence[int]\n";
-    assert!(
-        analyze_with_only_operator(source, MutationOperator::TypeListSequence)
-            .candidates
-            .is_empty()
+    assert_eq!(
+        analyze_with_only_operator(source, MutationOperator::TypeListSequence).candidates,
+        Vec::new()
     );
 }
 

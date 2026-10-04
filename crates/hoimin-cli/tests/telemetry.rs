@@ -29,7 +29,10 @@ fn redirected_plan_stays_machine_readable_without_logging() {
     let output = plan(None);
     assert!(output.status.success(), "{output:?}");
     let manifest: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert!(!manifest["candidates"].as_array().unwrap().is_empty());
+    assert!(
+        !manifest["candidates"].as_array().unwrap().is_empty(),
+        "{manifest}"
+    );
     assert!(output.stderr.is_empty(), "{output:?}");
 }
 

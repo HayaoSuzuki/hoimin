@@ -62,7 +62,7 @@ async fn nullable_builtin_provenance_public_plan_matches_executable_annotations(
         ),
         "__annotations__['value'] is int",
     );
-    assert!(plan(custom_class).await.candidates.is_empty());
+    assert_eq!(plan(custom_class).await.candidates, Vec::new());
     for name in [
         "str", "int", "float", "bool", "bytes", "list", "set", "dict",
     ] {

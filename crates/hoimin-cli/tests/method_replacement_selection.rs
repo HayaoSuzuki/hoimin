@@ -35,7 +35,7 @@ async fn method_descriptors_ids_order_and_truncation_match_baseline() {
     // Captured at base 65865ea before selection guards; includes every public field.
     let baseline: Vec<MutationCandidate> =
         serde_json::from_str(include_str!("fixtures/method-replacements/candidates.json")).unwrap();
-    assert!(!baseline.is_empty());
+    assert_ne!(baseline, Vec::new());
     for limit in 0..=baseline.len() + 1 {
         let output = discover_targets(root, &targets, &operators, MutationProfile::Full, limit)
             .await

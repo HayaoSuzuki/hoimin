@@ -32,7 +32,7 @@ fn cases() -> Vec<Case> {
     for case in &cases {
         assert_eq!(case.schema, 1);
         assert!(!case.id.is_empty() && ids.insert(&case.id), "{}", case.id);
-        assert!(!case.source.is_empty());
+        assert_ne!(case.source, "");
         assert!(case.operator.starts_with("type_"));
         assert_eq!(
             hoimin_core::MutationOperatorSelection::parse_selector(&case.operator)

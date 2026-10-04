@@ -66,7 +66,7 @@ fn nested_finally_bounds_actual_statement_and_annotation_visits() {
                 source.push('\n');
             }
             let (unselected, statements, leaves) = analyze(&source, false);
-            assert!(unselected.is_empty());
+            assert_eq!(unselected, Vec::new());
             assert_eq!((statements, leaves), (0, 0));
             let (candidates, statements, leaves) = analyze(&source, true);
             assert_eq!(candidates.len(), 1);
@@ -187,7 +187,7 @@ fn finally_routing_preserves_callbacks_and_all_exit_categories() {
     for source in cases {
         let current = observe(source, false);
         assert_eq!(current, observe(source, true), "{source}");
-        assert!(!current.annotations.is_empty());
+        assert_ne!(current.annotations, Vec::new());
         assert_eq!(analyze(source, true).0, {
             let _guard = OldRecordingGuard::enabled(true);
             analyze(source, true).0
