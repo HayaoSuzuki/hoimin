@@ -376,7 +376,8 @@ def test_version_updates_manifests_and_both_lockfiles(
     result = release(repository, "set-version", version)
     assert result.returncode == 0, result.stderr
     documents = {
-        name: tomllib.loads((repository / name).read_text()) for name in VERSION_FILES
+        name: tomllib.loads((repository / name).read_text(encoding="utf-8"))
+        for name in VERSION_FILES
     }
     assert documents["Cargo.toml"]["workspace"]["package"]["version"] == version
     assert documents["pyproject.toml"]["project"]["version"] == version.replace(
@@ -386,7 +387,7 @@ def test_version_updates_manifests_and_both_lockfiles(
         ("Cargo.lock", {"hoimin-core", "hoimin-cli"}),
         ("uv.lock", {"hoimin"}),
     ):
-        original = tomllib.loads((ROOT / name).read_text())["package"]
+        original = tomllib.loads((ROOT / name).read_text(encoding="utf-8"))["package"]
         for before, after in zip(original, documents[name]["package"], strict=True):
             expected = dict(before)
             if expected["name"] in packages:

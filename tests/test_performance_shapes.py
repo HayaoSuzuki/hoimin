@@ -359,7 +359,7 @@ def test_added_axes_selection_controls(tmp_path: Path) -> None:
     assert (parent / "unicode-long-line/case.py").stat().st_size == (
         parent / "unicode-many-lines/case.py"
     ).stat().st_size
-    assert "雪" in (parent / "unicode-long-line/case.py").read_text()
+    assert "雪" in (parent / "unicode-long-line/case.py").read_text(encoding="utf-8")
     assert shapes.make_fixture("workspace-workers", 2, parent / "workers")["jobs"] == 2
     symbols = shapes.make_fixture("symbol-selectors", 4, parent / "symbols")
     assert symbols["selectors"] == ["--symbol", "case:subject"] * 4

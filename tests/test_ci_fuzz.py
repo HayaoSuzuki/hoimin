@@ -255,7 +255,9 @@ def test_cli_rejects_non_positive_fixed_time(tmp_path: Path, seconds: str) -> No
 
 
 def test_workflow_runs_fuzz_in_parallel_with_bounded_total_time() -> None:
-    workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
+    workflow = yaml.safe_load(
+        (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    )
     job = workflow["jobs"]["fuzz"]
     assert job["needs"] == "quality"
     assert job["runs-on"] == "ubuntu-latest"

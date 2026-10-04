@@ -188,6 +188,9 @@ def test_strict_execution_removes_inherited_corpus_filters(
 
     monkeypatch.setenv("HOIMIN_BOUNDARY_CASE", "one")
     monkeypatch.setenv("HOIMIN_SESSION_ORACLE_CASE", "one")
+    monkeypatch.setattr("tools.boundary_contracts.sys.platform", case["platforms"][0])
+    monkeypatch.setattr("tools.boundary_contracts.os.killpg", Mock(), raising=False)
+    monkeypatch.setattr("tools.boundary_contracts.signal.SIGKILL", 9, raising=False)
     mocker.patch("tools.boundary_contracts.subprocess.Popen", side_effect=spawn)
     assert execute(case, tmp_path)["status"] == "match"
 

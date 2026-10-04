@@ -200,7 +200,9 @@ def load_registry(path: Path = REGISTRY) -> Registry:
             source = (
                 ROOT / "crates" / case["package"] / "tests" / (case["target"] + ".rs")
             )
-            assert ("fn " + case["test"] + "(") in source.read_text(), case["id"]
+            assert ("fn " + case["test"] + "(") in source.read_text(encoding="utf-8"), (
+                case["id"]
+            )
     return registry
 
 

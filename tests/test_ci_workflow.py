@@ -4,6 +4,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 import tomllib
@@ -129,6 +130,31 @@ WHEEL_SMOKE_COMMAND = "uv run --frozen --no-sync python tests/wheel_smoke.py"
 MANUAL_NON_LINUX_CI_COMMAND = "gh workflow run non-linux-ci.yml --ref <REF>"
 
 
+def bash_executable() -> str:
+    if os.name != "nt":
+        return "bash"
+
+    git = shutil.which("git")
+    if git is not None:
+        candidate = Path(git).resolve().parents[1] / "bin" / "bash.exe"
+        if candidate.is_file():
+            return str(candidate)
+
+    bash = shutil.which("bash")
+    assert bash is not None, "Git Bash is required to execute workflow fixtures"
+    return bash
+
+
+def git_bash_path(path: Path) -> str:
+    resolved = path.resolve()
+    if os.name != "nt":
+        return str(resolved)
+
+    drive, tail = os.path.splitdrive(resolved)
+    assert drive, f"Git Bash fixture path must be on a drive: {resolved}"
+    return f"/{drive[0].lower()}{tail.replace(os.sep, '/')}"
+
+
 def job_block(workflow: str, job_name: str) -> str:
     marker = f"  {job_name}:\n"
     start = workflow.index(marker)
@@ -201,7 +227,7 @@ def lean_gate_invocations(
     call_log = temporary / "calls.jsonl"
     fake_python = fake_bin / "python3"
     fake_python.write_text(
-        f"""#!{sys.executable}
+        f"""#!{git_bash_path(Path(sys.executable))}
 import json
 import os
 import sys
@@ -214,6 +240,7 @@ if call_count == int(os.environ.get("LEAN_FAIL_AT", "0")):
     raise SystemExit(23)
 """,
         encoding="utf-8",
+        newline="\n",
     )
     fake_python.chmod(0o755)
     runner_temp = temporary / "runner"
@@ -224,18 +251,19 @@ if call_count == int(os.environ.get("LEAN_FAIL_AT", "0")):
             "LEAN_CALL_LOG": str(call_log),
             "LEAN_FAIL_AT": str(fail_at or 0),
             "PATH": f"{fake_bin}{os.pathsep}{environment['PATH']}",
-            "RUNNER_TEMP": str(runner_temp),
+            "RUNNER_TEMP": git_bash_path(runner_temp),
         }
     )
     # Execute the checked-in workflow under the test's controlled fake PATH.
     completed = subprocess.run(  # noqa: S603
-        ["bash", "-euo", "pipefail", "-c", script],  # noqa: S607
+        [bash_executable(), "-euo", "pipefail"],
         cwd=temporary,
         env=environment,
+        input=script,
         check=False,
         capture_output=True,
         text=True,
-        timeout=10,
+        timeout=60 if os.name == "nt" else 10,
     )
     calls = (
         [lean_call(line) for line in call_log.read_text().splitlines()]
@@ -868,7 +896,7 @@ def run_toolchain_setup(
     elan_bin.mkdir(parents=True)
     elan = elan_bin / "elan"
     elan.write_text(
-        f"""#!{sys.executable}
+        f"""#!{git_bash_path(Path(sys.executable))}
 import os
 import sys
 from pathlib import Path
@@ -889,6 +917,7 @@ if args[0] == "run":
     print("Lean (version 4.32.2)")
 """,
         encoding="utf-8",
+        newline="\n",
     )
     elan.chmod(0o755)
     cached_toolchain = temporary / "cached-toolchain"
@@ -896,17 +925,18 @@ if args[0] == "run":
         cached_toolchain.touch()
     # The workflow script and fake elan executable are controlled fixtures.
     return subprocess.run(  # noqa: S603
-        ["bash", "-euo", "pipefail", "-c", script],  # noqa: S607
+        [bash_executable(), "-euo", "pipefail"],
         cwd=ROOT,
         env={
             **os.environ,
-            "HOME": str(temporary),
+            "HOME": git_bash_path(temporary),
             "ELAN_HOME": str(temporary / ".elan"),
-            "GITHUB_PATH": str(temporary / "github-path"),
-            "RUNNER_TEMP": str(temporary),
+            "GITHUB_PATH": git_bash_path(temporary / "github-path"),
+            "RUNNER_TEMP": git_bash_path(temporary),
             "TEST_TOOLCHAIN_CACHE": str(cached_toolchain),
             "TEST_INSTALL_FAILS": str(int(install_fails)),
         },
+        input=script,
         check=False,
         capture_output=True,
         text=True,
@@ -1051,7 +1081,7 @@ def test_bounded_audit_covers_every_module_and_generator(tmp_path: Path) -> None
             expected_gates.append(["lake", "exe", executable, "--", "--sensitivity"])
     assert remaining == expected_gates
     assert set(LEAN_CORPUS_BY_EXECUTABLE.values()) == {
-        str(path.relative_to(LEAN_ORACLE))
+        path.relative_to(LEAN_ORACLE).as_posix()
         for path in (LEAN_ORACLE / "corpus").glob("*.jsonl")
     }
 

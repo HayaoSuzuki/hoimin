@@ -194,7 +194,11 @@ def package(
     else:
         with tarfile.open(directory / (prefix + ".tar.gz"), "w:gz") as archive:
             for name, path in files.items():
-                archive.add(path, arcname=name)
+                info = archive.gettarinfo(path, arcname=name)
+                if name == "hoimin":
+                    info.mode = 0o755
+                with path.open("rb") as stream:
+                    archive.addfile(info, stream)
 
 
 def checksums(directory: Path, version: str) -> None:

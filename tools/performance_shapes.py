@@ -387,6 +387,19 @@ def executed_tests(output: str) -> int:
     return sum(int(p) for _, p, _, _ in results)
 
 
+def tool_version(argv: list[str]) -> str:
+    try:
+        return subprocess.run(  # noqa: S603 - Developer tool from PATH.
+            argv,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+    except OSError as error:
+        message = f"{' '.join(argv)}: {error}"
+        raise ValueError(message) from error
+
+
 # Each branch materializes one registered benchmark shape.
 def make_fixture(name: str, size: int, root: Path) -> Fixture:  # noqa: C901, PLR0912, PLR0915
     if name not in SHAPES or type(size) is not int or not 1 <= size <= LIMITS[name]:
@@ -506,7 +519,7 @@ def make_fixture(name: str, size: int, root: Path) -> Fixture:  # noqa: C901, PL
     elif name == "workspace-workers":
         source, mode, count, jobs = "value = 1 + 2\n" * 4, "run", 4, size
         (root / "data.bin").write_bytes(b"x" * 65536)
-    (root / "case.py").write_text(source)
+    (root / "case.py").write_text(source, encoding="utf-8", newline="\n")
     return {
         "name": name,
         "size": size,
@@ -813,12 +826,7 @@ def main() -> int:  # noqa: C901, PLR0912, PLR0915
             "machine": platform.machine(),
             "cpu": platform.processor(),
             "python": sys.version,
-            "rust": subprocess.run(
-                ["rustc", "--version"],  # noqa: S607 - Developer tool from PATH.
-                capture_output=True,
-                text=True,
-                check=True,
-            ).stdout.strip(),
+            "rust": tool_version(["rustc", "--version"]),
         }
         result["registry_sha256"] = hashlib.sha256(
             args.registry.read_bytes()

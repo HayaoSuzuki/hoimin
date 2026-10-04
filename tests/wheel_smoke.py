@@ -124,7 +124,9 @@ def is_compatible_wheel(
 
 
 def project_identity() -> tuple[str, Version]:
-    document = tomllib.loads((REPOSITORY_ROOT / "pyproject.toml").read_text())
+    document = tomllib.loads(
+        (REPOSITORY_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    )
     project = document["project"]
     return canonicalize_name(project["name"]), Version(project["version"])
 
