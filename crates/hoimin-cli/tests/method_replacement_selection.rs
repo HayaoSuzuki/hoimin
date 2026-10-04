@@ -6,7 +6,9 @@ use hoimin_core::{
 
 #[tokio::test]
 async fn method_descriptors_ids_order_and_truncation_match_baseline() {
-    let source = include_str!("fixtures/method-replacements/subject.py");
+    // The baseline uses LF bytes for spans, file hashes, and candidate IDs.
+    // Undo checkout CRLF conversion before writing the source under test.
+    let source = include_str!("fixtures/method-replacements/subject.py").replace("\r\n", "\n");
     let directory = tempfile::tempdir().unwrap();
     std::fs::write(directory.path().join("subject.py"), source).unwrap();
     let root = Utf8Path::from_path(directory.path()).unwrap();

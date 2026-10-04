@@ -163,6 +163,13 @@ fn public_prepare_releases_manifest_bytes_before_source_read_and_preserves_previ
         .max_blocking_threads(1)
         .build()
         .unwrap();
+    // Windows child stdout/stderr reads use blocking threads. Keep them off the
+    // single-thread blocking pool used to gate the source read below: a stderr
+    // read can otherwise prevent stdout from draining and deadlock the child.
+    let process_runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
     let directory = tempfile::tempdir().unwrap();
     let marker = directory.path().join("test-command-ran");
     let (path, manifest, manifest_size) =
@@ -221,7 +228,7 @@ fn public_prepare_releases_manifest_bytes_before_source_read_and_preserves_previ
             assert_eq!(row["original"], candidate.original);
             assert_eq!(row["replacement"], candidate.replacement);
         }
-        let output = runtime.block_on(async {
+        let output = process_runtime.block_on(async {
             tokio::time::timeout(
                 Duration::from_secs(30),
                 tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
