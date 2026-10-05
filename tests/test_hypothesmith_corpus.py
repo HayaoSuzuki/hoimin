@@ -148,3 +148,19 @@ def test_real_generator_is_reproducible_and_reports_existing_inputs(
     for data in first.values():
         assert 0 < len(data) <= MAX_CORPUS_BYTES
         compile(data, "<generated>", "exec", dont_inherit=True)
+
+
+def test_libcst_generator_accepts_expected_internal_filtering(tmp_path: Path) -> None:
+    pytest.importorskip(
+        "hypothesmith", reason="install the optional fuzz dependency group"
+    )
+
+    counts = corpus.generate(
+        tmp_path,
+        examples=50,
+        random_seed=2_880_707_897,
+        strategy="libcst",
+        max_bytes=MAX_CORPUS_BYTES,
+    )
+
+    assert counts["written"] > 0

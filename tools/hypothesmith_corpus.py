@@ -51,7 +51,7 @@ def generate(
 
     # Optional dependencies: normal unit tests and --help need no fuzz extras.
     import hypothesmith  # noqa: PLC0415
-    from hypothesis import Phase, given, seed, settings  # noqa: PLC0415
+    from hypothesis import HealthCheck, Phase, given, seed, settings  # noqa: PLC0415
 
     source_strategy = (
         hypothesmith.from_grammar()
@@ -67,6 +67,7 @@ def generate(
         database=None,
         deadline=None,
         phases=(Phase.generate, Phase.target),
+        suppress_health_check=(HealthCheck.filter_too_much,),
     )
     @given(source_strategy)
     def collect(source: str) -> None:
