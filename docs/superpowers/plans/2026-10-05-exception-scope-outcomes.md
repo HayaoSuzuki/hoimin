@@ -24,9 +24,9 @@ Files: `crates/hoimin-cli/src/analyzer/exception_hierarchy.rs`, `analyzer/rust.r
 Produces: a report from `ExceptionIndex::collect`, passed through the AST producer
 and formatted with existing diagnostic fields. Scope work consumes this report.
 
-- [ ] Write public tests for disabled scope, no relation, constructor policy,
+- [x] Write public tests for disabled scope, no relation, constructor policy,
   unsupported tuple, aggregation/location and bare raise; observe RED.
-- [ ] Replace the empty-vector/boolean inference with explicit outcomes; run
+- [x] Replace the empty-vector/boolean inference with explicit outcomes; run
   focused hierarchy tests and review semantics, bounds and integration separately.
 - [ ] Commit the outcome implementation and verification record.
 
@@ -63,3 +63,22 @@ limits; a small Lean domain does not establish Rust's resource bound.
 
 Base `97c5bcd`; design/plan reviewed before implementation. User authorized the
 follow-up implementation. The existing dedicated branch is reused.
+
+### Task 1 review and verification
+
+Implementation review 1 (semantics): only skipped outcomes warn; disabled scopes
+are counted at occurrences, while bare raises are excluded deliberately.
+Implementation review 2 (bounds): four skipped reasons and four policy reasons,
+saturating counts and one earliest span bound retained report data.
+Implementation review 3 (integration): existing diagnostic code and candidate
+producer ordering/limits remain; cancellation is checked before publishing results.
+Test review 1: policy exclusions and unsupported/disabled cases are paired.
+Test review 2: 200 disabled sites assert aggregation and source location.
+Test review 3: 22 public integration tests, 21 hierarchy library tests and 125 Lean
+public oracle cases passed; the workspace run reached successful doc-tests with
+no failures. The new scope regressions fail on eight unrelated-shadowing cases
+and the parameter rename case, as expected before Task 2.
+
+Disk ruling: resume builds with CARGO_INCREMENTAL=0 and dev/test debug info disabled;
+monitor target and available space, clean generated artifacts between major gates
+if necessary. The previous target directory was already absent at resume.

@@ -471,7 +471,7 @@ pub(crate) fn analyze_source_with_exceptions(
         return Err(AnalysisError::Cancelled);
     }
     let token_candidates = token_candidates.finish();
-    let (ast_candidates, hierarchy_skipped) = ast_candidates(
+    let (ast_candidates, hierarchy_report) = ast_candidates(
         parsed.syntax(),
         source,
         &line_index,
@@ -528,11 +528,14 @@ pub(crate) fn analyze_source_with_exceptions(
         })
         .into_iter()
         .collect();
-    if hierarchy_skipped {
+    if let Some((range, message)) = hierarchy_report.diagnostic() {
+        let (line, column) = line_index.line_and_column(source, usize::from(range.start()));
         diagnostics.push(AnalyzerDiagnostic {
             code: AnalyzerDiagnosticCode::UnsupportedExceptionHierarchy,
-            path: Some(request.path.to_owned()), line: None, column: None,
-            message: Some("exception hierarchy: skipped references without a supported, visible related class or compatible constructor".into()),
+            path: Some(request.path.to_owned()),
+            line: Some(line),
+            column: Some(column),
+            message: Some(message),
         });
     }
     #[cfg(test)]
@@ -2700,7 +2703,7 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         request: &'a AnalyzeRequest<'a>,
         cancelled: &'a F,
         exceptions: Option<&exception_hierarchy::ExceptionIndex>,
-    ) -> Result<(ProducerPrefix, bool), AnalysisCancelled> {
+    ) -> Result<(ProducerPrefix, exception_hierarchy::HierarchyReport), AnalysisCancelled> {
         let mut collector = Self {
             in_pattern: false,
             operator_imports: if request
@@ -2727,9 +2730,9 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                 return Err(AnalysisCancelled);
             }
         }
-        let mut skipped = false;
+        let mut report = exception_hierarchy::HierarchyReport::default();
         if let Some(index) = exceptions {
-            skipped = index.collect(
+            report = index.collect(
                 request.path,
                 module,
                 request.max_candidates,
@@ -2743,7 +2746,7 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                 },
             )?;
         }
-        Ok((collector.candidates.finish(), skipped))
+        Ok((collector.candidates.finish(), report))
     }
 
     fn check_cancelled(&mut self) -> bool {
@@ -3398,7 +3401,7 @@ fn ast_candidates<'a, F: Fn() -> bool>(
     request: &'a AnalyzeRequest<'a>,
     cancelled: &'a F,
     exceptions: Option<&exception_hierarchy::ExceptionIndex>,
-) -> Result<(ProducerPrefix, bool), AnalysisCancelled> {
+) -> Result<(ProducerPrefix, exception_hierarchy::HierarchyReport), AnalysisCancelled> {
     AstCandidateCollector::collect(
         module, source, line_index, facts, request, cancelled, exceptions,
     )

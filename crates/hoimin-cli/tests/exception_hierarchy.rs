@@ -744,3 +744,53 @@ async fn hierarchy_assignment_edges_have_an_independent_limit() {
         .unwrap_err();
     assert!(error.to_string().contains("summary limit"), "{error}");
 }
+
+#[tokio::test]
+async fn hierarchy_outcomes_distinguish_skipped_analysis_from_policy_exclusions() {
+    let dir = tempfile::tempdir().unwrap();
+    let definitions = "class Root(Exception): pass\nclass Child(Root): pass\n";
+    for (name, source, reason) in [
+        ("disabled", format!("{definitions}def target():\n    eval('1')\n    raise Child()\n"), Some("disabled_scope")),
+        ("tuple", format!("{definitions}def target():\n    try: pass\n    except (Child, ValueError): pass\n"), Some("unsupported_expression")),
+        ("no-relation", "class Child(Exception): pass\ndef target():\n    raise Child()\n".into(), None),
+        ("constructor", "class Root(Exception):\n    def __init__(self, code): pass\nclass Child(Root): pass\ndef target():\n    raise Child(1)\n".into(), None),
+        ("bare", format!("{definitions}def target():\n    raise\n"), None),
+    ] {
+        std::fs::write(dir.path().join("service.py"), source).unwrap();
+        let plan = hoimin_cli::plan::create(config(dir.path(), &[])).await.unwrap();
+        assert!(plan.manifest.candidates.is_empty(), "{name}");
+        match reason {
+            Some(reason) => {
+                assert_eq!(plan.manifest.diagnostics.len(), 1, "{name}");
+                let diagnostic = &plan.manifest.diagnostics[0];
+                assert!(diagnostic.message.contains(reason), "{diagnostic:?}");
+                assert_eq!(diagnostic.line, Some(5), "{name}");
+                assert!(diagnostic.column.is_some());
+            }
+            None => assert!(plan.manifest.diagnostics.is_empty(), "{name}: {:?}", plan.manifest.diagnostics),
+        }
+        assert!(!plan.manifest.truncated);
+    }
+}
+
+#[tokio::test]
+async fn hierarchy_skipped_reasons_are_aggregated_with_first_location() {
+    let dir = tempfile::tempdir().unwrap();
+    let source =
+        "class Root(Exception): pass\nclass Child(Root): pass\ndef target():\n    eval('1')\n"
+            .to_owned()
+            + &"    raise Child()\n".repeat(200);
+    std::fs::write(dir.path().join("service.py"), source).unwrap();
+    let plan = hoimin_cli::plan::create(config(dir.path(), &[]))
+        .await
+        .unwrap();
+    assert_eq!(plan.manifest.diagnostics.len(), 1);
+    let diagnostic = &plan.manifest.diagnostics[0];
+    assert!(
+        diagnostic.message.contains("disabled_scope=200"),
+        "{diagnostic:?}"
+    );
+    assert_eq!(diagnostic.line, Some(5));
+    assert!(diagnostic.message.len() < 512);
+    assert!(!plan.manifest.truncated);
+}

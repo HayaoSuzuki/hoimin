@@ -12,6 +12,75 @@ const MAX_STEPS: usize = 256;
 pub(crate) const MAX_SUMMARY_ENTRIES: usize = 65_536;
 type ClassId = (Utf8PathBuf, String);
 
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum SkipReason {
+    DisabledScope,
+    UnsupportedExpression,
+    UnresolvedBinding,
+    UntrustedModule,
+}
+impl SkipReason {
+    fn label(self) -> &'static str {
+        match self {
+            Self::DisabledScope => "disabled_scope",
+            Self::UnsupportedExpression => "unsupported_expression",
+            Self::UnresolvedBinding => "unresolved_binding",
+            Self::UntrustedModule => "untrusted_module",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum IneligibleReason {
+    NoUserDefinedClass,
+    NoRelatedClass,
+    NoVisibleDestination,
+    ConstructorPolicy,
+}
+
+enum SiteOutcome {
+    Candidates(Vec<String>),
+    Ineligible(IneligibleReason),
+    Skipped(SkipReason),
+}
+
+/// Fixed reason vocabulary bounds storage independently of the number of sites.
+#[derive(Default)]
+pub(crate) struct HierarchyReport {
+    emitted: usize,
+    ineligible: BTreeMap<IneligibleReason, (usize, TextRange)>,
+    skipped: BTreeMap<SkipReason, (usize, TextRange)>,
+}
+impl HierarchyReport {
+    fn skip(&mut self, reason: SkipReason, range: TextRange) {
+        Self::record(&mut self.skipped, reason, range);
+    }
+    fn record<K: Ord>(entries: &mut BTreeMap<K, (usize, TextRange)>, reason: K, range: TextRange) {
+        let entry = entries.entry(reason).or_insert((0, range));
+        entry.0 = entry.0.saturating_add(1);
+        if range.start() < entry.1.start() {
+            entry.1 = range;
+        }
+    }
+    pub(crate) fn diagnostic(&self) -> Option<(TextRange, String)> {
+        let first = self
+            .skipped
+            .values()
+            .map(|(_, range)| *range)
+            .min_by_key(Ranged::start)?;
+        let reasons = self
+            .skipped
+            .iter()
+            .map(|(reason, (count, _))| format!("{}={count}", reason.label()))
+            .collect::<Vec<_>>()
+            .join(", ");
+        Some((
+            first,
+            format!("exception hierarchy: analysis skipped ({reasons})"),
+        ))
+    }
+}
+
 #[derive(Clone)]
 enum BindingKind {
     Class {
@@ -1143,18 +1212,25 @@ impl ExceptionIndex {
         raised: bool,
         excluded: &BTreeSet<String>,
         budget: (usize, &dyn Fn() -> bool),
-    ) -> Vec<String> {
+    ) -> SiteOutcome {
         if excluded.contains(name.split('.').next().unwrap()) {
-            return Vec::new();
+            return SiteOutcome::Skipped(SkipReason::UnresolvedBinding);
+        }
+        if self.modules.get(path).is_some_and(|module| module.dynamic) {
+            return SiteOutcome::Skipped(SkipReason::UntrustedModule);
         }
         let Some(id) = self.binding_id(path, name, before) else {
-            return Vec::new();
+            return if self.builtin_base(path, name, before).is_some() {
+                SiteOutcome::Ineligible(IneligibleReason::NoUserDefinedClass)
+            } else {
+                SiteOutcome::Skipped(SkipReason::UnresolvedBinding)
+            };
         };
         let Some(class) = self.classes.get(&id) else {
-            return Vec::new();
+            return SiteOutcome::Skipped(SkipReason::UnresolvedBinding);
         };
         if raised && !class.constructible {
-            return Vec::new();
+            return SiteOutcome::Ineligible(IneligibleReason::ConstructorPolicy);
         }
         let siblings = class.parent.as_ref().and_then(|p| self.children.get(p));
         let children = self.children.get(&id);
@@ -1164,19 +1240,25 @@ impl ExceptionIndex {
             .chain(siblings.into_iter().flatten())
             .chain(children.into_iter().flatten());
         let mut result = BTreeSet::new();
+        let mut has_related = false;
+        let mut compatible = false;
         for destination in related {
             if (budget.1)() {
                 break;
             }
-            if *destination == id
-                || (raised
-                    && !self
-                        .classes
-                        .get(destination)
-                        .is_some_and(|c| c.constructible))
+            if *destination == id {
+                continue;
+            }
+            has_related = true;
+            if raised
+                && !self
+                    .classes
+                    .get(destination)
+                    .is_some_and(|c| c.constructible)
             {
                 continue;
             }
+            compatible = true;
             if let Some(aliases) = self.visible.get(path).and_then(|v| v.get(destination))
                 && let Some((name, _)) = aliases.iter().find(|(n, end)| {
                     *end <= before && !excluded.contains(n.split('.').next().unwrap())
@@ -1188,7 +1270,17 @@ impl ExceptionIndex {
                 }
             }
         }
-        result.into_iter().collect()
+        if result.is_empty() {
+            SiteOutcome::Ineligible(if !has_related {
+                IneligibleReason::NoRelatedClass
+            } else if !compatible {
+                IneligibleReason::ConstructorPolicy
+            } else {
+                IneligibleReason::NoVisibleDestination
+            })
+        } else {
+            SiteOutcome::Candidates(result.into_iter().collect())
+        }
     }
 
     pub(crate) fn collect(
@@ -1198,7 +1290,7 @@ impl ExceptionIndex {
         limit: usize,
         cancelled: &impl Fn() -> bool,
         mut emit: impl FnMut(TextRange, String),
-    ) -> Result<bool, AnalysisCancelled> {
+    ) -> Result<HierarchyReport, AnalysisCancelled> {
         let mut collector = Collector {
             index: self,
             limit,
@@ -1209,14 +1301,14 @@ impl ExceptionIndex {
             disabled: false,
             cancelled,
             stopped: false,
-            skipped: false,
+            report: HierarchyReport::default(),
             emit: &mut emit,
         };
         collector.visit_body(&module.body);
         if collector.stopped || cancelled() {
             Err(AnalysisCancelled)
         } else {
-            Ok(collector.skipped)
+            Ok(collector.report)
         }
     }
 }
@@ -1231,22 +1323,28 @@ struct Collector<'i, 'p, F, C> {
     disabled: bool,
     cancelled: &'p C,
     stopped: bool,
-    skipped: bool,
+    report: HierarchyReport,
     emit: F,
 }
 impl<F: FnMut(TextRange, String), C: Fn() -> bool> Collector<'_, '_, F, C> {
     fn occurrence(&mut self, expression: &Expr, raised: bool) {
-        if self.disabled || self.stopped {
+        if self.stopped {
+            return;
+        }
+        if self.disabled {
+            self.report
+                .skip(SkipReason::DisabledScope, expression.range());
             return;
         }
         let Some(name) = reference(expression) else {
-            self.skipped = true;
+            self.report
+                .skip(SkipReason::UnsupportedExpression, expression.range());
             return;
         };
         let before = self
             .deferred
             .unwrap_or_else(|| usize::from(expression.start()));
-        let replacements = self.index.replacements(
+        let outcome = self.index.replacements(
             self.path,
             &name,
             before,
@@ -1254,12 +1352,23 @@ impl<F: FnMut(TextRange, String), C: Fn() -> bool> Collector<'_, '_, F, C> {
             &self.excluded,
             (self.limit, self.cancelled),
         );
-        self.skipped |= replacements.is_empty();
+        let replacements = match outcome {
+            SiteOutcome::Candidates(replacements) => replacements,
+            SiteOutcome::Ineligible(reason) => {
+                HierarchyReport::record(&mut self.report.ineligible, reason, expression.range());
+                return;
+            }
+            SiteOutcome::Skipped(reason) => {
+                self.report.skip(reason, expression.range());
+                return;
+            }
+        };
         for replacement in replacements {
             if (self.cancelled)() {
                 self.stopped = true;
                 return;
             }
+            self.report.emitted = self.report.emitted.saturating_add(1);
             (self.emit)(expression.range(), replacement);
         }
     }
