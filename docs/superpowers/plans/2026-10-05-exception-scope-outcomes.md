@@ -45,7 +45,7 @@ Produces: typed scoped keys with deterministic serialization in test observation
   and public candidates, retain broken-variant sensitivity and actual limits.
 - [x] Review implementation three times (binding semantics, effect propagation,
   resources) and tests three times (positive controls, adversarial cases, integration).
-- [ ] Run guarded Lean/freshness/sensitivity, focused tests, workspace tests,
+- [x] Run guarded Lean/freshness/sensitivity, focused tests, workspace tests,
   formatting and all-features Clippy. Obtain the final independent review, fix
   material findings with regressions, update docs and commit.
 
@@ -104,3 +104,14 @@ Task 1 committed as `ddda24f`. Task 2 focused validation passes: all library tes
 151 public Lean cases. The 39 extraction and 170 snapshot cases agree. All-features
 Clippy and Lean aggregate/freshness/sensitivity pass. An independent final review
 and a fresh workspace run after the implicit-scope fix remain before completion.
+
+### Final completion
+
+Independent review found one Important implicit-class-cell write gap; public RED
+expected zero candidates and observed one. Fix `c5f288c` resolves the owner through
+aliases/nested closures and preserves local/global/header controls. The final
+workspace run passed 2601 tests with 22 ignored, zero failures. Clippy,
+formatting, Lean model/proofs, corpus freshness and 18-variant sensitivity passed.
+The final corpus contains 160 strict and 215 internal cases. See
+`docs/superpowers/reports/2026-10-05-exception-scope-lean-audit.md` for reviews,
+resource decisions and remaining model boundaries. All work remains on the branch.

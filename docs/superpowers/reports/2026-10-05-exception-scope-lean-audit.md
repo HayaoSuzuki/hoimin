@@ -81,7 +81,7 @@ build encountered a reserved-word collision in a local variable; it was correcte
 The first adapter run rejected the obsolete hardcoded corpus count before semantic
 comparison; schema/count guards were updated to the generated case set.
 
-Commands and final results are recorded below when the integration gates finish.
+Commands and final results are recorded below.
 All Lean commands use `tools/lean_resource_guard.py --timeout-seconds 20
 --rss-limit-mib 2048 --sample-ms 250`; proofs retain 50000 heartbeats. Lean jobs
 run serially, and the aggregate check uses `-j1 -DElab.async=false`.
@@ -93,7 +93,7 @@ The scan now skips comprehension targets and lambda bodies while retaining heade
 and outer-walrus effects. Four module/function controls pass and are retained in
 the Lean-generated strict corpus as well.
 
-Focused verification: `cargo test -p hoimin-cli --lib --test exception_hierarchy
+Pre-review focused verification: `cargo test -p hoimin-cli --lib --test exception_hierarchy
 --test exception_hierarchy_scopes --test lean_exception_hierarchy_oracle` passed
 (765 library tests, 12 ignored; 22 hierarchy, four scope and one 151-case public
 oracle test). Extraction and snapshot adapters matched all 209 internal rows.
@@ -131,3 +131,35 @@ Fix review 2: nested closures use the class definition binding; definition heade
 use the containing scope, and alias edges preserve the resolved owning identity.
 Fix review 3: one optional binding per bounded class scope preserves storage limits;
 rebound definition names remain conservatively invalidated.
+
+## Final verification
+
+At `c5f288c`, `cargo test --workspace` passed: 2601 tests, zero failures,
+22 ignored, across 129 binary/doc-test summaries. The five scope tests
+include the six class-cell controls. All 160 strict and 215 internal-fixture corpus
+rows match; all original 125 strict inputs/expectations remain unchanged except
+for the internal corpus schema version. No new `sorry` or axioms occur in the model
+or proofs. All 18 model theorems check; 18 broken variants are detected.
+
+Commands (Rust commands used the disk-saving environment above):
+
+```console
+cargo test --workspace
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo fmt --all -- --check
+```
+
+The guarded Lean commands, from `formal/HoiminOracle`, were:
+
+```console
+lake build +HoiminOracle.ExceptionHierarchyModel:o
+lake build +HoiminOracle.ExceptionHierarchyProofs:o
+lake exe generate_exception_hierarchy --output corpus/exception-hierarchy.jsonl
+lake exe generate_exception_hierarchy --check corpus/exception-hierarchy.jsonl
+lake exe generate_exception_hierarchy --sensitivity
+lake env lean -j1 -DElab.async=false HoiminOracle.lean
+```
+
+Each command ran through the 20-second / 2048-MiB resource guard. The final reviewer
+finding is fixed and tested; no Minor findings were deferred. Changes stay on the
+requested branch, without pushing or merging.
