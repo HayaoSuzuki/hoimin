@@ -104,9 +104,10 @@ review record `docs/superpowers/reviews/2026-10-05-issue-692.md`.
    rechecks, and checked against copied workspace records. Tests must cover both
    dependency content changes and additions, not only selected source changes.
 
-## Completion
+## Initial implementation completion
 
-All tasks are complete. Tasks 2–4 are committed together because candidate
+Tasks 1–4 above are complete; the later design-review follow-up below remains open.
+Tasks 2–4 are committed together because candidate
 production and automatic dependency validation share the new project index.
 See `docs/superpowers/reviews/2026-10-05-issue-692.md` for review counterexamples,
 verification results, and the pre-existing default-feature Clippy limitation.
@@ -141,3 +142,55 @@ Extend the Lean model with provider trust after writes through canonical aliases
 prove that a written alias invalidates its provider, and check generated expectations
 against public plans. The audit records the initial failure and three further
 implementation/test review passes; the existing snapshot corpus remains unchanged.
+
+## Design-review follow-up (open)
+
+The [original-design review](../reports/2026-10-05-exception-hierarchy-design-review.md)
+reopens the following work. Documentation of a limitation does not resolve it.
+These tasks are not implemented by the review commit. Retain the existing explicit
+operator selection, fingerprint scope, candidate schema and deterministic ordering.
+
+1. **Specify effects and trust before extending aliases.** Define separate class
+   definition, exported attribute and use-site binding identities. List supported
+   import/assignment aliases, writes and opaque escapes, including scope and order.
+   Preserve unknown effects and rejection reasons in the extracted facts. Review
+   normal uses, adversarial uses and extraction correspondence in three passes.
+2. **Retain the runtime counterexample, then implement the bounded subset.** Start
+   with the report's `other = e; other.Root = object` public-plan regression and
+   independent Python control. Cover alias chains, rebinding, cycles and scope
+   collisions with explicit limits. Add a reason when known facts require rejecting
+   a provider; do not imply that arbitrary function/object aliases are solved.
+   Keep positive controls for unrelated providers and attributes. Each new rule
+   needs a failing behavioral regression before the repair.
+3. **Make the correspondence boundary observable.** Model supported extraction
+   events and alias propagation in Lean; prove the resulting invalidation invariant.
+   Compare Rust-extracted facts with model inputs, then public candidates with
+   generated expectations. Retain independent Python controls and a broken-model
+   sensitivity check. Follow the existing Lean resource guard and serial commands.
+4. **Preserve reasons and measure useful coverage.** Distinguish no related class,
+   invisible destination, constructor mismatch, unknown binding and mutated provider
+   while keeping diagnostics bounded. Use a declared positive-fixture matrix and
+   unrelated-change controls before narrowing provider-wide invalidation. Do not
+   restrict fingerprint inputs to a dependency closure as a shortcut; additions
+   can alter resolution. Record fixture results separately from any real-project
+   evaluation, and make no recovery-rate claim without the latter.
+5. **Set lifecycle and resource acceptance conditions.** Before enabling concurrent
+   loads, choose single initialization or first-success publication, and test real
+   concurrent schedules plus cancellation. Check source, AST, transient summaries
+   and retained entries separately; measure memory/time at resource boundaries
+   before claiming a process-level bound. Current sequential cache proofs do not
+   discharge concurrent obligations.
+
+The implementation order is 1 → 2/3 → 4; 5 is required before increasing concurrency
+or making stronger resource guarantees. Each implementation and test stage retains
+the user's minimum of three self-review passes, with the reviewed claims and
+counterexamples recorded, not just a pass count.
+
+Plan self-review for these open tasks:
+
+- Pass 1, scope: preserve the useful static feature; do not turn this into executing
+  target projects or implementing all Python semantics.
+- Pass 2, dependencies: establish extraction facts before proving alias rules;
+  otherwise the current correspondence gap would recur.
+- Pass 3, acceptance: include positive controls, reason distinctions and lifecycle
+  conditions. Keep unimplemented tasks open even though the initial plan passed.

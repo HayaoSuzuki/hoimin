@@ -2,6 +2,24 @@
 
 Issue: #692. Branch: `investigate/user-defined-exception-mutations`.
 
+## Contract and review status
+
+The [original-design review](../reports/2026-10-05-exception-hierarchy-design-review.md)
+identifies unresolved gaps in runtime identity, extraction correspondence and
+diagnostics. This is a bounded lexical candidate generator. It does not establish
+that every emitted spelling will denote the indexed class at runtime. In particular,
+untracked assignment/function aliases inside the indexed project can change a
+provider without invalidating candidates in another file. Such unsupported effects
+are not guaranteed to be detected and skipped. This limitation also applies when
+the mutation site itself uses supported syntax.
+
+Distinguish a class definition's identity and parent edge from its module's current
+exported attribute and from the binding at a use site. Future changes must preserve
+these distinctions and the reasons for losing trust. The review proposes separate
+input, extraction, resolution, eligibility and diagnostic stages; that refactoring
+and broader alias tracking are not yet implemented. The follow-up plan records them
+as open work, rather than treating these contract clarifications as fixes.
+
 ## Behavior
 
 Add the explicit-only operator `exception_hierarchy`. Preserve the existing default
@@ -35,8 +53,11 @@ constructor compatibility.
 A separate `analyzer/exception_hierarchy` module owns a compact immutable project
 index. Parse with the existing Ruff parser and existing recursion guard. Retain
 class/import/binding summaries rather than whole project ASTs. Resolve ancestry
-iteratively with explicit bounds. Build once per discovery/run analysis session,
-and share through an Arc. Thread the project into both plan discovery and run's
+iteratively with explicit bounds. Reuse the first successful index across sequential
+loads in a discovery/run analysis session through an Arc. The current cache does
+not enforce single construction or immutable publication for concurrent loads;
+parallel initialization requires a separate lifecycle contract and validation.
+Thread the project into both plan discovery and run's
 blocking analysis; direct source-only analyzer callers build a single-module index.
 
 The per-module analysis retains lexical binding exclusions for module and function
@@ -49,8 +70,10 @@ invalidate trust. Definition/base resolution respects definition order.
 Feed hierarchy candidates through the existing AST producer so profile filtering,
 line/symbol selection, source ordering, deduplication and bounded retention remain
 shared. Check cancellation while building summaries, resolving edges and enumerating
-destinations. Diagnostic messages explain unsupported hierarchy references without
-changing the existing candidate schema.
+destinations. The current bounded per-file diagnostic reports that a reference has
+no supported replacement; it does not distinguish no related class, invisibility,
+unsupported resolution or constructor mismatch. Reason-preserving diagnostics are
+an open design requirement, without changing the existing candidate schema.
 
 ## Project inputs
 
@@ -70,6 +93,10 @@ Index limits: 4096 Python files, 16 MiB per file, 64 MiB total decoded source,
 steps, and 65536 entries per module-name, binding, import-dependency and visible-alias table. Exceeding a project limit
 fails with an explicit analysis error, never silently reuses a partial index. Candidate count still uses the
 existing `max_candidates`; avoid constructing all class pairs upfront.
+These are input and table limits, not a process peak-memory guarantee. Sources,
+the current AST and transient summaries can coexist; some summary bounds are
+checked after construction. A quantitative memory/time contract needs separate
+measurement and validation.
 
 ## Verification
 

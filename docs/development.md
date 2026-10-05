@@ -1348,9 +1348,10 @@ The index retains binding/import/class summaries and decoded-source hashes.
 Loaded bytes must also match the prepared fingerprint before decoding. Prepared
 Python input paths reserve module origins even if temporarily missing, so a lower
 search root cannot silently supply different classes during a delete/restore race. Both
-plan discovery and run analysis share a cached index within their analysis session;
+plan discovery and run analysis reuse a cached index for sequential loads within their analysis session;
 failed or cancelled builds are not cached. Selected source contents must match the
-indexed snapshot. `fingerprint_inputs::resolve_config` adds the allowed Python input
+indexed snapshot. The cache does not enforce single initialization or first-success
+publication for concurrent callers. `fingerprint_inputs::resolve_config` adds the allowed Python input
 set to existing fingerprint records, and verify/run rechecks recompute the set.
 This covers dependency additions and deletions as well as content changes, and the
 workspace manifest check verifies copied automatic inputs.
@@ -1368,6 +1369,14 @@ package at a different root, are conservatively excluded. Top-level CPython 3.14
 reserved; an identically named project file cannot establish an import identity.
 Names below project packages, such as `pkg.sys`, remain eligible. This lexical model does
 not prove safety against arbitrary external monkeypatching or custom import hooks.
+Untracked assignment/function aliases inside indexed modules can also affect
+candidates in other modules. For example, `import errors as e; other = e;
+other.Root = object` is not propagated to consumers of `errors.Root`. Unsupported
+effects are not always detected and skipped, so emitted spellings are not guaranteed
+to resolve to exception classes at runtime. The
+[original-design review](superpowers/reports/2026-10-05-exception-hierarchy-design-review.md)
+records this unresolved case and the planned separation of extraction, binding
+resolution, provider effects and diagnostics.
 
 Pairs connect direct user-defined parents/children and siblings with a shared
 user-defined direct parent. Builtins seed ancestry only. Termination and exception
@@ -1392,7 +1401,10 @@ index construction and replacement enumeration. Per-site replacement retention i
 bounded by `max_candidates + 1`, preserving the existing producer's source-order
 prefix and truncation signal. One `exception_hierarchy_skipped` diagnostic per file
 reports references without a supported visible related class or compatible
-constructor; it does not mark analysis as truncated.
+constructor; it does not mark analysis as truncated. It currently conflates a valid
+absence of related classes with unsupported analysis. The input/table limits above
+do not constitute a peak-memory bound: decoded sources, an AST and transient
+summaries can coexist, and some summary limits are checked after construction.
 
 Focused verification:
 
