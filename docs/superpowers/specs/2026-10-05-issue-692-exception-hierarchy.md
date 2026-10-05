@@ -66,8 +66,8 @@ and content changes. Keep user-declared fingerprint selectors intact. Propagate
 automatic inputs into workspace revalidation. Never import target Python modules.
 
 Index limits: 4096 Python files, 16 MiB per file, 64 MiB total decoded source,
-256 ancestry/import steps. Exceeding a project limit fails with an explicit analysis
-error, never silently reuses a partial index. Candidate count still uses the
+256 ancestry/import steps, and 65536 module bindings. Exceeding a project limit
+fails with an explicit analysis error, never silently reuses a partial index. Candidate count still uses the
 existing `max_candidates`; avoid constructing all class pairs upfront.
 
 ## Verification
@@ -91,3 +91,10 @@ Fingerprint discovery scans the allowed project Python files, including files ou
 selected mutation roots, so a newly added module cannot silently alter resolution.
 Unsupported references produce a bounded per-file diagnostic, not one message per
 possible destination. Project limits are enforced before parsing additional files.
+
+Implementation review clarification: classes with the same file but different imported
+module names are conservatively rejected. Ambiguous namespace/regular-package layouts
+are also rejected rather than claiming a complete Python import resolver. Function
+uses require definitions preceding the function header; implicit class cells and
+private names are excluded in method scopes. Candidate replacement retention is
+bounded per site in addition to the existing producer bound.

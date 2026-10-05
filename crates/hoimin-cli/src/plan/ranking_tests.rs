@@ -565,6 +565,7 @@ const HIGH_VALUE_CONTROL_OPERATORS: &[&str] = &[
     "break_continue",
 ];
 const EXCEPTION_HANDLING_OPERATORS: &[&str] = &[
+    "exception_hierarchy",
     "exception_type_pair",
     "exception_bare_to_exception",
     "exception_exception_to_bare",
@@ -653,7 +654,7 @@ fn ranking_assigns_every_operator_to_its_fixed_category() {
         .into_iter()
         .filter_map(MutationOperator::from_name)
         .collect::<BTreeSet<_>>();
-    assert_eq!(tested.len(), 55);
+    assert_eq!(tested.len(), 56);
     assert_eq!(tested, canonical);
 
     for (operators, expected) in categories {

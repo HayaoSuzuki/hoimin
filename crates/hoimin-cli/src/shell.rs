@@ -1362,7 +1362,8 @@ fn prepare_shell_setup_sync_in(
             .map_err(|_| "--max-processes exceeds the supported process count".to_owned())?,
     )
     .map_err(|error| error.to_string())?
-    .with_managed_candidate_spool_owner(Arc::clone(&execution_spool));
+    .with_managed_candidate_spool_owner(Arc::clone(&execution_spool))
+    .with_exception_project(&config);
     boundary(ShellSetupBoundary::AnalyzerCreated);
     let report = PreparedReport::new(config.output.format, delivery_spool.path())
         .map_err(|error| error.to_string())?;
@@ -1997,19 +1998,25 @@ fn recheck_fingerprint_inputs(
     copied_at_start: &BTreeSet<Utf8PathBuf>,
     id: EffectId,
 ) -> Result<(), EffectFailed> {
-    crate::fingerprint_inputs::recheck(
-        root,
-        &config.fingerprint_includes,
-        &config.fingerprint_files,
-        &config.fingerprint_inputs,
-    )
-    .map_err(|error| {
+    crate::fingerprint_inputs::recheck_config(config, root).map_err(|error| {
         EffectFailed::other(id, "plan.fingerprint_input.changed", error.to_string())
     })?;
+    let files = if config
+        .operators
+        .contains(hoimin_core::MutationOperator::ExceptionHierarchy)
+    {
+        config
+            .fingerprint_inputs
+            .iter()
+            .map(|r| r.path.to_string())
+            .collect::<Vec<_>>()
+    } else {
+        config.fingerprint_files.clone()
+    };
     crate::fingerprint_inputs::recheck_manifest(
         root,
         &config.fingerprint_includes,
-        &config.fingerprint_files,
+        &files,
         &config.fingerprint_inputs,
         manifest,
         copied_at_start,
@@ -2276,11 +2283,7 @@ pub enum PrepareRunConfigError {
 /// Returns an error when a configured fingerprint input pattern cannot be resolved.
 pub fn prepare_run_config(mut config: RunConfig) -> Result<RunConfig, PrepareRunConfigError> {
     config.fingerprint_env_hash = crate::fingerprint_env::capture(&config.fingerprint_env)?;
-    config.fingerprint_inputs = crate::fingerprint_inputs::resolve(
-        &config.root,
-        &config.fingerprint_includes,
-        &config.fingerprint_files,
-    )?;
+    config.fingerprint_inputs = crate::fingerprint_inputs::resolve_config(&config)?;
     Ok(config)
 }
 

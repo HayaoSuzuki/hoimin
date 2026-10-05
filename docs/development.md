@@ -1334,3 +1334,62 @@ termination/exit observations. Hash collisions, arbitrary native bytes, Windows
 OS behavior, and concurrent environment mutation are outside the finite model.
 Native/framing/platform config tests and public plan/verify/privacy controls cover
 those implementation boundaries where stated; tests do not mutate global env.
+
+## User-defined exception hierarchies
+
+`exception_hierarchy` is an explicit-only operator implemented in
+`analyzer/exception_hierarchy.rs` and `analyzer/exception_project.rs`. The project
+loader discovers Python inputs using the existing include/exclude policy, without
+file/line/symbol/changed mutation filters. Module roots follow worker precedence:
+project root, explicit import roots, then source roots. Inherited external
+PYTHONPATH entries and third-party packages are outside the analysis scope.
+
+The index retains binding/import/class summaries and decoded-source hashes. Both
+plan discovery and run analysis share a cached index within their analysis session;
+failed or cancelled builds are not cached. Selected source contents must match the
+indexed snapshot. `fingerprint_inputs::resolve_config` adds the allowed Python input
+set to existing fingerprint records, and verify/run rechecks recompute the set.
+This covers dependency additions and deletions as well as content changes, and the
+workspace manifest check verifies copied automatic inputs.
+
+Supported class identities are unconditional top-level single-inheritance classes
+without decorators, type parameters, class keywords or custom subclass hooks. Class
+bodies can contain methods, pass statements and docstrings. Explicit class imports,
+relative class imports, module imports, and aliases are recognized; re-exports and
+`from package import submodule` are not inferred. Duplicate/rebound bindings and
+namespace manipulation invalidate trust. A file imported under multiple module
+names is excluded because Python creates distinct class identities for those loads.
+Ambiguous module/package layouts, including namespace portions shadowed by a regular
+package at a different root, are conservatively excluded. This lexical model does
+not prove safety against arbitrary external monkeypatching or custom import hooks.
+
+Pairs connect direct user-defined parents/children and siblings with a shared
+user-defined direct parent. Builtins seed ancestry only. Termination and exception
+group ancestry is rejected. Handler mutations allow custom constructors; `raise`
+mutations require the entire user-defined ancestry to inherit the plain `Exception`
+constructor, with neither `__init__` nor `__new__` overrides. Specialized builtin
+constructors are handler-only. Arguments and `from` causes are preserved.
+
+Function parameters, binding targets, captures and definition-header assignments
+suppress affected references throughout their lexical scope. Class bodies are
+excluded; method scopes skip class-local bindings. Module definitions used inside a
+function must already exist before that function's definition, preventing early
+calls from observing an inserted future name. Conservative exclusions may suppress
+valid candidates; they never authorize an inserted import.
+
+The loader limits input to 4096 files, 16 MiB per file, 64 MiB total decoded source,
+and 65536 module bindings. Ancestry/import traversal is limited to 256 steps and
+uses the existing AST depth guard. Cancellation is checked during discovery,
+index construction and replacement enumeration. Per-site replacement retention is
+bounded by `max_candidates + 1`, preserving the existing producer's source-order
+prefix and truncation signal. One `exception_hierarchy_skipped` diagnostic per file
+reports references without a supported visible related class or compatible
+constructor; it does not mark analysis as truncated.
+
+Focused verification:
+
+```console
+cargo test -p hoimin-core --test operator_selection
+cargo test -p hoimin-cli --lib hierarchy
+cargo test -p hoimin-cli --test exception_hierarchy
+```
