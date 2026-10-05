@@ -6,8 +6,9 @@ proof would have been insufficient, but that did not justify omitting models of
 visibility, identity, index bounds and prepared-input consistency.
 
 The focused follow-up at the end of this report supersedes the initial corpus
-counts: the current corpus has 97 public cases and 170 internal cases. It records
-two additional findings, their fixes, and a regression caught while reviewing the fix.
+counts: the current corpus has 108 public cases and 170 internal cases. It records
+the depth/import findings and the subsequent alias-write finding, their fixes, and
+a regression caught while reviewing the earlier fix.
 
 ## Claim and correspondence worksheet
 
@@ -309,3 +310,133 @@ The depth change repairs the model against the existing documented production
 contract; it does not weaken a safety requirement to hide an implementation bug.
 The namespace change repairs production against independent Python evidence.
 The full prior corpus remains present and its observations remain unchanged.
+
+## Additional alias-write review (after `b31d1dc`)
+
+The new correspondence premise is a statically named attribute write through an
+explicit project import. Lean represents the affected provider as an untrusted
+origin; public fixtures can perform that write before importing an exception under
+a different name. Independent Python observations distinguish a real exception
+class from the replacement. The mode is `strict`; arbitrary object aliasing,
+external monkeypatching and dynamic import hooks remain outside the model.
+
+A RED public test confirmed that `import errors as e; e.Child = object` in a
+separate module did not invalidate `from errors import Child`: the planner still
+proposed it as a destination. The design will retain import origins before local
+bindings are invalidated, propagate known attribute writes to those providers,
+and keep unrelated providers eligible. Nested/relative imports and explicit
+`setattr`/`delattr` calls need the same treatment.
+
+Design reviews: (1) invalidate the provider, not just one spelling, (2) keep the
+boundary explicit for untracked object aliases, (3) bound alias-to-origin summaries
+and avoid a product of every write with every module. Plan reviews: (1) retain RED
+and independent Python evidence, (2) add unchanged/unrelated positive controls,
+(3) extend the generated corpus without rewriting the prior cases, then run all
+proof, correspondence, regression and lint checks.
+
+
+### Alias-write finding and resolution
+
+The minimal cross-file witness is:
+
+```python
+# errors.py
+class Root(Exception): pass
+class Child(Root): pass
+
+# patcher.py
+import errors as e
+e.Child = object
+
+# service.py
+import patcher
+from errors import Root, Child
+def f():
+    raise Root()
+```
+
+Before repair the public plan emitted `Root→Child`, while an independent Python
+process confirmed `Child is object` and `issubclass(Child, BaseException) is False`.
+The existing escaping-write scan made only `patcher.e` opaque, so `service.Child`
+still resolved through the provider's original class summary. The RED regression
+failed on that exact unwanted pair.
+
+The repair retains explicit import origins independently of mutable local binding
+summaries. Known attribute assignment/deletion and direct `setattr`/`delattr` calls
+mark those origins as mutated before resolving classes. Private spellings are
+canonicalized, nested imports are included, and relative/absolute records merge
+both initialization and mutation flags. An affected package prefix covers indexed
+descendants; writes through the shared `builtins` namespace invalidate all seeds.
+Provider matching walks each indexed module's prefixes rather than comparing every
+write with every module.
+
+A transient per-module alias/origin set rejects its 65537th distinct entry. Its
+boundary test uses one dependency and many aliases inside a function, so neither
+the old dependency-count limit nor top-level binding count can mask this check.
+The earlier dependency-limit test remains present. Invalidations are conservative:
+ambiguous lexical scopes and uncertain execution order can suppress extra candidates.
+An unrelated, unambiguously identified provider retains its candidates.
+
+### Formal correspondence and review record
+
+`providerTrusted` takes canonical write-receiver aliases, their resolved providers
+and a write set. The new `written_alias_invalidates_provider` theorem proves that
+any listed alias resolving to a provider invalidates that provider, independent of
+the spelling used later. It quantifies over arbitrary alias tables and finite write
+sets. It assumes the provider resolution supplied to the model; the fixtures check
+particular translations of qualified/private/relative references. It does not prove
+that Rust resolves every Python alias or every package mutation correctly.
+
+The generated corpus adds 11 cases: unchanged and unrelated controls, direct and
+nested assignment, private aliases, `setattr`, deletion, `delattr`, relative import
+normalization, imported-class constructor mutation and unaliased dotted imports.
+The relative case deliberately combines absolute and relative spellings of one
+provider to ensure normalization cannot erase mutation flags. All prior 267 rows
+have identical parsed contents. A new deliberately broken control that
+invalidates only the written spelling is detected because another spelling still
+resolves to the same provider.
+
+Independent Python regression cases also check mutation of `builtins.Exception`.
+The subprocess restores the builtin before shutdown. This checks the shared-seed
+boundary separately; the new Lean theorem models provider-level invalidation, not
+Python's entire builtin namespace or interpreter lifecycle.
+
+| Review pass | Implementation review | Test review |
+| --- | --- | --- |
+| 1 | Traced the unwanted candidate across writer, provider and consumer; retained origins before local-name invalidation | Reproduced the unwanted pair and verified the actual Python class was not an exception |
+| 2 | Checked nested/private imports, relative normalization, flag merging, package prefixes and shared builtin seeds | Checked assignment, deletion, setter/deleter calls, constructor changes, unchanged/unrelated controls and merged absolute/relative imports |
+| 3 | Checked independent alias/dependency bounds, cancellation, observation scope and proof premises | Verified actual 65536/65537 alias boundaries, unchanged prior rows, full correspondence, sensitivity and regression/lint results |
+
+One intermediate unit invocation ran before the new corpus was generated. The
+adapter correctly rejected the stale row count; this was a fixture-update ordering
+error, not a semantic mismatch. Generation was completed before re-running both
+adapters. An initial Lean proof attempt referenced a nonexistent Boolean lemma;
+the proof was rewritten using `List.any_eq_true` and all proofs then checked. No
+failed invocation is counted as successful evidence.
+
+### Alias-write verification and reproduction
+
+- 14 kernel-checked theorems, with no proof hole, added axiom or unlimited heartbeat.
+- 108 `strict` and 170 `internal-fixture` rows: all 278 matched.
+- 14 deliberately broken controls detected; snapshot depth remains three.
+- Generated-corpus freshness and aggregate library check passed. Every Lean command
+  retained the 20-second / 2048 MiB / 250 ms guard. The largest final run was the
+  aggregate check at 13.3 seconds / 1214 MiB; no resource cap was raised.
+- Hierarchy unit checks: 19 passed, including the 170-row internal adapter.
+- Public integration: 17 passed, including the final shared-builtin check.
+- `cargo test --workspace`, `cargo fmt --all -- --check`, and
+  `cargo clippy --workspace --all-targets --all-features -- -D warnings`: passed (exit 0).
+
+From the repository root:
+
+```sh
+cargo test -p hoimin-cli --test exception_hierarchy hierarchy_review_imported_attribute -- --nocapture
+cargo test -p hoimin-cli --test exception_hierarchy hierarchy_review_attribute_write_forms -- --nocapture
+cargo test -p hoimin-cli --test exception_hierarchy hierarchy_review_bounds_import_alias -- --nocapture
+HOIMIN_ORACLE_CASE=attribute-assignment cargo test -p hoimin-cli --test lean_exception_hierarchy_oracle -- --nocapture
+```
+
+The guarded Lean build/freshness/sensitivity and whole-workspace commands above
+remain applicable. No unresolved mismatch remains in these cases. Untracked
+object/function aliases, arbitrary external monkeypatching, dynamic import hooks
+and general concurrent scheduling remain outside the established correspondence.

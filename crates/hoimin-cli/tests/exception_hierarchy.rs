@@ -496,3 +496,174 @@ async fn hierarchy_review_bounds_deferred_import_dependencies() {
         .unwrap_err();
     assert!(error.to_string().contains("summary limit"), "{error}");
 }
+
+#[tokio::test]
+async fn hierarchy_review_imported_attribute_writes_invalidate_other_aliases() {
+    for (name, patch) in [
+        ("unchanged", "import errors as e\n"),
+        ("assignment", "import errors as e\ne.Child = object\n"),
+        (
+            "nested",
+            "def patch():\n    import errors as e\n    e.Child = object\npatch()\n",
+        ),
+        (
+            "setattr",
+            "import errors as e\nsetattr(e, 'Child', object)\n",
+        ),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        write_sources(
+            dir.path(),
+            &[
+                (
+                    "errors.py",
+                    "class Root(Exception): pass\nclass Child(Root): pass\n",
+                ),
+                ("patcher.py", patch),
+                (
+                    "service.py",
+                    "import patcher\nfrom errors import Root, Child\ndef f():\n    raise Root()\n",
+                ),
+            ],
+        );
+        let runtime = format!(
+            "import service; assert issubclass(service.Child, BaseException) == {}",
+            if name == "unchanged" { "True" } else { "False" }
+        );
+        let output = std::process::Command::new(python())
+            .current_dir(dir.path())
+            .args(["-B", "-c", &runtime])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{name}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let plan = hoimin_cli::plan::create(config(dir.path(), &[]))
+            .await
+            .unwrap();
+        assert_eq!(
+            plan.manifest.candidates.len(),
+            usize::from(name == "unchanged"),
+            "{name}: {:?}",
+            plan.manifest.candidates
+        );
+    }
+}
+
+#[tokio::test]
+async fn hierarchy_review_attribute_write_forms_match_python() {
+    for (name, patch, check) in [
+        (
+            "builtins",
+            "import builtins as e\ne.Exception = object\n",
+            "not issubclass(service.Root, BaseException)",
+        ),
+        (
+            "unchanged",
+            "import pkg.errors as e\n",
+            "issubclass(service.e.Child, service.Root)",
+        ),
+        (
+            "unrelated",
+            "import pkg.other as e\ne.Child = object\n",
+            "issubclass(service.e.Child, service.Root)",
+        ),
+        (
+            "private",
+            "class P:\n    def patch(self):\n        import pkg.errors as __e\n        __e.Child = object\nP().patch()\n",
+            "service.e.Child is object",
+        ),
+        (
+            "delete",
+            "import pkg.errors as e\ndel e.Child\n",
+            "not hasattr(service.e, 'Child')",
+        ),
+        (
+            "delattr",
+            "import pkg.errors as e\ndelattr(e, 'Child')\n",
+            "not hasattr(service.e, 'Child')",
+        ),
+        (
+            "relative",
+            "from pkg import errors as unused\nfrom . import errors as e\ne.Child = object\n",
+            "service.e.Child is object",
+        ),
+        (
+            "constructor",
+            "from .errors import Child as e\ne.__init__ = lambda self, *args: None\n",
+            "service.e.Child.__init__ is not service.Root.__init__",
+        ),
+        (
+            "dotted",
+            "import pkg.errors\npkg.errors.Child = object\n",
+            "service.e.Child is object",
+        ),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        write_sources(
+            dir.path(),
+            &[
+                ("pkg/__init__.py", ""),
+                (
+                    "pkg/errors.py",
+                    "class Root(Exception): pass\nclass Child(Root): pass\n",
+                ),
+                (
+                    "pkg/other.py",
+                    "class Root(Exception): pass\nclass Child(Root): pass\n",
+                ),
+                ("pkg/patcher.py", patch),
+                (
+                    "service.py",
+                    "import pkg.patcher\nimport pkg.errors as e\nfrom pkg.errors import Root\ndef f():\n    raise Root()\n",
+                ),
+            ],
+        );
+        let runtime = format!(
+            "import builtins\nsaved = builtins.Exception\ntry:\n    import service\n    assert {check}\nfinally:\n    builtins.Exception = saved\n"
+        );
+        let output = std::process::Command::new(python())
+            .current_dir(dir.path())
+            .args(["-B", "-c", &runtime])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{name}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let plan = hoimin_cli::plan::create(config(dir.path(), &[]))
+            .await
+            .unwrap();
+        let eligible = matches!(name, "unchanged" | "unrelated");
+        assert_eq!(
+            plan.manifest.candidates.len(),
+            usize::from(eligible),
+            "{name}: {:?}",
+            plan.manifest.candidates
+        );
+    }
+}
+
+#[tokio::test]
+async fn hierarchy_review_bounds_import_alias_correlations() {
+    use std::fmt::Write as _;
+    let dir = tempfile::tempdir().unwrap();
+    let mut source = "def deferred():\n".to_owned();
+    for i in 0..65_536 {
+        writeln!(source, "    import errors as alias{i}").unwrap();
+    }
+    std::fs::write(dir.path().join("service.py"), &source).unwrap();
+    let plan = hoimin_cli::plan::create(config(dir.path(), &[]))
+        .await
+        .unwrap();
+    assert!(plan.manifest.candidates.is_empty());
+    source.push_str("    import errors as one_more_alias\n");
+    std::fs::write(dir.path().join("service.py"), source).unwrap();
+    let error = hoimin_cli::plan::create(config(dir.path(), &[]))
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("summary limit"), "{error}");
+}

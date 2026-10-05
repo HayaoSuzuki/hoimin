@@ -120,3 +120,14 @@ This is conservative across call order: a colliding import can suppress candidat
 even if that function is never called. Only imports outside function bodies form
 the static initialization-cycle graph; deferred self-imports do not invalidate an
 otherwise stable hierarchy. The import-dependency table has its own entry bound.
+
+
+Known attribute assignment/deletion and direct `setattr`/`delattr` through explicit
+imports invalidate the provider, not just the local spelling. Import origins are
+retained before local bindings become opaque; absolute/relative origins and eager/
+deferred or mutated flags merge conservatively. Package-root writes invalidate
+indexed descendants too. Writes through `builtins` invalidate all hierarchy seeds.
+The transient alias-to-origin set is capped at 65536 entries per parsed module;
+retained dependency entries keep the existing global bound. Ambiguous scopes may
+suppress extra candidates. Untracked object/function aliases, dynamic import hooks
+and arbitrary external monkeypatching are not resolved by this static analysis.

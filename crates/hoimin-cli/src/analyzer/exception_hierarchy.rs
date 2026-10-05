@@ -32,13 +32,24 @@ struct Binding {
     end: usize,
 }
 
+#[derive(Clone, Copy, Default)]
+struct ImportUse {
+    eager: bool,
+    mutated: bool,
+}
+impl ImportUse {
+    fn merge(&mut self, other: Self) {
+        self.eager |= other.eager;
+        self.mutated |= other.mutated;
+    }
+}
+
 #[derive(Default)]
 struct Module {
     bindings: BTreeMap<String, Binding>,
     dynamic: bool,
     loaded: BTreeMap<String, usize>,
-    // The flag records an import outside a function body (an initialization edge).
-    dependencies: BTreeMap<(String, u32), bool>,
+    dependencies: BTreeMap<(String, u32), ImportUse>,
 }
 
 #[derive(Clone)]
@@ -291,31 +302,65 @@ fn mangled_name(class: Option<&str>, name: &str) -> Option<String> {
 struct Escapes {
     bindings: Bindings,
     class_name: Option<String>,
-    imports: BTreeMap<(String, u32), bool>,
+    imports: BTreeMap<(String, u32), ImportUse>,
+    import_aliases: BTreeSet<(String, String, u32)>,
+    attribute_roots: BTreeSet<String>,
+    limit_exceeded: bool,
     deferred: bool,
+}
+impl Escapes {
+    fn import(&mut self, module: String, level: u32, bound: &str, origin: String) {
+        if self.limit_exceeded {
+            return;
+        }
+        self.imports.entry((module, level)).or_default().eager |= !self.deferred;
+        let name =
+            mangled_name(self.class_name.as_deref(), bound).unwrap_or_else(|| bound.to_owned());
+        self.import_aliases.insert((name, origin, level));
+        self.limit_exceeded = self.import_aliases.len() > MAX_SUMMARY_ENTRIES
+            || self.imports.len() > MAX_SUMMARY_ENTRIES;
+    }
+    fn attribute_target(&mut self, expression: &Expr) {
+        if let Some(name) = reference(expression) {
+            let root = name.split('.').next().unwrap();
+            self.attribute_roots.insert(root.to_owned());
+            if let Some(mangled) = mangled_name(self.class_name.as_deref(), root) {
+                self.attribute_roots.insert(mangled);
+            }
+        }
+    }
 }
 impl<'a> Visitor<'a> for Escapes {
     fn visit_stmt(&mut self, statement: &'a Stmt) {
         match statement {
             Stmt::Import(import) => {
                 for alias in &import.names {
-                    self.imports
-                        .entry((alias.name.to_string(), 0))
-                        .and_modify(|eager| *eager |= !self.deferred)
-                        .or_insert(!self.deferred);
+                    let module = alias.name.to_string();
+                    let bound = alias
+                        .asname
+                        .as_ref()
+                        .map_or_else(|| module.split('.').next().unwrap(), |name| name.as_str());
+                    let origin = if alias.asname.is_some() {
+                        module.clone()
+                    } else {
+                        bound.to_owned()
+                    };
+                    self.import(module.clone(), 0, bound, origin);
                 }
             }
             Stmt::ImportFrom(import) => {
-                self.imports
-                    .entry((
-                        import
-                            .module
-                            .as_ref()
-                            .map_or_else(String::new, ToString::to_string),
+                let module = import
+                    .module
+                    .as_ref()
+                    .map_or_else(String::new, ToString::to_string);
+                for alias in &import.names {
+                    self.import(
+                        module.clone(),
                         import.level,
-                    ))
-                    .and_modify(|eager| *eager |= !self.deferred)
-                    .or_insert(!self.deferred);
+                        alias.asname.as_ref().unwrap_or(&alias.name),
+                        module.clone(),
+                    );
+                }
             }
             _ => {}
         }
@@ -342,6 +387,7 @@ impl<'a> Visitor<'a> for Escapes {
     fn visit_expr(&mut self, expression: &'a Expr) {
         match expression {
             Expr::Attribute(a) if a.ctx != ExprContext::Load => {
+                self.attribute_target(&a.value);
                 if let Some(name) = reference(&a.value) {
                     let root = name.split('.').next().unwrap();
                     self.bindings.names.insert(root.to_owned());
@@ -366,6 +412,12 @@ impl<'a> Visitor<'a> for Escapes {
                 }) =>
             {
                 self.bindings.dynamic = true;
+                if reference(&c.func)
+                    .is_some_and(|name| matches!(name.as_str(), "setattr" | "delattr"))
+                    && let Some(target) = c.arguments.args.first()
+                {
+                    self.attribute_target(target);
+                }
             }
             _ => {}
         }
@@ -377,7 +429,7 @@ impl Module {
     fn eager_imports(&self) -> impl Iterator<Item = &String> {
         self.dependencies
             .iter()
-            .filter(|((_, level), eager)| *level == 0 && **eager)
+            .filter(|((_, level), usage)| *level == 0 && usage.eager)
             .map(|((name, _), _)| name)
     }
     fn possible_imports(&self) -> impl Iterator<Item = &String> {
@@ -392,7 +444,7 @@ impl Module {
             .and_modify(|b| b.kind = BindingKind::Unknown)
             .or_insert(Binding { kind, end });
     }
-    fn parse(module: &ModModule) -> Self {
+    fn parse(module: &ModModule) -> Result<Self, AnalysisError> {
         let mut result = Self::default();
         for statement in &module.body {
             let headers = header_bindings(statement);
@@ -471,12 +523,20 @@ impl Module {
         }
         let mut escapes = Escapes::default();
         escapes.visit_body(&module.body);
+        if escapes.limit_exceeded {
+            return Err(AnalysisError::HierarchyLimit);
+        }
+        for (name, origin, level) in escapes.import_aliases {
+            if escapes.attribute_roots.contains(&name) {
+                escapes.imports.entry((origin, level)).or_default().mutated = true;
+            }
+        }
         result.dynamic |= escapes.bindings.dynamic;
         result.dependencies = escapes.imports;
         for name in escapes.bindings.names {
             result.insert(name, BindingKind::Unknown, 0);
         }
-        result
+        Ok(result)
     }
 }
 
@@ -568,7 +628,7 @@ impl ExceptionIndex {
                 depth::dispose(parsed.into_syntax());
                 return Err(error);
             }
-            let summary = Module::parse(parsed.syntax());
+            let summary = Module::parse(parsed.syntax())?;
             binding_count += summary.bindings.len();
             dependency_count += summary.dependencies.len();
             if binding_count > MAX_SUMMARY_ENTRIES || dependency_count > MAX_SUMMARY_ENTRIES {
@@ -578,6 +638,7 @@ impl ExceptionIndex {
         }
         index.resolve_relative_imports(cancelled)?;
         index.exclude_submodule_collisions(cancelled)?;
+        index.exclude_mutated_imports(cancelled)?;
         index.exclude_import_cycles(cancelled)?;
         let ids = index
             .modules
@@ -676,7 +737,7 @@ impl ExceptionIndex {
             let context = names
                 .filter(|names| names.len() == 1)
                 .and_then(|names| names.first());
-            for ((imported, level), eager) in std::mem::take(&mut module.dependencies) {
+            for ((imported, level), usage) in std::mem::take(&mut module.dependencies) {
                 if cancelled() {
                     return Err(AnalysisCancelled);
                 }
@@ -689,8 +750,8 @@ impl ExceptionIndex {
                     module
                         .dependencies
                         .entry((name, 0))
-                        .and_modify(|previous| *previous |= eager)
-                        .or_insert(eager);
+                        .and_modify(|previous| previous.merge(usage))
+                        .or_insert(usage);
                 }
             }
             for binding in module.bindings.values_mut() {
@@ -739,6 +800,48 @@ impl ExceptionIndex {
                     binding.kind = BindingKind::Unknown;
                 }
                 name = parent;
+            }
+        }
+        Ok(())
+    }
+
+    fn exclude_mutated_imports(
+        &mut self,
+        cancelled: &impl Fn() -> bool,
+    ) -> Result<(), AnalysisCancelled> {
+        let origins = self
+            .modules
+            .values()
+            .flat_map(|module| module.dependencies.iter())
+            .filter(|((_, level), usage)| *level == 0 && usage.mutated)
+            .map(|((name, _), _)| name.clone())
+            .collect::<BTreeSet<_>>();
+        if origins.contains("builtins") {
+            for module in self.modules.values_mut() {
+                if cancelled() {
+                    return Err(AnalysisCancelled);
+                }
+                module.dynamic = true;
+            }
+            return Ok(());
+        }
+        for (name, path) in &self.module_paths {
+            if cancelled() {
+                return Err(AnalysisCancelled);
+            }
+            let mut prefix = name.as_str();
+            let affected = loop {
+                if origins.contains(prefix) {
+                    break true;
+                }
+                if let Some((parent, _)) = prefix.rsplit_once('.') {
+                    prefix = parent;
+                } else {
+                    break false;
+                }
+            };
+            if affected && let Some(module) = self.modules.get_mut(path) {
+                module.dynamic = true;
             }
         }
         Ok(())

@@ -89,7 +89,7 @@ pub fn cases() -> Vec<Case> {
         }
         assert!(case.files.iter().any(|(path, _)| path == "service.py"));
     }
-    assert_eq!(rows.iter().filter(|r| r.mode == "strict").count(), 97);
+    assert_eq!(rows.iter().filter(|r| r.mode == "strict").count(), 108);
     assert_eq!(
         rows.iter().filter(|r| r.mode == "internal-fixture").count(),
         170

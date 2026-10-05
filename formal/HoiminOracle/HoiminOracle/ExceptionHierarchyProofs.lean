@@ -114,4 +114,12 @@ theorem arbitrary_trace_keeps_successful_cache (base : Bool) (events : List Even
   | nil => exact h
   | cons event rest ih => exact ih _ (step_keeps_successful_cache base state cache event h)
 
+set_option maxHeartbeats 50000 in
+theorem written_alias_invalidates_provider (aliases : Nat → Option Nat)
+    (written : List Nat) (name owner : Nat) (hw : name ∈ written)
+    (ho : aliases name = some owner) : providerTrusted aliases written owner = false := by
+  have affected : written.any (fun key => aliases key == some owner) = true :=
+    List.any_eq_true.mpr ⟨name, hw, by simp [ho]⟩
+  simp [providerTrusted, affected]
+
 end HoiminOracle.ExceptionHierarchy

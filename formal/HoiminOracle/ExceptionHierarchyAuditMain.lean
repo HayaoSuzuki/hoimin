@@ -142,6 +142,32 @@ def collisionRows : List Json := collisionImports.map fun (name, imports, helper
     (if namedEligible (graph true) (collisionGlobals (name != "absent")) (locals 0) 1 2 0 1 true true
       then [("pkg.Root", "pkg.Child")] else [])
 
+def attributeWrites : List (String × String × Option Nat) := [
+  ("unchanged", "import pkg.errors as e\n", none),
+  ("unrelated", "import pkg.other as e\ne.Child = object\n", some 2),
+  ("assignment", "import pkg.errors as e\ne.Child = object\n", some 1),
+  ("nested", "def patch():\n    import pkg.errors as e\n    e.Child = object\npatch()\n", some 1),
+  ("private", "class P:\n    def patch(self):\n        import pkg.errors as __e\n        __e.Child = object\nP().patch()\n", some 1),
+  ("setattr", "import pkg.errors as e\nsetattr(e, 'Child', object)\n", some 1),
+  ("delete", "import pkg.errors as e\ndel e.Child\n", some 1),
+  ("delattr", "import pkg.errors as e\ndelattr(e, 'Child')\n", some 1),
+  ("relative", "from pkg import errors as unused\nfrom . import errors as e\ne.Child = object\n", some 1),
+  ("constructor", "from .errors import Child as e\ne.__init__ = lambda self, *args: None\n", some 1),
+  ("dotted", "import pkg.errors\npkg.errors.Child = object\n", some 1)]
+
+def writeAliases (owner : Option Nat) (name : Nat) : Option Nat :=
+  if name == 10 then owner else if name == 20 then some 1 else none
+
+def attributeRows : List Json := attributeWrites.map fun (name, patch, owner) =>
+  let trusted := providerTrusted (writeAliases owner) (if owner.isSome then [10] else []) rootId.owner
+  strictRow ("attribute-" ++ name) [
+    ("pkg/__init__.py", ""),
+    ("pkg/errors.py", definition "Root" "Exception" ++ definition "Child" "Root"),
+    ("pkg/other.py", definition "Root" "Exception" ++ definition "Child" "Root"),
+    ("pkg/patcher.py", patch),
+    ("service.py", "import pkg.patcher\nimport pkg.errors as e\nfrom pkg.errors import Root\ndef target():\n    raise Root()\n")]
+    (if eligible (graph true) rootId childId 0 1 true trusted then [("Root", "e.Child")] else [])
+
 def events : List Event := [.change, .delete, .restore, .build]
 def traces : Nat → List (List Event)
   | 0 => [[]]
@@ -163,7 +189,7 @@ def snapshotRows : List Json := [false, true].flatMap fun base => (domain 3).map
       (some (loadName state.lastLoad)) (some (fingerprintMatches state))) ["lib"]
     (es.map eventName) (errorsSource (!base))
 
-def rows := candidateRows ++ loadRows ++ relativeRows ++ reservedRows ++ resourceRows ++ depthRows ++ collisionRows ++ snapshotRows
+def rows := candidateRows ++ loadRows ++ relativeRows ++ reservedRows ++ resourceRows ++ depthRows ++ collisionRows ++ attributeRows ++ snapshotRows
 def corpus := String.join (rows.map fun r => r.compress ++ "\n")
 
 -- Deliberately broken variants stay in the executable, never in imported proof modules.
@@ -206,10 +232,11 @@ def checkSensitivity : IO Unit := do
     ("builtin-consumes-step", ancestry 256 (chainGraph 256) ⟨1, 255⟩ && constructible 256 (chainGraph 256) ⟨1, 255⟩ &&
       !(ancestry 255 (chainGraph 256) ⟨1, 255⟩ && constructible 255 (chainGraph 256) ⟨1, 255⟩)),
     ("namespace-overwrite", namedEligible (graph true) globals (locals 0) 1 2 0 1 true true !=
-      namedEligible (graph true) (collisionGlobals true) (locals 0) 1 2 0 1 true true)]
+      namedEligible (graph true) (collisionGlobals true) (locals 0) 1 2 0 1 true true),
+    ("write-only-invalidates-spelling", providerTrusted (writeAliases (some 1)) [10] 1 != !([10].contains (20 : Nat)))]
   for (name, detected) in checks do
     unless detected do throw (IO.userError ("undetected " ++ name))
-  IO.println s!"sensitivity: 13 broken variants detected; strict={candidateRows.length + loadRows.length + relativeRows.length + reservedRows.length + resourceRows.length + depthRows.length + collisionRows.length} internal-fixture={snapshotRows.length}"
+  IO.println s!"sensitivity: 14 broken variants detected; strict={candidateRows.length + loadRows.length + relativeRows.length + reservedRows.length + resourceRows.length + depthRows.length + collisionRows.length + attributeRows.length} internal-fixture={snapshotRows.length}"
 
 def main (args : List String) : IO Unit := do
   let args := if args.head? == some "--" then args.drop 1 else args

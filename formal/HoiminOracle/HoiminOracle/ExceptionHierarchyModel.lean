@@ -119,4 +119,8 @@ def CacheInvariant (initialRelated : Bool) (state : State) : Prop :=
   ∀ cache, state.cache = some cache →
     cache.origin = 0 ∧ cache.digest = 0 ∧ (cache.eligible = true → initialRelated = true)
 
+-- A write through any imported spelling invalidates its provider for all aliases.
+def providerTrusted (aliases : Nat → Option Nat) (written : List Nat) (owner : Nat) : Bool :=
+  !written.any (fun name => aliases name == some owner)
+
 end HoiminOracle.ExceptionHierarchy

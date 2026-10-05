@@ -130,3 +130,14 @@ colliding exported bindings before class resolution. Check deferred self-imports
 as a positive control, actual import-table limits, generated expectations and the
 full workspace regression suite. Review details and evidence are recorded in the
 [formal audit](../reports/2026-10-05-exception-hierarchy-lean-audit.md).
+
+
+## Explicit attribute-write review follow-up
+
+Retain import-origin correlations before name invalidation, propagate known writes
+to providers and package descendants, and keep alias summaries bounded. Add direct,
+nested/private, relative, deletion, constructor and unrelated-provider controls.
+Extend the Lean model with provider trust after writes through canonical aliases,
+prove that a written alias invalidates its provider, and check generated expectations
+against public plans. The audit records the initial failure and three further
+implementation/test review passes; the existing snapshot corpus remains unchanged.
