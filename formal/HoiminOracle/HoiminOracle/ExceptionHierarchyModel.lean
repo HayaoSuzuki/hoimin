@@ -124,27 +124,28 @@ def providerTrusted (aliases : Nat → Option Nat) (written : List Nat) (owner :
   !written.any (fun name => aliases name == some owner)
 
 -- (target, source) is a may-alias edge: writes propagate from target to source.
-abbrev AliasEdges := List (String × String)
+abbrev ScopedName := Nat × String
+abbrev AliasEdges := List (ScopedName × ScopedName)
 
-def expandWrites (edges : AliasEdges) (marked : List String) : List String :=
+def expandWrites (edges : AliasEdges) (marked : List ScopedName) : List ScopedName :=
   (marked ++ edges.filterMap (fun (target, source) =>
     if marked.contains target then some source else none)).eraseDups
 
-def writeClosure : Nat → AliasEdges → List String → List String
+def writeClosure : Nat → AliasEdges → List ScopedName → List ScopedName
   | 0, _, marked => marked.eraseDups
   | fuel + 1, edges, marked => writeClosure fuel edges (expandWrites edges marked)
 
-def closureComplete (edges : AliasEdges) (written marked : List String) : Bool :=
+def closureComplete (edges : AliasEdges) (written marked : List ScopedName) : Bool :=
   written.all marked.contains && edges.all (fun (target, source) =>
     !marked.contains target || marked.contains source)
 
-inductive WriteReach (edges : AliasEdges) (written : List String) : String → Prop
+inductive WriteReach (edges : AliasEdges) (written : List ScopedName) : ScopedName → Prop
   | direct {name} : name ∈ written → WriteReach edges written name
   | alias {target source} : (target, source) ∈ edges → WriteReach edges written target →
       WriteReach edges written source
 
-def aliasTrusted (edges : AliasEdges) (written : List String)
-    (imports : List (String × String)) (owner : String) : Bool :=
+def aliasTrusted (edges : AliasEdges) (written : List ScopedName)
+    (imports : List (ScopedName × String)) (owner : String) : Bool :=
   let marked := writeClosure edges.length edges written
   closureComplete edges written marked &&
     !imports.any (fun (name, origin) => marked.contains name && origin == owner)

@@ -123,8 +123,8 @@ theorem written_alias_invalidates_provider (aliases : Nat → Option Nat)
   simp [providerTrusted, affected]
 
 set_option maxHeartbeats 50000 in
-theorem closed_writes_cover_alias_paths (edges : AliasEdges) (written marked : List String)
-    (complete : closureComplete edges written marked = true) (name : String)
+theorem closed_writes_cover_alias_paths (edges : AliasEdges) (written marked : List ScopedName)
+    (complete : closureComplete edges written marked = true) (name : ScopedName)
     (reachable : WriteReach edges written name) : name ∈ marked := by
   simp only [closureComplete, Bool.and_eq_true] at complete
   have direct := List.all_eq_true.mp complete.1
@@ -136,8 +136,8 @@ theorem closed_writes_cover_alias_paths (edges : AliasEdges) (written marked : L
       simpa [ih] using rule
 
 set_option maxHeartbeats 50000 in
-theorem alias_path_invalidates_provider (edges : AliasEdges) (written : List String)
-    (imports : List (String × String)) (name owner : String)
+theorem alias_path_invalidates_provider (edges : AliasEdges) (written : List ScopedName)
+    (imports : List (ScopedName × String)) (name : ScopedName) (owner : String)
     (reachable : WriteReach edges written name) (imported : (name, owner) ∈ imports) :
     aliasTrusted edges written imports owner = false := by
   unfold aliasTrusted
@@ -150,5 +150,19 @@ theorem alias_path_invalidates_provider (edges : AliasEdges) (written : List Str
     rw [affected]
     simp
   · simp [complete]
+
+-- Equal spellings in distinct lexical scopes are different graph vertices.
+set_option maxHeartbeats 50000 in
+theorem distinct_scopes_have_distinct_names (a b : Nat) (name : String) (h : a ≠ b) :
+    (a, name) ≠ (b, name) := by
+  intro equal
+  exact h (congrArg Prod.fst equal)
+
+-- Even an alias write cannot reach the same spelling in another scope without
+-- an actual edge connecting those identities.
+set_option maxHeartbeats 50000 in
+theorem isolated_scope_write_preserves_provider (a b : Nat) (name owner : String)
+    (h : a ≠ b) : aliasTrusted [] [(a, name)] [((b, name), owner)] owner = true := by
+  simp [aliasTrusted, writeClosure, closureComplete, Ne.symm h]
 
 end HoiminOracle.ExceptionHierarchy

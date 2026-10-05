@@ -24,10 +24,10 @@ pub struct Case {
 #[derive(Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AliasFacts {
-    pub imports: Vec<(String, String, u32)>,
-    pub assignments: Vec<(String, String)>,
-    pub writes: Vec<String>,
-    pub affected: Vec<String>,
+    pub imports: Vec<((usize, String), String, u32)>,
+    pub assignments: Vec<((usize, String), (usize, String))>,
+    pub writes: Vec<(usize, String)>,
+    pub affected: Vec<(usize, String)>,
 }
 
 impl AliasFacts {
@@ -68,7 +68,7 @@ pub fn cases() -> Vec<Case> {
         .collect();
     let mut ids = BTreeSet::new();
     for case in &mut rows {
-        assert_eq!(case.schema, 1);
+        assert_eq!(case.schema, 2);
         assert!(ids.insert(&case.id) && !case.id.is_empty());
         match case.mode.as_str() {
             "strict" => {
@@ -120,10 +120,10 @@ pub fn cases() -> Vec<Case> {
         }
         assert!(case.files.iter().any(|(path, _)| path == "service.py"));
     }
-    assert_eq!(rows.iter().filter(|r| r.mode == "strict").count(), 125);
+    assert_eq!(rows.iter().filter(|r| r.mode == "strict").count(), 151);
     assert_eq!(
         rows.iter().filter(|r| r.mode == "internal-fixture").count(),
-        187
+        209
     );
     rows
 }

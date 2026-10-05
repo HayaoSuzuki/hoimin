@@ -11,8 +11,9 @@ and provider invalidation. Existing project fingerprints and candidate schema st
 
 ## Constraints and review focus
 
-Use the existing branch and no new dependencies. Each new retained scope/local/edge
-table is bounded by 65536 entries; existing input and resolution limits remain.
+Use the existing branch and no new dependencies. Scope IDs, per-scope declaration sets, and edge
+tables are bounded by 65536 entries; total declaration entries across scopes are
+bounded by 131072; existing input and resolution limits remain.
 Lean commands are serial, guarded at 20 seconds / 2048 MiB; proofs keep 50000 heartbeats.
 Review headers versus bodies, method closure rules, comprehension walrus targets,
 nonlocal resolution with later assignments, and bounded diagnostic aggregation.
@@ -28,7 +29,7 @@ and formatted with existing diagnostic fields. Scope work consumes this report.
   unsupported tuple, aggregation/location and bare raise; observe RED.
 - [x] Replace the empty-vector/boolean inference with explicit outcomes; run
   focused hierarchy tests and review semantics, bounds and integration separately.
-- [ ] Commit the outcome implementation and verification record.
+- [x] Commit the outcome implementation and verification record.
 
 ## Task 2: lexical identities and formal correspondence
 
@@ -36,13 +37,13 @@ Files: hierarchy analyzer, new `exception_scopes.rs`, alias extraction adapter,
 hierarchy integration tests, existing Lean model/proofs/generator/corpus/support.
 Produces: typed scoped keys with deterministic serialization in test observations.
 
-- [ ] Write renaming, global, nonlocal, closure, class, header, lambda and
+- [x] Write renaming, global, nonlocal, closure, class, header, lambda and
   comprehension regression/control tests; observe the relevant RED results.
-- [ ] Collect lexical declarations and resolve scope-qualified references; thread
+- [x] Collect lexical declarations and resolve scope-qualified references; thread
   keys through aliases/imports/writes and only invalidate reached module bindings.
-- [ ] Extend Lean keys/proofs/fixtures; generate expectations, compare extraction
+- [x] Extend Lean keys/proofs/fixtures; generate expectations, compare extraction
   and public candidates, retain broken-variant sensitivity and actual limits.
-- [ ] Review implementation three times (binding semantics, effect propagation,
+- [x] Review implementation three times (binding semantics, effect propagation,
   resources) and tests three times (positive controls, adversarial cases, integration).
 - [ ] Run guarded Lean/freshness/sensitivity, focused tests, workspace tests,
   formatting and all-features Clippy. Obtain the final independent review, fix
@@ -82,3 +83,24 @@ and the parameter rename case, as expected before Task 2.
 Disk ruling: resume builds with CARGO_INCREMENTAL=0 and dev/test debug info disabled;
 monitor target and available space, clean generated artifacts between major gates
 if necessary. The previous target directory was already absent at resume.
+
+### Task 2 resource ruling
+
+Ruling: use 65536 per declaration set and 131072 total declaration entries —
+a single total bound of 65536 would reject the existing supported case of 65536
+alias assignments inside a function, because the function name also consumes an
+entry. The total is independently checked and exercised at 131072/131073. Cost:
+up to 131072 declaration entries may be retained/visited, not 65536 total.
+
+Implementation review 1: function locals are collected before resolution; method
+free variables skip class namespaces; class loads retain both local and fallback.
+Implementation review 2: imports, alias endpoints and writes use the same typed key;
+only reached scope-0 names affect module bindings; eager headers remain outside bodies.
+Implementation review 3: bounded scopes/declarations complement the existing edge,
+import and write caps; limit failure prevents publishing partial summaries.
+
+Task 1 committed as `ddda24f`. Task 2 focused validation passes: all library tests
+(765 passed, 12 ignored), 22 hierarchy tests, four scope regression tests, and
+151 public Lean cases. The 39 extraction and 170 snapshot cases agree. All-features
+Clippy and Lean aggregate/freshness/sensitivity pass. An independent final review
+and a fresh workspace run after the implicit-scope fix remain before completion.

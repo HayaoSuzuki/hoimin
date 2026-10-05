@@ -11,6 +11,9 @@ use super::{AnalysisCancelled, AnalysisError, depth};
 const MAX_STEPS: usize = 256;
 pub(crate) const MAX_SUMMARY_ENTRIES: usize = 65_536;
 type ClassId = (Utf8PathBuf, String);
+#[path = "exception_scopes.rs"]
+mod scopes;
+use scopes::{BindingKey, Declarations, Kind, Scopes};
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum SkipReason {
@@ -269,6 +272,12 @@ impl<'a> Visitor<'a> for Bindings {
     }
     fn visit_expr(&mut self, expression: &'a Expr) {
         match expression {
+            Expr::Lambda(lambda) => {
+                if let Some(parameters) = &lambda.parameters {
+                    self.visit_parameters(parameters);
+                }
+                return;
+            }
             Expr::Name(n) if n.ctx != ExprContext::Load => {
                 self.names.insert(n.id.to_string());
             }
@@ -298,6 +307,14 @@ impl<'a> Visitor<'a> for Bindings {
             _ => {}
         }
         visitor::walk_expr(self, expression);
+    }
+    fn visit_comprehension(&mut self, generator: &'a ruff_python_ast::Comprehension) {
+        // Iteration targets are local to the implicit comprehension scope.
+        // Assignment expressions in its expressions still bind in the outer scope.
+        self.visit_expr(&generator.iter);
+        for condition in &generator.ifs {
+            self.visit_expr(condition);
+        }
     }
     fn visit_except_handler(&mut self, handler: &'a ruff_python_ast::ExceptHandler) {
         let ruff_python_ast::ExceptHandler::ExceptHandler(handler) = handler;
@@ -370,45 +387,66 @@ fn mangled_name(class: Option<&str>, name: &str) -> Option<String> {
 #[derive(Default)]
 struct Escapes {
     bindings: Bindings,
-    class_name: Option<String>,
+    scopes: Scopes,
     imports: BTreeMap<(String, u32), ImportUse>,
-    import_aliases: BTreeSet<(String, String, u32)>,
-    assignments: BTreeSet<(String, String)>,
-    attribute_roots: BTreeSet<String>,
+    import_aliases: BTreeSet<(BindingKey, String, u32)>,
+    assignments: BTreeSet<(BindingKey, BindingKey)>,
+    attribute_roots: BTreeSet<BindingKey>,
     limit_exceeded: bool,
     deferred: bool,
 }
 impl Escapes {
-    fn assignment(&mut self, target: &Expr, source: &Expr) {
-        if self.limit_exceeded {
+    fn comprehension(&mut self, generators: &[ruff_python_ast::Comprehension], elements: &[&Expr]) {
+        let Some(first) = generators.first() else {
             return;
+        };
+        self.visit_expr(&first.iter);
+        let mut declarations = Declarations::default();
+        declarations.targets(generators);
+        self.scopes.enter(Kind::Comprehension, None, declarations);
+        for (index, generator) in generators.iter().enumerate() {
+            if index != 0 {
+                self.visit_expr(&generator.iter);
+            }
+            self.visit_expr(&generator.target);
+            for condition in &generator.ifs {
+                self.visit_expr(condition);
+            }
         }
+        for element in elements {
+            self.visit_expr(element);
+        }
+        self.scopes.leave();
+    }
+    fn assignment(&mut self, target: &Expr, source: &Expr, walrus: bool) {
         if let Expr::Name(target) = target
             && let Some(source) = reference(source)
         {
-            let source = source.split('.').next().unwrap();
-            let canonical = |name: &str| {
-                mangled_name(self.class_name.as_deref(), name).unwrap_or_else(|| name.to_owned())
-            };
-            self.assignments
-                .insert((canonical(&target.id), canonical(source)));
-            self.limit_exceeded = self.assignments.len() > MAX_SUMMARY_ENTRIES;
+            for target in self.scopes.resolve(&target.id, true, walrus) {
+                for source in self
+                    .scopes
+                    .resolve(source.split('.').next().unwrap(), false, false)
+                {
+                    self.assignments.insert((target.clone(), source));
+                }
+            }
+            self.limit_exceeded |= self.assignments.len() > MAX_SUMMARY_ENTRIES;
         }
     }
 
     /// May-alias edges retain every assignment, including rebinding and cycles.
     /// Each reached name is queued once, so reverse source order cannot lose writes.
-    fn affected_roots(&self) -> BTreeSet<String> {
-        let mut sources: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    fn affected_roots(&self) -> BTreeSet<BindingKey> {
+        let mut sources: BTreeMap<&BindingKey, Vec<&BindingKey>> = BTreeMap::new();
         for (target, source) in &self.assignments {
             sources.entry(target).or_default().push(source);
         }
         let mut marked = self.attribute_roots.clone();
-        let mut pending: Vec<_> = self.attribute_roots.iter().map(String::as_str).collect();
+        let mut pending: Vec<_> = self.attribute_roots.iter().collect();
         while let Some(target) = pending.pop() {
             if let Some(aliases) = sources.get(target) {
                 for &source in aliases {
-                    if marked.insert(source.to_owned()) {
+                    if marked.insert(source.clone()) {
                         pending.push(source);
                     }
                 }
@@ -417,42 +455,56 @@ impl Escapes {
         marked
     }
 
-    fn import(&mut self, module: String, level: u32, bound: &str, origin: String) {
+    fn import(&mut self, module: String, level: u32, bound: &str, origin: &str) {
         if self.limit_exceeded {
             return;
         }
         self.imports.entry((module, level)).or_default().eager |= !self.deferred;
-        let name =
-            mangled_name(self.class_name.as_deref(), bound).unwrap_or_else(|| bound.to_owned());
-        self.import_aliases.insert((name, origin, level));
+        for name in self.scopes.resolve(bound, true, false) {
+            self.import_aliases.insert((name, origin.to_owned(), level));
+        }
         self.limit_exceeded = self.import_aliases.len() > MAX_SUMMARY_ENTRIES
             || self.imports.len() > MAX_SUMMARY_ENTRIES;
     }
     fn attribute_target(&mut self, expression: &Expr) {
         if let Some(name) = reference(expression) {
             let root = name.split('.').next().unwrap();
-            self.attribute_roots.insert(root.to_owned());
-            if let Some(mangled) = mangled_name(self.class_name.as_deref(), root) {
-                self.attribute_roots.insert(mangled);
-            }
+            self.attribute_roots
+                .extend(self.scopes.resolve(root, false, false));
             self.limit_exceeded |= self.attribute_roots.len() > MAX_SUMMARY_ENTRIES;
         }
     }
 }
 impl<'a> Visitor<'a> for Escapes {
+    fn visit_body(&mut self, body: &'a [Stmt]) {
+        let module = self.scopes.is_empty();
+        if module {
+            let mut declarations = Declarations::default();
+            declarations.visit_body(body);
+            self.scopes.enter(Kind::Module, None, declarations);
+        }
+        for statement in body {
+            self.visit_stmt(statement);
+        }
+        self.limit_exceeded |= self.scopes.exceeded;
+        if module {
+            self.scopes.leave();
+        }
+    }
     fn visit_stmt(&mut self, statement: &'a Stmt) {
-        if self.limit_exceeded {
+        if self.limit_exceeded || self.scopes.exceeded {
+            self.limit_exceeded = true;
             return;
         }
         match statement {
             Stmt::Assign(assign) => {
                 for target in &assign.targets {
-                    self.assignment(target, &assign.value);
+                    self.assignment(target, &assign.value, false);
                 }
             }
             Stmt::AnnAssign(assign) => {
                 if let Some(value) = &assign.value {
-                    self.assignment(&assign.target, value);
+                    self.assignment(&assign.target, value, false);
                 }
             }
             Stmt::Import(import) => {
@@ -467,7 +519,7 @@ impl<'a> Visitor<'a> for Escapes {
                     } else {
                         bound.to_owned()
                     };
-                    self.import(module.clone(), 0, bound, origin);
+                    self.import(module.clone(), 0, bound, &origin);
                 }
             }
             Stmt::ImportFrom(import) => {
@@ -480,47 +532,83 @@ impl<'a> Visitor<'a> for Escapes {
                         module.clone(),
                         import.level,
                         alias.asname.as_ref().unwrap_or(&alias.name),
-                        module.clone(),
+                        &module,
                     );
                 }
             }
             _ => {}
         }
-        if let Stmt::Global(g) = statement {
-            for name in &g.names {
-                self.bindings.names.insert(name.to_string());
-                if let Some(mangled) = mangled_name(self.class_name.as_deref(), name) {
-                    self.bindings.names.insert(mangled);
+        match statement {
+            Stmt::FunctionDef(d) => {
+                scopes::headers(self, statement);
+                let mut declarations = Declarations::default();
+                declarations.parameters(&d.parameters);
+                declarations.visit_body(&d.body);
+                self.scopes.enter(Kind::Function, None, declarations);
+                let old = std::mem::replace(&mut self.deferred, true);
+                self.visit_body(&d.body);
+                self.deferred = old;
+                self.scopes.leave();
+            }
+            Stmt::ClassDef(d) => {
+                scopes::headers(self, statement);
+                let mut declarations = Declarations::default();
+                declarations.visit_body(&d.body);
+                self.scopes
+                    .enter(Kind::Class, Some(d.name.as_str()), declarations);
+                self.visit_body(&d.body);
+                self.scopes.leave();
+            }
+            Stmt::Global(g) => {
+                // Keep the existing conservative treatment of global declarations.
+                for name in &g.names {
+                    for key in self.scopes.resolve(name, true, false) {
+                        if key.scope == 0 {
+                            self.bindings.names.insert(key.name);
+                        }
+                    }
                 }
             }
-        }
-        if let Stmt::ClassDef(d) = statement {
-            let old = self.class_name.replace(d.name.to_string());
-            visitor::walk_stmt(self, statement);
-            self.class_name = old;
-        } else if matches!(statement, Stmt::FunctionDef(_)) {
-            let old = std::mem::replace(&mut self.deferred, true);
-            visitor::walk_stmt(self, statement);
-            self.deferred = old;
-        } else {
-            visitor::walk_stmt(self, statement);
+            _ => visitor::walk_stmt(self, statement),
         }
     }
     fn visit_expr(&mut self, expression: &'a Expr) {
-        if self.limit_exceeded {
+        if self.limit_exceeded || self.scopes.exceeded {
+            self.limit_exceeded = true;
             return;
         }
         match expression {
-            Expr::Named(named) => self.assignment(&named.target, &named.value),
-            Expr::Attribute(a) if a.ctx != ExprContext::Load => {
-                self.attribute_target(&a.value);
-                if let Some(name) = reference(&a.value) {
-                    let root = name.split('.').next().unwrap();
-                    self.bindings.names.insert(root.to_owned());
-                    if let Some(mangled) = mangled_name(self.class_name.as_deref(), root) {
-                        self.bindings.names.insert(mangled);
-                    }
+            Expr::Named(named) => self.assignment(&named.target, &named.value, true),
+            Expr::Attribute(a) if a.ctx != ExprContext::Load => self.attribute_target(&a.value),
+            Expr::Lambda(l) => {
+                let mut declarations = Declarations::default();
+                if let Some(parameters) = &l.parameters {
+                    self.visit_parameters(parameters);
+                    declarations.parameters(parameters);
                 }
+                declarations.visit_expr(&l.body);
+                self.scopes.enter(Kind::Function, None, declarations);
+                let old = std::mem::replace(&mut self.deferred, true);
+                self.visit_expr(&l.body);
+                self.deferred = old;
+                self.scopes.leave();
+                return;
+            }
+            Expr::ListComp(c) => {
+                self.comprehension(&c.generators, &[&c.elt]);
+                return;
+            }
+            Expr::SetComp(c) => {
+                self.comprehension(&c.generators, &[&c.elt]);
+                return;
+            }
+            Expr::DictComp(c) => {
+                self.comprehension(&c.generators, &[&c.key, &c.value]);
+                return;
+            }
+            Expr::Generator(c) => {
+                self.comprehension(&c.generators, &[&c.elt]);
+                return;
             }
             Expr::Call(c)
                 if reference(&c.func).is_some_and(|n| {
@@ -653,7 +741,12 @@ impl Module {
             return Err(AnalysisError::HierarchyLimit);
         }
         let affected = escapes.affected_roots();
-        escapes.bindings.names.extend(affected.iter().cloned());
+        escapes.bindings.names.extend(
+            affected
+                .iter()
+                .filter(|key| key.scope == 0)
+                .map(|key| key.name.clone()),
+        );
         for (name, origin, level) in escapes.import_aliases {
             if affected.contains(&name) {
                 escapes.imports.entry((origin, level)).or_default().mutated = true;

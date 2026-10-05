@@ -42,7 +42,9 @@ deferred dependency behavior and all input fingerprints.
 The existing scope index has different flow-sensitive responsibilities. Avoid
 coupling the new project summary to its full retained occurrence index; extract a
 small declaration/resolution helper for this feature. Keep scope/local tables
-bounded in addition to the existing 65536 edge/import/write limits. Resource errors
+bounded in addition to the existing 65536 edge/import/write limits. Scope IDs
+and each declaration set have a 65536-entry limit; all declaration entries across
+scopes have a separate 131072-entry limit, preserving the existing alias boundary. Resource errors
 reject the index, rather than publishing partial facts.
 
 ## Verification and review
