@@ -6,7 +6,7 @@ set_option maxHeartbeats 50000 in
 theorem ancestry_reaches (fuel : Nat) (graph : Graph) (id : ClassId)
     (h : ancestry fuel graph id = true) : ReachesException graph id := by
   induction fuel generalizing id with
-  | zero => simp [ancestry] at h
+  | zero => exact .root h
   | succ fuel ih =>
       by_cases hs : seed id = true
       · exact .root hs

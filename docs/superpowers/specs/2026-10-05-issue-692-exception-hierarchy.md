@@ -66,7 +66,8 @@ and content changes. Keep user-declared fingerprint selectors intact. Propagate
 automatic inputs into workspace revalidation. Never import target Python modules.
 
 Index limits: 4096 Python files, 16 MiB per file, 64 MiB total decoded source,
-256 ancestry/import steps, and 65536 entries per module-name, binding and visible-alias table. Exceeding a project limit
+256 user-defined ancestry steps (the terminal builtin consumes no step), 256 import
+steps, and 65536 entries per module-name, binding, import-dependency and visible-alias table. Exceeding a project limit
 fails with an explicit analysis error, never silently reuses a partial index. Candidate count still uses the
 existing `max_candidates`; avoid constructing all class pairs upfront.
 
@@ -110,3 +111,12 @@ and `__main__` cannot resolve to local project modules. Loaded raw bytes must ma
 prepared fingerprints, and prepared Python paths reserve opaque module origins
 when absent from the current input set. This can suppress candidates but prevents
 an absent higher-priority module from exposing a different lower-priority class.
+
+
+Submodule imports can overwrite a same-name class in the parent package. Record
+possible imports from every scope and invalidate colliding package bindings before
+resolving class identities, including absolute/relative imports from other files.
+This is conservative across call order: a colliding import can suppress candidates
+even if that function is never called. Only imports outside function bodies form
+the static initialization-cycle graph; deferred self-imports do not invalidate an
+otherwise stable hierarchy. The import-dependency table has its own entry bound.

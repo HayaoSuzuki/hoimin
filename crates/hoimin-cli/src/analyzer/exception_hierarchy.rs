@@ -37,6 +37,8 @@ struct Module {
     bindings: BTreeMap<String, Binding>,
     dynamic: bool,
     loaded: BTreeMap<String, usize>,
+    // The flag records an import outside a function body (an initialization edge).
+    dependencies: BTreeMap<(String, u32), bool>,
 }
 
 #[derive(Clone)]
@@ -284,23 +286,55 @@ fn mangled_name(class: Option<&str>, name: &str) -> Option<String> {
         .then(|| format!("_{class}{name}"))
 }
 
-/// Writes explicitly escaping function scope invalidate module identities too.
+/// Escaping writes and imports can change module identities from nested scopes.
 #[derive(Default)]
-struct Escapes(Bindings, Option<String>);
+struct Escapes {
+    bindings: Bindings,
+    class_name: Option<String>,
+    imports: BTreeMap<(String, u32), bool>,
+    deferred: bool,
+}
 impl<'a> Visitor<'a> for Escapes {
     fn visit_stmt(&mut self, statement: &'a Stmt) {
+        match statement {
+            Stmt::Import(import) => {
+                for alias in &import.names {
+                    self.imports
+                        .entry((alias.name.to_string(), 0))
+                        .and_modify(|eager| *eager |= !self.deferred)
+                        .or_insert(!self.deferred);
+                }
+            }
+            Stmt::ImportFrom(import) => {
+                self.imports
+                    .entry((
+                        import
+                            .module
+                            .as_ref()
+                            .map_or_else(String::new, ToString::to_string),
+                        import.level,
+                    ))
+                    .and_modify(|eager| *eager |= !self.deferred)
+                    .or_insert(!self.deferred);
+            }
+            _ => {}
+        }
         if let Stmt::Global(g) = statement {
             for name in &g.names {
-                self.0.names.insert(name.to_string());
-                if let Some(mangled) = mangled_name(self.1.as_deref(), name) {
-                    self.0.names.insert(mangled);
+                self.bindings.names.insert(name.to_string());
+                if let Some(mangled) = mangled_name(self.class_name.as_deref(), name) {
+                    self.bindings.names.insert(mangled);
                 }
             }
         }
         if let Stmt::ClassDef(d) = statement {
-            let old = self.1.replace(d.name.to_string());
+            let old = self.class_name.replace(d.name.to_string());
             visitor::walk_stmt(self, statement);
-            self.1 = old;
+            self.class_name = old;
+        } else if matches!(statement, Stmt::FunctionDef(_)) {
+            let old = std::mem::replace(&mut self.deferred, true);
+            visitor::walk_stmt(self, statement);
+            self.deferred = old;
         } else {
             visitor::walk_stmt(self, statement);
         }
@@ -310,9 +344,9 @@ impl<'a> Visitor<'a> for Escapes {
             Expr::Attribute(a) if a.ctx != ExprContext::Load => {
                 if let Some(name) = reference(&a.value) {
                     let root = name.split('.').next().unwrap();
-                    self.0.names.insert(root.to_owned());
-                    if let Some(mangled) = mangled_name(self.1.as_deref(), root) {
-                        self.0.names.insert(mangled);
+                    self.bindings.names.insert(root.to_owned());
+                    if let Some(mangled) = mangled_name(self.class_name.as_deref(), root) {
+                        self.bindings.names.insert(mangled);
                     }
                 }
             }
@@ -331,7 +365,7 @@ impl<'a> Visitor<'a> for Escapes {
                     )
                 }) =>
             {
-                self.0.dynamic = true;
+                self.bindings.dynamic = true;
             }
             _ => {}
         }
@@ -340,15 +374,17 @@ impl<'a> Visitor<'a> for Escapes {
 }
 
 impl Module {
-    fn imports(&self) -> impl Iterator<Item = &String> {
-        self.loaded
+    fn eager_imports(&self) -> impl Iterator<Item = &String> {
+        self.dependencies
+            .iter()
+            .filter(|((_, level), eager)| *level == 0 && **eager)
+            .map(|((name, _), _)| name)
+    }
+    fn possible_imports(&self) -> impl Iterator<Item = &String> {
+        self.dependencies
             .keys()
-            .chain(self.bindings.values().filter_map(|b| match &b.kind {
-                BindingKind::Import {
-                    module, level: 0, ..
-                } => Some(module),
-                _ => None,
-            }))
+            .filter(|(_, level)| *level == 0)
+            .map(|(name, _)| name)
     }
     fn insert(&mut self, name: String, kind: BindingKind, end: usize) {
         self.bindings
@@ -435,8 +471,9 @@ impl Module {
         }
         let mut escapes = Escapes::default();
         escapes.visit_body(&module.body);
-        result.dynamic |= escapes.0.dynamic;
-        for name in escapes.0.names {
+        result.dynamic |= escapes.bindings.dynamic;
+        result.dependencies = escapes.imports;
+        for name in escapes.bindings.names {
             result.insert(name, BindingKind::Unknown, 0);
         }
         result
@@ -511,6 +548,7 @@ impl ExceptionIndex {
             ..Self::default()
         };
         let mut binding_count = 0usize;
+        let mut dependency_count = 0usize;
         for (path, source) in sources {
             if cancelled() {
                 return Err(AnalysisError::Cancelled);
@@ -532,12 +570,14 @@ impl ExceptionIndex {
             }
             let summary = Module::parse(parsed.syntax());
             binding_count += summary.bindings.len();
-            if binding_count > MAX_SUMMARY_ENTRIES {
+            dependency_count += summary.dependencies.len();
+            if binding_count > MAX_SUMMARY_ENTRIES || dependency_count > MAX_SUMMARY_ENTRIES {
                 return Err(AnalysisError::HierarchyLimit);
             }
             index.modules.insert(path.clone(), summary);
         }
         index.resolve_relative_imports(cancelled)?;
+        index.exclude_submodule_collisions(cancelled)?;
         index.exclude_import_cycles(cancelled)?;
         let ids = index
             .modules
@@ -588,7 +628,7 @@ impl ExceptionIndex {
         let mut pending = self
             .modules
             .values()
-            .flat_map(Module::imports)
+            .flat_map(Module::possible_imports)
             .filter(|name| self.module_paths.contains_key(*name))
             .cloned()
             .collect::<BTreeSet<_>>();
@@ -617,13 +657,12 @@ impl ExceptionIndex {
             let Some(module) = self.modules.get(path) else {
                 continue;
             };
-            for binding in module.bindings.values() {
+            for (imported, level) in module.dependencies.keys() {
                 if cancelled() {
                     return Err(AnalysisCancelled);
                 }
-                if let BindingKind::Import { module, level, .. } = &binding.kind
-                    && *level > 0
-                    && let Some(target) = relative_module(path, &name, module, *level)
+                if *level > 0
+                    && let Some(target) = relative_module(path, &name, imported, *level)
                     && self.module_paths.contains_key(&target)
                 {
                     pending.insert(target);
@@ -637,6 +676,23 @@ impl ExceptionIndex {
             let context = names
                 .filter(|names| names.len() == 1)
                 .and_then(|names| names.first());
+            for ((imported, level), eager) in std::mem::take(&mut module.dependencies) {
+                if cancelled() {
+                    return Err(AnalysisCancelled);
+                }
+                let resolved = if level == 0 {
+                    Some(imported)
+                } else {
+                    context.and_then(|name| relative_module(path, name, &imported, level))
+                };
+                if let Some(name) = resolved {
+                    module
+                        .dependencies
+                        .entry((name, 0))
+                        .and_modify(|previous| *previous |= eager)
+                        .or_insert(eager);
+                }
+            }
             for binding in module.bindings.values_mut() {
                 if cancelled() {
                     return Err(AnalysisCancelled);
@@ -653,6 +709,36 @@ impl ExceptionIndex {
                         binding.kind = BindingKind::Unknown;
                     }
                 }
+            }
+        }
+        Ok(())
+    }
+
+    /// Importing a child module assigns it to the same-name parent attribute.
+    /// Imports in nested scopes may execute before any analyzed function call.
+    fn exclude_submodule_collisions(
+        &mut self,
+        cancelled: &impl Fn() -> bool,
+    ) -> Result<(), AnalysisCancelled> {
+        let imports = self
+            .modules
+            .values()
+            .flat_map(Module::possible_imports)
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        for imported in &imports {
+            let mut name = imported.as_str();
+            while let Some((parent, member)) = name.rsplit_once('.') {
+                if cancelled() {
+                    return Err(AnalysisCancelled);
+                }
+                if let Some(path) = self.module_paths.get(parent)
+                    && let Some(module) = self.modules.get_mut(path)
+                    && let Some(binding) = module.bindings.get_mut(member)
+                {
+                    binding.kind = BindingKind::Unknown;
+                }
+                name = parent;
             }
         }
         Ok(())
@@ -677,7 +763,7 @@ impl ExceptionIndex {
                 if !visited.insert(path.clone()) {
                     continue;
                 }
-                for module in self.modules[&path].imports() {
+                for module in self.modules[&path].eager_imports() {
                     if let Some(next) = self.module_paths.get(module) {
                         if next == start {
                             rejected.insert(start.clone());

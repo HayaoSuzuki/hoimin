@@ -384,3 +384,115 @@ async fn hierarchy_audit_early_submodules_and_nested_stdlib_names_remain_eligibl
         "loaded.Child"
     );
 }
+
+#[tokio::test]
+async fn hierarchy_review_submodule_loading_overwrites_package_class_attributes() {
+    for (name, imports, helper) in [
+        ("absent", "", ""),
+        ("aliased", "import pkg.Child as loaded\n", ""),
+        ("from", "from pkg.Child import marker\n", ""),
+        (
+            "nested-import",
+            "def load():\n    import pkg.Child as loaded\nload()\n",
+            "",
+        ),
+        (
+            "nested-from",
+            "def load():\n    from pkg.Child import marker\nload()\n",
+            "",
+        ),
+        (
+            "relative",
+            "import pkg.loader\n",
+            "from .Child import marker\n",
+        ),
+        (
+            "nested-relative",
+            "import pkg.loader\npkg.loader.load()\n",
+            "def load():\n    from .Child import marker\n",
+        ),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let service = format!("import pkg\n{imports}def f():\n    raise pkg.Root()\n");
+        write_sources(
+            dir.path(),
+            &[
+                (
+                    "pkg/__init__.py",
+                    "class Root(Exception): pass\nclass Child(Root): pass\n",
+                ),
+                ("pkg/Child.py", "marker = 1\n"),
+                ("pkg/loader.py", helper),
+                ("service.py", &service),
+            ],
+        );
+        let imported = name != "absent";
+        let runtime = format!(
+            "import service, types; assert isinstance(service.pkg.Child, types.ModuleType) == {}",
+            if imported { "True" } else { "False" }
+        );
+        let output = std::process::Command::new(python())
+            .current_dir(dir.path())
+            .args(["-B", "-c", &runtime])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{name}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let plan = hoimin_cli::plan::create(config(dir.path(), &[]))
+            .await
+            .unwrap();
+        assert_eq!(
+            plan.manifest.candidates.len(),
+            usize::from(!imported),
+            "{name}: {:?}",
+            plan.manifest.candidates
+        );
+    }
+}
+
+#[tokio::test]
+async fn hierarchy_review_deferred_self_import_is_not_an_initialization_cycle() {
+    let dir = tempfile::tempdir().unwrap();
+    write_sources(
+        dir.path(),
+        &[
+            (
+                "errors.py",
+                "class Root(Exception): pass\nclass Child(Root): pass\ndef deferred():\n    import errors as own\n    return own.Root\n",
+            ),
+            (
+                "service.py",
+                "from errors import Root, Child\ndef f():\n    raise Child()\n",
+            ),
+        ],
+    );
+    let plan = hoimin_cli::plan::create(config(dir.path(), &[]))
+        .await
+        .unwrap();
+    assert_eq!(plan.manifest.candidates.len(), 1);
+    assert_eq!(plan.manifest.candidates[0].candidate.replacement, "Root");
+}
+
+#[tokio::test]
+async fn hierarchy_review_bounds_deferred_import_dependencies() {
+    use std::fmt::Write as _;
+    let dir = tempfile::tempdir().unwrap();
+    let mut source = "def deferred():\n".to_owned();
+    for i in 0..65_536 {
+        writeln!(source, "    import dependency{i} as unused").unwrap();
+    }
+    std::fs::write(dir.path().join("service.py"), &source).unwrap();
+    let plan = hoimin_cli::plan::create(config(dir.path(), &[]))
+        .await
+        .unwrap();
+    assert!(plan.manifest.candidates.is_empty());
+    source.push_str("    import one_more_dependency as unused\n");
+    std::fs::write(dir.path().join("service.py"), source).unwrap();
+    let error = hoimin_cli::plan::create(config(dir.path(), &[]))
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("summary limit"), "{error}");
+}

@@ -105,6 +105,43 @@ def resourceRows : List Json := [254, 255, 256].map fun aliases =>
   row s!"resource-{retained}" "resource" "strict" [("errors.py", definitions), ("service.py", source)]
     (observation pairs (some (!accepted)) (if accepted then some true else none)) [] [] "" 1
 
+-- Fuel is the count of user classes, as in the Rust MAX_STEPS loop.
+def chainGraph (count : Nat) : Graph := fun id =>
+  if id.owner == 1 && id.member < count then
+    some ⟨if id.member == 0 then exceptionId else ⟨1, id.member - 1⟩, true⟩
+  else none
+
+def depthRows : List Json := [254, 255, 256, 257].flatMap fun count =>
+  [false, true].map fun raised =>
+    let source := String.join ((List.range count).map fun n =>
+      definition s!"C{n}" (if n == 0 then "Exception" else s!"C{n - 1}")) ++
+      "def target():\n    " ++
+      (if raised then s!"raise C{count - 1}()\n" else
+        s!"try:\n        pass\n    except C{count - 1}:\n        pass\n")
+    strictRow s!"depth-{count}-{raised}" [("service.py", source)]
+      (if eligible (chainGraph count) ⟨1, count - 1⟩ ⟨1, count - 2⟩ 0 1 raised true then
+        [(s!"C{count - 1}", s!"C{count - 2}")] else [])
+
+def collisionImports : List (String × String × String) := [
+  ("absent", "", ""),
+  ("aliased", "import pkg.Child as loaded\n", ""),
+  ("from", "from pkg.Child import marker\n", ""),
+  ("nested-import", "def load():\n    import pkg.Child as loaded\nload()\n", ""),
+  ("nested-from", "def load():\n    from pkg.Child import marker\nload()\n", ""),
+  ("relative", "import pkg.loader\n", "from .Child import marker\n"),
+  ("nested-relative", "import pkg.loader\npkg.loader.load()\n", "def load():\n    from .Child import marker\n")]
+
+def collisionGlobals (loaded : Bool) : Nat → Option ClassId := fun key =>
+  if loaded && key == 2 then none else globals key
+
+def collisionRows : List Json := collisionImports.map fun (name, imports, helper) =>
+  strictRow ("namespace-" ++ name) [
+    ("pkg/__init__.py", definition "Root" "Exception" ++ definition "Child" "Root"),
+    ("pkg/Child.py", "marker = 1\n"), ("pkg/loader.py", helper),
+    ("service.py", "import pkg\n" ++ imports ++ "def target():\n    raise pkg.Root()\n")]
+    (if namedEligible (graph true) (collisionGlobals (name != "absent")) (locals 0) 1 2 0 1 true true
+      then [("pkg.Root", "pkg.Child")] else [])
+
 def events : List Event := [.change, .delete, .restore, .build]
 def traces : Nat → List (List Event)
   | 0 => [[]]
@@ -126,7 +163,7 @@ def snapshotRows : List Json := [false, true].flatMap fun base => (domain 3).map
       (some (loadName state.lastLoad)) (some (fingerprintMatches state))) ["lib"]
     (es.map eventName) (errorsSource (!base))
 
-def rows := candidateRows ++ loadRows ++ relativeRows ++ reservedRows ++ resourceRows ++ snapshotRows
+def rows := candidateRows ++ loadRows ++ relativeRows ++ reservedRows ++ resourceRows ++ depthRows ++ collisionRows ++ snapshotRows
 def corpus := String.join (rows.map fun r => r.compress ++ "\n")
 
 -- Deliberately broken variants stay in the executable, never in imported proof modules.
@@ -165,10 +202,14 @@ def checkSensitivity : IO Unit := do
     ("reserved-origin", healthy != eligible (graph true) childId rootId 0 1 true false),
     ("constructor", healthy != eligible (graph true 1) childId rootId 0 1 true true),
     ("inclusive-limit", (reserve 2 2).isSome != decide (2 ≤ 2)),
-    ("reject-all", healthy)]
+    ("reject-all", healthy),
+    ("builtin-consumes-step", ancestry 256 (chainGraph 256) ⟨1, 255⟩ && constructible 256 (chainGraph 256) ⟨1, 255⟩ &&
+      !(ancestry 255 (chainGraph 256) ⟨1, 255⟩ && constructible 255 (chainGraph 256) ⟨1, 255⟩)),
+    ("namespace-overwrite", namedEligible (graph true) globals (locals 0) 1 2 0 1 true true !=
+      namedEligible (graph true) (collisionGlobals true) (locals 0) 1 2 0 1 true true)]
   for (name, detected) in checks do
     unless detected do throw (IO.userError ("undetected " ++ name))
-  IO.println s!"sensitivity: 11 broken variants detected; strict={candidateRows.length + loadRows.length + relativeRows.length + reservedRows.length + resourceRows.length} internal-fixture={snapshotRows.length}"
+  IO.println s!"sensitivity: 13 broken variants detected; strict={candidateRows.length + loadRows.length + relativeRows.length + reservedRows.length + resourceRows.length + depthRows.length + collisionRows.length} internal-fixture={snapshotRows.length}"
 
 def main (args : List String) : IO Unit := do
   let args := if args.head? == some "--" then args.drop 1 else args

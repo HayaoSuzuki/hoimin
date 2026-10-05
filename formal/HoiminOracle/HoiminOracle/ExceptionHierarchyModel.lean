@@ -16,8 +16,9 @@ def exceptionId : ClassId := ⟨0, 0⟩
 def valueErrorId : ClassId := ⟨0, 1⟩
 def seed (id : ClassId) : Bool := id == exceptionId || id == valueErrorId
 
+-- Fuel counts user-defined classes; the terminal builtin consumes no step.
 def ancestry : Nat → Graph → ClassId → Bool
-  | 0, _, _ => false
+  | 0, _, id => seed id
   | fuel + 1, graph, id =>
       if seed id then true
       else match graph id with
@@ -25,7 +26,7 @@ def ancestry : Nat → Graph → ClassId → Bool
         | some info => ancestry fuel graph info.parent
 
 def constructible : Nat → Graph → ClassId → Bool
-  | 0, _, _ => false
+  | 0, _, id => id == exceptionId
   | fuel + 1, graph, id =>
       if id == exceptionId then true
       else match graph id with

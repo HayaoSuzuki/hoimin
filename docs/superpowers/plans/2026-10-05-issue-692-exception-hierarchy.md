@@ -119,3 +119,14 @@ extend this plan with a Lean model, kernel-checked invariants, shortest broken-m
 witnesses, a generated corpus, public/internal Rust adapters, and CI freshness and
 sensitivity checks. The report records three design, plan, implementation and test
 review passes for this additional work. Existing production behavior is unchanged.
+
+
+## Focused formal-correspondence review follow-up
+
+Extend the audit at the 256-class ancestry boundary and at package attributes
+replaced by child-module imports. Retain failing old-model/old-implementation cases,
+correct fuel accounting, add bounded possible/eager import summaries, and reject
+colliding exported bindings before class resolution. Check deferred self-imports
+as a positive control, actual import-table limits, generated expectations and the
+full workspace regression suite. Review details and evidence are recorded in the
+[formal audit](../reports/2026-10-05-exception-hierarchy-lean-audit.md).
