@@ -11,6 +11,9 @@ Issue #692、作業ブランチ `investigate/user-defined-exception-mutations`�
 private name は既存のクラス名による mangling と整合させる。
 属性代入・削除、既存の直接 setattr/delattr を起点に、辺を逆向きにたどった全先頭名へ影響を伝える。
 その集合と import の由来を突き合わせ、既存の provider 無効化へ渡す。
+同じ集合に含まれる module の束縛も既存の Unknown として除外する。
+実装レビューで `other = Root; other.__init__ = ...` は import を経由しないと気づき、
+この条件を追加した。書き込みのない正例は1候補、書き込みありは0候補というテストが旧処理で失敗した。
 
 対象は書き込みを拒否するための may-alias 解析である。代入別名を新たな候補の表記として許可しない。
 関数の戻り値、引数を介した別名、container/destructuring 経由、任意の動的作用は対象外とする。
@@ -79,4 +82,113 @@ Lean の許可判定は fixed point も確認し、証明は実際に確認し�
 
 ## 結果
 
-実装・テスト後に追記する。
+### 証明と実装の対応
+
+`closed_writes_cover_alias_paths` は、直接書き込みを含み、代入辺について閉じている集合が、
+任意長の `WriteReach` 経路を覆うことを帰納法で証明した。
+`alias_path_invalidates_provider` は、その経路で到達する import の提供元を `aliasTrusted` が
+許可しないことを証明した。燃料不足で閉包条件を満たせない場合も許可しない。
+いずれも `sorry`、追加公理、`native_decide` に依存しないカーネル検査の対象である。
+
+Rust は名前の visited 集合と worklist で閉包を計算する。
+辺の向き、正規化した import・代入・書き込み、閉包の完全な集合を、Lean の17 fixture と比較した。
+期待値は Lean が生成し、adapter は同じ production visitor を呼ぶ。
+期待する中間情報を Rust 側で再計算して自分自身と比較する方式ではない。
+並びだけを正規化し、重複した観測を比較時に消さない。
+
+公開 planner の125ケースと、内部抽出17ケース、既存 snapshot 170ケースの対応を確認した。
+追加した34行以外に旧 corpus の変更はない。ここで確認したのは有限の fixture に対する対応であり、
+Rust の全入力や Python 全体の意味を Lean で証明したものではない。
+別ファイルの提供元だけでなく、影響する同一 module のクラス束縛も Unknown として除外する修正を加えた。
+
+### 反例と感度
+
+公開回帰テストは旧処理で `Child → Root` が残ることを確認して失敗した。
+同じ fixture を独立 Python プロセスで実行すると、元コードは Child、Root への置換後は TypeError となる。
+同一 module のクラスの constructor を別名で変更する追加テストも、修正前は1候補、期待0候補で失敗した。
+書き込みのない対照例は1候補を残す。
+
+Lean の感度確認は、従来14変種に「代入を無視」「1回だけ伝播」「辺の向きを反転」の3変種を追加して検出した。
+別名 fixture は17個、各最大3辺であり、全 Python 構文や全グラフの有限列挙とは主張しない。
+既存 snapshot 探索は alphabet 4、深さ0–3を維持し、深さ3で85 trace、228 event を評価した。
+別名の重複・循環を含めても探索範囲や資源上限を増やしていない。
+
+さらに Rust の抽出辺を一時的に反転すると `alias-extraction-chain` が、伝播を無視すると
+`alias-assignment` の公開 planner 比較が、それぞれ semantic mismatch を検出した。
+これらはテスト後に復元した。抽出境界と候補への反映の両方をテストが観測することを確認した。
+atomicity は DB 更新のない静的解析には適用せず、上限超過時に部分 index を公開しない既存契約を維持する。
+重複辺・循環は idempotency、辺の向き・複数段・再代入は到達関係、実上限は boundary の確認に対応する。
+
+### 実装のセルフレビュー
+
+1. 作用の到達先: import だけを無効にすると同一 module のクラスを取りこぼす。
+   RED を追加して、閉包に含まれる module 束縛も除外するよう修正した。
+2. 資源と終了: 代入辺と直接書き込み名に各65536件の上限を設け、重複辺は件数を増やさない。
+   閉包は直接書き込み名と辺の端点の和集合以内で、同じ名前を繰り返し queue へ入れない。
+   provider 無効化の前に上限超過を拒否する。
+3. 構文と対応: 単純・注釈付き・連鎖・代入式、private name、逆順と循環を確認した。
+   production の辺反転と伝播無効化をテストが検出することも確認した。
+   関数・container 経由の参照は対応したとは扱わない。
+
+### テストのセルフレビュー
+
+1. 意味: 元コードも壊れているだけの反例を避け、正常な Child の送出を独立プロセスで確認する。
+   未変更・無関係な提供元の正例が残ることをモデル生成の期待値で比較した。
+2. 境界: 実際の65536辺で成功、重複追加も成功、65537辺でエラーとなることを公開 planner で確認する。
+   直接書き込み名の65536件、重複、65537件も production parser/summary の経路で確認する。
+3. 観測: strict と internal-fixture の観測を混同しない。型・必須 field・mode の整合性を検査し、
+   corpus の JSON 不整合を意味上の mismatch として扱わない。比較では集合に変換して重複を隠さない。
+
+### 検証コマンドと資源
+
+Lean プロジェクト内で、各コマンドに次の prefix を付けて逐次実行した。
+`NAME` は各実行で異なる統計ファイル名に置き換える。
+
+```sh
+python3 tools/lean_resource_guard.py --timeout-seconds 20 \
+  --rss-limit-mib 2048 --sample-ms 250 --stats /private/tmp/NAME.json -- COMMAND
+```
+
+`COMMAND`:
+
+```sh
+lake build +HoiminOracle.ExceptionHierarchyModel:o
+lake build +HoiminOracle.ExceptionHierarchyProofs:o
+lake build +ExceptionHierarchyAuditMain:o
+lake exe generate_exception_hierarchy --output corpus/exception-hierarchy.jsonl
+lake exe generate_exception_hierarchy --check corpus/exception-hierarchy.jsonl
+lake exe generate_exception_hierarchy --sensitivity
+lake env lean -j1 -DElab.async=false HoiminOracle.lean
+```
+
+単一ケースの再現は repository root から実行する。
+
+```sh
+HOIMIN_ORACLE_CASE=alias-assignment cargo test -p hoimin-cli --test lean_exception_hierarchy_oracle
+HOIMIN_ORACLE_CASE=alias-extraction-chain cargo test -p hoimin-cli --lib lean_exception_hierarchy_alias_extraction_correspondence
+cargo test -p hoimin-cli --test exception_hierarchy
+cargo test -p hoimin-cli --lib hierarchy
+cargo test --workspace
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+```
+
+検証中の修正: resource guard の相対パス誤り、証明の Bool/let 展開エラー、
+Lean の3要素 tuple が入れ子 JSON 配列になることによる adapter deserialize エラーがあった。
+全体ビルドでは parser を単独で読み込むテストの `crate::cli` 解決失敗があり、parser 関数を
+workspace adapter から渡す形に直した。Clippy の補助 module 重複読み込みも、共有 module を1箇所にして解消した。
+それぞれ修正して再実行し、証明の前提や期待値を実装に合わせて弱めることはしなかった。
+タイムアウトやRSS上限の引き上げは行っていない。
+
+全 workspace テストは終了コード0で成功した。階層の integration test は20件、
+公開 oracle は125ケースを確認した。補助 module の共有化後にも、library の階層テスト21件、
+公開 oracle、単独 parser 経路の階層テスト14件を再実行して成功した。
+fmt と all-features Clippy も成功した。
+
+成功した Lean 実行の最大値は8.694秒、監視対象 process tree のRSSは約1220 MiBだった。
+モデル、証明、生成、freshness、sensitivity、集約 import の全検査が制限内で成功した。
+resource guard の20秒・2048 MiBと各定理の50000 heartbeats は維持している。
+
+今回の範囲である代入別名の伝播、抽出境界の対応確認、同一 module の書き込み拒否は完了した。
+原設計レビューの診断の細分化、属性単位の精度改善、並行 cache の契約、全体のメモリ測定は残作業とする。
+関数や container に渡った参照、外部の動的作用を追跡したという保証は追加していない。

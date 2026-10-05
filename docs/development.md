@@ -1369,14 +1369,18 @@ package at a different root, are conservatively excluded. Top-level CPython 3.14
 reserved; an identically named project file cannot establish an import identity.
 Names below project packages, such as `pkg.sys`, remain eligible. This lexical model does
 not prove safety against arbitrary external monkeypatching or custom import hooks.
-Untracked assignment/function aliases inside indexed modules can also affect
-candidates in other modules. For example, `import errors as e; other = e;
-other.Root = object` is not propagated to consumers of `errors.Root`. Unsupported
-effects are not always detected and skipped, so emitted spellings are not guaranteed
+Simple, chained and annotated name assignments and assignment expressions propagate
+known attribute writes back through their possible aliases, including private names.
+Cycles and rebinding retain all possible edges; affected local bindings and imported
+providers are invalidated. Each module has separate limits of 65536 assignment edges
+and 65536 direct write roots. This does not make assignment aliases eligible spellings.
+Untracked function/container aliases inside indexed modules can still affect
+candidates in other modules. Unsupported effects are not always detected and skipped,
+so emitted spellings are not guaranteed
 to resolve to exception classes at runtime. The
 [original-design review](superpowers/reports/2026-10-05-exception-hierarchy-design-review.md)
-records this unresolved case and the planned separation of extraction, binding
-resolution, provider effects and diagnostics.
+records the design gaps; the [alias correspondence audit](superpowers/reports/2026-10-05-exception-alias-lean-audit.md)
+records the bounded assignment repair, Lean proofs and extracted-fact comparisons.
 
 Pairs connect direct user-defined parents/children and siblings with a shared
 user-defined direct parent. Builtins seed ancestry only. Termination and exception

@@ -186,6 +186,13 @@ or making stronger resource guarantees. Each implementation and test stage retai
 the user's minimum of three self-review passes, with the reviewed claims and
 counterexamples recorded, not just a pass count.
 
+Progress: the [assignment-alias audit](../reports/2026-10-05-exception-alias-lean-audit.md)
+implements the bounded name-assignment slice of tasks 2/3, including local class
+writes, Lean path proofs, and comparisons of Rust-extracted facts. Task 1's broader
+identity/opaque-effect representation and tasks 4/5 remain open. Function/container
+alias inference is not included. Do not read completion of this slice as completion
+of all original-design findings.
+
 Plan self-review for these open tasks:
 
 - Pass 1, scope: preserve the useful static feature; do not turn this into executing

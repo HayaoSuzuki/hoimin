@@ -8,7 +8,7 @@ The [original-design review](../reports/2026-10-05-exception-hierarchy-design-re
 identifies unresolved gaps in runtime identity, extraction correspondence and
 diagnostics. This is a bounded lexical candidate generator. It does not establish
 that every emitted spelling will denote the indexed class at runtime. In particular,
-untracked assignment/function aliases inside the indexed project can change a
+untracked function/container aliases inside the indexed project can change a
 provider without invalidating candidates in another file. Such unsupported effects
 are not guaranteed to be detected and skipped. This limitation also applies when
 the mutation site itself uses supported syntax.
@@ -19,6 +19,15 @@ these distinctions and the reasons for losing trust. The review proposes separat
 input, extraction, resolution, eligibility and diagnostic stages; that refactoring
 and broader alias tracking are not yet implemented. The follow-up plan records them
 as open work, rather than treating these contract clarifications as fixes.
+
+The [assignment-alias audit](../reports/2026-10-05-exception-alias-lean-audit.md) adds
+a bounded may-alias write closure for simple/chained/annotated name assignments and
+assignment expressions. Preserve all edges across rebinding and scopes; canonicalize
+private names. Invalidate reached local bindings and imported providers before
+class resolution. Assignment edges and direct write roots have independent per-module
+limits of 65536. This does not enable new candidate spellings or infer function or
+container aliases. Lean proves path coverage and provider invalidation in the model;
+generated fixtures compare production extraction facts and public candidates separately.
 
 ## Behavior
 

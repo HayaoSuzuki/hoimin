@@ -122,4 +122,33 @@ theorem written_alias_invalidates_provider (aliases : Nat → Option Nat)
     List.any_eq_true.mpr ⟨name, hw, by simp [ho]⟩
   simp [providerTrusted, affected]
 
+set_option maxHeartbeats 50000 in
+theorem closed_writes_cover_alias_paths (edges : AliasEdges) (written marked : List String)
+    (complete : closureComplete edges written marked = true) (name : String)
+    (reachable : WriteReach edges written name) : name ∈ marked := by
+  simp only [closureComplete, Bool.and_eq_true] at complete
+  have direct := List.all_eq_true.mp complete.1
+  have closed := List.all_eq_true.mp complete.2
+  induction reachable with
+  | direct member => simpa using direct _ member
+  | @alias target source edge _ ih =>
+      have rule := closed (target, source) edge
+      simpa [ih] using rule
+
+set_option maxHeartbeats 50000 in
+theorem alias_path_invalidates_provider (edges : AliasEdges) (written : List String)
+    (imports : List (String × String)) (name owner : String)
+    (reachable : WriteReach edges written name) (imported : (name, owner) ∈ imports) :
+    aliasTrusted edges written imports owner = false := by
+  unfold aliasTrusted
+  dsimp only
+  by_cases complete : closureComplete edges written (writeClosure edges.length edges written) = true
+  · have marked := closed_writes_cover_alias_paths edges written _ complete name reachable
+    have affected : imports.any (fun (name, origin) =>
+        (writeClosure edges.length edges written).contains name && origin == owner) = true :=
+      List.any_eq_true.mpr ⟨(name, owner), imported, by simp [marked]⟩
+    rw [affected]
+    simp
+  · simp [complete]
+
 end HoiminOracle.ExceptionHierarchy

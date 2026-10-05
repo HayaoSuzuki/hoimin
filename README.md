@@ -428,7 +428,7 @@ class bodies are skipped, while method bodies use module bindings. No imports ar
 inserted. A per-file diagnostic indicates references without a supported visible
 replacement. All allowed project Python files, including unselected files, become
 fingerprint inputs for this operator, so dependency additions, removals and changes
-invalidate saved plans and resumed results. Assignment/function aliases that the
+invalidate saved plans and resumed results. Function/container aliases that the
 analysis does not track can still change a class binding, even within indexed
 project files; such changes are not guaranteed to suppress affected candidates.
 The operator does not guarantee that every replacement denotes an exception class

@@ -1,20 +1,25 @@
+use super::super::rust::exception_hierarchy::oracle_corpus as corpus;
 use super::ExceptionProject;
 use crate::cli::parse_config_from as parse_config;
 use camino::Utf8Path;
-#[path = "../../tests/support/exception_hierarchy_oracle.rs"]
-mod corpus;
 use corpus::Observation;
 
 #[test]
 fn lean_exception_hierarchy_snapshot_correspondence() {
     let mut checked = 0;
-    let cases = corpus::selected("internal-fixture");
+    let cases: Vec<_> = corpus::selected("internal-fixture")
+        .into_iter()
+        .filter(|case| case.kind == "snapshot")
+        .collect();
+    assert!(!cases.is_empty(), "no snapshot cases selected");
     let expected_count = cases.len();
     let mut mismatches = Vec::new();
     for case in cases {
         let dir = tempfile::tempdir().unwrap();
         corpus::write_sources(&case, dir.path());
-        let config = crate::shell::prepare_run_config(corpus::config(&case, dir.path())).unwrap();
+        let config =
+            crate::shell::prepare_run_config(corpus::config(&case, dir.path(), parse_config))
+                .unwrap();
         let project = ExceptionProject::from_config(&config).unwrap();
         let original = &case.files.iter().find(|(p, _)| p == "errors.py").unwrap().1;
         let service = &case

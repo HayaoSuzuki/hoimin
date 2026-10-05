@@ -18,6 +18,25 @@ pub struct Case {
     pub changed_source: String,
     pub max_candidates: usize,
     pub expected: Observation,
+    pub expected_alias_facts: Option<AliasFacts>,
+}
+
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AliasFacts {
+    pub imports: Vec<(String, String, u32)>,
+    pub assignments: Vec<(String, String)>,
+    pub writes: Vec<String>,
+    pub affected: Vec<String>,
+}
+
+impl AliasFacts {
+    pub fn sort(&mut self) {
+        self.imports.sort();
+        self.assignments.sort();
+        self.writes.sort();
+        self.affected.sort();
+    }
 }
 
 #[derive(Debug, PartialEq, Deserialize)]
@@ -43,16 +62,17 @@ where
 }
 
 pub fn cases() -> Vec<Case> {
-    let rows: Vec<Case> = CORPUS
+    let mut rows: Vec<Case> = CORPUS
         .lines()
         .map(|line| serde_json::from_str(line).unwrap())
         .collect();
     let mut ids = BTreeSet::new();
-    for case in &rows {
+    for case in &mut rows {
         assert_eq!(case.schema, 1);
         assert!(ids.insert(&case.id) && !case.id.is_empty());
         match case.mode.as_str() {
             "strict" => {
+                assert!(case.expected_alias_facts.is_none());
                 assert!(matches!(case.kind.as_str(), "candidate" | "resource"));
                 assert!(case.actions.is_empty() && case.changed_source.is_empty());
                 assert!(case.expected.error.is_some());
@@ -60,7 +80,18 @@ pub fn cases() -> Vec<Case> {
                     case.expected.load.is_none() && case.expected.fingerprint_matches.is_none()
                 );
             }
+            "internal-fixture" if case.kind == "alias-extraction" => {
+                let facts = case.expected_alias_facts.as_mut().expect("alias facts");
+                facts.sort();
+                assert!(case.actions.is_empty() && case.changed_source.is_empty());
+                assert!(case.expected.pairs.is_empty());
+                assert!(case.expected.error.is_none() && case.expected.truncated.is_none());
+                assert!(
+                    case.expected.load.is_none() && case.expected.fingerprint_matches.is_none()
+                );
+            }
             "internal-fixture" => {
+                assert!(case.expected_alias_facts.is_none());
                 assert_eq!(case.kind, "snapshot");
                 assert!(!case.changed_source.is_empty());
                 assert!(case.expected.error.is_none() && case.expected.truncated.is_none());
@@ -89,10 +120,10 @@ pub fn cases() -> Vec<Case> {
         }
         assert!(case.files.iter().any(|(path, _)| path == "service.py"));
     }
-    assert_eq!(rows.iter().filter(|r| r.mode == "strict").count(), 108);
+    assert_eq!(rows.iter().filter(|r| r.mode == "strict").count(), 125);
     assert_eq!(
         rows.iter().filter(|r| r.mode == "internal-fixture").count(),
-        170
+        187
     );
     rows
 }
@@ -107,7 +138,11 @@ pub fn write_sources(case: &Case, root: &Path) {
     }
 }
 
-pub fn config(case: &Case, root: &Path) -> hoimin_core::RunConfig {
+pub fn config<E: std::fmt::Debug>(
+    case: &Case,
+    root: &Path,
+    parse_config: impl FnOnce(Vec<String>) -> Result<hoimin_core::RunConfig, E>,
+) -> hoimin_core::RunConfig {
     let limit = case.max_candidates.to_string();
     let mut args = vec![
         "hoimin",
@@ -129,20 +164,21 @@ pub fn config(case: &Case, root: &Path) -> hoimin_core::RunConfig {
     }
     args.extend(["--", "unused-test-command"]);
     // Both adapters use the real CLI configuration parser.
-    parse_config(args).unwrap()
+    parse_config(args.into_iter().map(str::to_owned).collect()).unwrap()
 }
-
-// The same file is compiled inside the library and as an integration-test module.
-// Each parent supplies only the location of the CLI parser.
-use super::parse_config;
 
 // Candidate ranking is a separate contract: compare the complete multiset without
 // dropping duplicates. This also supports a minimal single-case reproduction.
 pub fn selected(mode: &str) -> Vec<Case> {
+    selected_kind(mode, None)
+}
+
+pub fn selected_kind(mode: &str, kind: Option<&str>) -> Vec<Case> {
     let filter = std::env::var("HOIMIN_ORACLE_CASE").ok();
     let selected: Vec<_> = cases()
         .into_iter()
         .filter(|case| case.mode == mode && filter.as_ref().is_none_or(|id| id == &case.id))
+        .filter(|case| kind.is_none_or(|kind| case.kind == kind))
         .collect();
     assert!(!selected.is_empty(), "no selected {mode} cases: {filter:?}");
     selected

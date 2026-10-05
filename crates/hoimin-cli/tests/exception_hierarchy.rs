@@ -667,3 +667,80 @@ async fn hierarchy_review_bounds_import_alias_correlations() {
         .unwrap_err();
     assert!(error.to_string().contains("summary limit"), "{error}");
 }
+
+#[tokio::test]
+async fn hierarchy_assignment_alias_cannot_leave_rebound_destination_eligible() {
+    let dir = fixture();
+    let service = "from errors import Root, Child\ndef f():\n    raise Child('x')\n";
+    std::fs::write(dir.path().join("service.py"), service).unwrap();
+    std::fs::write(
+        dir.path().join("patcher.py"),
+        "import errors as e\nother = e\nother.Root = object\n",
+    )
+    .unwrap();
+    let runtime = "import patcher, service\ntry:\n service.f()\nexcept Exception as e:\n print(type(e).__name__)\n";
+    for (source, expected) in [
+        (service.to_owned(), "Child"),
+        (service.replace("raise Child", "raise Root"), "TypeError"),
+    ] {
+        std::fs::write(dir.path().join("service.py"), source).unwrap();
+        let output = std::process::Command::new(python())
+            .current_dir(dir.path())
+            .args(["-B", "-c", runtime])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), expected);
+    }
+    std::fs::write(dir.path().join("service.py"), service).unwrap();
+    let plan = hoimin_cli::plan::create(config(dir.path(), &[]))
+        .await
+        .unwrap();
+    assert!(
+        plan.manifest.candidates.is_empty(),
+        "{:?}",
+        plan.manifest.candidates
+    );
+}
+
+#[tokio::test]
+async fn hierarchy_assignment_alias_invalidates_local_class_constructor() {
+    let dir = tempfile::tempdir().unwrap();
+    for (write, expected) in [("", 1), ("other.__init__ = lambda self, code: None\n", 0)] {
+        let source = format!(
+            "class Root(Exception): pass\nclass Child(Root): pass\nother = Root\n{write}def f():\n    raise Child()\n"
+        );
+        std::fs::write(dir.path().join("service.py"), source).unwrap();
+        let plan = hoimin_cli::plan::create(config(dir.path(), &[]))
+            .await
+            .unwrap();
+        assert_eq!(plan.manifest.candidates.len(), expected, "{write}");
+    }
+}
+
+#[tokio::test]
+async fn hierarchy_assignment_edges_have_an_independent_limit() {
+    use std::fmt::Write as _;
+    let dir = tempfile::tempdir().unwrap();
+    let mut source = "def deferred():\n".to_owned();
+    for i in 0..65_536 {
+        writeln!(source, "    alias{i} = e").unwrap();
+    }
+    // Repeating an edge does not consume another retained entry.
+    source.push_str("    alias0 = e\n");
+    std::fs::write(dir.path().join("service.py"), &source).unwrap();
+    let plan = hoimin_cli::plan::create(config(dir.path(), &[]))
+        .await
+        .unwrap();
+    assert!(plan.manifest.candidates.is_empty());
+    source.push_str("    one_more = e\n");
+    std::fs::write(dir.path().join("service.py"), source).unwrap();
+    let error = hoimin_cli::plan::create(config(dir.path(), &[]))
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("summary limit"), "{error}");
+}

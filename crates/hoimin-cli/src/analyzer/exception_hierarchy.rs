@@ -304,11 +304,50 @@ struct Escapes {
     class_name: Option<String>,
     imports: BTreeMap<(String, u32), ImportUse>,
     import_aliases: BTreeSet<(String, String, u32)>,
+    assignments: BTreeSet<(String, String)>,
     attribute_roots: BTreeSet<String>,
     limit_exceeded: bool,
     deferred: bool,
 }
 impl Escapes {
+    fn assignment(&mut self, target: &Expr, source: &Expr) {
+        if self.limit_exceeded {
+            return;
+        }
+        if let Expr::Name(target) = target
+            && let Some(source) = reference(source)
+        {
+            let source = source.split('.').next().unwrap();
+            let canonical = |name: &str| {
+                mangled_name(self.class_name.as_deref(), name).unwrap_or_else(|| name.to_owned())
+            };
+            self.assignments
+                .insert((canonical(&target.id), canonical(source)));
+            self.limit_exceeded = self.assignments.len() > MAX_SUMMARY_ENTRIES;
+        }
+    }
+
+    /// May-alias edges retain every assignment, including rebinding and cycles.
+    /// Each reached name is queued once, so reverse source order cannot lose writes.
+    fn affected_roots(&self) -> BTreeSet<String> {
+        let mut sources: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+        for (target, source) in &self.assignments {
+            sources.entry(target).or_default().push(source);
+        }
+        let mut marked = self.attribute_roots.clone();
+        let mut pending: Vec<_> = self.attribute_roots.iter().map(String::as_str).collect();
+        while let Some(target) = pending.pop() {
+            if let Some(aliases) = sources.get(target) {
+                for &source in aliases {
+                    if marked.insert(source.to_owned()) {
+                        pending.push(source);
+                    }
+                }
+            }
+        }
+        marked
+    }
+
     fn import(&mut self, module: String, level: u32, bound: &str, origin: String) {
         if self.limit_exceeded {
             return;
@@ -327,12 +366,26 @@ impl Escapes {
             if let Some(mangled) = mangled_name(self.class_name.as_deref(), root) {
                 self.attribute_roots.insert(mangled);
             }
+            self.limit_exceeded |= self.attribute_roots.len() > MAX_SUMMARY_ENTRIES;
         }
     }
 }
 impl<'a> Visitor<'a> for Escapes {
     fn visit_stmt(&mut self, statement: &'a Stmt) {
+        if self.limit_exceeded {
+            return;
+        }
         match statement {
+            Stmt::Assign(assign) => {
+                for target in &assign.targets {
+                    self.assignment(target, &assign.value);
+                }
+            }
+            Stmt::AnnAssign(assign) => {
+                if let Some(value) = &assign.value {
+                    self.assignment(&assign.target, value);
+                }
+            }
             Stmt::Import(import) => {
                 for alias in &import.names {
                     let module = alias.name.to_string();
@@ -385,7 +438,11 @@ impl<'a> Visitor<'a> for Escapes {
         }
     }
     fn visit_expr(&mut self, expression: &'a Expr) {
+        if self.limit_exceeded {
+            return;
+        }
         match expression {
+            Expr::Named(named) => self.assignment(&named.target, &named.value),
             Expr::Attribute(a) if a.ctx != ExprContext::Load => {
                 self.attribute_target(&a.value);
                 if let Some(name) = reference(&a.value) {
@@ -526,8 +583,10 @@ impl Module {
         if escapes.limit_exceeded {
             return Err(AnalysisError::HierarchyLimit);
         }
+        let affected = escapes.affected_roots();
+        escapes.bindings.names.extend(affected.iter().cloned());
         for (name, origin, level) in escapes.import_aliases {
-            if escapes.attribute_roots.contains(&name) {
+            if affected.contains(&name) {
                 escapes.imports.entry((origin, level)).or_default().mutated = true;
             }
         }
@@ -539,6 +598,17 @@ impl Module {
         Ok(result)
     }
 }
+
+#[cfg(test)]
+#[path = "exception_alias_oracle_tests.rs"]
+mod alias_oracle_tests;
+
+// Shared by extraction and snapshot adapters. In the standalone parser tests,
+// only the extraction adapter is compiled, leaving the workspace helpers unused.
+#[cfg(test)]
+#[allow(dead_code)]
+#[path = "../../tests/support/exception_hierarchy_oracle.rs"]
+pub(crate) mod oracle_corpus;
 
 fn relative_module(path: &Utf8Path, current: &str, imported: &str, level: u32) -> Option<String> {
     if level == 0 {

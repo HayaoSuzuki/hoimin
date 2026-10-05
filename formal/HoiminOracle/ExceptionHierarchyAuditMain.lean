@@ -168,6 +168,71 @@ def attributeRows : List Json := attributeWrites.map fun (name, patch, owner) =>
     ("service.py", "import pkg.patcher\nimport pkg.errors as e\nfrom pkg.errors import Root\ndef target():\n    raise Root()\n")]
     (if eligible (graph true) rootId childId 0 1 true trusted then [("Root", "e.Child")] else [])
 
+structure AliasCase where
+  name : String
+  source : String
+  imports : List (String × String) := [("e", "errors")]
+  edges : AliasEdges := []
+  written : List String := ["other"]
+
+def aliasCases : List AliasCase := [
+  { name := "unchanged", source := "import errors as e\nother = e\n",
+    edges := [("other", "e")], written := [] },
+  { name := "direct", source := "import errors as e\ne.Root = object\n", written := ["e"] },
+  { name := "assignment", source := "import errors as e\nother = e\nother.Root = object\n",
+    edges := [("other", "e")] },
+  { name := "chain", source := "import errors as e\nfirst = e\nother = first\nother.Root = object\n",
+    edges := [("first", "e"), ("other", "first")] },
+  { name := "reverse", source := "import errors as e\ndef patch():\n    other = first\n    other.Root = object\nfirst = e\npatch()\n",
+    edges := [("other", "first"), ("first", "e")] },
+  { name := "cycle", source := "import errors as e\nfirst = e\nother = first\nfirst = other\nother.Root = object\n",
+    edges := [("first", "e"), ("other", "first"), ("first", "other")] },
+  { name := "duplicate", source := "import errors as e\nother = e\nother = e\nother.Root = object\n",
+    edges := [("other", "e"), ("other", "e")] },
+  { name := "rebind", source := "import errors as e\nimport unrelated as foreign\nother = e\ne = foreign\nother.Root = object\n",
+    imports := [("e", "errors"), ("foreign", "unrelated")], edges := [("other", "e"), ("e", "foreign")] },
+  { name := "unrelated", source := "import unrelated as e\nother = e\nother.Root = object\n",
+    imports := [("e", "unrelated")], edges := [("other", "e")] },
+  { name := "annotated", source := "import errors as e\nother: object = e\nother.Root = object\n",
+    edges := [("other", "e")] },
+  { name := "chained", source := "import errors as e\nfirst = other = e\nother.Root = object\n",
+    edges := [("first", "e"), ("other", "e")] },
+  { name := "walrus", source := "import errors as e\nif (other := e):\n    other.Root = object\n",
+    edges := [("other", "e")] },
+  { name := "private", source := "class P:\n    def patch(self):\n        import errors as __e\n        __other = __e\n        __other.Root = object\nP().patch()\n",
+    imports := [("_P__e", "errors")], edges := [("_P__other", "_P__e")],
+    written := ["__other", "_P__other"] },
+  { name := "nested", source := "def patch():\n    import errors as e\n    other = e\n    other.Root = object\npatch()\n",
+    edges := [("other", "e")] },
+  { name := "attribute", source := "import errors as e\nother = e.Root\nother.__init__ = lambda self, *args: None\n",
+    edges := [("other", "e")] },
+  { name := "delete", source := "import errors as e\nother = e\ndel other.Root\n",
+    edges := [("other", "e")] },
+  { name := "setattr", source := "import errors as e\nother = e\nsetattr(other, 'Root', object)\n",
+    edges := [("other", "e")] }]
+
+def aliasFiles (c : AliasCase) : List (String × String) := [
+  ("errors.py", definition "Root" "Exception" ++ definition "Child" "Root"),
+  ("unrelated.py", definition "Root" "Exception"), ("patcher.py", c.source),
+  ("service.py", "from errors import Root, Child\ndef target():\n    raise Child()\n")]
+
+def aliasRows : List Json := aliasCases.map fun c =>
+  strictRow ("alias-" ++ c.name) (aliasFiles c)
+    (if eligible (graph true) childId rootId 0 1 true (aliasTrusted c.edges c.written c.imports "errors")
+      then [("Child", "Root")] else [])
+
+def aliasExtractionRows : List Json := aliasCases.map fun c =>
+  let facts := Json.mkObj [
+    ("imports", toJson (c.imports.map fun (name, origin) =>
+      Json.arr #[toJson name, toJson origin, toJson (0 : Nat)])),
+    ("assignments", toJson c.edges.eraseDups), ("writes", toJson c.written.eraseDups),
+    ("affected", toJson (writeClosure c.edges.length c.edges c.written))]
+  let base := row ("alias-extraction-" ++ c.name) "alias-extraction" "internal-fixture"
+    (aliasFiles c) (observation [])
+  match base with
+  | .obj fields => .obj (fields.insert "expected_alias_facts" facts)
+  | _ => base
+
 def events : List Event := [.change, .delete, .restore, .build]
 def traces : Nat → List (List Event)
   | 0 => [[]]
@@ -189,7 +254,7 @@ def snapshotRows : List Json := [false, true].flatMap fun base => (domain 3).map
       (some (loadName state.lastLoad)) (some (fingerprintMatches state))) ["lib"]
     (es.map eventName) (errorsSource (!base))
 
-def rows := candidateRows ++ loadRows ++ relativeRows ++ reservedRows ++ resourceRows ++ depthRows ++ collisionRows ++ attributeRows ++ snapshotRows
+def rows := candidateRows ++ loadRows ++ relativeRows ++ reservedRows ++ resourceRows ++ depthRows ++ collisionRows ++ attributeRows ++ snapshotRows ++ aliasRows ++ aliasExtractionRows
 def corpus := String.join (rows.map fun r => r.compress ++ "\n")
 
 -- Deliberately broken variants stay in the executable, never in imported proof modules.
@@ -236,7 +301,17 @@ def checkSensitivity : IO Unit := do
     ("write-only-invalidates-spelling", providerTrusted (writeAliases (some 1)) [10] 1 != !([10].contains (20 : Nat)))]
   for (name, detected) in checks do
     unless detected do throw (IO.userError ("undetected " ++ name))
-  IO.println s!"sensitivity: 14 broken variants detected; strict={candidateRows.length + loadRows.length + relativeRows.length + reservedRows.length + resourceRows.length + depthRows.length + collisionRows.length + attributeRows.length} internal-fixture={snapshotRows.length}"
+  let edges := [("first", "e"), ("other", "first")]
+  let written := ["other"]
+  let imports := [("e", "errors")]
+  let trusted := aliasTrusted edges written imports "errors"
+  let ignoresAliases := !imports.any (fun (name, _) => written.contains name)
+  let onePass := !imports.any (fun (name, _) => (expandWrites edges written).contains name)
+  let reversed := aliasTrusted (edges.map fun (target, source) => (source, target)) written imports "errors"
+  for (name, broken) in [("ignore-assignment", ignoresAliases), ("single-pass", onePass), ("reverse-edge", reversed)] do
+    unless trusted != broken do throw (IO.userError ("undetected " ++ name))
+  IO.println s!"alias domain: cases={aliasCases.length} max_edges=3; fixed-point checked before trust; three propagation variants detected"
+  IO.println s!"sensitivity: 17 broken variants detected; strict={candidateRows.length + loadRows.length + relativeRows.length + reservedRows.length + resourceRows.length + depthRows.length + collisionRows.length + attributeRows.length + aliasRows.length} internal-fixture={snapshotRows.length + aliasExtractionRows.length}"
 
 def main (args : List String) : IO Unit := do
   let args := if args.head? == some "--" then args.drop 1 else args

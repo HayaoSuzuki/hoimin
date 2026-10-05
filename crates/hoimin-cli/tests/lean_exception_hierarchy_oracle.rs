@@ -12,7 +12,8 @@ async fn lean_exception_hierarchy_public_plan_correspondence() {
     for case in cases {
         let dir = tempfile::tempdir().unwrap();
         corpus::write_sources(&case, dir.path());
-        let result = hoimin_cli::plan::create(corpus::config(&case, dir.path())).await;
+        let result =
+            hoimin_cli::plan::create(corpus::config(&case, dir.path(), parse_config)).await;
         let actual = match result {
             Ok(plan) => Observation {
                 pairs: plan
