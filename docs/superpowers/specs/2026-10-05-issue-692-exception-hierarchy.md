@@ -66,7 +66,7 @@ and content changes. Keep user-declared fingerprint selectors intact. Propagate
 automatic inputs into workspace revalidation. Never import target Python modules.
 
 Index limits: 4096 Python files, 16 MiB per file, 64 MiB total decoded source,
-256 ancestry/import steps, and 65536 module bindings. Exceeding a project limit
+256 ancestry/import steps, and 65536 entries per module-name, binding and visible-alias table. Exceeding a project limit
 fails with an explicit analysis error, never silently reuses a partial index. Candidate count still uses the
 existing `max_candidates`; avoid constructing all class pairs upfront.
 
@@ -98,3 +98,11 @@ are also rejected rather than claiming a complete Python import resolver. Functi
 uses require definitions preceding the function header; implicit class cells and
 private names are excluded in method scopes. Candidate replacement retention is
 bounded per site in addition to the existing producer bound.
+
+Focused-review corrections: relative imports resolve under the module's imported
+name; qualified references respect submodule load order. Private binding exclusions
+include their class-mangled spellings. CPython 3.14 standard-library/frozen roots
+and `__main__` cannot resolve to local project modules. Loaded raw bytes must match
+prepared fingerprints, and prepared Python paths reserve opaque module origins
+when absent from the current input set. This can suppress candidates but prevents
+an absent higher-priority module from exposing a different lower-priority class.

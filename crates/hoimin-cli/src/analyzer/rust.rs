@@ -287,7 +287,7 @@ pub(crate) enum AnalysisError {
     Cancelled,
     #[error("analysis depth exceeds supported limit {limit}")]
     DepthExceeded { limit: usize },
-    #[error("exception hierarchy exceeds 65536 bindings")]
+    #[error("exception hierarchy summary limit exceeded (65536 entries per index table)")]
     HierarchyLimit,
     #[error("source changed after exception hierarchy indexing")]
     HierarchySourceChanged,

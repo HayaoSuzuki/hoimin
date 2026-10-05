@@ -193,3 +193,194 @@ async fn hierarchy_handler_narrowing_changes_python_except_and_except_star_behav
         assert_eq!(report["mutants"].as_array().unwrap().len(), 2);
     }
 }
+
+fn write_sources(root: &Path, sources: &[(&str, &str)]) {
+    for (path, source) in sources {
+        let path = root.join(path);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, source).unwrap();
+    }
+}
+
+#[tokio::test]
+async fn hierarchy_audit_submodule_must_be_loaded_before_use() {
+    let dir = tempfile::tempdir().unwrap();
+    write_sources(
+        dir.path(),
+        &[
+            ("pkg/__init__.py", "class Root(Exception): pass\n"),
+            (
+                "pkg/errors.py",
+                "from pkg import Root\nclass Child(Root): pass\n",
+            ),
+            (
+                "service.py",
+                "import pkg as p\nfrom pkg import Root\ndef f():\n    raise Root()\nimport pkg.errors as later\n",
+            ),
+        ],
+    );
+    let plan = hoimin_cli::plan::create(config(dir.path(), &[]))
+        .await
+        .unwrap();
+    assert!(
+        plan.manifest.candidates.is_empty(),
+        "{:?}",
+        plan.manifest.candidates
+    );
+}
+
+#[tokio::test]
+async fn hierarchy_audit_relative_imports_cannot_mix_namespace_identities() {
+    let dir = tempfile::tempdir().unwrap();
+    write_sources(
+        dir.path(),
+        &[
+            ("pkg/base.py", "class Root(ValueError): pass\n"),
+            ("lib/pkg/base.py", "class Root(Exception): pass\n"),
+            (
+                "lib/pkg/errors.py",
+                "from .base import Root\nclass Child(Root): pass\n",
+            ),
+            (
+                "service.py",
+                "from pkg.errors import Child\nfrom lib.pkg.base import Root\ndef f():\n    raise Child()\n",
+            ),
+        ],
+    );
+    let output = std::process::Command::new(python()).current_dir(dir.path())
+        .args(["-B", "-c", "import sys; sys.path.append('lib'); from service import Child, Root; assert not issubclass(Child, Root)"])
+        .output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let plan = hoimin_cli::plan::create(config(dir.path(), &["--import-root", "lib"]))
+        .await
+        .unwrap();
+    assert!(
+        plan.manifest.candidates.is_empty(),
+        "{:?}",
+        plan.manifest.candidates
+    );
+}
+
+#[tokio::test]
+async fn hierarchy_audit_index_bounds_visible_alias_expansion() {
+    use std::fmt::Write as _;
+    let dir = tempfile::tempdir().unwrap();
+    let mut errors = "class Root(Exception): pass\n".to_owned();
+    let mut service = String::new();
+    for i in 0..260 {
+        writeln!(errors, "class Child{i}(Root): pass").unwrap();
+        writeln!(service, "import errors as e{i}").unwrap();
+    }
+    service.push_str("def f():\n    raise e0.Child0()\n");
+    write_sources(
+        dir.path(),
+        &[("errors.py", &errors), ("service.py", &service)],
+    );
+    let result = hoimin_cli::plan::create(config(dir.path(), &[])).await;
+    assert!(
+        result.is_err(),
+        "alias expansion must hit the bounded index limit"
+    );
+    assert!(result.unwrap_err().to_string().contains("limit"));
+}
+
+#[tokio::test]
+async fn hierarchy_audit_relative_imports_use_the_imported_module_name() {
+    let dir = tempfile::tempdir().unwrap();
+    write_sources(
+        dir.path(),
+        &[
+            ("lib/pkg/__init__.py", ""),
+            ("lib/pkg/base.py", "class Root(Exception): pass\n"),
+            (
+                "lib/pkg/errors.py",
+                "from .base import Root\nclass Child(Root): pass\n",
+            ),
+            (
+                "service.py",
+                "from pkg.errors import Child\nfrom pkg.base import Root\ndef f():\n    raise Child()\n",
+            ),
+        ],
+    );
+    let plan = hoimin_cli::plan::create(config(dir.path(), &["--import-root", "lib"]))
+        .await
+        .unwrap();
+    assert_eq!(plan.manifest.candidates.len(), 1);
+    assert_eq!(plan.manifest.candidates[0].candidate.replacement, "Root");
+}
+
+#[tokio::test]
+async fn hierarchy_audit_interpreter_modules_cannot_resolve_to_project_files() {
+    for name in ["sys", "os", "__main__"] {
+        let dir = tempfile::tempdir().unwrap();
+        write_sources(
+            dir.path(),
+            &[
+                ("base.py", "class Root(Exception): pass\n"),
+                (
+                    &format!("{name}.py"),
+                    "from base import Root\nclass Child(Root): pass\n",
+                ),
+                (
+                    "service.py",
+                    &format!(
+                        "from base import Root\nimport {name} as e\ndef f():\n    raise Root()\n"
+                    ),
+                ),
+            ],
+        );
+        let output = std::process::Command::new(python())
+            .current_dir(dir.path())
+            .args([
+                "-B",
+                "-c",
+                &format!("import {name} as e; assert not hasattr(e, 'Child')"),
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let plan = hoimin_cli::plan::create(config(dir.path(), &[]))
+            .await
+            .unwrap();
+        assert!(
+            plan.manifest.candidates.is_empty(),
+            "{name}: {:?}",
+            plan.manifest.candidates
+        );
+    }
+}
+
+#[tokio::test]
+async fn hierarchy_audit_early_submodules_and_nested_stdlib_names_remain_eligible() {
+    let dir = tempfile::tempdir().unwrap();
+    write_sources(
+        dir.path(),
+        &[
+            ("pkg/__init__.py", "class Root(Exception): pass\n"),
+            (
+                "pkg/sys.py",
+                "from pkg import Root\nclass Child(Root): pass\n",
+            ),
+            (
+                "service.py",
+                "import pkg as p\nimport pkg.sys as loaded\nfrom pkg import Root\ndef f():\n    raise Root()\n",
+            ),
+        ],
+    );
+    let plan = hoimin_cli::plan::create(config(dir.path(), &[]))
+        .await
+        .unwrap();
+    assert_eq!(plan.manifest.candidates.len(), 1);
+    assert_eq!(
+        plan.manifest.candidates[0].candidate.replacement,
+        "loaded.Child"
+    );
+}

@@ -1344,7 +1344,10 @@ file/line/symbol/changed mutation filters. Module roots follow worker precedence
 project root, explicit import roots, then source roots. Inherited external
 PYTHONPATH entries and third-party packages are outside the analysis scope.
 
-The index retains binding/import/class summaries and decoded-source hashes. Both
+The index retains binding/import/class summaries and decoded-source hashes.
+Loaded bytes must also match the prepared fingerprint before decoding. Prepared
+Python input paths reserve module origins even if temporarily missing, so a lower
+search root cannot silently supply different classes during a delete/restore race. Both
 plan discovery and run analysis share a cached index within their analysis session;
 failed or cancelled builds are not cached. Selected source contents must match the
 indexed snapshot. `fingerprint_inputs::resolve_config` adds the allowed Python input
@@ -1357,10 +1360,13 @@ without decorators, type parameters, class keywords or custom subclass hooks. Cl
 bodies can contain methods, pass statements and docstrings. Explicit class imports,
 relative class imports, module imports, and aliases are recognized; re-exports and
 `from package import submodule` are not inferred. Duplicate/rebound bindings and
-namespace manipulation invalidate trust. A file imported under multiple module
+namespace manipulation invalidate trust. Relative imports use the known name under which their containing module is loaded,
+rather than guessing from its first filesystem root. A file imported under multiple module
 names is excluded because Python creates distinct class identities for those loads.
 Ambiguous module/package layouts, including namespace portions shadowed by a regular
-package at a different root, are conservatively excluded. This lexical model does
+package at a different root, are conservatively excluded. Top-level CPython 3.14 standard-library/frozen module names and `__main__` are
+reserved; an identically named project file cannot establish an import identity.
+Names below project packages, such as `pkg.sys`, remain eligible. This lexical model does
 not prove safety against arbitrary external monkeypatching or custom import hooks.
 
 Pairs connect direct user-defined parents/children and siblings with a shared
@@ -1371,14 +1377,16 @@ constructor, with neither `__init__` nor `__new__` overrides. Specialized builti
 constructors are handler-only. Arguments and `from` causes are preserved.
 
 Function parameters, binding targets, captures and definition-header assignments
-suppress affected references throughout their lexical scope. Class bodies are
+suppress affected references throughout their lexical scope, including private
+bindings after Python class name mangling. Qualified references require their
+submodule to have been loaded before the containing function or module-level use. Class bodies are
 excluded; method scopes skip class-local bindings. Module definitions used inside a
 function must already exist before that function's definition, preventing early
 calls from observing an inserted future name. Conservative exclusions may suppress
 valid candidates; they never authorize an inserted import.
 
 The loader limits input to 4096 files, 16 MiB per file, 64 MiB total decoded source,
-and 65536 module bindings. Ancestry/import traversal is limited to 256 steps and
+and 65536 entries per module-name, binding and visible-alias table. Ancestry/import traversal is limited to 256 steps and
 uses the existing AST depth guard. Cancellation is checked during discovery,
 index construction and replacement enumeration. Per-site replacement retention is
 bounded by `max_candidates + 1`, preserving the existing producer's source-order

@@ -9,6 +9,7 @@ use ruff_text_size::{Ranged, TextRange};
 use super::{AnalysisCancelled, AnalysisError, depth};
 
 const MAX_STEPS: usize = 256;
+pub(crate) const MAX_SUMMARY_ENTRIES: usize = 65_536;
 type ClassId = (Utf8PathBuf, String);
 
 #[derive(Clone)]
@@ -20,6 +21,7 @@ enum BindingKind {
     Import {
         module: String,
         member: Option<String>,
+        level: u32,
     },
     Unknown,
 }
@@ -34,7 +36,7 @@ struct Binding {
 struct Module {
     bindings: BTreeMap<String, Binding>,
     dynamic: bool,
-    loaded: BTreeSet<String>,
+    loaded: BTreeMap<String, usize>,
 }
 
 #[derive(Clone)]
@@ -276,23 +278,42 @@ fn header_bindings(statement: &Stmt) -> Bindings {
     bindings
 }
 
+fn mangled_name(class: Option<&str>, name: &str) -> Option<String> {
+    let class = class?.trim_start_matches('_');
+    (!class.is_empty() && name.starts_with("__") && !name.ends_with("__"))
+        .then(|| format!("_{class}{name}"))
+}
+
 /// Writes explicitly escaping function scope invalidate module identities too.
 #[derive(Default)]
-struct Escapes(Bindings);
+struct Escapes(Bindings, Option<String>);
 impl<'a> Visitor<'a> for Escapes {
     fn visit_stmt(&mut self, statement: &'a Stmt) {
         if let Stmt::Global(g) = statement {
-            self.0.names.extend(g.names.iter().map(ToString::to_string));
+            for name in &g.names {
+                self.0.names.insert(name.to_string());
+                if let Some(mangled) = mangled_name(self.1.as_deref(), name) {
+                    self.0.names.insert(mangled);
+                }
+            }
         }
-        visitor::walk_stmt(self, statement);
+        if let Stmt::ClassDef(d) = statement {
+            let old = self.1.replace(d.name.to_string());
+            visitor::walk_stmt(self, statement);
+            self.1 = old;
+        } else {
+            visitor::walk_stmt(self, statement);
+        }
     }
     fn visit_expr(&mut self, expression: &'a Expr) {
         match expression {
             Expr::Attribute(a) if a.ctx != ExprContext::Load => {
                 if let Some(name) = reference(&a.value) {
-                    self.0
-                        .names
-                        .insert(name.split('.').next().unwrap().to_owned());
+                    let root = name.split('.').next().unwrap();
+                    self.0.names.insert(root.to_owned());
+                    if let Some(mangled) = mangled_name(self.1.as_deref(), root) {
+                        self.0.names.insert(mangled);
+                    }
                 }
             }
             Expr::Call(c)
@@ -321,9 +342,11 @@ impl<'a> Visitor<'a> for Escapes {
 impl Module {
     fn imports(&self) -> impl Iterator<Item = &String> {
         self.loaded
-            .iter()
+            .keys()
             .chain(self.bindings.values().filter_map(|b| match &b.kind {
-                BindingKind::Import { module, .. } => Some(module),
+                BindingKind::Import {
+                    module, level: 0, ..
+                } => Some(module),
                 _ => None,
             }))
     }
@@ -333,7 +356,7 @@ impl Module {
             .and_modify(|b| b.kind = BindingKind::Unknown)
             .or_insert(Binding { kind, end });
     }
-    fn parse(module: &ModModule, path: &Utf8Path, module_name: &str) -> Self {
+    fn parse(module: &ModModule) -> Self {
         let mut result = Self::default();
         for statement in &module.body {
             let headers = header_bindings(statement);
@@ -373,29 +396,29 @@ impl Module {
                         } else {
                             module.clone()
                         };
-                        result.loaded.insert(module);
+                        result.loaded.entry(module).or_insert(end);
                         let kind = BindingKind::Import {
                             module: bound_module,
                             member: None,
+                            level: 0,
                         };
                         result.insert(name, kind, end);
                     }
                 }
                 Stmt::ImportFrom(d) => {
                     let imported = d.module.as_ref().map_or("", |m| m.as_str());
-                    let module = relative_module(path, module_name, imported, d.level);
+
                     for alias in &d.names {
                         if alias.name.as_str() == "*" {
                             result.dynamic = true;
                         }
                         result.insert(
                             alias.asname.as_ref().unwrap_or(&alias.name).to_string(),
-                            module.as_ref().map_or(BindingKind::Unknown, |module| {
-                                BindingKind::Import {
-                                    module: module.clone(),
-                                    member: Some(alias.name.to_string()),
-                                }
-                            }),
+                            BindingKind::Import {
+                                module: imported.to_owned(),
+                                member: Some(alias.name.to_string()),
+                                level: d.level,
+                            },
                             end,
                         );
                     }
@@ -455,7 +478,13 @@ fn module_name(path: &Utf8Path, root: &Utf8Path) -> Option<String> {
     if parts.last() == Some(&"__init__") {
         parts.pop();
     }
-    if parts.is_empty() {
+    // Interpreter modules can take precedence over project search roots. The
+    // analyzer must not invent classes from a coincidentally named local file.
+    if parts.is_empty()
+        || include_str!("python_stdlib_names.txt")
+            .lines()
+            .any(|name| name == parts[0])
+    {
         None
     } else {
         Some(parts.join("."))
@@ -468,8 +497,17 @@ impl ExceptionIndex {
         roots: &[Utf8PathBuf],
         cancelled: &impl Fn() -> bool,
     ) -> Result<Self, AnalysisError> {
+        Self::from_sources_with_inputs(sources, roots, &[], cancelled)
+    }
+
+    pub(crate) fn from_sources_with_inputs(
+        sources: &[(Utf8PathBuf, String)],
+        roots: &[Utf8PathBuf],
+        inputs: &[Utf8PathBuf],
+        cancelled: &impl Fn() -> bool,
+    ) -> Result<Self, AnalysisError> {
         let mut index = Self {
-            module_paths: map_modules(sources, roots, cancelled)?,
+            module_paths: map_modules(sources, roots, inputs, cancelled)?,
             ..Self::default()
         };
         let mut binding_count = 0usize;
@@ -492,36 +530,14 @@ impl ExceptionIndex {
                 depth::dispose(parsed.into_syntax());
                 return Err(error);
             }
-            let name = roots
-                .iter()
-                .find_map(|r| module_name(path, r))
-                .unwrap_or_default();
-            let summary = Module::parse(parsed.syntax(), path, &name);
+            let summary = Module::parse(parsed.syntax());
             binding_count += summary.bindings.len();
-            if binding_count > 65_536 {
+            if binding_count > MAX_SUMMARY_ENTRIES {
                 return Err(AnalysisError::HierarchyLimit);
             }
             index.modules.insert(path.clone(), summary);
         }
-        // Loading one file under multiple module names creates different Python classes.
-        let mut imported_names = BTreeMap::<Utf8PathBuf, BTreeSet<String>>::new();
-        for module in index.modules.values() {
-            for module in module.imports() {
-                if let Some(path) = index.module_paths.get(module) {
-                    imported_names
-                        .entry(path.clone())
-                        .or_default()
-                        .insert(module.clone());
-                }
-            }
-        }
-        for (path, names) in imported_names {
-            if names.len() > 1
-                && let Some(module) = index.modules.get_mut(&path)
-            {
-                module.dynamic = true;
-            }
-        }
+        index.resolve_relative_imports(cancelled)?;
         index.exclude_import_cycles(cancelled)?;
         let ids = index
             .modules
@@ -557,6 +573,89 @@ impl ExceptionIndex {
         self.source_hashes
             .get(path)
             .is_none_or(|hash| *hash == blake3::hash(source.as_bytes()))
+    }
+
+    /// A relative import depends on the name used to load its containing module,
+    /// not on the first filesystem root that happens to contain its source.
+    fn resolve_relative_imports(
+        &mut self,
+        cancelled: &impl Fn() -> bool,
+    ) -> Result<(), AnalysisCancelled> {
+        let mut aliases = BTreeMap::<Utf8PathBuf, Vec<String>>::new();
+        for (name, path) in &self.module_paths {
+            aliases.entry(path.clone()).or_default().push(name.clone());
+        }
+        let mut pending = self
+            .modules
+            .values()
+            .flat_map(Module::imports)
+            .filter(|name| self.module_paths.contains_key(*name))
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        pending.extend(
+            aliases
+                .values()
+                .filter(|names| names.len() == 1)
+                .flatten()
+                .cloned(),
+        );
+        let mut contexts = BTreeMap::<Utf8PathBuf, BTreeSet<String>>::new();
+        while let Some(name) = pending.pop_first() {
+            if cancelled() {
+                return Err(AnalysisCancelled);
+            }
+            let Some(path) = self.module_paths.get(&name) else {
+                continue;
+            };
+            if !contexts
+                .entry(path.clone())
+                .or_default()
+                .insert(name.clone())
+            {
+                continue;
+            }
+            let Some(module) = self.modules.get(path) else {
+                continue;
+            };
+            for binding in module.bindings.values() {
+                if cancelled() {
+                    return Err(AnalysisCancelled);
+                }
+                if let BindingKind::Import { module, level, .. } = &binding.kind
+                    && *level > 0
+                    && let Some(target) = relative_module(path, &name, module, *level)
+                    && self.module_paths.contains_key(&target)
+                {
+                    pending.insert(target);
+                }
+            }
+        }
+        for (path, module) in &mut self.modules {
+            let names = contexts.get(path);
+            // A file loaded under two names defines distinct runtime class identities.
+            module.dynamic |= names.is_some_and(|names| names.len() > 1);
+            let context = names
+                .filter(|names| names.len() == 1)
+                .and_then(|names| names.first());
+            for binding in module.bindings.values_mut() {
+                if cancelled() {
+                    return Err(AnalysisCancelled);
+                }
+                if let BindingKind::Import { module, level, .. } = &mut binding.kind
+                    && *level > 0
+                {
+                    if let Some(resolved) =
+                        context.and_then(|name| relative_module(path, name, module, *level))
+                    {
+                        *module = resolved;
+                        *level = 0;
+                    } else {
+                        binding.kind = BindingKind::Unknown;
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 
     fn exclude_import_cycles(
@@ -609,7 +708,7 @@ impl ExceptionIndex {
         }
         match (&binding.kind, attr) {
             (BindingKind::Class { .. }, None) => Some((path.to_owned(), root.to_owned())),
-            (BindingKind::Import { module, member }, attr) => {
+            (BindingKind::Import { module, member, .. }, attr) => {
                 let (module, member) = match (member, attr) {
                     (Some(member), None) => (module.clone(), member.clone()),
                     (None, Some(attr)) => {
@@ -623,7 +722,14 @@ impl ExceptionIndex {
                 if member.is_empty() {
                     return None;
                 }
-                if attr.is_some() && !self.modules.get(path)?.loaded.contains(&module) {
+                if attr.is_some()
+                    && self
+                        .modules
+                        .get(path)?
+                        .loaded
+                        .get(&module)
+                        .is_none_or(|end| *end > before)
+                {
                     return None;
                 }
                 let path = self.module_paths.get(&module)?;
@@ -657,7 +763,7 @@ impl ExceptionIndex {
         if binding.end > before {
             return None;
         }
-        if let BindingKind::Import { module, member } = &binding.kind
+        if let BindingKind::Import { module, member, .. } = &binding.kind
             && module == "builtins"
         {
             let builtin = match (member.as_deref(), attr) {
@@ -705,17 +811,21 @@ impl ExceptionIndex {
         None
     }
 
-    fn build_visible(&mut self, cancelled: &impl Fn() -> bool) -> Result<(), AnalysisCancelled> {
+    fn build_visible(&mut self, cancelled: &impl Fn() -> bool) -> Result<(), AnalysisError> {
+        let mut remaining = MAX_SUMMARY_ENTRIES;
         for (path, module) in &self.modules {
             let mut visible = BTreeMap::<ClassId, Vec<(String, usize)>>::new();
             for (name, binding) in &module.bindings {
                 if cancelled() {
-                    return Err(AnalysisCancelled);
+                    return Err(AnalysisError::Cancelled);
                 }
                 if let Some(id) = self
                     .binding_id(path, name, usize::MAX)
                     .filter(|id| self.classes.contains_key(id))
                 {
+                    remaining = remaining
+                        .checked_sub(1)
+                        .ok_or(AnalysisError::HierarchyLimit)?;
                     visible
                         .entry(id)
                         .or_default()
@@ -724,19 +834,20 @@ impl ExceptionIndex {
                 if let BindingKind::Import {
                     module: imported,
                     member: None,
+                    ..
                 } = &binding.kind
                 {
                     for (module_name, module_path) in &self.module_paths {
                         if (module_name != imported
                             && !module_name.starts_with(&format!("{imported}.")))
-                            || !module.loaded.contains(module_name)
+                            || !module.loaded.contains_key(module_name)
                         {
                             continue;
                         }
                         if let Some(target) = self.modules.get(module_path) {
                             for member in target.bindings.keys() {
                                 if cancelled() {
-                                    return Err(AnalysisCancelled);
+                                    return Err(AnalysisError::Cancelled);
                                 }
                                 let spelling =
                                     format!("{name}{}.{member}", &module_name[imported.len()..]);
@@ -744,7 +855,13 @@ impl ExceptionIndex {
                                     .binding_id(path, &spelling, usize::MAX)
                                     .filter(|id| self.classes.contains_key(id))
                                 {
-                                    visible.entry(id).or_default().push((spelling, binding.end));
+                                    remaining = remaining
+                                        .checked_sub(1)
+                                        .ok_or(AnalysisError::HierarchyLimit)?;
+                                    visible.entry(id).or_default().push((
+                                        spelling,
+                                        binding.end.max(module.loaded[module_name]),
+                                    ));
                                 }
                             }
                         }
@@ -829,6 +946,7 @@ impl ExceptionIndex {
             path,
             excluded: BTreeSet::new(),
             deferred: None,
+            class_name: None,
             disabled: false,
             cancelled,
             stopped: false,
@@ -850,6 +968,7 @@ struct Collector<'i, 'p, F, C> {
     path: &'p Utf8Path,
     excluded: BTreeSet<String>,
     deferred: Option<usize>,
+    class_name: Option<String>,
     disabled: bool,
     cancelled: &'p C,
     stopped: bool,
@@ -900,6 +1019,12 @@ impl<'a, F: FnMut(TextRange, String), C: Fn() -> bool> Visitor<'a> for Collector
                 for p in &d.parameters {
                     bindings.names.insert(p.name().to_string());
                 }
+                self.excluded.extend(
+                    bindings
+                        .names
+                        .iter()
+                        .filter_map(|name| mangled_name(self.class_name.as_deref(), name)),
+                );
                 self.excluded.extend(bindings.names);
                 self.deferred = self.deferred.or(Some(usize::from(d.start())));
                 self.disabled |= bindings.dynamic || d.type_params.is_some();
@@ -909,7 +1034,10 @@ impl<'a, F: FnMut(TextRange, String), C: Fn() -> bool> Visitor<'a> for Collector
             // Class locals are not closures for methods. Do not mutate class bodies.
             Stmt::ClassDef(d) => {
                 if d.type_params.is_none() {
-                    let old = self.excluded.clone();
+                    let old = (
+                        self.excluded.clone(),
+                        self.class_name.replace(d.name.to_string()),
+                    );
                     self.excluded.insert("__class__".into());
                     if let Some(visible) = self.index.visible.get(self.path) {
                         for aliases in visible.values() {
@@ -929,7 +1057,7 @@ impl<'a, F: FnMut(TextRange, String), C: Fn() -> bool> Visitor<'a> for Collector
                             self.visit_stmt(stmt);
                         }
                     }
-                    self.excluded = old;
+                    (self.excluded, self.class_name) = old;
                 }
             }
             Stmt::Raise(r) => {
@@ -955,27 +1083,37 @@ impl<'a, F: FnMut(TextRange, String), C: Fn() -> bool> Visitor<'a> for Collector
 fn map_modules(
     sources: &[(Utf8PathBuf, String)],
     roots: &[Utf8PathBuf],
+    inputs: &[Utf8PathBuf],
     cancelled: &impl Fn() -> bool,
 ) -> Result<BTreeMap<String, Utf8PathBuf>, AnalysisError> {
     let mut module_paths = BTreeMap::new();
     let mut claimed = BTreeSet::new();
     for root in roots {
         let mut mappings = BTreeMap::<String, Option<Utf8PathBuf>>::new();
-        for (path, _) in sources {
+        for path in sources.iter().map(|(path, _)| path).chain(inputs) {
             if cancelled() {
                 return Err(AnalysisError::Cancelled);
             }
             if let Some(name) = module_name(path, root) {
                 mappings
                     .entry(name)
-                    .and_modify(|p| *p = None)
+                    .and_modify(|p| {
+                        if p.as_ref() != Some(path) {
+                            *p = None;
+                        }
+                    })
                     .or_insert_with(|| Some(path.clone()));
+                if mappings.len() > MAX_SUMMARY_ENTRIES {
+                    return Err(AnalysisError::HierarchyLimit);
+                }
             }
         }
         for (name, path) in mappings {
-            if claimed.insert(name.clone())
-                && let Some(path) = path
-            {
+            let first = claimed.insert(name.clone());
+            if claimed.len() > MAX_SUMMARY_ENTRIES {
+                return Err(AnalysisError::HierarchyLimit);
+            }
+            if first && let Some(path) = path {
                 module_paths.insert(name, path);
             }
         }

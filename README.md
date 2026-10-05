@@ -422,7 +422,8 @@ This operator can broaden handlers and is not included in the default selection,
 
 Analysis does not import project modules. Dynamic or ambiguous definitions,
 re-exports, multiple inheritance, termination exceptions, and exception groups are
-skipped. Definitions must precede the containing function or the module-level use;
+skipped. Imports using top-level standard-library module names are conservatively
+excluded, even when a project contains a file with that name. Definitions must precede the containing function or the module-level use;
 class bodies are skipped, while method bodies use module bindings. No imports are
 inserted. A per-file diagnostic indicates references without a supported visible
 replacement. All allowed project Python files, including unselected files, become

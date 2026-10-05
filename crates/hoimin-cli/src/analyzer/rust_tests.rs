@@ -9328,3 +9328,29 @@ fn exception_hierarchy_respects_implicit_class_cells_and_private_names() {
         assert!(hierarchy_candidates(source).is_empty(), "{source}");
     }
 }
+
+#[test]
+fn exception_hierarchy_audit_mangled_bindings_shadow_module_aliases() {
+    let classes = "class Root(Exception): pass\nclass _Service__Child(Root): pass\n";
+    for usage in [
+        "class Service:\n    def f(self, __Child):\n        raise _Service__Child()\n",
+        "class Service:\n    def f(self):\n        __Child = ValueError\n        raise _Service__Child()\n",
+        "class Service:\n    def f(self, __Child):\n        def nested():\n            raise _Service__Child()\n",
+        "class Service:\n    def change(self):\n        global __Child\n        __Child = ValueError\ndef f():\n    raise _Service__Child()\n",
+    ] {
+        assert!(
+            hierarchy_candidates(&format!("{classes}{usage}")).is_empty(),
+            "{usage}"
+        );
+    }
+}
+
+#[test]
+fn exception_hierarchy_audit_mangled_spelling_without_local_binding_remains_eligible() {
+    assert_eq!(
+        hierarchy_candidates(
+            "class Root(Exception): pass\nclass _Service__Child(Root): pass\nclass Service:\n    def f(self):\n        raise _Service__Child()\n"
+        ),
+        vec![("_Service__Child".into(), "Root".into())]
+    );
+}
