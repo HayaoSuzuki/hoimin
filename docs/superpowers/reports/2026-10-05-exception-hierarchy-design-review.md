@@ -8,6 +8,8 @@ Issue: #692。作業ブランチ: `investigate/user-defined-exception-mutations`
 後続の[別名伝播の形式監査](2026-10-05-exception-alias-lean-audit.md)で、本文の単純な代入別名の反例を修正し、
 Lean の到達経路の証明と抽出情報の対応テストを追加した。本文は `db79321` の監査記録として残す。
 関数・container 経由の参照、診断と精度、並行 cache などの指摘は引き続き残る。
+さらに[修正後の再レビュー](2026-10-05-exception-hierarchy-design-recheck.md)で、scope を失う合流による
+過剰除外と診断欠落を具体的に確認し、次の実装の受入条件を追加した。
 
 ## 判定
 

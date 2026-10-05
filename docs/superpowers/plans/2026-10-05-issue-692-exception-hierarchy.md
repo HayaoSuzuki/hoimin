@@ -106,7 +106,9 @@ review record `docs/superpowers/reviews/2026-10-05-issue-692.md`.
 
 ## Initial implementation completion
 
-Tasks 1–4 above are complete; the later design-review follow-up below remains open.
+Tasks 1–4 delivered the initial implementation. Later design reviews reopen
+acceptance criteria, including diagnostics and useful precision; the historical
+checked boxes above do not establish that those findings are resolved.
 Tasks 2–4 are committed together because candidate
 production and automatic dependency validation share the new project index.
 See `docs/superpowers/reviews/2026-10-05-issue-692.md` for review counterexamples,
@@ -201,3 +203,31 @@ Plan self-review for these open tasks:
   otherwise the current correspondence gap would recur.
 - Pass 3, acceptance: include positive controls, reason distinctions and lifecycle
   conditions. Keep unimplemented tasks open even though the initial plan passed.
+
+## Acceptance after the post-repair design review
+
+The [new review](../reports/2026-10-05-exception-hierarchy-design-recheck.md) tests
+`2f41888` and makes tasks 1/4 concrete. Complete these boundaries before widening
+alias inference again; adding more syntax cases does not resolve the abstraction.
+
+- Introduce an internal analysis outcome separate from the replacement vector.
+  Preserve a reason and location when a scope is disabled. Public plan tests must
+  distinguish disabled analysis from no related class and intentional bare-raise
+  exclusion, without an unbounded message stream or new required candidate fields.
+- Represent write-analysis bindings with module/scope/name identity. Resolve
+  parameters, globals, nonlocals, closure references, private names and method
+  scope rules before connecting aliases. Keep actual cross-scope writes rejected.
+- Retain the report's local-parameter renaming comparison: both spellings must
+  preserve `Child → Root` when the parameter is unrelated to the exception class.
+  Compare model keys, Rust-extracted facts and the complete public candidate set.
+- Record the supported-use matrix before broadening eligibility: plain/custom
+  constructors, handler/raise, visible names and tuple/re-export exclusions.
+  Treat intended policy exclusions separately from failed analysis. Do not claim
+  real-project coverage from this fixture matrix alone.
+
+Plan review 1: reason preservation must precede formatting diagnostics; inferring
+reasons from an empty result would repeat the current defect. Plan review 2: scope
+IDs require lexical reference resolution, not only numbering functions. Plan review
+3: positive renaming controls and global/nonlocal rejection controls must accompany
+the proof/model changes, so correspondence alone cannot mask a poor abstraction.
+This review changes documentation only; all items in this section remain open.

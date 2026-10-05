@@ -29,6 +29,21 @@ limits of 65536. This does not enable new candidate spellings or infer function 
 container aliases. Lean proves path coverage and provider invalidation in the model;
 generated fixtures compare production extraction facts and public candidates separately.
 
+The [post-repair design review](../reports/2026-10-05-exception-hierarchy-design-recheck.md)
+confirms two open shortcomings: merging names across unrelated scopes suppresses
+valid candidates, and a disabled scope can produce no diagnostic at all. Existing
+path proofs do not establish that this abstraction preserves useful precision.
+The next increment must distinguish lexical bindings by module, scope and normalized
+name, with global/nonlocal and closure resolution before constructing alias edges.
+Keep the existing class-definition identity until a separate change needs to widen it.
+
+Define analysis outcomes independently of candidate count: candidates found,
+analyzed with no eligible replacement, and analysis stopped with a reason/location.
+Preserve reasons internally before bounded diagnostic aggregation. Preserve the
+external candidate schema. Acceptance must include positive cases, rejection cases,
+and controls where an unrelated local rename preserves the complete candidate set.
+These are requirements for the next increment, not guarantees of the current code.
+
 ## Behavior
 
 Add the explicit-only operator `exception_hierarchy`. Preserve the existing default
@@ -47,6 +62,7 @@ Follow indirect ancestry to ordinary builtin Exception subclasses. Reject termin
 and exception-group lineages. Do not add imports. Unsupported syntax, unresolved
 bases, ambiguous names, duplicate bindings, class decorators, class keywords,
 multiple inheritance, and nested definitions cannot establish trusted identities.
+Tuple handlers are not decomposed into individual hierarchy mutation sites.
 Treat imported re-exports and cycles conservatively. This is a conservative lexical
 analysis, not proof against arbitrary external monkeypatching.
 
@@ -75,6 +91,9 @@ nonlocals must not make a shadowed source/destination appear available. Conserva
 scope-wide exclusion is acceptable. Class bodies are excluded; methods resolve
 module names without treating class locals as closures. Dynamic namespace writes
 invalidate trust. Definition/base resolution respects definition order.
+The current write analysis also merges names across distinct scopes. This stronger
+approximation can suppress module classes because of writes to unrelated parameters;
+the scope-sensitive follow-up above is intended to remove that loss of precision.
 
 Feed hierarchy candidates through the existing AST producer so profile filtering,
 line/symbol selection, source ordering, deduplication and bounded retention remain
@@ -83,6 +102,8 @@ destinations. The current bounded per-file diagnostic reports that a reference h
 no supported replacement; it does not distinguish no related class, invisibility,
 unsupported resolution or constructor mismatch. Reason-preserving diagnostics are
 an open design requirement, without changing the existing candidate schema.
+Disabled scopes currently return before setting the skipped flag; absence of a
+diagnostic therefore does not establish that hierarchy analysis completed.
 
 ## Project inputs
 
