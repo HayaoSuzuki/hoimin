@@ -5,6 +5,31 @@ description: docs/auditsとdocs/superpowers/reports内の全Markdownを追跡状
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-692-exception-alias-lean-audit
+  resource: ../../superpowers/reports/2026-10-05-exception-alias-lean-audit.md
+  revision: fae3ce3e82a8a768c8dca49531384aa081a97f71
+  working_tree: clean
+  sha256: ae7b94036a5af22ec2a1fc1bbfd3e3b1afca89597b0c22cf439b8a7642331027
+- id: issue-692-exception-hierarchy-design-recheck
+  resource: ../../superpowers/reports/2026-10-05-exception-hierarchy-design-recheck.md
+  revision: fae3ce3e82a8a768c8dca49531384aa081a97f71
+  working_tree: clean
+  sha256: de4151c7a0ff9dc055e325e5970d63eaf1e4d9513fa62fcdc4314c87c5fa22d9
+- id: issue-692-exception-hierarchy-design-review
+  resource: ../../superpowers/reports/2026-10-05-exception-hierarchy-design-review.md
+  revision: fae3ce3e82a8a768c8dca49531384aa081a97f71
+  working_tree: clean
+  sha256: 75a27a18440a7ac84691c1841da0021266b94723fd1593efa9e266331d6fa231
+- id: issue-692-exception-hierarchy-lean-audit
+  resource: ../../superpowers/reports/2026-10-05-exception-hierarchy-lean-audit.md
+  revision: fae3ce3e82a8a768c8dca49531384aa081a97f71
+  working_tree: clean
+  sha256: c2ba971d1024f21d4696bce93c0ea24079c8b43d1169dd18d98ee4b566f4bacc
+- id: issue-692-exception-scope-lean-audit
+  resource: ../../superpowers/reports/2026-10-05-exception-scope-lean-audit.md
+  revision: fae3ce3e82a8a768c8dca49531384aa081a97f71
+  working_tree: clean
+  sha256: 290244cc4afcb16315fd2d0353da0dedf0e6c64d82c5dc03cee393dbd98088ff
 - id: tracing-progress-report
   resource: ../../superpowers/reports/2026-09-26-tracing-progress.md
   revision: f43ccffdee2996c8fd53da2d8be230045e7d5ab7
@@ -709,6 +734,11 @@ sources:
 
 | 原文 | 先頭見出し | 作成時の状態 |
 | --- | --- | --- |
+| [2026-10-05-exception-alias-lean-audit.md](../../superpowers/reports/2026-10-05-exception-alias-lean-audit.md) | 代入による別名の形式監査 [^issue-692-exception-alias-lean-audit] | 追跡済み（fae3ce3） |
+| [2026-10-05-exception-hierarchy-design-recheck.md](../../superpowers/reports/2026-10-05-exception-hierarchy-design-recheck.md) | 別名伝播修正後の原設計再レビュー [^issue-692-exception-hierarchy-design-recheck] | 追跡済み（fae3ce3） |
+| [2026-10-05-exception-hierarchy-design-review.md](../../superpowers/reports/2026-10-05-exception-hierarchy-design-review.md) | 例外階層ミューテーションの原設計レビュー [^issue-692-exception-hierarchy-design-review] | 追跡済み（fae3ce3） |
+| [2026-10-05-exception-hierarchy-lean-audit.md](../../superpowers/reports/2026-10-05-exception-hierarchy-lean-audit.md) | Exception hierarchy: formal audit and implementation correspondence [^issue-692-exception-hierarchy-lean-audit] | 追跡済み（fae3ce3） |
+| [2026-10-05-exception-scope-lean-audit.md](../../superpowers/reports/2026-10-05-exception-scope-lean-audit.md) | Exception scope and outcome audit [^issue-692-exception-scope-lean-audit] | 追跡済み（fae3ce3） |
 | [2026-09-26-proptest-boundaries.md](../../superpowers/reports/2026-09-26-proptest-boundaries.md) | Proptest boundary coverage: review and evidence [^proptest-boundaries-report] | 変更あり（CI追試） |
 | [2026-09-15-issue-549-slice-tuple.md](../../superpowers/reports/2026-09-15-issue-549-slice-tuple.md) | Issue #549: Slice tuple修正の検証 [^issue-549-report] | 未追跡（参照時点） |
 
@@ -1167,3 +1197,13 @@ sources:
 | Tracing and terminal progress review | [レビューと検証結果](../../superpowers/reports/2026-09-26-tracing-progress.md) [^tracing-progress-report] |
 
 [^tracing-progress-report]: [Tracing and terminal progress review](../../superpowers/reports/2026-09-26-tracing-progress.md)。
+
+[^issue-692-exception-alias-lean-audit]: [2026-10-05-exception-alias-lean-audit.md](../../superpowers/reports/2026-10-05-exception-alias-lean-audit.md)。
+
+[^issue-692-exception-hierarchy-design-recheck]: [2026-10-05-exception-hierarchy-design-recheck.md](../../superpowers/reports/2026-10-05-exception-hierarchy-design-recheck.md)。
+
+[^issue-692-exception-hierarchy-design-review]: [2026-10-05-exception-hierarchy-design-review.md](../../superpowers/reports/2026-10-05-exception-hierarchy-design-review.md)。
+
+[^issue-692-exception-hierarchy-lean-audit]: [2026-10-05-exception-hierarchy-lean-audit.md](../../superpowers/reports/2026-10-05-exception-hierarchy-lean-audit.md)。
+
+[^issue-692-exception-scope-lean-audit]: [2026-10-05-exception-scope-lean-audit.md](../../superpowers/reports/2026-10-05-exception-scope-lean-audit.md)。
