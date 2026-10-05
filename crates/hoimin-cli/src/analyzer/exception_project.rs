@@ -260,3 +260,7 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "exception_project_oracle_tests.rs"]
+mod oracle_tests;

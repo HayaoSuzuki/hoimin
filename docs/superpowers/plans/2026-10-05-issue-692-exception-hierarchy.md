@@ -110,3 +110,12 @@ All tasks are complete. Tasks 2–4 are committed together because candidate
 production and automatic dependency validation share the new project index.
 See `docs/superpowers/reviews/2026-10-05-issue-692.md` for review counterexamples,
 verification results, and the pre-existing default-feature Clippy limitation.
+
+
+## Formal-audit follow-up
+
+The committed [correspondence worksheet and follow-up plan](../reports/2026-10-05-exception-hierarchy-lean-audit.md)
+extend this plan with a Lean model, kernel-checked invariants, shortest broken-model
+witnesses, a generated corpus, public/internal Rust adapters, and CI freshness and
+sensitivity checks. The report records three design, plan, implementation and test
+review passes for this additional work. Existing production behavior is unchanged.

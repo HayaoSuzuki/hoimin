@@ -119,6 +119,7 @@ LEAN_CORPUS_BY_EXECUTABLE = {
     "generate_private_annotation_import": "corpus/private-annotation-import.jsonl",
     "generate_environment_fingerprint": "corpus/environment-fingerprint.jsonl",
     "generate_resume_diagnostic": "corpus/resume-diagnostic.jsonl",
+    "generate_exception_hierarchy": "corpus/exception-hierarchy.jsonl",
 }
 LEAN_SENSITIVITY_EXECUTABLES = {
     name

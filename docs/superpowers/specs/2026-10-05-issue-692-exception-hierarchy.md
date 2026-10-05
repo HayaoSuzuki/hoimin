@@ -80,10 +80,14 @@ cancellation and deterministic bounded candidate prefixes. Run focused tests the
 workspace tests, formatting and clippy.
 
 Use three documented self-review passes for design, plan, implementation and tests.
-Lean is optional: the primary risks here are correspondence with Python name
-binding and integration with filesystem inputs. A graph-only proof would not
-validate those boundaries; executable counterexamples and integration tests are
-the initial verification method.
+Lean now supplements the concrete regression tests. The follow-up
+[formal audit](../reports/2026-10-05-exception-hierarchy-lean-audit.md) models
+ancestry, binding precedence, load order, module identity, bounded insertion and
+prepared-input cache transitions. Kernel-checked properties are paired with
+Lean-generated expectations exercised through the public planner and owned
+internal fixtures. This supersedes the initial decision to omit Lean: a graph-only
+proof was insufficient, but the wider invariants still deserved formal checking.
+The proof does not establish arbitrary Python semantics or Rust refinement.
 
 Review corrections: module search precedence matches `build_command_environment_with_import_roots`.
 Implicit inherited PYTHONPATH entries outside configured roots are not indexed.
