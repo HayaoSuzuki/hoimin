@@ -173,6 +173,7 @@ struct Frame {
     kind: Kind,
     class: Option<String>,
     declarations: Declarations,
+    class_binding: Option<BindingKey>,
 }
 #[derive(Default)]
 pub(super) struct Scopes {
@@ -186,6 +187,13 @@ impl Scopes {
         self.frames.is_empty()
     }
     pub fn enter(&mut self, kind: Kind, class: Option<&str>, mut declarations: Declarations) {
+        // A class cell refers to the class object, not to its class namespace.
+        // Using the definition binding is conservative if that name is rebound.
+        let class_binding = if kind == Kind::Class {
+            class.and_then(|name| self.resolve(name, true, false).into_iter().next())
+        } else {
+            None
+        };
         let class = class
             .map(str::to_owned)
             .or_else(|| self.frames.last().and_then(|f| f.class.clone()));
@@ -208,6 +216,7 @@ impl Scopes {
             kind,
             class,
             declarations,
+            class_binding,
         });
         self.next_id += 1;
     }
@@ -218,20 +227,29 @@ impl Scopes {
         mangled_name(self.frames.last().and_then(|f| f.class.as_deref()), name)
             .unwrap_or_else(|| name.to_owned())
     }
-    fn enclosing(&self, index: usize, name: &str) -> usize {
+    fn enclosing(&self, index: usize, name: &str) -> BindingKey {
+        let key = |scope| BindingKey {
+            scope,
+            name: name.to_owned(),
+        };
         for frame in self.frames[..index].iter().rev() {
+            if name == "__class__"
+                && let Some(binding) = &frame.class_binding
+            {
+                return binding.clone();
+            }
             if matches!(frame.kind, Kind::Function | Kind::Comprehension) {
                 if frame.declarations.globals.contains(name) {
-                    return 0;
+                    return key(0);
                 }
                 if frame.declarations.locals.contains(name)
                     && !frame.declarations.nonlocals.contains(name)
                 {
-                    return frame.id;
+                    return key(frame.id);
                 }
             }
         }
-        0
+        key(0)
     }
     pub fn resolve(&self, name: &str, store: bool, walrus: bool) -> Vec<BindingKey> {
         let name = self.canonical(name);
@@ -243,27 +261,24 @@ impl Scopes {
         }
         let frame = &self.frames[index];
         let d = &frame.declarations;
-        let scopes = if frame.kind == Kind::Module || d.globals.contains(&name) {
-            vec![0]
+        let key = |scope| BindingKey {
+            scope,
+            name: name.clone(),
+        };
+        if frame.kind == Kind::Module || d.globals.contains(&name) {
+            vec![key(0)]
         } else if d.nonlocals.contains(&name) {
             vec![self.enclosing(index, &name)]
         } else if frame.kind == Kind::Class {
             if store {
-                vec![frame.id]
+                vec![key(frame.id)]
             } else {
-                vec![frame.id, self.enclosing(index, &name)]
+                vec![key(frame.id), self.enclosing(index, &name)]
             }
         } else if d.locals.contains(&name) {
-            vec![frame.id]
+            vec![key(frame.id)]
         } else {
             vec![self.enclosing(index, &name)]
-        };
-        scopes
-            .into_iter()
-            .map(|scope| BindingKey {
-                scope,
-                name: name.clone(),
-            })
-            .collect()
+        }
     }
 }

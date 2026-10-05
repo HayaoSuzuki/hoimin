@@ -1338,7 +1338,8 @@ those implementation boundaries where stated; tests do not mutate global env.
 ## User-defined exception hierarchies
 
 `exception_hierarchy` is an explicit-only operator implemented in
-`analyzer/exception_hierarchy.rs` and `analyzer/exception_project.rs`. The project
+`analyzer/exception_hierarchy.rs`, `analyzer/exception_scopes.rs`, and
+`analyzer/exception_project.rs`. The project
 loader discovers Python inputs using the existing include/exclude policy, without
 file/line/symbol/changed mutation filters. Module roots follow worker precedence:
 project root, explicit import roots, then source roots. Inherited external
@@ -1371,9 +1372,18 @@ Names below project packages, such as `pkg.sys`, remain eligible. This lexical m
 not prove safety against arbitrary external monkeypatching or custom import hooks.
 Simple, chained and annotated name assignments and assignment expressions propagate
 known attribute writes back through their possible aliases, including private names.
-Cycles and rebinding retain all possible edges; affected local bindings and imported
-providers are invalidated. Each module has separate limits of 65536 assignment edges
-and 65536 direct write roots. This does not make assignment aliases eligible spellings.
+Cycles and rebinding retain all possible edges. Keys contain a lexical scope ID
+and the normalized name: unrelated parameters and local imports do not share a
+vertex with a module binding. Implicit `__class__` writes resolve to the owning
+class, including through aliases and nested closures. Global/nonlocal/free references resolve before
+propagation; methods skip class namespaces, while class-body reads conservatively
+retain both local and outer possibilities. Definition headers, lambda bodies and
+comprehensions have separate binding rules, including outer walrus targets and
+first-iterable evaluation. Only affected module bindings invalidate module names;
+reached import keys invalidate their provider from any scope. Each module has
+separate limits of 65536 assignment edges, direct write roots and scope IDs. Each
+scope's declaration set is capped at 65536 entries, with 131072 declaration entries
+across all scopes. This does not make assignment aliases eligible spellings.
 Untracked function/container aliases inside indexed modules can still affect
 candidates in other modules. Unsupported effects are not always detected and skipped,
 so emitted spellings are not guaranteed
@@ -1381,6 +1391,8 @@ to resolve to exception classes at runtime. The
 [original-design review](superpowers/reports/2026-10-05-exception-hierarchy-design-review.md)
 records the design gaps; the [alias correspondence audit](superpowers/reports/2026-10-05-exception-alias-lean-audit.md)
 records the bounded assignment repair, Lean proofs and extracted-fact comparisons.
+The [scope and outcome audit](superpowers/reports/2026-10-05-exception-scope-lean-audit.md)
+records scoped identities, diagnostic semantics, and their verification.
 
 Pairs connect direct user-defined parents/children and siblings with a shared
 user-defined direct parent. Builtins seed ancestry only. Termination and exception
@@ -1404,9 +1416,11 @@ uses the existing AST depth guard. Cancellation is checked during discovery,
 index construction and replacement enumeration. Per-site replacement retention is
 bounded by `max_candidates + 1`, preserving the existing producer's source-order
 prefix and truncation signal. One `exception_hierarchy_skipped` diagnostic per file
-reports references without a supported visible related class or compatible
-constructor; it does not mark analysis as truncated. It currently conflates a valid
-absence of related classes with unsupported analysis. The input/table limits above
+aggregates incomplete-analysis reasons (disabled scope, unsupported expression,
+unresolved binding or untrusted module) and locates the earliest skipped site.
+Intentional exclusions such as no related class, no visible destination, custom
+constructor policy and bare raises do not warn. Diagnostics do not mark analysis
+as truncated. The input/table limits above
 do not constitute a peak-memory bound: decoded sources, an AST and transient
 summaries can coexist, and some summary limits are checked after construction.
 

@@ -26,7 +26,9 @@ preorder IDs. Normalize private names using the enclosing class before resolving
 Collect declarations before resolving references, so later assignments determine
 function locals. Parameters and local imports belong to the function; global goes
 to scope 0; nonlocal goes to the nearest enclosing function binding. Free variables
-follow lexical parents, skipping class locals for methods. Class-body loads may
+follow lexical parents, skipping class locals for methods. The implicit `__class__`
+cell resolves to its owning class definition binding, after local/global shadowing;
+method headers do not acquire that cell. Class-body loads may
 refer to the class namespace or outer binding; retain both where order is unknown.
 Definition headers execute in the enclosing scope, separate from function/class
 bodies. Lambda parameters and comprehension targets must not become module names;

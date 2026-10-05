@@ -257,6 +257,30 @@ def scopeCases : List AliasCase := [
   { name := "scope-comprehension-walrus", source := "import errors as e\nvalues = [(other := e) for value in (0,)]\nother.Root = object\n",
     imports := [((0, "e"), "errors")], edges := [((0, "other"), (0, "e"))], written := [(0, "other")] }]
 
+def classCellCases : List AliasCase := [
+  { name := "cell-direct", source := "import errors as __class__\nclass Holder:\n    def patch(self):\n        __class__.Root = object\n",
+    imports := [((0, "__class__"), "errors")], written := [(0, "Holder")] },
+  { name := "cell-alias", source := "import errors as __class__\nclass Holder:\n    def patch(self):\n        alias = __class__\n        alias.Root = object\n",
+    imports := [((0, "__class__"), "errors")], edges := [((2, "alias"), (0, "Holder"))], written := [(2, "alias")] },
+  { name := "cell-nested", source := "import errors as __class__\nclass Holder:\n    def patch(self):\n        def nested():\n            __class__.Root = object\n",
+    imports := [((0, "__class__"), "errors")], written := [(0, "Holder")] },
+  { name := "cell-parameter", source := "import errors as __class__\nclass Holder:\n    def patch(self, __class__):\n        __class__.Root = object\n",
+    imports := [((0, "__class__"), "errors")], written := [(2, "__class__")] },
+  { name := "cell-global", source := "import errors as __class__\nclass Holder:\n    def patch(self):\n        global __class__\n        __class__.Root = object\n",
+    imports := [((0, "__class__"), "errors")], written := [(0, "__class__")] },
+  { name := "cell-header", source := "import errors as __class__\nclass Holder:\n    def patch(self, value=setattr(__class__, 'Root', object)):\n        pass\n",
+    imports := [((0, "__class__"), "errors")], written := [(1, "__class__"), (0, "__class__")] }]
+
+def classCellOwnerRows : List Json := [
+  "def patch(self):\n        __class__.__init__ = lambda self, required: None",
+  "def patch(self):\n        alias = __class__\n        alias.__init__ = lambda self, required: None",
+  "def patch(self):\n        def nested():\n            __class__.__init__ = lambda self, required: None"
+].zipIdx |>.map fun (method, index) =>
+  strictRow s!"class-cell-owner-{index}"
+    [("service.py", definition "Root" "Exception" ++ "class Child(Root):\n    " ++ method ++
+      "\ndef target():\n    raise Root()\n")]
+    (if eligible (graph true 1) rootId childId 0 1 true true then [("Root", "Child")] else [])
+
 -- Public candidate controls for the separate may-bind scan, not only alias extraction.
 def implicitScopeRows : List Json := [
   "values = [Root for Root in ()]\ndef target():\n    raise Child()\n",
@@ -273,12 +297,12 @@ def aliasFiles (c : AliasCase) : List (String × String) := [
   ("unrelated.py", definition "Root" "Exception"), ("patcher.py", c.source),
   ("service.py", "from errors import Root, Child\ndef target():\n    raise Child()\n")]
 
-def aliasRows : List Json := (aliasCases ++ scopeCases).map fun c =>
+def aliasRows : List Json := (aliasCases ++ scopeCases ++ classCellCases).map fun c =>
   strictRow ("alias-" ++ c.name) (aliasFiles c)
     (if eligible (graph true) childId rootId 0 1 true (aliasTrusted c.edges c.written c.imports "errors")
       then [("Child", "Root")] else [])
 
-def aliasExtractionRows : List Json := (aliasCases ++ scopeCases).map fun c =>
+def aliasExtractionRows : List Json := (aliasCases ++ scopeCases ++ classCellCases).map fun c =>
   let facts := Json.mkObj [
     ("imports", toJson (c.imports.map fun (name, origin) =>
       Json.arr #[toJson name, toJson origin, toJson (0 : Nat)])),
@@ -311,7 +335,7 @@ def snapshotRows : List Json := [false, true].flatMap fun base => (domain 3).map
       (some (loadName state.lastLoad)) (some (fingerprintMatches state))) ["lib"]
     (es.map eventName) (errorsSource (!base))
 
-def rows := candidateRows ++ loadRows ++ relativeRows ++ reservedRows ++ resourceRows ++ depthRows ++ collisionRows ++ attributeRows ++ snapshotRows ++ aliasRows ++ implicitScopeRows ++ aliasExtractionRows
+def rows := candidateRows ++ loadRows ++ relativeRows ++ reservedRows ++ resourceRows ++ depthRows ++ collisionRows ++ attributeRows ++ snapshotRows ++ aliasRows ++ implicitScopeRows ++ classCellOwnerRows ++ aliasExtractionRows
 def corpus := String.join (rows.map fun r => r.compress ++ "\n")
 
 -- Deliberately broken variants stay in the executable, never in imported proof modules.
@@ -370,8 +394,8 @@ def checkSensitivity : IO Unit := do
   let separated :=  aliasTrusted [] [(1, "e")] [((0, "e"), "errors")] "errors"
   let flattened := aliasTrusted [] [(0, "e")] [((0, "e"), "errors")] "errors"
   unless separated != flattened do throw (IO.userError "undetected flattened-scope")
-  IO.println s!"alias domain: cases={aliasCases.length + scopeCases.length} max_edges=3; fixed-point checked before trust; three propagation variants detected"
-  IO.println s!"sensitivity: 18 broken variants detected; strict={candidateRows.length + loadRows.length + relativeRows.length + reservedRows.length + resourceRows.length + depthRows.length + collisionRows.length + attributeRows.length + aliasRows.length + implicitScopeRows.length} internal-fixture={snapshotRows.length + aliasExtractionRows.length}"
+  IO.println s!"alias domain: cases={aliasCases.length + scopeCases.length + classCellCases.length} max_edges=3; fixed-point checked before trust; three propagation variants detected"
+  IO.println s!"sensitivity: 18 broken variants detected; strict={candidateRows.length + loadRows.length + relativeRows.length + reservedRows.length + resourceRows.length + depthRows.length + collisionRows.length + attributeRows.length + aliasRows.length + implicitScopeRows.length + classCellOwnerRows.length} internal-fixture={snapshotRows.length + aliasExtractionRows.length}"
 
 def main (args : List String) : IO Unit := do
   let args := if args.head? == some "--" then args.drop 1 else args

@@ -253,3 +253,44 @@ async fn hierarchy_implicit_scope_bindings_do_not_hide_module_classes() {
         assert_eq!(plan.manifest.candidates[0].candidate.replacement, "Root");
     }
 }
+
+#[tokio::test]
+async fn hierarchy_implicit_class_cell_writes_invalidate_owning_class() {
+    for (method, expected) in [
+        (
+            "def patch(self):\n        __class__.__init__ = lambda self, required: None",
+            0,
+        ),
+        (
+            "def patch(self):\n        alias = __class__\n        alias.__init__ = lambda self, required: None",
+            0,
+        ),
+        (
+            "def patch(self):\n        def nested():\n            __class__.__init__ = lambda self, required: None",
+            0,
+        ),
+        (
+            "def patch(self, __class__):\n        __class__.__init__ = lambda self, required: None",
+            1,
+        ),
+        (
+            "def patch(self):\n        global __class__\n        __class__.__init__ = lambda self, required: None",
+            1,
+        ),
+        (
+            "def patch(self, value=(alias := __class__)):\n        alias.__init__ = lambda self, required: None",
+            1,
+        ),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let source = format!(
+            "__class__ = object()\nclass Root(Exception): pass\nclass Child(Root):\n    {method}\ndef target():\n    raise Root()\n"
+        );
+        std::fs::write(dir.path().join("service.py"), source).unwrap();
+        let plan = hoimin_cli::plan::create(config(dir.path())).await.unwrap();
+        assert_eq!(plan.manifest.candidates.len(), expected, "{method}");
+        if expected == 1 {
+            assert_eq!(plan.manifest.candidates[0].candidate.replacement, "Child");
+        }
+    }
+}
