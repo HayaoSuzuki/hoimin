@@ -94,6 +94,7 @@ pub enum MutationOperator {
     StructureIndexNeighbor,
     StructureSliceNeighbor,
     ExceptionTypePair,
+    ExceptionHierarchy,
     ExceptionBareToException,
     ExceptionExceptionToBare,
     ExceptionBaseBoundary,
@@ -162,6 +163,7 @@ impl MutationOperator {
             Self::StructureIndexNeighbor => "structure_index_neighbor",
             Self::StructureSliceNeighbor => "structure_slice_neighbor",
             Self::ExceptionTypePair => "exception_type_pair",
+            Self::ExceptionHierarchy => "exception_hierarchy",
             Self::ExceptionBareToException => "exception_bare_to_exception",
             Self::ExceptionExceptionToBare => "exception_exception_to_bare",
             Self::ExceptionBaseBoundary => "exception_base_boundary",
@@ -176,7 +178,7 @@ impl MutationOperator {
             Self::TypeSequenceIterable => "type_sequence_iterable",
         }
     }
-    fn all() -> [Self; 55] {
+    fn all() -> [Self; 56] {
         [
             Self::CompareEqNe,
             Self::CompareOrder,
@@ -221,6 +223,7 @@ impl MutationOperator {
             Self::StructureIndexNeighbor,
             Self::StructureSliceNeighbor,
             Self::ExceptionTypePair,
+            Self::ExceptionHierarchy,
             Self::ExceptionBareToException,
             Self::ExceptionExceptionToBare,
             Self::ExceptionBaseBoundary,
