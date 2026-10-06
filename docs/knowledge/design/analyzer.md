@@ -319,6 +319,12 @@ sources:
   working_tree: untracked
   sha256: a79205f7322678af6112d30bd6e59728fb0bacfc592b64ddc11dc3c815433636
 
+- id: issue-707
+  resource: ../../superpowers/reports/issue-707/design.md
+  revision: 38a15ddd4e8de36d29800f81b2e8314109b3f855
+  working_tree: untracked
+  sha256: 30d5553957b88c0d968dcf953995d3cd81fcf53a2579b36272d694e9d935e6ad
+
 ---
 
 # 構文と名前解決の契約
@@ -689,3 +695,7 @@ condition_clause_delete は if/elif の最上位 BoolOp から1項だけ除き�
 container_element_delete は list・括弧付き tuple・dict から1要素を除く。型、残る式の順序、dict の組を保持し、型式・パターン・代入ターゲットと展開・束縛・中断を含むリテラルを除外する。 [^issue-706]
 
 [^issue-706]: [設計](../../superpowers/reports/issue-706/design.md)
+
+conversion_call_remove は builtin と解決できる単純名の変換呼び出しを括弧付き引数に置換し、引数評価を1回残す。変換・コピー等は省略し、再束縛・展開・generator・束縛・中断・型式・代入ターゲットは除外する。 [^issue-707]
+
+[^issue-707]: [設計](../../superpowers/reports/issue-707/design.md)

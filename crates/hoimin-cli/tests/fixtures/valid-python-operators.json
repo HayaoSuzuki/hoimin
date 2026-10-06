@@ -333,5 +333,10 @@
     "operator": "container_element_delete",
     "status": "deferred",
     "reason": "Dedicated source, CPython and public CLI tests; outside initial cross-producer corpus"
+  },
+  {
+    "operator": "conversion_call_remove",
+    "status": "deferred",
+    "reason": "Dedicated source, CPython and public CLI tests; outside initial cross-producer corpus"
   }
 ]

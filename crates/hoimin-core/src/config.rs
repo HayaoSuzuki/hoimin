@@ -119,6 +119,7 @@ pub enum MutationOperator {
     WhileConditionFalse,
     ConditionClauseDelete,
     ContainerElementDelete,
+    ConversionCallRemove,
 }
 
 impl MutationOperator {
@@ -131,6 +132,7 @@ impl MutationOperator {
     #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::ConversionCallRemove => "conversion_call_remove",
             Self::ContainerElementDelete => "container_element_delete",
             Self::ConditionClauseDelete => "condition_clause_delete",
             Self::WhileConditionFalse => "while_condition_false",
@@ -200,7 +202,7 @@ impl MutationOperator {
             Self::TypeSequenceIterable => "type_sequence_iterable",
         }
     }
-    fn all() -> [Self; 67] {
+    fn all() -> [Self; 68] {
         [
             Self::CompareEqNe,
             Self::CompareOrder,
@@ -269,6 +271,7 @@ impl MutationOperator {
             Self::WhileConditionFalse,
             Self::ConditionClauseDelete,
             Self::ContainerElementDelete,
+            Self::ConversionCallRemove,
         ]
     }
 }
