@@ -1,0 +1,166 @@
+[
+  {
+    "project": "iniconfig",
+    "file": "iniconfig/__init__.py",
+    "candidate_count": 0
+  },
+  {
+    "project": "iniconfig",
+    "file": "iniconfig/__init__.py",
+    "candidate_count": 0
+  },
+  {
+    "project": "packaging",
+    "version": "26.3",
+    "file": "packaging/version.py",
+    "probe": "import_only",
+    "test_command": "import packaging",
+    "candidate_count": 11,
+    "invalid_syntax": [],
+    "counts": {
+      "killed": 0,
+      "survived": 10,
+      "timeout": 0,
+      "out_of_memory": 0,
+      "process_limit": 0,
+      "error": 0,
+      "not_run": 0,
+      "inconclusive": 0,
+      "score": 0.0
+    },
+    "baseline": {
+      "Exit": 0
+    },
+    "seconds": 0.51,
+    "equivalence": "unclassified; authored probes, not upstream suites",
+    "mutants": [
+      {
+        "original": "frozenset(\".0123456789\")",
+        "replacement": "(\".0123456789\")",
+        "status": "survived"
+      },
+      {
+        "original": "tuple(map(int, version.split(\".\")))",
+        "replacement": "(map(int, version.split(\".\")))",
+        "status": "survived"
+      },
+      {
+        "original": "int(match.group(\"epoch\"))",
+        "replacement": "(match.group(\"epoch\"))",
+        "status": "survived"
+      },
+      {
+        "original": "tuple(map(int, match.group(\"release\").split(\".\")))",
+        "replacement": "(map(int, match.group(\"release\").split(\".\")))",
+        "status": "survived"
+      },
+      {
+        "original": "str(self)",
+        "replacement": "(self)",
+        "status": "survived"
+      },
+      {
+        "original": "str(self)",
+        "replacement": "(self)",
+        "status": "survived"
+      },
+      {
+        "original": "str(x)",
+        "replacement": "(x)",
+        "status": "survived"
+      },
+      {
+        "original": "str(self)",
+        "replacement": "(self)",
+        "status": "survived"
+      },
+      {
+        "original": "int(number or 0)",
+        "replacement": "(number or 0)",
+        "status": "survived"
+      },
+      {
+        "original": "int(number)",
+        "replacement": "(number)",
+        "status": "survived"
+      }
+    ]
+  },
+  {
+    "project": "packaging",
+    "version": "26.3",
+    "file": "packaging/version.py",
+    "probe": "behavior",
+    "test_command": "from packaging.version import Version; assert str(Version('01.2')) == '1.2'; assert Version('1.0a1') < Version('1.0'); v=Version('1!1.2a3+foo.2'); assert v.epoch == 1 and v.pre == ('a',3) and v.local == 'foo.2' and v.public == '1!1.2a3'; assert repr(v) == \"<Version('1!1.2a3+foo.2')>\"; assert v._str == '1!1.2a3+foo.2'; assert Version('1.0-2').post == 2",
+    "candidate_count": 11,
+    "invalid_syntax": [],
+    "counts": {
+      "killed": 10,
+      "survived": 0,
+      "timeout": 0,
+      "out_of_memory": 0,
+      "process_limit": 0,
+      "error": 0,
+      "not_run": 0,
+      "inconclusive": 0,
+      "score": 1.0
+    },
+    "baseline": {
+      "Exit": 0
+    },
+    "seconds": 0.628,
+    "equivalence": "unclassified; authored probes, not upstream suites",
+    "mutants": [
+      {
+        "original": "frozenset(\".0123456789\")",
+        "replacement": "(\".0123456789\")",
+        "status": "killed"
+      },
+      {
+        "original": "tuple(map(int, version.split(\".\")))",
+        "replacement": "(map(int, version.split(\".\")))",
+        "status": "killed"
+      },
+      {
+        "original": "int(match.group(\"epoch\"))",
+        "replacement": "(match.group(\"epoch\"))",
+        "status": "killed"
+      },
+      {
+        "original": "tuple(map(int, match.group(\"release\").split(\".\")))",
+        "replacement": "(map(int, match.group(\"release\").split(\".\")))",
+        "status": "killed"
+      },
+      {
+        "original": "str(self)",
+        "replacement": "(self)",
+        "status": "killed"
+      },
+      {
+        "original": "str(self)",
+        "replacement": "(self)",
+        "status": "killed"
+      },
+      {
+        "original": "str(x)",
+        "replacement": "(x)",
+        "status": "killed"
+      },
+      {
+        "original": "str(self)",
+        "replacement": "(self)",
+        "status": "killed"
+      },
+      {
+        "original": "int(number or 0)",
+        "replacement": "(number or 0)",
+        "status": "killed"
+      },
+      {
+        "original": "int(number)",
+        "replacement": "(number)",
+        "status": "killed"
+      }
+    ]
+  }
+]

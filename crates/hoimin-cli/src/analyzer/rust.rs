@@ -2644,6 +2644,7 @@ const MUTABLE_BUILTINS: &[&str] = &[
     "str",
     "int",
     "float",
+    "complex",
     "bool",
     "bytes",
     "any",
@@ -2765,6 +2766,9 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             string_exclusions: if request
                 .operators
                 .contains(MutationOperator::StringLiteralEmpty)
+                || request
+                    .operators
+                    .contains(MutationOperator::ConversionCallRemove)
                 || request
                     .operators
                     .contains(MutationOperator::ContainerElementDelete)
@@ -2975,10 +2979,55 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
 
     fn collect_call(&mut self, call: &ExprCall) {
         if let Expr::Name(name) = call.func.as_ref() {
+            self.collect_conversion_call_remove(call, name);
             self.collect_builtin_call(call, name.id.as_str(), name.range());
         }
         if let Expr::Attribute(attribute) = call.func.as_ref() {
             self.collect_method_call(call, attribute.attr.as_str(), attribute.attr.range());
+        }
+    }
+
+    fn collect_conversion_call_remove(
+        &mut self,
+        call: &ExprCall,
+        name: &ruff_python_ast::ExprName,
+    ) {
+        if !self
+            .request
+            .operators
+            .contains(MutationOperator::ConversionCallRemove)
+            || self.runtime_role != RuntimeRole::Value
+            || self.in_pattern
+            || self.string_exclusions.contains_alias(call.range())
+            || !matches!(
+                name.id.as_str(),
+                "int"
+                    | "float"
+                    | "complex"
+                    | "bool"
+                    | "str"
+                    | "bytes"
+                    | "list"
+                    | "tuple"
+                    | "dict"
+                    | "set"
+                    | "frozenset"
+            )
+            || !has_exact_positional_arguments(call, 1)
+            || !self.facts.resolves_builtin(name.range(), name.id.as_str())
+        {
+            return;
+        }
+        let argument = &call.arguments.args[0];
+        if deletion::conversion_argument(argument, self.cancelled)
+            && !self.check_cancelled()
+            && let Some(text) = source_text(self.source, argument.range())
+        {
+            self.add_candidate(
+                call.range(),
+                format!("({text})"),
+                MutationOperator::ConversionCallRemove,
+            );
         }
     }
 

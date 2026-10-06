@@ -390,9 +390,9 @@ the detailed capability and cleanup model.
 Without `--operators`, a run selects all 43 runtime operators. `--operators`
 (comma-separated) selects an explicit set; `--exclude-operators` then removes
 individual IDs or selector families. Type-annotation `type_*` operators remain
-opt-in. Hoimin exposes 67 operator IDs in total: 43 default runtime IDs, seven
+opt-in. Hoimin exposes 68 operator IDs in total: 43 default runtime IDs, seven
 opt-in type IDs, five opt-in risky exception IDs, `exception_hierarchy`, and
-`statement_delete`, `integer_literal_neighbor`, `condition_constant`, `function_body_erase`, `enum_member_replace`, `augmented_to_assignment`, `return_tuple_swap`, `string_literal_empty`, `while_condition_false`, `condition_clause_delete`, and `container_element_delete`.
+`statement_delete`, `integer_literal_neighbor`, `condition_constant`, `function_body_erase`, `enum_member_replace`, `augmented_to_assignment`, `return_tuple_swap`, `string_literal_empty`, `while_condition_false`, `condition_clause_delete`, `container_element_delete`, and `conversion_call_remove`.
 
 | Group | Runtime IDs | Mutations |
 | --- | --- | --- |
@@ -1022,3 +1022,10 @@ or dict entry. Whole-literal reconstruction normalizes separators and inter-elem
 comments while protecting retained expression grouping. Tuple kind, retained order,
 and dict key/value pairs are preserved; removed elements are not evaluated. Unpacking,
 binding/suspension expressions, nonruntime roles and assignment targets are excluded.
+
+`--operators conversion_call_remove` replaces a statically resolved builtin conversion
+with its single positional argument in parentheses. It supports int/float/complex/bool/
+str/bytes/list/tuple/dict/set/frozenset and skips keywords, unpacking, generators,
+binding/suspension, shadowed names, type roles and assignment targets. The argument is
+evaluated once; conversion hooks, validation, copying and iterator consumption disappear.
+Known scope rebinding is checked; arbitrary external builtin monkey patching is not proven.
