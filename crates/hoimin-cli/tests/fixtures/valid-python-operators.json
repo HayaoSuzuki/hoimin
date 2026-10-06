@@ -313,5 +313,10 @@
     "operator": "return_tuple_swap",
     "status": "deferred",
     "reason": "Dedicated tuple/source/scope and public CLI tests; outside initial cross-producer corpus"
+  },
+  {
+    "operator": "string_literal_empty",
+    "status": "deferred",
+    "reason": "Dedicated literal-role, CPython and public CLI tests; outside initial cross-producer corpus"
   }
 ]

@@ -115,6 +115,7 @@ pub enum MutationOperator {
     EnumMemberReplace,
     AugmentedToAssignment,
     ReturnTupleSwap,
+    StringLiteralEmpty,
 }
 
 impl MutationOperator {
@@ -131,6 +132,7 @@ impl MutationOperator {
             Self::EnumMemberReplace => "enum_member_replace",
             Self::AugmentedToAssignment => "augmented_to_assignment",
             Self::ReturnTupleSwap => "return_tuple_swap",
+            Self::StringLiteralEmpty => "string_literal_empty",
             Self::ConditionConstant => "condition_constant",
             Self::IntegerLiteralNeighbor => "integer_literal_neighbor",
             Self::StatementDelete => "statement_delete",
@@ -192,7 +194,7 @@ impl MutationOperator {
             Self::TypeSequenceIterable => "type_sequence_iterable",
         }
     }
-    fn all() -> [Self; 63] {
+    fn all() -> [Self; 64] {
         [
             Self::CompareEqNe,
             Self::CompareOrder,
@@ -257,6 +259,7 @@ impl MutationOperator {
             Self::EnumMemberReplace,
             Self::AugmentedToAssignment,
             Self::ReturnTupleSwap,
+            Self::StringLiteralEmpty,
         ]
     }
 }

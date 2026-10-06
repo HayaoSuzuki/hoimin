@@ -295,6 +295,12 @@ sources:
   working_tree: untracked
   sha256: 1aade18c32612463dbb7cacb57cf05eceb01e6f5b8f8c47be1d46cd9163a1fd4
 
+- id: issue-703
+  resource: ../../superpowers/reports/issue-703/design.md
+  revision: 625e68e
+  working_tree: untracked
+  sha256: 31f19345bca108b883d6083984c505b9860718b607fe0091105b0244e7b03b65
+
 ---
 
 # 構文と名前解決の契約
@@ -649,3 +655,7 @@ Lean の証明は、与えられたノード分類に対する適用条件と単
 `return_tuple_swap` は同期・非ジェネレーター関数が直接返す2要素タプルの単純な要素を交換する。AST の要素範囲を使い、区切り・コメント・括弧を保存してタプル全体を1範囲として置換する。名前の実行時型の一致は仮定しない。入れ子関数の本体と、その場で評価される引数初期値などのスコープを区別する。[^issue-702]
 
 [^issue-702]: [戻り値タプル交換の設計](../../superpowers/reports/issue-702/design.md)・[レビューと検証](../../superpowers/reports/issue-702/review.md)
+
+`string_literal_empty` は単一トークンの非空 str リテラル全体を空文字列に置換する。空判定には復号した値を使い、docstring・型の式・パターン・補間文字列を除外する。明示的な TypeAlias マーカーは引用・括弧を含め保守的に認識する。通常のメッセージ文字列を関数名の綴りだけで除外しない。[^issue-703]
+
+[^issue-703]: [文字列の空文字化の設計](../../superpowers/reports/issue-703/design.md)・[レビューと検証](../../superpowers/reports/issue-703/review.md)

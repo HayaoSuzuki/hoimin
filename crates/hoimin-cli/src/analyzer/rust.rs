@@ -32,6 +32,8 @@ mod enum_members;
 mod function_body;
 #[path = "rust/return_tuple.rs"]
 mod return_tuple;
+#[path = "rust/string_literals.rs"]
+mod string_literals;
 
 #[path = "rust/deletion.rs"]
 mod deletion;
@@ -2723,6 +2725,7 @@ enum ReturnScope {
 }
 
 struct AstCandidateCollector<'a, F> {
+    string_exclusions: string_literals::Exclusions,
     enum_index: enum_members::EnumIndex,
     operator_imports: OperatorImports,
     return_scope: ReturnScope,
@@ -2750,6 +2753,14 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         exceptions: Option<&exception_hierarchy::ExceptionIndex>,
     ) -> Result<AstCollection, AnalysisCancelled> {
         let mut collector = Self {
+            string_exclusions: if request
+                .operators
+                .contains(MutationOperator::StringLiteralEmpty)
+            {
+                string_literals::Exclusions::build(module, cancelled)?
+            } else {
+                string_literals::Exclusions::default()
+            },
             enum_index: if request
                 .operators
                 .contains(MutationOperator::EnumMemberReplace)
@@ -3585,6 +3596,23 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
                 _ => false,
             };
             let signed_literal = self.collect_integer_literal(expression);
+            if self
+                .request
+                .operators
+                .contains(MutationOperator::StringLiteralEmpty)
+                && !self.in_pattern
+                && !self.string_exclusions.contains(expression.range())
+                && let Expr::StringLiteral(literal) = expression
+                && !literal.value.is_implicit_concatenated()
+                && !literal.value.is_empty()
+            {
+                self.add_candidate(
+                    literal.range(),
+                    "\"\"".to_owned(),
+                    MutationOperator::StringLiteralEmpty,
+                );
+            }
+
             if !self.in_pattern
                 && let Some((range, destinations)) = self.enum_index.destinations(
                     expression,
