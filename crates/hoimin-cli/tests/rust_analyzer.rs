@@ -376,3 +376,41 @@ fn enum_replacement_is_opt_in_bounded_selected_and_cancellable() {
     operators.exclude(operator);
     assert!(!operators.contains(operator));
 }
+
+#[test]
+fn augmented_assignment_is_opt_in_selected_bounded_and_cancellable() {
+    let operator = MutationOperator::from_name("augmented_to_assignment").unwrap();
+    let mut operators = MutationOperatorSelection::default();
+    assert!(!operators.contains(operator));
+    for name in MutationOperatorSelection::valid_names() {
+        for op in MutationOperatorSelection::parse_selector(name).unwrap() {
+            operators.exclude(op);
+        }
+    }
+    operators.include(operator);
+    let source = "def first(x):\n    x += 1\ndef second(x):\n    x *= 2\n";
+    let mut request = rust::AnalyzeRequest {
+        path: Utf8Path::new("subject.py"),
+        lines: &[],
+        symbols: &[],
+        operators: &operators,
+        profile: MutationProfile::Full,
+        max_candidates: 1,
+    };
+    let output = rust::analyze_source(&request, source);
+    assert!(output.truncated);
+    assert_eq!(output.candidates.len(), 1);
+    assert_eq!(output.candidates[0].original, "+=");
+    request.max_candidates = 10;
+    request.lines = &[hoimin_core::LineRange { start: 4, end: 4 }];
+    let output = rust::analyze_source(&request, source);
+    assert_eq!(output.candidates.len(), 1);
+    assert_eq!(output.candidates[0].original, "*=");
+    request.lines = &[];
+    let symbols = ["second".to_owned()];
+    request.symbols = &symbols;
+    assert_eq!(rust::analyze_source(&request, source).candidates.len(), 1);
+    assert!(rust::analyze_source_cancellable(&request, source, || true).is_err());
+    operators.exclude(operator);
+    assert!(!operators.contains(operator));
+}

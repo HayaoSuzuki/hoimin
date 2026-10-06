@@ -1217,3 +1217,5 @@ sources:
 - Issue #699: [関数本体空化の検証](../../superpowers/reports/issue-699/review.md)。
 
 - [Issue #700: Enum review](../../superpowers/reports/issue-700/review.md) — 同値別名・束縛・文字列表現・元の識別子表記を検証。
+
+- [Issue #701: augmented assignment review](../../superpowers/reports/issue-701/review.md) — 演算子トークン・集計の欠落・in-place 更新を検証。

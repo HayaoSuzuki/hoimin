@@ -303,5 +303,10 @@
     "operator": "enum_member_replace",
     "status": "deferred",
     "reason": "Dedicated Enum alias, scope, CPython and public CLI tests; outside the initial cross-producer corpus"
+  },
+  {
+    "operator": "augmented_to_assignment",
+    "status": "deferred",
+    "reason": "Dedicated 13-operator token, CPython and public CLI tests; outside initial cross-producer corpus"
   }
 ]

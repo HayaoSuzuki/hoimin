@@ -390,9 +390,9 @@ the detailed capability and cleanup model.
 Without `--operators`, a run selects all 43 runtime operators. `--operators`
 (comma-separated) selects an explicit set; `--exclude-operators` then removes
 individual IDs or selector families. Type-annotation `type_*` operators remain
-opt-in. Hoimin exposes 61 operator IDs in total: 43 default runtime IDs, seven
+opt-in. Hoimin exposes 62 operator IDs in total: 43 default runtime IDs, seven
 opt-in type IDs, five opt-in risky exception IDs, `exception_hierarchy`, and
-`statement_delete`, `integer_literal_neighbor`, `condition_constant`, `function_body_erase`, and `enum_member_replace`.
+`statement_delete`, `integer_literal_neighbor`, `condition_constant`, `function_body_erase`, `enum_member_replace`, and `augmented_to_assignment`.
 
 | Group | Runtime IDs | Mutations |
 | --- | --- | --- |
@@ -978,3 +978,10 @@ conservatively excluded. Dynamic namespace operations, tracked global declaratio
 and direct alias assignments invalidate this initial module index. Methods with
 ordinary undecorated names are ignored as non-members; decorated/special methods
 exclude the definition. No target module is imported by the analyzer.
+
+`--operators augmented_to_assignment` replaces any augmented-assignment operator
+on a simple name (`total += amount`) with `=` (`total = amount`). All 13 augmented
+operators are supported. Attributes and subscripts are excluded; only the operator
+token changes. Existing arithmetic substitutions may coexist at that location.
+This removes the old-value read and in-place operation, including list/object
+side effects; it is not restricted to numbers. The operator remains opt-in.
