@@ -251,3 +251,32 @@ fn statement_deletion_obeys_selection_prefix_and_cancellation() {
     assert_eq!(rust::analyze_source(&request, source).candidates.len(), 2);
     assert!(rust::analyze_source_cancellable(&request, source, || true).is_err());
 }
+
+#[test]
+fn integer_neighbors_remain_opt_in_and_keep_a_bounded_prefix() {
+    let operator = MutationOperator::from_name("integer_literal_neighbor").unwrap();
+    let mut operators = MutationOperatorSelection::default();
+    assert!(!operators.contains(operator));
+    for name in MutationOperatorSelection::valid_names() {
+        for op in MutationOperatorSelection::parse_selector(name).unwrap() {
+            operators.exclude(op);
+        }
+    }
+    operators.include(operator);
+    let source = "def f():\n    return -3\n";
+    let request = rust::AnalyzeRequest {
+        path: Utf8Path::new("subject.py"),
+        lines: &[],
+        symbols: &[],
+        operators: &operators,
+        profile: MutationProfile::Full,
+        max_candidates: 1,
+    };
+    let output = rust::analyze_source(&request, source);
+    assert_eq!(output.candidates.len(), 1);
+    assert!(output.truncated);
+    assert_eq!(output.candidates[0].original, "-3");
+    assert!(rust::analyze_source_cancellable(&request, source, || true).is_err());
+    operators.exclude(operator);
+    assert!(!operators.contains(operator));
+}

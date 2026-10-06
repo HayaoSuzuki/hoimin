@@ -259,6 +259,12 @@ sources:
   working_tree: untracked
   sha256: 4796ccaf60b518dc7f79385efa5058b9565626e1629a2064bb0bcf77cd9d86f6
 
+- id: issue-697
+  resource: ../../superpowers/reports/issue-697/design.md
+  revision: 3438b3a
+  working_tree: untracked
+  sha256: c5ed107d2acd19f67814da53bd64f5873c35656a56e0920111a2f79b6f06ea6b
+
 ---
 
 # 構文と名前解決の契約
@@ -583,3 +589,9 @@ Leanの子孫検査モデルと公開planの対応を通常の回帰テストへ
 Lean の証明は、与えられたノード分類に対する適用条件と単一置換のモデルを対象とする。Rust の解析器そのものの証明ではない。文字コード、構文、保存 plan の検証は公開 CLI と CPython 3.14 のテストで別途確認する。[^issue-696]
 
 [^issue-696]: [設計・証明範囲](../../superpowers/reports/issue-696/design.md)、[実装計画](../../superpowers/reports/issue-696/plan.md)。
+
+# 通常の整数リテラルの隣接値（Issue #697）
+
+`integer_literal_neighbor` は明示選択時だけ、通常の十進整数と単項負号付き整数を隣接値に変更する。絶対値の上限は u64::MAX で、範囲外の隣接値は生成しない。添字・スライス、型式、パターン、代入・削除ターゲットは対象外とし、括弧付き置換で優先順位を保つ。Lean は隣接値の算術モデルを証明し、構文・AST との対応は別途テストする。[^issue-697]
+
+[^issue-697]: [設計と証明範囲](../../superpowers/reports/issue-697/design.md)。

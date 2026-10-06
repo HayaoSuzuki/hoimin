@@ -283,5 +283,10 @@
     "operator": "statement_delete",
     "status": "deferred",
     "reason": "Dedicated statement_delete public CLI tests compile mutations with CPython 3.14 and verify saved plans; not in the original cross-producer corpus."
+  },
+  {
+    "operator": "integer_literal_neighbor",
+    "status": "deferred",
+    "reason": "Dedicated integer_literal_neighbor tests cover CPython 3.14 and saved-plan verification; outside initial cross-producer corpus."
   }
 ]

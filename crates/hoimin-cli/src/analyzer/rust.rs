@@ -2685,6 +2685,7 @@ fn exception_pair_replacements(name: &str) -> &'static [&'static str] {
 
 struct AstCandidateCollector<'a, F> {
     operator_imports: OperatorImports,
+    integer_suppressed: bool,
     in_pattern: bool,
     source: &'a str,
     line_index: &'a LineIndex,
@@ -2708,6 +2709,7 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         exceptions: Option<&exception_hierarchy::ExceptionIndex>,
     ) -> Result<(ProducerPrefix, exception_hierarchy::HierarchyReport), AnalysisCancelled> {
         let mut collector = Self {
+            integer_suppressed: false,
             in_pattern: false,
             operator_imports: if request
                 .operators
@@ -2780,6 +2782,35 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         {
             self.candidates.push(candidate);
         }
+    }
+
+    // Returns true for signed literals, including out-of-range spellings, so
+    // their positive operand cannot become a separate generic candidate.
+    fn collect_integer_literal(&mut self, expression: &Expr) -> bool {
+        let signed = matches!(expression, Expr::UnaryOp(unary)
+            if unary.op == UnaryOp::USub && matches!(unary.operand.as_ref(), Expr::NumberLiteral(_)));
+        if self.integer_suppressed
+            || self.in_pattern
+            || !self
+                .request
+                .operators
+                .contains(MutationOperator::IntegerLiteralNeighbor)
+        {
+            return signed;
+        }
+        if let Some((value, _)) = decimal_literal_value(self.source, expression) {
+            let limit = i128::from(u64::MAX);
+            for neighbor in [value - 1, value + 1] {
+                if (-limit..=limit).contains(&neighbor) {
+                    self.add_candidate(
+                        expression.range(),
+                        format!("({neighbor})"),
+                        MutationOperator::IntegerLiteralNeighbor,
+                    );
+                }
+            }
+        }
+        signed
     }
 
     fn collect_call(&mut self, call: &ExprCall) {
@@ -3372,6 +3403,15 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
 
     fn visit_expr(&mut self, expression: &'ast Expr) {
         if !self.check_cancelled() && !self.facts.contains_annotation_span(expression.range()) {
+            let suppressed = self.integer_suppressed;
+            self.integer_suppressed |= match expression {
+                Expr::Attribute(value) => value.ctx != ExprContext::Load,
+                Expr::Subscript(value) => value.ctx != ExprContext::Load,
+                Expr::List(value) => value.ctx != ExprContext::Load,
+                Expr::Tuple(value) => value.ctx != ExprContext::Load,
+                _ => false,
+            };
+            let signed_literal = self.collect_integer_literal(expression);
             if !self.in_pattern
                 && let Some((range, replacement)) = self.operator_imports.replacement(expression)
             {
@@ -3384,7 +3424,15 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
                 Expr::Tuple(tuple) => self.collect_tuple_literal(tuple),
                 _ => {}
             }
-            visitor::walk_expr(self, expression);
+            if let Expr::Subscript(subscript) = expression {
+                self.visit_expr(subscript.value.as_ref());
+                self.integer_suppressed = true;
+                self.visit_expr(subscript.slice.as_ref());
+            } else {
+                self.integer_suppressed |= signed_literal;
+                visitor::walk_expr(self, expression);
+            }
+            self.integer_suppressed = suppressed;
         }
     }
 
