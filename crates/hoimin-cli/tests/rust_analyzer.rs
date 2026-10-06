@@ -280,3 +280,31 @@ fn integer_neighbors_remain_opt_in_and_keep_a_bounded_prefix() {
     operators.exclude(operator);
     assert!(!operators.contains(operator));
 }
+
+#[test]
+fn condition_constants_respect_focused_guards_and_limits() {
+    let operator = MutationOperator::from_name("condition_constant").unwrap();
+    let mut operators = MutationOperatorSelection::default();
+    assert!(!operators.contains(operator));
+    for name in MutationOperatorSelection::valid_names() {
+        for op in MutationOperatorSelection::parse_selector(name).unwrap() {
+            operators.exclude(op);
+        }
+    }
+    operators.include(operator);
+    let source = "if __name__ == '__main__':\n    run()\n";
+    let mut request = rust::AnalyzeRequest {
+        path: Utf8Path::new("subject.py"),
+        lines: &[],
+        symbols: &[],
+        operators: &operators,
+        profile: MutationProfile::Full,
+        max_candidates: 1,
+    };
+    let output = rust::analyze_source(&request, source);
+    assert_eq!(output.candidates.len(), 1);
+    assert!(output.truncated);
+    request.profile = MutationProfile::Focused;
+    assert!(rust::analyze_source(&request, source).candidates.is_empty());
+    assert!(rust::analyze_source_cancellable(&request, source, || true).is_err());
+}

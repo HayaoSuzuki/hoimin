@@ -1,0 +1,310 @@
+[
+  {
+    "project": "iniconfig",
+    "version": "2.3.0",
+    "file": "iniconfig/__init__.py",
+    "probe": "import_only",
+    "test_command": "import iniconfig",
+    "candidate_count": 10,
+    "invalid_syntax": [],
+    "counts": {
+      "killed": 0,
+      "survived": 10,
+      "timeout": 0,
+      "out_of_memory": 0,
+      "process_limit": 0,
+      "error": 0,
+      "not_run": 0,
+      "inconclusive": 0,
+      "score": 0.0
+    },
+    "baseline": {
+      "Exit": 0
+    },
+    "seconds": 0.348,
+    "equivalence": "unclassified; authored probes, not upstream suites",
+    "mutants": [
+      {
+        "original": "_sections is not None and _sources is not None",
+        "replacement": "(False)",
+        "status": "survived"
+      },
+      {
+        "original": "_sections is not None and _sources is not None",
+        "replacement": "(True)",
+        "status": "survived"
+      },
+      {
+        "original": "data is None",
+        "replacement": "(False)",
+        "status": "survived"
+      },
+      {
+        "original": "data is None",
+        "replacement": "(True)",
+        "status": "survived"
+      },
+      {
+        "original": "data is None",
+        "replacement": "(True)",
+        "status": "survived"
+      },
+      {
+        "original": "data is None",
+        "replacement": "(False)",
+        "status": "survived"
+      },
+      {
+        "original": "convert is not None",
+        "replacement": "(False)",
+        "status": "survived"
+      },
+      {
+        "original": "convert is not None",
+        "replacement": "(True)",
+        "status": "survived"
+      },
+      {
+        "original": "name not in self.sections",
+        "replacement": "(True)",
+        "status": "survived"
+      },
+      {
+        "original": "name not in self.sections",
+        "replacement": "(False)",
+        "status": "survived"
+      }
+    ]
+  },
+  {
+    "project": "iniconfig",
+    "version": "2.3.0",
+    "file": "iniconfig/__init__.py",
+    "probe": "behavior",
+    "test_command": "from iniconfig import IniConfig; c = IniConfig('example.ini', data='[s]\\nk = v\\n'); assert c['s']['k'] == 'v'",
+    "candidate_count": 10,
+    "invalid_syntax": [],
+    "counts": {
+      "killed": 3,
+      "survived": 7,
+      "timeout": 0,
+      "out_of_memory": 0,
+      "process_limit": 0,
+      "error": 0,
+      "not_run": 0,
+      "inconclusive": 0,
+      "score": 0.3
+    },
+    "baseline": {
+      "Exit": 0
+    },
+    "seconds": 0.361,
+    "equivalence": "unclassified; authored probes, not upstream suites",
+    "mutants": [
+      {
+        "original": "_sections is not None and _sources is not None",
+        "replacement": "(False)",
+        "status": "survived"
+      },
+      {
+        "original": "_sections is not None and _sources is not None",
+        "replacement": "(True)",
+        "status": "killed"
+      },
+      {
+        "original": "data is None",
+        "replacement": "(False)",
+        "status": "survived"
+      },
+      {
+        "original": "data is None",
+        "replacement": "(True)",
+        "status": "killed"
+      },
+      {
+        "original": "data is None",
+        "replacement": "(True)",
+        "status": "survived"
+      },
+      {
+        "original": "data is None",
+        "replacement": "(False)",
+        "status": "survived"
+      },
+      {
+        "original": "convert is not None",
+        "replacement": "(False)",
+        "status": "survived"
+      },
+      {
+        "original": "convert is not None",
+        "replacement": "(True)",
+        "status": "survived"
+      },
+      {
+        "original": "name not in self.sections",
+        "replacement": "(True)",
+        "status": "killed"
+      },
+      {
+        "original": "name not in self.sections",
+        "replacement": "(False)",
+        "status": "survived"
+      }
+    ]
+  },
+  {
+    "project": "packaging",
+    "version": "26.3",
+    "file": "packaging/version.py",
+    "probe": "import_only",
+    "test_command": "import packaging",
+    "candidate_count": 138,
+    "invalid_syntax": [],
+    "counts": {
+      "killed": 0,
+      "survived": 10,
+      "timeout": 0,
+      "out_of_memory": 0,
+      "process_limit": 0,
+      "error": 0,
+      "not_run": 0,
+      "inconclusive": 0,
+      "score": 0.0
+    },
+    "baseline": {
+      "Exit": 0
+    },
+    "seconds": 0.744,
+    "equivalence": "unclassified; authored probes, not upstream suites",
+    "mutants": [
+      {
+        "original": "typing.TYPE_CHECKING",
+        "replacement": "(False)",
+        "status": "survived"
+      },
+      {
+        "original": "typing.TYPE_CHECKING",
+        "replacement": "(True)",
+        "status": "survived"
+      },
+      {
+        "original": "sys.version_info >= (3, 13)",
+        "replacement": "(False)",
+        "status": "survived"
+      },
+      {
+        "original": "sys.version_info >= (3, 13)",
+        "replacement": "(True)",
+        "status": "survived"
+      },
+      {
+        "original": "typing.TYPE_CHECKING",
+        "replacement": "(True)",
+        "status": "survived"
+      },
+      {
+        "original": "typing.TYPE_CHECKING",
+        "replacement": "(False)",
+        "status": "survived"
+      },
+      {
+        "original": "typing.TYPE_CHECKING",
+        "replacement": "(True)",
+        "status": "survived"
+      },
+      {
+        "original": "typing.TYPE_CHECKING",
+        "replacement": "(False)",
+        "status": "survived"
+      },
+      {
+        "original": "not isinstance(other, _BaseVersion)",
+        "replacement": "(False)",
+        "status": "survived"
+      },
+      {
+        "original": "not isinstance(other, _BaseVersion)",
+        "replacement": "(True)",
+        "status": "survived"
+      }
+    ]
+  },
+  {
+    "project": "packaging",
+    "version": "26.3",
+    "file": "packaging/version.py",
+    "probe": "behavior",
+    "test_command": "from packaging.version import Version; assert str(Version('01.2')) == '1.2'; assert Version('1.0a1') < Version('1.0')",
+    "candidate_count": 138,
+    "invalid_syntax": [],
+    "counts": {
+      "killed": 0,
+      "survived": 10,
+      "timeout": 0,
+      "out_of_memory": 0,
+      "process_limit": 0,
+      "error": 0,
+      "not_run": 0,
+      "inconclusive": 0,
+      "score": 0.0
+    },
+    "baseline": {
+      "Exit": 0
+    },
+    "seconds": 0.877,
+    "equivalence": "unclassified; authored probes, not upstream suites",
+    "mutants": [
+      {
+        "original": "typing.TYPE_CHECKING",
+        "replacement": "(False)",
+        "status": "survived"
+      },
+      {
+        "original": "typing.TYPE_CHECKING",
+        "replacement": "(True)",
+        "status": "survived"
+      },
+      {
+        "original": "sys.version_info >= (3, 13)",
+        "replacement": "(False)",
+        "status": "survived"
+      },
+      {
+        "original": "sys.version_info >= (3, 13)",
+        "replacement": "(True)",
+        "status": "survived"
+      },
+      {
+        "original": "typing.TYPE_CHECKING",
+        "replacement": "(True)",
+        "status": "survived"
+      },
+      {
+        "original": "typing.TYPE_CHECKING",
+        "replacement": "(False)",
+        "status": "survived"
+      },
+      {
+        "original": "typing.TYPE_CHECKING",
+        "replacement": "(True)",
+        "status": "survived"
+      },
+      {
+        "original": "typing.TYPE_CHECKING",
+        "replacement": "(False)",
+        "status": "survived"
+      },
+      {
+        "original": "not isinstance(other, _BaseVersion)",
+        "replacement": "(False)",
+        "status": "survived"
+      },
+      {
+        "original": "not isinstance(other, _BaseVersion)",
+        "replacement": "(True)",
+        "status": "survived"
+      }
+    ]
+  }
+]

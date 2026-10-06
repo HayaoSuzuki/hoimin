@@ -265,6 +265,12 @@ sources:
   working_tree: untracked
   sha256: c5ed107d2acd19f67814da53bd64f5873c35656a56e0920111a2f79b6f06ea6b
 
+- id: issue-698
+  resource: ../../superpowers/reports/issue-698/design.md
+  revision: 93df0b4
+  working_tree: untracked
+  sha256: 323657b55670eeac6e4304645b7a2ef785551632de05c63441b5d7a86981aaa6
+
 ---
 
 # 構文と名前解決の契約
@@ -595,3 +601,9 @@ Lean の証明は、与えられたノード分類に対する適用条件と単
 `integer_literal_neighbor` は明示選択時だけ、通常の十進整数と単項負号付き整数を隣接値に変更する。絶対値の上限は u64::MAX で、範囲外の隣接値は生成しない。添字・スライス、型式、パターン、代入・削除ターゲットは対象外とし、括弧付き置換で優先順位を保つ。Lean は隣接値の算術モデルを証明し、構文・AST との対応は別途テストする。[^issue-697]
 
 [^issue-697]: [設計と証明範囲](../../superpowers/reports/issue-697/design.md)。
+
+# if/elif 条件の定数化（Issue #698）
+
+`condition_constant` は明示選択時だけ if/elif の条件全体を True/False に置換し、条件の評価と副作用を省く。既存の真偽値リテラル、代入式・await・yield を含む条件は除外する。focused profile の main guard 除外も維持する。Lean の分岐選択モデルと公開 CLI の検証を区別する。[^issue-698]
+
+[^issue-698]: [設計とモデル範囲](../../superpowers/reports/issue-698/design.md)。

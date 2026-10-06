@@ -390,9 +390,9 @@ the detailed capability and cleanup model.
 Without `--operators`, a run selects all 43 runtime operators. `--operators`
 (comma-separated) selects an explicit set; `--exclude-operators` then removes
 individual IDs or selector families. Type-annotation `type_*` operators remain
-opt-in. Hoimin exposes 58 operator IDs in total: 43 default runtime IDs, seven
+opt-in. Hoimin exposes 59 operator IDs in total: 43 default runtime IDs, seven
 opt-in type IDs, five opt-in risky exception IDs, `exception_hierarchy`, and
-`statement_delete`, and `integer_literal_neighbor`.
+`statement_delete`, `integer_literal_neighbor`, and `condition_constant`.
 
 | Group | Runtime IDs | Mutations |
 | --- | --- | --- |
@@ -940,3 +940,11 @@ other bases, floats, complex numbers, bools, type expressions, match patterns,
 assignment/deletion targets and subscript slice expressions are excluded. Index
 and slice neighbors remain the responsibility of the structural operators.
 The operator is opt-in and does not change the 43 default runtime operators.
+
+`--operators condition_constant` fixes an entire `if`/`elif` condition to `True`
+or `False`, skipping evaluation and side effects of the original condition.
+Existing boolean constants and conditions containing nested assignment expressions,
+`await`, `yield` or `yield from` are excluded. Bodies, else clauses and neighbouring
+clauses are preserved. While/assert/ternary/comprehension predicates are not targets.
+The operator is disabled by default, and focused-profile exclusions still apply.
+Killing both branch mutations does not establish finer boundary correctness.

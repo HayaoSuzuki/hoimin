@@ -288,5 +288,10 @@
     "operator": "integer_literal_neighbor",
     "status": "deferred",
     "reason": "Dedicated integer_literal_neighbor tests cover CPython 3.14 and saved-plan verification; outside initial cross-producer corpus."
+  },
+  {
+    "operator": "condition_constant",
+    "status": "deferred",
+    "reason": "Dedicated condition_constant public CLI tests cover CPython 3.14 and saved plans; outside initial corpus."
   }
 ]

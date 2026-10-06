@@ -2813,6 +2813,21 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         signed
     }
 
+    fn collect_condition_constant(&mut self, condition: &Expr) {
+        if !matches!(condition, Expr::BooleanLiteral(_))
+            && deletion::can_remove(condition, self.cancelled)
+            && !self.check_cancelled()
+        {
+            for replacement in ["(True)", "(False)"] {
+                self.add_candidate(
+                    condition.range(),
+                    replacement.to_owned(),
+                    MutationOperator::ConditionConstant,
+                );
+            }
+        }
+    }
+
     fn collect_call(&mut self, call: &ExprCall) {
         if let Expr::Name(name) = call.func.as_ref() {
             self.collect_builtin_call(call, name.id.as_str(), name.range());
@@ -3347,6 +3362,22 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
 impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
     fn visit_stmt(&mut self, statement: &'ast Stmt) {
         if !self.check_cancelled() {
+            if self
+                .request
+                .operators
+                .contains(MutationOperator::ConditionConstant)
+                && let Stmt::If(statement_if) = statement
+            {
+                self.collect_condition_constant(&statement_if.test);
+                for clause in &statement_if.elif_else_clauses {
+                    if self.check_cancelled() {
+                        return;
+                    }
+                    if let Some(test) = &clause.test {
+                        self.collect_condition_constant(test);
+                    }
+                }
+            }
             if self
                 .request
                 .operators
