@@ -230,5 +230,5 @@ async fn an_empty_resolved_scope_ignores_unsupported_git_names() {
     write(root, r"data/bad\name.py", "value = False\n");
     let (code, manifest, error) = plan(root, true, &["--exclude", "selected/**"]).await;
     assert_eq!(code, 0, "{error}");
-    assert!(identities(&manifest).is_empty());
+    assert_eq!(identities(&manifest), Vec::<serde_json::Value>::new());
 }

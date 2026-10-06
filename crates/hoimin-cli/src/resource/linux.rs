@@ -2208,7 +2208,7 @@ mod platform {
                     .unwrap_err();
             assert!(error.to_string().contains("--max-memory"));
             assert_eq!(std::fs::read(&path).unwrap(), b"unchanged");
-            assert!(diagnostics.is_empty());
+            assert_eq!(diagnostics, Vec::<String>::new());
         }
 
         #[test]

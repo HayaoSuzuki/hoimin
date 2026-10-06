@@ -592,7 +592,7 @@ async fn changed_target_with_only_an_excluded_unreadable_file_skips_current_file
     .await
     .unwrap();
 
-    assert!(targets.is_empty());
+    assert_eq!(targets, Vec::<TargetSlice>::new());
 }
 
 #[tokio::test]
@@ -1326,11 +1326,9 @@ async fn dangling_source_links_are_missing_without_enabling_link_discovery() {
         sources: vec![source.into()],
         ..Selection::default()
     };
-    assert!(
-        TargetHandler::resolve(&selection("linked"))
-            .await
-            .unwrap()
-            .is_empty()
+    assert_eq!(
+        TargetHandler::resolve(&selection("linked")).await.unwrap(),
+        Vec::<TargetSlice>::new()
     );
     let error = TargetHandler::resolve(&selection("dangling"))
         .await

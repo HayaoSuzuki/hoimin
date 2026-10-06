@@ -146,13 +146,13 @@ async fn glob_discovery_core_and_public_plan_match_lean() {
                 String::from_utf8_lossy(&stderr)
                     .contains("target is missing or is not a Python file")
             );
-            assert!(stdout.is_empty());
+            assert_eq!(stdout, Vec::<u8>::new());
             continue;
         }
         assert_eq!(code, 0, "{case:?}: {}", String::from_utf8_lossy(&stderr));
         let plan: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
         assert_eq!(plan["truncated"], false);
-        assert!(plan["diagnostics"].as_array().unwrap().is_empty());
+        assert_eq!(plan["diagnostics"], serde_json::json!([]));
         let candidates = plan["candidates"].as_array().unwrap();
         let paths: BTreeSet<_> = candidates
             .iter()

@@ -9088,11 +9088,11 @@ fn exception_hierarchy_mutates_local_handlers_and_raises() {
 #[test]
 fn exception_hierarchy_custom_constructors_are_handler_only() {
     let classes = "class AppError(Exception): pass\nclass MissingError(AppError):\n    def __init__(self, *, code): pass\n";
-    assert!(
+    assert_eq!(
         hierarchy_candidates(&format!(
             "{classes}def f():\n    raise MissingError(code=1)\n"
-        ))
-        .is_empty()
+        )),
+        Vec::<(String, String)>::new()
     );
     assert_eq!(
         hierarchy_candidates(&format!(

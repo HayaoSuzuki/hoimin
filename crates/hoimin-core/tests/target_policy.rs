@@ -824,7 +824,10 @@ fn unix_changed_intersection_keeps_backslash_as_a_filename_character() {
         vec![LineRange { start: 2, end: 3 }],
     )]);
 
-    assert!(intersect_changed(&explicit, &changed).is_empty());
+    assert_eq!(
+        intersect_changed(&explicit, &changed),
+        Vec::<TargetSlice>::new()
+    );
 }
 
 #[cfg(windows)]

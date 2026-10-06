@@ -1,4 +1,5 @@
 use hoimin_cli::cli::OutputFormat;
+use hoimin_cli::plan::RankedPlanCandidate;
 use hoimin_core::RunConfig;
 use std::path::{Path, PathBuf};
 
@@ -77,7 +78,10 @@ async fn hierarchy_exclusion_and_import_roots_apply_to_index_and_fingerprint() {
     let excluded = hoimin_cli::plan::create(config(dir.path(), &["--exclude", "errors.py"]))
         .await
         .unwrap();
-    assert!(excluded.manifest.candidates.is_empty());
+    assert_eq!(
+        excluded.manifest.candidates,
+        Vec::<RankedPlanCandidate>::new()
+    );
     assert_eq!(excluded.manifest.fingerprint_inputs.len(), 1);
     std::fs::create_dir(dir.path().join("lib")).unwrap();
     std::fs::rename(
@@ -488,7 +492,7 @@ async fn hierarchy_review_bounds_deferred_import_dependencies() {
     let plan = hoimin_cli::plan::create(config(dir.path(), &[]))
         .await
         .unwrap();
-    assert!(plan.manifest.candidates.is_empty());
+    assert_eq!(plan.manifest.candidates, Vec::<RankedPlanCandidate>::new());
     source.push_str("    import one_more_dependency as unused\n");
     std::fs::write(dir.path().join("service.py"), source).unwrap();
     let error = hoimin_cli::plan::create(config(dir.path(), &[]))
@@ -659,7 +663,7 @@ async fn hierarchy_review_bounds_import_alias_correlations() {
     let plan = hoimin_cli::plan::create(config(dir.path(), &[]))
         .await
         .unwrap();
-    assert!(plan.manifest.candidates.is_empty());
+    assert_eq!(plan.manifest.candidates, Vec::<RankedPlanCandidate>::new());
     source.push_str("    import errors as one_more_alias\n");
     std::fs::write(dir.path().join("service.py"), source).unwrap();
     let error = hoimin_cli::plan::create(config(dir.path(), &[]))
@@ -736,7 +740,7 @@ async fn hierarchy_assignment_edges_have_an_independent_limit() {
     let plan = hoimin_cli::plan::create(config(dir.path(), &[]))
         .await
         .unwrap();
-    assert!(plan.manifest.candidates.is_empty());
+    assert_eq!(plan.manifest.candidates, Vec::<RankedPlanCandidate>::new());
     source.push_str("    one_more = e\n");
     std::fs::write(dir.path().join("service.py"), source).unwrap();
     let error = hoimin_cli::plan::create(config(dir.path(), &[]))

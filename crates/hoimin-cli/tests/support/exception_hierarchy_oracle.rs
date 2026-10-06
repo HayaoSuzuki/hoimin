@@ -84,7 +84,7 @@ pub fn cases() -> Vec<Case> {
                 let facts = case.expected_alias_facts.as_mut().expect("alias facts");
                 facts.sort();
                 assert!(case.actions.is_empty() && case.changed_source.is_empty());
-                assert!(case.expected.pairs.is_empty());
+                assert_eq!(case.expected.pairs, Vec::<(String, String)>::new());
                 assert!(case.expected.error.is_none() && case.expected.truncated.is_none());
                 assert!(
                     case.expected.load.is_none() && case.expected.fingerprint_matches.is_none()
@@ -93,7 +93,7 @@ pub fn cases() -> Vec<Case> {
             "internal-fixture" => {
                 assert!(case.expected_alias_facts.is_none());
                 assert_eq!(case.kind, "snapshot");
-                assert!(!case.changed_source.is_empty());
+                assert_ne!(case.changed_source, "");
                 assert!(case.expected.error.is_none() && case.expected.truncated.is_none());
                 assert!(matches!(
                     case.expected.load.as_deref(),
