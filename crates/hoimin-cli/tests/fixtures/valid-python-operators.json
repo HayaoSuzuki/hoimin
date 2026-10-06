@@ -308,5 +308,10 @@
     "operator": "augmented_to_assignment",
     "status": "deferred",
     "reason": "Dedicated 13-operator token, CPython and public CLI tests; outside initial cross-producer corpus"
+  },
+  {
+    "operator": "return_tuple_swap",
+    "status": "deferred",
+    "reason": "Dedicated tuple/source/scope and public CLI tests; outside initial cross-producer corpus"
   }
 ]

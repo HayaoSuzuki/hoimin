@@ -114,6 +114,7 @@ pub enum MutationOperator {
     FunctionBodyErase,
     EnumMemberReplace,
     AugmentedToAssignment,
+    ReturnTupleSwap,
 }
 
 impl MutationOperator {
@@ -129,6 +130,7 @@ impl MutationOperator {
             Self::FunctionBodyErase => "function_body_erase",
             Self::EnumMemberReplace => "enum_member_replace",
             Self::AugmentedToAssignment => "augmented_to_assignment",
+            Self::ReturnTupleSwap => "return_tuple_swap",
             Self::ConditionConstant => "condition_constant",
             Self::IntegerLiteralNeighbor => "integer_literal_neighbor",
             Self::StatementDelete => "statement_delete",
@@ -190,7 +192,7 @@ impl MutationOperator {
             Self::TypeSequenceIterable => "type_sequence_iterable",
         }
     }
-    fn all() -> [Self; 62] {
+    fn all() -> [Self; 63] {
         [
             Self::CompareEqNe,
             Self::CompareOrder,
@@ -254,6 +256,7 @@ impl MutationOperator {
             Self::FunctionBodyErase,
             Self::EnumMemberReplace,
             Self::AugmentedToAssignment,
+            Self::ReturnTupleSwap,
         ]
     }
 }

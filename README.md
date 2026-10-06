@@ -390,9 +390,9 @@ the detailed capability and cleanup model.
 Without `--operators`, a run selects all 43 runtime operators. `--operators`
 (comma-separated) selects an explicit set; `--exclude-operators` then removes
 individual IDs or selector families. Type-annotation `type_*` operators remain
-opt-in. Hoimin exposes 62 operator IDs in total: 43 default runtime IDs, seven
+opt-in. Hoimin exposes 63 operator IDs in total: 43 default runtime IDs, seven
 opt-in type IDs, five opt-in risky exception IDs, `exception_hierarchy`, and
-`statement_delete`, `integer_literal_neighbor`, `condition_constant`, `function_body_erase`, `enum_member_replace`, and `augmented_to_assignment`.
+`statement_delete`, `integer_literal_neighbor`, `condition_constant`, `function_body_erase`, `enum_member_replace`, `augmented_to_assignment`, and `return_tuple_swap`.
 
 | Group | Runtime IDs | Mutations |
 | --- | --- | --- |
@@ -985,3 +985,13 @@ operators are supported. Attributes and subscripts are excluded; only the operat
 token changes. Existing arithmetic substitutions may coexist at that location.
 This removes the old-value read and in-place operation, including list/object
 side effects; it is not restricted to numbers. The operator remains opt-in.
+
+`--operators return_tuple_swap` swaps two simple elements directly returned as a
+tuple by a synchronous, non-generator function. Names and standalone number/string/
+Boolean/None literals are supported, including signed numbers. Calls, attributes,
+subscripts, nested containers, implicit string concatenation, bytes/fstrings and
+suspension expressions are excluded. A single tuple span changes; element separators,
+comments, parentheses and trailing commas are preserved. Keyword-adjacent bare tuples
+are parenthesized when needed for lexical separation. Identical source atoms or
+normalized names are skipped. Names may have different runtime types; this operator
+does not promise type preservation or identify all equivalent swaps.

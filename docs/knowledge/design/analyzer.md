@@ -289,6 +289,12 @@ sources:
   working_tree: untracked
   sha256: 874cc475bf39b5c0d99c6176ac18a66211e67dea1ec8548caa2490e25d20843a
 
+- id: issue-702
+  resource: ../../superpowers/reports/issue-702/design.md
+  revision: 4b37fcb
+  working_tree: untracked
+  sha256: 1aade18c32612463dbb7cacb57cf05eceb01e6f5b8f8c47be1d46cd9163a1fd4
+
 ---
 
 # 構文と名前解決の契約
@@ -639,3 +645,7 @@ Lean の証明は、与えられたノード分類に対する適用条件と単
 `augmented_to_assignment` は単純な名前への複合代入だけを対象に、演算子トークンを `=` に置換する。旧値の読み出しと in-place 演算がなくなることを変異の意味に含める。右辺・空白・コメントは保存し、既存の演算子置換候補と共存する。[^issue-701]
 
 [^issue-701]: [複合代入置換の設計](../../superpowers/reports/issue-701/design.md)・[レビューと検証](../../superpowers/reports/issue-701/review.md)
+
+`return_tuple_swap` は同期・非ジェネレーター関数が直接返す2要素タプルの単純な要素を交換する。AST の要素範囲を使い、区切り・コメント・括弧を保存してタプル全体を1範囲として置換する。名前の実行時型の一致は仮定しない。入れ子関数の本体と、その場で評価される引数初期値などのスコープを区別する。[^issue-702]
+
+[^issue-702]: [戻り値タプル交換の設計](../../superpowers/reports/issue-702/design.md)・[レビューと検証](../../superpowers/reports/issue-702/review.md)
