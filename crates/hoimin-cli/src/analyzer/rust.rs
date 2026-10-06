@@ -26,6 +26,8 @@ use super::{AnalyzerCandidate, AnalyzerDiagnostic, AnalyzerDiagnosticCode};
 #[path = "exception_hierarchy.rs"]
 pub(crate) mod exception_hierarchy;
 
+#[path = "rust/container_elements.rs"]
+mod container_elements;
 #[path = "rust/enum_members.rs"]
 mod enum_members;
 #[path = "rust/function_body.rs"]
@@ -2724,12 +2726,19 @@ enum ReturnScope {
     PlainSynchronous,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RuntimeRole {
+    Value,
+    AssignmentTarget,
+}
+
 struct AstCandidateCollector<'a, F> {
     string_exclusions: string_literals::Exclusions,
     enum_index: enum_members::EnumIndex,
     operator_imports: OperatorImports,
     return_scope: ReturnScope,
     integer_suppressed: bool,
+    runtime_role: RuntimeRole,
     in_pattern: bool,
     source: &'a str,
     line_index: &'a LineIndex,
@@ -2756,6 +2765,9 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             string_exclusions: if request
                 .operators
                 .contains(MutationOperator::StringLiteralEmpty)
+                || request
+                    .operators
+                    .contains(MutationOperator::ContainerElementDelete)
             {
                 string_literals::Exclusions::build(module, cancelled)?
             } else {
@@ -2771,6 +2783,7 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             },
             return_scope: ReturnScope::Excluded,
             integer_suppressed: false,
+            runtime_role: RuntimeRole::Value,
             in_pattern: false,
             operator_imports: if request
                 .operators
@@ -3676,13 +3689,40 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
     fn visit_expr(&mut self, expression: &'ast Expr) {
         if !self.check_cancelled() && !self.facts.contains_annotation_span(expression.range()) {
             let suppressed = self.integer_suppressed;
-            self.integer_suppressed |= match expression {
+            let target_context = self.runtime_role;
+            let target = match expression {
                 Expr::Attribute(value) => value.ctx != ExprContext::Load,
                 Expr::Subscript(value) => value.ctx != ExprContext::Load,
                 Expr::List(value) => value.ctx != ExprContext::Load,
                 Expr::Tuple(value) => value.ctx != ExprContext::Load,
                 _ => false,
             };
+            self.integer_suppressed |= target;
+            if target {
+                self.runtime_role = RuntimeRole::AssignmentTarget;
+            }
+            if self
+                .request
+                .operators
+                .contains(MutationOperator::ContainerElementDelete)
+                && self.runtime_role == RuntimeRole::Value
+                && !self.in_pattern
+                && !self.string_exclusions.contains_alias(expression.range())
+            {
+                container_elements::emit(
+                    expression,
+                    self.source,
+                    self.request.max_candidates,
+                    self.cancelled,
+                    |replacement| {
+                        self.add_candidate(
+                            expression.range(),
+                            replacement,
+                            MutationOperator::ContainerElementDelete,
+                        );
+                    },
+                );
+            }
             let signed_literal = self.collect_integer_literal(expression);
             if self
                 .request
@@ -3736,6 +3776,7 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
                 visitor::walk_expr(self, expression);
             }
             self.integer_suppressed = suppressed;
+            self.runtime_role = target_context;
         }
     }
 
