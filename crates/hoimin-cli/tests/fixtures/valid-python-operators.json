@@ -293,5 +293,10 @@
     "operator": "condition_constant",
     "status": "deferred",
     "reason": "Dedicated condition_constant public CLI tests cover CPython 3.14 and saved plans; outside initial corpus."
+  },
+  {
+    "operator": "function_body_erase",
+    "status": "deferred",
+    "reason": "Dedicated function_body_erase public tests cover CPython and saved plans; outside initial corpus."
   }
 ]

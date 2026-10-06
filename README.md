@@ -390,9 +390,9 @@ the detailed capability and cleanup model.
 Without `--operators`, a run selects all 43 runtime operators. `--operators`
 (comma-separated) selects an explicit set; `--exclude-operators` then removes
 individual IDs or selector families. Type-annotation `type_*` operators remain
-opt-in. Hoimin exposes 59 operator IDs in total: 43 default runtime IDs, seven
+opt-in. Hoimin exposes 60 operator IDs in total: 43 default runtime IDs, seven
 opt-in type IDs, five opt-in risky exception IDs, `exception_hierarchy`, and
-`statement_delete`, `integer_literal_neighbor`, and `condition_constant`.
+`statement_delete`, `integer_literal_neighbor`, `condition_constant`, and `function_body_erase`.
 
 | Group | Runtime IDs | Mutations |
 | --- | --- | --- |
@@ -948,3 +948,18 @@ Existing boolean constants and conditions containing nested assignment expressio
 clauses are preserved. While/assert/ternary/comprehension predicates are not targets.
 The operator is disabled by default, and focused-profile exclusions still apply.
 Killing both branch mutations does not establish finer boundary correctness.
+
+`--operators function_body_erase` replaces the body of a synchronous function or
+method with `pass`, preserving its leading docstring, decorators, signature and
+defaults. Value-returning functions, generators, async functions, dunder names and
+obvious docstring/pass/None-return/ellipsis stubs are excluded. Nested definitions'
+returns/yields belong to their own scopes; suspension in their evaluated defaults
+still excludes the outer function. This opt-in operator is a limited extreme
+mutation, not coverage collection or automatic identification of pseudo-tested code.
+
+Its selection anchor is the first erased statement (after the docstring): selecting
+only a later body line does not select the whole-function mutation. Symbol selection
+uses the erased function, even when its first statement defines a nested function.
+Preview shows the whole body span. The shared 2 MiB serialized-candidate limit still
+applies. A survivor remains `survived`; it does not establish whether the function
+ran, was observed, or was equivalent, and this score cannot replace fine-grained mutation.

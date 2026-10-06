@@ -26,6 +26,9 @@ use super::{AnalyzerCandidate, AnalyzerDiagnostic, AnalyzerDiagnosticCode};
 #[path = "exception_hierarchy.rs"]
 pub(crate) mod exception_hierarchy;
 
+#[path = "rust/function_body.rs"]
+mod function_body;
+
 #[path = "rust/deletion.rs"]
 mod deletion;
 
@@ -2768,8 +2771,18 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
     }
 
     fn add_candidate(&mut self, range: TextRange, replacement: String, operator: MutationOperator) {
+        self.add_candidate_in_scope(range, replacement, operator, range);
+    }
+
+    fn add_candidate_in_scope(
+        &mut self,
+        range: TextRange,
+        replacement: String,
+        operator: MutationOperator,
+        scope: TextRange,
+    ) {
         let range = byte_range(range);
-        let symbol = self.facts.scope_at(range.start);
+        let symbol = self.facts.scope_at(usize::from(scope.start()));
         if let Some(candidate) = make_candidate(
             self.request,
             self.source,
@@ -3362,6 +3375,21 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
 impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
     fn visit_stmt(&mut self, statement: &'ast Stmt) {
         if !self.check_cancelled() {
+            if self
+                .request
+                .operators
+                .contains(MutationOperator::FunctionBodyErase)
+                && let Stmt::FunctionDef(definition) = statement
+                && let Some(range) = function_body::erased_range(definition, self.cancelled)
+                && !self.check_cancelled()
+            {
+                self.add_candidate_in_scope(
+                    range,
+                    "pass".to_owned(),
+                    MutationOperator::FunctionBodyErase,
+                    definition.range(),
+                );
+            }
             if self
                 .request
                 .operators

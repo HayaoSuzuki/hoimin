@@ -308,3 +308,35 @@ fn condition_constants_respect_focused_guards_and_limits() {
     assert!(rust::analyze_source(&request, source).candidates.is_empty());
     assert!(rust::analyze_source_cancellable(&request, source, || true).is_err());
 }
+
+#[test]
+fn body_erasure_anchors_first_erased_line_and_owning_function() {
+    let operator = MutationOperator::from_name("function_body_erase").unwrap();
+    let mut operators = MutationOperatorSelection::default();
+    assert!(!operators.contains(operator));
+    for name in MutationOperatorSelection::valid_names() {
+        for op in MutationOperatorSelection::parse_selector(name).unwrap() {
+            operators.exclude(op);
+        }
+    }
+    operators.include(operator);
+    let source = "def outer():\n    'doc'\n    def inner():\n        return 1\n    call()\n";
+    let mut request = rust::AnalyzeRequest {
+        path: Utf8Path::new("subject.py"),
+        lines: &[hoimin_core::LineRange { start: 5, end: 5 }],
+        symbols: &[],
+        operators: &operators,
+        profile: MutationProfile::Full,
+        max_candidates: 10,
+    };
+    assert!(rust::analyze_source(&request, source).candidates.is_empty());
+    request.lines = &[hoimin_core::LineRange { start: 3, end: 3 }];
+    let output = rust::analyze_source(&request, source);
+    assert_eq!(output.candidates.len(), 1);
+    assert_eq!(output.candidates[0].symbol.as_deref(), Some("outer"));
+    let symbols = ["outer.inner".to_owned()];
+    request.symbols = &symbols;
+    request.lines = &[];
+    assert!(rust::analyze_source(&request, source).candidates.is_empty());
+    assert!(rust::analyze_source_cancellable(&request, source, || true).is_err());
+}
