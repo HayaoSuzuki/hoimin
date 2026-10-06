@@ -1610,3 +1610,5 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 - Issue #698: [条件定数化の設計](../../superpowers/reports/issue-698/design.md)。
 
 - Issue #699: [関数本体空化の設計](../../superpowers/reports/issue-699/design.md)。
+
+- [Issue #700: Enum design](../../superpowers/reports/issue-700/design.md) — 同値別名・束縛・文字列表現・元の識別子表記を検証。

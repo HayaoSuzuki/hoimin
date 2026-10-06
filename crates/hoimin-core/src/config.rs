@@ -112,6 +112,7 @@ pub enum MutationOperator {
     IntegerLiteralNeighbor,
     ConditionConstant,
     FunctionBodyErase,
+    EnumMemberReplace,
 }
 
 impl MutationOperator {
@@ -125,6 +126,7 @@ impl MutationOperator {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::FunctionBodyErase => "function_body_erase",
+            Self::EnumMemberReplace => "enum_member_replace",
             Self::ConditionConstant => "condition_constant",
             Self::IntegerLiteralNeighbor => "integer_literal_neighbor",
             Self::StatementDelete => "statement_delete",
@@ -186,7 +188,7 @@ impl MutationOperator {
             Self::TypeSequenceIterable => "type_sequence_iterable",
         }
     }
-    fn all() -> [Self; 60] {
+    fn all() -> [Self; 61] {
         [
             Self::CompareEqNe,
             Self::CompareOrder,
@@ -248,6 +250,7 @@ impl MutationOperator {
             Self::IntegerLiteralNeighbor,
             Self::ConditionConstant,
             Self::FunctionBodyErase,
+            Self::EnumMemberReplace,
         ]
     }
 }

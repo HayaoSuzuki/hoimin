@@ -298,5 +298,10 @@
     "operator": "function_body_erase",
     "status": "deferred",
     "reason": "Dedicated function_body_erase public tests cover CPython and saved plans; outside initial corpus."
+  },
+  {
+    "operator": "enum_member_replace",
+    "status": "deferred",
+    "reason": "Dedicated Enum alias, scope, CPython and public CLI tests; outside the initial cross-producer corpus"
   }
 ]

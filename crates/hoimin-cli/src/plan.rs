@@ -959,6 +959,7 @@ fn output_config(format: OutputFormat) -> OutputConfig {
 fn plan_diagnostic(diagnostic: &AnalyzerDiagnostic) -> PlanDiagnostic {
     PlanDiagnostic {
         code: match diagnostic.code {
+            AnalyzerDiagnosticCode::UnsupportedEnumDefinition => "enum_definition_skipped",
             AnalyzerDiagnosticCode::UnsupportedExceptionHierarchy => "exception_hierarchy_skipped",
             AnalyzerDiagnosticCode::InvalidSyntax => "invalid_syntax",
             AnalyzerDiagnosticCode::UnreconstructableSpan => "unreconstructable_span",
