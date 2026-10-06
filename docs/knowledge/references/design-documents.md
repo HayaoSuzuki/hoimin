@@ -5,6 +5,16 @@ description: docs/superpowers/specs内の全Markdownを先頭見出しと出典�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-692-exception-scope-outcomes
+  resource: ../../superpowers/specs/2026-10-05-exception-scope-outcomes.md
+  revision: fae3ce3e82a8a768c8dca49531384aa081a97f71
+  working_tree: clean
+  sha256: 08bcdc67d25554eb86990d7f8e83ca451d8f72639069ea72acbb6092d8a1f101
+- id: issue-692-issue-692-exception-hierarchy
+  resource: ../../superpowers/specs/2026-10-05-issue-692-exception-hierarchy.md
+  revision: fae3ce3e82a8a768c8dca49531384aa081a97f71
+  working_tree: clean
+  sha256: 540858afd18bf3ac21382ead8b016358aae9e5f2a4aa3e7fc37a2ae0591d2361
 - id: proptest-boundaries-design
   resource: ../../superpowers/specs/2026-09-26-proptest-boundaries-design.md
   revision: 69e09da75ba5505cc6f750af2f6da131774dd070
@@ -975,6 +985,8 @@ sources:
 
 | 原文 | 先頭見出し | 作成時の状態 |
 | --- | --- | --- |
+| [2026-10-05-exception-scope-outcomes.md](../../superpowers/specs/2026-10-05-exception-scope-outcomes.md) | Exception hierarchy: scope identity and analysis outcomes [^issue-692-exception-scope-outcomes] | 追跡済み（fae3ce3） |
+| [2026-10-05-issue-692-exception-hierarchy.md](../../superpowers/specs/2026-10-05-issue-692-exception-hierarchy.md) | User-defined exception hierarchy mutations [^issue-692-issue-692-exception-hierarchy] | 追跡済み（fae3ce3） |
 | [2026-09-26-proptest-boundaries-design.md](../../superpowers/specs/2026-09-26-proptest-boundaries-design.md) | Proptest boundary coverage design [^proptest-boundaries-design] | 追跡済み |
 | [2026-09-15-issue-549-slice-tuple-design.md](../../superpowers/specs/2026-09-15-issue-549-slice-tuple-design.md) | Issue #549: Sliceを含むtupleの候補除外 [^issue-549-design] | 未追跡（参照時点） |
 
@@ -1586,3 +1598,7 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 [^issue-565-design]: [Issue 565: recursively exclude disallowed annotation arguments](../../superpowers/specs/2026-09-24-issue-565-annotation-descendants.md)。
 
 [^proptest-boundaries-design]: [Proptest boundary coverage design](../../superpowers/specs/2026-09-26-proptest-boundaries-design.md)。
+
+[^issue-692-exception-scope-outcomes]: [2026-10-05-exception-scope-outcomes.md](../../superpowers/specs/2026-10-05-exception-scope-outcomes.md)。
+
+[^issue-692-issue-692-exception-hierarchy]: [2026-10-05-issue-692-exception-hierarchy.md](../../superpowers/specs/2026-10-05-issue-692-exception-hierarchy.md)。

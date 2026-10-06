@@ -251,6 +251,7 @@ fn operator_reason(operator: &str) -> Option<RankingReasonCode> {
         | MutationOperator::BooleanLiteral
         | MutationOperator::BreakContinue => RankingReasonCode::HighValueControl,
         MutationOperator::ExceptionTypePair
+        | MutationOperator::ExceptionHierarchy
         | MutationOperator::ExceptionBareToException
         | MutationOperator::ExceptionExceptionToBare
         | MutationOperator::ExceptionBaseBoundary

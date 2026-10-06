@@ -390,8 +390,8 @@ the detailed capability and cleanup model.
 Without `--operators`, a run selects all 43 runtime operators. `--operators`
 (comma-separated) selects an explicit set; `--exclude-operators` then removes
 individual IDs or selector families. Type-annotation `type_*` operators remain
-opt-in. Hoimin exposes 55 operator IDs in total: 43 default runtime IDs, seven
-opt-in type IDs, and five opt-in risky exception IDs.
+opt-in. Hoimin exposes 56 operator IDs in total: 43 default runtime IDs, seven
+opt-in type IDs, five opt-in risky exception IDs, and `exception_hierarchy`.
 
 | Group | Runtime IDs | Mutations |
 | --- | --- | --- |
@@ -404,6 +404,36 @@ opt-in type IDs, and five opt-in risky exception IDs.
 | Standard-library operator functions | `operator_function` | Mutates trusted Python 3.14 `operator` callable references across comparison, arithmetic, bitwise, unary, truth, identity, in-place, and sequence operations; also covers `contains`, `getitem`, `setitem`, `delitem`, and `call` |
 | Boundary operators | `structure_index_neighbor`, `structure_slice_neighbor` | adjacent plain-decimal index and slice-bound values, including unary-minus integers |
 | Exception types | `exception_type_pair` | curated pairs such as `ValueError` ↔ `TypeError` in simple `except`/`except*` clauses and supported `raise` expressions |
+
+User-defined exceptions have a separate, explicit-only operator:
+
+```console
+hoimin plan --file src/service.py --import-root src --operators exception_hierarchy -- pytest -q
+```
+
+`exception_hierarchy` reads project Python class definitions and explicit imports,
+then replaces a visible exception with its direct user-defined parent, child, or
+sibling. It supports `except`, `except*`, and `raise`; raised-exception replacements
+require both classes to inherit `Exception`'s constructor without a custom
+`__init__` or `__new__`. For example, `MissingError(AppError)` and
+`ConflictError(AppError)` can be exchanged when both names are visible.
+This operator can broaden handlers and is not included in the default selection,
+`exception_ops`, or `exception_risky`.
+
+Analysis does not import project modules. Dynamic or ambiguous definitions,
+re-exports, multiple inheritance, termination exceptions, and exception groups are
+skipped. Imports using top-level standard-library module names are conservatively
+excluded, even when a project contains a file with that name. Definitions must precede the containing function or the module-level use;
+class bodies are skipped, while method bodies use module bindings. No imports are
+inserted. A per-file diagnostic reports incomplete analysis with its reason and
+first location. Valid exclusions, such as having no related class or an incompatible
+constructor, do not produce this diagnostic. All allowed project Python files, including unselected files, become
+fingerprint inputs for this operator, so dependency additions, removals and changes
+invalidate saved plans and resumed results. Function/container aliases that the
+analysis does not track can still change a class binding, even within indexed
+project files; such changes are not guaranteed to suppress affected candidates.
+The operator does not guarantee that every replacement denotes an exception class
+at runtime. See [the implementation boundaries](docs/development.md#user-defined-exception-hierarchies).
 
 Boundary operators recognize ASCII decimal digits with an optional unary minus,
 including grouped or multiline spellings such as `items[(-1)]` and `items[-(1)]`.

@@ -12,11 +12,9 @@ use hoimin_core::{
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-#[cfg(not(test))]
-use crate::analyzer::discover_targets_with_timeout;
-use crate::analyzer::{AnalyzerDiagnostic, AnalyzerDiagnosticCode, Discovery};
 #[cfg(test)]
-use crate::analyzer::{DiscoveryControl, discover_targets_with_control};
+use crate::analyzer::DiscoveryControl;
+use crate::analyzer::{AnalyzerDiagnostic, AnalyzerDiagnosticCode, Discovery};
 use crate::cli::{OutputFormat, TopSelectionPolicy, VerifySelection};
 use crate::fingerprint_inputs;
 use crate::resource::{self, ResourceError};
@@ -150,40 +148,18 @@ fn map_discovery_error(error: &hoimin_core::EffectFailed, caller: DiscoveryCalle
 }
 
 async fn discover_plan_targets(
-    root: &Utf8Path,
+    config: &RunConfig,
     targets: &[TargetSlice],
-    operators: &hoimin_core::MutationOperatorSelection,
-    profile: hoimin_core::MutationProfile,
-    max_candidates: usize,
-    analyzer_timeout: std::time::Duration,
     #[cfg(test)] control: Option<DiscoveryControl>,
 ) -> Result<Discovery, hoimin_core::EffectFailed> {
     crate::live_progress::stage("analyzing sources");
-    #[cfg(test)]
-    {
-        discover_targets_with_control(
-            root,
-            targets,
-            operators,
-            profile,
-            max_candidates,
-            analyzer_timeout,
-            control,
-        )
-        .await
-    }
-    #[cfg(not(test))]
-    {
-        discover_targets_with_timeout(
-            root,
-            targets,
-            operators,
-            profile,
-            max_candidates,
-            analyzer_timeout,
-        )
-        .await
-    }
+    crate::analyzer::discover_config_targets(
+        config,
+        targets,
+        #[cfg(test)]
+        control,
+    )
+    .await
 }
 
 /// Creates a read-only, versioned mutation candidate plan.
@@ -224,12 +200,8 @@ async fn create_inner(
     crate::live_progress::stage("reading sources");
     let sources = source_records(&config.root, &targets).await?;
     let discovery = discover_plan_targets(
-        &config.root,
+        &config,
         &targets,
-        &config.operators,
-        config.profile,
-        config.limits.max_candidates.get(),
-        config.limits.analyzer_timeout.get(),
         #[cfg(test)]
         control,
     )
@@ -391,12 +363,8 @@ async fn prepare_verify_selection_inner(
         .await
         .map_err(|error| PlanError::SourceChanged(error.to_string()))?;
     ensure_exact_records(&manifest.sources, &current_sources, RecordMismatch::Source)?;
-    let current_inputs = fingerprint_inputs::resolve(
-        &config.root,
-        &config.fingerprint_includes,
-        &config.fingerprint_files,
-    )
-    .map_err(|error| PlanError::FingerprintInputChanged(error.to_string()))?;
+    let current_inputs = fingerprint_inputs::resolve_config(&config)
+        .map_err(|error| PlanError::FingerprintInputChanged(error.to_string()))?;
     ensure_exact_records(
         &manifest.fingerprint_inputs,
         &current_inputs,
@@ -836,12 +804,8 @@ async fn validate_requested_candidates(
 
     let discovery_targets = requested_discovery_targets(targets, &requested_paths);
     let discovery = discover_plan_targets(
-        &config.root,
+        config,
         &discovery_targets,
-        &config.operators,
-        config.profile,
-        config.limits.max_candidates.get(),
-        config.limits.analyzer_timeout.get(),
         #[cfg(test)]
         control,
     )
@@ -995,6 +959,7 @@ fn output_config(format: OutputFormat) -> OutputConfig {
 fn plan_diagnostic(diagnostic: &AnalyzerDiagnostic) -> PlanDiagnostic {
     PlanDiagnostic {
         code: match diagnostic.code {
+            AnalyzerDiagnosticCode::UnsupportedExceptionHierarchy => "exception_hierarchy_skipped",
             AnalyzerDiagnosticCode::InvalidSyntax => "invalid_syntax",
             AnalyzerDiagnosticCode::UnreconstructableSpan => "unreconstructable_span",
             AnalyzerDiagnosticCode::UnparseableReplacement => "unparseable_replacement",

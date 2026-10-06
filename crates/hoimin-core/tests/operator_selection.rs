@@ -299,3 +299,18 @@ fn raw_config() -> RawRunConfig {
         ..RawRunConfig::default()
     }
 }
+
+#[test]
+fn exception_hierarchy_is_explicit_only() {
+    let operators = MutationOperatorSelection::parse_selector("exception_hierarchy").unwrap();
+    assert_eq!(operators.len(), 1);
+    assert_eq!(operators[0].as_str(), "exception_hierarchy");
+    assert!(!MutationOperatorSelection::all_legacy().contains(operators[0]));
+    for family in ["exception_ops", "exception_risky"] {
+        assert!(
+            !MutationOperatorSelection::parse_selector(family)
+                .unwrap()
+                .contains(&operators[0])
+        );
+    }
+}

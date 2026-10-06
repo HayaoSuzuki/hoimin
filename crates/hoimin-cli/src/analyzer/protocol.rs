@@ -9,6 +9,7 @@ pub const DEFAULT_MAX_ANALYZER_OUTPUT_BYTES: usize = 64 * 1024 * 1024;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AnalyzerDiagnosticCode {
     InvalidSyntax,
+    UnsupportedExceptionHierarchy,
     UnreconstructableSpan,
     UnparseableReplacement,
     CandidateLimitExceeded,
@@ -267,6 +268,9 @@ impl AnalyzerProtocol {
             ));
         }
         let code = match raw.code.value().map(String::as_str) {
+            Some("unsupported_exception_hierarchy") => {
+                AnalyzerDiagnosticCode::UnsupportedExceptionHierarchy
+            }
             Some("invalid_syntax") => AnalyzerDiagnosticCode::InvalidSyntax,
             Some("unreconstructable_span") => AnalyzerDiagnosticCode::UnreconstructableSpan,
             Some("unparseable_replacement") => AnalyzerDiagnosticCode::UnparseableReplacement,
@@ -276,6 +280,9 @@ impl AnalyzerProtocol {
         };
         let has_location = raw.line.is_present() || raw.column.is_present();
         let fields_match = match code {
+            AnalyzerDiagnosticCode::UnsupportedExceptionHierarchy => {
+                raw.path.value().is_some() && !has_location && raw.message.value().is_some()
+            }
             AnalyzerDiagnosticCode::InvalidRequest => {
                 !raw.path.is_present() && !has_location && raw.message.value().is_some()
             }

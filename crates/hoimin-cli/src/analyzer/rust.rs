@@ -23,6 +23,9 @@ use ruff_text_size::{Ranged, TextRange};
 
 use super::{AnalyzerCandidate, AnalyzerDiagnostic, AnalyzerDiagnosticCode};
 
+#[path = "exception_hierarchy.rs"]
+pub(crate) mod exception_hierarchy;
+
 #[path = "rust/depth.rs"]
 mod depth;
 #[path = "rust/fact_index.rs"]
@@ -284,6 +287,10 @@ pub(crate) enum AnalysisError {
     Cancelled,
     #[error("analysis depth exceeds supported limit {limit}")]
     DepthExceeded { limit: usize },
+    #[error("exception hierarchy summary limit exceeded (65536 entries per index table)")]
+    HierarchyLimit,
+    #[error("source changed after exception hierarchy indexing")]
+    HierarchySourceChanged,
 }
 
 impl From<AnalysisCancelled> for AnalysisError {
@@ -297,18 +304,48 @@ pub(crate) fn analyze_source(request: &AnalyzeRequest<'_>, source: &str) -> Anal
         .expect("the analyzer probe requires a source within the supported analysis depth")
 }
 
-#[expect(
-    clippy::too_many_lines,
-    reason = "token and type-annotation candidates share local byte-span and source-order control flow"
-)]
 pub(crate) fn analyze_source_cancellable(
     request: &AnalyzeRequest<'_>,
     source: &str,
     cancelled: impl Fn() -> bool,
 ) -> Result<AnalyzerOutput, AnalysisError> {
+    analyze_source_with_exceptions(request, source, &cancelled, None)
+}
+
+#[expect(
+    clippy::too_many_lines,
+    reason = "token and type-annotation candidates share local byte-span and source-order control flow"
+)]
+pub(crate) fn analyze_source_with_exceptions(
+    request: &AnalyzeRequest<'_>,
+    source: &str,
+    cancelled: &impl Fn() -> bool,
+    exceptions: Option<&exception_hierarchy::ExceptionIndex>,
+) -> Result<AnalyzerOutput, AnalysisError> {
     if cancelled() {
         return Err(AnalysisError::Cancelled);
     }
+    if exceptions.is_some_and(|index| !index.source_matches(request.path, source)) {
+        return Err(AnalysisError::HierarchySourceChanged);
+    }
+    let local_index;
+    let exceptions = if request
+        .operators
+        .contains(MutationOperator::ExceptionHierarchy)
+    {
+        if let Some(index) = exceptions {
+            Some(index)
+        } else {
+            local_index = exception_hierarchy::ExceptionIndex::from_sources(
+                &[(request.path.to_owned(), source.to_owned())],
+                &[camino::Utf8PathBuf::new()],
+                cancelled,
+            )?;
+            Some(&local_index)
+        }
+    } else {
+        None
+    };
     // Retain invalid partial trees too: parse_module drops those recursively on Err.
     let parsed = parse_unchecked_source(source, ruff_python_ast::PySourceType::Python);
     if !parsed.has_valid_syntax() {
@@ -434,13 +471,14 @@ pub(crate) fn analyze_source_cancellable(
         return Err(AnalysisError::Cancelled);
     }
     let token_candidates = token_candidates.finish();
-    let ast_candidates = ast_candidates(
+    let (ast_candidates, hierarchy_report) = ast_candidates(
         parsed.syntax(),
         source,
         &line_index,
         &facts,
         request,
         &cancelled,
+        exceptions,
     )?;
     if cancelled() {
         return Err(AnalysisError::Cancelled);
@@ -480,7 +518,7 @@ pub(crate) fn analyze_source_cancellable(
     });
     let truncated = producer_overflowed || candidates.len() > request.max_candidates;
     candidates.truncate(request.max_candidates);
-    let diagnostics = truncated
+    let mut diagnostics: Vec<_> = truncated
         .then(|| AnalyzerDiagnostic {
             code: AnalyzerDiagnosticCode::CandidateLimitExceeded,
             path: Some(request.path.to_owned()),
@@ -490,6 +528,16 @@ pub(crate) fn analyze_source_cancellable(
         })
         .into_iter()
         .collect();
+    if let Some((range, message)) = hierarchy_report.diagnostic() {
+        let (line, column) = line_index.line_and_column(source, usize::from(range.start()));
+        diagnostics.push(AnalyzerDiagnostic {
+            code: AnalyzerDiagnosticCode::UnsupportedExceptionHierarchy,
+            path: Some(request.path.to_owned()),
+            line: Some(line),
+            column: Some(column),
+            message: Some(message),
+        });
+    }
     #[cfg(test)]
     let fact_lookups = facts.lookup_stats();
     #[cfg(test)]
@@ -2654,7 +2702,8 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         facts: &'a AstFacts<'a>,
         request: &'a AnalyzeRequest<'a>,
         cancelled: &'a F,
-    ) -> Result<ProducerPrefix, AnalysisCancelled> {
+        exceptions: Option<&exception_hierarchy::ExceptionIndex>,
+    ) -> Result<(ProducerPrefix, exception_hierarchy::HierarchyReport), AnalysisCancelled> {
         let mut collector = Self {
             in_pattern: false,
             operator_imports: if request
@@ -2681,7 +2730,23 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                 return Err(AnalysisCancelled);
             }
         }
-        Ok(collector.candidates.finish())
+        let mut report = exception_hierarchy::HierarchyReport::default();
+        if let Some(index) = exceptions {
+            report = index.collect(
+                request.path,
+                module,
+                request.max_candidates,
+                cancelled,
+                |range, replacement| {
+                    collector.add_candidate(
+                        range,
+                        replacement,
+                        MutationOperator::ExceptionHierarchy,
+                    );
+                },
+            )?;
+        }
+        Ok((collector.candidates.finish(), report))
     }
 
     fn check_cancelled(&mut self) -> bool {
@@ -3335,8 +3400,11 @@ fn ast_candidates<'a, F: Fn() -> bool>(
     facts: &'a AstFacts<'a>,
     request: &'a AnalyzeRequest<'a>,
     cancelled: &'a F,
-) -> Result<ProducerPrefix, AnalysisCancelled> {
-    AstCandidateCollector::collect(module, source, line_index, facts, request, cancelled)
+    exceptions: Option<&exception_hierarchy::ExceptionIndex>,
+) -> Result<(ProducerPrefix, exception_hierarchy::HierarchyReport), AnalysisCancelled> {
+    AstCandidateCollector::collect(
+        module, source, line_index, facts, request, cancelled, exceptions,
+    )
 }
 
 fn byte_range(range: TextRange) -> Range<usize> {

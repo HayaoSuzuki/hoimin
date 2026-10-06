@@ -17,6 +17,7 @@ pub enum FsTargetError {
     InvalidGlob(ignore::Error),
     Walk(ignore::Error),
     NonUtf8Path,
+    AnalysisLimit,
     OutsideRoot,
     UnsupportedPath(String),
 }
@@ -26,6 +27,9 @@ impl fmt::Display for FsTargetError {
         match self {
             Self::InvalidGlob(error) => write!(formatter, "invalid include/exclude glob: {error}"),
             Self::Walk(error) => write!(formatter, "target discovery failed: {error}"),
+            Self::AnalysisLimit => formatter.write_str(
+                "exception hierarchy input discovery cancelled or exceeded its file limit",
+            ),
             Self::NonUtf8Path => formatter.write_str("target path must be valid UTF-8"),
             Self::OutsideRoot => formatter.write_str("discovered path is outside root"),
             Self::UnsupportedPath(path) => {
@@ -53,6 +57,28 @@ fn discover_explicit_with_stats(
     selection: &Selection,
     stats: &DiscoveryStats,
 ) -> Result<Vec<DiscoveredFile>, FsTargetError> {
+    discover_with_control(selection, stats, None)
+}
+
+pub(crate) fn discover_python_bounded(
+    selection: &Selection,
+    limit: usize,
+    cancelled: &dyn Fn() -> bool,
+) -> Result<Vec<DiscoveredFile>, FsTargetError> {
+    discover_with_control(
+        selection,
+        &DiscoveryStats::default(),
+        Some((limit, cancelled)),
+    )
+}
+
+type DiscoveryControl<'a> = Option<(usize, &'a dyn Fn() -> bool)>;
+
+fn discover_with_control(
+    selection: &Selection,
+    stats: &DiscoveryStats,
+    control: DiscoveryControl<'_>,
+) -> Result<Vec<DiscoveredFile>, FsTargetError> {
     let root = selection.root.as_std_path();
     let mut files = BTreeMap::<Utf8PathBuf, DiscoveredFile>::new();
     let scope = DiscoveryScope::new(selection).map(Arc::new);
@@ -64,7 +90,7 @@ fn discover_explicit_with_stats(
         .require_git(false)
         .overrides(excludes)
         .filter_entry(move |entry| normal_filter.keeps(entry));
-    collect(normal.build(), root, &mut files, stats)?;
+    collect(normal.build(), root, &mut files, stats, control)?;
 
     if !selection.includes.is_empty() {
         let includes = build_overrides(root, &selection.includes, &selection.excludes)?;
@@ -79,7 +105,7 @@ fn discover_explicit_with_stats(
             .parents(false)
             .overrides(includes)
             .filter_entry(move |entry| restored_filter.keeps(entry));
-        collect(restored.build(), root, &mut files, stats)?;
+        collect(restored.build(), root, &mut files, stats, control)?;
     }
 
     Ok(files.into_values().collect())
@@ -278,11 +304,18 @@ fn collect(
     root: &Path,
     files: &mut BTreeMap<Utf8PathBuf, DiscoveredFile>,
     stats: &DiscoveryStats,
+    control: DiscoveryControl<'_>,
 ) -> Result<(), FsTargetError> {
     #[cfg(not(test))]
     let _ = stats;
     for entry in builder {
+        if control.is_some_and(|(_, cancelled)| cancelled()) {
+            return Err(FsTargetError::AnalysisLimit);
+        }
         let entry = entry.map_err(FsTargetError::Walk)?;
+        if control.is_some() && !is_python(&entry) {
+            continue;
+        }
         if entry
             .file_type()
             .is_some_and(|file_type| file_type.is_file())
@@ -297,6 +330,10 @@ fn collect(
             let relative = portable_path::from_native(relative)
                 .map_err(|error| FsTargetError::UnsupportedPath(error.into_value()))?;
             let path = Utf8PathBuf::from(relative.into_owned());
+            if control.is_some_and(|(limit, _)| files.len() >= limit && !files.contains_key(&path))
+            {
+                return Err(FsTargetError::AnalysisLimit);
+            }
             files.insert(
                 path.clone(),
                 DiscoveredFile {

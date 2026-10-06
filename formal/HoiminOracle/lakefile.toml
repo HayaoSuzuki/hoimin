@@ -213,3 +213,7 @@ root = "EnvironmentFingerprintAuditMain"
 [[lean_exe]]
 name = "generate_resume_diagnostic"
 root = "ResumeDiagnosticAuditMain"
+
+[[lean_exe]]
+name = "generate_exception_hierarchy"
+root = "ExceptionHierarchyAuditMain"

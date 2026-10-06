@@ -27,6 +27,32 @@ impl PortableFileReader {
         self.classify_read(path, self.root.read(path))
     }
 
+    pub(crate) fn read_bounded(
+        &self,
+        path: &Utf8Path,
+        limit: usize,
+    ) -> Result<Vec<u8>, PortableFileReadError> {
+        use std::io::Read;
+        Self::validate_portable_path(path)?;
+        self.classify_read(
+            path,
+            self.root.with_read_file(path, |file| {
+                let mut bytes = Vec::new();
+                file.take(limit as u64 + 1)
+                    .read_to_end(&mut bytes)
+                    .map_err(|e| WorkspaceError::io("read hierarchy input", path, e))?;
+                if bytes.len() > limit {
+                    return Err(WorkspaceError::io(
+                        "read hierarchy input",
+                        path,
+                        std::io::Error::other("exception hierarchy source byte limit exceeded"),
+                    ));
+                }
+                Ok(bytes)
+            }),
+        )
+    }
+
     fn hash(&self, path: &Utf8Path) -> Result<blake3::Hash, PortableFileReadError> {
         Self::validate_portable_path(path)?;
         self.classify_read(path, self.root.hash(path))

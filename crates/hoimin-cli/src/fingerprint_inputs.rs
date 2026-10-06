@@ -79,15 +79,34 @@ pub fn resolve(
         .collect()
 }
 
-/// Re-resolves fingerprint inputs and compares them with the records frozen into configuration.
-pub(crate) fn recheck(
+/// Include the complete allowed Python input set when project hierarchy analysis is enabled.
+pub(crate) fn resolve_config(
+    config: &hoimin_core::RunConfig,
+) -> Result<Vec<FingerprintInputFile>, FingerprintInputError> {
+    let mut files = config.fingerprint_files.clone();
+    if let Some(project) = crate::analyzer::exception_project::ExceptionProject::from_config(config)
+    {
+        files.extend(
+            project
+                .files(&|| false)
+                .map_err(FingerprintInputError::UnsupportedFile)?
+                .into_iter()
+                .map(camino::Utf8PathBuf::into_string),
+        );
+        files.sort();
+        files.dedup();
+    }
+    resolve(&config.root, &config.fingerprint_includes, &files)
+}
+
+pub(crate) fn recheck_config(
+    config: &hoimin_core::RunConfig,
     root: &Utf8Path,
-    patterns: &[String],
-    files: &[String],
-    expected: &[FingerprintInputFile],
 ) -> Result<(), FingerprintInputRecheckError> {
-    let current = resolve(root, patterns, files)?;
-    if current == expected {
+    let mut current = config.clone();
+    current.root = root.to_owned();
+    current.selection.root = root.to_owned();
+    if resolve_config(&current)? == config.fingerprint_inputs {
         Ok(())
     } else {
         Err(FingerprintInputRecheckError::RecordsChanged)

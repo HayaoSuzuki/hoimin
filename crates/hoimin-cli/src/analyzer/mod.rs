@@ -1,3 +1,5 @@
+pub(crate) mod exception_project;
+use exception_project::ExceptionProject;
 mod protocol;
 #[allow(dead_code)]
 mod rust;
@@ -46,6 +48,7 @@ impl CandidateSpoolOwner {
 
 pub struct AnalyzerHandler {
     root_path: Utf8PathBuf,
+    exception_project: Option<ExceptionProject>,
     root: Option<PortableFileReader>,
     store: Option<CandidateStore>,
     candidate_spool_owner: Option<CandidateSpoolOwner>,
@@ -61,6 +64,7 @@ pub struct Discovery {
 }
 
 struct DiscoveryWork {
+    exception_project: Option<ExceptionProject>,
     root: Utf8PathBuf,
     targets: Vec<TargetSlice>,
     operators: MutationOperatorSelection,
@@ -125,6 +129,7 @@ pub async fn discover_targets(
 ///
 /// Returns `analyzer.timeout` when the deadline expires, or an analyzer error when discovery
 /// cannot complete successfully.
+#[cfg(test)]
 pub(crate) async fn discover_targets_with_timeout(
     root: &Utf8Path,
     targets: &[TargetSlice],
@@ -134,6 +139,7 @@ pub(crate) async fn discover_targets_with_timeout(
     analyzer_timeout: Duration,
 ) -> Result<Discovery, EffectFailed> {
     discover_targets_inner(
+        None,
         root,
         targets,
         operators,
@@ -157,6 +163,7 @@ pub(crate) async fn discover_targets_with_control(
     control: Option<DiscoveryControl>,
 ) -> Result<Discovery, EffectFailed> {
     discover_targets_inner(
+        None,
         root,
         targets,
         operators,
@@ -168,8 +175,32 @@ pub(crate) async fn discover_targets_with_control(
     .await
 }
 
+pub(crate) async fn discover_config_targets(
+    config: &hoimin_core::RunConfig,
+    targets: &[TargetSlice],
+    #[cfg(test)] control: Option<DiscoveryControl>,
+) -> Result<Discovery, EffectFailed> {
+    discover_targets_inner(
+        ExceptionProject::from_config(config),
+        &config.root,
+        targets,
+        &config.operators,
+        config.profile,
+        config.limits.max_candidates.get(),
+        config.limits.analyzer_timeout.get(),
+        #[cfg(test)]
+        control,
+    )
+    .await
+}
+
 #[tracing::instrument(name = "discover_candidates", level = "debug", skip_all, fields(files = targets.len(), max_candidates))]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "test deadline control supplements shared discovery parameters"
+)]
 async fn discover_targets_inner(
+    exception_project: Option<ExceptionProject>,
     root: &Utf8Path,
     targets: &[TargetSlice],
     operators: &MutationOperatorSelection,
@@ -196,7 +227,7 @@ async fn discover_targets_inner(
     };
     #[cfg(not(test))]
     let deadline = discovery_deadline(tokio::time::Instant::now(), analyzer_timeout)?;
-    let work = discovery_work(
+    let mut work = discovery_work(
         root,
         targets,
         operators,
@@ -206,6 +237,9 @@ async fn discover_targets_inner(
         #[cfg(test)]
         control,
     );
+    if exception_project.is_some() {
+        work.exception_project = exception_project;
+    }
     let span = tracing::Span::current();
     let mut task = tokio::task::spawn_blocking(move || {
         let _entered = span.enter();
@@ -311,6 +345,9 @@ fn discovery_work(
     #[cfg(test)] control: Option<DiscoveryControl>,
 ) -> DiscoveryWork {
     DiscoveryWork {
+        exception_project: operators
+            .contains(hoimin_core::MutationOperator::ExceptionHierarchy)
+            .then(|| ExceptionProject::new(root)),
         root: root.to_owned(),
         targets: targets.to_vec(),
         operators: operators.clone(),
@@ -324,6 +361,7 @@ fn discovery_work(
 
 fn discover_targets_blocking(work: DiscoveryWork) -> Result<Discovery, EffectFailed> {
     let DiscoveryWork {
+        exception_project,
         root,
         targets,
         operators,
@@ -337,6 +375,11 @@ fn discover_targets_blocking(work: DiscoveryWork) -> Result<Discovery, EffectFai
     let root = PortableFileReader::open(root.clone()).map_err(|error| {
         EffectFailed::other(EffectId(0), "analyzer.source.read", error.to_string())
     })?;
+    let exceptions = exception_project
+        .as_ref()
+        .map(|p| p.load(&|| cancellation.is_cancelled()))
+        .transpose()
+        .map_err(|e| EffectFailed::other(EffectId(0), "analyzer.exception_hierarchy", e))?;
     let mut discovery = Discovery {
         candidates: Vec::new(),
         diagnostics: Vec::new(),
@@ -360,7 +403,7 @@ fn discover_targets_blocking(work: DiscoveryWork) -> Result<Discovery, EffectFai
             }
             (control.before_analysis)();
         }
-        let output = rust::analyze_source_cancellable(
+        let output = rust::analyze_source_with_exceptions(
             &rust::AnalyzeRequest {
                 path: &target.path,
                 lines: &target.lines,
@@ -370,7 +413,8 @@ fn discover_targets_blocking(work: DiscoveryWork) -> Result<Discovery, EffectFai
                 max_candidates: max_candidates.saturating_sub(discovery.candidates.len()),
             },
             module,
-            || cancellation.is_cancelled(),
+            &|| cancellation.is_cancelled(),
+            exceptions.as_deref(),
         )
         .map_err(|error| analysis_failure(EffectId(0), &target.path, error))?;
         for candidate in output.candidates {
@@ -418,6 +462,7 @@ impl AnalyzerHandler {
     )]
     pub fn new(root: Utf8PathBuf) -> Result<Self, std::io::Error> {
         Ok(Self {
+            exception_project: None,
             root_path: root,
             root: None,
             store: None,
@@ -438,6 +483,11 @@ impl AnalyzerHandler {
         _max_processes: u32,
     ) -> Result<Self, std::io::Error> {
         Self::new(root)
+    }
+
+    pub(crate) fn with_exception_project(mut self, config: &hoimin_core::RunConfig) -> Self {
+        self.exception_project = ExceptionProject::from_config(config);
+        self
     }
 
     #[cfg(test)]
@@ -497,6 +547,12 @@ impl AnalyzerHandler {
             result = async { self.read_source(&request.target.path) } => result
                 .map_err(|error| EffectFailed::other(id, "analyzer.source.read", error.to_string()))?,
         };
+        if self.exception_project.is_none()
+            && operators.contains(hoimin_core::MutationOperator::ExceptionHierarchy)
+        {
+            self.exception_project = Some(ExceptionProject::new(&self.root_path));
+        }
+        let exception_project = self.exception_project.clone();
         let store = self.store.take().expect("store initialized");
         let remaining = request.max_candidates.saturating_sub(store.count());
         let max_candidates = usize::try_from(remaining).unwrap_or(usize::MAX);
@@ -515,6 +571,7 @@ impl AnalyzerHandler {
                 hook();
             }
             analyze_and_store(BlockingAnalysis {
+                exception_project,
                 request,
                 operators,
                 profile,
@@ -556,6 +613,7 @@ impl AnalyzerHandler {
 }
 
 struct BlockingAnalysis {
+    exception_project: Option<ExceptionProject>,
     request: AnalyzeFile,
     operators: MutationOperatorSelection,
     profile: MutationProfile,
@@ -569,6 +627,7 @@ fn analyze_and_store(
     work: BlockingAnalysis,
 ) -> Result<(AnalysisFinished, Option<CandidateStore>), EffectFailed> {
     let BlockingAnalysis {
+        exception_project,
         request,
         operators,
         profile,
@@ -583,7 +642,12 @@ fn analyze_and_store(
         .decoded_source()
         .expect("source was decoded")
         .text();
-    let output = rust::analyze_source_cancellable(
+    let exceptions = exception_project
+        .as_ref()
+        .map(|p| p.load(&|| cancellation.is_cancelled()))
+        .transpose()
+        .map_err(|e| EffectFailed::other(id, "analyzer.exception_hierarchy", e))?;
+    let output = rust::analyze_source_with_exceptions(
         &rust::AnalyzeRequest {
             path: &request.target.path,
             lines: &request.target.lines,
@@ -593,7 +657,8 @@ fn analyze_and_store(
             max_candidates,
         },
         module,
-        || cancellation.is_cancelled(),
+        &|| cancellation.is_cancelled(),
+        exceptions.as_deref(),
     )
     .map_err(|error| analysis_failure(id, &request.target.path, error))?;
     for candidate in output.candidates {
@@ -641,6 +706,10 @@ fn analyze_and_store(
 
 fn map_analyzer_diagnostic(diagnostic: AnalyzerDiagnostic) -> RunAnalysisDiagnostic {
     let (code, default_message) = match diagnostic.code {
+        AnalyzerDiagnosticCode::UnsupportedExceptionHierarchy => (
+            "analyzer.exception_hierarchy_skipped",
+            "unsupported exception hierarchy reference",
+        ),
         AnalyzerDiagnosticCode::InvalidSyntax => {
             ("analyzer.invalid_syntax", "source could not be parsed")
         }
@@ -701,6 +770,9 @@ fn analysis_failure(
 ) -> EffectFailed {
     match error {
         rust::AnalysisError::Cancelled => cancelled(id),
+        rust::AnalysisError::HierarchyLimit | rust::AnalysisError::HierarchySourceChanged => {
+            EffectFailed::other(id, "analyzer.exception_hierarchy", error.to_string())
+        }
         rust::AnalysisError::DepthExceeded { .. } => {
             EffectFailed::other(id, "analyzer.depth", format!("{path}: {error}"))
         }
@@ -1314,5 +1386,84 @@ mod tests {
             !spool_path.exists(),
             "spool owner must be released when detached analysis exits"
         );
+    }
+}
+
+#[cfg(test)]
+mod exception_project_tests {
+    use super::*;
+    #[tokio::test]
+    async fn exception_hierarchy_discovery_reads_unselected_module() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("errors.py"),
+            "class Root(Exception): pass\nclass Child(Root): pass\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("service.py"),
+            "from errors import Child, Root\ndef f():\n    raise Child()\n",
+        )
+        .unwrap();
+        let root = Utf8PathBuf::from_path_buf(dir.path().into()).unwrap();
+        let operators = serde_json::from_value(serde_json::json!(["exception_hierarchy"])).unwrap();
+        let output = discover_targets(
+            &root,
+            &[TargetSlice {
+                path: "service.py".into(),
+                lines: vec![],
+                symbols: vec![],
+            }],
+            &operators,
+            MutationProfile::Full,
+            100,
+        )
+        .await
+        .unwrap();
+        assert_eq!(output.candidates.len(), 1);
+        assert_eq!(output.candidates[0].replacement, "Root");
+    }
+}
+
+#[cfg(test)]
+mod exception_fingerprint_tests {
+    #[test]
+    fn exception_hierarchy_fingerprints_unselected_inputs_and_additions() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("service.py"),
+            "from errors import Child, Root\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("errors.py"),
+            "class Root(Exception): pass\nclass Child(Root): pass\n",
+        )
+        .unwrap();
+        let config = crate::cli::parse_config_from([
+            "hoimin",
+            "run",
+            "--root",
+            dir.path().to_str().unwrap(),
+            "--file",
+            "service.py",
+            "--operators",
+            "exception_hierarchy",
+            "--",
+            "python3",
+            "-m",
+            "unittest",
+        ])
+        .unwrap();
+        let prepared = crate::shell::prepare_run_config(config.clone()).unwrap();
+        assert_eq!(prepared.fingerprint_inputs.len(), 2);
+        std::fs::write(
+            dir.path().join("new_errors.py"),
+            "class NewError(Exception): pass\n",
+        )
+        .unwrap();
+        let next = crate::shell::prepare_run_config(config).unwrap();
+        assert_eq!(next.fingerprint_inputs.len(), 3);
+        assert_ne!(prepared.fingerprint_inputs, next.fingerprint_inputs);
     }
 }

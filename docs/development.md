@@ -1334,3 +1334,100 @@ termination/exit observations. Hash collisions, arbitrary native bytes, Windows
 OS behavior, and concurrent environment mutation are outside the finite model.
 Native/framing/platform config tests and public plan/verify/privacy controls cover
 those implementation boundaries where stated; tests do not mutate global env.
+
+## User-defined exception hierarchies
+
+`exception_hierarchy` is an explicit-only operator implemented in
+`analyzer/exception_hierarchy.rs`, `analyzer/exception_scopes.rs`, and
+`analyzer/exception_project.rs`. The project
+loader discovers Python inputs using the existing include/exclude policy, without
+file/line/symbol/changed mutation filters. Module roots follow worker precedence:
+project root, explicit import roots, then source roots. Inherited external
+PYTHONPATH entries and third-party packages are outside the analysis scope.
+
+The index retains binding/import/class summaries and decoded-source hashes.
+Loaded bytes must also match the prepared fingerprint before decoding. Prepared
+Python input paths reserve module origins even if temporarily missing, so a lower
+search root cannot silently supply different classes during a delete/restore race. Both
+plan discovery and run analysis reuse a cached index for sequential loads within their analysis session;
+failed or cancelled builds are not cached. Selected source contents must match the
+indexed snapshot. The cache does not enforce single initialization or first-success
+publication for concurrent callers. `fingerprint_inputs::resolve_config` adds the allowed Python input
+set to existing fingerprint records, and verify/run rechecks recompute the set.
+This covers dependency additions and deletions as well as content changes, and the
+workspace manifest check verifies copied automatic inputs.
+
+Supported class identities are unconditional top-level single-inheritance classes
+without decorators, type parameters, class keywords or custom subclass hooks. Class
+bodies can contain methods, pass statements and docstrings. Explicit class imports,
+relative class imports, module imports, and aliases are recognized; re-exports and
+`from package import submodule` are not inferred. Duplicate/rebound bindings and
+namespace manipulation invalidate trust. Relative imports use the known name under which their containing module is loaded,
+rather than guessing from its first filesystem root. A file imported under multiple module
+names is excluded because Python creates distinct class identities for those loads.
+Ambiguous module/package layouts, including namespace portions shadowed by a regular
+package at a different root, are conservatively excluded. Top-level CPython 3.14 standard-library/frozen module names and `__main__` are
+reserved; an identically named project file cannot establish an import identity.
+Names below project packages, such as `pkg.sys`, remain eligible. This lexical model does
+not prove safety against arbitrary external monkeypatching or custom import hooks.
+Simple, chained and annotated name assignments and assignment expressions propagate
+known attribute writes back through their possible aliases, including private names.
+Cycles and rebinding retain all possible edges. Keys contain a lexical scope ID
+and the normalized name: unrelated parameters and local imports do not share a
+vertex with a module binding. Implicit `__class__` writes resolve to the owning
+class, including through aliases and nested closures. Global/nonlocal/free references resolve before
+propagation; methods skip class namespaces, while class-body reads conservatively
+retain both local and outer possibilities. Definition headers, lambda bodies and
+comprehensions have separate binding rules, including outer walrus targets and
+first-iterable evaluation. Only affected module bindings invalidate module names;
+reached import keys invalidate their provider from any scope. Each module has
+separate limits of 65536 assignment edges, direct write roots and scope IDs. Each
+scope's declaration set is capped at 65536 entries, with 131072 declaration entries
+across all scopes. This does not make assignment aliases eligible spellings.
+Untracked function/container aliases inside indexed modules can still affect
+candidates in other modules. Unsupported effects are not always detected and skipped,
+so emitted spellings are not guaranteed
+to resolve to exception classes at runtime. The
+[original-design review](superpowers/reports/2026-10-05-exception-hierarchy-design-review.md)
+records the design gaps; the [alias correspondence audit](superpowers/reports/2026-10-05-exception-alias-lean-audit.md)
+records the bounded assignment repair, Lean proofs and extracted-fact comparisons.
+The [scope and outcome audit](superpowers/reports/2026-10-05-exception-scope-lean-audit.md)
+records scoped identities, diagnostic semantics, and their verification.
+
+Pairs connect direct user-defined parents/children and siblings with a shared
+user-defined direct parent. Builtins seed ancestry only. Termination and exception
+group ancestry is rejected. Handler mutations allow custom constructors; `raise`
+mutations require the entire user-defined ancestry to inherit the plain `Exception`
+constructor, with neither `__init__` nor `__new__` overrides. Specialized builtin
+constructors are handler-only. Arguments and `from` causes are preserved.
+
+Function parameters, binding targets, captures and definition-header assignments
+suppress affected references throughout their lexical scope, including private
+bindings after Python class name mangling. Qualified references require their
+submodule to have been loaded before the containing function or module-level use. Class bodies are
+excluded; method scopes skip class-local bindings. Module definitions used inside a
+function must already exist before that function's definition, preventing early
+calls from observing an inserted future name. Conservative exclusions may suppress
+valid candidates; they never authorize an inserted import.
+
+The loader limits input to 4096 files, 16 MiB per file, 64 MiB total decoded source,
+and 65536 entries per module-name, binding and visible-alias table. Ancestry/import traversal is limited to 256 steps and
+uses the existing AST depth guard. Cancellation is checked during discovery,
+index construction and replacement enumeration. Per-site replacement retention is
+bounded by `max_candidates + 1`, preserving the existing producer's source-order
+prefix and truncation signal. One `exception_hierarchy_skipped` diagnostic per file
+aggregates incomplete-analysis reasons (disabled scope, unsupported expression,
+unresolved binding or untrusted module) and locates the earliest skipped site.
+Intentional exclusions such as no related class, no visible destination, custom
+constructor policy and bare raises do not warn. Diagnostics do not mark analysis
+as truncated. The input/table limits above
+do not constitute a peak-memory bound: decoded sources, an AST and transient
+summaries can coexist, and some summary limits are checked after construction.
+
+Focused verification:
+
+```console
+cargo test -p hoimin-core --test operator_selection
+cargo test -p hoimin-cli --lib hierarchy
+cargo test -p hoimin-cli --test exception_hierarchy
+```

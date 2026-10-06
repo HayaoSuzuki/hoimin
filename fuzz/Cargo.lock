@@ -265,6 +265,7 @@ dependencies = [
 name = "hoimin-fuzz"
 version = "0.0.0"
 dependencies = [
+ "blake3",
  "camino",
  "hoimin-core",
  "libfuzzer-sys",

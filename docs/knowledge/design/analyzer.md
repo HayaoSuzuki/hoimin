@@ -5,6 +5,21 @@ description: 構文・名前解決・変更するバイト範囲・候補保持�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-692-hierarchy
+  resource: ../../superpowers/specs/2026-10-05-issue-692-exception-hierarchy.md
+  revision: fae3ce3e82a8a768c8dca49531384aa081a97f71
+  working_tree: clean
+  sha256: 540858afd18bf3ac21382ead8b016358aae9e5f2a4aa3e7fc37a2ae0591d2361
+- id: issue-692-scopes
+  resource: ../../superpowers/specs/2026-10-05-exception-scope-outcomes.md
+  revision: fae3ce3e82a8a768c8dca49531384aa081a97f71
+  working_tree: clean
+  sha256: 08bcdc67d25554eb86990d7f8e83ca451d8f72639069ea72acbb6092d8a1f101
+- id: issue-692-verification
+  resource: ../../superpowers/reports/2026-10-05-exception-scope-lean-audit.md
+  revision: fae3ce3e82a8a768c8dca49531384aa081a97f71
+  working_tree: clean
+  sha256: 290244cc4afcb16315fd2d0353da0dedf0e6c64d82c5dc03cee393dbd98088ff
 - id: issue-556-design
   resource: ../../superpowers/specs/2026-09-24-issue-556-with-suppression.md
   revision: 282e941e4c1a5a23303d30beca881d7bbfde7763
@@ -536,3 +551,21 @@ nullable追加では、str/int/float/bool/bytesの名前とlist/set/dictの型�
 Leanの子孫検査モデルと公開planの対応を通常の回帰テストへ追加する。名前の再束縛に関する#564の修正を併合し、その4入力も期待値を保持したstrict検証へ移行する。65入力すべてを照合し、report-only指定は拒否する。検証範囲と過去の不一致は[監査記録](../audits/nullable-gates-2026-09.md)を参照する。[^issue-565-design]
 
 [^issue-565-design]: [Issue 565: recursively exclude disallowed annotation arguments](../../superpowers/specs/2026-09-24-issue-565-annotation-descendants.md)。
+
+## ユーザ定義例外の継承関係（Issue #692）
+
+`exception_hierarchy` は明示指定する演算子で、プロジェクトの Python ファイルを実行せずに例外クラスと明示 import を収集する。既存の名前で参照できる直接のユーザ定義親子、または同じユーザ定義の直接親を持つ兄弟を、`except`・`except*`・`raise` の置換候補にする。`raise` は継承経路全体で `Exception` のコンストラクタを継承する組に限る。既定の演算子集合は変更せず、import の追加もしない。[^issue-692-hierarchy]
+
+索引用の入力には、変異対象に選ばれていない依存ファイルも含める。これらの追加・削除・内容変更を fingerprint で検出し、plan・run・verify の入力整合性を確認する。条件付き定義、多重継承、再 export、外部パッケージなどの解析範囲と資源上限は原設計を参照する。[^issue-692-hierarchy]
+
+別名と属性書き込みの追跡にはスコープ番号と正規化名の組を使い、無関係な同名引数をモジュールの例外クラスと混同しない。global・nonlocal・自由変数を解決し、メソッドの暗黙の `__class__` は所属クラスへ結び付ける。解析を打ち切った参照は理由・件数・最初の位置を一つの診断に集約し、関連クラスなしやコンストラクタ条件による除外とは区別する。[^issue-692-scopes]
+
+この変更の最終実装 `c5f288c` では、全体テスト2,601件成功・22件スキップ、Lean の18定理、公開160ケース・内部215ケースの照合を記録した。設計・計画・実装・テストの各段階のセルフレビューと、独立レビューで見つけた `__class__` 書き込みの修正も監査記録に残す。モデル上の証明は Rust 全体の正しさやプロセスのピークメモリ量の保証を意味しない。関数の引数・戻り値やコンテナを介する別名、型パラメータの注釈スコープなどはモデルの対象外である。[^issue-692-verification]
+
+この節は2026-10-05に出典と照合した。PR作成時に追加したのはカタログと参照検査であり、上記の実装テストを再実行したという記録ではない。名前解決、継承・コンストラクタ条件、依存入力の探索、診断条件を変更するときは、これらの設計・テスト・Lean の対応範囲も再確認する。
+
+[^issue-692-hierarchy]: [2026-10-05-issue-692-exception-hierarchy.md](../../superpowers/specs/2026-10-05-issue-692-exception-hierarchy.md)。
+
+[^issue-692-scopes]: [2026-10-05-exception-scope-outcomes.md](../../superpowers/specs/2026-10-05-exception-scope-outcomes.md)。
+
+[^issue-692-verification]: [2026-10-05-exception-scope-lean-audit.md](../../superpowers/reports/2026-10-05-exception-scope-lean-audit.md)。

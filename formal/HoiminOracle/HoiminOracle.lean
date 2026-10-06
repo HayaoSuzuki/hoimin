@@ -111,3 +111,5 @@ import HoiminOracle.PrivateAnnotationImportModel
 import HoiminOracle.EnvironmentFingerprintModel
 
 import HoiminOracle.ResumeDiagnosticModel
+import HoiminOracle.ExceptionHierarchyModel
+import HoiminOracle.ExceptionHierarchyProofs

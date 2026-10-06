@@ -9043,3 +9043,314 @@ fn private_annotation_import_gate_preserves_header_context() {
         );
     }
 }
+
+fn hierarchy_candidates(source: &str) -> Vec<(String, String)> {
+    let operators = serde_json::from_value(serde_json::json!(["exception_hierarchy"])).unwrap();
+    let output = analyze_source(
+        &AnalyzeRequest {
+            path: Utf8Path::new("sample.py"),
+            lines: &[],
+            symbols: &[],
+            operators: &operators,
+            profile: MutationProfile::Full,
+            max_candidates: 100,
+        },
+        source,
+    );
+    for candidate in &output.candidates {
+        apply_candidate_and_reparse(source, candidate);
+    }
+    output
+        .candidates
+        .into_iter()
+        .map(|c| (c.original, c.replacement))
+        .collect()
+}
+
+#[test]
+fn exception_hierarchy_mutates_local_handlers_and_raises() {
+    let classes = "class AppError(Exception): pass\nclass MissingError(AppError): pass\nclass ConflictError(AppError): pass\n";
+    for usage in [
+        "def f():\n    raise MissingError('x') from cause\n",
+        "def f():\n    try: action()\n    except MissingError: pass\n",
+        "def f():\n    try: action()\n    except* MissingError: pass\n",
+    ] {
+        assert_eq!(
+            hierarchy_candidates(&format!("{classes}{usage}")),
+            vec![
+                ("MissingError".into(), "AppError".into()),
+                ("MissingError".into(), "ConflictError".into()),
+            ]
+        );
+    }
+}
+
+#[test]
+fn exception_hierarchy_custom_constructors_are_handler_only() {
+    let classes = "class AppError(Exception): pass\nclass MissingError(AppError):\n    def __init__(self, *, code): pass\n";
+    assert!(
+        hierarchy_candidates(&format!(
+            "{classes}def f():\n    raise MissingError(code=1)\n"
+        ))
+        .is_empty()
+    );
+    assert_eq!(
+        hierarchy_candidates(&format!(
+            "{classes}def f():\n    try: action()\n    except MissingError: pass\n"
+        )),
+        vec![("MissingError".into(), "AppError".into())]
+    );
+}
+
+#[test]
+fn exception_hierarchy_rejects_shadowed_and_unsupported_classes() {
+    let classes = "class AppError(Exception): pass\nclass MissingError(AppError): pass\n";
+    for usage in [
+        "def f(MissingError):\n    raise MissingError()\n",
+        "def f():\n    raise MissingError()\n    AppError = other\n",
+        "MissingError = other\ndef f():\n    raise MissingError()\n",
+        "def f():\n    exec('AppError = other')\n    raise MissingError()\n",
+    ] {
+        assert!(
+            hierarchy_candidates(&format!("{classes}{usage}")).is_empty(),
+            "{usage}"
+        );
+    }
+    for base in [
+        "BaseException",
+        "SystemExit",
+        "KeyboardInterrupt",
+        "GeneratorExit",
+        "ExceptionGroup",
+        "BaseExceptionGroup",
+        "Unknown",
+    ] {
+        assert!(hierarchy_candidates(&format!("class AppError({base}): pass\nclass MissingError(AppError): pass\ntry: action()\nexcept MissingError: pass\n")).is_empty(), "{base}");
+    }
+}
+
+#[test]
+fn exception_hierarchy_preserves_alias_identity_and_scope() {
+    let classes = "class Root(Exception): pass\nclass Child(Root): pass\n";
+    for usage in [
+        "def f():\n    try: action()\n    except Child as Root: pass\n",
+        "def f():\n    match x:\n        case {'x': Root}: pass\n    raise Child()\n",
+        "def f():\n    global Root\n    Root = other\n    raise Child()\n",
+        "Root.__bases__ = (other,)\ndef f():\n    raise Child()\n",
+    ] {
+        assert!(
+            hierarchy_candidates(&format!("{classes}{usage}")).is_empty(),
+            "{usage}"
+        );
+    }
+    assert_eq!(
+        hierarchy_candidates(&format!(
+            "{classes}class Service:\n    Root = other\n    def f(self):\n        raise Child()\n"
+        )),
+        vec![("Child".into(), "Root".into())]
+    );
+}
+
+#[test]
+fn exception_hierarchy_cross_module_and_relative_imports() {
+    use super::exception_hierarchy::ExceptionIndex;
+    let errors =
+        "class Root(Exception): pass\nclass Child(Root): pass\nclass Sibling(Root): pass\n";
+    for (source, expected) in [
+        (
+            "from .errors import Child as C, Root as R\ndef f():\n    raise C()\n",
+            vec![("C", "R")],
+        ),
+        (
+            "import pkg.errors as e\ndef f():\n    raise e.Child()\n",
+            vec![("e.Child", "e.Root"), ("e.Child", "e.Sibling")],
+        ),
+        (
+            "from .errors import Child\ndef f():\n    raise Child()\n",
+            vec![],
+        ),
+    ] {
+        let path = Utf8Path::new("pkg/service.py");
+        let index = ExceptionIndex::from_sources(
+            &[
+                ("pkg/errors.py".into(), errors.into()),
+                (path.to_owned(), source.into()),
+            ],
+            &["".into()],
+            &|| false,
+        )
+        .unwrap();
+        let operators = serde_json::from_value(serde_json::json!(["exception_hierarchy"])).unwrap();
+        let output = super::analyze_source_with_exceptions(
+            &AnalyzeRequest {
+                path,
+                lines: &[],
+                symbols: &[],
+                operators: &operators,
+                profile: MutationProfile::Full,
+                max_candidates: 100,
+            },
+            source,
+            &|| false,
+            Some(&index),
+        )
+        .unwrap();
+        assert_eq!(
+            output
+                .candidates
+                .iter()
+                .map(|c| (c.original.as_str(), c.replacement.as_str()))
+                .collect::<Vec<_>>(),
+            expected
+        );
+        for c in &output.candidates {
+            apply_candidate_and_reparse(source, c);
+        }
+    }
+}
+
+#[test]
+fn exception_hierarchy_is_conservative_at_definition_and_constructor_boundaries() {
+    for source in [
+        "class Child(Root): pass\nclass Root(Exception): pass\ndef f():\n    raise Child()\n",
+        "class Root(Exception): pass\n@decorate\nclass Child(Root): pass\ndef f():\n    raise Child()\n",
+        "class Root(Exception): pass\nif condition:\n    class Child(Root): pass\ndef f():\n    raise Child()\n",
+        "class Root(Exception): pass\nclass Child(Root, Mixin): pass\ndef f():\n    raise Child()\n",
+        "class Root(Exception):\n    def __new__(cls): pass\nclass Child(Root): pass\ndef f():\n    raise Child\n",
+        "class Root(OSError): pass\nclass Child(Root): pass\ndef f():\n    raise Child()\n",
+        "class Root(Exception): pass\nclass Child(Root): pass\ndef f(Root):\n    def inner():\n        raise Child()\n",
+    ] {
+        assert!(hierarchy_candidates(source).is_empty(), "{source}");
+    }
+    let source = "class Root(Exception): pass\nclass Child(Root): pass\ndef f(Root):\n    raise Child()\nclass Later(Child): pass\n";
+    assert!(
+        hierarchy_candidates(source).is_empty(),
+        "later definitions must not become visible inside an earlier function"
+    );
+    let source = "class Root(RuntimeError): pass\nclass Child(Root): pass\ntry: action()\nexcept Child: pass\n";
+    assert_eq!(
+        hierarchy_candidates(source),
+        vec![("Child".into(), "Root".into())]
+    );
+}
+
+#[test]
+fn exception_hierarchy_respects_candidate_prefix_selection_and_cancellation() {
+    let source = "class Root(Exception): pass\nclass A(Root): pass\nclass B(Root): pass\nclass C(Root): pass\ndef f():\n    raise A()\ndef g():\n    raise B()\n";
+    let operators = serde_json::from_value(serde_json::json!(["exception_hierarchy"])).unwrap();
+    let mut request = AnalyzeRequest {
+        path: Utf8Path::new("sample.py"),
+        lines: &[],
+        symbols: &[],
+        operators: &operators,
+        profile: MutationProfile::Full,
+        max_candidates: 100,
+    };
+    let full = analyze_source(&request, source);
+    assert_eq!(full.candidates.len(), 6);
+    for limit in 0..=6 {
+        request.max_candidates = limit;
+        let output = analyze_source(&request, source);
+        assert_eq!(output.candidates, full.candidates[..limit]);
+        assert_eq!(output.truncated, limit < 6);
+    }
+    request.max_candidates = 100;
+    let symbols = ["g".to_owned()];
+    request.symbols = &symbols;
+    assert_eq!(analyze_source(&request, source).candidates.len(), 3);
+    assert!(matches!(
+        analyze_source_cancellable(&request, source, || true),
+        Err(super::AnalysisError::Cancelled)
+    ));
+}
+
+#[test]
+fn exception_hierarchy_rejects_import_cycles_and_unloaded_submodules() {
+    use super::exception_hierarchy::ExceptionIndex;
+    let cases = [
+        vec![
+            (
+                "a.py",
+                "from b import Child\nclass Root(Exception): pass\ndef f():\n    raise Child()\n",
+            ),
+            ("b.py", "from a import Root\nclass Child(Root): pass\n"),
+        ],
+        vec![
+            (
+                "a.py",
+                "import pkg\ndef f():\n    raise pkg.errors.Child()\n",
+            ),
+            (
+                "pkg/errors.py",
+                "class Root(Exception): pass\nclass Child(Root): pass\n",
+            ),
+            ("pkg/__init__.py", ""),
+        ],
+    ];
+    for sources in cases {
+        let input = sources
+            .iter()
+            .map(|(p, s)| ((*p).into(), (*s).to_owned()))
+            .collect::<Vec<_>>();
+        let index = ExceptionIndex::from_sources(&input, &["".into()], &|| false).unwrap();
+        let parsed = parse_module(sources[0].1).unwrap();
+        let mut output = Vec::new();
+        index
+            .collect(
+                Utf8Path::new("a.py"),
+                parsed.syntax(),
+                100,
+                &|| false,
+                |_, name| output.push(name),
+            )
+            .unwrap();
+        assert!(output.is_empty(), "{sources:?}");
+    }
+}
+
+#[test]
+fn exception_hierarchy_rejects_definition_header_rebinding_and_builtin_attributes() {
+    for source in [
+        "class Root(Exception): pass\nclass Child(Root): pass\ndef bind(x=(Child := ValueError)): pass\ndef f():\n    raise Root()\n",
+        "from builtins import Exception as E\nclass Root(E.__base__): pass\nclass Child(Root): pass\ndef f():\n    raise Child()\n",
+        "class Root(Exception): pass\nclass Child(Root): pass\nclass Other((Child := ValueError)): pass\ndef f():\n    raise Root()\n",
+    ] {
+        assert!(hierarchy_candidates(source).is_empty(), "{source}");
+    }
+}
+
+#[test]
+fn exception_hierarchy_respects_implicit_class_cells_and_private_names() {
+    for source in [
+        "class __class__(Exception): pass\nclass Child(__class__): pass\nclass Other(Exception):\n    def f(self):\n        raise __class__()\n",
+        "class Root(Exception): pass\nclass __Child(Root): pass\nclass Other:\n    def f(self):\n        raise __Child()\n",
+    ] {
+        assert!(hierarchy_candidates(source).is_empty(), "{source}");
+    }
+}
+
+#[test]
+fn exception_hierarchy_audit_mangled_bindings_shadow_module_aliases() {
+    let classes = "class Root(Exception): pass\nclass _Service__Child(Root): pass\n";
+    for usage in [
+        "class Service:\n    def f(self, __Child):\n        raise _Service__Child()\n",
+        "class Service:\n    def f(self):\n        __Child = ValueError\n        raise _Service__Child()\n",
+        "class Service:\n    def f(self, __Child):\n        def nested():\n            raise _Service__Child()\n",
+        "class Service:\n    def change(self):\n        global __Child\n        __Child = ValueError\ndef f():\n    raise _Service__Child()\n",
+    ] {
+        assert!(
+            hierarchy_candidates(&format!("{classes}{usage}")).is_empty(),
+            "{usage}"
+        );
+    }
+}
+
+#[test]
+fn exception_hierarchy_audit_mangled_spelling_without_local_binding_remains_eligible() {
+    assert_eq!(
+        hierarchy_candidates(
+            "class Root(Exception): pass\nclass _Service__Child(Root): pass\nclass Service:\n    def f(self):\n        raise _Service__Child()\n"
+        ),
+        vec![("_Service__Child".into(), "Root".into())]
+    );
+}
