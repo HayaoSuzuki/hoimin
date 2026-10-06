@@ -581,6 +581,7 @@ const BEHAVIORAL_OPERATORS: &[&str] = &[
     "enum_member_replace",
     "return_tuple_swap",
     "string_literal_empty",
+    "optional_keyword_delete",
     "conversion_call_remove",
     "container_element_delete",
     "statement_delete",
@@ -666,7 +667,7 @@ fn ranking_assigns_every_operator_to_its_fixed_category() {
         .into_iter()
         .filter_map(MutationOperator::from_name)
         .collect::<BTreeSet<_>>();
-    assert_eq!(tested.len(), 68);
+    assert_eq!(tested.len(), 69);
     assert_eq!(tested, canonical);
 
     for (operators, expected) in categories {

@@ -262,6 +262,7 @@ fn operator_reason(operator: &str) -> Option<RankingReasonCode> {
         | MutationOperator::ExceptionTupleRemoveMember => RankingReasonCode::ExceptionHandling,
         MutationOperator::ContainerElementDelete
         | MutationOperator::ConversionCallRemove
+        | MutationOperator::OptionalKeywordDelete
         | MutationOperator::StringLiteralEmpty
         | MutationOperator::ReturnTupleSwap
         | MutationOperator::EnumMemberReplace

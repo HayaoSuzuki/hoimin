@@ -1626,3 +1626,5 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 - [Issue #706 design](../../superpowers/reports/issue-706/design.md)
 
 - [Issue #707 design](../../superpowers/reports/issue-707/design.md)
+
+- [Issue #708 design](../../superpowers/reports/issue-708/design.md)

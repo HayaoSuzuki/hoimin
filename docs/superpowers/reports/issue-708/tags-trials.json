@@ -1,0 +1,9 @@
+{
+  "project": "packaging 26.3",
+  "file": "packaging/tags.py",
+  "status": "blocked_by_existing_analyzer_failure",
+  "error": "fact_index.rs:106 duplicate unary-not operator start; plan.discovery worker panic",
+  "candidate_count": null,
+  "baseline": "not run",
+  "equivalence": "not assessed"
+}

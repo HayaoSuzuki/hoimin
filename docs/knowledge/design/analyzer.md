@@ -325,6 +325,12 @@ sources:
   working_tree: untracked
   sha256: 30d5553957b88c0d968dcf953995d3cd81fcf53a2579b36272d694e9d935e6ad
 
+- id: issue-708
+  resource: ../../superpowers/reports/issue-708/design.md
+  revision: 3c2a0fda1fbd54719433e55a6d747ce11f47e1c7
+  working_tree: untracked
+  sha256: 4fa705263311a2b6497f74f9bdedd359fb1cf83a3c01520855e04d77622cb48c
+
 ---
 
 # 構文と名前解決の契約
@@ -699,3 +705,7 @@ container_element_delete は list・括弧付き tuple・dict から1要素を�
 conversion_call_remove は builtin と解決できる単純名の変換呼び出しを括弧付き引数に置換し、引数評価を1回残す。変換・コピー等は省略し、再束縛・展開・generator・束縛・中断・型式・代入ターゲットは除外する。 [^issue-707]
 
 [^issue-707]: [設計](../../superpowers/reports/issue-707/design.md)
+
+optional_keyword_delete は一意な同一モジュール関数への呼び出しの引数束縛を検証し、default のある明示キーワードを1つ除く。残る引数の順序と既存 default を保ち、曖昧な束縛や関数の流出、型式、代入ターゲットを除外する。 [^issue-708]
+
+[^issue-708]: [設計](../../superpowers/reports/issue-708/design.md)

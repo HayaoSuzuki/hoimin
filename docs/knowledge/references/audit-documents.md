@@ -1231,3 +1231,7 @@ sources:
 - [Issue #706 review](../../superpowers/reports/issue-706/review.md)
 
 - [Issue #707 review](../../superpowers/reports/issue-707/review.md)
+
+- [Issue #708 review](../../superpowers/reports/issue-708/review.md)
+
+- [Analyzer issues 696–708 stack and evidence](../../superpowers/reports/analyzer-696-708.md)

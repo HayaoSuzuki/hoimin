@@ -390,9 +390,9 @@ the detailed capability and cleanup model.
 Without `--operators`, a run selects all 43 runtime operators. `--operators`
 (comma-separated) selects an explicit set; `--exclude-operators` then removes
 individual IDs or selector families. Type-annotation `type_*` operators remain
-opt-in. Hoimin exposes 68 operator IDs in total: 43 default runtime IDs, seven
+opt-in. Hoimin exposes 69 operator IDs in total: 43 default runtime IDs, seven
 opt-in type IDs, five opt-in risky exception IDs, `exception_hierarchy`, and
-`statement_delete`, `integer_literal_neighbor`, `condition_constant`, `function_body_erase`, `enum_member_replace`, `augmented_to_assignment`, `return_tuple_swap`, `string_literal_empty`, `while_condition_false`, `condition_clause_delete`, `container_element_delete`, and `conversion_call_remove`.
+`statement_delete`, `integer_literal_neighbor`, `condition_constant`, `function_body_erase`, `enum_member_replace`, `augmented_to_assignment`, `return_tuple_swap`, `string_literal_empty`, `while_condition_false`, `condition_clause_delete`, `container_element_delete`, `conversion_call_remove`, and `optional_keyword_delete`.
 
 | Group | Runtime IDs | Mutations |
 | --- | --- | --- |
@@ -1029,3 +1029,12 @@ str/bytes/list/tuple/dict/set/frozenset and skips keywords, unpacking, generator
 binding/suspension, shadowed names, type roles and assignment targets. The argument is
 evaluated once; conversion hooks, validation, copying and iterator consumption disappear.
 Known scope rebinding is checked; arbitrary external builtin monkey patching is not proven.
+
+`--operators optional_keyword_delete` removes one explicitly supplied optional keyword
+from a uniquely bound, undecorated synchronous top-level function in the same file.
+It validates the original argument binding, preserves other argument order and uses
+the existing default object without evaluating the removed argument. Calls before the
+definition ends, function escapes/aliases, known rebinding, dynamic namespace access,
+variadics, type parameters, names beginning with `__`, expansions and unsafe/type/target
+roles are excluded.
+Reconstruction normalizes inter-argument trivia; external monkey patching is not proven.

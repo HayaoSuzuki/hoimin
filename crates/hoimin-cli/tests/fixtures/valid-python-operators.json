@@ -338,5 +338,10 @@
     "operator": "conversion_call_remove",
     "status": "deferred",
     "reason": "Dedicated source, CPython and public CLI tests; outside initial cross-producer corpus"
+  },
+  {
+    "operator": "optional_keyword_delete",
+    "status": "deferred",
+    "reason": "Dedicated source, CPython and public CLI tests; outside initial cross-producer corpus"
   }
 ]
