@@ -113,6 +113,7 @@ pub enum MutationOperator {
     ConditionConstant,
     FunctionBodyErase,
     EnumMemberReplace,
+    AugmentedToAssignment,
 }
 
 impl MutationOperator {
@@ -127,6 +128,7 @@ impl MutationOperator {
         match self {
             Self::FunctionBodyErase => "function_body_erase",
             Self::EnumMemberReplace => "enum_member_replace",
+            Self::AugmentedToAssignment => "augmented_to_assignment",
             Self::ConditionConstant => "condition_constant",
             Self::IntegerLiteralNeighbor => "integer_literal_neighbor",
             Self::StatementDelete => "statement_delete",
@@ -188,7 +190,7 @@ impl MutationOperator {
             Self::TypeSequenceIterable => "type_sequence_iterable",
         }
     }
-    fn all() -> [Self; 61] {
+    fn all() -> [Self; 62] {
         [
             Self::CompareEqNe,
             Self::CompareOrder,
@@ -251,6 +253,7 @@ impl MutationOperator {
             Self::ConditionConstant,
             Self::FunctionBodyErase,
             Self::EnumMemberReplace,
+            Self::AugmentedToAssignment,
         ]
     }
 }

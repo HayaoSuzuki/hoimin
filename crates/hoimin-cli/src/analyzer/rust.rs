@@ -3360,6 +3360,32 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         }
     }
 
+    fn collect_augmented_to_assignment(&mut self, assign: &ruff_python_ast::StmtAugAssign) {
+        if !self
+            .request
+            .operators
+            .contains(MutationOperator::AugmentedToAssignment)
+            || !matches!(assign.target.as_ref(), Expr::Name(_))
+        {
+            return;
+        }
+        let gap = TextRange::new(assign.target.end(), assign.value.start());
+        for token in self.facts.candidate_tokens_in_range(gap) {
+            if (self.cancelled)() {
+                self.cancelled_observed = true;
+                return;
+            }
+            if token.kind().as_augmented_assign_operator() == Some(assign.op) {
+                self.add_candidate(
+                    token.range(),
+                    "=".to_owned(),
+                    MutationOperator::AugmentedToAssignment,
+                );
+                return;
+            }
+        }
+    }
+
     fn collect_tuple_exception_handler(&mut self, tuple: &ExprTuple) {
         let Some(names) = supported_exception_tuple_names(tuple, self.facts) else {
             return;
@@ -3416,6 +3442,9 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
 impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
     fn visit_stmt(&mut self, statement: &'ast Stmt) {
         if !self.check_cancelled() {
+            if let Stmt::AugAssign(assign) = statement {
+                self.collect_augmented_to_assignment(assign);
+            }
             if self
                 .request
                 .operators

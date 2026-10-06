@@ -283,6 +283,12 @@ sources:
   working_tree: untracked
   sha256: e8615e151e19ee6a0699326b59823c4e65170b36865102c59ee639c77d3e25cc
 
+- id: issue-701
+  resource: ../../superpowers/reports/issue-701/design.md
+  revision: c7920e0
+  working_tree: untracked
+  sha256: 874cc475bf39b5c0d99c6176ac18a66211e67dea1ec8548caa2490e25d20843a
+
 ---
 
 # 構文と名前解決の契約
@@ -629,3 +635,7 @@ Lean の証明は、与えられたノード分類に対する適用条件と単
 明示選択の `enum_member_replace` は、同一モジュールの確定した Enum 定義を索引化し、異なる値の代表メンバーへ属性名だけを置換する。同値の別名は候補を増やさない。名前の隠蔽、動的な名前空間操作、未対応の定義や値は保守的に除外する。識別子の元の綴りを保存し、解析器が値を区別できないサロゲート文字列は診断する。[^issue-700]
 
 [^issue-700]: [Enum の設計と制約](../../superpowers/reports/issue-700/design.md)・[レビューと検証](../../superpowers/reports/issue-700/review.md)
+
+`augmented_to_assignment` は単純な名前への複合代入だけを対象に、演算子トークンを `=` に置換する。旧値の読み出しと in-place 演算がなくなることを変異の意味に含める。右辺・空白・コメントは保存し、既存の演算子置換候補と共存する。[^issue-701]
+
+[^issue-701]: [複合代入置換の設計](../../superpowers/reports/issue-701/design.md)・[レビューと検証](../../superpowers/reports/issue-701/review.md)

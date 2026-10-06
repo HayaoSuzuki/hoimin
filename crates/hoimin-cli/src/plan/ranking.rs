@@ -277,7 +277,8 @@ fn operator_reason(operator: &str) -> Option<RankingReasonCode> {
         | MutationOperator::StructureSortedReversed
         | MutationOperator::StructureIndexNeighbor
         | MutationOperator::StructureSliceNeighbor => RankingReasonCode::Behavioral,
-        MutationOperator::IntegerLiteralNeighbor
+        MutationOperator::AugmentedToAssignment
+        | MutationOperator::IntegerLiteralNeighbor
         | MutationOperator::BinaryAddSub
         | MutationOperator::AugmentedAddSub
         | MutationOperator::BinaryMulDiv
