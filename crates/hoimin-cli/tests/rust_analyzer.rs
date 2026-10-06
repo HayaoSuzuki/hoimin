@@ -216,3 +216,38 @@ fn foreign_middle_token_in_a_format_spec_is_invalid_syntax() {
         }
     }
 }
+
+#[test]
+fn statement_deletion_obeys_selection_prefix_and_cancellation() {
+    use hoimin_core::LineRange;
+    let source = "def first():\n    a()\ndef second():\n    b()\n    c()\n";
+    let mut operators = MutationOperatorSelection::default();
+    for name in MutationOperatorSelection::valid_names() {
+        for op in MutationOperatorSelection::parse_selector(name).unwrap() {
+            operators.exclude(op);
+        }
+    }
+    operators.include(MutationOperator::from_name("statement_delete").unwrap());
+    let mut request = rust::AnalyzeRequest {
+        path: Utf8Path::new("subject.py"),
+        lines: &[],
+        symbols: &[],
+        operators: &operators,
+        profile: MutationProfile::Full,
+        max_candidates: 1,
+    };
+    let limited = rust::analyze_source(&request, source);
+    assert!(limited.truncated);
+    assert_eq!(limited.candidates.len(), 1);
+    assert_eq!(limited.candidates[0].original, "a()");
+    request.max_candidates = 10;
+    request.lines = &[LineRange { start: 4, end: 4 }];
+    let selected = rust::analyze_source(&request, source);
+    assert_eq!(selected.candidates.len(), 1);
+    assert_eq!(selected.candidates[0].original, "b()");
+    request.lines = &[];
+    let symbols = ["second".to_owned()];
+    request.symbols = &symbols;
+    assert_eq!(rust::analyze_source(&request, source).candidates.len(), 2);
+    assert!(rust::analyze_source_cancellable(&request, source, || true).is_err());
+}

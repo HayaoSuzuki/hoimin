@@ -1207,3 +1207,5 @@ sources:
 [^issue-692-exception-hierarchy-lean-audit]: [2026-10-05-exception-hierarchy-lean-audit.md](../../superpowers/reports/2026-10-05-exception-hierarchy-lean-audit.md)。
 
 [^issue-692-exception-scope-lean-audit]: [2026-10-05-exception-scope-lean-audit.md](../../superpowers/reports/2026-10-05-exception-scope-lean-audit.md)。
+
+- Issue #696: [セルフレビューと検証結果](../../superpowers/reports/issue-696/review.md)、[実パッケージ試行](../../superpowers/reports/issue-696/project-trials.json)。

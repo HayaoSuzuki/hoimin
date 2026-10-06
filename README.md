@@ -390,8 +390,9 @@ the detailed capability and cleanup model.
 Without `--operators`, a run selects all 43 runtime operators. `--operators`
 (comma-separated) selects an explicit set; `--exclude-operators` then removes
 individual IDs or selector families. Type-annotation `type_*` operators remain
-opt-in. Hoimin exposes 56 operator IDs in total: 43 default runtime IDs, seven
-opt-in type IDs, five opt-in risky exception IDs, and `exception_hierarchy`.
+opt-in. Hoimin exposes 57 operator IDs in total: 43 default runtime IDs, seven
+opt-in type IDs, five opt-in risky exception IDs, `exception_hierarchy`, and
+`statement_delete`.
 
 | Group | Runtime IDs | Mutations |
 | --- | --- | --- |
@@ -917,3 +918,15 @@ triggered workflow, protect its GitHub environment with required reviewers
 or equivalent rules, and register PyPI Trusted Publishing for only that
 workflow and environment. Grant `id-token: write` only to its publication job,
 and update the workflow contract tests in the same change.
+
+### Opt-in call statement deletion
+
+`--operators statement_delete` replaces an independent call statement (for example
+`store.persist(record)`) with `pass`. It removes evaluation of the callee and all
+arguments. It is disabled by default. Assignment, return, import, compound
+statements, and calls containing assignment expressions, `await`, `yield` or
+`yield from` (including nested lambda bodies) are excluded. An empty suite remains
+valid, and neighbouring statements and trailing comments are preserved. The usual
+profile, line/symbol/changed selection, limits and cancellation still apply.
+A surviving deletion means the missing effect deserves inspection; it does not
+prove a test defect or that the mutation is non-equivalent.

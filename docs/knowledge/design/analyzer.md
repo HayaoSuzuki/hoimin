@@ -253,6 +253,12 @@ sources:
   revision: 98e78166b43940df38a8bb8099c9c6af6004ba5a
   working_tree: clean
 
+- id: issue-696
+  resource: ../../superpowers/reports/issue-696/design.md
+  revision: 4cc710dea80e4198f48b05a8673ac921961927e4
+  working_tree: untracked
+  sha256: 4796ccaf60b518dc7f79385efa5058b9565626e1629a2064bb0bcf77cd9d86f6
+
 ---
 
 # 構文と名前解決の契約
@@ -569,3 +575,11 @@ Leanの子孫検査モデルと公開planの対応を通常の回帰テストへ
 [^issue-692-scopes]: [2026-10-05-exception-scope-outcomes.md](../../superpowers/specs/2026-10-05-exception-scope-outcomes.md)。
 
 [^issue-692-verification]: [2026-10-05-exception-scope-lean-audit.md](../../superpowers/reports/2026-10-05-exception-scope-lean-audit.md)。
+
+# 呼び出し式文の削除（Issue #696）
+
+`statement_delete` は明示選択時だけ、独立した呼び出し式文を `pass` に置換する。代入式、await、yield、yield from を含む呼び出しは除外し、既定の43演算子は維持する。[^issue-696]
+
+Lean の証明は、与えられたノード分類に対する適用条件と単一置換のモデルを対象とする。Rust の解析器そのものの証明ではない。文字コード、構文、保存 plan の検証は公開 CLI と CPython 3.14 のテストで別途確認する。[^issue-696]
+
+[^issue-696]: [設計・証明範囲](../../superpowers/reports/issue-696/design.md)、[実装計画](../../superpowers/reports/issue-696/plan.md)。
