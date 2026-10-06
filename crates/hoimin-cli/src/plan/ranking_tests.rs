@@ -593,6 +593,7 @@ const BEHAVIORAL_OPERATORS: &[&str] = &[
     "structure_slice_neighbor",
 ];
 const ARITHMETIC_OPERATORS: &[&str] = &[
+    "integer_literal_neighbor",
     "binary_add_sub",
     "augmented_add_sub",
     "binary_mul_div",
@@ -655,7 +656,7 @@ fn ranking_assigns_every_operator_to_its_fixed_category() {
         .into_iter()
         .filter_map(MutationOperator::from_name)
         .collect::<BTreeSet<_>>();
-    assert_eq!(tested.len(), 57);
+    assert_eq!(tested.len(), 58);
     assert_eq!(tested, canonical);
 
     for (operators, expected) in categories {

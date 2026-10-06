@@ -1209,3 +1209,5 @@ sources:
 [^issue-692-exception-scope-lean-audit]: [2026-10-05-exception-scope-lean-audit.md](../../superpowers/reports/2026-10-05-exception-scope-lean-audit.md)。
 
 - Issue #696: [セルフレビューと検証結果](../../superpowers/reports/issue-696/review.md)、[実パッケージ試行](../../superpowers/reports/issue-696/project-trials.json)。
+
+- Issue #697: [整数隣接値の検証](../../superpowers/reports/issue-697/review.md)。

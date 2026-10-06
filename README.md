@@ -390,9 +390,9 @@ the detailed capability and cleanup model.
 Without `--operators`, a run selects all 43 runtime operators. `--operators`
 (comma-separated) selects an explicit set; `--exclude-operators` then removes
 individual IDs or selector families. Type-annotation `type_*` operators remain
-opt-in. Hoimin exposes 57 operator IDs in total: 43 default runtime IDs, seven
+opt-in. Hoimin exposes 58 operator IDs in total: 43 default runtime IDs, seven
 opt-in type IDs, five opt-in risky exception IDs, `exception_hierarchy`, and
-`statement_delete`.
+`statement_delete`, and `integer_literal_neighbor`.
 
 | Group | Runtime IDs | Mutations |
 | --- | --- | --- |
@@ -930,3 +930,13 @@ valid, and neighbouring statements and trailing comments are preserved. The usua
 profile, line/symbol/changed selection, limits and cancellation still apply.
 A surviving deletion means the missing effect deserves inspection; it does not
 prove a test defect or that the mutation is non-equivalent.
+
+`--operators integer_literal_neighbor` changes ordinary decimal integers from `n`
+to `n-1` or `n+1`, with parenthesized replacements. Unary-negative decimal literals
+are one expression, not a separate positive operand. Magnitudes through
+`18446744073709551615` are supported; neighbors outside the corresponding signed
+range are omitted. This is not arbitrary-precision integer mutation. Underscores,
+other bases, floats, complex numbers, bools, type expressions, match patterns,
+assignment/deletion targets and subscript slice expressions are excluded. Index
+and slice neighbors remain the responsibility of the structural operators.
+The operator is opt-in and does not change the 43 default runtime operators.

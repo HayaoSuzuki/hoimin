@@ -1604,3 +1604,5 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 [^issue-692-issue-692-exception-hierarchy]: [2026-10-05-issue-692-exception-hierarchy.md](../../superpowers/specs/2026-10-05-issue-692-exception-hierarchy.md)。
 
 - Issue #696: [呼び出し式文削除の設計](../../superpowers/reports/issue-696/design.md)と[実装計画](../../superpowers/reports/issue-696/plan.md)。
+
+- Issue #697: [整数隣接値の設計](../../superpowers/reports/issue-697/design.md)。
