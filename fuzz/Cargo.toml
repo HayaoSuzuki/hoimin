@@ -13,6 +13,7 @@ members = ["."]
 resolver = "3"
 
 [dependencies]
+blake3 = "1.8"
 hoimin-core = { path = "../crates/hoimin-core" }
 libfuzzer-sys = "0.4"
 camino = "1.1"
