@@ -271,6 +271,12 @@ sources:
   working_tree: untracked
   sha256: 323657b55670eeac6e4304645b7a2ef785551632de05c63441b5d7a86981aaa6
 
+- id: issue-699
+  resource: ../../superpowers/reports/issue-699/design.md
+  revision: e4a359e
+  working_tree: untracked
+  sha256: c84756dcff1e913353ae772dc9bfabf5a1d50938367faad1974a75332f90d2e1
+
 ---
 
 # 構文と名前解決の契約
@@ -607,3 +613,9 @@ Lean の証明は、与えられたノード分類に対する適用条件と単
 `condition_constant` は明示選択時だけ if/elif の条件全体を True/False に置換し、条件の評価と副作用を省く。既存の真偽値リテラル、代入式・await・yield を含む条件は除外する。focused profile の main guard 除外も維持する。Lean の分岐選択モデルと公開 CLI の検証を区別する。[^issue-698]
 
 [^issue-698]: [設計とモデル範囲](../../superpowers/reports/issue-698/design.md)。
+
+# 関数本体の空化（Issue #699）
+
+`function_body_erase` は明示選択時だけ、値を返さない同期関数の本体を pass に置換する。docstring・シグネチャ・デコレータを残し、generator・特殊名・空の本体は除外する。行選択の起点は最初に消す文で、シンボルは外側の対象関数を使う。生存から実行の有無や同値性を判定せず、細かな演算子の代用ともしない。[^issue-699]
+
+[^issue-699]: [設計と制限](../../superpowers/reports/issue-699/design.md)、[モデル・検証範囲](../../superpowers/reports/issue-699/review.md)。
