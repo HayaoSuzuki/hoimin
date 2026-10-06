@@ -108,6 +108,7 @@ pub enum MutationOperator {
     TypeMapping,
     TypeIterableIterator,
     TypeSequenceIterable,
+    StatementDelete,
 }
 
 impl MutationOperator {
@@ -120,6 +121,7 @@ impl MutationOperator {
     #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::StatementDelete => "statement_delete",
             Self::CompareEqNe => "compare_eq_ne",
             Self::CompareOrder => "compare_order",
             Self::Membership => "membership",
@@ -178,7 +180,7 @@ impl MutationOperator {
             Self::TypeSequenceIterable => "type_sequence_iterable",
         }
     }
-    fn all() -> [Self; 56] {
+    fn all() -> [Self; 57] {
         [
             Self::CompareEqNe,
             Self::CompareOrder,
@@ -236,6 +238,7 @@ impl MutationOperator {
             Self::TypeMapping,
             Self::TypeIterableIterator,
             Self::TypeSequenceIterable,
+            Self::StatementDelete,
         ]
     }
 }

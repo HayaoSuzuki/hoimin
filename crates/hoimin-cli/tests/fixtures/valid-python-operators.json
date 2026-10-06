@@ -278,5 +278,10 @@
     "operator": "type_sequence_iterable",
     "status": "deferred",
     "reason": "Existing operator-specific tests remain authoritative; not included in this initial cross-producer corpus"
+  },
+  {
+    "operator": "statement_delete",
+    "status": "deferred",
+    "reason": "Dedicated statement_delete public CLI tests compile mutations with CPython 3.14 and verify saved plans; not in the original cross-producer corpus."
   }
 ]

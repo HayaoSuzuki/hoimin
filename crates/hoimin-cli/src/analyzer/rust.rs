@@ -26,6 +26,9 @@ use super::{AnalyzerCandidate, AnalyzerDiagnostic, AnalyzerDiagnosticCode};
 #[path = "exception_hierarchy.rs"]
 pub(crate) mod exception_hierarchy;
 
+#[path = "rust/deletion.rs"]
+mod deletion;
+
 #[path = "rust/depth.rs"]
 mod depth;
 #[path = "rust/fact_index.rs"]
@@ -3313,6 +3316,21 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
 impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
     fn visit_stmt(&mut self, statement: &'ast Stmt) {
         if !self.check_cancelled() {
+            if self
+                .request
+                .operators
+                .contains(MutationOperator::StatementDelete)
+                && let Stmt::Expr(statement_expr) = statement
+                && matches!(statement_expr.value.as_ref(), Expr::Call(_))
+                && deletion::can_remove(statement_expr.value.as_ref(), self.cancelled)
+                && !self.check_cancelled()
+            {
+                self.add_candidate(
+                    statement.range(),
+                    "pass".to_owned(),
+                    MutationOperator::StatementDelete,
+                );
+            }
             if let Stmt::Raise(statement_raise) = statement {
                 self.collect_raised_exception(statement_raise);
             }
