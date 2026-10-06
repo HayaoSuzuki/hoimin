@@ -1221,3 +1221,5 @@ sources:
 - [Issue #701: augmented assignment review](../../superpowers/reports/issue-701/review.md) — 演算子トークン・集計の欠落・in-place 更新を検証。
 
 - [Issue #702: return tuple review](../../superpowers/reports/issue-702/review.md) — 要素順・ソース範囲・関数スコープを検証。
+
+- [Issue #703: string literal review](../../superpowers/reports/issue-703/review.md) — 空判定・docstring・型・文字コードを検証。

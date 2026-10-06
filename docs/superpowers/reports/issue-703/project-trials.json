@@ -1,0 +1,290 @@
+[
+  {
+    "project": "iniconfig",
+    "version": "2.3.0",
+    "file": "iniconfig/__init__.py",
+    "probe": "import_only",
+    "test_command": "import iniconfig",
+    "candidate_count": 8,
+    "invalid_syntax": [],
+    "counts": {
+      "killed": 0,
+      "survived": 8,
+      "timeout": 0,
+      "out_of_memory": 0,
+      "process_limit": 0,
+      "error": 0,
+      "not_run": 0,
+      "inconclusive": 0,
+      "score": 0.0
+    },
+    "baseline": {
+      "Exit": 0
+    },
+    "seconds": 0.403,
+    "equivalence": "unclassified; authored probes, not upstream suites",
+    "mutants": [
+      {
+        "original": "\"IniConfig\"",
+        "replacement": "\"\"",
+        "status": "survived"
+      },
+      {
+        "original": "\"ParseError\"",
+        "replacement": "\"\"",
+        "status": "survived"
+      },
+      {
+        "original": "\"COMMENTCHARS\"",
+        "replacement": "\"\"",
+        "status": "survived"
+      },
+      {
+        "original": "\"iscommentline\"",
+        "replacement": "\"\"",
+        "status": "survived"
+      },
+      {
+        "original": "\"_D\"",
+        "replacement": "\"\"",
+        "status": "survived"
+      },
+      {
+        "original": "\"_T\"",
+        "replacement": "\"\"",
+        "status": "survived"
+      },
+      {
+        "original": "\"utf-8\"",
+        "replacement": "\"\"",
+        "status": "survived"
+      },
+      {
+        "original": "\"utf-8\"",
+        "replacement": "\"\"",
+        "status": "survived"
+      }
+    ]
+  },
+  {
+    "project": "iniconfig",
+    "version": "2.3.0",
+    "file": "iniconfig/__init__.py",
+    "probe": "behavior",
+    "test_command": "from iniconfig import IniConfig; c = IniConfig('example.ini', data='[s]\\nk = v\\n'); assert c['s']['k'] == 'v'; import iniconfig as i; from pathlib import Path; assert i.__all__ == ['IniConfig','ParseError','COMMENTCHARS','iscommentline']; assert i._D.__name__ == '_D' and i._T.__name__ == '_T'; Path('sample.ini').write_text('[s]\\nk = v\\n',encoding='utf-8'); assert i.IniConfig('sample.ini')['s']['k'] == 'v'; assert i.IniConfig.parse('sample.ini')['s']['k'] == 'v'",
+    "candidate_count": 8,
+    "invalid_syntax": [],
+    "counts": {
+      "killed": 8,
+      "survived": 0,
+      "timeout": 0,
+      "out_of_memory": 0,
+      "process_limit": 0,
+      "error": 0,
+      "not_run": 0,
+      "inconclusive": 0,
+      "score": 1.0
+    },
+    "baseline": {
+      "Exit": 0
+    },
+    "seconds": 0.401,
+    "equivalence": "unclassified; authored probes, not upstream suites",
+    "mutants": [
+      {
+        "original": "\"IniConfig\"",
+        "replacement": "\"\"",
+        "status": "killed"
+      },
+      {
+        "original": "\"ParseError\"",
+        "replacement": "\"\"",
+        "status": "killed"
+      },
+      {
+        "original": "\"COMMENTCHARS\"",
+        "replacement": "\"\"",
+        "status": "killed"
+      },
+      {
+        "original": "\"iscommentline\"",
+        "replacement": "\"\"",
+        "status": "killed"
+      },
+      {
+        "original": "\"_D\"",
+        "replacement": "\"\"",
+        "status": "killed"
+      },
+      {
+        "original": "\"_T\"",
+        "replacement": "\"\"",
+        "status": "killed"
+      },
+      {
+        "original": "\"utf-8\"",
+        "replacement": "\"\"",
+        "status": "killed"
+      },
+      {
+        "original": "\"utf-8\"",
+        "replacement": "\"\"",
+        "status": "killed"
+      }
+    ]
+  },
+  {
+    "project": "packaging",
+    "version": "26.3",
+    "file": "packaging/version.py",
+    "probe": "import_only",
+    "test_command": "import packaging",
+    "candidate_count": 90,
+    "invalid_syntax": [],
+    "counts": {
+      "killed": 0,
+      "survived": 10,
+      "timeout": 0,
+      "out_of_memory": 0,
+      "process_limit": 0,
+      "error": 0,
+      "not_run": 0,
+      "inconclusive": 0,
+      "score": 0.0
+    },
+    "baseline": {
+      "Exit": 0
+    },
+    "seconds": 0.627,
+    "equivalence": "unclassified; authored probes, not upstream suites",
+    "mutants": [
+      {
+        "original": "\"alpha\"",
+        "replacement": "\"\"",
+        "status": "survived"
+      },
+      {
+        "original": "\"a\"",
+        "replacement": "\"\"",
+        "status": "survived"
+      },
+      {
+        "original": "\"beta\"",
+        "replacement": "\"\"",
+        "status": "survived"
+      },
+      {
+        "original": "\"b\"",
+        "replacement": "\"\"",
+        "status": "survived"
+      },
+      {
+        "original": "\"c\"",
+        "replacement": "\"\"",
+        "status": "survived"
+      },
+      {
+        "original": "\"rc\"",
+        "replacement": "\"\"",
+        "status": "survived"
+      },
+      {
+        "original": "\"pre\"",
+        "replacement": "\"\"",
+        "status": "survived"
+      },
+      {
+        "original": "\"rc\"",
+        "replacement": "\"\"",
+        "status": "survived"
+      },
+      {
+        "original": "\"preview\"",
+        "replacement": "\"\"",
+        "status": "survived"
+      },
+      {
+        "original": "\"rc\"",
+        "replacement": "\"\"",
+        "status": "survived"
+      }
+    ]
+  },
+  {
+    "project": "packaging",
+    "version": "26.3",
+    "file": "packaging/version.py",
+    "probe": "behavior",
+    "test_command": "from packaging.version import Version; assert str(Version('01.2')) == '1.2'; assert Version('1.0a1') < Version('1.0'); from packaging.version import normalize_pre; assert [normalize_pre(x) for x in ('alpha','beta','c','pre','preview')] == ['a','b','rc','rc','rc']",
+    "candidate_count": 90,
+    "invalid_syntax": [],
+    "counts": {
+      "killed": 10,
+      "survived": 0,
+      "timeout": 0,
+      "out_of_memory": 0,
+      "process_limit": 0,
+      "error": 0,
+      "not_run": 0,
+      "inconclusive": 0,
+      "score": 1.0
+    },
+    "baseline": {
+      "Exit": 0
+    },
+    "seconds": 0.798,
+    "equivalence": "unclassified; authored probes, not upstream suites",
+    "mutants": [
+      {
+        "original": "\"alpha\"",
+        "replacement": "\"\"",
+        "status": "killed"
+      },
+      {
+        "original": "\"a\"",
+        "replacement": "\"\"",
+        "status": "killed"
+      },
+      {
+        "original": "\"beta\"",
+        "replacement": "\"\"",
+        "status": "killed"
+      },
+      {
+        "original": "\"b\"",
+        "replacement": "\"\"",
+        "status": "killed"
+      },
+      {
+        "original": "\"c\"",
+        "replacement": "\"\"",
+        "status": "killed"
+      },
+      {
+        "original": "\"rc\"",
+        "replacement": "\"\"",
+        "status": "killed"
+      },
+      {
+        "original": "\"pre\"",
+        "replacement": "\"\"",
+        "status": "killed"
+      },
+      {
+        "original": "\"rc\"",
+        "replacement": "\"\"",
+        "status": "killed"
+      },
+      {
+        "original": "\"preview\"",
+        "replacement": "\"\"",
+        "status": "killed"
+      },
+      {
+        "original": "\"rc\"",
+        "replacement": "\"\"",
+        "status": "killed"
+      }
+    ]
+  }
+]
