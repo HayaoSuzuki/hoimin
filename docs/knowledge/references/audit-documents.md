@@ -1223,3 +1223,5 @@ sources:
 - [Issue #702: return tuple review](../../superpowers/reports/issue-702/review.md) — 要素順・ソース範囲・関数スコープを検証。
 
 - [Issue #703: string literal review](../../superpowers/reports/issue-703/review.md) — 空判定・docstring・型・文字コードを検証。
+
+- [Issue #704 review](../../superpowers/reports/issue-704/review.md)

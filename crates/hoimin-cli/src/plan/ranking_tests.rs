@@ -556,6 +556,7 @@ fn ranking_compares_explicit_line_paths_with_windows_case_rules() {
 
 const HIGH_VALUE_CONTROL_OPERATORS: &[&str] = &[
     "condition_constant",
+    "while_condition_false",
     "compare_eq_ne",
     "compare_order",
     "membership",
@@ -662,7 +663,7 @@ fn ranking_assigns_every_operator_to_its_fixed_category() {
         .into_iter()
         .filter_map(MutationOperator::from_name)
         .collect::<BTreeSet<_>>();
-    assert_eq!(tested.len(), 64);
+    assert_eq!(tested.len(), 65);
     assert_eq!(tested, canonical);
 
     for (operators, expected) in categories {
