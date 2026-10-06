@@ -390,9 +390,9 @@ the detailed capability and cleanup model.
 Without `--operators`, a run selects all 43 runtime operators. `--operators`
 (comma-separated) selects an explicit set; `--exclude-operators` then removes
 individual IDs or selector families. Type-annotation `type_*` operators remain
-opt-in. Hoimin exposes 66 operator IDs in total: 43 default runtime IDs, seven
+opt-in. Hoimin exposes 67 operator IDs in total: 43 default runtime IDs, seven
 opt-in type IDs, five opt-in risky exception IDs, `exception_hierarchy`, and
-`statement_delete`, `integer_literal_neighbor`, `condition_constant`, `function_body_erase`, `enum_member_replace`, `augmented_to_assignment`, `return_tuple_swap`, `string_literal_empty`, `while_condition_false`, and `condition_clause_delete`.
+`statement_delete`, `integer_literal_neighbor`, `condition_constant`, `function_body_erase`, `enum_member_replace`, `augmented_to_assignment`, `return_tuple_swap`, `string_literal_empty`, `while_condition_false`, `condition_clause_delete`, and `container_element_delete`.
 
 | Group | Runtime IDs | Mutations |
 | --- | --- | --- |
@@ -1016,3 +1016,9 @@ and/or condition. Retained expressions keep their order and nested grouping;
 inter-operand formatting is normalized. The removed expression's effects disappear,
 and short-circuit behavior may expose previously skipped operands. Binding/suspension
 expressions and other condition contexts are excluded.
+
+`--operators container_element_delete` removes one list/parenthesized-tuple element
+or dict entry. Whole-literal reconstruction normalizes separators and inter-element
+comments while protecting retained expression grouping. Tuple kind, retained order,
+and dict key/value pairs are preserved; removed elements are not evaluated. Unpacking,
+binding/suspension expressions, nonruntime roles and assignment targets are excluded.

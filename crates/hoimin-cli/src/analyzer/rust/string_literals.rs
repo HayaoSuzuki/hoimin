@@ -1,4 +1,4 @@
-//! Role exclusions for runtime string erasure; built only for this operator.
+//! String-role and explicit type-alias exclusions for selected runtime operators.
 use super::{AnalysisCancelled, ContainmentIndex};
 use ruff_python_ast::{
     Expr, ModModule, Stmt,
@@ -8,7 +8,10 @@ use ruff_text_size::{Ranged, TextRange};
 use std::collections::HashSet;
 
 #[derive(Default)]
-pub(super) struct Exclusions(ContainmentIndex);
+pub(super) struct Exclusions {
+    all: ContainmentIndex,
+    aliases: ContainmentIndex,
+}
 impl Exclusions {
     pub(super) fn build(
         module: &ModModule,
@@ -27,6 +30,7 @@ impl Exclusions {
         let mut roles = Roles {
             markers: &markers,
             ranges: Vec::new(),
+            aliases: Vec::new(),
             cancelled,
             stopped: false,
         };
@@ -35,10 +39,17 @@ impl Exclusions {
         if roles.stopped || cancelled() {
             return Err(AnalysisCancelled);
         }
-        Ok(Self(ContainmentIndex::new(roles.ranges)))
+        Ok(Self {
+            all: ContainmentIndex::new(roles.ranges),
+            aliases: ContainmentIndex::new(roles.aliases),
+        })
+    }
+    pub(super) fn contains_alias(&self, range: TextRange) -> bool {
+        self.aliases
+            .contains(usize::from(range.start()), usize::from(range.end()))
     }
     pub(super) fn contains(&self, range: TextRange) -> bool {
-        self.0
+        self.all
             .contains(usize::from(range.start()), usize::from(range.end()))
     }
 }
@@ -119,6 +130,7 @@ impl<F> Markers<'_, F> {
 struct Roles<'a, F> {
     markers: &'a Markers<'a, F>,
     ranges: Vec<(usize, usize)>,
+    aliases: Vec<(usize, usize)>,
     cancelled: &'a F,
     stopped: bool,
 }
@@ -146,6 +158,8 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for Roles<'_, F> {
             Stmt::ClassDef(c) => self.docstring(&c.body),
             Stmt::AnnAssign(a) if self.markers.alias_annotation(&a.annotation) => {
                 if let Some(value) = &a.value {
+                    self.aliases
+                        .push((usize::from(value.start()), usize::from(value.end())));
                     self.exclude(value.range());
                 }
             }

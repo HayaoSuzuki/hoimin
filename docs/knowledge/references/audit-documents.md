@@ -1227,3 +1227,5 @@ sources:
 - [Issue #704 review](../../superpowers/reports/issue-704/review.md)
 
 - [Issue #705 review](../../superpowers/reports/issue-705/review.md)
+
+- [Issue #706 review](../../superpowers/reports/issue-706/review.md)

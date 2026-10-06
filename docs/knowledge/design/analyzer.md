@@ -313,6 +313,12 @@ sources:
   working_tree: untracked
   sha256: 00a9ef473ab17de502b60e2279e6c77117794153113da5468c3048d6f16b5a6c
 
+- id: issue-706
+  resource: ../../superpowers/reports/issue-706/design.md
+  revision: bbd765087f8bdda2a5af7b4cea2de6dc8b23f4aa
+  working_tree: untracked
+  sha256: a79205f7322678af6112d30bd6e59728fb0bacfc592b64ddc11dc3c815433636
+
 ---
 
 # 構文と名前解決の契約
@@ -679,3 +685,7 @@ while_condition_false は while 条件全体を偽にし、条件評価と本体
 condition_clause_delete は if/elif の最上位 BoolOp から1項だけ除き、残りの式の順序と木構造を保つ。短絡評価の変化を含む変異であり、束縛・中断を含む条件は除外する。 [^issue-705]
 
 [^issue-705]: [設計](../../superpowers/reports/issue-705/design.md)
+
+container_element_delete は list・括弧付き tuple・dict から1要素を除く。型、残る式の順序、dict の組を保持し、型式・パターン・代入ターゲットと展開・束縛・中断を含むリテラルを除外する。 [^issue-706]
+
+[^issue-706]: [設計](../../superpowers/reports/issue-706/design.md)

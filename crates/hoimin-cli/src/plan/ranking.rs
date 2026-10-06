@@ -260,7 +260,8 @@ fn operator_reason(operator: &str) -> Option<RankingReasonCode> {
         | MutationOperator::ExceptionBaseBoundary
         | MutationOperator::ExceptionTupleAddPair
         | MutationOperator::ExceptionTupleRemoveMember => RankingReasonCode::ExceptionHandling,
-        MutationOperator::StringLiteralEmpty
+        MutationOperator::ContainerElementDelete
+        | MutationOperator::StringLiteralEmpty
         | MutationOperator::ReturnTupleSwap
         | MutationOperator::EnumMemberReplace
         | MutationOperator::FunctionBodyErase
