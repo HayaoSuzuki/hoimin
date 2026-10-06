@@ -277,6 +277,12 @@ sources:
   working_tree: untracked
   sha256: c84756dcff1e913353ae772dc9bfabf5a1d50938367faad1974a75332f90d2e1
 
+- id: issue-700
+  resource: ../../superpowers/reports/issue-700/design.md
+  revision: 10a0021
+  working_tree: untracked
+  sha256: e8615e151e19ee6a0699326b59823c4e65170b36865102c59ee639c77d3e25cc
+
 ---
 
 # 構文と名前解決の契約
@@ -619,3 +625,7 @@ Lean の証明は、与えられたノード分類に対する適用条件と単
 `function_body_erase` は明示選択時だけ、値を返さない同期関数の本体を pass に置換する。docstring・シグネチャ・デコレータを残し、generator・特殊名・空の本体は除外する。行選択の起点は最初に消す文で、シンボルは外側の対象関数を使う。生存から実行の有無や同値性を判定せず、細かな演算子の代用ともしない。[^issue-699]
 
 [^issue-699]: [設計と制限](../../superpowers/reports/issue-699/design.md)、[モデル・検証範囲](../../superpowers/reports/issue-699/review.md)。
+
+明示選択の `enum_member_replace` は、同一モジュールの確定した Enum 定義を索引化し、異なる値の代表メンバーへ属性名だけを置換する。同値の別名は候補を増やさない。名前の隠蔽、動的な名前空間操作、未対応の定義や値は保守的に除外する。識別子の元の綴りを保存し、解析器が値を区別できないサロゲート文字列は診断する。[^issue-700]
+
+[^issue-700]: [Enum の設計と制約](../../superpowers/reports/issue-700/design.md)・[レビューと検証](../../superpowers/reports/issue-700/review.md)

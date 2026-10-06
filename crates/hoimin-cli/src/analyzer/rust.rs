@@ -26,6 +26,8 @@ use super::{AnalyzerCandidate, AnalyzerDiagnostic, AnalyzerDiagnosticCode};
 #[path = "exception_hierarchy.rs"]
 pub(crate) mod exception_hierarchy;
 
+#[path = "rust/enum_members.rs"]
+mod enum_members;
 #[path = "rust/function_body.rs"]
 mod function_body;
 
@@ -477,7 +479,7 @@ pub(crate) fn analyze_source_with_exceptions(
         return Err(AnalysisError::Cancelled);
     }
     let token_candidates = token_candidates.finish();
-    let (ast_candidates, hierarchy_report) = ast_candidates(
+    let (ast_candidates, hierarchy_report, enum_diagnostics) = ast_candidates(
         parsed.syntax(),
         source,
         &line_index,
@@ -538,6 +540,16 @@ pub(crate) fn analyze_source_with_exceptions(
         let (line, column) = line_index.line_and_column(source, usize::from(range.start()));
         diagnostics.push(AnalyzerDiagnostic {
             code: AnalyzerDiagnosticCode::UnsupportedExceptionHierarchy,
+            path: Some(request.path.to_owned()),
+            line: Some(line),
+            column: Some(column),
+            message: Some(message),
+        });
+    }
+    for (range, message) in enum_diagnostics {
+        let (line, column) = line_index.line_and_column(source, usize::from(range.start()));
+        diagnostics.push(AnalyzerDiagnostic {
+            code: AnalyzerDiagnosticCode::UnsupportedEnumDefinition,
             path: Some(request.path.to_owned()),
             line: Some(line),
             column: Some(column),
@@ -1112,9 +1124,15 @@ struct NameResolutionIndex {
 
 impl NameResolutionIndex {
     fn from_module(module: &ModModule) -> Self {
+        Self::from_module_with_names(module, HashSet::new())
+    }
+
+    fn from_module_with_names(module: &ModModule, extra: HashSet<String>) -> Self {
         let mut builder = NameResolutionBuilder::new();
         let mut names = ImportedNames::default();
         names.visit_body(&module.body);
+        builder.identity_names.clone_from(&extra);
+        names.0.extend(extra);
         builder.imported_names = names.0;
         builder.visit_body(&module.body);
         // Resolve nonlocal destinations after all enclosing locals are known.
@@ -1461,6 +1479,7 @@ impl<'ast> Visitor<'ast> for ImportedNames {
 }
 
 struct NameResolutionBuilder {
+    identity_names: HashSet<String>,
     imported_names: HashSet<String>,
     nonlocal_import_writes: Vec<(ScopeId, String)>,
     index: NameResolutionIndex,
@@ -1495,6 +1514,7 @@ impl NameResolutionBuilder {
                 unevaluated_annotations: HashSet::new(),
                 imported_names: HashSet::new(),
             },
+            identity_names: HashSet::new(),
             imported_names: HashSet::new(),
             nonlocal_import_writes: Vec::new(),
             current: ScopeId(0),
@@ -1853,7 +1873,9 @@ impl NameResolutionBuilder {
 
     fn record_occurrence(&mut self, name: &ruff_python_ast::ExprName) {
         let id = name.id.as_str();
-        if name.ctx != ExprContext::Load || !tracked_resolution_name(id) {
+        if name.ctx != ExprContext::Load
+            || (!tracked_resolution_name(id) && !self.identity_names.contains(id))
+        {
             return;
         }
         let temporarily_shadowed = self
@@ -2686,7 +2708,14 @@ fn exception_pair_replacements(name: &str) -> &'static [&'static str] {
     }
 }
 
+type AstCollection = (
+    ProducerPrefix,
+    exception_hierarchy::HierarchyReport,
+    Vec<(TextRange, String)>,
+);
+
 struct AstCandidateCollector<'a, F> {
+    enum_index: enum_members::EnumIndex,
     operator_imports: OperatorImports,
     integer_suppressed: bool,
     in_pattern: bool,
@@ -2710,8 +2739,16 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         request: &'a AnalyzeRequest<'a>,
         cancelled: &'a F,
         exceptions: Option<&exception_hierarchy::ExceptionIndex>,
-    ) -> Result<(ProducerPrefix, exception_hierarchy::HierarchyReport), AnalysisCancelled> {
+    ) -> Result<AstCollection, AnalysisCancelled> {
         let mut collector = Self {
+            enum_index: if request
+                .operators
+                .contains(MutationOperator::EnumMemberReplace)
+            {
+                enum_members::EnumIndex::build(module, source, cancelled)?
+            } else {
+                enum_members::EnumIndex::default()
+            },
             integer_suppressed: false,
             in_pattern: false,
             operator_imports: if request
@@ -2754,7 +2791,11 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                 },
             )?;
         }
-        Ok((collector.candidates.finish(), report))
+        Ok((
+            collector.candidates.finish(),
+            report,
+            collector.enum_index.diagnostics,
+        ))
     }
 
     fn check_cancelled(&mut self) -> bool {
@@ -3472,6 +3513,20 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
             };
             let signed_literal = self.collect_integer_literal(expression);
             if !self.in_pattern
+                && let Some((range, destinations)) = self.enum_index.destinations(
+                    expression,
+                    self.request.max_candidates,
+                    self.cancelled,
+                )
+            {
+                for replacement in destinations {
+                    if self.check_cancelled() {
+                        return;
+                    }
+                    self.add_candidate(range, replacement, MutationOperator::EnumMemberReplace);
+                }
+            }
+            if !self.in_pattern
                 && let Some((range, replacement)) = self.operator_imports.replacement(expression)
             {
                 self.add_candidate(range, replacement, MutationOperator::OperatorFunction);
@@ -3526,7 +3581,7 @@ fn ast_candidates<'a, F: Fn() -> bool>(
     request: &'a AnalyzeRequest<'a>,
     cancelled: &'a F,
     exceptions: Option<&exception_hierarchy::ExceptionIndex>,
-) -> Result<(ProducerPrefix, exception_hierarchy::HierarchyReport), AnalysisCancelled> {
+) -> Result<AstCollection, AnalysisCancelled> {
     AstCandidateCollector::collect(
         module, source, line_index, facts, request, cancelled, exceptions,
     )

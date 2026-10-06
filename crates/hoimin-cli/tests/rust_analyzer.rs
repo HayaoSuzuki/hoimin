@@ -340,3 +340,39 @@ fn body_erasure_anchors_first_erased_line_and_owning_function() {
     assert!(rust::analyze_source(&request, source).candidates.is_empty());
     assert!(rust::analyze_source_cancellable(&request, source, || true).is_err());
 }
+
+#[test]
+fn enum_replacement_is_opt_in_bounded_selected_and_cancellable() {
+    let operator = MutationOperator::from_name("enum_member_replace").unwrap();
+    let mut operators = MutationOperatorSelection::default();
+    assert!(!operators.contains(operator));
+    for name in MutationOperatorSelection::valid_names() {
+        for op in MutationOperatorSelection::parse_selector(name).unwrap() {
+            operators.exclude(op);
+        }
+    }
+    operators.include(operator);
+    let source = "from enum import Enum\nclass Status(Enum):\n    A=1; B=2; C=3\ndef choose():\n    return Status.A\nx=Status.B\n";
+    let mut request = rust::AnalyzeRequest {
+        path: Utf8Path::new("subject.py"),
+        lines: &[],
+        symbols: &[],
+        operators: &operators,
+        profile: MutationProfile::Full,
+        max_candidates: 1,
+    };
+    let limited = rust::analyze_source(&request, source);
+    assert_eq!(limited.candidates.len(), 1);
+    assert!(limited.truncated);
+    assert_eq!(limited.candidates[0].replacement, "B");
+    request.max_candidates = 10;
+    request.lines = &[hoimin_core::LineRange { start: 6, end: 6 }];
+    assert_eq!(rust::analyze_source(&request, source).candidates.len(), 2);
+    request.lines = &[];
+    let symbols = ["choose".to_owned()];
+    request.symbols = &symbols;
+    assert_eq!(rust::analyze_source(&request, source).candidates.len(), 2);
+    assert!(rust::analyze_source_cancellable(&request, source, || true).is_err());
+    operators.exclude(operator);
+    assert!(!operators.contains(operator));
+}

@@ -706,6 +706,10 @@ fn analyze_and_store(
 
 fn map_analyzer_diagnostic(diagnostic: AnalyzerDiagnostic) -> RunAnalysisDiagnostic {
     let (code, default_message) = match diagnostic.code {
+        AnalyzerDiagnosticCode::UnsupportedEnumDefinition => (
+            "analyzer.enum_definition_skipped",
+            "unsupported enum definition",
+        ),
         AnalyzerDiagnosticCode::UnsupportedExceptionHierarchy => (
             "analyzer.exception_hierarchy_skipped",
             "unsupported exception hierarchy reference",

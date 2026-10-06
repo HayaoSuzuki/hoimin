@@ -390,9 +390,9 @@ the detailed capability and cleanup model.
 Without `--operators`, a run selects all 43 runtime operators. `--operators`
 (comma-separated) selects an explicit set; `--exclude-operators` then removes
 individual IDs or selector families. Type-annotation `type_*` operators remain
-opt-in. Hoimin exposes 60 operator IDs in total: 43 default runtime IDs, seven
+opt-in. Hoimin exposes 61 operator IDs in total: 43 default runtime IDs, seven
 opt-in type IDs, five opt-in risky exception IDs, `exception_hierarchy`, and
-`statement_delete`, `integer_literal_neighbor`, `condition_constant`, and `function_body_erase`.
+`statement_delete`, `integer_literal_neighbor`, `condition_constant`, `function_body_erase`, and `enum_member_replace`.
 
 | Group | Runtime IDs | Mutations |
 | --- | --- | --- |
@@ -963,3 +963,18 @@ uses the erased function, even when its first statement defines a nested functio
 Preview shows the whole body span. The shared 2 MiB serialized-candidate limit still
 applies. A survivor remains `survived`; it does not establish whether the function
 ran, was observed, or was equivalent, and this score cannot replace fine-grained mutation.
+
+`--operators enum_member_replace` changes a same-module Enum/IntEnum/StrEnum
+member reference to a canonical member with a different value. Only unconditional
+top-level definitions with one trusted standard-library base and homogeneous
+integer/string literals or standard `auto()` calls are supported. Aliases share
+one destination; the attribute token's original spelling is preserved. Defaults
+remain unchanged. Local/rebound names, annotations, patterns and class-body
+self references are excluded. Unsupported definitions emit `enum_definition_skipped`.
+Custom decorators/metaclasses/generators, reserved attributes (including `_ignore_`),
+mixed values, Flag/IntFlag, integers exceeding u64 magnitude, strings containing
+U+FFFD or parser-replaced surrogate escapes, and non-ASCII StrEnum auto names are
+conservatively excluded. Dynamic namespace operations, tracked global declarations
+and direct alias assignments invalidate this initial module index. Methods with
+ordinary undecorated names are ignored as non-members; decorated/special methods
+exclude the definition. No target module is imported by the analyzer.
