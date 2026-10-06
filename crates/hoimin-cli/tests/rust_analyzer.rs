@@ -531,3 +531,69 @@ fn while_false_is_opt_in_selected_bounded_and_cancellable() {
     operators.exclude(operator);
     assert!(!operators.contains(operator));
 }
+
+#[test]
+fn clause_delete_is_opt_in_selected_bounded_and_cancellable() {
+    let operator = MutationOperator::from_name("condition_clause_delete").unwrap();
+    let mut operators = MutationOperatorSelection::default();
+    assert!(!operators.contains(operator));
+    for name in MutationOperatorSelection::valid_names() {
+        for op in MutationOperatorSelection::parse_selector(name).unwrap() {
+            operators.exclude(op);
+        }
+    }
+    operators.include(operator);
+    let source = "def first():\n    if first_ready and allowed: pass\ndef second():\n    if second_ready or allowed: pass\n";
+    let mut request = rust::AnalyzeRequest {
+        path: Utf8Path::new("subject.py"),
+        lines: &[],
+        symbols: &[],
+        operators: &operators,
+        profile: MutationProfile::Full,
+        max_candidates: 1,
+    };
+    let output = rust::analyze_source(&request, source);
+    assert!(output.truncated);
+    assert_eq!(output.candidates.len(), 1);
+    assert_eq!(output.candidates[0].original, "first_ready and allowed");
+    request.max_candidates = 10;
+    request.lines = &[hoimin_core::LineRange { start: 4, end: 4 }];
+    assert_eq!(
+        rust::analyze_source(&request, source).candidates[0].original,
+        "second_ready or allowed"
+    );
+    request.lines = &[];
+    let symbols = ["second".to_owned()];
+    request.symbols = &symbols;
+    assert_eq!(rust::analyze_source(&request, source).candidates.len(), 2);
+    assert!(rust::analyze_source_cancellable(&request, source, || true).is_err());
+    operators.exclude(operator);
+    assert!(!operators.contains(operator));
+}
+
+#[test]
+fn repeated_clauses_are_deduplicated_before_bounded_generation() {
+    let mut operators = MutationOperatorSelection::default();
+    for name in MutationOperatorSelection::valid_names() {
+        for op in MutationOperatorSelection::parse_selector(name).unwrap() {
+            operators.exclude(op);
+        }
+    }
+    operators.include(MutationOperator::from_name("condition_clause_delete").unwrap());
+    let source = format!("if {}: pass\n", vec!["a"; 4096].join(" and "));
+    let request = rust::AnalyzeRequest {
+        path: Utf8Path::new("subject.py"),
+        lines: &[],
+        symbols: &[],
+        operators: &operators,
+        profile: MutationProfile::Full,
+        max_candidates: 1,
+    };
+    let output = rust::analyze_source(&request, &source);
+    assert_eq!(output.candidates.len(), 1);
+    assert!(!output.truncated);
+    assert_eq!(
+        output.candidates[0].replacement.matches("(a)").count(),
+        4095
+    );
+}

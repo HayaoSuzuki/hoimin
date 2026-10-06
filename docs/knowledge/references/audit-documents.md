@@ -1225,3 +1225,5 @@ sources:
 - [Issue #703: string literal review](../../superpowers/reports/issue-703/review.md) — 空判定・docstring・型・文字コードを検証。
 
 - [Issue #704 review](../../superpowers/reports/issue-704/review.md)
+
+- [Issue #705 review](../../superpowers/reports/issue-705/review.md)

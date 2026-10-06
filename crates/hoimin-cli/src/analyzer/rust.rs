@@ -2888,6 +2888,63 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         signed
     }
 
+    fn collect_condition_clause_delete(&mut self, condition: &Expr) {
+        let Expr::BoolOp(boolean) = condition else {
+            return;
+        };
+        if boolean.values.len() < 2 || !deletion::can_remove(condition, self.cancelled) {
+            return;
+        }
+        let separator = match boolean.op {
+            ruff_python_ast::BoolOp::And => " and ",
+            ruff_python_ast::BoolOp::Or => " or ",
+        };
+        let mut previous = None;
+        let mut emitted = 0usize;
+        for removed in 0..boolean.values.len() {
+            if self.check_cancelled() {
+                return;
+            }
+            let text = source_text(self.source, boolean.values[removed].range());
+            // Removing either adjacent identical operand makes the same edit.
+            if text == previous {
+                continue;
+            }
+            previous = text;
+            // All edits have the same span/operator/scope and emission ordering.
+            if emitted > self.request.max_candidates {
+                break;
+            }
+            emitted += 1;
+            let mut replacement = String::from("(");
+            let mut first = true;
+            for (index, operand) in boolean.values.iter().enumerate() {
+                if self.check_cancelled() {
+                    return;
+                }
+                if index == removed {
+                    continue;
+                }
+                let Some(text) = source_text(self.source, operand.range()) else {
+                    return;
+                };
+                if !first {
+                    replacement.push_str(separator);
+                }
+                first = false;
+                replacement.push('(');
+                replacement.push_str(text);
+                replacement.push(')');
+            }
+            replacement.push(')');
+            self.add_candidate(
+                condition.range(),
+                replacement,
+                MutationOperator::ConditionClauseDelete,
+            );
+        }
+    }
+
     fn collect_condition_constant(&mut self, condition: &Expr) {
         if !matches!(condition, Expr::BooleanLiteral(_))
             && deletion::can_remove(condition, self.cancelled)
@@ -3382,6 +3439,22 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
     }
 
     fn collect_statement_mutations(&mut self, statement: &Stmt) {
+        if self
+            .request
+            .operators
+            .contains(MutationOperator::ConditionClauseDelete)
+            && let Stmt::If(statement_if) = statement
+        {
+            self.collect_condition_clause_delete(&statement_if.test);
+            for clause in &statement_if.elif_else_clauses {
+                if self.check_cancelled() {
+                    return;
+                }
+                if let Some(test) = &clause.test {
+                    self.collect_condition_clause_delete(test);
+                }
+            }
+        }
         if self
             .request
             .operators

@@ -243,6 +243,7 @@ fn operator_reason(operator: &str) -> Option<RankingReasonCode> {
     let operator = MutationOperator::from_name(operator)?;
     Some(match operator {
         MutationOperator::WhileConditionFalse
+        | MutationOperator::ConditionClauseDelete
         | MutationOperator::ConditionConstant
         | MutationOperator::CompareEqNe
         | MutationOperator::CompareOrder

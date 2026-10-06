@@ -117,6 +117,7 @@ pub enum MutationOperator {
     ReturnTupleSwap,
     StringLiteralEmpty,
     WhileConditionFalse,
+    ConditionClauseDelete,
 }
 
 impl MutationOperator {
@@ -129,6 +130,7 @@ impl MutationOperator {
     #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::ConditionClauseDelete => "condition_clause_delete",
             Self::WhileConditionFalse => "while_condition_false",
             Self::FunctionBodyErase => "function_body_erase",
             Self::EnumMemberReplace => "enum_member_replace",
@@ -196,7 +198,7 @@ impl MutationOperator {
             Self::TypeSequenceIterable => "type_sequence_iterable",
         }
     }
-    fn all() -> [Self; 65] {
+    fn all() -> [Self; 66] {
         [
             Self::CompareEqNe,
             Self::CompareOrder,
@@ -263,6 +265,7 @@ impl MutationOperator {
             Self::ReturnTupleSwap,
             Self::StringLiteralEmpty,
             Self::WhileConditionFalse,
+            Self::ConditionClauseDelete,
         ]
     }
 }

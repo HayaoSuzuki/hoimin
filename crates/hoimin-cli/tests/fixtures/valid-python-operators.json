@@ -323,5 +323,10 @@
     "operator": "while_condition_false",
     "status": "deferred",
     "reason": "Dedicated source, CPython and public CLI tests; outside initial cross-producer corpus"
+  },
+  {
+    "operator": "condition_clause_delete",
+    "status": "deferred",
+    "reason": "Dedicated source, CPython and public CLI tests; outside initial cross-producer corpus"
   }
 ]
