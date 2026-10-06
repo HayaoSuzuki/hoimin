@@ -7,7 +7,7 @@ use ruff_python_ast::{
 };
 use ruff_text_size::{Ranged, TextRange};
 
-use super::{AnalysisCancelled, BindingEffect, NameResolutionIndex, NameScopeKind};
+use super::{AnalysisCancelled, NameResolutionIndex, NameScopeKind};
 
 #[derive(Default)]
 pub(super) struct EnumIndex {
@@ -136,55 +136,11 @@ impl EnumIndex {
     }
 
     fn unique_module_binding(&self, name: &str) -> bool {
-        let scope = &self.resolution.scopes[0];
-        !scope.wildcard
-            && scope
-                .ordered
-                .get(name)
-                .is_some_and(|h| matches!(h.events.as_slice(), [(_, BindingEffect::Bind)]))
+        self.resolution.unique_module_binding(name)
     }
 
-    // Intentionally reject class namespace loads and any shadow in an enclosing
-    // lexical scope. Method bodies skip class namespaces as Python does.
     fn resolves_module(&self, expression: &Expr, name: &str) -> bool {
-        if !self.unique_module_binding(name) || name.starts_with("__") {
-            return false;
-        }
-        let Some(site) = self
-            .resolution
-            .occurrences
-            .get(&usize::from(expression.start()))
-        else {
-            return false;
-        };
-        if site.temporarily_shadowed {
-            return false;
-        }
-        let mut scope_id = site.scope;
-        let mut skip_classes = false;
-        loop {
-            let scope = &self.resolution.scopes[scope_id.0];
-            if scope.kind == NameScopeKind::Module {
-                return true;
-            }
-            if scope.kind == NameScopeKind::Class && !skip_classes {
-                return false;
-            }
-            if scope.kind != NameScopeKind::Class {
-                if scope.wildcard
-                    || scope.locals.contains(name)
-                    || scope.nonlocals.contains(name)
-                    || scope.possible_bindings.contains(name)
-                {
-                    return false;
-                }
-                skip_classes = true;
-            }
-            let Some(parent) = scope.parent else {
-                return false;
-            };
-            scope_id = parent;
-        }
+        self.resolution.resolves_unique_module(expression, name)
     }
     fn trusted_import(&self, expression: &Expr, imports: &HashMap<String, Import>) -> bool {
         let root = match expression {

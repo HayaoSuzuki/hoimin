@@ -32,6 +32,8 @@ mod container_elements;
 mod enum_members;
 #[path = "rust/function_body.rs"]
 mod function_body;
+#[path = "rust/optional_keywords.rs"]
+mod optional_keywords;
 #[path = "rust/return_tuple.rs"]
 mod return_tuple;
 #[path = "rust/string_literals.rs"]
@@ -1129,6 +1131,54 @@ struct NameResolutionIndex {
 }
 
 impl NameResolutionIndex {
+    fn unique_module_binding(&self, name: &str) -> bool {
+        let scope = &self.scopes[0];
+        !scope.wildcard
+            && scope
+                .ordered
+                .get(name)
+                .is_some_and(|h| matches!(h.events.as_slice(), [(_, BindingEffect::Bind)]))
+    }
+
+    // Intentionally reject class namespace loads and any shadow in an enclosing
+    // lexical scope. Method bodies skip class namespaces as Python does.
+    fn resolves_unique_module(&self, expression: &Expr, name: &str) -> bool {
+        if !self.unique_module_binding(name) || name.starts_with("__") {
+            return false;
+        }
+        let Some(site) = self.occurrences.get(&usize::from(expression.start())) else {
+            return false;
+        };
+        if site.temporarily_shadowed {
+            return false;
+        }
+        let mut scope_id = site.scope;
+        let mut skip_classes = false;
+        loop {
+            let scope = &self.scopes[scope_id.0];
+            if scope.kind == NameScopeKind::Module {
+                return true;
+            }
+            if scope.kind == NameScopeKind::Class && !skip_classes {
+                return false;
+            }
+            if scope.kind != NameScopeKind::Class {
+                if scope.wildcard
+                    || scope.locals.contains(name)
+                    || scope.nonlocals.contains(name)
+                    || scope.possible_bindings.contains(name)
+                {
+                    return false;
+                }
+                skip_classes = true;
+            }
+            let Some(parent) = scope.parent else {
+                return false;
+            };
+            scope_id = parent;
+        }
+    }
+
     fn from_module(module: &ModModule) -> Self {
         Self::from_module_with_names(module, HashSet::new())
     }
@@ -2736,6 +2786,7 @@ enum RuntimeRole {
 struct AstCandidateCollector<'a, F> {
     string_exclusions: string_literals::Exclusions,
     enum_index: enum_members::EnumIndex,
+    optional_functions: optional_keywords::FunctionIndex,
     operator_imports: OperatorImports,
     return_scope: ReturnScope,
     integer_suppressed: bool,
@@ -2763,9 +2814,20 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         exceptions: Option<&exception_hierarchy::ExceptionIndex>,
     ) -> Result<AstCollection, AnalysisCancelled> {
         let mut collector = Self {
+            optional_functions: if request
+                .operators
+                .contains(MutationOperator::OptionalKeywordDelete)
+            {
+                optional_keywords::FunctionIndex::build(module, cancelled)?
+            } else {
+                optional_keywords::FunctionIndex::default()
+            },
             string_exclusions: if request
                 .operators
                 .contains(MutationOperator::StringLiteralEmpty)
+                || request
+                    .operators
+                    .contains(MutationOperator::OptionalKeywordDelete)
                 || request
                     .operators
                     .contains(MutationOperator::ConversionCallRemove)
@@ -2978,6 +3040,32 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
     }
 
     fn collect_call(&mut self, call: &ExprCall) {
+        if self
+            .request
+            .operators
+            .contains(MutationOperator::OptionalKeywordDelete)
+            && self.runtime_role == RuntimeRole::Value
+            && !self.in_pattern
+            && !self.string_exclusions.contains_alias(call.range())
+            && let Some(keywords) = self
+                .optional_functions
+                .optional_keywords(call, self.cancelled)
+        {
+            optional_keywords::emit(
+                call,
+                &keywords,
+                self.source,
+                self.request.max_candidates,
+                self.cancelled,
+                |replacement| {
+                    self.add_candidate(
+                        call.range(),
+                        replacement,
+                        MutationOperator::OptionalKeywordDelete,
+                    );
+                },
+            );
+        }
         if let Expr::Name(name) = call.func.as_ref() {
             self.collect_conversion_call_remove(call, name);
             self.collect_builtin_call(call, name.id.as_str(), name.range());

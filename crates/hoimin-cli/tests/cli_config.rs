@@ -121,7 +121,7 @@ fn readme_documents_all_mutation_operator_ids_and_selector_families() {
     }
     for expected in [
         "all 43 runtime operators",
-        "68 operator IDs",
+        "69 operator IDs",
         "collection_ops",
         "structure_ops",
         "bitwise_ops",

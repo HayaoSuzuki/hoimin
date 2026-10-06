@@ -1,0 +1,22 @@
+[
+  {
+    "project": "iniconfig",
+    "file": "iniconfig/__init__.py",
+    "candidate_count": 0
+  },
+  {
+    "project": "iniconfig",
+    "file": "iniconfig/__init__.py",
+    "candidate_count": 0
+  },
+  {
+    "project": "packaging",
+    "file": "packaging/version.py",
+    "candidate_count": 0
+  },
+  {
+    "project": "packaging",
+    "file": "packaging/version.py",
+    "candidate_count": 0
+  }
+]
