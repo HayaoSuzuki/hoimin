@@ -30,6 +30,8 @@ pub(crate) mod exception_hierarchy;
 mod enum_members;
 #[path = "rust/function_body.rs"]
 mod function_body;
+#[path = "rust/return_tuple.rs"]
+mod return_tuple;
 
 #[path = "rust/deletion.rs"]
 mod deletion;
@@ -2714,9 +2716,16 @@ type AstCollection = (
     Vec<(TextRange, String)>,
 );
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ReturnScope {
+    Excluded,
+    PlainSynchronous,
+}
+
 struct AstCandidateCollector<'a, F> {
     enum_index: enum_members::EnumIndex,
     operator_imports: OperatorImports,
+    return_scope: ReturnScope,
     integer_suppressed: bool,
     in_pattern: bool,
     source: &'a str,
@@ -2749,6 +2758,7 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             } else {
                 enum_members::EnumIndex::default()
             },
+            return_scope: ReturnScope::Excluded,
             integer_suppressed: false,
             in_pattern: false,
             operator_imports: if request
@@ -3360,6 +3370,61 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         }
     }
 
+    fn collect_statement_mutations(&mut self, statement: &Stmt) {
+        if let Stmt::AugAssign(assign) = statement {
+            self.collect_augmented_to_assignment(assign);
+        }
+        if self
+            .request
+            .operators
+            .contains(MutationOperator::FunctionBodyErase)
+            && let Stmt::FunctionDef(definition) = statement
+            && let Some(range) = function_body::erased_range(definition, self.cancelled)
+            && !self.check_cancelled()
+        {
+            self.add_candidate_in_scope(
+                range,
+                "pass".to_owned(),
+                MutationOperator::FunctionBodyErase,
+                definition.range(),
+            );
+        }
+        if self
+            .request
+            .operators
+            .contains(MutationOperator::ConditionConstant)
+            && let Stmt::If(statement_if) = statement
+        {
+            self.collect_condition_constant(&statement_if.test);
+            for clause in &statement_if.elif_else_clauses {
+                if self.check_cancelled() {
+                    return;
+                }
+                if let Some(test) = &clause.test {
+                    self.collect_condition_constant(test);
+                }
+            }
+        }
+        if self
+            .request
+            .operators
+            .contains(MutationOperator::StatementDelete)
+            && let Stmt::Expr(statement_expr) = statement
+            && matches!(statement_expr.value.as_ref(), Expr::Call(_))
+            && deletion::can_remove(statement_expr.value.as_ref(), self.cancelled)
+            && !self.check_cancelled()
+        {
+            self.add_candidate(
+                statement.range(),
+                "pass".to_owned(),
+                MutationOperator::StatementDelete,
+            );
+        }
+        if let Stmt::Raise(statement_raise) = statement {
+            self.collect_raised_exception(statement_raise);
+        }
+    }
+
     fn collect_augmented_to_assignment(&mut self, assign: &ruff_python_ast::StmtAugAssign) {
         if !self
             .request
@@ -3442,57 +3507,36 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
 impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
     fn visit_stmt(&mut self, statement: &'ast Stmt) {
         if !self.check_cancelled() {
-            if let Stmt::AugAssign(assign) = statement {
-                self.collect_augmented_to_assignment(assign);
+            self.collect_statement_mutations(statement);
+            if self.check_cancelled() {
+                return;
             }
-            if self
-                .request
-                .operators
-                .contains(MutationOperator::FunctionBodyErase)
-                && let Stmt::FunctionDef(definition) = statement
-                && let Some(range) = function_body::erased_range(definition, self.cancelled)
-                && !self.check_cancelled()
-            {
-                self.add_candidate_in_scope(
-                    range,
-                    "pass".to_owned(),
-                    MutationOperator::FunctionBodyErase,
-                    definition.range(),
-                );
+            if let Stmt::FunctionDef(definition) = statement {
+                let allowed = self
+                    .request
+                    .operators
+                    .contains(MutationOperator::ReturnTupleSwap)
+                    && function_body::plain_synchronous(definition, self.cancelled);
+                let scope = if allowed {
+                    ReturnScope::PlainSynchronous
+                } else {
+                    ReturnScope::Excluded
+                };
+                let previous = std::mem::replace(&mut self.return_scope, scope);
+                visitor::walk_stmt(self, statement);
+                self.return_scope = previous;
+                return;
             }
-            if self
-                .request
-                .operators
-                .contains(MutationOperator::ConditionConstant)
-                && let Stmt::If(statement_if) = statement
-            {
-                self.collect_condition_constant(&statement_if.test);
-                for clause in &statement_if.elif_else_clauses {
-                    if self.check_cancelled() {
-                        return;
-                    }
-                    if let Some(test) = &clause.test {
-                        self.collect_condition_constant(test);
-                    }
-                }
-            }
-            if self
-                .request
-                .operators
-                .contains(MutationOperator::StatementDelete)
-                && let Stmt::Expr(statement_expr) = statement
-                && matches!(statement_expr.value.as_ref(), Expr::Call(_))
-                && deletion::can_remove(statement_expr.value.as_ref(), self.cancelled)
-                && !self.check_cancelled()
+            if self.return_scope == ReturnScope::PlainSynchronous
+                && let Stmt::Return(statement_return) = statement
+                && let Some(Expr::Tuple(tuple)) = statement_return.value.as_deref()
+                && let Some(replacement) = return_tuple::replacement(tuple, self.source)
             {
                 self.add_candidate(
-                    statement.range(),
-                    "pass".to_owned(),
-                    MutationOperator::StatementDelete,
+                    tuple.range(),
+                    replacement,
+                    MutationOperator::ReturnTupleSwap,
                 );
-            }
-            if let Stmt::Raise(statement_raise) = statement {
-                self.collect_raised_exception(statement_raise);
             }
             let Stmt::Try(try_statement) = statement else {
                 visitor::walk_stmt(self, statement);

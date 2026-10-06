@@ -22,6 +22,7 @@ pub(super) fn erased_range<F: Fn() -> bool>(
     let first = body.first()?;
     let mut check = OwnScope {
         safe: true,
+        reject_value_return: true,
         cancelled,
     };
     let mut meaningful = false;
@@ -36,6 +37,27 @@ pub(super) fn erased_range<F: Fn() -> bool>(
         }
     }
     meaningful.then(|| TextRange::new(first.start(), body.last().expect("nonempty body").end()))
+}
+
+pub(super) fn plain_synchronous<F: Fn() -> bool>(
+    definition: &StmtFunctionDef,
+    cancelled: &F,
+) -> bool {
+    if definition.is_async || cancelled() {
+        return false;
+    }
+    let mut check = OwnScope {
+        safe: true,
+        reject_value_return: false,
+        cancelled,
+    };
+    for statement in &definition.body {
+        check.visit_stmt(statement);
+        if !check.safe {
+            return false;
+        }
+    }
+    !cancelled()
 }
 
 fn is_docstring(statement: &Stmt) -> bool {
@@ -58,6 +80,7 @@ fn is_noop(statement: &Stmt) -> bool {
 
 struct OwnScope<'a, F> {
     safe: bool,
+    reject_value_return: bool,
     cancelled: &'a F,
 }
 impl<'ast, F: Fn() -> bool> Visitor<'ast> for OwnScope<'_, F> {
@@ -83,10 +106,11 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for OwnScope<'_, F> {
             }
             Stmt::TypeAlias(_) => {}
             Stmt::Return(value)
-                if value
-                    .value
-                    .as_deref()
-                    .is_some_and(|value| !matches!(value, Expr::NoneLiteral(_))) =>
+                if self.reject_value_return
+                    && value
+                        .value
+                        .as_deref()
+                        .is_some_and(|value| !matches!(value, Expr::NoneLiteral(_))) =>
             {
                 self.safe = false;
             }
