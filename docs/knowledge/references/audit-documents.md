@@ -1211,3 +1211,5 @@ sources:
 - Issue #696: [セルフレビューと検証結果](../../superpowers/reports/issue-696/review.md)、[実パッケージ試行](../../superpowers/reports/issue-696/project-trials.json)。
 
 - Issue #697: [整数隣接値の検証](../../superpowers/reports/issue-697/review.md)。
+
+- Issue #698: [条件定数化の検証](../../superpowers/reports/issue-698/review.md)。
