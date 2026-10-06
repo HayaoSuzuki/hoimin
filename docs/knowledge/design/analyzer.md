@@ -307,6 +307,12 @@ sources:
   working_tree: untracked
   sha256: f1083311f2f119625c62ee1558b769969f96992b06f9727a353e0347e877fde7
 
+- id: issue-705
+  resource: ../../superpowers/reports/issue-705/design.md
+  revision: dbb9635e291ca83ac6895bd650f6185a7f46ffca
+  working_tree: untracked
+  sha256: 00a9ef473ab17de502b60e2279e6c77117794153113da5468c3048d6f16b5a6c
+
 ---
 
 # 構文と名前解決の契約
@@ -669,3 +675,7 @@ Lean の証明は、与えられたノード分類に対する適用条件と単
 while_condition_false は while 条件全体を偽にし、条件評価と本体を省略する。else は保持し、真偽値定数と束縛・中断を含む条件を除外する。 [^issue-704]
 
 [^issue-704]: [設計](../../superpowers/reports/issue-704/design.md)
+
+condition_clause_delete は if/elif の最上位 BoolOp から1項だけ除き、残りの式の順序と木構造を保つ。短絡評価の変化を含む変異であり、束縛・中断を含む条件は除外する。 [^issue-705]
+
+[^issue-705]: [設計](../../superpowers/reports/issue-705/design.md)

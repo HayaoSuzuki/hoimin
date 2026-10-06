@@ -390,9 +390,9 @@ the detailed capability and cleanup model.
 Without `--operators`, a run selects all 43 runtime operators. `--operators`
 (comma-separated) selects an explicit set; `--exclude-operators` then removes
 individual IDs or selector families. Type-annotation `type_*` operators remain
-opt-in. Hoimin exposes 65 operator IDs in total: 43 default runtime IDs, seven
+opt-in. Hoimin exposes 66 operator IDs in total: 43 default runtime IDs, seven
 opt-in type IDs, five opt-in risky exception IDs, `exception_hierarchy`, and
-`statement_delete`, `integer_literal_neighbor`, `condition_constant`, `function_body_erase`, `enum_member_replace`, `augmented_to_assignment`, `return_tuple_swap`, `string_literal_empty`, and `while_condition_false`.
+`statement_delete`, `integer_literal_neighbor`, `condition_constant`, `function_body_erase`, `enum_member_replace`, `augmented_to_assignment`, `return_tuple_swap`, `string_literal_empty`, `while_condition_false`, and `condition_clause_delete`.
 
 | Group | Runtime IDs | Mutations |
 | --- | --- | --- |
@@ -1010,3 +1010,9 @@ quote style need not survive; the replacement is an empty str. Default IDs are u
 It skips both the original condition's evaluation and the loop body; an existing
 else suite still runs. Boolean literals, binding and suspension expressions are
 excluded. This is opt-in and does not affect for loops or comprehensions.
+
+`--operators condition_clause_delete` removes one top-level operand from an if/elif
+and/or condition. Retained expressions keep their order and nested grouping;
+inter-operand formatting is normalized. The removed expression's effects disappear,
+and short-circuit behavior may expose previously skipped operands. Binding/suspension
+expressions and other condition contexts are excluded.
