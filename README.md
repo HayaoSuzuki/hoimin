@@ -390,9 +390,9 @@ the detailed capability and cleanup model.
 Without `--operators`, a run selects all 43 runtime operators. `--operators`
 (comma-separated) selects an explicit set; `--exclude-operators` then removes
 individual IDs or selector families. Type-annotation `type_*` operators remain
-opt-in. Hoimin exposes 64 operator IDs in total: 43 default runtime IDs, seven
+opt-in. Hoimin exposes 65 operator IDs in total: 43 default runtime IDs, seven
 opt-in type IDs, five opt-in risky exception IDs, `exception_hierarchy`, and
-`statement_delete`, `integer_literal_neighbor`, `condition_constant`, `function_body_erase`, `enum_member_replace`, `augmented_to_assignment`, `return_tuple_swap`, and `string_literal_empty`.
+`statement_delete`, `integer_literal_neighbor`, `condition_constant`, `function_body_erase`, `enum_member_replace`, `augmented_to_assignment`, `return_tuple_swap`, `string_literal_empty`, and `while_condition_false`.
 
 | Group | Runtime IDs | Mutations |
 | --- | --- | --- |
@@ -1005,3 +1005,8 @@ markers imported from typing/typing_extensions, including quoted/parenthesized m
 are recognized conservatively across scopes; shadowed or unusual marker spellings can
 suppress a candidate. Normal annotated assignment values remain eligible. Prefix and
 quote style need not survive; the replacement is an empty str. Default IDs are unchanged.
+
+`--operators while_condition_false` replaces eligible while tests with `(False)`.
+It skips both the original condition's evaluation and the loop body; an existing
+else suite still runs. Boolean literals, binding and suspension expressions are
+excluded. This is opt-in and does not affect for loops or comprehensions.

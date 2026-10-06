@@ -1,0 +1,86 @@
+[
+  {
+    "project": "iniconfig",
+    "file": "iniconfig/__init__.py",
+    "candidate_count": 0
+  },
+  {
+    "project": "iniconfig",
+    "file": "iniconfig/__init__.py",
+    "candidate_count": 0
+  },
+  {
+    "project": "packaging",
+    "version": "26.3",
+    "file": "packaging/version.py",
+    "probe": "import_only",
+    "test_command": "import packaging",
+    "candidate_count": 2,
+    "invalid_syntax": [],
+    "counts": {
+      "killed": 0,
+      "survived": 2,
+      "timeout": 0,
+      "out_of_memory": 0,
+      "process_limit": 0,
+      "error": 0,
+      "not_run": 0,
+      "inconclusive": 0,
+      "score": 0.0
+    },
+    "baseline": {
+      "Exit": 0
+    },
+    "seconds": 0.267,
+    "equivalence": "unclassified; authored probes, not upstream suites",
+    "mutants": [
+      {
+        "original": "i > 1 and rel[i - 1] == 0",
+        "replacement": "(False)",
+        "status": "survived"
+      },
+      {
+        "original": "i and release[i - 1] == 0",
+        "replacement": "(False)",
+        "status": "survived"
+      }
+    ]
+  },
+  {
+    "project": "packaging",
+    "version": "26.3",
+    "file": "packaging/version.py",
+    "probe": "behavior",
+    "test_command": "from packaging.version import Version; assert str(Version('01.2')) == '1.2'; assert Version('1.0a1') < Version('1.0'); from packaging.version import _TrimmedRelease; assert _TrimmedRelease('1.0.0').release == (1,); assert Version('1.0.0') == Version('1')",
+    "candidate_count": 2,
+    "invalid_syntax": [],
+    "counts": {
+      "killed": 2,
+      "survived": 0,
+      "timeout": 0,
+      "out_of_memory": 0,
+      "process_limit": 0,
+      "error": 0,
+      "not_run": 0,
+      "inconclusive": 0,
+      "score": 1.0
+    },
+    "baseline": {
+      "Exit": 0
+    },
+    "seconds": 0.265,
+    "equivalence": "unclassified; authored probes, not upstream suites",
+    "mutants": [
+      {
+        "original": "i > 1 and rel[i - 1] == 0",
+        "replacement": "(False)",
+        "status": "killed"
+      },
+      {
+        "original": "i and release[i - 1] == 0",
+        "replacement": "(False)",
+        "status": "killed"
+      }
+    ]
+  }
+]

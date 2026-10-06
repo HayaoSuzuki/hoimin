@@ -301,6 +301,12 @@ sources:
   working_tree: untracked
   sha256: 31f19345bca108b883d6083984c505b9860718b607fe0091105b0244e7b03b65
 
+- id: issue-704
+  resource: ../../superpowers/reports/issue-704/design.md
+  revision: 22483e46cea1802a29c3fb376442aefc0dde5b27
+  working_tree: untracked
+  sha256: f1083311f2f119625c62ee1558b769969f96992b06f9727a353e0347e877fde7
+
 ---
 
 # 構文と名前解決の契約
@@ -659,3 +665,7 @@ Lean の証明は、与えられたノード分類に対する適用条件と単
 `string_literal_empty` は単一トークンの非空 str リテラル全体を空文字列に置換する。空判定には復号した値を使い、docstring・型の式・パターン・補間文字列を除外する。明示的な TypeAlias マーカーは引用・括弧を含め保守的に認識する。通常のメッセージ文字列を関数名の綴りだけで除外しない。[^issue-703]
 
 [^issue-703]: [文字列の空文字化の設計](../../superpowers/reports/issue-703/design.md)・[レビューと検証](../../superpowers/reports/issue-703/review.md)
+
+while_condition_false は while 条件全体を偽にし、条件評価と本体を省略する。else は保持し、真偽値定数と束縛・中断を含む条件を除外する。 [^issue-704]
+
+[^issue-704]: [設計](../../superpowers/reports/issue-704/design.md)

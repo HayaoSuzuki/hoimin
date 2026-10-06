@@ -3382,6 +3382,21 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
     }
 
     fn collect_statement_mutations(&mut self, statement: &Stmt) {
+        if self
+            .request
+            .operators
+            .contains(MutationOperator::WhileConditionFalse)
+            && let Stmt::While(loop_stmt) = statement
+            && !matches!(loop_stmt.test.as_ref(), Expr::BooleanLiteral(_))
+            && deletion::can_remove(&loop_stmt.test, self.cancelled)
+            && !self.check_cancelled()
+        {
+            self.add_candidate(
+                loop_stmt.test.range(),
+                "(False)".to_owned(),
+                MutationOperator::WhileConditionFalse,
+            );
+        }
         if let Stmt::AugAssign(assign) = statement {
             self.collect_augmented_to_assignment(assign);
         }

@@ -242,7 +242,8 @@ fn fixed_score(code: RankingReasonCode) -> u32 {
 fn operator_reason(operator: &str) -> Option<RankingReasonCode> {
     let operator = MutationOperator::from_name(operator)?;
     Some(match operator {
-        MutationOperator::ConditionConstant
+        MutationOperator::WhileConditionFalse
+        | MutationOperator::ConditionConstant
         | MutationOperator::CompareEqNe
         | MutationOperator::CompareOrder
         | MutationOperator::Membership
