@@ -21,11 +21,16 @@ Standalone executable archives and `SHA256SUMS` remain on GitHub Releases.
    and enable two-factor authentication. Use a separate account on TestPyPI
    to test the publication process.
 2. In [GitHub repository environments](https://github.com/HayaoSuzuki/hoimin/settings/environments),
-   create `pypi` and `testpypi`. Add a required reviewer and restrict deployment
-   branches to `main`. For a sole maintainer approving their own manual runs,
-   leave **Prevent self-review** disabled; otherwise another reviewer must
-   approve. These environment protections require configuration on GitHub;
-   the workflow file does not install them.
+   create `pypi` and `testpypi`. Set **Deployment branches and tags** to
+   **Selected branches and tags** and add a **Branch** rule for `main` in both.
+   Add a required reviewer if the repository visibility and GitHub plan support
+   it. For private repositories on GitHub Pro or Team, **Required reviewers**
+   and **Prevent self-review** are unavailable; use the branch restriction and
+   manual workflow dispatch. In that configuration, dispatch starts publication
+   after validation without a second approval prompt. Where reviewers are
+   available, leave **Prevent self-review** disabled for a sole maintainer who
+   approves their own runs. These protections require configuration on GitHub;
+   the workflow file does not install them. See [GitHub's availability rules](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments#required-reviewers).
 3. Register a pending Trusted Publisher using the following values on
    [PyPI account publishing](https://pypi.org/manage/account/publishing/) and
    [TestPyPI account publishing](https://test.pypi.org/manage/account/publishing/).
@@ -66,9 +71,10 @@ gh workflow run publish-pypi.yml --repo HayaoSuzuki/hoimin --ref main \
   -f tag=vX.Y.Z -f index=testpypi
 ```
 
-Open the run in GitHub Actions, review the selected release and approve the
-`testpypi` environment. On a supported OS and architecture, check installation
-with an isolated Python 3.14 environment:
+Review the selected release before dispatching. Open the run in GitHub Actions
+and approve the `testpypi` environment if required reviewers are configured;
+otherwise the upload proceeds after validation. On a supported OS and
+architecture, check installation with an isolated Python 3.14 environment:
 
 ```sh
 uv venv --python 3.14 /tmp/hoimin-testpypi
@@ -89,8 +95,9 @@ gh workflow run publish-pypi.yml --repo HayaoSuzuki/hoimin --ref main \
   -f tag=vX.Y.Z -f index=pypi
 ```
 
-Approve the `pypi` environment after reviewing the run. Then confirm the project
-page, the three wheel files, license, repository links and installation:
+If required reviewers are configured, approve the `pypi` environment after
+reviewing the run. Otherwise dispatch authorizes the upload. Then confirm the
+project page, the three wheel files, license, repository links and installation:
 
 ```sh
 uvx --python 3.14 --from 'hoimin==X.Y.Z' hoimin --version

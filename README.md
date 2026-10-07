@@ -979,7 +979,9 @@ workflow. Select a published ELv2 release tag and either TestPyPI (the default)
 or PyPI. It verifies all three wheels against `SHA256SUMS`, checks their package
 metadata and bundled licenses, and uploads the same wheel bytes through Trusted
 Publishing. Only the upload job has `id-token: write`; its GitHub environment
-controls approval. See [PyPI publishing](docs/pypi-publishing.md) for the initial
+restricts deployment to `main` and can require approval where the GitHub plan
+supports reviewers. Without reviewers, manual dispatch proceeds to upload after
+validation. See [PyPI publishing](docs/pypi-publishing.md) for the initial
 account and environment setup, first publication, and retry procedure.
 
 ### Additional runtime mutations

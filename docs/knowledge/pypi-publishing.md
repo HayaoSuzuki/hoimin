@@ -7,8 +7,9 @@ catalog_revision: 36aa4cd696f4db28cd4811a0995d85df89b56eb5
 sources:
 - id: guide
   resource: ../pypi-publishing.md
-  working_tree: untracked
-  sha256: 4c43bb88d089c3b9759562a1c946fd231b5f962cbaa12ca418db5fa84295783b
+  working_tree: modified
+  sha256: 728fc5cf7294b63a34fff4fb5d7789f42dd67eafbb30ed71c487cb0a22bc6c02
+  revision: 3e98a0386d1e531e2c1961f117a73d9378f2dea7
 - id: workflow
   resource: ../../.github/workflows/publish-pypi.yml
   working_tree: untracked
@@ -31,7 +32,9 @@ sources:
 
 # アカウント側の設定
 
-PyPIとTestPyPIそれぞれに、所有者`HayaoSuzuki`、リポジトリ`hoimin`、ワークフロー`publish-pypi.yml`をTrusted Publisherとして登録する。Environmentは送信先と同じ`pypi`または`testpypi`を指定する。GitHub側で必須レビュアーとmainへのブランチ制限を設定する作業も必要であり、ワークフローの追加だけではこれらの保護は有効にならない。[^guide]
+PyPIとTestPyPIそれぞれに、所有者`HayaoSuzuki`、リポジトリ`hoimin`、ワークフロー`publish-pypi.yml`をTrusted Publisherとして登録する。Environmentは送信先と同じ`pypi`または`testpypi`を指定する。GitHub側で両Environmentにmainへのブランチ制限を設定する必要があり、ワークフローの追加だけでは有効にならない。[^guide]
+
+必須レビュアーを利用できる場合は、公開ジョブの承認者を設定する。非公開リポジトリをGitHub ProまたはTeamで利用する場合、この機能は使えない。その構成では、手動実行後に検証が通ると、追加の承認待ちなしで公開する。[^guide]
 
 # 検証範囲と再確認条件
 
