@@ -207,6 +207,10 @@ name = "generate_method_call_remove"
 root = "MethodCallRemoveAuditMain"
 
 [[lean_exe]]
+name = "generate_function_return_constant"
+root = "FunctionReturnConstantAuditMain"
+
+[[lean_exe]]
 name = "generate_prepared_annotation_import"
 root = "PreparedAnnotationImportAuditMain"
 

@@ -1,0 +1,101 @@
+[
+  {
+    "module": "packaging.markers",
+    "package": "packaging",
+    "version": "26.3",
+    "sha256": "6cbe860d35d98d2b599e7f0ec73feab124e015711b30be9045e678c92940d9cc",
+    "candidate_count": 12,
+    "truncated": false,
+    "command": "from packaging.markers import Marker; assert Marker('python_version >= \"3.0\"').evaluate(); assert not Marker('python_version < \"3.0\"').evaluate()",
+    "baseline": {
+      "Exit": 0
+    },
+    "counts": {
+      "killed": 1,
+      "survived": 2,
+      "timeout": 0,
+      "out_of_memory": 0,
+      "process_limit": 0,
+      "error": 0,
+      "not_run": 0,
+      "inconclusive": 0,
+      "score": 0.3333333333333333
+    },
+    "complete": true,
+    "elapsed_seconds": 0.849102,
+    "mutants": [
+      {
+        "line": 209,
+        "original": "assert isinstance(marker, (list, tuple, str))\n\n    # Unwrap a redundant [[...]] wrapper, but keep the nesting context so a\n    # nested group keeps the parentheses its and/or precedence needs.\n    if (\n        isinstance(marker, list)\n        and len(marker) == 1\n        and isinstance(marker[0], (list, tuple))\n    ):\n        return _format_marker(marker[0], first=first)\n\n    if isinstance(marker, list):\n        inner = (_format_marker(m, first=False) for m in marker)\n        if first:\n            return \" \".join(inner)\n        else:\n            return \"(\" + \" \".join(inner) + \")\"\n    elif isinstance(marker, tuple):\n        return \" \".join([m.serialize() for m in marker])\n    else:\n        return marker",
+        "replacement": "return \"A\"",
+        "status": "survived"
+      },
+      {
+        "line": 209,
+        "original": "assert isinstance(marker, (list, tuple, str))\n\n    # Unwrap a redundant [[...]] wrapper, but keep the nesting context so a\n    # nested group keeps the parentheses its and/or precedence needs.\n    if (\n        isinstance(marker, list)\n        and len(marker) == 1\n        and isinstance(marker[0], (list, tuple))\n    ):\n        return _format_marker(marker[0], first=first)\n\n    if isinstance(marker, list):\n        inner = (_format_marker(m, first=False) for m in marker)\n        if first:\n            return \" \".join(inner)\n        else:\n            return \"(\" + \" \".join(inner) + \")\"\n    elif isinstance(marker, tuple):\n        return \" \".join([m.serialize() for m in marker])\n    else:\n        return marker",
+        "replacement": "return \"\"",
+        "status": "survived"
+      },
+      {
+        "line": 245,
+        "original": "op_str = op.serialize()\n    if key in MARKERS_REQUIRING_VERSION:\n        try:\n            spec = Specifier(f\"{op_str}{rhs}\")\n        except InvalidSpecifier:\n            pass\n        else:\n            return spec.contains(lhs, prereleases=True)\n\n    oper: Operator | None = _operators.get(op_str)\n    if oper is None:\n        raise UndefinedComparison(f\"Undefined {op!r} on {lhs!r} and {rhs!r}.\")\n\n    return oper(lhs, rhs)",
+        "replacement": "return False",
+        "status": "killed"
+      }
+    ]
+  },
+  {
+    "module": "packaging.version",
+    "package": "packaging",
+    "version": "26.3",
+    "sha256": "558b2fb50fd198c660a4c082f96b8919c565911b6b4b6e07f34b6b60c074be97",
+    "candidate_count": 4,
+    "truncated": false,
+    "command": "from packaging.version import Version; assert str(Version(' 1.2 ')) == '1.2'; assert Version('1.2') < Version('2.0')",
+    "baseline": {
+      "Exit": 0
+    },
+    "counts": {
+      "killed": 0,
+      "survived": 3,
+      "timeout": 0,
+      "out_of_memory": 0,
+      "process_limit": 0,
+      "error": 0,
+      "not_run": 0,
+      "inconclusive": 0,
+      "score": 0.0
+    },
+    "complete": true,
+    "elapsed_seconds": 0.316455,
+    "mutants": [
+      {
+        "line": 106,
+        "original": "letter = letter.lower()\n    return _LETTER_NORMALIZATION.get(letter, letter)",
+        "replacement": "return \"\"",
+        "status": "survived"
+      },
+      {
+        "line": 106,
+        "original": "letter = letter.lower()\n    return _LETTER_NORMALIZATION.get(letter, letter)",
+        "replacement": "return \"A\"",
+        "status": "survived"
+      },
+      {
+        "line": 266,
+        "original": "epoch = value or 0\n    if isinstance(epoch, int) and epoch >= 0:\n        return epoch\n    msg = f\"epoch must be non-negative integer, got {epoch}\"\n    raise InvalidVersion(msg)",
+        "replacement": "return 1",
+        "status": "survived"
+      }
+    ]
+  },
+  {
+    "module": "packaging.specifiers",
+    "version": "26.3",
+    "sha256": "661ad31ddf45ffb861d2626734f4e3d66966029b8fdb79586bb105825d8d9d59",
+    "discovery_exit": 2,
+    "diagnostic": "\nthread 'tokio-rt-worker' (43529207) panicked at crates/hoimin-cli/src/analyzer/rust/fact_index.rs:106:21:\nduplicate unary-not operator start\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\nplan.discovery: task 14 panicked with message \"duplicate unary-not operator start\"\n",
+    "existing_operator_exit": 2,
+    "existing_operator_diagnostic": "\nthread 'tokio-rt-worker' (43529223) panicked at crates/hoimin-cli/src/analyzer/rust/fact_index.rs:106:21:\nduplicate unary-not operator start\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\nplan.discovery: task 14 panicked with message \"duplicate unary-not operator start\"\n"
+  }
+]

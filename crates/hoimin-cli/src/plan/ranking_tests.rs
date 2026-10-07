@@ -578,6 +578,7 @@ const EXCEPTION_HANDLING_OPERATORS: &[&str] = &[
 ];
 const BEHAVIORAL_OPERATORS: &[&str] = &[
     "method_call_remove",
+    "function_body_return_constant",
     "function_body_erase",
     "enum_member_replace",
     "return_tuple_swap",
@@ -668,7 +669,7 @@ fn ranking_assigns_every_operator_to_its_fixed_category() {
         .into_iter()
         .filter_map(MutationOperator::from_name)
         .collect::<BTreeSet<_>>();
-    assert_eq!(tested.len(), 70);
+    assert_eq!(tested.len(), 71);
     assert_eq!(tested, canonical);
 
     for (operators, expected) in categories {

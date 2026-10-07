@@ -66,6 +66,7 @@ fn readme_documents_all_mutation_operator_ids_and_selector_families() {
         fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../README.md")).unwrap();
     for name in [
         "method_call_remove",
+        "function_body_return_constant",
         "compare_eq_ne",
         "compare_order",
         "membership",
@@ -129,7 +130,7 @@ fn readme_documents_all_mutation_operator_ids_and_selector_families() {
     }
     for expected in [
         "50 default runtime operators",
-        "70 operator IDs",
+        "71 operator IDs",
         "collection_ops",
         "structure_ops",
         "bitwise_ops",
