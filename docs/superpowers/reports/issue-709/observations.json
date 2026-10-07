@@ -1,0 +1,736 @@
+{
+  "scope": "Existing independent verify calls; controlled stimuli and narrow authored package checks, not upstream suites or prevalence estimation.",
+  "python": "3.14.7 (main, Aug  7 2026, 02:15:30) [Clang 22.1.3 ]",
+  "controls": [
+    {
+      "mode": "pass",
+      "observations": [
+        {
+          "elapsed_seconds": 0.174223,
+          "baseline": {
+            "Exit": 0
+          },
+          "complete": true,
+          "mutants": [
+            {
+              "id": "m1_207eca1f356eafb3a5000bce4ca315a1b86f70b17b687ea1316af85c44ee0bc5",
+              "status": "survived"
+            }
+          ]
+        },
+        {
+          "elapsed_seconds": 0.156163,
+          "baseline": {
+            "Exit": 0
+          },
+          "complete": true,
+          "mutants": [
+            {
+              "id": "m1_207eca1f356eafb3a5000bce4ca315a1b86f70b17b687ea1316af85c44ee0bc5",
+              "status": "survived"
+            }
+          ]
+        },
+        {
+          "elapsed_seconds": 0.116007,
+          "baseline": {
+            "Exit": 0
+          },
+          "complete": true,
+          "mutants": [
+            {
+              "id": "m1_207eca1f356eafb3a5000bce4ca315a1b86f70b17b687ea1316af85c44ee0bc5",
+              "status": "survived"
+            }
+          ]
+        },
+        {
+          "elapsed_seconds": 0.115046,
+          "baseline": {
+            "Exit": 0
+          },
+          "complete": true,
+          "mutants": [
+            {
+              "id": "m1_207eca1f356eafb3a5000bce4ca315a1b86f70b17b687ea1316af85c44ee0bc5",
+              "status": "survived"
+            }
+          ]
+        },
+        {
+          "elapsed_seconds": 0.115068,
+          "baseline": {
+            "Exit": 0
+          },
+          "complete": true,
+          "mutants": [
+            {
+              "id": "m1_207eca1f356eafb3a5000bce4ca315a1b86f70b17b687ea1316af85c44ee0bc5",
+              "status": "survived"
+            }
+          ]
+        },
+        {
+          "elapsed_seconds": 0.120405,
+          "baseline": {
+            "Exit": 0
+          },
+          "complete": true,
+          "mutants": [
+            {
+              "id": "m1_207eca1f356eafb3a5000bce4ca315a1b86f70b17b687ea1316af85c44ee0bc5",
+              "status": "survived"
+            }
+          ]
+        }
+      ],
+      "per_test_failure_controls": [
+        [
+          false,
+          false
+        ],
+        [
+          false,
+          false
+        ],
+        [
+          false,
+          false
+        ],
+        [
+          false,
+          false
+        ],
+        [
+          false,
+          false
+        ],
+        [
+          false,
+          false
+        ]
+      ]
+    },
+    {
+      "mode": "fail",
+      "observations": [
+        {
+          "elapsed_seconds": 0.118692,
+          "baseline": {
+            "Exit": 0
+          },
+          "complete": true,
+          "mutants": [
+            {
+              "id": "m1_207eca1f356eafb3a5000bce4ca315a1b86f70b17b687ea1316af85c44ee0bc5",
+              "status": "killed"
+            }
+          ]
+        },
+        {
+          "elapsed_seconds": 0.117044,
+          "baseline": {
+            "Exit": 0
+          },
+          "complete": true,
+          "mutants": [
+            {
+              "id": "m1_207eca1f356eafb3a5000bce4ca315a1b86f70b17b687ea1316af85c44ee0bc5",
+              "status": "killed"
+            }
+          ]
+        },
+        {
+          "elapsed_seconds": 0.116957,
+          "baseline": {
+            "Exit": 0
+          },
+          "complete": true,
+          "mutants": [
+            {
+              "id": "m1_207eca1f356eafb3a5000bce4ca315a1b86f70b17b687ea1316af85c44ee0bc5",
+              "status": "killed"
+            }
+          ]
+        },
+        {
+          "elapsed_seconds": 0.117619,
+          "baseline": {
+            "Exit": 0
+          },
+          "complete": true,
+          "mutants": [
+            {
+              "id": "m1_207eca1f356eafb3a5000bce4ca315a1b86f70b17b687ea1316af85c44ee0bc5",
+              "status": "killed"
+            }
+          ]
+        },
+        {
+          "elapsed_seconds": 0.118163,
+          "baseline": {
+            "Exit": 0
+          },
+          "complete": true,
+          "mutants": [
+            {
+              "id": "m1_207eca1f356eafb3a5000bce4ca315a1b86f70b17b687ea1316af85c44ee0bc5",
+              "status": "killed"
+            }
+          ]
+        },
+        {
+          "elapsed_seconds": 0.116821,
+          "baseline": {
+            "Exit": 0
+          },
+          "complete": true,
+          "mutants": [
+            {
+              "id": "m1_207eca1f356eafb3a5000bce4ca315a1b86f70b17b687ea1316af85c44ee0bc5",
+              "status": "killed"
+            }
+          ]
+        }
+      ],
+      "per_test_failure_controls": [
+        [
+          true,
+          false
+        ],
+        [
+          true,
+          false
+        ],
+        [
+          true,
+          false
+        ],
+        [
+          true,
+          false
+        ],
+        [
+          true,
+          false
+        ],
+        [
+          true,
+          false
+        ]
+      ]
+    },
+    {
+      "mode": "alternate",
+      "observations": [
+        {
+          "elapsed_seconds": 0.117595,
+          "baseline": {
+            "Exit": 0
+          },
+          "complete": true,
+          "mutants": [
+            {
+              "id": "m1_207eca1f356eafb3a5000bce4ca315a1b86f70b17b687ea1316af85c44ee0bc5",
+              "status": "killed"
+            }
+          ]
+        },
+        {
+          "elapsed_seconds": 0.118393,
+          "baseline": {
+            "Exit": 0
+          },
+          "complete": true,
+          "mutants": [
+            {
+              "id": "m1_207eca1f356eafb3a5000bce4ca315a1b86f70b17b687ea1316af85c44ee0bc5",
+              "status": "survived"
+            }
+          ]
+        },
+        {
+          "elapsed_seconds": 0.11988,
+          "baseline": {
+            "Exit": 0
+          },
+          "complete": true,
+          "mutants": [
+            {
+              "id": "m1_207eca1f356eafb3a5000bce4ca315a1b86f70b17b687ea1316af85c44ee0bc5",
+              "status": "killed"
+            }
+          ]
+        },
+        {
+          "elapsed_seconds": 0.114922,
+          "baseline": {
+            "Exit": 0
+          },
+          "complete": true,
+          "mutants": [
+            {
+              "id": "m1_207eca1f356eafb3a5000bce4ca315a1b86f70b17b687ea1316af85c44ee0bc5",
+              "status": "survived"
+            }
+          ]
+        },
+        {
+          "elapsed_seconds": 0.116237,
+          "baseline": {
+            "Exit": 0
+          },
+          "complete": true,
+          "mutants": [
+            {
+              "id": "m1_207eca1f356eafb3a5000bce4ca315a1b86f70b17b687ea1316af85c44ee0bc5",
+              "status": "killed"
+            }
+          ]
+        },
+        {
+          "elapsed_seconds": 0.113675,
+          "baseline": {
+            "Exit": 0
+          },
+          "complete": true,
+          "mutants": [
+            {
+              "id": "m1_207eca1f356eafb3a5000bce4ca315a1b86f70b17b687ea1316af85c44ee0bc5",
+              "status": "survived"
+            }
+          ]
+        }
+      ],
+      "per_test_failure_controls": [
+        [
+          true,
+          false
+        ],
+        [
+          false,
+          false
+        ],
+        [
+          true,
+          false
+        ],
+        [
+          false,
+          false
+        ],
+        [
+          true,
+          false
+        ],
+        [
+          false,
+          false
+        ]
+      ]
+    },
+    {
+      "mode": "masked",
+      "observations": [
+        {
+          "elapsed_seconds": 0.113257,
+          "baseline": {
+            "Exit": 0
+          },
+          "complete": true,
+          "mutants": [
+            {
+              "id": "m1_207eca1f356eafb3a5000bce4ca315a1b86f70b17b687ea1316af85c44ee0bc5",
+              "status": "killed"
+            }
+          ]
+        },
+        {
+          "elapsed_seconds": 0.109039,
+          "baseline": {
+            "Exit": 0
+          },
+          "complete": true,
+          "mutants": [
+            {
+              "id": "m1_207eca1f356eafb3a5000bce4ca315a1b86f70b17b687ea1316af85c44ee0bc5",
+              "status": "killed"
+            }
+          ]
+        },
+        {
+          "elapsed_seconds": 0.115023,
+          "baseline": {
+            "Exit": 0
+          },
+          "complete": true,
+          "mutants": [
+            {
+              "id": "m1_207eca1f356eafb3a5000bce4ca315a1b86f70b17b687ea1316af85c44ee0bc5",
+              "status": "killed"
+            }
+          ]
+        },
+        {
+          "elapsed_seconds": 0.113268,
+          "baseline": {
+            "Exit": 0
+          },
+          "complete": true,
+          "mutants": [
+            {
+              "id": "m1_207eca1f356eafb3a5000bce4ca315a1b86f70b17b687ea1316af85c44ee0bc5",
+              "status": "killed"
+            }
+          ]
+        },
+        {
+          "elapsed_seconds": 0.117687,
+          "baseline": {
+            "Exit": 0
+          },
+          "complete": true,
+          "mutants": [
+            {
+              "id": "m1_207eca1f356eafb3a5000bce4ca315a1b86f70b17b687ea1316af85c44ee0bc5",
+              "status": "killed"
+            }
+          ]
+        },
+        {
+          "elapsed_seconds": 0.110812,
+          "baseline": {
+            "Exit": 0
+          },
+          "complete": true,
+          "mutants": [
+            {
+              "id": "m1_207eca1f356eafb3a5000bce4ca315a1b86f70b17b687ea1316af85c44ee0bc5",
+              "status": "killed"
+            }
+          ]
+        }
+      ],
+      "per_test_failure_controls": [
+        [
+          true,
+          true
+        ],
+        [
+          false,
+          true
+        ],
+        [
+          true,
+          true
+        ],
+        [
+          false,
+          true
+        ],
+        [
+          true,
+          true
+        ],
+        [
+          false,
+          true
+        ]
+      ]
+    }
+  ],
+  "failed_baseline": [
+    {
+      "elapsed_seconds": 0.079625,
+      "baseline": {
+        "Exit": 1
+      },
+      "complete": false,
+      "mutants": []
+    },
+    {
+      "elapsed_seconds": 0.080074,
+      "baseline": {
+        "Exit": 1
+      },
+      "complete": false,
+      "mutants": []
+    }
+  ],
+  "packages": [
+    {
+      "package": "packaging",
+      "version": "26.3",
+      "target": "packaging/version.py",
+      "sha256": "558b2fb50fd198c660a4c082f96b8919c565911b6b4b6e07f34b6b60c074be97",
+      "authored_check": "from packaging.version import Version; assert Version('1.0') < Version('2.0'); assert Version('1.0') == Version('1.0.0'); assert Version('1.0a1') < Version('1.0')",
+      "observations": [
+        {
+          "elapsed_seconds": 0.321468,
+          "baseline": {
+            "Exit": 0
+          },
+          "complete": true,
+          "mutants": [
+            {
+              "id": "m1_ef158e2032a0e89a39439c5c3e1e42f92a2400106a178fd41f73383da0e20938",
+              "status": "survived"
+            },
+            {
+              "id": "m1_13b63c5c0e2883f3cdbccafc0173a7be65b85d037e4f6d1432f2f61cb3e18736",
+              "status": "survived"
+            },
+            {
+              "id": "m1_67c82e14c64d4921e1a4fbff0dfc20e2906e070ef75298625dda325fd89efb95",
+              "status": "survived"
+            },
+            {
+              "id": "m1_3522542f8dd3840afa0f1ea6c34ba2a6d38b3effdbb468249809bf283951639d",
+              "status": "survived"
+            }
+          ]
+        },
+        {
+          "elapsed_seconds": 0.32358,
+          "baseline": {
+            "Exit": 0
+          },
+          "complete": true,
+          "mutants": [
+            {
+              "id": "m1_ef158e2032a0e89a39439c5c3e1e42f92a2400106a178fd41f73383da0e20938",
+              "status": "survived"
+            },
+            {
+              "id": "m1_13b63c5c0e2883f3cdbccafc0173a7be65b85d037e4f6d1432f2f61cb3e18736",
+              "status": "survived"
+            },
+            {
+              "id": "m1_67c82e14c64d4921e1a4fbff0dfc20e2906e070ef75298625dda325fd89efb95",
+              "status": "survived"
+            },
+            {
+              "id": "m1_3522542f8dd3840afa0f1ea6c34ba2a6d38b3effdbb468249809bf283951639d",
+              "status": "survived"
+            }
+          ]
+        },
+        {
+          "elapsed_seconds": 0.326759,
+          "baseline": {
+            "Exit": 0
+          },
+          "complete": true,
+          "mutants": [
+            {
+              "id": "m1_ef158e2032a0e89a39439c5c3e1e42f92a2400106a178fd41f73383da0e20938",
+              "status": "survived"
+            },
+            {
+              "id": "m1_13b63c5c0e2883f3cdbccafc0173a7be65b85d037e4f6d1432f2f61cb3e18736",
+              "status": "survived"
+            },
+            {
+              "id": "m1_67c82e14c64d4921e1a4fbff0dfc20e2906e070ef75298625dda325fd89efb95",
+              "status": "survived"
+            },
+            {
+              "id": "m1_3522542f8dd3840afa0f1ea6c34ba2a6d38b3effdbb468249809bf283951639d",
+              "status": "survived"
+            }
+          ]
+        },
+        {
+          "elapsed_seconds": 0.315019,
+          "baseline": {
+            "Exit": 0
+          },
+          "complete": true,
+          "mutants": [
+            {
+              "id": "m1_ef158e2032a0e89a39439c5c3e1e42f92a2400106a178fd41f73383da0e20938",
+              "status": "survived"
+            },
+            {
+              "id": "m1_13b63c5c0e2883f3cdbccafc0173a7be65b85d037e4f6d1432f2f61cb3e18736",
+              "status": "survived"
+            },
+            {
+              "id": "m1_67c82e14c64d4921e1a4fbff0dfc20e2906e070ef75298625dda325fd89efb95",
+              "status": "survived"
+            },
+            {
+              "id": "m1_3522542f8dd3840afa0f1ea6c34ba2a6d38b3effdbb468249809bf283951639d",
+              "status": "survived"
+            }
+          ]
+        },
+        {
+          "elapsed_seconds": 0.323225,
+          "baseline": {
+            "Exit": 0
+          },
+          "complete": true,
+          "mutants": [
+            {
+              "id": "m1_ef158e2032a0e89a39439c5c3e1e42f92a2400106a178fd41f73383da0e20938",
+              "status": "survived"
+            },
+            {
+              "id": "m1_13b63c5c0e2883f3cdbccafc0173a7be65b85d037e4f6d1432f2f61cb3e18736",
+              "status": "survived"
+            },
+            {
+              "id": "m1_67c82e14c64d4921e1a4fbff0dfc20e2906e070ef75298625dda325fd89efb95",
+              "status": "survived"
+            },
+            {
+              "id": "m1_3522542f8dd3840afa0f1ea6c34ba2a6d38b3effdbb468249809bf283951639d",
+              "status": "survived"
+            }
+          ]
+        }
+      ],
+      "changed_classifications": 0,
+      "first_round_seconds": 0.321468,
+      "five_round_seconds": 1.610051
+    },
+    {
+      "package": "iniconfig",
+      "version": "2.3.0",
+      "target": "iniconfig/__init__.py",
+      "sha256": "5cbe5ea94623e26b2400ea2b6798df4408a726f2734c8f9f271a4fe317d7b5ac",
+      "authored_check": "from iniconfig import IniConfig; c = IniConfig('example.ini', data='[main]\\na=1\\n'); assert c['main']['a'] == '1'; assert list(c.sections) == ['main']",
+      "observations": [
+        {
+          "elapsed_seconds": 0.211822,
+          "baseline": {
+            "Exit": 0
+          },
+          "complete": true,
+          "mutants": [
+            {
+              "id": "m1_89bbbc51664e6274c3113da74aea21741d91152f9d234478b9ec927815c27ee4",
+              "status": "survived"
+            },
+            {
+              "id": "m1_06719d269c681c7eb8c28a08fad99d4210de79df79f4e4e9ecc0279b31719f02",
+              "status": "survived"
+            },
+            {
+              "id": "m1_0545aa70e6d34995ae130c16f4fda80398dec5b5e7e36d8924c8e682ec9d3353",
+              "status": "killed"
+            },
+            {
+              "id": "m1_49878b00962f4ec4184afd697dbdb00d758edfa0f514bdfa0cab50f2718572d8",
+              "status": "survived"
+            }
+          ]
+        },
+        {
+          "elapsed_seconds": 0.209949,
+          "baseline": {
+            "Exit": 0
+          },
+          "complete": true,
+          "mutants": [
+            {
+              "id": "m1_89bbbc51664e6274c3113da74aea21741d91152f9d234478b9ec927815c27ee4",
+              "status": "survived"
+            },
+            {
+              "id": "m1_06719d269c681c7eb8c28a08fad99d4210de79df79f4e4e9ecc0279b31719f02",
+              "status": "survived"
+            },
+            {
+              "id": "m1_0545aa70e6d34995ae130c16f4fda80398dec5b5e7e36d8924c8e682ec9d3353",
+              "status": "killed"
+            },
+            {
+              "id": "m1_49878b00962f4ec4184afd697dbdb00d758edfa0f514bdfa0cab50f2718572d8",
+              "status": "survived"
+            }
+          ]
+        },
+        {
+          "elapsed_seconds": 0.209072,
+          "baseline": {
+            "Exit": 0
+          },
+          "complete": true,
+          "mutants": [
+            {
+              "id": "m1_89bbbc51664e6274c3113da74aea21741d91152f9d234478b9ec927815c27ee4",
+              "status": "survived"
+            },
+            {
+              "id": "m1_06719d269c681c7eb8c28a08fad99d4210de79df79f4e4e9ecc0279b31719f02",
+              "status": "survived"
+            },
+            {
+              "id": "m1_0545aa70e6d34995ae130c16f4fda80398dec5b5e7e36d8924c8e682ec9d3353",
+              "status": "killed"
+            },
+            {
+              "id": "m1_49878b00962f4ec4184afd697dbdb00d758edfa0f514bdfa0cab50f2718572d8",
+              "status": "survived"
+            }
+          ]
+        },
+        {
+          "elapsed_seconds": 0.212886,
+          "baseline": {
+            "Exit": 0
+          },
+          "complete": true,
+          "mutants": [
+            {
+              "id": "m1_89bbbc51664e6274c3113da74aea21741d91152f9d234478b9ec927815c27ee4",
+              "status": "survived"
+            },
+            {
+              "id": "m1_06719d269c681c7eb8c28a08fad99d4210de79df79f4e4e9ecc0279b31719f02",
+              "status": "survived"
+            },
+            {
+              "id": "m1_0545aa70e6d34995ae130c16f4fda80398dec5b5e7e36d8924c8e682ec9d3353",
+              "status": "killed"
+            },
+            {
+              "id": "m1_49878b00962f4ec4184afd697dbdb00d758edfa0f514bdfa0cab50f2718572d8",
+              "status": "survived"
+            }
+          ]
+        },
+        {
+          "elapsed_seconds": 0.227133,
+          "baseline": {
+            "Exit": 0
+          },
+          "complete": true,
+          "mutants": [
+            {
+              "id": "m1_89bbbc51664e6274c3113da74aea21741d91152f9d234478b9ec927815c27ee4",
+              "status": "survived"
+            },
+            {
+              "id": "m1_06719d269c681c7eb8c28a08fad99d4210de79df79f4e4e9ecc0279b31719f02",
+              "status": "survived"
+            },
+            {
+              "id": "m1_0545aa70e6d34995ae130c16f4fda80398dec5b5e7e36d8924c8e682ec9d3353",
+              "status": "killed"
+            },
+            {
+              "id": "m1_49878b00962f4ec4184afd697dbdb00d758edfa0f514bdfa0cab50f2718572d8",
+              "status": "survived"
+            }
+          ]
+        }
+      ],
+      "changed_classifications": 0,
+      "first_round_seconds": 0.211822,
+      "five_round_seconds": 1.070862
+    }
+  ]
+}

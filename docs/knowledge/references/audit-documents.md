@@ -732,6 +732,22 @@ sources:
   resource: ../../superpowers/reports/default-analyzer-operators/review.md
   working_tree: untracked
   sha256: 9a0875f841d3b40d504c2a07b638ea03cbd403adb37b66ffd19c2ae43b3af719
+- id: issue-709-design
+  resource: ../../superpowers/reports/issue-709/design.md
+  working_tree: untracked
+  sha256: 4b5d6005177bfb151a3a9a6dce053918c571ed970e9d2ed5c1761c2991773d21
+- id: issue-709-plan
+  resource: ../../superpowers/reports/issue-709/plan.md
+  working_tree: untracked
+  sha256: 4c475534f4f19a29ad98324afc6613cf6e897c1c1c7d3877205b2cd21e2f13eb
+- id: issue-709-assessment
+  resource: ../../superpowers/reports/issue-709/assessment.md
+  working_tree: untracked
+  sha256: c3fb86ebf25c5d4b8bfa2f9eb13fb57faf1d276c1e0e1d6706406da5d2b083fa
+- id: issue-709-review
+  resource: ../../superpowers/reports/issue-709/review.md
+  working_tree: untracked
+  sha256: 291049426d815f46c6b68d75c81415e80024165972fc60df65f0fcfb09ed9800
 ---
 
 # 収録一覧
@@ -1251,3 +1267,18 @@ sources:
 
 [^default-operators]: [設計](../../superpowers/reports/default-analyzer-operators/design.md)。
 [^default-operators-review]: [レビューと検証](../../superpowers/reports/default-analyzer-operators/review.md)。
+
+# Issue #709: 反復検証の事前評価
+
+- [design.md](../../superpowers/reports/issue-709/design.md) — 導入判断の根拠とレビュー。[^issue-709-design]
+- [plan.md](../../superpowers/reports/issue-709/plan.md) — 導入判断の根拠とレビュー。[^issue-709-plan]
+- [assessment.md](../../superpowers/reports/issue-709/assessment.md) — 導入判断の根拠とレビュー。[^issue-709-assessment]
+- [review.md](../../superpowers/reports/issue-709/review.md) — 導入判断の根拠とレビュー。[^issue-709-review]
+
+[^issue-709-design]: [design.md](../../superpowers/reports/issue-709/design.md)。
+
+[^issue-709-plan]: [plan.md](../../superpowers/reports/issue-709/plan.md)。
+
+[^issue-709-assessment]: [assessment.md](../../superpowers/reports/issue-709/assessment.md)。
+
+[^issue-709-review]: [review.md](../../superpowers/reports/issue-709/review.md)。
