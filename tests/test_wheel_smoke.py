@@ -345,8 +345,10 @@ def test_reads_the_single_metadata_member(tmp_path: Path) -> None:
     wheel = tmp_path / "hoimin.whl"
     text = (
         "Requires-Python: >=3.14, <3.15\n"
-        "License-Expression: MIT\n"
-        "Project-URL: Repository, https://github.com/tokyogas-tech/hoimin\n"
+        "License-Expression: Elastic-2.0\n"
+        "Project-URL: Changelog, https://github.com/HayaoSuzuki/hoimin/releases\n"
+        "Project-URL: Issues, https://github.com/HayaoSuzuki/hoimin/issues\n"
+        "Project-URL: Repository, https://github.com/HayaoSuzuki/hoimin\n"
     )
     with zipfile.ZipFile(wheel, "w") as archive:
         archive.writestr("hoimin-0.1.0.dist-info/METADATA", text)
@@ -354,8 +356,12 @@ def test_reads_the_single_metadata_member(tmp_path: Path) -> None:
     assert actual == WheelMetadata(
         requires_python=">=3.14, <3.15",
         requires_dist=None,
-        license_expression="MIT",
-        project_urls=["Repository, https://github.com/tokyogas-tech/hoimin"],
+        license_expression="Elastic-2.0",
+        project_urls=[
+            "Changelog, https://github.com/HayaoSuzuki/hoimin/releases",
+            "Issues, https://github.com/HayaoSuzuki/hoimin/issues",
+            "Repository, https://github.com/HayaoSuzuki/hoimin",
+        ],
     )
 
 
@@ -370,8 +376,8 @@ def test_rejects_an_archive_without_metadata(tmp_path: Path) -> None:
 def test_rejects_an_archive_with_multiple_metadata_members(tmp_path: Path) -> None:
     wheel = tmp_path / "hoimin.whl"
     with zipfile.ZipFile(wheel, "w") as archive:
-        archive.writestr("one.dist-info/METADATA", "License-Expression: MIT\n")
-        archive.writestr("two.dist-info/METADATA", "License-Expression: MIT\n")
+        archive.writestr("one.dist-info/METADATA", "License-Expression: Elastic-2.0\n")
+        archive.writestr("two.dist-info/METADATA", "License-Expression: Elastic-2.0\n")
     with pytest.raises(AssertionError, match="expected exactly one METADATA"):
         wheel_metadata(wheel)
 
@@ -380,8 +386,12 @@ def test_accepts_the_expected_metadata() -> None:
     metadata = WheelMetadata(
         requires_python=">=3.14, <3.15",
         requires_dist=None,
-        license_expression="MIT",
-        project_urls=["Repository, https://github.com/tokyogas-tech/hoimin"],
+        license_expression="Elastic-2.0",
+        project_urls=[
+            "Changelog, https://github.com/HayaoSuzuki/hoimin/releases",
+            "Issues, https://github.com/HayaoSuzuki/hoimin/issues",
+            "Repository, https://github.com/HayaoSuzuki/hoimin",
+        ],
     )
     actual = validate_wheel_metadata(metadata)
     assert actual is None
@@ -395,8 +405,12 @@ def test_accepts_the_expected_metadata() -> None:
             WheelMetadata(
                 requires_python=">=3.13,<3.15",
                 requires_dist=None,
-                license_expression="MIT",
-                project_urls=["Repository, https://github.com/tokyogas-tech/hoimin"],
+                license_expression="Elastic-2.0",
+                project_urls=[
+                    "Changelog, https://github.com/HayaoSuzuki/hoimin/releases",
+                    "Issues, https://github.com/HayaoSuzuki/hoimin/issues",
+                    "Repository, https://github.com/HayaoSuzuki/hoimin",
+                ],
             ),
             id="Requires-Python",
         ),
@@ -405,8 +419,12 @@ def test_accepts_the_expected_metadata() -> None:
             WheelMetadata(
                 requires_python=">=3.14,<3.15",
                 requires_dist=["pytest"],
-                license_expression="MIT",
-                project_urls=["Repository, https://github.com/tokyogas-tech/hoimin"],
+                license_expression="Elastic-2.0",
+                project_urls=[
+                    "Changelog, https://github.com/HayaoSuzuki/hoimin/releases",
+                    "Issues, https://github.com/HayaoSuzuki/hoimin/issues",
+                    "Repository, https://github.com/HayaoSuzuki/hoimin",
+                ],
             ),
             id="Requires-Dist",
         ),
@@ -415,8 +433,12 @@ def test_accepts_the_expected_metadata() -> None:
             WheelMetadata(
                 requires_python=">=3.14,<3.15",
                 requires_dist=None,
-                license_expression="Apache-2.0",
-                project_urls=["Repository, https://github.com/tokyogas-tech/hoimin"],
+                license_expression="MIT",
+                project_urls=[
+                    "Changelog, https://github.com/HayaoSuzuki/hoimin/releases",
+                    "Issues, https://github.com/HayaoSuzuki/hoimin/issues",
+                    "Repository, https://github.com/HayaoSuzuki/hoimin",
+                ],
             ),
             id="License-Expression",
         ),
@@ -425,8 +447,8 @@ def test_accepts_the_expected_metadata() -> None:
             WheelMetadata(
                 requires_python=">=3.14,<3.15",
                 requires_dist=None,
-                license_expression="MIT",
-                project_urls=["Homepage, https://example.invalid/"],
+                license_expression="Elastic-2.0",
+                project_urls=["Repository, https://github.com/tokyogas-tech/hoimin"],
             ),
             id="Project-URL",
         ),

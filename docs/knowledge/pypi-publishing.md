@@ -22,6 +22,16 @@ sources:
   resource: ../../tests/test_pypi_release.py
   working_tree: untracked
   sha256: d3b8f853dc0e9253b8774bf884604292ac13e0b33cfeeeda40d58bc64378c426
+- id: wheel-smoke
+  resource: ../../tests/wheel_smoke.py
+  revision: ff50918cb14ff39c67c0a594b665fd29d73080b4
+  working_tree: modified
+  sha256: 4132f96832912a24f6c7af14bff21fb53b3650f60d39c73aa4d1e9e56cf84369
+- id: wheel-smoke-tests
+  resource: ../../tests/test_wheel_smoke.py
+  revision: ff50918cb14ff39c67c0a594b665fd29d73080b4
+  working_tree: modified
+  sha256: e8653a2473cc383c6c99911cc9f095beb3133fb6233f74c5e85ae71845f220ba
 ---
 
 # 公開の対象と手順
@@ -38,6 +48,8 @@ PyPIとTestPyPIそれぞれに、所有者`HayaoSuzuki`、リポジトリ`hoimin
 
 # 検証範囲と再確認条件
 
+ビルド後のwheelスモークテストは、`Elastic-2.0`と移管先のRepository・Issues・Changelog URLを確認してから、隔離環境へのインストールとCLI実行を検証する。メタデータの回帰テストでは、旧`MIT`ライセンスと旧組織のURLを拒否する。ライセンスや公開URLを変更するときは、この期待値も更新する。[^wheel-smoke][^wheel-smoke-tests]
+
 ローカルテストは、不足・破損したwheel、異なる版やライセンス、重複したメタデータ、無効なタグを拒否する条件を検証する。実際のOIDC認証、Environment承認、PyPIへのアップロードはローカル検証の対象外であり、初回TestPyPI公開時に確認する。[^tests][^guide]
 
 公開ジョブは既存ファイルを自動的にスキップしない。一部だけアップロードされた場合は、登録済みのファイルとハッシュを調べ、必要なら新しい版を公開する。workflow名、リポジトリ所有者、Environment名、Python対応範囲、wheelのプラットフォーム名、ライセンス本文を変えたときは、登録値と検証条件を読み直す。[^guide][^validator]
@@ -46,3 +58,6 @@ PyPIとTestPyPIそれぞれに、所有者`HayaoSuzuki`、リポジトリ`hoimin
 [^workflow]: [手動公開ワークフロー](../../.github/workflows/publish-pypi.yml)。
 [^validator]: [配布物の検証処理](../../tools/pypi_release.py)。
 [^tests]: [公開準備の回帰テスト](../../tests/test_pypi_release.py)。
+
+[^wheel-smoke]: [wheelのスモークテスト](../../tests/wheel_smoke.py)。
+[^wheel-smoke-tests]: [wheel検証の回帰テスト](../../tests/test_wheel_smoke.py)。

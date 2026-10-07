@@ -38,8 +38,12 @@ class WheelMetadata:
 EXPECTED_WHEEL_METADATA = WheelMetadata(
     requires_python=">=3.14,<3.15",
     requires_dist=None,
-    license_expression="MIT",
-    project_urls=["Repository, https://github.com/tokyogas-tech/hoimin"],
+    license_expression="Elastic-2.0",
+    project_urls=[
+        "Changelog, https://github.com/HayaoSuzuki/hoimin/releases",
+        "Issues, https://github.com/HayaoSuzuki/hoimin/issues",
+        "Repository, https://github.com/HayaoSuzuki/hoimin",
+    ],
 )
 
 ISOLATED_ENVIRONMENT_REMOVALS = ("PYTHONPATH", "PYTHONHOME", "VIRTUAL_ENV")
