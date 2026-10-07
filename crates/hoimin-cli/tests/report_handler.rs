@@ -473,42 +473,41 @@ impl SharedWriter {
 
 #[allow(
     clippy::too_many_lines,
-    reason = "The documentation contract is intentionally kept in one test so each README command is exercised against the same fixture."
+    reason = "The documentation contract is intentionally kept in one test so each usage reference command is exercised against the same fixture."
 )]
 #[tokio::test]
 async fn documentation_contract() {
     let root = repo_root();
-    let readme = std::fs::read_to_string(root.join("README.md")).unwrap();
+    let usage = std::fs::read_to_string(root.join("docs/usage.md")).unwrap();
     assert!(
-        readme.contains(
+        usage.contains(
             "hoimin run --root . --source src --metrics metrics.json -- python -m pytest -q"
         ),
-        "README must contain the documented --metrics metrics.json example",
+        "usage reference must contain the documented --metrics metrics.json example",
     );
     assert!(
-        readme.contains("opt-in") && readme.contains("separate from the run JSON"),
-        "README must identify metrics as opt-in and separate from run JSON",
+        usage.contains("opt-in") && usage.contains("separate from the run JSON"),
+        "usage reference must identify metrics as opt-in and separate from run JSON",
     );
     assert!(
-        readme.contains("warns without changing the mutation result"),
-        "README must document metrics write-failure behavior",
+        usage.contains("warns without changing the mutation result"),
+        "usage reference must document metrics write-failure behavior",
     );
     assert!(
-        readme.contains(
+        usage.contains(
             "`complete` is `false` when any mutant is inconclusive or the run fails or is interrupted"
         ),
-        "README must define the machine-readable complete field",
+        "usage reference must define the machine-readable complete field",
     );
-    let commands = fenced_run_commands(&readme);
+    let commands = fenced_run_commands(&usage);
     assert!(
         !commands.is_empty(),
-        "README must contain fenced hoimin run commands"
+        "usage reference must contain fenced hoimin run commands"
     );
-    assert!(commands.iter().any(|words| words.first().unwrap() == "uvx"));
     assert!(
         commands
             .iter()
-            .any(|words| words.first().unwrap() == "pipx")
+            .any(|words| words.first().unwrap() == "hoimin")
     );
 
     let fixture = tempfile::tempdir().unwrap();

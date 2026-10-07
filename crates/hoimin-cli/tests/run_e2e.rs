@@ -2101,28 +2101,28 @@ async fn focused_profile_does_not_resume_full_profile_session() {
 }
 
 #[test]
-fn readme_documents_focused_profile_selection_and_session_compatibility() {
-    let readme = std::fs::read_to_string(repo_root().join("README.md")).unwrap();
-    let windows_readme = readme.replace("\r\n", "\n").replace('\n', "\r\n");
+fn usage_documents_focused_profile_selection_and_session_compatibility() {
+    let usage = std::fs::read_to_string(repo_root().join("docs/usage.md")).unwrap();
+    let windows_usage = usage.replace("\r\n", "\n").replace('\n', "\r\n");
 
-    for documented_readme in [&readme, &windows_readme] {
-        let documented_readme = documented_readme.replace("\r\n", "\n");
+    for documented_usage in [&usage, &windows_usage] {
+        let documented_usage = documented_usage.replace("\r\n", "\n");
 
-        assert!(documented_readme.contains("`--profile full` / `--profile focused`"));
-        assert!(documented_readme.contains(
+        assert!(documented_usage.contains("`--profile full` / `--profile focused`"));
+        assert!(documented_usage.contains(
             "`--profile full` is the default and considers every candidate produced by the selected\noperators."
         ));
-        assert!(documented_readme.contains("Python `__main__` guards, bare\n`print(...)` calls, `assert` statements, and function default expressions."));
-        assert!(documented_readme.contains(
+        assert!(documented_usage.contains("Python `__main__` guards, bare\n`print(...)` calls, `assert` statements, and function default expressions."));
+        assert!(documented_usage.contains(
             "Profile selection is part of session compatibility, so a focused run never resumes results from a full run and vice versa."
         ));
     }
 }
 
 #[test]
-fn readme_documents_agent_plan_workflow() {
-    let readme = std::fs::read_to_string(repo_root().join("README.md")).unwrap();
-    let documented_readme = readme.replace("\r\n", "\n");
+fn usage_documents_agent_plan_workflow() {
+    let usage = std::fs::read_to_string(repo_root().join("docs/usage.md")).unwrap();
+    let documented_usage = usage.replace("\r\n", "\n");
 
     for expected in [
         "hoimin plan",
@@ -2146,7 +2146,7 @@ fn readme_documents_agent_plan_workflow() {
         "`--fingerprint-include GLOB`",
         "`truncated`",
     ] {
-        assert!(documented_readme.contains(expected), "missing {expected}");
+        assert!(documented_usage.contains(expected), "missing {expected}");
     }
 }
 

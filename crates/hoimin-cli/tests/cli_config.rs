@@ -63,9 +63,9 @@ const RUNTIME_DEFAULT_OPERATOR_IDS: [&str; 52] = [
 ];
 
 #[test]
-fn readme_documents_all_mutation_operator_ids_and_selector_families() {
-    let readme =
-        fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../README.md")).unwrap();
+fn usage_documents_all_mutation_operator_ids_and_selector_families() {
+    let usage =
+        fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../docs/usage.md")).unwrap();
     for name in [
         "method_call_remove",
         "function_body_return_constant",
@@ -128,7 +128,7 @@ fn readme_documents_all_mutation_operator_ids_and_selector_families() {
         "type_collections",
         "type_iterables",
     ] {
-        assert!(readme.contains(name), "README is missing {name}");
+        assert!(usage.contains(name), "usage reference is missing {name}");
     }
     for expected in [
         "52 default runtime operators",
@@ -146,7 +146,10 @@ fn readme_documents_all_mutation_operator_ids_and_selector_families() {
         "comprehensions",
         "set literals",
     ] {
-        assert!(readme.contains(expected), "README is missing {expected}");
+        assert!(
+            usage.contains(expected),
+            "usage reference is missing {expected}"
+        );
     }
 }
 
@@ -181,14 +184,17 @@ fn development_docs_explain_exception_mutation_policy() {
 
 #[test]
 fn docs_publish_mandatory_disk_defaults() {
-    let readme =
-        fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../README.md")).unwrap();
+    let usage =
+        fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../docs/usage.md")).unwrap();
     for expected in [
         "`--max-workspace-size` | `8GiB`",
         "`--min-free-space` | `10GiB`",
         "raising a consumption limit or lowering the reserve is explicit risk acceptance",
     ] {
-        assert!(readme.contains(expected), "README is missing {expected}");
+        assert!(
+            usage.contains(expected),
+            "usage reference is missing {expected}"
+        );
     }
 }
 
