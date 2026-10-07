@@ -57,7 +57,12 @@ def validate_wheel(wheel: Path, version: str) -> None:
             msg = f"missing license declarations in {wheel.name}"
             raise ValueError(msg)
         for name in LICENSE_FILES:
-            if archive.read(prefix + "licenses/" + name) != (ROOT / name).read_bytes():
+            # Windows checkouts can package CRLF; compare text without rewriting wheels.
+            actual_license = archive.read(prefix + "licenses/" + name).replace(
+                b"\r\n", b"\n"
+            )
+            expected_license = (ROOT / name).read_bytes().replace(b"\r\n", b"\n")
+            if actual_license != expected_license:
                 msg = f"unexpected license text in {wheel.name}: {name}"
                 raise ValueError(msg)
 
