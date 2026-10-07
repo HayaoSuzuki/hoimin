@@ -416,11 +416,21 @@ def test_incomplete_metadata_is_rejected_before_any_write(repository: Path) -> N
 @pytest.mark.parametrize(
     "platform", ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
 )
-def test_archives_contain_executable_and_readme(tmp_path: Path, platform: str) -> None:
+def test_archives_contain_executable_readme_and_licenses(
+    tmp_path: Path, platform: str
+) -> None:
     binary = tmp_path / ("hoimin.exe" if platform.startswith("windows") else "hoimin")
     binary.write_bytes(b"executable payload")
     binary.chmod(0o755)
     (tmp_path / "README.md").write_text("usage")
+    notices = {
+        "LICENSE": b"project license terms\n",
+        "vendor/ruff_python_parser/LICENSE": b"third-party license terms\n",
+    }
+    for name, content in notices.items():
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
     result = release(
         tmp_path,
         "package",
@@ -439,16 +449,22 @@ def test_archives_contain_executable_and_readme(tmp_path: Path, platform: str) -
     if platform.startswith("windows"):
         assert archive.name == prefix + ".zip"
         with zipfile.ZipFile(archive) as zipped:
-            assert set(zipped.namelist()) == {binary.name, "README.md"}
+            assert set(zipped.namelist()) == {binary.name, "README.md", *notices}
             assert zipped.read(binary.name) == binary.read_bytes()
+            for name, content in notices.items():
+                assert zipped.read(name) == content
     else:
         assert archive.name == prefix + ".tar.gz"
         with tarfile.open(archive) as packed:
-            assert set(packed.getnames()) == {binary.name, "README.md"}
+            assert set(packed.getnames()) == {binary.name, "README.md", *notices}
             assert packed.getmember(binary.name).mode & 0o111
             contents = packed.extractfile(binary.name)
             assert contents is not None
             assert contents.read() == binary.read_bytes()
+            for name, content in notices.items():
+                notice = packed.extractfile(name)
+                assert notice is not None
+                assert notice.read() == content
 
 
 def release_assets(directory: Path) -> list[Path]:

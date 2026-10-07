@@ -184,6 +184,8 @@ def package(
     files = {
         "hoimin.exe" if platform.startswith("windows") else "hoimin": binary,
         "README.md": root / "README.md",
+        "LICENSE": root / "LICENSE",
+        "vendor/ruff_python_parser/LICENSE": root / "vendor/ruff_python_parser/LICENSE",
     }
     if platform.startswith("windows"):
         with zipfile.ZipFile(
