@@ -275,6 +275,15 @@ def test_rejects_ambiguous_current_compatible_wheels() -> None:
         )
 
 
+@pytest.fixture
+def wheel_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "hoimin"\nversion = "0.1.0"\n', encoding="utf-8"
+    )
+    monkeypatch.setattr("wheel_smoke.REPOSITORY_ROOT", tmp_path)
+
+
+@pytest.mark.usefixtures("wheel_project")
 def test_uses_the_explicit_wheel_override(tmp_path: Path) -> None:
     override = tmp_path / "hoimin-0.1.0-cp314-cp314-manylinux_2_17_x86_64.whl"
     override.touch()
@@ -288,6 +297,7 @@ def test_uses_the_explicit_wheel_override(tmp_path: Path) -> None:
     assert actual == override.resolve()
 
 
+@pytest.mark.usefixtures("wheel_project")
 def test_rejects_a_stale_explicit_wheel_override(tmp_path: Path) -> None:
     override = tmp_path / "hoimin-0.9.0-cp314-cp314-manylinux_2_17_x86_64.whl"
     override.touch()
@@ -323,6 +333,7 @@ def test_rejects_an_empty_wheel_directory(tmp_path: Path) -> None:
         )
 
 
+@pytest.mark.usefixtures("wheel_project")
 def test_discovers_the_current_compatible_wheel(tmp_path: Path) -> None:
     wheel_directory = tmp_path
     stale = wheel_directory / "hoimin-0.0.9-cp314-cp314-manylinux_2_17_x86_64.whl"
