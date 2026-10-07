@@ -776,10 +776,10 @@ fn promoted_defaults_keep_profile_filtering_before_bounded_prefix_selection() {
 }
 
 #[test]
-fn method_remove_is_opt_in_selected_bounded_and_cancellable() {
+fn method_remove_is_opt_out_selected_bounded_and_cancellable() {
     let operator = MutationOperator::from_name("method_call_remove").unwrap();
     let mut operators = MutationOperatorSelection::default();
-    assert!(!operators.contains(operator));
+    assert!(operators.contains(operator));
     for name in MutationOperatorSelection::valid_names() {
         for op in MutationOperatorSelection::parse_selector(name).unwrap() {
             operators.exclude(op);
@@ -818,7 +818,7 @@ fn method_remove_is_opt_in_selected_bounded_and_cancellable() {
 fn return_constant_preserves_scope_selection_profile_prefix_and_cancellation() {
     let operator = MutationOperator::from_name("function_body_return_constant").unwrap();
     let mut operators = MutationOperatorSelection::default();
-    assert!(!operators.contains(operator));
+    assert!(operators.contains(operator));
     for name in MutationOperatorSelection::valid_names() {
         for op in MutationOperatorSelection::parse_selector(name).unwrap() {
             operators.exclude(op);

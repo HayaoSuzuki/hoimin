@@ -4,7 +4,7 @@ use std::path::Path;
 use hoimin_cli::plan::PlanManifest;
 use hoimin_core::MutationOperatorSelection;
 
-const PROMOTED: [&str; 7] = [
+const PROMOTED: [&str; 9] = [
     "statement_delete",
     "integer_literal_neighbor",
     "augmented_to_assignment",
@@ -12,6 +12,8 @@ const PROMOTED: [&str; 7] = [
     "string_literal_empty",
     "while_condition_false",
     "conversion_call_remove",
+    "method_call_remove",
+    "function_body_return_constant",
 ];
 
 async fn cli(args: Vec<OsString>) -> serde_json::Value {
@@ -62,11 +64,11 @@ async fn plan(root: &Path, selection: &[&str]) -> serde_json::Value {
 #[tokio::test]
 async fn default_candidates_are_opt_out_and_saved_legacy_plans_stay_legacy() {
     let root = tempfile::tempdir().unwrap();
-    let source = "def f(x, y):\n    print('message')\n    x += 3\n    while x < y:\n        x += 1\n    z = int(x)\n    return x, y\n";
+    let source = "def f(x, y):\n    print('message')\n    x += 3\n    while x < y:\n        x += 1\n    z = int(x)\n    return x, y\ndef recent(text) -> str:\n    return text.strip()\n";
     std::fs::write(root.path().join("subject.py"), source).unwrap();
     let default = plan(root.path(), &[]).await;
     let manifest: PlanManifest = serde_json::from_value(default.clone()).unwrap();
-    assert_eq!(manifest.normalized_config.operators.names().len(), 50);
+    assert_eq!(manifest.normalized_config.operators.names().len(), 52);
     let candidates = default["candidates"].as_array().unwrap();
     for operator in PROMOTED {
         assert!(
@@ -132,6 +134,84 @@ async fn default_candidates_are_opt_out_and_saved_legacy_plans_stay_legacy() {
     .await;
     assert_eq!(report["baseline"]["termination"]["Exit"], 0);
     assert_eq!(report["summary"]["counts"]["survived"], 1);
+    assert_eq!(
+        std::fs::read_to_string(root.path().join("subject.py")).unwrap(),
+        source
+    );
+}
+
+#[tokio::test]
+async fn excluding_recent_defaults_recovers_and_verifies_previous_fifty_selection() {
+    let root = tempfile::tempdir().unwrap();
+    let source = "def clean(text) -> str:\n    return text.strip() + \"!\"\n";
+    std::fs::write(root.path().join("subject.py"), source).unwrap();
+    let mut previous = MutationOperatorSelection::all_legacy().names();
+    previous.extend(PROMOTED[..7].iter().map(ToString::to_string));
+    assert_eq!(previous.len(), 50);
+    let old = plan(root.path(), &["--operators", &previous.join(",")]).await;
+    let opt_out = plan(
+        root.path(),
+        &[
+            "--exclude-operators",
+            "method_call_remove,function_body_return_constant",
+        ],
+    )
+    .await;
+    assert_eq!(
+        old["normalized_config"]["operators"],
+        opt_out["normalized_config"]["operators"]
+    );
+    assert_eq!(old["candidates"], opt_out["candidates"]);
+    let current = plan(root.path(), &[]).await;
+    for name in ["method_call_remove", "function_body_return_constant"] {
+        assert!(
+            current["candidates"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|c| c["operator"] == name)
+        );
+        assert!(
+            !old["candidates"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|c| c["operator"] == name)
+        );
+    }
+    // Observe the prepared configuration as well as execution compatibility.
+    let path = root.path().join("previous-plan.json");
+    std::fs::write(&path, serde_json::to_vec(&old).unwrap()).unwrap();
+    let prepared = hoimin_cli::plan::prepare_verify(
+        &path,
+        &[old["candidates"][0]["id"].as_str().unwrap().to_owned()],
+        hoimin_cli::cli::OutputFormat::Json,
+    )
+    .await
+    .unwrap();
+    let expected: std::collections::BTreeSet<_> = previous.into_iter().collect();
+    assert_eq!(
+        prepared
+            .config
+            .operators
+            .names()
+            .into_iter()
+            .collect::<std::collections::BTreeSet<_>>(),
+        expected
+    );
+    let report = cli(vec![
+        "hoimin".into(),
+        "verify".into(),
+        path.into_os_string(),
+        "--top".into(),
+        "1".into(),
+        "--format".into(),
+        "json".into(),
+    ])
+    .await;
+    assert_eq!(report["baseline"]["termination"]["Exit"], 0);
+    assert_eq!(report["summary"]["counts"]["survived"], 1);
+    assert_eq!(report["summary"]["complete"], true);
     assert_eq!(
         std::fs::read_to_string(root.path().join("subject.py")).unwrap(),
         source

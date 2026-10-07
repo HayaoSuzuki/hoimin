@@ -726,8 +726,9 @@ fn normalize_documented_command(command: &[String], root: &Path, python: &Path) 
     argv.splice(
         separator..separator,
         [
+            // Execute every retained fixture candidate under current defaults.
             "--max-mutants".to_owned(),
-            "1".to_owned(),
+            "32".to_owned(),
             "--max-candidates".to_owned(),
             "32".to_owned(),
             "--total-timeout".to_owned(),

@@ -46,4 +46,25 @@ example : (defaults (fun _ => true) (fun _ => false) 0 || (0 == 1)) ≠
 example : ((false && !true) || true) ≠
     select (fun _ => false) (fun _ => true) (fun _ => true) none 0 := by decide
 
+-- A later rollout can be undone without removing earlier default additions.
+theorem incremental_opt_out_recovers_previous (legacy earlier recent : Selection)
+    (disjoint : ∀ op, defaults legacy earlier op = true → recent op = false) :
+    select (defaults legacy earlier) recent recent none = defaults legacy earlier :=
+  opt_out_recovers_legacy (defaults legacy earlier) recent disjoint
+
+-- Excluding one new operator must not exclude its distinct sibling.
+theorem other_promotion_retained (previous recent : Selection) (removed kept : Nat)
+    (different : kept ≠ removed) (promoted : recent kept = true) :
+    select previous recent (fun op => op == removed) none kept = true := by
+  simp [select, defaults, promoted, different]
+
+-- Minimal sensitivity witnesses for incremental rollback and frozen plans.
+example :
+    select (defaults (fun op => op == 0) (fun op => op == 1))
+      (fun op => op == 2 || op == 3) (fun op => op == 2 || op == 3) none 1 ≠
+    select (fun op => op == 0) (fun op => op == 1 || op == 2 || op == 3)
+      (fun op => op == 1 || op == 2 || op == 3) none 1 := by decide
+example : reload (fun op => op == 0) 1 ≠
+    defaults (fun op => op == 0) (fun op => op == 1) 1 := by decide
+
 end DefaultOperatorSelection

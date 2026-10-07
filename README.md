@@ -397,22 +397,29 @@ the detailed capability and cleanup model.
 
 ## Mutation operators
 
-Without `--operators`, a run selects 50 default runtime operators. `--operators`
+Without `--operators`, a run selects 52 default runtime operators. `--operators`
 (comma-separated) selects an explicit set; `--exclude-operators` then removes
 individual IDs or selector families. Hoimin exposes 71 operator IDs in total:
-50 default runtime IDs, seven opt-in type IDs, five opt-in risky exception IDs,
-`exception_hierarchy`, and eight opt-in analyzers: `condition_constant`,
+52 default runtime IDs, seven opt-in type IDs, five opt-in risky exception IDs,
+`exception_hierarchy`, and six opt-in analyzers: `condition_constant`,
 `function_body_erase`, `enum_member_replace`, `condition_clause_delete`,
-`container_element_delete`, `optional_keyword_delete`, `method_call_remove`, and `function_body_return_constant`.
+`container_element_delete`, and `optional_keyword_delete`.
 
 The defaults include `statement_delete`, `integer_literal_neighbor`,
 `augmented_to_assignment`, `return_tuple_swap`, `string_literal_empty`,
-`while_condition_false`, and `conversion_call_remove`. To disable any of these,
+`while_condition_false`, `conversion_call_remove`, `method_call_remove`, and
+`function_body_return_constant`. To disable any of these,
 use, for example, `--exclude-operators statement_delete,string_literal_empty`.
-To recover the previous 43-operator selection, exclude all seven:
+To recover the previous 50-operator selection, use:
 
 ```text
---exclude-operators statement_delete,integer_literal_neighbor,augmented_to_assignment,return_tuple_swap,string_literal_empty,while_condition_false,conversion_call_remove
+--exclude-operators method_call_remove,function_body_return_constant
+```
+
+To recover the historical 43-operator selection, exclude all nine:
+
+```text
+--exclude-operators statement_delete,integer_literal_neighbor,augmented_to_assignment,return_tuple_swap,string_literal_empty,while_condition_false,conversion_call_remove,method_call_remove,function_body_return_constant
 ```
 
 New default runs can generate more candidates and take longer. With a candidate
@@ -1073,7 +1080,7 @@ Reconstruction normalizes inter-argument trivia; external monkey patching is not
 
 `--operators method_call_remove` replaces an argument-free attribute call such as
 `text.strip()` with `(text)`. It retains receiver evaluation once and removes
-attribute lookup and invocation, including their side effects. It is opt-in and
+attribute lookup and invocation, including their side effects. It is enabled by default and
 syntax based: the callable need not be a bound method, and the result type may
 change. Arguments, binding/suspension/generator receivers, annotations, explicit
 type aliases, patterns and assignment targets are excluded. This is a restricted
@@ -1087,6 +1094,9 @@ docstring. A direct, unshadowed builtin return annotation selects `False`/`True`
 runtime type guarantee. Async functions, generators, dunder methods, functions
 without an own-scope value return, and ambiguous/quoted/composite annotations are
 excluded. A sole return of the same literal is skipped. Body side effects are
-intentionally removed. This opt-in extreme mutation complements `function_body_erase`;
+intentionally removed. This extreme mutation is enabled by default and complements `function_body_erase`;
 a surviving mutant does not establish that covered code is pseudo-tested.
 See the [design and paper reference](docs/superpowers/reports/function-body-return-constant/design.md).
+
+The [default-selection policy](docs/superpowers/reports/recent-analyzer-defaults/design.md)
+supersedes the opt-in rollout described in the two original design reports.

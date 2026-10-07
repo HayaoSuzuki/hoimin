@@ -351,6 +351,12 @@ sources:
   working_tree: untracked
   sha256: b505c8e3f175303e82106e08836df1a3f9bf12ad94bfc52e07b1521721c2dcaf
 
+- id: recent-analyzer-defaults
+  resource: ../../superpowers/reports/recent-analyzer-defaults/design.md
+  revision: 8437243
+  working_tree: untracked
+  sha256: 98c8c6c858b6159203d518deaff36f5a186e4f1304bca81085549b401161db26
+
 ---
 
 # 構文と名前解決の契約
@@ -734,7 +740,7 @@ optional_keyword_delete は一意な同一モジュール関数への呼び出�
 
 `statement_delete`、`integer_literal_neighbor`、`augmented_to_assignment`、
 `return_tuple_swap`、`string_literal_empty`、`while_condition_false`、
-`conversion_call_remove` を既定で有効にし、既定数を43から50へ増やした。
+`conversion_call_remove` の7種類を最初に既定化し、43から50種類へ増やした。
 `--exclude-operators` で個別に無効化できる。明示選択と保存済み plan は展開し直さず、
 `all_legacy()` は従来の43種類を保持する。候補数・実行時間・上限内に残る候補は変化し得る。
 残る6種類は、粗い変異との重複、要素数に応じた候補増加、追加の名前解決を理由に段階的な導入とした。
@@ -746,10 +752,14 @@ optional_keyword_delete は一意な同一モジュール関数への呼び出�
 
 [^default-operators-review]: [レビューと検証](../../superpowers/reports/default-analyzer-operators/review.md)。
 
-`method_call_remove` は引数のない属性呼び出しを括弧付き receiver に置換する opt-in 演算子である。receiver の評価を1回残し、属性参照と呼び出しを除く。bound method であることや型の一致は保証せず、束縛・中断・generator を含む receiver、型式、代入ターゲットなどは除外する。[^method-call-remove]
+`method_call_remove` は引数のない属性呼び出しを括弧付き receiver に置換する演算子である。receiver の評価を1回残し、属性参照と呼び出しを除く。bound method であることや型の一致は保証せず、束縛・中断・generator を含む receiver、型式、代入ターゲットなどは除外する。[^method-call-remove]
 
 [^method-call-remove]: [設計と5回のレビュー](../../superpowers/reports/method-call-remove/design.md)、[評価と形式証明の範囲](../../superpowers/reports/method-call-remove/assessment.md)
 
-`function_body_return_constant` は、組込みの `bool`・`int`・`str` と確定できる直接の戻り値注釈に応じて、同期関数の本体を相補的な定数 return に置き換える opt-in 演算子である。docstring とヘッダーを残し、async・generator・dunder・自身の値 return がない関数・同じリテラルだけを返す候補を除外する。注釈の解決には遅延評価用の名前解決を使う。注釈は実行時型の保証ではなく、生存変異だけから pseudo-tested とも判定しない。[^function-body-return-constant]
+`function_body_return_constant` は、組込みの `bool`・`int`・`str` と確定できる直接の戻り値注釈に応じて、同期関数の本体を相補的な定数 return に置き換える演算子である。docstring とヘッダーを残し、async・generator・dunder・自身の値 return がない関数・同じリテラルだけを返す候補を除外する。注釈の解決には遅延評価用の名前解決を使う。注釈は実行時型の保証ではなく、生存変異だけから pseudo-tested とも判定しない。[^function-body-return-constant]
 
 [^function-body-return-constant]: [設計](../../superpowers/reports/function-body-return-constant/design.md)、[原論文・評価・形式証明の範囲](../../superpowers/reports/function-body-return-constant/assessment.md)
+
+現在は `method_call_remove` と `function_body_return_constant` も既定で有効にし、合計52種類としている。`--exclude-operators method_call_remove,function_body_return_constant` で、この2種類を追加する前の50種類へ戻せる。明示選択・保存済み plan・従来の43種類を返す `all_legacy()` は拡張しない。元の機能設計書の opt-in 記述は導入時の方針であり、今回の依頼によって更新した。[^recent-analyzer-defaults]
+
+[^recent-analyzer-defaults]: [既定化の設計](../../superpowers/reports/recent-analyzer-defaults/design.md)、[形式証明の範囲](../../superpowers/reports/recent-analyzer-defaults/formal-audit.md)
