@@ -1073,6 +1073,9 @@ def test_bounded_audit_covers_every_module_and_generator(tmp_path: Path) -> None
         "ResourceCleanupAuditMain.lean",
         "4",
     ]
+    assert remaining.pop(0) == [
+        "lake", "env", "lean", "-j1", "-DElab.async=false", "DefaultOperatorSelection.lean"
+    ]
     lakefile = mapping(tomllib.loads(LEAN_LAKEFILE.read_text(encoding="utf-8")))
     executable_names = [
         string(mapping(item)["name"]) for item in sequence(lakefile["lean_exe"])

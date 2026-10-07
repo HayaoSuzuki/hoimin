@@ -333,7 +333,7 @@ async fn pytest_command_produces_the_expected_mutant_statuses() {
     let pytest = run_fixture(&["-m", "pytest", "-q", "tests"]).await;
 
     assert_eq!(pytest.exit_code, 0);
-    assert_eq!(pytest.statuses, ["killed"]);
+    assert_eq!(pytest.statuses, ["killed", "killed", "killed"]);
     assert_eq!(
         pytest.document["run"]["versions"],
         serde_json::json!({
@@ -1220,7 +1220,14 @@ async fn metrics_write_failure_warns_without_changing_run_result() {
         &["-m", "pytest", "-q", "tests"],
         None,
         false,
-        &["--jobs", "2", "--max-mutants", "2"],
+        &[
+            "--operators",
+            "binary_add_sub",
+            "--jobs",
+            "2",
+            "--max-mutants",
+            "2",
+        ],
     )
     .await;
     let failed = run_fixture_options_extra(
@@ -1228,6 +1235,8 @@ async fn metrics_write_failure_warns_without_changing_run_result() {
         None,
         false,
         &[
+            "--operators",
+            "binary_add_sub",
             "--jobs",
             "2",
             "--max-mutants",
@@ -1238,6 +1247,7 @@ async fn metrics_write_failure_warns_without_changing_run_result() {
     )
     .await;
 
+    assert_eq!(ordinary.document["summary"]["complete"], true);
     assert_eq!(failed.exit_code, ordinary.exit_code);
     assert_eq!(failed.statuses, ordinary.statuses);
     assert_eq!(
@@ -1573,7 +1583,7 @@ async fn sqlite_session_saves_and_resumes_a_determinate_result_without_reexecuti
         "stderr={} stdout={}",
         first.stderr, first.stdout
     );
-    assert_eq!(first.statuses, ["killed"]);
+    assert_eq!(first.statuses, ["killed", "killed", "killed"]);
     let connection = rusqlite::Connection::open(&database).unwrap();
     connection
         .execute("UPDATE runs SET complete=0", [])
@@ -1582,7 +1592,7 @@ async fn sqlite_session_saves_and_resumes_a_determinate_result_without_reexecuti
 
     let resumed = run_fixture_with_session(&["-m", "pytest", "-q", "tests"], &database, true).await;
     assert_eq!(resumed.exit_code, 0);
-    assert_eq!(resumed.statuses, ["killed"]);
+    assert_eq!(resumed.statuses, ["killed", "killed", "killed"]);
     let resumed_run_id = resumed.document["run"]["run_id"].as_str().unwrap();
     assert_eq!(
         resumed.document["baseline"]["run_id"].as_str().unwrap(),
@@ -1611,7 +1621,7 @@ async fn sqlite_session_reuses_results_after_jobs_and_output_retention_change() 
     )
     .await;
     assert_eq!(first.exit_code, 0, "{}", first.stderr);
-    assert_eq!(first.statuses, ["killed"]);
+    assert_eq!(first.statuses, ["killed", "killed", "killed"]);
     let first_run_id = first.document["run"]["run_id"].as_str().unwrap().to_owned();
     let connection = rusqlite::Connection::open(&database).unwrap();
     connection
@@ -1628,7 +1638,7 @@ async fn sqlite_session_reuses_results_after_jobs_and_output_retention_change() 
     .await;
 
     assert_eq!(resumed.exit_code, 0, "{}", resumed.stderr);
-    assert_eq!(resumed.statuses, ["killed"]);
+    assert_eq!(resumed.statuses, ["killed", "killed", "killed"]);
     assert_eq!(
         resumed.document["run"]["run_id"].as_str().unwrap(),
         first_run_id

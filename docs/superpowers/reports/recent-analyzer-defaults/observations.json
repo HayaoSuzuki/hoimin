@@ -1,0 +1,30 @@
+[
+  {
+    "module": "packaging.version",
+    "version": "26.3",
+    "source_sha256": "558b2fb50fd198c660a4c082f96b8919c565911b6b4b6e07f34b6b60c074be97",
+    "previous50": 476,
+    "default52": 484,
+    "opt_out_both": 476,
+    "recent_candidates": {
+      "function_body_return_constant": 4,
+      "method_call_remove": 4
+    },
+    "exact_opt_out_candidate_equality": true,
+    "truncated": false
+  },
+  {
+    "module": "iniconfig",
+    "version": "2.3.0",
+    "source_sha256": "5cbe5ea94623e26b2400ea2b6798df4408a726f2734c8f9f271a4fe317d7b5ac",
+    "previous50": 34,
+    "default52": 38,
+    "opt_out_both": 34,
+    "recent_candidates": {
+      "function_body_return_constant": 2,
+      "method_call_remove": 2
+    },
+    "exact_opt_out_candidate_equality": true,
+    "truncated": false
+  }
+]

@@ -464,6 +464,8 @@ impl Default for MutationOperatorSelection {
             MutationOperator::StringLiteralEmpty,
             MutationOperator::WhileConditionFalse,
             MutationOperator::ConversionCallRemove,
+            MutationOperator::MethodCallRemove,
+            MutationOperator::FunctionBodyReturnConstant,
         ] {
             selection.include(operator);
         }
