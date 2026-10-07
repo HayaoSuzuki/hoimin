@@ -122,6 +122,7 @@ pub enum MutationOperator {
     ConversionCallRemove,
     OptionalKeywordDelete,
     MethodCallRemove,
+    FunctionBodyReturnConstant,
 }
 
 impl MutationOperator {
@@ -136,6 +137,7 @@ impl MutationOperator {
         match self {
             Self::OptionalKeywordDelete => "optional_keyword_delete",
             Self::MethodCallRemove => "method_call_remove",
+            Self::FunctionBodyReturnConstant => "function_body_return_constant",
             Self::ConversionCallRemove => "conversion_call_remove",
             Self::ContainerElementDelete => "container_element_delete",
             Self::ConditionClauseDelete => "condition_clause_delete",
@@ -206,7 +208,7 @@ impl MutationOperator {
             Self::TypeSequenceIterable => "type_sequence_iterable",
         }
     }
-    fn all() -> [Self; 70] {
+    fn all() -> [Self; 71] {
         [
             Self::CompareEqNe,
             Self::CompareOrder,
@@ -278,6 +280,7 @@ impl MutationOperator {
             Self::ConversionCallRemove,
             Self::OptionalKeywordDelete,
             Self::MethodCallRemove,
+            Self::FunctionBodyReturnConstant,
         ]
     }
 }

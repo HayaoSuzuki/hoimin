@@ -399,11 +399,11 @@ the detailed capability and cleanup model.
 
 Without `--operators`, a run selects 50 default runtime operators. `--operators`
 (comma-separated) selects an explicit set; `--exclude-operators` then removes
-individual IDs or selector families. Hoimin exposes 70 operator IDs in total:
+individual IDs or selector families. Hoimin exposes 71 operator IDs in total:
 50 default runtime IDs, seven opt-in type IDs, five opt-in risky exception IDs,
-`exception_hierarchy`, and seven opt-in analyzers: `condition_constant`,
+`exception_hierarchy`, and eight opt-in analyzers: `condition_constant`,
 `function_body_erase`, `enum_member_replace`, `condition_clause_delete`,
-`container_element_delete`, `optional_keyword_delete`, and `method_call_remove`.
+`container_element_delete`, `optional_keyword_delete`, `method_call_remove`, and `function_body_return_constant`.
 
 The defaults include `statement_delete`, `integer_literal_neighbor`,
 `augmented_to_assignment`, `return_tuple_swap`, `string_literal_empty`,
@@ -1079,3 +1079,14 @@ change. Arguments, binding/suspension/generator receivers, annotations, explicit
 type aliases, patterns and assignment targets are excluded. This is a restricted
 static adaptation of [PyTation's RemMetCall](https://arxiv.org/html/2601.19088v2).
 See the [design and evidence](docs/superpowers/reports/method-call-remove/design.md).
+
+`--operators function_body_return_constant` replaces a synchronous value-returning
+function body with complementary constants, preserving its header and leading
+docstring. A direct, unshadowed builtin return annotation selects `False`/`True`
+(`bool`), `0`/`1` (`int`), or `""`/`"A"` (`str`). An annotation is a heuristic, not a
+runtime type guarantee. Async functions, generators, dunder methods, functions
+without an own-scope value return, and ambiguous/quoted/composite annotations are
+excluded. A sole return of the same literal is skipped. Body side effects are
+intentionally removed. This opt-in extreme mutation complements `function_body_erase`;
+a surviving mutant does not establish that covered code is pseudo-tested.
+See the [design and paper reference](docs/superpowers/reports/function-body-return-constant/design.md).

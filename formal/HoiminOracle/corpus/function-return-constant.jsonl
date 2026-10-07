@@ -1,0 +1,32 @@
+{"expected":[{"original":"return compute()","replacement":"return False"},{"original":"return compute()","replacement":"return True"}],"id":"bool_pair","mode":"strict","schema":1,"source":"def example() -> bool:\n    return compute()\n"}
+{"expected":[{"original":"return compute()","replacement":"return 0"},{"original":"return compute()","replacement":"return 1"}],"id":"int_pair","mode":"strict","schema":1,"source":"def example() -> int:\n    return compute()\n"}
+{"expected":[{"original":"return compute()","replacement":"return \"\""},{"original":"return compute()","replacement":"return \"A\""}],"id":"str_pair","mode":"strict","schema":1,"source":"def example() -> str:\n    return compute()\n"}
+{"expected":[{"original":"record()\n    return compute()","replacement":"return 0"},{"original":"record()\n    return compute()","replacement":"return 1"}],"id":"docstring_effects","mode":"strict","schema":1,"source":"def example() -> int:\n    \"\"\"preserved documentation\"\"\"\n    record()\n    return compute()\n"}
+{"expected":[{"original":"return False","replacement":"return True"}],"id":"bool_false","mode":"strict","schema":1,"source":"def example() -> bool:\n    return False\n"}
+{"expected":[{"original":"return True","replacement":"return False"}],"id":"bool_true","mode":"strict","schema":1,"source":"def example() -> bool:\n    return True\n"}
+{"expected":[{"original":"return 0","replacement":"return 1"}],"id":"int_zero","mode":"strict","schema":1,"source":"def example() -> int:\n    return 0\n"}
+{"expected":[{"original":"return 1","replacement":"return 0"}],"id":"int_one","mode":"strict","schema":1,"source":"def example() -> int:\n    return 1\n"}
+{"expected":[{"original":"return ''","replacement":"return \"A\""}],"id":"str_empty","mode":"strict","schema":1,"source":"def example() -> str:\n    return ''\n"}
+{"expected":[{"original":"return '\\x41'","replacement":"return \"\""}],"id":"str_cooked_a","mode":"strict","schema":1,"source":"def example() -> str:\n    return '\\x41'\n"}
+{"expected":[{"original":"return (False)","replacement":"return True"}],"id":"parenthesized_false","mode":"strict","schema":1,"source":"def example() -> bool:\n    return (False)\n"}
+{"expected":[{"original":"return 0","replacement":"return False"},{"original":"return 0","replacement":"return True"}],"id":"bool_integer_distinct","mode":"strict","schema":1,"source":"def example() -> bool:\n    return 0\n"}
+{"expected":[{"original":"return True","replacement":"return 0"},{"original":"return True","replacement":"return 1"}],"id":"int_boolean_distinct","mode":"strict","schema":1,"source":"def example() -> int:\n    return True\n"}
+{"expected":[],"id":"async","mode":"strict","schema":1,"source":"async def example() -> int:\n    return compute()\n"}
+{"expected":[],"id":"dunder","mode":"strict","schema":1,"source":"def __example__() -> int:\n    return compute()\n"}
+{"expected":[],"id":"generator","mode":"strict","schema":1,"source":"def example() -> int:\n    yield item\n    return compute()\n"}
+{"expected":[],"id":"return_none","mode":"strict","schema":1,"source":"def example() -> int:\n    return None\n"}
+{"expected":[],"id":"bare_return","mode":"strict","schema":1,"source":"def example() -> int:\n    return\n"}
+{"expected":[],"id":"nested_return_only","mode":"strict","schema":1,"source":"def example() -> int:\n    def inner():\n        return 1\n"}
+{"expected":[{"original":"def inner():\n        yield item\n    return compute()","replacement":"return 0"},{"original":"def inner():\n        yield item\n    return compute()","replacement":"return 1"}],"id":"nested_generator_ignored","mode":"strict","schema":1,"source":"def example() -> int:\n    def inner():\n        yield item\n    return compute()\n"}
+{"expected":[{"original":"callback = lambda: (yield item)\n    return compute()","replacement":"return 0"},{"original":"callback = lambda: (yield item)\n    return compute()","replacement":"return 1"}],"id":"nested_lambda_ignored","mode":"strict","schema":1,"source":"def example() -> int:\n    callback = lambda: (yield item)\n    return compute()\n"}
+{"expected":[],"id":"nested_class_only","mode":"strict","schema":1,"source":"def example() -> int:\n    class Inner:\n        def value(self):\n            return 1\n"}
+{"expected":[],"id":"default_yield","mode":"strict","schema":1,"source":"def example() -> int:\n    def inner(value=(yield item)):\n        pass\n    return compute()\n"}
+{"expected":[],"id":"decorator_yield","mode":"strict","schema":1,"source":"def example() -> int:\n    @(yield decorator)\n    def inner():\n        pass\n    return compute()\n"}
+{"expected":[],"id":"annotation_missing","mode":"strict","schema":1,"source":"def example():\n    return compute()\n"}
+{"expected":[],"id":"annotation_quoted","mode":"strict","schema":1,"source":"def example() -> 'int':\n    return compute()\n"}
+{"expected":[],"id":"annotation_alias","mode":"strict","schema":1,"source":"Number = int\ndef example() -> Number:\n    return compute()\n"}
+{"expected":[],"id":"annotation_qualified","mode":"strict","schema":1,"source":"import builtins\ndef example() -> builtins.int:\n    return compute()\n"}
+{"expected":[],"id":"annotation_composite","mode":"strict","schema":1,"source":"def example() -> int | None:\n    return compute()\n"}
+{"expected":[],"id":"shadowed_before","mode":"strict","schema":1,"source":"int = Custom\ndef example() -> int:\n    return compute()\n"}
+{"expected":[],"id":"shadowed_after","mode":"strict","schema":1,"source":"def example() -> int:\n    return compute()\nint = Custom\n"}
+{"expected":[],"id":"ambiguous_binding","mode":"strict","schema":1,"source":"if flag:\n    int = Custom\ndef example() -> int:\n    return compute()\n"}

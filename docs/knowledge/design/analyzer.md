@@ -345,6 +345,12 @@ sources:
   working_tree: untracked
   sha256: f1b09d5746badd9bb8adb53404d35739275c1185a80339a8241811793ab16192
 
+- id: function-body-return-constant
+  resource: ../../superpowers/reports/function-body-return-constant/design.md
+  revision: 1865f47
+  working_tree: untracked
+  sha256: b505c8e3f175303e82106e08836df1a3f9bf12ad94bfc52e07b1521721c2dcaf
+
 ---
 
 # 構文と名前解決の契約
@@ -743,3 +749,7 @@ optional_keyword_delete は一意な同一モジュール関数への呼び出�
 `method_call_remove` は引数のない属性呼び出しを括弧付き receiver に置換する opt-in 演算子である。receiver の評価を1回残し、属性参照と呼び出しを除く。bound method であることや型の一致は保証せず、束縛・中断・generator を含む receiver、型式、代入ターゲットなどは除外する。[^method-call-remove]
 
 [^method-call-remove]: [設計と5回のレビュー](../../superpowers/reports/method-call-remove/design.md)、[評価と形式証明の範囲](../../superpowers/reports/method-call-remove/assessment.md)
+
+`function_body_return_constant` は、組込みの `bool`・`int`・`str` と確定できる直接の戻り値注釈に応じて、同期関数の本体を相補的な定数 return に置き換える opt-in 演算子である。docstring とヘッダーを残し、async・generator・dunder・自身の値 return がない関数・同じリテラルだけを返す候補を除外する。注釈の解決には遅延評価用の名前解決を使う。注釈は実行時型の保証ではなく、生存変異だけから pseudo-tested とも判定しない。[^function-body-return-constant]
+
+[^function-body-return-constant]: [設計](../../superpowers/reports/function-body-return-constant/design.md)、[原論文・評価・形式証明の範囲](../../superpowers/reports/function-body-return-constant/assessment.md)

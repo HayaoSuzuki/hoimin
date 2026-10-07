@@ -3615,6 +3615,35 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         }
     }
 
+    fn collect_function_body_return_constant(&mut self, statement: &Stmt) {
+        if self
+            .request
+            .operators
+            .contains(MutationOperator::FunctionBodyReturnConstant)
+            && let Stmt::FunctionDef(definition) = statement
+            && let Some(Expr::Name(annotation)) = definition.returns.as_deref()
+            && self
+                .facts
+                .name_resolution
+                .annotation_resolution(usize::from(annotation.start()), annotation.id.as_str())
+                == NameResolution::DefinitelyBuiltin
+            && let Some((range, replacements)) =
+                function_body::constant_returns(definition, annotation.id.as_str(), self.cancelled)
+        {
+            for replacement in replacements {
+                if self.check_cancelled() {
+                    return;
+                }
+                self.add_candidate_in_scope(
+                    range,
+                    replacement.to_owned(),
+                    MutationOperator::FunctionBodyReturnConstant,
+                    definition.range(),
+                );
+            }
+        }
+    }
+
     fn collect_statement_mutations(&mut self, statement: &Stmt) {
         if self
             .request
@@ -3650,6 +3679,7 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         if let Stmt::AugAssign(assign) = statement {
             self.collect_augmented_to_assignment(assign);
         }
+        self.collect_function_body_return_constant(statement);
         if self
             .request
             .operators
