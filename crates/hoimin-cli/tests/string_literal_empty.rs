@@ -222,11 +222,11 @@ async fn string_empty_saved_plan_requires_content_observation() {
 async fn string_empty_uses_decoded_value_and_exact_encoded_occurrence() {
     let root = tempfile::tempdir().unwrap();
     std::fs::write(root.path().join("subject.py"), "x='\\\n'\n").unwrap();
-    assert!(
+    assert_eq!(
         plan(root.path(), "string_literal_empty", "pass").await["candidates"]
             .as_array()
-            .unwrap()
-            .is_empty()
+            .unwrap(),
+        &Vec::<serde_json::Value>::new()
     );
     for newline in ["\n", "\r\n", "\r"] {
         for encoding in ["utf8", "bom", "latin1"] {

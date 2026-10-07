@@ -294,7 +294,7 @@ fn line_diverse_cycles_dense_start_lines_without_suppressing_candidates() {
         }
     }
     assert_eq!(select_ids(&candidates, usize::MAX, policy), full);
-    assert!(select_ids(&[], usize::MAX, policy).is_empty());
+    assert_eq!(select_ids(&[], usize::MAX, policy), Vec::<String>::new());
 }
 
 #[test]

@@ -220,6 +220,6 @@ async fn line_diverse_requires_top_and_preserves_mutant_budget() {
         let (code, output, err) = cli(args).await;
         assert_eq!(code, 2, "{err}");
         assert!(output.is_null());
-        assert!(!err.is_empty());
+        assert_ne!(err, "");
     }
 }

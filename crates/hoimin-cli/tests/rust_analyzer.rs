@@ -305,7 +305,10 @@ fn condition_constants_respect_focused_guards_and_limits() {
     assert_eq!(output.candidates.len(), 1);
     assert!(output.truncated);
     request.profile = MutationProfile::Focused;
-    assert!(rust::analyze_source(&request, source).candidates.is_empty());
+    assert_eq!(
+        rust::analyze_source(&request, source).candidates,
+        Vec::new()
+    );
     assert!(rust::analyze_source_cancellable(&request, source, || true).is_err());
 }
 
@@ -329,7 +332,10 @@ fn body_erasure_anchors_first_erased_line_and_owning_function() {
         profile: MutationProfile::Full,
         max_candidates: 10,
     };
-    assert!(rust::analyze_source(&request, source).candidates.is_empty());
+    assert_eq!(
+        rust::analyze_source(&request, source).candidates,
+        Vec::new()
+    );
     request.lines = &[hoimin_core::LineRange { start: 3, end: 3 }];
     let output = rust::analyze_source(&request, source);
     assert_eq!(output.candidates.len(), 1);
@@ -337,7 +343,10 @@ fn body_erasure_anchors_first_erased_line_and_owning_function() {
     let symbols = ["outer.inner".to_owned()];
     request.symbols = &symbols;
     request.lines = &[];
-    assert!(rust::analyze_source(&request, source).candidates.is_empty());
+    assert_eq!(
+        rust::analyze_source(&request, source).candidates,
+        Vec::new()
+    );
     assert!(rust::analyze_source_cancellable(&request, source, || true).is_err());
 }
 
@@ -847,21 +856,26 @@ fn return_constant_preserves_scope_selection_profile_prefix_and_cancellation() {
     assert_eq!(bounded.candidates, full.candidates[..1]);
     request.max_candidates = 10;
     request.lines = &[hoimin_core::LineRange { start: 4, end: 4 }];
-    assert!(rust::analyze_source(&request, source).candidates.is_empty());
+    assert_eq!(
+        rust::analyze_source(&request, source).candidates,
+        Vec::new()
+    );
     request.lines = &[hoimin_core::LineRange { start: 3, end: 3 }];
     assert_eq!(rust::analyze_source(&request, source).candidates.len(), 2);
     request.lines = &[];
     let symbols = ["outer.inner".to_owned()];
     request.symbols = &symbols;
-    assert!(rust::analyze_source(&request, source).candidates.is_empty());
+    assert_eq!(
+        rust::analyze_source(&request, source).candidates,
+        Vec::new()
+    );
     request.symbols = &[];
     let guarded = "if __name__ == '__main__':\n    def f(x) -> int: return x\n";
     assert_eq!(rust::analyze_source(&request, guarded).candidates.len(), 2);
     request.profile = MutationProfile::Focused;
-    assert!(
-        rust::analyze_source(&request, guarded)
-            .candidates
-            .is_empty()
+    assert_eq!(
+        rust::analyze_source(&request, guarded).candidates,
+        Vec::new()
     );
     assert!(rust::analyze_source_cancellable(&request, source, || true).is_err());
     operators.exclude(operator);
