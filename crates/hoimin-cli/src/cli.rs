@@ -272,9 +272,10 @@ struct RawVerifyArgs {
     )]
     offset: Option<usize>,
 
-    /// Select strict saved-rank order or equal-score file diversity for --top.
+    /// Select saved-rank order or equal-score file/line diversity for --top.
     ///
-    /// Diverse round-robins files only within equal-score tiers.
+    /// Diverse round-robins files; line-diverse round-robins (file, start-line) groups.
+    /// Both keep higher-score tiers first.
     #[arg(
         long,
         value_enum,
@@ -400,6 +401,7 @@ impl PlanArgs {
 pub enum TopSelectionPolicy {
     Strict,
     Diverse,
+    LineDiverse,
 }
 
 #[derive(Debug, Eq, PartialEq)]

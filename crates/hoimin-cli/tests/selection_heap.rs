@@ -97,13 +97,17 @@ fn offset_selection_does_not_clone_or_retain_the_discarded_prefix() {
     let candidates = candidates();
     let one = NonZeroUsize::new(1).unwrap();
     let mut regressions = Vec::new();
-    for policy in [TopSelectionPolicy::Strict, TopSelectionPolicy::Diverse] {
+    for policy in [
+        TopSelectionPolicy::Strict,
+        TopSelectionPolicy::Diverse,
+        TopSelectionPolicy::LineDiverse,
+    ] {
         let mut first_page_calls = None;
         for offset in [0, 512, 1023] {
             // Eight equally sized files: round robin row is offset / 8 and
             // column is offset % 8. These positions are independent of selection.
             let expected_index = match policy {
-                TopSelectionPolicy::Strict => offset,
+                TopSelectionPolicy::Strict | TopSelectionPolicy::LineDiverse => offset,
                 TopSelectionPolicy::Diverse => (offset % 8) * 128 + offset / 8,
             };
             begin();

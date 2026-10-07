@@ -199,6 +199,10 @@ name = "generate_paging"
 root = "PagingAuditMain"
 
 [[lean_exe]]
+name = "generate_line_diverse"
+root = "LineDiverseAuditMain"
+
+[[lean_exe]]
 name = "generate_prepared_annotation_import"
 root = "PreparedAnnotationImportAuditMain"
 

@@ -1,0 +1,943 @@
+{
+  "scope": "authored deterministic comparison; no prevalence or real-defect claim",
+  "python": "3.14.7 (main, Aug  7 2026, 02:15:30) [Clang 22.1.3 ]",
+  "budget": 3,
+  "repetitions_weak": 5,
+  "repetitions_strong": 1,
+  "scenarios": [
+    {
+      "fixture": "one_file",
+      "sources": {
+        "a.py": "def dense(x):\n    return x == 1 or x == 2 or x == 3 or x == 4 or x == 5 or x == 6 or x == 7 or x == 8 or x == 9 or x == 10\ndef ignored(x):\n    return x == 0\ndef another(x):\n    return x == 1\n"
+      },
+      "sha256": {
+        "a.py": "6ade027db1c25dfe7e2a2c05011ba48d0b3a0cf822b186b1903f98dcc40cf14e"
+      },
+      "weak_command": "from a import dense, ignored, another\nfor x in range(12):\n    assert dense(x) == (1 <= x <= 10)\nignored(0)\nanother(1)\n",
+      "strong_command": "from a import dense, ignored, another\nfor x in range(12):\n    assert dense(x) == (1 <= x <= 10)\nignored(0)\nanother(1)\nassert ignored(0) is True\nassert another(1) is True\n",
+      "results": {
+        "weak": {
+          "strict": [
+            {
+              "elapsed_seconds": 0.240538,
+              "distinct_start_lines": 1,
+              "mutants": [
+                {
+                  "id": "m1_29ac037827d69e946556d6f282b30758f62bb3e02089e6db556ace34f4b14f6a",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                },
+                {
+                  "id": "m1_fa6ab7c450d3b6f5b67f500482d04516d2dcb97daca584c4fa95e3d0a8049132",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                },
+                {
+                  "id": "m1_82fd2e9653150f33b83e6bdf4193518359902aee2d4ed54c1e7f5ce4c4d6d1ab",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                }
+              ]
+            },
+            {
+              "elapsed_seconds": 0.177084,
+              "distinct_start_lines": 1,
+              "mutants": [
+                {
+                  "id": "m1_29ac037827d69e946556d6f282b30758f62bb3e02089e6db556ace34f4b14f6a",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                },
+                {
+                  "id": "m1_fa6ab7c450d3b6f5b67f500482d04516d2dcb97daca584c4fa95e3d0a8049132",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                },
+                {
+                  "id": "m1_82fd2e9653150f33b83e6bdf4193518359902aee2d4ed54c1e7f5ce4c4d6d1ab",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                }
+              ]
+            },
+            {
+              "elapsed_seconds": 0.197613,
+              "distinct_start_lines": 1,
+              "mutants": [
+                {
+                  "id": "m1_29ac037827d69e946556d6f282b30758f62bb3e02089e6db556ace34f4b14f6a",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                },
+                {
+                  "id": "m1_fa6ab7c450d3b6f5b67f500482d04516d2dcb97daca584c4fa95e3d0a8049132",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                },
+                {
+                  "id": "m1_82fd2e9653150f33b83e6bdf4193518359902aee2d4ed54c1e7f5ce4c4d6d1ab",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                }
+              ]
+            },
+            {
+              "elapsed_seconds": 0.184102,
+              "distinct_start_lines": 1,
+              "mutants": [
+                {
+                  "id": "m1_29ac037827d69e946556d6f282b30758f62bb3e02089e6db556ace34f4b14f6a",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                },
+                {
+                  "id": "m1_fa6ab7c450d3b6f5b67f500482d04516d2dcb97daca584c4fa95e3d0a8049132",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                },
+                {
+                  "id": "m1_82fd2e9653150f33b83e6bdf4193518359902aee2d4ed54c1e7f5ce4c4d6d1ab",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                }
+              ]
+            },
+            {
+              "elapsed_seconds": 0.390804,
+              "distinct_start_lines": 1,
+              "mutants": [
+                {
+                  "id": "m1_29ac037827d69e946556d6f282b30758f62bb3e02089e6db556ace34f4b14f6a",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                },
+                {
+                  "id": "m1_fa6ab7c450d3b6f5b67f500482d04516d2dcb97daca584c4fa95e3d0a8049132",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                },
+                {
+                  "id": "m1_82fd2e9653150f33b83e6bdf4193518359902aee2d4ed54c1e7f5ce4c4d6d1ab",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                }
+              ]
+            }
+          ],
+          "diverse": [
+            {
+              "elapsed_seconds": 0.21351,
+              "distinct_start_lines": 1,
+              "mutants": [
+                {
+                  "id": "m1_29ac037827d69e946556d6f282b30758f62bb3e02089e6db556ace34f4b14f6a",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                },
+                {
+                  "id": "m1_fa6ab7c450d3b6f5b67f500482d04516d2dcb97daca584c4fa95e3d0a8049132",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                },
+                {
+                  "id": "m1_82fd2e9653150f33b83e6bdf4193518359902aee2d4ed54c1e7f5ce4c4d6d1ab",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                }
+              ]
+            },
+            {
+              "elapsed_seconds": 0.178698,
+              "distinct_start_lines": 1,
+              "mutants": [
+                {
+                  "id": "m1_29ac037827d69e946556d6f282b30758f62bb3e02089e6db556ace34f4b14f6a",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                },
+                {
+                  "id": "m1_fa6ab7c450d3b6f5b67f500482d04516d2dcb97daca584c4fa95e3d0a8049132",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                },
+                {
+                  "id": "m1_82fd2e9653150f33b83e6bdf4193518359902aee2d4ed54c1e7f5ce4c4d6d1ab",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                }
+              ]
+            },
+            {
+              "elapsed_seconds": 0.192509,
+              "distinct_start_lines": 1,
+              "mutants": [
+                {
+                  "id": "m1_29ac037827d69e946556d6f282b30758f62bb3e02089e6db556ace34f4b14f6a",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                },
+                {
+                  "id": "m1_fa6ab7c450d3b6f5b67f500482d04516d2dcb97daca584c4fa95e3d0a8049132",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                },
+                {
+                  "id": "m1_82fd2e9653150f33b83e6bdf4193518359902aee2d4ed54c1e7f5ce4c4d6d1ab",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                }
+              ]
+            },
+            {
+              "elapsed_seconds": 0.187008,
+              "distinct_start_lines": 1,
+              "mutants": [
+                {
+                  "id": "m1_29ac037827d69e946556d6f282b30758f62bb3e02089e6db556ace34f4b14f6a",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                },
+                {
+                  "id": "m1_fa6ab7c450d3b6f5b67f500482d04516d2dcb97daca584c4fa95e3d0a8049132",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                },
+                {
+                  "id": "m1_82fd2e9653150f33b83e6bdf4193518359902aee2d4ed54c1e7f5ce4c4d6d1ab",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                }
+              ]
+            },
+            {
+              "elapsed_seconds": 0.179772,
+              "distinct_start_lines": 1,
+              "mutants": [
+                {
+                  "id": "m1_29ac037827d69e946556d6f282b30758f62bb3e02089e6db556ace34f4b14f6a",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                },
+                {
+                  "id": "m1_fa6ab7c450d3b6f5b67f500482d04516d2dcb97daca584c4fa95e3d0a8049132",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                },
+                {
+                  "id": "m1_82fd2e9653150f33b83e6bdf4193518359902aee2d4ed54c1e7f5ce4c4d6d1ab",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                }
+              ]
+            }
+          ],
+          "line-diverse": [
+            {
+              "elapsed_seconds": 0.15838,
+              "distinct_start_lines": 3,
+              "mutants": [
+                {
+                  "id": "m1_29ac037827d69e946556d6f282b30758f62bb3e02089e6db556ace34f4b14f6a",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                },
+                {
+                  "id": "m1_d299a7fbd4e4b568d32a7e09edf73fd0ed23a56ff0a99a464b63fd879368c1c6",
+                  "path": "a.py",
+                  "line": 4,
+                  "status": "survived"
+                },
+                {
+                  "id": "m1_adbd92e138f39a89a29a35c91b45334dcf46a3b7cce3e10b549c9efdd104ac24",
+                  "path": "a.py",
+                  "line": 6,
+                  "status": "survived"
+                }
+              ]
+            },
+            {
+              "elapsed_seconds": 0.156686,
+              "distinct_start_lines": 3,
+              "mutants": [
+                {
+                  "id": "m1_29ac037827d69e946556d6f282b30758f62bb3e02089e6db556ace34f4b14f6a",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                },
+                {
+                  "id": "m1_d299a7fbd4e4b568d32a7e09edf73fd0ed23a56ff0a99a464b63fd879368c1c6",
+                  "path": "a.py",
+                  "line": 4,
+                  "status": "survived"
+                },
+                {
+                  "id": "m1_adbd92e138f39a89a29a35c91b45334dcf46a3b7cce3e10b549c9efdd104ac24",
+                  "path": "a.py",
+                  "line": 6,
+                  "status": "survived"
+                }
+              ]
+            },
+            {
+              "elapsed_seconds": 0.170987,
+              "distinct_start_lines": 3,
+              "mutants": [
+                {
+                  "id": "m1_29ac037827d69e946556d6f282b30758f62bb3e02089e6db556ace34f4b14f6a",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                },
+                {
+                  "id": "m1_d299a7fbd4e4b568d32a7e09edf73fd0ed23a56ff0a99a464b63fd879368c1c6",
+                  "path": "a.py",
+                  "line": 4,
+                  "status": "survived"
+                },
+                {
+                  "id": "m1_adbd92e138f39a89a29a35c91b45334dcf46a3b7cce3e10b549c9efdd104ac24",
+                  "path": "a.py",
+                  "line": 6,
+                  "status": "survived"
+                }
+              ]
+            },
+            {
+              "elapsed_seconds": 0.164641,
+              "distinct_start_lines": 3,
+              "mutants": [
+                {
+                  "id": "m1_29ac037827d69e946556d6f282b30758f62bb3e02089e6db556ace34f4b14f6a",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                },
+                {
+                  "id": "m1_d299a7fbd4e4b568d32a7e09edf73fd0ed23a56ff0a99a464b63fd879368c1c6",
+                  "path": "a.py",
+                  "line": 4,
+                  "status": "survived"
+                },
+                {
+                  "id": "m1_adbd92e138f39a89a29a35c91b45334dcf46a3b7cce3e10b549c9efdd104ac24",
+                  "path": "a.py",
+                  "line": 6,
+                  "status": "survived"
+                }
+              ]
+            },
+            {
+              "elapsed_seconds": 0.16277,
+              "distinct_start_lines": 3,
+              "mutants": [
+                {
+                  "id": "m1_29ac037827d69e946556d6f282b30758f62bb3e02089e6db556ace34f4b14f6a",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                },
+                {
+                  "id": "m1_d299a7fbd4e4b568d32a7e09edf73fd0ed23a56ff0a99a464b63fd879368c1c6",
+                  "path": "a.py",
+                  "line": 4,
+                  "status": "survived"
+                },
+                {
+                  "id": "m1_adbd92e138f39a89a29a35c91b45334dcf46a3b7cce3e10b549c9efdd104ac24",
+                  "path": "a.py",
+                  "line": 6,
+                  "status": "survived"
+                }
+              ]
+            }
+          ]
+        },
+        "strong": {
+          "strict": [
+            {
+              "elapsed_seconds": 0.37191,
+              "distinct_start_lines": 1,
+              "mutants": [
+                {
+                  "id": "m1_29ac037827d69e946556d6f282b30758f62bb3e02089e6db556ace34f4b14f6a",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                },
+                {
+                  "id": "m1_fa6ab7c450d3b6f5b67f500482d04516d2dcb97daca584c4fa95e3d0a8049132",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                },
+                {
+                  "id": "m1_82fd2e9653150f33b83e6bdf4193518359902aee2d4ed54c1e7f5ce4c4d6d1ab",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                }
+              ]
+            }
+          ],
+          "diverse": [
+            {
+              "elapsed_seconds": 0.353291,
+              "distinct_start_lines": 1,
+              "mutants": [
+                {
+                  "id": "m1_29ac037827d69e946556d6f282b30758f62bb3e02089e6db556ace34f4b14f6a",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                },
+                {
+                  "id": "m1_fa6ab7c450d3b6f5b67f500482d04516d2dcb97daca584c4fa95e3d0a8049132",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                },
+                {
+                  "id": "m1_82fd2e9653150f33b83e6bdf4193518359902aee2d4ed54c1e7f5ce4c4d6d1ab",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                }
+              ]
+            }
+          ],
+          "line-diverse": [
+            {
+              "elapsed_seconds": 0.472874,
+              "distinct_start_lines": 3,
+              "mutants": [
+                {
+                  "id": "m1_29ac037827d69e946556d6f282b30758f62bb3e02089e6db556ace34f4b14f6a",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                },
+                {
+                  "id": "m1_d299a7fbd4e4b568d32a7e09edf73fd0ed23a56ff0a99a464b63fd879368c1c6",
+                  "path": "a.py",
+                  "line": 4,
+                  "status": "killed"
+                },
+                {
+                  "id": "m1_adbd92e138f39a89a29a35c91b45334dcf46a3b7cce3e10b549c9efdd104ac24",
+                  "path": "a.py",
+                  "line": 6,
+                  "status": "killed"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "median_weak_seconds": {
+        "strict": 0.197613,
+        "diverse": 0.187008,
+        "line-diverse": 0.16277
+      }
+    },
+    {
+      "fixture": "two_files",
+      "sources": {
+        "a.py": "def dense(x):\n    return x == 1 or x == 2 or x == 3 or x == 4 or x == 5 or x == 6 or x == 7 or x == 8 or x == 9 or x == 10\n",
+        "b.py": "def ignored(x):\n    return x == 0\ndef another(x):\n    return x == 1\n"
+      },
+      "sha256": {
+        "a.py": "402cdb765420eefb55ab1b1f131c26a6596e4aea546374bd897dcf01025eafa7",
+        "b.py": "c1b664a33a963c0541d9835906bf9b25b853d2e2aeb9fe264b16163154f05a21"
+      },
+      "weak_command": "from a import dense\nfrom b import ignored, another\nfor x in range(12):\n    assert dense(x) == (1 <= x <= 10)\nignored(0)\nanother(1)\n",
+      "strong_command": "from a import dense\nfrom b import ignored, another\nfor x in range(12):\n    assert dense(x) == (1 <= x <= 10)\nignored(0)\nanother(1)\nassert ignored(0) is True\nassert another(1) is True\n",
+      "results": {
+        "weak": {
+          "strict": [
+            {
+              "elapsed_seconds": 0.38856,
+              "distinct_start_lines": 1,
+              "mutants": [
+                {
+                  "id": "m1_57aa5ecd03c947bcfeceaa3a810077bbc31574a9fd8f9229da41a011d70a1d29",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                },
+                {
+                  "id": "m1_47767ea8b21e0b3ac15ff7ae5534dd166784deb635109b09122363aada5b11f7",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                },
+                {
+                  "id": "m1_0e2a46431909100734df459c485c93343b41efc27853d7ec0ee601e1143cb80e",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                }
+              ]
+            },
+            {
+              "elapsed_seconds": 0.363092,
+              "distinct_start_lines": 1,
+              "mutants": [
+                {
+                  "id": "m1_57aa5ecd03c947bcfeceaa3a810077bbc31574a9fd8f9229da41a011d70a1d29",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                },
+                {
+                  "id": "m1_47767ea8b21e0b3ac15ff7ae5534dd166784deb635109b09122363aada5b11f7",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                },
+                {
+                  "id": "m1_0e2a46431909100734df459c485c93343b41efc27853d7ec0ee601e1143cb80e",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                }
+              ]
+            },
+            {
+              "elapsed_seconds": 0.528499,
+              "distinct_start_lines": 1,
+              "mutants": [
+                {
+                  "id": "m1_57aa5ecd03c947bcfeceaa3a810077bbc31574a9fd8f9229da41a011d70a1d29",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                },
+                {
+                  "id": "m1_47767ea8b21e0b3ac15ff7ae5534dd166784deb635109b09122363aada5b11f7",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                },
+                {
+                  "id": "m1_0e2a46431909100734df459c485c93343b41efc27853d7ec0ee601e1143cb80e",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                }
+              ]
+            },
+            {
+              "elapsed_seconds": 0.455365,
+              "distinct_start_lines": 1,
+              "mutants": [
+                {
+                  "id": "m1_57aa5ecd03c947bcfeceaa3a810077bbc31574a9fd8f9229da41a011d70a1d29",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                },
+                {
+                  "id": "m1_47767ea8b21e0b3ac15ff7ae5534dd166784deb635109b09122363aada5b11f7",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                },
+                {
+                  "id": "m1_0e2a46431909100734df459c485c93343b41efc27853d7ec0ee601e1143cb80e",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                }
+              ]
+            },
+            {
+              "elapsed_seconds": 0.606371,
+              "distinct_start_lines": 1,
+              "mutants": [
+                {
+                  "id": "m1_57aa5ecd03c947bcfeceaa3a810077bbc31574a9fd8f9229da41a011d70a1d29",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                },
+                {
+                  "id": "m1_47767ea8b21e0b3ac15ff7ae5534dd166784deb635109b09122363aada5b11f7",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                },
+                {
+                  "id": "m1_0e2a46431909100734df459c485c93343b41efc27853d7ec0ee601e1143cb80e",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                }
+              ]
+            }
+          ],
+          "diverse": [
+            {
+              "elapsed_seconds": 0.625803,
+              "distinct_start_lines": 2,
+              "mutants": [
+                {
+                  "id": "m1_57aa5ecd03c947bcfeceaa3a810077bbc31574a9fd8f9229da41a011d70a1d29",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                },
+                {
+                  "id": "m1_a047d63c41756f13f6bc50386c7ca444911dc0bdfc470a79646f2d7b650428df",
+                  "path": "b.py",
+                  "line": 2,
+                  "status": "survived"
+                },
+                {
+                  "id": "m1_47767ea8b21e0b3ac15ff7ae5534dd166784deb635109b09122363aada5b11f7",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                }
+              ]
+            },
+            {
+              "elapsed_seconds": 0.429885,
+              "distinct_start_lines": 2,
+              "mutants": [
+                {
+                  "id": "m1_57aa5ecd03c947bcfeceaa3a810077bbc31574a9fd8f9229da41a011d70a1d29",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                },
+                {
+                  "id": "m1_a047d63c41756f13f6bc50386c7ca444911dc0bdfc470a79646f2d7b650428df",
+                  "path": "b.py",
+                  "line": 2,
+                  "status": "survived"
+                },
+                {
+                  "id": "m1_47767ea8b21e0b3ac15ff7ae5534dd166784deb635109b09122363aada5b11f7",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                }
+              ]
+            },
+            {
+              "elapsed_seconds": 0.402487,
+              "distinct_start_lines": 2,
+              "mutants": [
+                {
+                  "id": "m1_57aa5ecd03c947bcfeceaa3a810077bbc31574a9fd8f9229da41a011d70a1d29",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                },
+                {
+                  "id": "m1_a047d63c41756f13f6bc50386c7ca444911dc0bdfc470a79646f2d7b650428df",
+                  "path": "b.py",
+                  "line": 2,
+                  "status": "survived"
+                },
+                {
+                  "id": "m1_47767ea8b21e0b3ac15ff7ae5534dd166784deb635109b09122363aada5b11f7",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                }
+              ]
+            },
+            {
+              "elapsed_seconds": 0.384639,
+              "distinct_start_lines": 2,
+              "mutants": [
+                {
+                  "id": "m1_57aa5ecd03c947bcfeceaa3a810077bbc31574a9fd8f9229da41a011d70a1d29",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                },
+                {
+                  "id": "m1_a047d63c41756f13f6bc50386c7ca444911dc0bdfc470a79646f2d7b650428df",
+                  "path": "b.py",
+                  "line": 2,
+                  "status": "survived"
+                },
+                {
+                  "id": "m1_47767ea8b21e0b3ac15ff7ae5534dd166784deb635109b09122363aada5b11f7",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                }
+              ]
+            },
+            {
+              "elapsed_seconds": 0.493947,
+              "distinct_start_lines": 2,
+              "mutants": [
+                {
+                  "id": "m1_57aa5ecd03c947bcfeceaa3a810077bbc31574a9fd8f9229da41a011d70a1d29",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                },
+                {
+                  "id": "m1_a047d63c41756f13f6bc50386c7ca444911dc0bdfc470a79646f2d7b650428df",
+                  "path": "b.py",
+                  "line": 2,
+                  "status": "survived"
+                },
+                {
+                  "id": "m1_47767ea8b21e0b3ac15ff7ae5534dd166784deb635109b09122363aada5b11f7",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                }
+              ]
+            }
+          ],
+          "line-diverse": [
+            {
+              "elapsed_seconds": 0.394898,
+              "distinct_start_lines": 3,
+              "mutants": [
+                {
+                  "id": "m1_57aa5ecd03c947bcfeceaa3a810077bbc31574a9fd8f9229da41a011d70a1d29",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                },
+                {
+                  "id": "m1_a047d63c41756f13f6bc50386c7ca444911dc0bdfc470a79646f2d7b650428df",
+                  "path": "b.py",
+                  "line": 2,
+                  "status": "survived"
+                },
+                {
+                  "id": "m1_04e9ec2a33ca46a3b753e12ca6c3a74da663c2573bc8ed3bdcc0f9aa8ed30993",
+                  "path": "b.py",
+                  "line": 4,
+                  "status": "survived"
+                }
+              ]
+            },
+            {
+              "elapsed_seconds": 0.415266,
+              "distinct_start_lines": 3,
+              "mutants": [
+                {
+                  "id": "m1_57aa5ecd03c947bcfeceaa3a810077bbc31574a9fd8f9229da41a011d70a1d29",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                },
+                {
+                  "id": "m1_a047d63c41756f13f6bc50386c7ca444911dc0bdfc470a79646f2d7b650428df",
+                  "path": "b.py",
+                  "line": 2,
+                  "status": "survived"
+                },
+                {
+                  "id": "m1_04e9ec2a33ca46a3b753e12ca6c3a74da663c2573bc8ed3bdcc0f9aa8ed30993",
+                  "path": "b.py",
+                  "line": 4,
+                  "status": "survived"
+                }
+              ]
+            },
+            {
+              "elapsed_seconds": 0.254913,
+              "distinct_start_lines": 3,
+              "mutants": [
+                {
+                  "id": "m1_57aa5ecd03c947bcfeceaa3a810077bbc31574a9fd8f9229da41a011d70a1d29",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                },
+                {
+                  "id": "m1_a047d63c41756f13f6bc50386c7ca444911dc0bdfc470a79646f2d7b650428df",
+                  "path": "b.py",
+                  "line": 2,
+                  "status": "survived"
+                },
+                {
+                  "id": "m1_04e9ec2a33ca46a3b753e12ca6c3a74da663c2573bc8ed3bdcc0f9aa8ed30993",
+                  "path": "b.py",
+                  "line": 4,
+                  "status": "survived"
+                }
+              ]
+            },
+            {
+              "elapsed_seconds": 0.355883,
+              "distinct_start_lines": 3,
+              "mutants": [
+                {
+                  "id": "m1_57aa5ecd03c947bcfeceaa3a810077bbc31574a9fd8f9229da41a011d70a1d29",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                },
+                {
+                  "id": "m1_a047d63c41756f13f6bc50386c7ca444911dc0bdfc470a79646f2d7b650428df",
+                  "path": "b.py",
+                  "line": 2,
+                  "status": "survived"
+                },
+                {
+                  "id": "m1_04e9ec2a33ca46a3b753e12ca6c3a74da663c2573bc8ed3bdcc0f9aa8ed30993",
+                  "path": "b.py",
+                  "line": 4,
+                  "status": "survived"
+                }
+              ]
+            },
+            {
+              "elapsed_seconds": 0.507828,
+              "distinct_start_lines": 3,
+              "mutants": [
+                {
+                  "id": "m1_57aa5ecd03c947bcfeceaa3a810077bbc31574a9fd8f9229da41a011d70a1d29",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                },
+                {
+                  "id": "m1_a047d63c41756f13f6bc50386c7ca444911dc0bdfc470a79646f2d7b650428df",
+                  "path": "b.py",
+                  "line": 2,
+                  "status": "survived"
+                },
+                {
+                  "id": "m1_04e9ec2a33ca46a3b753e12ca6c3a74da663c2573bc8ed3bdcc0f9aa8ed30993",
+                  "path": "b.py",
+                  "line": 4,
+                  "status": "survived"
+                }
+              ]
+            }
+          ]
+        },
+        "strong": {
+          "strict": [
+            {
+              "elapsed_seconds": 0.3793,
+              "distinct_start_lines": 1,
+              "mutants": [
+                {
+                  "id": "m1_57aa5ecd03c947bcfeceaa3a810077bbc31574a9fd8f9229da41a011d70a1d29",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                },
+                {
+                  "id": "m1_47767ea8b21e0b3ac15ff7ae5534dd166784deb635109b09122363aada5b11f7",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                },
+                {
+                  "id": "m1_0e2a46431909100734df459c485c93343b41efc27853d7ec0ee601e1143cb80e",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                }
+              ]
+            }
+          ],
+          "diverse": [
+            {
+              "elapsed_seconds": 0.481231,
+              "distinct_start_lines": 2,
+              "mutants": [
+                {
+                  "id": "m1_57aa5ecd03c947bcfeceaa3a810077bbc31574a9fd8f9229da41a011d70a1d29",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                },
+                {
+                  "id": "m1_a047d63c41756f13f6bc50386c7ca444911dc0bdfc470a79646f2d7b650428df",
+                  "path": "b.py",
+                  "line": 2,
+                  "status": "killed"
+                },
+                {
+                  "id": "m1_47767ea8b21e0b3ac15ff7ae5534dd166784deb635109b09122363aada5b11f7",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                }
+              ]
+            }
+          ],
+          "line-diverse": [
+            {
+              "elapsed_seconds": 0.4836,
+              "distinct_start_lines": 3,
+              "mutants": [
+                {
+                  "id": "m1_57aa5ecd03c947bcfeceaa3a810077bbc31574a9fd8f9229da41a011d70a1d29",
+                  "path": "a.py",
+                  "line": 2,
+                  "status": "killed"
+                },
+                {
+                  "id": "m1_a047d63c41756f13f6bc50386c7ca444911dc0bdfc470a79646f2d7b650428df",
+                  "path": "b.py",
+                  "line": 2,
+                  "status": "killed"
+                },
+                {
+                  "id": "m1_04e9ec2a33ca46a3b753e12ca6c3a74da663c2573bc8ed3bdcc0f9aa8ed30993",
+                  "path": "b.py",
+                  "line": 4,
+                  "status": "killed"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "median_weak_seconds": {
+        "strict": 0.455365,
+        "diverse": 0.429885,
+        "line-diverse": 0.394898
+      }
+    }
+  ]
+}

@@ -2219,3 +2219,89 @@ async fn public_resume_reports_validate_schema_four_in_json_and_jsonl() {
         }
     }
 }
+
+#[tokio::test]
+async fn line_diverse_public_reports_and_previews_match_current_schemas() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path().join("project");
+    std::fs::create_dir(&root).unwrap();
+    std::fs::write(root.join("calc.py"), "value = 1 + 2\n").unwrap();
+    let repo = repo_root();
+    let python = repo.join(if cfg!(windows) {
+        ".venv/Scripts/python.exe"
+    } else {
+        ".venv/bin/python"
+    });
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let args = vec![
+        "hoimin".into(),
+        "plan".into(),
+        "--root".into(),
+        root.into_os_string(),
+        "--source".into(),
+        ".".into(),
+        "--operators".into(),
+        "binary_add_sub".into(),
+        "--min-free-space".into(),
+        "1B".into(),
+        "--allow-best-effort-memory".into(),
+        "--".into(),
+        python.into_os_string(),
+        "-c".into(),
+        "import calc".into(),
+    ];
+    assert_eq!(
+        hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await,
+        0
+    );
+    let plan = directory.path().join("plan.json");
+    std::fs::write(&plan, &stdout).unwrap();
+    let event_schema = read_schema(&repo.join("docs/json-schema/run-event.schema.json"));
+    let result_schema = read_schema(&repo.join("docs/json-schema/run-result.schema.json"));
+    let preview_schema = read_schema(&repo.join("docs/json-schema/verify-preview.schema.json"));
+    for dry in [false, true] {
+        for format in ["json", "jsonl", "human"] {
+            stdout.clear();
+            stderr.clear();
+            let mut args = vec![
+                "hoimin".into(),
+                "verify".into(),
+                plan.as_os_str().to_owned(),
+                "--top".into(),
+                "1".into(),
+                "--selection-policy".into(),
+                "line-diverse".into(),
+                "--format".into(),
+                format.into(),
+            ];
+            if dry {
+                args.push("--dry-run".into());
+            }
+            let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+            assert_eq!(
+                code,
+                i32::from(!dry),
+                "{}",
+                String::from_utf8_lossy(&stderr)
+            );
+            let text = std::str::from_utf8(&stdout).unwrap();
+            assert!(text.contains("line_round_robin_v1"));
+            if format == "human" {
+                continue;
+            }
+            if dry {
+                let document = serde_json::from_slice(&stdout).unwrap();
+                assert_schema_valid(&preview_schema, &document, &event_schema);
+            } else if format == "json" {
+                let document = serde_json::from_slice(&stdout).unwrap();
+                assert_schema_valid(&result_schema, &document, &event_schema);
+            } else {
+                for line in text.lines() {
+                    let event = serde_json::from_str(line).unwrap();
+                    assert_schema_valid(&event_schema, &event, &event_schema);
+                }
+            }
+        }
+    }
+}

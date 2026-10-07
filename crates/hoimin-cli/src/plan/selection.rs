@@ -34,8 +34,8 @@ pub(crate) fn select_top_candidate_ids_at(
                 .take(limit)
                 .map(|candidate| candidate.id.clone()),
         ),
-        TopSelectionPolicy::Diverse => selected.extend(
-            DiverseCandidates::new(candidates)
+        TopSelectionPolicy::Diverse | TopSelectionPolicy::LineDiverse => selected.extend(
+            DiverseCandidates::new(candidates, policy == TopSelectionPolicy::LineDiverse)
                 .skip(offset)
                 .take(limit)
                 .map(|candidate| candidate.id.clone()),
@@ -45,16 +45,18 @@ pub(crate) fn select_top_candidate_ids_at(
 }
 
 /// Yield the complete policy order without owning any IDs. Paging must consume
-/// this order before cloning, so an offset never restarts the file rotation.
+/// this order before cloning, so an offset never restarts the group rotation.
 struct DiverseCandidates<'a> {
     remaining: &'a [RankedPlanCandidate],
+    by_line: bool,
     active_groups: VecDeque<VecDeque<&'a RankedPlanCandidate>>,
 }
 
 impl<'a> DiverseCandidates<'a> {
-    fn new(candidates: &'a [RankedPlanCandidate]) -> Self {
+    fn new(candidates: &'a [RankedPlanCandidate], by_line: bool) -> Self {
         Self {
             remaining: candidates,
+            by_line,
             active_groups: VecDeque::new(),
         }
     }
@@ -73,7 +75,7 @@ impl<'a> Iterator for DiverseCandidates<'a> {
                 .unwrap_or(self.remaining.len());
             let (tier, remaining) = self.remaining.split_at(tier_end);
             self.remaining = remaining;
-            self.active_groups = group_tier(tier);
+            self.active_groups = group_tier(tier, self.by_line);
         }
         let mut group = self.active_groups.pop_front()?;
         let candidate = group.pop_front().expect("active groups contain candidates");
@@ -84,17 +86,21 @@ impl<'a> Iterator for DiverseCandidates<'a> {
     }
 }
 
-fn group_tier(candidates: &[RankedPlanCandidate]) -> VecDeque<VecDeque<&RankedPlanCandidate>> {
-    let mut group_index = HashMap::<&Utf8Path, usize>::new();
+fn group_tier(
+    candidates: &[RankedPlanCandidate],
+    by_line: bool,
+) -> VecDeque<VecDeque<&RankedPlanCandidate>> {
+    let mut group_index = HashMap::<(&Utf8Path, Option<u32>), usize>::new();
     let mut groups = Vec::<VecDeque<&RankedPlanCandidate>>::new();
 
     for candidate in candidates {
-        let index = if let Some(index) = group_index.get(candidate.path.as_path()) {
+        let key = (candidate.path.as_path(), by_line.then_some(candidate.line));
+        let index = if let Some(index) = group_index.get(&key) {
             *index
         } else {
             let index = groups.len();
             groups.push(VecDeque::new());
-            group_index.insert(candidate.path.as_path(), index);
+            group_index.insert(key, index);
             index
         };
         groups[index].push_back(candidate);

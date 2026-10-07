@@ -157,7 +157,7 @@
         "mode": { "type": "string", "enum": ["candidate_ids", "top"] },
         "policy": {
           "type": "string",
-          "enum": ["explicit_candidates", "strict", "file_round_robin_v1"]
+          "enum": ["explicit_candidates", "strict", "file_round_robin_v1", "line_round_robin_v1"]
         },
         "requested": { "type": "integer", "minimum": 1 },
         "selected": { "type": "integer", "minimum": 0 },
