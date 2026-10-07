@@ -8,20 +8,22 @@ sources:
 - id: guide
   resource: ../pypi-publishing.md
   working_tree: modified
-  sha256: 728fc5cf7294b63a34fff4fb5d7789f42dd67eafbb30ed71c487cb0a22bc6c02
-  revision: 3e98a0386d1e531e2c1961f117a73d9378f2dea7
+  sha256: 360d9a07d70ecffad7583352bfe8f266d858587aa9c9b8e665e3266121786c3e
+  revision: 252654579792ede15081c8913e9b0ea59dd71a68
 - id: workflow
   resource: ../../.github/workflows/publish-pypi.yml
   working_tree: untracked
   sha256: 83729c030760d213a51ad3235136728133f83f916bd0af577b76199f5ca2c060
 - id: validator
   resource: ../../tools/pypi_release.py
-  working_tree: untracked
-  sha256: 920a311549b60351b58357afba94a1a6a9eaea520740d1db410615f65a6f5196
+  working_tree: modified
+  sha256: fd374ab48a99035ec0e7555490c162d15545f4b887fb728a9127be8d3b817bab
+  revision: 252654579792ede15081c8913e9b0ea59dd71a68
 - id: tests
   resource: ../../tests/test_pypi_release.py
-  working_tree: untracked
-  sha256: d3b8f853dc0e9253b8774bf884604292ac13e0b33cfeeeda40d58bc64378c426
+  working_tree: modified
+  sha256: 7ef177aeb7745b1dd32c8b87f8478490f2f3ae0daf4187273791aa938572004d
+  revision: 252654579792ede15081c8913e9b0ea59dd71a68
 - id: wheel-smoke
   resource: ../../tests/wheel_smoke.py
   revision: ff50918cb14ff39c67c0a594b665fd29d73080b4
@@ -62,7 +64,11 @@ GitHub Release用のビルドでは、PR検証と手動検証は実行イベン�
 
 ビルド後のwheelスモークテストは、`Elastic-2.0`と移管先のRepository・Issues・Changelog URLを確認してから、隔離環境へのインストールとCLI実行を検証する。メタデータの回帰テストでは、旧`MIT`ライセンスと旧組織のURLを拒否する。ライセンスや公開URLを変更するときは、この期待値も更新する。[^wheel-smoke][^wheel-smoke-tests]
 
+ライセンス本文の比較は、Windowsのcheckoutで生じるCRLFとLFの違いだけを許容する。本文や空白の変更は拒否し、wheel自体のバイト列とSHA-256照合は変更しない。[^validator][^tests]
+
 ローカルテストは、不足・破損したwheel、異なる版やライセンス、重複したメタデータ、無効なタグを拒否する条件を検証する。実際のOIDC認証、Environment承認、PyPIへのアップロードはローカル検証の対象外であり、初回TestPyPI公開時に確認する。[^tests][^guide]
+
+ワークフローや検証コードを修正した場合は、mainへのマージ後に新しい手動実行を開始する。GitHubのRe-runは元のコミットを使うため、コード修正を反映しない。[^guide]
 
 公開ジョブは既存ファイルを自動的にスキップしない。一部だけアップロードされた場合は、登録済みのファイルとハッシュを調べ、必要なら新しい版を公開する。workflow名、リポジトリ所有者、Environment名、Python対応範囲、wheelのプラットフォーム名、ライセンス本文を変えたときは、登録値と検証条件を読み直す。[^guide][^validator]
 

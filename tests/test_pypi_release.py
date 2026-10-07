@@ -110,6 +110,55 @@ def test_accepts_equivalent_python_specifier_formatting(
     assert result.returncode == 0, result.stderr
 
 
+@pytest.mark.parametrize("line_ending", [b"\n", b"\r\n"], ids=["LF", "CRLF"])
+def test_accepts_license_line_endings_without_changing_wheel_bytes(
+    release_assets: Path, line_ending: bytes
+) -> None:
+    wheel = release_assets / "hoimin-1.2.3-py3-none-win_amd64.whl"
+    with zipfile.ZipFile(wheel) as archive:
+        files = {name: archive.read(name) for name in archive.namelist()}
+    for name in ("LICENSE", "vendor/ruff_python_parser/LICENSE"):
+        member = "hoimin-1.2.3.dist-info/licenses/" + name
+        files[member] = (
+            files[member].replace(b"\r\n", b"\n").replace(b"\n", line_ending)
+        )
+    with zipfile.ZipFile(wheel, "w") as archive:
+        for name, content in files.items():
+            archive.writestr(name, content)
+    write_checksums(release_assets)
+    original = wheel.read_bytes()
+    result = prepare(release_assets)
+    assert result.returncode == 0, result.stderr
+    assert (release_assets.parent / "dist" / wheel.name).read_bytes() == original
+
+
+@pytest.mark.parametrize(
+    "license_name", ["LICENSE", "vendor/ruff_python_parser/LICENSE"]
+)
+@pytest.mark.parametrize("damage", ["text", "whitespace"])
+def test_rejects_license_changes_with_windows_line_endings(
+    release_assets: Path, license_name: str, damage: str
+) -> None:
+    wheel = release_assets / "hoimin-1.2.3-py3-none-win_amd64.whl"
+    with zipfile.ZipFile(wheel) as archive:
+        files = {name: archive.read(name) for name in archive.namelist()}
+    member = "hoimin-1.2.3.dist-info/licenses/" + license_name
+    content = files[member].replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")
+    files[member] = (
+        content.replace(b"License", b"Modified", 1)
+        if damage == "text"
+        else content.replace(b" ", b"  ", 1)
+    )
+    with zipfile.ZipFile(wheel, "w") as archive:
+        for name, content in files.items():
+            archive.writestr(name, content)
+    write_checksums(release_assets)
+    result = prepare(release_assets)
+    assert result.returncode != 0
+    assert "unexpected license text" in result.stderr
+    assert not (release_assets.parent / "dist").exists()
+
+
 @pytest.mark.parametrize(
     "damage",
     [

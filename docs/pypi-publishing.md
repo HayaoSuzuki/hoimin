@@ -11,6 +11,10 @@ texts match the expected release. It stages only the verified wheels. A separate
 job uploads those same bytes using PyPI Trusted Publishing and creates publish
 attestations. It does not build or execute downloaded code in the upload job.
 
+License comparisons allow only the CRLF/LF line-ending difference introduced by
+Windows checkouts. Other text and whitespace differences are rejected. Wheel
+bytes and SHA-256 checks remain unchanged.
+
 Supported distributions remain Windows x86-64, manylinux2014 x86-64 and macOS
 11+ arm64, with Python `>=3.14,<3.15`. This workflow publishes wheels only.
 Standalone executable archives and `SHA256SUMS` remain on GitHub Releases.
@@ -115,7 +119,11 @@ For OIDC errors, compare the repository owner, workflow filename and environment
 with the registration on the selected index. PyPI and TestPyPI registrations are
 independent. Runs started from a branch other than `main` skip publication.
 
-If no files were uploaded, fix the configuration and rerun the same tag. Duplicate
+If no files were uploaded, fix the configuration and retry the same tag. When
+the workflow or validator code changes, merge the fix and start a new manual run
+from `main`. GitHub's **Re-run** retains the original commit and will not pick up
+the fix; see [re-running workflows](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/re-run-workflows-and-jobs).
+Duplicate
 uploads fail: `skip-existing` is intentionally disabled, as recommended by the
 [publishing action](https://github.com/pypa/gh-action-pypi-publish#tolerating-release-package-file-duplicates).
 If an upload stops after publishing some files, inspect the index's files and
