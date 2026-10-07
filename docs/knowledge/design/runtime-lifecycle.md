@@ -6,9 +6,10 @@ status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
 - id: readme
-  resource: ../../../README.md
-  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
-  working_tree: clean
+  resource: ../../usage.md
+  revision: 5a45bdc3bd444771c4c57e30fe211f174850ce93
+  working_tree: untracked
+  sha256: 6894a34743882cc26fdd1f39cb536c94dfc20d5f1dcf33b3cb7f3da9b13e6bef
 - id: disk
   resource: ../../superpowers/specs/2026-08-27-disk-safe-mutation-execution-design.md
   revision: a7daea0b557cd435c1e55b540392fbdd116348e1
@@ -57,9 +58,9 @@ Hoiminは、実行にかかった経過時間（wall-clock時間）、子孫プ�
 
 # OSごとの制限とプロセス終了の保証
 
-READMEの公開契約では、OSの機能でメモリとプロセス数の上限を強制する方式（hard enforcement）と、利用できる機能の範囲で制御する方式（best-effort）を区別している。WindowsではJob Object、Linuxでは権限を委譲されたcgroup v2が上限強制の基盤となる。これらを利用できない場合の条件は別に定められており、macOSではメモリ上限を強制しない。[^readme]
+利用方法の公開契約では、OSの機能でメモリとプロセス数の上限を強制する方式（hard enforcement）と、利用できる機能の範囲で制御する方式（best-effort）を区別している。WindowsではJob Object、Linuxでは権限を委譲されたcgroup v2が上限強制の基盤となる。これらを利用できない場合の条件は別に定められており、macOSではメモリ上限を強制しない。[^readme]
 
-Unix向けの共通実装（portable経路）では、Hoiminが直接起動して管理するプロセス（root）が生存中にタイムアウトまたはキャンセルを受けると、そのプロセスグループを終了させ、rootの終了状態を回収する（reap）。rootが自然終了した後に残る子孫プロセスの後処理は保証範囲外である。これはREADMEに記載された契約の要約であり、今回すべてのOSで実測した結果ではない。[^readme]
+Unix向けの共通実装（portable経路）では、Hoiminが直接起動して管理するプロセス（root）が生存中にタイムアウトまたはキャンセルを受けると、そのプロセスグループを終了させ、rootの終了状態を回収する（reap）。rootが自然終了した後に残る子孫プロセスの後処理は保証範囲外である。これは利用方法に記載された契約の要約であり、今回すべてのOSで実測した結果ではない。[^readme]
 
 # 最終結果の確定と出力完了
 
@@ -107,7 +108,7 @@ Issue487では、選択済みbackendのmodeと安定したmechanism名を、Star
 
 実際のbackend情報を渡したRustの遷移試験と、OSが上限を強制したという実機の証拠は区別する。Windowsの制限単位は独立したIssue488の対象であり、この情報伝播の修正だけでrun全体の上限を保証しない。[^issue-487]
 
-[^readme]: [README.md](../../../README.md)。
+[^readme]: [利用方法](../../usage.md)。
 [^disk]: [2026-08-27-disk-safe-mutation-execution-design.md](../../superpowers/specs/2026-08-27-disk-safe-mutation-execution-design.md)。
 [^terminal]: [2026-07-29-run-finished-terminal-design.md](../../superpowers/specs/2026-07-29-run-finished-terminal-design.md)。
 [^delivery]: [2026-09-08-issue-335-report-shutdown-design.md](../../superpowers/specs/2026-09-08-issue-335-report-shutdown-design.md)。

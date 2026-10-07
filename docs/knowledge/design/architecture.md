@@ -29,9 +29,10 @@ sources:
   working_tree: modified
   sha256: 876febae6c90fcbdc18e79d97ba1179fa5553871d1369d95f85405041d663d1e
 - id: workspace-path-policy
-  resource: ../../../README.md
-  revision: a3b78d913f57ffc89edf753f6ae36bd940873f1e
-  working_tree: clean
+  resource: ../../usage.md
+  revision: 5a45bdc3bd444771c4c57e30fe211f174850ce93
+  working_tree: untracked
+  sha256: 6894a34743882cc26fdd1f39cb536c94dfc20d5f1dcf33b3cb7f3da9b13e6bef
 - id: workspace-path-implementation
   resource: ../../../crates/hoimin-cli/src/workspace/root.rs
   revision: b87a5a4a68d628679ac501573894fedb7149d5b6
@@ -161,7 +162,7 @@ crateの依存、実行要求と完了通知、コピーへの変異適用、解
 Issue 477では、path-only `.pth` に登録した元のsrcディレクトリがworkerより先にimportされる問題を扱う。`--import-root src` はworkerのimport探索先を明示し、`--file`・`--line` の候補範囲を広げない。worker root、明示したimport root、source root、継承PYTHONPATHの順序を保つ。指定ディレクトリがコピーに存在しない場合はbaseline前に拒否する。正規パッケージのpath-only `.pth` を検証対象とし、独自finderや環境変数を無視するPython起動まで保証しない。[^issue-477]
 
 [^initial]: [2026-07-18-python-mutation-tool-design.md](../../superpowers/specs/2026-07-18-python-mutation-tool-design.md)。
-[^workspace-path-policy]: [README.md](../../../README.md)。
+[^workspace-path-policy]: [利用方法](../../usage.md)。
 [^workspace-path-implementation]: [workspace/root.rs](../../../crates/hoimin-cli/src/workspace/root.rs)。
 [^workspace-path-tests]: [workspace_handler.rs](../../../crates/hoimin-cli/tests/workspace_handler.rs)。
 [^workspace-path-e2e]: [run_e2e.rs](../../../crates/hoimin-cli/tests/run_e2e.rs)。

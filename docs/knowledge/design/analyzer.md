@@ -231,9 +231,10 @@ sources:
   revision: a7daea0b557cd435c1e55b540392fbdd116348e1
   working_tree: clean
 - id: readme
-  resource: ../../../README.md
-  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
-  working_tree: clean
+  resource: ../../usage.md
+  revision: 5a45bdc3bd444771c4c57e30fe211f174850ce93
+  working_tree: untracked
+  sha256: 6894a34743882cc26fdd1f39cb536c94dfc20d5f1dcf33b3cb7f3da9b13e6bef
 - id: issue-486
   resource: ../../superpowers/specs/2026-09-11-issue-486-type-parameter-bindings-design.md
   working_tree: untracked
@@ -385,7 +386,7 @@ Issue #468 の設計では、`case -1` などの数値パターンに通常の�
 
 # 候補数と解析メモリの上限
 
-候補件数を制限しても、解析に使うメモリ全体の上限にはならない。ソース本文、トークン列、ASTなどの大きさは入力サイズに依存するためである。READMEもこの適用範囲を明記している。[^readme]
+候補件数を制限しても、解析に使うメモリ全体の上限にはならない。ソース本文、トークン列、ASTなどの大きさは入力サイズに依存するためである。利用方法もこの適用範囲を明記している。[^readme]
 
 変異候補を検証する際は、次の対象を分けて調べる。各行は異なる資料で扱われた契約であり、全組合せを一つの試験で確認したものではない。[^operator-report][^span][^bounded][^readme]
 
@@ -409,7 +410,7 @@ Issue #468 の設計では、`case -1` などの数値パターンに通常の�
 
 [9月11日境界監査](../audits/boundary-2026-09.md)では、構文解析成功とPythonのコンパイル成功の差、ジェネリック型パラメータが有効な範囲、入力形状別の規模検証を追加課題に挙げた。先行報告で試験した入力と条件が異なるため、先行する成功結果だけではこれらの課題を判断できない。
 
-演算子、名前解決、変更範囲の検証、候補順序、保持構造を変更したら、対応する監査と実装比較用のテストを再確認する。原文の演算子数は報告時点の数値として読み、現行一覧はREADMEと実装を照合する。
+演算子、名前解決、変更範囲の検証、候補順序、保持構造を変更したら、対応する監査と実装比較用のテストを再確認する。原文の演算子数は報告時点の数値として読み、現行一覧は利用方法と実装を照合する。
 
 # 型パラメータとruntime候補の名前解決
 
@@ -449,7 +450,7 @@ Ruffや `ast.parse` が受け入れても、重複リテラルキーはCPython�
 [^operator-report]: [2026-09-08-python-operator-coverage.md](../../superpowers/reports/2026-09-08-python-operator-coverage.md)。
 [^span]: [2026-08-15-lean-byte-span-preservation-audit.md](../../superpowers/reports/2026-08-15-lean-byte-span-preservation-audit.md)。
 [^bounded]: [2026-08-14-lean-bounded-candidate-discovery-audit.md](../../superpowers/reports/2026-08-14-lean-bounded-candidate-discovery-audit.md)。
-[^readme]: [README.md](../../../README.md)。
+[^readme]: [利用方法](../../usage.md)。
 
 [^issue-486]: [2026-09-11-issue-486-type-parameter-bindings-design.md](../../superpowers/specs/2026-09-11-issue-486-type-parameter-bindings-design.md)。
 

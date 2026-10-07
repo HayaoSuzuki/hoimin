@@ -4,8 +4,8 @@ import pytest
 
 
 @pytest.fixture(scope="module")
-def readme() -> str:
-    return (Path(__file__).resolve().parents[1] / "README.md").read_text(
+def usage() -> str:
+    return (Path(__file__).resolve().parents[1] / "docs/usage.md").read_text(
         encoding="utf-8"
     )
 
@@ -21,8 +21,8 @@ def readme() -> str:
         "top N among retained candidates",
     ],
 )
-def test_documents_ranked_two_command_workflow(readme: str, text: str) -> None:
-    assert text in readme
+def test_documents_ranked_two_command_workflow(usage: str, text: str) -> None:
+    assert text in usage
 
 
 @pytest.mark.parametrize(
@@ -35,6 +35,6 @@ def test_documents_ranked_two_command_workflow(readme: str, text: str) -> None:
     ],
 )
 def test_documents_saved_rank_and_oversized_top_semantics(
-    readme: str, text: str
+    usage: str, text: str
 ) -> None:
-    assert text in readme
+    assert text in usage

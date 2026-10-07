@@ -11,12 +11,16 @@ modify production code solely to make the mutant fail.
 
 ## Obtain hoimin
 
-When using hoimin on another project, use a prebuilt GitHub Release wheel through
-authenticated `gh`, then install it with `uv tool install` or run it with `uvx`.
-Follow [Release wheel setup](release-wheel.md) for private-repository access,
-platform selection, and version pinning. Keep the same hoimin version throughout
-plan and verify. When validating unreleased changes to hoimin itself, build the
-working tree instead: a released wheel cannot test those changes.
+When using hoimin on another project, install from PyPI:
+
+```console
+uv tool install --python 3.14 hoimin
+```
+
+Follow [PyPI setup](installation.md) for platform requirements, version pinning,
+and the `uvx` alternative. Keep the same hoimin version throughout plan and
+verify. When validating unreleased changes to hoimin itself, build the working
+tree instead: a released wheel cannot test those changes.
 
 ## Keep disk use bounded
 

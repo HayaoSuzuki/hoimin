@@ -6,10 +6,10 @@ status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
 - id: tracing-readme
-  resource: ../../../README.md
-  revision: 3912d73220917308ce6a966ad2b57ec9b566490c
-  working_tree: modified
-  sha256: a50c7c1f6329eaf5581ece30a9c8c91231c3bfe6ee557ed036d140e828a318b6
+  resource: ../../usage.md
+  revision: 5a45bdc3bd444771c4c57e30fe211f174850ce93
+  working_tree: untracked
+  sha256: 6894a34743882cc26fdd1f39cb536c94dfc20d5f1dcf33b3cb7f3da9b13e6bef
 - id: tracing-runtime
   resource: ../../../crates/hoimin-cli/src/telemetry.rs
   revision: 3912d73220917308ce6a966ad2b57ec9b566490c
@@ -205,5 +205,5 @@ CLIはログを容量制限付きキューから別スレッドへ渡す。キ�
 
 端末判定、フィルター、完了件数、stderrの書込み単位を変える場合は、通常実行・再開・出力先の詰まりを再検証する。今回の実行結果とOSの範囲は[レビュー記録](../../superpowers/reports/2026-09-26-tracing-progress.md)を参照する。
 
-[^tracing-readme]: [利用方法](../../../README.md)。
+[^tracing-readme]: [利用方法](../../usage.md)。
 [^tracing-runtime]: [CLIの診断出力](../../../crates/hoimin-cli/src/telemetry.rs)。

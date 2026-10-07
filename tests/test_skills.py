@@ -177,9 +177,9 @@ def test_mutation_skills_require_disk_safe_execution(
 
 
 def test_macos_memory_policy_is_documented() -> None:
-    readme = (ROOT / "README.md").read_text(encoding="utf-8")
-    assert "--max-memory" in readme
-    assert "not enforced" in readme
+    usage = (ROOT / "docs/usage.md").read_text(encoding="utf-8")
+    assert "--max-memory" in usage
+    assert "not enforced" in usage
 
 
 @pytest.mark.parametrize("root", [".agents", ".claude"])

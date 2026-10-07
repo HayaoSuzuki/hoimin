@@ -6,10 +6,10 @@ status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
 - id: readme
-  resource: ../../README.md
-  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
-  working_tree: modified
-  sha256: 6f6a014526b10fa17386463390d61c4989350de9908236094c82bc21068eb3e6
+  resource: ../usage.md
+  revision: 5a45bdc3bd444771c4c57e30fe211f174850ce93
+  working_tree: untracked
+  sha256: 6894a34743882cc26fdd1f39cb536c94dfc20d5f1dcf33b3cb7f3da9b13e6bef
 - id: development
   resource: ../development.md
   revision: a7daea0b557cd435c1e55b540392fbdd116348e1
@@ -93,7 +93,7 @@ Leanモデルの証明とRustの対応検証は、それぞれの範囲を明示
 
 修正後にYAMLと参照関係を再検査し、上表に結果を記録した。出典306件のうち1件は、この点検で追加した日本語文章規範である。
 
-[^readme]: [README.md](../../README.md)。
+[^readme]: [利用方法](../usage.md)。
 [^development]: [development.md](../development.md)。
 [^boundary]: [README.md](../superpowers/reports/2026-09-11-boundary-contract-audit/README.md)。
 [^progress]: [2026-09-11-progress-input-lean.md](../superpowers/reports/2026-09-11-progress-input-lean.md)。

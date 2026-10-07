@@ -142,9 +142,10 @@ sources:
   revision: a7daea0b557cd435c1e55b540392fbdd116348e1
   working_tree: clean
 - id: readme
-  resource: ../../../README.md
-  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
-  working_tree: clean
+  resource: ../../usage.md
+  revision: 5a45bdc3bd444771c4c57e30fe211f174850ce93
+  working_tree: untracked
+  sha256: 6894a34743882cc26fdd1f39cb536c94dfc20d5f1dcf33b3cb7f3da9b13e6bef
 - id: development
   resource: ../../development.md
   revision: a7daea0b557cd435c1e55b540392fbdd116348e1
@@ -237,7 +238,7 @@ Issue #473 の設計では、明示symbolと同じファイルにある子symbol
 [^initial]: [2026-07-21-agent-plan-verify-design.md](../../superpowers/specs/2026-07-21-agent-plan-verify-design.md)。
 [^ranked]: [2026-07-27-ranked-plan-top-verify-design.md](../../superpowers/specs/2026-07-27-ranked-plan-top-verify-design.md)。
 [^diverse]: [2026-09-08-issue-433-diverse-selection-design.md](../../superpowers/specs/2026-09-08-issue-433-diverse-selection-design.md)。
-[^readme]: [README.md](../../../README.md)。
+[^readme]: [利用方法](../../usage.md)。
 [^development]: [development.md](../../development.md)。
 [^plan]: [plan.rs](../../../crates/hoimin-cli/src/plan.rs)。
 

@@ -13,8 +13,8 @@ fail.
 
 Keep the hoimin version used to create the plan throughout the improvement loop.
 For setup on another project, follow
-[Release wheel setup](../hoimin-mutation-testing/release-wheel.md): download a
-prebuilt wheel with authenticated `gh` and use `uv tool install` or `uvx`.
+[PyPI setup](../hoimin-mutation-testing/installation.md): install with
+`uv tool install --python 3.14 hoimin`, or use the pinned `uvx` alternative.
 If the version must change, regenerate the plan. To validate unreleased changes
 to hoimin itself, use a build of the working tree.
 

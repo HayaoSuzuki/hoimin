@@ -4,7 +4,7 @@
 
 ## 契約と最小の証拠
 
-[READMEのsession再開契約](../../../README.md#sessions-and-resume)は、互換な不完全runを再利用し、不互換な条件の結果を混在させないとする。現在のfingerprintはコピーのinclude/exclude設定を含めないため、テストが読む補助ファイルの有無が変わっても、以前の結果を選んでしまう。分類はconfirmed bugである。
+[session再開契約](../../usage.md#sessions-and-resume)は、互換な不完全runを再利用し、不互換な条件の結果を混在させないとする。現在のfingerprintはコピーのinclude/exclude設定を含めないため、テストが読む補助ファイルの有無が変わっても、以前の結果を選んでしまう。分類はconfirmed bugである。
 
 補助ファイル `strict.flag` がある場合だけ `subject.value() == 10` を検査するテストで再現した。subjectには加算3箇所を置き、max-mutants=1で先頭候補だけを実行してSQLiteへ保存する。初回はflagがコピーされ、候補はkilledとなる。次のresumeでflagをexcludeすると、同じ候補を新規実行すればsurvivedになるが、実際は古いkilledを再利用した。scoreも新規実行の0.0に対して1.0となった。
 
