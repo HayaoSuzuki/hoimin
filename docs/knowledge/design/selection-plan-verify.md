@@ -153,6 +153,22 @@ sources:
   resource: ../../../crates/hoimin-cli/src/plan.rs
   revision: a7daea0b557cd435c1e55b540392fbdd116348e1
   working_tree: clean
+- id: issue-709-design
+  resource: ../../superpowers/reports/issue-709/design.md
+  working_tree: untracked
+  sha256: 4b5d6005177bfb151a3a9a6dce053918c571ed970e9d2ed5c1761c2991773d21
+- id: issue-709-plan
+  resource: ../../superpowers/reports/issue-709/plan.md
+  working_tree: untracked
+  sha256: 4c475534f4f19a29ad98324afc6613cf6e897c1c1c7d3877205b2cd21e2f13eb
+- id: issue-709-assessment
+  resource: ../../superpowers/reports/issue-709/assessment.md
+  working_tree: untracked
+  sha256: c3fb86ebf25c5d4b8bfa2f9eb13fb57faf1d276c1e0e1d6706406da5d2b083fa
+- id: issue-709-review
+  resource: ../../superpowers/reports/issue-709/review.md
+  working_tree: untracked
+  sha256: 291049426d815f46c6b68d75c81415e80024165972fc60df65f0fcfb09ed9800
 ---
 
 # 候補発見と実行の分離
@@ -329,3 +345,15 @@ Issue #480 は、Issue #476 の定義存在確認にも共通decoderを使う。
 
 [^issue-480-symbol]: [target/mod.rs](../../../crates/hoimin-cli/src/target/mod.rs).
 [^issue-480-symbol-spec]: [Issue #480 design](../../superpowers/specs/2026-09-14-issue-480-source-encoding-design.md).
+
+# 反復検証の導入判断（Issue #709）
+
+反復実行の組み込みは保留とする。論文が測った個別テストの不安定化と、hoimin が観測するコマンド全体の終了状態は一致しない。固定候補の既存 verify 反復による限定試行では、制御された交互終了を観測できた一方、実パッケージの狭いチェックで分類の変化は得られなかった。これは不要・安定性の証明ではない。実利用で判断を変える終了状態の揺らぎと追加コストを記録し、必要性を再評価する。新しい CLI オプションや分類は追加していない。[^issue-709-assessment]
+
+[^issue-709-design]: [design.md](../../superpowers/reports/issue-709/design.md)。
+
+[^issue-709-plan]: [plan.md](../../superpowers/reports/issue-709/plan.md)。
+
+[^issue-709-assessment]: [assessment.md](../../superpowers/reports/issue-709/assessment.md)。
+
+[^issue-709-review]: [review.md](../../superpowers/reports/issue-709/review.md)。
