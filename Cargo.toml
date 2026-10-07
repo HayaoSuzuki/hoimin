@@ -7,7 +7,7 @@ resolver = "3"
 littrs-ruff-python-parser = { path = "vendor/ruff_python_parser" }
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.88"
 license = "Elastic-2.0"

@@ -45,6 +45,8 @@ def repository(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     root.mkdir()
     for name in VERSION_FILES:
         shutil.copyfile(ROOT / name, root / name)
+    # Keep tag-allocation scenarios independent of the release being prepared.
+    automation.set_version(root, "0.1.0")
     git(root, "init", "--initial-branch=main")
     git(root, "config", "user.name", "Release test")
     git(root, "config", "user.email", "release@example.invalid")
@@ -313,7 +315,7 @@ def test_prepare_propagates_skip_and_error_without_publishing(
         "if mode == 'release': print('v1.2.3')\n"
         "if mode == 'error': sys.exit(23)\n"
     )
-    shutil.copyfile(ROOT / "Cargo.toml", tmp_path / "Cargo.toml")
+    (tmp_path / "Cargo.toml").write_text('[workspace.package]\nversion = "0.1.0"\n')
     monkeypatch.setenv("PATH", str(fake_bin) + os.pathsep + os.environ["PATH"])
     monkeypatch.setenv("RELEASE_TEST_MODE", mode)
     monkeypatch.setenv("PUBLISH", "false" if mode == "preview" else "true")
@@ -360,13 +362,18 @@ def test_tag_push_with_lost_response_is_recovered(
     assert automation.remote_tags(repository) == {"v0.1.0": commit}
 
 
-def test_workspace_version_can_raise_release_floor(repository: Path) -> None:
-    git(repository, "tag", "v0.1.8")
+@pytest.mark.parametrize("version", ["0.2.0", "1.0.0"])
+def test_workspace_version_can_raise_release_floor(
+    repository: Path, version: str
+) -> None:
+    git(repository, "tag", "v0.1.19")
     git(repository, "push", "origin", "--tags")
-    assert release(repository, "set-version", "1.0.0").returncode == 0
-    git(repository, "commit", "-am", "major")
+    assert release(repository, "set-version", version).returncode == 0
+    git(repository, "commit", "-am", "raise release floor")
     commit = git(repository, "rev-parse", "HEAD")
-    assert release(repository, "tag", "--commit", commit).stdout.strip() == "v1.0.0"
+    assert (
+        release(repository, "tag", "--commit", commit).stdout.strip() == f"v{version}"
+    )
 
 
 @pytest.mark.parametrize("version", ["1.2.3", "1.2.3-dev.123"])
