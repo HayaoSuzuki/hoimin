@@ -11,7 +11,7 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.88"
 license = "Elastic-2.0"
-repository = "https://github.com/tokyogas-tech/hoimin"
+repository = "https://github.com/HayaoSuzuki/hoimin"
 
 [workspace.lints.clippy]
 all = "deny"

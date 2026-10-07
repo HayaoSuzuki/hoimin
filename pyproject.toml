@@ -20,7 +20,9 @@ classifiers = [
 ]
 
 [project.urls]
-Repository = "https://github.com/tokyogas-tech/hoimin"
+Repository = "https://github.com/HayaoSuzuki/hoimin"
+Issues = "https://github.com/HayaoSuzuki/hoimin/issues"
+Changelog = "https://github.com/HayaoSuzuki/hoimin/releases"
 
 [tool.maturin]
 bindings = "bin"

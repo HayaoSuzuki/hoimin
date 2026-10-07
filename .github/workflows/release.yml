@@ -15,7 +15,7 @@ permissions:
 
 concurrency:
   # Different merges must not cancel each other's pending releases.
-  group: release-${{ github.event_name }}-${{ github.event.pull_request.merge_commit_sha || github.sha }}
+  group: release-${{ github.event_name }}-${{ github.event_name == 'pull_request_target' && github.event.pull_request.merge_commit_sha || github.sha }}
   cancel-in-progress: false
 
 jobs:
@@ -31,9 +31,11 @@ jobs:
       commit: ${{ steps.version.outputs.commit }}
       publish: ${{ steps.version.outputs.publish }}
     steps:
+      # PR payload merge_commit_sha can lag behind a synchronize event.
+      # Only post-merge publication uses it; previews use the event commit.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
+          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.merge_commit_sha || github.sha }}
           fetch-depth: 0
           persist-credentials: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.merged == true }}
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -43,7 +45,7 @@ jobs:
         id: version
         env:
           PUBLISH: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.merged == true }}
-          COMMIT: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
+          COMMIT: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.merge_commit_sha || github.sha }}
         run: |
           if [[ "$PUBLISH" == true ]]; then
             tag=$(python tools/release.py tag --commit "$COMMIT")

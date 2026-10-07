@@ -411,7 +411,8 @@ def assert_github_release(workflow: str) -> None:
     assert decoded["concurrency"] == {
         "group": (
             "release-${{ github.event_name }}-"
-            "${{ github.event.pull_request.merge_commit_sha || github.sha }}"
+            "${{ github.event_name == 'pull_request_target' && "
+            "github.event.pull_request.merge_commit_sha || github.sha }}"
         ),
         "cancel-in-progress": False,
     }
@@ -543,6 +544,7 @@ def test_every_workflow_uses_known_actions_with_full_commit_pins(path: Path) -> 
         CACHE_SAVE_ACTION,
         UPLOAD_ARTIFACT_ACTION,
         "actions/download-artifact",
+        "pypa/gh-action-pypi-publish",
     }
     decoded = workflow_contract(path.read_text(encoding="utf-8"))
     actions = [
@@ -1657,11 +1659,16 @@ def test_merged_prs_publish_only_to_github_releases() -> None:
     assert_github_release(workflow)
 
 
-def test_release_version_preparation_uses_only_merged_base_commit() -> None:
+def test_release_uses_event_commit_except_after_merging_to_base() -> None:
     workflow = workflow_document(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
     jobs = workflow_jobs(workflow)
     prepare = jobs["prepare"]
-    trusted_ref = "${{ github.event.pull_request.merge_commit_sha || github.sha }}"
+    # A synchronize payload may still carry the previous merge_commit_sha.
+    # Previews use the event merge commit; publication uses the merged base commit.
+    trusted_ref = (
+        "${{ github.event_name == 'pull_request_target' && "
+        "github.event.pull_request.merge_commit_sha || github.sha }}"
+    )
     publish_condition = (
         "${{ github.event_name == 'pull_request_target' && "
         "github.event.pull_request.merged == true }}"
