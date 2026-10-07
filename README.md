@@ -915,7 +915,7 @@ Windows Job Object tests run on Windows and Linux hard-limit tests require a del
 
 Merging a pull request into `main` starts `.github/workflows/release.yml`.
 It reserves a `vMAJOR.MINOR.PATCH` tag on the merged commit, builds and checks
-all three platforms, then publishes a [GitHub Release](https://github.com/tokyogas-tech/hoimin/releases)
+all three platforms, then publishes a [GitHub Release](https://github.com/HayaoSuzuki/hoimin/releases)
 with generated release notes and `SHA256SUMS`:
 
 | Platform | Standalone executable archive | Python wheel |
@@ -974,11 +974,13 @@ last. There is no separate client-side read/compare/update of `Latest` that coul
 race with another run. The GitHub API owns that selection; local tests check the
 outgoing request, while hosted execution remains the integration check.
 
-PyPI publication is not enabled. Before enabling it, add a separate manually
-triggered workflow, protect its GitHub environment with required reviewers
-or equivalent rules, and register PyPI Trusted Publishing for only that
-workflow and environment. Grant `id-token: write` only to its publication job,
-and update the workflow contract tests in the same change.
+PyPI publication uses the separate, manually triggered `publish-pypi.yml`
+workflow. Select a published ELv2 release tag and either TestPyPI (the default)
+or PyPI. It verifies all three wheels against `SHA256SUMS`, checks their package
+metadata and bundled licenses, and uploads the same wheel bytes through Trusted
+Publishing. Only the upload job has `id-token: write`; its GitHub environment
+controls approval. See [PyPI publishing](docs/pypi-publishing.md) for the initial
+account and environment setup, first publication, and retry procedure.
 
 ### Additional runtime mutations
 

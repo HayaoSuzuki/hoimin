@@ -1,0 +1,45 @@
+---
+type: Playbook
+title: PyPIへのwheel公開
+description: 手動公開の条件、Trusted Publishingの登録値、検証と再実行の範囲を示す。
+status: draft
+catalog_revision: 36aa4cd696f4db28cd4811a0995d85df89b56eb5
+sources:
+- id: guide
+  resource: ../pypi-publishing.md
+  working_tree: untracked
+  sha256: 4c43bb88d089c3b9759562a1c946fd231b5f962cbaa12ca418db5fa84295783b
+- id: workflow
+  resource: ../../.github/workflows/publish-pypi.yml
+  working_tree: untracked
+  sha256: 83729c030760d213a51ad3235136728133f83f916bd0af577b76199f5ca2c060
+- id: validator
+  resource: ../../tools/pypi_release.py
+  working_tree: untracked
+  sha256: 920a311549b60351b58357afba94a1a6a9eaea520740d1db410615f65a6f5196
+- id: tests
+  resource: ../../tests/test_pypi_release.py
+  working_tree: untracked
+  sha256: d3b8f853dc0e9253b8774bf884604292ac13e0b33cfeeeda40d58bc64378c426
+---
+
+# 公開の対象と手順
+
+`HayaoSuzuki/hoimin` の `main` から `publish-pypi.yml` を手動実行し、公開済みの安定版タグと送信先を指定する。送信先の既定値はTestPyPIで、PyPIへの公開は別の実行で選択する。登録値とコマンドの正本は[公開手順](../pypi-publishing.md)に置く。[^guide]
+
+準備ジョブは、タグのmainへの所属、GitHub Releaseの公開状態、3種類のwheelの名前・ハッシュ・メタデータ・ライセンス本文を確認する。検証後のwheelだけを公開ジョブへ渡し、公開ジョブにはソースのcheckoutやビルドを含めない。`id-token: write`はこのジョブだけに付与する。[^workflow][^validator]
+
+# アカウント側の設定
+
+PyPIとTestPyPIそれぞれに、所有者`HayaoSuzuki`、リポジトリ`hoimin`、ワークフロー`publish-pypi.yml`をTrusted Publisherとして登録する。Environmentは送信先と同じ`pypi`または`testpypi`を指定する。GitHub側で必須レビュアーとmainへのブランチ制限を設定する作業も必要であり、ワークフローの追加だけではこれらの保護は有効にならない。[^guide]
+
+# 検証範囲と再確認条件
+
+ローカルテストは、不足・破損したwheel、異なる版やライセンス、重複したメタデータ、無効なタグを拒否する条件を検証する。実際のOIDC認証、Environment承認、PyPIへのアップロードはローカル検証の対象外であり、初回TestPyPI公開時に確認する。[^tests][^guide]
+
+公開ジョブは既存ファイルを自動的にスキップしない。一部だけアップロードされた場合は、登録済みのファイルとハッシュを調べ、必要なら新しい版を公開する。workflow名、リポジトリ所有者、Environment名、Python対応範囲、wheelのプラットフォーム名、ライセンス本文を変えたときは、登録値と検証条件を読み直す。[^guide][^validator]
+
+[^guide]: [PyPI公開手順](../pypi-publishing.md)。
+[^workflow]: [手動公開ワークフロー](../../.github/workflows/publish-pypi.yml)。
+[^validator]: [配布物の検証処理](../../tools/pypi_release.py)。
+[^tests]: [公開準備の回帰テスト](../../tests/test_pypi_release.py)。

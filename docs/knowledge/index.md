@@ -6,6 +6,7 @@ okf_version: "0.2"
 
 - [このカタログの範囲と読み方](overview.md) - 参照コミット、証拠レベル、未追跡資料、更新方法。
 - [開発での参照・更新手順](../okf-workflow.md) - 作業開始時の確認、概念の作成基準、出典と索引の更新、完了時の検査。
+- [PyPIへのwheel公開](pypi-publishing.md) - 手動公開、Trusted Publishingの登録値、配布物の検証と再実行。
 
 # 設計と契約
 
