@@ -44,3 +44,22 @@ OKF:25 concept YAML headers, four reserved files, new source link/hash checked.
 The initial failed runs and corrected test assumptions above remain part of the
 evidence; their outcomes are not counted as success. Precommit repeats required
 workspace/vendor quality checks. PR creation, stack linking and cargo clean follow.
+
+## CI formatting correction (2026-10-07)
+
+[CI run 37584038612](https://github.com/tokyogas-tech/hoimin/actions/runs/37584038612/job/112669988610)
+failed Ruff formatting on the added list in `tests/test_ci_workflow.py`.
+The local verification above omitted the three Python quality commands documented
+in `docs/development.md`. Passing pytest and the Rust-only pre-commit hooks did
+not establish that the CI quality gate passed. Reporting completion before checking
+that gate was a verification error.
+
+Reproduced the exact formatting failure locally, then applied Ruff formatting.
+No test assertions or production behavior changed. The following CI commands now
+pass locally: `uv run --frozen --no-sync ruff format --check .` (27 files),
+`uv run --frozen --no-sync ruff check --no-fix .`, and
+`uv run --frozen --no-sync ty check`. The CI workflow contract suite passes all142
+tests after the correction. Future completion checks must cover every command in
+the documented local quality gate, including Python checks when Rust is the main
+implementation language; local evidence and remote CI status must be reported
+separately.
