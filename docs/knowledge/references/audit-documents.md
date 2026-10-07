@@ -724,6 +724,14 @@ sources:
   resource: ../../superpowers/reports/2026-09-15-audit-verification-promotion.md
   working_tree: untracked
   sha256: 3a3a79631919bc7f2d52b7e73c888345bf12050e7b5a2b198b7b24986b5191b1
+- id: default-operators
+  resource: ../../superpowers/reports/default-analyzer-operators/design.md
+  working_tree: untracked
+  sha256: 8aa57f82bc7545d7bf5d0d88fb7b2c1b07175272320cac19561bf413ec37f643
+- id: default-operators-review
+  resource: ../../superpowers/reports/default-analyzer-operators/review.md
+  working_tree: untracked
+  sha256: 9a0875f841d3b40d504c2a07b638ea03cbd403adb37b66ffd19c2ae43b3af719
 ---
 
 # 収録一覧
@@ -1235,3 +1243,11 @@ sources:
 - [Issue #708 review](../../superpowers/reports/issue-708/review.md)
 
 - [Analyzer issues 696–708 stack and evidence](../../superpowers/reports/analyzer-696-708.md)
+
+| 原文 | 参照時点 | 内容 |
+| --- | --- | --- |
+| [Default analyzer operators](../../superpowers/reports/default-analyzer-operators/design.md) | 未追跡 | 7種類の既定化、opt-out、互換性の設計。[^default-operators] |
+| [Default operator selection review and validation](../../superpowers/reports/default-analyzer-operators/review.md) | 未追跡 | 各段階5回のレビュー、Lean の証明範囲、実プロジェクトの候補数。[^default-operators-review] |
+
+[^default-operators]: [設計](../../superpowers/reports/default-analyzer-operators/design.md)。
+[^default-operators-review]: [レビューと検証](../../superpowers/reports/default-analyzer-operators/review.md)。

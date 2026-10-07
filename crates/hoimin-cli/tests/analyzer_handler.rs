@@ -249,7 +249,9 @@ async fn discover_targets_rejects_linked_source_parent() {
 
 #[tokio::test]
 async fn in_memory_discovery_stops_when_a_later_target_exceeds_the_global_limit() {
-    let (_directory, root, targets, operators) = two_target_fixture();
+    let (_directory, root, targets, _) = two_target_fixture();
+    // One arithmetic candidate per target reaches the limit on the second file.
+    let operators = serde_json::from_value(serde_json::json!(["binary_add_sub"])).unwrap();
 
     let discovery = discover_targets(&root, &targets, &operators, MutationProfile::Focused, 1)
         .await

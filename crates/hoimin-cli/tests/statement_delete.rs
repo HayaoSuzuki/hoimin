@@ -215,11 +215,11 @@ async fn statement_deletion_preserves_encoded_bytes_and_newlines() {
 }
 
 #[test]
-fn statement_deletion_is_explicit_and_excludable() {
+fn statement_deletion_is_default_and_excludable() {
     use hoimin_core::{MutationOperator, MutationOperatorSelection};
     let operator = MutationOperator::from_name("statement_delete").unwrap();
     let mut selection = MutationOperatorSelection::default();
-    assert!(!selection.contains(operator));
+    assert!(selection.contains(operator));
     selection.include(operator);
     assert!(selection.contains(operator));
     selection.exclude(operator);
