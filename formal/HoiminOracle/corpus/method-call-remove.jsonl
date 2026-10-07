@@ -1,0 +1,23 @@
+{"expected":[{"original":"obj.method()","replacement":"(obj)"}],"id":"name","mode":"strict","schema":1,"source":"result = obj.method()\n"}
+{"expected":[{"original":"'text'.strip()","replacement":"('text')"}],"id":"string","mode":"strict","schema":1,"source":"result = 'text'.strip()\n"}
+{"expected":[{"original":"factory().method()","replacement":"(factory())"}],"id":"factory","mode":"strict","schema":1,"source":"result = factory().method()\n"}
+{"expected":[{"original":"(left + right).method()","replacement":"(left + right)"}],"id":"binary","mode":"strict","schema":1,"source":"result = (left + right).method()\n"}
+{"expected":[{"original":"(left if flag else right).method()","replacement":"(left if flag else right)"}],"id":"conditional","mode":"strict","schema":1,"source":"result = (left if flag else right).method()\n"}
+{"expected":[{"original":"module.Constructor()","replacement":"(module)"}],"id":"module_attribute","mode":"strict","schema":1,"source":"result = module.Constructor()\n"}
+{"expected":[],"id":"positional","mode":"strict","schema":1,"source":"result = obj.method(item)\n"}
+{"expected":[],"id":"keyword","mode":"strict","schema":1,"source":"result = obj.method(flag=True)\n"}
+{"expected":[],"id":"star","mode":"strict","schema":1,"source":"result = obj.method(*items)\n"}
+{"expected":[],"id":"double_star","mode":"strict","schema":1,"source":"result = obj.method(**options)\n"}
+{"expected":[],"id":"bare_call","mode":"strict","schema":1,"source":"result = obj()\n"}
+{"expected":[],"id":"walrus","mode":"strict","schema":1,"source":"result = (captured := obj).method()\n"}
+{"expected":[],"id":"nested_walrus","mode":"strict","schema":1,"source":"result = factory(captured := obj).method()\n"}
+{"expected":[],"id":"await","mode":"strict","schema":1,"source":"async def example():\n    return (await factory()).method()\n"}
+{"expected":[],"id":"nested_await","mode":"strict","schema":1,"source":"async def example():\n    return factory(await pending).method()\n"}
+{"expected":[],"id":"yield","mode":"strict","schema":1,"source":"def example():\n    return (yield item).method()\n"}
+{"expected":[],"id":"yield_from","mode":"strict","schema":1,"source":"def example():\n    return (yield from items).method()\n"}
+{"expected":[],"id":"generator","mode":"strict","schema":1,"source":"result = (item for item in items).method()\n"}
+{"expected":[],"id":"nested_generator","mode":"strict","schema":1,"source":"result = tuple(item for item in items).method()\n"}
+{"expected":[],"id":"annotation","mode":"strict","schema":1,"source":"value: obj.method() = None\n"}
+{"expected":[],"id":"type_alias","mode":"strict","schema":1,"source":"from typing import TypeAlias\nAlias: TypeAlias = obj.method()\n"}
+{"expected":[],"id":"pattern","mode":"strict","schema":1,"source":"match subject:\n    case obj.method():\n        pass\n"}
+{"expected":[],"id":"target","mode":"strict","schema":1,"source":"obj.method().field = item\n"}

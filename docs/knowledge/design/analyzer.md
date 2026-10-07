@@ -339,6 +339,12 @@ sources:
   resource: ../../superpowers/reports/default-analyzer-operators/review.md
   working_tree: untracked
   sha256: 9a0875f841d3b40d504c2a07b638ea03cbd403adb37b66ffd19c2ae43b3af719
+- id: method-call-remove
+  resource: ../../superpowers/reports/method-call-remove/design.md
+  revision: 3596c98
+  working_tree: untracked
+  sha256: f1b09d5746badd9bb8adb53404d35739275c1185a80339a8241811793ab16192
+
 ---
 
 # 構文と名前解決の契約
@@ -733,3 +739,7 @@ optional_keyword_delete は一意な同一モジュール関数への呼び出�
 既定値の選択規則を Lean モデルで証明し、公開 CLI で除外・明示選択・保存済み plan を検証した。モデルの証明範囲と実行結果は別々に記録している。[^default-operators-review]
 
 [^default-operators-review]: [レビューと検証](../../superpowers/reports/default-analyzer-operators/review.md)。
+
+`method_call_remove` は引数のない属性呼び出しを括弧付き receiver に置換する opt-in 演算子である。receiver の評価を1回残し、属性参照と呼び出しを除く。bound method であることや型の一致は保証せず、束縛・中断・generator を含む receiver、型式、代入ターゲットなどは除外する。[^method-call-remove]
+
+[^method-call-remove]: [設計と5回のレビュー](../../superpowers/reports/method-call-remove/design.md)、[評価と形式証明の範囲](../../superpowers/reports/method-call-remove/assessment.md)

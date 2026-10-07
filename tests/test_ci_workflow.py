@@ -116,6 +116,7 @@ LEAN_CORPUS_BY_EXECUTABLE = {
     "generate_prepared_namespace": "corpus/prepared-namespace.jsonl",
     "generate_paging": "corpus/paging.jsonl",
     "generate_line_diverse": "corpus/line-diverse.jsonl",
+    "generate_method_call_remove": "corpus/method-call-remove.jsonl",
     "generate_prepared_annotation_import": "corpus/prepared-annotation-import.jsonl",
     "generate_private_annotation_import": "corpus/private-annotation-import.jsonl",
     "generate_environment_fingerprint": "corpus/environment-fingerprint.jsonl",
