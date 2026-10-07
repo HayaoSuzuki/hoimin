@@ -87,7 +87,7 @@ mod tests {
                 let result = analyze_source_cancellable(&request, &accepted, || false).unwrap();
                 assert_eq!(result.candidates.len(), 1);
                 assert!(result.truncated);
-                assert_eq!(result.candidates[0].operator, "binary_add_sub");
+                assert_eq!(result.candidates[0].operator, "integer_literal_neighbor");
                 let rejected = format!("value = {}\n", expression(127));
                 assert!(matches!(
                     analyze_source_cancellable(&request, &rejected, || false),

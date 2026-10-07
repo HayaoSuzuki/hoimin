@@ -135,7 +135,7 @@ struct RawMutationArgs {
     #[arg(long, value_name = "GLOB")]
     exclude: Vec<String>,
 
-    /// Include only named mutation operators; may be repeated or comma-delimited.
+    /// Include only named mutation operators; omit for the default runtime set. Repeatable or comma-delimited.
     #[arg(long, value_delimiter = ',')]
     operators: Vec<String>,
 

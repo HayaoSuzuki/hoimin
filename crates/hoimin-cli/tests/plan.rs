@@ -2529,7 +2529,18 @@ async fn root_selection_excludes_uncopyable_sources_in_plan_run_and_verify() {
     std::fs::write(project.path.join("venv/dep.py"), "value = 3 + 4\n").unwrap();
     let coordinator = tempfile::tempdir().unwrap();
     let marker = coordinator.path().join("test-command-ran");
-    let mut args = plan_args(&project, ["--source", ".", "--include", "venv/**"], &marker);
+    let mut args = plan_args(
+        &project,
+        [
+            "--source",
+            ".",
+            "--include",
+            "venv/**",
+            "--operators",
+            "binary_add_sub",
+        ],
+        &marker,
+    );
     insert_test_min_free_space(&mut args);
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
@@ -3385,7 +3396,11 @@ async fn symbol_definition_verify_checks_unrequested_symbol_files() {
     ]);
     let coordinator = tempfile::tempdir().unwrap();
     let marker = coordinator.path().join("baseline-marker");
-    let args = plan_args(&project, ["--symbol", "other:empty"], &marker);
+    let args = plan_args(
+        &project,
+        ["--symbol", "other:empty", "--operators", "binary_add_sub"],
+        &marker,
+    );
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
     assert_eq!(
@@ -3747,8 +3762,8 @@ async fn verify_preview_public_cli_preserves_policy_range_and_execution_order_wi
     ]);
     let coordinator = tempfile::tempdir().unwrap();
     let marker = coordinator.path().join("marker");
-    let (path, manifest) =
-        write_plan_manifest_with_marker(&project, &["--jobs", "1"], &marker).await;
+    let options = ["--jobs", "1", "--operators", "compare_eq_ne,binary_add_sub"];
+    let (path, manifest) = write_plan_manifest_with_marker(&project, &options, &marker).await;
     assert_eq!(manifest.candidates.len(), 6);
     assert!(
         manifest.candidates[..5]
@@ -4478,8 +4493,12 @@ async fn verify_preview_details_distinguish_same_line_mutations_in_all_formats()
         Project::new_with_source("def acceptable(value):\n    return value > 0 and value < 10\n");
     let coordinator = tempfile::tempdir().unwrap();
     let marker = coordinator.path().join("marker");
-    let (path, manifest) =
-        write_plan_manifest_with_marker(&project, &["--jobs", "1"], &marker).await;
+    let (path, manifest) = write_plan_manifest_with_marker(
+        &project,
+        &["--jobs", "1", "--operators", "compare_order,boolean_and_or"],
+        &marker,
+    )
+    .await;
     let before = std::fs::read(&path).unwrap();
     assert_eq!(manifest.candidates.len(), 3);
     let at_column = |column| {

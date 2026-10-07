@@ -387,12 +387,31 @@ the detailed capability and cleanup model.
 
 ## Mutation operators
 
-Without `--operators`, a run selects all 43 runtime operators. `--operators`
+Without `--operators`, a run selects 50 default runtime operators. `--operators`
 (comma-separated) selects an explicit set; `--exclude-operators` then removes
-individual IDs or selector families. Type-annotation `type_*` operators remain
-opt-in. Hoimin exposes 69 operator IDs in total: 43 default runtime IDs, seven
-opt-in type IDs, five opt-in risky exception IDs, `exception_hierarchy`, and
-`statement_delete`, `integer_literal_neighbor`, `condition_constant`, `function_body_erase`, `enum_member_replace`, `augmented_to_assignment`, `return_tuple_swap`, `string_literal_empty`, `while_condition_false`, `condition_clause_delete`, `container_element_delete`, `conversion_call_remove`, and `optional_keyword_delete`.
+individual IDs or selector families. Hoimin exposes 69 operator IDs in total:
+50 default runtime IDs, seven opt-in type IDs, five opt-in risky exception IDs,
+`exception_hierarchy`, and six opt-in analyzers: `condition_constant`,
+`function_body_erase`, `enum_member_replace`, `condition_clause_delete`,
+`container_element_delete`, and `optional_keyword_delete`.
+
+The defaults include `statement_delete`, `integer_literal_neighbor`,
+`augmented_to_assignment`, `return_tuple_swap`, `string_literal_empty`,
+`while_condition_false`, and `conversion_call_remove`. To disable any of these,
+use, for example, `--exclude-operators statement_delete,string_literal_empty`.
+To recover the previous 43-operator selection, exclude all seven:
+
+```text
+--exclude-operators statement_delete,integer_literal_neighbor,augmented_to_assignment,return_tuple_swap,string_literal_empty,while_condition_false,conversion_call_remove
+```
+
+New default runs can generate more candidates and take longer. With a candidate
+cap, the retained prefix can also change. Explicit `--operators` selections and
+saved plans keep their operator sets; saved plans are not expanded on reload.
+The six analyzers above remain opt-in for a staged rollout: coarse whole-condition
+or body edits overlap finer mutations, clause/container deletion can add many
+candidates per expression, and enum/optional-keyword edits require extra module
+binding analysis. Their existing applicability guards are unchanged.
 
 | Group | Runtime IDs | Mutations |
 | --- | --- | --- |
@@ -919,11 +938,11 @@ or equivalent rules, and register PyPI Trusted Publishing for only that
 workflow and environment. Grant `id-token: write` only to its publication job,
 and update the workflow contract tests in the same change.
 
-### Opt-in call statement deletion
+### Additional runtime mutations
 
 `--operators statement_delete` replaces an independent call statement (for example
 `store.persist(record)`) with `pass`. It removes evaluation of the callee and all
-arguments. It is disabled by default. Assignment, return, import, compound
+arguments. It is enabled by default. Assignment, return, import, compound
 statements, and calls containing assignment expressions, `await`, `yield` or
 `yield from` (including nested lambda bodies) are excluded. An empty suite remains
 valid, and neighbouring statements and trailing comments are preserved. The usual
@@ -939,7 +958,7 @@ range are omitted. This is not arbitrary-precision integer mutation. Underscores
 other bases, floats, complex numbers, bools, type expressions, match patterns,
 assignment/deletion targets and subscript slice expressions are excluded. Index
 and slice neighbors remain the responsibility of the structural operators.
-The operator is opt-in and does not change the 43 default runtime operators.
+The operator is enabled by default.
 
 `--operators condition_constant` fixes an entire `if`/`elif` condition to `True`
 or `False`, skipping evaluation and side effects of the original condition.
@@ -968,8 +987,8 @@ ran, was observed, or was equivalent, and this score cannot replace fine-grained
 member reference to a canonical member with a different value. Only unconditional
 top-level definitions with one trusted standard-library base and homogeneous
 integer/string literals or standard `auto()` calls are supported. Aliases share
-one destination; the attribute token's original spelling is preserved. Defaults
-remain unchanged. Local/rebound names, annotations, patterns and class-body
+one destination; the attribute token's original spelling is preserved. The operator remains
+opt-in. Local/rebound names, annotations, patterns and class-body
 self references are excluded. Unsupported definitions emit `enum_definition_skipped`.
 Custom decorators/metaclasses/generators, reserved attributes (including `_ignore_`),
 mixed values, Flag/IntFlag, integers exceeding u64 magnitude, strings containing
@@ -984,7 +1003,7 @@ on a simple name (`total += amount`) with `=` (`total = amount`). All 13 augment
 operators are supported. Attributes and subscripts are excluded; only the operator
 token changes. Existing arithmetic substitutions may coexist at that location.
 This removes the old-value read and in-place operation, including list/object
-side effects; it is not restricted to numbers. The operator remains opt-in.
+side effects; it is not restricted to numbers. The operator is enabled by default.
 
 `--operators return_tuple_swap` swaps two simple elements directly returned as a
 tuple by a synchronous, non-generator function. Names and standalone number/string/
@@ -994,7 +1013,7 @@ suspension expressions are excluded. A single tuple span changes; element separa
 comments, parentheses and trailing commas are preserved. Keyword-adjacent bare tuples
 are parenthesized when needed for lexical separation. Identical source atoms or
 normalized names are skipped. Names may have different runtime types; this operator
-does not promise type preservation or identify all equivalent swaps.
+does not promise type preservation or identify all equivalent swaps. It is enabled by default.
 
 `--operators string_literal_empty` replaces each nonempty, single-token runtime str
 literal with `""`, including raw/u/triple-quoted strings. Decoded empty values,
@@ -1004,12 +1023,12 @@ are excluded. Ordinary string expressions and call messages remain eligible. PEP
 markers imported from typing/typing_extensions, including quoted/parenthesized markers,
 are recognized conservatively across scopes; shadowed or unusual marker spellings can
 suppress a candidate. Normal annotated assignment values remain eligible. Prefix and
-quote style need not survive; the replacement is an empty str. Default IDs are unchanged.
+quote style need not survive; the replacement is an empty str. It is enabled by default.
 
 `--operators while_condition_false` replaces eligible while tests with `(False)`.
 It skips both the original condition's evaluation and the loop body; an existing
 else suite still runs. Boolean literals, binding and suspension expressions are
-excluded. This is opt-in and does not affect for loops or comprehensions.
+excluded. It is enabled by default and does not affect for loops or comprehensions.
 
 `--operators condition_clause_delete` removes one top-level operand from an if/elif
 and/or condition. Retained expressions keep their order and nested grouping;
@@ -1029,6 +1048,7 @@ str/bytes/list/tuple/dict/set/frozenset and skips keywords, unpacking, generator
 binding/suspension, shadowed names, type roles and assignment targets. The argument is
 evaluated once; conversion hooks, validation, copying and iterator consumption disappear.
 Known scope rebinding is checked; arbitrary external builtin monkey patching is not proven.
+This operator is enabled by default.
 
 `--operators optional_keyword_delete` removes one explicitly supplied optional keyword
 from a uniquely bound, undecorated synchronous top-level function in the same file.

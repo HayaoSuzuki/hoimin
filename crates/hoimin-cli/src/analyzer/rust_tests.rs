@@ -749,7 +749,7 @@ fn operator_function_class_guard_preserves_independent_import_references() {
             let source = format!(
                 "{import}\nbefore = {reference}(2, 3)\nclass C: pass\ndef run(): return {reference}(2, 3)\n"
             );
-            let output = analyze(&source);
+            let output = analyze_legacy(&source);
             assert_eq!(output.candidates.len(), 2, "{source}");
             for candidate in &output.candidates {
                 assert_eq!(candidate.operator, "operator_function");
@@ -758,7 +758,7 @@ fn operator_function_class_guard_preserves_independent_import_references() {
         }
     }
     let source = "import operator as op\nfrom operator import add as plus\nclass C:\n    initial = op.__add__(2, 3)\n    def run(self):\n        def nested(): return plus(2, 3)\n        return op.add(2, 3)\n";
-    let output = analyze(source);
+    let output = analyze_legacy(source);
     assert_eq!(output.candidates.len(), 2);
     assert_eq!(
         output
@@ -1200,7 +1200,7 @@ fn real_three_producer_prefix_matches_the_lean_merge_projection() {
 #[test]
 fn eligibility_and_zero_limit_rows_match_real_analyzer_outputs() {
     let eligibility = bounded_discovery_case("eligibility_before_capacity");
-    let focused = analyze_with_profile(
+    let focused = analyze_legacy_with_profile(
         MutationProfile::Focused,
         usize::try_from(eligibility.limit).unwrap(),
         "print(True)\nresult = 1 + 2\n",
@@ -1219,7 +1219,7 @@ fn eligibility_and_zero_limit_rows_match_real_analyzer_outputs() {
     assert_eq!(focused.truncated, eligibility.expected_truncated);
 
     let zero = bounded_discovery_case("zero_limit");
-    let output = analyze_with_profile(
+    let output = analyze_legacy_with_profile(
         MutationProfile::Full,
         usize::try_from(zero.limit).unwrap(),
         "value = left == right\n",
@@ -1739,8 +1739,8 @@ fn except_star_exception_type_pairs_keep_shared_selection_and_profile_behavior()
             })
             .collect::<Vec<_>>()
     };
-    let full = analyze_with_profile(MutationProfile::Full, 10_000, source);
-    let focused = analyze_with_profile(MutationProfile::Focused, 10_000, source);
+    let full = analyze_legacy_with_profile(MutationProfile::Full, 10_000, source);
+    let focused = analyze_legacy_with_profile(MutationProfile::Focused, 10_000, source);
     assert_eq!(summarize(&full), summarize(&focused));
     assert_eq!(
         summarize(&full),
@@ -1752,7 +1752,7 @@ fn except_star_exception_type_pairs_keep_shared_selection_and_profile_behavior()
         )]
     );
 
-    let selected = analyze_with(
+    let selected = analyze_legacy_with(
         Utf8Path::new("pkg/sample.py"),
         &[LineRange { start: 4, end: 4 }],
         &["pkg.sample:selected".to_owned()],
@@ -1761,7 +1761,7 @@ fn except_star_exception_type_pairs_keep_shared_selection_and_profile_behavior()
     );
     assert_eq!(summarize(&selected), summarize(&full));
 
-    let bounded = analyze_with_profile(
+    let bounded = analyze_legacy_with_profile(
         MutationProfile::Full,
         1,
         "try:\n    work()\nexcept* KeyError:\n    pass\n",
@@ -1808,7 +1808,7 @@ fn except_star_exception_type_pairs_keep_shared_selection_and_profile_behavior()
         "        pass\n",
     );
     assert_eq!(
-        summarize(&analyze_with_profile(
+        summarize(&analyze_legacy_with_profile(
             MutationProfile::Full,
             10_000,
             arid_source,
@@ -1817,7 +1817,7 @@ fn except_star_exception_type_pairs_keep_shared_selection_and_profile_behavior()
         1
     );
     assert_eq!(
-        summarize(&analyze_with_profile(
+        summarize(&analyze_legacy_with_profile(
             MutationProfile::Focused,
             10_000,
             arid_source,
@@ -4243,7 +4243,7 @@ fn match_boolean_patterns_mutate_without_admitting_other_pattern_tokens() {
         "    match other:\n",
         "        case captured:\n            pass\n",
     );
-    let output = analyze(source);
+    let output = analyze_legacy(source);
     let candidates: Vec<_> = output
         .candidates
         .iter()
@@ -4377,6 +4377,7 @@ fn augmented_and_pattern_candidates_share_line_symbol_and_focused_selection() {
         candidates,
         vec![
             ("*=", "/=", "augmented_mul_div", 2, Some("selected")),
+            ("*=", "=", "augmented_to_assignment", 2, Some("selected")),
             ("True", "False", "boolean_literal", 4, Some("selected")),
         ]
     );
@@ -4811,7 +4812,7 @@ fn bounded_collection_preserves_the_exact_full_output_prefix_and_retention_bound
 #[test]
 fn bounded_collection_filters_focused_arid_candidates_before_prefix_capacity() {
     let source = format!("{}result = 1 + 2\n", "print(True)\n".repeat(100));
-    let focused = analyze_with_profile(MutationProfile::Focused, 1, &source);
+    let focused = analyze_legacy_with_profile(MutationProfile::Focused, 1, &source);
 
     assert_eq!(focused.candidates.len(), 1);
     assert_eq!(focused.candidates[0].line, 101);
@@ -4844,7 +4845,7 @@ fn bounded_collection_with_zero_limit_keeps_only_an_overflow_probe() {
 #[test]
 fn focused_profile_suppresses_main_print_assert_and_defaults() {
     let source = "if __name__ == \"__main__\":\n    print(1 + 2)\n    assert 3 == 3\nelse:\n    fallback = 4 + 5\n\ndef f(flag=True, *, enabled=False):\n    return flag + enabled\n";
-    let focused = analyze_with_profile(MutationProfile::Focused, 10_000, source);
+    let focused = analyze_legacy_with_profile(MutationProfile::Focused, 10_000, source);
     let descriptors: Vec<_> = focused
         .candidates
         .iter()
@@ -4880,7 +4881,7 @@ fn focused_profile_accepts_only_exact_main_guard_shapes() {
 #[test]
 fn focused_profile_suppresses_only_bare_print_and_assert() {
     let source = "print(1 + 2)\nlogger.print(3 + 4)\nassert 5 + 6\nregular = 7 + 8\n";
-    let focused = analyze_with_profile(MutationProfile::Focused, 10_000, source);
+    let focused = analyze_legacy_with_profile(MutationProfile::Focused, 10_000, source);
     let descriptors: Vec<_> = focused
         .candidates
         .iter()
@@ -4912,7 +4913,7 @@ fn focused_profile_retains_type_annotation_candidates() {
 
 #[test]
 fn focused_filter_runs_before_candidate_limit() {
-    let focused = analyze_with_profile(
+    let focused = analyze_legacy_with_profile(
         MutationProfile::Focused,
         1,
         "def choose(enabled=True):\n    return 1 + 2\n",
@@ -4944,7 +4945,16 @@ fn focused_profile_applies_after_line_and_symbol_selection() {
         .iter()
         .map(|candidate| (candidate.line, candidate.operator.as_str()))
         .collect();
-    assert_eq!(descriptors, vec![(2, "binary_add_sub")]);
+    assert_eq!(
+        descriptors,
+        vec![
+            (2, "integer_literal_neighbor"),
+            (2, "integer_literal_neighbor"),
+            (2, "binary_add_sub"),
+            (2, "integer_literal_neighbor"),
+            (2, "integer_literal_neighbor")
+        ]
+    );
 }
 
 #[test]
@@ -5004,7 +5014,7 @@ const NESTED_QUOTE_PAIRS: &[(&str, &str, &str)] = &[
 
 fn assert_only_trailing_expression_changes(literal_line: &str) {
     let source = format!("{literal_line}result = left + right\n");
-    let output = analyze(&source);
+    let output = analyze_with_only_operator(&source, MutationOperator::BinaryAddSub);
     assert_eq!(output.diagnostics, Vec::new());
     assert_eq!(output.candidates.len(), 1);
     let candidate = &output.candidates[0];
@@ -5022,13 +5032,13 @@ fn assert_only_trailing_expression_changes(literal_line: &str) {
 #[test]
 fn ordinary_string_literals_ignore_every_mutable_operator_token() {
     assert_eq!(
-        analyze("label = 'ordinary operator-free text'\n").candidates,
+        analyze_legacy("label = 'ordinary operator-free text'\n").candidates,
         Vec::new()
     );
     for token in MUTABLE_OPERATOR_TOKENS {
         let source = format!("label = {token:?}\n");
         assert!(
-            analyze(&source).candidates.is_empty(),
+            analyze_legacy(&source).candidates.is_empty(),
             "ordinary string content {token:?} produced a candidate"
         );
         assert_only_trailing_expression_changes(&source);
@@ -5040,7 +5050,7 @@ fn nested_quote_pairs_preserve_every_surrounding_string_byte() {
     for (name, benign, adversarial) in NESTED_QUOTE_PAIRS {
         for source in [benign, adversarial] {
             assert!(
-                analyze(source).candidates.is_empty(),
+                analyze_legacy(source).candidates.is_empty(),
                 "nested quote fixture {name} produced a literal-content candidate"
             );
             assert_only_trailing_expression_changes(source);
@@ -6541,7 +6551,7 @@ proptest! {
 #[test]
 fn emits_the_mvp_operator_replacements_in_source_order() {
     let source = "def f(a, b, xs, flag):\n    value = a == b and a not in xs and a is not b\n    value += a * b // 2 % 2\n    return not flag, +a, -b, True, False\n";
-    let output = analyze(source);
+    let output = analyze_legacy(source);
     let pairs: Vec<_> = output
         .candidates
         .iter()
@@ -6583,7 +6593,7 @@ fn emits_the_mvp_operator_replacements_in_source_order() {
 fn emits_complete_candidate_records_in_source_order() {
     let source =
         "top = left == right\ndef decide(flag, value):\n    return not flag or value + 1\n";
-    let output = analyze(source);
+    let output = analyze_legacy(source);
     let candidates: Vec<_> = output
         .candidates
         .iter()
@@ -6719,7 +6729,7 @@ fn assigns_ast_scopes_to_decorators_async_definitions_and_not_following_code() {
 #[test]
 fn emits_each_remaining_mvp_operator() {
     let source = "def f(a, b, xs):\n    a != b\n    a < b\n    a <= b\n    a > b\n    a >= b\n    a in xs\n    a is b\n    a or b\n    a + b\n    a - b\n    a / b\n    while a:\n        break\n        continue\n";
-    let output = analyze(source);
+    let output = analyze_legacy(source);
     let pairs: Vec<_> = output
         .candidates
         .iter()
@@ -9353,4 +9363,48 @@ fn exception_hierarchy_audit_mangled_spelling_without_local_binding_remains_elig
         ),
         vec![("_Service__Child".into(), "Root".into())]
     );
+}
+
+// Historical exact-record and Lean fixture tests pin the original operator set.
+// Other helpers deliberately keep Default to exercise current default guards.
+fn analyze_legacy(source: &str) -> super::AnalyzerOutput {
+    analyze_legacy_with(Utf8Path::new("pkg/sample.py"), &[], &[], 10_000, source)
+}
+
+fn analyze_legacy_with(
+    path: &Utf8Path,
+    lines: &[LineRange],
+    symbols: &[String],
+    max_candidates: usize,
+    source: &str,
+) -> super::AnalyzerOutput {
+    analyze_source(
+        &AnalyzeRequest {
+            path,
+            lines,
+            symbols,
+            operators: &MutationOperatorSelection::all_legacy(),
+            profile: MutationProfile::Full,
+            max_candidates,
+        },
+        source,
+    )
+}
+
+fn analyze_legacy_with_profile(
+    profile: MutationProfile,
+    max_candidates: usize,
+    source: &str,
+) -> super::AnalyzerOutput {
+    analyze_source(
+        &AnalyzeRequest {
+            path: Utf8Path::new("pkg/sample.py"),
+            lines: &[],
+            symbols: &[],
+            operators: &MutationOperatorSelection::all_legacy(),
+            profile,
+            max_candidates,
+        },
+        source,
+    )
 }

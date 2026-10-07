@@ -305,6 +305,8 @@ impl MutationOperatorSelection {
     }
 
     #[must_use]
+    /// The historical 43 runtime operators, without later default additions.
+    /// Use [`Self::default()`] for the current default runtime selection.
     pub fn all_legacy() -> Self {
         Self(
             [
@@ -447,7 +449,19 @@ impl MutationOperatorSelection {
 
 impl Default for MutationOperatorSelection {
     fn default() -> Self {
-        Self::all_legacy()
+        let mut selection = Self::all_legacy();
+        for operator in [
+            MutationOperator::StatementDelete,
+            MutationOperator::IntegerLiteralNeighbor,
+            MutationOperator::AugmentedToAssignment,
+            MutationOperator::ReturnTupleSwap,
+            MutationOperator::StringLiteralEmpty,
+            MutationOperator::WhileConditionFalse,
+            MutationOperator::ConversionCallRemove,
+        ] {
+            selection.include(operator);
+        }
+        selection
     }
 }
 
@@ -993,7 +1007,7 @@ impl TryFrom<RawRunConfig> for RunConfig {
         }
         validate_test_argv(&raw.test_argv)?;
         let mut operators = if raw.operators.is_empty() {
-            MutationOperatorSelection::all_legacy()
+            MutationOperatorSelection::default()
         } else {
             MutationOperatorSelection(BTreeSet::new())
         };

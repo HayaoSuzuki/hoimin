@@ -1,0 +1,47 @@
+{
+  "scope": "Plan discovery only; no mutation execution, timing is not a benchmark. Two installed project files, not representative of all projects.",
+  "results": [
+    {
+      "module": "packaging.version",
+      "source_sha256": "558b2fb50fd198c660a4c082f96b8919c565911b6b4b6e07f34b6b60c074be97",
+      "bytes": 39040,
+      "candidate_counts": {
+        "legacy": 248,
+        "default": 476,
+        "opt_out": 248
+      },
+      "cli_elapsed_seconds_single_sample": {
+        "legacy": 0.0251,
+        "default": 0.0328,
+        "opt_out": 0.025
+      },
+      "truncated": {
+        "legacy": false,
+        "default": false,
+        "opt_out": false
+      },
+      "opt_out_exactly_matches_legacy": true
+    },
+    {
+      "module": "iniconfig",
+      "source_sha256": "5cbe5ea94623e26b2400ea2b6798df4408a726f2734c8f9f271a4fe317d7b5ac",
+      "bytes": 7497,
+      "candidate_counts": {
+        "legacy": 24,
+        "default": 34,
+        "opt_out": 24
+      },
+      "cli_elapsed_seconds_single_sample": {
+        "legacy": 0.0103,
+        "default": 0.0112,
+        "opt_out": 0.0102
+      },
+      "truncated": {
+        "legacy": false,
+        "default": false,
+        "opt_out": false
+      },
+      "opt_out_exactly_matches_legacy": true
+    }
+  ]
+}

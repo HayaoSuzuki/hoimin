@@ -331,6 +331,14 @@ sources:
   working_tree: untracked
   sha256: 4fa705263311a2b6497f74f9bdedd359fb1cf83a3c01520855e04d77622cb48c
 
+- id: default-operators
+  resource: ../../superpowers/reports/default-analyzer-operators/design.md
+  working_tree: untracked
+  sha256: 8aa57f82bc7545d7bf5d0d88fb7b2c1b07175272320cac19561bf413ec37f643
+- id: default-operators-review
+  resource: ../../superpowers/reports/default-analyzer-operators/review.md
+  working_tree: untracked
+  sha256: 9a0875f841d3b40d504c2a07b638ea03cbd403adb37b66ffd19c2ae43b3af719
 ---
 
 # 構文と名前解決の契約
@@ -650,7 +658,7 @@ Leanの子孫検査モデルと公開planの対応を通常の回帰テストへ
 
 # 呼び出し式文の削除（Issue #696）
 
-`statement_delete` は明示選択時だけ、独立した呼び出し式文を `pass` に置換する。代入式、await、yield、yield from を含む呼び出しは除外し、既定の43演算子は維持する。[^issue-696]
+`statement_delete` は既定で有効で、独立した呼び出し式文を `pass` に置換する。代入式、await、yield、yield from を含む呼び出しは除外する。[^issue-696]
 
 Lean の証明は、与えられたノード分類に対する適用条件と単一置換のモデルを対象とする。Rust の解析器そのものの証明ではない。文字コード、構文、保存 plan の検証は公開 CLI と CPython 3.14 のテストで別途確認する。[^issue-696]
 
@@ -658,7 +666,7 @@ Lean の証明は、与えられたノード分類に対する適用条件と単
 
 # 通常の整数リテラルの隣接値（Issue #697）
 
-`integer_literal_neighbor` は明示選択時だけ、通常の十進整数と単項負号付き整数を隣接値に変更する。絶対値の上限は u64::MAX で、範囲外の隣接値は生成しない。添字・スライス、型式、パターン、代入・削除ターゲットは対象外とし、括弧付き置換で優先順位を保つ。Lean は隣接値の算術モデルを証明し、構文・AST との対応は別途テストする。[^issue-697]
+`integer_literal_neighbor` は既定で有効で、通常の十進整数と単項負号付き整数を隣接値に変更する。絶対値の上限は u64::MAX で、範囲外の隣接値は生成しない。添字・スライス、型式、パターン、代入・削除ターゲットは対象外とし、括弧付き置換で優先順位を保つ。Lean は隣接値の算術モデルを証明し、構文・AST との対応は別途テストする。[^issue-697]
 
 [^issue-697]: [設計と証明範囲](../../superpowers/reports/issue-697/design.md)。
 
@@ -709,3 +717,19 @@ conversion_call_remove は builtin と解決できる単純名の変換呼び出
 optional_keyword_delete は一意な同一モジュール関数への呼び出しの引数束縛を検証し、default のある明示キーワードを1つ除く。残る引数の順序と既存 default を保ち、曖昧な束縛や関数の流出、型式、代入ターゲットを除外する。 [^issue-708]
 
 [^issue-708]: [設計](../../superpowers/reports/issue-708/design.md)
+
+# 既定の演算子選択（2026-10-07）
+
+`statement_delete`、`integer_literal_neighbor`、`augmented_to_assignment`、
+`return_tuple_swap`、`string_literal_empty`、`while_condition_false`、
+`conversion_call_remove` を既定で有効にし、既定数を43から50へ増やした。
+`--exclude-operators` で個別に無効化できる。明示選択と保存済み plan は展開し直さず、
+`all_legacy()` は従来の43種類を保持する。候補数・実行時間・上限内に残る候補は変化し得る。
+残る6種類は、粗い変異との重複、要素数に応じた候補増加、追加の名前解決を理由に段階的な導入とした。
+過去の Issue 別文書の opt-in 記述は導入時の履歴であり、現在の既定値は本節に従う。[^default-operators]
+
+[^default-operators]: [設計](../../superpowers/reports/default-analyzer-operators/design.md)、[実装計画](../../superpowers/plans/2026-10-07-default-analyzer-operators.md)、[レビューと検証](../../superpowers/reports/default-analyzer-operators/review.md)。
+
+既定値の選択規則を Lean モデルで証明し、公開 CLI で除外・明示選択・保存済み plan を検証した。モデルの証明範囲と実行結果は別々に記録している。[^default-operators-review]
+
+[^default-operators-review]: [レビューと検証](../../superpowers/reports/default-analyzer-operators/review.md)。

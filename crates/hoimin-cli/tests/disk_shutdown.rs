@@ -25,6 +25,7 @@ async fn run_isolated(args: Vec<OsString>, stdout: &mut Vec<u8>, stderr: &mut Ve
         .expect("disk evidence process exit code")
 }
 
+// The fixture has one binary mutation; --max-mutants 1 completes the run.
 fn successful_command() -> Vec<OsString> {
     #[cfg(unix)]
     {
@@ -59,7 +60,7 @@ fn with_host_independent_reserve(mut args: Vec<OsString>) -> Vec<OsString> {
 #[tokio::test]
 async fn public_runtime_emits_measured_disk_and_cleanup_evidence() {
     let project = tempfile::tempdir().unwrap();
-    std::fs::write(project.path().join("target.py"), b"value = 1\n").unwrap();
+    std::fs::write(project.path().join("target.py"), b"value = left + right\n").unwrap();
     let mut args = with_host_independent_reserve(vec![
         OsString::from("hoimin"),
         OsString::from("run"),
@@ -112,7 +113,7 @@ async fn public_runtime_emits_measured_disk_and_cleanup_evidence() {
 #[tokio::test]
 async fn public_initial_reserve_failure_uses_the_typed_report_path_before_dispatch() {
     let project = tempfile::tempdir().unwrap();
-    std::fs::write(project.path().join("target.py"), b"value = 1\n").unwrap();
+    std::fs::write(project.path().join("target.py"), b"value = left + right\n").unwrap();
     let mut args = vec![
         OsString::from("hoimin"),
         OsString::from("run"),
@@ -146,7 +147,7 @@ async fn public_initial_reserve_failure_uses_the_typed_report_path_before_dispat
 #[tokio::test]
 async fn public_jsonl_runtime_emits_disk_evidence() {
     let project = tempfile::tempdir().unwrap();
-    std::fs::write(project.path().join("target.py"), b"value = 1\n").unwrap();
+    std::fs::write(project.path().join("target.py"), b"value = left + right\n").unwrap();
     let mut args = with_host_independent_reserve(vec![
         OsString::from("hoimin"),
         OsString::from("run"),
@@ -189,7 +190,7 @@ async fn public_jsonl_runtime_emits_disk_evidence() {
 #[tokio::test]
 async fn public_human_runtime_emits_disk_policy_evidence() {
     let project = tempfile::tempdir().unwrap();
-    std::fs::write(project.path().join("target.py"), b"value = 1\n").unwrap();
+    std::fs::write(project.path().join("target.py"), b"value = left + right\n").unwrap();
     let mut args = with_host_independent_reserve(vec![
         OsString::from("hoimin"),
         OsString::from("run"),

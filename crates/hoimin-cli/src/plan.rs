@@ -1101,7 +1101,8 @@ mod tests {
                 .await
                 .unwrap();
             let output = super::create(config.clone()).await.unwrap();
-            assert_eq!(output.manifest.candidates.len(), count);
+            // Each line has one binary and four integer-neighbor candidates.
+            assert_eq!(output.manifest.candidates.len(), 5 * count);
             let ids = output
                 .manifest
                 .candidates

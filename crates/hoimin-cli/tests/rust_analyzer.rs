@@ -253,10 +253,10 @@ fn statement_deletion_obeys_selection_prefix_and_cancellation() {
 }
 
 #[test]
-fn integer_neighbors_remain_opt_in_and_keep_a_bounded_prefix() {
+fn integer_neighbors_are_default_and_keep_a_bounded_prefix() {
     let operator = MutationOperator::from_name("integer_literal_neighbor").unwrap();
     let mut operators = MutationOperatorSelection::default();
-    assert!(!operators.contains(operator));
+    assert!(operators.contains(operator));
     for name in MutationOperatorSelection::valid_names() {
         for op in MutationOperatorSelection::parse_selector(name).unwrap() {
             operators.exclude(op);
@@ -378,10 +378,10 @@ fn enum_replacement_is_opt_in_bounded_selected_and_cancellable() {
 }
 
 #[test]
-fn augmented_assignment_is_opt_in_selected_bounded_and_cancellable() {
+fn augmented_assignment_is_default_selected_bounded_and_cancellable() {
     let operator = MutationOperator::from_name("augmented_to_assignment").unwrap();
     let mut operators = MutationOperatorSelection::default();
-    assert!(!operators.contains(operator));
+    assert!(operators.contains(operator));
     for name in MutationOperatorSelection::valid_names() {
         for op in MutationOperatorSelection::parse_selector(name).unwrap() {
             operators.exclude(op);
@@ -416,10 +416,10 @@ fn augmented_assignment_is_opt_in_selected_bounded_and_cancellable() {
 }
 
 #[test]
-fn return_tuple_swap_is_opt_in_selected_bounded_and_cancellable() {
+fn return_tuple_swap_is_default_selected_bounded_and_cancellable() {
     let operator = MutationOperator::from_name("return_tuple_swap").unwrap();
     let mut operators = MutationOperatorSelection::default();
-    assert!(!operators.contains(operator));
+    assert!(operators.contains(operator));
     for name in MutationOperatorSelection::valid_names() {
         for op in MutationOperatorSelection::parse_selector(name).unwrap() {
             operators.exclude(op);
@@ -455,10 +455,10 @@ fn return_tuple_swap_is_opt_in_selected_bounded_and_cancellable() {
 }
 
 #[test]
-fn string_empty_is_opt_in_selected_bounded_and_cancellable() {
+fn string_empty_is_default_selected_bounded_and_cancellable() {
     let operator = MutationOperator::from_name("string_literal_empty").unwrap();
     let mut operators = MutationOperatorSelection::default();
-    assert!(!operators.contains(operator));
+    assert!(operators.contains(operator));
     for name in MutationOperatorSelection::valid_names() {
         for op in MutationOperatorSelection::parse_selector(name).unwrap() {
             operators.exclude(op);
@@ -494,10 +494,10 @@ fn string_empty_is_opt_in_selected_bounded_and_cancellable() {
 }
 
 #[test]
-fn while_false_is_opt_in_selected_bounded_and_cancellable() {
+fn while_false_is_default_selected_bounded_and_cancellable() {
     let operator = MutationOperator::from_name("while_condition_false").unwrap();
     let mut operators = MutationOperatorSelection::default();
-    assert!(!operators.contains(operator));
+    assert!(operators.contains(operator));
     for name in MutationOperatorSelection::valid_names() {
         for op in MutationOperatorSelection::parse_selector(name).unwrap() {
             operators.exclude(op);
@@ -665,10 +665,10 @@ fn repeated_container_elements_are_deduplicated_before_bounded_generation() {
 }
 
 #[test]
-fn conversion_remove_is_opt_in_selected_bounded_and_cancellable() {
+fn conversion_remove_is_default_selected_bounded_and_cancellable() {
     let operator = MutationOperator::from_name("conversion_call_remove").unwrap();
     let mut operators = MutationOperatorSelection::default();
-    assert!(!operators.contains(operator));
+    assert!(operators.contains(operator));
     for name in MutationOperatorSelection::valid_names() {
         for op in MutationOperatorSelection::parse_selector(name).unwrap() {
             operators.exclude(op);
@@ -740,4 +740,37 @@ fn optional_keyword_is_opt_in_selected_bounded_and_cancellable() {
     assert!(rust::analyze_source_cancellable(&request, source, || true).is_err());
     operators.exclude(operator);
     assert!(!operators.contains(operator));
+}
+
+#[test]
+fn promoted_defaults_keep_profile_filtering_before_bounded_prefix_selection() {
+    let operators = MutationOperatorSelection::default();
+    let source = "print('skip', 7)\ndef f(x, y):\n    x += 3\n    while x < y:\n        x += 1\n    z = int(x)\n    return x, y\n";
+    for profile in [MutationProfile::Full, MutationProfile::Focused] {
+        let mut request = rust::AnalyzeRequest {
+            path: Utf8Path::new("subject.py"),
+            lines: &[],
+            symbols: &[],
+            operators: &operators,
+            profile,
+            max_candidates: 1000,
+        };
+        let full = rust::analyze_source(&request, source);
+        assert!(!full.truncated);
+        assert!(full.candidates.len() > 3);
+        if profile == MutationProfile::Focused {
+            assert!(full.candidates.iter().all(|c| c.line != 1));
+        } else {
+            assert!(
+                full.candidates
+                    .iter()
+                    .any(|c| c.line == 1 && c.operator == "statement_delete")
+            );
+        }
+        request.max_candidates = 3;
+        let bounded = rust::analyze_source(&request, source);
+        assert_eq!(bounded.candidates, full.candidates[..3]);
+        assert!(bounded.truncated);
+        assert!(rust::analyze_source_cancellable(&request, source, || true).is_err());
+    }
 }

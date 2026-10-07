@@ -314,3 +314,73 @@ fn exception_hierarchy_is_explicit_only() {
         );
     }
 }
+
+const PROMOTED: [&str; 7] = [
+    "statement_delete",
+    "integer_literal_neighbor",
+    "augmented_to_assignment",
+    "return_tuple_swap",
+    "string_literal_empty",
+    "while_condition_false",
+    "conversion_call_remove",
+];
+
+#[test]
+fn default_selection_promotes_exactly_seven_operators() {
+    let default = MutationOperatorSelection::default();
+    let legacy = MutationOperatorSelection::all_legacy();
+    assert_eq!(legacy.names().len(), 43);
+    assert_eq!(default.names().len(), 50);
+    for name in legacy.names() {
+        assert!(default.contains(MutationOperator::from_name(&name).unwrap()));
+    }
+    let mut additions: Vec<_> = default
+        .names()
+        .into_iter()
+        .filter(|name| !legacy.contains(MutationOperator::from_name(name).unwrap()))
+        .collect();
+    additions.sort();
+    let mut expected = PROMOTED.map(str::to_owned).to_vec();
+    expected.sort();
+    assert_eq!(additions, expected);
+}
+
+#[test]
+fn omitted_raw_operators_use_defaults_and_all_promotions_are_excludable() {
+    let mut raw = raw_config();
+    raw.operators.clear();
+    let default = RunConfig::try_from(raw.clone()).unwrap();
+    assert_eq!(default.operators.names().len(), 50);
+    assert_eq!(default.operators, MutationOperatorSelection::default());
+    raw.exclude_operators = PROMOTED.map(str::to_owned).to_vec();
+    assert_eq!(
+        RunConfig::try_from(raw).unwrap().operators,
+        MutationOperatorSelection::all_legacy()
+    );
+}
+
+#[test]
+fn explicit_selection_does_not_expand_to_defaults() {
+    let mut raw = raw_config();
+    raw.operators = vec![
+        "string_literal_empty".to_owned(),
+        "compare_eq_ne".to_owned(),
+    ];
+    raw.exclude_operators = vec!["string_literal_empty".to_owned()];
+    assert_eq!(
+        RunConfig::try_from(raw).unwrap().operators.names(),
+        vec!["compare_eq_ne"]
+    );
+}
+
+#[test]
+fn stored_legacy_plan_selection_is_not_expanded_on_reload() {
+    let mut raw = raw_config();
+    raw.operators = MutationOperatorSelection::all_legacy().names();
+    let plan = RunConfig::try_from(raw).unwrap().into_plan_config();
+    let json = serde_json::to_vec(&plan).unwrap();
+    let restored: PlanConfig = serde_json::from_slice(&json).unwrap();
+    restored.validate().unwrap();
+    assert_eq!(restored.operators, MutationOperatorSelection::all_legacy());
+    assert_eq!(serde_json::to_vec(&restored).unwrap(), json);
+}

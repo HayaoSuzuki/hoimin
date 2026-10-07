@@ -732,6 +732,10 @@ async fn focused_collection_and_structure_candidates_remain_eligible_outside_ari
             ("collection_append_insert", 5),
             ("collection_list_tuple", 2),
             ("structure_append_extend", 5),
+            ("integer_literal_neighbor", 2),
+            ("integer_literal_neighbor", 5),
+            ("return_tuple_swap", 2),
+            ("statement_delete", 5),
         ])
     );
 }
@@ -1085,6 +1089,8 @@ async fn metrics_sidecar_observes_complete_parallel_run_without_changing_report(
         2,
         "from src.calc import total; assert total() == 6",
         &[
+            "--operators",
+            "binary_add_sub",
             "--max-mutants",
             "2",
             "--metrics",
@@ -2038,7 +2044,7 @@ async fn focused_profile_is_reported_and_omits_arid_candidates() {
         .iter()
         .map(|mutant| mutant["candidate"]["line"].as_u64().unwrap())
         .collect();
-    assert_eq!(lines, vec![4, 9]);
+    assert_eq!(lines, vec![4, 4, 4, 4, 4, 9, 9, 9, 9, 9]);
 
     let jsonl = run_focused_profile(project.path(), "focused", "jsonl", None, false, 100).await;
     let run_started = jsonl
