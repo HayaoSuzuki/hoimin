@@ -203,6 +203,10 @@ name = "generate_line_diverse"
 root = "LineDiverseAuditMain"
 
 [[lean_exe]]
+name = "generate_method_call_remove"
+root = "MethodCallRemoveAuditMain"
+
+[[lean_exe]]
 name = "generate_prepared_annotation_import"
 root = "PreparedAnnotationImportAuditMain"
 

@@ -343,5 +343,10 @@
     "operator": "optional_keyword_delete",
     "status": "deferred",
     "reason": "Dedicated source, CPython and public CLI tests; outside initial cross-producer corpus"
+  },
+  {
+    "operator": "method_call_remove",
+    "status": "deferred",
+    "reason": "Dedicated 23-case Lean corpus with public CLI/CPython correspondence and saved-plan tests; outside initial cross-producer corpus"
   }
 ]

@@ -2833,6 +2833,9 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                     .contains(MutationOperator::ConversionCallRemove)
                 || request
                     .operators
+                    .contains(MutationOperator::MethodCallRemove)
+                || request
+                    .operators
                     .contains(MutationOperator::ContainerElementDelete)
             {
                 string_literals::Exclusions::build(module, cancelled)?
@@ -3071,7 +3074,31 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             self.collect_builtin_call(call, name.id.as_str(), name.range());
         }
         if let Expr::Attribute(attribute) = call.func.as_ref() {
+            self.collect_method_call_remove(call, &attribute.value);
             self.collect_method_call(call, attribute.attr.as_str(), attribute.attr.range());
+        }
+    }
+
+    fn collect_method_call_remove(&mut self, call: &ExprCall, receiver: &Expr) {
+        if self
+            .request
+            .operators
+            .contains(MutationOperator::MethodCallRemove)
+            && self.runtime_role == RuntimeRole::Value
+            && !self.in_pattern
+            && !self.string_exclusions.contains_alias(call.range())
+            && has_exact_positional_arguments(call, 0)
+            && deletion::conversion_argument(receiver, self.cancelled)
+            && !self.check_cancelled()
+            && let Some(text) = source_text(self.source, receiver.range())
+        {
+            // The receiver is evaluated once; attribute lookup and invocation
+            // (including descriptor effects) are the deliberately removed work.
+            self.add_candidate(
+                call.range(),
+                format!("({text})"),
+                MutationOperator::MethodCallRemove,
+            );
         }
     }
 

@@ -399,11 +399,11 @@ the detailed capability and cleanup model.
 
 Without `--operators`, a run selects 50 default runtime operators. `--operators`
 (comma-separated) selects an explicit set; `--exclude-operators` then removes
-individual IDs or selector families. Hoimin exposes 69 operator IDs in total:
+individual IDs or selector families. Hoimin exposes 70 operator IDs in total:
 50 default runtime IDs, seven opt-in type IDs, five opt-in risky exception IDs,
-`exception_hierarchy`, and six opt-in analyzers: `condition_constant`,
+`exception_hierarchy`, and seven opt-in analyzers: `condition_constant`,
 `function_body_erase`, `enum_member_replace`, `condition_clause_delete`,
-`container_element_delete`, and `optional_keyword_delete`.
+`container_element_delete`, `optional_keyword_delete`, and `method_call_remove`.
 
 The defaults include `statement_delete`, `integer_literal_neighbor`,
 `augmented_to_assignment`, `return_tuple_swap`, `string_literal_empty`,
@@ -1070,3 +1070,12 @@ definition ends, function escapes/aliases, known rebinding, dynamic namespace ac
 variadics, type parameters, names beginning with `__`, expansions and unsafe/type/target
 roles are excluded.
 Reconstruction normalizes inter-argument trivia; external monkey patching is not proven.
+
+`--operators method_call_remove` replaces an argument-free attribute call such as
+`text.strip()` with `(text)`. It retains receiver evaluation once and removes
+attribute lookup and invocation, including their side effects. It is opt-in and
+syntax based: the callable need not be a bound method, and the result type may
+change. Arguments, binding/suspension/generator receivers, annotations, explicit
+type aliases, patterns and assignment targets are excluded. This is a restricted
+static adaptation of [PyTation's RemMetCall](https://arxiv.org/html/2601.19088v2).
+See the [design and evidence](docs/superpowers/reports/method-call-remove/design.md).
