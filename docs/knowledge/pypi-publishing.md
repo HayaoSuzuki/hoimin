@@ -32,6 +32,16 @@ sources:
   revision: ff50918cb14ff39c67c0a594b665fd29d73080b4
   working_tree: modified
   sha256: e8653a2473cc383c6c99911cc9f095beb3133fb6233f74c5e85ae71845f220ba
+- id: release-workflow
+  resource: ../../.github/workflows/release.yml
+  revision: 054dbba32859182145b2bbb1c2578b9f398c615d
+  working_tree: modified
+  sha256: 54f5370958362bc75b961507676cb93b4af31f1c8a07c4c3d93696b458981bd1
+- id: ci-tests
+  resource: ../../tests/test_ci_workflow.py
+  revision: 054dbba32859182145b2bbb1c2578b9f398c615d
+  working_tree: modified
+  sha256: 5b3ec43583718ce1140eaba0d9fcb33ddb6e96d241d2296c7316484554903037
 ---
 
 # 公開の対象と手順
@@ -48,6 +58,8 @@ PyPIとTestPyPIそれぞれに、所有者`HayaoSuzuki`、リポジトリ`hoimin
 
 # 検証範囲と再確認条件
 
+GitHub Release用のビルドでは、PR検証と手動検証は実行イベントの`github.sha`、マージ後の公開は`pull_request_target`の`merge_commit_sha`を使う。PR更新時のペイロードには古い`merge_commit_sha`が入る場合があるため、検証対象の選択には使わない。checkout、後続ジョブへのコミット指定、同時実行のグループで同じ選択条件を用いる。[^release-workflow][^ci-tests]
+
 ビルド後のwheelスモークテストは、`Elastic-2.0`と移管先のRepository・Issues・Changelog URLを確認してから、隔離環境へのインストールとCLI実行を検証する。メタデータの回帰テストでは、旧`MIT`ライセンスと旧組織のURLを拒否する。ライセンスや公開URLを変更するときは、この期待値も更新する。[^wheel-smoke][^wheel-smoke-tests]
 
 ローカルテストは、不足・破損したwheel、異なる版やライセンス、重複したメタデータ、無効なタグを拒否する条件を検証する。実際のOIDC認証、Environment承認、PyPIへのアップロードはローカル検証の対象外であり、初回TestPyPI公開時に確認する。[^tests][^guide]
@@ -61,3 +73,6 @@ PyPIとTestPyPIそれぞれに、所有者`HayaoSuzuki`、リポジトリ`hoimin
 
 [^wheel-smoke]: [wheelのスモークテスト](../../tests/wheel_smoke.py)。
 [^wheel-smoke-tests]: [wheel検証の回帰テスト](../../tests/test_wheel_smoke.py)。
+
+[^release-workflow]: [GitHub Releaseのビルド・公開ワークフロー](../../.github/workflows/release.yml)。
+[^ci-tests]: [CIワークフローの回帰テスト](../../tests/test_ci_workflow.py)。
