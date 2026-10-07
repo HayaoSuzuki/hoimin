@@ -46,9 +46,9 @@ GitHub Releases retain standalone archives and wheels as release artifacts.
 The standalone Linux executable is built on Ubuntu 22.04; the wheel uses
 manylinux2014 for broader glibc compatibility. Wheels require Python 3.14.
 
-The first release uses the workspace version (currently `0.1.0`). Later
-merges increment the highest stable tag's patch version. Raising the workspace
-version can establish a higher minimum version for the next release; keep
+The workspace version is the minimum version for the next release, currently
+`0.2.0`. CI chooses the higher of that minimum and the highest stable tag's
+next patch version. When raising the minimum, keep
 `Cargo.toml`, `pyproject.toml`, `Cargo.lock`, and `uv.lock` consistent when
 changing it. CI embeds the reserved version into those four files in its
 build checkout, without committing version changes back to `main`.
@@ -97,4 +97,3 @@ restricts deployment to `main` and can require approval where the GitHub plan
 supports reviewers. Without reviewers, manual dispatch proceeds to upload after
 validation. See [PyPI publishing](pypi-publishing.md) for the initial
 account and environment setup, first publication, and retry procedure.
-
