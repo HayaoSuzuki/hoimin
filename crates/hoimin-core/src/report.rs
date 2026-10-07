@@ -386,6 +386,7 @@ pub enum VerificationSelectionPolicy {
     ExplicitCandidates,
     Strict,
     FileRoundRobinV1,
+    LineRoundRobinV1,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]

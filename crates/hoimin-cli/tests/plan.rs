@@ -3776,6 +3776,8 @@ async fn verify_preview_public_cli_preserves_policy_range_and_execution_order_wi
         ("strict", "0", "6", vec![0, 1, 2, 3, 4, 5]),
         ("diverse", "0", "6", vec![0, 2, 4, 1, 3, 5]),
         ("diverse", "2", "3", vec![4, 1, 3]),
+        ("line-diverse", "0", "6", vec![0, 2, 4, 1, 3, 5]),
+        ("line-diverse", "2", "3", vec![4, 1, 3]),
         ("strict", "4", "99", vec![4, 5]),
         ("diverse", "4", "99", vec![3, 5]),
     ] {
@@ -3813,7 +3815,7 @@ async fn verify_preview_public_cli_preserves_policy_range_and_execution_order_wi
         assert_eq!(
             value["verification_selection"],
             serde_json::json!({
-                "mode": "top", "policy": if policy == "strict" { "strict" } else { "file_round_robin_v1" },
+                "mode": "top", "policy": match policy { "strict" => "strict", "line-diverse" => "line_round_robin_v1", _ => "file_round_robin_v1" },
                 "requested": top.parse::<usize>().unwrap(), "selected": positions.len(),
                 "scope": "retained_candidates", "plan_truncated": false,
             })
@@ -3921,13 +3923,31 @@ async fn verify_preview_truncated_formats_borrowed_dispatch_and_runtime_boundary
         write_plan_manifest(&project, &["--max-candidates", "1"]).await;
     assert!(manifest.truncated);
     let execution_tmp = tempfile::tempdir().unwrap();
-    let preview = preview_cli(&path, &["--top", "99", "--dry-run"], execution_tmp.path()).await;
+    let preview = preview_cli(
+        &path,
+        &[
+            "--top",
+            "99",
+            "--selection-policy",
+            "line-diverse",
+            "--dry-run",
+        ],
+        execution_tmp.path(),
+    )
+    .await;
     assert!(preview.status.success());
     let preview: serde_json::Value = serde_json::from_slice(&preview.stdout).unwrap();
     assert!(!marker.exists());
     let run = preview_cli(
         &path,
-        &["--top", "99", "--format", "jsonl"],
+        &[
+            "--top",
+            "99",
+            "--selection-policy",
+            "line-diverse",
+            "--format",
+            "jsonl",
+        ],
         execution_tmp.path(),
     )
     .await;
@@ -3944,7 +3964,15 @@ async fn verify_preview_truncated_formats_borrowed_dispatch_and_runtime_boundary
     write_json(&path, &serde_json::to_value(&manifest).unwrap());
     let temporary = tempfile::tempdir().unwrap();
     for format in ["json", "jsonl", "human"] {
-        let args = ["--top", "99", "--dry-run", "--format", format];
+        let args = [
+            "--top",
+            "99",
+            "--selection-policy",
+            "line-diverse",
+            "--dry-run",
+            "--format",
+            format,
+        ];
         let output = preview_cli(&path, &args, temporary.path()).await;
         assert!(
             output.status.success(),

@@ -59,6 +59,8 @@ hoimin plan --root . --source src --changed \
 hoimin verify PLAN.json --top 10 --format json > reports/batch-a-001.json
 # alternatively, spread an equal-score tier across production files
 hoimin verify PLAN.json --top 10 --selection-policy diverse
+# or spread an equal-score tier across source start lines
+hoimin verify PLAN.json --top 10 --selection-policy line-diverse
 ```
 
 Each plan candidate records `rank`, `score`, and `ranking_reasons`.
@@ -78,14 +80,22 @@ Plans created with an older ranking rule must be regenerated before verification
 The `strict` selection policy is the default and uses the saved rank prefix.
 The `diverse` selection policy round-robins production files only within equal-score tiers.
 Higher-score tiers are exhausted before lower-score tiers.
+The `line-diverse` policy round-robins `(file, start line)` groups within each
+score tier. Group order follows the first saved rank and candidates inside each
+group keep their saved order. Multi-line mutations belong to their start line;
+remaining candidates return on later rounds, so none are suppressed.
 The verification report records `file_round_robin_v1`.
+For line diversity it records `line_round_robin_v1`.
+Older report readers may need updating to accept the new policy value.
+Line diversity can expose other test gaps with a small budget, but additional
+lines do not guarantee better defect detection or an unbiased mutation score.
 Verification does not rewrite the plan or change its execution limits.
 
 `--candidate ID` remains available for exact selection and may be repeated.
 `--candidate` and `--top` are mutually exclusive, and one selection mode is
 required. If `N` exceeds the retained candidate count, `--top N` selects every retained candidate
 and reports the actual selected count. A plan with no retained candidates cannot be verified
-with `--top`: both selection policies reject it with exit code 2 before running the baseline.
+with `--top`: all selection policies reject it with exit code 2 before running the baseline.
 Version-1 manifests
 must be regenerated with the current `hoimin plan`.
 
@@ -661,7 +671,9 @@ hoimin progress reports/batch-b-001.json reports/batch-b-002.json
 
 This example partitions a plan with 120 retained candidates. Keep the same
 `--selection-policy` for its batches: `strict` uses saved rank order; `diverse`
-uses the complete equal-score file-round-robin order before slicing. Changing
+uses the complete equal-score file-round-robin order; `line-diverse` uses the
+complete equal-score start-line-round-robin order. Both apply offset/top after
+ordering, so page boundaries never restart the rotation. Changing
 the policy between batches can change membership. The JSON/JSONL mutant records
 retain the actual selected candidate IDs; save the range/policy commands with
 those reports for reruns.

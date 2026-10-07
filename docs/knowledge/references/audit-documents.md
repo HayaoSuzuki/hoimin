@@ -748,6 +748,26 @@ sources:
   resource: ../../superpowers/reports/issue-709/review.md
   working_tree: untracked
   sha256: 291049426d815f46c6b68d75c81415e80024165972fc60df65f0fcfb09ed9800
+- id: issue-710-design
+  resource: ../../superpowers/reports/issue-710/design.md
+  working_tree: untracked
+  sha256: 187d95a722fc212fa5748bd95b031035ecc34f89f43633a12d2b29e034d7701e
+
+- id: issue-710-plan
+  resource: ../../superpowers/reports/issue-710/plan.md
+  working_tree: untracked
+  sha256: 664949692555d984ab034f9468f745f958fb16b529dee9f0b75e10a30d060f7a
+
+- id: issue-710-assessment
+  resource: ../../superpowers/reports/issue-710/assessment.md
+  working_tree: untracked
+  sha256: 9e099f6d6125e40eed282924e41381fd0ed60d1a6f4f507dca3eeda14a21dece
+
+- id: issue-710-review
+  resource: ../../superpowers/reports/issue-710/review.md
+  working_tree: untracked
+  sha256: 37e8886b574a7226c882551b72683241c31bcd39ed0654f417c9569f63ed4e31
+
 ---
 
 # 収録一覧
@@ -1282,3 +1302,18 @@ sources:
 [^issue-709-assessment]: [assessment.md](../../superpowers/reports/issue-709/assessment.md)。
 
 [^issue-709-review]: [review.md](../../superpowers/reports/issue-709/review.md)。
+
+# Issue #710: 開始行の分散選択
+
+- [design.md](../../superpowers/reports/issue-710/design.md) — 選択規則・比較実験・検証の記録。[^issue-710-design]
+- [plan.md](../../superpowers/reports/issue-710/plan.md) — 選択規則・比較実験・検証の記録。[^issue-710-plan]
+- [assessment.md](../../superpowers/reports/issue-710/assessment.md) — 選択規則・比較実験・検証の記録。[^issue-710-assessment]
+- [review.md](../../superpowers/reports/issue-710/review.md) — 選択規則・比較実験・検証の記録。[^issue-710-review]
+
+[^issue-710-design]: [design.md](../../superpowers/reports/issue-710/design.md)。
+
+[^issue-710-plan]: [plan.md](../../superpowers/reports/issue-710/plan.md)。
+
+[^issue-710-assessment]: [assessment.md](../../superpowers/reports/issue-710/assessment.md)。
+
+[^issue-710-review]: [review.md](../../superpowers/reports/issue-710/review.md)。

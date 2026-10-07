@@ -245,3 +245,72 @@ fn pages_preserve_policy_order_at_tier_and_integer_boundaries() {
         );
     }
 }
+
+#[test]
+fn line_diverse_cycles_dense_start_lines_without_suppressing_candidates() {
+    let mut candidates = (1..=10)
+        .map(|rank| {
+            let mut value = candidate(&format!("dense-{rank}"), "a.py", rank, 100);
+            value.candidate.line = 2;
+            // Even a multi-line mutation belongs only to its start line.
+            value.candidate.original = "first\nsecond\nthird".into();
+            value.candidate.span.length = value.original.len() as u64;
+            value
+        })
+        .collect::<Vec<_>>();
+    let mut same_file = candidate("next-line", "a.py", 11, 100);
+    same_file.candidate.line = 3;
+    let mut other_file = candidate("other-file", "b.py", 12, 100);
+    other_file.candidate.line = 2;
+    candidates.extend([same_file, other_file]);
+    let policy = TopSelectionPolicy::LineDiverse;
+    assert_eq!(
+        select_ids(&candidates, 3, policy),
+        ["dense-1", "next-line", "other-file"]
+    );
+    let full = select_ids(&candidates, usize::MAX, policy);
+    assert_eq!(full.len(), 12);
+    assert_eq!(full.iter().collect::<BTreeSet<_>>().len(), 12);
+    assert_eq!(
+        &full[3..],
+        (2..=10).map(|n| format!("dense-{n}")).collect::<Vec<_>>()
+    );
+    for offset in 0..=13 {
+        for count in [1, 3, 20, usize::MAX] {
+            let actual = super::selection::select_top_candidate_ids_at(
+                &candidates,
+                NonZeroUsize::new(count).unwrap(),
+                policy,
+                offset,
+            );
+            assert_eq!(
+                actual,
+                full.iter()
+                    .skip(offset)
+                    .take(count)
+                    .cloned()
+                    .collect::<Vec<_>>()
+            );
+        }
+    }
+    assert_eq!(select_ids(&candidates, usize::MAX, policy), full);
+    assert!(select_ids(&[], usize::MAX, policy).is_empty());
+}
+
+#[test]
+fn line_diverse_exhausts_score_tiers_even_when_lower_tier_has_unseen_lines() {
+    let mut candidates = vec![
+        candidate("high-1", "a.py", 1, 100),
+        candidate("high-2", "a.py", 2, 100),
+        candidate("low-1", "a.py", 3, 70),
+        candidate("low-2", "a.py", 4, 70),
+        candidate("low-3", "b.py", 5, 70),
+    ];
+    candidates[1].candidate.line = 1;
+    candidates[3].candidate.line = 3;
+    candidates[4].candidate.line = 3;
+    assert_eq!(
+        select_ids(&candidates, 99, TopSelectionPolicy::LineDiverse),
+        ["high-1", "high-2", "low-1", "low-3", "low-2"]
+    );
+}

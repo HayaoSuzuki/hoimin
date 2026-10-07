@@ -22,7 +22,7 @@
       "const": "verify_preview"
     },
     "plan_schema_version": {
-      "const": 4
+      "const": 5
     },
     "ranking_rule_version": {
       "const": 4
@@ -49,7 +49,8 @@
           "enum": [
             "explicit_candidates",
             "strict",
-            "file_round_robin_v1"
+            "file_round_robin_v1",
+            "line_round_robin_v1"
           ]
         },
         "requested": {

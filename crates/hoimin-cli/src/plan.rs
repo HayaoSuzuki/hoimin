@@ -484,6 +484,7 @@ fn resolve_verify_selection(
             let report_policy = match policy {
                 TopSelectionPolicy::Strict => VerificationSelectionPolicy::Strict,
                 TopSelectionPolicy::Diverse => VerificationSelectionPolicy::FileRoundRobinV1,
+                TopSelectionPolicy::LineDiverse => VerificationSelectionPolicy::LineRoundRobinV1,
             };
             if candidate_ids.len() > max_mutants {
                 return Err(PlanError::CandidateInvalid(format!(

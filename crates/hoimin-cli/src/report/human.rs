@@ -65,6 +65,7 @@ pub(super) fn write_event(writer: &mut impl Write, event: &OutputEvent) -> io::R
                             }
                             VerificationSelectionPolicy::Strict => "strict",
                             VerificationSelectionPolicy::FileRoundRobinV1 => "file_round_robin_v1",
+                            VerificationSelectionPolicy::LineRoundRobinV1 => "line_round_robin_v1",
                         };
                         writeln!(
                             writer,
