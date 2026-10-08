@@ -36,12 +36,12 @@ jobs:
         with:
           enable-cache: true
       - name: Install pinned fuzz toolchain
-        run: rustup toolchain install nightly-2026-07-27 --profile minimal
+        run: rustup toolchain install nightly-2026-10-08 --profile minimal
       - name: Cache cargo-fuzz executable
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/cargo-fuzz-tool
-          key: cargo-fuzz-${{ runner.os }}-${{ runner.arch }}-0.13.2-nightly-2026-07-27
+          key: cargo-fuzz-${{ runner.os }}-${{ runner.arch }}-0.13.2-nightly-2026-10-08
       - name: Install cargo-fuzz within remaining budget
         shell: bash
         run: |
@@ -54,7 +54,7 @@ jobs:
               echo "Fuzz budget exhausted during setup" >&2
               exit 1
             fi
-            timeout "${remaining}s" cargo +nightly-2026-07-27 install cargo-fuzz \
+            timeout "${remaining}s" cargo +nightly-2026-10-08 install cargo-fuzz \
               --version 0.13.2 --locked --root "$tool_root"
           fi
       - name: Restore discovered corpus

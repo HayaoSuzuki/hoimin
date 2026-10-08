@@ -42,15 +42,13 @@ resources:
           requiredChecks:
             - context: Quality (ubuntu-latest)
               integrationId: 15368
-            - context: Rust MSRV (1.88)
-              integrationId: 15368
             - context: Rust (ubuntu-latest)
               integrationId: 15368
             - context: Lean audit
               integrationId: 15368
             - context: Cross-boundary contracts
               integrationId: 15368
-            - context: Rust randomized order (nightly-2026-07-27)
+            - context: Rust randomized order (nightly-2026-10-08)
               integrationId: 15368
             - context: contracts
               integrationId: 15368

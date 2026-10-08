@@ -36,7 +36,7 @@ REPOSITORY_RUST_JOBS = {
     "linux-best-effort",
     "linux-cgroup-v2-hard",
 }
-COMPATIBILITY_RUST_JOBS = {"msrv", "rust-shuffle", "fuzz"}
+COMPATIBILITY_RUST_JOBS = {"rust-shuffle", "fuzz"}
 LEAN_JOBS = {"lean-audit"}
 AUTOMATIC_LINUX_MATRIX_JOBS = {
     "quality",
@@ -615,12 +615,12 @@ def test_scheduled_fuzz_runs_daily_with_selectable_per_target_time() -> None:
     )
     assert (
         named_step(job, "Install pinned fuzz toolchain")["run"]
-        == "rustup toolchain install nightly-2026-07-27 --profile minimal"
+        == "rustup toolchain install nightly-2026-10-08 --profile minimal"
     )
     install = string(
         named_step(job, "Install cargo-fuzz within remaining budget")["run"]
     )
-    assert "cargo +nightly-2026-07-27 install cargo-fuzz" in install
+    assert "cargo +nightly-2026-10-08 install cargo-fuzz" in install
     assert "--version 0.13.2 --locked" in install
     command = string(named_step(job, "Fuzz all targets")["run"])
     assert "--seconds-per-target \"${{ inputs.seconds || '60' }}\"" in command
@@ -713,7 +713,7 @@ def test_accepts_updated_exact_stable_versions(channel: str) -> None:
         "stable",
         "beta",
         "nightly",
-        "nightly-2026-07-27",
+        "nightly-2026-10-08",
         "1",
         "1.98",
         "1.98.*",
@@ -852,14 +852,13 @@ def test_rust_jobs_install_only_their_classified_toolchain() -> None:
     assert sorted(install_commands) == sorted(
         ["rustup toolchain install"] * len(REPOSITORY_RUST_JOBS)
         + [
-            "rustup toolchain install 1.88 --profile minimal",
-            "rustup toolchain install nightly-2026-07-27 --profile minimal",
-            "rustup toolchain install nightly-2026-07-27 --profile minimal",
+            "rustup toolchain install nightly-2026-10-08 --profile minimal",
+            "rustup toolchain install nightly-2026-10-08 --profile minimal",
         ]
     )
     assert sorted(
         re.findall(r"(?m)\b(?:cargo|rustc|rustdoc) \+([^\s]+)", workflow)
-    ) == sorted(["1.88", "nightly-2026-07-27", "nightly-2026-07-27"])
+    ) == sorted(["nightly-2026-10-08", "nightly-2026-10-08"])
     for job_name in REPOSITORY_RUST_JOBS:
         job = job_block(workflow, job_name)
         steps = job_steps(workflow_jobs(decoded)[job_name])
@@ -881,10 +880,8 @@ def test_rust_jobs_install_only_their_classified_toolchain() -> None:
         assert install_indexes[0] < min(rust_command_indexes), job_name
         assert re.search(r"(?:cargo|rustc|rustdoc) \+[^\s]+", job) is None, job_name
 
-    msrv = job_block(workflow, "msrv")
     shuffle = job_block(workflow, "rust-shuffle")
-    assert "cargo +1.88 check" in msrv
-    assert "cargo +nightly-2026-07-27 test" in shuffle
+    assert "cargo +nightly-2026-10-08 test" in shuffle
 
 
 # Lean Audit Workflow contracts.
@@ -1370,13 +1367,13 @@ def test_release_has_no_toolchain_override() -> None:
     assert "rust-toolchain:" not in release
 
 
-def test_development_guide_separates_pin_updates_from_msrv_updates() -> None:
+def test_development_guide_updates_pin_and_minimum_version_together() -> None:
     guide = DEVELOPMENT_GUIDE.read_text(encoding="utf-8")
 
     assert "## Pinned Rust toolchain" in guide
     assert "rust-toolchain.toml" in guide
     assert "major.minor.patch" in guide
-    assert "does not raise the minimum supported Rust version" in guide
+    assert "Update the pin and minimum supported Rust version together" in guide
     expected_commands = [
         "uv sync --frozen --group fuzz --no-install-project",
         "uv run --frozen --no-sync ruff format --check .",
@@ -1421,23 +1418,11 @@ def test_development_guide_documents_one_shot_non_linux_ci() -> None:
 
 
 # Shuffle Workflow contracts.
-def test_msrv_job_matches_the_manifest_and_checks_the_locked_workspace() -> None:
-    workflow = CI_WORKFLOW.read_text(encoding="utf-8")
+def test_minimum_rust_version_matches_the_repository_toolchain() -> None:
     manifest = mapping(tomllib.loads(CARGO_MANIFEST.read_text(encoding="utf-8")))
-    msrv = string(mapping(mapping(manifest["workspace"])["package"])["rust-version"])
-    job = job_block(workflow, "msrv")
-
-    assert re.search(r"(?m)^    needs: quality$", job) is not None
-    assert re.search(r"(?m)^    runs-on: ubuntu-latest$", job) is not None
-    assert f"rustup toolchain install {msrv} --profile minimal" in job
-    assert (
-        re.search(
-            rf"(?m)^      - run: cargo \+{re.escape(msrv)} check "
-            r"--workspace --all-targets --all-features --locked$",
-            job,
-        )
-        is not None
-    )
+    toolchain = mapping(tomllib.loads(RUST_TOOLCHAIN.read_text(encoding="utf-8")))
+    minimum = mapping(mapping(manifest["workspace"])["package"])["rust-version"]
+    assert minimum == mapping(toolchain["toolchain"])["channel"]
 
 
 def test_wheel_smoke_build_starts_from_an_empty_artifact_directory() -> None:
@@ -1472,7 +1457,7 @@ def test_shuffle_job_is_pinned_isolated_and_complete() -> None:
         re.search(
             (
                 r"(?m)^        run: rustup toolchain install "
-                r"nightly-2026-07-27 --profile minimal$"
+                r"nightly-2026-10-08 --profile minimal$"
             ),
             shuffle,
         )
@@ -1482,7 +1467,7 @@ def test_shuffle_job_is_pinned_isolated_and_complete() -> None:
     assert (
         re.search(
             (
-                r"(?m)^        run: cargo \+nightly-2026-07-27 test --workspace -- "
+                r"(?m)^        run: cargo \+nightly-2026-10-08 test --workspace -- "
                 r"-Z unstable-options --shuffle$"
             ),
             shuffle,
@@ -1497,7 +1482,7 @@ def test_stable_quality_matrix_and_release_workflow_remain_nightly_free() -> Non
     release = RELEASE_WORKFLOW.read_text(encoding="utf-8")
 
     assert "matrix:\n        os: [ubuntu-latest]" in quality
-    assert "nightly-2026-07-27" not in release
+    assert "nightly-2026-10-08" not in release
     assert "--shuffle" not in release
 
 
@@ -1505,10 +1490,10 @@ def test_development_guide_documents_seed_replay() -> None:
     guide = DEVELOPMENT_GUIDE.read_text(encoding="utf-8")
 
     assert (
-        "cargo +nightly-2026-07-27 test --workspace -- -Z unstable-options --shuffle\n"
+        "cargo +nightly-2026-10-08 test --workspace -- -Z unstable-options --shuffle\n"
     ) in guide
     assert (
-        "cargo +nightly-2026-07-27 test --workspace -- \\\n"
+        "cargo +nightly-2026-10-08 test --workspace -- \\\n"
         "  -Z unstable-options --shuffle-seed <SEED>\n"
     ) in guide
 
