@@ -188,11 +188,11 @@ unchanged:
 
 ```console
 cargo install cargo-fuzz --version 0.13.2 --locked
-rustup toolchain install nightly-2026-07-27 --profile minimal
-cargo +nightly-2026-07-27 fuzz build
+rustup toolchain install nightly-2026-10-08 --profile minimal
+cargo +nightly-2026-10-08 fuzz build
 for target in source_encoding source_index candidate_validation analyzer_protocol python_analyzer report_sequence target_resolution; do
   mkdir -p "fuzz/corpus/$target"
-  cargo +nightly-2026-07-27 fuzz run "$target" "fuzz/corpus/$target" "fuzz/seeds/$target" -- -max_total_time=30 -max_len=4096 -timeout=5 -rss_limit_mb=1024 || break
+  cargo +nightly-2026-10-08 fuzz run "$target" "fuzz/corpus/$target" "fuzz/seeds/$target" -- -max_total_time=30 -max_len=4096 -timeout=5 -rss_limit_mb=1024 || break
 done
 ```
 
@@ -206,8 +206,8 @@ applies to fuzzing time, not compilation; `-timeout` bounds an individual input.
 Replay and minimize a reported failure, using its actual artifact path:
 
 ```console
-cargo +nightly-2026-07-27 fuzz run source_encoding fuzz/artifacts/source_encoding/crash-<hash>
-cargo +nightly-2026-07-27 fuzz tmin source_encoding fuzz/artifacts/source_encoding/crash-<hash>
+cargo +nightly-2026-10-08 fuzz run source_encoding fuzz/artifacts/source_encoding/crash-<hash>
+cargo +nightly-2026-10-08 fuzz tmin source_encoding fuzz/artifacts/source_encoding/crash-<hash>
 ```
 
 Retain the minimized input in the target's `seeds/` directory and add a normal
@@ -295,7 +295,7 @@ ordinary dev-only sync. Run from the repository root:
 uv sync --frozen --group fuzz --no-install-project
 uv run --frozen --no-sync python tools/hypothesmith_corpus.py --examples 100 --seed 20260926 --strategy grammar
 uv run --frozen --no-sync python tools/hypothesmith_corpus.py --examples 100 --seed 20260926 --strategy libcst
-cargo +nightly-2026-07-27 fuzz run python_analyzer fuzz/corpus/python_analyzer fuzz/seeds/python_analyzer -- -max_total_time=30 -max_len=4096 -timeout=5 -rss_limit_mb=1024
+cargo +nightly-2026-10-08 fuzz run python_analyzer fuzz/corpus/python_analyzer fuzz/seeds/python_analyzer -- -max_total_time=30 -max_len=4096 -timeout=5 -rss_limit_mb=1024
 ```
 
 The generator writes to `fuzz/corpus/python_analyzer` by default; `--output DIR`
@@ -473,28 +473,45 @@ the minimal profile, and both components. It does not duplicate the current
 version number, so a patch or minor update does not require changing the test.
 Wheel package versions must still match the package metadata exactly.
 
-Updating this pin is a deliberate compatibility change: update
-`rust-toolchain.toml`, run every quality-gate command above, and review the
-latest-stable canary separately. Updating the repository pin does not raise the minimum supported Rust version.
-An MSRV change follows the distinct procedure below.
+Update the pin and minimum supported Rust version together in one PR. Hoimin
+follows the latest stable release after validation; development, blocking CI,
+and wheel builds use that exact version. The floating `stable` channel is only
+used by the weekly canary. A new release does not silently change a historical
+checkout's build toolchain.
 
 ## Minimum supported Rust version
 
-`workspace.package.rust-version` in `Cargo.toml` is the minimum supported Rust
-version (MSRV). CI checks the complete locked workspace with that compiler.
-Run the same gate locally before updating Rust dependencies:
+`workspace.package.rust-version` in `Cargo.toml` must equal the exact stable pin
+in `rust-toolchain.toml`. The workflow contract tests reject a mismatch. There
+is no separate old-compiler CI job. Source builds require the declared version
+or newer; users installing a compatible prebuilt wheel do not need Rust.
+Dependencies are not held back to preserve support for an older compiler.
 
-```console
-rustup toolchain install 1.88 --profile minimal
-cargo +1.88 check --workspace --all-targets --all-features --locked
-```
+For each stable update:
 
-The committed `Cargo.lock` must remain compilable on the MSRV. When a dependency
-update raises its compiler requirement, select the newest dependency release
-that still supports the MSRV. If the project deliberately raises its MSRV,
-update `workspace.package.rust-version`, the `msrv` CI job, its workflow
-contract test, and this section in the same pull request. The pinned stable CI
-gate remains required in addition to the MSRV gate.
+1. Check the [official release list](https://blog.rust-lang.org/releases/) and
+   update both declarations in the same PR, including patch versions. Install
+   with `rustup toolchain install` and check the locked workspace with
+   `cargo check --workspace --all-targets --all-features --locked`.
+2. Run the quality gates above, including the vendored parser and contracts.
+   Validate all supported wheel builds and smoke tests through the release
+   workflow's PR preview; dispatch non-Linux CI once against the final ref.
+3. Check the pinned nightly can still build the workspace. When updating it,
+   use an available recent `nightly-YYYY-MM-DD` and update both fuzz workflows,
+   `tools/ci_fuzz.py`, the shuffle job, cargo-fuzz cache keys, workflow contracts,
+   these command examples, and the required check name in
+   `infra/github/Pulumi.yaml`. Run bounded fuzzing and shuffled workspace tests.
+4. Review the canary result and the source-build compatibility change before
+   merging. Do not publish a release merely to test the toolchain update.
+
+Renovate's [rust-toolchain manager](https://docs.renovatebot.com/modules/manager/rust-toolchain/)
+detects exact stable pins. The existing repository-wide `minimumReleaseAge` of
+seven days applies to these update PRs. Maintain that waiting period for routine
+updates; an urgent manual update still requires the checks above. A toolchain
+update PR is not assumed to update Cargo's minimum version: update `rust-version`
+on the same branch before merging. The equality contract prevents accepting a
+one-sided update. Nightly dates in scripts and YAML remain a coordinated manual
+update rather than a daily floating-channel upgrade.
 
 Install the smoke script's dependencies with `uv sync --frozen --no-install-project`,
 then use `uv run --frozen --no-sync` to run it. This avoids rebuilding hoimin or
@@ -511,14 +528,14 @@ CI supplements the stable cross-platform suite with Rust's standard nightly
 test harness in randomized order:
 
 ```console
-rustup toolchain install nightly-2026-07-27 --profile minimal
-cargo +nightly-2026-07-27 test --workspace -- -Z unstable-options --shuffle
+rustup toolchain install nightly-2026-10-08 --profile minimal
+cargo +nightly-2026-10-08 test --workspace -- -Z unstable-options --shuffle
 ```
 
 The harness prints the generated seed. Replay a failing order exactly with:
 
 ```console
-cargo +nightly-2026-07-27 test --workspace -- \
+cargo +nightly-2026-10-08 test --workspace -- \
   -Z unstable-options --shuffle-seed <SEED>
 ```
 

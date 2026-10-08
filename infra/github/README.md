@@ -3,7 +3,7 @@
 This Pulumi YAML project manages one `main-protection` repository ruleset for
 `tokyogas-tech/hoimin`. The GitHub provider is pinned to version 6.15.0.
 
-The rules require a pull request, the ten existing PR checks in
+The rules require a pull request, the nine existing PR checks in
 `.github/workflows/ci.yml`, and a merge queue. They prohibit branch deletion
 and force pushes. The bypass list is empty, so administrators also follow
 the rules. Review approval count is zero; this change adds no reviewer quota.
@@ -55,7 +55,7 @@ a textual merge or use an old checkout to apply settings.
 
 1. Merge the accompanying `.github/workflows/ci.yml` change into `main`
    **before enabling the ruleset**. It adds `merge_group: checks_requested`.
-   Confirm that the ten PR checks pass. Enabling the queue before this
+   Confirm that the nine PR checks pass. Enabling the queue before this
    workflow change reaches main can leave queued PRs waiting for checks.
 2. Change directory and configure credentials for the current shell:
 
@@ -110,7 +110,7 @@ pulumi preview --stack production --refresh --diff
 ```
 
 Check that enforcement is `active`, the target is `refs/heads/main`, bypass
-actors are empty, and the rules include pull requests, ten required checks,
+actors are empty, and the rules include pull requests, nine required checks,
 deletion protection, force-push protection, and a merge queue. Use the next
 normal PR to confirm that failed required checks block merging and that
 queue entry starts CI on `merge_group`. Local validation cannot establish
@@ -121,7 +121,7 @@ in the same change and apply the stack after the workflow is ready. Ensure
 new required jobs run on both `pull_request` and `merge_group`. GitHub
 accepts skipped or neutral check conclusions; do not add conditional skips
 to required jobs as a substitute for successful validation. Currently the
-ten PR jobs have no job-level condition and their prerequisites are also
+nine PR jobs have no job-level condition and their prerequisites are also
 required checks.
 
 The ruleset uses Pulumi `protect: true` to prevent accidental deletion by

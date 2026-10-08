@@ -17,6 +17,28 @@ MAX_SEED = 4294967295
 JOB_MINUTES = 11
 
 
+def test_fuzz_workflows_install_and_cache_the_runner_toolchain() -> None:
+    for name in ("ci.yml", "fuzz.yml"):
+        workflow = yaml.safe_load(
+            (ROOT / ".github/workflows" / name).read_text(encoding="utf-8")
+        )
+        steps = workflow["jobs"]["fuzz"]["steps"]
+        install = next(
+            s for s in steps if s.get("name") == "Install pinned fuzz toolchain"
+        )
+        assert install["run"] == (
+            f"rustup toolchain install {ci_fuzz.TOOLCHAIN} --profile minimal"
+        )
+        cache = next(s for s in steps if s.get("name") == "Cache cargo-fuzz executable")
+        assert cache["with"]["key"].endswith(f"-{ci_fuzz.TOOLCHAIN}")
+        build = next(
+            s
+            for s in steps
+            if s.get("name") == "Install cargo-fuzz within remaining budget"
+        )
+        assert f"cargo +{ci_fuzz.TOOLCHAIN} install cargo-fuzz" in build["run"]
+
+
 @pytest.fixture
 def fake_fuzz_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     # Cargo and uv are the expensive/external boundary. Execute lightweight

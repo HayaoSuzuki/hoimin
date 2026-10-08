@@ -9,7 +9,7 @@ use thiserror::Error;
 use crate::{CommandArg, LineSelection, Selection};
 
 pub const MAX_JOBS: usize = 256;
-pub const MAX_TIMEOUT: Duration = Duration::from_secs(100 * 365 * 24 * 60 * 60);
+pub const MAX_TIMEOUT: Duration = Duration::from_hours(100 * 365 * 24);
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct RawRunLimits {
@@ -37,7 +37,7 @@ impl Default for RawRunLimits {
             analyzer_timeout: Duration::from_secs(30),
             baseline_timeout: Duration::from_secs(60),
             mutant_timeout: None,
-            total_timeout: Duration::from_secs(5 * 60),
+            total_timeout: Duration::from_mins(5),
             max_memory: 1024 * 1024 * 1024,
             max_output: 1024 * 1024,
             max_copy_size: 1024 * 1024 * 1024,

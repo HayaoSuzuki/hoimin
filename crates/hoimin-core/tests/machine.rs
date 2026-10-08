@@ -4122,7 +4122,7 @@ impl ScheduleHarness {
             RunEffect::ObserveRemainingBudget(observe) => {
                 RunEvent::RemainingBudgetObserved(RemainingBudgetObserved {
                     id: observe.id,
-                    remaining: Duration::from_secs(86_400),
+                    remaining: Duration::from_hours(24),
                 })
             }
             RunEffect::AnalyzeFile(analyze) => RunEvent::AnalysisFinished(AnalysisFinished {

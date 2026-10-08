@@ -10,7 +10,7 @@ import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-TOOLCHAIN = "nightly-2026-07-27"
+TOOLCHAIN = "nightly-2026-10-08"
 STARTUP_MARGIN = 10
 
 

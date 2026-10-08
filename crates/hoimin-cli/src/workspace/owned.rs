@@ -739,7 +739,7 @@ mod tests {
         let coordinator = ManagedRootCoordinator::open(parent).unwrap();
         let root = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
         let published = root.path().to_owned();
-        let future = std::time::SystemTime::now() + std::time::Duration::from_secs(25 * 60 * 60);
+        let future = std::time::SystemTime::now() + std::time::Duration::from_hours(25);
 
         let report = ManagedRunRoot::reclaim_abandoned(&coordinator, future);
 
@@ -804,7 +804,7 @@ mod tests {
             fs2::FileExt::unlock(lease.as_deref().unwrap()).unwrap();
         }
         drop(root);
-        let future = std::time::SystemTime::now() + std::time::Duration::from_secs(25 * 60 * 60);
+        let future = std::time::SystemTime::now() + std::time::Duration::from_hours(25);
 
         let report = ManagedRunRoot::reclaim_abandoned(&coordinator, future);
 
@@ -1836,7 +1836,7 @@ mod tests {
         let published = root.path().to_owned();
         std::fs::write(published.join(super::HEARTBEAT_FILE), b"not json\n").unwrap();
         drop(root);
-        let future = std::time::SystemTime::now() + std::time::Duration::from_secs(25 * 60 * 60);
+        let future = std::time::SystemTime::now() + std::time::Duration::from_hours(25);
 
         let report = ManagedRunRoot::reclaim_abandoned(&coordinator, future);
 
@@ -2102,7 +2102,7 @@ mod tests {
         let published = root.path().to_owned();
         root.retain().unwrap();
         drop(root);
-        let future = std::time::SystemTime::now() + std::time::Duration::from_secs(25 * 60 * 60);
+        let future = std::time::SystemTime::now() + std::time::Duration::from_hours(25);
 
         let report = ManagedRunRoot::reclaim_abandoned(&coordinator, future);
 
@@ -2166,7 +2166,7 @@ mod tests {
             .dir
             .rename(&active, &coordinator.dir, &staging)
             .unwrap();
-        let future = std::time::SystemTime::now() + std::time::Duration::from_secs(25 * 60 * 60);
+        let future = std::time::SystemTime::now() + std::time::Duration::from_hours(25);
 
         let report = ManagedRunRoot::reclaim_abandoned(&coordinator, future);
 
@@ -2181,7 +2181,7 @@ mod tests {
         let coordinator = ManagedRootCoordinator::open(parent).unwrap();
         let staging = format!("{}{}", super::STAGING_PREFIX, uuid::Uuid::new_v4());
         drop(super::create_owned_directory(&coordinator.dir, &staging).unwrap());
-        let future = std::time::SystemTime::now() + std::time::Duration::from_secs(25 * 60 * 60);
+        let future = std::time::SystemTime::now() + std::time::Duration::from_hours(25);
 
         let report = ManagedRunRoot::reclaim_abandoned(&coordinator, future);
 
@@ -2257,7 +2257,7 @@ mod tests {
             .dir
             .rename(&active, &coordinator.dir, &staging)
             .unwrap();
-        let future = std::time::SystemTime::now() + std::time::Duration::from_secs(25 * 60 * 60);
+        let future = std::time::SystemTime::now() + std::time::Duration::from_hours(25);
 
         let report = ManagedRunRoot::reclaim_abandoned(&coordinator, future);
 
@@ -2384,7 +2384,7 @@ const MAX_CLEANUP_SLICE_DURATION: Duration = Duration::from_secs(5);
 const MAX_CLEANUP_DEPTH: usize = 4_096;
 const OWNER_CLEANUP_BUDGET: Duration = Duration::from_secs(60);
 const JANITOR_CLEANUP_BUDGET: Duration = Duration::from_secs(30);
-const STALE_AFTER: Duration = Duration::from_secs(24 * 60 * 60);
+const STALE_AFTER: Duration = Duration::from_hours(24);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
