@@ -5,6 +5,26 @@ description: docs/auditsとdocs/superpowers/reports内の全Markdownを追跡状
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-695-assessment
+  resource: ../../superpowers/reports/issue-695/assessment.md
+  revision: 76f03acdefefdc03aff6973b0d2b49f6f3598837
+  working_tree: clean
+  sha256: c59799d8ae2b2dfb6c9e06f10ccec12c0d87d88ef7b849140b265f68c4ddf050
+- id: issue-695-design
+  resource: ../../superpowers/reports/issue-695/design.md
+  revision: 76f03acdefefdc03aff6973b0d2b49f6f3598837
+  working_tree: clean
+  sha256: 01880cfdffc342bb4b70a51d139ce77d08f3e932ba512500f72e7c1fb9920915
+- id: issue-695-plan
+  resource: ../../superpowers/reports/issue-695/plan.md
+  revision: 76f03acdefefdc03aff6973b0d2b49f6f3598837
+  working_tree: clean
+  sha256: 39ef60a6677db36fd5cbfe98a6f39c1e84102cb6e336fbc37c55e97226982bbb
+- id: issue-695-review
+  resource: ../../superpowers/reports/issue-695/review.md
+  revision: 76f03acdefefdc03aff6973b0d2b49f6f3598837
+  working_tree: clean
+  sha256: e0601ed731dfa3357e9482070fb313177bdb89fca0405c30e984a59bec851a38
 - id: issue-692-exception-alias-lean-audit
   resource: ../../superpowers/reports/2026-10-05-exception-alias-lean-audit.md
   revision: fae3ce3e82a8a768c8dca49531384aa081a97f71
@@ -1317,3 +1337,20 @@ sources:
 [^issue-710-assessment]: [assessment.md](../../superpowers/reports/issue-710/assessment.md)。
 
 [^issue-710-review]: [review.md](../../superpowers/reports/issue-710/review.md)。
+
+# Issue #695: seed付きの無作為抽出
+
+| 原文 | 参照時点 | 内容 |
+| --- | --- | --- |
+| [Issue 695: implementation assessment](../../superpowers/reports/issue-695/assessment.md) | `76f03ac`、コミット済み | 既存選択との違いと導入判断。[^issue-695-assessment] |
+| [Seeded verification sampling](../../superpowers/reports/issue-695/design.md) | `76f03ac`、コミット済み | 母集団、選択規則、報告範囲の契約。[^issue-695-design] |
+| [Seeded sampling implementation plan](../../superpowers/reports/issue-695/plan.md) | `76f03ac`、コミット済み | 実装・検証・レビューの実施計画。[^issue-695-plan] |
+| [Issue 695: review and verification record](../../superpowers/reports/issue-695/review.md) | `76f03ac`、コミット済み | 各段階のレビュー、形式証明の範囲、CLI照合と作成例の測定。[^issue-695-review] |
+
+[^issue-695-assessment]: [assessment.md](../../superpowers/reports/issue-695/assessment.md)。
+
+[^issue-695-design]: [design.md](../../superpowers/reports/issue-695/design.md)。
+
+[^issue-695-plan]: [plan.md](../../superpowers/reports/issue-695/plan.md)。
+
+[^issue-695-review]: [review.md](../../superpowers/reports/issue-695/review.md)。
