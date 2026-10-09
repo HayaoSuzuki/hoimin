@@ -1,0 +1,13 @@
+{
+  "validator": "Draft202012Validator",
+  "actual_documents_and_events_validated": 10,
+  "rejected_metadata_variants": [
+    "missing_sampling",
+    "duplicate_ids",
+    "negative_seed",
+    "overflow_seed",
+    "wrong_scope",
+    "wrong_policy",
+    "truncated"
+  ]
+}

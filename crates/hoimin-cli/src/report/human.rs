@@ -51,27 +51,7 @@ pub(super) fn write_event(writer: &mut impl Write, event: &OutputEvent) -> io::R
                         writeln!(writer, "fingerprint inputs: [{inputs}]")?;
                     }
                     if let Some(selection) = &value.verification_selection {
-                        let mode = match selection.mode {
-                            VerificationSelectionMode::CandidateIds => "candidate_ids",
-                            VerificationSelectionMode::Top => "top",
-                        };
-                        let scope = match selection.scope {
-                            VerificationSelectionScope::ExplicitCandidates => "explicit_candidates",
-                            VerificationSelectionScope::RetainedCandidates => "retained_candidates",
-                        };
-                        let policy = match selection.policy {
-                            VerificationSelectionPolicy::ExplicitCandidates => {
-                                "explicit_candidates"
-                            }
-                            VerificationSelectionPolicy::Strict => "strict",
-                            VerificationSelectionPolicy::FileRoundRobinV1 => "file_round_robin_v1",
-                            VerificationSelectionPolicy::LineRoundRobinV1 => "line_round_robin_v1",
-                        };
-                        writeln!(
-                            writer,
-                            "verification selection: mode={mode} policy={policy} requested={} selected={} scope={scope} plan_truncated={}",
-                            selection.requested, selection.selected, selection.plan_truncated
-                        )?;
+                        write_selection(writer, selection)?;
                     }
                 }
                 None => writeln!(writer, "run started: {}", value.run_id)?,
@@ -143,9 +123,55 @@ fn termination_name(termination: ProcessTermination) -> String {
     }
 }
 
+fn write_selection(
+    writer: &mut impl Write,
+    selection: &hoimin_core::VerificationSelection,
+) -> io::Result<()> {
+    let mode = match selection.mode {
+        VerificationSelectionMode::CandidateIds => "candidate_ids",
+        VerificationSelectionMode::Top => "top",
+        VerificationSelectionMode::Sample => "sample",
+    };
+    let scope = match selection.scope {
+        VerificationSelectionScope::ExplicitCandidates => "explicit_candidates",
+        VerificationSelectionScope::RetainedCandidates => "retained_candidates",
+        VerificationSelectionScope::SampledCandidates => "sampled_candidates",
+    };
+    let policy = match selection.policy {
+        VerificationSelectionPolicy::ExplicitCandidates => "explicit_candidates",
+        VerificationSelectionPolicy::Strict => "strict",
+        VerificationSelectionPolicy::FileRoundRobinV1 => "file_round_robin_v1",
+        VerificationSelectionPolicy::LineRoundRobinV1 => "line_round_robin_v1",
+        VerificationSelectionPolicy::Splitmix64FisherYatesV1 => "splitmix64_fisher_yates_v1",
+    };
+    writeln!(
+        writer,
+        "verification selection: mode={mode} policy={policy} requested={} selected={} scope={scope} plan_truncated={}",
+        selection.requested, selection.selected, selection.plan_truncated
+    )?;
+    if let Some(sampling) = &selection.sampling {
+        writeln!(
+            writer,
+            "sample: population={} seed={}",
+            sampling.population, sampling.seed
+        )?;
+    }
+    Ok(())
+}
+
 fn write_summary(writer: &mut impl Write, summary: &RunSummary) -> io::Result<()> {
     let counts = &summary.counts;
     writeln!(writer, "run summary:")?;
+    if summary
+        .verification_selection
+        .as_ref()
+        .is_some_and(|s| s.mode == VerificationSelectionMode::Sample)
+    {
+        writeln!(
+            writer,
+            "  scope: sampled candidates only; score and completion do not describe the population"
+        )?;
+    }
     writeln!(writer, "  killed: {}", counts.killed)?;
     writeln!(writer, "  survived: {}", counts.survived)?;
     writeln!(writer, "  timeout: {}", counts.timeout)?;

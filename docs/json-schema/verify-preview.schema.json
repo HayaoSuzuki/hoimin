@@ -42,7 +42,8 @@
         "mode": {
           "enum": [
             "candidate_ids",
-            "top"
+            "top",
+            "sample"
           ]
         },
         "policy": {
@@ -50,7 +51,8 @@
             "explicit_candidates",
             "strict",
             "file_round_robin_v1",
-            "line_round_robin_v1"
+            "line_round_robin_v1",
+            "splitmix64_fisher_yates_v1"
           ]
         },
         "requested": {
@@ -64,13 +66,76 @@
         "scope": {
           "enum": [
             "explicit_candidates",
-            "retained_candidates"
+            "retained_candidates",
+            "sampled_candidates"
           ]
         },
         "plan_truncated": {
           "type": "boolean"
+        },
+        "sampling": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "population",
+            "seed",
+            "selected_ids"
+          ],
+          "properties": {
+            "population": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "seed": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 18446744073709551615
+            },
+            "selected_ids": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "type": "string"
+              }
+            }
+          }
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "sample"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "sampling"
+            ],
+            "properties": {
+              "policy": {
+                "const": "splitmix64_fisher_yates_v1"
+              },
+              "scope": {
+                "const": "sampled_candidates"
+              },
+              "plan_truncated": {
+                "const": false
+              }
+            }
+          },
+          "else": {
+            "not": {
+              "required": [
+                "sampling"
+              ]
+            }
+          }
+        }
+      ]
     },
     "offset": {
       "type": [

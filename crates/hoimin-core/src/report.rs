@@ -378,6 +378,7 @@ pub struct ResourceControl {
 pub enum VerificationSelectionMode {
     CandidateIds,
     Top,
+    Sample,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -387,6 +388,7 @@ pub enum VerificationSelectionPolicy {
     Strict,
     FileRoundRobinV1,
     LineRoundRobinV1,
+    Splitmix64FisherYatesV1,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -394,6 +396,7 @@ pub enum VerificationSelectionPolicy {
 pub enum VerificationSelectionScope {
     ExplicitCandidates,
     RetainedCandidates,
+    SampledCandidates,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -404,6 +407,17 @@ pub struct VerificationSelection {
     pub selected: usize,
     pub scope: VerificationSelectionScope,
     pub plan_truncated: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sampling: Option<VerificationSampling>,
+}
+
+/// Sampling provenance, including IDs that may never reach execution.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct VerificationSampling {
+    pub population: usize,
+    pub seed: u64,
+    /// Ordered dispatch IDs; parallel completion order may differ.
+    pub selected_ids: Vec<String>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]

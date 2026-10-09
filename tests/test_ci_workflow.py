@@ -123,6 +123,7 @@ LEAN_CORPUS_BY_EXECUTABLE = {
     "generate_environment_fingerprint": "corpus/environment-fingerprint.jsonl",
     "generate_resume_diagnostic": "corpus/resume-diagnostic.jsonl",
     "generate_exception_hierarchy": "corpus/exception-hierarchy.jsonl",
+    "generate_sampling": "corpus/sampling.jsonl",
 }
 LEAN_SENSITIVITY_EXECUTABLES = {
     name

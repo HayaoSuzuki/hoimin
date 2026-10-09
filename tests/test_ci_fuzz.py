@@ -166,6 +166,7 @@ def test_campaign_reports_all_targets_or_stops_at_failure(
             "python_analyzer",
             "report_sequence",
             "target_resolution",
+            "sampling",
         ]
         report = json.loads((report_dir / "summary.json").read_text())
         stages = {stage["name"]: stage for stage in report["stages"]}

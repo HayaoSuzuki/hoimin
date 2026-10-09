@@ -229,3 +229,7 @@ root = "ResumeDiagnosticAuditMain"
 [[lean_exe]]
 name = "generate_exception_hierarchy"
 root = "ExceptionHierarchyAuditMain"
+
+[[lean_exe]]
+name = "generate_sampling"
+root = "SamplingAuditMain"

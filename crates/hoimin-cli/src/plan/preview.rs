@@ -76,7 +76,7 @@ impl VerifyPreview {
             ranking_rule_version: manifest.ranking_rule_version,
             verification_selection,
             offset: match requested {
-                VerifySelection::CandidateIds(_) => None,
+                VerifySelection::CandidateIds(_) | VerifySelection::Sample { .. } => None,
                 VerifySelection::Top { .. } => Some(0),
                 VerifySelection::TopRange { offset, .. } => Some(*offset),
             },
@@ -116,6 +116,13 @@ impl VerifyPreview {
                 .map_or_else(|| "null".to_owned(), |offset| offset.to_string()),
             self.retained_candidates,
         )?;
+        if let Some(sampling) = &selection.sampling {
+            writeln!(
+                writer,
+                "sample: population={} seed={} (preview only; no outcomes)",
+                sampling.population, sampling.seed
+            )?;
+        }
         for candidate in &self.candidates {
             writeln!(
                 writer,

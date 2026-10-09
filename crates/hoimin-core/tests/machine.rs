@@ -137,6 +137,7 @@ fn top_verification_observes_budget_after_successful_baseline() {
             selected: 30,
             scope: VerificationSelectionScope::RetainedCandidates,
             plan_truncated: false,
+            sampling: None,
         });
     let (state, effects) = waiting_for_baseline_from(initial_state);
     let baseline_id = effect_id(find_effect(&effects, |effect| {
@@ -171,6 +172,7 @@ fn explicit_verification_skips_budget_observation() {
             selected: 30,
             scope: VerificationSelectionScope::ExplicitCandidates,
             plan_truncated: false,
+            sampling: None,
         });
     let (state, effects) = waiting_for_baseline_from(initial_state);
     let baseline_id = effect_id(find_effect(&effects, |effect| {
@@ -4658,6 +4660,7 @@ fn waiting_for_top_budget_observation() -> (RunState, Vec<RunEffect>) {
             selected: 30,
             scope: VerificationSelectionScope::RetainedCandidates,
             plan_truncated: false,
+            sampling: None,
         });
     let (state, effects) = waiting_for_baseline_from(initial_state);
     let baseline_id = effect_id(find_effect(&effects, |effect| {
@@ -5346,5 +5349,48 @@ fn test_resource_control() -> hoimin_core::ResourceControl {
     hoimin_core::ResourceControl {
         mode: hoimin_core::ResourceMode::Hard,
         mechanism: "test_supplied_hard".into(),
+    }
+}
+
+#[test]
+fn sample_cancellation_and_deadline_keep_provenance_and_incomplete_results() {
+    for event in [RunEvent::CancellationRequested, RunEvent::DeadlineReached] {
+        let selection = VerificationSelection {
+            mode: VerificationSelectionMode::Sample,
+            policy: VerificationSelectionPolicy::Splitmix64FisherYatesV1,
+            requested: 2,
+            selected: 2,
+            scope: VerificationSelectionScope::SampledCandidates,
+            plan_truncated: false,
+            sampling: Some(hoimin_core::VerificationSampling {
+                population: 100,
+                seed: 42,
+                selected_ids: vec!["m2".into(), "m1".into()],
+            }),
+        };
+        let mut harness = ScheduleHarness::new(2, 1, ScheduleFilter::Ordered, false, vec![0]);
+        harness.state = harness.state.with_verification_selection(selection.clone());
+        harness.complete_until(|effect| matches!(effect, RunEffect::ApplyMutation(_)));
+        harness.stop(event);
+        let harness = harness.finish(&[]);
+        let summary = harness
+            .output_events
+            .iter()
+            .find_map(|(_, event)| match event {
+                OutputEvent::RunFinished(summary) => Some(summary),
+                _ => None,
+            })
+            .unwrap();
+        assert!(!summary.complete);
+        assert_ne!(summary.exit_code, 0);
+        assert_eq!(summary.counts.killed, 0);
+        assert_eq!(summary.counts.not_run, 2);
+        assert_eq!(summary.verification_selection.as_ref(), Some(&selection));
+        assert!(
+            harness
+                .ledger
+                .values()
+                .all(|status| *status == MutationStatus::NotRun)
+        );
     }
 }

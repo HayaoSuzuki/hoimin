@@ -27,6 +27,7 @@ pub use preview::VerifyPreview;
 mod ranking;
 #[cfg(test)]
 mod ranking_tests;
+mod sampling;
 mod selection;
 #[cfg(test)]
 mod selection_tests;
@@ -98,6 +99,7 @@ pub enum ResolvedVerifySelection {
 pub enum VerifySelectionScope {
     ExplicitCandidates,
     RetainedCandidates,
+    SampledCandidates,
 }
 
 #[derive(Debug, Error)]
@@ -446,7 +448,20 @@ fn resolve_verify_selection(
     PlanError,
 > {
     let max_mutants = manifest.normalized_config.limits.max_mutants.get();
+    let mut sampling = None;
     let (selection, selection_scope, mode, policy, requested) = match requested_selection {
+        VerifySelection::Sample { count, seed } => {
+            let sample = resolve_sample(manifest, count.get(), *seed)?;
+            let ids = sample.selected_ids.clone();
+            sampling = Some(sample);
+            (
+                ResolvedVerifySelection::RankedCandidates(ids),
+                VerifySelectionScope::SampledCandidates,
+                VerificationSelectionMode::Sample,
+                VerificationSelectionPolicy::Splitmix64FisherYatesV1,
+                count.get(),
+            )
+        }
         VerifySelection::CandidateIds(requested_ids) => (
             ResolvedVerifySelection::ExplicitCandidates(normalize_requested_ids(
                 requested_ids,
@@ -512,6 +527,9 @@ fn resolve_verify_selection(
         VerifySelectionScope::RetainedCandidates => {
             ReportVerificationSelectionScope::RetainedCandidates
         }
+        VerifySelectionScope::SampledCandidates => {
+            ReportVerificationSelectionScope::SampledCandidates
+        }
     };
     Ok((
         selection,
@@ -523,8 +541,42 @@ fn resolve_verify_selection(
             selected,
             scope,
             plan_truncated: manifest.truncated,
+            sampling,
         },
     ))
+}
+
+fn resolve_sample(
+    manifest: &PlanManifest,
+    requested: usize,
+    seed: u64,
+) -> Result<hoimin_core::VerificationSampling, PlanError> {
+    if manifest.truncated {
+        return Err(PlanError::CandidateInvalid(
+            "--sample requires a complete plan; truncated plans cannot be sampled".to_owned(),
+        ));
+    }
+    let population = manifest.candidates.len();
+    if population == 0 {
+        return Err(PlanError::CandidateInvalid(
+            "--sample requires at least one candidate; the plan is empty".to_owned(),
+        ));
+    }
+    let actual = requested.min(population);
+    let max_mutants = manifest.normalized_config.limits.max_mutants.get();
+    if actual > max_mutants {
+        return Err(PlanError::CandidateInvalid(format!(
+            "selected {actual} candidates exceeds max_mutants {max_mutants}"
+        )));
+    }
+    Ok(hoimin_core::VerificationSampling {
+        population,
+        seed,
+        selected_ids: sampling::sample_indices(population, actual, seed)
+            .into_iter()
+            .map(|index| manifest.candidates[index].id.clone())
+            .collect(),
+    })
 }
 
 async fn source_records(

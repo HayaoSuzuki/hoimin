@@ -187,6 +187,7 @@ jobs:
           }
 
           modules=(
+            HoiminOracle.SamplingModel
             HoiminOracle.BindingFlowModel
             HoiminOracle.BoundedCandidateDiscoveryModel
             HoiminOracle.BudgetModel
@@ -282,6 +283,7 @@ jobs:
             HoiminOracle.TopBudgetProjectionCases
             HoiminOracle.WorkspaceCases
             Main
+            SamplingAuditMain
             BindingFlowAuditMain
             HoiminOracle.ComprehensionBindingModel
             ComprehensionBindingAuditMain
@@ -436,6 +438,7 @@ jobs:
             'generate_environment_fingerprint|corpus/environment-fingerprint.jsonl|sensitivity'
             'generate_resume_diagnostic|corpus/resume-diagnostic.jsonl|sensitivity'
             'generate_exception_hierarchy|corpus/exception-hierarchy.jsonl|sensitivity'
+            'generate_sampling|corpus/sampling.jsonl|sensitivity'
           )
           for entry in "${generators[@]}"; do
             IFS='|' read -r executable corpus sensitivity <<< "$entry"
