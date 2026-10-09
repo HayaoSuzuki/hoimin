@@ -72,6 +72,8 @@ hoimin verify PLAN.json --top 10 --format json > reports/batch-a-001.json
 hoimin verify PLAN.json --top 10 --selection-policy diverse
 # or spread an equal-score tier across source start lines
 hoimin verify PLAN.json --top 10 --selection-policy line-diverse
+# or sample across all ranks from a complete plan
+hoimin verify PLAN.json --sample 10 --seed 42
 ```
 
 Each plan candidate records `rank`, `score`, and `ranking_reasons`.
@@ -705,8 +707,60 @@ hoimin verify plan.json --top 20 --offset 100 --selection-policy diverse --dry-r
 `--dry-run` performs the same plan, source, fingerprint and candidate validation
 as verification, then exits without baseline or mutation tests, worker copies,
 sessions or execution metrics. It conflicts with `--metrics`. A valid preview
-exits with code 0, including for a truncated plan; invalid selections and stale
+exits with code 0, including for a truncated plan when using ID/top selection;
+sampling rejects truncated plans. Invalid selections and stale
 plans exit with code 2. Runtime resource availability is checked when executing.
+
+### Reproducible random samples
+
+Use a sample when you want a limited number of mutants drawn across all saved
+ranks. Both the positive count and unsigned 64-bit seed are required:
+
+```console
+hoimin verify plan.json --sample 100 --seed 42 --dry-run > sample-preview.json
+hoimin verify plan.json --sample 100 --seed 42 > reports/sample-001.json
+hoimin verify plan.json --sample 100 --seed 42 > reports/sample-002.json
+hoimin progress reports/sample-001.json reports/sample-002.json
+```
+
+The population consists of the candidates in the complete saved plan, as limited
+by its selectors, profile and operators. Sampling rejects `truncated: true` and
+empty plans. A request above the population size selects the entire population
+in sampled order. If the actual selection exceeds the plan's `max_mutants`,
+verification rejects it before tests run; create a plan with a sufficient budget.
+`--sample` conflicts with `--top`, `--candidate`, `--offset` and
+`--selection-policy`. `--seed` is valid only with `--sample`.
+
+The `splitmix64_fisher_yates_v1` policy uses a fixed 64-bit pseudorandom generator,
+rejection sampling and a forward partial Fisher–Yates shuffle without replacement.
+The same plan, count, seed and algorithm version produce the same IDs and dispatch
+order across platforms. Parallel test completion order and elapsed time can vary.
+Increasing the count keeps the previous selection as a prefix.
+
+Preview, JSON and JSONL run metadata use `mode: sample`,
+`scope: sampled_candidates` and the versioned `policy` above. The
+`verification_selection.sampling` object contains `population`, `seed` and
+`selected_ids` in dispatch order; `requested` and `selected` distinguish requested
+and actual counts. Preserve u64 seeds as integers when reading JSON: a JavaScript
+Number cannot represent every accepted seed exactly. Run-start and summary
+metadata retain the full selection even when tests fail before all mutants run.
+Existing selection modes omit the optional `sampling` object.
+
+Completion and mutation score describe the selected sample. Mutants outside it
+have no outcome; killing the sample does not certify the population. Timeouts,
+cancellation and other unfinished outcomes retain the usual incomplete-result
+semantics. This feature reports no confidence interval or real-defect detection
+estimate. Fixed-seed frequency checks and small authored-project measurements are
+available in the [evaluation](superpowers/reports/issue-695/review.md).
+
+For repeated evaluation, preserve the plan, count and seed and keep one report
+history per sample. Changes to tracked source or fingerprint inputs require a new
+plan; confirm its ordered selected IDs before treating it as the same sample.
+For a fixed candidate set in a regenerated plan, replay saved IDs with repeated
+`--candidate ID` options (that mode uses its existing discovery order).
+Changing seeds or populations can make `progress` indeterminate under its existing
+candidate identity and ambiguity checks. Source and fingerprint validation still
+applies in every mode.
 
 When saved source or fingerprint input records differ from the workspace,
 verification reports `modified`, `added` or `removed` with quoted root-relative

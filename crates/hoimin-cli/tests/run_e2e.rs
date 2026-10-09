@@ -3040,6 +3040,7 @@ async fn run_missing_explicit_candidate(
             selected: 1,
             scope: VerificationSelectionScope::ExplicitCandidates,
             plan_truncated: false,
+            sampling: None,
         },
         &mut stdout,
         &mut stderr,

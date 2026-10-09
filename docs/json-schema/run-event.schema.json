@@ -154,20 +154,107 @@
         "plan_truncated"
       ],
       "properties": {
-        "mode": { "type": "string", "enum": ["candidate_ids", "top"] },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "candidate_ids",
+            "top",
+            "sample"
+          ]
+        },
         "policy": {
           "type": "string",
-          "enum": ["explicit_candidates", "strict", "file_round_robin_v1", "line_round_robin_v1"]
+          "enum": [
+            "explicit_candidates",
+            "strict",
+            "file_round_robin_v1",
+            "line_round_robin_v1",
+            "splitmix64_fisher_yates_v1"
+          ]
         },
-        "requested": { "type": "integer", "minimum": 1 },
-        "selected": { "type": "integer", "minimum": 0 },
+        "requested": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "selected": {
+          "type": "integer",
+          "minimum": 0
+        },
         "scope": {
           "type": "string",
-          "enum": ["explicit_candidates", "retained_candidates"]
+          "enum": [
+            "explicit_candidates",
+            "retained_candidates",
+            "sampled_candidates"
+          ]
         },
-        "plan_truncated": { "type": "boolean" }
+        "plan_truncated": {
+          "type": "boolean"
+        },
+        "sampling": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "population",
+            "seed",
+            "selected_ids"
+          ],
+          "properties": {
+            "population": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "seed": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 18446744073709551615
+            },
+            "selected_ids": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
       },
-      "additionalProperties": true
+      "additionalProperties": true,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "sample"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "sampling"
+            ],
+            "properties": {
+              "policy": {
+                "const": "splitmix64_fisher_yates_v1"
+              },
+              "scope": {
+                "const": "sampled_candidates"
+              },
+              "plan_truncated": {
+                "const": false
+              }
+            }
+          },
+          "else": {
+            "not": {
+              "required": [
+                "sampling"
+              ]
+            }
+          }
+        }
+      ]
     },
     "diskCapabilityProbe": {
       "type": "object",

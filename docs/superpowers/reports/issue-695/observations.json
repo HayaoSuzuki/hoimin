@@ -1,0 +1,939 @@
+{
+  "arch": "aarch64",
+  "os": "macos",
+  "projects": [
+    {
+      "name": "constants",
+      "operators": [
+        "binary_add_sub",
+        "boolean_literal"
+      ],
+      "population": 8,
+      "population_results": [
+        {
+          "id": "m1_21bbdcf467c6c06666562822c3c64039e76f6ea7f74fe5a4ebf31e255e78b426",
+          "operator": "boolean_literal",
+          "status": "killed"
+        },
+        {
+          "id": "m1_ce54ae18abe78b0911ff8d44f0caef0f88d1e91e78693c4bc858118e1253dec9",
+          "operator": "boolean_literal",
+          "status": "killed"
+        },
+        {
+          "id": "m1_62c5586a5541ca268febdfc1f19541c476fd6b2358449a9805f2aeb60a58e861",
+          "operator": "boolean_literal",
+          "status": "survived"
+        },
+        {
+          "id": "m1_a818f22fa8d2b47485d2e38b9be05fd8fbd7f0670e1849bda218898826171267",
+          "operator": "boolean_literal",
+          "status": "survived"
+        },
+        {
+          "id": "m1_e8a9d164e73757182c98dd84e56d4e4b89050038b1cd657a10beb60a8c8f7dea",
+          "operator": "boolean_literal",
+          "status": "survived"
+        },
+        {
+          "id": "m1_1a5a20bb36987f71338a9db748e0dd69a56d9fabf86d7d28b40180124b750c9d",
+          "operator": "binary_add_sub",
+          "status": "killed"
+        },
+        {
+          "id": "m1_0be261e7c9f8428259fdb5828a71f9dd0004164c3680105b73fd700b9f08f9d4",
+          "operator": "binary_add_sub",
+          "status": "survived"
+        },
+        {
+          "id": "m1_042a9c2a7a1f396161aa1c20e43fa932f768524c09a187d04e7e212c7ed46b35",
+          "operator": "binary_add_sub",
+          "status": "killed"
+        }
+      ],
+      "reference_counts": {
+        "error": 0,
+        "inconclusive": 0,
+        "killed": 4,
+        "not_run": 0,
+        "out_of_memory": 0,
+        "process_limit": 0,
+        "score": 0.5,
+        "survived": 4,
+        "timeout": 0
+      },
+      "reference_elapsed_seconds": 0.242859792,
+      "source_records": [
+        {
+          "hash": "fa7a9ef13831542fe0015cedf51947dd24f2edb546c5c6c13600bf114c324c0e",
+          "path": "a.py"
+        },
+        {
+          "hash": "fea418c226e76c3332522bcfb5063f32d15e6f7054912cfa33dcb30fe9a006cd",
+          "path": "b.py"
+        }
+      ],
+      "sources": {
+        "a.py": "a = True; b = False; c = True\nd = False\nx = 1 + 2; y = 3 + 4\n",
+        "b.py": "a = True\nx = 1 + 2\n"
+      },
+      "test_program": "import a,b; assert a.a is True; assert a.b is False; assert a.x == 3; assert b.x == 3",
+      "trials": [
+        {
+          "counts": {
+            "error": 0,
+            "inconclusive": 0,
+            "killed": 1,
+            "not_run": 0,
+            "out_of_memory": 0,
+            "process_limit": 0,
+            "score": 0.5,
+            "survived": 1,
+            "timeout": 0
+          },
+          "elapsed_seconds": 0.109721417,
+          "mutants": [
+            {
+              "id": "m1_042a9c2a7a1f396161aa1c20e43fa932f768524c09a187d04e7e212c7ed46b35",
+              "operator": "binary_add_sub",
+              "status": "killed"
+            },
+            {
+              "id": "m1_62c5586a5541ca268febdfc1f19541c476fd6b2358449a9805f2aeb60a58e861",
+              "operator": "boolean_literal",
+              "status": "survived"
+            }
+          ],
+          "score_error": 0.0,
+          "selection": {
+            "mode": "sample",
+            "plan_truncated": false,
+            "policy": "splitmix64_fisher_yates_v1",
+            "requested": 2,
+            "sampling": {
+              "population": 8,
+              "seed": 0,
+              "selected_ids": [
+                "m1_042a9c2a7a1f396161aa1c20e43fa932f768524c09a187d04e7e212c7ed46b35",
+                "m1_62c5586a5541ca268febdfc1f19541c476fd6b2358449a9805f2aeb60a58e861"
+              ]
+            },
+            "scope": "sampled_candidates",
+            "selected": 2
+          }
+        },
+        {
+          "counts": {
+            "error": 0,
+            "inconclusive": 0,
+            "killed": 2,
+            "not_run": 0,
+            "out_of_memory": 0,
+            "process_limit": 0,
+            "score": 1.0,
+            "survived": 0,
+            "timeout": 0
+          },
+          "elapsed_seconds": 0.115995166,
+          "mutants": [
+            {
+              "id": "m1_ce54ae18abe78b0911ff8d44f0caef0f88d1e91e78693c4bc858118e1253dec9",
+              "operator": "boolean_literal",
+              "status": "killed"
+            },
+            {
+              "id": "m1_21bbdcf467c6c06666562822c3c64039e76f6ea7f74fe5a4ebf31e255e78b426",
+              "operator": "boolean_literal",
+              "status": "killed"
+            }
+          ],
+          "score_error": 0.5,
+          "selection": {
+            "mode": "sample",
+            "plan_truncated": false,
+            "policy": "splitmix64_fisher_yates_v1",
+            "requested": 2,
+            "sampling": {
+              "population": 8,
+              "seed": 1,
+              "selected_ids": [
+                "m1_ce54ae18abe78b0911ff8d44f0caef0f88d1e91e78693c4bc858118e1253dec9",
+                "m1_21bbdcf467c6c06666562822c3c64039e76f6ea7f74fe5a4ebf31e255e78b426"
+              ]
+            },
+            "scope": "sampled_candidates",
+            "selected": 2
+          }
+        },
+        {
+          "counts": {
+            "error": 0,
+            "inconclusive": 0,
+            "killed": 1,
+            "not_run": 0,
+            "out_of_memory": 0,
+            "process_limit": 0,
+            "score": 0.5,
+            "survived": 1,
+            "timeout": 0
+          },
+          "elapsed_seconds": 0.109009792,
+          "mutants": [
+            {
+              "id": "m1_1a5a20bb36987f71338a9db748e0dd69a56d9fabf86d7d28b40180124b750c9d",
+              "operator": "binary_add_sub",
+              "status": "killed"
+            },
+            {
+              "id": "m1_0be261e7c9f8428259fdb5828a71f9dd0004164c3680105b73fd700b9f08f9d4",
+              "operator": "binary_add_sub",
+              "status": "survived"
+            }
+          ],
+          "score_error": 0.0,
+          "selection": {
+            "mode": "sample",
+            "plan_truncated": false,
+            "policy": "splitmix64_fisher_yates_v1",
+            "requested": 2,
+            "sampling": {
+              "population": 8,
+              "seed": 42,
+              "selected_ids": [
+                "m1_1a5a20bb36987f71338a9db748e0dd69a56d9fabf86d7d28b40180124b750c9d",
+                "m1_0be261e7c9f8428259fdb5828a71f9dd0004164c3680105b73fd700b9f08f9d4"
+              ]
+            },
+            "scope": "sampled_candidates",
+            "selected": 2
+          }
+        },
+        {
+          "counts": {
+            "error": 0,
+            "inconclusive": 0,
+            "killed": 1,
+            "not_run": 0,
+            "out_of_memory": 0,
+            "process_limit": 0,
+            "score": 0.5,
+            "survived": 1,
+            "timeout": 0
+          },
+          "elapsed_seconds": 0.102559375,
+          "mutants": [
+            {
+              "id": "m1_21bbdcf467c6c06666562822c3c64039e76f6ea7f74fe5a4ebf31e255e78b426",
+              "operator": "boolean_literal",
+              "status": "killed"
+            },
+            {
+              "id": "m1_62c5586a5541ca268febdfc1f19541c476fd6b2358449a9805f2aeb60a58e861",
+              "operator": "boolean_literal",
+              "status": "survived"
+            }
+          ],
+          "score_error": 0.0,
+          "selection": {
+            "mode": "sample",
+            "plan_truncated": false,
+            "policy": "splitmix64_fisher_yates_v1",
+            "requested": 2,
+            "sampling": {
+              "population": 8,
+              "seed": 18446744073709551615,
+              "selected_ids": [
+                "m1_21bbdcf467c6c06666562822c3c64039e76f6ea7f74fe5a4ebf31e255e78b426",
+                "m1_62c5586a5541ca268febdfc1f19541c476fd6b2358449a9805f2aeb60a58e861"
+              ]
+            },
+            "scope": "sampled_candidates",
+            "selected": 2
+          }
+        },
+        {
+          "counts": {
+            "error": 0,
+            "inconclusive": 0,
+            "killed": 2,
+            "not_run": 0,
+            "out_of_memory": 0,
+            "process_limit": 0,
+            "score": 0.5,
+            "survived": 2,
+            "timeout": 0
+          },
+          "elapsed_seconds": 0.144240084,
+          "mutants": [
+            {
+              "id": "m1_042a9c2a7a1f396161aa1c20e43fa932f768524c09a187d04e7e212c7ed46b35",
+              "operator": "binary_add_sub",
+              "status": "killed"
+            },
+            {
+              "id": "m1_62c5586a5541ca268febdfc1f19541c476fd6b2358449a9805f2aeb60a58e861",
+              "operator": "boolean_literal",
+              "status": "survived"
+            },
+            {
+              "id": "m1_a818f22fa8d2b47485d2e38b9be05fd8fbd7f0670e1849bda218898826171267",
+              "operator": "boolean_literal",
+              "status": "survived"
+            },
+            {
+              "id": "m1_21bbdcf467c6c06666562822c3c64039e76f6ea7f74fe5a4ebf31e255e78b426",
+              "operator": "boolean_literal",
+              "status": "killed"
+            }
+          ],
+          "score_error": 0.0,
+          "selection": {
+            "mode": "sample",
+            "plan_truncated": false,
+            "policy": "splitmix64_fisher_yates_v1",
+            "requested": 4,
+            "sampling": {
+              "population": 8,
+              "seed": 0,
+              "selected_ids": [
+                "m1_042a9c2a7a1f396161aa1c20e43fa932f768524c09a187d04e7e212c7ed46b35",
+                "m1_62c5586a5541ca268febdfc1f19541c476fd6b2358449a9805f2aeb60a58e861",
+                "m1_a818f22fa8d2b47485d2e38b9be05fd8fbd7f0670e1849bda218898826171267",
+                "m1_21bbdcf467c6c06666562822c3c64039e76f6ea7f74fe5a4ebf31e255e78b426"
+              ]
+            },
+            "scope": "sampled_candidates",
+            "selected": 4
+          }
+        },
+        {
+          "counts": {
+            "error": 0,
+            "inconclusive": 0,
+            "killed": 2,
+            "not_run": 0,
+            "out_of_memory": 0,
+            "process_limit": 0,
+            "score": 0.5,
+            "survived": 2,
+            "timeout": 0
+          },
+          "elapsed_seconds": 0.142285208,
+          "mutants": [
+            {
+              "id": "m1_ce54ae18abe78b0911ff8d44f0caef0f88d1e91e78693c4bc858118e1253dec9",
+              "operator": "boolean_literal",
+              "status": "killed"
+            },
+            {
+              "id": "m1_21bbdcf467c6c06666562822c3c64039e76f6ea7f74fe5a4ebf31e255e78b426",
+              "operator": "boolean_literal",
+              "status": "killed"
+            },
+            {
+              "id": "m1_62c5586a5541ca268febdfc1f19541c476fd6b2358449a9805f2aeb60a58e861",
+              "operator": "boolean_literal",
+              "status": "survived"
+            },
+            {
+              "id": "m1_a818f22fa8d2b47485d2e38b9be05fd8fbd7f0670e1849bda218898826171267",
+              "operator": "boolean_literal",
+              "status": "survived"
+            }
+          ],
+          "score_error": 0.0,
+          "selection": {
+            "mode": "sample",
+            "plan_truncated": false,
+            "policy": "splitmix64_fisher_yates_v1",
+            "requested": 4,
+            "sampling": {
+              "population": 8,
+              "seed": 1,
+              "selected_ids": [
+                "m1_ce54ae18abe78b0911ff8d44f0caef0f88d1e91e78693c4bc858118e1253dec9",
+                "m1_21bbdcf467c6c06666562822c3c64039e76f6ea7f74fe5a4ebf31e255e78b426",
+                "m1_62c5586a5541ca268febdfc1f19541c476fd6b2358449a9805f2aeb60a58e861",
+                "m1_a818f22fa8d2b47485d2e38b9be05fd8fbd7f0670e1849bda218898826171267"
+              ]
+            },
+            "scope": "sampled_candidates",
+            "selected": 4
+          }
+        },
+        {
+          "counts": {
+            "error": 0,
+            "inconclusive": 0,
+            "killed": 2,
+            "not_run": 0,
+            "out_of_memory": 0,
+            "process_limit": 0,
+            "score": 0.5,
+            "survived": 2,
+            "timeout": 0
+          },
+          "elapsed_seconds": 0.146653958,
+          "mutants": [
+            {
+              "id": "m1_1a5a20bb36987f71338a9db748e0dd69a56d9fabf86d7d28b40180124b750c9d",
+              "operator": "binary_add_sub",
+              "status": "killed"
+            },
+            {
+              "id": "m1_0be261e7c9f8428259fdb5828a71f9dd0004164c3680105b73fd700b9f08f9d4",
+              "operator": "binary_add_sub",
+              "status": "survived"
+            },
+            {
+              "id": "m1_62c5586a5541ca268febdfc1f19541c476fd6b2358449a9805f2aeb60a58e861",
+              "operator": "boolean_literal",
+              "status": "survived"
+            },
+            {
+              "id": "m1_042a9c2a7a1f396161aa1c20e43fa932f768524c09a187d04e7e212c7ed46b35",
+              "operator": "binary_add_sub",
+              "status": "killed"
+            }
+          ],
+          "score_error": 0.0,
+          "selection": {
+            "mode": "sample",
+            "plan_truncated": false,
+            "policy": "splitmix64_fisher_yates_v1",
+            "requested": 4,
+            "sampling": {
+              "population": 8,
+              "seed": 42,
+              "selected_ids": [
+                "m1_1a5a20bb36987f71338a9db748e0dd69a56d9fabf86d7d28b40180124b750c9d",
+                "m1_0be261e7c9f8428259fdb5828a71f9dd0004164c3680105b73fd700b9f08f9d4",
+                "m1_62c5586a5541ca268febdfc1f19541c476fd6b2358449a9805f2aeb60a58e861",
+                "m1_042a9c2a7a1f396161aa1c20e43fa932f768524c09a187d04e7e212c7ed46b35"
+              ]
+            },
+            "scope": "sampled_candidates",
+            "selected": 4
+          }
+        },
+        {
+          "counts": {
+            "error": 0,
+            "inconclusive": 0,
+            "killed": 2,
+            "not_run": 0,
+            "out_of_memory": 0,
+            "process_limit": 0,
+            "score": 0.5,
+            "survived": 2,
+            "timeout": 0
+          },
+          "elapsed_seconds": 0.150220125,
+          "mutants": [
+            {
+              "id": "m1_21bbdcf467c6c06666562822c3c64039e76f6ea7f74fe5a4ebf31e255e78b426",
+              "operator": "boolean_literal",
+              "status": "killed"
+            },
+            {
+              "id": "m1_62c5586a5541ca268febdfc1f19541c476fd6b2358449a9805f2aeb60a58e861",
+              "operator": "boolean_literal",
+              "status": "survived"
+            },
+            {
+              "id": "m1_a818f22fa8d2b47485d2e38b9be05fd8fbd7f0670e1849bda218898826171267",
+              "operator": "boolean_literal",
+              "status": "survived"
+            },
+            {
+              "id": "m1_1a5a20bb36987f71338a9db748e0dd69a56d9fabf86d7d28b40180124b750c9d",
+              "operator": "binary_add_sub",
+              "status": "killed"
+            }
+          ],
+          "score_error": 0.0,
+          "selection": {
+            "mode": "sample",
+            "plan_truncated": false,
+            "policy": "splitmix64_fisher_yates_v1",
+            "requested": 4,
+            "sampling": {
+              "population": 8,
+              "seed": 18446744073709551615,
+              "selected_ids": [
+                "m1_21bbdcf467c6c06666562822c3c64039e76f6ea7f74fe5a4ebf31e255e78b426",
+                "m1_62c5586a5541ca268febdfc1f19541c476fd6b2358449a9805f2aeb60a58e861",
+                "m1_a818f22fa8d2b47485d2e38b9be05fd8fbd7f0670e1849bda218898826171267",
+                "m1_1a5a20bb36987f71338a9db748e0dd69a56d9fabf86d7d28b40180124b750c9d"
+              ]
+            },
+            "scope": "sampled_candidates",
+            "selected": 4
+          }
+        }
+      ]
+    },
+    {
+      "name": "functions",
+      "operators": [
+        "binary_add_sub",
+        "boolean_literal"
+      ],
+      "population": 6,
+      "population_results": [
+        {
+          "id": "m1_f9ddf5f4d57d7aba361ca210e8a01deefd8eed97b4b5c3831b23ba10c7b1429e",
+          "operator": "boolean_literal",
+          "status": "killed"
+        },
+        {
+          "id": "m1_7f2ecab55f9a80e0a188552ecbc6bfb71427868b8c00f90671c60c1a33bc94de",
+          "operator": "boolean_literal",
+          "status": "killed"
+        },
+        {
+          "id": "m1_c5ef3c8a2cbdfd7d8216b236f5fa1f9752976607942476d1c96cc654faeb67ad",
+          "operator": "binary_add_sub",
+          "status": "killed"
+        },
+        {
+          "id": "m1_73346cf56b78c21bf9519d5a92816d7d317f3374213fc11468de85f083990a98",
+          "operator": "binary_add_sub",
+          "status": "survived"
+        },
+        {
+          "id": "m1_45bf924f3d449c1c14d918574d20b82fd31cdf84c9a51ed9652145828b894227",
+          "operator": "binary_add_sub",
+          "status": "killed"
+        },
+        {
+          "id": "m1_b9439313bab5c48265267bb18090ddbfc7c5e56e217d796b4456dcd6de833af5",
+          "operator": "binary_add_sub",
+          "status": "survived"
+        }
+      ],
+      "reference_counts": {
+        "error": 0,
+        "inconclusive": 0,
+        "killed": 4,
+        "not_run": 0,
+        "out_of_memory": 0,
+        "process_limit": 0,
+        "score": 0.6666666666666666,
+        "survived": 2,
+        "timeout": 0
+      },
+      "reference_elapsed_seconds": 0.196846708,
+      "source_records": [
+        {
+          "hash": "2f1a57f5725e69a176035688595a31e2cb11ff06d7cb48df72ff628412b3f116",
+          "path": "a.py"
+        },
+        {
+          "hash": "cc1459d1981ce0be8fdd867d54e2c220b770fe5b1b6c9ea602a0cc26f3945142",
+          "path": "b.py"
+        }
+      ],
+      "sources": {
+        "a.py": "def add(x,y):\n    return x + y\ndef unused(x):\n    return x + 1\nflag = True\n",
+        "b.py": "def adjust(x):\n    return x + 1\ndef ignored(x):\n    return x + 2\nflag = True\n"
+      },
+      "test_program": "import a,b; assert a.add(3,1) == 4; assert b.adjust(2) == 3; assert a.flag; assert b.flag",
+      "trials": [
+        {
+          "counts": {
+            "error": 0,
+            "inconclusive": 0,
+            "killed": 2,
+            "not_run": 0,
+            "out_of_memory": 0,
+            "process_limit": 0,
+            "score": 1.0,
+            "survived": 0,
+            "timeout": 0
+          },
+          "elapsed_seconds": 0.119683042,
+          "mutants": [
+            {
+              "id": "m1_7f2ecab55f9a80e0a188552ecbc6bfb71427868b8c00f90671c60c1a33bc94de",
+              "operator": "boolean_literal",
+              "status": "killed"
+            },
+            {
+              "id": "m1_f9ddf5f4d57d7aba361ca210e8a01deefd8eed97b4b5c3831b23ba10c7b1429e",
+              "operator": "boolean_literal",
+              "status": "killed"
+            }
+          ],
+          "score_error": 0.33333333333333337,
+          "selection": {
+            "mode": "sample",
+            "plan_truncated": false,
+            "policy": "splitmix64_fisher_yates_v1",
+            "requested": 2,
+            "sampling": {
+              "population": 6,
+              "seed": 0,
+              "selected_ids": [
+                "m1_7f2ecab55f9a80e0a188552ecbc6bfb71427868b8c00f90671c60c1a33bc94de",
+                "m1_f9ddf5f4d57d7aba361ca210e8a01deefd8eed97b4b5c3831b23ba10c7b1429e"
+              ]
+            },
+            "scope": "sampled_candidates",
+            "selected": 2
+          }
+        },
+        {
+          "counts": {
+            "error": 0,
+            "inconclusive": 0,
+            "killed": 1,
+            "not_run": 0,
+            "out_of_memory": 0,
+            "process_limit": 0,
+            "score": 0.5,
+            "survived": 1,
+            "timeout": 0
+          },
+          "elapsed_seconds": 0.104078125,
+          "mutants": [
+            {
+              "id": "m1_b9439313bab5c48265267bb18090ddbfc7c5e56e217d796b4456dcd6de833af5",
+              "operator": "binary_add_sub",
+              "status": "survived"
+            },
+            {
+              "id": "m1_f9ddf5f4d57d7aba361ca210e8a01deefd8eed97b4b5c3831b23ba10c7b1429e",
+              "operator": "boolean_literal",
+              "status": "killed"
+            }
+          ],
+          "score_error": -0.16666666666666663,
+          "selection": {
+            "mode": "sample",
+            "plan_truncated": false,
+            "policy": "splitmix64_fisher_yates_v1",
+            "requested": 2,
+            "sampling": {
+              "population": 6,
+              "seed": 1,
+              "selected_ids": [
+                "m1_b9439313bab5c48265267bb18090ddbfc7c5e56e217d796b4456dcd6de833af5",
+                "m1_f9ddf5f4d57d7aba361ca210e8a01deefd8eed97b4b5c3831b23ba10c7b1429e"
+              ]
+            },
+            "scope": "sampled_candidates",
+            "selected": 2
+          }
+        },
+        {
+          "counts": {
+            "error": 0,
+            "inconclusive": 0,
+            "killed": 2,
+            "not_run": 0,
+            "out_of_memory": 0,
+            "process_limit": 0,
+            "score": 1.0,
+            "survived": 0,
+            "timeout": 0
+          },
+          "elapsed_seconds": 0.112950875,
+          "mutants": [
+            {
+              "id": "m1_7f2ecab55f9a80e0a188552ecbc6bfb71427868b8c00f90671c60c1a33bc94de",
+              "operator": "boolean_literal",
+              "status": "killed"
+            },
+            {
+              "id": "m1_c5ef3c8a2cbdfd7d8216b236f5fa1f9752976607942476d1c96cc654faeb67ad",
+              "operator": "binary_add_sub",
+              "status": "killed"
+            }
+          ],
+          "score_error": 0.33333333333333337,
+          "selection": {
+            "mode": "sample",
+            "plan_truncated": false,
+            "policy": "splitmix64_fisher_yates_v1",
+            "requested": 2,
+            "sampling": {
+              "population": 6,
+              "seed": 42,
+              "selected_ids": [
+                "m1_7f2ecab55f9a80e0a188552ecbc6bfb71427868b8c00f90671c60c1a33bc94de",
+                "m1_c5ef3c8a2cbdfd7d8216b236f5fa1f9752976607942476d1c96cc654faeb67ad"
+              ]
+            },
+            "scope": "sampled_candidates",
+            "selected": 2
+          }
+        },
+        {
+          "counts": {
+            "error": 0,
+            "inconclusive": 0,
+            "killed": 1,
+            "not_run": 0,
+            "out_of_memory": 0,
+            "process_limit": 0,
+            "score": 0.5,
+            "survived": 1,
+            "timeout": 0
+          },
+          "elapsed_seconds": 0.101832625,
+          "mutants": [
+            {
+              "id": "m1_c5ef3c8a2cbdfd7d8216b236f5fa1f9752976607942476d1c96cc654faeb67ad",
+              "operator": "binary_add_sub",
+              "status": "killed"
+            },
+            {
+              "id": "m1_b9439313bab5c48265267bb18090ddbfc7c5e56e217d796b4456dcd6de833af5",
+              "operator": "binary_add_sub",
+              "status": "survived"
+            }
+          ],
+          "score_error": -0.16666666666666663,
+          "selection": {
+            "mode": "sample",
+            "plan_truncated": false,
+            "policy": "splitmix64_fisher_yates_v1",
+            "requested": 2,
+            "sampling": {
+              "population": 6,
+              "seed": 18446744073709551615,
+              "selected_ids": [
+                "m1_c5ef3c8a2cbdfd7d8216b236f5fa1f9752976607942476d1c96cc654faeb67ad",
+                "m1_b9439313bab5c48265267bb18090ddbfc7c5e56e217d796b4456dcd6de833af5"
+              ]
+            },
+            "scope": "sampled_candidates",
+            "selected": 2
+          }
+        },
+        {
+          "counts": {
+            "error": 0,
+            "inconclusive": 0,
+            "killed": 3,
+            "not_run": 0,
+            "out_of_memory": 0,
+            "process_limit": 0,
+            "score": 0.75,
+            "survived": 1,
+            "timeout": 0
+          },
+          "elapsed_seconds": 0.15430025,
+          "mutants": [
+            {
+              "id": "m1_7f2ecab55f9a80e0a188552ecbc6bfb71427868b8c00f90671c60c1a33bc94de",
+              "operator": "boolean_literal",
+              "status": "killed"
+            },
+            {
+              "id": "m1_f9ddf5f4d57d7aba361ca210e8a01deefd8eed97b4b5c3831b23ba10c7b1429e",
+              "operator": "boolean_literal",
+              "status": "killed"
+            },
+            {
+              "id": "m1_b9439313bab5c48265267bb18090ddbfc7c5e56e217d796b4456dcd6de833af5",
+              "operator": "binary_add_sub",
+              "status": "survived"
+            },
+            {
+              "id": "m1_45bf924f3d449c1c14d918574d20b82fd31cdf84c9a51ed9652145828b894227",
+              "operator": "binary_add_sub",
+              "status": "killed"
+            }
+          ],
+          "score_error": 0.08333333333333337,
+          "selection": {
+            "mode": "sample",
+            "plan_truncated": false,
+            "policy": "splitmix64_fisher_yates_v1",
+            "requested": 4,
+            "sampling": {
+              "population": 6,
+              "seed": 0,
+              "selected_ids": [
+                "m1_7f2ecab55f9a80e0a188552ecbc6bfb71427868b8c00f90671c60c1a33bc94de",
+                "m1_f9ddf5f4d57d7aba361ca210e8a01deefd8eed97b4b5c3831b23ba10c7b1429e",
+                "m1_b9439313bab5c48265267bb18090ddbfc7c5e56e217d796b4456dcd6de833af5",
+                "m1_45bf924f3d449c1c14d918574d20b82fd31cdf84c9a51ed9652145828b894227"
+              ]
+            },
+            "scope": "sampled_candidates",
+            "selected": 4
+          }
+        },
+        {
+          "counts": {
+            "error": 0,
+            "inconclusive": 0,
+            "killed": 3,
+            "not_run": 0,
+            "out_of_memory": 0,
+            "process_limit": 0,
+            "score": 0.75,
+            "survived": 1,
+            "timeout": 0
+          },
+          "elapsed_seconds": 0.151142959,
+          "mutants": [
+            {
+              "id": "m1_b9439313bab5c48265267bb18090ddbfc7c5e56e217d796b4456dcd6de833af5",
+              "operator": "binary_add_sub",
+              "status": "survived"
+            },
+            {
+              "id": "m1_f9ddf5f4d57d7aba361ca210e8a01deefd8eed97b4b5c3831b23ba10c7b1429e",
+              "operator": "boolean_literal",
+              "status": "killed"
+            },
+            {
+              "id": "m1_45bf924f3d449c1c14d918574d20b82fd31cdf84c9a51ed9652145828b894227",
+              "operator": "binary_add_sub",
+              "status": "killed"
+            },
+            {
+              "id": "m1_7f2ecab55f9a80e0a188552ecbc6bfb71427868b8c00f90671c60c1a33bc94de",
+              "operator": "boolean_literal",
+              "status": "killed"
+            }
+          ],
+          "score_error": 0.08333333333333337,
+          "selection": {
+            "mode": "sample",
+            "plan_truncated": false,
+            "policy": "splitmix64_fisher_yates_v1",
+            "requested": 4,
+            "sampling": {
+              "population": 6,
+              "seed": 1,
+              "selected_ids": [
+                "m1_b9439313bab5c48265267bb18090ddbfc7c5e56e217d796b4456dcd6de833af5",
+                "m1_f9ddf5f4d57d7aba361ca210e8a01deefd8eed97b4b5c3831b23ba10c7b1429e",
+                "m1_45bf924f3d449c1c14d918574d20b82fd31cdf84c9a51ed9652145828b894227",
+                "m1_7f2ecab55f9a80e0a188552ecbc6bfb71427868b8c00f90671c60c1a33bc94de"
+              ]
+            },
+            "scope": "sampled_candidates",
+            "selected": 4
+          }
+        },
+        {
+          "counts": {
+            "error": 0,
+            "inconclusive": 0,
+            "killed": 3,
+            "not_run": 0,
+            "out_of_memory": 0,
+            "process_limit": 0,
+            "score": 0.75,
+            "survived": 1,
+            "timeout": 0
+          },
+          "elapsed_seconds": 0.1606825,
+          "mutants": [
+            {
+              "id": "m1_7f2ecab55f9a80e0a188552ecbc6bfb71427868b8c00f90671c60c1a33bc94de",
+              "operator": "boolean_literal",
+              "status": "killed"
+            },
+            {
+              "id": "m1_c5ef3c8a2cbdfd7d8216b236f5fa1f9752976607942476d1c96cc654faeb67ad",
+              "operator": "binary_add_sub",
+              "status": "killed"
+            },
+            {
+              "id": "m1_45bf924f3d449c1c14d918574d20b82fd31cdf84c9a51ed9652145828b894227",
+              "operator": "binary_add_sub",
+              "status": "killed"
+            },
+            {
+              "id": "m1_73346cf56b78c21bf9519d5a92816d7d317f3374213fc11468de85f083990a98",
+              "operator": "binary_add_sub",
+              "status": "survived"
+            }
+          ],
+          "score_error": 0.08333333333333337,
+          "selection": {
+            "mode": "sample",
+            "plan_truncated": false,
+            "policy": "splitmix64_fisher_yates_v1",
+            "requested": 4,
+            "sampling": {
+              "population": 6,
+              "seed": 42,
+              "selected_ids": [
+                "m1_7f2ecab55f9a80e0a188552ecbc6bfb71427868b8c00f90671c60c1a33bc94de",
+                "m1_c5ef3c8a2cbdfd7d8216b236f5fa1f9752976607942476d1c96cc654faeb67ad",
+                "m1_45bf924f3d449c1c14d918574d20b82fd31cdf84c9a51ed9652145828b894227",
+                "m1_73346cf56b78c21bf9519d5a92816d7d317f3374213fc11468de85f083990a98"
+              ]
+            },
+            "scope": "sampled_candidates",
+            "selected": 4
+          }
+        },
+        {
+          "counts": {
+            "error": 0,
+            "inconclusive": 0,
+            "killed": 2,
+            "not_run": 0,
+            "out_of_memory": 0,
+            "process_limit": 0,
+            "score": 0.5,
+            "survived": 2,
+            "timeout": 0
+          },
+          "elapsed_seconds": 0.149825334,
+          "mutants": [
+            {
+              "id": "m1_c5ef3c8a2cbdfd7d8216b236f5fa1f9752976607942476d1c96cc654faeb67ad",
+              "operator": "binary_add_sub",
+              "status": "killed"
+            },
+            {
+              "id": "m1_b9439313bab5c48265267bb18090ddbfc7c5e56e217d796b4456dcd6de833af5",
+              "operator": "binary_add_sub",
+              "status": "survived"
+            },
+            {
+              "id": "m1_73346cf56b78c21bf9519d5a92816d7d317f3374213fc11468de85f083990a98",
+              "operator": "binary_add_sub",
+              "status": "survived"
+            },
+            {
+              "id": "m1_f9ddf5f4d57d7aba361ca210e8a01deefd8eed97b4b5c3831b23ba10c7b1429e",
+              "operator": "boolean_literal",
+              "status": "killed"
+            }
+          ],
+          "score_error": -0.16666666666666663,
+          "selection": {
+            "mode": "sample",
+            "plan_truncated": false,
+            "policy": "splitmix64_fisher_yates_v1",
+            "requested": 4,
+            "sampling": {
+              "population": 6,
+              "seed": 18446744073709551615,
+              "selected_ids": [
+                "m1_c5ef3c8a2cbdfd7d8216b236f5fa1f9752976607942476d1c96cc654faeb67ad",
+                "m1_b9439313bab5c48265267bb18090ddbfc7c5e56e217d796b4456dcd6de833af5",
+                "m1_73346cf56b78c21bf9519d5a92816d7d317f3374213fc11468de85f083990a98",
+                "m1_f9ddf5f4d57d7aba361ca210e8a01deefd8eed97b4b5c3831b23ba10c7b1429e"
+              ]
+            },
+            "scope": "sampled_candidates",
+            "selected": 4
+          }
+        }
+      ]
+    }
+  ],
+  "scope": "two authored Python fixtures; no representative-project or real-defect claim"
+}

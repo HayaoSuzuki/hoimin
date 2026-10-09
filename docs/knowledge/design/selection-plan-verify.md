@@ -5,6 +5,16 @@ description: 候補発見と実行の分離、ランキング、部分集合、�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-695-design
+  resource: ../../superpowers/reports/issue-695/design.md
+  revision: 76f03acdefefdc03aff6973b0d2b49f6f3598837
+  working_tree: clean
+  sha256: 01880cfdffc342bb4b70a51d139ce77d08f3e932ba512500f72e7c1fb9920915
+- id: issue-695-review
+  resource: ../../superpowers/reports/issue-695/review.md
+  revision: 76f03acdefefdc03aff6973b0d2b49f6f3598837
+  working_tree: clean
+  sha256: e0601ed731dfa3357e9482070fb313177bdb89fca0405c30e984a59bec851a38
 - id: issue-454
   resource: ../../superpowers/specs/2026-09-14-issue-454-fixed-batches-design.md
   working_tree: untracked
@@ -322,7 +332,7 @@ JSON/JSONLのmutant記録に実際の候補IDを残す。バッチの再実行�
 
 # 実行前の候補preview（Issue #599）
 
-`verify PLAN --dry-run` は通常のverifyと同じplan・ソース・fingerprint・候補の検証を行い、選択結果を出力して終了する。baselineと変異テスト、workerコピー、session作成、実行metricsは発生しない。`--metrics` との併用は拒否する。有効なpreviewはtruncated planでも終了コード0、入力不正は2となる。実行時の資源確保までは確認しない。[^issue-599]
+`verify PLAN --dry-run` は通常のverifyと同じplan・ソース・fingerprint・候補の検証を行い、選択結果を出力して終了する。baselineと変異テスト、workerコピー、session作成、実行metricsは発生しない。`--metrics` との併用は拒否する。候補ID・top指定の有効なpreviewはtruncated planでも終了コード0となる。sample指定はtruncated planを拒否し、入力不正は2となる。[^issue-695-design]実行時の資源確保までは確認しない。[^issue-599]
 
 JSONとJSONLは、独立したschema 1の `verify_preview` オブジェクトを1件出力する。`candidates` 配列は選択順で、各行にID、保存rank、バッチ内の `selection_order`、path、lineを含む。rank・選択順・行番号は1始まりである。top指定の `offset` は0始まり、明示ID指定ではnullとなる。既存の選択metadataに加え、保持数を `retained_candidates` に記録する。[^issue-599-preview][^issue-599-schema]
 
@@ -392,3 +402,16 @@ reportのpolicyは`line_round_robin_v1`。新しいpolicyを拒否する旧reade
 [^issue-710-assessment]: [assessment.md](../../superpowers/reports/issue-710/assessment.md)。
 
 [^issue-710-review]: [review.md](../../superpowers/reports/issue-710/review.md)。
+
+# Issue #695: seed付きの無作為抽出
+
+`verify PLAN --sample N --seed S` は、完全なplanに保存された候補集合から順位にかかわらず重複なしで抽出する。Nは正の整数、Sは0を含む符号なし64ビット整数で、両方の指定を必須とする。sampleはtop・候補ID・offset・順位用policyと併用できず、seedはsampleでのみ使える。母集団はplan作成時のselector・profile・operatorによって制限される。[^issue-695-design]
+
+抽出前に空集合と `truncated: true` を拒否する。要求数が母集団数を超える場合は全候補を選び、実際の抽出数がplanの `max_mutants` を超える場合は実行前に拒否する。選択規則 `splitmix64_fisher_yates_v1` は64ビットの疑似乱数生成、剰余の偏りを避ける棄却、前方からの部分Fisher–Yates交換を固定する。同じplan・件数・seed・規則の版で候補IDと実行を割り当てる順序を再現する。並列実行の完了順は対象外である。[^issue-695-design]
+
+previewとrunの選択metadataは `mode: sample`、`scope: sampled_candidates` を使い、要求数・実際の抽出数に加えて `sampling` に母集団数・seed・選択順のIDを残す。完了とscoreの対象は標本であり、標本外の候補をkilledに数えない。timeoutやキャンセルは従来の未完了判定を維持する。反復評価ではplan・件数・seedを保存し、追跡対象の変更でplanを再作成した場合は選択IDも確認する。progressは従来の候補同一性・曖昧性の判定を続ける。[^issue-695-design][^issue-695-review]
+
+実装コミット `76f03ac` に含まれる記録では、macOS arm64でRust 2,720件・Python 504件、4,096ケースのプロパティテスト、Lean生成値と公開CLIの360ケース照合、計1,615,243入力のファジングを実施した。Leanの証明はモデルの交換・prefix・受付条件に関するもので、全入力に対するRustの正しさを証明したものではない。比較測定の対象は作成したPythonプロジェクト2件であり、実運用での速度向上や実不具合の検出率は未確認である。抽出規則・レポート・実行順を変更するときは、これらの契約と検証範囲を再確認する。[^issue-695-review]
+
+[^issue-695-design]: [Seeded verification sampling](../../superpowers/reports/issue-695/design.md)。
+[^issue-695-review]: [Issue 695: review and verification record](../../superpowers/reports/issue-695/review.md)。

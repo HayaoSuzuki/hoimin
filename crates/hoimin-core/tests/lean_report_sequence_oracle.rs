@@ -369,6 +369,10 @@ mod correspondence {
         }
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "exhaustive protocol-error mapping stays in one oracle adapter"
+    )]
     fn observed_error(error: &ReportSequenceError) -> Result<Expected, String> {
         let (code, fields) = match error {
             ReportSequenceError::RunNotStarted => ("report.sequence.run_not_started", vec![]),

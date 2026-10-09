@@ -246,12 +246,12 @@ struct RawPlanArgs {
         ArgGroup::new("selection")
             .required(true)
             .multiple(false)
-            .args(["candidate_ids", "top"])
+            .args(["candidate_ids", "top", "sample"])
     ),
     after_help = "Execution and resource settings come from PLAN and cannot be overridden. Disk safety limits --max-workspace-size and --min-free-space are inherited from PLAN. Create a new plan to change them."
 )]
 struct RawVerifyArgs {
-    /// Path to a version-4 plan manifest.
+    /// Path to a version-5 plan manifest.
     #[arg(value_name = "PLAN")]
     manifest: PathBuf,
 
@@ -262,6 +262,14 @@ struct RawVerifyArgs {
     /// Execute the N highest-ranked candidates retained in the plan; strict order is the default.
     #[arg(long, value_name = "N")]
     top: Option<NonZeroUsize>,
+
+    /// Sample N candidates without replacement from a complete plan.
+    #[arg(long, value_name = "N", requires = "seed", conflicts_with_all = ["offset", "selection_policy"])]
+    sample: Option<NonZeroUsize>,
+
+    /// Explicit reproducible sampling seed (unsigned 64-bit integer).
+    #[arg(long, value_name = "SEED", requires = "sample", conflicts_with_all = ["top", "candidate_ids"])]
+    seed: Option<u64>,
 
     /// Skip K candidates in the complete selected-policy ordering before taking --top N.
     #[arg(
@@ -407,6 +415,10 @@ pub enum TopSelectionPolicy {
 #[derive(Debug, Eq, PartialEq)]
 pub enum VerifySelection {
     CandidateIds(Vec<String>),
+    Sample {
+        count: NonZeroUsize,
+        seed: u64,
+    },
     Top {
         count: NonZeroUsize,
         policy: TopSelectionPolicy,
@@ -550,7 +562,13 @@ impl TryFrom<Command> for ParsedCommand {
                         count,
                         policy: raw.selection_policy.unwrap_or(TopSelectionPolicy::Strict),
                     },
-                    None => VerifySelection::CandidateIds(raw.candidate_ids),
+                    None => match raw.sample {
+                        Some(count) => VerifySelection::Sample {
+                            count,
+                            seed: raw.seed.expect("clap requires --seed with --sample"),
+                        },
+                        None => VerifySelection::CandidateIds(raw.candidate_ids),
+                    },
                 };
                 Ok(Self::Verify(VerifyArgs {
                     dry_run: raw.dry_run,

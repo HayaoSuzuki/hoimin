@@ -339,11 +339,11 @@ impl RunState {
         self
     }
 
-    fn is_top_verification(&self) -> bool {
+    fn is_ordered_verification(&self) -> bool {
         matches!(
             self.verification_selection,
             Some(VerificationSelection {
-                mode: VerificationSelectionMode::Top,
+                mode: VerificationSelectionMode::Top | VerificationSelectionMode::Sample,
                 ..
             })
         )
@@ -1509,7 +1509,7 @@ pub fn transition(
                 id: output_id,
                 event: output,
             })];
-            if success && state.is_top_verification() {
+            if success && state.is_ordered_verification() {
                 state.phase = RunPhase::BudgetCheck;
                 let id = state.allocate_id()?;
                 effects.push(RunEffect::ObserveRemainingBudget(ObserveRemainingBudget {
@@ -1551,7 +1551,7 @@ pub fn transition(
                         "warning",
                         "budget.projected_shortfall",
                         format!(
-                            "verify top budget projection: selected={}, jobs={}, \
+                            "verify budget projection: selected={}, jobs={}, \
                              planned_total_timeout={}s, baseline={}s, \
                              effective_mutant_timeout={}s, remaining={}s, \
                              projected_capacity={}s. This is not a guaranteed failure; \

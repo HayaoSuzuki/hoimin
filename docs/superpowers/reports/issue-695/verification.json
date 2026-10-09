@@ -1,0 +1,121 @@
+{
+  "date": "2026-10-10",
+  "base_commit": "1e58e1f",
+  "branch": "feat/sampling-with-seed",
+  "platform": "macOS arm64",
+  "rust": "1.99.0",
+  "python": "3.14.7",
+  "rust_workspace": {
+    "command": "cargo test --workspace",
+    "exit_code": 0,
+    "passed": 2720,
+    "ignored": 24,
+    "test_binaries": 148
+  },
+  "python_suite": {
+    "command": ".venv/bin/python -m pytest -q",
+    "passed": 504,
+    "skipped": 3,
+    "exit_code": 0,
+    "note": "ran with process visibility; sandbox ps restrictions caused four infrastructure failures in an earlier run"
+  },
+  "format": "pass",
+  "clippy_workspace_all_targets": "pass",
+  "ruff_changed_python_tests": "pass",
+  "properties": {
+    "cases": 4096,
+    "seed": 695,
+    "passed": true
+  },
+  "lean": {
+    "oracle_cases": 360,
+    "accepted": 72,
+    "rejected": 288,
+    "all_matched": true,
+    "guard_statistics": {
+      "proof": {
+        "elapsed_ms": 3543,
+        "exit_code": 0,
+        "peak_rss_kib": 667568,
+        "reason": "child_exit",
+        "rss_limit_kib": 2097152,
+        "schema": 1,
+        "timeout_ms": 20000
+      },
+      "corpus": {
+        "elapsed_ms": 4798,
+        "exit_code": 0,
+        "peak_rss_kib": 675136,
+        "reason": "child_exit",
+        "rss_limit_kib": 2097152,
+        "schema": 1,
+        "timeout_ms": 20000
+      },
+      "executable": {
+        "elapsed_ms": 5449,
+        "exit_code": 0,
+        "peak_rss_kib": 706352,
+        "reason": "child_exit",
+        "rss_limit_kib": 2097152,
+        "schema": 1,
+        "timeout_ms": 20000
+      },
+      "sensitivity": {
+        "elapsed_ms": 560,
+        "exit_code": 0,
+        "peak_rss_kib": 56960,
+        "reason": "child_exit",
+        "rss_limit_kib": 2097152,
+        "schema": 1,
+        "timeout_ms": 20000
+      }
+    }
+  },
+  "fuzz_campaigns": [
+    {
+      "seed": 695,
+      "runs": 999275,
+      "seconds": 31,
+      "reported_rss_mib": 466,
+      "findings": 0
+    },
+    {
+      "seed": 695,
+      "runs": 615968,
+      "seconds": 11,
+      "reported_rss_mib": 419,
+      "findings": 0,
+      "includes_checked_in_seeds": true
+    }
+  ],
+  "evaluation": {
+    "authored_projects": 2,
+    "full_population_runs": 2,
+    "sample_runs": 16,
+    "inconclusive_outcomes": 0,
+    "file": "observations.json"
+  },
+  "frequency_inspection": {
+    "seeds": 65536,
+    "population": 8,
+    "sample_size": 3,
+    "file": "frequencies.json"
+  },
+  "schema_validation": "schema-validation.json",
+  "self_reviews": {
+    "assessment": 5,
+    "design": 5,
+    "plan": 5,
+    "implementation": 5,
+    "tests": 5
+  },
+  "independent_review": {
+    "initial": "one minor stale top-mode label; fixed",
+    "final": "approved; no actionable findings"
+  },
+  "limitations": [
+    "No representative production-project or real-defect experiment.",
+    "Formal proofs concern the model; finite oracle matches do not prove Rust for all inputs.",
+    "Runtime tests ran on macOS arm64; other operating systems were not executed locally."
+  ]
+}
