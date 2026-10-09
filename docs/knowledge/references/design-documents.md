@@ -1628,3 +1628,7 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 - [Issue #707 design](../../superpowers/reports/issue-707/design.md)
 
 - [Issue #708 design](../../superpowers/reports/issue-708/design.md)
+
+## Issue #741 リリースSBOM
+
+- [設計](../../superpowers/specs/2026-10-10-issue-741-sbom-design.md) - 配布物別SBOMと公開ゲート。詳細は[契約](../release-sbom.md)を参照。

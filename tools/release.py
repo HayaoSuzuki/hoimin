@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib
+import json
 import re
 import shutil
 import subprocess
@@ -166,7 +168,7 @@ def set_version(root: Path, version: str) -> None:
         updated[name] = contents
     # Validate every edit before changing any file. No dependency resolution needed.
     for name, contents in updated.items():
-        (root / name).write_text(contents, encoding="utf-8")
+        (root / name).write_text(contents, encoding="utf-8", newline="\n")
 
 
 def package(
@@ -203,16 +205,27 @@ def package(
                     archive.addfile(info, stream)
 
 
-def checksums(directory: Path, version: str) -> None:
+def checksums(directory: Path, version: str, commit: str = "") -> None:
     validate_version(version)
     expected = {
         f"hoimin-v{version}-{platform}."
         + ("zip" if platform.startswith("windows") else "tar.gz")
         for platform in PLATFORMS
     }
+    sbom = importlib.import_module("tools.sbom" if __package__ else "sbom")
+    expected.update(
+        sbom.filename(version, platform, kind)
+        for platform in PLATFORMS
+        for kind in sbom.KINDS
+    )
+    wheels = {}
     python_version = re.escape(version.replace("-dev.", ".dev"))
-    for platform in (r"win_amd64", r"manylinux[^/]*x86_64", r"macosx_[^/]*arm64"):
-        pattern = rf"hoimin-{python_version}-[^-]+-[^-]+-{platform}\.whl"
+    for platform, wheel_platform in zip(
+        PLATFORMS,
+        (r"win_amd64", r"manylinux[^/]*x86_64", r"macosx_[^/]*arm64"),
+        strict=True,
+    ):
+        pattern = rf"hoimin-{python_version}-[^-]+-[^-]+-{wheel_platform}\.whl"
         matches = [
             path.name
             for path in directory.iterdir()
@@ -222,12 +235,31 @@ def checksums(directory: Path, version: str) -> None:
             msg = f"expected exactly one wheel for {platform}, got {matches}"
             raise ValueError(msg)
         expected.update(matches)
+        wheels[platform] = matches[0]
     actual = {path.name for path in directory.iterdir()} - {"SHA256SUMS"}
     if actual != expected:
         msg = (
             f"unexpected release assets: missing={expected - actual}, "
             f"extra={actual - expected}"
         )
+        raise ValueError(msg)
+    lock_digests = set()
+    for platform in PLATFORMS:
+        suffix = "zip" if platform.startswith("windows") else "tar.gz"
+        for kind in sbom.KINDS:
+            path = directory / sbom.filename(version, platform, kind)
+            asset = directory / (
+                wheels[platform]
+                if kind == "wheel"
+                else f"hoimin-v{version}-{platform}.{suffix}"
+            )
+            sbom.validate(path, asset, platform, kind, version, commit)
+            data = json.loads(path.read_text(encoding="utf-8"))
+            lock_digests.add(
+                sbom.properties(data["metadata"]["properties"])["hoimin:lock:sha256"]
+            )
+    if len(lock_digests) != 1:
+        msg = "SBOMs describe different Cargo.lock files"
         raise ValueError(msg)
     lines = []
     for name in sorted(expected):
@@ -257,6 +289,7 @@ def main() -> None:
     sums = commands.add_parser("checksums")
     sums.add_argument("--directory", type=Path, required=True)
     sums.add_argument("--version", required=True)
+    sums.add_argument("--commit", required=True)
     args = parser.parse_args()
     if args.command == "tag":
         tag = reserve_tag(args.root, args.commit)
@@ -274,7 +307,7 @@ def main() -> None:
         for wheel in (args.root / "target/wheels").glob("*.whl"):
             shutil.copyfile(wheel, args.directory / wheel.name)
     else:
-        checksums(args.directory, args.version)
+        checksums(args.directory, args.version, args.commit)
 
 
 if __name__ == "__main__":

@@ -97,3 +97,64 @@ restricts deployment to `main` and can require approval where the GitHub plan
 supports reviewers. Without reviewers, manual dispatch proceeds to upload after
 validation. See [PyPI publishing](pypi-publishing.md) for the initial
 account and environment setup, first publication, and retry procedure.
+
+## Release SBOMs
+
+Every standalone archive and wheel has a separate CycloneDX 1.5 JSON SBOM:
+`hoimin-v<VERSION>-<PLATFORM>-<KIND>.cdx.json`. `<PLATFORM>` is
+`windows-x86_64`, `linux-x86_64`, or `macos-aarch64`; `<KIND>` is
+`standalone` or `wheel`. All six documents are GitHub Release assets covered
+by `SHA256SUMS`. The aggregate `verified-release` Actions artifact also
+contains all twelve assets and their checksums on PRs and manual runs.
+
+Download and verify a release (substitute the actual version):
+
+```console
+gh release download v<VERSION> --repo HayaoSuzuki/hoimin --dir release-assets
+cd release-assets
+sha256sum --check SHA256SUMS
+```
+
+Use `shasum -a 256 -c SHA256SUMS` on macOS. Each document's metadata records
+the release commit, target triple, `--no-default-features`, build environment,
+`rustc -vV`, and the SHA-256 of the release-version-adjusted `Cargo.lock`.
+`hoimin:artifact:name` and `hoimin:artifact:sha256` identify the exact archive
+or wheel described. Release manifests and lockfiles use LF on every OS so
+all builds describe identical lockfile bytes.
+
+These SBOMs describe Cargo's normal and build dependency graph, including
+transitive packages and Cargo package URLs. Build dependencies can affect
+compilation without being present in the executable. This is not a complete
+binary inventory: OS libraries, bundled C sources within crates, toolchains,
+and other system software are not exhaustively analyzed. Python development
+and test packages and the separate fuzz workspace are excluded. Existing
+`cargo audit` and `uv audit` continue independently.
+
+The Linux wheel graph is captured inside the same manylinux2014 Maturin
+container used to build it. The Linux standalone graph is captured on the
+Ubuntu 22.04 host. Windows and macOS also receive separate documents for
+their two distribution forms. The capture runs after version adjustment,
+using the same target and Cargo feature flags as the build.
+
+The vendored `littrs-ruff-python-parser` is identified as a local modification
+through a commit-qualified Cargo package URL. Its pedigree, upstream package
+and VCS revision, Ruff backport revision, and commit-pinned
+`README.hoimin.md` link distinguish it from the unmodified crates.io package.
+The README hash identifies the local-change description; the release commit
+identifies the complete vendored source tree.
+
+Generation uses `cargo-cyclonedx 0.5.7`; JSON validation uses
+`jsonschema 4.25.1` and checked-in official schemas, without network schema
+retrieval. Because this generator does not expose `--locked`, capture first
+runs locked Cargo metadata, then compares lockfile bytes after generation.
+Any change is restored and rejected, including on generator failure.
+CI rejects missing, empty, malformed, mismatched, or internally inconsistent
+SBOMs before producing checksums or publishing. It also checks that all six
+documents name the same lockfile digest. Already published releases retain
+the existing protection against replacement; PyPI still uploads only wheels.
+
+When changing the Cargo feature flags, target matrix, Maturin image, generator,
+or vendored parser version, update the SBOM metadata contract and tests with
+the build configuration. See the [design](superpowers/specs/2026-10-10-issue-741-sbom-design.md)
+and [verification record](superpowers/reports/2026-10-10-issue-741-sbom.md)
+for the tested scope and native-platform limitations.

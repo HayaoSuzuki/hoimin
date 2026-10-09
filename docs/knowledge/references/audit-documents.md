@@ -1354,3 +1354,7 @@ sources:
 [^issue-695-plan]: [plan.md](../../superpowers/reports/issue-695/plan.md)。
 
 [^issue-695-review]: [review.md](../../superpowers/reports/issue-695/review.md)。
+
+## Issue #741 リリースSBOM
+
+- [検証記録](../../superpowers/reports/2026-10-10-issue-741-sbom.md) - 配布物別SBOMと公開ゲート。詳細は[契約](../release-sbom.md)を参照。

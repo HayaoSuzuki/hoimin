@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+from sbom_fixtures import attach_sboms
 
 from tools import release as automation
 
@@ -491,8 +492,16 @@ def release_assets(directory: Path) -> list[Path]:
 
 def test_checksums_cover_exactly_all_platform_assets(tmp_path: Path) -> None:
     assets = release_assets(tmp_path)
+    assets += attach_sboms(assets)
     result = release(
-        tmp_path, "checksums", "--directory", str(tmp_path), "--version", "1.2.3"
+        tmp_path,
+        "checksums",
+        "--directory",
+        str(tmp_path),
+        "--version",
+        "1.2.3",
+        "--commit",
+        "a" * 40,
     )
     assert result.returncode == 0, result.stderr
     assert (tmp_path / "SHA256SUMS").read_text() == "".join(
@@ -520,7 +529,14 @@ def test_incomplete_or_mixed_assets_cannot_be_published(
         assets[-1].rename(tmp_path / "hoimin-1.2.3-py3-none-manylinux2014_x86_64.whl")
     assert (
         release(
-            tmp_path, "checksums", "--directory", str(tmp_path), "--version", "1.2.3"
+            tmp_path,
+            "checksums",
+            "--directory",
+            str(tmp_path),
+            "--version",
+            "1.2.3",
+            "--commit",
+            "a" * 40,
         ).returncode
         != 0
     )
@@ -647,3 +663,33 @@ def test_publication_uses_server_version_selection_in_both_finish_orders(
     state = json.loads((tmp_path / "server.json").read_text())
     assert state["published"] == list(order)
     assert state["latest"] == "v1.2.4"
+
+
+def test_release_lock_bytes_match_with_windows_default_newlines(
+    repository: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original = Path.write_text
+
+    def windows_write(
+        path: Path,
+        data: str,
+        *,
+        encoding: str | None = None,
+        errors: str | None = None,
+        newline: str | None = None,
+    ) -> int:
+        # Reproduce TextIOWrapper's Windows default on any test host.
+        return original(
+            path,
+            data,
+            encoding=encoding,
+            errors=errors,
+            newline="\r\n" if newline is None else newline,
+        )
+
+    monkeypatch.setattr(Path, "write_text", windows_write)
+    automation.set_version(repository, "1.2.3")
+    lock = (repository / "Cargo.lock").read_bytes()
+    assert b'version = "1.2.3"' in lock
+    assert b"\r\n" not in lock

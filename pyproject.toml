@@ -30,6 +30,7 @@ manifest-path = "crates/hoimin-cli/Cargo.toml"
 
 [dependency-groups]
 dev = [
+    "jsonschema==4.25.1",
     "maturin>=1.11,<2",
     "mypy>=2.3.0",
     "packaging>=26.0",

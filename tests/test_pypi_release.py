@@ -271,3 +271,23 @@ def test_pypi_workflow_keeps_oidc_in_manual_protected_upload_job() -> None:
     assert upload["with"]["packages-dir"] == "dist/"
     assert "password" not in upload["with"]
     assert upload["with"].get("skip-existing", False) is False
+
+
+def test_sbom_checksums_do_not_change_pypi_payload(release_assets: Path) -> None:
+    sbom = release_assets / "hoimin-v1.2.3-linux-x86_64-wheel.cdx.json"
+    sbom.write_text('{"bomFormat":"CycloneDX"}')
+    sums = release_assets / "SHA256SUMS"
+    sums.write_text(
+        sums.read_text()
+        + hashlib.sha256(sbom.read_bytes()).hexdigest()
+        + "  "
+        + sbom.name
+        + "\n"
+    )
+    result = prepare(release_assets)
+    assert result.returncode == 0, result.stderr
+    output = release_assets.parent / "dist"
+    assert len(list(output.iterdir())) == 3
+    for path in output.iterdir():
+        assert path.suffix == ".whl"
+        assert path.read_bytes() == (release_assets / path.name).read_bytes()
