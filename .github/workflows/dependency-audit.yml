@@ -13,6 +13,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: dependency-audit-${{ github.event_name }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   python:
     name: Python dependency audit (${{ matrix.platform }})
@@ -24,6 +28,8 @@ jobs:
         platform: [linux, macos, windows]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.14'
@@ -32,7 +38,9 @@ jobs:
           version: '0.12.23'
           enable-cache: false
       - name: Audit all Python extras and dependency groups
-        run: uv audit --frozen --preview-features audit-command --python-platform "${{ matrix.platform }}"
+        env:
+          AUDIT_PLATFORM: ${{ matrix.platform }}
+        run: uv audit --frozen --preview-features audit-command --python-platform "$AUDIT_PLATFORM"
 
   rust:
     name: Rust dependency audit (${{ matrix.lockfile }})
@@ -46,6 +54,8 @@ jobs:
       CARGO_AUDIT_VERSION: '0.22.2'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Install repository Rust toolchain
         run: rustup toolchain install
       - name: Cache cargo-audit executable
@@ -63,4 +73,6 @@ jobs:
             cargo install cargo-audit --version "$CARGO_AUDIT_VERSION" --locked --root "$tool_root"
           fi
       - name: Audit locked Rust dependencies
-        run: cargo audit --file "${{ matrix.lockfile }}"
+        env:
+          AUDIT_LOCKFILE: ${{ matrix.lockfile }}
+        run: cargo audit --file "$AUDIT_LOCKFILE"

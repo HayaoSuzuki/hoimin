@@ -14,29 +14,56 @@
   "packageRules": [
     {
       "description": "Group production dependencies after 7 days",
-      "matchManagers": ["cargo"],
-      "matchDepTypes": ["dependencies"],
+      "matchManagers": [
+        "cargo"
+      ],
+      "matchDepTypes": [
+        "dependencies"
+      ],
       "groupName": "production dependencies",
       "minimumReleaseAge": "7 days"
     },
     {
       "description": "Group Rust development dependencies after 3 days",
-      "matchManagers": ["cargo"],
-      "matchDepTypes": ["dev-dependencies"],
+      "matchManagers": [
+        "cargo"
+      ],
+      "matchDepTypes": [
+        "dev-dependencies"
+      ],
       "groupName": "development dependencies",
       "minimumReleaseAge": "3 days"
     },
     {
       "description": "Group Python development dependencies after 3 days",
-      "matchManagers": ["pep621"],
-      "matchDepTypes": ["dependency-groups"],
+      "matchManagers": [
+        "pep621"
+      ],
+      "matchDepTypes": [
+        "dependency-groups"
+      ],
       "groupName": "development dependencies",
       "minimumReleaseAge": "3 days"
     },
     {
       "description": "Group GitHub Actions updates after 3 days",
-      "matchManagers": ["github-actions"],
+      "matchManagers": [
+        "github-actions"
+      ],
       "groupName": "development dependencies",
+      "minimumReleaseAge": "3 days"
+    },
+    {
+      "description": "Update pinned workflow linters and their lockfile together",
+      "matchManagers": [
+        "pep621"
+      ],
+      "matchPackageNames": [
+        "actionlint-py",
+        "shellcheck-py",
+        "zizmor"
+      ],
+      "groupName": "workflow linters",
       "minimumReleaseAge": "3 days"
     }
   ]

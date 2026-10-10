@@ -20,6 +20,7 @@ concurrency:
 
 jobs:
   fuzz:
+    name: Scheduled fuzz
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -29,6 +30,8 @@ jobs:
       - name: Start fuzz budget including setup
         run: echo "FUZZ_DEADLINE=$(( $(date +%s) + 3300 ))" >> "$GITHUB_ENV"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.14'
@@ -65,12 +68,14 @@ jobs:
           restore-keys: |
             fuzz-corpus-v1-${{ runner.os }}-${{ github.ref_name }}-
       - name: Fuzz all targets
+        env:
+          FUZZ_SECONDS: ${{ inputs.seconds || '60' }}
         run: >-
           python tools/ci_fuzz.py
           --deadline "$FUZZ_DEADLINE"
           --report "$RUNNER_TEMP/fuzz-report"
           --seed "$GITHUB_RUN_ID"
-          --seconds-per-target "${{ inputs.seconds || '60' }}"
+          --seconds-per-target "$FUZZ_SECONDS"
       - name: Save discovered corpus
         if: always()
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

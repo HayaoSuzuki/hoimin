@@ -11,6 +11,8 @@ okf_version: "0.2"
 
 - [リリース配布物のSBOM](release-sbom.md) - Cargo依存グラフの範囲、配布物との対応、公開前の検証。
 
+- [CIの選択と必須チェック](ci-validation.md) - 保守的な差分分類、集約、厳格なworkflow検査と公開の権限境界。
+
 # 設計と契約
 
 - [全体構成](design/architecture.md) - 隔離コピー、状態遷移と入出力の分離、Rust解析器への移行。

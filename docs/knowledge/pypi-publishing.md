@@ -12,13 +12,14 @@ sources:
   revision: 252654579792ede15081c8913e9b0ea59dd71a68
 - id: workflow
   resource: ../../.github/workflows/publish-pypi.yml
-  working_tree: untracked
-  sha256: 83729c030760d213a51ad3235136728133f83f916bd0af577b76199f5ca2c060
+  revision: 6ec69f4ac926c887003e5509bb393289f0bc9e71
+  working_tree: modified
+  sha256: 455ba3e258022c8131acb9b193b4daa5e9acd2b198bb5f66aa85855e758d39a2
 - id: validator
   resource: ../../tools/pypi_release.py
+  revision: 6ec69f4ac926c887003e5509bb393289f0bc9e71
   working_tree: modified
-  sha256: fd374ab48a99035ec0e7555490c162d15545f4b887fb728a9127be8d3b817bab
-  revision: 252654579792ede15081c8913e9b0ea59dd71a68
+  sha256: 9b9000c2455426120e2be78994084014d26d2bc8eeaa840f08d6a6b01a05e895
 - id: tests
   resource: ../../tests/test_pypi_release.py
   working_tree: modified
@@ -36,14 +37,14 @@ sources:
   sha256: e8653a2473cc383c6c99911cc9f095beb3133fb6233f74c5e85ae71845f220ba
 - id: release-workflow
   resource: ../../.github/workflows/release.yml
-  revision: 054dbba32859182145b2bbb1c2578b9f398c615d
+  revision: 6ec69f4ac926c887003e5509bb393289f0bc9e71
   working_tree: modified
-  sha256: 54f5370958362bc75b961507676cb93b4af31f1c8a07c4c3d93696b458981bd1
+  sha256: b8c69f70b49c03ca024d50ee0c6c32af3079e56b26e4cbf8dd6b945a3b6682bb
 - id: ci-tests
   resource: ../../tests/test_ci_workflow.py
-  revision: 054dbba32859182145b2bbb1c2578b9f398c615d
+  revision: 6ec69f4ac926c887003e5509bb393289f0bc9e71
   working_tree: modified
-  sha256: 5b3ec43583718ce1140eaba0d9fcb33ddb6e96d241d2296c7316484554903037
+  sha256: bc6dfe33f0d22bb323df74e08092921ae83773a2491796e38c7cc6e2c8a437fe
 ---
 
 # 公開の対象と手順
@@ -59,6 +60,9 @@ PyPIとTestPyPIそれぞれに、所有者`HayaoSuzuki`、リポジトリ`hoimin
 必須レビュアーを利用できる場合は、公開ジョブの承認者を設定する。非公開リポジトリをGitHub ProまたはTeamで利用する場合、この機能は使えない。その構成では、手動実行後に検証が通ると、追加の承認待ちなしで公開する。[^guide]
 
 # 検証範囲と再確認条件
+
+GitHub ReleaseのPR previewは配布入力の変更時に選択し、手動実行では常に選択する。
+previewのprepareはread権限とし、マージ済みcommitのタグ予約と公開だけをwrite権限にする。[^release-workflow]
 
 GitHub Release用のビルドでは、PR検証と手動検証は実行イベントの`github.sha`、マージ後の公開は`pull_request_target`の`merge_commit_sha`を使う。PR更新時のペイロードには古い`merge_commit_sha`が入る場合があるため、検証対象の選択には使わない。checkout、後続ジョブへのコミット指定、同時実行のグループで同じ選択条件を用いる。[^release-workflow][^ci-tests]
 

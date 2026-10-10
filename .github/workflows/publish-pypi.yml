@@ -23,6 +23,7 @@ concurrency:
 
 jobs:
   prepare:
+    name: Validate PyPI wheels
     if: github.repository == 'HayaoSuzuki/hoimin' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -55,6 +56,7 @@ jobs:
           retention-days: 7
 
   publish:
+    name: Publish PyPI wheels
     needs: prepare
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -62,7 +64,7 @@ jobs:
       name: ${{ inputs.index }}
       url: ${{ inputs.index == 'pypi' && 'https://pypi.org/p/hoimin' || 'https://test.pypi.org/p/hoimin' }}
     permissions:
-      id-token: write
+      id-token: write # Trusted Publishing OIDC token; no source checkout here.
     steps:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:

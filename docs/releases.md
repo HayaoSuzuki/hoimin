@@ -72,8 +72,13 @@ is rejected, the atomic push writes neither ref.
 All concurrent automated reservations must use this protocol; manually created
 tags or runs of an older workflow do not participate in its shared lease.
 
-PRs and manual runs build preview packages (`-dev.<RUN_ID>`) and retain them
-as Actions artifacts. They do not create tags or releases. For a manual check:
+PRs that change distribution inputs and all manual runs build preview packages
+(`-dev.<RUN_ID>`) and retain them
+as Actions artifacts. They do not create tags or releases. Older previews of the
+same PR are cancelled. The preview preparation job has read-only permissions;
+only the merged-commit tag reservation and publication jobs can write.
+See [CI selection](ci.md) for conservative fallback and classification.
+For a manual check:
 
 ```console
 gh workflow run release.yml --ref <BRANCH>
@@ -106,7 +111,7 @@ Every standalone archive and wheel has a separate CycloneDX 1.5 JSON SBOM:
 `windows-x86_64`, `linux-x86_64`, or `macos-aarch64`; `<KIND>` is
 `standalone` or `wheel`. All six documents are GitHub Release assets covered
 by `SHA256SUMS`. The aggregate `verified-release` Actions artifact also
-contains all twelve assets and their checksums on PRs and manual runs.
+contains all twelve assets and their checksums on selected PR previews and manual runs.
 
 Download and verify a release (substitute the actual version):
 

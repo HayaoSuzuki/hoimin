@@ -11,8 +11,53 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  changes:
+    name: Changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      python: ${{ steps.plan.outputs.python }}
+      rust: ${{ steps.plan.outputs.rust }}
+      formal: ${{ steps.plan.outputs.formal }}
+      distribution: ${{ steps.plan.outputs.distribution }}
+      cgroup: ${{ steps.plan.outputs.cgroup }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.14'
+      - name: Select checks conservatively
+        id: plan
+        env:
+          CI_CGROUP: ${{ vars.HOIMIN_CGROUP_V2_DELEGATED }}
+        run: python tools/ci_selection.py plan
+
+  workflow-lint:
+    name: Workflow lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.14'
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - run: uv sync --frozen --group workflow --no-install-project
+      - run: uv run --frozen --no-sync python -m tools.workflow_lint
+      - run: uv run --frozen --no-sync pytest tests/test_workflow_lint.py tests/test_ci_selection.py tests/test_ci_selection_workflow.py tests/test_ci_metrics.py
+
   quality:
+    needs: changes
     name: Quality (${{ matrix.os }})
     strategy:
       fail-fast: false
@@ -21,6 +66,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.14'
@@ -34,14 +81,20 @@ jobs:
       - name: Release SBOM generative tests
         run: uv run --frozen --no-sync pytest tests/test_sbom_properties.py tests/test_sbom_oracle.py
       - name: Install repository Rust toolchain
+        if: needs.changes.outputs.rust == 'true'
         run: rustup toolchain install
-      - run: cargo fmt --all -- --check
-      - run: cargo fmt --manifest-path vendor/ruff_python_parser/Cargo.toml -- --check
-      - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
-      - run: cargo clippy --locked -p littrs-ruff-python-parser --lib --no-deps -- -D warnings
+      - if: needs.changes.outputs.rust == 'true'
+        run: cargo fmt --all -- --check
+      - if: needs.changes.outputs.rust == 'true'
+        run: cargo fmt --manifest-path vendor/ruff_python_parser/Cargo.toml -- --check
+      - if: needs.changes.outputs.rust == 'true'
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+      - if: needs.changes.outputs.rust == 'true'
+        run: cargo clippy --locked -p littrs-ruff-python-parser --lib --no-deps -- -D warnings
 
   fuzz:
-    needs: quality
+    needs: [changes, quality]
+    if: needs.changes.outputs.rust == 'true'
     name: Fuzz (bounded)
     runs-on: ubuntu-latest
     # Recent longest test jobs took 11m18s–12m09s; 11m is approximately 91–98%.
@@ -53,6 +106,8 @@ jobs:
       - name: Start fuzz budget including setup
         run: echo "FUZZ_DEADLINE=$(( $(date +%s) + 600 ))" >> "$GITHUB_ENV"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.14'
@@ -103,7 +158,8 @@ jobs:
           retention-days: 7
 
   rust:
-    needs: quality
+    needs: [changes, quality]
+    if: needs.changes.outputs.rust == 'true'
     name: Rust (${{ matrix.os }})
     timeout-minutes: 30
     strategy:
@@ -118,6 +174,8 @@ jobs:
       CARGO_BUILD_JOBS: "2"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.14'
@@ -130,7 +188,7 @@ jobs:
       - run: cargo test --workspace
       - run: cargo test -p hoimin-cli --test run_e2e
       - name: Performance shape gates
-        run: python tools/performance_shapes.py gate --output "${{ runner.temp }}/performance-gates"
+        run: python tools/performance_shapes.py gate --output "$RUNNER_TEMP/performance-gates"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()
         with:
@@ -139,12 +197,15 @@ jobs:
       - run: uv run --frozen pytest tests/test_skills.py
 
   lean-audit:
-    needs: quality
+    needs: [changes, quality]
+    if: needs.changes.outputs.formal == 'true'
     name: Lean audit
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.14'
@@ -468,7 +529,8 @@ jobs:
           retention-days: 7
 
   boundary-contracts:
-    needs: lean-audit
+    needs: [changes, lean-audit]
+    if: needs.changes.outputs.formal == 'true'
     name: Cross-boundary contracts
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -479,6 +541,8 @@ jobs:
       CARGO_BUILD_JOBS: "2"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
         with:
           python-version: '3.14'
@@ -490,10 +554,10 @@ jobs:
           uv run --frozen --no-sync pytest tests/test_boundary_contracts.py -v
           cargo test -p hoimin-cli --test lean_progress_input_oracle shared_reader_fixture_encodings_preserve_fields_and_projection_premises -- --exact
       - name: Strict implemented boundary cases
-        run: python tools/boundary_contracts.py strict --output "${{ runner.temp }}/boundary-contracts"
+        run: python tools/boundary_contracts.py strict --output "$RUNNER_TEMP/boundary-contracts"
       - name: Report every case including unavailable premises
         if: always()
-        run: python tools/boundary_contracts.py report --from-results "${{ runner.temp }}/boundary-contracts/strict.json" --output "${{ runner.temp }}/boundary-contracts"
+        run: python tools/boundary_contracts.py report --from-results "$RUNNER_TEMP/boundary-contracts/strict.json" --output "$RUNNER_TEMP/boundary-contracts"
       - name: Minimal result-validation witness
         if: always()
         env:
@@ -507,7 +571,8 @@ jobs:
           if-no-files-found: warn
 
   rust-shuffle:
-    needs: quality
+    needs: [changes, quality]
+    if: needs.changes.outputs.rust == 'true'
     name: Rust randomized order (nightly-2026-10-08)
     runs-on: ubuntu-latest
     env:
@@ -517,6 +582,8 @@ jobs:
       CARGO_BUILD_JOBS: "2"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.14'
@@ -530,7 +597,9 @@ jobs:
         run: cargo +nightly-2026-10-08 test --workspace -- -Z unstable-options --shuffle
 
   contracts:
-    needs: quality
+    name: Contracts
+    needs: [changes, quality]
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     env:
       CARGO_PROFILE_DEV_DEBUG: "0"
@@ -539,6 +608,8 @@ jobs:
       CARGO_BUILD_JOBS: "2"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.14'
@@ -552,7 +623,8 @@ jobs:
       - run: cargo test -p hoimin-cli --features contracts
 
   core-dependency-purity:
-    needs: quality
+    needs: [changes, quality]
+    if: needs.changes.outputs.rust == 'true'
     name: Core dependency purity (${{ matrix.os }})
     strategy:
       fail-fast: false
@@ -561,6 +633,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Install repository Rust toolchain
         run: rustup toolchain install
       - name: Reject I/O dependencies in hoimin-core
@@ -570,7 +644,8 @@ jobs:
           ! grep -E '(^| )(tokio|rusqlite|tempfile|windows-sys|libc|hoimin-cli)( |$)' core-tree.txt
 
   wheel-smoke:
-    needs: quality
+    needs: [changes, quality]
+    if: needs.changes.outputs.distribution == 'true' || needs.changes.outputs.python == 'true'
     name: Wheel smoke (${{ matrix.os }})
     strategy:
       fail-fast: false
@@ -579,6 +654,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.14'
@@ -595,7 +672,9 @@ jobs:
       - run: uv run --frozen --no-sync python tests/wheel_smoke.py
 
   linux-best-effort:
-    needs: quality
+    name: Linux best effort
+    needs: [changes, quality]
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     env:
       CARGO_PROFILE_DEV_DEBUG: "0"
@@ -604,16 +683,22 @@ jobs:
       CARGO_BUILD_JOBS: "2"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Install repository Rust toolchain
         run: rustup toolchain install
       - run: cargo test -p hoimin-cli --test process_handler linux_policy::unavailable_cgroup_requires_explicit_best_effort_opt_in -- --exact
 
   linux-cgroup-v2-hard:
-    needs: quality
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.HOIMIN_CGROUP_V2_DELEGATED == 'true'
-    runs-on: [self-hosted, linux, x64, cgroup-v2-delegated]
+    name: Linux cgroup v2 hard
+    needs: [changes, quality]
+    if: needs.changes.outputs.cgroup == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.HOIMIN_CGROUP_V2_DELEGATED == 'true'
+    # Trusted main push only, explicit delegated-cgroup opt-in; never PR code.
+    runs-on: [self-hosted, linux, x64, cgroup-v2-delegated] # zizmor: ignore[self-hosted-runner]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.14'
@@ -629,3 +714,21 @@ jobs:
           set -o pipefail
           cargo test -p hoimin-cli --test process_handler cgroup_v2:: -- --nocapture 2>&1 | tee cgroup-v2.log
           ! grep -Fq 'SKIP:' cgroup-v2.log
+
+  result:
+    name: CI result
+    if: always()
+    needs: [changes, quality, workflow-lint, fuzz, rust, lean-audit, boundary-contracts, rust-shuffle, contracts, core-dependency-purity, wheel-smoke, linux-best-effort, linux-cgroup-v2-hard]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.14'
+      - name: Require selected jobs to succeed
+        env:
+          CI_NEEDS: ${{ toJSON(needs) }}
+        run: printf '%s' "$CI_NEEDS" | python tools/ci_selection.py aggregate

@@ -1,0 +1,95 @@
+{
+  "measured_at": "2026-10-10T06:01:20.900998+00:00",
+  "repository": "HayaoSuzuki/hoimin",
+  "workflow": "CI",
+  "url": "https://github.com/HayaoSuzuki/hoimin/actions/runs/38023706140",
+  "metrics": {
+    "run_id": 38023706140,
+    "run_attempt": 1,
+    "event": "pull_request",
+    "head_sha": "3610b13ef07da4a6cbbd6b9290b68f1493db34ce",
+    "elapsed_seconds": 694.0,
+    "executed_jobs": 10,
+    "job_seconds": 2803.0,
+    "queue_seconds": 28.0,
+    "jobs": [
+      {
+        "name": "Quality (ubuntu-latest)",
+        "conclusion": "success",
+        "queue_seconds": 2.0,
+        "duration_seconds": 84.0,
+        "start_delay_seconds": 2.0
+      },
+      {
+        "name": "Rust randomized order (nightly-2026-10-08)",
+        "conclusion": "success",
+        "queue_seconds": 3.0,
+        "duration_seconds": 500.0,
+        "start_delay_seconds": 89.0
+      },
+      {
+        "name": "Fuzz (bounded)",
+        "conclusion": "success",
+        "queue_seconds": 3.0,
+        "duration_seconds": 595.0,
+        "start_delay_seconds": 89.0
+      },
+      {
+        "name": "Core dependency purity (ubuntu-latest)",
+        "conclusion": "success",
+        "queue_seconds": 3.0,
+        "duration_seconds": 14.0,
+        "start_delay_seconds": 89.0
+      },
+      {
+        "name": "Rust (ubuntu-latest)",
+        "conclusion": "success",
+        "queue_seconds": 2.0,
+        "duration_seconds": 605.0,
+        "start_delay_seconds": 88.0
+      },
+      {
+        "name": "contracts",
+        "conclusion": "success",
+        "queue_seconds": 3.0,
+        "duration_seconds": 363.0,
+        "start_delay_seconds": 89.0
+      },
+      {
+        "name": "Lean audit",
+        "conclusion": "success",
+        "queue_seconds": 3.0,
+        "duration_seconds": 167.0,
+        "start_delay_seconds": 89.0
+      },
+      {
+        "name": "linux-best-effort",
+        "conclusion": "success",
+        "queue_seconds": 3.0,
+        "duration_seconds": 64.0,
+        "start_delay_seconds": 89.0
+      },
+      {
+        "name": "Wheel smoke (ubuntu-latest)",
+        "conclusion": "success",
+        "queue_seconds": 3.0,
+        "duration_seconds": 199.0,
+        "start_delay_seconds": 89.0
+      },
+      {
+        "name": "linux-cgroup-v2-hard",
+        "conclusion": "skipped",
+        "queue_seconds": 0.0,
+        "duration_seconds": 0.0,
+        "start_delay_seconds": 86.0
+      },
+      {
+        "name": "Cross-boundary contracts",
+        "conclusion": "success",
+        "queue_seconds": 3.0,
+        "duration_seconds": 212.0,
+        "start_delay_seconds": 259.0
+      }
+    ]
+  }
+}

@@ -1,0 +1,4 @@
+self-hosted-runner:
+  # Trusted, opt-in main push job; see docs/development.md.
+  labels:
+    - cgroup-v2-delegated
