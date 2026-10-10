@@ -16,8 +16,8 @@ sources:
 - id: review
   resource: ../superpowers/reports/2026-10-10-issue-741-sbom.md
   working_tree: modified
-  sha256: a894a37d5bb1d88dcd92382e5cb90e8e829e0e4bee11b9a5799271a6443fae41
-  revision: 1d558280d911173f0421cb8ce3bf2e6ee65e8cc0
+  sha256: 83c27615f328d8d1157cb8d138ed4520227bfab96cd5687a7bea9aebcafb3e1c
+  revision: 1d2c0912d029318fd40c09f3e6576735c0a740e3
 ---
 
 # 配布物との対応

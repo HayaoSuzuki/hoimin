@@ -2,6 +2,8 @@
 
 import hashlib
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -9,6 +11,28 @@ from sbom_fixtures import COMMIT, capture_file, raw_bom, source_tree
 from test_release import release_assets
 
 from tools import capture_sbom, release, sbom
+
+
+@pytest.mark.parametrize("exit_code", [0, 7])
+def test_capture_decodes_tool_output_as_utf8(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, exit_code: int
+) -> None:
+    # Model Windows' default codec while executing a real child process.
+    monkeypatch.setattr(subprocess, "_text_encoding", lambda: "cp1252")
+    script = (
+        "import sys; "
+        "sys.stdout.buffer.write('裏側\\n'.encode('utf-8')); "
+        "sys.stderr.buffer.write('診断\\n'.encode('utf-8')); "
+        f"sys.exit({exit_code})"
+    )
+    if exit_code:
+        with pytest.raises(subprocess.CalledProcessError) as error:
+            capture_sbom.run(tmp_path, sys.executable, "-c", script)
+        assert error.value.returncode == 7
+        assert error.value.stdout == "裏側\n"
+        assert error.value.stderr == "診断\n"
+    else:
+        assert capture_sbom.run(tmp_path, sys.executable, "-c", script) == "裏側"
 
 
 def test_release_without_sboms_is_rejected(tmp_path: Path) -> None:

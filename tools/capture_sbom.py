@@ -13,7 +13,7 @@ GENERATOR_VERSION = "0.5.7"
 
 def run(root: Path, *args: str) -> str:
     return subprocess.run(  # noqa: S603 -- Fixed build tools, argv without a shell.
-        args, cwd=root, check=True, capture_output=True, text=True, timeout=600
+        args, cwd=root, check=True, capture_output=True, encoding="utf-8", timeout=600
     ).stdout.strip()
 
 
