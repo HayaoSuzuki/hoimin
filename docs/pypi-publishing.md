@@ -153,8 +153,11 @@ reproducibility, absence of vulnerabilities, or OS code signing.
 
 Local tests exercise orchestration and real recorded GitHub signature rejection.
 They do not establish successful OIDC token exchange or uploads under the new
-publisher registrations. Hosted bootstrap evidence remains pending until merge
-and account configuration. Record it before treating Issue #771 as complete.
+publisher registrations. Hosted bootstrap on 2026-10-11 JST verified v0.3.6 on
+both indexes, including downloaded bytes, both predicates, original build
+identity and five rejection cases. Automatic dispatch was enabled afterward.
+See the [hosted verification record](reviews/2026-10-11-issue-771-hosted-verification.md)
+and its [public evidence](reviews/2026-10-11-issue-771-hosted-verification.json).
 
 - [PyPI attestation limits](https://docs.pypi.org/attestations/)
 - [Bundle conversion and upload](https://docs.pypi.org/attestations/producing-attestations/)
