@@ -24,7 +24,7 @@ sources:
   resource: ../../tests/wheel_smoke.py
   revision: 79b6bde29b05e9904c8efff59e02d0c45377d7f7
   working_tree: modified
-  sha256: 1613215c80e781d479eb1a3058b3e093af7b46d580c9671ffbccf707d9bed970
+  sha256: a36e258c5e538d1da0d98c42d3a70e9922ddfb3b4ac977a32714a53bc25726f3
 ---
 
 # 配布物からの実行

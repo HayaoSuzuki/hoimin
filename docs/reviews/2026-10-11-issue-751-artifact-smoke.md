@@ -70,3 +70,13 @@ Independent review found an interpreter-symlink bug, fixed with lexical absolute
 Python paths and a Unix regression. Follow-up review found no remaining issues.
 `cargo clean` found no retained outputs; disk free space was 176.3 GiB.
 Hosted Linux/macOS/glibc-floor preview remains to be checked after pushing this PR.
+
+First hosted preview (`38074451400`) exposed Rust preview `-dev.N` versus Python
+metadata `.devN` spelling in the newly strict version assertion. A failing
+regression reproduced it locally; comparison now uses normalized version values
+while still checking the command identity and rejecting another version.
+The fix is limited to the shared test helper. Existing artifact identity,
+absolute-path execution, rejection tests and public version floor remain unchanged.
+Fix verification: 110 focused tests passed, one Unix-only skip; repository Ruff
+and ty, three-module mypy, OKF links/hashes and whitespace passed. Independent
+follow-up review accepted the normalization and found no issues.

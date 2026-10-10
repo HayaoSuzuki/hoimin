@@ -90,6 +90,22 @@ def test_version_mismatch_stops_before_mutation(
     assert command.call_count == 1
 
 
+def test_preview_version_matches_python_metadata_spelling(
+    tmp_path: Path, mocker: MockerFixture
+) -> None:
+    mocker.patch(
+        "wheel_smoke.run",
+        side_effect=[
+            subprocess.CompletedProcess([], 0, "hoimin 0.3.0-dev.123\n", ""),
+            subprocess.CompletedProcess([], 0, "Usage: hoimin", ""),
+            subprocess.CompletedProcess([], 0, '{"mutants":[{"status":"killed"}]}', ""),
+        ],
+    )
+    exercise_cli(
+        Path(sys.executable), Path(sys.executable), tmp_path / "fixture", "0.3.0.dev123"
+    )
+
+
 def test_zip_symlink_is_not_executed(tmp_path: Path) -> None:
     archive = tmp_path / "release.zip"
     with zipfile.ZipFile(archive, "w") as stream:

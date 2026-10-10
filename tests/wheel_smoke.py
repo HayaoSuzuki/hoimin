@@ -286,7 +286,15 @@ def exercise_cli(
     environment = isolated_environment(os.environ)
     fixture.mkdir(parents=True)
     version = run([str(executable), "--version"], cwd=fixture, env=environment)
-    assert (version.stdout + version.stderr).strip() == f"hoimin {expected_version}"
+    actual_version = (version.stdout + version.stderr).strip()
+    assert actual_version.startswith("hoimin "), actual_version
+    # Rust preview versions use -dev.N; Python wheel metadata uses .devN.
+    assert Version(actual_version.removeprefix("hoimin ")) == Version(
+        expected_version
+    ), (
+        actual_version,
+        expected_version,
+    )
     help_result = run([str(executable), "--help"], cwd=fixture, env=environment)
     assert_help_hides_python_option(help_result)
     target = write_fixture(fixture)
