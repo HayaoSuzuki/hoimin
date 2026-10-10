@@ -97,5 +97,11 @@ successfully and the missing-evidence case still rejected input.
   all 297 fake Python calls. A diagnostic run with a temporary 120-second limit
   passed every original assertion in 55.10 seconds; this is diagnostic evidence,
   not a normal-suite pass. The checked-in timeout and test remain unchanged.
-- A final full run without compilation or parallel tests is being checked.
-  Index bootstrap remains pending corrected main.
+- Final full run: **897 passed, 28 skipped, 1 failed**, 292.97 seconds. The same
+  unchanged Lean contract timed out. No timeout extension, skip or weakened
+  assertion was committed; the Windows full suite is not reported as green.
+- CI caught one formatting omission in the new fixture test. Applied Ruff
+  formatting; `ruff format --check .` passed for all 45 files, strict Ruff / ty
+  passed, and all 36 provenance tests passed again in 2.54 seconds.
+- Index bootstrap remains pending corrected main. No PyPI / TestPyPI files
+  were uploaded and the automatic-publication variable remains unset.
