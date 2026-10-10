@@ -55,6 +55,9 @@ Branch: `fix/issue-748-cli-reference`.
    EOF blank line. The earlier unstaged diff check had omitted the untracked
    generated document. Added a failing whitespace regression assertion, then
    normalized line ends in the renderer and regenerated the document.
+7. Hosted Python tests detected that the manual Windows/macOS Rust job still
+   lacked the new steps. Reproduced the failure locally and added the same
+   generator tests/check to manual CI; kept the existing job parity contract.
 
 ## Test self-review and evidence
 
@@ -80,6 +83,9 @@ Branch: `fix/issue-748-cli-reference`.
 6. After whitespace normalization, all seven generator tests passed again,
    repeated actual generation matched the final hash above and `--check` passed.
    The added assertions prohibit trailing whitespace and multiple EOF newlines.
+7. Broadened validation after the hosted parity failure: the explicit reference
+   wiring test now covers both workflows. The initial hosted Python suite had
+   860 passes, 10 skips and this one failure; final results follow below.
 
 ## Mutation and disk evidence
 
@@ -106,3 +112,21 @@ all 14 staged files, including the new generated document. Historical
 OKF metadata unrelated to this change was preserved. Consulted the overview,
 selection/plan/verify and CI concepts; added the CLI reference playbook and
 updated the CI selection contract. Public execution contracts did not change.
+
+## Hosted follow-up
+
+- Initial code commit `55a94b1`, CI run `38035102408`: Python found the missing
+  manual-workflow parity update. Reproduced the exact failure locally, then added
+  the two steps to `non-linux-ci.yml` and covered both workflows explicitly.
+- Full local Python suite after the fix: 853 passed, 20 skipped in 220.82 s.
+  All-file Ruff format/lint, ty and all-workflow lint passed again.
+- The same initial CI run also failed unchanged staging reclamation test
+  `workspace::owned::tests::stale_staging_root_is_reclaimed_only_with_expected_marker_contents`:
+  reclaimed 0, preserved 1, no details. Source review found adjacent tests
+  explicitly documenting Unix fork inheritance of lease locks and unlocking
+  before drop. A busy lease preserves without diagnostics, matching this
+  observation; the exact branch is not proven. No runtime code changed. The
+  next push reruns the complete Rust job rather than ignoring the failure.
+- Initial release preview run `38035102365` succeeded for Linux, Windows, macOS
+  and final asset validation. Dependency audit run `38035102361` succeeded.
+- Independent review of the follow-up workflow change reported no findings.
