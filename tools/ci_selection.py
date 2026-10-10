@@ -25,6 +25,8 @@ def classify(paths: list[str]) -> dict[str, bool]:
 
 
 def categories_for(path: str) -> tuple[str, ...]:  # noqa: PLR0911 -- explicit path taxonomy
+    if path == "docs/cli-reference.md":
+        return ("rust",)
     if path.startswith(("docs/json-schema/", "tests/fixtures/")):
         return CATEGORIES
     if path.endswith(".md") and (path == "CONTRIBUTING.md" or path.startswith("docs/")):

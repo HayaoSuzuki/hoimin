@@ -7,19 +7,19 @@ catalog_revision: 6ec69f4ac926c887003e5509bb393289f0bc9e71
 sources:
 - id: guide
   resource: ../ci.md
-  revision: a9f9d424cd7fc0c21ece1c89c233448e531a5b64
+  revision: 1e60e54813dad14f124635496ed773b299bb4b90
   working_tree: modified
-  sha256: e39e1ca23612fc82c4e8a7f1aef276b28a91553a9df9339645400b4fd6983c01
+  sha256: a3bff387f9c0b52bee9109ea4c925d48dd06646ed0a3bf1fbe2929958b50723b
 - id: planner
   resource: ../../tools/ci_selection.py
-  revision: 6ec69f4ac926c887003e5509bb393289f0bc9e71
-  working_tree: untracked
-  sha256: 581a5a991fd41b6ca76849f31cc2b4e05564134b6792117a0f9d7df2799664ec
+  revision: 1e60e54813dad14f124635496ed773b299bb4b90
+  working_tree: modified
+  sha256: 44f27dd6683f6b362f3124fede5857675836ad93f13fff7ade1cdf793d205d81
 - id: ci
   resource: ../../.github/workflows/ci.yml
-  revision: 6ec69f4ac926c887003e5509bb393289f0bc9e71
+  revision: 1e60e54813dad14f124635496ed773b299bb4b90
   working_tree: modified
-  sha256: 0ffc5516e77e03feb8c4684f8e66700ac020f9f99b4c0c8271bbdcb8d8433335
+  sha256: 18675c9744ae8606570e0b42c9d54b4dc19fd39c00849f659585157a843c3f08
 - id: release
   resource: ../../.github/workflows/release.yml
   revision: 6ec69f4ac926c887003e5509bb393289f0bc9e71
@@ -33,6 +33,10 @@ sources:
 文書変更でも変更判定と品質・workflow検査、集約を起動する。
 集約は必要なjobのsuccessを要求し、failure・cancelled・skipped・結果欠落を拒否する。
 条件付きjobの意図したskipだけを許容する。[^planner][^ci]
+
+生成済みの`docs/cli-reference.md`は文書のみの変更でもRust検証を選ぶ。
+Rust jobは生成コマンドの`--check`で同期を検査し、CLI定義と生成文書の差分を拒否する。
+生成対象と再生成の手順は[CLIリファレンスの生成と同期](cli-reference.md)を参照する。[^planner][^ci]
 
 # 公開と検査の運用
 

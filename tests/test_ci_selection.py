@@ -17,6 +17,7 @@ from tools import ci_selection
     [
         ("README.md", {"distribution"}),
         ("docs/usage.md", set()),
+        ("docs/cli-reference.md", {"rust"}),
         ("docs/audits/note.md", set()),
         ("crates/hoimin-cli/src/main.rs", {"rust", "formal", "distribution"}),
         ("vendor/ruff_python_parser/src/lib.rs", {"rust", "formal", "distribution"}),

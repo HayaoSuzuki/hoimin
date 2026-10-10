@@ -1,6 +1,9 @@
 # Usage reference
 
 See the [README](../README.md) for installation and a quick start.
+The [generated CLI reference](cli-reference.md) lists public commands, arguments,
+help, defaults and reflected Clap constraints. This guide covers examples and
+runtime contracts, including OS-specific limits and plan/verify inheritance.
 
 - [Run it](#run-it)
 - [Select mutation targets](#select-mutation-targets)

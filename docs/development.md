@@ -1454,3 +1454,27 @@ cargo test -p hoimin-core --test operator_selection
 cargo test -p hoimin-cli --lib hierarchy
 cargo test -p hoimin-cli --test exception_hierarchy
 ```
+
+## Generated CLI reference
+
+The command definitions in `crates/hoimin-cli/src/cli.rs` are the source of truth
+for [the CLI reference](cli-reference.md). After changing public command help or
+arguments, regenerate and commit the Markdown on the same work branch:
+
+```console
+cargo run --locked -p hoimin-cli --example generate_cli_reference
+cargo run --locked -p hoimin-cli --example generate_cli_reference -- --check
+cargo test --locked -p hoimin-cli --example generate_cli_reference
+```
+
+The development example uses the same command factory as parsing and completions.
+Check mode never writes; missing or stale output fails with a regeneration command.
+It accepts CRLF checkouts but generation writes UTF-8/LF, with fixed help width,
+no terminal color, timestamps or absolute paths. Rust CI checks freshness, including
+changes limited to `docs/cli-reference.md`.
+
+Keep examples, conditional requirements, numeric parser bounds, runtime validation,
+OS-specific limits and plan/verify inheritance in [the usage guide](usage.md).
+Clap's stable reflection API does not expose every parser or conditional requirement.
+The generator preserves long help and adds available argument/group metadata;
+it is not a substitute for runtime contract documentation.
