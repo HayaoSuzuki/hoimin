@@ -80,7 +80,10 @@ uv run --frozen --no-sync python -m tools.ci_metrics --run RUN_ID --output docs/
 対応するpreview `38023706209`は624秒、5job、合計1387job秒、queue合計19秒。
 取得結果は[測定記録](performance/ci/)に保存した。
 SBOM実装変更の1例であり、文書変更の平均や削減率ではない。
-導入後は文書、Rust、formal、配布の各変更で同じ条件のrunを取得し、失敗率とskip結果も比較する。
+導入後の同種の全検証PRでは、CI run `38031404421`が723秒・13job・3080job秒・queue合計37秒、preview `38031404452`が690秒・6job・1470job秒・queue合計20秒だった。
+両PRともworkflow・配布入力の変更を含み、全検証を選ぶ。
+新しい軽量jobを含む実行数は増えており、異なる変更内容やキャッシュ状態を含む1例の比較から、速度改善や悪化の因果を断定しない。
+文書だけ、Rustだけ、formalだけの変更は別途同じ条件で測定する。文書だけの削減率は未実測。
 hosted Runnerでの導入後実測はローカル検証から推定しない。
 
 設計と各段階の5回のセルフレビューは[検証記録](reviews/2026-10-10-ci-selection.md)に記載する。

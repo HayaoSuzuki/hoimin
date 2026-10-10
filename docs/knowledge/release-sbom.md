@@ -6,9 +6,9 @@ status: draft
 sources:
 - id: ci
   resource: ../ci.md
-  revision: 6ec69f4ac926c887003e5509bb393289f0bc9e71
-  working_tree: untracked
-  sha256: 26923b90487b22141f78651a6fcf564d6170686917c6c519f721f380514b92c9
+  revision: a9f9d424cd7fc0c21ece1c89c233448e531a5b64
+  working_tree: modified
+  sha256: e39e1ca23612fc82c4e8a7f1aef276b28a91553a9df9339645400b4fd6983c01
 - id: release
   resource: ../releases.md
   revision: 6ec69f4ac926c887003e5509bb393289f0bc9e71

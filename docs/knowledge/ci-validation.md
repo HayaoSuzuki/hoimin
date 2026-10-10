@@ -7,9 +7,9 @@ catalog_revision: 6ec69f4ac926c887003e5509bb393289f0bc9e71
 sources:
 - id: guide
   resource: ../ci.md
-  revision: 6ec69f4ac926c887003e5509bb393289f0bc9e71
-  working_tree: untracked
-  sha256: 26923b90487b22141f78651a6fcf564d6170686917c6c519f721f380514b92c9
+  revision: a9f9d424cd7fc0c21ece1c89c233448e531a5b64
+  working_tree: modified
+  sha256: e39e1ca23612fc82c4e8a7f1aef276b28a91553a9df9339645400b4fd6983c01
 - id: planner
   resource: ../../tools/ci_selection.py
   revision: 6ec69f4ac926c887003e5509bb393289f0bc9e71
@@ -46,7 +46,8 @@ previewは配布入力の変更時と手動実行時に選択し、マージ後�
 
 # 未確認事項と再確認条件
 
-hosted Runnerでの導入後の時間、PR再pushのキャンセル、merge queue実行はローカルの契約テストとは別に確認する。
+hostedで全検証CIと3platform previewの成功・時間、PR再pushによる旧CIのキャンセルを確認した。
+実測の対象はworkflow・配布入力を含むPRに限り、文書のみの削減率やmerge queue実行は未確認である。[^guide]
 現移管先の必須チェックは未設定であり、有効化する場合は`CI result`を指定する。
 旧組織の設定は対象外とする。
 path分類、job名、公開イベント、Runner、lint版を変えた場合はこの契約と負例テストを再確認する。[^guide]

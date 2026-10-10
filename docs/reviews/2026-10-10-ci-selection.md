@@ -91,7 +91,7 @@ mainのbranch protection APIは404「Branch not protected」を返した。
 rule、箇所、理由と再現コマンドは`docs/ci.md`に記載した。
 RuffのsubprocessとCLI出力に関する局所除外も、shellを使わないargv起動とCLI契約の理由を記載する。
 Rustのproduction sourceは変更していない。CLIは変異検証のため現ソースからビルドした。
-hosted Runnerでのafter測定、再pushキャンセル、merge queue実行は未確認。
+hostedでの初回確認時点ではafter測定と再pushキャンセルは未確認だった。後述の追加実測で確認した。merge queue実行は未確認。
 旧組織に対するインフラ適用と本番公開は実施しない。
 
 
@@ -105,7 +105,7 @@ hosted Runnerでのafter測定、再pushキャンセル、merge queue実行は�
 - 変異検証は1並列、workspace 8GiB上限、空き10GiB予約。peak owned 38,480,736 bytes、最小空き187,659,636,736 bytes。hoimin管理領域と外部temp rootの削除を確認した。
 - 最終`cargo clean`は2582ファイル・2.4GiBを削除。直後のCドライブ空きは189,734,293,504 bytes（約176.7GiB）。初回・中間・ビルド後にcleanと容量確認を行った。
 
-変更後の測定と公開の実機確認は未実施として残し、実装のローカル検証結果と区別する。
+変更後の測定は後述のhosted実測を参照する。実公開の実機確認は未実施として残す。
 
 OKFは33ページの構造を検査し、更新した出典のhash・脚注・リンクと入口索引の到達を確認した。
 
@@ -126,4 +126,27 @@ Windowsのperformance stepと自動CIのstepを同じbash明示に揃え、既�
 初回wheel smokeのLinux全pytestで、Windowsではskipされるreserve/prepareの既存shellテスト3件の更新漏れも見つかった。
 分離後の2stepを順に実行し、予約errorで出力なし、空tagでprepareを選ばない、release/previewで正しいtagを渡す契約へ更新した。
 追加修正後のローカルworkflow契約は152 passed（81.87秒）、release回帰は34 passed・10 skipped（46.90秒）。
-Linux専用shellテストの実行成功は次のhosted runで確認する。
+Linux専用shellテストの実行成功は次のhosted runで確認した。
+
+
+## 修正後のhosted検証と導入後測定
+
+コミット`a9f9d424cd7fc0c21ece1c89c233448e531a5b64`のCI run `38031404421`とpreview `38031404452`はsuccess。
+CIは必要な13jobがすべて成功し、無効なcgroup opt-inの実機jobだけが意図したskipとなり、`CI result`が成功した。
+previewは3platformのbuildとSBOM・checksumを含む集約検証が成功し、reserveとpublishだけが意図したskipとなった。
+Linux全pytestは859 passed・10 skipped（38.76秒）。Linux専用reserve/prepareのshell回帰テストも成功した。
+依存監査run `38031404374`も成功した。
+再pushで旧CI run `38030815192`がcancelledになり、他の完了済runを巻き込まないことを確認した。
+
+| workflow・配布入力を含むPR | 経過秒 | 実行job数 | 合計job秒 | queue合計秒 |
+| --- | ---: | ---: | ---: | ---: |
+| 導入前CI `38023706140` | 694 | 10 | 2803 | 28 |
+| 導入後CI `38031404421` | 723 | 13 | 3080 | 37 |
+| 導入前preview `38023706209` | 624 | 5 | 1387 | 19 |
+| 導入後preview `38031404452` | 690 | 6 | 1470 | 20 |
+
+API取得結果を`docs/performance/ci/after-ci.json`と`after-preview.json`へ保存した。
+同種の全検証PRの比較であり、軽量jobの追加を含む。異なる差分とキャッシュ状態を含む1例なので、効果の因果や平均を示す比較ではない。
+文書のみ・Rustのみ・formalのみのhosted実測、別PRとの同時更新、merge queue、実公開は未確認。
+これらのイベントの条件は契約テストで確認し、文書のみの削減率は主張しない。
+最後の測定記録追加は文書だけのcommitであり、上記の実装コミットの成功証拠と区別する。
