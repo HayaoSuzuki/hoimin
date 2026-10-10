@@ -22,9 +22,9 @@ sources:
   sha256: 18675c9744ae8606570e0b42c9d54b4dc19fd39c00849f659585157a843c3f08
 - id: release
   resource: ../../.github/workflows/release.yml
-  revision: 6ec69f4ac926c887003e5509bb393289f0bc9e71
+  revision: a6965910bbc745e74aeb539628b3e2dc66c2a9d3
   working_tree: modified
-  sha256: 35efb0eb0e4f31293bdd38edf9c9163795ba8d1e4d9f7635426bf047a194700e
+  sha256: aed6b62488b3c90397739c36e793b1e143356163a9f6b50a2071c9a45a5c605b
 ---
 
 # 選択と集約の契約
@@ -42,6 +42,8 @@ Rust jobは生成コマンドの`--check`で同期を検査し、CLI定義と生
 
 PRの古い検証とpreviewだけをキャンセルする。
 previewは配布入力の変更時と手動実行時に選択し、マージ後のタグ予約と公開は独立した書込jobで実行する。
+由来証明の書込jobもマージ後に限定し、公開は証明と照合の成功を要求する。
+対象と実機検証の範囲は[リリースの由来証明](release-provenance.md)を参照する。
 書込jobでPR headを実行しない。[^release]
 
 全workflowを固定版のactionlint・ShellCheck・zizmorで検査する。

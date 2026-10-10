@@ -399,10 +399,93 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
-  publish:
-    name: Publish release
+  attest:
+    name: Attest validated release assets
     needs: [prepare, validate]
     if: "!cancelled() && needs.prepare.result == 'success' && needs.validate.result == 'success' && needs.prepare.outputs.publish == 'true'"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write # Request the signing certificate for this workflow identity.
+      attestations: write # Store provenance for the validated release files.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.14'
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: verified-release
+          path: dist
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - run: uv sync --frozen --no-install-project
+      - name: Verify unchanged release assets
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          COMMIT: ${{ needs.prepare.outputs.commit }}
+        run: uv run --frozen --no-sync python tools/release.py checksums --directory dist --version "$VERSION" --commit "$COMMIT" --verify
+      - name: Record source and workflow identities
+        env:
+          COMMIT: ${{ needs.prepare.outputs.commit }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          SOURCE_SHA: ${{ github.sha }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$COMMIT"
+          # Never claim that a different event source is the built release commit.
+          test "$SOURCE_SHA" = "$COMMIT"
+          mkdir provenance
+          printf 'version=%s\ncheckout_commit=%s\nsource_sha=%s\nworkflow_sha=%s\nworkflow_ref=%s\n' \
+            "$VERSION" "$COMMIT" "$SOURCE_SHA" "$WORKFLOW_SHA" "$WORKFLOW_REF" \
+            | tee provenance/identity.txt >> "$GITHUB_STEP_SUMMARY"
+      - name: Generate build provenance
+        id: provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: dist/*
+      - name: Verify provenance and rejection policies
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
+          SOURCE_SHA: ${{ github.sha }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+        run: |
+          cp "$BUNDLE" provenance/bundle.json
+          for asset in dist/*; do
+            gh attestation verify "$asset" --bundle "$BUNDLE" --repo "$GH_REPO" \
+              --signer-workflow "$GH_REPO/.github/workflows/release.yml" \
+              --source-digest "$SOURCE_SHA" --signer-digest "$WORKFLOW_SHA" \
+              --deny-self-hosted-runners --format json > "provenance/$(basename "$asset").json"
+          done
+          cp dist/SHA256SUMS "$RUNNER_TEMP/modified-checksums"
+          printf '\nmodified\n' >> "$RUNNER_TEMP/modified-checksums"
+          if gh attestation verify "$RUNNER_TEMP/modified-checksums" --bundle "$BUNDLE" --repo "$GH_REPO"; then
+            echo 'Modified bytes unexpectedly accepted'; exit 1
+          fi
+          if gh attestation verify dist/SHA256SUMS --bundle "$BUNDLE" --repo actions/attest; then
+            echo 'Wrong repository unexpectedly accepted'; exit 1
+          fi
+          if gh attestation verify dist/SHA256SUMS --bundle "$BUNDLE" --repo "$GH_REPO" \
+            --source-digest 0000000000000000000000000000000000000000; then
+            echo 'Wrong source unexpectedly accepted'; exit 1
+          fi
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: "!cancelled() && steps.provenance.outcome == 'success'"
+        with:
+          name: provenance-evidence
+          path: provenance/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish release
+    needs: [prepare, validate, attest]
+    if: "!cancelled() && needs.prepare.result == 'success' && needs.validate.result == 'success' && needs.attest.result == 'success' && needs.prepare.outputs.publish == 'true'"
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -417,16 +500,15 @@ jobs:
           python-version: '3.14'
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          pattern: release-*
-          merge-multiple: true
+          name: verified-release
           path: dist
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
       - run: uv sync --frozen --no-install-project
-      - name: Require all platforms and write checksums
+      - name: Verify unchanged release assets
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
           COMMIT: ${{ needs.prepare.outputs.commit }}
-        run: uv run --frozen --no-sync python tools/release.py checksums --directory dist --version "$VERSION" --commit "$COMMIT"
+        run: uv run --frozen --no-sync python tools/release.py checksums --directory dist --version "$VERSION" --commit "$COMMIT" --verify
       - name: Publish complete release
         env:
           GH_TOKEN: ${{ github.token }}

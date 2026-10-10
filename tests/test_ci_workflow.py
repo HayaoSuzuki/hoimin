@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 import tomllib
+from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import TypedDict, TypeGuard
 
@@ -444,11 +445,12 @@ def assert_github_release(workflow: str) -> None:
         "linux-wheel",
         "macos-wheel",
         "validate",
+        "attest",
         "publish",
     }
     # GitHub Releases does not need PyPI credentials or publishing commands.
     assert "secrets" not in workflow
-    assert "id-token" not in workflow
+    assert_release_provenance(jobs)
     assert "uv publish" not in workflow
     maturin_versions = set()
     for name, runner, target, platform in (
@@ -521,7 +523,7 @@ def assert_github_release(workflow: str) -> None:
     }
     publish = jobs["publish"]
     assert publish["permissions"] == {"contents": "write"}
-    assert publish["needs"] == ["prepare", "validate"]
+    assert publish["needs"] == ["prepare", "validate", "attest"]
     validate = jobs["validate"]
     assert validate["if"] == (
         "!cancelled() && needs.prepare.result == 'success' && "
@@ -538,7 +540,8 @@ def assert_github_release(workflow: str) -> None:
     ]
     assert publish["if"] == (
         "!cancelled() && needs.prepare.result == 'success' && "
-        "needs.validate.result == 'success' && needs.prepare.outputs.publish == 'true'"
+        "needs.validate.result == 'success' && needs.attest.result == 'success' && "
+        "needs.prepare.outputs.publish == 'true'"
     )
     assert all("environment" not in job and "env" not in job for job in jobs.values())
     for job in (jobs["changes"], prepare, reserve, publish):
@@ -562,6 +565,113 @@ def assert_github_release(workflow: str) -> None:
                 }
 
 
+def assert_release_provenance(jobs: dict[str, dict[str, object]]) -> None:
+    attest = jobs["attest"]
+    assert jobs["publish"]["needs"] == ["prepare", "validate", "attest"]
+    assert attest["needs"] == ["prepare", "validate"]
+    assert attest["permissions"] == {
+        "contents": "read",
+        "id-token": "write",
+        "attestations": "write",
+    }
+    assert attest["if"] == (
+        "!cancelled() && needs.prepare.result == 'success' && "
+        "needs.validate.result == 'success' && needs.prepare.outputs.publish == 'true'"
+    )
+    for name, job in jobs.items():
+        if name != "attest":
+            assert "id-token" not in mapping(job.get("permissions", {}))
+            assert "attestations" not in mapping(job.get("permissions", {}))
+    for job in (attest, jobs["publish"]):
+        download = next(
+            step
+            for step in job_steps(job)
+            if step.get("uses") == "actions/download-artifact"
+        )
+        assert download["with"] == {"name": "verified-release", "path": "dist"}
+        check = named_step(job, "Verify unchanged release assets")
+        assert string(check["run"]).endswith('--commit "$COMMIT" --verify')
+    action = next(
+        step for step in job_steps(attest) if step.get("uses") == "actions/attest"
+    )
+    assert action["with"] == {"subject-path": "dist/*"}
+    identity = string(
+        named_step(attest, "Record source and workflow identities")["run"]
+    )
+    assert 'test "$(git rev-parse HEAD)" = "$COMMIT"' in identity
+    assert 'test "$SOURCE_SHA" = "$COMMIT"' in identity
+    verification = named_step(attest, "Verify provenance and rejection policies")
+    command = string(verification["run"])
+    assert "for asset in dist/*; do" in command
+    for flag in (
+        "--repo",
+        "--signer-workflow",
+        "--source-digest",
+        "--signer-digest",
+        "--deny-self-hosted-runners",
+        "--bundle",
+    ):
+        assert flag in command
+    assert verification["env"] == {
+        "GH_TOKEN": "${{ github.token }}",
+        "GH_REPO": "${{ github.repository }}",
+        "BUNDLE": "${{ steps.provenance.outputs.bundle-path }}",
+        "SOURCE_SHA": "${{ github.sha }}",
+        "WORKFLOW_SHA": "${{ github.workflow_sha }}",
+    }
+    assert "unexpectedly accepted" in command
+
+
+@pytest.mark.parametrize(
+    "damage",
+    [
+        "preview-write",
+        "missing-checksum-subject",
+        "rebuild-checksums",
+        "different-artifact",
+        "missing-source-gate",
+        "missing-signature-policy",
+        "publish-without-attest",
+    ],
+)
+def test_release_provenance_rejects_broken_publication_contract(damage: str) -> None:
+    document = workflow_contract(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
+    jobs = workflow_jobs(document)
+    attest = jobs["attest"]
+    if damage == "preview-write":
+        attest["if"] = "always()"
+    elif damage == "missing-checksum-subject":
+        action = next(
+            step for step in job_steps(attest) if step.get("uses") == "actions/attest"
+        )
+        action["with"] = {"subject-checksums": "dist/SHA256SUMS"}
+    elif damage == "rebuild-checksums":
+        check = named_step(jobs["publish"], "Verify unchanged release assets")
+        check["run"] = string(check["run"]).replace(" --verify", "")
+    elif damage == "different-artifact":
+        download = next(
+            step
+            for step in job_steps(attest)
+            if step.get("uses") == "actions/download-artifact"
+        )
+        download["with"] = {"pattern": "release-*", "path": "dist"}
+    elif damage == "missing-source-gate":
+        identity = named_step(attest, "Record source and workflow identities")
+        identity["run"] = string(identity["run"]).replace(
+            'test "$SOURCE_SHA" = "$COMMIT"', "true"
+        )
+    elif damage == "missing-signature-policy":
+        verification = named_step(attest, "Verify provenance and rejection policies")
+        verification["run"] = string(verification["run"]).replace(
+            '--signer-digest "$WORKFLOW_SHA"', ""
+        )
+    else:
+        jobs["publish"]["needs"] = ["prepare", "validate"]
+    # workflow_contract normalizes action identities; inspect the decoded jobs.
+    with pytest.raises(AssertionError):
+        assert_release_provenance(jobs)
+
+
 def assert_repository_rust_toolchain(toolchain: dict[str, object]) -> None:
     assert set(toolchain) == {"toolchain"}
     declaration = mapping(toolchain["toolchain"])
@@ -578,6 +688,87 @@ def assert_repository_rust_toolchain(toolchain: dict[str, object]) -> None:
     assert sorted(string_list(declaration["components"])) == sorted(
         ["clippy", "rustfmt"]
     )
+
+
+@pytest.mark.parametrize(
+    "mode", ["valid", "baseline-fails", "modified", "repository", "source"]
+)
+def test_provenance_shell_stops_on_failed_verification(
+    tmp_path: Path, mode: str
+) -> None:
+    document = workflow_document(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
+    step = named_step(
+        workflow_jobs(document)["attest"], "Verify provenance and rejection policies"
+    )
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    for index in range(12):
+        (dist / f"asset-{index}").write_bytes(b"asset")
+    (dist / "SHA256SUMS").write_bytes(b"checksums\n")
+    (tmp_path / "provenance").mkdir()
+    (tmp_path / "bundle.json").write_bytes(b"fixture bundle")
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "BUNDLE": git_bash_path(tmp_path / "bundle.json"),
+            "RUNNER_TEMP": git_bash_path(tmp_path),
+            "GH_REPO": "HayaoSuzuki/hoimin",
+            "SOURCE_SHA": "a" * 40,
+            "WORKFLOW_SHA": "b" * 40,
+            "MODE": mode,
+        }
+    )
+    # This double checks shell control flow, not cryptographic verification.
+    double = """\
+gh() {
+  printf '%s\\n' "$*" >> calls.txt
+  case "$*" in
+    *modified-checksums*) test "$MODE" = modified; return ;;
+    *'--repo actions/attest'*) test "$MODE" = repository; return ;;
+    *'--source-digest 0000000000000000000000000000000000000000'*)
+      test "$MODE" = source; return ;;
+    *) test "$MODE" != baseline-fails; return ;;
+  esac
+}
+"""
+    result = subprocess.run(  # noqa: S603 -- trusted repository script, fake gh, no network
+        [bash_executable(), "-e", "-o", "pipefail"],
+        input=double + string(step["run"]),
+        cwd=tmp_path,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+    assert (result.returncode == 0) == (mode == "valid"), result.stderr
+    calls = (tmp_path / "calls.txt").read_text().splitlines()
+    if mode == "baseline-fails":
+        assert len(calls) == 1
+    else:
+        assert len([call for call in calls if "--format json" in call]) == 13
+        if mode != "valid":
+            assert "unexpectedly accepted" in result.stdout
+    assert (tmp_path / "provenance/bundle.json").read_bytes() == b"fixture bundle"
+
+
+def test_provenance_evidence_is_not_collected_as_a_platform_build() -> None:
+    document = workflow_contract(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
+    jobs = workflow_jobs(document)
+    download = next(
+        step
+        for step in job_steps(jobs["validate"])
+        if step.get("uses") == "actions/download-artifact"
+    )
+    evidence = next(
+        step
+        for step in job_steps(jobs["attest"])
+        if step.get("uses") == UPLOAD_ARTIFACT_ACTION
+    )
+    # Artifacts from the previous attempt can still exist when jobs are rerun.
+    pattern = string(mapping(download["with"])["pattern"])
+    name = string(mapping(evidence["with"])["name"])
+    assert not fnmatchcase(name, pattern)
 
 
 def workflow_paths() -> list[Path]:
@@ -602,6 +793,7 @@ def test_every_workflow_uses_known_actions_with_full_commit_pins(path: Path) -> 
         CACHE_SAVE_ACTION,
         UPLOAD_ARTIFACT_ACTION,
         "actions/download-artifact",
+        "actions/attest",
         "pypa/gh-action-pypi-publish",
     }
     decoded = workflow_contract(path.read_text(encoding="utf-8"))
@@ -1761,8 +1953,7 @@ def test_release_uses_event_commit_except_after_merging_to_base() -> None:
     )
     # No other run or repository can supply the release artifacts.
     assert download["with"] == {
-        "pattern": "release-*",
-        "merge-multiple": True,
+        "name": "verified-release",
         "path": "dist",
     }
 

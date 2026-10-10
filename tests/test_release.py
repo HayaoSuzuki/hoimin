@@ -538,6 +538,39 @@ def test_checksums_cover_exactly_all_platform_assets(tmp_path: Path) -> None:
     )
 
 
+@pytest.mark.parametrize("damage", ["none", "missing", "digest", "crlf", "extra"])
+def test_verifying_checksums_never_repairs_downloaded_bytes(
+    tmp_path: Path, damage: str
+) -> None:
+    assets = release_assets(tmp_path)
+    attach_sboms(assets)
+    arguments = (
+        "checksums",
+        "--directory",
+        str(tmp_path),
+        "--version",
+        "1.2.3",
+        "--commit",
+        "a" * 40,
+    )
+    assert release(tmp_path, *arguments).returncode == 0
+    sums = tmp_path / "SHA256SUMS"
+    if damage == "missing":
+        sums.unlink()
+    elif damage == "digest":
+        sums.write_bytes(b"0" + sums.read_bytes()[1:])
+    elif damage == "crlf":
+        sums.write_bytes(sums.read_bytes().replace(b"\n", b"\r\n"))
+    elif damage == "extra":
+        sums.write_bytes(sums.read_bytes() + b"unexpected\n")
+    before = {path.name: path.read_bytes() for path in tmp_path.iterdir()}
+    result = release(tmp_path, *arguments, "--verify")
+    assert (result.returncode == 0) == (damage == "none"), result.stderr
+    if damage != "none":
+        assert "SHA256SUMS does not match" in result.stderr
+    assert {path.name: path.read_bytes() for path in tmp_path.iterdir()} == before
+
+
 @pytest.mark.parametrize(
     "damage", ["missing", "empty", "extra", "wrong-version", "duplicate-platform"]
 )
