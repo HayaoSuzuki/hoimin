@@ -7,16 +7,17 @@ sources:
 - id: release
   resource: ../releases.md
   working_tree: modified
-  sha256: fa3e61a63955b3c3cc2c2143a9f9d519335db26427ee28c5b6cacc02fb8132ea
-  revision: 313b84f104be0b8db29586b2e18b2ac073fc8eef
+  sha256: 1eea875281faa68fa573bf8331beb954727c55dba5aad5d4537b2773791a1b53
+  revision: 1d558280d911173f0421cb8ce3bf2e6ee65e8cc0
 - id: design
   resource: ../superpowers/specs/2026-10-10-issue-741-sbom-design.md
   working_tree: untracked
   sha256: 9025a3ca80f190d69b0df391bbb536df0304ad9948db1910420fab5bf7c4d6b9
 - id: review
   resource: ../superpowers/reports/2026-10-10-issue-741-sbom.md
-  working_tree: untracked
-  sha256: 535aa03987354c2611f7b1573348ed59d920fbc11656c405d4d8b99b3f805257
+  working_tree: modified
+  sha256: a894a37d5bb1d88dcd92382e5cb90e8e829e0e4bee11b9a5799271a6443fae41
+  revision: 1d558280d911173f0421cb8ce3bf2e6ee65e8cc0
 ---
 
 # 配布物との対応
