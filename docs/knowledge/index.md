@@ -9,6 +9,8 @@ okf_version: "0.2"
 - [Rustの固定版と最低対応版の更新](rust-toolchains.md) - 最新stableへの追従、nightly検証、更新PRと配布確認。
 - [PyPIへのwheel公開](pypi-publishing.md) - TestPyPI経由の自動公開、Trusted Publishingの登録値、証明と再実行。
 
+- [配布archiveとwheelの実行検証](artifact-smoke.md) - 実行するbyte列の同一性、Linux ABI、証跡と公開停止。
+
 - [リリース配布物のSBOM](release-sbom.md) - Cargo依存グラフの範囲、配布物との対応、公開前の検証。
 - [GitHubリリースの由来証明](release-provenance.md) - 署名対象と公開物の一致、ソース同一性、検証と公開停止。
 
