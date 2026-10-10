@@ -38,6 +38,8 @@ mod optional_keywords;
 mod return_tuple;
 #[path = "rust/string_literals.rs"]
 mod string_literals;
+#[path = "rust/string_segments.rs"]
+mod string_segments;
 
 #[path = "rust/deletion.rs"]
 mod deletion;
@@ -2827,6 +2829,9 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                 .contains(MutationOperator::StringLiteralEmpty)
                 || request
                     .operators
+                    .contains(MutationOperator::StringSegmentEmpty)
+                || request
+                    .operators
                     .contains(MutationOperator::OptionalKeywordDelete)
                 || request
                     .operators
@@ -2916,6 +2921,25 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
 
     fn add_candidate(&mut self, range: TextRange, replacement: String, operator: MutationOperator) {
         self.add_candidate_in_scope(range, replacement, operator, range);
+    }
+
+    fn collect_string_segment(&mut self, expression: &Expr) {
+        if self
+            .request
+            .operators
+            .contains(MutationOperator::StringSegmentEmpty)
+            && !self.in_pattern
+            && !self.string_exclusions.excludes_segment(expression.range())
+            && let Some((range, replacement)) =
+                string_segments::replacement(expression, self.source, self.cancelled)
+        {
+            self.add_candidate_in_scope(
+                range,
+                replacement,
+                MutationOperator::StringSegmentEmpty,
+                expression.range(),
+            );
+        }
     }
 
     fn add_candidate_in_scope(
@@ -3918,6 +3942,7 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
                 );
             }
             let signed_literal = self.collect_integer_literal(expression);
+            self.collect_string_segment(expression);
             if self
                 .request
                 .operators

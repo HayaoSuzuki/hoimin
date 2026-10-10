@@ -11,6 +11,7 @@ use std::collections::HashSet;
 pub(super) struct Exclusions {
     all: ContainmentIndex,
     aliases: ContainmentIndex,
+    segments: ContainmentIndex,
 }
 impl Exclusions {
     pub(super) fn build(
@@ -31,6 +32,7 @@ impl Exclusions {
             markers: &markers,
             ranges: Vec::new(),
             aliases: Vec::new(),
+            segments: Vec::new(),
             cancelled,
             stopped: false,
         };
@@ -42,6 +44,7 @@ impl Exclusions {
         Ok(Self {
             all: ContainmentIndex::new(roles.ranges),
             aliases: ContainmentIndex::new(roles.aliases),
+            segments: ContainmentIndex::new(roles.segments),
         })
     }
     pub(super) fn contains_alias(&self, range: TextRange) -> bool {
@@ -50,6 +53,10 @@ impl Exclusions {
     }
     pub(super) fn contains(&self, range: TextRange) -> bool {
         self.all
+            .contains(usize::from(range.start()), usize::from(range.end()))
+    }
+    pub(super) fn excludes_segment(&self, range: TextRange) -> bool {
+        self.segments
             .contains(usize::from(range.start()), usize::from(range.end()))
     }
 }
@@ -131,12 +138,15 @@ struct Roles<'a, F> {
     markers: &'a Markers<'a, F>,
     ranges: Vec<(usize, usize)>,
     aliases: Vec<(usize, usize)>,
+    segments: Vec<(usize, usize)>,
     cancelled: &'a F,
     stopped: bool,
 }
 impl<F> Roles<'_, F> {
     fn exclude(&mut self, range: TextRange) {
         self.ranges
+            .push((usize::from(range.start()), usize::from(range.end())));
+        self.segments
             .push((usize::from(range.start()), usize::from(range.end())));
     }
     fn docstring(&mut self, body: &[Stmt]) {
@@ -172,10 +182,27 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for Roles<'_, F> {
         if self.stopped {
             return;
         }
-        if matches!(expression, Expr::FString(_) | Expr::TString(_)) {
-            self.exclude(expression.range());
-        } else {
-            visitor::walk_expr(self, expression);
+        match expression {
+            Expr::FString(value) => {
+                let range = expression.range();
+                // Existing runtime string operators still exclude the entire f-string.
+                self.ranges
+                    .push((usize::from(range.start()), usize::from(range.end())));
+                for element in value.value.elements() {
+                    self.stopped |= (self.cancelled)();
+                    if self.stopped {
+                        return;
+                    }
+                    if let Some(field) = element.as_interpolation() {
+                        let range = field.range();
+                        // This also excludes nested f-strings in fields/format specs.
+                        self.segments
+                            .push((usize::from(range.start()), usize::from(range.end())));
+                    }
+                }
+            }
+            Expr::TString(_) => self.exclude(expression.range()),
+            _ => visitor::walk_expr(self, expression),
         }
     }
 }

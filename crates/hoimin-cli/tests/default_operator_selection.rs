@@ -4,7 +4,7 @@ use std::path::Path;
 use hoimin_cli::plan::PlanManifest;
 use hoimin_core::MutationOperatorSelection;
 
-const PROMOTED: [&str; 9] = [
+const PROMOTED: [&str; 10] = [
     "statement_delete",
     "integer_literal_neighbor",
     "augmented_to_assignment",
@@ -14,6 +14,7 @@ const PROMOTED: [&str; 9] = [
     "conversion_call_remove",
     "method_call_remove",
     "function_body_return_constant",
+    "string_segment_empty",
 ];
 
 async fn cli(args: Vec<OsString>) -> serde_json::Value {
@@ -64,11 +65,11 @@ async fn plan(root: &Path, selection: &[&str]) -> serde_json::Value {
 #[tokio::test]
 async fn default_candidates_are_opt_out_and_saved_legacy_plans_stay_legacy() {
     let root = tempfile::tempdir().unwrap();
-    let source = "def f(x, y):\n    print('message')\n    x += 3\n    while x < y:\n        x += 1\n    z = int(x)\n    return x, y\ndef recent(text) -> str:\n    return text.strip()\n";
+    let source = "def f(x, y):\n    print('message')\n    x += 3\n    while x < y:\n        x += 1\n    z = int(x)\n    return x, y\ndef recent(text) -> str:\n    return text.strip()\ndef segment(x):\n    return f'prefix:{x}'\n";
     std::fs::write(root.path().join("subject.py"), source).unwrap();
     let default = plan(root.path(), &[]).await;
     let manifest: PlanManifest = serde_json::from_value(default.clone()).unwrap();
-    assert_eq!(manifest.normalized_config.operators.names().len(), 52);
+    assert_eq!(manifest.normalized_config.operators.names().len(), 53);
     let candidates = default["candidates"].as_array().unwrap();
     for operator in PROMOTED {
         assert!(
@@ -153,7 +154,7 @@ async fn excluding_recent_defaults_recovers_and_verifies_previous_fifty_selectio
         root.path(),
         &[
             "--exclude-operators",
-            "method_call_remove,function_body_return_constant",
+            "method_call_remove,function_body_return_constant,string_segment_empty",
         ],
     )
     .await;

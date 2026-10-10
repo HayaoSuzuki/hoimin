@@ -123,6 +123,7 @@ pub enum MutationOperator {
     OptionalKeywordDelete,
     MethodCallRemove,
     FunctionBodyReturnConstant,
+    StringSegmentEmpty,
 }
 
 impl MutationOperator {
@@ -135,6 +136,7 @@ impl MutationOperator {
     #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::StringSegmentEmpty => "string_segment_empty",
             Self::OptionalKeywordDelete => "optional_keyword_delete",
             Self::MethodCallRemove => "method_call_remove",
             Self::FunctionBodyReturnConstant => "function_body_return_constant",
@@ -208,7 +210,7 @@ impl MutationOperator {
             Self::TypeSequenceIterable => "type_sequence_iterable",
         }
     }
-    fn all() -> [Self; 71] {
+    fn all() -> [Self; 72] {
         [
             Self::CompareEqNe,
             Self::CompareOrder,
@@ -281,6 +283,7 @@ impl MutationOperator {
             Self::OptionalKeywordDelete,
             Self::MethodCallRemove,
             Self::FunctionBodyReturnConstant,
+            Self::StringSegmentEmpty,
         ]
     }
 }
@@ -466,6 +469,7 @@ impl Default for MutationOperatorSelection {
             MutationOperator::ConversionCallRemove,
             MutationOperator::MethodCallRemove,
             MutationOperator::FunctionBodyReturnConstant,
+            MutationOperator::StringSegmentEmpty,
         ] {
             selection.include(operator);
         }

@@ -413,10 +413,10 @@ the detailed capability and cleanup model.
 
 ## Mutation operators
 
-Without `--operators`, a run selects 52 default runtime operators. `--operators`
+Without `--operators`, a run selects 53 default runtime operators. `--operators`
 (comma-separated) selects an explicit set; `--exclude-operators` then removes
-individual IDs or selector families. Hoimin exposes 71 operator IDs in total:
-52 default runtime IDs, seven opt-in type IDs, five opt-in risky exception IDs,
+individual IDs or selector families. Hoimin exposes 72 operator IDs in total:
+53 default runtime IDs, seven opt-in type IDs, five opt-in risky exception IDs,
 `exception_hierarchy`, and six opt-in analyzers: `condition_constant`,
 `function_body_erase`, `enum_member_replace`, `condition_clause_delete`,
 `container_element_delete`, and `optional_keyword_delete`.
@@ -424,18 +424,19 @@ individual IDs or selector families. Hoimin exposes 71 operator IDs in total:
 The defaults include `statement_delete`, `integer_literal_neighbor`,
 `augmented_to_assignment`, `return_tuple_swap`, `string_literal_empty`,
 `while_condition_false`, `conversion_call_remove`, `method_call_remove`, and
-`function_body_return_constant`. To disable any of these,
+`function_body_return_constant`, and `string_segment_empty`. To disable any of these,
 use, for example, `--exclude-operators statement_delete,string_literal_empty`.
-To recover the previous 50-operator selection, use:
+To recover the previous 52-operator selection, use
+`--exclude-operators string_segment_empty`. To recover the earlier 50-operator selection, use:
 
 ```text
---exclude-operators method_call_remove,function_body_return_constant
+--exclude-operators method_call_remove,function_body_return_constant,string_segment_empty
 ```
 
-To recover the historical 43-operator selection, exclude all nine:
+To recover the historical 43-operator selection, exclude all ten:
 
 ```text
---exclude-operators statement_delete,integer_literal_neighbor,augmented_to_assignment,return_tuple_swap,string_literal_empty,while_condition_false,conversion_call_remove,method_call_remove,function_body_return_constant
+--exclude-operators statement_delete,integer_literal_neighbor,augmented_to_assignment,return_tuple_swap,string_literal_empty,while_condition_false,conversion_call_remove,method_call_remove,function_body_return_constant,string_segment_empty
 ```
 
 New default runs can generate more candidates and take longer. With a candidate
@@ -1019,6 +1020,35 @@ markers imported from typing/typing_extensions, including quoted/parenthesized m
 are recognized conservatively across scopes; shadowed or unusual marker spellings can
 suppress a candidate. Normal annotated assignment values remain eligible. Prefix and
 quote style need not survive; the replacement is an empty str. It is enabled by default.
+
+`string_segment_empty` is enabled by default; disable it with
+`--exclude-operators string_segment_empty`, or select it alone with
+`--operators string_segment_empty`. It removes the first eligible nonempty top-level
+literal segment of each f-string expression, or empties the first nonempty token of
+an implicitly concatenated ordinary string. Mixed ordinary/f-string concatenation
+is treated as one expression. Empty decoded pieces are skipped. For example,
+`f'prefix:{value}:suffix'` becomes `f'{value}:suffix'`, and
+`'prefix' 'suffix'` becomes `"" 'suffix'`. Only one candidate is generated per
+expression. Interpolation fields, conversion flags, format specs, debug text and
+comments between concatenated tokens keep their source text. Raw/triple-quoted
+strings, Unicode, escapes and doubled braces use AST source spans rather than
+decoded character lengths. Complete ordinary tokens become `""`; f-string text is
+deleted without losing interpolation side effects. An f-string token consisting
+only of fixed text becomes `f""`. Separating spaces are added against immediately
+adjacent quote tokens where needed to keep their lexical boundaries valid.
+
+Docstrings, annotations, explicit type aliases, patterns, bytes and t-strings
+(including their fields) are excluded. Interpolation contents and format-spec
+internals, including nested f-strings, are also excluded. Debug-derived text is not
+a literal segment; separately written text surrounding a debug field is eligible.
+This operator does not target single ordinary string tokens, which remain the
+responsibility of `string_literal_empty`. The existing operator's behavior is unchanged.
+A strong assertion on `state() == 'prefix:1'` kills the segment mutation of
+`f'prefix:{1}'`; a weaker `state().endswith('1')` assertion survives. This demonstrates
+missing fixed-text coverage, rather than establishing that every changed string is
+a useful defect. Existing explicit operator sets, candidate IDs and saved plan
+operator sets retain their meaning; default candidate counts and capped selections
+can change.
 
 `--operators while_condition_false` replaces eligible while tests with `(False)`.
 It skips both the original condition's evaluation and the loop body; an existing

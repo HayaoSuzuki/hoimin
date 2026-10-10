@@ -353,5 +353,10 @@
     "operator": "function_body_return_constant",
     "status": "deferred",
     "reason": "Dedicated Lean corpus, public CLI/CPython, own-scope, annotation-resolution and saved-plan tests; outside initial cross-producer corpus"
+  },
+  {
+    "operator": "string_segment_empty",
+    "status": "deferred",
+    "reason": "Dedicated public CLI/CPython 3.14 tests cover exact source spans, quote boundaries, interpolation evaluation, role exclusions, original encodings and saved-plan verification; outside initial cross-producer corpus"
   }
 ]

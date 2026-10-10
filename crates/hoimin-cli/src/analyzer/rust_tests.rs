@@ -19,6 +19,38 @@ use std::fmt::Write as _;
 
 const BINDING_FLOW_CORPUS: &str =
     include_str!("../../../../formal/HoiminOracle/corpus/binding-flow-joins.jsonl");
+
+#[test]
+fn string_segments_respect_candidate_caps_and_target_selection() {
+    let source =
+        "def first(x):\n return f'prefix:{x}:suffix'\ndef second(x):\n return 'prefix' 'suffix'\n";
+    let output = analyze_with_only_operator(source, MutationOperator::StringSegmentEmpty);
+    assert_eq!(output.candidates.len(), 1);
+    assert!(output.truncated);
+    assert_eq!(output.candidates[0].original, "prefix:");
+    let mut operators = MutationOperatorSelection::default();
+    for name in operators.names() {
+        let operator = MutationOperator::from_name(&name).unwrap();
+        if operator != MutationOperator::StringSegmentEmpty {
+            operators.exclude(operator);
+        }
+    }
+    let lines = [LineRange { start: 4, end: 4 }];
+    let symbols = ["second".to_owned()];
+    let request = AnalyzeRequest {
+        path: Utf8Path::new("subject.py"),
+        lines: &lines,
+        symbols: &symbols,
+        operators: &operators,
+        profile: MutationProfile::Full,
+        max_candidates: 1,
+    };
+    let selected = analyze_source(&request, source);
+    assert_eq!(selected.candidates.len(), 1);
+    assert_eq!(selected.candidates[0].original, "'prefix'");
+    assert!(!selected.truncated);
+    assert!(analyze_source_cancellable(&request, source, || true).is_err());
+}
 const ANNOTATION_SCOPE_CORPUS: &str =
     include_str!("../../../../formal/HoiminOracle/corpus/annotation-scope-correspondence.jsonl");
 const EXCEPTION_MATCH_BINDING_CORPUS: &str = include_str!(concat!(
@@ -5073,10 +5105,10 @@ fn interpolated_string_pairs_skip_literals_and_retain_expressions() {
         ),
     ] {
         assert!(
-            analyze(literal).candidates.is_empty(),
+            analyze_legacy(literal).candidates.is_empty(),
             "{flavor} literal content produced a candidate"
         );
-        let observed = analyze(expression)
+        let observed = analyze_legacy(expression)
             .candidates
             .into_iter()
             .map(|candidate| {

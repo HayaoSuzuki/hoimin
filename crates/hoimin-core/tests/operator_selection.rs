@@ -315,7 +315,7 @@ fn exception_hierarchy_is_explicit_only() {
     }
 }
 
-const PROMOTED: [&str; 9] = [
+const PROMOTED: [&str; 10] = [
     "statement_delete",
     "integer_literal_neighbor",
     "augmented_to_assignment",
@@ -325,14 +325,15 @@ const PROMOTED: [&str; 9] = [
     "conversion_call_remove",
     "method_call_remove",
     "function_body_return_constant",
+    "string_segment_empty",
 ];
 
 #[test]
-fn default_selection_promotes_exactly_nine_operators() {
+fn default_selection_promotes_exactly_ten_operators() {
     let default = MutationOperatorSelection::default();
     let legacy = MutationOperatorSelection::all_legacy();
     assert_eq!(legacy.names().len(), 43);
-    assert_eq!(default.names().len(), 52);
+    assert_eq!(default.names().len(), 53);
     for name in legacy.names() {
         assert!(default.contains(MutationOperator::from_name(&name).unwrap()));
     }
@@ -352,7 +353,7 @@ fn omitted_raw_operators_use_defaults_and_all_promotions_are_excludable() {
     let mut raw = raw_config();
     raw.operators.clear();
     let default = RunConfig::try_from(raw.clone()).unwrap();
-    assert_eq!(default.operators.names().len(), 52);
+    assert_eq!(default.operators.names().len(), 53);
     assert_eq!(default.operators, MutationOperatorSelection::default());
     raw.exclude_operators = PROMOTED.map(str::to_owned).to_vec();
     assert_eq!(

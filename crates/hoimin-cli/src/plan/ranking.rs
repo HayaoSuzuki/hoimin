@@ -266,6 +266,7 @@ fn operator_reason(operator: &str) -> Option<RankingReasonCode> {
         | MutationOperator::ConversionCallRemove
         | MutationOperator::OptionalKeywordDelete
         | MutationOperator::StringLiteralEmpty
+        | MutationOperator::StringSegmentEmpty
         | MutationOperator::ReturnTupleSwap
         | MutationOperator::EnumMemberReplace
         | MutationOperator::FunctionBodyErase
