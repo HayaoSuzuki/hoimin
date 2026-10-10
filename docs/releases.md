@@ -192,7 +192,7 @@ A rerun can register another proof for rebuilt bytes, but cannot replace an
 already public Release with them. Verify the actually downloaded public bytes;
 do not assume the newest run's artifact matches an older publication.
 
-The first merged-PR run after this change is the hosted integration check:
+For the first merged-PR run after changing this workflow,
 inspect `provenance-evidence/identity.txt` and the thirteen verification results,
 then download that public Release and verify every file with the trusted SHAs.
 Compare its files byte-for-byte with that attempt's `verified-release`, and
@@ -201,6 +201,21 @@ Local tests cover the Python validator and workflow control flow; they do not
 issue a GitHub OIDC certificate or establish the observed identity of a merged
 `pull_request_target` run. Record those actual results before claiming hosted
 verification is complete.
+
+The first hosted integration completed for
+[v0.3.4](https://github.com/HayaoSuzuki/hoimin/releases/tag/v0.3.4) in
+[run 38052986762](https://github.com/HayaoSuzuki/hoimin/actions/runs/38052986762).
+The observed `pull_request_target` certificate identifies
+`c08574663a363228fed310fbf75157831b4a5669` as both the source and workflow
+revision, matching the checkout and reserved tag. All thirteen public files
+verified with that repository, workflow and both digests and matched
+`verified-release` byte-for-byte; the six SBOM artifact digests also matched.
+Independent checks of modified bytes, another repository, an unexpected source,
+and an unexpected workflow all failed verification. See the
+[verification record](reviews/2026-10-10-issue-750-release-provenance.md#マージ後の実機検証)
+and [recorded certificate attributes and digests](reviews/2026-10-10-issue-750-hosted-verification.json).
+This is evidence for that run and release; repeat the checks after changing the
+trigger, signing workflow, artifact handling, permissions, or verification tools.
 
 Build provenance identifies a producing workflow and source under the stated
 policy. It does not establish reproducible builds, freedom from vulnerabilities,
