@@ -1,0 +1,27 @@
+{
+  "archive": {
+    "archive": "hoimin-v0.3.8-windows-x86_64.zip",
+    "sha256": "c44edbbf2f728fcb9beb5a7abbf56f0937b1cebde225a7f9ad4abfe5b5547dc5",
+    "binary_sha256": "26ea989b8998b58f2df24f245e44ca217f27251387ccf2ca4e245b0ababcb0e3",
+    "version": "0.3.8",
+    "system": "Windows-11-10.0.26200-SP0",
+    "machine": "AMD64",
+    "python": "3.14.6",
+    "libc": [
+      "",
+      ""
+    ]
+  },
+  "wheel": {
+    "wheel": "hoimin-0.3.8-py3-none-win_amd64.whl",
+    "sha256": "d8fc6d973c27e53d6c387f100d18022a39feb368c1f0b1708c9864cfcbf070a5",
+    "version": "0.3.8",
+    "system": "Windows-11-10.0.26200-SP0",
+    "machine": "AMD64",
+    "python": "3.14.6",
+    "libc": [
+      "",
+      ""
+    ]
+  }
+}

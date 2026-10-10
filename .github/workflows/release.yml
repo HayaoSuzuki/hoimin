@@ -177,6 +177,13 @@ jobs:
             --target x86_64-pc-windows-msvc
       - run: uv sync --frozen --no-install-project
       - run: uv run --frozen --no-sync python tests/wheel_smoke.py
+        env:
+          HOIMIN_SMOKE_REPORT: wheel-smoke.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: smoke-wheel-windows
+          path: wheel-smoke.json
+          if-no-files-found: error
       - name: Package verified binaries and wheels
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
@@ -271,6 +278,13 @@ jobs:
           df -h . /tmp
       - run: uv sync --frozen --no-install-project
       - run: uv run --frozen --no-sync python tests/wheel_smoke.py
+        env:
+          HOIMIN_SMOKE_REPORT: wheel-smoke.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: smoke-wheel-linux
+          path: wheel-smoke.json
+          if-no-files-found: error
       - name: Package verified binaries and wheels
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
@@ -348,6 +362,13 @@ jobs:
             --target aarch64-apple-darwin
       - run: uv sync --frozen --no-install-project
       - run: uv run --frozen --no-sync python tests/wheel_smoke.py
+        env:
+          HOIMIN_SMOKE_REPORT: wheel-smoke.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: smoke-wheel-macos
+          path: wheel-smoke.json
+          if-no-files-found: error
       - name: Package verified binaries and wheels
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
@@ -410,10 +431,127 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
+  archive-smoke:
+    name: Packaged archive smoke (${{ matrix.platform }})
+    needs: [prepare, validate]
+    if: "!cancelled() && needs.prepare.result == 'success' && needs.validate.result == 'success'"
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows-x86_64
+            extension: zip
+          - os: ubuntu-22.04
+            platform: linux-x86_64
+            extension: tar.gz
+          - os: macos-14
+            platform: macos-aarch64
+            extension: tar.gz
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.14'
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: verified-release
+          path: dist
+      - run: uv sync --frozen --no-install-project
+      - name: Verify unchanged release assets
+        shell: bash
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          COMMIT: ${{ needs.prepare.outputs.commit }}
+        run: uv run --frozen --no-sync python tools/release.py checksums --directory dist --version "$VERSION" --commit "$COMMIT" --verify
+      - name: Run packaged executable outside checkout
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          ARCHIVE: dist/hoimin-v${{ needs.prepare.outputs.version }}-${{ matrix.platform }}.${{ matrix.extension }}
+          SMOKE_REPORT: archive-smoke.json
+        run: uv run --frozen --no-sync python tests/archive_smoke.py
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: smoke-archive-${{ matrix.platform }}
+          path: archive-smoke.json
+          if-no-files-found: error
+
+  linux-abi:
+    name: Linux wheel glibc 2.17 smoke
+    needs: [prepare, validate]
+    if: "!cancelled() && needs.prepare.result == 'success' && needs.validate.result == 'success'"
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.14'
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: verified-release
+          path: dist
+      - run: uv sync --frozen --no-install-project
+      - name: Verify unchanged release assets
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          COMMIT: ${{ needs.prepare.outputs.commit }}
+        run: uv run --frozen --no-sync python tools/release.py checksums --directory dist --version "$VERSION" --commit "$COMMIT" --verify
+      - name: Set expected wheel version
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: python tools/release.py set-version "$VERSION"
+      - name: Check wheel ABI and execute at glibc floor
+        env:
+          MANYLINUX_IMAGE: quay.io/pypa/manylinux2014_x86_64@sha256:f6a6f153c9cf45470507ebbc27013e5db14ce21331b62fd2c540561f25e5f0a5
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          docker run --rm --volume "$PWD:/io:ro" --volume "$PWD/evidence:/evidence" --workdir /io \
+            --env PATH=/opt/python/cp314-cp314/bin:/opt/bin:/usr/local/bin:/usr/bin:/bin \
+            --env HOIMIN_SMOKE_REPORT=/evidence/wheel-smoke.json \
+            --env PYTHONDONTWRITEBYTECODE=1 \
+            --entrypoint /bin/bash "$MANYLINUX_IMAGE" -euc '
+              set -o pipefail
+              python -c "import platform,sys; assert sys.version_info[:2] == (3,14); assert platform.libc_ver() == (\"glibc\", \"2.17\")"
+              python -m pip install --disable-pip-version-check "packaging==26.0"
+              wheels=(/io/dist/*manylinux*whl)
+              test "${#wheels[@]}" -eq 1
+              auditwheel show "${wheels[0]}" | tee /evidence/wheel-abi.txt
+              export HOIMIN_WHEEL="${wheels[0]}"
+              python tests/wheel_smoke.py
+            '
+          printf '%s\n' "$MANYLINUX_IMAGE" > evidence/image.txt
+          docker image rm "$MANYLINUX_IMAGE"
+          df -h . /tmp
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: "${{ !cancelled() }}"
+        with:
+          name: smoke-linux-abi
+          path: evidence/*
+          if-no-files-found: error
+
   attest:
     name: Attest validated release assets
-    needs: [prepare, validate]
-    if: "!cancelled() && needs.prepare.result == 'success' && needs.validate.result == 'success' && needs.prepare.outputs.publish == 'true'"
+    needs: [prepare, validate, archive-smoke, linux-abi]
+    if: >-
+      !cancelled() && needs.prepare.result == 'success' && needs.validate.result == 'success' &&
+      needs.archive-smoke.result == 'success' && needs.linux-abi.result == 'success' &&
+      needs.prepare.outputs.publish == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

@@ -46,6 +46,11 @@ GitHub Releases retain standalone archives and wheels as release artifacts.
 The standalone Linux executable is built on Ubuntu 22.04; the wheel uses
 manylinux2014 for broader glibc compatibility. Wheels require Python 3.14.
 
+Before publication, separate jobs exercise the verified archives outside the
+checkout and the Linux wheel at glibc 2.17 with Python 3.14. See the
+[artifact smoke checks](artifact-smoke.md) for runtime/ABI distinctions, evidence
+artifacts and failure gates.
+
 The workspace version is the minimum version for the next release, currently
 `0.3.0`. CI chooses the higher of that minimum and the highest stable tag's
 next patch version. When raising the minimum, keep
