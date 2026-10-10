@@ -6,9 +6,9 @@ status: draft
 sources:
 - id: workflow
   resource: ../../.github/workflows/release.yml
-  revision: a6965910bbc745e74aeb539628b3e2dc66c2a9d3
+  revision: 52e12a30bf40cb8b0040e21e776c8b75bc37ccc6
   working_tree: modified
-  sha256: aed6b62488b3c90397739c36e793b1e143356163a9f6b50a2071c9a45a5c605b
+  sha256: 197b961819a9962c98b9442c0143d3ae9ac97169ae8118deec0d3b5e65f7c1f4
 - id: validator
   resource: ../../tools/release.py
   revision: a6965910bbc745e74aeb539628b3e2dc66c2a9d3
@@ -16,9 +16,9 @@ sources:
   sha256: 6799cf1bea1690e390e7bfa6b184ce0306105c655c95e8873b28c14b670c2184
 - id: guide
   resource: ../releases.md
-  revision: c08574663a363228fed310fbf75157831b4a5669
+  revision: 52e12a30bf40cb8b0040e21e776c8b75bc37ccc6
   working_tree: modified
-  sha256: 52722f00a49c79310eb37bb4cf1efcf54124ee7ab2f8d08bf75982b0a09acd3e
+  sha256: cab75b11fc1b7ca03f24c37b845344b839cfdfd3f636b9e94776ea42079a58d9
 - id: review
   resource: ../reviews/2026-10-10-issue-750-release-provenance.md
   revision: c08574663a363228fed310fbf75157831b4a5669
@@ -41,6 +41,8 @@ validateが生成するimmutableな `verified-release` artifactを、証明job�
 PRと手動previewでは署名・証明登録を実行しない。
 生成したbundleで全ファイルを検証し、改変bytes、別repository、異なるsource SHAの拒否も確認してから公開を許可する。
 検証・証拠保存の失敗は公開を止め、既存の公開済みReleaseを書き換えない条件も維持する。[^workflow]
+
+PyPI向けには、同じビルドjobでwheelごとの単一subject証明も登録する。GitHub Releaseの13ファイルの一覧は維持し、公開時に新しいビルド証明を作らない。TestPyPIからPyPIへの公開条件と設定は[PyPIへのwheel公開](pypi-publishing.md)を参照する。[^workflow]
 
 # ソースとワークフローの同一性
 

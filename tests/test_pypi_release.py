@@ -249,20 +249,16 @@ def test_requires_matching_published_release(
     assert not (release_assets.parent / "dist").exists()
 
 
-def test_pypi_workflow_keeps_oidc_in_manual_protected_upload_job() -> None:
-    workflow = yaml.safe_load((ROOT / ".github/workflows/publish-pypi.yml").read_text())
-    assert set(workflow[True]) == {"workflow_dispatch"}
-    inputs = workflow[True]["workflow_dispatch"]["inputs"]
-    assert inputs["index"]["default"] == "testpypi"
-    assert set(inputs["index"]["options"]) == {"testpypi", "pypi"}
+def test_pypi_workflow_keeps_oidc_in_protected_upload_job() -> None:
+    workflow = yaml.safe_load((ROOT / ".github/workflows/release.yml").read_text())
     assert workflow["permissions"] == {"contents": "read"}
-    prepare_job = workflow["jobs"]["prepare"]
+    prepare_job = workflow["jobs"]["pypi-prepare"]
     assert "github.ref == 'refs/heads/main'" in prepare_job["if"]
     assert "github.repository == 'HayaoSuzuki/hoimin'" in prepare_job["if"]
     assert "id-token" not in prepare_job.get("permissions", {})
-    publish = workflow["jobs"]["publish"]
-    assert publish["needs"] == "prepare"
-    assert publish["environment"]["name"] == "${{ inputs.index }}"
+    publish = workflow["jobs"]["pypi-publish"]
+    assert publish["needs"] == ["pypi-prepare", "pypi-inspect"]
+    assert publish["environment"]["name"] == "pypi"
     assert publish["permissions"] == {"id-token": "write"}
     assert len(publish["steps"]) == 2
     assert publish["steps"][0]["uses"].startswith("actions/download-artifact@")

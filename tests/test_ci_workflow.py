@@ -424,7 +424,23 @@ def assert_github_release(workflow: str) -> None:
     assert decoded[True] == {
         "pull_request": {"branches": ["main"]},
         "pull_request_target": {"branches": ["main"], "types": ["closed"]},
-        "workflow_dispatch": None,
+        "workflow_dispatch": {
+            "inputs": {
+                "pypi_tag": {
+                    "description": (
+                        "Existing release tag for PyPI recovery "
+                        "(empty for build preview)"
+                    ),
+                    "type": "string",
+                    "default": "",
+                },
+                "pypi_production": {
+                    "description": "Publish to PyPI after TestPyPI verification",
+                    "type": "boolean",
+                    "default": False,
+                },
+            },
+        },
     }
     assert decoded["concurrency"] == {
         "group": (
@@ -447,6 +463,14 @@ def assert_github_release(workflow: str) -> None:
         "validate",
         "attest",
         "publish",
+        "pypi-prepare",
+        "dispatch-pypi",
+        "testpypi-inspect",
+        "testpypi-publish",
+        "testpypi",
+        "pypi-inspect",
+        "pypi-publish",
+        "pypi",
     }
     # GitHub Releases does not need PyPI credentials or publishing commands.
     assert "secrets" not in workflow
@@ -543,7 +567,11 @@ def assert_github_release(workflow: str) -> None:
         "needs.validate.result == 'success' && needs.attest.result == 'success' && "
         "needs.prepare.outputs.publish == 'true'"
     )
-    assert all("environment" not in job and "env" not in job for job in jobs.values())
+    assert all(
+        "environment" not in job and "env" not in job
+        for name, job in jobs.items()
+        if name not in {"testpypi-publish", "pypi-publish"}
+    )
     for job in (jobs["changes"], prepare, reserve, publish):
         assert set(job) <= {
             "name",
@@ -579,8 +607,9 @@ def assert_release_provenance(jobs: dict[str, dict[str, object]]) -> None:
         "needs.validate.result == 'success' && needs.prepare.outputs.publish == 'true'"
     )
     for name, job in jobs.items():
-        if name != "attest":
+        if name not in {"attest", "testpypi-publish", "pypi-publish"}:
             assert "id-token" not in mapping(job.get("permissions", {}))
+        if name not in {"attest", "pypi-prepare"}:
             assert "attestations" not in mapping(job.get("permissions", {}))
     for job in (attest, jobs["publish"]):
         download = next(

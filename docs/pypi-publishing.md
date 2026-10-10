@@ -1,143 +1,163 @@
-# Publishing hoimin wheels to PyPI
+# Publishing hoimin wheels and build provenance
 
-Use `.github/workflows/publish-pypi.yml` to publish an existing GitHub Release.
-The workflow runs manually from `main` in `HayaoSuzuki/hoimin`. Select a stable
-release tag and an index: `testpypi` (default) or `pypi`.
+`release.yml` builds GitHub Releases and can automatically publish their exact
+wheels to TestPyPI and then PyPI. Each wheel carries two attestations: its
+original build-time SLSA provenance and a publish attestation. Wheel contents,
+platform support, and the 0.3.x version floor are unchanged.
 
-The workflow downloads the three native wheels and `SHA256SUMS`. It checks that
-the tag belongs to `main`, that the release is published and not a prerelease,
-and that the wheel filenames, SHA-256 digests, package metadata and license
-texts match the expected release. It stages only the verified wheels. A separate
-job uploads those same bytes using PyPI Trusted Publishing and creates publish
-attestations. It does not build or execute downloaded code in the upload job.
+Automatic publication is initially disabled. Leaving `PYPI_AUTO_PUBLISH`
+unset lets GitHub Releases continue while the publisher accounts are configured.
+The previous `publish-pypi.yml` manual entry point is retired.
 
-License comparisons allow only the CRLF/LF line-ending difference introduced by
-Windows checkouts. Other text and whitespace differences are rejected. Wheel
-bytes and SHA-256 checks remain unchanged.
+## Publication order
 
-Supported distributions remain Windows x86-64, manylinux2014 x86-64 and macOS
-11+ arm64, with Python `>=3.14,<3.15`. This workflow publishes wheels only.
-Standalone executable archives and `SHA256SUMS` remain on GitHub Releases.
+1. A PR merged into `main` builds, validates and publishes the GitHub Release.
+   `release.yml` signs the existing complete asset inventory and separately signs
+   each of the three wheels with a single-subject SLSA statement.
+2. When the repository variable `PYPI_AUTO_PUBLISH` equals `true`, an
+   `actions: write` job dispatches a publication-only run of `release.yml` on
+   `main`. It executes no checked-out code. This explicit dispatch is necessary:
+   PyPI rejects upload tokens from `pull_request_target` events.
+3. The publication run downloads the public release wheels and checksums,
+   verifies metadata/licenses and original build signatures, and converts the
+   original bundles to PEP 740 without changing their signed statement bytes.
+4. The protected `testpypi` job publishes the three wheels with SLSA and publish
+   attestations. A separate read-only job downloads all three wheels and both
+   attestations, verifies signatures and identities, pins the build source and
+   workflow revisions to the tag commit, and compares SHA256 with GitHub bytes.
+5. Only successful TestPyPI verification permits the protected `pypi` upload.
+   A final read-only job performs the same checks against production PyPI.
 
-## One-time setup
+The automatic publisher dispatch is a separate Actions run. Watch both runs;
+a successful GitHub Release build alone does not mean PyPI publication passed.
+An empty `pypi_tag` retains the existing manual build-preview behavior and
+never publishes to either index. PR previews never dispatch PyPI publication.
 
-1. Sign in to the PyPI account that will own `hoimin`, verify its email address,
-   and enable two-factor authentication. Use a separate account on TestPyPI
-   to test the publication process.
-2. In [GitHub repository environments](https://github.com/HayaoSuzuki/hoimin/settings/environments),
-   create `pypi` and `testpypi`. Set **Deployment branches and tags** to
-   **Selected branches and tags** and add a **Branch** rule for `main` in both.
-   Add a required reviewer if the repository visibility and GitHub plan support
-   it. For private repositories on GitHub Pro or Team, **Required reviewers**
-   and **Prevent self-review** are unavailable; use the branch restriction and
-   manual workflow dispatch. In that configuration, dispatch starts publication
-   after validation without a second approval prompt. Where reviewers are
-   available, leave **Prevent self-review** disabled for a sole maintainer who
-   approves their own runs. These protections require configuration on GitHub;
-   the workflow file does not install them. See [GitHub's availability rules](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments#required-reviewers).
-3. Register a pending Trusted Publisher using the following values on
-   [PyPI account publishing](https://pypi.org/manage/account/publishing/) and
-   [TestPyPI account publishing](https://test.pypi.org/manage/account/publishing/).
+## One-time publisher setup
+
+The account owner must register a publisher on **both** indexes. Existing
+`publish-pypi.yml` registrations do not authorize the new workflow.
+
+- [PyPI hoimin publishing settings](https://pypi.org/manage/project/hoimin/settings/publishing/)
+- [TestPyPI hoimin publishing settings](https://test.pypi.org/manage/project/hoimin/settings/publishing/)
 
 | Field | PyPI | TestPyPI |
 | --- | --- | --- |
-| PyPI project name | `hoimin` | `hoimin` |
 | GitHub owner | `HayaoSuzuki` | `HayaoSuzuki` |
-| Repository name | `hoimin` | `hoimin` |
-| Workflow filename | `publish-pypi.yml` | `publish-pypi.yml` |
-| Environment name | `pypi` | `testpypi` |
+| Repository | `hoimin` | `hoimin` |
+| Workflow filename | `release.yml` | `release.yml` |
+| Environment | `pypi` | `testpypi` |
 
-The workflow filename excludes `.github/workflows/`. Register only this workflow,
-not `release.yml`. No PyPI API token or GitHub repository secret is needed.
-If the project already exists under the publishing account, add the same values
-under the project's **Publishing** settings instead of creating a pending publisher.
+Use an ordinary publisher for the existing `hoimin` project, not a pending
+publisher for a new project. No API token or repository secret is required.
+Both upload jobs are directly in `release.yml`. A reusable upload workflow
+would change the OIDC `job_workflow_ref` used to select the publisher and is
+therefore deliberately not used.
 
-As of the preparation check on 2026-10-07, both project JSON endpoints returned
-404. This does not guarantee that the name can be registered. A pending publisher
-does not reserve the name; PyPI creates the project on the first successful
-publication. See [creating a project with Trusted Publishing](https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/).
+In [GitHub environments](https://github.com/HayaoSuzuki/hoimin/settings/environments),
+retain the `pypi` and `testpypi` environments and restrict their deployment
+branches to `main`. Required reviewers cause an approval pause; fully automatic
+publication requires these environments to allow upload without a reviewer.
+Account registration and environment protection are external settings; merging
+this change does not install or enable them.
 
-## First publication
+## Bootstrap and enable automatic publication
 
-Merge the preparation branch into `main` and wait for the existing **Build and
-release** workflow to finish creating a GitHub Release. Use a release containing
-both the ELv2 change and the updated `HayaoSuzuki/hoimin` package URLs. The earlier
-`v0.1.17` release predates ELv2 and fails the license checks. The workspace version
-is a release-version floor; the existing release workflow assigns the next tag
-and writes that version into the wheel metadata before building.
+Keep `PYPI_AUTO_PUBLISH` unset until setup is complete. Merge this implementation
+and wait for a new GitHub Release whose original build includes the three
+single-wheel statements. Earlier versions cannot be repaired by resigning their
+wheels in a publication job, and existing PyPI files cannot gain attestations
+retroactively. Do not use an already-published legacy version for bootstrap.
 
-Inspect the release and replace `vX.Y.Z` in these commands with its actual tag.
-First publish to TestPyPI:
-
-```sh
-gh release view vX.Y.Z --repo HayaoSuzuki/hoimin
-gh workflow run publish-pypi.yml --repo HayaoSuzuki/hoimin --ref main \
-  -f tag=vX.Y.Z -f index=testpypi
-```
-
-Review the selected release before dispatching. Open the run in GitHub Actions
-and approve the `testpypi` environment if required reviewers are configured;
-otherwise the upload proceeds after validation. On a supported OS and
-architecture, check installation with an isolated Python 3.14 environment:
+First publish the new tag only to TestPyPI:
 
 ```sh
-uv venv --python 3.14 /tmp/hoimin-testpypi
-uv pip install --python /tmp/hoimin-testpypi/bin/python \
-  --index-url https://test.pypi.org/simple/ --only-binary=:all: 'hoimin==X.Y.Z'
-/tmp/hoimin-testpypi/bin/hoimin --version
-/tmp/hoimin-testpypi/bin/hoimin --help
+gh workflow run release.yml --repo HayaoSuzuki/hoimin --ref main \
+  -f pypi_tag=vX.Y.Z -f pypi_production=false
 ```
 
-The commands above use Unix paths. On Windows, use the environment's
-`Scripts/python.exe` and `Scripts/hoimin.exe`. hoimin's wheel has no runtime
-Python dependencies, so this check does not need an additional package index.
-
-Publish the same tag to PyPI after the TestPyPI check:
+Review the publication run: all three TestPyPI wheels and both predicates must
+verify. Then publish the same bytes to production through the same gate:
 
 ```sh
-gh workflow run publish-pypi.yml --repo HayaoSuzuki/hoimin --ref main \
-  -f tag=vX.Y.Z -f index=pypi
+gh workflow run release.yml --repo HayaoSuzuki/hoimin --ref main \
+  -f pypi_tag=vX.Y.Z -f pypi_production=true
 ```
 
-If required reviewers are configured, approve the `pypi` environment after
-reviewing the run. Otherwise dispatch authorizes the upload. Then confirm the
-project page, the three wheel files, license, repository links and installation:
+The already-complete TestPyPI publication is verified again instead of uploaded
+again. After both index checks pass, remove the obsolete `publish-pypi.yml`
+publishers and enable automatic publication for future merged releases:
 
 ```sh
-uvx --python 3.14 --from 'hoimin==X.Y.Z' hoimin --version
+gh variable set PYPI_AUTO_PUBLISH --repo HayaoSuzuki/hoimin --body true
 ```
 
-## Failures and retries
+The variable can also be set in [repository Actions variables](https://github.com/HayaoSuzuki/hoimin/settings/variables/actions).
+Delete it or set it to `false` to disable future automatic dispatches. This does
+not cancel a publication already dispatched. Manual recovery explicitly opts
+into a run and remains available while automatic dispatch is disabled.
 
-The workflow fails before staging if a wheel is missing, corrupt, from another
-version, or carries different license metadata or license texts. Compare the
-selected tag and GitHub Release assets; do not bypass the checks or relabel an
-older wheel. The checksums protect against accidental mismatches; they do not
-prove the origin of assets if an administrator replaces both assets and checksums.
+## Failures and recovery
 
-For OIDC errors, compare the repository owner, workflow filename and environment
-with the registration on the selected index. PyPI and TestPyPI registrations are
-independent. Runs started from a branch other than `main` skip publication.
+Missing or invalid original build evidence, wrong repository/workflow/source,
+changed bytes, metadata/license mismatches, and malformed index evidence stop
+publication. An authentication failure on TestPyPI prevents any production
+upload. A production verification failure marks the publication run failed but
+cannot undo files already accepted by PyPI. The GitHub Release remains public.
 
-If no files were uploaded, fix the configuration and retry the same tag. When
-the workflow or validator code changes, merge the fix and start a new manual run
-from `main`. GitHub's **Re-run** retains the original commit and will not pick up
-the fix; see [re-running workflows](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/re-run-workflows-and-jobs).
-Duplicate
-uploads fail: `skip-existing` is intentionally disabled, as recommended by the
-[publishing action](https://github.com/pypa/gh-action-pypi-publish#tolerating-release-package-file-duplicates).
-If an upload stops after publishing some files, inspect the index's files and
-digests before taking further action. The workflow does not automatically repair
-a partial publication. Publish a new release version when a clean retry is needed;
-do not delete an existing release expecting to reuse its filenames.
+Before each upload, the index is inspected. A version-level HTTP 404 permits a
+new upload. Other HTTP errors fail; they are never interpreted as an empty index.
+An existing publication is reused only if its exact three files, downloaded
+bytes and both cryptographic attestations verify. Partial publication, legacy
+publish-only evidence, wrong digests and duplicate predicates fail. The action
+keeps `skip-existing` disabled; it does not silently repair partial uploads.
 
-## References and verification scope
+When no files were accepted, correct the settings and retry the same tag. When
+all files were accepted, rerunning verifies them and skips only the now-proven
+complete upload. For partial publication, inspect the files and create a new
+release version if necessary. Never delete files expecting to reuse filenames.
+Multiple valid original signatures from a build rerun are all checked and one
+is selected deterministically. No candidate with the matching wheel subject
+may fail cryptographic verification.
 
-- [PyPI Trusted Publishing](https://docs.pypi.org/trusted-publishers/)
-- [Adding a publisher and configuring environments](https://docs.pypi.org/trusted-publishers/adding-a-publisher/)
-- [Publishing with OIDC and TestPyPI](https://docs.pypi.org/trusted-publishers/using-a-publisher/)
-- [Validator](../tools/pypi_release.py) and [tests](../tests/test_pypi_release.py)
+A workflow/code fix requires a new manual dispatch on updated `main` because
+GitHub Re-run retains the original workflow revision. Manual recovery fetches
+original build bundles from GitHub's attestation service, so it does not depend
+on a seven-day Actions artifact. It neither rebuilds nor relabels wheels.
+Concurrent uploads are serialized per index and version; different release
+versions do not replace each other's pending uploads. A concurrent duplicate
+may fail after another run publishes; recover by verifying the complete upload.
 
-Local checks validate artifact selection, metadata, licenses, checksums and
-workflow permissions. They do not exercise GitHub's environment approval or
-PyPI's OIDC token exchange. The first TestPyPI run verifies those integrations.
+## Verify a downloaded release
+
+Use the pinned tooling from this repository with Python 3.14 and GitHub CLI:
+
+```sh
+uv sync --frozen --no-install-project --only-group provenance
+uv run --frozen --no-sync python -m tools.pypi_provenance verify \
+  --index pypi --tag vX.Y.Z --commit EXPECTED_40_HEX_RELEASE_COMMIT \
+  --directory github-release-wheels
+```
+
+The directory must contain the three original GitHub wheels. The verifier
+retrieves index wheels and evidence through the JSON and Integrity APIs. It
+requires `HayaoSuzuki/hoimin`, build workflow `release.yml`, the expected source
+and build-workflow commit, a GitHub-hosted builder, and one attestation of each
+supported predicate. The expected commit comes from the reviewed release tag,
+not from an untrusted statement. Use `--index testpypi` for TestPyPI.
+The publish certificate can refer to a later publication-run revision; it is
+not treated as the original build source. Provenance does not establish
+reproducibility, absence of vulnerabilities, or OS code signing.
+
+## Verification scope and references
+
+Local tests exercise orchestration and real recorded GitHub signature rejection.
+They do not establish successful OIDC token exchange or uploads under the new
+publisher registrations. Hosted bootstrap evidence remains pending until merge
+and account configuration. Record it before treating Issue #771 as complete.
+
+- [PyPI attestation limits](https://docs.pypi.org/attestations/)
+- [Bundle conversion and upload](https://docs.pypi.org/attestations/producing-attestations/)
+- [Integrity API](https://docs.pypi.org/api/integrity/)
+- [Trusted Publisher setup](https://docs.pypi.org/trusted-publishers/adding-a-publisher/)
+- [Implementation and self-review](reviews/2026-10-10-issue-771-pypi-provenance.md)

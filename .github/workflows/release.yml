@@ -8,8 +8,17 @@ on: # zizmor: ignore[dangerous-triggers]
   pull_request_target:
     branches: [main]
     types: [closed]
-  # Manual runs validate packages without reserving tags or publishing.
+  # An empty tag preserves the package preview. A tag resumes PyPI only.
   workflow_dispatch:
+    inputs:
+      pypi_tag:
+        description: Existing release tag for PyPI recovery (empty for build preview)
+        type: string
+        default: ''
+      pypi_production:
+        description: Publish to PyPI after TestPyPI verification
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -23,7 +32,9 @@ concurrency:
 jobs:
   changes:
     name: Changes
-    if: github.event_name != 'pull_request_target' || github.event.pull_request.merged == true
+    if: >-
+      (github.event_name != 'pull_request_target' || github.event.pull_request.merged == true) &&
+      !(github.event_name == 'workflow_dispatch' && inputs.pypi_tag != '')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -448,6 +459,19 @@ jobs:
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
         with:
           subject-path: dist/*
+      # PyPI requires one independently signed statement per wheel.
+      - name: Attest Windows wheel for PyPI
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: dist/*-win_amd64.whl
+      - name: Attest Linux wheel for PyPI
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: dist/*-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+      - name: Attest macOS wheel for PyPI
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: dist/*-macosx_11_0_arm64.whl
       - name: Verify provenance and rejection policies
         env:
           GH_TOKEN: ${{ github.token }}
@@ -529,3 +553,242 @@ jobs:
           # A client-side read/compare followed by --latest=true would race.
           gh api --method PATCH "repos/$GH_REPO/releases/$release_id" \
             -F draft=false -f make_latest=legacy
+
+
+  pypi-prepare:
+    name: Prepare original wheel build attestations
+    if: >-
+      github.repository == 'HayaoSuzuki/hoimin' &&
+      github.ref == 'refs/heads/main' &&
+      github.event_name == 'workflow_dispatch' && inputs.pypi_tag != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      attestations: read # Fetch original build signatures without creating new ones.
+    outputs:
+      tag: ${{ steps.prepare.outputs.tag }}
+      commit: ${{ steps.prepare.outputs.commit }}
+      artifact: ${{ steps.prepare.outputs.artifact }}
+      production: ${{ inputs.pypi_production }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.14'
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - run: uv sync --frozen --no-install-project --only-group provenance
+      - name: Verify original release and stage signed wheels
+        id: prepare
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          MANUAL_TAG: ${{ inputs.pypi_tag }}
+        run: |
+          set -euo pipefail
+          tag="$MANUAL_TAG"
+          [[ "$tag" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          commit=$(git rev-parse "$tag^{commit}")
+          git merge-base --is-ancestor "$commit" HEAD
+          gh release view "$tag" --json tagName,isDraft,isPrerelease > release.json
+          gh release download "$tag" --pattern '*.whl' --pattern SHA256SUMS --dir release-assets
+          uv run --frozen --no-sync python -m tools.pypi_provenance stage \
+            --tag "$tag" --commit "$commit" --directory release-assets \
+            --release-json release.json --output dist
+          {
+            echo "tag=$tag"
+            echo "commit=$commit"
+            echo "artifact=pypi-wheels-$GITHUB_RUN_ID-$commit"
+          } >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ steps.prepare.outputs.artifact }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  dispatch-pypi:
+    name: Start supported PyPI publication event
+    needs: [prepare, publish]
+    if: >-
+      !cancelled() && github.repository == 'HayaoSuzuki/hoimin' &&
+      github.ref == 'refs/heads/main' && github.event_name == 'pull_request_target' &&
+      needs.publish.result == 'success' && vars.PYPI_AUTO_PUBLISH == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write # Explicit workflow_dispatch avoids PyPI's forbidden PR-target event.
+    steps:
+      - name: Dispatch publication on main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: gh workflow run release.yml --ref main -f pypi_tag="$TAG" -f pypi_production=true
+
+  testpypi-inspect:
+    needs: [pypi-prepare]
+    if: "!cancelled() && needs.pypi-prepare.result == 'success'"
+    name: Inspect index before upload
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      published: ${{ steps.inspect.outputs.published }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.14'
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - run: uv sync --frozen --no-install-project --only-group provenance
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: ${{ needs.pypi-prepare.outputs.artifact }}
+          path: dist
+      - name: Inspect existing files and both attestations
+        id: inspect
+        env:
+          INDEX: testpypi
+          TAG: ${{ needs.pypi-prepare.outputs.tag }}
+          COMMIT: ${{ needs.pypi-prepare.outputs.commit }}
+        run: uv run --frozen --no-sync python -m tools.pypi_provenance inspect --index "$INDEX" --tag "$TAG" --commit "$COMMIT" --directory dist
+
+  testpypi-publish:
+    name: Publish verified wheels
+    needs: [pypi-prepare, testpypi-inspect]
+    concurrency:
+      group: upload-testpypi-${{ needs.pypi-prepare.outputs.tag }}
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/hoimin
+    permissions:
+      id-token: write # Trusted Publishing only; no checked-out release code.
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        if: needs.testpypi-inspect.outputs.published == 'false'
+        with:
+          name: ${{ needs.pypi-prepare.outputs.artifact }}
+          path: dist
+      - name: Publish verified wheels and both predicates
+        if: needs.testpypi-inspect.outputs.published == 'false'
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
+        with:
+          packages-dir: dist/
+          repository-url: https://test.pypi.org/legacy/
+          attestations: true
+          print-hash: true
+
+  testpypi:
+    name: Verify downloaded index wheels and provenance
+    needs: [pypi-prepare, testpypi-inspect, testpypi-publish]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.14'
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - run: uv sync --frozen --no-install-project --only-group provenance
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: ${{ needs.pypi-prepare.outputs.artifact }}
+          path: dist
+      - name: Verify all published bytes and both attestations
+        env:
+          INDEX: testpypi
+          TAG: ${{ needs.pypi-prepare.outputs.tag }}
+          COMMIT: ${{ needs.pypi-prepare.outputs.commit }}
+        run: uv run --frozen --no-sync python -m tools.pypi_provenance verify --index "$INDEX" --tag "$TAG" --commit "$COMMIT" --directory dist
+
+  pypi-inspect:
+    needs: [pypi-prepare, testpypi]
+    if: "!cancelled() && needs.pypi-prepare.result == 'success' && needs.testpypi.result == 'success' && needs.pypi-prepare.outputs.production == 'true'"
+    name: Inspect index before upload
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      published: ${{ steps.inspect.outputs.published }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.14'
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - run: uv sync --frozen --no-install-project --only-group provenance
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: ${{ needs.pypi-prepare.outputs.artifact }}
+          path: dist
+      - name: Inspect existing files and both attestations
+        id: inspect
+        env:
+          INDEX: pypi
+          TAG: ${{ needs.pypi-prepare.outputs.tag }}
+          COMMIT: ${{ needs.pypi-prepare.outputs.commit }}
+        run: uv run --frozen --no-sync python -m tools.pypi_provenance inspect --index "$INDEX" --tag "$TAG" --commit "$COMMIT" --directory dist
+
+  pypi-publish:
+    name: Publish verified wheels
+    needs: [pypi-prepare, pypi-inspect]
+    concurrency:
+      group: upload-pypi-${{ needs.pypi-prepare.outputs.tag }}
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: pypi
+      url: https://pypi.org/p/hoimin
+    permissions:
+      id-token: write # Trusted Publishing only; no checked-out release code.
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        if: needs.pypi-inspect.outputs.published == 'false'
+        with:
+          name: ${{ needs.pypi-prepare.outputs.artifact }}
+          path: dist
+      - name: Publish verified wheels and both predicates
+        if: needs.pypi-inspect.outputs.published == 'false'
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
+        with:
+          packages-dir: dist/
+          repository-url: https://upload.pypi.org/legacy/
+          attestations: true
+          print-hash: true
+
+  pypi:
+    name: Verify downloaded index wheels and provenance
+    needs: [pypi-prepare, pypi-inspect, pypi-publish]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.14'
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - run: uv sync --frozen --no-install-project --only-group provenance
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: ${{ needs.pypi-prepare.outputs.artifact }}
+          path: dist
+      - name: Verify all published bytes and both attestations
+        env:
+          INDEX: pypi
+          TAG: ${{ needs.pypi-prepare.outputs.tag }}
+          COMMIT: ${{ needs.pypi-prepare.outputs.commit }}
+        run: uv run --frozen --no-sync python -m tools.pypi_provenance verify --index "$INDEX" --tag "$TAG" --commit "$COMMIT" --directory dist

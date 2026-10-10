@@ -94,15 +94,15 @@ last. There is no separate client-side read/compare/update of `Latest` that coul
 race with another run. The GitHub API owns that selection; local tests check the
 outgoing request, while hosted execution remains the integration check.
 
-PyPI publication uses the separate, manually triggered `publish-pypi.yml`
-workflow. Select a published ELv2 release tag and either TestPyPI (the default)
-or PyPI. It verifies all three wheels against `SHA256SUMS`, checks their package
-metadata and bundled licenses, and uploads the same wheel bytes through Trusted
-Publishing. Only the upload job has `id-token: write`; its GitHub environment
-restricts deployment to `main` and can require approval where the GitHub plan
-supports reviewers. Without reviewers, manual dispatch proceeds to upload after
-validation. See [PyPI publishing](pypi-publishing.md) for the initial
-account and environment setup, first publication, and retry procedure.
+After publisher setup, setting the repository variable `PYPI_AUTO_PUBLISH=true`
+enables automatic publication: GitHub Release, a separate publication-only
+`release.yml` dispatch, TestPyPI upload and verification, then PyPI upload and
+verification. The default is disabled so GitHub Releases can continue before
+account setup. Each unchanged wheel carries its original single-subject SLSA
+build attestation and a publish attestation. Protected upload jobs have only
+OIDC permission and execute no checked-out code. Manual recovery uses the same
+TestPyPI gate. See [PyPI publishing](pypi-publishing.md) for registration values,
+initial hosted verification, enablement and partial-publication recovery.
 
 ## GitHub build provenance
 
@@ -115,7 +115,9 @@ GitHub stores the signed provenance separately; no new Release attachment is
 added and the distribution format and version series remain unchanged (0.3.x).
 Older releases made before this workflow change do not acquire provenance.
 
-The separate attestation job alone has `id-token: write` and `attestations: write`.
+Within the GitHub build phase, only the attestation job has `id-token: write`
+and `attestations: write`. The later index upload jobs have OIDC permission
+without GitHub attestation-write permission.
 It uses the commit-pinned official `actions/attest` action and hosted runners.
 PR previews and manual validation runs remain read-only and do not generate
 attestations. Public repositories are eligible on all current GitHub plans;
