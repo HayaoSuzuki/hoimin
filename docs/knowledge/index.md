@@ -12,6 +12,8 @@ okf_version: "0.2"
 - [リリース配布物のSBOM](release-sbom.md) - Cargo依存グラフの範囲、配布物との対応、公開前の検証。
 - [GitHubリリースの由来証明](release-provenance.md) - 署名対象と公開物の一致、ソース同一性、検証と公開停止。
 
+- [Rust依存のライセンスと取得元](dependency-policy.md) - 両workspaceの検査、限定例外、build script差分レビュー。
+
 - [CIの選択と必須チェック](ci-validation.md) - 保守的な差分分類、集約、厳格なworkflow検査と公開の権限境界。
 - [CLIリファレンスの生成と同期](cli-reference.md) - Rust定義からの生成、手書き文書との分担、更新漏れの検査。
 
