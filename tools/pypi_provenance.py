@@ -162,8 +162,8 @@ def stage(
                 raise ValueError(msg)
             matching: list[Attestation] = []
             for line in candidates[0].read_text(encoding="utf-8").splitlines():
-                raw = object_mapping(json.loads(line))["bundle"]
-                bundle = Bundle.from_json(json.dumps(raw))
+                # CLI JSONL contains bare bundles, not GitHub API wrappers.
+                bundle = Bundle.from_json(line)
                 value = Attestation.from_bundle(bundle)
                 statement = statement_of(value.model_dump(mode="json"))
                 if statement.get("subject") != [
@@ -171,7 +171,7 @@ def stage(
                 ]:
                     continue
                 bundle_path = root / "selected-bundle.json"
-                bundle_path.write_text(json.dumps(raw), encoding="utf-8")
+                bundle_path.write_text(line, encoding="utf-8")
                 # A same-subject invalid signature is fatal, not a reason to fall back.
                 verify_build(wheel, bundle_path, commit)
                 value.verify(
