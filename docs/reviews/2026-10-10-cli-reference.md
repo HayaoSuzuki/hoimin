@@ -130,3 +130,23 @@ updated the CI selection contract. Public execution contracts did not change.
 - Initial release preview run `38035102365` succeeded for Linux, Windows, macOS
   and final asset validation. Dependency audit run `38035102361` succeeded.
 - Independent review of the follow-up workflow change reported no findings.
+
+## Final hosted verification
+
+Implementation commit: `7fc0225d594435b6e3b458a856b8723422d16818`.
+
+- [CI run 38035722899](https://github.com/HayaoSuzuki/hoimin/actions/runs/38035722899):
+  success, including CI result, Rust workspace tests, the generator example's
+  seven tests, actual CLI reference `--check`, randomized-order Rust, contracts,
+  boundary contracts, bounded fuzz, Lean, strict quality and workflow checks.
+  The opt-in Linux cgroup job was intentionally skipped. The unchanged staging
+  reclamation test passed in this full rerun.
+- Hosted full Python suite: 861 passed, 10 skipped in 23.61 s.
+- [Release preview 38035722907](https://github.com/HayaoSuzuki/hoimin/actions/runs/38035722907):
+  success for Linux, Windows, macOS and final asset validation. Tag reservation
+  and publishing were intentionally skipped for the PR.
+- [Dependency audit 38035722896](https://github.com/HayaoSuzuki/hoimin/actions/runs/38035722896):
+  success.
+
+This final evidence update changes only this review document. Implementation and
+test code remain identical to the hosted-verified commit above.
