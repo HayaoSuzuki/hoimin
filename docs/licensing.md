@@ -21,3 +21,6 @@ hoimin is source-available under ELv2, which is not an OSI-approved open-source
 license. Third-party components retain their own licenses, including the
 [vendored Ruff Python parser](../vendor/ruff_python_parser/LICENSE).
 
+Dependency changes follow the [Rust dependency policy](dependency-policy.md).
+Its allow-list check does not replace the license terms or redistribution duties.
+
