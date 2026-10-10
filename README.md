@@ -33,8 +33,6 @@ on macOS and Linux without delegated cgroup limits; see the
 
 See the [usage reference](https://github.com/HayaoSuzuki/hoimin/blob/main/docs/usage.md)
 for selectors, plan/verify workflows, reports, and configuration, or run `hoimin --help`.
-To preview a reproducible sample from a complete saved plan, run
-`hoimin verify PLAN.json --sample 100 --seed 42 --dry-run`.
 For contributing, see [development](https://github.com/HayaoSuzuki/hoimin/blob/main/docs/development.md)
 and [building and releases](https://github.com/HayaoSuzuki/hoimin/blob/main/docs/releases.md).
 
