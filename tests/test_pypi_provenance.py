@@ -165,9 +165,11 @@ def test_real_github_aggregate_signature_is_valid_but_not_pypi_compatible() -> N
 
 
 def test_real_cli_download_contains_individually_verifiable_wheel_proof() -> None:
-    lines = (ROOT / "tests/fixtures/pypi-provenance-download.jsonl").read_text(
-        encoding="utf-8"
-    ).splitlines()
+    lines = (
+        (ROOT / "tests/fixtures/pypi-provenance-download.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    )
     counts: list[int] = []
     for line in lines:
         bundle = Bundle.from_json(line)

@@ -49,7 +49,7 @@ sources:
   resource: ../../tests/test_pypi_provenance.py
   revision: c9f92eb721d8a858a2f55643a5c72723763174dd
   working_tree: modified
-  sha256: b021cd97e5d159c71c90004df565ed2f1d3f9ffd99bffe31b0b9369853c677fb
+  sha256: 210238c8d1caeaafef9a9acaea02cea43a0eb3c1a1e062e879f554626d92308f
 - id: review
   resource: ../reviews/2026-10-10-issue-771-pypi-provenance.md
   revision: 52e12a30bf40cb8b0040e21e776c8b75bc37ccc6
