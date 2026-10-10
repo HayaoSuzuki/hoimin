@@ -16,14 +16,19 @@ sources:
   sha256: 6799cf1bea1690e390e7bfa6b184ce0306105c655c95e8873b28c14b670c2184
 - id: guide
   resource: ../releases.md
-  revision: a6965910bbc745e74aeb539628b3e2dc66c2a9d3
+  revision: c08574663a363228fed310fbf75157831b4a5669
   working_tree: modified
-  sha256: 076faf654acd7068709b049448c26f9c732d6c58864f5fb32b03cf87e2930b21
+  sha256: 52722f00a49c79310eb37bb4cf1efcf54124ee7ab2f8d08bf75982b0a09acd3e
 - id: review
   resource: ../reviews/2026-10-10-issue-750-release-provenance.md
-  revision: a6965910bbc745e74aeb539628b3e2dc66c2a9d3
+  revision: c08574663a363228fed310fbf75157831b4a5669
+  working_tree: modified
+  sha256: 70e05665ae643e033fadb37a5499b175cf5e8ddce881192b13fc783e3a4f809f
+- id: hosted
+  resource: ../reviews/2026-10-10-issue-750-hosted-verification.json
+  revision: c08574663a363228fed310fbf75157831b4a5669
   working_tree: untracked
-  sha256: d0ce58daecf505205b3322c341c48b4590af1a97d6282542e8e80cc07935518e
+  sha256: ae58498410a4d1d5ce6918244e4af5b78667d82daba568e5c3502ed4943a9c8f
 ---
 
 # 対象ファイルと公開条件
@@ -52,11 +57,13 @@ checkout操作だけでOIDCのsource identityが変わるとは仮定しない�
 ローカルの回帰、shell制御、厳格lint、変異検証と、各段階5回以上のセルフレビューは[検証記録](../reviews/2026-10-10-issue-750-release-provenance.md)に記載する。
 ローカル試験でGitHub OIDC証明書を発行したとは扱わない。[^review]
 
-マージ後の最初の実runで、証明書のsource/workflow identity、13ファイルの署名検証、拒否ケース、公開物とverified-releaseのbyte一致、SBOM内digestを確認する必要がある。
-確認前に完了条件をすべて満たしたと主張しない。
+マージ後の実run `38052986762` でv0.3.4を公開し、証明書のsource/workflow identity、13ファイルの署名検証、4種類の拒否ケース、公開物とverified-releaseのbyte一致、SBOM内digestを確認した。
+この実測のソースとworkflowのSHAはともに `c08574663a363228fed310fbf75157831b4a5669` だった。
+証明書属性とdigestは[実測JSON](../reviews/2026-10-10-issue-750-hosted-verification.json)に保存した。[^hosted]
 trigger、権限、公式Action、GH CLI、artifact取得、配布inventoryを変更した際も再確認する。[^guide][^review]
 
 [^workflow]: [リリースワークフロー](../../.github/workflows/release.yml)。
 [^validator]: [checksumとSBOMの検証](../../tools/release.py)。
 [^guide]: [利用者の照合手順と再実行](../releases.md#github-build-provenance)。
 [^review]: [Issue #750の検証記録](../reviews/2026-10-10-issue-750-release-provenance.md)。
+[^hosted]: [v0.3.4の実証明書属性・公開物digest・拒否結果](../reviews/2026-10-10-issue-750-hosted-verification.json)。

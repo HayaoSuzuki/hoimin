@@ -55,7 +55,34 @@ Rustの配布コード、README、ライセンス、wheel metadata、archive構�
 文書はこのリポジトリ内のrelease手順とOKFカタログへまとめ、別サイトの変更は不要と判断した。
 作業ツリーのCLIをビルドして変異試験に使用し、終了後に `cargo clean` を実施した。
 
-GitHub OIDC証明書はローカルで発行できず、PR previewも書込みを行わない。
-マージ後の最初の `pull_request_target` runでsource/workflow identity、正常・拒否の署名検証、公開物とverified-releaseのbyte一致を確認する必要がある。
-手順は[リリース運用](../releases.md#github-build-provenance)に記載した。
-この実機確認が済むまではIssue #750の完了条件をすべて達成したとは扱わず、PRはissueを自動closeしない。
+PR #770の時点では、GitHub OIDC証明書はローカルで発行できず、previewも書込みを行わないため実機確認を残した。
+そのためPR #770ではIssueを自動closeしなかった。
+マージ後の確認結果は次節に記載する。
+
+## マージ後の実機検証
+
+PR #770のマージコミットは `c08574663a363228fed310fbf75157831b4a5669`。
+[run 38052986762](https://github.com/HayaoSuzuki/hoimin/actions/runs/38052986762) のattempt 1は全9jobが成功し、[v0.3.4](https://github.com/HayaoSuzuki/hoimin/releases/tag/v0.3.4) を公開した。
+結果の記録は `docs/issue-750-hosted-verification` ブランチで行い、配布コードの変更はない。
+証明書属性、13ファイルのSHA256、取得元artifact ID/digest、拒否結果とCLI版は[実測JSON](2026-10-10-issue-750-hosted-verification.json)に保存した。
+
+| 確認対象 | 実測結果 |
+| --- | --- |
+| checkout、source、workflow SHA | いずれも `c08574663a363228fed310fbf75157831b4a5669` |
+| 証明書のtrigger / runner | `pull_request_target` / `github-hosted` |
+| 証明書のsigner workflow | `https://github.com/HayaoSuzuki/hoimin/.github/workflows/release.yml@refs/heads/main` |
+| 公開物とverified-release | 全13ファイルのバイト列が一致 |
+| 公開物の署名・subject digest | GitHub APIから証明を取得し、repository・workflow・source/signer digestを指定して全13件成功。各証明のsubject集合も公開物の13件とそのSHA256に一致 |
+| SHA256SUMSとSBOM | 非書込み検証が成功し、6つのSBOM内のartifact digestも一致 |
+| 改変bytes、別repository、異なるsource、異なるworkflow | 有効な同じbundleを使った4ケースがすべてexit 1で拒否された |
+
+実機検証のセルフレビューも以下の5回行った。
+
+1. 期待するidentityを確認した。検証値はマージコミットと実行workflowから決め、ダウンロードしたファイルの主張だけを信頼しない。実証明書のsource、signer、build configのdigestと照合した。
+2. 完全な対象集合を確認した。公開物とverified-releaseが同じ13ファイルであることを確認し、checksum一覧を含め、署名のsubject集合と全digestを照合した。
+3. digestの連鎖を確認した。公開物とartifactをバイト単位で比較し、既存の完全inventory・checksum・SBOM検証を実行した。SBOM 6件のartifact digestも取得した公開物に対して確認した。
+4. 拒否試験の対照を確認した。取得したbundleで正常なSHA256SUMSが検証できることを先に確認してから、4種類の不正入力・policyを検査した。workflow内の3ケースに加えて、公開後の取得物でも拒否を確認した。
+5. 結論と資源を確認した。観測はv0.3.4・attempt 1に限定し、将来の変更や再現性・無脆弱性へ保証を広げない。ダウンロードは10GiB以上の空き容量を確認した一時領域で行い、終了後に削除した。公開済みReleaseの再ビルド・再公開は行っておらず、既存の非上書きガードと前段の回帰検証を維持する。
+
+Issue #750で残していた実証明書と公開物の照合を完了した。
+利用者手順と再確認条件は[リリース運用](../releases.md#github-build-provenance)に記載した。

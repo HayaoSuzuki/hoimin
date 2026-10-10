@@ -1,0 +1,176 @@
+{
+  "repository": "HayaoSuzuki/hoimin",
+  "release": {
+    "isDraft": false,
+    "isPrerelease": false,
+    "publishedAt": "2026-10-10T12:53:52Z",
+    "tagName": "v0.3.4",
+    "url": "https://github.com/HayaoSuzuki/hoimin/releases/tag/v0.3.4"
+  },
+  "run_id": 38052986762,
+  "run_url": "https://github.com/HayaoSuzuki/hoimin/actions/runs/38052986762",
+  "identities": {
+    "version": "0.3.4",
+    "checkout_commit": "c08574663a363228fed310fbf75157831b4a5669",
+    "source_sha": "c08574663a363228fed310fbf75157831b4a5669",
+    "workflow_sha": "c08574663a363228fed310fbf75157831b4a5669",
+    "workflow_ref": "HayaoSuzuki/hoimin/.github/workflows/release.yml@refs/heads/main"
+  },
+  "public_sha256": {
+    "SHA256SUMS": "d09eeea57a692cf481fab9a5fb71cb41c6f69557101e90b371446d2304878996",
+    "hoimin-0.3.4-py3-none-macosx_11_0_arm64.whl": "4093bd6458d3972a507160fdd68957f52038a977d4522e47d940bb219d0492cf",
+    "hoimin-0.3.4-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl": "bb9662dcead554cd9a29d0b7fd8c97c1534da85db9937f32234c0f9a37f9d630",
+    "hoimin-0.3.4-py3-none-win_amd64.whl": "b44ff0dfe3d0dbeafdba9dac3b9a72d42ef88e1917ae86d2d24e9e6c058ef419",
+    "hoimin-v0.3.4-linux-x86_64-standalone.cdx.json": "6da2359a05e85dd8b72ab28a75a854248eb47db45d768076257fd72107767fb0",
+    "hoimin-v0.3.4-linux-x86_64-wheel.cdx.json": "9d59775d6cc1881b5e96efdba0751f6003cb5a85ee8286ebc9a55c466e43cf05",
+    "hoimin-v0.3.4-linux-x86_64.tar.gz": "b306ba5c41c5e6a0318dcbb2fc3d7b00f4e4d9877716924786f250736cd14cbf",
+    "hoimin-v0.3.4-macos-aarch64-standalone.cdx.json": "ce76fcbefcc23ea9dcd78db15651ec5b10dad46ca692a3dec27829f06d2df0c0",
+    "hoimin-v0.3.4-macos-aarch64-wheel.cdx.json": "946e4b778b795965f584cb2b303eb1f00a26c04d28a9f4834cd016da49b28c10",
+    "hoimin-v0.3.4-macos-aarch64.tar.gz": "bc35a941b1c6f201b77bb4f52a075bdf18bf75e6793e6496bc5866dc6773e187",
+    "hoimin-v0.3.4-windows-x86_64-standalone.cdx.json": "220a6971213025923027b1de58d7144f9a0456d3c7a9cc8498db4e2f9df5084a",
+    "hoimin-v0.3.4-windows-x86_64-wheel.cdx.json": "29a8c1eb5ddb8b5d83327543b5b7918aee46db98763b127893864550ef33feac",
+    "hoimin-v0.3.4-windows-x86_64.zip": "daf432768f8db1b0a32b955ccdf11f2ac74f3a77babdd42cc463fa2fde1396eb"
+  },
+  "public_equals_verified_release": true,
+  "public_signature_verifications": 13,
+  "sbom_digest_verifications": 6,
+  "certificate": {
+    "certificateIssuer": "CN=sigstore-intermediate,O=sigstore.dev",
+    "subjectAlternativeName": "https://github.com/HayaoSuzuki/hoimin/.github/workflows/release.yml@refs/heads/main",
+    "issuer": "https://token.actions.githubusercontent.com",
+    "githubWorkflowTrigger": "pull_request_target",
+    "githubWorkflowSHA": "c08574663a363228fed310fbf75157831b4a5669",
+    "githubWorkflowName": "Build and release",
+    "githubWorkflowRepository": "HayaoSuzuki/hoimin",
+    "githubWorkflowRef": "refs/heads/main",
+    "buildSignerURI": "https://github.com/HayaoSuzuki/hoimin/.github/workflows/release.yml@refs/heads/main",
+    "buildSignerDigest": "c08574663a363228fed310fbf75157831b4a5669",
+    "runnerEnvironment": "github-hosted",
+    "sourceRepositoryURI": "https://github.com/HayaoSuzuki/hoimin",
+    "sourceRepositoryDigest": "c08574663a363228fed310fbf75157831b4a5669",
+    "sourceRepositoryRef": "refs/heads/main",
+    "sourceRepositoryIdentifier": "1304504846",
+    "sourceRepositoryOwnerURI": "https://github.com/HayaoSuzuki",
+    "sourceRepositoryOwnerIdentifier": "10297185",
+    "buildConfigURI": "https://github.com/HayaoSuzuki/hoimin/.github/workflows/release.yml@refs/heads/main",
+    "buildConfigDigest": "c08574663a363228fed310fbf75157831b4a5669",
+    "buildTrigger": "pull_request_target",
+    "runInvocationURI": "https://github.com/HayaoSuzuki/hoimin/actions/runs/38052986762/attempts/1",
+    "sourceRepositoryVisibilityAtSigning": "public"
+  },
+  "negative_verifications": [
+    {
+      "case": "modified-bytes",
+      "exit_code": 1,
+      "diagnostic": "Error: verifying with issuer \"sigstore.dev\""
+    },
+    {
+      "case": "wrong-repository",
+      "exit_code": 1,
+      "diagnostic": "Error: verifying with issuer \"sigstore.dev\""
+    },
+    {
+      "case": "wrong-source",
+      "exit_code": 1,
+      "diagnostic": "Error: expected SourceRepositoryDigest to be 0000000000000000000000000000000000000000, got c08574663a363228fed310fbf75157831b4a5669"
+    },
+    {
+      "case": "wrong-workflow",
+      "exit_code": 1,
+      "diagnostic": "Error: verifying with issuer \"sigstore.dev\""
+    }
+  ],
+  "artifacts": [
+    {
+      "id": 11670502237,
+      "name": "provenance-evidence",
+      "digest": "sha256:c847dc80024a1c029b44243dd6cf634549e09404c9004bc9954e458e627cdd18"
+    },
+    {
+      "id": 11670377218,
+      "name": "verified-release",
+      "digest": "sha256:2af0e72679f939ea9b5846bcf1d84fb20691dc77d45ca06a26bc50ceee71b681"
+    }
+  ],
+  "recorded_at": "2026-10-10T12:58:11.173234+00:00",
+  "github_cli_version": "gh version 2.76.2 (2025-07-30)",
+  "verification_policy": {
+    "repo": "HayaoSuzuki/hoimin",
+    "signer_workflow": "HayaoSuzuki/hoimin/.github/workflows/release.yml",
+    "source_digest": "c08574663a363228fed310fbf75157831b4a5669",
+    "signer_digest": "c08574663a363228fed310fbf75157831b4a5669",
+    "deny_self_hosted_runners": true
+  },
+  "run": {
+    "status": "completed",
+    "conclusion": "success",
+    "run_attempt": 1,
+    "created_at": "2026-10-10T12:43:07Z",
+    "updated_at": "2026-10-10T12:53:56Z",
+    "jobs": [
+      {
+        "id": 114215726043,
+        "name": "Changes",
+        "conclusion": "success",
+        "started_at": "2026-10-10T12:43:10Z",
+        "completed_at": "2026-10-10T12:43:16Z"
+      },
+      {
+        "id": 114215752105,
+        "name": "Reserve release tag",
+        "conclusion": "success",
+        "started_at": "2026-10-10T12:43:19Z",
+        "completed_at": "2026-10-10T12:43:29Z"
+      },
+      {
+        "id": 114215788679,
+        "name": "Prepare packages",
+        "conclusion": "success",
+        "started_at": "2026-10-10T12:43:31Z",
+        "completed_at": "2026-10-10T12:43:36Z"
+      },
+      {
+        "id": 114215809004,
+        "name": "macOS wheel",
+        "conclusion": "success",
+        "started_at": "2026-10-10T12:43:43Z",
+        "completed_at": "2026-10-10T12:50:04Z"
+      },
+      {
+        "id": 114215809022,
+        "name": "Windows wheel",
+        "conclusion": "success",
+        "started_at": "2026-10-10T12:43:38Z",
+        "completed_at": "2026-10-10T12:51:17Z"
+      },
+      {
+        "id": 114215809032,
+        "name": "Linux wheel",
+        "conclusion": "success",
+        "started_at": "2026-10-10T12:43:39Z",
+        "completed_at": "2026-10-10T12:52:09Z"
+      },
+      {
+        "id": 114217332398,
+        "name": "Validate release assets",
+        "conclusion": "success",
+        "started_at": "2026-10-10T12:52:11Z",
+        "completed_at": "2026-10-10T12:52:24Z"
+      },
+      {
+        "id": 114217380965,
+        "name": "Attest validated release assets",
+        "conclusion": "success",
+        "started_at": "2026-10-10T12:52:27Z",
+        "completed_at": "2026-10-10T12:53:32Z"
+      },
+      {
+        "id": 114217579909,
+        "name": "Publish release",
+        "conclusion": "success",
+        "started_at": "2026-10-10T12:53:35Z",
+        "completed_at": "2026-10-10T12:53:55Z"
+      }
+    ]
+  }
+}
