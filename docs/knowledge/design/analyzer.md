@@ -5,6 +5,31 @@ description: 構文・名前解決・変更するバイト範囲・候補保持�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: string-segment-implementation
+  resource: ../../../crates/hoimin-cli/src/analyzer/rust/string_segments.rs
+  revision: d6f4be7b467b584479250ff01dca034441a92b82
+  working_tree: untracked
+  sha256: b126bf9a14e7b812cc56d29c91ed849d6274be48d1cbc83b3380ee1fd77f61fa
+- id: string-segment-exclusions
+  resource: ../../../crates/hoimin-cli/src/analyzer/rust/string_literals.rs
+  revision: d6f4be7b467b584479250ff01dca034441a92b82
+  working_tree: modified
+  sha256: 3ea6e3c5e1f49de52765356a7f035c6d9673fa252f9b9ac8d44a468b3dc4532e
+- id: string-segment-selection
+  resource: ../../../crates/hoimin-core/src/config.rs
+  revision: d6f4be7b467b584479250ff01dca034441a92b82
+  working_tree: modified
+  sha256: 5c9c069bf3505dcb411a70636eee41029ce754e8599ac84ff14175b5f6749331
+- id: string-segment-tests
+  resource: ../../../crates/hoimin-cli/tests/string_segment_empty.rs
+  revision: d6f4be7b467b584479250ff01dca034441a92b82
+  working_tree: untracked
+  sha256: 676bf6fdd0d2452916873c3a6323c107b3a8ddc9702ee5714c6b8d176bc2fd2e
+- id: string-segment-review
+  resource: ../../reviews/2026-10-10-issue-761-string-segments.md
+  revision: d6f4be7b467b584479250ff01dca034441a92b82
+  working_tree: untracked
+  sha256: cf3f04a7fcd807124e3686780fbd0db6efec3393941ac600339fc0332c471558
 - id: issue-692-hierarchy
   resource: ../../superpowers/specs/2026-10-05-issue-692-exception-hierarchy.md
   revision: fae3ce3e82a8a768c8dca49531384aa081a97f71
@@ -761,6 +786,40 @@ optional_keyword_delete は一意な同一モジュール関数への呼び出�
 
 [^function-body-return-constant]: [設計](../../superpowers/reports/function-body-return-constant/design.md)、[原論文・評価・形式証明の範囲](../../superpowers/reports/function-body-return-constant/assessment.md)
 
-現在は `method_call_remove` と `function_body_return_constant` も既定で有効にし、合計52種類としている。`--exclude-operators method_call_remove,function_body_return_constant` で、この2種類を追加する前の50種類へ戻せる。明示選択・保存済み plan・従来の43種類を返す `all_legacy()` は拡張しない。元の機能設計書の opt-in 記述は導入時の方針であり、今回の依頼によって更新した。[^recent-analyzer-defaults]
+`method_call_remove` と `function_body_return_constant` の既定化で合計52種類になった。
+この既定化でも、明示選択・保存済み plan・従来の43種類を返す `all_legacy()` は拡張していない。
+元の機能設計書の opt-in 記述は導入時の方針である。[^recent-analyzer-defaults]
 
 [^recent-analyzer-defaults]: [既定化の設計](../../superpowers/reports/recent-analyzer-defaults/design.md)、[形式証明の範囲](../../superpowers/reports/recent-analyzer-defaults/formal-audit.md)
+
+# 文字列の固定部分の空化（Issue #761）
+
+`string_segment_empty` は、f-stringまたは通常文字列の暗黙連結から、ソース順で最初の適格な非空リテラル部分を1か所だけ空化する。
+通常文字列とf-stringの混在連結も1式として扱い、復号した値が空の部分を飛ばす。
+f-stringでは最上位の固定テキストだけを削り、補間式・conversion・format spec・debug表記のソースを保持する。
+固定テキストだけからなるf-stringトークンは `f""` にし、通常の構成トークンは `""` にする。
+隣接する引用符が三重引用符に結合しないよう、必要な区切り空白を挿入する。
+文字数ではなくASTのソース範囲を使うため、エスケープ・二重波括弧・Unicodeの復号後の長さを範囲計算に使わない。[^string-segment-implementation]
+
+docstring・型注釈・明示的な型エイリアス・パターン・bytes・t-stringは除外する。
+補間式とformat specの内部にある文字列やネストしたf-stringも除外する。
+debug由来のテキストは対象外だが、その前後に別途書かれた固定テキストは対象になり得る。
+既存の `string_literal_empty` 用の補間文字列全体の除外を保ち、新演算子には別の除外範囲を使う。[^string-segment-exclusions]
+
+ユーザー指定により、この演算子は既定で有効とし、現在の既定選択は53種類、公開IDは計72種類である。
+`--exclude-operators string_segment_empty` で追加前の52種類に戻せる。
+以前の50種類へ戻すには、さらに `method_call_remove,function_body_return_constant` も除外する。
+明示選択と保存済みplanの演算子集合は展開し直さず、既存候補IDと `all_legacy()` の意味も保持する。
+新しい既定実行では候補数・所要時間・上限内に残る候補が変わり得る。[^string-segment-selection]
+
+CPython 3.14による実行で構文・値・補間の回数と順序・conversion・動的format specを確認する。
+固定部分を検査する強いassertではkillされ、値だけを調べる弱いassertでは生存する例を、保存済みplan経由で検証する。
+これは固定部分の検証漏れを示す例であり、任意の文字列変化を有用な欠陥と判定する根拠ではない。
+実プロジェクト評価の対象と限界はレビュー記録に記載する。[^string-segment-tests][^string-segment-review]
+
+[^string-segment-exclusions]: [文字列の役割別除外](../../../crates/hoimin-cli/src/analyzer/rust/string_literals.rs)。
+[^string-segment-review]: [各段階のレビューと評価](../../reviews/2026-10-10-issue-761-string-segments.md)。
+
+[^string-segment-implementation]: [ソース範囲と置換](../../../crates/hoimin-cli/src/analyzer/rust/string_segments.rs)、[文字列の役割別除外](../../../crates/hoimin-cli/src/analyzer/rust/string_literals.rs)。
+[^string-segment-selection]: [演算子の定義と既定選択](../../../crates/hoimin-core/src/config.rs)。
+[^string-segment-tests]: [CPython・保存済みplanの回帰テスト](../../../crates/hoimin-cli/tests/string_segment_empty.rs)、[各段階のセルフレビューと評価](../../reviews/2026-10-10-issue-761-string-segments.md)。

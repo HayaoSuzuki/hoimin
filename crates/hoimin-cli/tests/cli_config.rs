@@ -7,7 +7,7 @@ use hoimin_cli::cli::{
 };
 use hoimin_core::{MutationOperator, MutationOperatorSelection, MutationProfile};
 
-const RUNTIME_DEFAULT_OPERATOR_IDS: [&str; 52] = [
+const RUNTIME_DEFAULT_OPERATOR_IDS: [&str; 53] = [
     "compare_eq_ne",
     "compare_order",
     "membership",
@@ -60,6 +60,7 @@ const RUNTIME_DEFAULT_OPERATOR_IDS: [&str; 52] = [
     "conversion_call_remove",
     "method_call_remove",
     "function_body_return_constant",
+    "string_segment_empty",
 ];
 
 #[test]
@@ -131,8 +132,8 @@ fn usage_documents_all_mutation_operator_ids_and_selector_families() {
         assert!(usage.contains(name), "usage reference is missing {name}");
     }
     for expected in [
-        "52 default runtime operators",
-        "71 operator IDs",
+        "53 default runtime operators",
+        "72 operator IDs",
         "collection_ops",
         "structure_ops",
         "bitwise_ops",
