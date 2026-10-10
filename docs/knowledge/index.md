@@ -8,6 +8,7 @@ okf_version: "0.2"
 - [開発での参照・更新手順](../okf-workflow.md) - 作業開始時の確認、概念の作成基準、出典と索引の更新、完了時の検査。
 - [Rustの固定版と最低対応版の更新](rust-toolchains.md) - 最新stableへの追従、nightly検証、更新PRと配布確認。
 - [PyPIへのwheel公開](pypi-publishing.md) - TestPyPI経由の自動公開、Trusted Publishingの登録値、証明と再実行。
+- [互換性と変更通知](compatibility.md) - 公開インターフェース、版の下限、移行案内とレビュー手順。
 
 - [リリース配布物のSBOM](release-sbom.md) - Cargo依存グラフの範囲、配布物との対応、公開前の検証。
 - [GitHubリリースの由来証明](release-provenance.md) - 署名対象と公開物の一致、ソース同一性、検証と公開停止。
