@@ -22,9 +22,9 @@ sources:
   sha256: 18675c9744ae8606570e0b42c9d54b4dc19fd39c00849f659585157a843c3f08
 - id: release
   resource: ../../.github/workflows/release.yml
-  revision: a6965910bbc745e74aeb539628b3e2dc66c2a9d3
+  revision: 52e12a30bf40cb8b0040e21e776c8b75bc37ccc6
   working_tree: modified
-  sha256: aed6b62488b3c90397739c36e793b1e143356163a9f6b50a2071c9a45a5c605b
+  sha256: 197b961819a9962c98b9442c0143d3ae9ac97169ae8118deec0d3b5e65f7c1f4
 ---
 
 # 選択と集約の契約
@@ -45,6 +45,8 @@ previewは配布入力の変更時と手動実行時に選択し、マージ後�
 由来証明の書込jobもマージ後に限定し、公開は証明と照合の成功を要求する。
 対象と実機検証の範囲は[リリースの由来証明](release-provenance.md)を参照する。
 書込jobでPR headを実行しない。[^release]
+
+PyPIへの公開は、GitHub Releaseの公開成功後に任意の有効化変数で別の`workflow_dispatch` runを起動する。TestPyPIの取得検証が成功した場合だけ本番へ進む。登録前は変数を未設定にし、詳細は[PyPIへのwheel公開](pypi-publishing.md)を参照する。[^release]
 
 全workflowを固定版のactionlint・ShellCheck・zizmorで検査する。
 重大度の足切りやShellCheckの一括除外をせず、必要な例外だけを理由付きで該当箇所に記載する。

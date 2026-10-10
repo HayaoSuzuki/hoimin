@@ -1,30 +1,25 @@
 ---
 type: Playbook
 title: PyPIへのwheel公開
-description: 手動公開の条件、Trusted Publishingの登録値、検証と再実行の範囲を示す。
+description: TestPyPI検証を経る自動公開、Trusted Publisher登録、元のビルド証明と再実行。
 status: draft
 catalog_revision: 36aa4cd696f4db28cd4811a0995d85df89b56eb5
 sources:
 - id: guide
   resource: ../pypi-publishing.md
   working_tree: modified
-  sha256: 360d9a07d70ecffad7583352bfe8f266d858587aa9c9b8e665e3266121786c3e
-  revision: 252654579792ede15081c8913e9b0ea59dd71a68
-- id: workflow
-  resource: ../../.github/workflows/publish-pypi.yml
-  revision: 6ec69f4ac926c887003e5509bb393289f0bc9e71
-  working_tree: modified
-  sha256: 455ba3e258022c8131acb9b193b4daa5e9acd2b198bb5f66aa85855e758d39a2
+  sha256: a4a4f467f9ced286353c57f23fe8d1ebe74619985c8b94e421146edf0a5e3c2a
+  revision: 52e12a30bf40cb8b0040e21e776c8b75bc37ccc6
 - id: validator
   resource: ../../tools/pypi_release.py
-  revision: 6ec69f4ac926c887003e5509bb393289f0bc9e71
-  working_tree: modified
+  revision: 52e12a30bf40cb8b0040e21e776c8b75bc37ccc6
+  working_tree: clean
   sha256: 9b9000c2455426120e2be78994084014d26d2bc8eeaa840f08d6a6b01a05e895
 - id: tests
   resource: ../../tests/test_pypi_release.py
   working_tree: modified
-  sha256: 7ef177aeb7745b1dd32c8b87f8478490f2f3ae0daf4187273791aa938572004d
-  revision: 252654579792ede15081c8913e9b0ea59dd71a68
+  sha256: 16e2e267eeeab4738108301763f0c3e197aaaa90b600f12d5f91dbdb31cd0507
+  revision: 52e12a30bf40cb8b0040e21e776c8b75bc37ccc6
 - id: wheel-smoke
   resource: ../../tests/wheel_smoke.py
   revision: ff50918cb14ff39c67c0a594b665fd29d73080b4
@@ -37,31 +32,46 @@ sources:
   sha256: e8653a2473cc383c6c99911cc9f095beb3133fb6233f74c5e85ae71845f220ba
 - id: release-workflow
   resource: ../../.github/workflows/release.yml
-  revision: 6ec69f4ac926c887003e5509bb393289f0bc9e71
+  revision: 52e12a30bf40cb8b0040e21e776c8b75bc37ccc6
   working_tree: modified
-  sha256: 35efb0eb0e4f31293bdd38edf9c9163795ba8d1e4d9f7635426bf047a194700e
+  sha256: 197b961819a9962c98b9442c0143d3ae9ac97169ae8118deec0d3b5e65f7c1f4
 - id: ci-tests
   resource: ../../tests/test_ci_workflow.py
-  revision: 6ec69f4ac926c887003e5509bb393289f0bc9e71
+  revision: 52e12a30bf40cb8b0040e21e776c8b75bc37ccc6
   working_tree: modified
-  sha256: 3fced57ffcda06eb7129821d19e10ef061348940ffa12cf253815498350879ee
+  sha256: 30a5e9e68cc2b9c3f15809a75eb74525dfb4c045dd41b8803c666e6d52aabd2d
+- id: provenance
+  resource: ../../tools/pypi_provenance.py
+  revision: 52e12a30bf40cb8b0040e21e776c8b75bc37ccc6
+  working_tree: untracked
+  sha256: c706d0cf5f216216b24c16aed98fdba2d50c6b79da3a589621331e08d22fb361
+- id: provenance-tests
+  resource: ../../tests/test_pypi_provenance.py
+  revision: 52e12a30bf40cb8b0040e21e776c8b75bc37ccc6
+  working_tree: untracked
+  sha256: 84c1bfc2e57873e2fa2925eb67eecfcde38af4bbbf854cbda434660e80431ec5
+- id: review
+  resource: ../reviews/2026-10-10-issue-771-pypi-provenance.md
+  revision: 52e12a30bf40cb8b0040e21e776c8b75bc37ccc6
+  working_tree: modified
+  sha256: a35194bb515f91d4aeb1d0f1176b729cca04ab4ff55de1864820e5e7f127c499
 ---
 
 # 公開の対象と手順
 
-`HayaoSuzuki/hoimin` の `main` から `publish-pypi.yml` を手動実行し、公開済みの安定版タグと送信先を指定する。送信先の既定値はTestPyPIで、PyPIへの公開は別の実行で選択する。登録値とコマンドの正本は[公開手順](../pypi-publishing.md)に置く。[^guide]
+`PYPI_AUTO_PUBLISH=true`を設定すると、mainへのマージ後にGitHub Releaseを作成し、`release.yml`の公開専用runを自動起動する。TestPyPIへの公開と3種類のwheel・両証明の取得検証に成功した場合だけ、同じwheelをPyPIへ公開する。変数が未設定なら自動公開しない。登録値とコマンドの正本は[公開手順](../pypi-publishing.md)に置く。[^guide]
 
-準備ジョブは、タグのmainへの所属、GitHub Releaseの公開状態、3種類のwheelの名前・ハッシュ・メタデータ・ライセンス本文を確認する。検証後のwheelだけを公開ジョブへ渡し、公開ジョブにはソースのcheckoutやビルドを含めない。`id-token: write`はこのジョブだけに付与する。[^workflow][^validator]
+準備ジョブは、タグのmainへの所属、GitHub Releaseの公開状態、3種類のwheelの名前・ハッシュ・メタデータ・ライセンス本文を確認する。検証後のwheelだけを公開ジョブへ渡し、公開ジョブにはソースのcheckoutやビルドを含めない。インデックス公開段階の`id-token: write`は、TestPyPIとPyPIの送信ジョブだけに付与する。[^release-workflow][^validator]
 
 # アカウント側の設定
 
-PyPIとTestPyPIそれぞれに、所有者`HayaoSuzuki`、リポジトリ`hoimin`、ワークフロー`publish-pypi.yml`をTrusted Publisherとして登録する。Environmentは送信先と同じ`pypi`または`testpypi`を指定する。GitHub側で両Environmentにmainへのブランチ制限を設定する必要があり、ワークフローの追加だけでは有効にならない。[^guide]
+PyPIとTestPyPIそれぞれに、所有者`HayaoSuzuki`、リポジトリ`hoimin`、ワークフロー`release.yml`をTrusted Publisherとして登録する。Environmentは送信先と同じ`pypi`または`testpypi`を指定する。GitHub側で両Environmentにmainへのブランチ制限を設定する必要があり、ワークフローの追加だけでは有効にならない。[^guide]
 
-必須レビュアーを利用できる場合は、公開ジョブの承認者を設定する。非公開リポジトリをGitHub ProまたはTeamで利用する場合、この機能は使えない。その構成では、手動実行後に検証が通ると、追加の承認待ちなしで公開する。[^guide]
+Environmentに必須レビュアーを設定すると、公開は承認待ちになる。完全自動化する場合はmainへの制限を維持し、レビュアーなしで公開できる設定にする。登録と初回実機確認を終えてから、自動公開変数を有効にする。[^guide]
 
 # 検証範囲と再確認条件
 
-GitHub ReleaseのPR previewは配布入力の変更時に選択し、手動実行では常に選択する。
+GitHub ReleaseのPR previewは配布入力の変更時に選択し、タグを指定しない手動実行では常に選択する。公開専用の手動実行はビルドを省略する。
 previewのprepareはread権限とし、マージ済みcommitのタグ予約と公開だけをwrite権限にする。[^release-workflow]
 
 GitHub Release用のビルドでは、PR検証と手動検証は実行イベントの`github.sha`、マージ後の公開は`pull_request_target`の`merge_commit_sha`を使う。PR更新時のペイロードには古い`merge_commit_sha`が入る場合があるため、検証対象の選択には使わない。checkout、後続ジョブへのコミット指定、同時実行のグループで同じ選択条件を用いる。[^release-workflow][^ci-tests]
@@ -74,10 +84,9 @@ GitHub Release用のビルドでは、PR検証と手動検証は実行イベン�
 
 ワークフローや検証コードを修正した場合は、mainへのマージ後に新しい手動実行を開始する。GitHubのRe-runは元のコミットを使うため、コード修正を反映しない。[^guide]
 
-公開ジョブは既存ファイルを自動的にスキップしない。一部だけアップロードされた場合は、登録済みのファイルとハッシュを調べ、必要なら新しい版を公開する。workflow名、リポジトリ所有者、Environment名、Python対応範囲、wheelのプラットフォーム名、ライセンス本文を変えたときは、登録値と検証条件を読み直す。[^guide][^validator]
+既存の3ファイルと両証明をすべて検証できた場合だけ、アップロードを再実行せず検証済み公開を再利用する。無条件の`skip-existing`は使わない。一部だけアップロードされた場合は、登録済みのファイルとハッシュを調べ、必要なら新しい版を公開する。workflow名、リポジトリ所有者、Environment名、Python対応範囲、wheelのプラットフォーム名、ライセンス本文を変えたときは、登録値と検証条件を読み直す。[^guide][^validator]
 
 [^guide]: [PyPI公開手順](../pypi-publishing.md)。
-[^workflow]: [手動公開ワークフロー](../../.github/workflows/publish-pypi.yml)。
 [^validator]: [配布物の検証処理](../../tools/pypi_release.py)。
 [^tests]: [公開準備の回帰テスト](../../tests/test_pypi_release.py)。
 
@@ -86,3 +95,20 @@ GitHub Release用のビルドでは、PR検証と手動検証は実行イベン�
 
 [^release-workflow]: [GitHub Releaseのビルド・公開ワークフロー](../../.github/workflows/release.yml)。
 [^ci-tests]: [CIワークフローの回帰テスト](../../tests/test_ci_workflow.py)。
+
+# ビルド証明と公開イベント
+
+各wheelのSLSA証明はビルド時に生成し、元の署名済みstatementを書き換えずPEP 740へ変換する。
+PyPIはアップロード元のTrusted Publisherで両証明を検証するため、ビルドと公開はともに`release.yml`を使う。
+公開ジョブを再利用workflowに分けるとOIDCの`job_workflow_ref`が変わるため、公開ジョブは同じファイルへ直接定義する。[^provenance][^review]
+
+ビルドの`pull_request_target`イベントからはPyPIへ公開できない。
+マージ後の限定ジョブが`actions: write`でmainの`workflow_dispatch`を起動し、公開専用runで元のtag・source・workflow・wheel digestを照合する。
+公開時の証明書のsource revisionをビルド元のrevisionと混同しない。[^release-workflow][^provenance]
+
+記録済みの実署名による拒否試験と、外部サービスを差し替えた制御フロー試験を区別する。
+今回のPublisher登録・OIDC・TestPyPI実機確認は、マージとアカウント設定が済むまで未完了である。[^provenance-tests][^review]
+
+[^provenance]: [証明の変換と公開後検証](../../tools/pypi_provenance.py)。
+[^provenance-tests]: [証明と公開条件の回帰テスト](../../tests/test_pypi_provenance.py)。
+[^review]: [Issue #771の設計・検証記録](../reviews/2026-10-10-issue-771-pypi-provenance.md)。

@@ -11,9 +11,9 @@ sources:
   sha256: e39e1ca23612fc82c4e8a7f1aef276b28a91553a9df9339645400b4fd6983c01
 - id: release
   resource: ../releases.md
-  revision: c08574663a363228fed310fbf75157831b4a5669
+  revision: 52e12a30bf40cb8b0040e21e776c8b75bc37ccc6
   working_tree: modified
-  sha256: 52722f00a49c79310eb37bb4cf1efcf54124ee7ab2f8d08bf75982b0a09acd3e
+  sha256: cab75b11fc1b7ca03f24c37b845344b839cfdfd3f636b9e94776ea42079a58d9
 - id: design
   resource: ../superpowers/specs/2026-10-10-issue-741-sbom-design.md
   working_tree: untracked
