@@ -86,6 +86,11 @@ jobs:
         run: python tools/release.py set-version "$VERSION"
       - name: Install repository Rust toolchain
         run: rustup toolchain install
+      - name: Install pinned SBOM generator
+        shell: bash
+        run: |
+          cargo install cargo-cyclonedx --version 0.5.7 --locked --root "$RUNNER_TEMP/sbom-tools"
+          echo "$RUNNER_TEMP/sbom-tools/bin" >> "$GITHUB_PATH"
       - name: Build standalone executable
         run: cargo build --release --locked --no-default-features --bin hoimin --target x86_64-pc-windows-msvc --target-dir target/standalone
       - name: Verify standalone executable
@@ -116,6 +121,19 @@ jobs:
         run: >-
           python tools/release.py package --binary target/standalone/x86_64-pc-windows-msvc/release/hoimin.exe
           --platform windows-x86_64 --version "$VERSION" --directory dist
+      - name: Generate and validate release SBOMs
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          COMMIT: ${{ needs.prepare.outputs.commit }}
+        shell: bash
+        run: |
+          python tools/capture_sbom.py --target x86_64-pc-windows-msvc --output target/sbom/standalone.json
+          python tools/capture_sbom.py --target x86_64-pc-windows-msvc --output target/sbom/wheel.json
+          for kind in standalone wheel; do
+            uv run --frozen --no-sync python tools/sbom.py --raw "target/sbom/$kind.json" \
+              --directory dist --platform windows-x86_64 --kind "$kind" \
+              --version "$VERSION" --commit "$COMMIT"
+          done
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-windows-x86_64
@@ -145,6 +163,11 @@ jobs:
         run: python tools/release.py set-version "$VERSION"
       - name: Install repository Rust toolchain
         run: rustup toolchain install
+      - name: Install pinned SBOM generator
+        shell: bash
+        run: |
+          cargo install cargo-cyclonedx --version 0.5.7 --locked --root "$RUNNER_TEMP/sbom-tools"
+          echo "$RUNNER_TEMP/sbom-tools/bin" >> "$GITHUB_PATH"
       - name: Build standalone executable
         run: cargo build --release --locked --no-default-features --bin hoimin --target x86_64-unknown-linux-gnu --target-dir target/standalone
       - name: Verify standalone executable
@@ -167,9 +190,15 @@ jobs:
           # Keep container-owned Cargo outputs separate from subsequent host builds.
           docker run --rm --volume "$PWD:/io" --workdir /io \
             --env CARGO_TARGET_DIR=/tmp/hoimin-wheel-target \
-            ghcr.io/pyo3/maturin:v"$MATURIN_VERSION" \
-            build --release --locked --compatibility manylinux2014 \
-            --no-default-features --target x86_64-unknown-linux-gnu --out target/wheels
+            --entrypoint /bin/bash ghcr.io/pyo3/maturin:v"$MATURIN_VERSION" -euc '
+              maturin build --release --locked --compatibility manylinux2014 \
+                --no-default-features --target x86_64-unknown-linux-gnu --out target/wheels
+              cargo install cargo-cyclonedx --version 0.5.7 --locked --root /tmp/sbom-tools
+              export PATH="/tmp/sbom-tools/bin:$PATH"
+              python3 tools/capture_sbom.py --target x86_64-unknown-linux-gnu \
+                --output target/sbom/wheel.json
+            '
+          sudo chown -R "$(id -u):$(id -g)" target/sbom
           sudo chown -R "$(id -u):$(id -g)" target/wheels
           # --rm removes the build container, but the large manylinux image remains.
           # Reclaim it before smoke tests without lowering hoimin's 10 GiB reserve.
@@ -184,6 +213,18 @@ jobs:
         run: >-
           python tools/release.py package --binary target/standalone/x86_64-unknown-linux-gnu/release/hoimin
           --platform linux-x86_64 --version "$VERSION" --directory dist
+      - name: Generate and validate release SBOMs
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          COMMIT: ${{ needs.prepare.outputs.commit }}
+        shell: bash
+        run: |
+          python tools/capture_sbom.py --target x86_64-unknown-linux-gnu --output target/sbom/standalone.json
+          for kind in standalone wheel; do
+            uv run --frozen --no-sync python tools/sbom.py --raw "target/sbom/$kind.json" \
+              --directory dist --platform linux-x86_64 --kind "$kind" \
+              --version "$VERSION" --commit "$COMMIT"
+          done
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-linux-x86_64
@@ -213,6 +254,11 @@ jobs:
         run: python tools/release.py set-version "$VERSION"
       - name: Install repository Rust toolchain
         run: rustup toolchain install
+      - name: Install pinned SBOM generator
+        shell: bash
+        run: |
+          cargo install cargo-cyclonedx --version 0.5.7 --locked --root "$RUNNER_TEMP/sbom-tools"
+          echo "$RUNNER_TEMP/sbom-tools/bin" >> "$GITHUB_PATH"
       - name: Build standalone executable
         run: cargo build --release --locked --no-default-features --bin hoimin --target aarch64-apple-darwin --target-dir target/standalone
       - name: Verify standalone executable
@@ -243,14 +289,58 @@ jobs:
         run: >-
           python tools/release.py package --binary target/standalone/aarch64-apple-darwin/release/hoimin
           --platform macos-aarch64 --version "$VERSION" --directory dist
+      - name: Generate and validate release SBOMs
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          COMMIT: ${{ needs.prepare.outputs.commit }}
+        shell: bash
+        run: |
+          python tools/capture_sbom.py --target aarch64-apple-darwin --output target/sbom/standalone.json
+          python tools/capture_sbom.py --target aarch64-apple-darwin --output target/sbom/wheel.json
+          for kind in standalone wheel; do
+            uv run --frozen --no-sync python tools/sbom.py --raw "target/sbom/$kind.json" \
+              --directory dist --platform macos-aarch64 --kind "$kind" \
+              --version "$VERSION" --commit "$COMMIT"
+          done
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-macos-aarch64
           path: dist/*
           if-no-files-found: error
 
-  publish:
+  validate:
     needs: [prepare, windows-wheel, linux-wheel, macos-wheel]
+    if: needs.prepare.outputs.version != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.14'
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: dist
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - run: uv sync --frozen --no-install-project
+      - name: Require all platforms and write checksums
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          COMMIT: ${{ needs.prepare.outputs.commit }}
+        run: uv run --frozen --no-sync python tools/release.py checksums --directory dist --version "$VERSION" --commit "$COMMIT"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: verified-release
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    needs: [prepare, validate]
     if: needs.prepare.outputs.publish == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -269,10 +359,13 @@ jobs:
           pattern: release-*
           merge-multiple: true
           path: dist
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - run: uv sync --frozen --no-install-project
       - name: Require all platforms and write checksums
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
-        run: python tools/release.py checksums --directory dist --version "$VERSION"
+          COMMIT: ${{ needs.prepare.outputs.commit }}
+        run: uv run --frozen --no-sync python tools/release.py checksums --directory dist --version "$VERSION" --commit "$COMMIT"
       - name: Publish complete release
         env:
           GH_TOKEN: ${{ github.token }}

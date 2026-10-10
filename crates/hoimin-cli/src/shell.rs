@@ -7448,9 +7448,42 @@ mod tests {
         );
     }
 
-    #[test]
-    fn rollback_contention_marks_root_for_immediate_janitor_recovery() {
+    #[tokio::test]
+    async fn rollback_contention_marks_root_for_immediate_janitor_recovery() {
         use fs2::FileExt;
+
+        const COMPLETED: &str = "hoimin rollback contention assertions completed";
+        const CHILD_MARKER: &str = "HOIMIN_ISOLATED_ROLLBACK_CONTENTION_TEST";
+        if std::env::var_os(CHILD_MARKER).as_deref() != Some(std::ffi::OsStr::new("1")) {
+            // A parallel test's fork can inherit the lease's open file description
+            // until exec. Dropping the rollback guard then need not release flock.
+            // Create the fixture in a process with no unrelated child spawns so
+            // the single janitor pass below really observes an abandoned lease.
+            let output = tokio::process::Command::new(std::env::current_exe().unwrap())
+                .arg("--exact")
+                .arg("shell::tests::rollback_contention_marks_root_for_immediate_janitor_recovery")
+                .arg("--test-threads=1")
+                .arg("--nocapture")
+                .env(CHILD_MARKER, "1")
+                .kill_on_drop(true)
+                .output();
+            let output = tokio::time::timeout(Duration::from_secs(30), output)
+                .await
+                .expect("isolated rollback contention test timed out")
+                .expect("isolated rollback contention test failed to start");
+            assert!(
+                output.status.success(),
+                "isolated rollback contention test failed: {}\nstdout:\n{}\nstderr:\n{}",
+                output.status,
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr),
+            );
+            assert!(
+                String::from_utf8_lossy(&output.stdout).contains(COMPLETED),
+                "isolated rollback contention test did not complete its assertions: {output:?}",
+            );
+            return;
+        }
 
         let parent = tempfile::tempdir().unwrap();
         let parent = Utf8Path::from_path(parent.path()).unwrap();
@@ -7476,6 +7509,7 @@ mod tests {
         let report = ManagedRunRoot::reclaim_abandoned(&coordinator, std::time::SystemTime::now());
         assert_eq!(report.reclaimed_roots, 1, "{report:?}");
         assert!(!execution_path.exists());
+        println!("{COMPLETED}");
     }
 
     fn process_effect(worker: u32) -> RunEffect {

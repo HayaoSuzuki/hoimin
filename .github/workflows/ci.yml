@@ -31,6 +31,8 @@ jobs:
       - run: uv run --frozen --no-sync ruff format --check .
       - run: uv run --frozen --no-sync ruff check --no-fix .
       - run: uv run --frozen --no-sync ty check
+      - name: Release SBOM generative tests
+        run: uv run --frozen --no-sync pytest tests/test_sbom_properties.py tests/test_sbom_oracle.py
       - name: Install repository Rust toolchain
         run: rustup toolchain install
       - run: cargo fmt --all -- --check
@@ -449,6 +451,13 @@ jobs:
                 lake exe "$executable" -- --sensitivity
             fi
           done
+      - name: Verify release SBOM model and corpus
+        working-directory: formal/HoiminOracle
+        run: |
+          python3 tools/lean_resource_guard.py --timeout-seconds 20 --rss-limit-mib 2048 --sample-ms 250 \
+            --stats "$RUNNER_TEMP/lean-audit/release-sbom.json" \
+            -- lake env lean --run ReleaseSbom.lean > "$RUNNER_TEMP/release-sbom-gate.csv"
+          diff -u ../../tests/fixtures/release-sbom-gate.csv "$RUNNER_TEMP/release-sbom-gate.csv"
       - name: Upload Lean resource statistics
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

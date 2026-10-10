@@ -14,6 +14,8 @@ from typing import TypedDict, TypeGuard
 import pytest
 import yaml
 
+from formal.HoiminOracle.tools import lean_resource_guard
+
 ROOT = Path(__file__).resolve().parents[1]
 CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 FUZZ_WORKFLOW = ROOT / ".github" / "workflows" / "fuzz.yml"
@@ -381,9 +383,15 @@ def assert_wheel_build(job: dict[str, object], target: str, platform: str) -> st
         expected = (
             'docker run --rm --volume "$PWD:/io" --workdir /io '
             "--env CARGO_TARGET_DIR=/tmp/hoimin-wheel-target "
-            'ghcr.io/pyo3/maturin:v"$MATURIN_VERSION" '
-            "build --release --locked --compatibility manylinux2014 "
+            '--entrypoint /bin/bash ghcr.io/pyo3/maturin:v"$MATURIN_VERSION" -euc '
+            "'maturin build --release --locked --compatibility manylinux2014 "
             f"--no-default-features --target {target} --out target/wheels\n"
+            "cargo install cargo-cyclonedx --version 0.5.7 --locked "
+            "--root /tmp/sbom-tools\n"
+            'export PATH="/tmp/sbom-tools/bin:$PATH"\n'
+            f"python3 tools/capture_sbom.py --target {target} "
+            "--output target/sbom/wheel.json'\n"
+            'sudo chown -R "$(id -u):$(id -g)" target/sbom\n'
             'sudo chown -R "$(id -u):$(id -g)" target/wheels\n'
             'docker image rm ghcr.io/pyo3/maturin:v"$MATURIN_VERSION"\n'
             "df -h . /tmp"
@@ -394,9 +402,17 @@ def assert_wheel_build(job: dict[str, object], target: str, platform: str) -> st
             "--release --locked --compatibility pypi --no-default-features "
             f"--target {target}"
         )
-    assert shlex.split(command.replace("\\\n", ""), comments=True) == shlex.split(
-        expected
-    )
+    actual_tokens = shlex.split(command.replace("\\\n", ""), comments=True)
+    expected_tokens = shlex.split(expected)
+    if platform == "linux-x86_64":
+        script_index = expected_tokens.index("-euc") + 1
+        actual_tokens[script_index] = shlex.join(
+            shlex.split(actual_tokens[script_index])
+        )
+        expected_tokens[script_index] = shlex.join(
+            shlex.split(expected_tokens[script_index])
+        )
+    assert actual_tokens == expected_tokens
     return version
 
 
@@ -423,6 +439,7 @@ def assert_github_release(workflow: str) -> None:
         "windows-wheel",
         "linux-wheel",
         "macos-wheel",
+        "validate",
         "publish",
     }
     # GitHub Releases does not need PyPI credentials or publishing commands.
@@ -478,7 +495,11 @@ def assert_github_release(workflow: str) -> None:
     )
     publish = jobs["publish"]
     assert publish["permissions"] == {"contents": "write"}
-    assert publish["needs"] == [
+    assert publish["needs"] == ["prepare", "validate"]
+    validate = jobs["validate"]
+    assert validate["if"] == "needs.prepare.outputs.version != ''"
+    assert "permissions" not in validate
+    assert validate["needs"] == [
         "prepare",
         "windows-wheel",
         "linux-wheel",
@@ -502,6 +523,7 @@ def assert_github_release(workflow: str) -> None:
                     CHECKOUT_ACTION,
                     SETUP_PYTHON_ACTION,
                     "actions/download-artifact",
+                    SETUP_UV_ACTION,
                 }
 
 
@@ -1812,3 +1834,20 @@ def test_github_release_policy_rejects_disguised_publication_paths(
 ) -> None:
     with pytest.raises(AssertionError):
         assert_github_release(hostile_workflow)
+
+
+def test_release_sbom_proof_step_supplies_valid_guard_arguments(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workflow = workflow_document(CI_WORKFLOW.read_text())
+    step = named_step(
+        workflow_jobs(workflow)["lean-audit"], "Verify release SBOM model and corpus"
+    )
+    command = string(step["run"]).replace("\\\n", "").split(">", 1)[0]
+    argv = shlex.split(command)
+    monkeypatch.setattr(sys, "argv", argv[1:])
+    arguments = lean_resource_guard.parse_arguments()
+    assert arguments.timeout_seconds == 20
+    assert arguments.rss_limit_mib == 2048
+    assert arguments.sample_ms == 250
+    assert arguments.command == ["lake", "env", "lean", "--run", "ReleaseSbom.lean"]

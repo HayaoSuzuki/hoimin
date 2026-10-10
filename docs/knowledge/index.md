@@ -9,6 +9,8 @@ okf_version: "0.2"
 - [Rustの固定版と最低対応版の更新](rust-toolchains.md) - 最新stableへの追従、nightly検証、更新PRと配布確認。
 - [PyPIへのwheel公開](pypi-publishing.md) - 手動公開、Trusted Publishingの登録値、配布物の検証と再実行。
 
+- [リリース配布物のSBOM](release-sbom.md) - Cargo依存グラフの範囲、配布物との対応、公開前の検証。
+
 # 設計と契約
 
 - [全体構成](design/architecture.md) - 隔離コピー、状態遷移と入出力の分離、Rust解析器への移行。

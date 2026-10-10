@@ -26,6 +26,8 @@ jobs:
       - run: uv run --frozen --no-sync ruff format --check .
       - run: uv run --frozen --no-sync ruff check --no-fix .
       - run: uv run --frozen --no-sync ty check
+      - name: Release SBOM generative tests
+        run: uv run --frozen --no-sync pytest tests/test_sbom_properties.py tests/test_sbom_oracle.py
       - name: Install repository Rust toolchain
         run: rustup toolchain install
       - run: cargo fmt --all -- --check
