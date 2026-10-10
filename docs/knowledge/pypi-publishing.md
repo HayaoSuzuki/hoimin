@@ -42,19 +42,24 @@ sources:
   sha256: 30a5e9e68cc2b9c3f15809a75eb74525dfb4c045dd41b8803c666e6d52aabd2d
 - id: provenance
   resource: ../../tools/pypi_provenance.py
-  revision: 52e12a30bf40cb8b0040e21e776c8b75bc37ccc6
-  working_tree: untracked
-  sha256: c706d0cf5f216216b24c16aed98fdba2d50c6b79da3a589621331e08d22fb361
+  revision: c9f92eb721d8a858a2f55643a5c72723763174dd
+  working_tree: modified
+  sha256: 478191ff23756d78670499c0127f06133b7ff7ce3a93f13392738a8108ea86d8
 - id: provenance-tests
   resource: ../../tests/test_pypi_provenance.py
-  revision: 52e12a30bf40cb8b0040e21e776c8b75bc37ccc6
-  working_tree: untracked
-  sha256: 84c1bfc2e57873e2fa2925eb67eecfcde38af4bbbf854cbda434660e80431ec5
+  revision: c9f92eb721d8a858a2f55643a5c72723763174dd
+  working_tree: modified
+  sha256: b021cd97e5d159c71c90004df565ed2f1d3f9ffd99bffe31b0b9369853c677fb
 - id: review
   resource: ../reviews/2026-10-10-issue-771-pypi-provenance.md
   revision: 52e12a30bf40cb8b0040e21e776c8b75bc37ccc6
   working_tree: modified
   sha256: a35194bb515f91d4aeb1d0f1176b729cca04ab4ff55de1864820e5e7f127c499
+- id: bootstrap
+  resource: ../reviews/2026-10-11-issue-771-hosted-verification.md
+  revision: c9f92eb721d8a858a2f55643a5c72723763174dd
+  working_tree: untracked
+  sha256: ff99fabef728ae3fb4183522f868f0902045ecc43fe85ab167da162a36b664d9
 ---
 
 # 公開の対象と手順
@@ -107,8 +112,10 @@ PyPIはアップロード元のTrusted Publisherで両証明を検証するた�
 公開時の証明書のsource revisionをビルド元のrevisionと混同しない。[^release-workflow][^provenance]
 
 記録済みの実署名による拒否試験と、外部サービスを差し替えた制御フロー試験を区別する。
-今回のPublisher登録・OIDC・TestPyPI実機確認は、マージとアカウント設定が済むまで未完了である。[^provenance-tests][^review]
+所有者から両Publisherの登録完了が報告された。v0.3.6のGitHub Releaseと元のビルド証明は成功したが、初回TestPyPI runはCLI JSONLの形式の取り違えにより準備段階で停止し、アップロードには到達していない。形式修正のmain反映後に新しいdispatchが必要であり、OIDC・TestPyPI・PyPIの実機確認と自動公開の有効化はまだ未完了である。[^provenance-tests][^bootstrap]
 
 [^provenance]: [証明の変換と公開後検証](../../tools/pypi_provenance.py)。
 [^provenance-tests]: [証明と公開条件の回帰テスト](../../tests/test_pypi_provenance.py)。
 [^review]: [Issue #771の設計・検証記録](../reviews/2026-10-10-issue-771-pypi-provenance.md)。
+
+[^bootstrap]: [Issue #771の実機bootstrap記録](../reviews/2026-10-11-issue-771-hosted-verification.md)。

@@ -164,6 +164,44 @@ def test_real_github_aggregate_signature_is_valid_but_not_pypi_compatible() -> N
         )
 
 
+def test_real_cli_download_contains_individually_verifiable_wheel_proof() -> None:
+    lines = (ROOT / "tests/fixtures/pypi-provenance-download.jsonl").read_text(
+        encoding="utf-8"
+    ).splitlines()
+    counts: list[int] = []
+    for line in lines:
+        bundle = Bundle.from_json(line)
+        value = Attestation.from_bundle(bundle)
+        statement = pypi_provenance.statement_of(value.model_dump(mode="json"))
+        subjects = statement["subject"]
+        assert isinstance(subjects, list)
+        counts.append(len(subjects))
+        if len(subjects) != 1:
+            continue
+        subject = object_mapping(subjects[0])
+        distribution = Distribution(
+            name=str(subject["name"]),
+            digest=str(object_mapping(subject["digest"])["sha256"]),
+        )
+        predicate, _ = value.verify(
+            GitHubPublisher(repository="HayaoSuzuki/hoimin", workflow="release.yml"),
+            distribution,
+            offline=True,
+        )
+        assert predicate == "https://slsa.dev/provenance/v1"
+        value.verify(
+            policy.OIDCSourceRepositoryDigest(
+                "c9f92eb721d8a858a2f55643a5c72723763174dd"
+            ),
+            distribution,
+            offline=True,
+        )
+        assert value.envelope.statement == base64.b64decode(
+            str(object_mapping(json.loads(line)["dsseEnvelope"])["payload"])
+        )
+    assert sorted(counts) == [1, 13]
+
+
 @pytest.mark.parametrize("damage", ["signature", "repository", "workflow", "source"])
 def test_real_signature_rejects_corruption_and_wrong_identity(damage: str) -> None:
     raw = recorded_bundle()
@@ -227,7 +265,7 @@ def test_build_verification_rejects_unpinned_source(
 
 
 @pytest.mark.parametrize(
-    "mode", ["valid", "missing", "digest", "signature", "duplicate"]
+    "mode", ["valid", "missing", "digest", "signature", "duplicate", "aggregate"]
 )
 def test_stage_is_atomic_and_preserves_signed_statement_bytes(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, mode: str
@@ -260,6 +298,15 @@ def test_stage_is_atomic_and_preserves_signed_statement_bytes(
                 for key, value in expected.items()
             )
             assert "--deny-self-hosted-runners" in arguments
+            verified_bundle = Bundle.from_json(
+                Path(arguments[arguments.index("--bundle") + 1]).read_text(
+                    encoding="utf-8"
+                )
+            )
+            assert (
+                Attestation.from_bundle(verified_bundle).envelope.statement
+                == source_statements[wheel.name]
+            )
             if mode == "signature":
                 raise subprocess.CalledProcessError(1, arguments)
             return
@@ -285,7 +332,10 @@ def test_stage_is_atomic_and_preserves_signed_statement_bytes(
         envelope["payload"] = base64.b64encode(payload).decode()
         raw["dsseEnvelope"] = envelope
         source_statements[wheel.name] = payload
-        line = json.dumps({"bundle": raw}) + "\n"
+        # gh attestation download writes bare Sigstore bundles, unlike the API.
+        line = json.dumps(raw) + "\n"
+        if mode == "aggregate":
+            line = json.dumps(recorded_bundle()) + "\n" + line
         (cwd / "download.jsonl").write_text(line * (2 if mode == "duplicate" else 1))
 
     def authenticated(
@@ -296,7 +346,7 @@ def test_stage_is_atomic_and_preserves_signed_statement_bytes(
     monkeypatch.setattr(pypi_provenance, "run_gh", github)
     monkeypatch.setattr(Attestation, "verify", authenticated)
     output = tmp_path / "dist"
-    if mode not in {"valid", "duplicate"}:
+    if mode not in {"valid", "duplicate", "aggregate"}:
         with pytest.raises(
             (ValueError, subprocess.CalledProcessError), match=r"attestation|non-zero"
         ):
