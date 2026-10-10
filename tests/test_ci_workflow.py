@@ -465,7 +465,10 @@ def assert_github_release(workflow: str) -> None:
             "timeout-minutes",
             "steps",
         }
-        assert job["if"] == "needs.prepare.outputs.version != ''"
+        assert job["if"] == (
+            "!cancelled() && needs.prepare.result == 'success' && "
+            "needs.prepare.outputs.version != ''"
+        )
         assert job["needs"] == "prepare"
         assert job["runs-on"] == runner
         steps = job_steps(job)
@@ -520,7 +523,12 @@ def assert_github_release(workflow: str) -> None:
     assert publish["permissions"] == {"contents": "write"}
     assert publish["needs"] == ["prepare", "validate"]
     validate = jobs["validate"]
-    assert validate["if"] == "needs.prepare.outputs.version != ''"
+    assert validate["if"] == (
+        "!cancelled() && needs.prepare.result == 'success' && "
+        "needs.windows-wheel.result == 'success' && "
+        "needs.linux-wheel.result == 'success' && "
+        "needs.macos-wheel.result == 'success' && needs.prepare.outputs.version != ''"
+    )
     assert "permissions" not in validate
     assert validate["needs"] == [
         "prepare",
@@ -528,7 +536,10 @@ def assert_github_release(workflow: str) -> None:
         "linux-wheel",
         "macos-wheel",
     ]
-    assert publish["if"] == "needs.prepare.outputs.publish == 'true'"
+    assert publish["if"] == (
+        "!cancelled() && needs.prepare.result == 'success' && "
+        "needs.validate.result == 'success' && needs.prepare.outputs.publish == 'true'"
+    )
     assert all("environment" not in job and "env" not in job for job in jobs.values())
     for job in (jobs["changes"], prepare, reserve, publish):
         assert set(job) <= {

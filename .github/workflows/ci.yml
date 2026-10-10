@@ -188,6 +188,7 @@ jobs:
       - run: cargo test --workspace
       - run: cargo test -p hoimin-cli --test run_e2e
       - name: Performance shape gates
+        shell: bash
         run: python tools/performance_shapes.py gate --output "$RUNNER_TEMP/performance-gates"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()

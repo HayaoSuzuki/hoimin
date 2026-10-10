@@ -9,7 +9,7 @@ sources:
   resource: ../ci.md
   revision: 6ec69f4ac926c887003e5509bb393289f0bc9e71
   working_tree: untracked
-  sha256: bf8554c5294de17809ea89260d290af57ada232faeed035ff1efe7a36939b945
+  sha256: 26923b90487b22141f78651a6fcf564d6170686917c6c519f721f380514b92c9
 - id: planner
   resource: ../../tools/ci_selection.py
   revision: 6ec69f4ac926c887003e5509bb393289f0bc9e71
@@ -19,12 +19,12 @@ sources:
   resource: ../../.github/workflows/ci.yml
   revision: 6ec69f4ac926c887003e5509bb393289f0bc9e71
   working_tree: modified
-  sha256: 36389eaf785f5b96a12d4b06f1af3ecc93d09e8301417bf485414b79fc11b8b7
+  sha256: 0ffc5516e77e03feb8c4684f8e66700ac020f9f99b4c0c8271bbdcb8d8433335
 - id: release
   resource: ../../.github/workflows/release.yml
   revision: 6ec69f4ac926c887003e5509bb393289f0bc9e71
   working_tree: modified
-  sha256: b8c69f70b49c03ca024d50ee0c6c32af3079e56b26e4cbf8dd6b945a3b6682bb
+  sha256: 35efb0eb0e4f31293bdd38edf9c9163795ba8d1e4d9f7635426bf047a194700e
 ---
 
 # 選択と集約の契約

@@ -39,12 +39,12 @@ sources:
   resource: ../../.github/workflows/release.yml
   revision: 6ec69f4ac926c887003e5509bb393289f0bc9e71
   working_tree: modified
-  sha256: b8c69f70b49c03ca024d50ee0c6c32af3079e56b26e4cbf8dd6b945a3b6682bb
+  sha256: 35efb0eb0e4f31293bdd38edf9c9163795ba8d1e4d9f7635426bf047a194700e
 - id: ci-tests
   resource: ../../tests/test_ci_workflow.py
   revision: 6ec69f4ac926c887003e5509bb393289f0bc9e71
   working_tree: modified
-  sha256: bc6dfe33f0d22bb323df74e08092921ae83773a2491796e38c7cc6e2c8a437fe
+  sha256: 3fced57ffcda06eb7129821d19e10ef061348940ffa12cf253815498350879ee
 ---
 
 # 公開の対象と手順

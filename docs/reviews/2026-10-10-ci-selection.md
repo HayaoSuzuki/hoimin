@@ -108,3 +108,22 @@ hosted Runnerでのafter測定、再pushキャンセル、merge queue実行は�
 変更後の測定と公開の実機確認は未実施として残し、実装のローカル検証結果と区別する。
 
 OKFは33ページの構造を検査し、更新した出典のhash・脚注・リンクと入口索引の到達を確認した。
+
+
+## Hostedでの追加確認
+
+PR #767の初回CI run `38030815192`ではPython 3.14の変更判定、厳格workflow lint、品質検査が成功した。
+release run `38030815191`ではprepareのversion出力が設定されたのに全buildがskipされた。
+意図したreserveのskipが祖先の暗黙`success()`を通じて後続へ伝播することを実機で確認した。
+build、validate、publishに`!cancelled()`と直接の依存jobのsuccessを明示し、局所テストと独立レビューで修正条件を確認した。
+この初回release runの短さを性能改善の証拠には使わない。
+
+追加セルフレビューでは、(1) PRでのreserve skip、(2) reserve失敗・空タグ、(3) build失敗・skip、(4) cancel、(5) 信頼するmerge commitとwrite権限の境界を順に再点検した。
+validateは3platform全buildのsuccess、publishはprepareとvalidateのsuccessに加えてpublish出力を要求する。
+Windowsのperformance stepと自動CIのstepを同じbash明示に揃え、既存のmatrix同等性検査も維持した。
+
+
+初回wheel smokeのLinux全pytestで、Windowsではskipされるreserve/prepareの既存shellテスト3件の更新漏れも見つかった。
+分離後の2stepを順に実行し、予約errorで出力なし、空tagでprepareを選ばない、release/previewで正しいtagを渡す契約へ更新した。
+追加修正後のローカルworkflow契約は152 passed（81.87秒）、release回帰は34 passed・10 skipped（46.90秒）。
+Linux専用shellテストの実行成功は次のhosted runで確認する。

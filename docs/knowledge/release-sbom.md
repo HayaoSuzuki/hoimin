@@ -8,7 +8,7 @@ sources:
   resource: ../ci.md
   revision: 6ec69f4ac926c887003e5509bb393289f0bc9e71
   working_tree: untracked
-  sha256: bf8554c5294de17809ea89260d290af57ada232faeed035ff1efe7a36939b945
+  sha256: 26923b90487b22141f78651a6fcf564d6170686917c6c519f721f380514b92c9
 - id: release
   resource: ../releases.md
   revision: 6ec69f4ac926c887003e5509bb393289f0bc9e71

@@ -117,7 +117,8 @@ jobs:
   windows-wheel:
     name: Windows wheel
     needs: prepare
-    if: needs.prepare.outputs.version != ''
+    # reserve is intentionally skipped on previews; bypass implicit success().
+    if: "!cancelled() && needs.prepare.result == 'success' && needs.prepare.outputs.version != ''"
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
@@ -196,7 +197,7 @@ jobs:
   linux-wheel:
     name: Linux wheel
     needs: prepare
-    if: needs.prepare.outputs.version != ''
+    if: "!cancelled() && needs.prepare.result == 'success' && needs.prepare.outputs.version != ''"
     runs-on: ubuntu-22.04
     timeout-minutes: 45
     steps:
@@ -288,7 +289,7 @@ jobs:
   macos-wheel:
     name: macOS wheel
     needs: prepare
-    if: needs.prepare.outputs.version != ''
+    if: "!cancelled() && needs.prepare.result == 'success' && needs.prepare.outputs.version != ''"
     runs-on: macos-14
     timeout-minutes: 45
     steps:
@@ -366,7 +367,10 @@ jobs:
   validate:
     name: Validate release assets
     needs: [prepare, windows-wheel, linux-wheel, macos-wheel]
-    if: needs.prepare.outputs.version != ''
+    if: >-
+      !cancelled() && needs.prepare.result == 'success' &&
+      needs.windows-wheel.result == 'success' && needs.linux-wheel.result == 'success' &&
+      needs.macos-wheel.result == 'success' && needs.prepare.outputs.version != ''
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -398,7 +402,7 @@ jobs:
   publish:
     name: Publish release
     needs: [prepare, validate]
-    if: needs.prepare.outputs.publish == 'true'
+    if: "!cancelled() && needs.prepare.result == 'success' && needs.validate.result == 'success' && needs.prepare.outputs.publish == 'true'"
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

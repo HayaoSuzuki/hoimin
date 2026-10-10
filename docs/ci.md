@@ -22,6 +22,8 @@ cgroup実機検証は、委譲済みRunnerを有効にしたmainへのpushだけ
 必要なjobのfailure・cancelled・skipped、結果の欠落は失敗になる。
 選択しなかったjobだけはskippedを許容する。
 PRの古いCIとpreviewだけをキャンセルする。
+previewではタグ予約jobを意図的にskipするため、後続のbuild・validate・publishにもstatus関数を明示し、祖先jobのskipが暗黙の`success()`で伝播することを防ぐ。
+各jobの直接の依存先にはsuccessを要求し、失敗やキャンセルを許容しない。
 
 ## 必須チェックの設定
 
