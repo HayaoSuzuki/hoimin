@@ -1,5 +1,10 @@
 # Building and releasing hoimin
 
+Use the [compatibility policy](compatibility.md) to classify public-interface,
+default-operator and package changes before choosing a version floor. The PR
+template records the decision and migration notice; generated release notes
+do not make that decision automatically.
+
 ## Build and verify a wheel
 
 The package is a native binary wheel, not a Python extension module. Build and smoke-test the wheel locally with:
@@ -222,7 +227,7 @@ trigger, signing workflow, artifact handling, permissions, or verification tools
 Build provenance identifies a producing workflow and source under the stated
 policy. It does not establish reproducible builds, freedom from vulnerabilities,
 OS code signing, or notarization. PyPI publish attestations remain a separate
-mechanism and this change does not automate PyPI publication.
+mechanism; the index publication pipeline described above preserves both proofs.
 
 ## Release SBOMs
 
