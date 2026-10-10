@@ -1,6 +1,7 @@
 name: Build and release
 
-on:
+# Closed/merged event; write jobs check out only merge_commit_sha, never PR head.
+on: # zizmor: ignore[dangerous-triggers]
   pull_request:
     branches: [main]
   # Only the merged base-branch commit is checked out with write permission.
@@ -14,17 +15,69 @@ permissions:
   contents: read
 
 concurrency:
-  # Different merges must not cancel each other's pending releases.
-  group: release-${{ github.event_name }}-${{ github.event_name == 'pull_request_target' && github.event.pull_request.merge_commit_sha || github.sha }}
-  cancel-in-progress: false
+  # PR previews cancel only older previews of the same PR.
+  # The existing per-merge group is retained for publication.
+  group: release-${{ github.event_name }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.event_name == 'pull_request_target' && github.event.pull_request.merge_commit_sha || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  prepare:
+  changes:
+    name: Changes
     if: github.event_name != 'pull_request_target' || github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      distribution: ${{ steps.plan.outputs.distribution }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.14'
+      - name: Select preview inputs
+        id: plan
+        run: python tools/ci_selection.py plan
+
+  reserve:
+    name: Reserve release tag
+    needs: changes
+    if: github.event_name == 'pull_request_target' && github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
-      contents: write
+      contents: write # Reserve release tags / publish validated assets.
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      # Only merged base-branch code is executed with a write token.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          fetch-depth: 0
+          # Required only to push the reserved tag for merged base-branch code.
+          persist-credentials: true # zizmor: ignore[artipacked]
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.14'
+      - name: Reserve release tag
+        id: tag
+        env:
+          COMMIT: ${{ github.event.pull_request.merge_commit_sha }}
+        run: |
+          tag=$(python tools/release.py tag --commit "$COMMIT")
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+  prepare:
+    name: Prepare packages
+    needs: [changes, reserve]
+    if: >-
+      always() && !cancelled() && needs.changes.result == 'success' &&
+      ((github.event_name != 'pull_request_target' && needs.changes.outputs.distribution == 'true') ||
+       (needs.reserve.result == 'success' && needs.reserve.outputs.tag != ''))
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       tag: ${{ steps.version.outputs.tag }}
       version: ${{ steps.version.outputs.version }}
@@ -37,7 +90,7 @@ jobs:
         with:
           ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.merge_commit_sha || github.sha }}
           fetch-depth: 0
-          persist-credentials: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.merged == true }}
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.14'
@@ -46,12 +99,10 @@ jobs:
         env:
           PUBLISH: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.merged == true }}
           COMMIT: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.merge_commit_sha || github.sha }}
+          RESERVED_TAG: ${{ needs.reserve.outputs.tag }}
         run: |
           if [[ "$PUBLISH" == true ]]; then
-            tag=$(python tools/release.py tag --commit "$COMMIT")
-            if [[ -z "$tag" ]]; then
-              PUBLISH=false
-            fi
+            tag="$RESERVED_TAG"
           else
             base=$(python -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["workspace"]["package"]["version"])')
             tag="v${base}-dev.${GITHUB_RUN_ID}"
@@ -64,8 +115,10 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
   windows-wheel:
+    name: Windows wheel
     needs: prepare
-    if: needs.prepare.outputs.version != ''
+    # reserve is intentionally skipped on previews; bypass implicit success().
+    if: "!cancelled() && needs.prepare.result == 'success' && needs.prepare.outputs.version != ''"
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
@@ -90,7 +143,6 @@ jobs:
         shell: bash
         run: |
           cargo install cargo-cyclonedx --version 0.5.7 --locked --root "$RUNNER_TEMP/sbom-tools"
-          echo "$RUNNER_TEMP/sbom-tools/bin" >> "$GITHUB_PATH"
       - name: Build standalone executable
         run: cargo build --release --locked --no-default-features --bin hoimin --target x86_64-pc-windows-msvc --target-dir target/standalone
       - name: Verify standalone executable
@@ -127,6 +179,8 @@ jobs:
           COMMIT: ${{ needs.prepare.outputs.commit }}
         shell: bash
         run: |
+          sbom_bin="$(cygpath -u "$RUNNER_TEMP")/sbom-tools/bin"
+          export PATH="$sbom_bin:$PATH"
           python tools/capture_sbom.py --target x86_64-pc-windows-msvc --output target/sbom/standalone.json
           python tools/capture_sbom.py --target x86_64-pc-windows-msvc --output target/sbom/wheel.json
           for kind in standalone wheel; do
@@ -141,8 +195,9 @@ jobs:
           if-no-files-found: error
 
   linux-wheel:
+    name: Linux wheel
     needs: prepare
-    if: needs.prepare.outputs.version != ''
+    if: "!cancelled() && needs.prepare.result == 'success' && needs.prepare.outputs.version != ''"
     runs-on: ubuntu-22.04
     timeout-minutes: 45
     steps:
@@ -167,7 +222,6 @@ jobs:
         shell: bash
         run: |
           cargo install cargo-cyclonedx --version 0.5.7 --locked --root "$RUNNER_TEMP/sbom-tools"
-          echo "$RUNNER_TEMP/sbom-tools/bin" >> "$GITHUB_PATH"
       - name: Build standalone executable
         run: cargo build --release --locked --no-default-features --bin hoimin --target x86_64-unknown-linux-gnu --target-dir target/standalone
       - name: Verify standalone executable
@@ -219,6 +273,7 @@ jobs:
           COMMIT: ${{ needs.prepare.outputs.commit }}
         shell: bash
         run: |
+          export PATH="$RUNNER_TEMP/sbom-tools/bin:$PATH"
           python tools/capture_sbom.py --target x86_64-unknown-linux-gnu --output target/sbom/standalone.json
           for kind in standalone wheel; do
             uv run --frozen --no-sync python tools/sbom.py --raw "target/sbom/$kind.json" \
@@ -232,8 +287,9 @@ jobs:
           if-no-files-found: error
 
   macos-wheel:
+    name: macOS wheel
     needs: prepare
-    if: needs.prepare.outputs.version != ''
+    if: "!cancelled() && needs.prepare.result == 'success' && needs.prepare.outputs.version != ''"
     runs-on: macos-14
     timeout-minutes: 45
     steps:
@@ -258,7 +314,6 @@ jobs:
         shell: bash
         run: |
           cargo install cargo-cyclonedx --version 0.5.7 --locked --root "$RUNNER_TEMP/sbom-tools"
-          echo "$RUNNER_TEMP/sbom-tools/bin" >> "$GITHUB_PATH"
       - name: Build standalone executable
         run: cargo build --release --locked --no-default-features --bin hoimin --target aarch64-apple-darwin --target-dir target/standalone
       - name: Verify standalone executable
@@ -295,6 +350,7 @@ jobs:
           COMMIT: ${{ needs.prepare.outputs.commit }}
         shell: bash
         run: |
+          export PATH="$RUNNER_TEMP/sbom-tools/bin:$PATH"
           python tools/capture_sbom.py --target aarch64-apple-darwin --output target/sbom/standalone.json
           python tools/capture_sbom.py --target aarch64-apple-darwin --output target/sbom/wheel.json
           for kind in standalone wheel; do
@@ -309,8 +365,12 @@ jobs:
           if-no-files-found: error
 
   validate:
+    name: Validate release assets
     needs: [prepare, windows-wheel, linux-wheel, macos-wheel]
-    if: needs.prepare.outputs.version != ''
+    if: >-
+      !cancelled() && needs.prepare.result == 'success' &&
+      needs.windows-wheel.result == 'success' && needs.linux-wheel.result == 'success' &&
+      needs.macos-wheel.result == 'success' && needs.prepare.outputs.version != ''
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -340,12 +400,13 @@ jobs:
           if-no-files-found: error
 
   publish:
+    name: Publish release
     needs: [prepare, validate]
-    if: needs.prepare.outputs.publish == 'true'
+    if: "!cancelled() && needs.prepare.result == 'success' && needs.validate.result == 'success' && needs.prepare.outputs.publish == 'true'"
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
-      contents: write
+      contents: write # Reserve release tags / publish validated assets.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

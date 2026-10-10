@@ -73,6 +73,12 @@ uv sync --frozen --no-install-project
 uv run --frozen --no-sync python tests/wheel_smoke.py
 ```
 
+## CI selection and workflow validation
+
+See [CI selection and workflow validation](ci.md) for path classification,
+the aggregate required check, pinned actionlint/ShellCheck/zizmor commands,
+documented inline exceptions, and before/after measurements.
+
 ## Dependency vulnerability audits
 
 The `Dependency audit` workflow checks committed dependencies on pull requests,

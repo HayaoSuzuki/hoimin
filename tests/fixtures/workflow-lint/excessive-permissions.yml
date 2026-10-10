@@ -1,0 +1,8 @@
+name: Excessive permissions fixture
+on: pull_request
+permissions: write-all
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo fixture

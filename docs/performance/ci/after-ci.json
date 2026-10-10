@@ -1,0 +1,116 @@
+{
+  "measured_at": "2026-10-10T06:47:44.255700+00:00",
+  "repository": "HayaoSuzuki/hoimin",
+  "workflow": "CI",
+  "url": "https://github.com/HayaoSuzuki/hoimin/actions/runs/38031404421",
+  "metrics": {
+    "run_id": 38031404421,
+    "run_attempt": 1,
+    "event": "pull_request",
+    "head_sha": "a9f9d424cd7fc0c21ece1c89c233448e531a5b64",
+    "elapsed_seconds": 723.0,
+    "executed_jobs": 13,
+    "job_seconds": 3080.0,
+    "queue_seconds": 37.0,
+    "jobs": [
+      {
+        "name": "Workflow lint",
+        "conclusion": "success",
+        "queue_seconds": 3.0,
+        "duration_seconds": 15.0,
+        "start_delay_seconds": 30.0
+      },
+      {
+        "name": "Changes",
+        "conclusion": "success",
+        "queue_seconds": 2.0,
+        "duration_seconds": 8.0,
+        "start_delay_seconds": 29.0
+      },
+      {
+        "name": "Quality (ubuntu-latest)",
+        "conclusion": "success",
+        "queue_seconds": 2.0,
+        "duration_seconds": 58.0,
+        "start_delay_seconds": 40.0
+      },
+      {
+        "name": "Wheel smoke (ubuntu-latest)",
+        "conclusion": "success",
+        "queue_seconds": 3.0,
+        "duration_seconds": 216.0,
+        "start_delay_seconds": 101.0
+      },
+      {
+        "name": "Fuzz (bounded)",
+        "conclusion": "success",
+        "queue_seconds": 3.0,
+        "duration_seconds": 595.0,
+        "start_delay_seconds": 101.0
+      },
+      {
+        "name": "Rust randomized order (nightly-2026-10-08)",
+        "conclusion": "success",
+        "queue_seconds": 3.0,
+        "duration_seconds": 556.0,
+        "start_delay_seconds": 101.0
+      },
+      {
+        "name": "Contracts",
+        "conclusion": "success",
+        "queue_seconds": 3.0,
+        "duration_seconds": 565.0,
+        "start_delay_seconds": 101.0
+      },
+      {
+        "name": "Linux best effort",
+        "conclusion": "success",
+        "queue_seconds": 3.0,
+        "duration_seconds": 70.0,
+        "start_delay_seconds": 101.0
+      },
+      {
+        "name": "Rust (ubuntu-latest)",
+        "conclusion": "success",
+        "queue_seconds": 3.0,
+        "duration_seconds": 614.0,
+        "start_delay_seconds": 101.0
+      },
+      {
+        "name": "Core dependency purity (ubuntu-latest)",
+        "conclusion": "success",
+        "queue_seconds": 3.0,
+        "duration_seconds": 13.0,
+        "start_delay_seconds": 101.0
+      },
+      {
+        "name": "Lean audit",
+        "conclusion": "success",
+        "queue_seconds": 4.0,
+        "duration_seconds": 164.0,
+        "start_delay_seconds": 102.0
+      },
+      {
+        "name": "Linux cgroup v2 hard",
+        "conclusion": "skipped",
+        "queue_seconds": 0.0,
+        "duration_seconds": -1.0,
+        "start_delay_seconds": 99.0
+      },
+      {
+        "name": "Cross-boundary contracts",
+        "conclusion": "success",
+        "queue_seconds": 3.0,
+        "duration_seconds": 201.0,
+        "start_delay_seconds": 269.0
+      },
+      {
+        "name": "CI result",
+        "conclusion": "success",
+        "queue_seconds": 2.0,
+        "duration_seconds": 5.0,
+        "start_delay_seconds": 717.0
+      }
+    ]
+  }
+}

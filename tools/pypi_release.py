@@ -24,7 +24,9 @@ LICENSE_FILES = ("LICENSE", "vendor/ruff_python_parser/LICENSE")
 
 
 def validate_wheel(wheel: Path, version: str) -> None:
-    project = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))[
+        "project"
+    ]
     prefix = f"hoimin-{version}.dist-info/"
     with zipfile.ZipFile(wheel) as archive:
         names = archive.namelist()

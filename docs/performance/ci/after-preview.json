@@ -1,0 +1,74 @@
+{
+  "measured_at": "2026-10-10T06:47:44.413316+00:00",
+  "repository": "HayaoSuzuki/hoimin",
+  "workflow": "Build and release",
+  "url": "https://github.com/HayaoSuzuki/hoimin/actions/runs/38031404452",
+  "metrics": {
+    "run_id": 38031404452,
+    "run_attempt": 1,
+    "event": "pull_request",
+    "head_sha": "a9f9d424cd7fc0c21ece1c89c233448e531a5b64",
+    "elapsed_seconds": 690.0,
+    "executed_jobs": 6,
+    "job_seconds": 1470.0,
+    "queue_seconds": 20.0,
+    "jobs": [
+      {
+        "name": "Changes",
+        "conclusion": "success",
+        "queue_seconds": 3.0,
+        "duration_seconds": 7.0,
+        "start_delay_seconds": 3.0
+      },
+      {
+        "name": "Prepare packages",
+        "conclusion": "success",
+        "queue_seconds": 2.0,
+        "duration_seconds": 7.0,
+        "start_delay_seconds": 13.0
+      },
+      {
+        "name": "Reserve release tag",
+        "conclusion": "skipped",
+        "queue_seconds": 0.0,
+        "duration_seconds": -1.0,
+        "start_delay_seconds": 11.0
+      },
+      {
+        "name": "Linux wheel",
+        "conclusion": "success",
+        "queue_seconds": 3.0,
+        "duration_seconds": 532.0,
+        "start_delay_seconds": 24.0
+      },
+      {
+        "name": "Windows wheel",
+        "conclusion": "success",
+        "queue_seconds": 3.0,
+        "duration_seconds": 649.0,
+        "start_delay_seconds": 24.0
+      },
+      {
+        "name": "macOS wheel",
+        "conclusion": "success",
+        "queue_seconds": 6.0,
+        "duration_seconds": 262.0,
+        "start_delay_seconds": 27.0
+      },
+      {
+        "name": "Validate release assets",
+        "conclusion": "success",
+        "queue_seconds": 3.0,
+        "duration_seconds": 13.0,
+        "start_delay_seconds": 676.0
+      },
+      {
+        "name": "Publish release",
+        "conclusion": "skipped",
+        "queue_seconds": 0.0,
+        "duration_seconds": -1.0,
+        "start_delay_seconds": 690.0
+      }
+    ]
+  }
+}

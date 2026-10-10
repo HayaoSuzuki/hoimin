@@ -46,6 +46,11 @@ fuzz = [
     "hypothesis>=6.93,<7",
     "hypothesmith==0.3.3",
 ]
+workflow = [
+    "actionlint-py==1.7.12.25",
+    "shellcheck-py==0.11.0.1",
+    "zizmor==1.30.1",
+]
 
 [tool.ruff]
 target-version = "py314"

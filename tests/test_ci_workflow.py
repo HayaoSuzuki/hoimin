@@ -428,13 +428,17 @@ def assert_github_release(workflow: str) -> None:
     assert decoded["concurrency"] == {
         "group": (
             "release-${{ github.event_name }}-"
-            "${{ github.event_name == 'pull_request_target' && "
-            "github.event.pull_request.merge_commit_sha || github.sha }}"
+            "${{ github.event_name == 'pull_request' && "
+            "github.event.pull_request.number || "
+            "github.event_name == 'pull_request_target' && "
+            "github.event.pull_request.merge_commit_sha || github.run_id }}"
         ),
-        "cancel-in-progress": False,
+        "cancel-in-progress": "${{ github.event_name == 'pull_request' }}",
     }
     jobs = workflow_jobs(decoded)
     assert set(jobs) == {
+        "changes",
+        "reserve",
         "prepare",
         "windows-wheel",
         "linux-wheel",
@@ -453,8 +457,18 @@ def assert_github_release(workflow: str) -> None:
         ("macos-wheel", "macos-14", "aarch64-apple-darwin", "macos-aarch64"),
     ):
         job = jobs[name]
-        assert set(job) == {"if", "needs", "runs-on", "timeout-minutes", "steps"}
-        assert job["if"] == "needs.prepare.outputs.version != ''"
+        assert set(job) == {
+            "name",
+            "if",
+            "needs",
+            "runs-on",
+            "timeout-minutes",
+            "steps",
+        }
+        assert job["if"] == (
+            "!cancelled() && needs.prepare.result == 'success' && "
+            "needs.prepare.outputs.version != ''"
+        )
         assert job["needs"] == "prepare"
         assert job["runs-on"] == runner
         steps = job_steps(job)
@@ -488,16 +502,33 @@ def assert_github_release(workflow: str) -> None:
         }
     assert len(maturin_versions) == 1
     prepare = jobs["prepare"]
-    assert prepare["permissions"] == {"contents": "write"}
-    assert (
-        prepare["if"] == "github.event_name != 'pull_request_target' || "
+    assert "permissions" not in prepare
+    assert prepare["needs"] == ["changes", "reserve"]
+    assert "needs.changes.outputs.distribution == 'true'" in string(prepare["if"])
+    reserve = jobs["reserve"]
+    assert reserve["permissions"] == {"contents": "write"}
+    assert reserve["if"] == (
+        "github.event_name == 'pull_request_target' && "
         "github.event.pull_request.merged == true"
     )
+    assert named_step(reserve, "Reserve release tag")["env"] == {
+        "COMMIT": "${{ github.event.pull_request.merge_commit_sha }}"
+    }
+    assert mapping(job_steps(reserve)[0]["with"]) == {
+        "ref": "${{ github.event.pull_request.merge_commit_sha }}",
+        "fetch-depth": 0,
+        "persist-credentials": True,
+    }
     publish = jobs["publish"]
     assert publish["permissions"] == {"contents": "write"}
     assert publish["needs"] == ["prepare", "validate"]
     validate = jobs["validate"]
-    assert validate["if"] == "needs.prepare.outputs.version != ''"
+    assert validate["if"] == (
+        "!cancelled() && needs.prepare.result == 'success' && "
+        "needs.windows-wheel.result == 'success' && "
+        "needs.linux-wheel.result == 'success' && "
+        "needs.macos-wheel.result == 'success' && needs.prepare.outputs.version != ''"
+    )
     assert "permissions" not in validate
     assert validate["needs"] == [
         "prepare",
@@ -505,10 +536,14 @@ def assert_github_release(workflow: str) -> None:
         "linux-wheel",
         "macos-wheel",
     ]
-    assert publish["if"] == "needs.prepare.outputs.publish == 'true'"
+    assert publish["if"] == (
+        "!cancelled() && needs.prepare.result == 'success' && "
+        "needs.validate.result == 'success' && needs.prepare.outputs.publish == 'true'"
+    )
     assert all("environment" not in job and "env" not in job for job in jobs.values())
-    for job in (prepare, publish):
+    for job in (jobs["changes"], prepare, reserve, publish):
         assert set(job) <= {
+            "name",
             "if",
             "needs",
             "runs-on",
@@ -646,7 +681,10 @@ def test_scheduled_fuzz_runs_daily_with_selectable_per_target_time() -> None:
     assert "cargo +nightly-2026-10-08 install cargo-fuzz" in install
     assert "--version 0.13.2 --locked" in install
     command = string(named_step(job, "Fuzz all targets")["run"])
-    assert "--seconds-per-target \"${{ inputs.seconds || '60' }}\"" in command
+    assert '--seconds-per-target "$FUZZ_SECONDS"' in command
+    assert named_step(job, "Fuzz all targets")["env"] == {
+        "FUZZ_SECONDS": "${{ inputs.seconds || '60' }}"
+    }
 
 
 @pytest.mark.parametrize("commit", ["1" * 40, "abcdef0123" * 4, "ABCDEF0123" * 4])
@@ -851,10 +889,13 @@ def test_rust_jobs_install_only_their_classified_toolchain() -> None:
     workflow = CI_WORKFLOW.read_text(encoding="utf-8")
     decoded = workflow_document(workflow)
 
-    assert (
-        set(workflow_jobs(decoded))
-        == REPOSITORY_RUST_JOBS | COMPATIBILITY_RUST_JOBS | LEAN_JOBS
-    )
+    assert set(
+        workflow_jobs(decoded)
+    ) == REPOSITORY_RUST_JOBS | COMPATIBILITY_RUST_JOBS | LEAN_JOBS | {
+        "changes",
+        "workflow-lint",
+        "result",
+    }
     assert "RUSTUP_TOOLCHAIN" not in workflow
     assert "rustup override" not in workflow
     assert "rustup default" not in workflow
@@ -991,11 +1032,14 @@ def test_job_uses_pinned_tools_repository_toolchain_and_cache() -> None:
     workflow = workflow_contract(CI_WORKFLOW.read_text(encoding="utf-8"))
     job = workflow_jobs(workflow)["lean-audit"]
 
-    assert job["needs"] == "quality"
+    assert job["needs"] == ["changes", "quality"]
     assert job["runs-on"] == "ubuntu-latest"
     assert job["timeout-minutes"] == 60
-    assert "if" not in job
-    assert job_steps(job)[0] == {"uses": CHECKOUT_ACTION}
+    assert job["if"] == "needs.changes.outputs.formal == 'true'"
+    assert job_steps(job)[0] == {
+        "uses": CHECKOUT_ACTION,
+        "with": {"persist-credentials": False},
+    }
     assert job_steps(job)[1] == {
         "uses": SETUP_PYTHON_ACTION,
         "with": {"python-version": "3.14"},
@@ -1199,7 +1243,7 @@ def test_non_linux_ci_has_only_a_manual_trigger() -> None:
     workflow = NON_LINUX_CI_WORKFLOW.read_text(encoding="utf-8")
     decoded = workflow_document(workflow)
 
-    assert set(decoded) == {"name", True, "permissions", "jobs"}
+    assert set(decoded) == {"name", True, "permissions", "concurrency", "jobs"}
     assert trigger_events(workflow) == {"workflow_dispatch"}
     assert decoded[True] == {"workflow_dispatch": None}
     assert decoded["permissions"] == {"contents": "read"}
@@ -1228,7 +1272,15 @@ def test_manual_non_linux_jobs_are_complete_and_independent() -> None:
         assert job["name"] == expected_name, job_name
         assert "needs" not in job, job_name
         assert "outputs" not in job, job_name
-        assert job_steps(job) == job_steps(workflow_jobs(automatic)[job_name]), job_name
+        automatic_steps = [
+            {
+                key: value
+                for key, value in step.items()
+                if key != "if" or value != "needs.changes.outputs.rust == 'true'"
+            }
+            for step in job_steps(workflow_jobs(automatic)[job_name])
+        ]
+        assert job_steps(job) == automatic_steps, job_name
 
     for job_name, expected_os in MANUAL_NON_LINUX_MATRIX_JOBS.items():
         job = jobs[job_name]
@@ -1253,7 +1305,7 @@ def test_windows_resource_scope_runs_native_acceptance_independently() -> None:
         "runs-on": "windows-latest",
         "timeout-minutes": 20,
         "steps": [
-            {"uses": CHECKOUT_ACTION},
+            {"uses": CHECKOUT_ACTION, "with": {"persist-credentials": False}},
             {"uses": SETUP_PYTHON_ACTION, "with": {"python-version": "3.14"}},
             {"uses": SETUP_UV_ACTION, "with": {"enable-cache": True}},
             {
@@ -1302,7 +1354,7 @@ def test_windows_metrics_destinations_runs_native_acceptance_independently() -> 
         "timeout-minutes": 25,
         "env": {"HOIMIN_REQUIRE_WINDOWS_SYMLINKS": "1"},
         "steps": [
-            {"uses": CHECKOUT_ACTION},
+            {"uses": CHECKOUT_ACTION, "with": {"persist-credentials": False}},
             {"uses": SETUP_PYTHON_ACTION, "with": {"python-version": "3.14"}},
             {"uses": SETUP_UV_ACTION, "with": {"enable-cache": True}},
             {
@@ -1338,7 +1390,7 @@ def test_latest_stable_canary_is_isolated_and_environment_complete() -> None:
     workflow = STABLE_CANARY_WORKFLOW.read_text(encoding="utf-8")
     decoded = workflow_contract(workflow)
 
-    assert set(decoded) == {"name", True, "permissions", "jobs"}
+    assert set(decoded) == {"name", True, "permissions", "concurrency", "jobs"}
     assert decoded["name"] == "Latest stable Rust canary"
     assert trigger_events(workflow) == {"schedule", "workflow_dispatch"}
     assert decoded["permissions"] == {"contents": "read"}
@@ -1346,7 +1398,8 @@ def test_latest_stable_canary_is_isolated_and_environment_complete() -> None:
     assert mapping(decoded[True])["workflow_dispatch"] is None
     assert set(workflow_jobs(decoded)) == {"stable"}
     job = workflow_jobs(decoded)["stable"]
-    assert set(job) == {"runs-on", "env", "steps"}
+    assert set(job) == {"name", "runs-on", "env", "steps"}
+    assert job["name"] == "Rust stable canary"
     assert job["runs-on"] == "ubuntu-latest"
     assert job["env"] == {
         "CARGO_PROFILE_DEV_DEBUG": "0",
@@ -1355,7 +1408,7 @@ def test_latest_stable_canary_is_isolated_and_environment_complete() -> None:
         "CARGO_BUILD_JOBS": "2",
     }
     assert job_steps(job) == [
-        {"uses": CHECKOUT_ACTION},
+        {"uses": CHECKOUT_ACTION, "with": {"persist-credentials": False}},
         {"uses": SETUP_PYTHON_ACTION, "with": {"python-version": "3.14"}},
         {"uses": SETUP_UV_ACTION, "with": {"enable-cache": True}},
         {
@@ -1473,7 +1526,7 @@ def test_shuffle_job_is_pinned_isolated_and_complete() -> None:
     assert re.search(r"(?m)^      - run: cargo test --workspace$", stable) is not None
     assert "  rust-shuffle:\n" in workflow
     shuffle = job_block(workflow, "rust-shuffle")
-    assert re.search(r"(?m)^    needs: quality$", shuffle) is not None
+    assert "    needs: [changes, quality]" in shuffle
     assert re.search(r"(?m)^    runs-on: ubuntu-latest$", shuffle) is not None
     assert "python-version: '3.14'" in shuffle
     assert (
@@ -1684,10 +1737,14 @@ def test_release_uses_event_commit_except_after_merging_to_base() -> None:
     assert mapping(job_steps(prepare)[0]["with"]) == {
         "ref": trusted_ref,
         "fetch-depth": 0,
-        "persist-credentials": publish_condition,
+        "persist-credentials": False,
     }
     version = named_step(prepare, "Reserve release tag or choose preview version")
-    assert version["env"] == {"PUBLISH": publish_condition, "COMMIT": trusted_ref}
+    assert version["env"] == {
+        "PUBLISH": publish_condition,
+        "COMMIT": trusted_ref,
+        "RESERVED_TAG": "${{ needs.reserve.outputs.tag }}",
+    }
     assert version["id"] == "version"
     assert (
         mapping(prepare["outputs"])["publish"] == "${{ steps.version.outputs.publish }}"
@@ -1839,7 +1896,7 @@ def test_github_release_policy_rejects_disguised_publication_paths(
 def test_release_sbom_proof_step_supplies_valid_guard_arguments(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    workflow = workflow_document(CI_WORKFLOW.read_text())
+    workflow = workflow_document(CI_WORKFLOW.read_text(encoding="utf-8"))
     step = named_step(
         workflow_jobs(workflow)["lean-audit"], "Verify release SBOM model and corpus"
     )

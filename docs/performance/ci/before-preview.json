@@ -1,0 +1,60 @@
+{
+  "measured_at": "2026-10-10T06:01:22.394799+00:00",
+  "repository": "HayaoSuzuki/hoimin",
+  "workflow": "Build and release",
+  "url": "https://github.com/HayaoSuzuki/hoimin/actions/runs/38023706209",
+  "metrics": {
+    "run_id": 38023706209,
+    "run_attempt": 1,
+    "event": "pull_request",
+    "head_sha": "3610b13ef07da4a6cbbd6b9290b68f1493db34ce",
+    "elapsed_seconds": 624.0,
+    "executed_jobs": 5,
+    "job_seconds": 1387.0,
+    "queue_seconds": 19.0,
+    "jobs": [
+      {
+        "name": "prepare",
+        "conclusion": "success",
+        "queue_seconds": 3.0,
+        "duration_seconds": 7.0,
+        "start_delay_seconds": 3.0
+      },
+      {
+        "name": "linux-wheel",
+        "conclusion": "success",
+        "queue_seconds": 2.0,
+        "duration_seconds": 440.0,
+        "start_delay_seconds": 13.0
+      },
+      {
+        "name": "macos-wheel",
+        "conclusion": "success",
+        "queue_seconds": 8.0,
+        "duration_seconds": 333.0,
+        "start_delay_seconds": 19.0
+      },
+      {
+        "name": "windows-wheel",
+        "conclusion": "success",
+        "queue_seconds": 3.0,
+        "duration_seconds": 595.0,
+        "start_delay_seconds": 14.0
+      },
+      {
+        "name": "validate",
+        "conclusion": "success",
+        "queue_seconds": 3.0,
+        "duration_seconds": 12.0,
+        "start_delay_seconds": 612.0
+      },
+      {
+        "name": "publish",
+        "conclusion": "skipped",
+        "queue_seconds": 0.0,
+        "duration_seconds": 0.0,
+        "start_delay_seconds": 624.0
+      }
+    ]
+  }
+}

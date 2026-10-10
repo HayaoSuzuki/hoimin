@@ -303,7 +303,7 @@ def test_shallow_checkout_is_deepened_before_ancestry_check(
 
 @pytest.mark.skipif(os.name != "posix", reason="GitHub prepare job uses Ubuntu bash")
 @pytest.mark.parametrize("mode", ["release", "skip", "preview", "error"])
-def test_prepare_propagates_skip_and_error_without_publishing(
+def test_reserve_and_prepare_propagate_skip_and_error_without_publishing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str
 ) -> None:
     fake_bin = tmp_path / "bin"
@@ -323,23 +323,51 @@ def test_prepare_propagates_skip_and_error_without_publishing(
     monkeypatch.setenv("COMMIT", "a" * 40)
     monkeypatch.setenv("GITHUB_RUN_ID", "123")
     output = tmp_path / "output"
+    workflow = yaml.safe_load(
+        (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+    )
+    reserved_tag = ""
+    if mode != "preview":
+        reserve_output = tmp_path / "reserve-output"
+        monkeypatch.setenv("GITHUB_OUTPUT", str(reserve_output))
+        reserve = next(
+            step
+            for step in workflow["jobs"]["reserve"]["steps"]
+            if step.get("id") == "tag"
+        )
+        result = command(
+            "bash", "-e", "-o", "pipefail", "-c", reserve["run"], cwd=tmp_path
+        )
+        if mode == "error":
+            assert result.returncode != 0
+            assert not reserve_output.exists()
+            assert not output.exists()
+            return
+        assert result.returncode == 0, result.stderr
+        reserved_tag = dict(
+            line.split("=", 1) for line in reserve_output.read_text().splitlines()
+        )["tag"]
+        if mode == "skip":
+            assert reserved_tag == ""
+            assert (
+                "needs.reserve.outputs.tag != ''" in workflow["jobs"]["prepare"]["if"]
+            )
+            assert not output.exists()
+            return
+        assert reserved_tag == "v1.2.3"
+    monkeypatch.setenv("RESERVED_TAG", reserved_tag)
     monkeypatch.setenv("GITHUB_OUTPUT", str(output))
-    workflow = yaml.safe_load((ROOT / ".github/workflows/release.yml").read_text())
     step = next(
         step
         for step in workflow["jobs"]["prepare"]["steps"]
         if step.get("id") == "version"
     )
     result = command("bash", "-e", "-o", "pipefail", "-c", step["run"], cwd=tmp_path)
-    if mode == "error":
-        assert result.returncode != 0
-        assert not output.exists()
-        return
     assert result.returncode == 0, result.stderr
     values = dict(line.split("=", 1) for line in output.read_text().splitlines())
     assert values["publish"] == ("true" if mode == "release" else "false")
     assert values["commit"] == "a" * 40
-    expected = {"release": "v1.2.3", "skip": "", "preview": "v0.1.0-dev.123"}[mode]
+    expected = {"release": "v1.2.3", "preview": "v0.1.0-dev.123"}[mode]
     assert values["tag"] == expected
     assert values["version"] == expected.removeprefix("v")
 
