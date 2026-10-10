@@ -12,6 +12,7 @@ okf_version: "0.2"
 - [リリース配布物のSBOM](release-sbom.md) - Cargo依存グラフの範囲、配布物との対応、公開前の検証。
 
 - [CIの選択と必須チェック](ci-validation.md) - 保守的な差分分類、集約、厳格なworkflow検査と公開の権限境界。
+- [CLIリファレンスの生成と同期](cli-reference.md) - Rust定義からの生成、手書き文書との分担、更新漏れの検査。
 
 # 設計と契約
 

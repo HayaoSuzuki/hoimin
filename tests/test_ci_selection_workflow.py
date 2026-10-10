@@ -11,6 +11,21 @@ from tools.ci_selection import CATEGORIES, selected_jobs
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_rust_job_checks_generated_cli_reference() -> None:
+    workflow = yaml.safe_load(
+        (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    )
+    steps = workflow["jobs"]["rust"]["steps"]
+    assert any(
+        step.get("run")
+        == (
+            "cargo run --locked -p hoimin-cli "
+            "--example generate_cli_reference -- --check"
+        )
+        for step in steps
+    )
+
+
 def test_non_linux_performance_gate_uses_bash_for_runner_temp() -> None:
     workflow = yaml.safe_load(
         (ROOT / ".github/workflows/non-linux-ci.yml").read_text(encoding="utf-8")

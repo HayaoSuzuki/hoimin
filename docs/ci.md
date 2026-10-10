@@ -7,7 +7,8 @@ Runner上のPythonは変更判定・集約を含めて3.14を明示する。
 
 | 変更 | 選択する検証 |
 | --- | --- |
-| `docs/**/*.md`（`docs/json-schema/`以外）、`CONTRIBUTING.md` | Python品質検査とworkflow検査 |
+| `docs/**/*.md`（`docs/json-schema/`と`docs/cli-reference.md`以外）、`CONTRIBUTING.md` | Python品質検査とworkflow検査 |
+| `docs/cli-reference.md` | Rust検証とCLIリファレンス同期検査、品質・workflow検査 |
 | `crates/`、`vendor/` | Rust、formal、配布検証も実行 |
 | `formal/` | Rustとformal検証も実行 |
 | `tests/**/*.py` | Python、Rust、formal検証も実行 |

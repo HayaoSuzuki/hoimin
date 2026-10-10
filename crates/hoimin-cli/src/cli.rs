@@ -595,7 +595,9 @@ pub fn write_completions(shell: Shell, writer: &mut impl std::io::Write) {
     clap_complete::generate(shell, &mut root_command(), "hoimin", writer);
 }
 
-fn root_command() -> clap::Command {
+/// Builds the shared command definition used by parsing, completions and documentation.
+#[must_use]
+pub fn root_command() -> clap::Command {
     let operator_roster = operator_help();
     RootCli::command()
         .mut_subcommand("run", |command| command.after_help(operator_roster.clone()))
