@@ -76,7 +76,7 @@ PRs that change distribution inputs and all manual runs build preview packages
 (`-dev.<RUN_ID>`) and retain them
 as Actions artifacts. They do not create tags or releases. Older previews of the
 same PR are cancelled. The preview preparation job has read-only permissions;
-only the merged-commit tag reservation and publication jobs can write.
+only the merged-commit tag reservation, provenance, and publication jobs can write.
 See [CI selection](ci.md) for conservative fallback and classification.
 For a manual check:
 
@@ -103,6 +103,109 @@ restricts deployment to `main` and can require approval where the GitHub plan
 supports reviewers. Without reviewers, manual dispatch proceeds to upload after
 validation. See [PyPI publishing](pypi-publishing.md) for the initial
 account and environment setup, first publication, and retry procedure.
+
+## GitHub build provenance
+
+New merged-PR releases attest all thirteen validated files: three standalone
+archives, three wheels, six SBOMs, and `SHA256SUMS` itself. The attestation and
+publication jobs download the same immutable `verified-release` artifact from
+the current run. Both revalidate the asset inventory, SBOM metadata and digests,
+and exact checksum bytes without rewriting the downloaded files.
+GitHub stores the signed provenance separately; no new Release attachment is
+added and the distribution format and version series remain unchanged (0.3.x).
+Older releases made before this workflow change do not acquire provenance.
+
+The separate attestation job alone has `id-token: write` and `attestations: write`.
+It uses the commit-pinned official `actions/attest` action and hosted runners.
+PR previews and manual validation runs remain read-only and do not generate
+attestations. Public repositories are eligible on all current GitHub plans;
+see [GitHub's availability and permissions documentation](https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations).
+
+The workflow distinguishes these identities:
+
+| Identity | Meaning and check |
+| --- | --- |
+| `prepare.commit` / `checkout_commit` | The reserved tag's merged commit, checked against `git rev-parse HEAD` and every SBOM's source metadata |
+| `source_sha` | The event source (`github.sha`), required to equal the checkout commit; checked against the attestation certificate with `--source-digest` |
+| `workflow_sha` | The revision of the executing workflow (`github.workflow_sha`); checked separately with `--signer-digest` |
+| `workflow_ref` | The executing workflow path/ref, recorded for investigation; verification requires this repository's `.github/workflows/release.yml` |
+
+The builder adjusts manifests and lockfiles to `prepare.version` after checkout,
+as before. Provenance identifies the source commit and workflow, including that
+version-adjustment procedure; it does not claim an unmodified working tree.
+Checking out a commit alone does not change the event's OIDC identity. If those
+source identities differ under `pull_request_target`, the job stops rather than
+publishing a release with an unrelated source identity.
+
+### Verify downloaded files
+
+Use a GitHub CLI supporting `--source-digest` and `--signer-digest` (check
+`gh attestation verify --help`). Choose the release commit and workflow revision
+from trusted repository history and the intended merged-PR run, independently
+of the downloaded files. The release tag is a lightweight tag on the release
+commit; `gh api repos/HayaoSuzuki/hoimin/commits/<TAG> --jq .sha` can resolve it.
+The run's **Record source and workflow identities** step reports the expected
+workflow revision. Do not simply accept arbitrary identities from a bundle.
+
+```bash
+REPO=HayaoSuzuki/hoimin
+TAG='v<VERSION>'
+RELEASE_COMMIT='<EXPECTED_40_HEX_RELEASE_COMMIT>'
+WORKFLOW_COMMIT='<EXPECTED_40_HEX_WORKFLOW_COMMIT>'
+gh release download "$TAG" --repo "$REPO" --dir release-assets
+cd release-assets
+sha256sum --check SHA256SUMS
+for asset in *; do
+  gh attestation verify "$asset" --repo "$REPO" \
+    --signer-workflow "$REPO/.github/workflows/release.yml" \
+    --source-digest "$RELEASE_COMMIT" --signer-digest "$WORKFLOW_COMMIT" \
+    --deny-self-hosted-runners
+done
+```
+
+Replace `v<VERSION>` and the two SHA placeholders before running. On macOS,
+use `shasum -a 256 -c SHA256SUMS`. Verify every file, including the checksum
+list. `gh` validates the signature and subject digest as well as the selected
+repository, workflow and source policy. See the
+[CLI verification reference](https://cli.github.com/manual/gh_attestation_verify).
+Checksums alone cannot detect replacement of both an asset and its checksum list.
+
+For a negative check, copy a downloaded file to a separate directory, append a
+byte, and run the same verification command on that copy: it must fail.
+The unchanged file must also fail with `--repo actions/attest`, or with
+`--source-digest 0000000000000000000000000000000000000000`.
+The publishing workflow runs these three checks against its newly generated
+bundle before permitting publication, avoiding dependence on attestation API
+indexing delays. It preserves the bundle, per-file verified JSON and identities
+in the `provenance-evidence` Actions artifact, including partial results if
+verification fails after generation. These files are diagnostic evidence, not
+an additional trusted authority; verification must still enforce the policy.
+
+### Failures, retries and first hosted verification
+
+If source identity, attestation generation, any positive or negative verification,
+or evidence upload fails, the dependent publication job does not run.
+Rerun the same merged-PR run after resolving the failure. It reuses the reserved
+tag, regenerates proof for the files from that attempt, resumes a draft, and
+retains the existing guard that leaves public Release assets unchanged.
+A rerun can register another proof for rebuilt bytes, but cannot replace an
+already public Release with them. Verify the actually downloaded public bytes;
+do not assume the newest run's artifact matches an older publication.
+
+The first merged-PR run after this change is the hosted integration check:
+inspect `provenance-evidence/identity.txt` and the thirteen verification results,
+then download that public Release and verify every file with the trusted SHAs.
+Compare its files byte-for-byte with that attempt's `verified-release`, and
+confirm the six SBOM artifact hashes match their associated archives/wheels.
+Local tests cover the Python validator and workflow control flow; they do not
+issue a GitHub OIDC certificate or establish the observed identity of a merged
+`pull_request_target` run. Record those actual results before claiming hosted
+verification is complete.
+
+Build provenance identifies a producing workflow and source under the stated
+policy. It does not establish reproducible builds, freedom from vulnerabilities,
+OS code signing, or notarization. PyPI publish attestations remain a separate
+mechanism and this change does not automate PyPI publication.
 
 ## Release SBOMs
 

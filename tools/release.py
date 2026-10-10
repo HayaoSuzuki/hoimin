@@ -205,7 +205,9 @@ def package(
                     archive.addfile(info, stream)
 
 
-def checksums(directory: Path, version: str, commit: str = "") -> None:
+def checksums(
+    directory: Path, version: str, commit: str = "", *, verify: bool = False
+) -> None:
     validate_version(version)
     expected = {
         f"hoimin-v{version}-{platform}."
@@ -270,7 +272,18 @@ def checksums(directory: Path, version: str, commit: str = "") -> None:
         with path.open("rb") as source:
             digest = hashlib.file_digest(source, "sha256").hexdigest()
         lines.append(f"{digest}  {name}\n")
-    (directory / "SHA256SUMS").write_text("".join(lines), encoding="utf-8")
+    content = "".join(lines).encode("utf-8")
+    path = directory / "SHA256SUMS"
+    if verify:
+        verify_checksum_file(path, content)
+    else:
+        path.write_bytes(content)
+
+
+def verify_checksum_file(path: Path, content: bytes) -> None:
+    if not path.is_file() or path.read_bytes() != content:
+        msg = "SHA256SUMS does not match the validated release assets"
+        raise ValueError(msg)
 
 
 def main() -> None:
@@ -290,6 +303,7 @@ def main() -> None:
     sums.add_argument("--directory", type=Path, required=True)
     sums.add_argument("--version", required=True)
     sums.add_argument("--commit", required=True)
+    sums.add_argument("--verify", action="store_true", help="Verify without rewriting")
     args = parser.parse_args()
     if args.command == "tag":
         tag = reserve_tag(args.root, args.commit)
@@ -307,7 +321,7 @@ def main() -> None:
         for wheel in (args.root / "target/wheels").glob("*.whl"):
             shutil.copyfile(wheel, args.directory / wheel.name)
     else:
-        checksums(args.directory, args.version, args.commit)
+        checksums(args.directory, args.version, args.commit, verify=args.verify)
 
 
 if __name__ == "__main__":
