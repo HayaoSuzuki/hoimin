@@ -8,8 +8,8 @@ sources:
 - id: guide
   resource: ../pypi-publishing.md
   working_tree: modified
-  sha256: a4a4f467f9ced286353c57f23fe8d1ebe74619985c8b94e421146edf0a5e3c2a
-  revision: 52e12a30bf40cb8b0040e21e776c8b75bc37ccc6
+  sha256: 238002fb03b6ea9fc82392e9fb0d4215d66dd4361d9bee22f8e625700dcb8003
+  revision: 3dbf6dfdb107cb83c1834fa8d3bf057e95243326
 - id: validator
   resource: ../../tools/pypi_release.py
   revision: 52e12a30bf40cb8b0040e21e776c8b75bc37ccc6
@@ -57,9 +57,14 @@ sources:
   sha256: a35194bb515f91d4aeb1d0f1176b729cca04ab4ff55de1864820e5e7f127c499
 - id: bootstrap
   resource: ../reviews/2026-10-11-issue-771-hosted-verification.md
-  revision: c9f92eb721d8a858a2f55643a5c72723763174dd
+  revision: 3dbf6dfdb107cb83c1834fa8d3bf057e95243326
+  working_tree: modified
+  sha256: e42ecdafe5fb25831f6652d8ba97d6517571b7ef0a0dbaf9c19f6a7b42b77263
+- id: bootstrap-evidence
+  resource: ../reviews/2026-10-11-issue-771-hosted-verification.json
+  revision: 3dbf6dfdb107cb83c1834fa8d3bf057e95243326
   working_tree: untracked
-  sha256: ff99fabef728ae3fb4183522f868f0902045ecc43fe85ab167da162a36b664d9
+  sha256: 3d2f452405473746b7dfe837c8ed00f21453e05fc3dc3476565b3d1a19b37883
 ---
 
 # 公開の対象と手順
@@ -112,10 +117,19 @@ PyPIはアップロード元のTrusted Publisherで両証明を検証するた�
 公開時の証明書のsource revisionをビルド元のrevisionと混同しない。[^release-workflow][^provenance]
 
 記録済みの実署名による拒否試験と、外部サービスを差し替えた制御フロー試験を区別する。
-所有者から両Publisherの登録完了が報告された。v0.3.6のGitHub Releaseと元のビルド証明は成功したが、初回TestPyPI runはCLI JSONLの形式の取り違えにより準備段階で停止し、アップロードには到達していない。形式修正のmain反映後に新しいdispatchが必要であり、OIDC・TestPyPI・PyPIの実機確認と自動公開の有効化はまだ未完了である。[^provenance-tests][^bootstrap]
+2026年10月11日（JST）、形式修正後のmainからv0.3.6をTestPyPIとPyPIへ公開し、両インデックスの各3wheelを取得して検証した。
+SHA-256はGitHub Releaseと一致し、SLSAとPublishの署名検証も成功した。
+ビルド元は`c9f92eb`、公開実行は`3dbf6df`であり、元のビルドstatementはバイト単位で保持されていた。[^bootstrap][^bootstrap-evidence]
+
+改変bytes・別repository・別source・別workflow・署名破損の5ケースが拒否されたことを確認した後、`PYPI_AUTO_PUBLISH=true`を設定して読み戻した。
+初回失敗と復旧の経緯、実行ID、公開証明の属性は実機記録とJSONに残している。[^provenance-tests][^bootstrap][^bootstrap-evidence]
+
+v0.3.7も両インデックスへの公開と取得検証に成功した。PyPI公開直後の版情報APIが404を返したため、反映後に失敗した検証ジョブだけを再実行した。自動公開は有効だが、インデックスの反映遅延からの自動復旧は未実装である。[^bootstrap]
 
 [^provenance]: [証明の変換と公開後検証](../../tools/pypi_provenance.py)。
 [^provenance-tests]: [証明と公開条件の回帰テスト](../../tests/test_pypi_provenance.py)。
 [^review]: [Issue #771の設計・検証記録](../reviews/2026-10-10-issue-771-pypi-provenance.md)。
 
 [^bootstrap]: [Issue #771の実機bootstrap記録](../reviews/2026-10-11-issue-771-hosted-verification.md)。
+
+[^bootstrap-evidence]: [両インデックスの検証結果JSON](../reviews/2026-10-11-issue-771-hosted-verification.json)。

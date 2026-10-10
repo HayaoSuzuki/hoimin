@@ -1,0 +1,334 @@
+{
+  "repository": "HayaoSuzuki/hoimin",
+  "release_tag": "v0.3.6",
+  "build_commit": "c9f92eb721d8a858a2f55643a5c72723763174dd",
+  "publication_commit": "3dbf6dfdb107cb83c1834fa8d3bf057e95243326",
+  "build_run": 38063176629,
+  "testpypi_run": 38066702628,
+  "production_run": 38066847354,
+  "indexes": {
+    "pypi": {
+      "verified": true,
+      "wheels": [
+        {
+          "filename": "hoimin-0.3.6-py3-none-macosx_11_0_arm64.whl",
+          "github_sha256": "19742d89594fc1a2b6e447d65817fd55bc692646ef8960622d26cfbbc4937e0a",
+          "index_sha256": "19742d89594fc1a2b6e447d65817fd55bc692646ef8960622d26cfbbc4937e0a",
+          "downloaded_bytes_verified": true,
+          "publisher": {
+            "environment": "pypi",
+            "kind": "GitHub",
+            "repository": "HayaoSuzuki/hoimin",
+            "workflow": "release.yml"
+          },
+          "predicates": [
+            "https://docs.pypi.org/attestations/publish/v1",
+            "https://slsa.dev/provenance/v1"
+          ],
+          "build_statement_sha256": "5b75c050170f618dde67585e7b519463182713423718cc0795f86d4696722dcd",
+          "original_build_statement_unchanged": true,
+          "build_certificate": {
+            "certificateIssuer": "CN=sigstore-intermediate,O=sigstore.dev",
+            "subjectAlternativeName": "https://github.com/HayaoSuzuki/hoimin/.github/workflows/release.yml@refs/heads/main",
+            "issuer": "https://token.actions.githubusercontent.com",
+            "githubWorkflowTrigger": "pull_request_target",
+            "githubWorkflowSHA": "c9f92eb721d8a858a2f55643a5c72723763174dd",
+            "githubWorkflowName": "Build and release",
+            "githubWorkflowRepository": "HayaoSuzuki/hoimin",
+            "githubWorkflowRef": "refs/heads/main",
+            "buildSignerURI": "https://github.com/HayaoSuzuki/hoimin/.github/workflows/release.yml@refs/heads/main",
+            "buildSignerDigest": "c9f92eb721d8a858a2f55643a5c72723763174dd",
+            "runnerEnvironment": "github-hosted",
+            "sourceRepositoryURI": "https://github.com/HayaoSuzuki/hoimin",
+            "sourceRepositoryDigest": "c9f92eb721d8a858a2f55643a5c72723763174dd",
+            "sourceRepositoryRef": "refs/heads/main",
+            "sourceRepositoryIdentifier": "1304504846",
+            "sourceRepositoryOwnerURI": "https://github.com/HayaoSuzuki",
+            "sourceRepositoryOwnerIdentifier": "10297185",
+            "buildConfigURI": "https://github.com/HayaoSuzuki/hoimin/.github/workflows/release.yml@refs/heads/main",
+            "buildConfigDigest": "c9f92eb721d8a858a2f55643a5c72723763174dd",
+            "buildTrigger": "pull_request_target",
+            "runInvocationURI": "https://github.com/HayaoSuzuki/hoimin/actions/runs/38063176629/attempts/1",
+            "sourceRepositoryVisibilityAtSigning": "public"
+          },
+          "provenance_url": "https://pypi.org/integrity/hoimin/0.3.6/hoimin-0.3.6-py3-none-macosx_11_0_arm64.whl/provenance"
+        },
+        {
+          "filename": "hoimin-0.3.6-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+          "github_sha256": "babac4a9673774119f8a9aa87c351f66136b5b3b982f6a94adb361fb4360ba4b",
+          "index_sha256": "babac4a9673774119f8a9aa87c351f66136b5b3b982f6a94adb361fb4360ba4b",
+          "downloaded_bytes_verified": true,
+          "publisher": {
+            "environment": "pypi",
+            "kind": "GitHub",
+            "repository": "HayaoSuzuki/hoimin",
+            "workflow": "release.yml"
+          },
+          "predicates": [
+            "https://docs.pypi.org/attestations/publish/v1",
+            "https://slsa.dev/provenance/v1"
+          ],
+          "build_statement_sha256": "55889030c5596c74224f2d0545801da8734c631ef77e2dab504f3097a102a761",
+          "original_build_statement_unchanged": true,
+          "build_certificate": {
+            "certificateIssuer": "CN=sigstore-intermediate,O=sigstore.dev",
+            "subjectAlternativeName": "https://github.com/HayaoSuzuki/hoimin/.github/workflows/release.yml@refs/heads/main",
+            "issuer": "https://token.actions.githubusercontent.com",
+            "githubWorkflowTrigger": "pull_request_target",
+            "githubWorkflowSHA": "c9f92eb721d8a858a2f55643a5c72723763174dd",
+            "githubWorkflowName": "Build and release",
+            "githubWorkflowRepository": "HayaoSuzuki/hoimin",
+            "githubWorkflowRef": "refs/heads/main",
+            "buildSignerURI": "https://github.com/HayaoSuzuki/hoimin/.github/workflows/release.yml@refs/heads/main",
+            "buildSignerDigest": "c9f92eb721d8a858a2f55643a5c72723763174dd",
+            "runnerEnvironment": "github-hosted",
+            "sourceRepositoryURI": "https://github.com/HayaoSuzuki/hoimin",
+            "sourceRepositoryDigest": "c9f92eb721d8a858a2f55643a5c72723763174dd",
+            "sourceRepositoryRef": "refs/heads/main",
+            "sourceRepositoryIdentifier": "1304504846",
+            "sourceRepositoryOwnerURI": "https://github.com/HayaoSuzuki",
+            "sourceRepositoryOwnerIdentifier": "10297185",
+            "buildConfigURI": "https://github.com/HayaoSuzuki/hoimin/.github/workflows/release.yml@refs/heads/main",
+            "buildConfigDigest": "c9f92eb721d8a858a2f55643a5c72723763174dd",
+            "buildTrigger": "pull_request_target",
+            "runInvocationURI": "https://github.com/HayaoSuzuki/hoimin/actions/runs/38063176629/attempts/1",
+            "sourceRepositoryVisibilityAtSigning": "public"
+          },
+          "provenance_url": "https://pypi.org/integrity/hoimin/0.3.6/hoimin-0.3.6-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl/provenance"
+        },
+        {
+          "filename": "hoimin-0.3.6-py3-none-win_amd64.whl",
+          "github_sha256": "61042af3e1ef965ce88994a0159174ec03660c9751e55cf2ae9871486e87557b",
+          "index_sha256": "61042af3e1ef965ce88994a0159174ec03660c9751e55cf2ae9871486e87557b",
+          "downloaded_bytes_verified": true,
+          "publisher": {
+            "environment": "pypi",
+            "kind": "GitHub",
+            "repository": "HayaoSuzuki/hoimin",
+            "workflow": "release.yml"
+          },
+          "predicates": [
+            "https://docs.pypi.org/attestations/publish/v1",
+            "https://slsa.dev/provenance/v1"
+          ],
+          "build_statement_sha256": "4afc9305b0074989f32e22856588111a9cd47ac7282958d0762eeabc9e8081e2",
+          "original_build_statement_unchanged": true,
+          "build_certificate": {
+            "certificateIssuer": "CN=sigstore-intermediate,O=sigstore.dev",
+            "subjectAlternativeName": "https://github.com/HayaoSuzuki/hoimin/.github/workflows/release.yml@refs/heads/main",
+            "issuer": "https://token.actions.githubusercontent.com",
+            "githubWorkflowTrigger": "pull_request_target",
+            "githubWorkflowSHA": "c9f92eb721d8a858a2f55643a5c72723763174dd",
+            "githubWorkflowName": "Build and release",
+            "githubWorkflowRepository": "HayaoSuzuki/hoimin",
+            "githubWorkflowRef": "refs/heads/main",
+            "buildSignerURI": "https://github.com/HayaoSuzuki/hoimin/.github/workflows/release.yml@refs/heads/main",
+            "buildSignerDigest": "c9f92eb721d8a858a2f55643a5c72723763174dd",
+            "runnerEnvironment": "github-hosted",
+            "sourceRepositoryURI": "https://github.com/HayaoSuzuki/hoimin",
+            "sourceRepositoryDigest": "c9f92eb721d8a858a2f55643a5c72723763174dd",
+            "sourceRepositoryRef": "refs/heads/main",
+            "sourceRepositoryIdentifier": "1304504846",
+            "sourceRepositoryOwnerURI": "https://github.com/HayaoSuzuki",
+            "sourceRepositoryOwnerIdentifier": "10297185",
+            "buildConfigURI": "https://github.com/HayaoSuzuki/hoimin/.github/workflows/release.yml@refs/heads/main",
+            "buildConfigDigest": "c9f92eb721d8a858a2f55643a5c72723763174dd",
+            "buildTrigger": "pull_request_target",
+            "runInvocationURI": "https://github.com/HayaoSuzuki/hoimin/actions/runs/38063176629/attempts/1",
+            "sourceRepositoryVisibilityAtSigning": "public"
+          },
+          "provenance_url": "https://pypi.org/integrity/hoimin/0.3.6/hoimin-0.3.6-py3-none-win_amd64.whl/provenance"
+        }
+      ]
+    },
+    "testpypi": {
+      "verified": true,
+      "wheels": [
+        {
+          "filename": "hoimin-0.3.6-py3-none-macosx_11_0_arm64.whl",
+          "github_sha256": "19742d89594fc1a2b6e447d65817fd55bc692646ef8960622d26cfbbc4937e0a",
+          "index_sha256": "19742d89594fc1a2b6e447d65817fd55bc692646ef8960622d26cfbbc4937e0a",
+          "downloaded_bytes_verified": true,
+          "publisher": {
+            "environment": "testpypi",
+            "kind": "GitHub",
+            "repository": "HayaoSuzuki/hoimin",
+            "workflow": "release.yml"
+          },
+          "predicates": [
+            "https://docs.pypi.org/attestations/publish/v1",
+            "https://slsa.dev/provenance/v1"
+          ],
+          "build_statement_sha256": "5b75c050170f618dde67585e7b519463182713423718cc0795f86d4696722dcd",
+          "original_build_statement_unchanged": true,
+          "build_certificate": {
+            "certificateIssuer": "CN=sigstore-intermediate,O=sigstore.dev",
+            "subjectAlternativeName": "https://github.com/HayaoSuzuki/hoimin/.github/workflows/release.yml@refs/heads/main",
+            "issuer": "https://token.actions.githubusercontent.com",
+            "githubWorkflowTrigger": "pull_request_target",
+            "githubWorkflowSHA": "c9f92eb721d8a858a2f55643a5c72723763174dd",
+            "githubWorkflowName": "Build and release",
+            "githubWorkflowRepository": "HayaoSuzuki/hoimin",
+            "githubWorkflowRef": "refs/heads/main",
+            "buildSignerURI": "https://github.com/HayaoSuzuki/hoimin/.github/workflows/release.yml@refs/heads/main",
+            "buildSignerDigest": "c9f92eb721d8a858a2f55643a5c72723763174dd",
+            "runnerEnvironment": "github-hosted",
+            "sourceRepositoryURI": "https://github.com/HayaoSuzuki/hoimin",
+            "sourceRepositoryDigest": "c9f92eb721d8a858a2f55643a5c72723763174dd",
+            "sourceRepositoryRef": "refs/heads/main",
+            "sourceRepositoryIdentifier": "1304504846",
+            "sourceRepositoryOwnerURI": "https://github.com/HayaoSuzuki",
+            "sourceRepositoryOwnerIdentifier": "10297185",
+            "buildConfigURI": "https://github.com/HayaoSuzuki/hoimin/.github/workflows/release.yml@refs/heads/main",
+            "buildConfigDigest": "c9f92eb721d8a858a2f55643a5c72723763174dd",
+            "buildTrigger": "pull_request_target",
+            "runInvocationURI": "https://github.com/HayaoSuzuki/hoimin/actions/runs/38063176629/attempts/1",
+            "sourceRepositoryVisibilityAtSigning": "public"
+          },
+          "provenance_url": "https://test.pypi.org/integrity/hoimin/0.3.6/hoimin-0.3.6-py3-none-macosx_11_0_arm64.whl/provenance"
+        },
+        {
+          "filename": "hoimin-0.3.6-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+          "github_sha256": "babac4a9673774119f8a9aa87c351f66136b5b3b982f6a94adb361fb4360ba4b",
+          "index_sha256": "babac4a9673774119f8a9aa87c351f66136b5b3b982f6a94adb361fb4360ba4b",
+          "downloaded_bytes_verified": true,
+          "publisher": {
+            "environment": "testpypi",
+            "kind": "GitHub",
+            "repository": "HayaoSuzuki/hoimin",
+            "workflow": "release.yml"
+          },
+          "predicates": [
+            "https://docs.pypi.org/attestations/publish/v1",
+            "https://slsa.dev/provenance/v1"
+          ],
+          "build_statement_sha256": "55889030c5596c74224f2d0545801da8734c631ef77e2dab504f3097a102a761",
+          "original_build_statement_unchanged": true,
+          "build_certificate": {
+            "certificateIssuer": "CN=sigstore-intermediate,O=sigstore.dev",
+            "subjectAlternativeName": "https://github.com/HayaoSuzuki/hoimin/.github/workflows/release.yml@refs/heads/main",
+            "issuer": "https://token.actions.githubusercontent.com",
+            "githubWorkflowTrigger": "pull_request_target",
+            "githubWorkflowSHA": "c9f92eb721d8a858a2f55643a5c72723763174dd",
+            "githubWorkflowName": "Build and release",
+            "githubWorkflowRepository": "HayaoSuzuki/hoimin",
+            "githubWorkflowRef": "refs/heads/main",
+            "buildSignerURI": "https://github.com/HayaoSuzuki/hoimin/.github/workflows/release.yml@refs/heads/main",
+            "buildSignerDigest": "c9f92eb721d8a858a2f55643a5c72723763174dd",
+            "runnerEnvironment": "github-hosted",
+            "sourceRepositoryURI": "https://github.com/HayaoSuzuki/hoimin",
+            "sourceRepositoryDigest": "c9f92eb721d8a858a2f55643a5c72723763174dd",
+            "sourceRepositoryRef": "refs/heads/main",
+            "sourceRepositoryIdentifier": "1304504846",
+            "sourceRepositoryOwnerURI": "https://github.com/HayaoSuzuki",
+            "sourceRepositoryOwnerIdentifier": "10297185",
+            "buildConfigURI": "https://github.com/HayaoSuzuki/hoimin/.github/workflows/release.yml@refs/heads/main",
+            "buildConfigDigest": "c9f92eb721d8a858a2f55643a5c72723763174dd",
+            "buildTrigger": "pull_request_target",
+            "runInvocationURI": "https://github.com/HayaoSuzuki/hoimin/actions/runs/38063176629/attempts/1",
+            "sourceRepositoryVisibilityAtSigning": "public"
+          },
+          "provenance_url": "https://test.pypi.org/integrity/hoimin/0.3.6/hoimin-0.3.6-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl/provenance"
+        },
+        {
+          "filename": "hoimin-0.3.6-py3-none-win_amd64.whl",
+          "github_sha256": "61042af3e1ef965ce88994a0159174ec03660c9751e55cf2ae9871486e87557b",
+          "index_sha256": "61042af3e1ef965ce88994a0159174ec03660c9751e55cf2ae9871486e87557b",
+          "downloaded_bytes_verified": true,
+          "publisher": {
+            "environment": "testpypi",
+            "kind": "GitHub",
+            "repository": "HayaoSuzuki/hoimin",
+            "workflow": "release.yml"
+          },
+          "predicates": [
+            "https://docs.pypi.org/attestations/publish/v1",
+            "https://slsa.dev/provenance/v1"
+          ],
+          "build_statement_sha256": "4afc9305b0074989f32e22856588111a9cd47ac7282958d0762eeabc9e8081e2",
+          "original_build_statement_unchanged": true,
+          "build_certificate": {
+            "certificateIssuer": "CN=sigstore-intermediate,O=sigstore.dev",
+            "subjectAlternativeName": "https://github.com/HayaoSuzuki/hoimin/.github/workflows/release.yml@refs/heads/main",
+            "issuer": "https://token.actions.githubusercontent.com",
+            "githubWorkflowTrigger": "pull_request_target",
+            "githubWorkflowSHA": "c9f92eb721d8a858a2f55643a5c72723763174dd",
+            "githubWorkflowName": "Build and release",
+            "githubWorkflowRepository": "HayaoSuzuki/hoimin",
+            "githubWorkflowRef": "refs/heads/main",
+            "buildSignerURI": "https://github.com/HayaoSuzuki/hoimin/.github/workflows/release.yml@refs/heads/main",
+            "buildSignerDigest": "c9f92eb721d8a858a2f55643a5c72723763174dd",
+            "runnerEnvironment": "github-hosted",
+            "sourceRepositoryURI": "https://github.com/HayaoSuzuki/hoimin",
+            "sourceRepositoryDigest": "c9f92eb721d8a858a2f55643a5c72723763174dd",
+            "sourceRepositoryRef": "refs/heads/main",
+            "sourceRepositoryIdentifier": "1304504846",
+            "sourceRepositoryOwnerURI": "https://github.com/HayaoSuzuki",
+            "sourceRepositoryOwnerIdentifier": "10297185",
+            "buildConfigURI": "https://github.com/HayaoSuzuki/hoimin/.github/workflows/release.yml@refs/heads/main",
+            "buildConfigDigest": "c9f92eb721d8a858a2f55643a5c72723763174dd",
+            "buildTrigger": "pull_request_target",
+            "runInvocationURI": "https://github.com/HayaoSuzuki/hoimin/actions/runs/38063176629/attempts/1",
+            "sourceRepositoryVisibilityAtSigning": "public"
+          },
+          "provenance_url": "https://test.pypi.org/integrity/hoimin/0.3.6/hoimin-0.3.6-py3-none-win_amd64.whl/provenance"
+        }
+      ]
+    }
+  },
+  "negative_verifications": [
+    {
+      "case": "modified-bytes",
+      "exit_code": 1,
+      "diagnostic": "Error: verifying with issuer \"sigstore.dev\""
+    },
+    {
+      "case": "wrong-repository",
+      "exit_code": 1,
+      "diagnostic": "Error: verifying with issuer \"sigstore.dev\""
+    },
+    {
+      "case": "wrong-source",
+      "exit_code": 1,
+      "diagnostic": "Error: expected SourceRepositoryDigest to be 0000000000000000000000000000000000000000, got c9f92eb721d8a858a2f55643a5c72723763174dd"
+    },
+    {
+      "case": "wrong-workflow",
+      "exit_code": 1,
+      "diagnostic": "Error: verifying with issuer \"sigstore.dev\""
+    },
+    {
+      "case": "corrupt-signature",
+      "exit_code": 1,
+      "diagnostic": "Error: verifying with issuer \"sigstore.dev\""
+    }
+  ],
+  "release": {
+    "isDraft": false,
+    "isPrerelease": false,
+    "publishedAt": "2026-10-10T15:33:01Z",
+    "tagName": "v0.3.6",
+    "url": "https://github.com/HayaoSuzuki/hoimin/releases/tag/v0.3.6"
+  },
+  "checksum_file_sha256": "df5464d997edef14ac6e64dceeb396e5651e38905a8bb51a9aceecb349f3305e",
+  "verified_at_utc": "2026-10-10T16:19:19.818023+00:00",
+  "temporary_files_cleaned_on_exit": true,
+  "automatic_publishing": {
+    "repository_variable": "PYPI_AUTO_PUBLISH",
+    "value": "true",
+    "read_back_at_utc": "2026-10-10T16:20:54.386496+00:00",
+    "enabled_after_both_index_verifications": true
+  },
+  "following_release": {
+    "release_tag": "v0.3.7",
+    "build_commit": "3dbf6dfdb107cb83c1834fa8d3bf057e95243326",
+    "build_run": 38066658469,
+    "automatic_dispatch": "skipped; build run began before enablement",
+    "publication_run": 38067591690,
+    "initial_result": "PyPI upload succeeded; verification received version JSON HTTP 404",
+    "recovery": "rerun failed verification jobs only after version JSON exposed all three files",
+    "successful_attempt": 2,
+    "conclusion": "success",
+    "verification_scope": "hosted downloads, bytes and both attestations on both indexes; independent local negative cases remain v0.3.6 only"
+  }
+}
