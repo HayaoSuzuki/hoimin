@@ -5,6 +5,9 @@ PRではbaseとheadのmerge baseから、pushとmerge queueではイベントの
 削除とrenameの旧pathも分類し、未知のpath、差分取得失敗、手動実行では全検証を選ぶ。
 Runner上のPythonは変更判定・集約を含めて3.14を明示する。
 
+依存監査workflowでは、脆弱性監査に加え、両Rust workspaceのライセンスと取得元を検査する。
+対象範囲とbuild script差分レビューは[依存ポリシー](dependency-policy.md)を参照する。
+
 | 変更 | 選択する検証 |
 | --- | --- |
 | `docs/**/*.md`（`docs/json-schema/`と`docs/cli-reference.md`以外）、`CONTRIBUTING.md` | Python品質検査とworkflow検査 |

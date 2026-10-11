@@ -18,6 +18,41 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  rust-policy:
+    name: Rust dependency policy (${{ matrix.manifest }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        manifest: [Cargo.toml, fuzz/Cargo.toml]
+    env:
+      CARGO_DENY_VERSION: '0.20.2'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install repository Rust toolchain
+        run: rustup toolchain install
+      - name: Cache cargo-deny executable
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/cargo-deny-tool
+          key: cargo-deny-${{ runner.os }}-${{ runner.arch }}-${{ env.CARGO_DENY_VERSION }}-${{ hashFiles('rust-toolchain.toml') }}
+      - name: Install cargo-deny
+        shell: bash
+        run: |
+          set -euo pipefail
+          tool_root="$RUNNER_TEMP/cargo-deny-tool"
+          echo "$tool_root/bin" >> "$GITHUB_PATH"
+          if [[ ! -x "$tool_root/bin/cargo-deny" ]]; then
+            cargo install cargo-deny --version "$CARGO_DENY_VERSION" --locked --root "$tool_root"
+          fi
+      - name: Check locked licenses and sources on all platforms
+        env:
+          POLICY_MANIFEST: ${{ matrix.manifest }}
+        run: cargo deny --manifest-path "$POLICY_MANIFEST" --workspace --all-features --locked --config deny.toml check --deny warnings licenses sources
+
   python:
     name: Python dependency audit (${{ matrix.platform }})
     runs-on: ubuntu-latest

@@ -1,0 +1,46 @@
+# Check both workspaces with --all-features and no target filter. No advisory or
+# duplicate-version check here: cargo-audit already owns vulnerability checks.
+[licenses]
+include-dev = true
+include-build = true
+confidence-threshold = 0.95
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "MIT",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+]
+unused-allowed-license = "deny"
+# One policy serves two different workspace roots; some scoped exceptions are
+# intentionally absent from each graph. This does not allow other licenses.
+unused-license-exception = "allow"
+
+# ELv2 is the repository's license, not a blanket approval for third parties.
+[[licenses.exceptions]]
+name = "hoimin-core"
+version = ">=0.3.0, <0.4.0"
+allow = ["Elastic-2.0"]
+
+[[licenses.exceptions]]
+name = "hoimin-cli"
+version = ">=0.3.0, <0.4.0"
+allow = ["Elastic-2.0"]
+
+[[licenses.exceptions]]
+name = "hoimin-fuzz"
+version = "=0.0.0"
+allow = ["Elastic-2.0"]
+
+# The libFuzzer development harness has an additional NCSA requirement.
+[[licenses.exceptions]]
+name = "libfuzzer-sys"
+version = "=0.4.13"
+allow = ["NCSA"]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
+unused-allowed-source = "deny"
