@@ -1,11 +1,19 @@
 # hoimin
 
-hoimin is a mutation-testing CLI for Python. It makes small changes to copies of
-your source and runs your tests to find behavior they do not check.
+hoimin is a mutation-testing CLI for Python, designed for AI agents to improve
+tests locally within explicit resource budgets. It makes small changes to copies
+of your source and runs your tests to find behavior they do not check.
 
-Browse the [searchable main documentation](https://hayaosuzuki.github.io/hoimin/)
-after its initial Pages activation. The existing references below remain available
-on GitHub. Maintainers can follow the [publication guide](docs/documentation.md).
+An agent investigates selected survivors, adds tests grounded in the intended
+behavior, and verifies the improvement. Humans provide specification decisions
+and review changes. Mutation scores are diagnostic observations; equivalent
+mutants and specification-permitted changes make them unsuitable as a standalone
+quality target. CI use is optional. See the [product principles](docs/product-principles.md).
+
+Browse the [documentation](https://hayaosuzuki.github.io/hoimin/) for installation,
+the agent workflow, resource limits, and command references. The site tracks
+`main`; for a particular release, read the Markdown at that release's Git tag.
+Maintainers can follow the [publication guide](docs/documentation.md).
 
 ## Install
 
@@ -30,8 +38,9 @@ hoimin run --root . --file src/calc.py --allow-best-effort-memory --format human
 ```
 
 Everything after `--` is your project's test command. hoimin runs it once as a
-baseline, then for each selected mutation. Inspect surviving mutations to find
-missing assertions or test cases. `--allow-best-effort-memory` permits execution
+baseline, then for each selected mutation. Have your agent investigate a small
+batch of survivors for missing assertions or test cases; a survivor alone does
+not establish a test defect. `--allow-best-effort-memory` permits execution
 on macOS and Linux without delegated cgroup limits; see the
 [resource limits](https://github.com/HayaoSuzuki/hoimin/blob/main/docs/usage.md#limits-and-defaults).
 

@@ -10,6 +10,24 @@ Use a read-only plan to choose mutation candidates, then verify only the candida
 behavioral contracts need investigation. A survivor is evidence to investigate, not a reason to
 modify production code solely to make the mutant fail.
 
+This is a local test-improvement workflow for an external AI agent. Humans resolve
+unclear requirements and review changes. Investigate a small batch under an agreed
+budget; do not seek a target kill ratio or assume every survivor needs a new test.
+Equivalent and specification-permitted changes can survive useful tests.
+
+## Respect resource stops
+
+Memory, disk, process, output, and time limits protect the developer's machine
+during unattended iteration. Check the reported backend and size per-root memory
+caps together with concurrency; the analyzer itself is outside descendant memory
+limits. Hard memory enforcement depends on the platform/backend, and disk monitoring
+is cooperative without a quota. These limits do not make arbitrary test code a sandbox.
+
+Stop and diagnose resource-limit, measurement, or cleanup failures. Keep incomplete,
+cancelled, error, and not-run results distinct from conclusive outcomes. Do not
+silently relax limits or retry an unchanged resource-exhausting run. Consult the
+user before increasing agreed resource consumption or accepting weaker enforcement.
+
 ## Obtain hoimin
 
 When using hoimin on another project, install from PyPI:
@@ -114,5 +132,8 @@ Each `verify` runs a fresh baseline and never reuses a session.
   stale. Regenerate it before any further verify. Also replan when selector, operators, profile,
   limits, or test argv must change.
 
-For a survivor, identify the externally observable contract its mutated expression violates and
-use `hoimin-mutation-improvement` for the test-improvement loop.
+For a survivor, investigate whether its mutated expression violates an externally
+observable requirement. Use `hoimin-mutation-improvement` for justified test changes,
+or report why the candidate is unhelpful, suspected equivalent, or unresolved.
+An agent's equivalence assessment is not a proof; do not turn it into a kill or
+silently remove it from the mutation-score denominator.

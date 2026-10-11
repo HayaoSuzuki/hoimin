@@ -2,7 +2,7 @@
 
 The documentation site is <https://hayaosuzuki.github.io/hoimin/>. It represents
 main, with the source commit shown on each page, rather than a specific release.
-The site becomes available after the initial workflow merge and Pages activation.
+The site is published through GitHub Pages by the Documentation workflow.
 
 Current user and maintainer guides, navigation, and theme controls use English.
 Historical design, audit, and investigation records retain their original language.
@@ -50,20 +50,20 @@ and absolute URLs within this project site. Raw HTML links must address rendered
 output paths. Use Markdown links for repository source references so the helper
 can rewrite them to revision-pinned GitHub URLs.
 
-## Initial activation and recovery
+## Publication recovery
 
-After the workflow is merged, select **Settings → Pages → Build and deployment →
-Source → GitHub Actions** in the hoimin repository. Use the `github-pages`
-environment and allow main deployments; any configured environment approval must
-be completed before publication. The existing HayaoSuzuki.github.io site is
-managed independently and requires no changes.
+Run **Documentation → Run workflow → main** to retry a failed deployment.
+PRs and non-main manual runs can validate but cannot publish. A failed build does
+not replace the published site. Publication runs cancel obsolete runs to prevent
+an older build overwriting a newer one.
 
-Run **Documentation → Run workflow → main** to publish initially or retry a
-failed deployment. PRs and non-main manual runs can validate but cannot publish.
-A failed build does not replace the published site. Publication runs cancel
-obsolete runs to prevent an older build overwriting a newer one.
+If repository settings need to be restored, select **Settings → Pages → Build
+and deployment → Source → GitHub Actions**. Use the `github-pages` environment
+and allow main deployments; any configured environment approval must be completed
+before publication. The existing HayaoSuzuki.github.io site is managed independently
+and requires no changes.
 
-After activation, check the live landing page, search, usage and resource-limit
+After a deployment or settings change, check the live landing page, search, usage and resource-limit
 sections. For a content problem, correct the Markdown through a PR and merge it.
 Historical version switching and rebuilding old release tags are not part of
-this initial main-only site.
+this main-only site.

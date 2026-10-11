@@ -7,9 +7,9 @@ catalog_revision: 79b6bde29b05e9904c8efff59e02d0c45377d7f7
 sources:
 - id: guide
   resource: ../artifact-smoke.md
-  revision: 79b6bde29b05e9904c8efff59e02d0c45377d7f7
-  working_tree: untracked
-  sha256: 355a4196f5670079df227c369f537a06b555704af9aae07d6c87f2bb2e94b758
+  revision: 34723ff3f9b19c28140a6efad0651e542e25b8c1
+  working_tree: modified
+  sha256: d6de40885b9261fe035c1b8de9f684cc0fbfd2e6d49bfea46858d75c9a3f12b8
 - id: workflow
   resource: ../../.github/workflows/release.yml
   revision: 79b6bde29b05e9904c8efff59e02d0c45377d7f7

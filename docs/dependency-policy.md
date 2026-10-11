@@ -51,7 +51,7 @@ the list using `cargo metadata --locked --all-features --format-version 1`
 (with `--manifest-path fuzz/Cargo.toml` for fuzz), select packages whose target
 `kind` contains `custom-build`, sort by name/version and review the diff.
 Update the inventory in the same PR. Metadata collection does not execute these
-scripts. This initial policy has no build-script allow-list or custom analyzer.
+scripts. This policy has no build-script allow-list or custom analyzer.
 
 Review additions/removals and why code execution during build is needed. This
 manual inventory does not certify the contents of build scripts, proc macros or

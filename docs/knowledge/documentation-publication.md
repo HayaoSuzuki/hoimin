@@ -8,14 +8,14 @@ catalog_revision: 2b29a8630ac8411a0545f17fabdf99f6fb848c00
 sources:
 - id: guide
   resource: ../documentation.md
-  revision: 2b29a8630ac8411a0545f17fabdf99f6fb848c00
+  revision: 34723ff3f9b19c28140a6efad0651e542e25b8c1
   working_tree: modified
-  sha256: 7af2f6ca4a981f08d5e6a2c6be722af8b4ab98d1cb03159e8662cf4d05ad35e8
+  sha256: 110f6f6a3acc959c45573079816d7cdabcce8ab00be5c14d8369ced3685bbf26
 - id: builder
   resource: ../../tools/docs_site.py
-  revision: 2b29a8630ac8411a0545f17fabdf99f6fb848c00
-  working_tree: modified
-  sha256: a3d2c661a4433113ca15537987dffd7e60930cdaac3fc3a194eedb87bd99e318
+  revision: 34723ff3f9b19c28140a6efad0651e542e25b8c1
+  working_tree: clean
+  sha256: 2eebb6e09a198a1c296ce0d1ddea37a42050ee1151e0d0db967a51addf256b8d
 - id: workflow
   resource: ../../.github/workflows/documentation.yml
   revision: 9eb8ed0d3690d45f77932afcfd457afbdbf43abd
@@ -43,11 +43,11 @@ Current user and maintainer guides and theme controls use English. Historical de
 
 All PRs, merge groups, main pushes, and manual runs perform a lightweight build. Builds have only contents: read. Pages artifact creation and deployment are limited to main pushes or main manual runs in the canonical repository. Only the deployment job receives pages: write and id-token: write. Main builds and deployment share a concurrency group, cancelling obsolete runs.[^workflow]
 
-The 15 published pages are copied from an explicit allowlist to a temporary directory. Research, audit, and OKF pages are outside site search. Markdown references to excluded material are checked for existence and rewritten to commit-pinned GitHub URLs. Missing files cannot be hidden by URL rewriting, and internal anchors are checked with MkDocs strict validation. Generated HTML validation also rejects missing pages and anchors in same-site absolute URLs and HTML href/src attributes. HTML URLs address rendered output paths, so use Markdown links for source references. Code examples and external URLs are not executed or fetched.[^builder][^tests]
+Published pages are copied from an explicit allowlist to a temporary directory. Research, audit, and OKF pages are outside site search. Markdown references to excluded material are checked for existence and rewritten to commit-pinned GitHub URLs. Missing files cannot be hidden by URL rewriting, and internal anchors are checked with MkDocs strict validation. Generated HTML validation also rejects missing pages and anchors in same-site absolute URLs and HTML href/src attributes. HTML URLs address rendered output paths, so use Markdown links for source references. Code examples and external URLs are not executed or fetched.[^builder][^tests]
 
 # Failures and verification scope
 
-Fix Markdown links and anchors after build failures. Retry publication with a manual Documentation run on main. Local build success, Pages settings, environment approval, and actual publication must be checked separately. After initial publication, check the landing page, search, plan/verify, results, and resource-limit navigation before claiming the site is published. Historical release-version switching is outside this initial scope.[^guide][^design]
+Fix Markdown links and anchors after build failures. Retry publication with a manual Documentation run on main. Local build success, Pages settings, environment approval, and actual publication must be checked separately. After deployment or a settings change, check the landing page, search, plan/verify, results, and resource-limit navigation. The guide describes recovery for the configured Pages site; settings restoration is not a prerequisite for ordinary readers. Historical release-version switching is outside the main-only scope.[^guide][^design]
 
 Recheck links, permissions, and presentation when changing the allowlist, URL rewriting, Markdown extensions, deployment conditions, or concurrency. Source existence checks use repository documents; no arbitrary external-input ingestion feature is added.[^builder][^workflow]
 

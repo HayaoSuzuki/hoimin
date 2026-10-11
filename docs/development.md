@@ -5,13 +5,43 @@ packages, GitHub CLI installation, and packaging validation. Current user and
 maintainer guides use English; historical design and audit records retain their
 original language.
 
+## Product direction
+
+Read the [product principles](product-principles.md) when evaluating changes.
+The primary user is an AI agent improving tests locally under explicit resource
+budgets, with humans resolving specification questions and reviewing changes.
+Prioritize useful behavioral tests, reproducible evidence, and safe termination
+over increasing mutation scores or scaling CI. Memory and disk controls, cleanup,
+and honest incomplete results are core requirements. Existing development CI and
+validation remain required; this direction does not relax them.
+
 ## Documentation publication
 
 Edit the existing Markdown and open a PR; the Documentation workflow checks the
-site, and a main merge publishes it after the one-time Pages activation.
+site, and a main merge publishes it through the configured GitHub Pages workflow.
 See the [publication guide](documentation.md) for the local build, review artifact
 and manual retry. The [searchable site](https://hayaosuzuki.github.io/hoimin/)
 tracks main and displays its source commit on every page.
+
+## Discussion maintenance
+
+Discussions is enabled for public usage questions and possible defects. Keep the
+external Issue/PR submission restrictions in place; see the [reporting guide](support.md).
+The category slugs `bug-reports` and `q-a` must match
+[bug-reports.yml](../.github/DISCUSSION_TEMPLATE/bug-reports.yml) and
+[q-a.yml](../.github/DISCUSSION_TEMPLATE/q-a.yml). **Bug reports** uses an open-ended
+format and **Q&A** uses a question-and-answer format. Templates take effect from
+the default branch; they do not configure categories or submission permissions.
+
+When restoring settings, enable **Settings → General → Features → Discussions**
+and restore the categories and matching slugs. Change templates through a branch/PR.
+After category or template changes, open both new-discussion forms without posting
+and inspect required/optional fields, links, and code formatting. Check candidate,
+baseline, resource-control, and usage questions, including a startup failure with
+no available version. Do not fetch or execute submitted code automatically.
+
+See GitHub's [category-form instructions](https://docs.github.com/en/discussions/managing-discussions-for-your-community/creating-discussion-category-forms)
+and [form syntax](https://docs.github.com/en/discussions/managing-discussions-for-your-community/syntax-for-discussion-category-forms).
 
 ## Knowledge workflow
 
@@ -360,7 +390,9 @@ f/t-string inside a format specification. It is fixed in the vendored parser;
 the minimized inputs are seeds `fstring-format-spec-recovery` and
 `tstring-format-spec-recovery`, and `foreign_middle_token_in_a_format_spec_is_invalid_syntax`
 in `crates/hoimin-cli/tests/rust_analyzer.rs` is the ordinary regression test.
-GitHub Actions execution and cold Linux build timing have not yet been verified.
+That local validation did not measure GitHub Actions execution or cold Linux
+build timing. Use the scheduled workflow's run logs for hosted execution evidence;
+the local result does not establish hosted timing.
 
 ### Generate Python inputs with hypothesmith
 
@@ -508,14 +540,13 @@ Windows and macOS validation lives in the separate `Manual non-Linux CI`
 workflow and starts only through `workflow_dispatch`. Its results are not a
 dependency or merge condition for automatic Linux CI.
 
-After the workflow exists on the default branch, run it once against the final
-ref that needs non-Linux evidence:
+Run the workflow against the final ref that needs non-Linux evidence:
 
 ```console
 gh workflow run non-linux-ci.yml --ref <REF>
 ```
 
-Do not dispatch it for intermediate commits. The tag-triggered release workflow
+Do not dispatch it for intermediate commits. The merged-PR release workflow
 is separate from this validation policy.
 
 ## Pinned workflow actions

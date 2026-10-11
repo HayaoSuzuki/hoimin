@@ -110,11 +110,11 @@ last. There is no separate client-side read/compare/update of `Latest` that coul
 race with another run. The GitHub API owns that selection; local tests check the
 outgoing request, while hosted execution remains the integration check.
 
-After publisher setup, setting the repository variable `PYPI_AUTO_PUBLISH=true`
-enables automatic publication: GitHub Release, a separate publication-only
+The repository enables automatic publication with `PYPI_AUTO_PUBLISH=true`:
+GitHub Release, a separate publication-only
 `release.yml` dispatch, TestPyPI upload and verification, then PyPI upload and
-verification. The default is disabled so GitHub Releases can continue before
-account setup. Each unchanged wheel carries its original single-subject SLSA
+verification. Unsetting the variable or setting it to `false` disables automatic
+dispatch without stopping GitHub Releases. Each unchanged wheel carries its original single-subject SLSA
 build attestation and a publish attestation. Protected upload jobs have only
 OIDC permission and execute no checked-out code. Manual recovery uses the same
 TestPyPI gate. See [PyPI publishing](pypi-publishing.md) for registration values,
@@ -128,7 +128,7 @@ publication jobs download the same immutable `verified-release` artifact from
 the current run. Both revalidate the asset inventory, SBOM metadata and digests,
 and exact checksum bytes without rewriting the downloaded files.
 GitHub stores the signed provenance separately; no new Release attachment is
-added and the distribution format and version series remain unchanged (0.3.x).
+added, and attestation does not change the distribution format or version floor.
 Older releases made before this workflow change do not acquire provenance.
 
 Within the GitHub build phase, only the attestation job has `id-token: write`

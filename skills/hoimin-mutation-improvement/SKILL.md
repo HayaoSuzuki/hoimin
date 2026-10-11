@@ -6,9 +6,34 @@ description: Use when iterating on hoimin mutation-test survivors and test impro
 
 # Improve Python Tests with hoimin
 
-Improve tests against explicitly selected planned candidates. A surviving candidate identifies a
-behavioral contract to test; it does not justify changing production code only to make a mutant
-fail.
+Improve tests against explicitly selected planned candidates within an agreed local
+resource budget. A surviving candidate is a lead to investigate, not proof of a
+missing behavioral test. It does not justify changing production code only to make
+a mutant fail. Humans resolve unclear requirements and review proposed changes.
+
+## Decide whether a test change is justified
+
+Before adding a test, identify an observable requirement from the specification,
+documented API, or an agreed contract. The current implementation alone is not an
+independent oracle. If the mutation is allowed by that contract, appears equivalent,
+or cannot be assessed with the available evidence, retain the rationale and stop
+work on that candidate. Ask the human to resolve material specification ambiguity.
+An LLM assessment of equivalence is not a proof.
+
+When retained assessments are useful, use the CLI's `review` commands within the
+authorized task, following the usage guide for identity and evidence rules. Keep
+assessments separate from actual execution outcomes; they do not rewrite scores
+or suppress candidates. Do not chase a target kill ratio or exhaust every survivor.
+
+## Respect resource stops
+
+Resource guards are essential to unattended local use. Check the backend and the
+combined allowance of concurrent process trees; memory limits do not cover the
+in-process analyzer, and disk guards are cooperative without a quota. Stop and
+diagnose resource-limit, measurement, or failed/deferred-cleanup results before
+another run. Do not silently raise agreed limits, weaken enforcement, or repeatedly
+retry a resource-exhausting command. Consult the user before accepting more resource
+consumption or weaker enforcement. Report retained paths and unverified work.
 
 ## Use the same hoimin version
 
@@ -61,13 +86,17 @@ hoimin verify "$plan_path" --candidate '<ID_FROM_PLAN_JSON>' --format json \
   > "$temp_dir/verify-001.json"
 ```
 
-2. If it survives, read its original expression, replacement, symbol, and line. Add or strengthen
-   the smallest behavioral test that observes the violated contract. Do not add implementation-
-   detail mocks, unrelated tests, or production-code changes made only to kill the mutant.
+2. If it survives, read its original expression, replacement, symbol, and line.
+   Investigate the contract first. Only for a justified test gap, add or strengthen
+   the smallest behavioral test that observes the violated contract. Do not add
+   implementation-detail mocks, unrelated tests, or production-code changes made
+   only to kill the mutant.
 3. Run the normal test command. If it fails, repair or report that failure before verifying again.
-4. Reverify the same candidate. A completed killed result closes that candidate; a survivor needs
-   another contract investigation; a baseline failure, incomplete run, cancellation, or error
-   stops the loop for diagnosis.
+4. Reverify the same candidate. Confirm that the test passes on the original and
+   detects the mutant for the intended behavioral reason. A completed killed result
+   without that reason is insufficient evidence of a useful improvement. Investigate
+   a remaining survivor only within the agreed budget; a baseline failure, incomplete
+   run, cancellation, or error stops the loop for diagnosis.
 
 ## Compare and stop honestly
 
@@ -76,6 +105,10 @@ Do not use arbitrary one-candidate or changing-subset verify reports to infer
 improvement, stalls, or saturation. When a planned candidate remains unverified, say so. When
 `PLAN.json` was truncated, also say that candidates outside its retained partial set were never
 enumerated.
+
+Stop at the agreed scope or budget, or when no justified test improvement remains.
+Progress saturation is an observation about comparable reports, not evidence that
+all behavior is covered or all remaining mutants are equivalent.
 
 ## Final report
 

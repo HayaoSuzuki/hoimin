@@ -7,9 +7,9 @@ catalog_revision: 79b6bde29b05e9904c8efff59e02d0c45377d7f7
 sources:
 - id: policy
   resource: ../dependency-policy.md
-  revision: e9acbf4e5da6d749a789405522feab6b6ac8ecc0
-  working_tree: clean
-  sha256: 00f4a2fdc1edf081158f4e35ed39ded9a357f36bf76a7e7d605c63e547735761
+  revision: 34723ff3f9b19c28140a6efad0651e542e25b8c1
+  working_tree: modified
+  sha256: 121c638e21b3cc6deb7995925457c9063a147888618f7013c3641274cc61df75
 - id: config
   resource: ../../deny.toml
   revision: e9acbf4e5da6d749a789405522feab6b6ac8ecc0

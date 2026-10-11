@@ -9,6 +9,15 @@ under `skills/`:
   candidates, preserve plan identity, and report unverified work honestly.
 
 Each skill includes its own PyPI setup reference and can be installed separately.
+
+These skills implement hoimin's primary [local agent workflow](product-principles.md):
+investigate small batches, identify specification-backed test improvements, and
+reverify within resource budgets. A survivor is not automatically a test defect;
+an agent's equivalence judgment is not a proof. Humans resolve unclear requirements
+and review changes. Do not use the skills to maximize a kill ratio or run an
+unbounded loop. Stop and diagnose resource-limit or cleanup failures rather than
+silently increasing limits.
+
 Skills are instructions for an agent; installing them does not install hoimin,
 run tests, or grant permission to execute commands. The repository's
 [Elastic License 2.0](../LICENSE) also applies to the skills.
@@ -34,10 +43,11 @@ into the project under test; hoimin's distribution repository does not maintain
 local `.agents/skills` or `.claude/skills` mirrors.
 
 An unpinned install chooses the latest tagged release, falling back to the default
-branch only if no release exists. Releases from before this layout change do not
-contain `skills/`; until a release includes it, use a reviewed commit or
-`--pin main` explicitly. A main pin follows a moving branch, whereas a commit pin
-identifies fixed content. Preview and install the same reviewed revision.
+branch only if no release exists. Tagged releases containing `skills/`, including
+`v0.4.6`, distribute both packages. Older tags may lack them: inspect the selected
+tag before installing. To use changes not yet included in a release, pin their
+reviewed commit explicitly. A `--pin main` pin follows a moving branch, whereas a
+commit pin identifies fixed content. Preview and install the same reviewed revision.
 
 For a local checkout, install without changing the distribution source:
 
@@ -68,8 +78,8 @@ uv run --frozen --no-sync pytest tests/test_skills.py
 
 hoimin's existing release workflow owns product tags and GitHub Releases. Skill
 files are fetched from the tagged repository tree; no wheel or separate skill
-archive is required. After a product release includes `skills/`, users can install
-that release's skills by pinning its tag. Do not run `gh skill publish --tag` as
+archive is required. Users can install a release's skills by pinning its tag when
+that tag contains `skills/`. Do not run `gh skill publish --tag` as
 part of routine skill validation: it creates a separate release and can conflict
 with hoimin's version allocation and publication workflow.
 

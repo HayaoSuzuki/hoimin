@@ -7,14 +7,14 @@ catalog_revision: 79b6bde29b05e9904c8efff59e02d0c45377d7f7
 sources:
 - id: policy
   resource: ../compatibility.md
-  revision: 79b6bde29b05e9904c8efff59e02d0c45377d7f7
-  working_tree: untracked
-  sha256: 2119cc8dca02becfeabf53279f82316a34e3d37b47ca3f7b31925657d91f2a16
+  revision: 34723ff3f9b19c28140a6efad0651e542e25b8c1
+  working_tree: modified
+  sha256: f305fa7a743b428c5bd32b7eefa6f288f42dc76dc4b795ae239b15737d5177fc
 - id: release
   resource: ../releases.md
-  revision: 79b6bde29b05e9904c8efff59e02d0c45377d7f7
+  revision: 34723ff3f9b19c28140a6efad0651e542e25b8c1
   working_tree: modified
-  sha256: 6e4d9d1a8d57a4af10e4533479e8a6fca43c371e45744adf24a6bde5fa6024ad
+  sha256: b5d4af1c031b438b9741ac8fb76f1518a676860d1d27f20f033169aaefeffedf
 - id: template
   resource: ../../.github/pull_request_template.md
   revision: 79b6bde29b05e9904c8efff59e02d0c45377d7f7
