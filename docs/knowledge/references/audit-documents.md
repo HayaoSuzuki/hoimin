@@ -5,6 +5,10 @@ description: docs/auditsとdocs/superpowers/reports内の全Markdownを追跡状
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-790-proofreadtools-report
+  resource: ../../superpowers/reports/2026-10-11-issue-790-proofreadtools.md
+  working_tree: untracked
+  sha256: eba7a49de174695b7978efe50a7a282110db5ab23630a2032e4bfcecbfa6b9fa
 - id: issue-695-assessment
   resource: ../../superpowers/reports/issue-695/assessment.md
   revision: 76f03acdefefdc03aff6973b0d2b49f6f3598837
@@ -1358,3 +1362,9 @@ sources:
 ## Issue #741 リリースSBOM
 
 - [検証記録](../../superpowers/reports/2026-10-10-issue-741-sbom.md) - 配布物別SBOMと公開ゲート。詳細は[契約](../release-sbom.md)を参照。
+
+## Issue #790・#776・#777
+
+- [proofreadtoolsの変異候補探索とテスト生成の評価](../../superpowers/reports/2026-10-11-issue-790-proofreadtools.md) - 固定proofreadtoolsの設計と実測。[^issue-790-proofreadtools-report]
+
+[^issue-790-proofreadtools-report]: [proofreadtoolsの変異候補探索とテスト生成の評価](../../superpowers/reports/2026-10-11-issue-790-proofreadtools.md)。

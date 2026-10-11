@@ -1,0 +1,5 @@
+# Characterization candidate: review against the intended specification.
+from proofreadtools.checks._variant_candidates import _length_ratio_upper_bound
+
+def test_generated_length_ratio_regression():
+    assert _length_ratio_upper_bound('aa', 'a') == 0.6666666666666666

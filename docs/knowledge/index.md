@@ -67,3 +67,5 @@ okf_version: "0.2"
 - [コレクション型注釈の参照先](design/annotation-builtins.md) - 具体型の両方向、遅延評価とscopeの判定。
 
 - [2026年9月の解析監査と回帰検証への反映](audits/analysis-2026-09.md) - #545〜#549の原証拠、修正PR、正式なテストの対応。
+
+- [制約付き変異探索と差分テスト生成](mutation-search.md) - 固定関数での実測、採用範囲、誘導探索とCrossHairの限界。
