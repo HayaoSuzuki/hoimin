@@ -1,5 +1,6 @@
 pub(crate) mod input;
 pub mod model;
+mod store;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ReviewError {
@@ -15,5 +16,7 @@ pub enum ReviewError {
     Database(#[from] rusqlite::Error),
 }
 
+#[cfg(test)]
+mod store_tests;
 #[cfg(test)]
 mod tests;

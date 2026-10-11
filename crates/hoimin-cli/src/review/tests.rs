@@ -3,7 +3,7 @@ use hoimin_core::{ByteSpan, CandidateDescriptor, CandidateIdentity, stable_mutan
 
 use super::model::*;
 
-fn key() -> ReviewKey {
+pub(super) fn key() -> ReviewKey {
     let descriptor = CandidateDescriptor {
         schema_version: 1,
         path: Utf8PathBuf::from("sample.py"),
@@ -26,7 +26,7 @@ fn key() -> ReviewKey {
     }
 }
 
-fn draft() -> ReviewDraft {
+pub(super) fn draft() -> ReviewDraft {
     ReviewDraft {
         assessment: Assessment::Actionable,
         reason: "required field missing".into(),
