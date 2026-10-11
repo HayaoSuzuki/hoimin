@@ -59,6 +59,7 @@ workflow = [
 ]
 docs = [
     "mkdocs==1.6.1",
+    "pytest>=9,<10",
 ]
 
 [tool.ruff]

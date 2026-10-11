@@ -955,6 +955,8 @@ def test_every_workflow_uses_known_actions_with_full_commit_pins(path: Path) -> 
         CACHE_SAVE_ACTION,
         UPLOAD_ARTIFACT_ACTION,
         "actions/download-artifact",
+        "actions/upload-pages-artifact",
+        "actions/deploy-pages",
         "actions/attest",
         "pypa/gh-action-pypi-publish",
     }

@@ -373,6 +373,7 @@ dev = [
 ]
 docs = [
     { name = "mkdocs" },
+    { name = "pytest" },
 ]
 fuzz = [
     { name = "hypothesis" },
@@ -406,7 +407,10 @@ dev = [
     { name = "ruff", specifier = ">=0.16.1,<0.17" },
     { name = "ty", specifier = ">=0.0.80" },
 ]
-docs = [{ name = "mkdocs", specifier = "==1.6.1" }]
+docs = [
+    { name = "mkdocs", specifier = "==1.6.1" },
+    { name = "pytest", specifier = ">=9,<10" },
+]
 fuzz = [
     { name = "hypothesis", specifier = ">=6.93,<7" },
     { name = "hypothesmith", specifier = "==0.3.3" },
