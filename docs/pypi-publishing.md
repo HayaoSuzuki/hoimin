@@ -107,7 +107,8 @@ cannot undo files already accepted by PyPI. The GitHub Release remains public.
 
 Before each upload, the index is inspected. A version-level HTTP 404 permits a
 new upload immediately; inspection does not wait for an absent version. After
-upload, verification retries HTTP 404 responses at 10-second intervals for a
+upload, verification retries HTTP 404 responses with exponential backoff
+(10, 20, 40 seconds, then capped at 60 seconds) for a
 600-second propagation budget, with at most 61 attempts. Request and verification
 time count against that budget; an in-flight request can finish after it expires.
 The entire verification job, including setup, is limited to 15 minutes. Each retry

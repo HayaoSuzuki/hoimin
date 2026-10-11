@@ -10,7 +10,8 @@ when rerun after propagation. This is evidence for increasing a bounded wait,
 not evidence of a guaranteed maximum index propagation delay.
 
 Post-upload verification now retries only HTTP 404, with a 600-second monotonic
-retry budget, 10-second intervals and at most 61 attempts. It checks the deadline
+retry budget, exponential backoff (10, 20, 40 seconds, then capped at 60 seconds)
+and a defensive cap of 61 attempts. It checks the deadline
 after sleeping before starting another attempt. Network/verification time counts
 toward the retry budget, but an already-running verification may finish later.
 Both verification jobs have a 15-minute hard limit including dependency setup.
@@ -53,7 +54,9 @@ is needed to exercise the updated waiting code.
 ## Verification self-review (five passes)
 
 1. Watched six new tests fail before helper implementation, then pass; generated
-   inputs cover zero through 60 delayed 404s without real sleeps or network calls.
+   inputs cover zero through 11 delayed 404s with a simulated clock, without real
+   sleeps or network calls. A separate frozen-clock test covers the defensive
+   attempt limit.
 2. Verified exhaustion rethrows the HTTP error and never reports publication success.
 3. Fresh review identified retry starting at an expired deadline. A simulated
    clock reproduced two calls instead of one (RED); the deadline recheck makes
@@ -70,3 +73,27 @@ is needed to exercise the updated waiting code.
 A fresh reviewer found the accidental existing-test edit and the deadline boundary
 above. Both were fixed; the deadline fix was validated RED-to-GREEN. No weakening
 of security validation was found. Full related-test results are recorded in the PR.
+
+## Exponential-backoff follow-up
+
+Design self-review (five passes): checked the requested doubling schedule;
+selected a 60-second cap; retained the monotonic budget; retained 404-only retry;
+kept inspect and signature validation unchanged.
+
+Planning self-review (five passes): added a schedule regression test first;
+planned a clock that advances with sleep; covered a shortened final sleep;
+checked the CI dependency groups after the reported failure; kept Hypothesis in
+normal development dependencies without adding Hypothesmith to ordinary CI.
+
+Implementation self-review (five passes): checked exponent indexing starts at
+zero; checked the interval cap; checked remaining-budget clamping; checked
+the deadline recheck prevents a thirteenth request at 600 seconds; checked the
+lock diff adds only the existing Hypothesis dependency to the dev group.
+
+Verification self-review (five passes): the schedule regression failed with
+fixed intervals before the change; the simulated clock covers delayed success;
+exhaustion performs 12 requests and sleeps exactly 600 seconds; a fresh default
+dev environment without the fuzz group passes all 48 provenance tests; strict
+Ruff and ty checks pass. CI run 38153505968 failed collecting these tests because
+Hypothesis was previously present only in the fuzz group. That dependency error
+is corrected in this follow-up; hosted CI must confirm the updated commit.

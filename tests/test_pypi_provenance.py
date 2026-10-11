@@ -34,8 +34,27 @@ from tools.ci_selection import object_mapping
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_propagation_uses_capped_exponential_backoff() -> None:
+    unavailable = urllib.error.HTTPError(
+        "https://pypi.org/", 404, "Not Found", Message(), None
+    )
+    with (
+        patch.object(
+            pypi_provenance, "verify_index", side_effect=[unavailable] * 4 + [True]
+        ),
+        patch.object(pypi_provenance.time, "sleep") as sleep,
+        patch.object(pypi_provenance.time, "monotonic", return_value=0),
+    ):
+        result = pypi_provenance.verify_with_propagation(
+            "pypi", "v0.4.2", "a" * 40, Path("dist"), allow_missing=False
+        )
+
+    assert result is True
+    assert [call.args[0] for call in sleep.call_args_list] == [10, 20, 40, 60]
+
+
 @settings(max_examples=20)
-@given(failures=st.integers(min_value=0, max_value=60))
+@given(failures=st.integers(min_value=0, max_value=11))
 def test_propagation_verification_waits_for_delayed_publication(failures: int) -> None:
     unavailable = urllib.error.HTTPError(
         "https://test.pypi.org/pypi/hoimin/0.4.2/json",
@@ -45,10 +64,15 @@ def test_propagation_verification_waits_for_delayed_publication(failures: int) -
         None,
     )
     responses = [unavailable] * failures + [True]
+    clock = [0.0]
+
+    def advance(seconds: float) -> None:
+        clock[0] += seconds
+
     with (
         patch.object(pypi_provenance, "verify_index", side_effect=responses) as verify,
-        patch.object(pypi_provenance.time, "sleep") as sleep,
-        patch.object(pypi_provenance.time, "monotonic", return_value=0),
+        patch.object(pypi_provenance.time, "sleep", side_effect=advance) as sleep,
+        patch.object(pypi_provenance.time, "monotonic", side_effect=lambda: clock[0]),
     ):
         result = pypi_provenance.verify_with_propagation(
             "testpypi", "v0.4.2", "a" * 40, Path("dist"), allow_missing=False
@@ -58,6 +82,34 @@ def test_propagation_verification_waits_for_delayed_publication(failures: int) -
     assert verify.call_count == failures + 1
     assert sleep.call_count == failures
     assert sum(call.args[0] for call in sleep.call_args_list) <= 600
+
+
+def test_propagation_backoff_exhausts_budget_with_shortened_final_sleep() -> None:
+    expected_delays = [10, 20, 40] + [60] * 8 + [50]
+    unavailable = urllib.error.HTTPError(
+        "https://pypi.org/", 404, "Not Found", Message(), None
+    )
+    clock = [0.0]
+
+    def advance(seconds: float) -> None:
+        clock[0] += seconds
+
+    with (
+        patch.object(
+            pypi_provenance, "verify_index", side_effect=unavailable
+        ) as verify,
+        patch.object(pypi_provenance.time, "sleep", side_effect=advance) as sleep,
+        patch.object(pypi_provenance.time, "monotonic", side_effect=lambda: clock[0]),
+        pytest.raises(urllib.error.HTTPError) as raised,
+    ):
+        pypi_provenance.verify_with_propagation(
+            "pypi", "v0.4.2", "a" * 40, Path("dist"), allow_missing=False
+        )
+
+    assert raised.value is unavailable
+    assert verify.call_count == 12
+    assert [call.args[0] for call in sleep.call_args_list] == expected_delays
+    assert clock[0] == 600
 
 
 def test_propagation_stops_after_bounded_attempts() -> None:

@@ -9,7 +9,7 @@ sources:
   resource: ../pypi-publishing.md
   revision: afab14d952113004ee999ea279358f16f2a0c6c6
   working_tree: modified
-  sha256: e603ead7480e48b21c1dfd358c21d9b8aaf8f8b5ad52ff4b16e6f141fffd39cb
+  sha256: 55a97aadae2a9aa8c5360fd6c6f9619d47d55540817d72e01dedb82192aa45ce
 - id: validator
   resource: ../../tools/pypi_release.py
   revision: 52e12a30bf40cb8b0040e21e776c8b75bc37ccc6
@@ -44,12 +44,12 @@ sources:
   resource: ../../tools/pypi_provenance.py
   revision: afab14d952113004ee999ea279358f16f2a0c6c6
   working_tree: modified
-  sha256: 3a5897ceb15d07196fbeeb295882b69f5e32c6843d8f68b47982f39afdecc52e
+  sha256: 7a79bea64db1a5c4d89c6236c3b8819a1d71ed956b8ea755c70c5ea2f748abe6
 - id: provenance-tests
   resource: ../../tests/test_pypi_provenance.py
   revision: afab14d952113004ee999ea279358f16f2a0c6c6
   working_tree: modified
-  sha256: 8bc6ac01e9f88cf7543b6d039b1c55abb378acf7fdcc2b0c228844e7a10ffae6
+  sha256: 4b0610342f0bc824f3d2c7b6852750eb3cd0969ff18d04cda3f83d08c2ccb8f5
 - id: review
   resource: ../reviews/2026-10-10-issue-771-pypi-provenance.md
   revision: 52e12a30bf40cb8b0040e21e776c8b75bc37ccc6
@@ -136,7 +136,7 @@ v0.3.7も両インデックスへの公開と取得検証に成功した。PyPI�
 
 ## 公開直後の404への待機
 
-公開後のverifyだけがHTTP 404を10秒間隔、最大61試行、600秒の単調時計予算で再試行する。
+公開後のverifyだけがHTTP 404を10秒、20秒、40秒、以後最大60秒の指数バックオフ、最大61試行、600秒の単調時計予算で再試行する。
 通信・検証にかかった時間も予算に算入し、待機後に期限へ到達した場合は次の検証を開始しない。
 開始済みの検証は期限後に完了することがあるため、依存準備を含むjob全体にも15分の上限を置く。
 待機はindex・version・残り予算をログに出し、inspectの不在判定、404以外のエラー、bytes・署名の拒否条件は緩和しない。[^guide][^provenance][^provenance-tests][^release-workflow]

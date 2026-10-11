@@ -34,6 +34,7 @@ PLATFORMS = 3
 PROPAGATION_ATTEMPTS = 61
 PROPAGATION_SECONDS = 600
 PROPAGATION_INTERVAL = 10
+PROPAGATION_MAX_INTERVAL = 60
 LOGGER = logging.getLogger(__name__)
 
 
@@ -319,7 +320,11 @@ def verify_with_propagation(
                 or remaining <= 0
             ):
                 raise
-            delay = min(PROPAGATION_INTERVAL, remaining)
+            delay = min(
+                PROPAGATION_INTERVAL * 2 ** (attempt - 1),
+                PROPAGATION_MAX_INTERVAL,
+                remaining,
+            )
             LOGGER.warning(
                 "%s %s publication not yet visible (HTTP 404); "
                 "retry %d/%d in %.1fs (%.1fs remaining)",
