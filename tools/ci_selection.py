@@ -14,6 +14,12 @@ from typing import TypeGuard
 
 CATEGORIES = ("python", "rust", "formal", "distribution")
 RELEASE_TOOLS = {"tools/release.py", "tools/sbom.py", "tools/capture_sbom.py"}
+DOCUMENTATION_INPUTS = {
+    "tools/docs_site.py",
+    "tests/test_docs_site.py",
+    "mkdocs.yml",
+    ".github/workflows/documentation.yml",
+}
 
 
 def classify(paths: list[str]) -> dict[str, bool]:
@@ -29,7 +35,10 @@ def categories_for(path: str) -> tuple[str, ...]:  # noqa: PLR0911 -- explicit p
         return ("rust",)
     if path.startswith(("docs/json-schema/", "tests/fixtures/")):
         return CATEGORIES
-    if path.endswith(".md") and (path == "CONTRIBUTING.md" or path.startswith("docs/")):
+    # Dedicated docs inputs are tested by the documentation workflow, without wheels.
+    if path in DOCUMENTATION_INPUTS or (
+        path.endswith(".md") and (path == "CONTRIBUTING.md" or path.startswith("docs/"))
+    ):
         return ()
     if path.startswith(("crates/", "vendor/")):
         return ("rust", "formal", "distribution")

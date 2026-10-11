@@ -8,8 +8,31 @@ import sys
 from pathlib import Path
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
 from tools import ci_selection
+
+
+@given(
+    path=st.sampled_from(
+        [
+            "tools/docs_site.py",
+            "tests/test_docs_site.py",
+            "mkdocs.yml",
+            ".github/workflows/documentation.yml",
+        ]
+    )
+)
+def test_documentation_inputs_use_the_dedicated_build(path: str) -> None:
+    flags = ci_selection.classify([path])
+
+    assert flags == {
+        "python": False,
+        "rust": False,
+        "formal": False,
+        "distribution": False,
+    }
 
 
 @pytest.mark.parametrize(

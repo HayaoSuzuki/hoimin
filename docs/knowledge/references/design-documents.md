@@ -5,6 +5,11 @@ description: docs/superpowers/specs内の全Markdownを先頭見出しと出典�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-749-documentation-pages-design
+  resource: ../../superpowers/specs/2026-10-12-issue-749-documentation-pages-design.md
+  revision: 9eb8ed0d3690d45f77932afcfd457afbdbf43abd
+  working_tree: clean
+  sha256: 683ffc6122e2372c7495fd02835de0abfd03ab8e7bd72770e6fc17de4807e56b
 - id: issue-711-survivor-review-design
   resource: ../../superpowers/specs/2026-10-11-issue-711-survivor-review-design.md
   working_tree: untracked
@@ -994,6 +999,7 @@ sources:
 
 | 原文 | 先頭見出し | 作成時の状態 |
 | --- | --- | --- |
+| [2026-10-12-issue-749-documentation-pages-design.md](../../superpowers/specs/2026-10-12-issue-749-documentation-pages-design.md) | Automatic documentation publication (#749) [^issue-749-documentation-pages-design] | 追跡済み（9eb8ed0） |
 | [2026-10-05-exception-scope-outcomes.md](../../superpowers/specs/2026-10-05-exception-scope-outcomes.md) | Exception hierarchy: scope identity and analysis outcomes [^issue-692-exception-scope-outcomes] | 追跡済み（fae3ce3） |
 | [2026-10-05-issue-692-exception-hierarchy.md](../../superpowers/specs/2026-10-05-issue-692-exception-hierarchy.md) | User-defined exception hierarchy mutations [^issue-692-issue-692-exception-hierarchy] | 追跡済み（fae3ce3） |
 | [2026-09-26-proptest-boundaries-design.md](../../superpowers/specs/2026-09-26-proptest-boundaries-design.md) | Proptest boundary coverage design [^proptest-boundaries-design] | 追跡済み |
@@ -1655,3 +1661,5 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 | #711 survivorの評価と履歴の保存設計 | [設計](../../superpowers/specs/2026-10-11-issue-711-survivor-review-design.md) [^issue-711-survivor-review-design] |
 
 [^issue-711-survivor-review-design]: [設計原文](../../superpowers/specs/2026-10-11-issue-711-survivor-review-design.md)。実装前の設計。
+
+[^issue-749-documentation-pages-design]: [承認済み設計](../../superpowers/specs/2026-10-12-issue-749-documentation-pages-design.md)。mainの検索可能なサイトと公開権限。
