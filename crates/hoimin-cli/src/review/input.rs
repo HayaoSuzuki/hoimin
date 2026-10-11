@@ -120,6 +120,19 @@ pub(crate) fn validate_store_destination(
     plan: &ReadOnlyPlan,
     report: Option<&Path>,
 ) -> Result<(), ReviewError> {
+    for suffix in ["", "-journal", "-wal", "-shm"] {
+        let mut name = store.as_os_str().to_os_string();
+        name.push(suffix);
+        validate_destination_entry(Path::new(&name), plan, report)?;
+    }
+    Ok(())
+}
+
+fn validate_destination_entry(
+    store: &Path,
+    plan: &ReadOnlyPlan,
+    report: Option<&Path>,
+) -> Result<(), ReviewError> {
     let metadata = match std::fs::symlink_metadata(store) {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),

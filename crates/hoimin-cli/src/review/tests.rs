@@ -200,6 +200,22 @@ async fn bounded_artifact_and_alias() {
     assert!(super::input::load_plan(&oversized).is_err());
 }
 
+#[tokio::test]
+async fn store_journal_must_not_alias_a_protected_input() {
+    let (dir, path) = plan_fixture().await;
+    let loaded = super::input::load_plan(&path).unwrap();
+    let store = dir.path().join("reviews.sqlite3");
+    std::fs::hard_link(&path, dir.path().join("reviews.sqlite3-journal")).unwrap();
+    assert!(super::input::validate_store_destination(&store, &loaded, None).is_err());
+}
+
+#[test]
+fn malformed_artifact_reference_is_rejected() {
+    let mut value = draft();
+    value.plan.content_hash = "invalid".into();
+    assert!(validate_draft(&value).is_err());
+}
+
 async fn report_fixture() -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf) {
     let (dir, path) = plan_fixture().await;
     let plan = super::input::load_plan(&path).unwrap();

@@ -133,6 +133,28 @@ pub fn validate_draft(draft: &ReviewDraft) -> Result<(), super::ReviewError> {
                 .chars()
                 .any(|ch| ch.is_control() && ch != '\n' && ch != '\t')
     }
+    fn valid_reference(reference: &ArtifactReference) -> bool {
+        !reference.path.as_os_str().is_empty()
+            && reference.content_hash.len() == 64
+            && reference
+                .content_hash
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+    }
+    if !valid_reference(&draft.plan)
+        || draft.plan.run_id.is_some()
+        || draft.report.as_ref().is_some_and(|reference| {
+            !valid_reference(reference)
+                || reference
+                    .run_id
+                    .as_ref()
+                    .is_none_or(|id| id.trim().is_empty() || !safe_text(id, 4096))
+        })
+    {
+        return Err(super::ReviewError::Invalid(
+            "invalid review artifact reference".into(),
+        ));
+    }
     if draft.reason.trim().is_empty() || !safe_text(&draft.reason, 4096) {
         return Err(super::ReviewError::Invalid(
             "reason must be nonblank, safe text of at most 4096 UTF-8 bytes".into(),

@@ -24,6 +24,7 @@ Commands:
   plan         Discover mutation candidates without executing tests
   verify       Execute one or more candidates using settings from a previously generated plan
   progress     Compare chronologically ordered mutation run reports
+  review       Record and inspect human assessments independently of test outcomes
   completions  Generate shell completion scripts
   help         Print this message or the help of the given subcommand(s)
 
@@ -251,6 +252,289 @@ reports
   required: false
   arity: 0
   repeatable: false
+```
+
+## hoimin review
+
+```text
+Record and inspect human assessments independently of test outcomes
+
+Usage: hoimin review <COMMAND>
+
+Commands:
+  list    List current candidates and their assessments
+  show    Show one candidate and its review history
+  record  Append a human assessment using an expected revision
+  help    Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help
+          Print help
+```
+
+Argument constraints:
+
+```text
+--help
+  required: false
+  arity: 0
+  repeatable: false
+```
+
+## hoimin review list
+
+```text
+List current candidates and their assessments
+
+Usage: hoimin review list [OPTIONS] --store <STORE> <PLAN>
+
+Arguments:
+  <PLAN>
+
+
+Options:
+      --store <STORE>
+
+
+      --report <REPORT>
+
+
+      --format <FORMAT>
+          [default: text]
+          [possible values: text, json]
+
+      --stale
+          Include stored candidates absent from the current plan in a separate list
+
+  -h, --help
+          Print help
+```
+
+Argument constraints:
+
+```text
+plan
+  required: true
+  arity: 1
+  repeatable: false
+--store
+  required: true
+  arity: 1
+  repeatable: false
+--report
+  required: false
+  arity: 1
+  repeatable: false
+--format
+  required: false
+  arity: 1
+  repeatable: false
+  default: text
+  values: text, json
+--stale
+  required: false
+  arity: 0
+  repeatable: false
+  default: false
+--help
+  required: false
+  arity: 0
+  repeatable: false
+```
+
+## hoimin review show
+
+```text
+Show one candidate and its review history
+
+Usage: hoimin review show [OPTIONS] --store <STORE> --candidate <CANDIDATE> <PLAN>
+
+Arguments:
+  <PLAN>
+
+
+Options:
+      --store <STORE>
+
+
+      --report <REPORT>
+
+
+      --format <FORMAT>
+          [default: text]
+          [possible values: text, json]
+
+      --candidate <CANDIDATE>
+
+
+  -h, --help
+          Print help
+```
+
+Argument constraints:
+
+```text
+plan
+  required: true
+  arity: 1
+  repeatable: false
+--store
+  required: true
+  arity: 1
+  repeatable: false
+--report
+  required: false
+  arity: 1
+  repeatable: false
+--format
+  required: false
+  arity: 1
+  repeatable: false
+  default: text
+  values: text, json
+--candidate
+  required: true
+  arity: 1
+  repeatable: false
+--help
+  required: false
+  arity: 0
+  repeatable: false
+```
+
+## hoimin review record
+
+```text
+Append a human assessment using an expected revision
+
+Usage: hoimin review record [OPTIONS] --store <STORE> --candidate <CANDIDATE> --assessment <ASSESSMENT> --reason <REASON> --expected-revision <EXPECTED_REVISION> <PLAN>
+
+Arguments:
+  <PLAN>
+
+
+Options:
+      --store <STORE>
+
+
+      --report <REPORT>
+
+
+      --format <FORMAT>
+          [default: text]
+          [possible values: text, json]
+
+      --candidate <CANDIDATE>
+
+
+      --assessment <ASSESSMENT>
+          [possible values: actionable, not_useful, suspected_equivalent, needs_investigation]
+
+      --reason <REASON>
+
+
+      --evidence <EVIDENCE>
+
+
+      --expected-revision <EXPECTED_REVISION>
+
+
+  -h, --help
+          Print help
+```
+
+Argument constraints:
+
+```text
+plan
+  required: true
+  arity: 1
+  repeatable: false
+--store
+  required: true
+  arity: 1
+  repeatable: false
+--report
+  required: false
+  arity: 1
+  repeatable: false
+--format
+  required: false
+  arity: 1
+  repeatable: false
+  default: text
+  values: text, json
+--candidate
+  required: true
+  arity: 1
+  repeatable: false
+--assessment
+  required: true
+  arity: 1
+  repeatable: false
+  values: actionable, not_useful, suspected_equivalent, needs_investigation
+--reason
+  required: true
+  arity: 1
+  repeatable: false
+--evidence
+  required: false
+  arity: 1
+  repeatable: true
+--expected-revision
+  required: true
+  arity: 1
+  repeatable: false
+--help
+  required: false
+  arity: 0
+  repeatable: false
+```
+
+## hoimin review help
+
+```text
+Print this message or the help of the given subcommand(s)
+
+Usage: hoimin review help [COMMAND]
+
+Commands:
+  list    List current candidates and their assessments
+  show    Show one candidate and its review history
+  record  Append a human assessment using an expected revision
+  help    Print this message or the help of the given subcommand(s)
+```
+
+## hoimin review help list
+
+```text
+List current candidates and their assessments
+
+Usage: hoimin review help list
+```
+
+## hoimin review help show
+
+```text
+Show one candidate and its review history
+
+Usage: hoimin review help show
+```
+
+## hoimin review help record
+
+```text
+Append a human assessment using an expected revision
+
+Usage: hoimin review help record
+```
+
+## hoimin review help help
+
+```text
+Print this message or the help of the given subcommand(s)
+
+Usage: hoimin review help help
 ```
 
 ## hoimin completions
@@ -975,6 +1259,7 @@ Usage: hoimin help [COMMAND]
 Commands:
   verify       Execute one or more candidates using settings from a previously generated plan
   progress     Compare chronologically ordered mutation run reports
+  review       Record and inspect human assessments independently of test outcomes
   completions  Generate shell completion scripts
   run          Run mutation tests for an explicitly selected target
   plan         Discover mutation candidates without executing tests
@@ -995,6 +1280,43 @@ Usage: hoimin help verify
 Compare chronologically ordered mutation run reports
 
 Usage: hoimin help progress
+```
+
+## hoimin help review
+
+```text
+Record and inspect human assessments independently of test outcomes
+
+Usage: hoimin help review [COMMAND]
+
+Commands:
+  list    List current candidates and their assessments
+  show    Show one candidate and its review history
+  record  Append a human assessment using an expected revision
+```
+
+## hoimin help review list
+
+```text
+List current candidates and their assessments
+
+Usage: hoimin help review list
+```
+
+## hoimin help review show
+
+```text
+Show one candidate and its review history
+
+Usage: hoimin help review show
+```
+
+## hoimin help review record
+
+```text
+Append a human assessment using an expected revision
+
+Usage: hoimin help review record
 ```
 
 ## hoimin help completions

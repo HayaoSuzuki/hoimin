@@ -272,7 +272,10 @@ if call_count == int(os.environ.get("LEAN_FAIL_AT", "0")):
         check=False,
         capture_output=True,
         text=True,
-        timeout=60 if os.name == "nt" else 10,
+        # Each guarded module starts a fake Python interpreter through Git Bash.
+        # Windows launcher overhead accumulates across the full module inventory;
+        # this harness deadline is independent of the real per-command CI guard.
+        timeout=120 if os.name == "nt" else 10,
     )
     calls = (
         [lean_call(line) for line in call_log.read_text().splitlines()]

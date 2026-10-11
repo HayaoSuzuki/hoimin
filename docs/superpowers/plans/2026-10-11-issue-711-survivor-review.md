@@ -1,6 +1,6 @@
 # Survivor Review Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 保存planの候補に、人の評価と理由を正確に紐づけ、更新履歴を保存・表示できるようにする。
 
@@ -76,11 +76,11 @@ CLI統合は新規 `crates/hoimin-cli/tests/review_cli.rs`、Lean対応は新規
 - `apply_update(state: &ReviewState, applicability: Applicability, expected_revision: u64, draft: ReviewDraft) -> Result<ReviewState, UpdateRejection>`。
 - `validate_draft(draft: &ReviewDraft) -> Result<(), ReviewError>`。署名と上限は後続Taskでも共用する。
 
-- [ ] テスト `identity_and_update_contract` を先に書く。実在sourceから既存stable IDでfixtureを作り、project/descriptorの変更がIdentityConflict、FreshだけCurrent、古いrevisionがRevisionConflictになることをassertする。拒否前後のstate equality、成功時のprefixとrevision+1も確認する。
-- [ ] テスト `draft_limits` を書く。reason 4096 bytesは許可、4097 bytes・空白のみは拒否、evidence 8個/各2048 bytesは許可、9個/2049 bytesは拒否。ESC/NULは拒否、改行/tabは許可。日本語もbyte数で数える。
-- [ ] `cargo test -p hoimin-cli --lib review::` を実行し、未実装の判定により失敗することを確認する。
-- [ ] modelを実装する。revision加算にはchecked_add、履歴更新には新しいstateを返す純粋処理を使う。descriptor比較にoriginalも含める。
-- [ ] 同じコマンドでテスト成功を確認し、Task 1のファイルだけをcommitする。
+- [x] テスト `identity_and_update_contract` を先に書く。実在sourceから既存stable IDでfixtureを作り、project/descriptorの変更がIdentityConflict、FreshだけCurrent、古いrevisionがRevisionConflictになることをassertする。拒否前後のstate equality、成功時のprefixとrevision+1も確認する。
+- [x] テスト `draft_limits` を書く。reason 4096 bytesは許可、4097 bytes・空白のみは拒否、evidence 8個/各2048 bytesは許可、9個/2049 bytesは拒否。ESC/NULは拒否、改行/tabは許可。日本語もbyte数で数える。
+- [x] `cargo test -p hoimin-cli --lib review::` を実行し、未実装の判定により失敗することを確認する。
+- [x] modelを実装する。revision加算にはchecked_add、履歴更新には新しいstateを返す純粋処理を使う。descriptor比較にoriginalも含める。
+- [x] 同じコマンドでテスト成功を確認し、Task 1のファイルだけをcommitする。
 
 ### Task 2: 実行しないplan/report読取り
 
@@ -96,13 +96,13 @@ CLI統合は新規 `crates/hoimin-cli/tests/review_cli.rs`、Lean対応は新規
 - `source_state(root: &Utf8Path, candidate: &MutationCandidate) -> Result<SourceState, ReviewError>`。読取り不能はUnavailable、hash変更はStale、同じhashで不正なspan/original/IDはエラー。
 - `validate_store_destination(store: &Path, plan: &ReadOnlyPlan, report: Option<&Path>) -> Result<(), ReviewError>`。
 
-- [ ] `read_only_plan_does_not_execute` を書く。analyzer/test argvに失敗markerを置いても有効planを読め、markerが生成されないことをassertする。未知版、重複ID、ID再計算不一致、範囲外pathを拒否する。
-- [ ] `source_freshness_and_plan_reordering` を書く。source変更→Stale、削除→Unavailable、rank/sequenceを整合した別planでも同じkeyになることを確認する。
-- [ ] `review_report_identity` を書く。完了v4 JSONは読めるが、未完了・baseline失敗・別root・summary不整合・同じIDの別descriptor・旧版・JSONLは拒否する。list対象の欠落候補は読取り自体のエラーにしない。
-- [ ] `bounded_artifact_and_alias` を書く。64 MiB超を拒否、storeとplan/report/sourceの同一ファイル・hardlink、およびstore symlinkを拒否する。Windowsでsymlink作成権限がない場合だけ理由付きskipし、hardlinkは通常ケースとして確認する。
-- [ ] 上記を `cargo test -p hoimin-cli --lib review::` で失敗確認後、共有入口とinputを実装する。review用の上限付き単一byte snapshotからhash/parseを行う。reportは同じbytesを既存のdocument validationへ渡し、validated documentからroot/run IDを得る。既存readerの二重openを使わない。
-- [ ] plan header/configの構造検査は共有するが、current fingerprint一致やanalyzer発見を要求しない。source検査は候補単位で行い、listのstale表示を妨げない。root外へ解決するcandidate pathは拒否する。
-- [ ] `cargo test -p hoimin-cli --lib` と既存 `lean_progress_input_oracle` / `lean_progress_decision_oracle` を実行し、既存readerの互換性を確認してcommitする。
+- [x] `read_only_plan_does_not_execute` を書く。analyzer/test argvに失敗markerを置いても有効planを読め、markerが生成されないことをassertする。未知版、重複ID、ID再計算不一致、範囲外pathを拒否する。
+- [x] `source_freshness_and_plan_reordering` を書く。source変更→Stale、削除→Unavailable、rank/sequenceを整合した別planでも同じkeyになることを確認する。
+- [x] `review_report_identity` を書く。完了v4 JSONは読めるが、未完了・baseline失敗・別root・summary不整合・同じIDの別descriptor・旧版・JSONLは拒否する。list対象の欠落候補は読取り自体のエラーにしない。
+- [x] `bounded_artifact_and_alias` を書く。64 MiB超を拒否、storeとplan/report/sourceの同一ファイル・hardlink、およびstore symlinkを拒否する。Windowsでsymlink作成権限がない場合だけ理由付きskipし、hardlinkは通常ケースとして確認する。
+- [x] 上記を `cargo test -p hoimin-cli --lib review::` で失敗確認後、共有入口とinputを実装する。review用の上限付き単一byte snapshotからhash/parseを行う。reportは同じbytesを既存のdocument validationへ渡し、validated documentからroot/run IDを得る。既存readerの二重openを使わない。
+- [x] plan header/configの構造検査は共有するが、current fingerprint一致やanalyzer発見を要求しない。source検査は候補単位で行い、listのstale表示を妨げない。root外へ解決するcandidate pathは拒否する。
+- [x] `cargo test -p hoimin-cli --lib` と既存 `lean_progress_input_oracle` / `lean_progress_decision_oracle` を実行し、既存readerの互換性を確認してcommitする。
 
 ### Task 3: 独立SQLite store
 
@@ -115,15 +115,15 @@ CLI統合は新規 `crates/hoimin-cli/tests/review_cli.rs`、Lean対応は新規
 - `ReviewStore::snapshot(&mut self) -> Result<Vec<(ReviewKey, ReviewState)>, ReviewError>`。
 - `ReviewStore::append(&mut self, key: &ReviewKey, source: SourceState, expected_revision: u64, draft: ReviewDraft) -> Result<ReviewEvent, ReviewError>`。
 
-- [ ] `store_history_and_conflict` を書く。初回revision1、更新revision2、再openで同じhistory、古いrevision拒否、同一内容の明示更新でもrevision3になることをassertする。
-- [ ] `store_concurrent_initialization_and_updates` を書く。2 connectionとbarrierで新規初期化を競合させ、同projectの有効DBだけが残ることを確認する。同candidate同revisionのappendは一方だけ成功、異なるcandidateのappendは両方保存される。
-- [ ] `store_rollback_and_busy` を書く。イベント追加後commit前のtest-only failure hookでrollbackを確認する。別connectionでwrite lockを保持し、busyが返ってhistoryが変わらないことを確認する。厳密な秒数のassertは避ける。
-- [ ] `store_rejects_foreign_corrupt_and_oversized` を書く。application ID違い、未知user_version、既存空ファイル、view/trigger/余計なtable、破損、16 MiB超、10,000イベント後の追加を拒否し、ファイルの既存内容を保持する。境界fixtureは直接既知schemaを使って作り、10,000回CLIを起動しない。
-- [ ] テスト失敗確認後、固定schemaを実装する。application IDは `0x484D5256` (HMRV)、user_versionは1。tablesはmetadata、candidates、review_events。候補IDをunique、eventは(candidate_id, revision)をprimary keyにし、descriptorとdraftはserdeで検査する。
-- [ ] 新規storeのみ初期化を許す。`OpenOptions::create_new(true)` に成功したprocessだけが空ファイルを初期化でき、初期化とproject束縛はBEGIN IMMEDIATE内で行う。AlreadyExists側は最大1秒の範囲で完成schemaを待って検証する。期限後も空/不正schemaなら拒否し、他processの未初期化ファイルや既存空ファイルを初期化しない。creatorの中断で残った空ファイルは自動修復対象にしない。
-- [ ] journal_modeはDELETE、synchronousはFULL、foreign_keysはON、trusted_schemaはOFF、busy_timeoutは1000 ms。新規page_sizeは4096、max_page_countは4096。schemaの既知定義・列・制約とquick_checkを検査し、schema外のSQL objectを許さない。
-- [ ] appendのtransaction内で容量・project・descriptor・revisionを再確認し、Task 1のapply_update結果から新eventだけをINSERTする。SQL/commit失敗はrollbackして元のhistoryを保つ。新規DB作成後の初回append失敗では空の有効storeが残り得るが、評価eventを保存した成功とは扱わない。
-- [ ] module内テスト成功を確認してcommitする。ここで空き容量とtargetサイズを確認し、以降のbuildを見込んで `cargo clean` を実施する。
+- [x] `store_history_and_conflict` を書く。初回revision1、更新revision2、再openで同じhistory、古いrevision拒否、同一内容の明示更新でもrevision3になることをassertする。
+- [x] `store_concurrent_initialization_and_updates` を書く。2 connectionとbarrierで新規初期化を競合させ、同projectの有効DBだけが残ることを確認する。同candidate同revisionのappendは一方だけ成功、異なるcandidateのappendは両方保存される。
+- [x] `store_rollback_and_busy` を書く。イベント追加後commit前のtest-only failure hookでrollbackを確認する。別connectionでwrite lockを保持し、busyが返ってhistoryが変わらないことを確認する。厳密な秒数のassertは避ける。
+- [x] `store_rejects_foreign_corrupt_and_oversized` を書く。application ID違い、未知user_version、既存空ファイル、view/trigger/余計なtable、破損、16 MiB超、10,000イベント後の追加を拒否し、ファイルの既存内容を保持する。境界fixtureは直接既知schemaを使って作り、10,000回CLIを起動しない。
+- [x] テスト失敗確認後、固定schemaを実装する。application IDは `0x484D5256` (HMRV)、user_versionは1。tablesはmetadata、candidates、review_events。候補IDをunique、eventは(candidate_id, revision)をprimary keyにし、descriptorとdraftはserdeで検査する。
+- [x] 新規storeのみ初期化を許す。`OpenOptions::create_new(true)` に成功したprocessだけが空ファイルを初期化でき、初期化とproject束縛はBEGIN IMMEDIATE内で行う。AlreadyExists側は最大1秒の範囲で完成schemaを待って検証する。期限後も空/不正schemaなら拒否し、他processの未初期化ファイルや既存空ファイルを初期化しない。creatorの中断で残った空ファイルは自動修復対象にしない。
+- [x] journal_modeはDELETE、synchronousはFULL、foreign_keysはON、trusted_schemaはOFF、busy_timeoutは1000 ms。新規page_sizeは4096、max_page_countは4096。schemaの既知定義・列・制約とquick_checkを検査し、schema外のSQL objectを許さない。
+- [x] appendのtransaction内で容量・project・descriptor・revisionを再確認し、Task 1のapply_update結果から新eventだけをINSERTする。SQL/commit失敗はrollbackして元のhistoryを保つ。新規DB作成後の初回append失敗では空の有効storeが残り得るが、評価eventを保存した成功とは扱わない。
+- [x] module内テスト成功を確認してcommitする。ここで空き容量とtargetサイズを確認し、以降のbuildを見込んで `cargo clean` を実施する。
 
 ### Task 4: CLI・text/JSON表示と既存結果の不変性
 
@@ -138,13 +138,13 @@ CLI統合は新規 `crates/hoimin-cli/tests/review_cli.rs`、Lean対応は新規
 - `OperatorReviewCounts { operator: String, total: u64, reviewed: u64, unreviewed: u64, stale: u64, source_unavailable: u64, assessments: BTreeMap<Assessment, u64> }`。各current rowはreviewed/unreviewed/stale/source_unavailableの一つに数え、reviewedは評価別件数の和。
 - `render::write(document: &ReviewDocument, format: ReviewOutputFormat, writer: &mut dyn Write) -> Result<(), ReviewError>`。formatはText/Json、CLI値はtext/json。
 
-- [ ] `review_cli_contract` を書く。設計の三コマンド、必須store/reason/revision、四評価、text/json、list --stale、unknown IDのexit2をassertする。
-- [ ] `review_status_and_counts` を書く。未評価≠not_useful、stale/Unavailable除外、reportなしnot_loaded、欠落not_in_report、report付きrecordの欠落拒否、operator集計の和を確認する。show/recordは対象1件、listはplan順、旧候補枠はID順で決定的に出力する。
-- [ ] `review_read_never_creates_store_or_processes` を書く。不存在storeのlist/showは未評価を返しファイルを作らず、analyzer/test markerを起動しない。
-- [ ] `review_output_failure_is_not_duplicate_write` を書く。書込み失敗writerでもeventのcommit済み状態は残る。stderrへ「保存済みrevision・表示失敗」を返し、同じexpected revisionでの再試行は競合してhistoryを増やさない。
-- [ ] `review_does_not_change_execution_results` を書く。同じfixtureのrun report bytes、MutationStatus、summarize、progress compare結果を評価登録前後で照合する。既存plan bytesも不変とする。新しいテスト実行を繰り返さず固定reportを使う。
-- [ ] 失敗確認後、parse/dispatch、recordのcommit後render、集計と専用schemaを実装する。historyのないrowのreviewはnullとし、textではunreviewedを表示する。stale rowの保存評価は履歴として表示し、有効な現評価欄はnullとする。
-- [ ] `cargo test -p hoimin-cli --test review_cli` を成功させ、JSON出力を専用schemaで検査する。既存completionテストを更新・実行し、commitする。
+- [x] `review_cli_contract` を書く。設計の三コマンド、必須store/reason/revision、四評価、text/json、list --stale、unknown IDのexit2をassertする。
+- [x] `review_status_and_counts` を書く。未評価≠not_useful、stale/Unavailable除外、reportなしnot_loaded、欠落not_in_report、report付きrecordの欠落拒否、operator集計の和を確認する。show/recordは対象1件、listはplan順、旧候補枠はID順で決定的に出力する。
+- [x] `review_read_never_creates_store_or_processes` を書く。不存在storeのlist/showは未評価を返しファイルを作らず、analyzer/test markerを起動しない。
+- [x] `review_output_failure_is_not_duplicate_write` を書く。書込み失敗writerでもeventのcommit済み状態は残る。stderrへ「保存済みrevision・表示失敗」を返し、同じexpected revisionでの再試行は競合してhistoryを増やさない。
+- [x] `review_does_not_change_execution_results` を書く。同じfixtureのrun report bytes、MutationStatus、summarize、progress compare結果を評価登録前後で照合する。既存plan bytesも不変とする。新しいテスト実行を繰り返さず固定reportを使う。
+- [x] 失敗確認後、parse/dispatch、recordのcommit後render、集計と専用schemaを実装する。historyのないrowのreviewはnullとし、textではunreviewedを表示する。stale rowの保存評価は履歴として表示し、有効な現評価欄はnullとする。
+- [x] `cargo test -p hoimin-cli --test review_cli` を成功させ、JSON出力を専用schemaで検査する。既存completionテストを更新・実行し、commitする。
 
 ### Task 5: Leanの三性質とRust差分検証
 
@@ -152,12 +152,12 @@ CLI統合は新規 `crates/hoimin-cli/tests/review_cli.rs`、Lean対応は新規
 
 **Interfaces:** Lean namespace `HoiminOracle.SurvivorReview` に `applicability` と `applyUpdate` をTask 1と同じ条件・拒否理由・順序で定義する。revisionはNatで表し、Rustのu64::MAX超を明示的に拒否する。generator名は `generate_survivor_review`。
 
-- [ ] Rust oracleテストを先に書く。corpus各行のproject/descriptor一致条件、鮮度、current/expected revision、history、draftからTask 1の実処理を呼び、適用判定・成功/拒否・更新後historyを比較する。corpus欠落時の失敗を確認する。
-- [ ] Lean modelと、`applied_requires_exact_identity_and_fresh_source`、`rejected_update_preserves_state`、`accepted_update_preserves_prefix_and_increments_revision` を実装する。sorry/axiomで証明を埋めない。拒否時は元stateを返すモデル表現とRust Resultをoracleで対応付ける。
-- [ ] 小さな決定的corpusをLeanから生成する。project/descriptor各不一致、三鮮度、revision一致/不一致/overflow、空/非空history、同じ時刻の複数更新を含める。symbol/originalを省いた弱いidentity判定を検出できるケースも含める。
-- [ ] generatorへ `--output`、`--check`、`--sensitivity` を実装する。identity guardの削除とrevision guardの削除をそれぞれ検出し、検出できなければsensitivityを失敗にする。
-- [ ] CIのserial module build一覧とgenerator一覧、workflow契約テストに追加する。既存guardで各commandを30秒、2048 MiB、250 ms samplingに制限する。WindowsのguardはPOSIX未対応なので、ローカル形式検証は利用可能なWSLの既存Lean環境かLinux CIで実施し、未実施を成功と扱わない。新たな巨大toolchainの導入はしない。
-- [ ] `cargo test -p hoimin-cli --test lean_survivor_review_oracle`、`uv run --frozen --no-sync pytest tests/test_ci_workflow.py` を実行する。Leanで証明・freshness・sensitivityの成功を確認してcommitする。
+- [x] Rust oracleテストを先に書く。corpus各行のproject/descriptor一致条件、鮮度、current/expected revision、history、draftからTask 1の実処理を呼び、適用判定・成功/拒否・更新後historyを比較する。corpus欠落時の失敗を確認する。
+- [x] Lean modelと、`applied_requires_exact_identity_and_fresh_source`、`rejected_update_preserves_state`、`accepted_update_preserves_prefix_and_increments_revision` を実装する。sorry/axiomで証明を埋めない。拒否時は元stateを返すモデル表現とRust Resultをoracleで対応付ける。
+- [x] 小さな決定的corpusをLeanから生成する。project/descriptor各不一致、三鮮度、revision一致/不一致/overflow、空/非空history、同じ時刻の複数更新を含める。symbol/originalを省いた弱いidentity判定を検出できるケースも含める。
+- [x] generatorへ `--output`、`--check`、`--sensitivity` を実装する。identity guardの削除とrevision guardの削除をそれぞれ検出し、検出できなければsensitivityを失敗にする。
+- [x] CIのserial module build一覧とgenerator一覧、workflow契約テストに追加する。既存guardで各commandを30秒、2048 MiB、250 ms samplingに制限する。WindowsのguardはPOSIX未対応なので、ローカル形式検証は利用可能なWSLの既存Lean環境かLinux CIで実施し、未実施を成功と扱わない。新たな巨大toolchainの導入はしない。
+- [x] `cargo test -p hoimin-cli --test lean_survivor_review_oracle`、`uv run --frozen --no-sync pytest tests/test_ci_workflow.py` を実行する。Leanで証明・freshness・sensitivityの成功を確認してcommitする。
 
 ### Task 6: 文書、版、最終レビューとstack
 
@@ -193,6 +193,6 @@ verifyで保存planのcommandをoverrideできないため、別planが必要で
 
 ## 実行方法
 
-この計画はユーザーのレビュー待ちで、実装は開始していない。
-共有型に依存する6 Taskのため、同じ担当が順番に実装するNative方式を推奨する。
-実行方法はユーザー確認後に確定し、選択した方式のskillを読む。
+ユーザーの承認を受け、Native方式でTask 1–6を順番に実装した。
+検証証拠と設計・計画からの判断は[実装報告](../reports/2026-10-11-issue-711-survivor-review.md)へ記録する。
+最終レビューとstack提出は検証後に実施する。
