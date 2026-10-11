@@ -1,7 +1,7 @@
 ---
 type: Contract
-title: 配布archiveとwheelの実行検証
-description: 検証済み配布物の外部実行、Linux ABIと公開停止条件。
+title: Archive and wheel execution checks
+description: Execution of verified artifacts, Linux ABI evidence and publication gates.
 status: draft
 catalog_revision: 79b6bde29b05e9904c8efff59e02d0c45377d7f7
 sources:
@@ -27,28 +27,28 @@ sources:
   sha256: a36e258c5e538d1da0d98c42d3a70e9922ddfb3b4ac977a32714a53bc25726f3
 ---
 
-# 配布物からの実行
+# Running distributed artifacts
 
-checksumとSBOMを検証したverified-releaseを別jobで取得し、checksumを再照合してから既存3platformのarchiveを実行する。
-既知の通常ファイルだけを受け付け、binaryの内容を固定の一時pathへコピーする。
-checkout外のfixtureを使い、別binaryへのfallbackを設けない。[^guide][^workflow][^archive]
+A separate job downloads the checksum- and SBOM-validated `verified-release`, rechecks checksums, and executes the archives for the three existing platforms.
+Only known regular files are accepted; binary contents are copied to a fixed temporary path.
+Fixtures run outside the checkout, with no fallback to another binary.[^guide][^workflow][^archive]
 
-wheelとarchiveで小さいmutation fixtureを共有し、version/help、JSON結果、元sourceの保全を確認する。
-既存のhost wheel検証に証跡を追加し、archive jobで同じwheel検証を重複しない。[^wheel][^guide]
+Wheels and archives share a small mutation fixture that checks version/help, JSON results, and preservation of the original source.
+Evidence is added to existing host-wheel validation; archive jobs do not duplicate that wheel validation.[^wheel][^guide]
 
-# Linuxの下限と公開条件
+# Linux baseline and publication gates
 
-standaloneはUbuntu 22.04で実行し、要求GLIBC symbolを2.35以下として記録する。
-wheelはdigest固定manylinux2014環境でCPython 3.14・glibc 2.17を確認し、auditwheelのABI情報と実行結果を別々に記録する。
-全Linux環境を保証する検査ではない。[^guide][^workflow]
+Standalone binaries run on Ubuntu 22.04, with required GLIBC symbols recorded at or below 2.35.
+Wheels are checked with CPython 3.14 and glibc 2.17 in a digest-pinned manylinux2014 environment; auditwheel ABI information and execution results are recorded separately.
+These checks do not guarantee support for every Linux environment.[^guide][^workflow]
 
-証跡は配布物に混ぜずCI artifactとして保存する。
-archiveとABI jobの成功をattestationの必要条件とし、その証明を必要とする公開も失敗時は進まない。[^workflow]
+Evidence is stored as CI artifacts, separately from distribution files.
+Archive and ABI jobs must succeed before attestation; publication that requires those attestations also stops on failure.[^workflow]
 
-image・配布layout・対象OS・fixture・公開依存が変わったら条件と証跡を再確認する。
-実機で成功した範囲はPR/レビュー記録で確認し、文書だけから実行成功を推定しない。[^guide]
+Recheck conditions and evidence when changing images, distribution layout, operating systems, fixtures, or publication dependencies.
+Consult PR/review records for the scope of successful hosted execution; documentation alone does not establish execution success.[^guide]
 
-[^guide]: [実行検証の運用](../artifact-smoke.md)。
-[^workflow]: [release workflow](../../.github/workflows/release.yml)。
-[^archive]: [archive helper](../../tests/archive_smoke.py)。
-[^wheel]: [wheelと共通fixture](../../tests/wheel_smoke.py)。
+[^guide]: [Artifact smoke operations](../artifact-smoke.md).
+[^workflow]: [Release workflow](../../.github/workflows/release.yml).
+[^archive]: [Archive helper](../../tests/archive_smoke.py).
+[^wheel]: [Wheel checks and shared fixture](../../tests/wheel_smoke.py).

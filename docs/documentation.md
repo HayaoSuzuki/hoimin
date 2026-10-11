@@ -4,6 +4,12 @@ The documentation site is <https://hayaosuzuki.github.io/hoimin/>. It represents
 main, with the source commit shown on each page, rather than a specific release.
 The site becomes available after the initial workflow merge and Pages activation.
 
+Current user and maintainer guides, navigation, and theme controls use English.
+Historical design, audit, and investigation records retain their original language.
+The site uses the same Material theme, indigo palettes, light/dark toggle, and
+hidden secondary sidebar as the [user site](https://hayaosuzuki.github.io/).
+Search, code-copy controls, and navigation labels remain in English.
+
 ## Regular updates
 
 Edit the existing Markdown in this repository and open a PR. The documentation
@@ -32,7 +38,9 @@ server to preview it, for example `python -m http.server --directory site 8000`
 and open <http://localhost:8000/>. Existing source Markdown is not rewritten.
 
 `tools/docs_site.py` defines the publication allowlist and `mkdocs.yml` defines
-navigation. Update both when adding a page. Research, audit and knowledge pages
+navigation. Update both when adding a page. The helper also copies the explicitly
+named `docs/stylesheets/extra.css`; adjacent files are not published automatically.
+Research, audit and knowledge pages
 remain on GitHub, outside site search. Links to excluded sources are checked for
 existence and point to the build's source commit on GitHub. External URL
 availability is not checked during builds.

@@ -1,7 +1,7 @@
 ---
 type: Contract
-title: GitHubリリースの由来証明
-description: 検証済み配布ファイルと署名対象の一致、ソース同一性、公開停止と実機確認。
+title: GitHub Release build provenance
+description: Artifact/attestation identity, source identity, publication gates and hosted evidence.
 status: draft
 sources:
 - id: workflow
@@ -31,41 +31,41 @@ sources:
   sha256: ae58498410a4d1d5ce6918244e4af5b78667d82daba568e5c3502ed4943a9c8f
 ---
 
-# 対象ファイルと公開条件
+# Attested files and publication gates
 
-GitHub Releaseの由来証明は、archive 3、wheel 3、SBOM 6、SHA256SUMS 1の計13ファイルを対象とする。
-validateが生成するimmutableな `verified-release` artifactを、証明jobと公開jobが同じrunから取得する。
-両jobは完全なinventory、SBOM内の配布物digestとcommit、checksum一覧のバイト列を再検証し、入力を修復・再生成しない。[^workflow][^validator]
+GitHub Release provenance covers 13 files: three archives, three wheels, six SBOMs, and one SHA256SUMS file.
+Attestation and publication jobs download the same immutable `verified-release` artifact produced by validation in the same run.
+Both jobs revalidate the complete inventory, artifact digests and commits in SBOMs, and checksum-list bytes without repairing or regenerating inputs.[^workflow][^validator]
 
-証明jobは公式Actionを完全SHAで固定し、contents read、id-token write、attestations writeだけを使う。
-PRと手動previewでは署名・証明登録を実行しない。
-生成したbundleで全ファイルを検証し、改変bytes、別repository、異なるsource SHAの拒否も確認してから公開を許可する。
-検証・証拠保存の失敗は公開を止め、既存の公開済みReleaseを書き換えない条件も維持する。[^workflow]
+The attestation job pins the official Action by full SHA and uses only contents read, id-token write, and attestations write permissions.
+PRs and manual previews do not sign or register attestations.
+Before allowing publication, verify every file with the generated bundle and check rejection of altered bytes, another repository, and a different source SHA.
+Validation or evidence-storage failures stop publication; protection against modifying already published Releases remains in place.[^workflow]
 
-PyPI向けには、同じビルドjobでwheelごとの単一subject証明も登録する。GitHub Releaseの13ファイルの一覧は維持し、公開時に新しいビルド証明を作らない。TestPyPIからPyPIへの公開条件と設定は[PyPIへのwheel公開](pypi-publishing.md)を参照する。[^workflow]
+For PyPI, the same build job also registers a single-subject attestation for each wheel. Preserve the 13-file GitHub Release inventory and do not create new build attestations at publication time. See [PyPI wheel publication](pypi-publishing.md) for TestPyPI-to-PyPI gates and configuration.[^workflow]
 
-# ソースとワークフローの同一性
+# Source and workflow identity
 
-prepareのcommit、checkoutのHEAD、イベントのsource SHAを一致させる。
-source SHAとworkflow SHAは意味が異なるため、証明書の `--source-digest` と `--signer-digest` で別々に照合する。
-workflow pathとrepositoryも利用者の期待値で制限する。
-checkout操作だけでOIDCのsource identityが変わるとは仮定しない。[^workflow][^guide]
+Require the prepared commit, checkout HEAD, and event source SHA to match.
+Source SHA and workflow SHA have different meanings; compare them separately using `--source-digest` and `--signer-digest`.
+Also constrain the workflow path and repository to the consumer's expected values.
+Do not assume a checkout operation changes OIDC source identity.[^workflow][^guide]
 
-ビルド時に予約versionへmanifestとlockfileを調整する既存の処理は維持する。
-証明はその処理を含むworkflowとソースを識別するもので、変更のない作業ツリー、再現可能ビルド、無脆弱性、OSコード署名を保証しない。[^guide]
+Retain the existing build-time adjustment of manifests and lockfiles to the reserved version.
+The attestation identifies the workflow and source including that adjustment; it does not guarantee an unchanged working tree, reproducible builds, absence of vulnerabilities, or OS code signing.[^guide]
 
-# 検証証拠と再確認
+# Verification evidence and rechecking
 
-ローカルの回帰、shell制御、厳格lint、変異検証と、各段階5回以上のセルフレビューは[検証記録](../reviews/2026-10-10-issue-750-release-provenance.md)に記載する。
-ローカル試験でGitHub OIDC証明書を発行したとは扱わない。[^review]
+The [verification record](../reviews/2026-10-10-issue-750-release-provenance.md) records local regressions, shell control flow, strict lint, mutation checks, and at least five self-reviews at each stage.
+Local tests are not treated as issuing GitHub OIDC certificates.[^review]
 
-マージ後の実run `38052986762` でv0.3.4を公開し、証明書のsource/workflow identity、13ファイルの署名検証、4種類の拒否ケース、公開物とverified-releaseのbyte一致、SBOM内digestを確認した。
-この実測のソースとworkflowのSHAはともに `c08574663a363228fed310fbf75157831b4a5669` だった。
-証明書属性とdigestは[実測JSON](../reviews/2026-10-10-issue-750-hosted-verification.json)に保存した。[^hosted]
-trigger、権限、公式Action、GH CLI、artifact取得、配布inventoryを変更した際も再確認する。[^guide][^review]
+Post-merge run `38052986762` published v0.3.4 and checked certificate source/workflow identity, signatures for all 13 files, four rejection cases, byte identity between published files and verified-release, and SBOM digests.
+Both source and workflow SHA for that measurement were `c08574663a363228fed310fbf75157831b4a5669`.
+Certificate attributes and digests are stored in the [hosted evidence JSON](../reviews/2026-10-10-issue-750-hosted-verification.json).[^hosted]
+Recheck when changing triggers, permissions, official Actions, GH CLI, artifact retrieval, or the distribution inventory.[^guide][^review]
 
-[^workflow]: [リリースワークフロー](../../.github/workflows/release.yml)。
-[^validator]: [checksumとSBOMの検証](../../tools/release.py)。
-[^guide]: [利用者の照合手順と再実行](../releases.md#github-build-provenance)。
-[^review]: [Issue #750の検証記録](../reviews/2026-10-10-issue-750-release-provenance.md)。
-[^hosted]: [v0.3.4の実証明書属性・公開物digest・拒否結果](../reviews/2026-10-10-issue-750-hosted-verification.json)。
+[^workflow]: [Release workflow](../../.github/workflows/release.yml).
+[^validator]: [Checksum and SBOM validation](../../tools/release.py).
+[^guide]: [Consumer verification and reruns](../releases.md#github-build-provenance).
+[^review]: [Issue #750 verification record](../reviews/2026-10-10-issue-750-release-provenance.md).
+[^hosted]: [v0.3.4 certificate attributes, published digests and rejection results](../reviews/2026-10-10-issue-750-hosted-verification.json).

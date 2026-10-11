@@ -1,5 +1,6 @@
 ---
 name: hoimin-mutation-testing
+license: Elastic-2.0
 description: Use when developing or changing Python code and automated tests, and hoimin mutation testing can expose missing behavioral coverage.
 ---
 
@@ -21,6 +22,11 @@ Follow [PyPI setup](installation.md) for platform requirements, version pinning,
 and the `uvx` alternative. Keep the same hoimin version throughout plan and
 verify. When validating unreleased changes to hoimin itself, build the working
 tree instead: a released wheel cannot test those changes.
+
+The [usage guide](https://hayaosuzuki.github.io/hoimin/docs/usage/)
+documents target selection, plan/verify, reports, and platform limits. This skill
+can be installed independently; use the improvement skill when it is available
+or follow the usage guide when investigating survivors.
 
 ## Keep disk use bounded
 

@@ -1,5 +1,6 @@
 ---
 name: hoimin-mutation-improvement
+license: Elastic-2.0
 description: Use when iterating on hoimin mutation-test survivors and test improvements until the current target's progress is saturated or complete.
 ---
 
@@ -13,10 +14,14 @@ fail.
 
 Keep the hoimin version used to create the plan throughout the improvement loop.
 For setup on another project, follow
-[PyPI setup](../hoimin-mutation-testing/installation.md): install with
+[PyPI setup](installation.md): install with
 `uv tool install --python 3.14 hoimin`, or use the pinned `uvx` alternative.
 If the version must change, regenerate the plan. To validate unreleased changes
 to hoimin itself, use a build of the working tree.
+
+The [usage guide](https://hayaosuzuki.github.io/hoimin/docs/usage/)
+documents plan/verify and platform limits. This package includes its own setup
+reference and does not require an installed sibling skill.
 
 ## Keep one plan valid
 

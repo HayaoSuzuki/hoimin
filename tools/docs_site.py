@@ -29,6 +29,7 @@ SITE_URL = "https://hayaosuzuki.github.io/hoimin/"
 PUBLIC_PAGES = (
     "README.md",
     "docs/usage.md",
+    "docs/agent-skills.md",
     "docs/cli-reference.md",
     "docs/compatibility.md",
     "docs/support.md",
@@ -234,6 +235,9 @@ def prepare_sources(root: Path, destination: Path, revision: str) -> None:
         target = destination / site_path(source)
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(root / source, target)
+    stylesheet = destination / "stylesheets" / "extra.css"
+    stylesheet.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(root / "docs" / "stylesheets" / "extra.css", stylesheet)
 
 
 def build_site(root: Path, output: Path) -> None:
