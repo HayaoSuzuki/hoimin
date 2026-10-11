@@ -14,6 +14,7 @@ import math
 import sys
 import time
 from collections.abc import Callable
+from contextlib import suppress
 from pathlib import Path
 from typing import TypedDict, cast
 
@@ -33,10 +34,6 @@ class SearchResult(TypedDict):
     mutant: float
     attempts: int
     elapsed: float
-
-
-class BudgetExpiredError(Exception):
-    pass
 
 
 class InvalidObservationError(Exception):
@@ -95,6 +92,7 @@ def find_witness(
         "attempts": 0,
         "elapsed": 0.0,
     }
+    invalid_observed = False
 
     @seed(seed_value)
     @settings(
@@ -108,21 +106,22 @@ def find_witness(
         st.text(alphabet="ab", min_size=1, max_size=MAX_LENGTH),
     )
     def compare(x: str, y: str) -> None:
+        nonlocal invalid_observed
         if time.monotonic() - started >= seconds:
-            raise BudgetExpiredError
+            return
         result["attempts"] += 1
-        left, right = observation(original, x, y), observation(mutant, x, y)
+        try:
+            left, right = observation(original, x, y), observation(mutant, x, y)
+        except InvalidObservationError:
+            invalid_observed = True
+            return
         if left != right:
             result.update(status="witness", args=[x, y], original=left, mutant=right)
         assert left == right
 
-    try:
+    with suppress(AssertionError):
         compare()
-    except AssertionError:
-        pass
-    except BudgetExpiredError:
-        pass
-    except InvalidObservationError:
+    if invalid_observed:
         result.update(status="unsupported_observation", args=[])
     result["elapsed"] = time.monotonic() - started
     return result
@@ -173,20 +172,73 @@ def crosshair_probe(original_source: str, mutant_source: str) -> str:
                 )
             ),
         )
+        # diffbehavior calls functions directly; docstring preconditions alone
+        # are not a domain filter. Identical guards exclude invalid differences.
+        function.body.insert(
+            1,
+            ast.parse(
+                "if not (1 <= len(x) <= 32 and 1 <= len(y) <= 32):\n    return 0.0\n"
+            ).body[0],
+        )
         functions.append(ast.unparse(ast.fix_missing_locations(function)))
     return "\n\n".join(functions) + "\n"
 
 
+def crosshair_arguments(output: str) -> list[str]:
+    for line in output.splitlines():
+        if not line.startswith("Given: (") or not line.endswith("),"):
+            continue
+        try:
+            expression = ast.parse("probe" + line[len("Given: ") : -1], mode="eval")
+            call = expression.body
+            if not isinstance(call, ast.Call) or call.args:
+                continue
+            values = {
+                keyword.arg: ast.literal_eval(keyword.value)
+                for keyword in call.keywords
+            }
+        except SyntaxError, ValueError, TypeError:
+            continue
+        if set(values) == {"x", "y"} and all(
+            type(value) is str and 1 <= len(value) <= MAX_LENGTH
+            for value in values.values()
+        ):
+            return ["a" * len(values["x"]), "a" * len(values["y"])]
+    return []
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=["search", "observe", "crosshair-probe"])
+    parser.add_argument(
+        "mode",
+        choices=[
+            "search",
+            "observe",
+            "crosshair-probe",
+            "parse-crosshair",
+            "regression",
+        ],
+    )
     parser.add_argument("--original", type=Path)
     parser.add_argument("--mutant", type=Path)
     parser.add_argument("--seed", type=int, default=790)
     parser.add_argument("--seconds", type=float, default=2.0)
     parser.add_argument("--x", default="a")
     parser.add_argument("--y", default="aa")
+    parser.add_argument("--expected", type=float)
     args = parser.parse_args()
+    if args.mode == "parse-crosshair":
+        if args.original is None:
+            parser.error("--original is required")
+        sys.stdout.write(
+            json.dumps(crosshair_arguments(args.original.read_text(encoding="utf-8")))
+        )
+        return
+    if args.mode == "regression":
+        if args.expected is None:
+            parser.error("--expected is required")
+        sys.stdout.write(render_regression((args.x, args.y), args.expected))
+        return
     if args.mode == "observe":
         module = importlib.import_module(MODULE)
         sys.stdout.write(

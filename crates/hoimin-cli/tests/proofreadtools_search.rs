@@ -1,5 +1,7 @@
 #[path = "support/proofreadtools_search/generator.rs"]
 mod generator;
+#[path = "support/proofreadtools_search/runner.rs"]
+mod runner;
 
 use generator::{generate_candidates, validate_sample};
 use hoimin_core::validate_candidate;
@@ -42,4 +44,104 @@ fn generated_single_edits_are_valid_unique_and_reproducible() {
 fn unknown_sample_checkout_is_rejected() {
     let project = tempfile::tempdir().unwrap();
     assert!(validate_sample(camino::Utf8Path::from_path(project.path()).unwrap()).is_err());
+}
+
+#[test]
+fn candidate_shrinking_starts_at_the_real_edit_and_reduces_structure() {
+    use proptest::strategy::ValueTree;
+    let candidate = generate_candidates(SOURCE, 776, 32).unwrap().remove(0);
+    let (space, mut tree) = generator::shrink_tree(SOURCE, &candidate).unwrap();
+    assert_eq!(space[tree.current()], candidate);
+    let initial = tree.current();
+    let mut previous = initial;
+    while tree.simplify() {
+        assert!(tree.current() < previous);
+        validate_candidate(SOURCE.as_bytes(), &space[tree.current()]).unwrap();
+        previous = tree.current();
+    }
+    assert_eq!(tree.current(), 0);
+}
+
+#[test]
+fn real_workspace_application_and_reset_preserve_original() {
+    runner::exercise_fixture(SOURCE);
+}
+
+#[test]
+fn incomplete_test_process_stops_before_witness_search() {
+    tokio::runtime::Runtime::new()
+        .unwrap()
+        .block_on(runner::exercise_timeout(SOURCE));
+}
+
+#[test]
+fn final_replay_prefers_retained_shrink_and_allows_negative_results() {
+    use serde_json::json;
+    assert!(runner::comparison_candidate(&[json!({"rows":[]})]).is_none());
+    let rows = vec![
+        json!({"rows":[{"id":"original","status":"survived_related_suite","witness":{"status":"witness"}}],
+            "shrink_rows":[{"kept":true,"row":{"id":"smaller","status":"survived_related_suite","witness":{"status":"witness"}}}]
+        }),
+    ];
+    assert_eq!(
+        runner::comparison_candidate(&rows).unwrap()["id"],
+        "smaller"
+    );
+}
+
+#[test]
+fn process_errors_and_incomplete_output_are_not_mutation_kills() {
+    use hoimin_core::{
+        EffectId, OutputSpoolRef, ProcessFinished, ProcessOutputState, ProcessTermination,
+        ResourceMode,
+    };
+    let mut result = ProcessFinished {
+        id: EffectId(1),
+        worker: Some(0),
+        termination: ProcessTermination::Exit(1),
+        output_state: ProcessOutputState::Complete,
+        output: OutputSpoolRef {
+            token: "fixture".into(),
+            retained: 10,
+            observed: 10,
+        },
+        elapsed: std::time::Duration::ZERO,
+        resource_mode: ResourceMode::Hard,
+    };
+    assert_eq!(
+        runner::verdict(&result, "AssertionError\n1 failed"),
+        "detected_assertion"
+    );
+    result.output.observed = 11;
+    assert_eq!(
+        runner::verdict(&result, "AssertionError\n1 failed"),
+        "incomplete"
+    );
+    result.output.observed = 10;
+    result.output_state = ProcessOutputState::CloseTimedOut;
+    assert_eq!(
+        runner::verdict(&result, "AssertionError\n1 failed"),
+        "incomplete"
+    );
+    result.output_state = ProcessOutputState::Complete;
+    assert_eq!(
+        runner::verdict(&result, "ImportError AssertionError"),
+        "test_failure_other"
+    );
+    result.termination = ProcessTermination::Timeout;
+    assert_eq!(runner::verdict(&result, "AssertionError"), "incomplete");
+    result.termination = ProcessTermination::Exit(0);
+    assert_ne!(
+        runner::verdict(&result, "1 skipped"),
+        "survived_related_suite"
+    );
+}
+
+#[test]
+#[ignore = "explicit bounded research against the pinned local proofreadtools checkout"]
+fn proofreadtools_experiment() {
+    tokio::runtime::Runtime::new()
+        .unwrap()
+        .block_on(runner::experiment())
+        .unwrap();
 }

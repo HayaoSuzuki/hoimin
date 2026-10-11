@@ -2,7 +2,10 @@ from pathlib import Path
 
 import pytest
 
-from tools import proofreadtools_search as search
+pytest.importorskip("hypothesis")
+from tools import (
+    proofreadtools_search as search,
+)
 
 ORIGINAL = (
     "def _length_ratio_upper_bound(x: str, y: str) -> float:\n"
@@ -30,6 +33,13 @@ def test_no_difference_is_not_an_equivalence_proof() -> None:
     )
 
 
+def test_mixed_difference_and_invalid_observation_is_not_a_witness() -> None:
+    mutant = ORIGINAL.replace("len(x) + len(y)", "len(x) - len(y)")
+    result = search.find_witness(ORIGINAL, mutant, 790, 2.0)
+    assert result["status"] == "unsupported_observation"
+    assert result["args"] == []
+
+
 @pytest.mark.parametrize("expression", ["1 / 0", "float('nan')", "'different type'"])
 def test_invalid_observation_is_not_a_witness(expression: str) -> None:
     mutant = (
@@ -46,3 +56,19 @@ def test_output_does_not_overwrite_existing_file(tmp_path: Path) -> None:
     with pytest.raises(FileExistsError):
         search.write_evidence(output, {"status": "witness"})
     assert output.read_text(encoding="utf-8") == "sentinel"
+
+
+def test_crosshair_probe_guards_the_same_input_domain() -> None:
+    source = search.crosshair_probe(ORIGINAL, ORIGINAL)
+    original = search.extracted(
+        source.replace("def original(", "def _length_ratio_upper_bound(")
+    )
+    assert original("", "") == 0.0
+    assert original("a" * 33, "a") == 0.0
+    assert original("a", "aa") == 2 / 3
+
+
+def test_crosshair_arguments_are_parsed_without_execution() -> None:
+    assert search.crosshair_arguments("Given: (x='aa', y='b'),\n") == ["aa", "a"]
+    assert search.crosshair_arguments("Given: (x='', y='b'),\n") == []
+    assert search.crosshair_arguments("Given: (x=__import__('os'), y='b'),\n") == []

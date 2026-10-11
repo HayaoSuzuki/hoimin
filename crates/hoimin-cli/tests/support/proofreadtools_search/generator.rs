@@ -150,6 +150,40 @@ pub fn seeded_runner(seed: u64) -> TestRunner {
     )
 }
 
+pub fn shrink_tree(
+    source: &str,
+    candidate: &CandidateDescriptor,
+) -> Result<(Vec<CandidateDescriptor>, proptest::num::usize::BinarySearch), String> {
+    struct Nodes(usize);
+    impl<'ast> Visitor<'ast> for Nodes {
+        fn visit_expr(&mut self, expr: &'ast Expr) {
+            self.0 += 1;
+            visitor::walk_expr(self, expr);
+        }
+    }
+    let mut space = candidate_space(source)?;
+    let mut ranked = Vec::new();
+    for entry in space.drain(..) {
+        let expression =
+            ruff_python_parser::parse_module(&entry.replacement).map_err(|e| e.to_string())?;
+        let mut nodes = Nodes(0);
+        for stmt in &expression.syntax().body {
+            nodes.visit_stmt(stmt);
+        }
+        ranked.push((nodes.0, entry.replacement.len(), entry));
+    }
+    ranked.sort_by(|a, b| (a.0, a.1, &a.2.replacement).cmp(&(b.0, b.1, &b.2.replacement)));
+    let space = ranked
+        .into_iter()
+        .map(|(_, _, entry)| entry)
+        .collect::<Vec<_>>();
+    let index = space
+        .iter()
+        .position(|entry| entry == candidate)
+        .ok_or("candidate outside generated space")?;
+    Ok((space, proptest::num::usize::BinarySearch::new(index)))
+}
+
 pub fn generate_candidates(
     source: &str,
     seed: u64,
