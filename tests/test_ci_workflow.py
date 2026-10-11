@@ -375,16 +375,25 @@ def assert_wheel_build(job: dict[str, object], target: str, platform: str) -> st
     build = named_step(job, "Build wheel")
     assert set(build) == {"name", "env", "shell", "run"}
     assert build["shell"] == "bash"
-    assert set(mapping(build["env"])) == {"MATURIN_VERSION"}
+    assert set(mapping(build["env"])) == (
+        {"MATURIN_VERSION", "MATURIN_IMAGE"}
+        if platform == "linux-x86_64"
+        else {"MATURIN_VERSION"}
+    )
     version = mapping(build["env"])["MATURIN_VERSION"]
     assert isinstance(version, str)
     assert re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", version)
     command = string(build["run"])
     if platform == "linux-x86_64":
+        image = mapping(build["env"])["MATURIN_IMAGE"]
+        assert isinstance(image, str)
+        assert re.fullmatch(
+            rf"ghcr\.io/pyo3/maturin:v{re.escape(version)}@sha256:[0-9a-f]{{64}}", image
+        )
         expected = (
             'docker run --rm --volume "$PWD:/io" --workdir /io '
             "--env CARGO_TARGET_DIR=/tmp/hoimin-wheel-target "
-            '--entrypoint /bin/bash ghcr.io/pyo3/maturin:v"$MATURIN_VERSION" -euc '
+            '--entrypoint /bin/bash "$MATURIN_IMAGE" -euc '
             "'maturin build --release --locked --compatibility manylinux2014 "
             f"--no-default-features --target {target} --out target/wheels\n"
             "cargo install cargo-cyclonedx --version 0.5.7 --locked "
@@ -394,7 +403,7 @@ def assert_wheel_build(job: dict[str, object], target: str, platform: str) -> st
             "--output target/sbom/wheel.json'\n"
             'sudo chown -R "$(id -u):$(id -g)" target/sbom\n'
             'sudo chown -R "$(id -u):$(id -g)" target/wheels\n'
-            'docker image rm ghcr.io/pyo3/maturin:v"$MATURIN_VERSION"\n'
+            'docker image rm "$MATURIN_IMAGE"\n'
             "df -h . /tmp"
         )
     else:
@@ -1880,6 +1889,11 @@ def test_accepts_updated_matching_maturin_pins(version: str) -> None:
         workflow,
     )
     assert count == 3
+    updated = re.sub(
+        r"ghcr\.io/pyo3/maturin:v[0-9]+\.[0-9]+\.[0-9]+@",
+        f"ghcr.io/pyo3/maturin:v{version}@",
+        updated,
+    )
     assert_github_release(updated)
 
 
@@ -1910,6 +1924,27 @@ def test_rejects_invalid_maturin_pins(version: object) -> None:
         for step in job_steps(job):
             if step.get("name") == "Build wheel":
                 mapping(step["env"])["MATURIN_VERSION"] = version
+    with pytest.raises(AssertionError):
+        assert_github_release(yaml.safe_dump(document))
+
+
+@pytest.mark.parametrize(
+    "image",
+    [
+        None,
+        "",
+        "ghcr.io/pyo3/maturin:v1.15.0",
+        "ghcr.io/pyo3/maturin:latest",
+        "ghcr.io/pyo3/maturin:v1.15.0@sha256:short",
+        "ghcr.io/pyo3/maturin:v9.99.0@sha256:" + "a" * 64,
+        "example.com/pyo3/maturin:v1.15.0@sha256:" + "a" * 64,
+        "ghcr.io/pyo3/maturin:v1.15.0@sha256:" + "G" * 64,
+    ],
+)
+def test_rejects_unpinned_or_mismatched_linux_maturin_image(image: object) -> None:
+    document = workflow_document(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
+    build = named_step(workflow_jobs(document)["linux-wheel"], "Build wheel")
+    mapping(build["env"])["MATURIN_IMAGE"] = image
     with pytest.raises(AssertionError):
         assert_github_release(yaml.safe_dump(document))
 
@@ -1951,7 +1986,7 @@ def test_rejects_mismatched_maturin_pins_and_other_input_changes(change: str) ->
         "--workdir /io",
         "--out target/wheels",
         'sudo chown -R "$(id -u):$(id -g)" target/wheels',
-        'docker image rm ghcr.io/pyo3/maturin:v"$MATURIN_VERSION"',
+        'docker image rm "$MATURIN_IMAGE"',
     ],
 )
 def test_linux_wheel_requires_portable_isolated_container_build(required: str) -> None:

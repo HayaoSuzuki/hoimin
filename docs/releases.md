@@ -51,6 +51,12 @@ GitHub Releases retain standalone archives and wheels as release artifacts.
 The standalone Linux executable is built on Ubuntu 22.04; the wheel uses
 manylinux2014 for broader glibc compatibility. Wheels require Python 3.14.
 
+The Linux wheel build uses an official Maturin container pinned by OCI digest.
+When updating Maturin, update all three `MATURIN_VERSION` values and the Linux
+`MATURIN_IMAGE` tag and digest together. Confirm that the official image index
+includes `linux/amd64`; the build and disk-cleanup steps use the same image
+reference. Keep the manylinux2014 compatibility and existing smoke checks.
+
 Before publication, separate jobs exercise the verified archives outside the
 checkout and the Linux wheel at glibc 2.17 with Python 3.14. See the
 [artifact smoke checks](artifact-smoke.md) for runtime/ABI distinctions, evidence
