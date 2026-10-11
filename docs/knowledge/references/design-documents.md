@@ -5,6 +5,11 @@ description: docs/superpowers/specs内の全Markdownを先頭見出しと出典�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-790-proofreadtools-design
+  resource: ../../superpowers/specs/2026-10-11-issue-790-proofreadtools-design.md
+  revision: 28fd9bf
+  working_tree: clean
+  sha256: 6958f99389c4eb4c23b69211da0cd9b493bed00beed2630f549b60924e4c758e
 - id: issue-692-exception-scope-outcomes
   resource: ../../superpowers/specs/2026-10-05-exception-scope-outcomes.md
   revision: fae3ce3e82a8a768c8dca49531384aa081a97f71
@@ -1632,3 +1637,9 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 ## Issue #741 リリースSBOM
 
 - [設計](../../superpowers/specs/2026-10-10-issue-741-sbom-design.md) - 配布物別SBOMと公開ゲート。詳細は[契約](../release-sbom.md)を参照。
+
+## Issue #790・#776・#777
+
+- [proofreadtoolsを使う変異候補・差分入力探索の評価設計](../../superpowers/specs/2026-10-11-issue-790-proofreadtools-design.md) - 固定proofreadtoolsの設計と実測。[^issue-790-proofreadtools-design]
+
+[^issue-790-proofreadtools-design]: [proofreadtoolsを使う変異候補・差分入力探索の評価設計](../../superpowers/specs/2026-10-11-issue-790-proofreadtools-design.md)。
