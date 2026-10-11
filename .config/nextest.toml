@@ -1,0 +1,14 @@
+# Evaluation only: retain Cargo in other jobs until hosted measurements justify adoption.
+nextest-version = "0.9.148"
+
+[profile.ci]
+test-threads = 2
+retries = 0
+fail-fast = false
+success-output = "final"
+failure-output = "immediate-final"
+
+[profile.ci.junit]
+path = "junit.xml"
+store-success-output = true
+store-failure-output = true

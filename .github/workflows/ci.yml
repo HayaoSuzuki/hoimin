@@ -185,7 +185,36 @@ jobs:
       - name: Install repository Rust toolchain
         run: rustup toolchain install
       - run: uv sync --frozen
-      - run: cargo test --workspace
+      - name: Install pinned nextest for bounded evaluation
+        shell: bash
+        run: |
+          set -euo pipefail
+          start=$SECONDS
+          mkdir -p "$RUNNER_TEMP/nextest-evaluation" "$RUNNER_TEMP/nextest-bin"
+          curl --proto '=https' --tlsv1.2 --fail --location \
+            https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-0.9.148/cargo-nextest-0.9.148-x86_64-unknown-linux-gnu.tar.gz \
+            --output "$RUNNER_TEMP/nextest.tar.gz"
+          echo "223ba936714cc861a9cdedad5a8eb664dfdd69d6fbdf6cea6aa8184f523290dc  $RUNNER_TEMP/nextest.tar.gz" | sha256sum --check
+          tar -xzf "$RUNNER_TEMP/nextest.tar.gz" -C "$RUNNER_TEMP/nextest-bin" cargo-nextest
+          echo "$RUNNER_TEMP/nextest-bin" >> "$GITHUB_PATH"
+          echo "$((SECONDS - start))" > "$RUNNER_TEMP/nextest-evaluation/install-seconds.txt"
+      - name: Build test inventory after uv sync
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/time -v -o "$RUNNER_TEMP/nextest-evaluation/build.time" \
+            cargo test --workspace --locked --no-run --message-format json \
+            > "$RUNNER_TEMP/nextest-evaluation/cargo-artifacts.jsonl"
+      - name: Compare Cargo and nextest on Linux
+        run: python tools/nextest_evaluation.py
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: always()
+        with:
+          name: nextest-evaluation-linux
+          path: |
+            ${{ runner.temp }}/nextest-evaluation
+            target/nextest/ci/junit.xml
+          retention-days: 7
       - run: cargo test --locked -p hoimin-cli --example generate_cli_reference
       - name: Check generated CLI reference
         run: cargo run --locked -p hoimin-cli --example generate_cli_reference -- --check

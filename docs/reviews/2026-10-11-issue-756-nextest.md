@@ -2,7 +2,7 @@
 
 Base: `00893465e0328204453e5008dc3884035b85c7bd`.
 Branch: `ci/issue-756-nextest-evaluation`.
-Status: design reviewed; implementation and measurements have not started.
+Status: design approved; temporary hosted comparison prepared, measurements pending.
 
 ## Bounded design
 
@@ -94,6 +94,39 @@ Implementation and verification self-reviews are pending; they will describe
 actual changes and results rather than planned checks. CI/docs-only changes do
 not alter the distributed version floor. Preserve `.idea/`, monitor free disk
 space and run `cargo clean` periodically.
+
+## Temporary comparison implementation self-reviews
+
+1. Installation is pinned to 0.9.148 and the GitHub release asset SHA-256;
+   credentials and write permissions are not added to the Rust job.
+2. Inventory checks include all compiled test binary paths and qualified test
+   identities with ignored status. Unsupported harness output fails the probe.
+3. Resource sampling follows only the measured command's descendants, includes
+   its time/Cargo wrappers and records its 200 ms sampling interval. Fast exits
+   and reparented children can escape samples; existing cleanup assertions remain
+   the behavioral evidence rather than the sampler claiming to prove cleanup.
+4. Cargo and nextest alternate on the same timeout-focused integration targets;
+   workspace runs follow, with doctests measured separately. Other CI jobs and
+   explicit example/reference commands remain unchanged.
+5. Commands use argv without a shell, preserve failed exit status, stop further
+   trials on failure and retain logs/time files with `always()` upload. A 900 s
+   command limit terminates the probe process group; this is an evaluation abort,
+   not an adopted test timeout policy.
+
+## Temporary comparison verification
+
+The initial absent helper caused collection failure; with stubs in place the
+intended regressions failed (four failures, one pass), then all five passed after
+implementation. They reject a missing test, a changed target kind and a changed
+ignore flag, and check recursive process accounting excluding siblings.
+Repository Ruff format/check and ty passed. Strict actionlint/ShellCheck/zizmor
+passed (the existing three Python-shell warnings remain). Cargo clean removed
+zero files; disk free space was 175.79 GiB before the trial.
+
+Ruling: use this review record as the execution ledger, since the approved
+bounded design already contains the sequence. Do not create a second speculative
+implementation-plan document or a persistent benchmark interface. The temporary
+comparison/helper/tests will be removed or reduced after the measured decision.
 
 ## Sources inspected
 
