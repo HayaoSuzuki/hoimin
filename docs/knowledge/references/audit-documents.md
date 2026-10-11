@@ -811,6 +811,10 @@ sources:
   working_tree: untracked
   sha256: 37e8886b574a7226c882551b72683241c31bcd39ed0654f417c9569f63ed4e31
 
+- id: fuzz-adoption-report
+  resource: ../../superpowers/reports/issue-805/README.md
+  working_tree: untracked
+  sha256: 8e97670911b94e411881ef6f4d0f66bd6180b582592d7c3e204f0bb1759781a4
 ---
 
 # 収録一覧
@@ -1409,3 +1413,10 @@ sources:
 - [#759 段階的検証の実現性調査](../../superpowers/reports/2026-10-11-issue-759-staged-verification.md) - 既存commandでの実現性、失敗・中断の除外、費用低減なしの測定と製品機能保留。[^issue-759-staged-report]
 
 [^issue-759-staged-report]: [#759 段階的検証の実現性調査](../../superpowers/reports/2026-10-11-issue-759-staged-verification.md)。条件、運用手順、セルフレビュー各5回。
+
+
+## Issues #805 and #807
+
+- [Fuzzing adoption decisions for #805 and #807](../../superpowers/reports/issue-805/README.md) - Bounded adoption decisions and evidence limitations.[^fuzz-adoption-report]
+
+[^fuzz-adoption-report]: [Fuzzing adoption decisions for #805 and #807](../../superpowers/reports/issue-805/README.md).

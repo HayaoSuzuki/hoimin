@@ -1,0 +1,72 @@
+{
+  "python": "3.14.6",
+  "rust": "1.99.0",
+  "platform": "Windows x86_64 MSVC",
+  "proptest_seed": 1,
+  "bolero_seed": 1,
+  "results": [
+    {
+      "mode": "replay",
+      "returncode": 0,
+      "seconds": 0.012948199640959501,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "mode": "empty",
+      "returncode": 0,
+      "seconds": 0.011021700222045183,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "mode": "full",
+      "returncode": 0,
+      "seconds": 0.01221950026229024,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "mode": "corrupt-count",
+      "returncode": 101,
+      "seconds": 0.012693299911916256,
+      "stdout": "",
+      "stderr": "\nthread 'main' (31676) panicked at src\\main.rs:5:5:\nassertion `left == right` failed\n  left: 1\n right: 2\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n"
+    },
+    {
+      "mode": "corrupt-unique",
+      "returncode": 101,
+      "seconds": 0.01298030000180006,
+      "stdout": "",
+      "stderr": "\nthread 'main' (46712) panicked at src\\main.rs:7:5:\nassertion `left == right` failed\n  left: 1\n right: 2\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n"
+    },
+    {
+      "mode": "corrupt-range",
+      "returncode": 101,
+      "seconds": 0.025521399918943644,
+      "stdout": "",
+      "stderr": "\nthread 'main' (27728) panicked at src\\main.rs:8:5:\nassertion failed: actual.iter().all(|&id| id < population)\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n"
+    },
+    {
+      "mode": "corrupt-prefix",
+      "returncode": 101,
+      "seconds": 0.011494799982756376,
+      "stdout": "",
+      "stderr": "\nthread 'main' (27688) panicked at src\\main.rs:9:5:\nassertion `left == right` failed\n  left: [0, 1]\n right: [1, 0]\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n"
+    },
+    {
+      "mode": "proptest",
+      "returncode": 0,
+      "seconds": 0.04406620003283024,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "mode": "bolero",
+      "returncode": 0,
+      "seconds": 0.03631370002403855,
+      "stdout": "",
+      "stderr": "test hoimin_sampling_research ...\trun time: 23.2765ms | iterations/s: 11041 | rng inputs: 257\n"
+    }
+  ]
+}

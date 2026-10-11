@@ -79,3 +79,5 @@ okf_version: "0.2"
 - [Constrained mutation search and differential test generation](mutation-search.md) - Measurements on fixed functions, adopted scope, guided search and CrossHair limits.
 
 - [Typed results and executable contracts](typed-results-and-contracts.md) - Expected failures, optional budget checks, and evidence limits.
+
+- [Fuzzing maintenance adoption](fuzzing-adoption.md) - Corpus replay evidence, property reuse and bounded exploration decisions.

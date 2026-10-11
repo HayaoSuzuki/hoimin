@@ -1,0 +1,17 @@
+[package]
+name = "hoimin-sampling-research"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+bolero = "=0.13.7"
+proptest = "=1.11.0"
+
+[lints.rust]
+warnings = "deny"
+
+[lints.clippy]
+all = "deny"
