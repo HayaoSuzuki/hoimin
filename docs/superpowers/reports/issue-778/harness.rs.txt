@@ -1,0 +1,42 @@
+use hoimin_core::{
+    BudgetKind, BudgetLedger, EffectId, PreflightCompleted, ReservationId, ReserveError,
+    RunBudgets, WorkspaceBudgetError, reserve_workspace_copy,
+};
+
+#[kani::proof]
+#[kani::unwind(8)]
+fn workspace_copy_contract() {
+    let bytes: u64 = kani::any();
+    let workers = u32::from(kani::any::<u8>() % 4);
+    let reported: u64 = kani::any();
+    let limit: u64 = kani::any();
+    let product = u128::from(bytes) * u128::from(workers);
+    let mut ledger = BudgetLedger::new(RunBudgets { memory: 0, copy: limit, processes: 0 });
+    let result = reserve_workspace_copy(&mut ledger, &PreflightCompleted {
+        id: EffectId(1), per_worker_logical_bytes: bytes, requested_workers: workers,
+        aggregate_logical_bytes: reported, fingerprint: None,
+    });
+    let rejected = result.is_err();
+    let valid = match result {
+        Ok(grant) => product <= u128::from(u64::MAX)
+            && product == u128::from(reported) && reported <= limit
+            && grant.granted_allowance() == reported
+            && grant.per_worker_logical_bytes() == bytes
+            && grant.requested_workers() == workers
+            && grant.preflight_id() == EffectId(1)
+            && grant.reservation_id() == ReservationId(0)
+            && ledger.reserved(BudgetKind::Copy) == reported,
+        Err(WorkspaceBudgetError::AggregateOverflow) => product > u128::from(u64::MAX),
+        Err(WorkspaceBudgetError::AggregateMismatch { per_worker, workers: count, reported: value }) =>
+            product <= u128::from(u64::MAX) && product != u128::from(reported)
+            && per_worker == bytes && count == workers && value == reported,
+        Err(WorkspaceBudgetError::Reserve(ReserveError::LimitReached(error))) =>
+            product <= u128::from(u64::MAX) && product == u128::from(reported)
+            && reported > limit && error.kind == BudgetKind::Copy
+            && error.requested == reported && error.available == limit,
+        Err(_) => false,
+    };
+    let unchanged = !rejected || (ledger.reserved(BudgetKind::Copy) == 0
+        && ledger.reserve(BudgetKind::Copy, 0) == Ok(ReservationId(0)));
+    assert!(valid && unchanged, "workspace copy contract");
+}

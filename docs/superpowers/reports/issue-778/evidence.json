@@ -1,0 +1,115 @@
+{
+  "schema": "hoimin.issue778.research.v1",
+  "hoimin_revision": "e87f2e58c717fd66cc74f149e133dad516b3f2fe",
+  "target": "hoimin_core::reserve_workspace_copy",
+  "source_sha256": "1dd41c876692b70b31f81bbb9b5d37084203460942547e9f1ef1e446c3467a2e",
+  "kani_version": "0.68.0",
+  "bundle_sha256": "32e2b484d73ede0bbf64a2cf0879c4259422497d8aec4ee67d448de9ae7843d3",
+  "bounds": {
+    "initial_ledger": "empty",
+    "workers": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "bytes": "u64",
+    "reported": "u64",
+    "copy_limit": "u64",
+    "reserve_calls": "1 plus zero-byte probe on rejection",
+    "contracts_feature": false,
+    "stubs": false,
+    "unwinding_checks": true
+  },
+  "limits": {
+    "memory_bytes": 4294967296,
+    "swap_bytes": 0,
+    "tasks": 128,
+    "harness_timeout_seconds": 60,
+    "initial_command_seconds": 240,
+    "retry_command_seconds": 120
+  },
+  "trials": [
+    {
+      "unwind": 8,
+      "classification": "resource_exhausted",
+      "reason": "timeout",
+      "command_exit": 1,
+      "harness_ms": 60042,
+      "time_wall_seconds": 98.05,
+      "maximum_rss_kib": 1994856,
+      "service_peak_display": "2.7G",
+      "service_metrics_source": "service-results.txt (transcribed)"
+    },
+    {
+      "unwind": 2,
+      "classification": "resource_exhausted",
+      "reason": "oom-kill",
+      "service_runtime_seconds": 23.743,
+      "service_peak_display": "4.0G",
+      "kani_json": null,
+      "service_metrics_source": "service-results.txt (transcribed)"
+    }
+  ],
+  "verified_contracts": 0,
+  "counterexamples": 0,
+  "intentional_defect_trials": 0,
+  "playback_trials": 0,
+  "ordinary_regression_test_replays": 0,
+  "decision": "hold; no product or CI integration",
+  "cleanup": {
+    "children_absent_before_clean": true,
+    "cargo_clean_files": 930,
+    "cargo_clean_display": "322.4MiB",
+    "bytes_before_clean": 2778174988,
+    "bytes_after_clean": 2447088565,
+    "dedicated_environment_removed": true
+  },
+  "artifacts": [
+    {
+      "path": "baseline-unwind2.log.gz",
+      "sha256": "f381dd5398093c179c53965906ff689aed306cc69952f36284b7fddc90b323fe",
+      "bytes": 8144
+    },
+    {
+      "path": "baseline.json",
+      "sha256": "860905356bc065a55164679b37818c473c44095e1051a92857eda77c53d21b14",
+      "bytes": 3868
+    },
+    {
+      "path": "baseline.log.gz",
+      "sha256": "4e53b122dba44365f1fb13bf20db2ac07268170a80c0505b0fbaab15da3a5d2f",
+      "bytes": 28936
+    },
+    {
+      "path": "cli-diagnostic.log.gz",
+      "sha256": "d3c37a64a4e1d71a598687cb4ec617bd2e78e2e63d1f633b571150543d514e33",
+      "bytes": 630
+    },
+    {
+      "path": "harness.rs.txt",
+      "sha256": "da0705a8d433cf3a6f54113f013c9746022b4bfe00ab637044576d77aa2411b7",
+      "bytes": 2185
+    },
+    {
+      "path": "install.sh.txt",
+      "sha256": "17380b4837eca280ef1f14ba70dab958800abeacf55e5e0526d122e35b05b6b9",
+      "bytes": 1049
+    },
+    {
+      "path": "retry.sh.txt",
+      "sha256": "834e1e6998cc6f10b04eed7fae88fa3e702c436a5f09645d6946537e4f9b4207",
+      "bytes": 788
+    },
+    {
+      "path": "run.sh.txt",
+      "sha256": "429d6e4b705a37bd13690cb596915f884163d0775bec7d9b31b2629c78db67f4",
+      "bytes": 934
+    },
+    {
+      "path": "service-results.txt",
+      "sha256": "ee9f8bbe7f683a0b0c9be1a4ab433ea8053e1f79195996eb721220d0a604808d",
+      "bytes": 712
+    }
+  ]
+}

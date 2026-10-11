@@ -5,6 +5,10 @@ description: docs/auditsとdocs/superpowers/reports内の全Markdownを追跡状
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-778-kani-report
+  resource: ../../superpowers/reports/2026-10-11-issue-778-kani.md
+  working_tree: untracked
+  sha256: 703f375d0a54f2bfbf0ffd457cf761402e2ae3101b9ab5b32114c93a7c27aa7c
 - id: issue-695-assessment
   resource: ../../superpowers/reports/issue-695/assessment.md
   revision: 76f03acdefefdc03aff6973b0d2b49f6f3598837
@@ -1358,3 +1362,9 @@ sources:
 ## Issue #741 リリースSBOM
 
 - [検証記録](../../superpowers/reports/2026-10-10-issue-741-sbom.md) - 配布物別SBOMと公開ゲート。詳細は[契約](../release-sbom.md)を参照。
+
+## Issue #778 Kani実現性調査
+
+- [Kaniによるworkspaceコピー予算契約の実現性調査](../../superpowers/reports/2026-10-11-issue-778-kani.md) - 実コード接続、60秒timeoutと4GiB OOM、導入保留の判断。[^issue-778-kani-report]
+
+[^issue-778-kani-report]: [Kaniによるworkspaceコピー予算契約の実現性調査](../../superpowers/reports/2026-10-11-issue-778-kani.md)。
