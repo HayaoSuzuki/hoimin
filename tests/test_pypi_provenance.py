@@ -12,9 +12,12 @@ from email.message import Message
 from operator import setitem
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 import yaml
+from hypothesis import given, settings
+from hypothesis import strategies as st
 from pypi_attestations import (
     Attestation,
     Distribution,
@@ -29,6 +32,145 @@ from tools import pypi_provenance
 from tools.ci_selection import object_mapping
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+@settings(max_examples=20)
+@given(failures=st.integers(min_value=0, max_value=60))
+def test_propagation_verification_waits_for_delayed_publication(failures: int) -> None:
+    unavailable = urllib.error.HTTPError(
+        "https://test.pypi.org/pypi/hoimin/0.4.2/json",
+        404,
+        "Not Found",
+        Message(),
+        None,
+    )
+    responses = [unavailable] * failures + [True]
+    with (
+        patch.object(pypi_provenance, "verify_index", side_effect=responses) as verify,
+        patch.object(pypi_provenance.time, "sleep") as sleep,
+        patch.object(pypi_provenance.time, "monotonic", return_value=0),
+    ):
+        result = pypi_provenance.verify_with_propagation(
+            "testpypi", "v0.4.2", "a" * 40, Path("dist"), allow_missing=False
+        )
+
+    assert result is True
+    assert verify.call_count == failures + 1
+    assert sleep.call_count == failures
+    assert sum(call.args[0] for call in sleep.call_args_list) <= 600
+
+
+def test_propagation_stops_after_bounded_attempts() -> None:
+    unavailable = urllib.error.HTTPError(
+        "https://pypi.org/pypi/hoimin/0.4.2/json", 404, "Not Found", Message(), None
+    )
+    with (
+        patch.object(
+            pypi_provenance, "verify_index", side_effect=unavailable
+        ) as verify,
+        patch.object(pypi_provenance.time, "sleep") as sleep,
+        patch.object(pypi_provenance.time, "monotonic", return_value=0),
+        pytest.raises(urllib.error.HTTPError) as raised,
+    ):
+        pypi_provenance.verify_with_propagation(
+            "pypi", "v0.4.2", "a" * 40, Path("dist"), allow_missing=False
+        )
+
+    assert raised.value is unavailable
+    assert verify.call_count == 61
+    assert sleep.call_count == 60
+
+
+def test_propagation_stops_when_request_time_consumes_budget() -> None:
+    unavailable = urllib.error.HTTPError(
+        "https://pypi.org/pypi/hoimin/0.4.2/json", 404, "Not Found", Message(), None
+    )
+    with (
+        patch.object(
+            pypi_provenance, "verify_index", side_effect=unavailable
+        ) as verify,
+        patch.object(pypi_provenance.time, "sleep") as sleep,
+        patch.object(pypi_provenance.time, "monotonic", side_effect=[0, 601]),
+        pytest.raises(urllib.error.HTTPError),
+    ):
+        pypi_provenance.verify_with_propagation(
+            "pypi", "v0.4.2", "a" * 40, Path("dist"), allow_missing=False
+        )
+
+    assert verify.call_count == 1
+    sleep.assert_not_called()
+
+
+@given(status=st.sampled_from([403, 429, 500, 502, 503]))
+def test_propagation_does_not_retry_other_http_errors(status: int) -> None:
+    rejected = urllib.error.HTTPError(
+        "https://pypi.org/", status, "rejected", Message(), None
+    )
+    with (
+        patch.object(pypi_provenance, "verify_index", side_effect=rejected) as verify,
+        patch.object(pypi_provenance.time, "sleep") as sleep,
+        pytest.raises(urllib.error.HTTPError) as raised,
+    ):
+        pypi_provenance.verify_with_propagation(
+            "pypi", "v0.4.2", "a" * 40, Path("dist"), allow_missing=False
+        )
+
+    assert raised.value is rejected
+    verify.assert_called_once()
+    sleep.assert_not_called()
+
+
+def test_propagation_does_not_start_verification_at_expired_deadline() -> None:
+    unavailable = urllib.error.HTTPError(
+        "https://pypi.org/", 404, "Not Found", Message(), None
+    )
+    with (
+        patch.object(
+            pypi_provenance, "verify_index", side_effect=unavailable
+        ) as verify,
+        patch.object(pypi_provenance.time, "sleep") as sleep,
+        patch.object(pypi_provenance.time, "monotonic", side_effect=[0, 599, 600]),
+        pytest.raises(urllib.error.HTTPError) as raised,
+    ):
+        pypi_provenance.verify_with_propagation(
+            "pypi", "v0.4.2", "a" * 40, Path("dist"), allow_missing=False
+        )
+
+    assert raised.value is unavailable
+    verify.assert_called_once()
+    sleep.assert_called_once_with(1)
+
+
+def test_propagation_does_not_retry_invalid_publication() -> None:
+    with (
+        patch.object(
+            pypi_provenance, "verify_index", side_effect=ValueError("digest")
+        ) as verify,
+        patch.object(pypi_provenance.time, "sleep") as sleep,
+        pytest.raises(ValueError, match="digest"),
+    ):
+        pypi_provenance.verify_with_propagation(
+            "pypi", "v0.4.2", "a" * 40, Path("dist"), allow_missing=False
+        )
+
+    verify.assert_called_once()
+    sleep.assert_not_called()
+
+
+def test_inspection_remains_immediate_for_missing_release() -> None:
+    with (
+        patch.object(pypi_provenance, "verify_index", return_value=False) as verify,
+        patch.object(pypi_provenance.time, "sleep") as sleep,
+    ):
+        result = pypi_provenance.verify_with_propagation(
+            "pypi", "v0.4.2", "a" * 40, Path("dist"), allow_missing=True
+        )
+
+    assert result is False
+    verify.assert_called_once_with(
+        "pypi", "v0.4.2", "a" * 40, Path("dist"), allow_missing=True
+    )
+    sleep.assert_not_called()
 
 
 def recorded_bundle() -> dict[str, object]:

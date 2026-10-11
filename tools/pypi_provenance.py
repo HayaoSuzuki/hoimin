@@ -7,6 +7,7 @@ import base64
 import hashlib
 import http
 import json
+import logging
 import os
 import re
 import shutil
@@ -30,7 +31,10 @@ PUBLISH = "https://docs.pypi.org/attestations/publish/v1"
 INDEXES = {"pypi": "https://pypi.org", "testpypi": "https://test.pypi.org"}
 PREDICATES = {SLSA, PUBLISH}
 PLATFORMS = 3
-PROPAGATION_ATTEMPTS = 6
+PROPAGATION_ATTEMPTS = 61
+PROPAGATION_SECONDS = 600
+PROPAGATION_INTERVAL = 10
+LOGGER = logging.getLogger(__name__)
 
 
 def sha256(path: Path) -> str:
@@ -294,6 +298,43 @@ def verify_index_wheel(
             verify_build(downloaded, bundle, commit)
 
 
+def verify_with_propagation(
+    index: str, tag: str, commit: str, directory: Path, *, allow_missing: bool
+) -> bool:
+    """Wait only for post-upload 404s; retain every publication verification."""
+    deadline = time.monotonic() + PROPAGATION_SECONDS
+    attempt = 0
+    while True:
+        attempt += 1
+        try:
+            return verify_index(
+                index, tag, commit, directory, allow_missing=allow_missing
+            )
+        except urllib.error.HTTPError as error:
+            remaining = deadline - time.monotonic()
+            if (
+                allow_missing
+                or error.code != http.HTTPStatus.NOT_FOUND
+                or attempt >= PROPAGATION_ATTEMPTS
+                or remaining <= 0
+            ):
+                raise
+            delay = min(PROPAGATION_INTERVAL, remaining)
+            LOGGER.warning(
+                "%s %s publication not yet visible (HTTP 404); "
+                "retry %d/%d in %.1fs (%.1fs remaining)",
+                index,
+                tag,
+                attempt,
+                PROPAGATION_ATTEMPTS - 1,
+                delay,
+                remaining,
+            )
+            time.sleep(delay)
+            if time.monotonic() >= deadline:
+                raise
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mode", choices=["stage", "inspect", "verify"])
@@ -311,26 +352,13 @@ def main() -> None:
     else:
         if args.index is None:
             parser.error("inspect/verify require --index")
-        # Index/CDN propagation may briefly return 404 after a successful upload.
-        published = False
-        for attempt in range(PROPAGATION_ATTEMPTS):
-            try:
-                published = verify_index(
-                    args.index,
-                    args.tag,
-                    args.commit,
-                    args.directory,
-                    allow_missing=args.mode == "inspect",
-                )
-                break
-            except urllib.error.HTTPError as error:
-                if (
-                    args.mode != "verify"
-                    or error.code != http.HTTPStatus.NOT_FOUND
-                    or attempt == PROPAGATION_ATTEMPTS - 1
-                ):
-                    raise
-                time.sleep(10)
+        published = verify_with_propagation(
+            args.index,
+            args.tag,
+            args.commit,
+            args.directory,
+            allow_missing=args.mode == "inspect",
+        )
         if args.mode == "inspect":
             with Path(os.environ["GITHUB_OUTPUT"]).open(
                 "a", encoding="utf-8"

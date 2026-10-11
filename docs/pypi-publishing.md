@@ -106,7 +106,16 @@ upload. A production verification failure marks the publication run failed but
 cannot undo files already accepted by PyPI. The GitHub Release remains public.
 
 Before each upload, the index is inspected. A version-level HTTP 404 permits a
-new upload. Other HTTP errors fail; they are never interpreted as an empty index.
+new upload immediately; inspection does not wait for an absent version. After
+upload, verification retries HTTP 404 responses at 10-second intervals for a
+600-second propagation budget, with at most 61 attempts. Request and verification
+time count against that budget; an in-flight request can finish after it expires.
+The entire verification job, including setup, is limited to 15 minutes. Each retry
+logs its index, version and remaining budget. Other HTTP errors and invalid bytes,
+publisher identities or attestations fail immediately. A retry never bypasses the
+complete inventory, wheel and signature checks.
+
+Inspection propagates other HTTP errors; they are never interpreted as an empty index.
 An existing publication is reused only if its exact three files, downloaded
 bytes and both cryptographic attestations verify. Partial publication, legacy
 publish-only evidence, wrong digests and duplicate predicates fail. The action

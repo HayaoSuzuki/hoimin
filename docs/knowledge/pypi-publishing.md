@@ -7,9 +7,9 @@ catalog_revision: 36aa4cd696f4db28cd4811a0995d85df89b56eb5
 sources:
 - id: guide
   resource: ../pypi-publishing.md
+  revision: afab14d952113004ee999ea279358f16f2a0c6c6
   working_tree: modified
-  sha256: 238002fb03b6ea9fc82392e9fb0d4215d66dd4361d9bee22f8e625700dcb8003
-  revision: 3dbf6dfdb107cb83c1834fa8d3bf057e95243326
+  sha256: e603ead7480e48b21c1dfd358c21d9b8aaf8f8b5ad52ff4b16e6f141fffd39cb
 - id: validator
   resource: ../../tools/pypi_release.py
   revision: 52e12a30bf40cb8b0040e21e776c8b75bc37ccc6
@@ -32,9 +32,9 @@ sources:
   sha256: e8653a2473cc383c6c99911cc9f095beb3133fb6233f74c5e85ae71845f220ba
 - id: release-workflow
   resource: ../../.github/workflows/release.yml
-  revision: 52e12a30bf40cb8b0040e21e776c8b75bc37ccc6
+  revision: afab14d952113004ee999ea279358f16f2a0c6c6
   working_tree: modified
-  sha256: 197b961819a9962c98b9442c0143d3ae9ac97169ae8118deec0d3b5e65f7c1f4
+  sha256: 76b469c08efcb0563945ce9bb1c49e83ceb7610cc20774063544b90da33e1477
 - id: ci-tests
   resource: ../../tests/test_ci_workflow.py
   revision: 52e12a30bf40cb8b0040e21e776c8b75bc37ccc6
@@ -42,14 +42,14 @@ sources:
   sha256: 30a5e9e68cc2b9c3f15809a75eb74525dfb4c045dd41b8803c666e6d52aabd2d
 - id: provenance
   resource: ../../tools/pypi_provenance.py
-  revision: c9f92eb721d8a858a2f55643a5c72723763174dd
+  revision: afab14d952113004ee999ea279358f16f2a0c6c6
   working_tree: modified
-  sha256: 478191ff23756d78670499c0127f06133b7ff7ce3a93f13392738a8108ea86d8
+  sha256: 3a5897ceb15d07196fbeeb295882b69f5e32c6843d8f68b47982f39afdecc52e
 - id: provenance-tests
   resource: ../../tests/test_pypi_provenance.py
-  revision: c9f92eb721d8a858a2f55643a5c72723763174dd
+  revision: afab14d952113004ee999ea279358f16f2a0c6c6
   working_tree: modified
-  sha256: 210238c8d1caeaafef9a9acaea02cea43a0eb3c1a1e062e879f554626d92308f
+  sha256: 8bc6ac01e9f88cf7543b6d039b1c55abb378acf7fdcc2b0c228844e7a10ffae6
 - id: review
   resource: ../reviews/2026-10-10-issue-771-pypi-provenance.md
   revision: 52e12a30bf40cb8b0040e21e776c8b75bc37ccc6
@@ -124,7 +124,7 @@ SHA-256はGitHub Releaseと一致し、SLSAとPublishの署名検証も成功し
 改変bytes・別repository・別source・別workflow・署名破損の5ケースが拒否されたことを確認した後、`PYPI_AUTO_PUBLISH=true`を設定して読み戻した。
 初回失敗と復旧の経緯、実行ID、公開証明の属性は実機記録とJSONに残している。[^provenance-tests][^bootstrap][^bootstrap-evidence]
 
-v0.3.7も両インデックスへの公開と取得検証に成功した。PyPI公開直後の版情報APIが404を返したため、反映後に失敗した検証ジョブだけを再実行した。自動公開は有効だが、インデックスの反映遅延からの自動復旧は未実装である。[^bootstrap]
+v0.3.7も両インデックスへの公開と取得検証に成功した。PyPI公開直後の版情報APIが404を返したため、反映後に失敗した検証ジョブだけを再実行した。この実機記録当時は、反映後に手動で再実行して復旧した。[^bootstrap]
 
 [^provenance]: [証明の変換と公開後検証](../../tools/pypi_provenance.py)。
 [^provenance-tests]: [証明と公開条件の回帰テスト](../../tests/test_pypi_provenance.py)。
@@ -133,3 +133,10 @@ v0.3.7も両インデックスへの公開と取得検証に成功した。PyPI�
 [^bootstrap]: [Issue #771の実機bootstrap記録](../reviews/2026-10-11-issue-771-hosted-verification.md)。
 
 [^bootstrap-evidence]: [両インデックスの検証結果JSON](../reviews/2026-10-11-issue-771-hosted-verification.json)。
+
+## 公開直後の404への待機
+
+公開後のverifyだけがHTTP 404を10秒間隔、最大61試行、600秒の単調時計予算で再試行する。
+通信・検証にかかった時間も予算に算入し、待機後に期限へ到達した場合は次の検証を開始しない。
+開始済みの検証は期限後に完了することがあるため、依存準備を含むjob全体にも15分の上限を置く。
+待機はindex・version・残り予算をログに出し、inspectの不在判定、404以外のエラー、bytes・署名の拒否条件は緩和しない。[^guide][^provenance][^provenance-tests][^release-workflow]
