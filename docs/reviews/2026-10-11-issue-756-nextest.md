@@ -2,7 +2,7 @@
 
 Base: `00893465e0328204453e5008dc3884035b85c7bd`.
 Branch: `ci/issue-756-nextest-evaluation`.
-Status: comparison completed; evaluated configuration not adopted; final review pending.
+Status: comparison completed; evaluated configuration not adopted; independent review approved.
 
 ## Bounded design
 
@@ -174,6 +174,38 @@ Ruling: do not add intentional failure/forced-timeout diagnostic infrastructure
 after the probe failed the adoption gate. Those checks remain prerequisites for
 any future adoption, as agreed in the design. This costs no current Cargo
 coverage; it leaves nextest timeout behavior unverified, explicitly documented.
+
+## Final verification and review
+
+Repository Ruff format/check and ty passed after restoring the trial code.
+Strict actionlint/ShellCheck/zizmor passed with only the three existing
+Python-shell support warnings. OKF 38 pages, changed local links and current-base
+source hashes passed. Preserved evidence totals, ignored identities, successful
+exit codes and table arithmetic passed explicit consistency checks.
+
+The restored CI-contract suite on Windows reported 158 passed and one timeout
+in the unchanged `test_bounded_audit_covers_every_module_and_generator` Git Bash
+fixture (60 s). An isolated run of that fixture and the two restored workflow
+contracts reported the same timeout and two passes. No timeout threshold or test
+assertion was weakened. This is an unresolved local fixture limitation, not a
+claim that the entire local suite passed. The same Lean fixture passed in the
+hosted trial's pytest run (930 passed, 10 skipped; only the two workflow-equality
+assertions failed there). No further expensive repeat was justified for this
+documentation-only final diff.
+
+Fresh independent read-only review approved the final base-to-head change with
+no actionable findings and an empty declined-to-judge list. It reconciled the
+measurements, scope, coverage/skip distinctions, source hash and reproduction.
+Final Git comparison confirms only five Markdown files differ from the base;
+no workflow, production code, tests or package metadata differ. `cargo clean`
+removed zero files and free disk space was 175.80 GiB; `.idea/` is preserved.
+
+Hosted final configuration CI [38114654380](https://github.com/HayaoSuzuki/hoimin/actions/runs/38114654380)
+passed Changes, Workflow lint, Quality and CI result. Rust/formal/wheel jobs
+were intentionally skipped for the five-file Markdown-only net diff, not counted
+as executed tests. Dependency audit and the no-distribution-change release check
+also succeeded. The earlier successful Rust comparison remains the execution
+evidence for nextest; this final documentation run does not replace that evidence.
 
 ## Sources inspected
 
