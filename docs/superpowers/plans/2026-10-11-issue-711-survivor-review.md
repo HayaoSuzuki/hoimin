@@ -163,14 +163,14 @@ CLI統合は新規 `crates/hoimin-cli/tests/review_cli.rs`、Lean対応は新規
 
 **Files:** Modify `docs/usage.md`, `docs/development.md`, `docs/knowledge/design/survivor-review.md`, `docs/knowledge/references/design-documents.md`, `Cargo.toml`, `Cargo.lock`, `pyproject.toml`, `uv.lock`; Create `docs/superpowers/reports/2026-10-11-issue-711-survivor-review.md`; Update `docs/knowledge/references/audit-documents.md`。必要なら既存release説明の版参照を同じcommitに含める。
 
-- [ ] usageへ設計のCLI例、revision競合時のshow→再評価、staleと疑似等価の意味、storeの移動制約を追記する。developmentへLean実行と保証範囲を追記する。
-- [ ] 実装レビューを最低5回実施してreportに記録する。順にidentity/source境界、transaction/並行更新、入力/出力制限、既存結果への非干渉、Lean/Rustの対応を読み直し、指摘と修正内容を残す。
-- [ ] テストレビューを最低5回実施してreportに記録する。順に異常入力のoracle、競合の再現性、失敗注入でのrollback、score/progress不変の判定根拠、corpus freshness/sensitivityとWindows/Linux差を確認する。レビュー回数を増やすためだけの同一テスト再実行はしない。
-- [ ] 配布版のfloorを既存 `uv run --frozen --no-sync python tools/release.py set-version 0.4.0` で揃える。この既存処理がCargo.toml/pyproject.tomlと両lockの自package版を一緒に更新する。実行前にmain側が既に0.4.0以上なら降格せず、差異を報告する。`uv run --frozen --no-sync pytest tests/test_release.py tests/test_pypi_release.py` で既存release契約を確認する。
-- [ ] `cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets --all-features -- -D warnings`、`cargo test --workspace` を実行する。追加のcontracts変更がある場合は `cargo test -p hoimin-cli --features contracts` も実行する。既存の無関係な失敗は今回の成功と混同せず原因を報告する。
-- [ ] 変更にPythonが含まれる場合は既存ruff/type checkを適用する。OKFのYAML、相対リンク、出典ID/hash、索引からの到達性を確認する。設計から実装済み契約へ変更した箇所だけ根拠を更新する。
-- [ ] 検証結果と未確認OS条件をreportへ残してcommitする。`cargo clean` と空き容量確認を行う。`gh stack rebase --no-trunk` で上段へ反映し、後述#759調査commitの準備へ進む。
-- [ ] `gh stack submit` でPRを作る段階では各PRのbaseを確認し、#711→main、#759→#711とする。作成した全PRをCodexにattachする。ユーザーのmerge操作を待つ。
+- [x] usageへ設計のCLI例、revision競合時のshow→再評価、staleと疑似等価の意味、storeの移動制約を追記する。developmentへLean実行と保証範囲を追記する。
+- [x] 実装レビューを最低5回実施してreportに記録する。順にidentity/source境界、transaction/並行更新、入力/出力制限、既存結果への非干渉、Lean/Rustの対応を読み直し、指摘と修正内容を残す。
+- [x] テストレビューを最低5回実施してreportに記録する。順に異常入力のoracle、競合の再現性、失敗注入でのrollback、score/progress不変の判定根拠、corpus freshness/sensitivityとWindows/Linux差を確認する。レビュー回数を増やすためだけの同一テスト再実行はしない。
+- [x] 配布版のfloorを既存 `uv run --frozen --no-sync python tools/release.py set-version 0.4.0` で揃える。この既存処理がCargo.toml/pyproject.tomlと両lockの自package版を一緒に更新する。実行前にmain側が既に0.4.0以上なら降格せず、差異を報告する。`uv run --frozen --no-sync pytest tests/test_release.py tests/test_pypi_release.py` で既存release契約を確認する。
+- [x] `cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets --all-features -- -D warnings`、`cargo test --workspace` を実行する。追加のcontracts変更がある場合は `cargo test -p hoimin-cli --features contracts` も実行する。既存の無関係な失敗は今回の成功と混同せず原因を報告する。
+- [x] 変更にPythonが含まれる場合は既存ruff/type checkを適用する。OKFのYAML、相対リンク、出典ID/hash、索引からの到達性を確認する。設計から実装済み契約へ変更した箇所だけ根拠を更新する。
+- [x] 検証結果と未確認OS条件をreportへ残してcommitする。`cargo clean` と空き容量確認を行う。`gh stack rebase --no-trunk` で上段へ反映し、後述#759調査commitの準備へ進む。
+- [x] `gh stack submit` でPRを作る段階では各PRのbaseを確認し、#711→main、#759→#711とする。作成した全PRをCodexにattachする。ユーザーのmerge操作を待つ。
 
 ## #759の調査への引継ぎ
 
@@ -195,4 +195,4 @@ verifyで保存planのcommandをoverrideできないため、別planが必要で
 
 ユーザーの承認を受け、Native方式でTask 1–6を順番に実装した。
 検証証拠と設計・計画からの判断は[実装報告](../reports/2026-10-11-issue-711-survivor-review.md)へ記録する。
-最終レビューとstack提出は検証後に実施する。
+最終レビューのImportant 4件を修正し、ローカル全体検証後にgh stackで #793/#794 を提出した。GitHub CIの最新状態はPRで確認する。

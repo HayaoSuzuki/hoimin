@@ -13,7 +13,7 @@ sources:
 - id: issue-711-review-report
   resource: ../../superpowers/reports/2026-10-11-issue-711-survivor-review.md
   working_tree: untracked
-  sha256: 96b4f16936c76116c5f3d5b10da9e78e736f00c3a5fc24d02cdb59342bd3df88
+  sha256: 2f388bf417df4054d41765ec4b66d74815880752cfb377956949bc628871c699
 ---
 
 # survivorの評価と実行結果の分離

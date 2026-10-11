@@ -127,7 +127,7 @@ fresh contextのread-only reviewerがCritical 0件・Important 4件を指摘し�
 page_sizeと旧候補状態の回帰を修正前に実行して2失敗・16成功を確認した。
 保存状態保持・保存後エラーの新規契約は修正前の型/関数でcompile失敗を確認し、実装後は21 review unitが成功した。
 後者は既存コマンドを実行して観測したREDではなく、追加する内部契約に対するcompile REDである。
-Rust全体と厳格Clippyを修正後にも再実行中であり、提出前に結果を確認する。
+修正後のRust全体も2730成功・23 ignored・失敗0（151集合）、厳格Clippyとcargo fmtも成功した。
 
 reviewerが判断を保留したLinux/Lean pinned版はGitHub CIで確認する。
 Python全体の保留は918成功で解消した。
@@ -138,3 +138,14 @@ OKFは40 MarkdownのYAML/予約file、相対リンク、source ID重複、出典
 古いcatalogの全sourceに脚注があるという主張はしていない。今回変更した出典を検査対象とした。
 
 CI初回の依存policyはfuzz/Cargo.lockのhoimin-coreが0.3.0のため失敗した。docs/releases.mdの版更新手順に従って0.4.0へ揃え、cargo metadata --manifest-path fuzz/Cargo.toml --locked --offlineが成功した。依存版やlint方針は緩めていない。
+
+## 最終ローカル検証とディスク
+
+cargo cleanで49.6 GiB（58,049 files）を削除し、Cドライブ空きは189,996,847,104 byte（約177 GiB）になった。
+Task 3の5.7 GiBと合わせ、段階間と最終段階でcleanupを実施した。
+自パッケージのElastic-2.0例外だけを0.4.xへ揃えた。第三者への包括許可は増やしていない。
+依存監査の修正後run 38137375084は成功した。
+Linux Lean 4.32.2と他のGitHub検証はPR #793で継続して確認し、最新結果はPRのCIを正本とする。
+
+gh stackで #793（#711→main）と #794（#759調査→#711）を作成した。
+ユーザーのmerge前にrelease/publishは行わない。
