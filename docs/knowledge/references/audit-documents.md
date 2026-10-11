@@ -9,6 +9,17 @@ sources:
   resource: ../../superpowers/reports/2026-10-11-issue-778-kani.md
   working_tree: untracked
   sha256: 703f375d0a54f2bfbf0ffd457cf761402e2ae3101b9ab5b32114c93a7c27aa7c
+
+- id: issue-790-django-report
+  resource: ../../superpowers/reports/2026-10-11-issue-790-django.md
+  revision: 93116fed96602628d04a2139645b3dfe1166e168
+  working_tree: modified
+  sha256: 7ae28e09ba8ddc8e2ad6f1dd8263cefb4ea770dfb58731cd565b67cf578c5689
+- id: issue-790-proofreadtools-report
+  resource: ../../superpowers/reports/2026-10-11-issue-790-proofreadtools.md
+  revision: 93116fed96602628d04a2139645b3dfe1166e168
+  working_tree: modified
+  sha256: cc82e35bb1e1d24398826289ca1225aa80a900e620be580163bf66d8175e387e
 - id: issue-695-assessment
   resource: ../../superpowers/reports/issue-695/assessment.md
   revision: 76f03acdefefdc03aff6973b0d2b49f6f3598837
@@ -1368,3 +1379,13 @@ sources:
 - [Kaniによるworkspaceコピー予算契約の実現性調査](../../superpowers/reports/2026-10-11-issue-778-kani.md) - 実コード接続、60秒timeoutと4GiB OOM、導入保留の判断。[^issue-778-kani-report]
 
 [^issue-778-kani-report]: [Kaniによるworkspaceコピー予算契約の実現性調査](../../superpowers/reports/2026-10-11-issue-778-kani.md)。
+
+## Issue #790・#776・#777
+
+- [proofreadtoolsの変異候補探索とテスト生成の評価](../../superpowers/reports/2026-10-11-issue-790-proofreadtools.md) - 固定proofreadtoolsの設計と実測。[^issue-790-proofreadtools-report]
+
+[^issue-790-proofreadtools-report]: [proofreadtoolsの変異候補探索とテスト生成の評価](../../superpowers/reports/2026-10-11-issue-790-proofreadtools.md)。
+
+- [Djangoでの制約付き変異探索](../../superpowers/reports/2026-10-11-issue-790-django.md) - 3関数・5 seedの負の結果と比較の制約。[^issue-790-django-report]
+
+[^issue-790-django-report]: [Djangoでの制約付き変異探索](../../superpowers/reports/2026-10-11-issue-790-django.md)。

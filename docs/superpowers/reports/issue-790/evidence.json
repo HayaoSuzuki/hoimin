@@ -1,0 +1,4856 @@
+{
+  "measurement": {
+    "arms": [
+      {
+        "candidate_space": 6,
+        "elapsed": 17.8611003,
+        "mode": "fixed",
+        "processes": 12,
+        "remaining": 0,
+        "rows": [
+          {
+            "candidate": {
+              "column": 15,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "collection_min_max",
+              "original": "min",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "max",
+              "schema_version": 1,
+              "span": {
+                "length": 3,
+                "start": 1614
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.8975771999999997,
+            "id": "m1_64657c367b59ab7c438d6355d4a829152d13c862508fe9058e540578fd92b1d6",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "a",
+                "aa"
+              ],
+              "attempts": 15,
+              "elapsed": 0.21988420002162457,
+              "mutant": 1.3333333333333333,
+              "original": 0.6666666666666666,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "integer_literal_neighbor",
+              "original": "2",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(3)",
+              "schema_version": 1,
+              "span": {
+                "length": 1,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.74787,
+            "id": "m1_025d9bd7efb1ad981bbfe16228726e9583999dae7dd3b8a65c30cf9a8202ae66",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "a",
+                "a"
+              ],
+              "attempts": 12,
+              "elapsed": 0.12584699969738722,
+              "mutant": 1.5,
+              "original": 1.0,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "integer_literal_neighbor",
+              "original": "2",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(1)",
+              "schema_version": 1,
+              "span": {
+                "length": 1,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.7594063,
+            "id": "m1_b37e7d26525d82bd2f3a42ebc14b0d1e5380b81b665bdb3eecf835e81ba36c17",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "a",
+                "a"
+              ],
+              "attempts": 12,
+              "elapsed": 0.1278218999505043,
+              "mutant": 0.5,
+              "original": 1.0,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 13,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "binary_mul_div",
+              "original": "*",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "/",
+              "schema_version": 1,
+              "span": {
+                "length": 1,
+                "start": 1612
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.7765295,
+            "id": "m1_fc5382a89c77ab31e9541a181df744a86b4da87aa64caaec0a85a23c8d21f524",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "aa",
+                "aa"
+              ],
+              "attempts": 26,
+              "elapsed": 0.13336519990116358,
+              "mutant": 0.25,
+              "original": 1.0,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 35,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "binary_mul_div",
+              "original": "/",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "*",
+              "schema_version": 1,
+              "span": {
+                "length": 1,
+                "start": 1634
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 3.2754251,
+            "id": "m1_e17300f355fe33ac2c76940089e52016aad122c8e27b71323e01080f2fb72dac",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [],
+              "attempts": 256,
+              "elapsed": 0.351681100204587,
+              "mutant": 0.0,
+              "original": 0.0,
+              "status": "unsupported_observation"
+            }
+          },
+          {
+            "candidate": {
+              "column": 45,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "binary_add_sub",
+              "original": "+",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "-",
+              "schema_version": 1,
+              "span": {
+                "length": 1,
+                "start": 1644
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 3.3870512,
+            "id": "m1_966a7f9a5a951b9f0743473f9ae39c790440c0eb1793cf9c874624b6d2a3ce2a",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [],
+              "attempts": 15,
+              "elapsed": 0.22953699994832277,
+              "mutant": -2.0,
+              "original": 0.6666666666666666,
+              "status": "unsupported_observation"
+            }
+          }
+        ],
+        "seed": 790,
+        "shrink_rows": [],
+        "weights": {}
+      },
+      {
+        "candidate_space": 18,
+        "elapsed": 52.2992475,
+        "mode": "random",
+        "processes": 36,
+        "remaining": 0,
+        "rows": [
+          {
+            "candidate": {
+              "column": 38,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.operand",
+              "original": "len(x) + len(y)",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(len(y))",
+              "schema_version": 1,
+              "span": {
+                "length": 15,
+                "start": 1637
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 3.2483399,
+            "id": "m1_92680f16bb3bfdeaf6d210897b504d60ede2c8dcf74044a9a4c244531c5f489f",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "a",
+                "a"
+              ],
+              "attempts": 12,
+              "elapsed": 0.135916399769485,
+              "mutant": 2.0,
+              "original": 1.0,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.binary",
+              "original": "2 * min(len(x), len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(2) / (min(len(x), len(y)))",
+              "schema_version": 1,
+              "span": {
+                "length": 23,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.7605072,
+            "id": "m1_b44f06712160ad4bfef369aafaaa26c57a9987136c3429a28859f49ff76ec959",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "aa",
+                "aa"
+              ],
+              "attempts": 26,
+              "elapsed": 0.13591259997338057,
+              "mutant": 0.25,
+              "original": 1.0,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 38,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.binary",
+              "original": "len(x) + len(y)",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(len(x)) - (len(y))",
+              "schema_version": 1,
+              "span": {
+                "length": 15,
+                "start": 1637
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.8139895,
+            "id": "m1_870f4d3fae92fd2262652fd423d82d3152551d9225a70be5ee3d82ac89829b6c",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [],
+              "attempts": 15,
+              "elapsed": 0.2065508002415299,
+              "mutant": -2.0,
+              "original": 0.6666666666666666,
+              "status": "unsupported_observation"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.binary",
+              "original": "2 * min(len(x), len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(2) - (min(len(x), len(y)))",
+              "schema_version": 1,
+              "span": {
+                "length": 23,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.7456383,
+            "id": "m1_f0d98f153acc40fe220c309489451e700f54352af86a09244b8b5363b31cba7d",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "a",
+                "a"
+              ],
+              "attempts": 12,
+              "elapsed": 0.13897129986435175,
+              "mutant": 1.5,
+              "original": 1.0,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.operand",
+              "original": "2 * min(len(x), len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(2)",
+              "schema_version": 1,
+              "span": {
+                "length": 23,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.7877471,
+            "id": "m1_49c1104087a501d85606f420966ce36e6c5c25ceb64ff739a203d030d77f7d6f",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "aa",
+                "aa"
+              ],
+              "attempts": 26,
+              "elapsed": 0.1330690998584032,
+              "mutant": 0.5,
+              "original": 1.0,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 15,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.call_argument",
+              "original": "min(len(x), len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(len(x))",
+              "schema_version": 1,
+              "span": {
+                "length": 19,
+                "start": 1614
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.7857049,
+            "id": "m1_b994a3674571c017373871a7aa3c16a0a8ae76157043cd294c1b2ab722c0a5aa",
+            "status": "survived_related_suite",
+            "witness": {
+              "args": [
+                "aa",
+                "a"
+              ],
+              "attempts": 22,
+              "elapsed": 0.2127720001153648,
+              "mutant": 1.3333333333333333,
+              "original": 0.6666666666666666,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.binary",
+              "original": "2 * min(len(x), len(y)) / (len(x) + len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(2 * min(len(x), len(y))) + (len(x) + len(y))",
+              "schema_version": 1,
+              "span": {
+                "length": 43,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.9495877,
+            "id": "m1_73495564843bd1b56017bc61a97b86a3cfee3a12a88db600d91d48349a88037c",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [],
+              "attempts": 256,
+              "elapsed": 0.3024681000970304,
+              "mutant": 0.0,
+              "original": 0.0,
+              "status": "unsupported_observation"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.binary",
+              "original": "2 * min(len(x), len(y)) / (len(x) + len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(2 * min(len(x), len(y))) * (len(x) + len(y))",
+              "schema_version": 1,
+              "span": {
+                "length": 43,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.9782195,
+            "id": "m1_28dbc45e65826e15bea533974dd43fe5d4c684649382c5b87a47d57a4f18831e",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [],
+              "attempts": 256,
+              "elapsed": 0.2982048001140356,
+              "mutant": 0.0,
+              "original": 0.0,
+              "status": "unsupported_observation"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.operand",
+              "original": "2 * min(len(x), len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(min(len(x), len(y)))",
+              "schema_version": 1,
+              "span": {
+                "length": 23,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 3.1335305,
+            "id": "m1_908946669c07c0e302d12c4326fe52eab91437eabb7938d4a99aa4488e96a92b",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "a",
+                "a"
+              ],
+              "attempts": 12,
+              "elapsed": 0.1368535002693534,
+              "mutant": 0.5,
+              "original": 1.0,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 38,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.binary",
+              "original": "len(x) + len(y)",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(len(x)) / (len(y))",
+              "schema_version": 1,
+              "span": {
+                "length": 15,
+                "start": 1637
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.8101483,
+            "id": "m1_256c4258225dc411aa5db1abb08b42a8bd65ead6064d75b425dcacf3bb0bfe36",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "a",
+                "a"
+              ],
+              "attempts": 12,
+              "elapsed": 0.12900839978829026,
+              "mutant": 2.0,
+              "original": 1.0,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 15,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.call_argument",
+              "original": "min(len(x), len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(len(y))",
+              "schema_version": 1,
+              "span": {
+                "length": 19,
+                "start": 1614
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.79424,
+            "id": "m1_d9c7911246ad21b6de719629871b84579e3d35860572fb3e5dfb0e8e4bd69275",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "a",
+                "aa"
+              ],
+              "attempts": 20,
+              "elapsed": 0.14998780004680157,
+              "mutant": 1.3333333333333333,
+              "original": 0.6666666666666666,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.binary",
+              "original": "2 * min(len(x), len(y)) / (len(x) + len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(2 * min(len(x), len(y))) - (len(x) + len(y))",
+              "schema_version": 1,
+              "span": {
+                "length": 43,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.9564051,
+            "id": "m1_1f9f1a1b0bf6af7f00f8486d53047f5cb2f0e14a6eb820a40fe9b268b8dfa16c",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [],
+              "attempts": 256,
+              "elapsed": 0.30095120007172227,
+              "mutant": 0.0,
+              "original": 0.0,
+              "status": "unsupported_observation"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.operand",
+              "original": "2 * min(len(x), len(y)) / (len(x) + len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(len(x) + len(y))",
+              "schema_version": 1,
+              "span": {
+                "length": 43,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.9366678,
+            "id": "m1_623f7ec8b1bf8bc9408ab327266bc39f5b56dce3f3978a99eb731b82a356aa68",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [],
+              "attempts": 256,
+              "elapsed": 0.2950977999716997,
+              "mutant": 0.0,
+              "original": 0.0,
+              "status": "unsupported_observation"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.operand",
+              "original": "2 * min(len(x), len(y)) / (len(x) + len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(2 * min(len(x), len(y)))",
+              "schema_version": 1,
+              "span": {
+                "length": 43,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.9557507,
+            "id": "m1_94774a907e1482062bf29c44572ee0ca929fd372c474a907d0cbf82ef67a074d",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [],
+              "attempts": 256,
+              "elapsed": 0.293900600168854,
+              "mutant": 0.0,
+              "original": 0.0,
+              "status": "unsupported_observation"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.binary",
+              "original": "2 * min(len(x), len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(2) + (min(len(x), len(y)))",
+              "schema_version": 1,
+              "span": {
+                "length": 23,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 3.0349143,
+            "id": "m1_34f75fd9fdfa874f2a1e9bef5d128d00c628e41740d3c6eabd55a37ed2ce1dd1",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "a",
+                "a"
+              ],
+              "attempts": 12,
+              "elapsed": 0.17131669959053397,
+              "mutant": 2.5,
+              "original": 1.0,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 38,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.operand",
+              "original": "len(x) + len(y)",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(len(x))",
+              "schema_version": 1,
+              "span": {
+                "length": 15,
+                "start": 1637
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.9227751,
+            "id": "m1_9f75942a91283ba4269b049d97836894f109a3d29b6bf23d7a970bf5fe775d05",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "a",
+                "a"
+              ],
+              "attempts": 12,
+              "elapsed": 0.13962030038237572,
+              "mutant": 2.0,
+              "original": 1.0,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 38,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.binary",
+              "original": "len(x) + len(y)",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(len(x)) * (len(y))",
+              "schema_version": 1,
+              "span": {
+                "length": 15,
+                "start": 1637
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.7987089000000003,
+            "id": "m1_dd974dce3c1770c41d305c3f6149b62195f9ec858e282550dd313947e2b08350",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "a",
+                "a"
+              ],
+              "attempts": 12,
+              "elapsed": 0.1247375002130866,
+              "mutant": 2.0,
+              "original": 1.0,
+              "status": "witness"
+            }
+          }
+        ],
+        "seed": 790,
+        "shrink_rows": [
+          {
+            "kept": false,
+            "row": {
+              "candidate": {
+                "column": 15,
+                "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+                "line": 41,
+                "operator": "research.call_function",
+                "original": "min",
+                "path": "src/proofreadtools/checks/_variant_candidates.py",
+                "replacement": "max",
+                "schema_version": 1,
+                "span": {
+                  "length": 3,
+                  "start": 1614
+                },
+                "symbol": "_length_ratio_upper_bound"
+              },
+              "elapsed": 2.8369747,
+              "id": "m1_8e8dc2562d2c03e1cc4c9ce1022ab267e5ea58a26dc99a52cd8834d95c8ac3d5",
+              "status": "detected_assertion",
+              "witness": {
+                "args": [
+                  "a",
+                  "aa"
+                ],
+                "attempts": 15,
+                "elapsed": 0.20768960006535053,
+                "mutant": 1.3333333333333333,
+                "original": 0.6666666666666666,
+                "status": "witness"
+              }
+            }
+          }
+        ],
+        "weights": {}
+      },
+      {
+        "candidate_space": 18,
+        "elapsed": 53.1332674,
+        "mode": "guided",
+        "processes": 36,
+        "remaining": 0,
+        "rows": [
+          {
+            "candidate": {
+              "column": 38,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.operand",
+              "original": "len(x) + len(y)",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(len(y))",
+              "schema_version": 1,
+              "span": {
+                "length": 15,
+                "start": 1637
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.7938267,
+            "id": "m1_92680f16bb3bfdeaf6d210897b504d60ede2c8dcf74044a9a4c244531c5f489f",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "a",
+                "a"
+              ],
+              "attempts": 12,
+              "elapsed": 0.12893390003591776,
+              "mutant": 2.0,
+              "original": 1.0,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.binary",
+              "original": "2 * min(len(x), len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(2) / (min(len(x), len(y)))",
+              "schema_version": 1,
+              "span": {
+                "length": 23,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.7732527,
+            "id": "m1_b44f06712160ad4bfef369aafaaa26c57a9987136c3429a28859f49ff76ec959",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "aa",
+                "aa"
+              ],
+              "attempts": 26,
+              "elapsed": 0.13659049989655614,
+              "mutant": 0.25,
+              "original": 1.0,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 38,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.binary",
+              "original": "len(x) + len(y)",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(len(x)) - (len(y))",
+              "schema_version": 1,
+              "span": {
+                "length": 15,
+                "start": 1637
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.8966883,
+            "id": "m1_870f4d3fae92fd2262652fd423d82d3152551d9225a70be5ee3d82ac89829b6c",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [],
+              "attempts": 15,
+              "elapsed": 0.20770089980214831,
+              "mutant": -2.0,
+              "original": 0.6666666666666666,
+              "status": "unsupported_observation"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.binary",
+              "original": "2 * min(len(x), len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(2) - (min(len(x), len(y)))",
+              "schema_version": 1,
+              "span": {
+                "length": 23,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.7317106,
+            "id": "m1_f0d98f153acc40fe220c309489451e700f54352af86a09244b8b5363b31cba7d",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "a",
+                "a"
+              ],
+              "attempts": 12,
+              "elapsed": 0.12616010010242462,
+              "mutant": 1.5,
+              "original": 1.0,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.operand",
+              "original": "2 * min(len(x), len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(2)",
+              "schema_version": 1,
+              "span": {
+                "length": 23,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.8117543,
+            "id": "m1_49c1104087a501d85606f420966ce36e6c5c25ceb64ff739a203d030d77f7d6f",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "aa",
+                "aa"
+              ],
+              "attempts": 26,
+              "elapsed": 0.1462906999513507,
+              "mutant": 0.5,
+              "original": 1.0,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 15,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.call_function",
+              "original": "min",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "max",
+              "schema_version": 1,
+              "span": {
+                "length": 3,
+                "start": 1614
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.8766961,
+            "id": "m1_8e8dc2562d2c03e1cc4c9ce1022ab267e5ea58a26dc99a52cd8834d95c8ac3d5",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "a",
+                "aa"
+              ],
+              "attempts": 15,
+              "elapsed": 0.2262138999067247,
+              "mutant": 1.3333333333333333,
+              "original": 0.6666666666666666,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.binary",
+              "original": "2 * min(len(x), len(y)) / (len(x) + len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(2 * min(len(x), len(y))) + (len(x) + len(y))",
+              "schema_version": 1,
+              "span": {
+                "length": 43,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 3.1333655,
+            "id": "m1_73495564843bd1b56017bc61a97b86a3cfee3a12a88db600d91d48349a88037c",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [],
+              "attempts": 256,
+              "elapsed": 0.2971885004080832,
+              "mutant": 0.0,
+              "original": 0.0,
+              "status": "unsupported_observation"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.binary",
+              "original": "2 * min(len(x), len(y)) / (len(x) + len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(2 * min(len(x), len(y))) * (len(x) + len(y))",
+              "schema_version": 1,
+              "span": {
+                "length": 43,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 3.0232407,
+            "id": "m1_28dbc45e65826e15bea533974dd43fe5d4c684649382c5b87a47d57a4f18831e",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [],
+              "attempts": 256,
+              "elapsed": 0.29494359996169806,
+              "mutant": 0.0,
+              "original": 0.0,
+              "status": "unsupported_observation"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.binary",
+              "original": "2 * min(len(x), len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(2) + (min(len(x), len(y)))",
+              "schema_version": 1,
+              "span": {
+                "length": 23,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 3.1194514,
+            "id": "m1_34f75fd9fdfa874f2a1e9bef5d128d00c628e41740d3c6eabd55a37ed2ce1dd1",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "a",
+                "a"
+              ],
+              "attempts": 12,
+              "elapsed": 0.14502769988030195,
+              "mutant": 2.5,
+              "original": 1.0,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 38,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.binary",
+              "original": "len(x) + len(y)",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(len(x)) / (len(y))",
+              "schema_version": 1,
+              "span": {
+                "length": 15,
+                "start": 1637
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.9878209,
+            "id": "m1_256c4258225dc411aa5db1abb08b42a8bd65ead6064d75b425dcacf3bb0bfe36",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "a",
+                "a"
+              ],
+              "attempts": 12,
+              "elapsed": 0.17249519983306527,
+              "mutant": 2.0,
+              "original": 1.0,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 15,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.call_argument",
+              "original": "min(len(x), len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(len(y))",
+              "schema_version": 1,
+              "span": {
+                "length": 19,
+                "start": 1614
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.8304311,
+            "id": "m1_d9c7911246ad21b6de719629871b84579e3d35860572fb3e5dfb0e8e4bd69275",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "a",
+                "aa"
+              ],
+              "attempts": 20,
+              "elapsed": 0.13655380019918084,
+              "mutant": 1.3333333333333333,
+              "original": 0.6666666666666666,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.binary",
+              "original": "2 * min(len(x), len(y)) / (len(x) + len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(2 * min(len(x), len(y))) - (len(x) + len(y))",
+              "schema_version": 1,
+              "span": {
+                "length": 43,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 3.1314379,
+            "id": "m1_1f9f1a1b0bf6af7f00f8486d53047f5cb2f0e14a6eb820a40fe9b268b8dfa16c",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [],
+              "attempts": 256,
+              "elapsed": 0.2895259000360966,
+              "mutant": 0.0,
+              "original": 0.0,
+              "status": "unsupported_observation"
+            }
+          },
+          {
+            "candidate": {
+              "column": 15,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.call_argument",
+              "original": "min(len(x), len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(len(x))",
+              "schema_version": 1,
+              "span": {
+                "length": 19,
+                "start": 1614
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.9095319,
+            "id": "m1_b994a3674571c017373871a7aa3c16a0a8ae76157043cd294c1b2ab722c0a5aa",
+            "status": "survived_related_suite",
+            "witness": {
+              "args": [
+                "aa",
+                "a"
+              ],
+              "attempts": 22,
+              "elapsed": 0.2412601001560688,
+              "mutant": 1.3333333333333333,
+              "original": 0.6666666666666666,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.operand",
+              "original": "2 * min(len(x), len(y)) / (len(x) + len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(2 * min(len(x), len(y)))",
+              "schema_version": 1,
+              "span": {
+                "length": 43,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 3.2205306,
+            "id": "m1_94774a907e1482062bf29c44572ee0ca929fd372c474a907d0cbf82ef67a074d",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [],
+              "attempts": 256,
+              "elapsed": 0.2902639997191727,
+              "mutant": 0.0,
+              "original": 0.0,
+              "status": "unsupported_observation"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.operand",
+              "original": "2 * min(len(x), len(y)) / (len(x) + len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(len(x) + len(y))",
+              "schema_version": 1,
+              "span": {
+                "length": 43,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 3.3842868,
+            "id": "m1_623f7ec8b1bf8bc9408ab327266bc39f5b56dce3f3978a99eb731b82a356aa68",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [],
+              "attempts": 256,
+              "elapsed": 0.31066029984503984,
+              "mutant": 0.0,
+              "original": 0.0,
+              "status": "unsupported_observation"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.operand",
+              "original": "2 * min(len(x), len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(min(len(x), len(y)))",
+              "schema_version": 1,
+              "span": {
+                "length": 23,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.8372365999999998,
+            "id": "m1_908946669c07c0e302d12c4326fe52eab91437eabb7938d4a99aa4488e96a92b",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "a",
+                "a"
+              ],
+              "attempts": 12,
+              "elapsed": 0.14363260008394718,
+              "mutant": 0.5,
+              "original": 1.0,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 38,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.operand",
+              "original": "len(x) + len(y)",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(len(x))",
+              "schema_version": 1,
+              "span": {
+                "length": 15,
+                "start": 1637
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.7664025,
+            "id": "m1_9f75942a91283ba4269b049d97836894f109a3d29b6bf23d7a970bf5fe775d05",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "a",
+                "a"
+              ],
+              "attempts": 12,
+              "elapsed": 0.12657810002565384,
+              "mutant": 2.0,
+              "original": 1.0,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 38,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.binary",
+              "original": "len(x) + len(y)",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(len(x)) * (len(y))",
+              "schema_version": 1,
+              "span": {
+                "length": 15,
+                "start": 1637
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.8592212999999997,
+            "id": "m1_dd974dce3c1770c41d305c3f6149b62195f9ec858e282550dd313947e2b08350",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "a",
+                "a"
+              ],
+              "attempts": 12,
+              "elapsed": 0.12858369993045926,
+              "mutant": 2.0,
+              "original": 1.0,
+              "status": "witness"
+            }
+          }
+        ],
+        "seed": 790,
+        "shrink_rows": [],
+        "weights": {
+          "research.binary": 7,
+          "research.call_argument": 4,
+          "research.call_function": 3,
+          "research.operand": 6
+        }
+      },
+      {
+        "candidate_space": 6,
+        "elapsed": 18.8963093,
+        "mode": "fixed",
+        "processes": 12,
+        "remaining": 0,
+        "rows": [
+          {
+            "candidate": {
+              "column": 15,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "collection_min_max",
+              "original": "min",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "max",
+              "schema_version": 1,
+              "span": {
+                "length": 3,
+                "start": 1614
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.996397,
+            "id": "m1_64657c367b59ab7c438d6355d4a829152d13c862508fe9058e540578fd92b1d6",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "a",
+                "aa"
+              ],
+              "attempts": 14,
+              "elapsed": 0.13902430003508923,
+              "mutant": 1.3333333333333333,
+              "original": 0.6666666666666666,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "integer_literal_neighbor",
+              "original": "2",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(3)",
+              "schema_version": 1,
+              "span": {
+                "length": 1,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 3.5318362,
+            "id": "m1_025d9bd7efb1ad981bbfe16228726e9583999dae7dd3b8a65c30cf9a8202ae66",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "a",
+                "a"
+              ],
+              "attempts": 12,
+              "elapsed": 0.24712430033832788,
+              "mutant": 1.5,
+              "original": 1.0,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "integer_literal_neighbor",
+              "original": "2",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(1)",
+              "schema_version": 1,
+              "span": {
+                "length": 1,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 3.6633855,
+            "id": "m1_b37e7d26525d82bd2f3a42ebc14b0d1e5380b81b665bdb3eecf835e81ba36c17",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "a",
+                "a"
+              ],
+              "attempts": 12,
+              "elapsed": 0.21340400027111173,
+              "mutant": 0.5,
+              "original": 1.0,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 13,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "binary_mul_div",
+              "original": "*",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "/",
+              "schema_version": 1,
+              "span": {
+                "length": 1,
+                "start": 1612
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.9136613000000002,
+            "id": "m1_fc5382a89c77ab31e9541a181df744a86b4da87aa64caaec0a85a23c8d21f524",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "aa",
+                "aa"
+              ],
+              "attempts": 17,
+              "elapsed": 0.21748080011457205,
+              "mutant": 0.25,
+              "original": 1.0,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 35,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "binary_mul_div",
+              "original": "/",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "*",
+              "schema_version": 1,
+              "span": {
+                "length": 1,
+                "start": 1634
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.9907047,
+            "id": "m1_e17300f355fe33ac2c76940089e52016aad122c8e27b71323e01080f2fb72dac",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [],
+              "attempts": 256,
+              "elapsed": 0.3052070001140237,
+              "mutant": 0.0,
+              "original": 0.0,
+              "status": "unsupported_observation"
+            }
+          },
+          {
+            "candidate": {
+              "column": 45,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "binary_add_sub",
+              "original": "+",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "-",
+              "schema_version": 1,
+              "span": {
+                "length": 1,
+                "start": 1644
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.7833592,
+            "id": "m1_966a7f9a5a951b9f0743473f9ae39c790440c0eb1793cf9c874624b6d2a3ce2a",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [],
+              "attempts": 14,
+              "elapsed": 0.12398270005360246,
+              "mutant": -2.0,
+              "original": 0.6666666666666666,
+              "status": "unsupported_observation"
+            }
+          }
+        ],
+        "seed": 776,
+        "shrink_rows": [],
+        "weights": {}
+      },
+      {
+        "candidate_space": 18,
+        "elapsed": 52.0888927,
+        "mode": "random",
+        "processes": 36,
+        "remaining": 0,
+        "rows": [
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.binary",
+              "original": "2 * min(len(x), len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(2) / (min(len(x), len(y)))",
+              "schema_version": 1,
+              "span": {
+                "length": 23,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.888471,
+            "id": "m1_b44f06712160ad4bfef369aafaaa26c57a9987136c3429a28859f49ff76ec959",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "aa",
+                "aa"
+              ],
+              "attempts": 17,
+              "elapsed": 0.21434059971943495,
+              "mutant": 0.25,
+              "original": 1.0,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 38,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.operand",
+              "original": "len(x) + len(y)",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(len(y))",
+              "schema_version": 1,
+              "span": {
+                "length": 15,
+                "start": 1637
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.8576653,
+            "id": "m1_92680f16bb3bfdeaf6d210897b504d60ede2c8dcf74044a9a4c244531c5f489f",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "a",
+                "a"
+              ],
+              "attempts": 12,
+              "elapsed": 0.21976289991289377,
+              "mutant": 2.0,
+              "original": 1.0,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.binary",
+              "original": "2 * min(len(x), len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(2) - (min(len(x), len(y)))",
+              "schema_version": 1,
+              "span": {
+                "length": 23,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.8625227,
+            "id": "m1_f0d98f153acc40fe220c309489451e700f54352af86a09244b8b5363b31cba7d",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "a",
+                "a"
+              ],
+              "attempts": 12,
+              "elapsed": 0.21821510000154376,
+              "mutant": 1.5,
+              "original": 1.0,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.binary",
+              "original": "2 * min(len(x), len(y)) / (len(x) + len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(2 * min(len(x), len(y))) * (len(x) + len(y))",
+              "schema_version": 1,
+              "span": {
+                "length": 43,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.95043,
+            "id": "m1_28dbc45e65826e15bea533974dd43fe5d4c684649382c5b87a47d57a4f18831e",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [],
+              "attempts": 256,
+              "elapsed": 0.2953526000492275,
+              "mutant": 0.0,
+              "original": 0.0,
+              "status": "unsupported_observation"
+            }
+          },
+          {
+            "candidate": {
+              "column": 15,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.call_function",
+              "original": "min",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "max",
+              "schema_version": 1,
+              "span": {
+                "length": 3,
+                "start": 1614
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.8068011999999998,
+            "id": "m1_8e8dc2562d2c03e1cc4c9ce1022ab267e5ea58a26dc99a52cd8834d95c8ac3d5",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "a",
+                "aa"
+              ],
+              "attempts": 14,
+              "elapsed": 0.12847500015050173,
+              "mutant": 1.3333333333333333,
+              "original": 0.6666666666666666,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 15,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.call_argument",
+              "original": "min(len(x), len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(len(x))",
+              "schema_version": 1,
+              "span": {
+                "length": 19,
+                "start": 1614
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.646097,
+            "id": "m1_b994a3674571c017373871a7aa3c16a0a8ae76157043cd294c1b2ab722c0a5aa",
+            "status": "survived_related_suite",
+            "witness": {
+              "args": [
+                "aa",
+                "a"
+              ],
+              "attempts": 21,
+              "elapsed": 0.12893819995224476,
+              "mutant": 1.3333333333333333,
+              "original": 0.6666666666666666,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 38,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.binary",
+              "original": "len(x) + len(y)",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(len(x)) - (len(y))",
+              "schema_version": 1,
+              "span": {
+                "length": 15,
+                "start": 1637
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.7769363,
+            "id": "m1_870f4d3fae92fd2262652fd423d82d3152551d9225a70be5ee3d82ac89829b6c",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [],
+              "attempts": 14,
+              "elapsed": 0.14055379992350936,
+              "mutant": -2.0,
+              "original": 0.6666666666666666,
+              "status": "unsupported_observation"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.binary",
+              "original": "2 * min(len(x), len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(2) + (min(len(x), len(y)))",
+              "schema_version": 1,
+              "span": {
+                "length": 23,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.8780989,
+            "id": "m1_34f75fd9fdfa874f2a1e9bef5d128d00c628e41740d3c6eabd55a37ed2ce1dd1",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "a",
+                "a"
+              ],
+              "attempts": 12,
+              "elapsed": 0.2253929004073143,
+              "mutant": 2.5,
+              "original": 1.0,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.binary",
+              "original": "2 * min(len(x), len(y)) / (len(x) + len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(2 * min(len(x), len(y))) - (len(x) + len(y))",
+              "schema_version": 1,
+              "span": {
+                "length": 43,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.9502049,
+            "id": "m1_1f9f1a1b0bf6af7f00f8486d53047f5cb2f0e14a6eb820a40fe9b268b8dfa16c",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [],
+              "attempts": 256,
+              "elapsed": 0.29688929999247193,
+              "mutant": 0.0,
+              "original": 0.0,
+              "status": "unsupported_observation"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.operand",
+              "original": "2 * min(len(x), len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(2)",
+              "schema_version": 1,
+              "span": {
+                "length": 23,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.90502,
+            "id": "m1_49c1104087a501d85606f420966ce36e6c5c25ceb64ff739a203d030d77f7d6f",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "aa",
+                "aa"
+              ],
+              "attempts": 17,
+              "elapsed": 0.21630319999530911,
+              "mutant": 0.5,
+              "original": 1.0,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 38,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.binary",
+              "original": "len(x) + len(y)",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(len(x)) / (len(y))",
+              "schema_version": 1,
+              "span": {
+                "length": 15,
+                "start": 1637
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.8478458,
+            "id": "m1_256c4258225dc411aa5db1abb08b42a8bd65ead6064d75b425dcacf3bb0bfe36",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "a",
+                "a"
+              ],
+              "attempts": 12,
+              "elapsed": 0.2121904999949038,
+              "mutant": 2.0,
+              "original": 1.0,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.binary",
+              "original": "2 * min(len(x), len(y)) / (len(x) + len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(2 * min(len(x), len(y))) + (len(x) + len(y))",
+              "schema_version": 1,
+              "span": {
+                "length": 43,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.9458173,
+            "id": "m1_73495564843bd1b56017bc61a97b86a3cfee3a12a88db600d91d48349a88037c",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [],
+              "attempts": 256,
+              "elapsed": 0.29806110030040145,
+              "mutant": 0.0,
+              "original": 0.0,
+              "status": "unsupported_observation"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.operand",
+              "original": "2 * min(len(x), len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(min(len(x), len(y)))",
+              "schema_version": 1,
+              "span": {
+                "length": 23,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.8788852,
+            "id": "m1_908946669c07c0e302d12c4326fe52eab91437eabb7938d4a99aa4488e96a92b",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "a",
+                "a"
+              ],
+              "attempts": 12,
+              "elapsed": 0.2099085999652743,
+              "mutant": 0.5,
+              "original": 1.0,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 38,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.binary",
+              "original": "len(x) + len(y)",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(len(x)) * (len(y))",
+              "schema_version": 1,
+              "span": {
+                "length": 15,
+                "start": 1637
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.8810417,
+            "id": "m1_dd974dce3c1770c41d305c3f6149b62195f9ec858e282550dd313947e2b08350",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "a",
+                "a"
+              ],
+              "attempts": 12,
+              "elapsed": 0.20965929981321096,
+              "mutant": 2.0,
+              "original": 1.0,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 15,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.call_argument",
+              "original": "min(len(x), len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(len(y))",
+              "schema_version": 1,
+              "span": {
+                "length": 19,
+                "start": 1614
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.842133,
+            "id": "m1_d9c7911246ad21b6de719629871b84579e3d35860572fb3e5dfb0e8e4bd69275",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "a",
+                "aa"
+              ],
+              "attempts": 23,
+              "elapsed": 0.14718709979206324,
+              "mutant": 1.3333333333333333,
+              "original": 0.6666666666666666,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.operand",
+              "original": "2 * min(len(x), len(y)) / (len(x) + len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(len(x) + len(y))",
+              "schema_version": 1,
+              "span": {
+                "length": 43,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 3.2776601,
+            "id": "m1_623f7ec8b1bf8bc9408ab327266bc39f5b56dce3f3978a99eb731b82a356aa68",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [],
+              "attempts": 256,
+              "elapsed": 0.3063425999134779,
+              "mutant": 0.0,
+              "original": 0.0,
+              "status": "unsupported_observation"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.operand",
+              "original": "2 * min(len(x), len(y)) / (len(x) + len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(2 * min(len(x), len(y)))",
+              "schema_version": 1,
+              "span": {
+                "length": 43,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.9726801,
+            "id": "m1_94774a907e1482062bf29c44572ee0ca929fd372c474a907d0cbf82ef67a074d",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [],
+              "attempts": 256,
+              "elapsed": 0.2973644998855889,
+              "mutant": 0.0,
+              "original": 0.0,
+              "status": "unsupported_observation"
+            }
+          },
+          {
+            "candidate": {
+              "column": 38,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.operand",
+              "original": "len(x) + len(y)",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(len(x))",
+              "schema_version": 1,
+              "span": {
+                "length": 15,
+                "start": 1637
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.8712991,
+            "id": "m1_9f75942a91283ba4269b049d97836894f109a3d29b6bf23d7a970bf5fe775d05",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "a",
+                "a"
+              ],
+              "attempts": 12,
+              "elapsed": 0.2144847996532917,
+              "mutant": 2.0,
+              "original": 1.0,
+              "status": "witness"
+            }
+          }
+        ],
+        "seed": 776,
+        "shrink_rows": [],
+        "weights": {}
+      },
+      {
+        "candidate_space": 18,
+        "elapsed": 51.8596731,
+        "mode": "guided",
+        "processes": 36,
+        "remaining": 0,
+        "rows": [
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.binary",
+              "original": "2 * min(len(x), len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(2) / (min(len(x), len(y)))",
+              "schema_version": 1,
+              "span": {
+                "length": 23,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.8623425,
+            "id": "m1_b44f06712160ad4bfef369aafaaa26c57a9987136c3429a28859f49ff76ec959",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "aa",
+                "aa"
+              ],
+              "attempts": 17,
+              "elapsed": 0.20798859978094697,
+              "mutant": 0.25,
+              "original": 1.0,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 38,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.binary",
+              "original": "len(x) + len(y)",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(len(x)) / (len(y))",
+              "schema_version": 1,
+              "span": {
+                "length": 15,
+                "start": 1637
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.8654196,
+            "id": "m1_256c4258225dc411aa5db1abb08b42a8bd65ead6064d75b425dcacf3bb0bfe36",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "a",
+                "a"
+              ],
+              "attempts": 12,
+              "elapsed": 0.21826080000028017,
+              "mutant": 2.0,
+              "original": 1.0,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.binary",
+              "original": "2 * min(len(x), len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(2) + (min(len(x), len(y)))",
+              "schema_version": 1,
+              "span": {
+                "length": 23,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.8492518000000002,
+            "id": "m1_34f75fd9fdfa874f2a1e9bef5d128d00c628e41740d3c6eabd55a37ed2ce1dd1",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "a",
+                "a"
+              ],
+              "attempts": 12,
+              "elapsed": 0.21424270002171397,
+              "mutant": 2.5,
+              "original": 1.0,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.binary",
+              "original": "2 * min(len(x), len(y)) / (len(x) + len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(2 * min(len(x), len(y))) * (len(x) + len(y))",
+              "schema_version": 1,
+              "span": {
+                "length": 43,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.9577237,
+            "id": "m1_28dbc45e65826e15bea533974dd43fe5d4c684649382c5b87a47d57a4f18831e",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [],
+              "attempts": 256,
+              "elapsed": 0.2966363001614809,
+              "mutant": 0.0,
+              "original": 0.0,
+              "status": "unsupported_observation"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.binary",
+              "original": "2 * min(len(x), len(y)) / (len(x) + len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(2 * min(len(x), len(y))) - (len(x) + len(y))",
+              "schema_version": 1,
+              "span": {
+                "length": 43,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.9559634,
+            "id": "m1_1f9f1a1b0bf6af7f00f8486d53047f5cb2f0e14a6eb820a40fe9b268b8dfa16c",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [],
+              "attempts": 256,
+              "elapsed": 0.29399439971894026,
+              "mutant": 0.0,
+              "original": 0.0,
+              "status": "unsupported_observation"
+            }
+          },
+          {
+            "candidate": {
+              "column": 15,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.call_argument",
+              "original": "min(len(x), len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(len(x))",
+              "schema_version": 1,
+              "span": {
+                "length": 19,
+                "start": 1614
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.7029766,
+            "id": "m1_b994a3674571c017373871a7aa3c16a0a8ae76157043cd294c1b2ab722c0a5aa",
+            "status": "survived_related_suite",
+            "witness": {
+              "args": [
+                "aa",
+                "a"
+              ],
+              "attempts": 21,
+              "elapsed": 0.14224490011110902,
+              "mutant": 1.3333333333333333,
+              "original": 0.6666666666666666,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 38,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.binary",
+              "original": "len(x) + len(y)",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(len(x)) - (len(y))",
+              "schema_version": 1,
+              "span": {
+                "length": 15,
+                "start": 1637
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.7896194,
+            "id": "m1_870f4d3fae92fd2262652fd423d82d3152551d9225a70be5ee3d82ac89829b6c",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [],
+              "attempts": 14,
+              "elapsed": 0.128048500046134,
+              "mutant": -2.0,
+              "original": 0.6666666666666666,
+              "status": "unsupported_observation"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.binary",
+              "original": "2 * min(len(x), len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(2) - (min(len(x), len(y)))",
+              "schema_version": 1,
+              "span": {
+                "length": 23,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.8760578,
+            "id": "m1_f0d98f153acc40fe220c309489451e700f54352af86a09244b8b5363b31cba7d",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "a",
+                "a"
+              ],
+              "attempts": 12,
+              "elapsed": 0.21359779965132475,
+              "mutant": 1.5,
+              "original": 1.0,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.operand",
+              "original": "2 * min(len(x), len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(2)",
+              "schema_version": 1,
+              "span": {
+                "length": 23,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.9545114,
+            "id": "m1_49c1104087a501d85606f420966ce36e6c5c25ceb64ff739a203d030d77f7d6f",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "aa",
+                "aa"
+              ],
+              "attempts": 17,
+              "elapsed": 0.21535700000822544,
+              "mutant": 0.5,
+              "original": 1.0,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 38,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.operand",
+              "original": "len(x) + len(y)",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(len(y))",
+              "schema_version": 1,
+              "span": {
+                "length": 15,
+                "start": 1637
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.8717509,
+            "id": "m1_92680f16bb3bfdeaf6d210897b504d60ede2c8dcf74044a9a4c244531c5f489f",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "a",
+                "a"
+              ],
+              "attempts": 12,
+              "elapsed": 0.2058287998661399,
+              "mutant": 2.0,
+              "original": 1.0,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.binary",
+              "original": "2 * min(len(x), len(y)) / (len(x) + len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(2 * min(len(x), len(y))) + (len(x) + len(y))",
+              "schema_version": 1,
+              "span": {
+                "length": 43,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.9610341,
+            "id": "m1_73495564843bd1b56017bc61a97b86a3cfee3a12a88db600d91d48349a88037c",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [],
+              "attempts": 256,
+              "elapsed": 0.30348150013014674,
+              "mutant": 0.0,
+              "original": 0.0,
+              "status": "unsupported_observation"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.operand",
+              "original": "2 * min(len(x), len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(min(len(x), len(y)))",
+              "schema_version": 1,
+              "span": {
+                "length": 23,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.9099513,
+            "id": "m1_908946669c07c0e302d12c4326fe52eab91437eabb7938d4a99aa4488e96a92b",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "a",
+                "a"
+              ],
+              "attempts": 12,
+              "elapsed": 0.21394399972632527,
+              "mutant": 0.5,
+              "original": 1.0,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 38,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.binary",
+              "original": "len(x) + len(y)",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(len(x)) * (len(y))",
+              "schema_version": 1,
+              "span": {
+                "length": 15,
+                "start": 1637
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.8994021,
+            "id": "m1_dd974dce3c1770c41d305c3f6149b62195f9ec858e282550dd313947e2b08350",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "a",
+                "a"
+              ],
+              "attempts": 12,
+              "elapsed": 0.2135196002200246,
+              "mutant": 2.0,
+              "original": 1.0,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.operand",
+              "original": "2 * min(len(x), len(y)) / (len(x) + len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(len(x) + len(y))",
+              "schema_version": 1,
+              "span": {
+                "length": 43,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.9706184,
+            "id": "m1_623f7ec8b1bf8bc9408ab327266bc39f5b56dce3f3978a99eb731b82a356aa68",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [],
+              "attempts": 256,
+              "elapsed": 0.2949309996329248,
+              "mutant": 0.0,
+              "original": 0.0,
+              "status": "unsupported_observation"
+            }
+          },
+          {
+            "candidate": {
+              "column": 38,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.operand",
+              "original": "len(x) + len(y)",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(len(x))",
+              "schema_version": 1,
+              "span": {
+                "length": 15,
+                "start": 1637
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.8625142,
+            "id": "m1_9f75942a91283ba4269b049d97836894f109a3d29b6bf23d7a970bf5fe775d05",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "a",
+                "a"
+              ],
+              "attempts": 12,
+              "elapsed": 0.20760799990966916,
+              "mutant": 2.0,
+              "original": 1.0,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.operand",
+              "original": "2 * min(len(x), len(y)) / (len(x) + len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(2 * min(len(x), len(y)))",
+              "schema_version": 1,
+              "span": {
+                "length": 43,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.9139447,
+            "id": "m1_94774a907e1482062bf29c44572ee0ca929fd372c474a907d0cbf82ef67a074d",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [],
+              "attempts": 256,
+              "elapsed": 0.296203900128603,
+              "mutant": 0.0,
+              "original": 0.0,
+              "status": "unsupported_observation"
+            }
+          },
+          {
+            "candidate": {
+              "column": 15,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.call_argument",
+              "original": "min(len(x), len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(len(y))",
+              "schema_version": 1,
+              "span": {
+                "length": 19,
+                "start": 1614
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.7665512,
+            "id": "m1_d9c7911246ad21b6de719629871b84579e3d35860572fb3e5dfb0e8e4bd69275",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "a",
+                "aa"
+              ],
+              "attempts": 23,
+              "elapsed": 0.1343744001351297,
+              "mutant": 1.3333333333333333,
+              "original": 0.6666666666666666,
+              "status": "witness"
+            }
+          }
+        ],
+        "seed": 776,
+        "shrink_rows": [
+          {
+            "kept": false,
+            "row": {
+              "candidate": {
+                "column": 15,
+                "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+                "line": 41,
+                "operator": "research.call_function",
+                "original": "min",
+                "path": "src/proofreadtools/checks/_variant_candidates.py",
+                "replacement": "max",
+                "schema_version": 1,
+                "span": {
+                  "length": 3,
+                  "start": 1614
+                },
+                "symbol": "_length_ratio_upper_bound"
+              },
+              "elapsed": 2.8487103,
+              "id": "m1_8e8dc2562d2c03e1cc4c9ce1022ab267e5ea58a26dc99a52cd8834d95c8ac3d5",
+              "status": "detected_assertion",
+              "witness": {
+                "args": [
+                  "a",
+                  "aa"
+                ],
+                "attempts": 14,
+                "elapsed": 0.128916600253433,
+                "mutant": 1.3333333333333333,
+                "original": 0.6666666666666666,
+                "status": "witness"
+              }
+            }
+          }
+        ],
+        "weights": {
+          "research.binary": 7,
+          "research.call_argument": 4,
+          "research.operand": 6
+        }
+      },
+      {
+        "candidate_space": 6,
+        "elapsed": 18.1041482,
+        "mode": "fixed",
+        "processes": 12,
+        "remaining": 0,
+        "rows": [
+          {
+            "candidate": {
+              "column": 15,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "collection_min_max",
+              "original": "min",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "max",
+              "schema_version": 1,
+              "span": {
+                "length": 3,
+                "start": 1614
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.8091817,
+            "id": "m1_64657c367b59ab7c438d6355d4a829152d13c862508fe9058e540578fd92b1d6",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "a",
+                "aa"
+              ],
+              "attempts": 14,
+              "elapsed": 0.12691259989514947,
+              "mutant": 1.3333333333333333,
+              "original": 0.6666666666666666,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "integer_literal_neighbor",
+              "original": "2",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(3)",
+              "schema_version": 1,
+              "span": {
+                "length": 1,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 3.4237871,
+            "id": "m1_025d9bd7efb1ad981bbfe16228726e9583999dae7dd3b8a65c30cf9a8202ae66",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "a",
+                "a"
+              ],
+              "attempts": 12,
+              "elapsed": 0.22626390028744936,
+              "mutant": 1.5,
+              "original": 1.0,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "integer_literal_neighbor",
+              "original": "2",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(1)",
+              "schema_version": 1,
+              "span": {
+                "length": 1,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 3.2058343,
+            "id": "m1_b37e7d26525d82bd2f3a42ebc14b0d1e5380b81b665bdb3eecf835e81ba36c17",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "a",
+                "a"
+              ],
+              "attempts": 12,
+              "elapsed": 0.21717630000784993,
+              "mutant": 0.5,
+              "original": 1.0,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 13,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "binary_mul_div",
+              "original": "*",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "/",
+              "schema_version": 1,
+              "span": {
+                "length": 1,
+                "start": 1612
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.8843423,
+            "id": "m1_fc5382a89c77ab31e9541a181df744a86b4da87aa64caaec0a85a23c8d21f524",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "aa",
+                "aa"
+              ],
+              "attempts": 22,
+              "elapsed": 0.2194365002214909,
+              "mutant": 0.25,
+              "original": 1.0,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 35,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "binary_mul_div",
+              "original": "/",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "*",
+              "schema_version": 1,
+              "span": {
+                "length": 1,
+                "start": 1634
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.9942691999999997,
+            "id": "m1_e17300f355fe33ac2c76940089e52016aad122c8e27b71323e01080f2fb72dac",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [],
+              "attempts": 256,
+              "elapsed": 0.3302601999603212,
+              "mutant": 0.0,
+              "original": 0.0,
+              "status": "unsupported_observation"
+            }
+          },
+          {
+            "candidate": {
+              "column": 45,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "binary_add_sub",
+              "original": "+",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "-",
+              "schema_version": 1,
+              "span": {
+                "length": 1,
+                "start": 1644
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.7699791,
+            "id": "m1_966a7f9a5a951b9f0743473f9ae39c790440c0eb1793cf9c874624b6d2a3ce2a",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [],
+              "attempts": 14,
+              "elapsed": 0.12767340010032058,
+              "mutant": -2.0,
+              "original": 0.6666666666666666,
+              "status": "unsupported_observation"
+            }
+          }
+        ],
+        "seed": 777,
+        "shrink_rows": [],
+        "weights": {}
+      },
+      {
+        "candidate_space": 18,
+        "elapsed": 54.2861244,
+        "mode": "random",
+        "processes": 36,
+        "remaining": 0,
+        "rows": [
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.operand",
+              "original": "2 * min(len(x), len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(2)",
+              "schema_version": 1,
+              "span": {
+                "length": 23,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.8884565,
+            "id": "m1_49c1104087a501d85606f420966ce36e6c5c25ceb64ff739a203d030d77f7d6f",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "aa",
+                "aa"
+              ],
+              "attempts": 22,
+              "elapsed": 0.2269438998773694,
+              "mutant": 0.5,
+              "original": 1.0,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.operand",
+              "original": "2 * min(len(x), len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(min(len(x), len(y)))",
+              "schema_version": 1,
+              "span": {
+                "length": 23,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.8440764,
+            "id": "m1_908946669c07c0e302d12c4326fe52eab91437eabb7938d4a99aa4488e96a92b",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "a",
+                "a"
+              ],
+              "attempts": 12,
+              "elapsed": 0.2146598999388516,
+              "mutant": 0.5,
+              "original": 1.0,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.binary",
+              "original": "2 * min(len(x), len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(2) / (min(len(x), len(y)))",
+              "schema_version": 1,
+              "span": {
+                "length": 23,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.9210972,
+            "id": "m1_b44f06712160ad4bfef369aafaaa26c57a9987136c3429a28859f49ff76ec959",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "aa",
+                "aa"
+              ],
+              "attempts": 22,
+              "elapsed": 0.22117150016129017,
+              "mutant": 0.25,
+              "original": 1.0,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.operand",
+              "original": "2 * min(len(x), len(y)) / (len(x) + len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(len(x) + len(y))",
+              "schema_version": 1,
+              "span": {
+                "length": 43,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 3.1505907,
+            "id": "m1_623f7ec8b1bf8bc9408ab327266bc39f5b56dce3f3978a99eb731b82a356aa68",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [],
+              "attempts": 256,
+              "elapsed": 0.29241410037502646,
+              "mutant": 0.0,
+              "original": 0.0,
+              "status": "unsupported_observation"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.binary",
+              "original": "2 * min(len(x), len(y)) / (len(x) + len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(2 * min(len(x), len(y))) + (len(x) + len(y))",
+              "schema_version": 1,
+              "span": {
+                "length": 43,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.9604604,
+            "id": "m1_73495564843bd1b56017bc61a97b86a3cfee3a12a88db600d91d48349a88037c",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [],
+              "attempts": 256,
+              "elapsed": 0.29422130016610026,
+              "mutant": 0.0,
+              "original": 0.0,
+              "status": "unsupported_observation"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.binary",
+              "original": "2 * min(len(x), len(y)) / (len(x) + len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(2 * min(len(x), len(y))) * (len(x) + len(y))",
+              "schema_version": 1,
+              "span": {
+                "length": 43,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 3.0992122,
+            "id": "m1_28dbc45e65826e15bea533974dd43fe5d4c684649382c5b87a47d57a4f18831e",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [],
+              "attempts": 256,
+              "elapsed": 0.2963539999909699,
+              "mutant": 0.0,
+              "original": 0.0,
+              "status": "unsupported_observation"
+            }
+          },
+          {
+            "candidate": {
+              "column": 38,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.binary",
+              "original": "len(x) + len(y)",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(len(x)) - (len(y))",
+              "schema_version": 1,
+              "span": {
+                "length": 15,
+                "start": 1637
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 3.3351351,
+            "id": "m1_870f4d3fae92fd2262652fd423d82d3152551d9225a70be5ee3d82ac89829b6c",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [],
+              "attempts": 14,
+              "elapsed": 0.15247409977018833,
+              "mutant": -2.0,
+              "original": 0.6666666666666666,
+              "status": "unsupported_observation"
+            }
+          },
+          {
+            "candidate": {
+              "column": 38,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.operand",
+              "original": "len(x) + len(y)",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(len(x))",
+              "schema_version": 1,
+              "span": {
+                "length": 15,
+                "start": 1637
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 3.630818,
+            "id": "m1_9f75942a91283ba4269b049d97836894f109a3d29b6bf23d7a970bf5fe775d05",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "a",
+                "a"
+              ],
+              "attempts": 12,
+              "elapsed": 0.2686336999759078,
+              "mutant": 2.0,
+              "original": 1.0,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 38,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.binary",
+              "original": "len(x) + len(y)",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(len(x)) * (len(y))",
+              "schema_version": 1,
+              "span": {
+                "length": 15,
+                "start": 1637
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.8393025,
+            "id": "m1_dd974dce3c1770c41d305c3f6149b62195f9ec858e282550dd313947e2b08350",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "a",
+                "a"
+              ],
+              "attempts": 12,
+              "elapsed": 0.12979389959946275,
+              "mutant": 2.0,
+              "original": 1.0,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 15,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.call_argument",
+              "original": "min(len(x), len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(len(y))",
+              "schema_version": 1,
+              "span": {
+                "length": 19,
+                "start": 1614
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 3.0313109,
+            "id": "m1_d9c7911246ad21b6de719629871b84579e3d35860572fb3e5dfb0e8e4bd69275",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "a",
+                "aa"
+              ],
+              "attempts": 14,
+              "elapsed": 0.211151999887079,
+              "mutant": 1.3333333333333333,
+              "original": 0.6666666666666666,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 38,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.binary",
+              "original": "len(x) + len(y)",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(len(x)) / (len(y))",
+              "schema_version": 1,
+              "span": {
+                "length": 15,
+                "start": 1637
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.9254078,
+            "id": "m1_256c4258225dc411aa5db1abb08b42a8bd65ead6064d75b425dcacf3bb0bfe36",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "a",
+                "a"
+              ],
+              "attempts": 12,
+              "elapsed": 0.21181209990754724,
+              "mutant": 2.0,
+              "original": 1.0,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.binary",
+              "original": "2 * min(len(x), len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(2) + (min(len(x), len(y)))",
+              "schema_version": 1,
+              "span": {
+                "length": 23,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.876932,
+            "id": "m1_34f75fd9fdfa874f2a1e9bef5d128d00c628e41740d3c6eabd55a37ed2ce1dd1",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "a",
+                "a"
+              ],
+              "attempts": 12,
+              "elapsed": 0.20577699970453975,
+              "mutant": 2.5,
+              "original": 1.0,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.binary",
+              "original": "2 * min(len(x), len(y)) / (len(x) + len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(2 * min(len(x), len(y))) - (len(x) + len(y))",
+              "schema_version": 1,
+              "span": {
+                "length": 43,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 3.2294296,
+            "id": "m1_1f9f1a1b0bf6af7f00f8486d53047f5cb2f0e14a6eb820a40fe9b268b8dfa16c",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [],
+              "attempts": 256,
+              "elapsed": 0.3159575001336634,
+              "mutant": 0.0,
+              "original": 0.0,
+              "status": "unsupported_observation"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.binary",
+              "original": "2 * min(len(x), len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(2) - (min(len(x), len(y)))",
+              "schema_version": 1,
+              "span": {
+                "length": 23,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 3.0652522,
+            "id": "m1_f0d98f153acc40fe220c309489451e700f54352af86a09244b8b5363b31cba7d",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "a",
+                "a"
+              ],
+              "attempts": 12,
+              "elapsed": 0.20421249978244305,
+              "mutant": 1.5,
+              "original": 1.0,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 15,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.call_argument",
+              "original": "min(len(x), len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(len(x))",
+              "schema_version": 1,
+              "span": {
+                "length": 19,
+                "start": 1614
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.7683086,
+            "id": "m1_b994a3674571c017373871a7aa3c16a0a8ae76157043cd294c1b2ab722c0a5aa",
+            "status": "survived_related_suite",
+            "witness": {
+              "args": [
+                "aa",
+                "a"
+              ],
+              "attempts": 15,
+              "elapsed": 0.20628240006044507,
+              "mutant": 1.3333333333333333,
+              "original": 0.6666666666666666,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 38,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.operand",
+              "original": "len(x) + len(y)",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(len(y))",
+              "schema_version": 1,
+              "span": {
+                "length": 15,
+                "start": 1637
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.8570724,
+            "id": "m1_92680f16bb3bfdeaf6d210897b504d60ede2c8dcf74044a9a4c244531c5f489f",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "a",
+                "a"
+              ],
+              "attempts": 12,
+              "elapsed": 0.2132929996587336,
+              "mutant": 2.0,
+              "original": 1.0,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.operand",
+              "original": "2 * min(len(x), len(y)) / (len(x) + len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(2 * min(len(x), len(y)))",
+              "schema_version": 1,
+              "span": {
+                "length": 43,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 3.0256088,
+            "id": "m1_94774a907e1482062bf29c44572ee0ca929fd372c474a907d0cbf82ef67a074d",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [],
+              "attempts": 256,
+              "elapsed": 0.2951941997744143,
+              "mutant": 0.0,
+              "original": 0.0,
+              "status": "unsupported_observation"
+            }
+          }
+        ],
+        "seed": 777,
+        "shrink_rows": [
+          {
+            "kept": false,
+            "row": {
+              "candidate": {
+                "column": 15,
+                "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+                "line": 41,
+                "operator": "research.call_function",
+                "original": "min",
+                "path": "src/proofreadtools/checks/_variant_candidates.py",
+                "replacement": "max",
+                "schema_version": 1,
+                "span": {
+                  "length": 3,
+                  "start": 1614
+                },
+                "symbol": "_length_ratio_upper_bound"
+              },
+              "elapsed": 2.7969431,
+              "id": "m1_8e8dc2562d2c03e1cc4c9ce1022ab267e5ea58a26dc99a52cd8834d95c8ac3d5",
+              "status": "detected_assertion",
+              "witness": {
+                "args": [
+                  "a",
+                  "aa"
+                ],
+                "attempts": 14,
+                "elapsed": 0.12624420039355755,
+                "mutant": 1.3333333333333333,
+                "original": 0.6666666666666666,
+                "status": "witness"
+              }
+            }
+          }
+        ],
+        "weights": {}
+      },
+      {
+        "candidate_space": 18,
+        "elapsed": 57.3407823,
+        "mode": "guided",
+        "processes": 36,
+        "remaining": 0,
+        "rows": [
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.operand",
+              "original": "2 * min(len(x), len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(2)",
+              "schema_version": 1,
+              "span": {
+                "length": 23,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.9245242,
+            "id": "m1_49c1104087a501d85606f420966ce36e6c5c25ceb64ff739a203d030d77f7d6f",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "aa",
+                "aa"
+              ],
+              "attempts": 22,
+              "elapsed": 0.22375550027936697,
+              "mutant": 0.5,
+              "original": 1.0,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.operand",
+              "original": "2 * min(len(x), len(y)) / (len(x) + len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(2 * min(len(x), len(y)))",
+              "schema_version": 1,
+              "span": {
+                "length": 43,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.9640974,
+            "id": "m1_94774a907e1482062bf29c44572ee0ca929fd372c474a907d0cbf82ef67a074d",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [],
+              "attempts": 256,
+              "elapsed": 0.30138800013810396,
+              "mutant": 0.0,
+              "original": 0.0,
+              "status": "unsupported_observation"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.operand",
+              "original": "2 * min(len(x), len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(min(len(x), len(y)))",
+              "schema_version": 1,
+              "span": {
+                "length": 23,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.8880226,
+            "id": "m1_908946669c07c0e302d12c4326fe52eab91437eabb7938d4a99aa4488e96a92b",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "a",
+                "a"
+              ],
+              "attempts": 12,
+              "elapsed": 0.21527549996972084,
+              "mutant": 0.5,
+              "original": 1.0,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.operand",
+              "original": "2 * min(len(x), len(y)) / (len(x) + len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(len(x) + len(y))",
+              "schema_version": 1,
+              "span": {
+                "length": 43,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 3.6416013,
+            "id": "m1_623f7ec8b1bf8bc9408ab327266bc39f5b56dce3f3978a99eb731b82a356aa68",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [],
+              "attempts": 256,
+              "elapsed": 0.5161234997212887,
+              "mutant": 0.0,
+              "original": 0.0,
+              "status": "unsupported_observation"
+            }
+          },
+          {
+            "candidate": {
+              "column": 15,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.call_argument",
+              "original": "min(len(x), len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(len(x))",
+              "schema_version": 1,
+              "span": {
+                "length": 19,
+                "start": 1614
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 3.2412271,
+            "id": "m1_b994a3674571c017373871a7aa3c16a0a8ae76157043cd294c1b2ab722c0a5aa",
+            "status": "survived_related_suite",
+            "witness": {
+              "args": [
+                "aa",
+                "a"
+              ],
+              "attempts": 15,
+              "elapsed": 0.24693330004811287,
+              "mutant": 1.3333333333333333,
+              "original": 0.6666666666666666,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.binary",
+              "original": "2 * min(len(x), len(y)) / (len(x) + len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(2 * min(len(x), len(y))) - (len(x) + len(y))",
+              "schema_version": 1,
+              "span": {
+                "length": 43,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 3.5248298,
+            "id": "m1_1f9f1a1b0bf6af7f00f8486d53047f5cb2f0e14a6eb820a40fe9b268b8dfa16c",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [],
+              "attempts": 256,
+              "elapsed": 0.391964599955827,
+              "mutant": 0.0,
+              "original": 0.0,
+              "status": "unsupported_observation"
+            }
+          },
+          {
+            "candidate": {
+              "column": 38,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.binary",
+              "original": "len(x) + len(y)",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(len(x)) / (len(y))",
+              "schema_version": 1,
+              "span": {
+                "length": 15,
+                "start": 1637
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 3.7045905,
+            "id": "m1_256c4258225dc411aa5db1abb08b42a8bd65ead6064d75b425dcacf3bb0bfe36",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "a",
+                "a"
+              ],
+              "attempts": 12,
+              "elapsed": 0.22849390003830192,
+              "mutant": 2.0,
+              "original": 1.0,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 38,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.binary",
+              "original": "len(x) + len(y)",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(len(x)) * (len(y))",
+              "schema_version": 1,
+              "span": {
+                "length": 15,
+                "start": 1637
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 3.1703305,
+            "id": "m1_dd974dce3c1770c41d305c3f6149b62195f9ec858e282550dd313947e2b08350",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "a",
+                "a"
+              ],
+              "attempts": 12,
+              "elapsed": 0.1364604001864791,
+              "mutant": 2.0,
+              "original": 1.0,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 38,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.operand",
+              "original": "len(x) + len(y)",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(len(x))",
+              "schema_version": 1,
+              "span": {
+                "length": 15,
+                "start": 1637
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 3.7333220000000003,
+            "id": "m1_9f75942a91283ba4269b049d97836894f109a3d29b6bf23d7a970bf5fe775d05",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "a",
+                "a"
+              ],
+              "attempts": 12,
+              "elapsed": 0.24169330019503832,
+              "mutant": 2.0,
+              "original": 1.0,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 15,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.call_argument",
+              "original": "min(len(x), len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(len(y))",
+              "schema_version": 1,
+              "span": {
+                "length": 19,
+                "start": 1614
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.9999497,
+            "id": "m1_d9c7911246ad21b6de719629871b84579e3d35860572fb3e5dfb0e8e4bd69275",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "a",
+                "aa"
+              ],
+              "attempts": 14,
+              "elapsed": 0.2139309998601675,
+              "mutant": 1.3333333333333333,
+              "original": 0.6666666666666666,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 38,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.operand",
+              "original": "len(x) + len(y)",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(len(y))",
+              "schema_version": 1,
+              "span": {
+                "length": 15,
+                "start": 1637
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 3.352388,
+            "id": "m1_92680f16bb3bfdeaf6d210897b504d60ede2c8dcf74044a9a4c244531c5f489f",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "a",
+                "a"
+              ],
+              "attempts": 12,
+              "elapsed": 0.2499477998353541,
+              "mutant": 2.0,
+              "original": 1.0,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.binary",
+              "original": "2 * min(len(x), len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(2) + (min(len(x), len(y)))",
+              "schema_version": 1,
+              "span": {
+                "length": 23,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 3.0035046,
+            "id": "m1_34f75fd9fdfa874f2a1e9bef5d128d00c628e41740d3c6eabd55a37ed2ce1dd1",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "a",
+                "a"
+              ],
+              "attempts": 12,
+              "elapsed": 0.21099199960008264,
+              "mutant": 2.5,
+              "original": 1.0,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.binary",
+              "original": "2 * min(len(x), len(y)) / (len(x) + len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(2 * min(len(x), len(y))) * (len(x) + len(y))",
+              "schema_version": 1,
+              "span": {
+                "length": 43,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.9896268,
+            "id": "m1_28dbc45e65826e15bea533974dd43fe5d4c684649382c5b87a47d57a4f18831e",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [],
+              "attempts": 256,
+              "elapsed": 0.29908209992572665,
+              "mutant": 0.0,
+              "original": 0.0,
+              "status": "unsupported_observation"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.binary",
+              "original": "2 * min(len(x), len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(2) - (min(len(x), len(y)))",
+              "schema_version": 1,
+              "span": {
+                "length": 23,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 3.0966077,
+            "id": "m1_f0d98f153acc40fe220c309489451e700f54352af86a09244b8b5363b31cba7d",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "a",
+                "a"
+              ],
+              "attempts": 12,
+              "elapsed": 0.2319379998371005,
+              "mutant": 1.5,
+              "original": 1.0,
+              "status": "witness"
+            }
+          },
+          {
+            "candidate": {
+              "column": 38,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.binary",
+              "original": "len(x) + len(y)",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(len(x)) - (len(y))",
+              "schema_version": 1,
+              "span": {
+                "length": 15,
+                "start": 1637
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 2.8009389000000002,
+            "id": "m1_870f4d3fae92fd2262652fd423d82d3152551d9225a70be5ee3d82ac89829b6c",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [],
+              "attempts": 14,
+              "elapsed": 0.1390907997265458,
+              "mutant": -2.0,
+              "original": 0.6666666666666666,
+              "status": "unsupported_observation"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.binary",
+              "original": "2 * min(len(x), len(y)) / (len(x) + len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(2 * min(len(x), len(y))) + (len(x) + len(y))",
+              "schema_version": 1,
+              "span": {
+                "length": 43,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 3.048998,
+            "id": "m1_73495564843bd1b56017bc61a97b86a3cfee3a12a88db600d91d48349a88037c",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [],
+              "attempts": 256,
+              "elapsed": 0.30598600022494793,
+              "mutant": 0.0,
+              "original": 0.0,
+              "status": "unsupported_observation"
+            }
+          },
+          {
+            "candidate": {
+              "column": 11,
+              "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+              "line": 41,
+              "operator": "research.binary",
+              "original": "2 * min(len(x), len(y))",
+              "path": "src/proofreadtools/checks/_variant_candidates.py",
+              "replacement": "(2) / (min(len(x), len(y)))",
+              "schema_version": 1,
+              "span": {
+                "length": 23,
+                "start": 1610
+              },
+              "symbol": "_length_ratio_upper_bound"
+            },
+            "elapsed": 3.1955887,
+            "id": "m1_b44f06712160ad4bfef369aafaaa26c57a9987136c3429a28859f49ff76ec959",
+            "status": "detected_assertion",
+            "witness": {
+              "args": [
+                "aa",
+                "aa"
+              ],
+              "attempts": 22,
+              "elapsed": 0.242370099760592,
+              "mutant": 0.25,
+              "original": 1.0,
+              "status": "witness"
+            }
+          }
+        ],
+        "seed": 777,
+        "shrink_rows": [
+          {
+            "kept": false,
+            "row": {
+              "candidate": {
+                "column": 15,
+                "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+                "line": 41,
+                "operator": "research.call_function",
+                "original": "min",
+                "path": "src/proofreadtools/checks/_variant_candidates.py",
+                "replacement": "max",
+                "schema_version": 1,
+                "span": {
+                  "length": 3,
+                  "start": 1614
+                },
+                "symbol": "_length_ratio_upper_bound"
+              },
+              "elapsed": 3.0159473,
+              "id": "m1_8e8dc2562d2c03e1cc4c9ce1022ab267e5ea58a26dc99a52cd8834d95c8ac3d5",
+              "status": "detected_assertion",
+              "witness": {
+                "args": [
+                  "a",
+                  "aa"
+                ],
+                "attempts": 14,
+                "elapsed": 0.12655579997226596,
+                "mutant": 1.3333333333333333,
+                "original": 0.6666666666666666,
+                "status": "witness"
+              }
+            }
+          }
+        ],
+        "weights": {
+          "research.binary": 7,
+          "research.call_argument": 4,
+          "research.operand": 6
+        }
+      }
+    ],
+    "baseline": "......                                                                   [100%]\r\n6 passed in 0.67s\r\n",
+    "cleanup": {
+      "all_reaped": true,
+      "originals_verified": true,
+      "output_drains_joined": true,
+      "workspace_removed": true
+    },
+    "platform": "windows",
+    "processes": 271,
+    "sample_sha": "409ed955c0695ec04976842ba9fd22c64c03c33a",
+    "source_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+    "symbol": "_length_ratio_upper_bound",
+    "target": "src/proofreadtools/checks/_variant_candidates.py",
+    "total_wall": 455.0228767,
+    "comparison_timing": {
+      "hypothesis_wall": 1.1610507,
+      "crosshair_wall": 45.4921396
+    }
+  },
+  "verification": {
+    "baseline": "......                                                                   [100%]\r\n6 passed in 0.71s\r\n",
+    "cleanup": {
+      "all_reaped": true,
+      "originals_verified": true,
+      "output_drains_joined": true,
+      "workspace_removed": true
+    },
+    "comparison": {
+      "candidate": {
+        "column": 15,
+        "file_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+        "line": 41,
+        "operator": "research.call_argument",
+        "original": "min(len(x), len(y))",
+        "path": "src/proofreadtools/checks/_variant_candidates.py",
+        "replacement": "(len(x))",
+        "schema_version": 1,
+        "span": {
+          "length": 19,
+          "start": 1614
+        },
+        "symbol": "_length_ratio_upper_bound"
+      },
+      "crosshair": {
+        "output": "Given: (x='\\x00\\x00', y='\\x00'),\r\n  search_probe.original : returns 0.6666666666666666\r\n    search_probe.mutant : returns 1.3333333333333333\r\n",
+        "termination": "Exit(1)",
+        "wall": 45.4486019
+      },
+      "generated": {
+        "fresh_plan_candidates": 6,
+        "generated_test": "# Characterization candidate: review against the intended specification.\r\nfrom proofreadtools.checks._variant_candidates import _length_ratio_upper_bound\r\n\r\ndef test_generated_length_ratio_regression():\r\n    assert _length_ratio_upper_bound('aa', 'a') == 0.6666666666666666\r\n",
+        "test_hash": "9fad8e724d1244f433c870b3aced3631592c4bebf5a962d34cf44612c2613e92",
+        "verification": {
+          "lightweight_suite": {
+            "output": "........................................................................ [  1%]\r\n........................................................................ [  2%]\r\n........................................................................ [  4%]\r\n........................................................................ [  5%]\r\n........................................................................ [  7%]\r\n........................................................................ [  8%]\r\n........................................................................ [  9%]\r\n........................................................................ [ 11%]\r\n........................................................................ [ 12%]\r\n........................................................................ [ 14%]\r\n........................................................................ [ 15%]\r\n........................................................................ [ 17%]\r\n........................................................................ [ 18%]\r\n........................................................................ [ 19%]\r\n........................................................................ [ 21%]\r\n........................................................................ [ 22%]\r\n........................................................................ [ 24%]\r\n........................................................................ [ 25%]\r\n........................................................................ [ 27%]\r\n........................................................................ [ 28%]\r\n........................................................................ [ 29%]\r\n........................................................................ [ 31%]\r\n........................................................................ [ 32%]\r\n........................................................................ [ 34%]\r\n........................................................................ [ 35%]\r\n........................................................................ [ 37%]\r\n........................................................................ [ 38%]\r\n........................................................................ [ 39%]\r\n........................................................................ [ 41%]\r\n........................................................................ [ 42%]\r\n........................................................................ [ 44%]\r\n........................................................................ [ 45%]\r\n........................................................................ [ 46%]\r\n........................................................................ [ 48%]\r\n........................................................................ [ 49%]\r\n........................................................................ [ 51%]\r\n........................................................................ [ 52%]\r\n........................................................................ [ 54%]\r\n........................................................................ [ 55%]\r\n........................................................................ [ 56%]\r\n........................................................................ [ 58%]\r\n........................................................................ [ 59%]\r\n........................................................................ [ 61%]\r\n........................................................................ [ 62%]\r\n........................................................................ [ 64%]\r\n........................................................................ [ 65%]\r\n........................................................................ [ 66%]\r\n........................................................................ [ 68%]\r\n........................................................................ [ 69%]\r\n........................................................................ [ 71%]\r\n........................................................................ [ 72%]\r\n........................................................................ [ 74%]\r\n........................................................................ [ 75%]\r\n........................................................................ [ 76%]\r\n........................................................................ [ 78%]\r\n........................................................................ [ 79%]\r\n........................................................................ [ 81%]\r\n........................................................................ [ 82%]\r\n........................................................................ [ 83%]\r\n........................s............................................... [ 85%]\r\n........................................................................ [ 86%]\r\n........................................................................ [ 88%]\r\n........................................................................ [ 89%]\r\n........................................................................ [ 91%]\r\n........................................................................ [ 92%]\r\n........................................................................ [ 93%]\r\n.......................................................sss.............. [ 95%]\r\n..........................ss............................................ [ 96%]\r\n........................................................................ [ 98%]\r\n........................................................................ [ 99%]\r\n...................                                                      [100%]\r\n=========================== short test summary info ===========================\r\nSKIPPED [1] tests\\test_cov_heavy.py:688: could not import 'pdfminer': No module named 'pdfminer'\r\nSKIPPED [1] tests\\test_preprocess_pdf.py:530: could not import 'pdfminer': No module named 'pdfminer'\r\nSKIPPED [1] tests\\test_preprocess_pdf.py:541: could not import 'pdfminer': No module named 'pdfminer'\r\nSKIPPED [1] tests\\test_preprocess_pdf.py:560: could not import 'pdfminer': No module named 'pdfminer'\r\nSKIPPED [1] tests\\test_preprocess_pdf.py:904: could not import 'pdfminer': No module named 'pdfminer'\r\nSKIPPED [1] tests\\test_preprocess_pdf.py:913: could not import 'pdfminer': No module named 'pdfminer'\r\n5053 passed, 6 skipped, 53 deselected in 49.05s\r\n",
+            "termination": "Exit(0)",
+            "wall": 50.5763237
+          },
+          "mutant": "F                                                                        [100%]\r\n================================== FAILURES ===================================\r\n___________________ test_generated_length_ratio_regression ____________________\r\n\r\n    def test_generated_length_ratio_regression():\r\n>       assert _length_ratio_upper_bound('aa', 'a') == 0.6666666666666666\r\nE       AssertionError: assert 1.3333333333333333 == 0.6666666666666666\r\nE        +  where 1.3333333333333333 = _length_ratio_upper_bound('aa', 'a')\r\n\r\ntests\\test_hoimin_generated_length_ratio.py:5: AssertionError\r\n=========================== short test summary info ===========================\r\nFAILED tests/test_hoimin_generated_length_ratio.py::test_generated_length_ratio_regression\r\n1 failed in 0.75s\r\n",
+          "original": ".                                                                        [100%]\r\n1 passed in 0.63s\r\n"
+        }
+      },
+      "hypothesis": {
+        "args": [
+          "aa",
+          "a"
+        ],
+        "attempts": 22,
+        "elapsed": 0.2185216001234949,
+        "mutant": 1.3333333333333333,
+        "original": 0.6666666666666666,
+        "status": "witness"
+      },
+      "hypothesis_wall": 0.9470653,
+      "prior_status": "survived_related_suite",
+      "real_replay": [
+        {
+          "args": [
+            "aa",
+            "a"
+          ],
+          "method": "hypothesis",
+          "mutants": [
+            {
+              "path": "C:\\Users\\hayao\\AppData\\Local\\Temp\\hoimin-worker-2mdaPQ\\workspace\\src\\proofreadtools\\checks\\_variant_candidates.py",
+              "value": 1.3333333333333333
+            },
+            {
+              "path": "C:\\Users\\hayao\\AppData\\Local\\Temp\\hoimin-worker-2mdaPQ\\workspace\\src\\proofreadtools\\checks\\_variant_candidates.py",
+              "value": 1.3333333333333333
+            }
+          ],
+          "originals": [
+            {
+              "path": "C:\\Users\\hayao\\AppData\\Local\\Temp\\hoimin-worker-2mdaPQ\\workspace\\src\\proofreadtools\\checks\\_variant_candidates.py",
+              "value": 0.6666666666666666
+            },
+            {
+              "path": "C:\\Users\\hayao\\AppData\\Local\\Temp\\hoimin-worker-2mdaPQ\\workspace\\src\\proofreadtools\\checks\\_variant_candidates.py",
+              "value": 0.6666666666666666
+            }
+          ],
+          "status": "reproduced_real_difference"
+        },
+        {
+          "args": [
+            "aa",
+            "a"
+          ],
+          "method": "crosshair",
+          "mutants": [
+            {
+              "path": "C:\\Users\\hayao\\AppData\\Local\\Temp\\hoimin-worker-2mdaPQ\\workspace\\src\\proofreadtools\\checks\\_variant_candidates.py",
+              "value": 1.3333333333333333
+            },
+            {
+              "path": "C:\\Users\\hayao\\AppData\\Local\\Temp\\hoimin-worker-2mdaPQ\\workspace\\src\\proofreadtools\\checks\\_variant_candidates.py",
+              "value": 1.3333333333333333
+            }
+          ],
+          "originals": [
+            {
+              "path": "C:\\Users\\hayao\\AppData\\Local\\Temp\\hoimin-worker-2mdaPQ\\workspace\\src\\proofreadtools\\checks\\_variant_candidates.py",
+              "value": 0.6666666666666666
+            },
+            {
+              "path": "C:\\Users\\hayao\\AppData\\Local\\Temp\\hoimin-worker-2mdaPQ\\workspace\\src\\proofreadtools\\checks\\_variant_candidates.py",
+              "value": 0.6666666666666666
+            }
+          ],
+          "status": "reproduced_real_difference"
+        }
+      ]
+    },
+    "plans": [
+      {
+        "fingerprint_inputs": [
+          {
+            "hash": "40d0ff5bb4e7364ffd4b84aa3780ab59aef45145d1cc6f3b15b837c37133c56a",
+            "path": "tests/_format_equivalence.py"
+          },
+          {
+            "hash": "91b7f5121d5502ca2512ebb77921a23d6f4328e670fe41fe2e18195e8596ca93",
+            "path": "tests/_recorded.py"
+          },
+          {
+            "hash": "34f0ce2d45a73b2cfb4851e2f20a0247bd36a58018008721c73a03887fcef9bd",
+            "path": "tests/_registry_docs.py"
+          },
+          {
+            "hash": "1294b21d56e3f312538fed2d5e2d86af98acecb1f7a8056029cd9b83a24f7b95",
+            "path": "tests/_vocab_reachability.py"
+          },
+          {
+            "hash": "5e1d170d89c9b59a18e271d026c1979f51624964b30b5948ddec2e2dc98e348c",
+            "path": "tests/conftest.py"
+          },
+          {
+            "hash": "ea7e07130f25356cf1b16bfba1ff5f7818925a36b3d8d6a2c81d882477d6083a",
+            "path": "tests/property_strategies.py"
+          },
+          {
+            "hash": "21979263ea5bc6c96f5efd6f849885ae5517d6a086a0d9fecc238c56ea6ed6c5",
+            "path": "tests/test_ai_markup.py"
+          },
+          {
+            "hash": "6de5c23751979429f973699fa2d42e03b2cad43da242c6514038a7575312c830",
+            "path": "tests/test_analyze_abbreviation_expansion_consistency.py"
+          },
+          {
+            "hash": "50ba93a51214ea2cb49a9ddb25897f281deb068cc33a649241a2de9f93eb5141",
+            "path": "tests/test_analyze_abusage.py"
+          },
+          {
+            "hash": "339c6381c679a7b223b61f6829ff0997973808bd66828e2e07eebbab8e77e10d",
+            "path": "tests/test_analyze_alnum_spacing.py"
+          },
+          {
+            "hash": "93af12fd67a7ff0ba488f51d84bfb797516ee3a38b6cc58a65fdc838458f775e",
+            "path": "tests/test_analyze_antecedent_clarity.py"
+          },
+          {
+            "hash": "35850fd0b606e9e43d28909e7e9cb32ac382f82b6ab8a4af8b871997b9c90399",
+            "path": "tests/test_analyze_argument_role_confusion.py"
+          },
+          {
+            "hash": "21b8d48dabc44026316c3a55c746d6f67e418e35e4b3ae5e4c8128cf48f52240",
+            "path": "tests/test_analyze_attachment_ambiguity.py"
+          },
+          {
+            "hash": "1f449a7990aa6d5d715a20a5c388b351f2ce97d5506ed95d04dc63f8dfedec2b",
+            "path": "tests/test_analyze_block_delimiter_balance.py"
+          },
+          {
+            "hash": "48e3da55550d5cd839779450958675c6b2d488a2a1a4d0c186982b0f470175e7",
+            "path": "tests/test_analyze_claim_evidence_coverage.py"
+          },
+          {
+            "hash": "fb1e96211688b38fb6bf0f311730c5b06e190f9fdc11f4cab25e0092080df2f7",
+            "path": "tests/test_analyze_clause_tone_consistency.py"
+          },
+          {
+            "hash": "033554e0f0dc5895461b33bf641eb15bddf5d895f06439a5ec538e378e1b8833",
+            "path": "tests/test_analyze_command_option_drift.py"
+          },
+          {
+            "hash": "8210f4ead615be262f7a06ee8ca342ef3782d93558089bdecbb08073adc7fb16",
+            "path": "tests/test_analyze_comparison_axis_consistency.py"
+          },
+          {
+            "hash": "50c7b46d273df5dc0f1c336298b64d511c1962e387d476fa56b6c2bddb267201",
+            "path": "tests/test_analyze_conjunction_flow.py"
+          },
+          {
+            "hash": "ffe2b90649ca151eeb48e8f954b9dc6902169c54a43227c2ece927e5460ac799",
+            "path": "tests/test_analyze_connective_logic_mismatch.py"
+          },
+          {
+            "hash": "0084ebf4ba6ac8845dcf3335057dae396ee1e7b2331547abe939dfcb268d2e91",
+            "path": "tests/test_analyze_contrast_pair_incomplete.py"
+          },
+          {
+            "hash": "020283ab2ab47b5565d52ea98983a460c0193f1555cc478c0a2fcde95401d2ea",
+            "path": "tests/test_analyze_count_padding.py"
+          },
+          {
+            "hash": "d6fb7a152ead33cb2a22f2b209b5b584afcbe7531037d4c8c156a56fa17b7155",
+            "path": "tests/test_analyze_cross_reference_anchors.py"
+          },
+          {
+            "hash": "2dce8ecb8da760569e151bf26079e74597ccca960a4f0ef0e09f8e73f297e35f",
+            "path": "tests/test_analyze_date_weekday_consistency.py"
+          },
+          {
+            "hash": "05fbe9c8ca8adb38fd4846949c200f2eeecab18f55291ae757ac4f0d89821588",
+            "path": "tests/test_analyze_definition_before_use.py"
+          },
+          {
+            "hash": "e7871006a4b6609b05160fddc347d92bdd2688ed606d4965b1ab8590bf3a1a08",
+            "path": "tests/test_analyze_definition_label_drift.py"
+          },
+          {
+            "hash": "a3726d50f75d3ac8926980b8fb0cc9ae62f8bf8b2e8171517f74f92fc04b99e0",
+            "path": "tests/test_analyze_definition_usage_drift.py"
+          },
+          {
+            "hash": "4c03df86b71f0d87b327f13fb6ec0574d6c5dd94052748a86d82841513d0aeaa",
+            "path": "tests/test_analyze_doubled_joshi.py"
+          },
+          {
+            "hash": "115e80ab960e5d604c36109454e0ca6eb7232148fa30a6c24a283d096c1c77fe",
+            "path": "tests/test_analyze_duplicate_config_keys.py"
+          },
+          {
+            "hash": "bb674271871d808e34fa1c292e99560a7f2f16707621566a3a660b3d8ef51984",
+            "path": "tests/test_analyze_duplicate_definition_terms.py"
+          },
+          {
+            "hash": "cc2b1202314196b4922599d7aa39023f8a9c50220a62cdfd106efe15ae3478b5",
+            "path": "tests/test_analyze_duplicates.py"
+          },
+          {
+            "hash": "8934a933507be7887db81ef3c07022be54576a11b130a8c851e32955c1514df9",
+            "path": "tests/test_analyze_edit_preference.py"
+          },
+          {
+            "hash": "cc7c80406b87e4010eb2ce733f1e7829fbe0f622ac39ffcffc389c0d13e91748",
+            "path": "tests/test_analyze_editorial_note_residue.py"
+          },
+          {
+            "hash": "f1b0cf4fd34f5750a0ae0b45e72cb24895055c9f76f37c3a71566d243a460fb5",
+            "path": "tests/test_analyze_example_rule_conflict.py"
+          },
+          {
+            "hash": "ba8e7018cb538a5b563e5393d909b3ef74ae973f42f79e957b871150267c02f7",
+            "path": "tests/test_analyze_figure_reference_consistency.py"
+          },
+          {
+            "hash": "f334ecfe8215d970eb6903e65aa0258994bf1e8d19607090f3b6a20314f96daa",
+            "path": "tests/test_analyze_heading_hierarchy.py"
+          },
+          {
+            "hash": "19feeebc2c29982b2efa2d0cb4b6b8afe029d631295ec410fa15343555366097",
+            "path": "tests/test_analyze_heading_quality.py"
+          },
+          {
+            "hash": "f7e84026a3922d6433d1004f49cc893b1843ccca5f5a56bd7e00f32a1ec90c3f",
+            "path": "tests/test_analyze_heading_topic_drift.py"
+          },
+          {
+            "hash": "d5c15270de83c31baa053f7ff6eb5603152e874dc44a321d640d6e837983caf3",
+            "path": "tests/test_analyze_homophone.py"
+          },
+          {
+            "hash": "5cba7232d232250a8ccf65cd56c27500591406c7b20f04c61e29c73b16fd4b66",
+            "path": "tests/test_analyze_homophone_verb.py"
+          },
+          {
+            "hash": "b629f27a09464d86f3575cd42a4519d5a379d4e6422db22531189ce34e946214",
+            "path": "tests/test_analyze_idiom_particle.py"
+          },
+          {
+            "hash": "68a96e6a6a63bf4402aa695c427c3ae29d98750fe975d6d16d462a0ac85aae73",
+            "path": "tests/test_analyze_inanimate_subject.py"
+          },
+          {
+            "hash": "fe98e8de9602b8a2eaaeceb5d83e0f988369407aa5fb51f8af1db8d3005c7b25",
+            "path": "tests/test_analyze_intra_paragraph_break.py"
+          },
+          {
+            "hash": "a0bd9c58e28af89129d3d16923ec4d77980b0e9721f56198cd8b745dabc95056",
+            "path": "tests/test_analyze_junsetsu_ga.py"
+          },
+          {
+            "hash": "983c8ecd066b4c2e009949c21b98add8fc17185d710c8affc2c87a0d3263d06f",
+            "path": "tests/test_analyze_katakana_choon.py"
+          },
+          {
+            "hash": "5342c5dfe304f14c8a94a013cda7ae15bb8e1b223295cd6b709cb7645894de07",
+            "path": "tests/test_analyze_keigo_level_consistency.py"
+          },
+          {
+            "hash": "e795bd4f66f483f8c7b2960dbc73574b46330e29839ab74277f418f71b10c206",
+            "path": "tests/test_analyze_keishiki_meishi.py"
+          },
+          {
+            "hash": "8ce19f509393c4baa4743cd029ceff89a9e0b5e31ca58fe80ac9215a12776b32",
+            "path": "tests/test_analyze_leading_particle.py"
+          },
+          {
+            "hash": "2430bea60ffdbe4deae5eadff85ab9887050cb72f82d19635d85e346cbb0a9ea",
+            "path": "tests/test_analyze_legalese_style.py"
+          },
+          {
+            "hash": "47ab5b772c8e49a149f7a7f7b5c015f37dba762d0dc11eb1c040971b86075359",
+            "path": "tests/test_analyze_lexical_repetition.py"
+          },
+          {
+            "hash": "798ddfcf08aa08b2f3c3aed77522f5835e22077c76517f235525b02a80524440",
+            "path": "tests/test_analyze_list_continuation_indent.py"
+          },
+          {
+            "hash": "70fd501a8619cbb173d3935cf65606138f0c02a8005ee675b5176296f33933a9",
+            "path": "tests/test_analyze_list_intro_count_mismatch.py"
+          },
+          {
+            "hash": "aed8f8e1dcf2566e5da0bb673fd6288991e0180c08ceec0376cce5bf90454f72",
+            "path": "tests/test_analyze_list_parallelism.py"
+          },
+          {
+            "hash": "8c4a11c505414ad13c2505f8d94e1ecec97d979b9a194d008d1739fcc3e48dbc",
+            "path": "tests/test_analyze_llm_suggest.py"
+          },
+          {
+            "hash": "7b230e05d0307124e08f209fa1c475cf3bf177e0aa3195cd1ab67f1d2094f7f1",
+            "path": "tests/test_analyze_misconversion.py"
+          },
+          {
+            "hash": "3132e8d364192bc4628e23e10038ab0d8ef42bb2ed01837ce129692f38364029",
+            "path": "tests/test_analyze_missing_period.py"
+          },
+          {
+            "hash": "e54f4077d423b7b6995416fe1621bcd82168de47b7a0ba253d41f41bd1e48f6e",
+            "path": "tests/test_analyze_modal_policy_consistency.py"
+          },
+          {
+            "hash": "9b96a212b8e137347c11a7385a80f43a40d3daabe7d4795a59bae5f44052462f",
+            "path": "tests/test_analyze_modifier_depth.py"
+          },
+          {
+            "hash": "1b54f040e6d2c646d71f3134e33a347d794dba98cafa6bbea3930037bd3134c4",
+            "path": "tests/test_analyze_mt_naturalness.py"
+          },
+          {
+            "hash": "1b24af80c8d3d5f5c064eced13aa7053c80fbd07ca63bdc5ee72ed38e331b0ce",
+            "path": "tests/test_analyze_na_copula.py"
+          },
+          {
+            "hash": "f288d993a27accb94230507e8a037bdbe725390445c17a8f629a011a078c8190",
+            "path": "tests/test_analyze_negated_condition_confusion.py"
+          },
+          {
+            "hash": "2a64a5bc90e09a37c9b3e1d7cd3304ef5d0eec04aaa34e04bd5d8b40624be802",
+            "path": "tests/test_analyze_ngram.py"
+          },
+          {
+            "hash": "21ad85722051aadcb6a769a568299140bef01b7d0b40b9979884ea335103f0d4",
+            "path": "tests/test_analyze_no_chain.py"
+          },
+          {
+            "hash": "8060b13c96a7c700dcd37cca0cefdd768d7debcf84807b4b8def9bb0cf634aa5",
+            "path": "tests/test_analyze_normalized_variants.py"
+          },
+          {
+            "hash": "2bced54ea0b10c8e3a1d59a40c39605e76c65b9a98266d03ac9211bca5a36297",
+            "path": "tests/test_analyze_numeric_fact_contradiction.py"
+          },
+          {
+            "hash": "ca2e118e675e0412db7b5ee3b8e3d67eb0382e00785a5c73de442160e3c28d86",
+            "path": "tests/test_analyze_numeric_unit_consistency.py"
+          },
+          {
+            "hash": "c4b47d641e1c84211511a9bb9bfe5ccb6302f64cce7805b7f4c47df72f8c18f0",
+            "path": "tests/test_analyze_okurigana.py"
+          },
+          {
+            "hash": "dc737a014a84adaa58f6db0880767d51823191ee959452c0f1e029787d8cdc57",
+            "path": "tests/test_analyze_order_reference_consistency.py"
+          },
+          {
+            "hash": "30e81d2b8c3d9f7f567e58149f95cc30798cac501a7223e2fb97c8bd446d06a2",
+            "path": "tests/test_analyze_orphan_particle.py"
+          },
+          {
+            "hash": "3c0b3adb333b1f23fb0055476ba4e4c9fd6e8a474d3188e8a905aef5d60a8818",
+            "path": "tests/test_analyze_particle_adjacency.py"
+          },
+          {
+            "hash": "8a70d2ac383cf808f59474616fb0a13975c4126e0eb1b50b5cf29b2b276abaf2",
+            "path": "tests/test_analyze_particle_likelihood.py"
+          },
+          {
+            "hash": "b5d5afebdde9b0a9469c9acbf2bfdc402a90cb1d7053d98cf08bf41227b2cc01",
+            "path": "tests/test_analyze_path_variant_consistency.py"
+          },
+          {
+            "hash": "9f8e50d9e167e94a891ee5e51fea2a17d9874fac00313821fdf7eabd7796990f",
+            "path": "tests/test_analyze_percentage_sum_consistency.py"
+          },
+          {
+            "hash": "6e62e2595dcd6cf8f6c038b3567af7911fb88ba239d0a9560a8666d2d50a71c2",
+            "path": "tests/test_analyze_person_viewpoint_consistency.py"
+          },
+          {
+            "hash": "b6119cb23536e9e0c41a52c267ae7624af073c86bcc05c8893a84be747842bb6",
+            "path": "tests/test_analyze_pleonasm.py"
+          },
+          {
+            "hash": "43b53b40e2d9fe7a443eb9b7d86e6248693e47e4ed43a7b7b267a6b6b8f6ca76",
+            "path": "tests/test_analyze_predicate_twist.py"
+          },
+          {
+            "hash": "b5d88947440514cb1a2a81e4cfc7feda0d56b3f0664f812e32d298fa7c28d3cc",
+            "path": "tests/test_analyze_proper_noun_load.py"
+          },
+          {
+            "hash": "520932cb1a0978ed9ead3259a4d93ea2818e622cc286e1849950577ec4544938",
+            "path": "tests/test_analyze_proper_noun_variants.py"
+          },
+          {
+            "hash": "7f4ab110b64d76905df0a4ae5b810e316c70dd689bbac003939838d619dda064",
+            "path": "tests/test_analyze_punctuation.py"
+          },
+          {
+            "hash": "7166d6924080bdecea459fa5e5f4ead7096b0babc61eb842f5eaa2a183196e2a",
+            "path": "tests/test_analyze_quantifier_negation_scope.py"
+          },
+          {
+            "hash": "1a98314f2504035bf7e3600fe619ccc063cb52bdbe5e328c12c61678b924614c",
+            "path": "tests/test_analyze_question_answer_coverage.py"
+          },
+          {
+            "hash": "3c6e54ced01751e9f118aa7244c59e7eea281276a04e7c7bce1f799fb9988b12",
+            "path": "tests/test_analyze_range_order_consistency.py"
+          },
+          {
+            "hash": "63bd5e44fce9c7e85170c33d5f216ce3fda0f43ee79cdf4b52c73c4939d8dcd6",
+            "path": "tests/test_analyze_ranuki_inuki.py"
+          },
+          {
+            "hash": "50cbdd92e848c598cfa18e6979b07cc72b86485a88932d0f4a9061afec458621",
+            "path": "tests/test_analyze_readability.py"
+          },
+          {
+            "hash": "6c695c602db80e4dff6592a237cbbcde4838d737b0761081b29b1158416ae4ea",
+            "path": "tests/test_analyze_redundant_patterns.py"
+          },
+          {
+            "hash": "f5dbc23e31d9fa9b20fa8c19652170a69e13b3bf7491e2ef51cb7d9ce6e0658a",
+            "path": "tests/test_analyze_reference_load.py"
+          },
+          {
+            "hash": "05ff858c64fcc0babe042738d40e26113ad53d8d6f8173bc0c45cd7fedc72643",
+            "path": "tests/test_analyze_rhetoric_restraint.py"
+          },
+          {
+            "hash": "f06bba772b473a248c50ba288767b4bbf760545c44763f1dac00c6ccff3c345d",
+            "path": "tests/test_analyze_sakamogi.py"
+          },
+          {
+            "hash": "9a24babdf58cefad84890119717b28a776735b7dd168c9bf85ffa3f7ca202826",
+            "path": "tests/test_analyze_semantic_contradiction.py"
+          },
+          {
+            "hash": "7294999aa7dc9ee9835251976db1bb8aa8d5011e2f15c98a6290aeaaf799c0e3",
+            "path": "tests/test_analyze_semantic_variants.py"
+          },
+          {
+            "hash": "b295620d0388c1b32fe64accbcb70cb60e039df1dd2123d180281e2ceb2f619c",
+            "path": "tests/test_analyze_sentence_focus_shift.py"
+          },
+          {
+            "hash": "87221d6cf12a2e30410ff149b9912a95d250d9af36550cefdbafe8daa35558b2",
+            "path": "tests/test_analyze_sentence_length.py"
+          },
+          {
+            "hash": "187965d50f6e6c5056152f66b9638e9b3142afa98f98b7aef4ec0319ac1daa59",
+            "path": "tests/test_analyze_sentence_overload.py"
+          },
+          {
+            "hash": "ae5dddd2b4a2f974fe2bcd3b382cb348563ad697893e0230a9b0c933dab2fd5c",
+            "path": "tests/test_analyze_sentence_overload_heavy.py"
+          },
+          {
+            "hash": "f198994e5b513e92ff9c81315dfad828e006f3d56300fdc0edcee37779807040",
+            "path": "tests/test_analyze_step_number_sequence.py"
+          },
+          {
+            "hash": "454bdbe0a36ade6377f8d87962808d3ffc221e66075160a7fc158f9bbe87e98d",
+            "path": "tests/test_analyze_structure.py"
+          },
+          {
+            "hash": "987309888babd2e2b58b8fec672d823a96f6b8b885adb787a2af16c24b296c0f",
+            "path": "tests/test_analyze_style_metrics.py"
+          },
+          {
+            "hash": "a840bf0a86e4b5bec32e77afcf590bc7bb4f9102505703613c4b46b4d225bb48",
+            "path": "tests/test_analyze_subject_elision.py"
+          },
+          {
+            "hash": "d27ba736e4cd8701d0be37318a09b2bbffd30cf595db002703a05456a8096c78",
+            "path": "tests/test_analyze_successive_word.py"
+          },
+          {
+            "hash": "d0186b88f3fe893ce4012ace60170773bde6809cd2e1f43b36c35c412850e5da",
+            "path": "tests/test_analyze_table_column_consistency.py"
+          },
+          {
+            "hash": "fc31f8c0c43060202867a37ff6687079f552cb3a7edb8f90ba41bf36f0e41fea",
+            "path": "tests/test_analyze_tense_aspect_consistency.py"
+          },
+          {
+            "hash": "82d7bc343b2ce0583ab6efb380084e63fd36cd60d9ec64d01f11a70dd0972e69",
+            "path": "tests/test_analyze_term_definition_drift.py"
+          },
+          {
+            "hash": "8d5cc7f8e1e290382d406fd9e3863a4d15f6c9523a5cea345583517be7cba744",
+            "path": "tests/test_analyze_term_enforcement.py"
+          },
+          {
+            "hash": "32a823b66698a29b3b322c339f2e44644fabf06bbfa08150cc80855da8092450",
+            "path": "tests/test_analyze_tone_consistency.py"
+          },
+          {
+            "hash": "2a07ca837b1645ee7c6d30a2baab373e55702acb8447848d5522731980372232",
+            "path": "tests/test_analyze_topic_drift.py"
+          },
+          {
+            "hash": "0c5b528d1d1b27792da8794887870900562849a5cab75b29fc46f60031533025",
+            "path": "tests/test_analyze_translation_source_alignment.py"
+          },
+          {
+            "hash": "08b87c10fcd00d32090e48a54609dea7931a1e583aa9dafa9a6b41cfd15f65f1",
+            "path": "tests/test_analyze_translationese.py"
+          },
+          {
+            "hash": "0c29b869549ff6a3f9d98ade6f321a5afe8066c063814d9cfe4d1c54a50be12a",
+            "path": "tests/test_analyze_unicode_sanity.py"
+          },
+          {
+            "hash": "ea4af9a346146813c457d6a50a1ef44da3ce51b8bc84e3943f5426be9c69b4dd",
+            "path": "tests/test_analyze_unnatural_alphabet.py"
+          },
+          {
+            "hash": "ba3bb05217f7a73cd3d2ace316306df6b96bcb5d46d0b9293d15fa09e48a1b3c",
+            "path": "tests/test_analyze_variants.py"
+          },
+          {
+            "hash": "c1717ad0bacd47bca90c795a57beede1e8c23e09d3147b05ceb6f49d5d66791c",
+            "path": "tests/test_analyze_voice.py"
+          },
+          {
+            "hash": "5b174b084056ef0753fac46d9c4ffd57ae016090fe25e74c4c47b2025b334805",
+            "path": "tests/test_analyze_weak_phrase.py"
+          },
+          {
+            "hash": "c3cb7f0e7ef42699e562c4255812969eb77bcf93151f7f69cbd89b88367c5cc1",
+            "path": "tests/test_broken_conjugation.py"
+          },
+          {
+            "hash": "bce384e05d565baf77883ac1132bb188f8004c3b57138b823345dceda822b332",
+            "path": "tests/test_changed_lines.py"
+          },
+          {
+            "hash": "2c57b61e7340d24ec9cc52eb8d7842ca5d0a016a441a68c7e570dfb8da32bf17",
+            "path": "tests/test_changed_lines_properties.py"
+          },
+          {
+            "hash": "5b7c3d09dc27d865409c34c7da47a656fb786f475229581f259afbddab6ace3e",
+            "path": "tests/test_checks_heavy.py"
+          },
+          {
+            "hash": "d5b74ebac7089abffcb0785c2467993cefca5ec465255e7fd38033ffb45899bd",
+            "path": "tests/test_checks_invariants.py"
+          },
+          {
+            "hash": "1107670be56cdae35d62407f590f464a7c36c5273cc9d521875405f78e973c41",
+            "path": "tests/test_checks_light.py"
+          },
+          {
+            "hash": "fe6fe656296fed5510cd497e8842eca7ff66107ad7d442f45819a00c1e802e70",
+            "path": "tests/test_checks_registry.py"
+          },
+          {
+            "hash": "9b89df47baaca25e233f5f2379eb7a06416ad327abb545d08083abddc23b74ad",
+            "path": "tests/test_ci_configuration.py"
+          },
+          {
+            "hash": "fd451e3ac4f2e33173acc41c9f419bdb728a06df04ef1ab1c3ff2e1f672d1af1",
+            "path": "tests/test_cli.py"
+          },
+          {
+            "hash": "12ffba12edfded8f3c5f3a2a498b0463fc757a88fb6f6a10092de6e0b540a084",
+            "path": "tests/test_code_block_respect.py"
+          },
+          {
+            "hash": "8b734769db29ede4f3a6ab48b3d4f206fe3e16c2b355302fbc1fe9a1f4ca18df",
+            "path": "tests/test_compare.py"
+          },
+          {
+            "hash": "14d796716a49dc5463ee896e2703da62bf33b367f935a7cabd5b1b8f376663d4",
+            "path": "tests/test_compare_properties.py"
+          },
+          {
+            "hash": "48b395f51931016bbdd56d62b194687437543d292b3ab22c094914f933f5689e",
+            "path": "tests/test_context.py"
+          },
+          {
+            "hash": "3c94e33e1d14670b9d14ec608f9a60e8262a85f961c9b6b9b820620791e4fce8",
+            "path": "tests/test_contracts.py"
+          },
+          {
+            "hash": "8f5e7affa1717d30053d82a4670536420d4c3b50d4627b80824a94396f642f4c",
+            "path": "tests/test_core.py"
+          },
+          {
+            "hash": "963022753ba9ae1d39e9e47bff1609d1e91e8699c641115878b8134a8407b0ce",
+            "path": "tests/test_core_structure_properties.py"
+          },
+          {
+            "hash": "b7be783cba4c762451d9b1927fe08ff6fbcb8b1f0e8d6a8e64eda46e1d0a0788",
+            "path": "tests/test_cov_ginza_a.py"
+          },
+          {
+            "hash": "59e3adcf17a84cb58c4b2ac3ccdbd0db896d0ba2555bf7b87caa18bba39f5ada",
+            "path": "tests/test_cov_ginza_b.py"
+          },
+          {
+            "hash": "5ae300c9789b65307f952a05eca0a3b7c1b95dc5e66ccb5917a9df835d3b421b",
+            "path": "tests/test_cov_heavy.py"
+          },
+          {
+            "hash": "89e79eb3ebf508ff4d09b430a91977020d0d5776073bae0ff2c96169ee22ff5f",
+            "path": "tests/test_cov_light.py"
+          },
+          {
+            "hash": "b65a91d026d553b751f32c3417c3f1aa88d1f77b1e3b347b8f546e22bd89bf4e",
+            "path": "tests/test_current_morphology_documentation.py"
+          },
+          {
+            "hash": "04791750571fda6ef8e630512d58c50d94c3e0451015d7e386e808eb6a223fde",
+            "path": "tests/test_deal_contracts.py"
+          },
+          {
+            "hash": "2cb8313cc044d937581f95e5893d001a0652d0a5409c179e606fae6dcb8dffe2",
+            "path": "tests/test_emphasis_scope.py"
+          },
+          {
+            "hash": "593c1ed794a9c10a1c3ee96b46c43bdc4ff855045630450f9a581b8a99fb729d",
+            "path": "tests/test_formal_model_layout.py"
+          },
+          {
+            "hash": "03bfd1c64fd988b5fcb38c19dcf927907020a5de2aabeef57c04265356396065",
+            "path": "tests/test_format_equivalence_matrix.py"
+          },
+          {
+            "hash": "1cad114fbc099b1be40c61c766be65ada7be87b01bdaefacdcbbd205b2bc451a",
+            "path": "tests/test_ginza.py"
+          },
+          {
+            "hash": "9fad8e724d1244f433c870b3aced3631592c4bebf5a962d34cf44612c2613e92",
+            "path": "tests/test_hoimin_generated_length_ratio.py"
+          },
+          {
+            "hash": "15e2060a4064d56fd246413038db0ff2d0dcda9a75f20d5bc7850048450f13c5",
+            "path": "tests/test_misconversion_allowlist.py"
+          },
+          {
+            "hash": "da47f938199f5d55948becd7cde6911ce040163aefb40b0f6088a88af9310a55",
+            "path": "tests/test_noxfile.py"
+          },
+          {
+            "hash": "74240eb394ef4ac0ae52e06a35b7684f4caa6aaf8f9542c2f9b418900577e35d",
+            "path": "tests/test_paragraph_line_numbers.py"
+          },
+          {
+            "hash": "48acdd37ba3bc4b048c79ceb59d0bb58a06558bddc0039f5f9cb4a98ba3aafed",
+            "path": "tests/test_pdf_properties.py"
+          },
+          {
+            "hash": "d64bfc7b55ea4ca7b4af619a2390e91a30ec98afd741e40c76cd912d840d55d8",
+            "path": "tests/test_preference_scorer.py"
+          },
+          {
+            "hash": "ba30eb40aa801b6d95f5c3fa7ba062913dc59398cdf5da9064979744b6a14dda",
+            "path": "tests/test_preprocess.py"
+          },
+          {
+            "hash": "20fdd61d40832ac0719b3a23e4b06bd838736a05194cb3af827b968da8075e4a",
+            "path": "tests/test_preprocess_asciidoc.py"
+          },
+          {
+            "hash": "717864dbe00f1b9c7cdbde95f56f321e03564328e0db9a0f1dc3a1238ed06aa3",
+            "path": "tests/test_preprocess_markdown.py"
+          },
+          {
+            "hash": "04fd266bde5051b01f5106acac1ca606fc5572466e41c3bfe2f4007044d8f6d9",
+            "path": "tests/test_preprocess_pdf.py"
+          },
+          {
+            "hash": "bf47c4f697ac882a6668735d5c4ed7824582a704bbd62ed71faa5fbcee552e13",
+            "path": "tests/test_preprocess_text.py"
+          },
+          {
+            "hash": "bfb5b31bce477c2bc15be6b1c9533eb4219a0e085035998b1a1fbdc7b683da8e",
+            "path": "tests/test_property_strategies.py"
+          },
+          {
+            "hash": "b0ad8f93d31d9e1ddcff9116fceb51297805077c12097cb941e28faac45ec465",
+            "path": "tests/test_pure_helpers.py"
+          },
+          {
+            "hash": "d008b1464a7bdfa70c4d9578512a1601831bae1bed8dd7cd3df012c14f93a2e6",
+            "path": "tests/test_recorded.py"
+          },
+          {
+            "hash": "790ead8298d4d4610965cdab3647d9aac437d508ee9030c8c3bba80a1e54f367",
+            "path": "tests/test_review.py"
+          },
+          {
+            "hash": "ece399cd68f19d943d117ea91c9535bfb88b8a56800a901b13d14bd5dbe7d84c",
+            "path": "tests/test_review_properties.py"
+          },
+          {
+            "hash": "165f2cf383beba285c749c3e449459eab3fb3437d1dbad9b6bd73f3e70c8770e",
+            "path": "tests/test_semantic_variant_pairs.py"
+          },
+          {
+            "hash": "2f445e38292baf1b1f32945b32eb897eeb8a3ba7ca8a9f0a7615d45896850f2b",
+            "path": "tests/test_sentence_overload_corpus.py"
+          },
+          {
+            "hash": "cb9db17313ba796caf6661e8e83dd23886a5fc41f1fd246ee03c8cc3ae0b5a88",
+            "path": "tests/test_sentence_overload_formats.py"
+          },
+          {
+            "hash": "2c1b438105dace48e58ac33cf2e4b6c71d55be848f55850946bdb7ddd049dd2f",
+            "path": "tests/test_sentence_overload_slow.py"
+          },
+          {
+            "hash": "4276f877a82529297a78f3016ea27206751e7a855eff1b0348476aeb7867d243",
+            "path": "tests/test_source_context.py"
+          },
+          {
+            "hash": "a55f77a89f26b88a1ad65c7c44f01f4a5ead9686132cdd5490381be115dad21f",
+            "path": "tests/test_sudachi_cache.py"
+          },
+          {
+            "hash": "6f6d2f82c4c9ab61e57114f42dc45d4d69248a46c43353dd7f15d3c3ea85f200",
+            "path": "tests/test_term_rule_loader.py"
+          },
+          {
+            "hash": "eff629d63aec8f096e7c8b69662f1e3eddd50256b943b47920c805f8db4cde4b",
+            "path": "tests/test_token.py"
+          },
+          {
+            "hash": "292015a0ba1ff38120432ef683da55aefc3525b31546ed933f33d1a9d16e8de0",
+            "path": "tests/test_variant_candidates.py"
+          },
+          {
+            "hash": "754089b386145f9335fe4fb9689ba84c4b6e549dae80d6c2458339cf6aedd0d9",
+            "path": "tests/test_variant_policy.py"
+          },
+          {
+            "hash": "91b9c2481e9085038940a18f0d7baee8251d8cda9539842c7ddc581662b4a3d1",
+            "path": "tests/test_vocab_reachability.py"
+          }
+        ],
+        "manifest_hash": "c149a8e06e4b548d5bfdd15727a4d1210f5378d7b237034b343161dcbb0837cd",
+        "sources": [
+          {
+            "hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+            "path": "src/proofreadtools/checks/_variant_candidates.py"
+          }
+        ]
+      }
+    ],
+    "platform": "windows",
+    "processes": 20,
+    "sample_sha": "409ed955c0695ec04976842ba9fd22c64c03c33a",
+    "source_hash": "1d10932438038b26bf3b2bba16c9a1d3ab40ce8f743076c290476d7aed91ae6b",
+    "symbol": "_length_ratio_upper_bound",
+    "target": "src/proofreadtools/checks/_variant_candidates.py",
+    "total_wall": 123.3331583
+  },
+  "overlap": {
+    "generated_unique": 18,
+    "fixed_unique": 6,
+    "normalized_ast_overlap": [
+      {
+        "generated_id": "m1_b44f06712160ad4bfef369aafaaa26c57a9987136c3429a28859f49ff76ec959",
+        "fixed_id": "m1_fc5382a89c77ab31e9541a181df744a86b4da87aa64caaec0a85a23c8d21f524"
+      },
+      {
+        "generated_id": "m1_870f4d3fae92fd2262652fd423d82d3152551d9225a70be5ee3d82ac89829b6c",
+        "fixed_id": "m1_966a7f9a5a951b9f0743473f9ae39c790440c0eb1793cf9c874624b6d2a3ce2a"
+      },
+      {
+        "generated_id": "m1_28dbc45e65826e15bea533974dd43fe5d4c684649382c5b87a47d57a4f18831e",
+        "fixed_id": "m1_e17300f355fe33ac2c76940089e52016aad122c8e27b71323e01080f2fb72dac"
+      },
+      {
+        "generated_id": "m1_8e8dc2562d2c03e1cc4c9ce1022ab267e5ea58a26dc99a52cd8834d95c8ac3d5",
+        "fixed_id": "m1_64657c367b59ab7c438d6355d4a829152d13c862508fe9058e540578fd92b1d6"
+      }
+    ]
+  },
+  "diagnostics": [
+    {
+      "reason": "OpenBLAS native threads exceeded the unchanged 1GiB job allowance",
+      "termination": "OutOfMemory",
+      "wall": 51.7624214,
+      "output_excerpt": "ク・実 ProcessPoolExecutor の end-to-end。ワーカーは spawn で cli を再 import するため、\r\n        # 偽チェックではなく実レジストリのチェックで配管（-j 配線・グループ化・集計）を通す。\r\n>       rc = cli.main(\r\n            [\r\n                \"all\",\r\n                \"-i\",\r\n                str(sample_review),\r\n                \"-o\",\r\n                str(output_dir),\r\n                \"-p\",\r\n                \"ch*.re\",\r\n                \"-j\",\r\n                \"2\",\r\n                \"--checks\",\r\n                \"voice,variants\",\r\n            ]\r\n        )\r\n\r\ntests\\test_cli.py:2564: \r\n_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _\r\nsrc\\proofreadtools\\cli.py:1273: in main\r\n    code, total_findings = _run_all(\r\nsrc\\proofreadtools\\cli.py:1119: in _run_all\r\n    return _run_batch(\r\nsrc\\proofreadtools\\cli.py:1085: in _run_batch\r\n    records = _run_all_parallel(names, ctx, docs, parsed_min_lens, workers)\r\n              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\r\nsrc\\proofreadtools\\cli.py:1046: in _run_all_parallel\r\n    records = [rec for future in as_completed(futures) for rec in future.result()]\r\n                                                                  ^^^^^^^^^^^^^^^\r\n..\\..\\..\\..\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\Lib\\concurrent\\futures\\_base.py:447: in result\r\n    return self.__get_result()\r\n           ^^^^^^^^^^^^^^^^^^^\r\n_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _\r\n\r\nself = None\r\n\r\n    def __get_result(self):\r\n        if self._exception is not None:\r\n            try:\r\n>               raise self._exception\r\nE               concurrent.futures.process.BrokenProcessPool: A process in the process pool was terminated abruptly while the future was running or pending.\r\n\r\n..\\..\\..\\..\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\Lib\\concurrent\\futures\\_base.py:396: BrokenProcessPool\r\n---------------------------- Captured stderr call -----------------------------\r\nOpenBLAS error: Memory allocation still failed after 10 retries, giving up.\r\nOpenBLAS error: Memory allocation still failed after 10 retries, giving up.\r\nOpenBLAS error: Memory allocation still failed after 10 retries, giving up.\r\nOpenBLAS error: Memory allocation still failed after 10 retries, giving up.\r\nOpenBLAS error: Memory allocation still failed after 10 retries, giving up.\r\nOpenBLAS error: Memory allocation still failed after 10 retries, giving up.\r\nOpenBLAS error: Memory allocation still failed after 10 retries, giving up.\r\nOpenBLAS error: Memory allocation still failed after 10 retries, giving up.\r\nOpenBLAS error: Memory allocation still failed after 10 retries, giving up.\r\nOpenBLAS error: Memory allocation still\r\n=========================== short test summary info ===========================\r\nSKIPPED [1] tests\\test_cov_heavy.py:688: could not import 'pdfminer': No module named 'pdfminer'\r\nSKIPPED [1] tests\\test_preprocess_pdf.py:530: could not import 'pdfminer': No module named 'pdfminer'\r\nSKIPPED [1] tests\\test_preprocess_pdf.py:541: could not import 'pdfminer': No module named 'pdfminer'\r\nSKIPPED [1] tests\\test_preprocess_pdf.py:560: could not import 'pdfminer': No module named 'pdfminer'\r\nSKIPPED [1] tests\\test_preprocess_pdf.py:904: could not import 'pdfminer': No module named 'pdfminer'\r\nSKIPPED [1] tests\\test_preprocess_pdf.py:913: could not import 'pdfminer': No module named 'pdfminer'\r\nFAILED tests/test_cli.py::test_all_parallel_runs_real_checks_with_jobs - conc...\r\n1 failed, 5052 passed, 6 skipped, 53 deselected in 50.26s\r\n",
+      "total_wall": 125.1140967,
+      "processes": 20
+    },
+    {
+      "reason": "sample declared nox dependency missing during initial suite collection",
+      "termination": "Exit(2)",
+      "output": "\r\n=================================== ERRORS ====================================\r\n___________________ ERROR collecting tests/test_noxfile.py ____________________\r\nImportError while importing test module 'C:\\Users\\hayao\\AppData\\Local\\Temp\\hoimin-worker-VEQvRB\\workspace\\tests\\test_noxfile.py'.\r\nHint: make sure your test modules/packages have valid Python names.\r\nTraceback:\r\n..\\..\\..\\..\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\Lib\\importlib\\__init__.py:88: in import_module\r\n    return _bootstrap._gcd_import(name[level:], package, level)\r\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\r\ntests\\test_noxfile.py:6: in <module>\r\n    import nox\r\nE   ModuleNotFoundError: No module named 'nox'\r\n=========================== short test summary info ===========================\r\nERROR tests/test_noxfile.py\r\n!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!\r\n53 deselected, 1 error in 4.66s\r\n"
+    }
+  ],
+  "environment": {
+    "python": "3.14.6",
+    "rust": "1.99.0",
+    "ruff": "0.16.10",
+    "ty": "0.0.84",
+    "search_dependencies": [
+      "attrs==26.1.0",
+      "cattrs==26.2.1",
+      "colorama==0.4.6",
+      "crosshair-tool==0.0.111",
+      "deal==4.24.6",
+      "hypothesis==6.169.0",
+      "iniconfig==2.3.1",
+      "levenshtein==0.27.4",
+      "lsprotocol==2025.0.0",
+      "mypy-extensions==1.1.0",
+      "numpy==2.4.6",
+      "packaging==26.3",
+      "pluggy==1.6.0",
+      "pygls==2.1.1",
+      "pygments==2.21.0",
+      "pytest==9.1.1",
+      "python-levenshtein==0.27.4",
+      "pyyaml==6.0.3",
+      "rapidfuzz==3.14.5",
+      "sortedcontainers==2.4.0",
+      "sudachidict-core==20260723",
+      "sudachipy==0.6.11",
+      "typeshed-client==2.13.0",
+      "typing-extensions==4.16.0",
+      "typing-inspect==0.9.0",
+      "z3-solver==5.1.0.0"
+    ],
+    "final_verification_addition": "nox==2026.8.10 pinned to sample lock; resolved transitive versions recorded separately",
+    "measurement_native_threads": "inherited (same for all arms)",
+    "verification_native_threads": {
+      "OPENBLAS_NUM_THREADS": "1",
+      "OMP_NUM_THREADS": "1",
+      "MKL_NUM_THREADS": "1"
+    },
+    "final_verification_dependencies": [
+      "argcomplete==3.7.2",
+      "attrs==26.1.0",
+      "cattrs==26.2.1",
+      "colorama==0.4.6",
+      "colorlog==6.12.0",
+      "crosshair-tool==0.0.111",
+      "deal==4.24.6",
+      "dependency-groups==1.3.2",
+      "distlib==0.4.3",
+      "filelock==4.1.0",
+      "humanize==4.16.0",
+      "hypothesis==6.169.0",
+      "iniconfig==2.3.1",
+      "levenshtein==0.27.4",
+      "lsprotocol==2025.0.0",
+      "mypy-extensions==1.1.0",
+      "nox==2026.8.10",
+      "numpy==2.4.6",
+      "packaging==26.3",
+      "platformdirs==4.13.0",
+      "pluggy==1.6.0",
+      "pygls==2.1.1",
+      "pygments==2.21.0",
+      "pytest==9.1.1",
+      "python-discovery==1.6.2",
+      "python-levenshtein==0.27.4",
+      "pyyaml==6.0.3",
+      "rapidfuzz==3.14.5",
+      "sortedcontainers==2.4.0",
+      "sudachidict-core==20260723",
+      "sudachipy==0.6.11",
+      "typeshed-client==2.13.0",
+      "typing-extensions==4.16.0",
+      "typing-inspect==0.9.0",
+      "virtualenv==21.14.6",
+      "z3-solver==5.1.0.0"
+    ]
+  },
+  "human_adoption": "not_reviewed",
+  "independent_code_reviewers": 1,
+  "review_wall_time": "not_measured"
+}
