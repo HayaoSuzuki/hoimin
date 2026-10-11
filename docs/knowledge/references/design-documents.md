@@ -5,6 +5,10 @@ description: docs/superpowers/specs内の全Markdownを先頭見出しと出典�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: typed-results-and-contracts-design
+  resource: ../../superpowers/specs/2026-10-12-typed-results-and-contracts-design.md
+  working_tree: untracked
+  sha256: 0c0af00307604471f24218f71a29017ed7dc346427f3b6c69504c732e2abf4ec
 - id: issue-749-documentation-pages-design
   resource: ../../superpowers/specs/2026-10-12-issue-749-documentation-pages-design.md
   revision: 9eb8ed0d3690d45f77932afcfd457afbdbf43abd
@@ -1663,3 +1667,11 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 [^issue-711-survivor-review-design]: [設計原文](../../superpowers/specs/2026-10-11-issue-711-survivor-review-design.md)。実装前の設計。
 
 [^issue-749-documentation-pages-design]: [承認済み設計](../../superpowers/specs/2026-10-12-issue-749-documentation-pages-design.md)。mainの検索可能なサイトと公開権限。
+
+## Typed Python failures and third-party contracts
+
+| Original heading | Source |
+| --- | --- |
+| Typed Python failures and third-party contracts | [Proposed design](../../superpowers/specs/2026-10-12-typed-results-and-contracts-design.md) [^typed-results-and-contracts-design] |
+
+[^typed-results-and-contracts-design]: [Design proposal](../../superpowers/specs/2026-10-12-typed-results-and-contracts-design.md). Static inspection and adoption criteria; implementation has not started.
