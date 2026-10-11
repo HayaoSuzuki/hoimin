@@ -1,3 +1,4 @@
+pub(crate) mod input;
 pub mod model;
 
 #[derive(Debug, thiserror::Error)]

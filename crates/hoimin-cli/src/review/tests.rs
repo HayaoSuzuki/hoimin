@@ -120,3 +120,140 @@ fn draft_limits() {
     value.evidence.clear();
     assert!(validate_draft(&value).is_ok());
 }
+
+async fn plan_fixture() -> (tempfile::TempDir, std::path::PathBuf) {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("sample.py"), "value = 1\n").unwrap();
+    let args = crate::cli::parse_from([
+        "hoimin",
+        "plan",
+        "--root",
+        dir.path().to_str().unwrap(),
+        "--file",
+        "sample.py",
+        "--min-free-space",
+        "1B",
+        "--",
+        "must-not-execute",
+    ])
+    .unwrap();
+    let crate::cli::ParsedCommand::Plan(args) = args else {
+        panic!("plan")
+    };
+    let output = crate::plan::create(args.into_run_config().unwrap())
+        .await
+        .unwrap();
+    assert!(!output.manifest.candidates.is_empty());
+    let path = dir.path().join("plan.json");
+    std::fs::write(&path, serde_json::to_vec(&output.manifest).unwrap()).unwrap();
+    (dir, path)
+}
+
+#[tokio::test]
+async fn read_only_plan_does_not_execute() {
+    let (_dir, path) = plan_fixture().await;
+    let loaded = super::input::load_plan(&path).unwrap();
+    assert!(!loaded.manifest.candidates.is_empty());
+    let mut value: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    value["candidates"][0]["id"] = serde_json::Value::String("0".repeat(64));
+    std::fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
+    assert!(super::input::load_plan(&path).is_err());
+}
+
+#[tokio::test]
+async fn source_freshness_and_plan_reordering() {
+    let (dir, path) = plan_fixture().await;
+    let loaded = super::input::load_plan(&path).unwrap();
+    let candidate = &loaded.manifest.candidates[0].candidate;
+    assert_eq!(
+        super::input::source_state(&loaded.project, candidate).unwrap(),
+        SourceState::Fresh
+    );
+    std::fs::write(dir.path().join("sample.py"), "value = 9\n").unwrap();
+    assert_eq!(
+        super::input::source_state(&loaded.project, candidate).unwrap(),
+        SourceState::Stale
+    );
+    std::fs::remove_file(dir.path().join("sample.py")).unwrap();
+    assert_eq!(
+        super::input::source_state(&loaded.project, candidate).unwrap(),
+        SourceState::Unavailable
+    );
+}
+
+#[tokio::test]
+async fn bounded_artifact_and_alias() {
+    let (dir, path) = plan_fixture().await;
+    let loaded = super::input::load_plan(&path).unwrap();
+    assert!(super::input::validate_store_destination(&path, &loaded, None).is_err());
+    assert!(
+        super::input::validate_store_destination(&dir.path().join("sample.py"), &loaded, None)
+            .is_err()
+    );
+    let alias = dir.path().join("alias.sqlite3");
+    std::fs::hard_link(&path, &alias).unwrap();
+    assert!(super::input::validate_store_destination(&alias, &loaded, None).is_err());
+    let oversized = dir.path().join("oversized.json");
+    let file = std::fs::File::create(&oversized).unwrap();
+    file.set_len(64 * 1024 * 1024 + 1).unwrap();
+    assert!(super::input::load_plan(&oversized).is_err());
+}
+
+async fn report_fixture() -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf) {
+    let (dir, path) = plan_fixture().await;
+    let plan = super::input::load_plan(&path).unwrap();
+    let mut report: serde_json::Value = serde_json::from_str(include_str!(
+        "../../tests/golden/reports/schema-v4-current.json"
+    ))
+    .unwrap();
+    let config = plan
+        .manifest
+        .normalized_config
+        .clone()
+        .into_run_config(hoimin_core::OutputConfig::default());
+    report["run"]["normalized_config"] = serde_json::to_value(config).unwrap();
+    report["mutants"][0]["candidate"] =
+        serde_json::to_value(&plan.manifest.candidates[0].candidate).unwrap();
+    let report_path = dir.path().join("report.json");
+    std::fs::write(&report_path, serde_json::to_vec(&report).unwrap()).unwrap();
+    (dir, path, report_path)
+}
+
+#[tokio::test]
+async fn review_report_identity() {
+    let (_dir, path, report_path) = report_fixture().await;
+    let plan = super::input::load_plan(&path).unwrap();
+    let original = std::fs::read(&report_path).unwrap();
+    let (report, _) = super::input::load_report(&report_path, &plan).unwrap();
+    assert_eq!(report.mutants.len(), 1);
+    for change in [
+        "incomplete",
+        "baseline",
+        "root",
+        "summary",
+        "descriptor",
+        "version",
+    ] {
+        let mut value: serde_json::Value = serde_json::from_slice(&original).unwrap();
+        match change {
+            "incomplete" => value["summary"]["complete"] = false.into(),
+            "baseline" => value["baseline"]["termination"]["Exit"] = 1.into(),
+            "root" => {
+                value["run"]["normalized_config"]["root"] =
+                    std::env::temp_dir().to_str().unwrap().into()
+            }
+            "summary" => value["summary"]["counts"]["killed"] = 9.into(),
+            "descriptor" => value["mutants"][0]["candidate"]["original"] = "wrong".into(),
+            "version" => value["schema_version"] = 3.into(),
+            _ => unreachable!(),
+        }
+        std::fs::write(&report_path, serde_json::to_vec(&value).unwrap()).unwrap();
+        assert!(
+            super::input::load_report(&report_path, &plan).is_err(),
+            "{change}"
+        );
+    }
+    std::fs::write(&report_path, [original.as_slice(), b"\n{}\n"].concat()).unwrap();
+    assert!(super::input::load_report(&report_path, &plan).is_err());
+}
