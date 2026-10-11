@@ -115,3 +115,5 @@ merged documentation PR #800 will run without concurrent heavy compilation.
 Free disk before builds was approximately 183 GB. The audit tool build target
 was cleaned with cargo clean after installation (818.4 MiB removed). Shared
 repository artifacts remain until CLI verification has finished.
+
+Rust validation completed: default core 372 passed / 2 ignored; final contract-enabled core 360 passed / 2 ignored; contract-enabled CLI 2,420 passed / 25 ignored across 123 targets. Optimized disabled checks passed 3/3. Strict feature Clippy passed after the sensitivity faults were restored.
