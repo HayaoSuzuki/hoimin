@@ -3,9 +3,78 @@ from pathlib import Path
 import markdown
 import pytest
 
+from tools import docs_site
 from tools.docs_site import RepositoryLinks, rewrite_url
 
 REVISION = "a" * 40
+
+
+def test_project_site_absolute_path_becomes_same_site_url(tmp_path: Path) -> None:
+    url = "/hoimin/docs/usage/?review=yes#results"
+
+    result = rewrite_url(tmp_path, tmp_path / "README.md", url, REVISION)
+
+    assert result == f"https://hayaosuzuki.github.io{url}"
+
+
+def test_missing_same_site_absolute_url_is_rejected(tmp_path: Path) -> None:
+    (tmp_path / "index.html").write_text(
+        '<a href="https://hayaosuzuki.github.io/hoimin/missing/">bad</a>',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="Missing built documentation target"):
+        docs_site.validate_site(tmp_path)
+
+
+def test_missing_same_site_absolute_fragment_is_rejected(tmp_path: Path) -> None:
+    (tmp_path / "index.html").write_text(
+        '<a href="https://hayaosuzuki.github.io/hoimin/#missing">bad</a>',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="Missing built documentation anchor"):
+        docs_site.validate_site(tmp_path)
+
+
+def test_missing_raw_html_relative_link_is_rejected(tmp_path: Path) -> None:
+    (tmp_path / "index.html").write_text(
+        '<a href="docs/missing.html">bad</a>', encoding="utf-8"
+    )
+
+    with pytest.raises(ValueError, match="Missing built documentation target"):
+        docs_site.validate_site(tmp_path)
+
+
+def test_missing_raw_html_same_page_fragment_is_rejected(tmp_path: Path) -> None:
+    (tmp_path / "index.html").write_text('<a href="#missing">bad</a>', encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Missing built documentation anchor"):
+        docs_site.validate_site(tmp_path)
+
+
+def test_built_links_preserve_encoded_query_and_fragment(tmp_path: Path) -> None:
+    (tmp_path / "index.html").write_text(
+        '<a href="/hoimin/docs/%75sage/?review=yes#results">usage</a>',
+        encoding="utf-8",
+    )
+    target = tmp_path / "docs" / "usage" / "index.html"
+    target.parent.mkdir(parents=True)
+    target.write_text('<h1 id="results">Results</h1>', encoding="utf-8")
+
+    docs_site.validate_site(tmp_path)
+
+
+def test_html_checker_ignores_literal_examples_and_external_urls(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "index.html").write_text(
+        '<code>&lt;a href="missing.html"&gt;example&lt;/a&gt;</code>'
+        '<a href="https://example.org/missing/#unknown">external</a>',
+        encoding="utf-8",
+    )
+
+    docs_site.validate_site(tmp_path)
 
 
 def test_excluded_source_links_to_exact_revision(tmp_path: Path) -> None:

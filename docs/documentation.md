@@ -37,6 +37,11 @@ remain on GitHub, outside site search. Links to excluded sources are checked for
 existence and point to the build's source commit on GitHub. External URL
 availability is not checked during builds.
 
+Generated HTML also checks local link targets and fragments, including raw HTML
+and absolute URLs within this project site. Raw HTML links must address rendered
+output paths. Use Markdown links for repository source references so the helper
+can rewrite them to revision-pinned GitHub URLs.
+
 ## Initial activation and recovery
 
 After the workflow is merged, select **Settings → Pages → Build and deployment →

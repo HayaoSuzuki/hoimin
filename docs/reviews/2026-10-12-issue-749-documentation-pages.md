@@ -13,7 +13,8 @@ each contain five self-review passes for their respective stages.
    search; their links point to existing sources at the build revision.
 2. Markdown: parsed inline/reference links after Markdown inline processing,
    leaving literal and fenced code untouched. Reused native strict anchor
-   validation after negative probes demonstrated rejection.
+   validation and added emitted-HTML checks after independent review demonstrated
+   a concrete gap for raw HTML and absolute project-site links.
 3. Filesystem: checked root containment before linking excluded sources. Build
    output is restricted to the dedicated repository `site/` folder because
    MkDocs cleans that folder. Temporary sources never rewrite original Markdown.
@@ -66,4 +67,25 @@ GitHub Actions, dispatch Documentation on main, verify the deployed site and
 usage/search navigation, then close #749. A successful local artifact does not
 establish public availability. Historical release documentation is deferred.
 
-Whole-branch independent review is recorded after the implementation checks.
+## Independent whole-branch review and fix pass
+
+A fresh reviewer independently rendered all 14 current pages without warnings
+and found two important gaps: valid `/hoimin/` URLs were rejected as source-path
+escapes, while same-site absolute URLs bypassed validation; raw HTML links also
+bypassed the Markdown tree and native link validator. There were no critical or
+minor findings. The review set aside the explicitly pending #798 dependency,
+post-merge Pages activation and deferred version history; those limits stand.
+
+Seven new regression tests failed before the fix. The fix preserves project-site
+URLs and checks generated local HTML href/src targets and anchor IDs using
+stdlib HTMLParser, within the output root. It handles decoded paths, directory
+indexes, queries, fragments and same-site absolute URLs without fetching remote
+content. Literal escaped code remains text. This follows the plan's conditional
+HTML-checker step because native validation proved insufficient.
+
+Fix self-review: checked URL origin/base matching; checked output containment;
+checked decoded fragments and directory indexes; checked raw HTML and literal
+code separately; checked the build invokes emitted validation and still rejects
+bad links. The expanded helper/selection/workflow tests pass (89 tests), including
+all 14 helper tests. Raw HTML repository references should use Markdown syntax
+for source-to-GitHub rewriting; raw HTML URLs address rendered output paths.

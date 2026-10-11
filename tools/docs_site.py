@@ -7,6 +7,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import override
 from urllib.parse import quote, unquote, urlsplit, urlunsplit
@@ -24,6 +25,7 @@ from mkdocs.structure.files import Files
 from mkdocs.structure.pages import Page
 
 REPOSITORY = "https://github.com/HayaoSuzuki/hoimin"
+SITE_URL = "https://hayaosuzuki.github.io/hoimin/"
 PUBLIC_PAGES = (
     "README.md",
     "docs/usage.md",
@@ -46,8 +48,35 @@ def site_path(source: str) -> str:
     return "index.md" if source == "README.md" else source
 
 
+def project_path(url: str) -> str | None:
+    parsed = urlsplit(url)
+    site = urlsplit(SITE_URL)
+    path = unquote(parsed.path)
+    if parsed.scheme not in {"", "http", "https"} or (
+        parsed.netloc and parsed.netloc != site.netloc
+    ):
+        return None
+    if path == site.path.rstrip("/"):
+        return ""
+    if path.startswith(site.path):
+        return path.removeprefix(site.path)
+    return None
+
+
 def rewrite_url(root: Path, source: Path, url: str, revision: str) -> str:
     parsed = urlsplit(url)
+    # Site URLs use emitted paths, checked against generated HTML after the build.
+    if project_path(url) is not None:
+        # MkDocs warns on every root-relative URL; our HTML check owns these URLs.
+        return urlunsplit(
+            (
+                "https",
+                urlsplit(SITE_URL).netloc,
+                parsed.path,
+                parsed.query,
+                parsed.fragment,
+            )
+        )
     prefix = f"{REPOSITORY}/blob/main/"
     if url.startswith(prefix):
         parsed = urlsplit(url.removeprefix(prefix))
@@ -79,6 +108,64 @@ def rewrite_url(root: Path, source: Path, url: str, revision: str) -> str:
             parsed.fragment,
         )
     )
+
+
+class BuiltPage(HTMLParser):
+    def __init__(self, text: str) -> None:
+        super().__init__(convert_charrefs=True)
+        self.anchors: set[str] = set()
+        self.urls: list[str] = []
+        self.feed(text)
+        self.close()
+
+    @override
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        for name, value in attrs:
+            if value is None:
+                continue
+            if name == "id" or (tag == "a" and name == "name"):
+                self.anchors.add(value)
+            if name in {"href", "src"}:
+                self.urls.append(value)
+
+
+def built_target(output: Path, page: Path, url: str) -> Path | None:
+    parsed = urlsplit(url)
+    project = project_path(url)
+    if project is not None:
+        target = output / project
+    elif parsed.scheme or parsed.netloc:
+        return None
+    else:
+        target = page.parent / unquote(parsed.path) if parsed.path else page
+    if target.is_dir():
+        target /= "index.html"
+    target = target.resolve()
+    if not target.is_relative_to(output):
+        msg = f"Built documentation link escapes site: {page}: {url}"
+        raise ValueError(msg)
+    if not target.is_file():
+        msg = f"Missing built documentation target: {page}: {url}"
+        raise ValueError(msg)
+    return target
+
+
+def validate_site(output: Path) -> None:
+    """Check emitted local links, including raw HTML; never fetch external URLs."""
+    output = output.resolve()
+    pages = {
+        page.resolve(): BuiltPage(page.read_text(encoding="utf-8"))
+        for page in output.rglob("*.html")
+    }
+    for path, page in pages.items():
+        for url in page.urls:
+            target = built_target(output, path, url)
+            if target is None:
+                continue
+            fragment = unquote(urlsplit(url).fragment)
+            if target in pages and fragment and fragment not in pages[target].anchors:
+                msg = f"Missing built documentation anchor: {path}: {url}"
+                raise ValueError(msg)
 
 
 class LinkProcessor(Treeprocessor):
@@ -177,10 +264,14 @@ def build_site(root: Path, output: Path) -> None:
             site_dir=str(output),
             strict=True,
         )
+        if config.site_url != SITE_URL:
+            msg = "mkdocs.yml site_url must match the documentation link resolver"
+            raise ValueError(msg)
         # MkDocs annotates strings only; Python-Markdown supports Extension objects.
         config.markdown_extensions.append(links)  # ty: ignore[invalid-argument-type]
         config.plugins["repository-links"] = SourcePlugin(links)
         build(config)
+        validate_site(output)
 
 
 def main() -> None:
