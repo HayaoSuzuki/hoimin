@@ -4,9 +4,35 @@ site_description: Bounded mutation testing for focused Python changes
 repo_url: https://github.com/HayaoSuzuki/hoimin
 edit_uri: ''
 theme:
-  name: mkdocs
+  name: material
+  language: en
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to light mode
+extra_css:
+  - stylesheets/extra.css
 plugins:
-  - search
+  - search:
+      lang: en
 markdown_extensions:
   - fenced_code
   - tables
@@ -29,6 +55,7 @@ nav:
       - License: docs/licensing.md
   - Usage and reference:
       - Usage: docs/usage.md
+      - Agent skills: docs/agent-skills.md
       - CLI reference: docs/cli-reference.md
       - Compatibility: docs/compatibility.md
   - Maintainer development:

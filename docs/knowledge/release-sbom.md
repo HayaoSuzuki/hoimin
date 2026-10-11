@@ -1,7 +1,7 @@
 ---
 type: Contract
-title: リリース配布物のSBOM
-description: 配布物別Cargo依存グラフ、由来の記録と不完全なリリースを拒否する条件。
+title: Release artifact SBOMs
+description: Per-artifact Cargo dependency graphs, provenance and incomplete-release rejection.
 status: draft
 sources:
 - id: ci
@@ -25,24 +25,23 @@ sources:
   revision: 1d2c0912d029318fd40c09f3e6576735c0a740e3
 ---
 
-# 配布物との対応
+# Mapping SBOMs to artifacts
 
-リリースは3 platformのstandaloneとwheelに対応する計6文書を公開する。CycloneDX JSON 1.5でCargoの通常・build推移依存を記録し、対象配布ファイルのSHA256、release commit、調整後Cargo.lockのSHA256、targetとfeaturesを併記する。Linuxのwheelはmanylinuxコンテナ内で取得し、standaloneのホスト環境と区別する。[^release]
+A release publishes six documents for standalone binaries and wheels on three platforms. CycloneDX JSON 1.5 records Cargo's normal and build transitive dependencies, the distribution file's SHA-256, release commit, adjusted Cargo.lock SHA-256, target, and features. Linux wheel evidence is captured inside the manylinux container, separately from the standalone host environment.[^release]
 
-# 公開条件と由来
+# Publication conditions and provenance
 
-必須SBOMの欠落、schema不適合、metadata不一致、graph参照不整合を拒否してからSHA256SUMSを生成する。配布入力を変更するPRと手動実行も集約artifactで検証する。[^ci]既存の公開済release保護とPyPIのwheel限定アップロードを維持する。[^design]
+Before generating SHA256SUMS, reject missing required SBOMs, schema violations, metadata mismatches, and inconsistent graph references. PRs changing distribution inputs and manual runs also validate the aggregate artifact.[^ci] Preserve existing protection of published releases and wheel-only PyPI uploads.[^design]
 
-vendored parserはupstream packageとVCS revision、Ruff修正由来、release commitで固定したpathとREADMEを記録する。Cargo由来のgraphはOSライブラリを含む完全なbinary inventoryではなく、build依存が配布binaryへ含まれるという主張でもない。[^release]
+For the vendored parser, record its upstream package and VCS revision, Ruff patch origins, and release-commit-pinned path and README. A Cargo-derived graph is not a complete binary inventory including OS libraries, and does not claim that build dependencies are shipped in the binary.[^release]
 
-# 証拠と再確認条件
+# Evidence and recheck conditions
 
-セルフレビュー、回帰テスト、Hypothesis、構造変異fuzz、Leanモデル証明と256ケースの実装照合を[検証記録](../superpowers/reports/2026-10-10-issue-741-sbom.md)に分けて記録する。Leanの証明はモデルの公開ゲートに限る。hosted CIによるWindows/Linux native buildと実際の公開はローカル証拠に含めない。[^review]
+The [verification record](../superpowers/reports/2026-10-10-issue-741-sbom.md) distinguishes self-reviews, regression tests, Hypothesis, structural-mutation fuzzing, Lean model proofs, and 256 implementation comparisons. Lean proofs apply only to the model's publication gate. Local evidence does not include hosted Windows/Linux native builds or actual publication.[^review]
 
-target、features、Maturin image、generator、schema、parserを更新した場合はbuild設定とSBOM metadataの対応を再確認する。[^release]
+Recheck the correspondence between build settings and SBOM metadata when updating targets, features, the Maturin image, generator, schema, or parser.[^release]
 
-[^release]: [運用と取得方法](../releases.md)。
-[^design]: [Issue #741 設計](../superpowers/specs/2026-10-10-issue-741-sbom-design.md)。
-[^review]: [Issue #741 検証記録](../superpowers/reports/2026-10-10-issue-741-sbom.md)。
-
-[^ci]: [CIとpreviewの選択](../ci.md)。
+[^release]: [Operations and retrieval](../releases.md).
+[^design]: [Issue #741 design](../superpowers/specs/2026-10-10-issue-741-sbom-design.md).
+[^review]: [Issue #741 verification record](../superpowers/reports/2026-10-10-issue-741-sbom.md).
+[^ci]: [CI and preview selection](../ci.md).

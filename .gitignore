@@ -2,6 +2,8 @@
 .superpowers/
 /target/
 /site/
+/.agents/skills/
+/.claude/skills/
 __pycache__/
 *.py[cod]
 .pytest_cache/

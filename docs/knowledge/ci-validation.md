@@ -1,7 +1,7 @@
 ---
 type: Contract
-title: CIの選択と必須チェック
-description: 保守的な差分分類、結果集約、workflow検査の運用条件。
+title: CI selection and required checks
+description: Conservative diff classification, result aggregation and workflow validation.
 status: draft
 catalog_revision: 00893465e0328204453e5008dc3884035b85c7bd
 sources:
@@ -27,46 +27,46 @@ sources:
   sha256: 1432888965f0e344e82875b96a59b2ffb06c6185d1c63a5cd710d2d44bf7ee1f
 ---
 
-# 選択と集約の契約
+# Selection and aggregation contracts
 
-差分が不明な場合は全検証を選ぶ。
-文書変更でも変更判定と品質・workflow検査、集約を起動する。
-集約は必要なjobのsuccessを要求し、failure・cancelled・skipped・結果欠落を拒否する。
-条件付きjobの意図したskipだけを許容する。[^planner][^ci]
+Unknown diffs select all checks.
+Documentation changes still run change selection, quality/workflow checks, and aggregation.
+Aggregation requires success for required jobs and rejects failure, cancellation, skipping, or missing results.
+Only intentional skips of unselected conditional jobs are accepted.[^planner][^ci]
 
-生成済みの`docs/cli-reference.md`は文書のみの変更でもRust検証を選ぶ。
-Rust jobは生成コマンドの`--check`で同期を検査し、CLI定義と生成文書の差分を拒否する。
-生成対象と再生成の手順は[CLIリファレンスの生成と同期](cli-reference.md)を参照する。[^planner][^ci]
+Changes to generated `docs/cli-reference.md` select Rust validation even when documentation is the only change.
+The Rust job runs the generator with `--check` to reject differences between CLI definitions and generated documentation.
+See [CLI reference generation and synchronization](cli-reference.md) for scope and regeneration.[^planner][^ci]
 
-# 公開と検査の運用
+# Publication and checking operations
 
-PRの古い検証とpreviewだけをキャンセルする。
-previewは配布入力の変更時と手動実行時に選択し、マージ後のタグ予約と公開は独立した書込jobで実行する。
-由来証明の書込jobもマージ後に限定し、公開は証明と照合の成功を要求する。
-対象と実機検証の範囲は[リリースの由来証明](release-provenance.md)を参照する。
-書込jobでPR headを実行しない。[^release]
+Only superseded PR validation and preview runs are cancelled.
+Preview is selected for distribution-input changes and manual runs; post-merge tag reservation and publication use separate jobs with write permissions.
+Provenance jobs with write permissions are also limited to post-merge execution, and publication requires successful attestation and verification.
+See [release provenance](release-provenance.md) for scope and hosted validation.
+Jobs with write permissions do not execute PR head code.[^release]
 
-検証済みarchiveの独立実行とLinux wheelのglibc 2.17実行・ABI記録が成功した場合だけ証明へ進む。
-詳細と保証範囲は[配布物の実行検証](artifact-smoke.md)を参照する。[^release]
+Attestation requires successful independent archive execution, Linux-wheel execution on glibc 2.17, and ABI recording.
+See [artifact execution checks](artifact-smoke.md) for details and limitations.[^release]
 
-PyPIへの公開は、GitHub Releaseの公開成功後に任意の有効化変数で別の`workflow_dispatch` runを起動する。TestPyPIの取得検証が成功した場合だけ本番へ進む。登録前は変数を未設定にし、詳細は[PyPIへのwheel公開](pypi-publishing.md)を参照する。[^release]
+After successful GitHub Release publication, an optional enablement variable starts a separate `workflow_dispatch` run for PyPI publication. Production publication requires successful TestPyPI retrieval and verification. Leave the variable unset before registration; see [PyPI wheel publication](pypi-publishing.md).[^release]
 
-全workflowを固定版のactionlint・ShellCheck・zizmorで検査する。
-重大度の足切りやShellCheckの一括除外をせず、必要な例外だけを理由付きで該当箇所に記載する。
-ローカルの再現コマンド、各例外、測定方法とツールの限界は運用ガイドを正本とする。[^guide]
+All workflows are checked with pinned actionlint, ShellCheck, and zizmor.
+Do not apply severity cutoffs or blanket ShellCheck exclusions; document necessary exceptions inline with reasons.
+The operational guide is canonical for local commands, exceptions, measurements, and tool limitations.[^guide]
 
-# 未確認事項と再確認条件
+# Unverified conditions and rechecking
 
-cargo-nextestの初回Linux評価は一覧一致と実行成功を確認したが、今回の2並列設定では時間短縮を確認できず、cargo testを維持する。
-実行内のcapability skipとignoreを区別した測定条件、資源使用量、再評価の範囲は[評価結果](../performance/nextest/2026-10-11-linux.md)を参照する。[^guide]
+The initial Linux cargo-nextest evaluation confirmed matching test lists and successful execution, but found no speedup with two workers, so cargo test was retained.
+See the [evaluation results](../performance/nextest/2026-10-11-linux.md) for runtime capability skips versus ignored tests, measurement conditions, resource usage, and reevaluation scope.[^guide]
 
-hostedで全検証CIと3platform previewの成功・時間、PR再pushによる旧CIのキャンセルを確認した。
-実測の対象はworkflow・配布入力を含むPRに限り、文書のみの削減率やmerge queue実行は未確認である。[^guide]
-現移管先の必須チェックは未設定であり、有効化する場合は`CI result`を指定する。
-旧組織の設定は対象外とする。
-path分類、job名、公開イベント、Runner、lint版を変えた場合はこの契約と負例テストを再確認する。[^guide]
+Hosted checks confirmed full-validation CI and three-platform preview success/timing, and cancellation of old CI on PR repush.
+Those measurements cover PRs changing workflows and distribution inputs; documentation-only reduction rates and merge queue execution remain unverified.[^guide]
+Required checks at the transferred repository were not configured at the recorded inspection; use `CI result` when enabling them.
+The former organization's configuration is outside scope.
+Recheck this contract and negative tests when changing path classification, job names, publication events, runners, or lint versions.[^guide]
 
-[^guide]: [CIの運用ガイド](../ci.md)。
-[^planner]: [変更判定と集約](../../tools/ci_selection.py)。
-[^ci]: [CI workflow](../../.github/workflows/ci.yml)。
-[^release]: [release workflow](../../.github/workflows/release.yml)。
+[^guide]: [CI operational guide](../ci.md).
+[^planner]: [Change selection and aggregation](../../tools/ci_selection.py).
+[^ci]: [CI workflow](../../.github/workflows/ci.yml).
+[^release]: [Release workflow](../../.github/workflows/release.yml).

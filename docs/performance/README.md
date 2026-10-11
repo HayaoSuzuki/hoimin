@@ -1,30 +1,30 @@
-# 入力形状別の性能検証
+# Performance validation by input shape
 
-[shapes.json](shapes.json) は、8次元・29形状の入力、N/2N/4Nのサイズ、測定対象、実行可能な回帰テストを記録する台帳である。`growth_model` は入力の構造、`expected_after_fix` は依存Issueが統合された後の期待値を示す。実測の記録は、それぞれに明記したrevisionの観測として読む。
+[shapes.json](shapes.json) inventories inputs across eight dimensions and 29 shapes, N/2N/4N sizes, measurement subjects, and executable regression tests. `growth_model` describes input structure; `expected_after_fix` describes expectations after dependent issues are integrated. Read measurements as observations at their explicitly recorded revisions.
 
-| 次元 | release入力 | 決定的な通常ゲートとの対応 |
+| Dimension | Release-mode inputs | Deterministic ordinary gates |
 | --- | --- | --- |
-| 対象発見 | 非対象・対象ファイル数、file/symbol/line selector宣言数を独立に増やす | #453の走査数、#474のselector照会、#475の行範囲統合をactive登録 |
-| fingerprint | ファイル数・総bytes・重複glob数とexact/glob混在 | #457のwalk回数をactive登録 |
-| ソース配置 | 同じbytes・候補を長い1行と多数行へ配置しUnicode列も比較 | #470の列照会をactive登録。既存token範囲照会をactive登録 |
-| AST | 幅、左深さ、巨大literal、未選択collectionを別々に増やす | #461のreplacement生成数をactive登録。既存prefix/overflowをactive登録 |
-| 解析状態 | import幅×annotation数、再代入×呼出数。選択・候補0対照 | #479/#482の操作数をactive登録 |
-| verify | 1file・多file、top1/topN、明示した不完全plan | #456の前処理回数をactive登録 |
-| 出力 | mutant record数とrecord長を独立に増やす | report/progressのallocator peak、#463のwrite数に加え、1reportの内容500/1,000/2,000件×履歴2/4/8のprogressゲート |
-| workspace | file数・bytes・worker数を独立に増やす | 作成後retained heapとpreflight allocator peakを別ゲートで測る |
+| Target discovery | Independently increase non-target/target file counts and file/symbol/line selector declarations | Active traversal-count gate for #453, selector queries for #474, and line-range merging for #475 |
+| Fingerprint | File counts, total bytes, duplicate globs, and mixed exact/glob inputs | Active walk-count gate for #457 |
+| Source layout | Place identical bytes/candidates on one long line or many lines; compare Unicode columns | Active column-query gate for #470 and existing token-range queries |
+| AST | Independently increase width, left depth, huge literals, and unselected collections | Active replacement-generation gate for #461 and existing prefix/overflow gates |
+| Analysis state | Import width × annotation count; rebinding × call count; unselected/zero-candidate controls | Active operation-count gates for #479/#482 |
+| Verify | One/many files, top1/topN, explicitly incomplete plans | Active preprocessing-count gate for #456 |
+| Output | Independently increase mutant record count and length | Report/progress allocator peaks, #463 write counts, and progress gates with 500/1,000/2,000 entries per report × 2/4/8 history lengths |
+| Workspace | Independently increase files, bytes, and workers | Separate post-creation retained-heap and preflight allocator-peak gates |
 
-現在のブランチは26個のactiveゲートを実行する。これで全入力形状の性能回帰を網羅するわけではない。追加の修正が未導入の場合はpendingとして登録し、成功数へ含めない。修正を取り込んだ後に実際のテスト名と計数箇所を照合し、`args` を指定して実行してからactiveへ変更する。単にラベルを変えて検証済みにしない。
+The documented branch runs 26 active gates. These do not cover every performance regression shape. Register pending fixes as pending and exclude them from successful counts. After integrating a fix, check actual test names and counter locations, run the specified `args`, then mark the gate active. Relabeling alone is not verification.
 
-## 通常ゲート
+## Ordinary gates
 
 ```sh
 python tools/performance_shapes.py check
 python tools/performance_shapes.py gate --output /tmp/hoimin-perf-gates-new
 ```
 
-指定したRustテストを `--exact` で実行し、0件一致、ignoredのみ、非zero終了を失敗にする。通常CIと手動非Linux CIは同じ小規模ゲートを使う。各cargoコマンドの外部上限は300秒。全体のjob上限は既存CIに従う。全workspaceテストの代わりではない。
+The runner executes specified Rust tests with `--exact`; zero matches, ignored-only results, and nonzero exits fail. Ordinary CI and manual non-Linux CI use the same small gates. Each cargo invocation has a 300-second external limit; the overall job retains its existing CI limit. These gates do not replace all-workspace tests.
 
-## release計測lane
+## Release measurement lane
 
 ```sh
 python tools/performance_shapes.py measure \
@@ -33,33 +33,31 @@ python tools/performance_shapes.py measure \
   --output /tmp/hoimin-perf-measurements-new
 ```
 
-`--shape long-line --shape many-lines` で絞り込める。標準は各サイズ3反復で、3〜10回を指定できる。両方の実行ファイルのSHA-256、argv、OS/CPU/Python/Rust、入力bytesとファイル数、候補数、truncation、終了コード、raw時間/RSSと集計を保存する。実行ファイルのdigestだけでソースrevisionは復元できないため、比較するcommitを実行記録にも書く。
+Filter with `--shape long-line --shape many-lines`. Each size defaults to three repetitions, with 3–10 allowed. Records include both executables' SHA-256, argv, OS/CPU/Python/Rust, input bytes/file counts, candidate counts, truncation, exit codes, raw time/RSS, and aggregates. A binary digest alone cannot reconstruct the source revision; also record compared commits in the execution report.
 
-stdout/stderrをファイルへ出し、既存resource guardで1実行30秒・プロセスツリー2GiBを上限とする。guardは25ms間隔でRSSをサンプリングする。観測できなかった短命なプロセスはnullとし、0bytesとは扱わない。経過時間はguardの起動監視・終了確認を含む。小さなfixtureでは監視の固定費が支配的になり、今回の標準サイズだけで漸近的な時間/RSSの保証はできない。allocator peak、retained heap、RSSを互換の値として比較しない。
+stdout/stderr go to files. The existing resource guard limits each execution to 30 seconds and the process tree to 2 GiB, sampling RSS every 25 ms. Unobserved short-lived processes have null RSS, not zero bytes. Elapsed time includes guard startup monitoring and exit confirmation. Monitoring overhead can dominate small fixtures; default sizes alone do not establish asymptotic time/RSS guarantees. Allocator peaks, retained heap, and RSS are not interchangeable.
 
-入力projectは実行ごとの一時ディレクトリに作り、完了時に削除する。結果ディレクトリは既存のものを上書きせず、新規パスだけを受け付ける。失敗時も、その実行のstdout/stderrと判定を保存する。出力先の作成自体ができない場合はartifactを保存できない。予備のverify plan生成は計測外で、失敗した場合は測定成功と数えない。
+Each execution creates its input project in a temporary directory and removes it on completion. Result directories must be new and are never overwritten. Failed executions still save stdout/stderr and verdicts; failure to create the output directory prevents artifact storage. Preliminary verify-plan generation is outside measurements, and failures are not counted as successful measurements.
 
-GitHub Actions の `Performance measurements` は手動実行専用。選んだrefと `baseline_ref` をrelease buildし、同じ台帳で計測してartifactを保存する。通常PRの合否に時間/RSSの閾値を加えない。POSIXのプロセス監視を使うため、計測laneはLinux/macOS向けであり、WindowsのRSS実測を済ませたことにはならない。
+The GitHub Actions `Performance measurements` workflow is manual-only. It release-builds the selected ref and `baseline_ref`, measures using the same inventory, and saves artifacts. Ordinary PR pass/fail does not gain time/RSS thresholds. POSIX process monitoring limits this lane to Linux/macOS; it does not establish Windows RSS measurements.
 
-## Leanの証拠
+## Lean evidence
 
-台帳の `lean` から既存のモデル・証明・生成corpus・Rust adapterをたどれる。生成器のbuild、`--sensitivity`、`--check` をresource guard付きで順番に実行した後、`lean-target-reads` gateで実装の対象読取り数を照合する。caseはLeanで定義し、JSONLを手編集しない。既存の0/1/上限/overflowケースはprefixと順序を検証し、CLI全体の定数メモリやnative stackを保証しない。追加した `lean.cost` は56ケースでbinding索引、annotation callback内の全状態clone、実replacement builderの回数・bytesを照合する。0/1、7/8/9、8/16/32と、実際に全走査・clone・filter前buildを行う壊した経路を検査する。counterの観測には内部seamが必要なためinternal-fixtureとし、詳細は[対応表](../superpowers/reports/2026-09-14-issue-491-cost-correspondence-worksheet.md)に記録する。
+The inventory's `lean` entries link existing models, proofs, generated corpora, and Rust adapters. Build the generator, run `--sensitivity`, and run `--check` sequentially with resource guards, then compare actual target reads through `lean-target-reads`. Define cases in Lean rather than editing JSONL. Existing 0/1/limit/overflow cases check prefixes and order, without guaranteeing constant memory for the entire CLI or native-stack bounds. The additional 56-case `lean.cost` corpus compares binding indexes, whole-state clones inside annotation callbacks, and actual replacement-builder counts/bytes. It covers 0/1, 7/8/9, 8/16/32 and deliberately broken paths that perform full scans, clones, and builds before filtering. Counter observations require internal seams, so these are internal fixtures; details are in the [correspondence worksheet](../superpowers/reports/2026-09-14-issue-491-cost-correspondence-worksheet.md).
 
-## 個別修正を組み合わせた確認
+## Combined fix validation
 
-[2026-09-14の統合確認](2026-09-14-integration-check.md) に、10件のPRのRust差分を組み合わせたrevision、競合解消、全workspace試験の結果を記録した。依存修正を取り込んだ統合時には21ゲートを実行してactiveへ昇格した。mainへのマージは各PRのCI成功後に順次行う。
+The [2026-09-14 integration check](2026-09-14-integration-check.md) records the revision combining Rust changes from ten PRs, conflict resolutions, and all-workspace test results. Integration with dependent fixes ran 21 gates and promoted them to active. Individual PRs were to be merged sequentially after their CI passed.
 
+## Additional execution evidence
 
-## 追加した実行証拠
+The [expanded release measurements](2026-09-14-issue-491-expanded-measurement.json) record 522 runs: 29 shapes × 3 sizes × 3 repetitions × 2 executables. They save output-document bytes, within-binary N/2N/4N ratios, and ratios against baseline, retaining null for unobserved RSS. These runs are separate from the existing 198-run audit. See the [input-axis report](../superpowers/reports/2026-09-14-issue-491-input-axis-review.md) for environment, digests, and sensitivity checks.
 
-[今回のrelease計測](2026-09-14-issue-491-expanded-measurement.json)は29形状×3サイズ×3反復×2実行ファイルの522回を記録する。出力document bytes、同一binary内のN/2N/4N比、baselineとの比を保存し、未観測RSSはnullのままとする。既存198回の監査とは別の実行である。詳しい環境・digest・感度検証は[入力軸の報告](../superpowers/reports/2026-09-14-issue-491-input-axis-review.md)に記載した。
+Preflight, worker creation, and reset use fixed-length content buffers rather than retaining heap proportional to the largest file. Metadata such as manifest entries scales with file/directory counts. Dedicated allocator gates measure stages using single files of 1/8/32 MiB, with real whole-content reads as the control. This does not establish constant memory or RSS for the entire CLI.
 
-preflight・worker作成・resetの内容バッファは固定長で、最大ファイルサイズに比例するヒープを保持しない。manifest entriesなどのメタデータはファイル数・ディレクトリ数に比例する。専用allocatorゲートは単一ファイル1/8/32MiBの各段階を測定し、実際の全内容読取りを対照にする。これはCLI全体の定数メモリやRSSの保証ではない。
+Reset preserves full byte comparison for equal-sized files and does not recreate unchanged files. On an equal-size change, it rewinds the same snapshot handle to restore the file, so snapshot reads for that file can double. For size mismatches, restoration skips worker-content reads. Contract post-validation performs a separate comparison. Source reads for snapshot/hash creation and final preflight revalidation remain one each.
 
-resetは同サイズの全バイト比較を維持し、未変更ファイルを再作成しない。同サイズの変更を検出した場合は、同じsnapshotハンドルを巻き戻して復元するため、そのファイルのsnapshot読取り量は最大2倍になる。サイズ不一致ではworker内容を読まず復元する。contractsの事後検証は別途1回比較する。ソースからsnapshotとhashを作る読取り、およびpreflightの最終再検証は各1回のままである。
-
-
-progressのallocatorゲートは同じ関数名のまま、1reportの内容500/1,000/2,000件と履歴2/4/8を独立に増やす。元の2,000件×16履歴も保持する。実際のreport bytesを記録し、各reportサイズで履歴2に対する追加peakを512KiB以下に制限する。全入力が利用可能で、候補対応数、score、差分、停滞判断が正しいことを同時に検査する。実際に全履歴のparsed reportを保持する対照は同じ上界を超える。この通常ゲートの追加確認を522回のrelease実測に含めない。
+The progress allocator gate keeps its function name while independently increasing report contents (500/1,000/2,000 entries) and history length (2/4/8). It retains the original 2,000-entry × 16-history case. It records actual report bytes and caps additional peak over history length 2 at 512 KiB for each report size. It also checks all inputs are usable and candidate correspondence, scores, differences, and stall decisions are correct. A control retaining every parsed historical report exceeds the same bound. These additional ordinary-gate checks are not part of the 522 release measurements.
 
 ## Nested control-flow reanalysis (Issue #546)
 
@@ -82,11 +80,11 @@ or arbitrary finally paths; elapsed time and RSS are not pass/fail metrics.
 See the [design](../superpowers/specs/2026-09-15-issue-546-loop-transfer-design.md)
 and [review](../superpowers/reports/2026-09-15-issue-546-loop-transfer-review.md).
 
-## 監査入力の回帰ゲート
+## Regression gates from audit inputs
 
-`audit-promoted-546` は監査原文と同じforループの深さ18／19／20、`audit-promoted-547` はimportとint注釈の数512／1,024／2,048を使う。どちらも型演算子選択・未選択で、候補なしと操作数の上限を検査する。台帳のactiveゲートとして通常CIから実行する。
+`audit-promoted-546` uses for-loop depths 18/19/20 from the original audit; `audit-promoted-547` uses 512/1,024/2,048 imports and int annotations. Both check zero candidates and operation-count bounds with the type operator selected and unselected. They are active inventory gates run by ordinary CI.
 
-旧監査の時間・RSS測定は履歴として保持する。今回のゲートは訪問回数・clone回数・コピー要素数を対象とし、時間の閾値を設けない。詳細は[移行検証報告](../superpowers/reports/2026-09-15-audit-verification-promotion.md)を参照する。
+Historical audit time/RSS measurements remain unchanged. These gates count visits, clones, and copied elements without time thresholds. See the [promotion verification report](../superpowers/reports/2026-09-15-audit-verification-promotion.md).
 
 ## Nested finally reanalysis (Issue #557)
 

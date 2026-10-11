@@ -1,7 +1,7 @@
 ---
 type: Playbook
-title: Rustの固定版と最低対応版の更新
-description: 最新stableへの追従、nightly検証、更新PRと配布確認の手順を示す。
+title: Updating the Rust pin and minimum version
+description: Stable updates, nightly validation, update PRs and distribution checks.
 status: draft
 sources:
 - id: development
@@ -46,33 +46,33 @@ sources:
   sha256: c45f2337c5d61a266203a500654460fb59cba2c86f90bc1299993d94b9a7f458
 ---
 
-# stableと最低対応版
+# Stable pin and minimum supported version
 
-hoiminの開発・通常CI・wheelビルドでは、`rust-toolchain.toml`の具体的なstable版を使う。`Cargo.toml`の最低対応Rustも同じ版に揃える。ソースからビルドする利用者にはその版以降を要求する。対応するビルド済みwheelを使う場合、Rustの導入は不要である。[^development][^pin][^manifest]
+Development, ordinary CI, and wheel builds use the concrete stable version in `rust-toolchain.toml`. Keep the minimum supported Rust version in `Cargo.toml` equal to that pin. Source builds require that version or later; compatible prebuilt wheels do not require Rust to be installed.[^development][^pin][^manifest]
 
-固定版と最低対応版の一致はworkflow契約テストで確認する。旧版コンパイラ専用のMSRVジョブを廃止し、固定版で品質検査とテストを行う。最新版を使うcanaryは、次の更新に必要な修正を把握するために残す。[^contracts][^ci][^development]
+Workflow contract tests check equality of the pin and minimum version. The dedicated older-compiler MSRV job was removed; quality checks and tests use the pinned version. A latest-version canary remains to identify fixes needed for the next update.[^contracts][^ci][^development]
 
-# 更新の手順
+# Update procedure
 
-公式リリース一覧で最新版を確認し、固定版と最低対応版を同じPRで更新する。Renovateのrust-toolchain managerで固定版の更新を検知できるが、Cargoの最低対応版まで自動更新されるとは仮定しない。担当者が同じPRで揃える。通常の更新には、既存Renovate設定の公開後7日間の待機期間を適用する。[^development][^renovate]
+Check the official release list and update the pin and minimum version in the same PR. Renovate's rust-toolchain manager detects pin updates, but do not assume it also updates Cargo's minimum version; the maintainer must align them. Ordinary updates use the existing Renovate seven-day post-release waiting period.[^development][^renovate]
 
-整形・Clippy・全workspaceテスト・contracts付きテスト・Python側の品質検査を実行する。各OSのwheelビルドとsmoke testにはリリースworkflowのPRプレビューを使い、non-Linux CIを最終refに対して一度実行する。具体的なコマンドは開発ガイドを正本とする。[^development]
+Run formatting, Clippy, all workspace tests, contract-enabled tests, and Python quality checks. Use the release workflow's PR preview for each OS's wheel build and smoke tests, and run non-Linux CI once against the final ref. The development guide is canonical for exact commands.[^development]
 
-# nightlyと必須チェック
+# Nightly and required checks
 
-fuzzとテスト順序のランダム化には日付固定nightlyを使う。stable更新時にもnightlyでビルドできることを確認する。nightlyの日付を変える際は、CI、定期fuzz、実行スクリプト、キャッシュキー、契約テスト、文書のコマンド例を揃え、fuzzとランダム順テストを実行する。[^development][^ci][^fuzz]
+Fuzzing and randomized test order use a date-pinned nightly. Confirm nightly builds when updating stable. When changing the nightly date, align CI, scheduled fuzzing, execution scripts, cache keys, contract tests, and documented command examples; run fuzzing and randomized tests.[^development][^ci][^fuzz]
 
-ジョブ名の変更は`infra/github/Pulumi.yaml`の必須チェックにも反映する。このPulumi設定は`tokyogas-tech/hoimin`向けであり、`HayaoSuzuki/hoimin`の設定を管理するものではない。適用時は対象リポジトリと現行workflowを確認し、開発ガイドからリンクした運用手順に従う。[^rules]
+The historical `infra/github/Pulumi.yaml` required-check configuration targets `tokyogas-tech/hoimin`, not `HayaoSuzuki/hoimin`. It is outside current work following the transfer. When interpreting that configuration, check its repository and workflow scope and consult the operational procedure linked from the development guide.[^rules]
 
-# 検証範囲
+# Verification scope
 
-このページはIssue #739で採用した更新方針を記録する。個別のRust版やOSでの実行成功を保証する資料ではない。各更新PRで検証結果と未確認事項を記録する。過去のMSRV設計書は当時の判断として残し、現行の更新手順にはこのページと開発ガイドを使う。
+This page records the update policy adopted in Issue #739. It does not guarantee execution success for a particular Rust version or OS. Record results and unverified conditions in each update PR. Retain historical MSRV designs as past decisions; use this page and the development guide for current procedures.
 
-[^development]: [development.md](../development.md)。
-[^pin]: [rust-toolchain.toml](../../rust-toolchain.toml)。
-[^manifest]: [Cargo.toml](../../Cargo.toml)。
-[^ci]: [ci.yml](../../.github/workflows/ci.yml)。
-[^fuzz]: [ci_fuzz.py](../../tools/ci_fuzz.py)。
-[^contracts]: [test_ci_workflow.py](../../tests/test_ci_workflow.py)。
-[^renovate]: [renovate.json](../../renovate.json)。
-[^rules]: [Pulumi.yaml](../../infra/github/Pulumi.yaml)。
+[^development]: [development.md](../development.md).
+[^pin]: [rust-toolchain.toml](../../rust-toolchain.toml).
+[^manifest]: [Cargo.toml](../../Cargo.toml).
+[^ci]: [ci.yml](../../.github/workflows/ci.yml).
+[^fuzz]: [ci_fuzz.py](../../tools/ci_fuzz.py).
+[^contracts]: [test_ci_workflow.py](../../tests/test_ci_workflow.py).
+[^renovate]: [renovate.json](../../renovate.json).
+[^rules]: [Pulumi.yaml](../../infra/github/Pulumi.yaml).

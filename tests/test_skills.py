@@ -160,7 +160,6 @@ REQUIRED_DISK_SAFETY_PHRASES = {
 }
 
 
-@pytest.mark.parametrize("root", [".agents", ".claude"])
 @pytest.mark.parametrize(
     ("name", "phrase"),
     [
@@ -169,10 +168,8 @@ REQUIRED_DISK_SAFETY_PHRASES = {
         for phrase in phrases
     ],
 )
-def test_mutation_skills_require_disk_safe_execution(
-    root: str, name: str, phrase: str
-) -> None:
-    skill = ROOT / root / "skills" / name / "SKILL.md"
+def test_mutation_skills_require_disk_safe_execution(name: str, phrase: str) -> None:
+    skill = ROOT / "skills" / name / "SKILL.md"
 
     assert phrase in skill.read_text(encoding="utf-8")
 
@@ -184,32 +181,40 @@ def test_macos_memory_policy_is_documented() -> None:
     assert "not enforced" in usage
 
 
-@pytest.mark.parametrize("root", [".agents", ".claude"])
-def test_macos_memory_policy_is_documented_in_skills(root: str) -> None:
-    skill = ROOT / root / "skills" / "hoimin-mutation-testing" / "SKILL.md"
+def test_macos_memory_policy_is_documented_in_skills() -> None:
+    skill = ROOT / "skills" / "hoimin-mutation-testing" / "SKILL.md"
 
     assert "--allow-best-effort-memory" in skill.read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize("name", SKILLS)
-def test_skill_mirrors_and_frontmatter(name: str) -> None:
+def test_distributable_skill_frontmatter(name: str) -> None:
     contract = SKILLS[name]
-    codex = ROOT / ".agents" / "skills" / name / "SKILL.md"
-    claude = ROOT / ".claude" / "skills" / name / "SKILL.md"
+    skill = ROOT / "skills" / name / "SKILL.md"
 
-    assert codex.is_file(), codex
-    assert claude.is_file(), claude
-    assert codex.read_bytes() == claude.read_bytes()
+    lines = skill.read_text(encoding="utf-8").splitlines()
 
-    lines = codex.read_text(encoding="utf-8").splitlines()
-
-    assert len(lines) >= 4
-    assert lines[0] == "---"
     closing = lines.index("---", 1)
     frontmatter = dict(line.split(": ", 1) for line in lines[1:closing])
 
-    assert frontmatter == {"name": name, "description": contract["description"]}
+    assert len(lines) >= 4
+    assert lines[0] == "---"
+    assert frontmatter == {
+        "name": name,
+        "description": contract["description"],
+        "license": "Elastic-2.0",
+    }
     assert frontmatter["description"].startswith("Use when")
+
+
+@pytest.mark.parametrize("name", SKILLS)
+def test_distributable_skill_includes_repository_license(name: str) -> None:
+    license_path = ROOT / "skills" / name / "LICENSE"
+    expected = (ROOT / "LICENSE").read_text(encoding="utf-8")
+
+    license_text = license_path.read_text(encoding="utf-8")
+
+    assert license_text == expected
 
 
 @pytest.mark.parametrize(
@@ -221,7 +226,7 @@ def test_skill_mirrors_and_frontmatter(name: str) -> None:
     ],
 )
 def test_skill_required_workflows(name: str, block: str) -> None:
-    skill = ROOT / ".agents" / "skills" / name / "SKILL.md"
+    skill = ROOT / "skills" / name / "SKILL.md"
     lines = skill.read_text(encoding="utf-8").splitlines()
     closing = lines.index("---", 1)
     body = "\n".join(lines[closing + 1 :])

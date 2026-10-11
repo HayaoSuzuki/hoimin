@@ -1,67 +1,67 @@
-# OKFを使った開発手順
+# Development with OKF
 
-OKF（Open Knowledge Format）は、概念ごとのMarkdownと索引で知識を整理する形式である。hoiminでは [docs/knowledge/](knowledge/index.md) に設計上の契約、判断、監査結果をまとめる。開発者は作業開始時に関連ページと出典を読み、変更によって説明が変わるページを同じ変更に含める。
+OKF (Open Knowledge Format) organizes knowledge as Markdown concepts and indexes. In hoimin, [docs/knowledge/](knowledge/index.md) records design contracts, decisions, and audit results. Read relevant concepts and their sources before starting work, and update affected explanations in the same change.
 
-## 作業開始時の参照
+## Before starting work
 
-1. [カタログの範囲と読み方](knowledge/overview.md)で、資料の版と証拠の区別を確認する。
-2. [入口の索引](knowledge/index.md)から関連する設計・監査ページを選ぶ。対象選択ならplan/verify、終了処理なら資源と終了処理、保存や再開ならsessionとレポートを読む。
-3. ページの出典から元の設計書・報告と該当コードを確認する。監査対象のコミット、OS、入力、モデルの仮定を作業対象と照合する。
-4. 変更する契約、未解決事項、必要な検証を整理する。関連ページがなければ原文とコードから調査し、作業結果を新規概念として残す必要があるか判断する。
+1. Read the [catalog scope and evidence guide](knowledge/overview.md) to distinguish source revisions and evidence levels.
+2. Choose relevant design and audit pages from the [catalog index](knowledge/index.md). For target selection, read plan/verify; for shutdown, read resources and cleanup; for persistence and resume, read sessions and reports.
+3. Follow sources to the original designs, reports, and implementation. Compare the audited commit, OS, inputs, and model assumptions with the current task.
+4. Identify the contracts to change, open questions, and required validation. If no concept covers the topic, investigate the originals and code, then decide whether the result warrants a new concept.
 
-設計書と現行コードが食い違う場合は、その違いを記録してから変更方針を決める。過去の監査で見つかった問題を現在も未修正と扱ったり、過去のテスト成功を今回の結果として記載したりしない。
+If a design disagrees with current code, record the difference before deciding how to change it. Do not treat historical audit findings as necessarily unfixed or historical test passes as results of the current work.
 
-## 更新対象の判断
+## Deciding what to update
 
-| 変更・発見 | OKFで行うこと |
+| Change or finding | OKF action |
 | --- | --- |
-| CLI、設定、保存形式、互換性、終了コードなどの契約変更 | 対応する設計ページの条件と根拠を更新する |
-| 解析、ランキング、資源制御、状態遷移などの設計判断 | 採用理由と適用範囲を既存ページに追記する。独立した話題なら概念を追加する |
-| 不具合修正やテスト・Leanモデルの変更で保証範囲が変化 | 関連する契約・監査ページに修正と検証範囲を記録する |
-| 新しい監査結果、未検証条件、従来の説明と矛盾する証拠 | 対象版を明示した監査概念を追加または更新し、関連設計ページから案内する |
-| 再利用する開発・運用手順の追加や変更 | 手順の正本を更新し、必要なら `Playbook` から案内する |
-| 設計書・監査報告の追加、移動、削除 | 原文一覧と、参照している概念・索引を更新する |
-| 誤字修正、整形、契約も証拠も変わらない内部整理 | OKF更新は不要。PRまたは完了報告に理由を一文残す |
+| CLI, configuration, persistence, compatibility, or exit-code contract changes | Update conditions and evidence in the relevant design concept |
+| Analyzer, ranking, resource-control, or state-transition decisions | Add the rationale and scope to the existing concept; add a concept for an independent topic |
+| Fixes or test/Lean-model changes that alter the scope of guarantees | Record the fix and verification scope in the relevant contract or audit concept |
+| New audit results, unverified conditions, or evidence contradicting an existing explanation | Add or update an audit concept with the target revision and link it from relevant designs |
+| Reusable development or operational procedures | Update the canonical guide and link it from a `Playbook` if useful |
+| Added, moved, or deleted designs or audit reports | Update source catalogs and referring concepts and indexes |
+| Typos, formatting, or internal cleanup that changes neither contracts nor evidence | No OKF update is required; explain why in one sentence in the PR or completion report |
 
-同じ話題の説明は既存ページを更新する。新規ページは後の作業で独立して参照する概念に限り、一時的な進捗記録をすべてOKF化する必要はない。元の設計書、実装、実行結果は既存の場所に保存し、OKFから根拠として参照する。
+Update existing pages for an existing topic. Add a concept only when future work will reference it independently; temporary progress does not always need an OKF concept. Keep original designs, implementations, and execution results in their established locations and reference them as evidence.
 
-## 作成と出典の記録
+## Creating concepts and recording sources
 
-`create-okf` スキルが使える環境では、たとえば `$create-okf 今回変更したsessionの互換性条件をdocs/knowledgeへ反映し、関連する監査と索引を点検してください` と依頼する。スキルがない環境でも、以下の規則で作成・更新できる。
+Where the `create-okf` skill is available, an example request is: `$create-okf Update docs/knowledge with the session compatibility conditions changed in this work, and check related audits and indexes`. Otherwise, use the following rules directly.
 
-このバンドルはOKF v0.2を使う。通常の概念ファイルには、先頭のYAML frontmatterに空でない文字列の `type` を置く。ここでは `title`、`description`、`status`、根拠を示す `sources` も記載する。`Contract`、`Decision`、`Audit`、`Playbook`、`Reference` はこのリポジトリの分類例であり、OKF標準の固定列挙ではない。
+This bundle uses OKF v0.2. Each ordinary concept starts with YAML frontmatter containing a nonempty string `type`. Also record `title`, `description`, `status`, and evidence in `sources`. `Contract`, `Decision`, `Audit`, `Playbook`, and `Reference` are repository conventions, not a fixed enumeration in the OKF standard.
 
-新規概念には `status: draft` を明記する。本文は、対象と用語、契約または判断、根拠、限界・未確認事項、再確認が必要な変更の順に、その話題に必要な項目を記載する。日本語は一段落一話題とし、設計、静的なコード確認、過去の実行結果を区別する。推量や未検証条件を推敲で断定へ変えない。
+New concepts explicitly use `status: draft`. Include the topic and terminology, contract or decision, evidence, limitations and unverified conditions, and changes that require rechecking, as relevant. Write current guides in English with one topic per paragraph. Distinguish designs, static code inspection, and historical execution results. Editing must not turn speculation or unverified conditions into established facts.
 
-出典には `resource` とページ内で一意な `id` を記載し、対応する `[^id]` の脚注を主張に付ける。相対パスは文書の位置を基準にする。実装、スキーマ、結果ファイルへのリンクも根拠にできる。既存の独自メタデータは意味を確認して保持する。
+Each source has a `resource` and an `id` unique within the page; attach the corresponding `[^id]` footnote to supported claims. Resolve relative paths from the document's location. Implementations, schemas, and result files can also be evidence. Understand and preserve existing custom metadata.
 
-版の記録には次のローカル規則を使う。
+Use these local revision conventions:
 
-- コミット済みの出典は、実際に読んだコミットを `sources[].revision` に記録する。読んだファイルがその版と同一なら `working_tree: clean` とする。
-- 未コミットの変更を読んだ場合は `working_tree: modified`、未追跡なら `working_tree: untracked` とし、読んだ内容の `sha256` を記録する。変更済み出典の `revision` は比較元のコミットを示す。将来のコミットIDを仮記入しない。
-- `catalog_revision` はそのページの整理に使った基準コミット、`audit_revision` は監査対象のコミットを示す。過去の監査対象を現在のHEADへ機械的に置き換えない。
-- 出典を読み直して本文を更新したときに、その出典の版・状態・ハッシュを更新する。無関係な過去の出典まで一括で更新しない。内容を確認していない出典は、メタデータだけを新しくしない。
-- `working_tree` とハッシュは参照時点の記録である。後でコミットされたことだけを理由に記録を変更する必要はない。現在の出典と違う場合は、記録した版を確認し、現行の説明を更新すべきか判断する。
+- For committed sources, record the commit actually read in `sources[].revision`. Use `working_tree: clean` if the file read matches that revision.
+- For uncommitted edits, use `working_tree: modified`; for untracked files, use `working_tree: untracked`. Record the SHA-256 of the content read. For modified sources, `revision` identifies the comparison commit. Never insert a guessed future commit ID.
+- `catalog_revision` identifies the baseline used to organize a concept; `audit_revision` identifies the audited commit. Do not mechanically replace historical audit targets with current HEAD.
+- Update a source's revision, state, and hash when rereading it and updating the explanation. Do not refresh unrelated historical sources or change metadata for sources you have not read.
+- `working_tree` and hashes record the state at the time of reference. Later commits alone do not require changing them. If the current source differs, inspect the recorded revision and decide whether the explanation needs updating.
 
-確認に使うコマンド例は `git rev-parse HEAD`、`git status --short -- <出典パス>`、`git show <参照コミット>:<リポジトリ内パス>`、`shasum -a 256 <出典パス>` である。出典の編集を終えてからハッシュを採る。未追跡資料を参照する変更を共有するときは、その資料も同じPRへ含めるか共有済みの出典を使う。
+Useful commands include `git rev-parse HEAD`, `git status --short -- <source-path>`, `git show <reference-commit>:<repository-path>`, and `shasum -a 256 <source-path>`. Compute hashes after editing the source. When sharing a change that references untracked material, include it in the same PR or use an already shared source.
 
-`verified` は、実際に内容を根拠と照合し、確認者と日時を記録できる場合だけ付ける。形式検査、文章の推敲、過去の成功結果の転記だけでは付けない。確認範囲を本文に書き、確認していない実装・OSへ保証を広げない。
+Use `verified` only after checking the content against evidence and recording the reviewer and date. Format checks, prose edits, and copying past successes do not qualify. State what was checked without extending guarantees to untested implementations or operating systems.
 
-## 索引の更新
+## Updating indexes
 
-新規概念は関連する索引からリンクし、[入口](knowledge/index.md)から到達できるようにする。ルート `index.md` のfrontmatterは `okf_version: "0.2"` だけとし、子ディレクトリの `index.md` と任意の `log.md` にはfrontmatterを付けない。索引は見出しと説明付きリンク一覧、ログは新しい日付を先にした記録にする。
+Link new concepts from relevant indexes so they are reachable from the [entry point](knowledge/index.md). The root `index.md` frontmatter contains only `okf_version: "0.2"`; child `index.md` files and optional `log.md` files have no frontmatter. Indexes contain headings and annotated links; logs list newer entries first.
 
-[設計書一覧](knowledge/references/design-documents.md)は `docs/superpowers/specs/` のMarkdown、[監査・報告一覧](knowledge/references/audit-documents.md)は `docs/superpowers/reports/` と `docs/audits/` のMarkdownを対象にする。これらに原文を追加したら、一覧表・出典・脚注も更新する。原文の引用見出しは元の表記を保つ。実施計画を置く `docs/superpowers/plans/` はこの一覧の対象外である。
+The [design catalog](knowledge/references/design-documents.md) covers Markdown under `docs/superpowers/specs/`; the [audit and report catalog](knowledge/references/audit-documents.md) covers Markdown under `docs/superpowers/reports/` and `docs/audits/`. When adding originals there, update the tables, sources, and footnotes. Preserve quoted source headings in their original language. Implementation plans under `docs/superpowers/plans/` are outside these catalogs.
 
-## 完了時の確認
+## Completion checks
 
-OKFを変更したら、形式、参照、内容を別々に確認する。これは開発時とレビュー時の手順であり、現時点ではOKF専用のCIゲートはない。
+After changing OKF, check structure, references, and content separately. This is a development and review procedure; there is currently no dedicated OKF CI gate.
 
-1. **形式**: YAMLパーサーで先頭のfrontmatterを読み、マッピングと `type`、予約ファイルの構造を検査する。対象は `docs/knowledge/` 内のMarkdownに限定する。
-2. **参照**: 出典IDと脚注の対応、リンク先、参照コミットまたはハッシュを確認する。新規・移動・削除された原文が一覧に反映され、入口から全概念へ到達できることを確認する。
-3. **内容**: 変更後の主張と根拠、対象版、OS・入力・モデルの条件、日本語の用語と段落を読む。実装のテストは[開発ガイド](development.md)から変更に必要なものを実行する。
+1. **Structure:** Parse initial YAML frontmatter and check mappings, `type`, and reserved-file structure. Limit this check to Markdown under `docs/knowledge/`.
+2. **References:** Check source IDs and footnotes, link targets, source commits or hashes, catalog updates for added/moved/deleted originals, and reachability from the entry point.
+3. **Content:** Read claims against evidence, target revisions, OS/input/model conditions, terminology, and paragraphs. Run implementation checks relevant to the change from the [development guide](development.md).
 
-以下はリポジトリのルートで実行する最小のYAML・予約ファイル検査である。PyYAMLが利用可能な `python3` を使う。必要なら隔離環境へ `PyYAML==6.0.3` を導入する。この例はリンク、出典、内容の検証を含まず、OKF仕様全体の適合判定でもない。
+The following minimal YAML and reserved-file check runs from the repository root with `python3` and PyYAML. If needed, install `PyYAML==6.0.3` in an isolated environment. It does not validate links, sources, content, or full OKF conformance.
 
 ```sh
 python3 - <<'PY'
@@ -92,4 +92,4 @@ print(f'YAML and reserved-file checks passed: {len(pages)} Markdown files')
 PY
 ```
 
-PRまたは完了報告には、参照したOKFページ、更新したページまたは更新不要の理由、実行した検査と未確認事項を記載する。[PRテンプレート](../.github/pull_request_template.md)に記入欄がある。検査時点の件数を記録する場合は、その対象と日付を併記し、過去の検査結果と今回の結果を区別する。
+In the PR or completion report, list the consulted concepts, updated pages or reason no update was needed, checks run, and unverified conditions. The [PR template](../.github/pull_request_template.md) has fields for this. When recording counts, include their scope and date, and distinguish current checks from historical audit results.

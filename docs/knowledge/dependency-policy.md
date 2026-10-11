@@ -1,7 +1,7 @@
 ---
 type: Contract
-title: Rust依存のライセンスと取得元
-description: 両workspaceの拒否型ポリシーとbuild script差分レビュー。
+title: Rust dependency licenses and sources
+description: Deny-by-default policies for both workspaces and build-script diff review.
 status: draft
 catalog_revision: 79b6bde29b05e9904c8efff59e02d0c45377d7f7
 sources:
@@ -22,26 +22,26 @@ sources:
   sha256: baf4dd85d13e34ebf2f217cfa00a3a67914a41b380da2c6d5f3e284185731d15
 ---
 
-# 検査範囲
+# Check scope
 
-通常workspaceとfuzz workspaceを、固定lockfile・全features・target絞込みなしで検査する。
-通常・build・開発依存と他OS向け依存を含むが、全crateが全配布物に含まれるとは限らない。[^policy][^workflow]
+Check the main and fuzz workspaces with fixed lockfiles, all features, and no target filtering.
+This includes normal, build, development, and other-OS dependencies; it does not mean every crate is included in every distribution.[^policy][^workflow]
 
-# 許可と例外
+# Allowances and exceptions
 
-未許可ライセンスと未知registry/git取得元を拒否する。
-ELv2はhoimin自身の版範囲だけ、NCSAはlibfuzzer-sys 0.4.13だけに限定する。
-ローカルpathはリポジトリ差分でレビューし、機械検査成功を安全性やライセンス義務の履行と同一視しない。[^policy][^config]
+Reject unapproved licenses and unknown registry/git sources.
+Limit ELv2 to hoimin's own version range and NCSA to libfuzzer-sys 0.4.13.
+Review local paths through repository diffs; passing automated checks does not establish safety or fulfillment of license obligations.[^policy][^config]
 
-# build scriptの変更
+# Build-script changes
 
-custom-build targetの一覧を依存更新とともに再生成し、追加・削除・版更新をレビューする。
-第一段階では手動差分レビューとし、独自解析器やbuild script拒否ゲートは作らない。
-proc macroやscriptの内容の安全性は保証しない。[^policy]
+Regenerate the custom-build target inventory with dependency updates and review additions, removals, and version changes.
+The initial approach uses manual diff review, without a custom analyzer or a build-script rejection gate.
+It does not guarantee the safety of proc macros or script contents.[^policy]
 
-依存・feature・toolchain・本体のminor版が変わったら、一覧と限定例外を再確認する。
-脆弱性監査とSBOMは別の検査・証拠として維持する。[^policy][^workflow]
+Recheck the inventory and narrow exceptions when dependencies, features, toolchains, or hoimin's minor version change.
+Maintain vulnerability audits and SBOMs as separate checks and evidence.[^policy][^workflow]
 
-[^policy]: [依存ポリシー](../dependency-policy.md)。
-[^config]: [許可設定](../../deny.toml)。
-[^workflow]: [依存監査workflow](../../.github/workflows/dependency-audit.yml)。
+[^policy]: [Dependency policy](../dependency-policy.md).
+[^config]: [Allowlist configuration](../../deny.toml).
+[^workflow]: [Dependency audit workflow](../../.github/workflows/dependency-audit.yml).

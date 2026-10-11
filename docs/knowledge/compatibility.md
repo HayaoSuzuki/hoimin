@@ -1,6 +1,6 @@
 ---
 type: Contract
-title: 互換性と変更通知
+title: Compatibility and change notices
 description: Public interfaces, version floors and migration notices.
 status: draft
 catalog_revision: 79b6bde29b05e9904c8efff59e02d0c45377d7f7

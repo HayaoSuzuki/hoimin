@@ -9,6 +9,25 @@ from tools.docs_site import RepositoryLinks, rewrite_url
 REVISION = "a" * 40
 
 
+def test_site_preparation_copies_only_allowlisted_theme_assets(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "repository"
+    styles = root / "docs" / "stylesheets"
+    styles.mkdir(parents=True)
+    (styles / "extra.css").write_bytes(b".md-sidebar--secondary { display: none; }")
+    (styles / "private.css").write_bytes(b"unpublished")
+    destination = tmp_path / "sources"
+    monkeypatch.setattr(docs_site, "PUBLIC_PAGES", ())
+
+    docs_site.prepare_sources(root, destination, REVISION)
+
+    assert (destination / "stylesheets" / "extra.css").read_bytes() == (
+        styles / "extra.css"
+    ).read_bytes()
+    assert not (destination / "stylesheets" / "private.css").exists()
+
+
 def test_project_site_absolute_path_becomes_same_site_url(tmp_path: Path) -> None:
     url = "/hoimin/docs/usage/?review=yes#results"
 
