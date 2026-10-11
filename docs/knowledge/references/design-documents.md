@@ -994,6 +994,10 @@ sources:
   revision: 98e78166b43940df38a8bb8099c9c6af6004ba5a
   working_tree: clean
 
+- id: fuzz-adoption-design
+  resource: ../../superpowers/specs/2026-10-12-fuzz-adoption-design.md
+  working_tree: untracked
+  sha256: 874f2ee7e360a8e11a75ab51124fb76438647f75801349cfc2f7a9306405c653
 ---
 
 # 収録一覧
@@ -1676,3 +1680,10 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 | Typed Python failures and third-party contracts | [Proposed design](../../superpowers/specs/2026-10-12-typed-results-and-contracts-design.md) [^typed-results-and-contracts-design] |
 
 [^typed-results-and-contracts-design]: [Design proposal](../../superpowers/specs/2026-10-12-typed-results-and-contracts-design.md). Static inspection and adoption criteria; implementation has not started.
+
+
+## Issues #805 and #807
+
+- [Bounded fuzzing adoption assessment](../../superpowers/specs/2026-10-12-fuzz-adoption-design.md) - Bounded adoption decisions and evidence limitations.[^fuzz-adoption-design]
+
+[^fuzz-adoption-design]: [Bounded fuzzing adoption assessment](../../superpowers/specs/2026-10-12-fuzz-adoption-design.md).
