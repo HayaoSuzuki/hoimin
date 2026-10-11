@@ -1,0 +1,4 @@
+/* Match the user site's layout; section links remain in the page content. */
+.md-sidebar--secondary {
+  display: none !important;
+}

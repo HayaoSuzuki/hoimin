@@ -1,8 +1,8 @@
-# 原文の索引
+# Original source indexes
 
-- [設計書の原文一覧](design-documents.md) - docs/superpowers/specs内の全Markdownを先頭見出しと出典版付きで案内する。
-- [監査・報告の原文一覧](audit-documents.md) - docs/auditsとdocs/superpowers/reports内の全Markdownを追跡状態付きで案内する。
+- [Original designs](design-documents.md) - All Markdown under docs/superpowers/specs, with first headings and source revisions.
+- [Original audits and reports](audit-documents.md) - All Markdown under docs/audits and docs/superpowers/reports, with tracking state.
 
-# 関連
+# Related guides
 
-- [カタログの入口](../index.md) - 全体の読み順。
+- [Catalog entry point](../index.md) - Overall reading order.

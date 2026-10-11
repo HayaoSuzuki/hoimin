@@ -1,42 +1,42 @@
-# CIの選択とworkflow検査
+# CI selection and workflow checks
 
-CIは変更判定と`CI result`を常に起動する。
-PRではbaseとheadのmerge baseから、pushとmerge queueではイベントのbaseから差分を取得する。
-削除とrenameの旧pathも分類し、未知のpath、差分取得失敗、手動実行では全検証を選ぶ。
-Runner上のPythonは変更判定・集約を含めて3.14を明示する。
+CI always runs change selection and `CI result`.
+For pull requests, it computes the diff from the merge base of the base and head commits; for pushes and merge queues, it uses the event's base commit.
+It also classifies deleted paths and the old paths of renamed files. Unknown paths, failed diff retrieval, and manual runs select all checks.
+All runners explicitly use Python 3.14, including change selection and result aggregation.
 
-依存監査workflowでは、脆弱性監査に加え、両Rust workspaceのライセンスと取得元を検査する。
-対象範囲とbuild script差分レビューは[依存ポリシー](dependency-policy.md)を参照する。
+The dependency audit workflow checks licenses and sources in both Rust workspaces in addition to vulnerability scanning.
+See the [dependency policy](dependency-policy.md) for its scope and build-script diff reviews.
 
-| 変更 | 選択する検証 |
+| Change | Selected checks |
 | --- | --- |
-| `docs/**/*.md`（`docs/json-schema/`と`docs/cli-reference.md`以外）、`CONTRIBUTING.md` | Python品質検査とworkflow検査 |
-| `docs/cli-reference.md` | Rust検証とCLIリファレンス同期検査、品質・workflow検査 |
-| `crates/`、`vendor/` | Rust、formal、配布検証も実行 |
-| `formal/` | Rustとformal検証も実行 |
-| `tests/**/*.py` | Python、Rust、formal検証も実行 |
-| `tools/release.py`、`tools/sbom.py`、`tools/capture_sbom.py` | Pythonと配布検証も実行 |
-| `README.md`、`LICENSE` | 配布検証も実行（wheelに含まれる入力） |
-| schema、fixture、wheel smoke、workflow、lockfile、その他 | 全検証 |
+| `docs/**/*.md` (except `docs/json-schema/` and `docs/cli-reference.md`), `CONTRIBUTING.md` | Python quality and workflow checks |
+| `docs/cli-reference.md` | Rust validation, CLI reference synchronization, quality and workflow checks |
+| `crates/`, `vendor/` | Also run Rust, formal, and distribution checks |
+| `formal/` | Also run Rust and formal checks |
+| `tests/**/*.py` | Also run Python, Rust, and formal checks |
+| `tools/release.py`, `tools/sbom.py`, `tools/capture_sbom.py` | Also run Python and distribution checks |
+| `README.md`, `LICENSE` | Also run distribution checks (these are wheel inputs) |
+| Schemas, fixtures, wheel smoke checks, workflows, lockfiles, and other paths | All checks |
 
-Python変更時にもwheel smokeを実行する。
-nightly shuffleとfuzzの制限は維持する。
-cgroup実機検証は、委譲済みRunnerを有効にしたmainへのpushだけで選択する。
-`CI result`は変更判定の成功と有効な出力、固定された全jobの結果を検査する。
-必要なjobのfailure・cancelled・skipped、結果の欠落は失敗になる。
-選択しなかったjobだけはskippedを許容する。
-PRの古いCIとpreviewだけをキャンセルする。
-previewではタグ予約jobを意図的にskipするため、後続のbuild・validate・publishにもstatus関数を明示し、祖先jobのskipが暗黙の`success()`で伝播することを防ぐ。
-各jobの直接の依存先にはsuccessを要求し、失敗やキャンセルを許容しない。
+Python changes also run wheel smoke checks.
+The restrictions on nightly shuffle and fuzzing remain in place.
+Live cgroup validation is selected only for pushes to main with a delegated runner explicitly enabled.
+`CI result` checks that change selection succeeded, that its outputs are valid, and that results are present for the fixed set of jobs.
+A required job with a `failure`, `cancelled`, or `skipped` result, or a missing result, fails the aggregate check.
+Only jobs that were not selected may be skipped.
+Only superseded PR CI and preview runs are cancelled.
+Preview intentionally skips tag reservation, so downstream build, validation, and publication jobs explicitly use status functions to prevent an ancestor's skipped result from propagating through the implicit `success()` condition.
+Each job still requires its direct dependencies to succeed; failures and cancellations are not accepted.
 
-## 必須チェックの設定
+## Configuring required checks
 
-2026-10-10のGitHub API確認では、`HayaoSuzuki/hoimin`のrulesetは削除とforce pushの禁止だけで、mainの必須チェックは未設定だった。
-保護を有効にする際は条件付きjobを必須にせず、集約する`CI result`を必須にする。
-旧組織のPulumi設定は移管済みのため対象外とする。
-この変更で外部rulesetを変更する操作は行っていない。
+The GitHub API inspection on 2026-10-10 found that the `HayaoSuzuki/hoimin` ruleset prohibited deletion and force pushes but did not configure required checks for main.
+When enabling protection, require the aggregate `CI result` rather than conditional jobs.
+The former organization's Pulumi configuration is outside this scope following the repository transfer.
+The CI selection change did not modify external rulesets.
 
-## workflow検査の再現
+## Running workflow checks locally
 
 ```console
 uv sync --frozen --group workflow --no-install-project
@@ -44,57 +44,57 @@ uv run --frozen --no-sync python -m tools.workflow_lint
 uv run --frozen --no-sync pytest tests/test_workflow_lint.py tests/test_ci_selection.py tests/test_ci_selection_workflow.py tests/test_ci_metrics.py
 ```
 
-`.github/workflows/`直下の全`.yml`と`.yaml`を列挙する。
-actionlint 1.7.12、ShellCheck 0.11.0、zizmor 1.30.1をdependency groupとlockfileで固定し、Renovateでまとめて更新する。
-zizmorはoffline・auditorでinformationalを含む全重大度を検査し、ShellCheckのルールを一括除外しない。
-秘密情報・書込権限・SARIF投稿は不要で、fork PRも同じ検査を実行する。
+The checker enumerates every `.yml` and `.yaml` file directly under `.github/workflows/`.
+actionlint 1.7.12, ShellCheck 0.11.0, and zizmor 1.30.1 are pinned in the dependency group and lockfile and updated together by Renovate.
+zizmor runs offline in auditor mode at every severity, including informational findings; ShellCheck rules are not excluded wholesale.
+These checks need no secrets, write permissions, or SARIF uploads, and fork PRs run the same checks.
 
-actionlint 1.7.12は子プロセス起動前にstdinを書き込み、Windowsで長いscriptがpipe容量を超えると停止する。
-actionlint内のShellCheck起動を無効にし、同じCLIからShellCheckを各bash/sh stepへ別途実行する。
-OS間の差を避けるため全OSで同じ経路を使う。
-Actions式の構文と信頼性はactionlintとzizmorで検査し、ShellCheckには式をplaceholderへ置き換えて渡す。
+actionlint 1.7.12 writes stdin before starting its child process, which can hang on Windows when a long script exceeds the pipe capacity.
+Its internal ShellCheck invocation is disabled; the same wrapper CLI runs ShellCheck separately for each bash/sh step.
+All operating systems use this path to avoid platform differences.
+actionlint and zizmor check Actions expression syntax and trust boundaries; expressions are replaced with placeholders before scripts are passed to ShellCheck.
 
-SBOMツールのPATHは使用するstepだけで設定し、`GITHUB_PATH`への書込みとその除外は不要にした。
-WindowsのGit Bashでは`cygpath`でRunnerのnative pathを変換する。
+The SBOM tools' PATH is set only in the steps that use them, removing the need to write to `GITHUB_PATH` or suppress a finding for that write.
+On Windows, Git Bash uses `cygpath` to convert the runner's native paths.
 
-除外は該当行の`zizmor: ignore[...]`と理由コメントに限定する。
+Suppressions are limited to an inline `zizmor: ignore[...]` on the relevant line with a comment explaining the reason.
 
-| rule | 箇所と理由 |
+| Rule | Location and reason |
 | --- | --- |
-| `dangerous-triggers` | releaseのclosed/mergedイベント。書込jobはマージ済みbase commitだけをcheckoutする |
-| `artipacked` | タグ予約job。タグのpushに認証情報が必要 |
-| `self-hosted-runner` | 委譲cgroupの実機検証。main pushかつ明示的opt-inのみ |
+| `dangerous-triggers` | The release closed/merged event; jobs with write permissions check out only the merged base commit |
+| `artipacked` | Tag reservation; pushing the tag requires credentials |
+| `self-hosted-runner` | Live delegated-cgroup validation; main pushes with explicit opt-in only |
 
-zizmorはPython shell内の`GITHUB_ENV`評価をサポートせず警告する。
-このツール上の限界を、検出できたと扱わない。
-隔離fixtureでは不正な式、ShellCheck違反、template injection、過大な権限を実ツールで拒否することを検査する。
+zizmor warns that it does not support evaluating `GITHUB_ENV` writes inside Python shell steps.
+This tool limitation is not counted as successful detection.
+Isolated fixtures check that the actual tools reject invalid expressions, ShellCheck violations, template injection, and excessive permissions.
 
-## 実行時間の測定
+## Measuring execution time
 
 ```console
 uv run --frozen --no-sync python -m tools.ci_metrics --run RUN_ID --output docs/performance/ci/after-ci.json
 ```
 
-認証済み`gh`でrunと最新attemptの全jobを取得する。
-経過秒数、実行job数、job時間の合計、created_atからstarted_atまでの待ち時間を保存する。
-依存jobの待機も含むrun開始からの遅延はqueue秒数とは別に記録する。
-欠けた時刻を0秒に置き換えず、skipped jobを実行数に含めない。
+The tool uses authenticated `gh` to fetch the run and all jobs from its latest attempt.
+It records elapsed seconds, the number of executed jobs, total job time, and the wait from `created_at` to `started_at`.
+Delays from the start of the run, including waits for dependencies, are recorded separately from queue time.
+Missing timestamps are not replaced with zero, and skipped jobs are not counted as executed.
 
-導入前のCI run `38023706140`は694秒、10job、合計2803job秒、queue合計28秒。
-対応するpreview `38023706209`は624秒、5job、合計1387job秒、queue合計19秒。
-取得結果は[測定記録](performance/ci/)に保存した。
-SBOM実装変更の1例であり、文書変更の平均や削減率ではない。
-導入後の同種の全検証PRでは、CI run `38031404421`が723秒・13job・3080job秒・queue合計37秒、preview `38031404452`が690秒・6job・1470job秒・queue合計20秒だった。
-両PRともworkflow・配布入力の変更を含み、全検証を選ぶ。
-新しい軽量jobを含む実行数は増えており、異なる変更内容やキャッシュ状態を含む1例の比較から、速度改善や悪化の因果を断定しない。
-文書だけ、Rustだけ、formalだけの変更は別途同じ条件で測定する。文書だけの削減率は未実測。
-hosted Runnerでの導入後実測はローカル検証から推定しない。
+Before CI selection was introduced, CI run `38023706140` took 694 seconds, executed 10 jobs, and totaled 2803 job-seconds and 28 queue-seconds.
+The corresponding preview run `38023706209` took 624 seconds, executed 5 jobs, and totaled 1387 job-seconds and 19 queue-seconds.
+The retrieved data is stored in the [measurement records](performance/ci/).
+This is one SBOM implementation change, not an average for documentation changes or a measured reduction rate.
+After CI selection was introduced, a comparable full-validation PR had CI run `38031404421` at 723 seconds, 13 jobs, 3080 job-seconds, and 37 queue-seconds; preview run `38031404452` took 690 seconds, 6 jobs, 1470 job-seconds, and 20 queue-seconds.
+Both PRs changed workflows and distribution inputs, selecting all checks.
+The job count increased with the new lightweight jobs. A comparison of single runs with different changes and cache states does not establish that CI selection caused a speedup or slowdown.
+Documentation-only, Rust-only, and formal-only changes need separate measurements under the same conditions. The documentation-only reduction rate has not been measured.
+Post-change hosted-runner measurements must not be inferred from local validation.
 
-設計と各段階の5回のセルフレビューは[検証記録](reviews/2026-10-10-ci-selection.md)に記載する。
+The design and five self-reviews at each stage are documented in the [verification record](reviews/2026-10-10-ci-selection.md).
 
-## Rustテストrunnerの評価
+## Rust test runner evaluation
 
-2026-10-11に既存Linux Rust jobでcargo-nextest 0.9.148を2並列で評価した。
-テスト一覧は一致したが、workspaceと反復したtimeout系の実行時間に改善を確認できず、今回は既存のcargo testを維持する。
-測定条件、資源使用量、ignoreと実行内skip、再現方法は[評価結果](performance/nextest/2026-10-11-linux.md)を参照する。
-nightly shuffle、contracts、OS固有の検証も維持する。
+On 2026-10-11, cargo-nextest 0.9.148 was evaluated in the existing Linux Rust job with two concurrent workers.
+The test lists matched, but neither workspace execution nor repeated timeout tests showed an improvement in execution time, so the existing cargo test runner was retained.
+See the [evaluation results](performance/nextest/2026-10-11-linux.md) for measurement conditions, resource usage, ignored tests versus runtime skips, and reproduction steps.
+Nightly shuffle, contracts, and OS-specific validation also remain in place.

@@ -6,18 +6,18 @@ status: draft
 sources:
 - id: release
   resource: ../../tools/release.py
-  revision: 948cc626c0c649f3defa70a6b7b0997d65262f66
-  working_tree: modified
+  revision: e9acbf4e5da6d749a789405522feab6b6ac8ecc0
+  working_tree: clean
   sha256: 2a5ff1d47bdb4f0147db9458d0bccc559d0f7b582d7f78f9542cf1d9d62fec82
 - id: budget
   resource: ../../crates/hoimin-core/src/budget.rs
-  revision: 948cc626c0c649f3defa70a6b7b0997d65262f66
-  working_tree: modified
-  sha256: 9fdcfa6648dfd3503a23dbb483845bd5f42fab43ba4af8f4595f7cb34decf6b5
+  revision: e9acbf4e5da6d749a789405522feab6b6ac8ecc0
+  working_tree: clean
+  sha256: eac9191b3f8a531c0005bdc24a8eb33a9ec30133447880cbd942bc8591b3c01f
 - id: policy
   resource: ../dependency-policy.md
-  revision: 948cc626c0c649f3defa70a6b7b0997d65262f66
-  working_tree: modified
+  revision: e9acbf4e5da6d749a789405522feab6b6ac8ecc0
+  working_tree: clean
   sha256: 00f4a2fdc1edf081158f4e35ed39ded9a357f36bf76a7e7d605c63e547735761
 ---
 

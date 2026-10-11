@@ -1,5 +1,10 @@
 # Development
 
+The [agent skill guide](agent-skills.md) covers the distributable `skills/`
+packages, GitHub CLI installation, and packaging validation. Current user and
+maintainer guides use English; historical design and audit records retain their
+original language.
+
 ## Documentation publication
 
 Edit the existing Markdown and open a PR; the Documentation workflow checks the

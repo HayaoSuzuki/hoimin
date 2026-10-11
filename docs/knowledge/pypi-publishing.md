@@ -1,7 +1,7 @@
 ---
 type: Playbook
-title: PyPIへのwheel公開
-description: TestPyPI検証を経る自動公開、Trusted Publisher登録、元のビルド証明と再実行。
+title: Publishing wheels to PyPI
+description: Automatic publication via TestPyPI, Trusted Publishers, original build attestations and recovery.
 status: draft
 catalog_revision: 36aa4cd696f4db28cd4811a0995d85df89b56eb5
 sources:
@@ -67,76 +67,72 @@ sources:
   sha256: 3d2f452405473746b7dfe837c8ed00f21453e05fc3dc3476565b3d1a19b37883
 ---
 
-# 公開の対象と手順
+# Publication scope and procedure
 
-`PYPI_AUTO_PUBLISH=true`を設定すると、mainへのマージ後にGitHub Releaseを作成し、`release.yml`の公開専用runを自動起動する。TestPyPIへの公開と3種類のwheel・両証明の取得検証に成功した場合だけ、同じwheelをPyPIへ公開する。変数が未設定なら自動公開しない。登録値とコマンドの正本は[公開手順](../pypi-publishing.md)に置く。[^guide]
+With `PYPI_AUTO_PUBLISH=true`, a merge to main creates a GitHub Release and automatically starts a publication-only `release.yml` run. The same wheels reach PyPI only after TestPyPI publication and retrieval/verification of all three wheels and both attestations succeed. An unset variable disables automatic publication. The [publication guide](../pypi-publishing.md) is canonical for registration values and commands.[^guide]
 
-準備ジョブは、タグのmainへの所属、GitHub Releaseの公開状態、3種類のwheelの名前・ハッシュ・メタデータ・ライセンス本文を確認する。検証後のwheelだけを公開ジョブへ渡し、公開ジョブにはソースのcheckoutやビルドを含めない。インデックス公開段階の`id-token: write`は、TestPyPIとPyPIの送信ジョブだけに付与する。[^release-workflow][^validator]
+Preparation checks tag membership in main, published GitHub Release status, and all three wheel names, hashes, metadata, and license text. Only validated wheels reach publication jobs, which neither check out source nor build it. At the index-publication stage, only the TestPyPI and PyPI upload jobs receive `id-token: write`.[^release-workflow][^validator]
 
-# アカウント側の設定
+# Account configuration
 
-PyPIとTestPyPIそれぞれに、所有者`HayaoSuzuki`、リポジトリ`hoimin`、ワークフロー`release.yml`をTrusted Publisherとして登録する。Environmentは送信先と同じ`pypi`または`testpypi`を指定する。GitHub側で両Environmentにmainへのブランチ制限を設定する必要があり、ワークフローの追加だけでは有効にならない。[^guide]
+Register a Trusted Publisher on both PyPI and TestPyPI with owner `HayaoSuzuki`, repository `hoimin`, and workflow `release.yml`. Use environment `pypi` or `testpypi` to match the destination. Both GitHub environments need main-only branch restrictions; adding the workflow alone does not configure them.[^guide]
 
-Environmentに必須レビュアーを設定すると、公開は承認待ちになる。完全自動化する場合はmainへの制限を維持し、レビュアーなしで公開できる設定にする。登録と初回実機確認を終えてから、自動公開変数を有効にする。[^guide]
+Required environment reviewers make publication wait for approval. For fully automatic publication, retain main-only restrictions while allowing publication without reviewers. Enable the automatic-publication variable after registration and initial hosted verification.[^guide]
 
-# 検証範囲と再確認条件
+# Validation scope and recheck conditions
 
-GitHub ReleaseのPR previewは配布入力の変更時に選択し、タグを指定しない手動実行では常に選択する。公開専用の手動実行はビルドを省略する。
-previewのprepareはread権限とし、マージ済みcommitのタグ予約と公開だけをwrite権限にする。[^release-workflow]
+GitHub Release PR preview is selected for distribution-input changes and always for manual runs without a tag. Publication-only manual runs skip builds.
+Preview preparation uses read permissions; only post-merge tag reservation and publication use write permissions.[^release-workflow]
 
-GitHub Release用のビルドでは、PR検証と手動検証は実行イベントの`github.sha`、マージ後の公開は`pull_request_target`の`merge_commit_sha`を使う。PR更新時のペイロードには古い`merge_commit_sha`が入る場合があるため、検証対象の選択には使わない。checkout、後続ジョブへのコミット指定、同時実行のグループで同じ選択条件を用いる。[^release-workflow][^ci-tests]
+GitHub Release builds use event `github.sha` for PR and manual validation, and `pull_request_target`'s `merge_commit_sha` for post-merge publication. PR-update payloads can contain stale `merge_commit_sha` values, so validation must not use that field to choose its target. Checkout, downstream commit inputs, and concurrency groups use the same selection conditions.[^release-workflow][^ci-tests]
 
-ビルド後のwheelスモークテストは、`Elastic-2.0`と移管先のRepository・Issues・Changelog URLを確認してから、隔離環境へのインストールとCLI実行を検証する。メタデータの回帰テストでは、旧`MIT`ライセンスと旧組織のURLを拒否する。ライセンスや公開URLを変更するときは、この期待値も更新する。[^wheel-smoke][^wheel-smoke-tests]
+Post-build wheel smoke tests check `Elastic-2.0` and the transferred repository's Repository, Issues, and Changelog URLs before isolated installation and CLI execution. Metadata regressions reject the former `MIT` license and former organization's URLs. Update these expectations when changing the license or public URLs.[^wheel-smoke][^wheel-smoke-tests]
 
-ライセンス本文の比較は、Windowsのcheckoutで生じるCRLFとLFの違いだけを許容する。本文や空白の変更は拒否し、wheel自体のバイト列とSHA-256照合は変更しない。[^validator][^tests]
+License-text comparison tolerates only CRLF/LF differences from Windows checkout. Text or whitespace changes are rejected; wheel bytes and SHA-256 verification remain unchanged.[^validator][^tests]
 
-ローカルテストは、不足・破損したwheel、異なる版やライセンス、重複したメタデータ、無効なタグを拒否する条件を検証する。実際のOIDC認証、Environment承認、PyPIへのアップロードはローカル検証の対象外であり、初回TestPyPI公開時に確認する。[^tests][^guide]
+Local tests validate rejection of missing/corrupt wheels, wrong versions or licenses, duplicate metadata, and invalid tags. Actual OIDC authentication, environment approval, and index uploads are outside local validation and require initial TestPyPI publication checks.[^tests][^guide]
 
-ワークフローや検証コードを修正した場合は、mainへのマージ後に新しい手動実行を開始する。GitHubのRe-runは元のコミットを使うため、コード修正を反映しない。[^guide]
+After workflow or validator fixes, start a new manual run after merging to main. GitHub Re-run uses the original commit and does not incorporate code fixes.[^guide]
 
-既存の3ファイルと両証明をすべて検証できた場合だけ、アップロードを再実行せず検証済み公開を再利用する。無条件の`skip-existing`は使わない。一部だけアップロードされた場合は、登録済みのファイルとハッシュを調べ、必要なら新しい版を公開する。workflow名、リポジトリ所有者、Environment名、Python対応範囲、wheelのプラットフォーム名、ライセンス本文を変えたときは、登録値と検証条件を読み直す。[^guide][^validator]
+Reuse a validated publication without reuploading only when all three existing files and both attestations pass validation. Do not use unconditional `skip-existing`. For partial uploads, inspect registered files and hashes and publish a new version if needed. Recheck registration and validation when changing the workflow name, owner, environments, Python support, wheel platform names, or license text.[^guide][^validator]
 
-[^guide]: [PyPI公開手順](../pypi-publishing.md)。
-[^validator]: [配布物の検証処理](../../tools/pypi_release.py)。
-[^tests]: [公開準備の回帰テスト](../../tests/test_pypi_release.py)。
+[^guide]: [PyPI publication guide](../pypi-publishing.md).
+[^validator]: [Artifact validation](../../tools/pypi_release.py).
+[^tests]: [Publication preparation regressions](../../tests/test_pypi_release.py).
+[^wheel-smoke]: [Wheel smoke tests](../../tests/wheel_smoke.py).
+[^wheel-smoke-tests]: [Wheel validation regressions](../../tests/test_wheel_smoke.py).
+[^release-workflow]: [GitHub Release build and publication workflow](../../.github/workflows/release.yml).
+[^ci-tests]: [CI workflow regressions](../../tests/test_ci_workflow.py).
 
-[^wheel-smoke]: [wheelのスモークテスト](../../tests/wheel_smoke.py)。
-[^wheel-smoke-tests]: [wheel検証の回帰テスト](../../tests/test_wheel_smoke.py)。
+# Build attestations and publication events
 
-[^release-workflow]: [GitHub Releaseのビルド・公開ワークフロー](../../.github/workflows/release.yml)。
-[^ci-tests]: [CIワークフローの回帰テスト](../../tests/test_ci_workflow.py)。
+Generate each wheel's SLSA attestation at build time and convert it to PEP 740 without changing the original signed statement.
+PyPI validates both attestations against the uploading Trusted Publisher, so build and publication both use `release.yml`.
+A reusable publication workflow would change OIDC `job_workflow_ref`; define upload jobs directly in the same file.[^provenance][^review]
 
-# ビルド証明と公開イベント
+The build's `pull_request_target` event cannot publish to PyPI.
+A restricted post-merge job uses `actions: write` to dispatch main, and the publication-only run checks the original tag, source, workflow, and wheel digest.
+Do not confuse the publication certificate's source revision with the build revision.[^release-workflow][^provenance]
 
-各wheelのSLSA証明はビルド時に生成し、元の署名済みstatementを書き換えずPEP 740へ変換する。
-PyPIはアップロード元のTrusted Publisherで両証明を検証するため、ビルドと公開はともに`release.yml`を使う。
-公開ジョブを再利用workflowに分けるとOIDCの`job_workflow_ref`が変わるため、公開ジョブは同じファイルへ直接定義する。[^provenance][^review]
+Distinguish recorded real-signature rejection tests from control-flow tests with substituted external services.
+On 2026-10-11 (JST), main with the format fix published v0.3.6 to TestPyPI and PyPI, then retrieved and verified all three wheels from each index.
+SHA-256 values matched GitHub Release, and SLSA and Publish signature verification succeeded.
+The build source was `c9f92eb`, the publication run used `3dbf6df`, and the original build statement was preserved byte for byte.[^bootstrap][^bootstrap-evidence]
 
-ビルドの`pull_request_target`イベントからはPyPIへ公開できない。
-マージ後の限定ジョブが`actions: write`でmainの`workflow_dispatch`を起動し、公開専用runで元のtag・source・workflow・wheel digestを照合する。
-公開時の証明書のsource revisionをビルド元のrevisionと混同しない。[^release-workflow][^provenance]
+After confirming rejection of five cases (altered bytes, wrong repository, wrong source, wrong workflow, and corrupt signature), `PYPI_AUTO_PUBLISH=true` was set and read back.
+The initial failure, recovery, run IDs, and publication-certificate attributes are recorded in the hosted report and JSON.[^provenance-tests][^bootstrap][^bootstrap-evidence]
 
-記録済みの実署名による拒否試験と、外部サービスを差し替えた制御フロー試験を区別する。
-2026年10月11日（JST）、形式修正後のmainからv0.3.6をTestPyPIとPyPIへ公開し、両インデックスの各3wheelを取得して検証した。
-SHA-256はGitHub Releaseと一致し、SLSAとPublishの署名検証も成功した。
-ビルド元は`c9f92eb`、公開実行は`3dbf6df`であり、元のビルドstatementはバイト単位で保持されていた。[^bootstrap][^bootstrap-evidence]
+v0.3.7 also passed publication and retrieval verification on both indexes. PyPI's version API returned 404 immediately after publication, so only the failed verification job was rerun after propagation. This historical recovery used a manual rerun.[^bootstrap]
 
-改変bytes・別repository・別source・別workflow・署名破損の5ケースが拒否されたことを確認した後、`PYPI_AUTO_PUBLISH=true`を設定して読み戻した。
-初回失敗と復旧の経緯、実行ID、公開証明の属性は実機記録とJSONに残している。[^provenance-tests][^bootstrap][^bootstrap-evidence]
+[^provenance]: [Attestation conversion and post-publication validation](../../tools/pypi_provenance.py).
+[^provenance-tests]: [Attestation and publication-gate regressions](../../tests/test_pypi_provenance.py).
+[^review]: [Issue #771 design and verification record](../reviews/2026-10-10-issue-771-pypi-provenance.md).
+[^bootstrap]: [Issue #771 hosted bootstrap record](../reviews/2026-10-11-issue-771-hosted-verification.md).
+[^bootstrap-evidence]: [Both indexes' verification JSON](../reviews/2026-10-11-issue-771-hosted-verification.json).
 
-v0.3.7も両インデックスへの公開と取得検証に成功した。PyPI公開直後の版情報APIが404を返したため、反映後に失敗した検証ジョブだけを再実行した。この実機記録当時は、反映後に手動で再実行して復旧した。[^bootstrap]
+## Waiting for post-publication 404s
 
-[^provenance]: [証明の変換と公開後検証](../../tools/pypi_provenance.py)。
-[^provenance-tests]: [証明と公開条件の回帰テスト](../../tests/test_pypi_provenance.py)。
-[^review]: [Issue #771の設計・検証記録](../reviews/2026-10-10-issue-771-pypi-provenance.md)。
-
-[^bootstrap]: [Issue #771の実機bootstrap記録](../reviews/2026-10-11-issue-771-hosted-verification.md)。
-
-[^bootstrap-evidence]: [両インデックスの検証結果JSON](../reviews/2026-10-11-issue-771-hosted-verification.json)。
-
-## 公開直後の404への待機
-
-公開後のverifyだけがHTTP 404を10秒、20秒、40秒、以後最大60秒の指数バックオフ、最大61試行、600秒の単調時計予算で再試行する。
-通信・検証にかかった時間も予算に算入し、待機後に期限へ到達した場合は次の検証を開始しない。
-開始済みの検証は期限後に完了することがあるため、依存準備を含むjob全体にも15分の上限を置く。
-待機はindex・version・残り予算をログに出し、inspectの不在判定、404以外のエラー、bytes・署名の拒否条件は緩和しない。[^guide][^provenance][^provenance-tests][^release-workflow]
+Only post-publication verification retries HTTP 404, using exponential delays of 10, 20, and 40 seconds, then at most 60 seconds, with at most 61 attempts and a 600-second monotonic budget.
+Network and verification time count toward that budget; no new verification starts if the deadline has been reached after sleeping.
+An in-flight verification can finish after the deadline, so the entire job, including dependency setup, also has a 15-minute limit.
+Wait logs identify the index, version, and remaining budget. This does not relax inspect's absence decision, non-404 errors, byte checks, or signature rejection conditions.[^guide][^provenance][^provenance-tests][^release-workflow]
