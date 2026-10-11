@@ -125,3 +125,11 @@ disk space was approximately 190 GB during validation.
   successfully previewed that revision and installed both skills independently
   from GitHub with that commit pin into separate temporary directories. Each
   installation contained `SKILL.md`, `installation.md`, and `LICENSE`.
+- Hosted dependency audit then rejected Material 9.7.6 for
+  [GHSA-xvg9-69gf-fjrf](https://github.com/advisories/GHSA-xvg9-69gf-fjrf),
+  a DOM XSS in the enabled search suggestions feature. Updated the exact pin to
+  patched 9.7.7 instead of suppressing the advisory. The reference site's theme
+  appearance is independent of using its older dependency version.
+- After this dependency correction, frozen uv audits for Linux, macOS, and
+  Windows each reported no known vulnerabilities in 82 packages. The strict site
+  build and all 51 focused tests passed again with Material 9.7.7.
