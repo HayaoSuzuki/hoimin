@@ -1,0 +1,24 @@
+title: "[Question] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Ask usage questions here. Check the [usage reference](https://github.com/HayaoSuzuki/hoimin/blob/main/docs/usage.md) and [reporting guide](https://github.com/HayaoSuzuki/hoimin/blob/main/docs/support.md).
+        External Issues and pull requests are not accepted. Share only information you are allowed to publish, with credentials and private paths removed.
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: What are you trying to do, and what would you like to know?
+    validations:
+      required: true
+  - type: textarea
+    id: attempted
+    attributes:
+      label: What you have tried
+      description: If relevant, include commands, results and documentation you checked.
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment, if relevant
+      description: Include hoimin/Python versions, OS/CPU, relevant configuration and resource-control mode. These details are optional for general questions.
