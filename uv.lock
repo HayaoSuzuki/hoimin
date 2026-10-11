@@ -335,6 +335,7 @@ source = { editable = "." }
 
 [package.dev-dependencies]
 dev = [
+    { name = "hypothesis" },
     { name = "jsonschema" },
     { name = "maturin" },
     { name = "mypy" },
@@ -365,6 +366,7 @@ workflow = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "hypothesis", specifier = ">=6.93,<7" },
     { name = "jsonschema", specifier = "==4.25.1" },
     { name = "maturin", specifier = ">=1.11,<2" },
     { name = "mypy", specifier = ">=2.3.0" },
