@@ -16,6 +16,7 @@ pub mod process;
 pub mod progress;
 pub mod report;
 pub mod resource;
+pub mod review;
 pub mod session;
 pub mod shell;
 pub mod target;
