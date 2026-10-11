@@ -36,7 +36,7 @@ each execution <=60 seconds; clean its dedicated build directory afterwards.
   setup, execution, replay and source-maintenance costs separately.
 - [x] Assess #804's initial target and #807's candidate list; record adoption,
   rejection or a concrete bounded follow-up for each.
-- [ ] Verify research material, update knowledge/source catalogs, obtain an
+- [x] Verify research material, update knowledge/source catalogs, obtain an
   independent review, commit and open reviewable PR(s) through `gh stack`.
 
 ## Plan self-review, five separate passes
@@ -59,3 +59,5 @@ Independent review found the suspected #807 compatibility gap was already
 covered by the committed Lean corpus. Removed the redundant trial tests and
 kept the negative assessment. Consolidate the local two-branch draft into one
 research PR; there is no independent implementation change to stack.
+
+Delivered as [PR #809](https://github.com/HayaoSuzuki/hoimin/pull/809) through `gh stack`.
