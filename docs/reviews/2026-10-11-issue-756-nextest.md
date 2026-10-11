@@ -2,7 +2,7 @@
 
 Base: `00893465e0328204453e5008dc3884035b85c7bd`.
 Branch: `ci/issue-756-nextest-evaluation`.
-Status: design approved; temporary hosted comparison prepared, measurements pending.
+Status: comparison completed; evaluated configuration not adopted; final review pending.
 
 ## Bounded design
 
@@ -90,10 +90,8 @@ leaves no descendants and keep resource-sensitive unsupported cases on Cargo.
    only relevant regressions, complete five implementation and five verification
    self-reviews, and obtain independent review before marking the PR ready.
 
-Implementation and verification self-reviews are pending; they will describe
-actual changes and results rather than planned checks. CI/docs-only changes do
-not alter the distributed version floor. Preserve `.idea/`, monitor free disk
-space and run `cargo clean` periodically.
+CI/docs-only changes do not alter the distributed version floor. Preserve
+`.idea/`, monitor free disk space and run `cargo clean` periodically.
 
 ## Temporary comparison implementation self-reviews
 
@@ -126,7 +124,56 @@ zero files; disk free space was 175.79 GiB before the trial.
 Ruling: use this review record as the execution ledger, since the approved
 bounded design already contains the sequence. Do not create a second speculative
 implementation-plan document or a persistent benchmark interface. The temporary
-comparison/helper/tests will be removed or reduced after the measured decision.
+comparison/helper/tests were removed after the measured decision.
+
+## Final implementation self-reviews
+
+1. Compared restored workflow and production files byte-for-byte through Git
+   against the base: no product, workflow, test or package-version change remains.
+2. Preserved measured commands, GNU time output, sampling metadata and log hashes
+   in Markdown evidence, so this documentation-only result uses existing CI
+   selection without broadening its path classification.
+3. Kept the successful comparison job separate from the failed overall trial.
+   The two existing workflow assertions remain unchanged and are rerun after
+   restoration; they are not waived to make the experiment green.
+4. Reported the memory benefit together with separate doctest overhead and the
+   unchanged shared-build peak; the decision does not discard favorable data.
+5. Recorded non-adoption only for the evaluated Linux two-thread setting.
+   The archived probe is reproducible by commit, with unsupported platforms,
+   concurrency settings and adoption-only failure/timeout checks explicit.
+
+## Verification self-reviews
+
+1. Verified actual independent inventory equality: 2,785 qualified identities,
+   145 binaries and 24 ignores. Nextest JUnit has 2,761 cases and no failures;
+   excluded two nested bootstrap summaries from naive Cargo pass-count sums.
+2. Inspected both logs for eight capability skips; no delegated-cgroup success
+   is inferred from PASS. The timeout probe similarly has one capability skip.
+3. Verified alternating probe repeats (12 selected cases each) and successful
+   full workspace/doctest runs. Existing interruption/reaping checks executed on
+   supported Linux paths; examples/reference checks also succeeded afterward.
+4. Reviewed resource arithmetic and limits: 200 ms samples include wrappers and
+   may miss fast/reparented processes; RSS sums duplicate shared pages. A single
+   full-workspace pair does not establish a general speed difference.
+5. Checked that retaining Cargo follows the agreed improvement gate and avoids
+   permanent benchmark/diagnostic machinery. Final strict lint, links/source
+   hashes, unchanged workflow contracts and independent review are recorded below
+   as their results arrive, without claiming unrun checks succeeded.
+
+## Hosted result
+
+[Rust comparison job](https://github.com/HayaoSuzuki/hoimin/actions/runs/38113472996/job/114393883068)
+succeeded. Cargo workspace took 146.12 s, nextest 151.10 s, installation 1 s and
+separate doctests 0.83 s. Timeout probe repeats were Cargo 15.97/14.32 s versus
+nextest 20.32/20.35 s. No runtime improvement justified adoption; the report
+records reduced execution RSS and its build/doctest limits as well.
+See the [result](../performance/nextest/2026-10-11-linux.md) and
+[preserved evidence](../performance/nextest/2026-10-11-linux-evidence.md).
+
+Ruling: do not add intentional failure/forced-timeout diagnostic infrastructure
+after the probe failed the adoption gate. Those checks remain prerequisites for
+any future adoption, as agreed in the design. This costs no current Cargo
+coverage; it leaves nextest timeout behavior unverified, explicitly documented.
 
 ## Sources inspected
 
