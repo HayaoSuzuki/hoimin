@@ -7,9 +7,9 @@ catalog_revision: 36aa4cd696f4db28cd4811a0995d85df89b56eb5
 sources:
 - id: guide
   resource: ../pypi-publishing.md
-  revision: afab14d952113004ee999ea279358f16f2a0c6c6
+  revision: 34723ff3f9b19c28140a6efad0651e542e25b8c1
   working_tree: modified
-  sha256: 55a97aadae2a9aa8c5360fd6c6f9619d47d55540817d72e01dedb82192aa45ce
+  sha256: 3751752a365a7cabde2b7daa7b022ac647b98ed8d26de369701425be33b36576
 - id: validator
   resource: ../../tools/pypi_release.py
   revision: 52e12a30bf40cb8b0040e21e776c8b75bc37ccc6

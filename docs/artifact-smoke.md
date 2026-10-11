@@ -52,4 +52,4 @@ retention, rather than adding files to the public package contract.
 When updating the image, inspect its upstream build and digest, verify CPython
 and glibc again, and run release preview. Monitor Runner space; the Linux job
 removes the image after testing. Keep existing workspace/free-space safeguards.
-These changes keep the current 0.3.x version floor and artifact layout.
+Smoke checks validate packaged artifacts without changing their layout or version floor.

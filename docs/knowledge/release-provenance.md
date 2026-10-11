@@ -17,9 +17,9 @@ sources:
   sha256: 2a5ff1d47bdb4f0147db9458d0bccc559d0f7b582d7f78f9542cf1d9d62fec82
 - id: guide
   resource: ../releases.md
-  revision: fd416a6965a5732d75fa5519a5932e4a78a9e18a
+  revision: 34723ff3f9b19c28140a6efad0651e542e25b8c1
   working_tree: modified
-  sha256: 147e604b107011c8842c200280446eb1a71b18f4bd5407c6cda32972d5d9f61a
+  sha256: b5d4af1c031b438b9741ac8fb76f1518a676860d1d27f20f033169aaefeffedf
 - id: review
   resource: ../reviews/2026-10-10-issue-750-release-provenance.md
   revision: c08574663a363228fed310fbf75157831b4a5669

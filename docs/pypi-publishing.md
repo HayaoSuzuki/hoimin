@@ -2,11 +2,12 @@
 
 `release.yml` builds GitHub Releases and can automatically publish their exact
 wheels to TestPyPI and then PyPI. Each wheel carries two attestations: its
-original build-time SLSA provenance and a publish attestation. Wheel contents,
-platform support, and the 0.3.x version floor are unchanged.
+original build-time SLSA provenance and a publish attestation. Publication uploads
+the validated release wheels without rebuilding or changing their contents.
 
-Automatic publication is initially disabled. Leaving `PYPI_AUTO_PUBLISH`
-unset lets GitHub Releases continue while the publisher accounts are configured.
+Automatic publication is enabled for this repository through
+`PYPI_AUTO_PUBLISH=true`. Leaving the variable unset or setting it to `false`
+disables automatic dispatch while allowing GitHub Releases to continue.
 The previous `publish-pypi.yml` manual entry point is retired.
 
 ## Publication order
@@ -33,7 +34,7 @@ a successful GitHub Release build alone does not mean PyPI publication passed.
 An empty `pypi_tag` retains the existing manual build-preview behavior and
 never publishes to either index. PR previews never dispatch PyPI publication.
 
-## One-time publisher setup
+## Restoring publisher configuration
 
 The account owner must register a publisher on **both** indexes. Existing
 `publish-pypi.yml` registrations do not authorize the new workflow.
@@ -61,11 +62,13 @@ publication requires these environments to allow upload without a reviewer.
 Account registration and environment protection are external settings; merging
 this change does not install or enable them.
 
-## Bootstrap and enable automatic publication
+## Bootstrap for a newly configured publisher
 
-Keep `PYPI_AUTO_PUBLISH` unset until setup is complete. Merge this implementation
-and wait for a new GitHub Release whose original build includes the three
-single-wheel statements. Earlier versions cannot be repaired by resigning their
+The repository's bootstrap is complete; see the [hosted verification record](#verification-scope-and-references).
+The following procedure is for a newly configured or replacement publisher.
+Keep `PYPI_AUTO_PUBLISH` unset until setup is complete. Choose a GitHub Release
+whose original build includes the three single-wheel statements. Earlier versions
+cannot be repaired by resigning their
 wheels in a publication job, and existing PyPI files cannot gain attestations
 retroactively. Do not use an already-published legacy version for bootstrap.
 

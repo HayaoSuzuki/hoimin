@@ -10,9 +10,10 @@ and review changes. Mutation scores are diagnostic observations; equivalent
 mutants and specification-permitted changes make them unsuitable as a standalone
 quality target. CI use is optional. See the [product principles](docs/product-principles.md).
 
-Browse the [searchable main documentation](https://hayaosuzuki.github.io/hoimin/)
-after its initial Pages activation. The existing references below remain available
-on GitHub. Maintainers can follow the [publication guide](docs/documentation.md).
+Browse the [documentation](https://hayaosuzuki.github.io/hoimin/) for installation,
+the agent workflow, resource limits, and command references. The site tracks
+`main`; for a particular release, read the Markdown at that release's Git tag.
+Maintainers can follow the [publication guide](docs/documentation.md).
 
 ## Install
 

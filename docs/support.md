@@ -2,9 +2,7 @@
 
 External Issues and pull requests are not accepted. Maintainers use Issues to
 track work they choose to undertake. Public usage questions and possible defects
-belong in [Discussions](https://github.com/HayaoSuzuki/hoimin/discussions), once
-the maintainer has enabled it using the setup below. Until then, the public
-discussion channel is unavailable; this guide does not open Issue/PR submissions.
+belong in [Discussions](https://github.com/HayaoSuzuki/hoimin/discussions).
 
 Choose **Bug reports** for unexpected behavior or **Q&A** for usage questions.
 The forms request enough context to discuss a problem without requiring a full
@@ -57,26 +55,5 @@ private paths and data you cannot share. Small redacted snippets are sufficient;
 uploading an archive, full report or repository is not required. This repository
 does not add bots or CI jobs that fetch or execute discussion submissions.
 
-## Maintainer setup after merge
-
-The forms take effect from the default branch. After merging the template PR:
-
-1. In repository **Settings → General → Features**, enable **Discussions**.
-2. Create **Bug reports** as an open-ended discussion category. Use **Q&A** as a
-   question-and-answer category, creating it if it is absent.
-3. Verify the category slugs match `bug-reports` and `q-a`, respectively. Their
-   forms are [bug-reports.yml](../.github/DISCUSSION_TEMPLATE/bug-reports.yml) and
-   [q-a.yml](../.github/DISCUSSION_TEMPLATE/q-a.yml). If a slug differs, correct the
-   category or update the matching filename through a branch/PR.
-4. Open the new-discussion form in each category without submitting a post. Check
-   required fields, the optional fields, links and code-block formatting. Walk
-   through a candidate report, a baseline failure, a resource-control report and
-   a general question using the guidance above. Include a startup failure with
-   an unavailable version in the check.
-5. Leave the existing external Issue/PR submission restrictions in place. Close
-   [#755](https://github.com/HayaoSuzuki/hoimin/issues/755) after these activation
-   and display checks succeed.
-
-Template files do not configure category names, formats or submission permissions.
-See GitHub's [category-form instructions](https://docs.github.com/en/discussions/managing-discussions-for-your-community/creating-discussion-category-forms)
-and [form syntax](https://docs.github.com/en/discussions/managing-discussions-for-your-community/syntax-for-discussion-category-forms).
+Maintainers can follow the [discussion maintenance procedure](development.md#discussion-maintenance)
+when changing categories or forms.

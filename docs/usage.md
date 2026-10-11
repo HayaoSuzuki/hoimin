@@ -73,13 +73,19 @@ or cleanup failures instead of silently raising limits or repeating the run.
 
 Create a ranked plan before improving tests, then verify its highest-ranked retained candidates:
 
+Create the `reports/` directory before redirecting output there. Save an initial
+verification report before editing tests so the agent can identify survivors.
+After a justified test-only change, repeat the same selection from the same plan
+and save a new report; source or fingerprint changes require a new plan.
+
 ```console
 hoimin plan --root . --source src --changed \
   --allow-best-effort-memory \
   --total-timeout 15m \
   -- python -m pytest -q > PLAN.json
-# improve tests, then run the saved top 10 without extracting IDs
+# first verify the saved top 10 to identify survivors before changing tests
 hoimin verify PLAN.json --top 10 --format json > reports/batch-a-001.json
+# after test-only improvements, repeat this selection into batch-a-002.json
 # alternatively, spread an equal-score tier across production files
 hoimin verify PLAN.json --top 10 --selection-policy diverse
 # or spread an equal-score tier across source start lines

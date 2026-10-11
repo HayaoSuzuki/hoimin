@@ -43,10 +43,11 @@ into the project under test; hoimin's distribution repository does not maintain
 local `.agents/skills` or `.claude/skills` mirrors.
 
 An unpinned install chooses the latest tagged release, falling back to the default
-branch only if no release exists. Releases from before this layout change do not
-contain `skills/`; until a release includes it, use a reviewed commit or
-`--pin main` explicitly. A main pin follows a moving branch, whereas a commit pin
-identifies fixed content. Preview and install the same reviewed revision.
+branch only if no release exists. Tagged releases containing `skills/`, including
+`v0.4.6`, distribute both packages. Older tags may lack them: inspect the selected
+tag before installing. To use changes not yet included in a release, pin their
+reviewed commit explicitly. A `--pin main` pin follows a moving branch, whereas a
+commit pin identifies fixed content. Preview and install the same reviewed revision.
 
 For a local checkout, install without changing the distribution source:
 
@@ -77,8 +78,8 @@ uv run --frozen --no-sync pytest tests/test_skills.py
 
 hoimin's existing release workflow owns product tags and GitHub Releases. Skill
 files are fetched from the tagged repository tree; no wheel or separate skill
-archive is required. After a product release includes `skills/`, users can install
-that release's skills by pinning its tag. Do not run `gh skill publish --tag` as
+archive is required. Users can install a release's skills by pinning its tag when
+that tag contains `skills/`. Do not run `gh skill publish --tag` as
 part of routine skill validation: it creates a separate release and can conflict
 with hoimin's version allocation and publication workflow.
 

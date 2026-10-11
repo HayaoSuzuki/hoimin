@@ -85,3 +85,53 @@ checked safety invariants, score claims, source hash, referenced anchors, and
 whitespace, and reported no findings requiring changes. A final editorial pass
 uses "reported saturation" to avoid implying statistical inference by the progress
 command. No runtime enforcement or LLM behavior was claimed as tested.
+
+## Follow-up: remove pre-activation wording from current guides
+
+The maintainer identified the README's "after its initial Pages activation" as
+unfinished reader guidance. A follow-up review covered all public allowlisted
+pages and the distribution setup references, distinguishing stale setup prose
+from legitimate historical evidence, examples, and recovery procedures.
+
+Read-only checks on 2026-10-12 confirmed:
+
+- The live documentation landing page returned HTTP 200 and still contained the
+  old activation wording. GitHub Pages uses the workflow build type and configured
+  `https://hayaosuzuki.github.io/hoimin/` URL.
+- Discussions is enabled, with `bug-reports` and `q-a` categories.
+- The latest release was `v0.4.6`; its tree contains both distribution skills.
+- The repository variable `PYPI_AUTO_PUBLISH` is `true`. The existing hosted
+  verification record separately documents the completed publisher bootstrap.
+
+These checks did not submit discussions, change settings, publish packages,
+exercise account authentication, or test search interactions. An exploratory
+Pages-deployments API request returned 404; deployment status was not inferred
+from it. The HTTP page and supported repository APIs supply the observations above.
+
+### Follow-up self-reviews
+
+- Design, five passes: current reader needs; confirmed service availability;
+  user/maintainer separation; historical evidence limits; version-neutral policy.
+- Plan, five passes: audit public allowlist; inspect setup references; verify
+  external settings read-only; preserve restoration procedures; refresh only
+  reread OKF sources.
+- Implementation, five passes: remove Pages prerequisites; expose active
+  Discussions; explain tagged skill availability; distinguish enabled PyPI from
+  replacement-publisher bootstrap; remove stale 0.3-series and tag-trigger claims.
+- Validation, five passes: strict site links/anchors; existing skill/reference
+  tests; OKF structure and changed source hashes; whitespace and stale-phrase
+  scan; independent review of the follow-up diff.
+
+Discussion maintenance moved from the user reporting page to the development
+guide. Historical release examples and unmeasured local/hosted timing remain
+explicitly qualified. The plan/verify guide now explains report-directory setup
+and the initial versus post-improvement report sequence.
+
+Follow-up verification passed: 61 existing focused tests, strict site build and
+HTML link/anchor checks, 45-page OKF structure, nine refreshed source hashes and
+their footnotes, and whitespace checks. The independent reviewer found the old
+"improve tests, then run" comment contradicted the new initial-verification
+instructions. It was corrected to verify first and retain a distinct
+`batch-a-002.json` report after test improvements; the reviewer reread the change
+and confirmed no outstanding findings. No repository setting or published site
+was changed by these checks; the revised content will publish after merge.

@@ -31,13 +31,13 @@ and atomic reservation checks. Changing the floor must keep `Cargo.toml`,
 
 | Change | Version decision and notice |
 | --- | --- |
-| Documentation, CI-only checks, SBOM or provenance metadata without a package-contract change | Keep the current minor series (currently 0.3.x). Explain any operational change. |
+| Documentation, CI-only checks, SBOM or provenance metadata without a package-contract change | Keep the current minor series. Explain any operational change. |
 | Bug fix restoring a documented contract, including removal of invalid mutation candidates | Patch in the current minor series. Describe changed results and any required plan regeneration. |
 | New operator available only by explicit selection, with existing defaults and saved-format contracts intact | Patch in the current minor series; name the opt-in and its scope. |
-| Expanding or changing the default operator set/profile | Raise the minor-version floor (next: 0.4.0). Explain candidate, budget and score-comparison effects. |
+| Expanding or changing the default operator set/profile | Raise the floor to a new minor series. Explain candidate, budget and score-comparison effects. |
 | Removing a CLI option, changing a supported exit-code contract or making a public schema incompatible | Raise the minor-version floor and give concrete invocation/reader migration steps. |
 | Ranking/identity algorithm or saved-format change that invalidates supported saved inputs | Raise the minor-version floor; specify whether to regenerate plans or start new sessions. A bug fix rejecting previously invalid inputs is distinguished from a format redesign. |
-| Changing the archive/wheel package contract or required runtime environment | Raise the minor-version floor (next: 0.4.0) and document installation changes. |
+| Changing the archive/wheel package contract or required runtime environment | Raise the floor to a new minor series and document installation changes. |
 
 For example, with a highest tag of `v0.3.9`, a floor of `0.3.0` yields
 `v0.3.10`; a floor of `0.4.0` yields `v0.4.0`. If `v0.4.0` already exists,
