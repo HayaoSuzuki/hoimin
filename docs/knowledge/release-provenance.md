@@ -6,14 +6,14 @@ status: draft
 sources:
 - id: workflow
   resource: ../../.github/workflows/release.yml
-  revision: fd416a6965a5732d75fa5519a5932e4a78a9e18a
+  revision: 948cc626c0c649f3defa70a6b7b0997d65262f66
   working_tree: modified
-  sha256: 41d0e214da7f797d753143ab8ea6c7d9c36e3adad8b2c701281d543fc131c580
+  sha256: eb7bf9a5256861b6ef699965be89c0b3d79f33acb7fdf3f62228acec622a1489
 - id: validator
   resource: ../../tools/release.py
-  revision: a6965910bbc745e74aeb539628b3e2dc66c2a9d3
+  revision: 948cc626c0c649f3defa70a6b7b0997d65262f66
   working_tree: modified
-  sha256: 6799cf1bea1690e390e7bfa6b184ce0306105c655c95e8873b28c14b670c2184
+  sha256: 2a5ff1d47bdb4f0147db9458d0bccc559d0f7b582d7f78f9542cf1d9d62fec82
 - id: guide
   resource: ../releases.md
   revision: fd416a6965a5732d75fa5519a5932e4a78a9e18a
@@ -69,3 +69,5 @@ trigger、権限、公式Action、GH CLI、artifact取得、配布inventoryを�
 [^guide]: [利用者の照合手順と再実行](../releases.md#github-build-provenance)。
 [^review]: [Issue #750の検証記録](../reviews/2026-10-10-issue-750-release-provenance.md)。
 [^hosted]: [v0.3.4の実証明書属性・公開物digest・拒否結果](../reviews/2026-10-10-issue-750-hosted-verification.json)。
+
+Release bootstrap installs locked internal-tooling before importing the typed version helpers; provenance-only setup includes the same group. See [typed results and contracts](typed-results-and-contracts.md).[^validator][^workflow]

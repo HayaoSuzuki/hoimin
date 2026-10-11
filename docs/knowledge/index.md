@@ -73,3 +73,5 @@ okf_version: "0.2"
 - [2026年9月の解析監査と回帰検証への反映](audits/analysis-2026-09.md) - #545〜#549の原証拠、修正PR、正式なテストの対応。
 
 - [制約付き変異探索と差分テスト生成](mutation-search.md) - 固定関数での実測、採用範囲、誘導探索とCrossHairの限界。
+
+- [Typed results and executable contracts](typed-results-and-contracts.md) - Expected failures, optional budget checks, and evidence limits.
