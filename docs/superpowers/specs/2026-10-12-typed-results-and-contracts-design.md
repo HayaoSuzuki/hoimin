@@ -1,6 +1,6 @@
 # Typed Python failures and third-party contracts
 
-Status: proposed; implementation has not started.
+Status: approved by the user on 2026-10-12; implementation has not started.
 
 ## Intent and scope
 

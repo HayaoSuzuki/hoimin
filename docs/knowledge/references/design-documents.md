@@ -7,8 +7,9 @@ catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
 - id: typed-results-and-contracts-design
   resource: ../../superpowers/specs/2026-10-12-typed-results-and-contracts-design.md
-  working_tree: untracked
-  sha256: 0c0af00307604471f24218f71a29017ed7dc346427f3b6c69504c732e2abf4ec
+  revision: 8ff7c6b
+  working_tree: modified
+  sha256: defbcf16ebaa8d2246648f11eddbbee52708ae33b0aff2965510e88f9becc6ac
 - id: issue-749-documentation-pages-design
   resource: ../../superpowers/specs/2026-10-12-issue-749-documentation-pages-design.md
   revision: 9eb8ed0d3690d45f77932afcfd457afbdbf43abd
