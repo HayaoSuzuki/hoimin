@@ -1,12 +1,12 @@
 # Build script inventory
 
-Observed 2026-10-11 from locked, all-feature, unfiltered Cargo metadata.
+Observed 2026-10-12 from locked, all-feature, unfiltered Cargo metadata.
 Regenerate and review with the [dependency policy](dependency-policy.md).
 Names/versions identify build targets; their contents have not been certified.
 
 ## main workspace
 
-Graph packages: 209. Normal, build and dev dependencies included.
+Graph packages: 210. Normal, build and dev dependencies included.
 
 | Package | Version |
 | --- | --- |
