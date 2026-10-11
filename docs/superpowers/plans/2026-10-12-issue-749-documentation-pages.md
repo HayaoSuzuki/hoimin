@@ -132,7 +132,7 @@ expose the site URL while distinguishing pending activation from a live site.
   command results, plus outstanding post-merge activation checks. Validate
   OKF provenance/links, `git diff --check`, strict build and all affected linters.
 - [x] Commit the guide and local review evidence on the work branch.
-- [ ] After release fix PR #798 merges, include latest main, repeat affected checks,
+- [x] After release fix PR #798 merges, include latest main, repeat affected checks,
   push the work branch and create/attach the documentation PR. Explain deferred
   versioned documentation and post-merge activation.
 - [ ] After the maintainer merges, enable Pages, verify successful deployment and

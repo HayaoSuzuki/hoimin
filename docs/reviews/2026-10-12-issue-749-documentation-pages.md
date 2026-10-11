@@ -89,3 +89,14 @@ code separately; checked the build invokes emitted validation and still rejects
 bad links. The expanded helper/selection/workflow tests pass (89 tests), including
 all 14 helper tests. Raw HTML repository references should use Markdown syntax
 for source-to-GitHub rewriting; raw HTML URLs address rendered output paths.
+
+## Integration after the release fix
+
+PR #798 merged as `c5b04a9`; local main was fast-forwarded and the documentation
+branch rebased onto it without conflicts. Default-dev Hypothesis is now present.
+After rebasing, frozen dependency sync, 137 helper/CI-selection/provenance tests,
+eight known action-pin contracts, Ruff format/check, ty, workflow lint and the
+strict site build with emitted-link validation passed. Source records were
+refreshed against the reachable rebased commits after reading their current
+content. Pages activation and live verification still require the documentation
+workflow's own merge.

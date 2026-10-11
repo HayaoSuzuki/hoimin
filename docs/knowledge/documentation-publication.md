@@ -3,31 +3,31 @@ type: Playbook
 title: ドキュメント公開
 description: mainの検索可能なサイト、公開権限、初回設定と再実行。
 status: draft
-catalog_revision: 921e9afc03c2ca5152b876640813250e7c63b8dc
+catalog_revision: 9eb8ed0d3690d45f77932afcfd457afbdbf43abd
 sources:
 - id: guide
   resource: ../documentation.md
-  revision: 4a1c86f0902aa300e846e1daa3b18f4282f15861
-  working_tree: modified
+  revision: 9eb8ed0d3690d45f77932afcfd457afbdbf43abd
+  working_tree: clean
   sha256: 445b302a3f05555175486e497bdac9b9d1e2081ebcdf9968f9a78807acfbb690
 - id: builder
   resource: ../../tools/docs_site.py
-  revision: 4a1c86f0902aa300e846e1daa3b18f4282f15861
-  working_tree: modified
+  revision: 9eb8ed0d3690d45f77932afcfd457afbdbf43abd
+  working_tree: clean
   sha256: a8b25c1152a7f2cfa964c74f0b4959bd462710f738bd78c120161c5f9ca38fc3
 - id: workflow
   resource: ../../.github/workflows/documentation.yml
-  revision: 921e9afc03c2ca5152b876640813250e7c63b8dc
+  revision: 9eb8ed0d3690d45f77932afcfd457afbdbf43abd
   working_tree: clean
-  sha256: d77b9e98f3c3ccdd85eff3dfa4bf0947547255f9754622a1df2a8fa1cd01fa05
+  sha256: e108d501ea258a8e61b1d5512bd45d55d1c09e4184a987516514da2ec31a59dc
 - id: tests
   resource: ../../tests/test_docs_site.py
-  revision: 4a1c86f0902aa300e846e1daa3b18f4282f15861
-  working_tree: modified
+  revision: 9eb8ed0d3690d45f77932afcfd457afbdbf43abd
+  working_tree: clean
   sha256: c2bc8b2d65bf14bdbc1f076351b5c3cd5b79b80c441525ec94565ab1f2067768
 - id: design
   resource: ../superpowers/specs/2026-10-12-issue-749-documentation-pages-design.md
-  revision: 921e9afc03c2ca5152b876640813250e7c63b8dc
+  revision: 9eb8ed0d3690d45f77932afcfd457afbdbf43abd
   working_tree: clean
   sha256: 683ffc6122e2372c7495fd02835de0abfd03ab8e7bd72770e6fc17de4807e56b
 ---
