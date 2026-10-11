@@ -7,12 +7,14 @@ catalog_revision: f397262
 sources:
 - id: django-experiment
   resource: ../superpowers/reports/2026-10-11-issue-790-django.md
-  working_tree: untracked
-  sha256: 99e11bcfecf07e56b7a12dce2c00035e4fae683d590899898716ec85f43bc0b0
+  revision: 93116fed96602628d04a2139645b3dfe1166e168
+  working_tree: modified
+  sha256: 7ae28e09ba8ddc8e2ad6f1dd8263cefb4ea770dfb58731cd565b67cf578c5689
 - id: experiment
   resource: ../superpowers/reports/2026-10-11-issue-790-proofreadtools.md
-  working_tree: untracked
-  sha256: eba7a49de174695b7978efe50a7a282110db5ab23630a2032e4bfcecbfa6b9fa
+  revision: 93116fed96602628d04a2139645b3dfe1166e168
+  working_tree: modified
+  sha256: cc82e35bb1e1d24398826289ca1225aa80a900e620be580163bf66d8175e387e
 - id: design
   resource: ../superpowers/specs/2026-10-11-issue-790-proofreadtools-design.md
   revision: 28fd9bf
@@ -27,9 +29,16 @@ sources:
 #790・#776・#777の研究対象として、proofreadtoolsの固定SHA `409ed955c0695ec04976842ba9fd22c64c03c33a` の長さ比関数をWindows・CPython 3.14で評価した。
 生成した18候補のうち既存operatorと正規化ASTが一致するものは4件で、既存の関連テストを通る別の候補1件から具体例テストを生成し、実workerで元成功・変異assertion失敗を確認した。[^experiment]
 
-## 採用範囲
+## 終了判断と保存範囲
 
-単一AST編集とHypothesisによる入力生成は、信頼する固定純粋関数への開発用PoCに限定する。
+2026-10-11、調査結果だけを残し、研究用コード・契約テスト・CI変更を最終PRから外して終了した。
+自動生成の成立例は得られたが、誘導探索の優位と継続保守に見合う効果は確認できず、製品機能への採用と追加実験は見送る。
+設計・計画・レビューは実験時の記録であり、今後の実装予定ではない。
+再実行には両報告が示す過去の実験コミットを使う。[^experiment][^django-experiment]
+
+## 実験時の適用範囲
+
+実験時の単一AST編集とHypothesisによる入力生成は、信頼する固定純粋関数への開発用PoCに限定した。
 無作為と誘導は同じ候補を各3反復で発見し、この小さい有限空間では誘導の優位を示せなかった。
 CrossHairでも同じ差を実CPythonで確認できたが、今回のCLI費用はHypothesisより大きく、製品組込みを見送る。[^experiment]
 

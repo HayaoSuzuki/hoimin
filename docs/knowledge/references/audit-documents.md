@@ -7,12 +7,14 @@ catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
 - id: issue-790-django-report
   resource: ../../superpowers/reports/2026-10-11-issue-790-django.md
-  working_tree: untracked
-  sha256: 99e11bcfecf07e56b7a12dce2c00035e4fae683d590899898716ec85f43bc0b0
+  revision: 93116fed96602628d04a2139645b3dfe1166e168
+  working_tree: modified
+  sha256: 7ae28e09ba8ddc8e2ad6f1dd8263cefb4ea770dfb58731cd565b67cf578c5689
 - id: issue-790-proofreadtools-report
   resource: ../../superpowers/reports/2026-10-11-issue-790-proofreadtools.md
-  working_tree: untracked
-  sha256: eba7a49de174695b7978efe50a7a282110db5ab23630a2032e4bfcecbfa6b9fa
+  revision: 93116fed96602628d04a2139645b3dfe1166e168
+  working_tree: modified
+  sha256: cc82e35bb1e1d24398826289ca1225aa80a900e620be580163bf66d8175e387e
 - id: issue-695-assessment
   resource: ../../superpowers/reports/issue-695/assessment.md
   revision: 76f03acdefefdc03aff6973b0d2b49f6f3598837
