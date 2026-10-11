@@ -3,7 +3,7 @@ type: Contract
 title: CIの選択と必須チェック
 description: 保守的な差分分類、結果集約、workflow検査の運用条件。
 status: draft
-catalog_revision: 6ec69f4ac926c887003e5509bb393289f0bc9e71
+catalog_revision: 79b6bde29b05e9904c8efff59e02d0c45377d7f7
 sources:
 - id: guide
   resource: ../ci.md
@@ -22,9 +22,9 @@ sources:
   sha256: 18675c9744ae8606570e0b42c9d54b4dc19fd39c00849f659585157a843c3f08
 - id: release
   resource: ../../.github/workflows/release.yml
-  revision: 52e12a30bf40cb8b0040e21e776c8b75bc37ccc6
+  revision: 79b6bde29b05e9904c8efff59e02d0c45377d7f7
   working_tree: modified
-  sha256: 197b961819a9962c98b9442c0143d3ae9ac97169ae8118deec0d3b5e65f7c1f4
+  sha256: 1432888965f0e344e82875b96a59b2ffb06c6185d1c63a5cd710d2d44bf7ee1f
 ---
 
 # 選択と集約の契約
@@ -45,6 +45,9 @@ previewは配布入力の変更時と手動実行時に選択し、マージ後�
 由来証明の書込jobもマージ後に限定し、公開は証明と照合の成功を要求する。
 対象と実機検証の範囲は[リリースの由来証明](release-provenance.md)を参照する。
 書込jobでPR headを実行しない。[^release]
+
+検証済みarchiveの独立実行とLinux wheelのglibc 2.17実行・ABI記録が成功した場合だけ証明へ進む。
+詳細と保証範囲は[配布物の実行検証](artifact-smoke.md)を参照する。[^release]
 
 PyPIへの公開は、GitHub Releaseの公開成功後に任意の有効化変数で別の`workflow_dispatch` runを起動する。TestPyPIの取得検証が成功した場合だけ本番へ進む。登録前は変数を未設定にし、詳細は[PyPIへのwheel公開](pypi-publishing.md)を参照する。[^release]
 

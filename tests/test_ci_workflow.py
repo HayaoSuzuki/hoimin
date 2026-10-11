@@ -461,6 +461,8 @@ def assert_github_release(workflow: str) -> None:
         "linux-wheel",
         "macos-wheel",
         "validate",
+        "archive-smoke",
+        "linux-abi",
         "attest",
         "publish",
         "pypi-prepare",
@@ -504,6 +506,7 @@ def assert_github_release(workflow: str) -> None:
             SETUP_PYTHON_ACTION,
             SETUP_UV_ACTION,
             UPLOAD_ARTIFACT_ACTION,
+            UPLOAD_ARTIFACT_ACTION,
         ]
         checkout = steps[0]
         assert checkout["with"] == {
@@ -513,7 +516,10 @@ def assert_github_release(workflow: str) -> None:
         maturin_versions.add(assert_wheel_build(job, target, platform))
         build = named_step(job, "Build wheel")
         smoke = next(step for step in steps if step.get("run") == WHEEL_SMOKE_COMMAND)
-        assert smoke == {"run": WHEEL_SMOKE_COMMAND}
+        assert smoke == {
+            "run": WHEEL_SMOKE_COMMAND,
+            "env": {"HOIMIN_SMOKE_REPORT": "wheel-smoke.json"},
+        }
         assert steps[steps.index(smoke) - 1] == {
             "run": "uv sync --frozen --no-install-project"
         }
@@ -594,9 +600,23 @@ def assert_github_release(workflow: str) -> None:
 
 
 def assert_release_provenance(jobs: dict[str, dict[str, object]]) -> None:
+    for smoke_job in (jobs["archive-smoke"], jobs["linux-abi"]):
+        assert smoke_job["needs"] == ["prepare", "validate"]
+        assert smoke_job["if"] == (
+            "!cancelled() && needs.prepare.result == 'success' && "
+            "needs.validate.result == 'success'"
+        )
+        download = next(
+            step
+            for step in job_steps(smoke_job)
+            if step.get("uses") == "actions/download-artifact"
+        )
+        assert download["with"] == {"name": "verified-release", "path": "dist"}
+        check = named_step(smoke_job, "Verify unchanged release assets")
+        assert " --verify" in string(check["run"])
     attest = jobs["attest"]
     assert jobs["publish"]["needs"] == ["prepare", "validate", "attest"]
-    assert attest["needs"] == ["prepare", "validate"]
+    assert attest["needs"] == ["prepare", "validate", "archive-smoke", "linux-abi"]
     assert attest["permissions"] == {
         "contents": "read",
         "id-token": "write",
@@ -604,7 +624,10 @@ def assert_release_provenance(jobs: dict[str, dict[str, object]]) -> None:
     }
     assert attest["if"] == (
         "!cancelled() && needs.prepare.result == 'success' && "
-        "needs.validate.result == 'success' && needs.prepare.outputs.publish == 'true'"
+        "needs.validate.result == 'success' && "
+        "needs.archive-smoke.result == 'success' && "
+        "needs.linux-abi.result == 'success' && "
+        "needs.prepare.outputs.publish == 'true'"
     )
     for name, job in jobs.items():
         if name not in {"attest", "testpypi-publish", "pypi-publish"}:
@@ -661,6 +684,9 @@ def assert_release_provenance(jobs: dict[str, dict[str, object]]) -> None:
         "missing-source-gate",
         "missing-signature-policy",
         "publish-without-attest",
+        "attest-without-archive-smoke",
+        "attest-without-linux-abi",
+        "smoke-unverified-bytes",
     ],
 )
 def test_release_provenance_rejects_broken_publication_contract(damage: str) -> None:
@@ -693,6 +719,19 @@ def test_release_provenance_rejects_broken_publication_contract(damage: str) -> 
         verification = named_step(attest, "Verify provenance and rejection policies")
         verification["run"] = string(verification["run"]).replace(
             '--signer-digest "$WORKFLOW_SHA"', ""
+        )
+    elif damage == "smoke-unverified-bytes":
+        download = next(
+            step
+            for step in job_steps(jobs["archive-smoke"])
+            if step.get("uses") == "actions/download-artifact"
+        )
+        download["with"] = {"pattern": "release-*", "path": "dist"}
+    elif damage.startswith("attest-without-"):
+        dependency = damage.removeprefix("attest-without-")
+        attest["needs"] = ["prepare", "validate"]
+        attest["if"] = string(attest["if"]).replace(
+            f"needs.{dependency}.result == 'success' && ", ""
         )
     else:
         jobs["publish"]["needs"] = ["prepare", "validate"]
@@ -2074,9 +2113,8 @@ def hostile_release_workflows() -> dict[str, str]:
         ),
         "literal publication token on expected smoke command": (
             workflow.replace(
-                "      - run: uv run --frozen --no-sync python tests/wheel_smoke.py\n",
-                "      - run: uv run --frozen --no-sync python tests/wheel_smoke.py\n"
-                "        env:\n"
+                "          HOIMIN_SMOKE_REPORT: wheel-smoke.json\n",
+                "          HOIMIN_SMOKE_REPORT: wheel-smoke.json\n"
                 "          UV_PUBLISH_TOKEN: pypi-hostile-token\n",
                 1,
             )

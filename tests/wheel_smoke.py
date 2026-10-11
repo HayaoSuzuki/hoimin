@@ -275,6 +275,64 @@ def write_fixture(root: Path) -> Path:
     return target
 
 
+def exercise_cli(
+    executable: Path, python: Path, fixture: Path, expected_version: str
+) -> None:
+    executable = executable.resolve(strict=True)
+    # A venv's interpreter may be a symlink: resolving it would escape that venv
+    # and lose its installed pytest. Keep the absolute invocation path instead.
+    python = python.absolute()
+    assert python.is_file(), python
+    environment = isolated_environment(os.environ)
+    fixture.mkdir(parents=True)
+    version = run([str(executable), "--version"], cwd=fixture, env=environment)
+    actual_version = (version.stdout + version.stderr).strip()
+    assert actual_version.startswith("hoimin "), actual_version
+    # Rust preview versions use -dev.N; Python wheel metadata uses .devN.
+    assert Version(actual_version.removeprefix("hoimin ")) == Version(
+        expected_version
+    ), (
+        actual_version,
+        expected_version,
+    )
+    help_result = run([str(executable), "--help"], cwd=fixture, env=environment)
+    assert_help_hides_python_option(help_result)
+    target = write_fixture(fixture)
+    original = hashlib.sha256(target.read_bytes()).digest()
+    completed = run(
+        [
+            str(executable),
+            "run",
+            "--root",
+            str(fixture),
+            "--source",
+            "src",
+            "--file",
+            "src/calc.py",
+            "--max-mutants",
+            "16",
+            "--max-candidates",
+            "64",
+            "--total-timeout",
+            "60s",
+            "--allow-best-effort-memory",
+            "--format",
+            "json",
+            "--",
+            str(python),
+            "-m",
+            "pytest",
+            "-q",
+        ],
+        cwd=fixture,
+        env=environment,
+    )
+    assert "--python" not in completed.stdout
+    assert_mutation_result(completed.stdout)
+    assert hashlib.sha256(target.read_bytes()).digest() == original
+    assert "PYTHONPATH" not in environment
+
+
 def main() -> int:
     wheel = wheel_path(
         environment=os.environ,
@@ -315,46 +373,26 @@ def main() -> int:
             env=environment,
         )
         executable = environment_hoimin(environment_root, is_windows=is_windows)
-        version = run(
-            [str(executable), "--version"], cwd=temporary_root, env=environment
+        exercise_cli(
+            executable, python, temporary_root / "project", str(project_identity()[1])
         )
-        assert (version.stdout + version.stderr).strip().startswith("hoimin ")
-
-        fixture = temporary_root / "project"
-        target = write_fixture(fixture)
-        original = hashlib.sha256(target.read_bytes()).digest()
-        completed = run(
-            [
-                str(executable),
-                "run",
-                "--root",
-                str(fixture),
-                "--source",
-                "src",
-                "--file",
-                "src/calc.py",
-                "--max-mutants",
-                "16",
-                "--max-candidates",
-                "64",
-                "--total-timeout",
-                "60s",
-                "--allow-best-effort-memory",
-                "--format",
-                "json",
-                "--",
-                str(python),
-                "-m",
-                "pytest",
-                "-q",
-            ],
-            cwd=fixture,
-            env=environment,
-        )
-        assert "--python" not in completed.stdout
-        assert_mutation_result(completed.stdout)
-        assert hashlib.sha256(target.read_bytes()).digest() == original
-        assert "PYTHONPATH" not in environment
+        if report := os.environ.get("HOIMIN_SMOKE_REPORT"):
+            Path(report).write_text(
+                json.dumps(
+                    {
+                        "wheel": wheel.name,
+                        "sha256": hashlib.sha256(wheel.read_bytes()).hexdigest(),
+                        "version": str(project_identity()[1]),
+                        "system": platform.platform(),
+                        "machine": platform.machine(),
+                        "python": platform.python_version(),
+                        "libc": platform.libc_ver(),
+                    },
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
 
     return 0
 
