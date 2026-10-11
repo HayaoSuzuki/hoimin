@@ -71,7 +71,7 @@ fn identity_and_update_contract() {
     let empty = ReviewState::default();
     let first = apply_update(&empty, Applicability::Current, 0, draft()).unwrap();
     assert_eq!(first.history[0].revision, 1);
-    assert!(empty.history.is_empty());
+    assert_eq!(empty.history, Vec::new());
     assert_eq!(
         apply_update(&first, Applicability::Current, 0, draft()),
         Err(UpdateRejection::RevisionConflict)
@@ -143,7 +143,7 @@ async fn plan_fixture() -> (tempfile::TempDir, std::path::PathBuf) {
     let output = crate::plan::create(args.into_run_config().unwrap())
         .await
         .unwrap();
-    assert!(!output.manifest.candidates.is_empty());
+    assert_ne!(output.manifest.candidates.len(), 0);
     let path = dir.path().join("plan.json");
     std::fs::write(&path, serde_json::to_vec(&output.manifest).unwrap()).unwrap();
     (dir, path)
@@ -153,7 +153,7 @@ async fn plan_fixture() -> (tempfile::TempDir, std::path::PathBuf) {
 async fn read_only_plan_does_not_execute() {
     let (_dir, path) = plan_fixture().await;
     let loaded = super::input::load_plan(&path).unwrap();
-    assert!(!loaded.manifest.candidates.is_empty());
+    assert_ne!(loaded.manifest.candidates.len(), 0);
     let mut value: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
     value["candidates"][0]["id"] = serde_json::Value::String("0".repeat(64));
@@ -241,7 +241,7 @@ async fn review_report_identity() {
             "baseline" => value["baseline"]["termination"]["Exit"] = 1.into(),
             "root" => {
                 value["run"]["normalized_config"]["root"] =
-                    std::env::temp_dir().to_str().unwrap().into()
+                    std::env::temp_dir().to_str().unwrap().into();
             }
             "summary" => value["summary"]["counts"]["killed"] = 9.into(),
             "descriptor" => value["mutants"][0]["candidate"]["original"] = "wrong".into(),
@@ -256,4 +256,98 @@ async fn review_report_identity() {
     }
     std::fs::write(&report_path, [original.as_slice(), b"\n{}\n"].concat()).unwrap();
     assert!(super::input::load_report(&report_path, &plan).is_err());
+}
+
+#[tokio::test]
+async fn review_does_not_change_execution_results() {
+    let (dir, path, report_path) = report_fixture().await;
+    let plan = super::input::load_plan(&path).unwrap();
+    let before = std::fs::read(&report_path).unwrap();
+    let reports = [
+        crate::progress::read_report(&report_path).unwrap(),
+        crate::progress::read_report(&report_path).unwrap(),
+    ];
+    let comparison =
+        crate::progress::compare_reports(&reports, std::num::NonZeroUsize::new(2).unwrap());
+    let candidate = &plan.manifest.candidates[0].candidate;
+    let args = crate::cli::parse_from(vec![
+        "hoimin".into(),
+        "review".into(),
+        "record".into(),
+        path.to_str().unwrap().to_owned(),
+        "--store".into(),
+        dir.path().join("reviews.sqlite3").to_str().unwrap().into(),
+        "--report".into(),
+        report_path.to_str().unwrap().into(),
+        "--candidate".into(),
+        candidate.id.clone(),
+        "--assessment".into(),
+        "suspected_equivalent".into(),
+        "--reason".into(),
+        "allowed reorder".into(),
+        "--expected-revision".into(),
+        "0".into(),
+        "--format".into(),
+        "json".into(),
+    ])
+    .unwrap();
+    let crate::cli::ParsedCommand::Review(args) = args else {
+        panic!("review")
+    };
+    let mut output = Vec::new();
+    super::run(&args, &mut output).unwrap();
+    let result: serde_json::Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(result["candidates"][0]["execution"]["status"], "killed");
+    assert_eq!(std::fs::read(&report_path).unwrap(), before);
+    let reports = [
+        crate::progress::read_report(&report_path).unwrap(),
+        crate::progress::read_report(&report_path).unwrap(),
+    ];
+    assert_eq!(
+        crate::progress::compare_reports(&reports, std::num::NonZeroUsize::new(2).unwrap()),
+        comparison
+    );
+}
+
+#[tokio::test]
+async fn review_report_missing_candidate_is_not_an_execution_result() {
+    let (dir, path, report_path) = report_fixture().await;
+    let plan = super::input::load_plan(&path).unwrap();
+    let candidate = &plan.manifest.candidates[1].candidate;
+    let mut argv = vec![
+        "hoimin".into(),
+        "review".into(),
+        "show".into(),
+        path.to_str().unwrap().to_owned(),
+        "--store".into(),
+        dir.path().join("reviews.sqlite3").to_str().unwrap().into(),
+        "--report".into(),
+        report_path.to_str().unwrap().into(),
+        "--candidate".into(),
+        candidate.id.clone(),
+        "--format".into(),
+        "json".into(),
+    ];
+    let mut output = Vec::new();
+    let mut errors = Vec::new();
+    assert_eq!(
+        crate::run_with_io(argv.clone(), &mut output, &mut errors).await,
+        0
+    );
+    let value: serde_json::Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(
+        value["candidates"][0]["execution"]["state"],
+        "not_in_report"
+    );
+    argv[2] = "record".into();
+    argv.extend([
+        "--assessment".into(),
+        "needs_investigation".into(),
+        "--reason".into(),
+        "missing".into(),
+        "--expected-revision".into(),
+        "0".into(),
+    ]);
+    assert_eq!(crate::run_with_io(argv, &mut output, &mut errors).await, 2);
+    assert!(!dir.path().join("reviews.sqlite3").exists());
 }

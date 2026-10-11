@@ -37,6 +37,8 @@ enum Command {
     Verify(RawVerifyArgs),
     /// Compare chronologically ordered mutation run reports.
     Progress(RawProgressArgs),
+    /// Record and inspect human assessments independently of test outcomes.
+    Review(ReviewCommand),
     /// Generate shell completion scripts.
     Completions(CompletionsArgs),
 }
@@ -46,6 +48,73 @@ pub struct CompletionsArgs {
     /// Shell to generate completions for.
     #[arg(value_enum)]
     pub shell: Shell,
+}
+
+#[derive(Debug, Args)]
+struct ReviewCommand {
+    #[command(subcommand)]
+    command: ReviewArgs,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ReviewArgs {
+    /// List current candidates and their assessments.
+    List(ReviewListArgs),
+    /// Show one candidate and its review history.
+    Show(ReviewShowArgs),
+    /// Append a human assessment using an expected revision.
+    Record(ReviewRecordArgs),
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, ValueEnum)]
+pub enum ReviewOutputFormat {
+    #[default]
+    Text,
+    Json,
+}
+
+#[derive(Debug, Args)]
+pub struct ReviewCommonArgs {
+    pub plan: PathBuf,
+    #[arg(long)]
+    pub store: PathBuf,
+    #[arg(long)]
+    pub report: Option<PathBuf>,
+    #[arg(long, value_enum, default_value = "text")]
+    pub format: ReviewOutputFormat,
+}
+
+#[derive(Debug, Args)]
+pub struct ReviewListArgs {
+    #[command(flatten)]
+    pub common: ReviewCommonArgs,
+    /// Include stored candidates absent from the current plan in a separate list.
+    #[arg(long)]
+    pub stale: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct ReviewShowArgs {
+    #[command(flatten)]
+    pub common: ReviewCommonArgs,
+    #[arg(long)]
+    pub candidate: String,
+}
+
+#[derive(Debug, Args)]
+pub struct ReviewRecordArgs {
+    #[command(flatten)]
+    pub common: ReviewCommonArgs,
+    #[arg(long)]
+    pub candidate: String,
+    #[arg(long, value_enum)]
+    pub assessment: crate::review::model::Assessment,
+    #[arg(long)]
+    pub reason: String,
+    #[arg(long)]
+    pub evidence: Vec<String>,
+    #[arg(long)]
+    pub expected_revision: u64,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
@@ -449,6 +518,7 @@ pub enum ParsedCommand {
     Plan(PlanArgs),
     Verify(VerifyArgs),
     Progress(ProgressArgs),
+    Review(ReviewArgs),
     Completions(CompletionsArgs),
 }
 
@@ -586,6 +656,7 @@ impl TryFrom<Command> for ParsedCommand {
                 patience: raw.patience,
                 format: raw.format,
             })),
+            Command::Review(args) => Ok(Self::Review(args.command)),
             Command::Completions(args) => Ok(Self::Completions(args)),
         }
     }

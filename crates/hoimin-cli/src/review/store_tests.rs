@@ -103,12 +103,12 @@ fn store_rollback_and_busy() {
             .append_failing(&key, SourceState::Fresh, 0, draft())
             .is_err()
     );
-    assert!(store.snapshot().unwrap().is_empty());
+    assert_eq!(store.snapshot().unwrap(), Vec::new());
     let db = rusqlite::Connection::open(&path).unwrap();
     db.execute_batch("BEGIN IMMEDIATE").unwrap();
     assert!(store.append(&key, SourceState::Fresh, 0, draft()).is_err());
     db.execute_batch("ROLLBACK").unwrap();
-    assert!(store.snapshot().unwrap().is_empty());
+    assert_eq!(store.snapshot().unwrap(), Vec::new());
 }
 
 #[test]

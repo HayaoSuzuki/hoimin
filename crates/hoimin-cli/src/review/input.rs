@@ -55,12 +55,11 @@ pub(crate) fn load_report(
             .candidates
             .iter()
             .find(|item| item.id == mutant.candidate.id)
+            && crate::plan::candidate_descriptor(&planned.candidate) != descriptor
         {
-            if crate::plan::candidate_descriptor(&planned.candidate) != descriptor {
-                return Err(ReviewError::Invalid(
-                    "report candidate descriptor differs from plan".into(),
-                ));
-            }
+            return Err(ReviewError::Invalid(
+                "report candidate descriptor differs from plan".into(),
+            ));
         }
     }
     let reference = ArtifactReference {
@@ -88,9 +87,8 @@ pub(crate) fn source_state(
             "candidate path must be root-relative".into(),
         ));
     }
-    let path = match std::fs::canonicalize(root.join(&candidate.path)) {
-        Ok(path) => path,
-        Err(_) => return Ok(SourceState::Unavailable),
+    let Ok(path) = std::fs::canonicalize(root.join(&candidate.path)) else {
+        return Ok(SourceState::Unavailable);
     };
     if !path.starts_with(root.as_std_path()) {
         return Err(ReviewError::Invalid(
@@ -98,9 +96,8 @@ pub(crate) fn source_state(
         ));
     }
     // Bound allocation before constructing the shared source validator.
-    let bytes = match bounded_read(&path, 64 * 1024 * 1024) {
-        Ok(bytes) => bytes,
-        Err(_) => return Ok(SourceState::Unavailable),
+    let Ok(bytes) = bounded_read(&path, 64 * 1024 * 1024) else {
+        return Ok(SourceState::Unavailable);
     };
     let context = CandidateValidationContext::new(&bytes)
         .map_err(|error| ReviewError::Invalid(error.to_string()))?;

@@ -115,6 +115,7 @@ async fn run_parsed_with_io<Stdout: std::io::Write, Stderr: std::io::Write>(
                 2
             }
         },
+        Ok(cli::ParsedCommand::Review(args)) => command_result(review::run(&args, stdout), stderr),
         Ok(cli::ParsedCommand::Completions(args)) => {
             cli::write_completions(args.shell, stdout);
             0
@@ -181,6 +182,19 @@ async fn run_parsed_with_io<Stdout: std::io::Write, Stderr: std::io::Write>(
             }
             exit_code
         }
+        Err(error) => {
+            let _ = writeln!(stderr, "{error}");
+            2
+        }
+    }
+}
+
+fn command_result(
+    result: Result<i32, impl std::fmt::Display>,
+    stderr: &mut impl std::io::Write,
+) -> i32 {
+    match result {
+        Ok(code) => code,
         Err(error) => {
             let _ = writeln!(stderr, "{error}");
             2
