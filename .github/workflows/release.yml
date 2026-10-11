@@ -256,13 +256,15 @@ jobs:
       - name: Build wheel
         env:
           MATURIN_VERSION: "1.15.0"
+          # Official v1.15.0 OCI index; includes linux/amd64 used by this runner.
+          MATURIN_IMAGE: ghcr.io/pyo3/maturin:v1.15.0@sha256:1c897d72a79c083cdea8829662f7b28e7657cf5b0d7f44fb4231e55998cf52ed
         shell: bash
         run: |
           # Build in manylinux2014; host builds link against Ubuntu's newer glibc.
           # Keep container-owned Cargo outputs separate from subsequent host builds.
           docker run --rm --volume "$PWD:/io" --workdir /io \
             --env CARGO_TARGET_DIR=/tmp/hoimin-wheel-target \
-            --entrypoint /bin/bash ghcr.io/pyo3/maturin:v"$MATURIN_VERSION" -euc '
+            --entrypoint /bin/bash "$MATURIN_IMAGE" -euc '
               maturin build --release --locked --compatibility manylinux2014 \
                 --no-default-features --target x86_64-unknown-linux-gnu --out target/wheels
               cargo install cargo-cyclonedx --version 0.5.7 --locked --root /tmp/sbom-tools
@@ -274,7 +276,7 @@ jobs:
           sudo chown -R "$(id -u):$(id -g)" target/wheels
           # --rm removes the build container, but the large manylinux image remains.
           # Reclaim it before smoke tests without lowering hoimin's 10 GiB reserve.
-          docker image rm ghcr.io/pyo3/maturin:v"$MATURIN_VERSION"
+          docker image rm "$MATURIN_IMAGE"
           df -h . /tmp
       - run: uv sync --frozen --no-install-project
       - run: uv run --frozen --no-sync python tests/wheel_smoke.py

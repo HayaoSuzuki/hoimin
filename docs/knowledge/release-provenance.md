@@ -6,9 +6,9 @@ status: draft
 sources:
 - id: workflow
   resource: ../../.github/workflows/release.yml
-  revision: 52e12a30bf40cb8b0040e21e776c8b75bc37ccc6
+  revision: fd416a6965a5732d75fa5519a5932e4a78a9e18a
   working_tree: modified
-  sha256: 197b961819a9962c98b9442c0143d3ae9ac97169ae8118deec0d3b5e65f7c1f4
+  sha256: 41d0e214da7f797d753143ab8ea6c7d9c36e3adad8b2c701281d543fc131c580
 - id: validator
   resource: ../../tools/release.py
   revision: a6965910bbc745e74aeb539628b3e2dc66c2a9d3
@@ -16,9 +16,9 @@ sources:
   sha256: 6799cf1bea1690e390e7bfa6b184ce0306105c655c95e8873b28c14b670c2184
 - id: guide
   resource: ../releases.md
-  revision: 52e12a30bf40cb8b0040e21e776c8b75bc37ccc6
+  revision: fd416a6965a5732d75fa5519a5932e4a78a9e18a
   working_tree: modified
-  sha256: cab75b11fc1b7ca03f24c37b845344b839cfdfd3f636b9e94776ea42079a58d9
+  sha256: 147e604b107011c8842c200280446eb1a71b18f4bd5407c6cda32972d5d9f61a
 - id: review
   resource: ../reviews/2026-10-10-issue-750-release-provenance.md
   revision: c08574663a363228fed310fbf75157831b4a5669
