@@ -3,6 +3,42 @@ use super::store::ReviewStore;
 use super::tests::{draft, key};
 
 #[test]
+fn store_rejects_changed_page_size_before_writing() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("reviews.sqlite3");
+    drop(ReviewStore::open_write(&path, &key().project).unwrap());
+    let connection = rusqlite::Connection::open(&path).unwrap();
+    connection
+        .execute_batch("PRAGMA page_size=8192; VACUUM;")
+        .unwrap();
+    drop(connection);
+    let bytes = std::fs::read(&path).unwrap();
+    assert!(ReviewStore::open_read(&path, &key().project).is_err());
+    assert!(ReviewStore::open_write(&path, &key().project).is_err());
+    assert_eq!(std::fs::read(&path).unwrap(), bytes);
+}
+
+#[test]
+fn committed_state_is_pinned_before_another_writer() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("reviews.sqlite3");
+    let key = key();
+    let mut a = ReviewStore::open_write(&path, &key.project).unwrap();
+    let saved = a.append(&key, SourceState::Fresh, 0, draft()).unwrap();
+    let mut b = ReviewStore::open_write(&path, &key.project).unwrap();
+    let mut later = draft();
+    later.assessment = Assessment::NotUseful;
+    b.append(&key, SourceState::Fresh, 1, later).unwrap();
+    assert_eq!(
+        a.snapshot().unwrap()[0].1.history.last().unwrap().revision,
+        2
+    );
+    assert_eq!(saved.history.last().unwrap().revision, 1);
+    assert_eq!(saved.history.len(), 1);
+    assert_eq!(saved.history[0].draft.assessment, Assessment::Actionable);
+}
+
+#[test]
 fn store_history_and_conflict() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("reviews.sqlite3");
@@ -18,6 +54,9 @@ fn store_history_and_conflict() {
         store
             .append(&key, SourceState::Fresh, 0, draft())
             .unwrap()
+            .history
+            .last()
+            .unwrap()
             .revision,
         1
     );
@@ -25,6 +64,9 @@ fn store_history_and_conflict() {
     assert_eq!(
         store
             .append(&key, SourceState::Fresh, 1, draft())
+            .unwrap()
+            .history
+            .last()
             .unwrap()
             .revision,
         2

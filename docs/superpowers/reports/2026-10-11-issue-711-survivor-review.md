@@ -60,7 +60,7 @@ Windowsの確認を、Linux/pinned版での検証成功と置き換えない。
 ## 検証の記録
 
 - 変更前CLI unit: sandboxではACL操作により失敗、同一binaryを制限外で実行して805成功・12 ignored。
-- review unit: 16成功。候補誤帰属、source鮮度、report不整合、保存履歴、競合、rollback、容量、journal aliasを含む。
+- review unit: 初回16成功、最終レビュー修正後21成功。候補誤帰属、source鮮度、report不整合、保存履歴、競合、rollback、容量、journal aliasを含む。
 - CLI統合: 2成功。record/list/show、revision競合、stale、保存後の出力失敗と再試行時の非重複を含む。
 - 共有reader変更後の既存CLI unit: 819成功・12 ignored。
 - progress input/decisionの既存Lean oracle: 4件+5件成功。
@@ -75,7 +75,7 @@ Windowsの確認を、Linux/pinned版での検証成功と置き換えない。
 Python全体は916成功・29 skipped・Git Bash harnessのtimeout 2件だった。
 workflow単独再実行では166成功・timeout 1件となり、全moduleを逐次起動するWindows harnessの60秒期限が不足した。
 このテスト期限だけ120秒へ変更し、実CIのLean 30秒・2 GiB制限は維持した。
-修正後の対象テストは66.31秒で成功した（旧60秒を超える）。Python全体の再実行は進行中。
+修正後の対象テストは66.31秒で成功した（旧60秒を超える）。Python全体の再実行は918成功・29 skipped・失敗0（220.55秒）だった。
 
 ## 実装セルフレビュー（5回）
 
@@ -113,3 +113,26 @@ Rust buildの段階間でcargo cleanを実施し、Task 3終了後には5.7 GiB�
 - [表示](../../../crates/hoimin-cli/src/review/render.rs)
 - [Lean証明](../../../formal/HoiminOracle/HoiminOracle/SurvivorReviewProofs.lean)
 - [Rust比較](../../../crates/hoimin-cli/tests/lean_survivor_review_oracle.rs)
+
+## 最終レビューと修正
+
+fresh contextのread-only reviewerがCritical 0件・Important 4件を指摘した。
+一回の修正passで次を修正した。
+
+1. commit後のsnapshot再読取りをなくし、source検査からrenderまでの全エラーへ保存済みrevisionを付ける。実source検査の失敗と既存broken writerの回帰を確認した。
+2. transaction内で確定したhistoryを返し、record出力をその状態に固定する。writer A保存後にwriter Bが更新する順序を固定し、DBはrevision2でもAの保存状態はrevision1/元評価のままであることを確認した。
+3. storeのpage_sizeを4096 byte必須とする。8192 byteへVACUUMした正規schema DBを読み書きとも拒否し、内容を変更しないことを確認した。既存16 MiB上限がpage数と一致する。
+4. 旧候補にもreportなしnot_loaded、report内欠落not_in_report、descriptor一致時の実statusを適用する。旧候補のoriginalが違うreportは拒否する。
+
+page_sizeと旧候補状態の回帰を修正前に実行して2失敗・16成功を確認した。
+保存状態保持・保存後エラーの新規契約は修正前の型/関数でcompile失敗を確認し、実装後は21 review unitが成功した。
+後者は既存コマンドを実行して観測したREDではなく、追加する内部契約に対するcompile REDである。
+Rust全体と厳格Clippyを修正後にも再実行中であり、提出前に結果を確認する。
+
+reviewerが判断を保留したLinux/Lean pinned版はGitHub CIで確認する。
+Python全体の保留は918成功で解消した。
+power lossとnetwork filesystemの実試験は範囲外で、既存文書の保証を拡大しない。
+Minor指摘はなかった。
+
+OKFは40 MarkdownのYAML/予約file、相対リンク、source ID重複、出典先、索引到達性、今回のreport hash/脚注を検査した。
+古いcatalogの全sourceに脚注があるという主張はしていない。今回変更した出典を検査対象とした。

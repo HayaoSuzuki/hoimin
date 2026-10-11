@@ -107,7 +107,7 @@ impl ReviewStore {
         source: SourceState,
         expected_revision: u64,
         draft: ReviewDraft,
-    ) -> Result<ReviewEvent, ReviewError> {
+    ) -> Result<ReviewState, ReviewError> {
         self.append_inner(key, source, expected_revision, draft, false)
     }
 
@@ -118,7 +118,7 @@ impl ReviewStore {
         source: SourceState,
         expected_revision: u64,
         draft: ReviewDraft,
-    ) -> Result<ReviewEvent, ReviewError> {
+    ) -> Result<ReviewState, ReviewError> {
         self.append_inner(key, source, expected_revision, draft, true)
     }
 
@@ -129,7 +129,7 @@ impl ReviewStore {
         expected_revision: u64,
         draft: ReviewDraft,
         fail_before_commit: bool,
-    ) -> Result<ReviewEvent, ReviewError> {
+    ) -> Result<ReviewState, ReviewError> {
         validate_draft(&draft)?;
         if key.project != self.project {
             return Err(invalid("store belongs to another project"));
@@ -178,7 +178,7 @@ impl ReviewStore {
             if fail_before_commit {
                 return Err(invalid("injected pre-commit failure"));
             }
-            Ok(event)
+            Ok(updated)
         })();
         match result {
             Ok(event) => {
@@ -265,6 +265,9 @@ fn validate_schema(connection: &Connection, project: &Utf8Path) -> Result<(), Re
     }
     let pages: i64 = connection.query_row("PRAGMA page_count", [], |row| row.get(0))?;
     let page_size: i64 = connection.query_row("PRAGMA page_size", [], |row| row.get(0))?;
+    if page_size != 4096 {
+        return Err(invalid("review store requires 4096-byte pages"));
+    }
     if pages.saturating_mul(page_size) > i64::try_from(DB_LIMIT).unwrap_or(i64::MAX) {
         return Err(invalid("review database exceeds 16 MiB"));
     }

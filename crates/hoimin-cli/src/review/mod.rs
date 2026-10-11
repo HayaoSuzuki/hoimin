@@ -53,83 +53,102 @@ pub fn run(args: &ReviewArgs, stdout: &mut dyn std::io::Write) -> Result<i32, Re
             "candidate ID is not in the plan".into(),
         ));
     }
-    let (mut store, saved_revision) = if let ReviewArgs::Record(args) = args {
-        let (store, revision) = record_store(args, &plan, report.as_ref(), &selected[0].candidate)?;
-        (Some(store), Some(revision))
+    let (snapshot, saved_revision) = if let ReviewArgs::Record(args) = args {
+        let (key, state) = record_store(args, &plan, report.as_ref(), &selected[0].candidate)?;
+        let revision = state.history.last().map_or(0, |event| event.revision);
+        (vec![(key, state)], Some(revision))
     } else {
-        (
-            store::ReviewStore::open_read(&common.store, &plan.project)?,
-            None,
-        )
+        let snapshot = store::ReviewStore::open_read(&common.store, &plan.project)?
+            .as_mut()
+            .map(store::ReviewStore::snapshot)
+            .transpose()?
+            .unwrap_or_default();
+        (snapshot, None)
     };
-    let snapshot = store
-        .as_mut()
-        .map(store::ReviewStore::snapshot)
-        .transpose()?
-        .unwrap_or_default();
-    let mut candidates = Vec::new();
-    for ranked in selected {
-        let candidate = &ranked.candidate;
-        let key = input::review_key(&plan.project, candidate);
-        let stored = snapshot
-            .iter()
-            .find(|(stored, _)| stored.candidate_id == key.candidate_id);
-        let empty = ReviewState::default();
-        let (stored_key, state) = stored.map_or((&key, &empty), |(key, state)| (key, state));
-        let applicable = model::applicability(
-            &key,
-            stored_key,
-            input::source_state(&plan.project, candidate)?,
-        );
-        if applicable == Applicability::IdentityConflict {
-            return Err(ReviewError::Invalid(
-                "stored candidate identity conflict".into(),
-            ));
-        }
-        let execution = report
-            .as_ref()
-            .map_or(ReviewExecution::NotLoaded, |(report, _)| {
-                report
-                    .mutants
-                    .iter()
-                    .find(|mutant| mutant.candidate.id == candidate.id)
-                    .map_or(ReviewExecution::NotInReport, |mutant| {
-                        ReviewExecution::Result(mutant.status)
-                    })
+    saved_output(saved_revision, || {
+        let mut candidates = Vec::new();
+        for ranked in selected {
+            let candidate = &ranked.candidate;
+            let key = input::review_key(&plan.project, candidate);
+            let stored = snapshot
+                .iter()
+                .find(|(stored, _)| stored.candidate_id == key.candidate_id);
+            let empty = ReviewState::default();
+            let (stored_key, state) = stored.map_or((&key, &empty), |(key, state)| (key, state));
+            let applicable = model::applicability(
+                &key,
+                stored_key,
+                input::source_state(&plan.project, candidate)?,
+            );
+            if applicable == Applicability::IdentityConflict {
+                return Err(ReviewError::Invalid(
+                    "stored candidate identity conflict".into(),
+                ));
+            }
+            let execution = execution(candidate, report.as_ref().map(|(report, _)| report))?;
+            candidates.push(ReviewRow {
+                candidate: candidate.clone(),
+                execution,
+                review: (applicable == Applicability::Current)
+                    .then(|| state.history.last().cloned())
+                    .flatten(),
+                applicability: applicable,
+                history: state.history.clone(),
             });
-        candidates.push(ReviewRow {
-            candidate: candidate.clone(),
-            execution,
-            review: (applicable == Applicability::Current)
-                .then(|| state.history.last().cloned())
-                .flatten(),
-            applicability: applicable,
-            history: state.history.clone(),
-        });
-    }
-    let stale_candidates = if include_stale {
-        stale_rows(&plan, &snapshot)
-    } else {
-        Vec::new()
+        }
+        let stale_candidates = if include_stale {
+            stale_rows(&plan, &snapshot, report.as_ref().map(|(report, _)| report))?
+        } else {
+            Vec::new()
+        };
+        let document = ReviewDocument {
+            schema_version: 1,
+            command,
+            project: plan.project.clone(),
+            operators: render::counts(&candidates),
+            candidates,
+            stale_candidates,
+        };
+        render::write(&document, common.format, stdout)?;
+        Ok(0)
+    })
+}
+
+fn saved_output<T>(
+    revision: Option<u64>,
+    operation: impl FnOnce() -> Result<T, ReviewError>,
+) -> Result<T, ReviewError> {
+    operation().map_err(|error| match revision {
+        Some(revision) => ReviewError::SavedOutput {
+            revision,
+            message: error.to_string(),
+        },
+        None => error,
+    })
+}
+
+fn execution(
+    candidate: &hoimin_core::MutationCandidate,
+    report: Option<&crate::progress::input::ReviewReport>,
+) -> Result<ReviewExecution, ReviewError> {
+    let Some(report) = report else {
+        return Ok(ReviewExecution::NotLoaded);
     };
-    let document = ReviewDocument {
-        schema_version: 1,
-        command,
-        project: plan.project,
-        operators: render::counts(&candidates),
-        candidates,
-        stale_candidates,
+    let Some(mutant) = report
+        .mutants
+        .iter()
+        .find(|mutant| mutant.candidate.id == candidate.id)
+    else {
+        return Ok(ReviewExecution::NotInReport);
     };
-    if let Err(error) = render::write(&document, common.format, stdout) {
-        return Err(match saved_revision {
-            Some(revision) => ReviewError::SavedOutput {
-                revision,
-                message: error.to_string(),
-            },
-            None => error,
-        });
+    if crate::plan::candidate_descriptor(candidate)
+        != crate::plan::candidate_descriptor(&mutant.candidate)
+    {
+        return Err(ReviewError::Invalid(
+            "report candidate descriptor differs from stored candidate".into(),
+        ));
     }
-    Ok(0)
+    Ok(ReviewExecution::Result(mutant.status))
 }
 
 #[cfg(test)]
@@ -142,7 +161,7 @@ fn record_store(
     plan: &crate::plan::ReadOnlyPlan,
     report: Option<&(crate::progress::input::ReviewReport, ArtifactReference)>,
     candidate: &hoimin_core::MutationCandidate,
-) -> Result<(store::ReviewStore, u64), ReviewError> {
+) -> Result<(model::ReviewKey, ReviewState), ReviewError> {
     if report.is_some_and(|(report, _)| {
         !report
             .mutants
@@ -178,19 +197,16 @@ fn record_store(
     };
     model::validate_draft(&draft)?;
     let mut store = store::ReviewStore::open_write(&args.common.store, &plan.project)?;
-    let event = store.append(
-        &input::review_key(&plan.project, candidate),
-        source,
-        args.expected_revision,
-        draft,
-    )?;
-    Ok((store, event.revision))
+    let key = input::review_key(&plan.project, candidate);
+    let state = store.append(&key, source, args.expected_revision, draft)?;
+    Ok((key, state))
 }
 
 fn stale_rows(
     plan: &crate::plan::ReadOnlyPlan,
     snapshot: &[(model::ReviewKey, ReviewState)],
-) -> Vec<ReviewRow> {
+    report: Option<&crate::progress::input::ReviewReport>,
+) -> Result<Vec<ReviewRow>, ReviewError> {
     let mut stale_candidates = Vec::new();
     for (key, state) in snapshot {
         if plan
@@ -202,25 +218,26 @@ fn stale_rows(
             continue;
         }
         let descriptor = &key.descriptor;
+        let candidate = hoimin_core::MutationCandidate {
+            id: key.candidate_id.clone(),
+            sequence: 0,
+            path: descriptor.path.clone(),
+            span: descriptor.span,
+            original: descriptor.original.clone(),
+            replacement: descriptor.replacement.clone(),
+            operator: descriptor.operator.clone(),
+            line: descriptor.line,
+            column: descriptor.column,
+            symbol: descriptor.symbol.clone(),
+            file_hash: descriptor.file_hash.clone(),
+        };
         stale_candidates.push(ReviewRow {
-            candidate: hoimin_core::MutationCandidate {
-                id: key.candidate_id.clone(),
-                sequence: 0,
-                path: descriptor.path.clone(),
-                span: descriptor.span,
-                original: descriptor.original.clone(),
-                replacement: descriptor.replacement.clone(),
-                operator: descriptor.operator.clone(),
-                line: descriptor.line,
-                column: descriptor.column,
-                symbol: descriptor.symbol.clone(),
-                file_hash: descriptor.file_hash.clone(),
-            },
-            execution: ReviewExecution::NotInReport,
+            execution: execution(&candidate, report)?,
+            candidate,
             review: None,
             applicability: Applicability::Stale,
             history: state.history.clone(),
         });
     }
-    stale_candidates
+    Ok(stale_candidates)
 }

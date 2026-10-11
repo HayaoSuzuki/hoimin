@@ -41,6 +41,28 @@ pub(super) fn draft() -> ReviewDraft {
     }
 }
 
+#[tokio::test]
+async fn post_commit_validation_failure_reports_saved_revision() {
+    let (dir, path) = plan_fixture().await;
+    let plan = super::input::load_plan(&path).unwrap();
+    let mut candidate = plan.manifest.candidates[0].candidate.clone();
+    let key = super::input::review_key(&plan.project, &candidate);
+    let mut store =
+        super::store::ReviewStore::open_write(&dir.path().join("reviews.sqlite3"), &plan.project)
+            .unwrap();
+    let state = store.append(&key, SourceState::Fresh, 0, draft()).unwrap();
+    let revision = state.history.last().unwrap().revision;
+    candidate.path = "../escaped.py".into();
+    let result = super::saved_output(Some(revision), || {
+        super::input::source_state(&plan.project, &candidate)
+    });
+    assert!(matches!(
+        result,
+        Err(super::ReviewError::SavedOutput { revision: 1, .. })
+    ));
+    assert_eq!(store.snapshot().unwrap()[0].1.history.len(), 1);
+}
+
 #[test]
 fn identity_and_update_contract() {
     let original = key();
@@ -150,6 +172,20 @@ async fn plan_fixture() -> (tempfile::TempDir, std::path::PathBuf) {
 }
 
 #[tokio::test]
+async fn old_candidate_without_report_is_not_loaded() {
+    let (_dir, path) = plan_fixture().await;
+    let mut plan = super::input::load_plan(&path).unwrap();
+    let key =
+        super::input::review_key(&plan.project, &plan.manifest.candidates.remove(0).candidate);
+    let state = apply_update(&ReviewState::default(), Applicability::Current, 0, draft()).unwrap();
+    let rows = super::stale_rows(&plan, &[(key, state)], None).unwrap();
+    assert!(matches!(
+        rows[0].execution,
+        super::render::ReviewExecution::NotLoaded
+    ));
+}
+
+#[tokio::test]
 async fn read_only_plan_does_not_execute() {
     let (_dir, path) = plan_fixture().await;
     let loaded = super::input::load_plan(&path).unwrap();
@@ -234,6 +270,23 @@ async fn report_fixture() -> (tempfile::TempDir, std::path::PathBuf, std::path::
     let report_path = dir.path().join("report.json");
     std::fs::write(&report_path, serde_json::to_vec(&report).unwrap()).unwrap();
     (dir, path, report_path)
+}
+
+#[tokio::test]
+async fn old_candidate_report_requires_full_descriptor_match() {
+    let (_dir, path, report_path) = report_fixture().await;
+    let mut plan = super::input::load_plan(&path).unwrap();
+    let (report, _) = super::input::load_report(&report_path, &plan).unwrap();
+    let mut key =
+        super::input::review_key(&plan.project, &plan.manifest.candidates.remove(0).candidate);
+    let state = apply_update(&ReviewState::default(), Applicability::Current, 0, draft()).unwrap();
+    let rows = super::stale_rows(&plan, &[(key.clone(), state.clone())], Some(&report)).unwrap();
+    assert!(matches!(
+        rows[0].execution,
+        super::render::ReviewExecution::Result(hoimin_core::MutationStatus::Killed)
+    ));
+    key.descriptor.original = "different".into();
+    assert!(super::stale_rows(&plan, &[(key, state)], Some(&report)).is_err());
 }
 
 #[tokio::test]
