@@ -226,14 +226,12 @@ fn nested_try_internal_rows_match_post_finally_production_exits() {
     let cases = parse_corpus(CORPUS).expect("Lean corpus must satisfy the adapter schema");
     let selected =
         selected_cases(&cases).expect("single-case filter must select a closed identity");
-    if std::env::var_os("HOIMIN_NESTED_TRY_CASE").is_some()
-        && selected[0].mode != "internal-fixture"
-    {
-        panic!(
-            "single-case internal adapter cannot execute mode {}",
-            selected[0].mode
-        );
-    }
+    assert!(
+        std::env::var_os("HOIMIN_NESTED_TRY_CASE").is_none()
+            || selected[0].mode == "internal-fixture",
+        "single-case internal adapter cannot execute mode {}",
+        selected[0].mode
+    );
     for item in selected
         .into_iter()
         .filter(|item| item.mode == "internal-fixture")

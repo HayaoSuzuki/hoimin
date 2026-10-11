@@ -3,6 +3,8 @@ use hoimin_cli::review::model::*;
 use hoimin_core::{ByteSpan, CandidateDescriptor, CandidateIdentity, stable_mutant_id};
 use serde::Deserialize;
 
+type KeyMutation = (&'static str, fn(&mut ReviewKey));
+
 const CORPUS: &str = include_str!("../../../formal/HoiminOracle/corpus/survivor-review.jsonl");
 
 #[derive(Deserialize)]
@@ -39,29 +41,32 @@ fn pure_review_matches_lean_identity_and_history_cases() {
         let case: Case = serde_json::from_str(line).unwrap();
         assert_eq!(case.schema, 1);
         let mut stored = key.clone();
-        match case.difference.as_str() {
-            "same" => (),
-            "project" => stored.project = "/other".into(),
-            "id" => stored.candidate_id = "0".repeat(64),
-            "schema" => stored.descriptor.schema_version = 2,
-            "path" => stored.descriptor.path = "other.py".into(),
-            "span" => stored.descriptor.span.start = 1,
-            "length" => stored.descriptor.span.length = 2,
-            "original" => stored.descriptor.original = "9".into(),
-            "replacement" => stored.descriptor.replacement = "3".into(),
-            "operator" => stored.descriptor.operator = "other".into(),
-            "line" => stored.descriptor.line = 2,
-            "column" => stored.descriptor.column = 1,
-            "symbol" => stored.descriptor.symbol = Some("f".into()),
-            "hash" => stored.descriptor.file_hash = "b".repeat(64),
-            _ => panic!("unknown difference"),
-        }
-        let source = match case.source {
-            0 => SourceState::Fresh,
-            1 => SourceState::Stale,
-            2 => SourceState::Unavailable,
-            _ => panic!("unknown source"),
-        };
+        let differences: [KeyMutation; 14] = [
+            ("same", |_| ()),
+            ("project", |key| key.project = "/other".into()),
+            ("id", |key| key.candidate_id = "0".repeat(64)),
+            ("schema", |key| key.descriptor.schema_version = 2),
+            ("path", |key| key.descriptor.path = "other.py".into()),
+            ("span", |key| key.descriptor.span.start = 1),
+            ("length", |key| key.descriptor.span.length = 2),
+            ("original", |key| key.descriptor.original = "9".into()),
+            ("replacement", |key| key.descriptor.replacement = "3".into()),
+            ("operator", |key| key.descriptor.operator = "other".into()),
+            ("line", |key| key.descriptor.line = 2),
+            ("column", |key| key.descriptor.column = 1),
+            ("symbol", |key| key.descriptor.symbol = Some("f".into())),
+            ("hash", |key| key.descriptor.file_hash = "b".repeat(64)),
+        ];
+        differences
+            .iter()
+            .find(|(name, _)| *name == case.difference)
+            .expect("registered difference")
+            .1(&mut stored);
+        let source = [
+            SourceState::Fresh,
+            SourceState::Stale,
+            SourceState::Unavailable,
+        ][usize::from(case.source)];
         let applicable = applicability(&key, &stored, source);
         assert_eq!(
             serde_json::to_value(applicable).unwrap(),
@@ -69,26 +74,25 @@ fn pure_review_matches_lean_identity_and_history_cases() {
             "{line}"
         );
         let state = ReviewState {
-            history: if case.current == 0 {
-                vec![]
-            } else {
-                vec![ReviewEvent {
+            history: (case.current != 0)
+                .then_some(ReviewEvent {
                     revision: case.current,
                     draft: draft.clone(),
-                }]
-            },
+                })
+                .into_iter()
+                .collect(),
         };
-        let (result, next) = match apply_update(&state, applicable, case.expected, draft.clone()) {
-            Ok(next) => ("accepted", next),
-            Err(reason) => (
-                match reason {
-                    UpdateRejection::NotCurrent => "not_current",
-                    UpdateRejection::RevisionConflict => "revision_conflict",
-                    UpdateRejection::RevisionOverflow => "revision_overflow",
-                },
-                state.clone(),
-            ),
-        };
+        let mut expected_history = state.history.clone();
+        expected_history.extend((case.result == "accepted").then_some(ReviewEvent {
+            revision: case.next_revision,
+            draft: draft.clone(),
+        }));
+
+        let (result, next) = apply_update(&state, applicable, case.expected, draft.clone())
+            .map_or_else(
+                |reason| (rejection_name(reason), state.clone()),
+                |next| ("accepted", next),
+            );
         assert_eq!(result, case.result, "{line}");
         assert_eq!(
             next.history.last().map_or(0, |event| event.revision),
@@ -103,14 +107,20 @@ fn pure_review_matches_lean_identity_and_history_cases() {
             case.history,
             "{line}"
         );
-        if result == "accepted" {
-            assert_eq!(
-                &next.history[..state.history.len()],
-                state.history.as_slice()
-            );
-        } else {
-            assert_eq!(next, state);
-        }
+        assert_eq!(
+            next,
+            ReviewState {
+                history: expected_history
+            }
+        );
+    }
+}
+
+fn rejection_name(reason: UpdateRejection) -> &'static str {
+    match reason {
+        UpdateRejection::NotCurrent => "not_current",
+        UpdateRejection::RevisionConflict => "revision_conflict",
+        UpdateRejection::RevisionOverflow => "revision_overflow",
     }
 }
 

@@ -174,6 +174,13 @@ fn run_fifo_operation(
     completed
 }
 
+fn available_file_symlink(target: PathBuf, link: &Path) -> Vec<()> {
+    link_created_or_platform_denied(create_file_symlink(target, link))
+        .then_some(())
+        .into_iter()
+        .collect()
+}
+
 fn link_created_or_platform_denied(result: std::io::Result<()>) -> bool {
     match result {
         Ok(()) => true,
@@ -309,22 +316,20 @@ fn colon_paths_can_be_explicitly_excluded_from_copy_and_integrity_checks() {
     let project = FixtureProject::new();
     let file = ".dockerfiles/appconfig/app:env:conf-sample";
     let tree = "fixtures:local";
-    for literal in [false, true] {
+    for options in [
+        CopyOptions {
+            excludes: vec![file.into(), tree.into()],
+            includes: vec!["**".into()],
+            ..CopyOptions::default()
+        },
+        CopyOptions {
+            literal_exclusions: vec![File(file.into()), Tree(tree.into())],
+            includes: vec!["**".into()],
+            ..CopyOptions::default()
+        },
+    ] {
         write_file(project.temp.path(), file, b"fixture\n");
         write_file(project.temp.path(), "fixtures:local/data.txt", b"fixture\n");
-        let options = if literal {
-            CopyOptions {
-                literal_exclusions: vec![File(file.into()), Tree(tree.into())],
-                includes: vec!["**".into()],
-                ..CopyOptions::default()
-            }
-        } else {
-            CopyOptions {
-                excludes: vec![file.into(), tree.into()],
-                includes: vec!["**".into()],
-                ..CopyOptions::default()
-            }
-        };
         let plan = preflight_plan(project.root(), 1, options);
         let grant = grant_plan(&plan, plan.aggregate_bytes());
         let worker = plan
@@ -392,17 +397,25 @@ fn windows_reset_handles_or_explicitly_rejects_a_lone_surrogate_name() {
         .root()
         .as_std_path()
         .join(OsString::from_wide(&[u16::from(b'x'), 0xD800]));
-    match fs::write(&native_path, b"untracked") {
-        Ok(()) => {
-            worker.reset().unwrap();
-            assert!(!native_path.exists());
+    for () in lone_surrogate_entry(&native_path) {
+        worker.reset().unwrap();
+        assert!(!native_path.exists());
+    }
+}
+
+#[cfg(windows)]
+fn lone_surrogate_entry(native_path: &Path) -> Vec<()> {
+    match fs::write(native_path, b"untracked") {
+        Ok(()) => vec![()],
+        Err(error) => {
+            assert!(
+                error.kind() == std::io::ErrorKind::InvalidInput
+                    || error.kind() == std::io::ErrorKind::PermissionDenied
+                    || error.raw_os_error() == Some(123),
+                "unexpected Windows lone-surrogate setup failure: {error}"
+            );
+            vec![]
         }
-        Err(error) => assert!(
-            error.kind() == std::io::ErrorKind::InvalidInput
-                || error.kind() == std::io::ErrorKind::PermissionDenied
-                || error.raw_os_error() == Some(123),
-            "unexpected Windows lone-surrogate setup failure: {error}"
-        ),
     }
 }
 
@@ -531,11 +544,11 @@ fn cleanup_restores_access_to_the_temporary_wrapper() {
     let wrapper = worker.root().parent().unwrap().to_owned();
     make_cleanup_wrapper_inaccessible(wrapper.as_std_path());
 
-    if let Err(error) = worker.try_cleanup() {
+    worker.try_cleanup().unwrap_or_else(|error| {
         make_cleanup_wrapper_accessible(wrapper.as_std_path());
         worker.try_cleanup().unwrap();
         panic!("cleanup did not restore wrapper permissions: {error}");
-    }
+    });
 
     assert!(!wrapper.exists());
 }
@@ -763,22 +776,17 @@ fn explicit_exclude_wins_over_include_and_gitignore() {
 fn skips_symlink_with_typed_diagnostic() {
     let project = FixtureProject::new();
     let link = project.temp.path().join("linked.py");
-    if !link_created_or_platform_denied(create_file_symlink(
-        project.temp.path().join("pkg/a.py"),
-        &link,
-    )) {
-        return;
+    for () in available_file_symlink(project.temp.path().join("pkg/a.py"), &link) {
+        let plan = preflight_plan(project.root(), 1, CopyOptions::default());
+
+        assert_eq!(
+            plan.diagnostics(),
+            &[WorkspaceDiagnostic::SymlinkSkipped {
+                path: Utf8PathBuf::from("linked.py")
+            }]
+        );
+        assert!(plan.manifest().entry(Utf8Path::new("linked.py")).is_none());
     }
-
-    let plan = preflight_plan(project.root(), 1, CopyOptions::default());
-
-    assert_eq!(
-        plan.diagnostics(),
-        &[WorkspaceDiagnostic::SymlinkSkipped {
-            path: Utf8PathBuf::from("linked.py")
-        }]
-    );
-    assert!(plan.manifest().entry(Utf8Path::new("linked.py")).is_none());
 }
 
 #[cfg(unix)]
@@ -938,18 +946,13 @@ fn mutation_rejects_linked_target_with_matching_bytes() {
     fs::write(outside.path(), b"original\n").unwrap();
     let target = worker.root().join("pkg/a.py");
     fs::remove_file(&target).unwrap();
-    if !link_created_or_platform_denied(create_file_symlink(
-        outside.path().to_path_buf(),
-        target.as_std_path(),
-    )) {
-        return;
+    for () in available_file_symlink(outside.path().to_path_buf(), target.as_std_path()) {
+        assert!(matches!(
+            worker.apply_mutation(&candidate),
+            Err(WorkspaceError::InvalidPath { .. })
+        ));
+        assert_eq!(fs::read(outside.path()).unwrap(), b"original\n");
     }
-
-    assert!(matches!(
-        worker.apply_mutation(&candidate),
-        Err(WorkspaceError::InvalidPath { .. })
-    ));
-    assert_eq!(fs::read(outside.path()).unwrap(), b"original\n");
 }
 
 #[test]
@@ -1173,7 +1176,10 @@ fn explicit_close_removes_active_worker_before_handler_drop() {
 #[test]
 fn literal_artifacts_are_omitted_from_copy_and_every_integrity_check() {
     use hoimin_cli::workspace::LiteralExclusion::{File, Tree};
-    for include in [false, true] {
+    for (includes, gitignore) in [
+        (vec![], b"".as_slice()),
+        (vec!["**".into()], b"*.db*\n.*hoimin*\n"),
+    ] {
         let project = FixtureProject::new();
         let artifacts = [
             "active[1].db",
@@ -1206,14 +1212,14 @@ fn literal_artifacts_are_omitted_from_copy_and_every_integrity_check() {
         for path in fixtures {
             write_file(project.temp.path(), path, b"fixture bytes");
         }
-        if include {
-            write_file(project.temp.path(), ".gitignore", b"*.db*\n.*hoimin*\n");
+        for contents in std::iter::once(gitignore).filter(|contents| !contents.is_empty()) {
+            fs::write(project.temp.path().join(".gitignore"), contents).unwrap();
         }
         let plan = preflight_plan(
             project.root(),
             2,
             CopyOptions {
-                includes: if include { vec!["**".into()] } else { vec![] },
+                includes,
                 excludes: vec![],
                 literal_exclusions: exclusions,
             },

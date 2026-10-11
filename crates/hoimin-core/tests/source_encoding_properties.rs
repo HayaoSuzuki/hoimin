@@ -27,10 +27,8 @@ proptest! {
             prop_assert_eq!(decoded.raw_to_utf8(raw), Some(utf8));
             prop_assert_eq!(decoded.utf8_to_raw(utf8), Some(raw));
         }
-        for offset in 0..expected.len() {
-            if !expected.is_char_boundary(offset) {
-                prop_assert_eq!(decoded.utf8_to_raw(offset), None);
-            }
+        for offset in (0..expected.len()).filter(|&offset| !expected.is_char_boundary(offset)) {
+            prop_assert_eq!(decoded.utf8_to_raw(offset), None);
         }
         for offset in [source.len() + 1, usize::MAX] {
             prop_assert_eq!(decoded.raw_to_utf8(offset), None);
@@ -46,7 +44,7 @@ proptest! {
         bom in any::<bool>(),
     ) {
         // An explicit first-line cookie isolates coordinate mapping from cookie parsing.
-        let mut source = if bom { "\u{feff}" } else { "" }.to_owned();
+        let mut source = ["", "\u{feff}"][usize::from(bom)].to_owned();
         source.push_str("# coding: utf-8\n");
         source.extend(characters);
         let decoded = decode_python_source(source.as_bytes())?;

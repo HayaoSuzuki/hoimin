@@ -2163,20 +2163,20 @@ mod tests {
         let second = ReservationId(2);
         let unexpected = ReservationId(3);
 
-        assert!(cleanup_reservations_match(
-            &[first, second],
-            &[second, first]
-        ));
-        assert!(!cleanup_reservations_match(&[first, second], &[]));
-        assert!(!cleanup_reservations_match(&[first, second], &[first]));
-        assert!(!cleanup_reservations_match(
-            &[first, second],
-            &[first, second, second]
-        ));
-        assert!(!cleanup_reservations_match(
-            &[first, second],
-            &[first, second, unexpected]
-        ));
+        let expected = [first, second];
+        let cases = [
+            (vec![second, first], true),
+            (vec![], false),
+            (vec![first], false),
+            (vec![first, second, second], false),
+            (vec![first, second, unexpected], false),
+        ];
+
+        for (received, accepted) in cases {
+            let matches = cleanup_reservations_match(&expected, &received);
+
+            assert_eq!(matches, accepted, "{received:?}");
+        }
     }
 
     fn audit_config() -> RunConfig {
@@ -2303,10 +2303,9 @@ mod tests {
                 survivors: case.expected_policy.survivors,
                 interrupted: case.expected_policy.interrupted,
             };
-            assert_eq!(state.exit_policy(), expected_policy, "{}", case.id);
-            assert_eq!(state.complete(), case.expected_complete, "{}", case.id);
-            assert_eq!(state.exit_code(), case.expected_exit_code, "{}", case.id);
-
+            let policy = state.exit_policy();
+            let complete = state.complete();
+            let exit_code = state.exit_code();
             let effects = state.final_report_effects().unwrap();
             let RunEffect::EmitOutput(output) = &effects[0] else {
                 panic!("expected final output effect");
@@ -2316,6 +2315,10 @@ mod tests {
             let OutputEvent::RunFinished(finished) = decoded else {
                 panic!("expected public RunFinished event");
             };
+
+            assert_eq!(policy, expected_policy, "{}", case.id);
+            assert_eq!(complete, case.expected_complete, "{}", case.id);
+            assert_eq!(exit_code, case.expected_exit_code, "{}", case.id);
             assert_eq!(
                 finished.counts.killed, case.expected_counts.killed,
                 "{}",
@@ -2408,16 +2411,9 @@ mod tests {
                                 survivors: summary.survivors,
                                 interrupted,
                             };
-                            assert_eq!(state.exit_policy(), expected);
-                            assert_eq!(state.exit_code(), exit_code_for(expected));
-                            assert_eq!(
-                                state.complete(),
-                                !expected.infrastructure_error
-                                    && !expected.baseline_failed
-                                    && !expected.incomplete
-                                    && !expected.interrupted
-                            );
-
+                            let policy = state.exit_policy();
+                            let exit_code = state.exit_code();
+                            let complete = state.complete();
                             let effects = state.final_report_effects().unwrap();
                             let RunEffect::EmitOutput(output) = &effects[0] else {
                                 panic!("expected final output effect");
@@ -2427,9 +2423,19 @@ mod tests {
                             let OutputEvent::RunFinished(finished) = decoded else {
                                 panic!("expected public RunFinished event");
                             };
+
+                            assert_eq!(policy, expected);
+                            assert_eq!(exit_code, exit_code_for(expected));
+                            assert_eq!(
+                                complete,
+                                !expected.infrastructure_error
+                                    && !expected.baseline_failed
+                                    && !expected.incomplete
+                                    && !expected.interrupted
+                            );
                             assert_eq!(finished.counts, state.summary);
-                            assert_eq!(finished.complete, state.complete());
-                            assert_eq!(finished.exit_code, state.exit_code());
+                            assert_eq!(finished.complete, complete);
+                            assert_eq!(finished.exit_code, exit_code);
                         }
                     }
                 }

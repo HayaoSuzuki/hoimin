@@ -999,11 +999,11 @@ mod ordered_history_tests {
             let mut events = Vec::with_capacity(length);
             for _ in 0..length {
                 state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
-                let effect = match state % 3 {
-                    0 => BindingEffect::Bind,
-                    1 => BindingEffect::MaybeBind,
-                    _ => BindingEffect::Unknown,
-                };
+                let effect = [
+                    BindingEffect::Bind,
+                    BindingEffect::MaybeBind,
+                    BindingEffect::Unknown,
+                ][(state % 3) as usize];
                 events.push(((state as usize >> 8) % 32, effect));
             }
             let mut history = OrderedBindingHistory::default();
@@ -1013,6 +1013,25 @@ mod ordered_history_tests {
             history.finalize();
             for offset in 0..=32 {
                 assert_eq!(history.resolve_at(offset), reference_fold(&events, offset));
+            }
+        }
+    }
+
+    proptest::proptest! {
+        #[test]
+        fn generated_event_histories_match_reference_for_every_offset(
+            events in proptest::collection::vec((0usize..32, 0usize..3), 0..128),
+        ) {
+            let effects = [BindingEffect::Bind, BindingEffect::MaybeBind, BindingEffect::Unknown];
+            let events = events.into_iter().map(|(offset, effect)| (offset, effects[effect])).collect::<Vec<_>>();
+            let mut history = OrderedBindingHistory::default();
+            for event in &events { history.push(*event); }
+            history.finalize();
+
+            for offset in 0..=32 {
+                let actual = history.resolve_at(offset);
+
+                proptest::prop_assert_eq!(actual, reference_fold(&events, offset));
             }
         }
     }
@@ -1044,11 +1063,7 @@ mod ordered_history_tests {
         let count = 4_096;
         let mut history = OrderedBindingHistory::default();
         for index in 0..count {
-            let offset = if index % 2 == 0 {
-                index
-            } else {
-                count * 2 - index
-            };
+            let offset = [index, count * 2 - index][index % 2];
             history.push((offset, BindingEffect::MaybeBind));
         }
         history.finalize();
@@ -8217,81 +8232,104 @@ mod performance_cost_tests {
 
     #[test]
     fn real_operation_counters_match_lean_cost_corpus() {
-        let mut families = [0; 3];
-        for case in corpus() {
-            match case.family {
-                Family::Binding => {
-                    families[0] += 1;
-                    assert!(
-                        binding_matches(&case, binding_observation(&case, false)),
-                        "{} binding cost",
-                        case.id
-                    );
-                }
-                Family::Annotation | Family::Replacement => {
-                    families[if matches!(case.family, Family::Annotation) {
-                        1
-                    } else {
-                        2
-                    }] += 1;
-                    let observation = source_observation(&case, false);
-                    assert!(
-                        source_matches(&case, &observation),
-                        "{} cost {observation:?}",
-                        case.id
-                    );
-                }
+        let cases = corpus();
+        let binding = cases
+            .iter()
+            .filter(|case| matches!(case.family, Family::Binding))
+            .collect::<Vec<_>>();
+        assert_eq!(binding.len(), 21);
+        for case in binding {
+            let observation = binding_observation(case, false);
+
+            assert!(
+                binding_matches(case, observation),
+                "{} binding cost",
+                case.id
+            );
+        }
+        for (family, expected_count) in [(Family::Annotation, 14), (Family::Replacement, 21)] {
+            let selected = cases
+                .iter()
+                .filter(|case| {
+                    std::mem::discriminant(&case.family) == std::mem::discriminant(&family)
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(selected.len(), expected_count);
+            for case in selected {
+                let observation = source_observation(case, false);
+
+                assert!(
+                    source_matches(case, &observation),
+                    "{} cost {observation:?}",
+                    case.id
+                );
             }
         }
-        assert_eq!(families, [21, 14, 21]);
     }
 
     #[test]
     fn real_broken_cost_variants_are_detected_without_semantic_changes() {
-        let mut detected = [false; 3];
-        for case in corpus() {
-            match case.family {
-                Family::Binding => {
-                    let observed = binding_observation(&case, true);
-                    assert_eq!(
-                        observed.1,
-                        native(case.linear_visits),
-                        "{} scan count",
-                        case.id
-                    );
-                    detected[0] |= !binding_matches(&case, observed);
-                }
-                Family::Annotation | Family::Replacement => {
-                    let normal = source_observation(&case, false);
-                    assert!(source_matches(&case, &normal), "{} normal cost", case.id);
-                    let broken = source_observation(&case, true);
-                    assert_eq!(
-                        normal.semantics, broken.semantics,
-                        "{} changed semantics",
-                        case.id
-                    );
-                    let family = if matches!(case.family, Family::Annotation) {
-                        1
-                    } else {
-                        2
-                    };
-                    if (family == 1 && case.selected && case.annotations > 0)
-                        || (family == 2 && !case.selected)
-                    {
-                        assert!(
-                            !source_matches(&case, &broken),
-                            "{} broken cost escaped",
-                            case.id
-                        );
-                        detected[family] = true;
-                    }
-                }
+        let cases = corpus();
+        let mut binding_detected = false;
+        for case in cases
+            .iter()
+            .filter(|case| matches!(case.family, Family::Binding))
+        {
+            let observed = binding_observation(case, true);
+
+            assert_eq!(
+                observed.1,
+                native(case.linear_visits),
+                "{} scan count",
+                case.id
+            );
+            binding_detected |= !binding_matches(case, observed);
+        }
+        assert!(
+            binding_detected,
+            "actual broken binding family must be detected"
+        );
+        for family in [Family::Annotation, Family::Replacement] {
+            let selected = cases
+                .iter()
+                .filter(|case| {
+                    std::mem::discriminant(&case.family) == std::mem::discriminant(&family)
+                })
+                .collect::<Vec<_>>();
+            for case in &selected {
+                let normal = source_observation(case, false);
+                let broken = source_observation(case, true);
+
+                assert!(source_matches(case, &normal), "{} normal cost", case.id);
+                assert_eq!(
+                    normal.semantics, broken.semantics,
+                    "{} changed semantics",
+                    case.id
+                );
+            }
+            let detectable = selected
+                .into_iter()
+                .filter(|case| {
+                    (matches!(case.family, Family::Annotation)
+                        && case.selected
+                        && case.annotations > 0)
+                        || (matches!(case.family, Family::Replacement) && !case.selected)
+                })
+                .collect::<Vec<_>>();
+            assert!(
+                !detectable.is_empty(),
+                "actual broken source family must be detected"
+            );
+            for case in detectable {
+                let broken = source_observation(case, true);
+
+                assert!(
+                    !source_matches(case, &broken),
+                    "{} broken cost escaped",
+                    case.id
+                );
             }
         }
-        assert_eq!(
-            detected, [true; 3],
-            "all actual broken families must be detected"
-        );
     }
 }
 

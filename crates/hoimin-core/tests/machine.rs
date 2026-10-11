@@ -847,46 +847,29 @@ fn cancellation_flushes_active_and_remaining_candidates_as_not_run() {
     .unwrap();
     let (mut state, mut effects) = transition(state, RunEvent::CancellationRequested).unwrap();
 
-    for sequence in 1..=3 {
-        if sequence != 1 {
-            let read = find_effect(&effects, |effect| {
-                matches!(effect, RunEffect::ReadCandidate(_))
-            });
-            assert!(matches!(
-                read,
-                RunEffect::ReadCandidate(ReadCandidate { cursor, .. })
-                    if *cursor == candidate_cursor((sequence - 1) * 10, sequence)
-            ));
-            let read_id = effect_id(read);
-            (state, effects) = transition(
-                state,
-                RunEvent::CandidateLoaded(CandidateLoaded {
-                    id: read_id,
-                    worker: 0,
-                    candidate: Some(fixture_candidate(sequence)),
-                    next_cursor: candidate_cursor(sequence * 10, sequence + 1),
-                }),
-            )
-            .unwrap();
-        }
-        (state, effects) = complete_mutant_started(state, &effects);
-        let finished = find_effect(&effects, |effect| {
-            matches!(effect, RunEffect::EmitOutput(value)
-                if matches!(&value.event, OutputEvent::MutantFinished(value)
-                    if value.status == MutationStatus::NotRun
-                        && value.candidate.sequence == sequence))
+    (state, effects) = finish_not_run_candidate(state, &effects, 1);
+
+    for sequence in 2..=3 {
+        let read = find_effect(&effects, |effect| {
+            matches!(effect, RunEffect::ReadCandidate(_))
         });
-        let finished_id = effect_id(finished);
+        assert!(matches!(
+            read,
+            RunEffect::ReadCandidate(ReadCandidate { cursor, .. })
+                if *cursor == candidate_cursor((sequence - 1) * 10, sequence)
+        ));
+        let read_id = effect_id(read);
         (state, effects) = transition(
             state,
-            RunEvent::OutputEmitted(OutputEmitted { id: finished_id }),
+            RunEvent::CandidateLoaded(CandidateLoaded {
+                id: read_id,
+                worker: 0,
+                candidate: Some(fixture_candidate(sequence)),
+                next_cursor: candidate_cursor(sequence * 10, sequence + 1),
+            }),
         )
         .unwrap();
-        assert_eq!(state.summary().not_run, sequence);
-        assert!(!effects.iter().any(|effect| matches!(
-            effect,
-            RunEffect::ApplyMutation(_) | RunEffect::RunMutant(_)
-        )));
+        (state, effects) = finish_not_run_candidate(state, &effects, sequence);
     }
 
     let read = find_effect(&effects, |effect| {
@@ -1839,52 +1822,48 @@ fn four_jobs_fill_four_independent_worker_chains_in_every_completion_order() {
         ("m4".to_owned(), MutationStatus::Killed),
     ];
     let mut tested_orders = 0;
-    for first in 0..4 {
-        for second in 0..4 {
-            for third in 0..4 {
-                for fourth in 0..4 {
-                    let order = [first, second, third, fourth];
-                    if order.into_iter().collect::<BTreeSet<_>>().len() != 4 {
-                        continue;
-                    }
-                    tested_orders += 1;
-                    let mut state = base_state.clone();
-                    let mut completion_sequences = Vec::new();
-                    let mut finished_candidates = Vec::new();
-                    for worker in order {
-                        let mut finished =
-                            process_finished(running_ids[&worker], ProcessTermination::Exit(1));
-                        finished.worker = Some(worker);
-                        let (next, produced) =
-                            transition(state, RunEvent::MutantFinished(finished)).unwrap();
-                        state = next;
-                        let output = find_effect(
-                            &produced,
-                            |effect| matches!(effect, RunEffect::EmitOutput(value) if matches!(&value.event, OutputEvent::MutantFinished(_))),
-                        );
-                        let RunEffect::EmitOutput(output) = output else {
-                            unreachable!()
-                        };
-                        let OutputEvent::MutantFinished(finished) = &output.event else {
-                            unreachable!()
-                        };
-                        assert_eq!(finished.candidate.sequence, u64::from(worker) + 1);
-                        assert_eq!(finished.candidate.id, format!("m{}", worker + 1));
-                        completion_sequences.push(finished.sequence);
-                        finished_candidates.push((finished.candidate.id.clone(), finished.status));
-                    }
-                    assert!(
-                        completion_sequences
-                            .windows(2)
-                            .all(|pair| pair[0] < pair[1]),
-                        "non-monotonic output sequence for completion order {order:?}"
-                    );
-                    finished_candidates.sort_by(|left, right| left.0.cmp(&right.0));
-                    assert_eq!(finished_candidates, expected_candidates);
-                    assert_eq!(state.summary().killed, 4);
-                }
-            }
+    let completion_orders = (0..4)
+        .flat_map(|first| {
+            (0..4).flat_map(move |second| {
+                (0..4)
+                    .flat_map(move |third| (0..4).map(move |fourth| [first, second, third, fourth]))
+            })
+        })
+        .filter(|order| order.iter().copied().collect::<BTreeSet<_>>().len() == 4);
+    for order in completion_orders {
+        tested_orders += 1;
+        let mut state = base_state.clone();
+        let mut completion_sequences = Vec::new();
+        let mut finished_candidates = Vec::new();
+        for worker in order {
+            let mut finished = process_finished(running_ids[&worker], ProcessTermination::Exit(1));
+            finished.worker = Some(worker);
+            let (next, produced) = transition(state, RunEvent::MutantFinished(finished)).unwrap();
+            state = next;
+            let output = find_effect(
+                &produced,
+                |effect| matches!(effect, RunEffect::EmitOutput(value) if matches!(&value.event, OutputEvent::MutantFinished(_))),
+            );
+            let RunEffect::EmitOutput(output) = output else {
+                unreachable!()
+            };
+            let OutputEvent::MutantFinished(finished) = &output.event else {
+                unreachable!()
+            };
+            assert_eq!(finished.candidate.sequence, u64::from(worker) + 1);
+            assert_eq!(finished.candidate.id, format!("m{}", worker + 1));
+            completion_sequences.push(finished.sequence);
+            finished_candidates.push((finished.candidate.id.clone(), finished.status));
         }
+        assert!(
+            completion_sequences
+                .windows(2)
+                .all(|pair| pair[0] < pair[1]),
+            "non-monotonic output sequence for completion order {order:?}"
+        );
+        finished_candidates.sort_by(|left, right| left.0.cmp(&right.0));
+        assert_eq!(finished_candidates, expected_candidates);
+        assert_eq!(state.summary().killed, 4);
     }
     assert_eq!(tested_orders, 24);
 }
@@ -4040,7 +4019,11 @@ impl ScheduleHarness {
     }
 
     fn complete_until(&mut self, predicate: impl Fn(&RunEffect) -> bool) {
-        for _ in 0..128 {
+        self.complete_until_with_limit(predicate, 128);
+    }
+
+    fn complete_until_with_limit(&mut self, predicate: impl Fn(&RunEffect) -> bool, limit: usize) {
+        for _ in 0..limit {
             if self.pending.iter().any(&predicate) {
                 return;
             }
@@ -4397,11 +4380,7 @@ proptest! {
         completion_classes in prop::collection::vec(0u8..6, 1..7),
         actions in prop::collection::vec(schedule_action_strategy(), 0..65),
     ) {
-        let filter = match filter {
-            0 => ScheduleFilter::All,
-            1 => ScheduleFilter::Explicit,
-            _ => ScheduleFilter::Ordered,
-        };
+        let filter = [ScheduleFilter::All, ScheduleFilter::Explicit, ScheduleFilter::Ordered][usize::from(filter)];
         ScheduleHarness::new(candidate_count, jobs, filter, session, completion_classes)
             .finish(&actions);
     }
@@ -4445,12 +4424,7 @@ proptest! {
             true,
             vec![completion_class],
         );
-        for _ in 0..32 {
-            if harness.pending.iter().any(|effect| matches!(effect, RunEffect::PersistResult(_))) {
-                break;
-            }
-            harness.apply(ScheduleAction::Complete(0));
-        }
+        harness.complete_until_with_limit(|effect| matches!(effect, RunEffect::PersistResult(_)), 32);
         assert!(harness.pending.iter().any(|effect| matches!(effect, RunEffect::PersistResult(_))));
         // pins: issue #113
         harness.finish(&[ScheduleAction::Cancel]);
@@ -5218,6 +5192,32 @@ fn fixture_candidate(sequence: u64) -> MutationCandidate {
     }
 }
 
+fn finish_not_run_candidate(
+    state: RunState,
+    effects: &[RunEffect],
+    sequence: u64,
+) -> (RunState, Vec<RunEffect>) {
+    let (state, effects) = complete_mutant_started(state, effects);
+    let finished = find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::EmitOutput(value)
+                if matches!(&value.event, OutputEvent::MutantFinished(value)
+                    if value.status == MutationStatus::NotRun
+                        && value.candidate.sequence == sequence))
+    });
+    let finished_id = effect_id(finished);
+    let (state, effects) = transition(
+        state,
+        RunEvent::OutputEmitted(OutputEmitted { id: finished_id }),
+    )
+    .unwrap();
+    assert_eq!(state.summary().not_run, sequence);
+    assert!(!effects.iter().any(|effect| matches!(
+        effect,
+        RunEffect::ApplyMutation(_) | RunEffect::RunMutant(_)
+    )));
+    (state, effects)
+}
+
 fn candidate_cursor(offset: u64, expected_sequence: u64) -> CandidateCursor {
     CandidateCursor {
         offset,
@@ -5240,6 +5240,60 @@ fn reservation_id(effect: &RunEffect) -> ReservationId {
     }
 }
 
+type ResourcePolicyScenario = (
+    &'static str,
+    fn(&mut ScheduleHarness),
+    usize,
+    MutationStatus,
+);
+
+fn resource_policy_scenarios() -> [ResourcePolicyScenario; 4] {
+    [
+        ("executed", |_| {}, 0, MutationStatus::NotRun),
+        (
+            "reused",
+            |harness| {
+                let index = harness
+                    .pending
+                    .iter()
+                    .position(|effect| matches!(effect, RunEffect::LookupStoredResult(_)))
+                    .unwrap();
+                let RunEffect::LookupStoredResult(lookup) = harness.pending.remove(index) else {
+                    unreachable!()
+                };
+                let (state, effects) = transition(
+                    harness.state.clone(),
+                    RunEvent::StoredResultLoaded(StoredResultLoaded {
+                        id: lookup.id,
+                        worker: lookup.worker,
+                        result: Some(StoredResult {
+                            mutant_id: lookup.mutant_id,
+                            status: MutationStatus::Killed,
+                        }),
+                    }),
+                )
+                .unwrap();
+                harness.state = state;
+                harness.register(effects);
+            },
+            1,
+            MutationStatus::Killed,
+        ),
+        (
+            "cancelled",
+            |harness| harness.stop(RunEvent::CancellationRequested),
+            2,
+            MutationStatus::NotRun,
+        ),
+        (
+            "deadline",
+            |harness| harness.stop(RunEvent::DeadlineReached),
+            2,
+            MutationStatus::NotRun,
+        ),
+    ]
+}
+
 // Supplied-policy transition tests: these do not claim native OS enforcement.
 #[test]
 fn selected_resource_policy_reaches_headers_and_synthetic_transitions_for_every_selection() {
@@ -5249,7 +5303,9 @@ fn selected_resource_policy_reaches_headers_and_synthetic_transitions_for_every_
             ScheduleFilter::Explicit,
             ScheduleFilter::Ordered,
         ] {
-            for scenario in ["executed", "reused", "cancelled", "deadline"] {
+            for (scenario, apply_scenario, expected_synthetic, synthetic_status) in
+                resource_policy_scenarios()
+            {
                 let policy = hoimin_core::ResourceControl {
                     mode,
                     mechanism: format!("supplied_{mode:?}"),
@@ -5264,35 +5320,7 @@ fn selected_resource_policy_reaches_headers_and_synthetic_transitions_for_every_
                     policy.clone(),
                 );
                 harness.complete_until(|effect| matches!(effect, RunEffect::LookupStoredResult(_)));
-                if scenario == "reused" {
-                    let index = harness
-                        .pending
-                        .iter()
-                        .position(|effect| matches!(effect, RunEffect::LookupStoredResult(_)))
-                        .unwrap();
-                    let RunEffect::LookupStoredResult(lookup) = harness.pending.remove(index)
-                    else {
-                        unreachable!()
-                    };
-                    let (state, effects) = transition(
-                        harness.state.clone(),
-                        RunEvent::StoredResultLoaded(StoredResultLoaded {
-                            id: lookup.id,
-                            worker: lookup.worker,
-                            result: Some(StoredResult {
-                                mutant_id: lookup.mutant_id,
-                                status: MutationStatus::Killed,
-                            }),
-                        }),
-                    )
-                    .unwrap();
-                    harness.state = state;
-                    harness.register(effects);
-                } else if scenario == "cancelled" {
-                    harness.stop(RunEvent::CancellationRequested);
-                } else if scenario == "deadline" {
-                    harness.stop(RunEvent::DeadlineReached);
-                }
+                apply_scenario(&mut harness);
                 let harness = harness.finish(&[]);
                 let headers: Vec<_> = harness
                     .output_events
@@ -5313,32 +5341,19 @@ fn selected_resource_policy_reaches_headers_and_synthetic_transitions_for_every_
                     })
                     .collect();
                 assert_eq!(mutants.len(), 2, "{scenario}");
-                let expected_synthetic = match scenario {
-                    "executed" => 0,
-                    "reused" => 1,
-                    _ => 2,
-                };
                 assert_eq!(
                     mutants.iter().filter(|v| v.termination.is_none()).count(),
                     expected_synthetic
                 );
-                for mutant in mutants {
-                    if mutant.termination.is_none() {
-                        assert_eq!(mutant.resource_mode, mode, "{scenario}");
-                        assert_eq!(mutant.elapsed_ms, 0);
-                        assert!(mutant.output.is_none());
-                        assert_eq!(
-                            mutant.status,
-                            if scenario == "reused" {
-                                MutationStatus::Killed
-                            } else {
-                                MutationStatus::NotRun
-                            }
-                        );
-                    } else {
-                        // The harness supplies Hard process observations, even for a BestEffort header.
-                        assert_eq!(mutant.resource_mode, ResourceMode::Hard);
-                    }
+                for mutant in mutants.iter().filter(|mutant| mutant.termination.is_none()) {
+                    assert_eq!(mutant.resource_mode, mode, "{scenario}");
+                    assert_eq!(mutant.elapsed_ms, 0);
+                    assert!(mutant.output.is_none());
+                    assert_eq!(mutant.status, synthetic_status);
+                }
+                for mutant in mutants.iter().filter(|mutant| mutant.termination.is_some()) {
+                    // The harness supplies Hard process observations, even for a BestEffort header.
+                    assert_eq!(mutant.resource_mode, ResourceMode::Hard);
                 }
             }
         }

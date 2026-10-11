@@ -260,6 +260,49 @@ mod unix {
         })
     }
 
+    fn require_unprivileged_process() {
+        assert_ne!(
+            unsafe { libc::geteuid() },
+            0,
+            "permission-denial cleanup fixtures require an unprivileged process"
+        );
+    }
+
+    fn restore_failed_cleanup_modes(
+        result: &Result<(), WorkspaceError>,
+        wrapper: &Path,
+        root: &Path,
+    ) {
+        if result.is_err() {
+            set_mode(wrapper, 0o700);
+            set_mode(root, 0o700);
+        }
+    }
+
+    fn retry_rejected_cleanup(worker: &mut WorkerWorkspace, result: &Result<(), WorkspaceError>) {
+        if result.is_err() {
+            worker.try_cleanup().unwrap();
+        }
+    }
+
+    fn recover_swapped_wrapper(
+        worker: &mut WorkerWorkspace,
+        result: &Result<(), WorkspaceError>,
+        wrapper: &Path,
+        held: &Path,
+    ) {
+        if result.is_err() {
+            if fs::symlink_metadata(wrapper).is_ok() {
+                fs::remove_file(wrapper).unwrap();
+            }
+            fs::rename(held, wrapper).unwrap();
+            worker.try_cleanup().unwrap();
+        } else if held.exists() {
+            set_mode(held, 0o700);
+            fs::remove_dir_all(held).unwrap();
+        }
+    }
+
     #[test]
     fn strict_cleanup_cases_match_the_lean_oracle() {
         let stable = case("stable_entry");
@@ -318,19 +361,14 @@ mod unix {
         set_mode(root.as_std_path(), 0o000);
         set_mode(wrapper.as_std_path(), 0o000);
         let result = fixture.worker.try_cleanup();
-        if result.is_err() {
-            set_mode(wrapper.as_std_path(), 0o700);
-            set_mode(root.as_std_path(), 0o700);
-        }
+        restore_failed_cleanup_modes(&result, wrapper.as_std_path(), root.as_std_path());
         result.unwrap();
         assert!(!wrapper.exists());
     }
 
     #[test]
     fn inaccessible_directory_swap_does_not_change_outside_hard_link_permissions() {
-        if unsafe { libc::geteuid() } == 0 {
-            return;
-        }
+        require_unprivileged_process();
         let outside = tempfile::NamedTempFile::new().unwrap();
         set_mode(outside.path(), 0o400);
         let outside_permissions = permission_fingerprint(outside.path());
@@ -362,9 +400,7 @@ mod unix {
 
     #[test]
     fn inaccessible_directory_swap_does_not_change_outside_symlink_permissions() {
-        if unsafe { libc::geteuid() } == 0 {
-            return;
-        }
+        require_unprivileged_process();
         let outside = tempfile::tempdir().unwrap();
         set_mode(outside.path(), 0o400);
         let outside_permissions = permission_fingerprint(outside.path());
@@ -414,9 +450,7 @@ mod unix {
         let (mut worker, result) = cleanup.join().unwrap();
         let actual_result = result_name(&result);
         let actual_outside_writable = is_owner_writable(outside.path());
-        if result.is_err() {
-            worker.try_cleanup().unwrap();
-        }
+        retry_rejected_cleanup(&mut worker, &result);
 
         assert_eq!(
             (actual_result, actual_outside_writable),
@@ -457,16 +491,7 @@ mod unix {
 
         let (mut worker, result) = cleanup.join().unwrap();
         let actual_outside_changed = permission_fingerprint(&outside) != outside_permissions;
-        if result.is_err() {
-            if fs::symlink_metadata(&wrapper).is_ok() {
-                fs::remove_file(&wrapper).unwrap();
-            }
-            fs::rename(&held, &wrapper).unwrap();
-            worker.try_cleanup().unwrap();
-        } else if held.exists() {
-            set_mode(&held, 0o700);
-            fs::remove_dir_all(&held).unwrap();
-        }
+        recover_swapped_wrapper(&mut worker, &result, &wrapper, &held);
         set_mode(&outside, 0o700);
 
         assert_eq!(actual_outside_changed, expected.outside_writable);
@@ -476,9 +501,7 @@ mod unix {
     fn final_removal_failure_is_retryable_without_reopening_cleanup_capabilities() {
         // A privileged process can traverse mode-000 directories, so it cannot exercise this
         // deterministic final-removal failure.
-        if unsafe { libc::geteuid() } == 0 {
-            return;
-        }
+        require_unprivileged_process();
         let fixture = Fixture::new();
         let wrapper = fixture
             .worker

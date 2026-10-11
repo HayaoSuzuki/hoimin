@@ -1,3 +1,6 @@
+#[path = "support/encoded_source.rs"]
+mod encoded_source;
+
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -155,9 +158,13 @@ async fn body_erasure_checks_function_scope_and_excludes_noops() {
             count,
             "{source}"
         );
-        if count == 1 {
-            assert_eq!(doc["candidates"][0]["symbol"], "f");
-        }
+        assert!(
+            doc["candidates"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|candidate| candidate["symbol"] == "f")
+        );
     }
 }
 
@@ -233,30 +240,18 @@ async fn body_erasure_keeps_the_shared_serialized_size_limit() {
 #[tokio::test]
 async fn body_erasure_preserves_encoded_docstrings_and_newlines() {
     for newline in ["\n", "\r\n", "\r"] {
-        for encoding in ["utf8", "bom", "latin1"] {
+        for encoding in encoded_source::ENCODINGS {
             let root = tempfile::tempdir().unwrap();
+            let encoding_name = encoding.name;
             let text = format!(
                 "# coding: {}{newline}def f(s):{newline}    'é'{newline}    s.x=1{newline}    s.y=2{newline}",
-                if encoding == "latin1" {
-                    "latin-1"
-                } else {
-                    "utf-8"
-                }
+                encoding.cookie
             );
-            let mut bytes = if encoding == "latin1" {
-                text.chars()
-                    .map(|c| u8::try_from(u32::from(c)).unwrap())
-                    .collect::<Vec<_>>()
-            } else {
-                text.as_bytes().to_vec()
-            };
-            if encoding == "bom" {
-                bytes.splice(0..0, [0xef, 0xbb, 0xbf]);
-            }
+            let mut bytes = encoding.source(&text);
             std::fs::write(root.path().join("subject.py"), &bytes).unwrap();
             let document = plan(root.path(), "function_body_erase", "pass").await;
             let cs = document["candidates"].as_array().unwrap();
-            assert_eq!(cs.len(), 1);
+            assert_eq!(cs.len(), 1, "{encoding_name} {newline:?}");
             let c = &cs[0];
             let start = usize::try_from(c["span"]["start"].as_u64().unwrap()).unwrap();
             let end = start + usize::try_from(c["span"]["length"].as_u64().unwrap()).unwrap();

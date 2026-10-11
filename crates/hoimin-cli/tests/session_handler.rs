@@ -72,7 +72,12 @@ fn all_optional_session_rows(schema_version: i64) -> GoldenSessionRows {
 #[test]
 fn golden_session_schema_eras_migrate_without_semantic_loss() {
     let root = repo_root().join("crates/hoimin-cli/tests/golden/sessions");
-    for version in 1..=4 {
+    for (version, expected_resume) in [
+        (1, Err("session.resume.incompatible".to_owned())),
+        (2, Err("session.resume.incompatible".to_owned())),
+        (3, Err("session.resume.incompatible".to_owned())),
+        (4, Ok("golden-run".to_owned())),
+    ] {
         let source = root.join(format!("schema-v{version}.sqlite3"));
         let temp = tempfile::tempdir().unwrap();
         let migrated_path = temp.path().join("session.sqlite3");
@@ -89,24 +94,12 @@ fn golden_session_schema_eras_migrate_without_semantic_loss() {
             id: EffectId(89),
             fingerprint: RunFingerprint::from_bytes([1; 32]),
         });
-        if version < 4 {
-            assert_eq!(
-                resumed.unwrap_err().failure.code(),
-                "session.resume.incompatible"
-            );
-        } else {
-            assert_eq!(resumed.unwrap().resume.unwrap().run_id, "golden-run");
-            let loaded = handler
-                .lookup(&lookup_request(90, "golden-run", "golden-mutant"))
-                .unwrap();
-            assert_eq!(
-                loaded.result,
-                Some(StoredResult {
-                    mutant_id: "golden-mutant".into(),
-                    status: MutationStatus::Killed,
-                })
-            );
-        }
+        assert_eq!(
+            resumed
+                .map(|loaded| loaded.resume.unwrap().run_id)
+                .map_err(|error| error.failure.code().to_owned()),
+            expected_resume
+        );
         drop(handler);
 
         let migrated = Connection::open(&migrated_path).unwrap();
@@ -120,6 +113,37 @@ fn golden_session_schema_eras_migrate_without_semantic_loss() {
         );
         assert_golden_session_rows(&migrated, version);
     }
+}
+
+#[test]
+fn golden_schema_four_loads_the_stored_mutant_after_resume() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("session.sqlite3");
+    std::fs::copy(
+        repo_root().join("crates/hoimin-cli/tests/golden/sessions/schema-v4.sqlite3"),
+        &path,
+    )
+    .unwrap();
+    let mut handler = SessionHandler::open(&path).unwrap();
+    let resumed = handler
+        .load(&LoadSession {
+            max_mutants: std::num::NonZeroUsize::new(100).unwrap(),
+            id: EffectId(89),
+            fingerprint: RunFingerprint::from_bytes([1; 32]),
+        })
+        .unwrap();
+    let loaded = handler
+        .lookup(&lookup_request(90, "golden-run", "golden-mutant"))
+        .unwrap();
+
+    assert_eq!(resumed.resume.unwrap().run_id, "golden-run");
+    assert_eq!(
+        loaded.result,
+        Some(StoredResult {
+            mutant_id: "golden-mutant".into(),
+            status: MutationStatus::Killed
+        })
+    );
 }
 
 #[test]
@@ -420,20 +444,13 @@ struct OperationTask {
 #[test]
 fn session_operations_complete_under_contention_matrix() {
     let mut visited = HashSet::new();
-    let mut failures = Vec::new();
 
     for (index, cell) in CELLS.into_iter().enumerate() {
         visited.insert(cell);
-        if let Err(error) = run_contention_cell(index, cell) {
-            failures.push(format!("{cell:?}: {error}"));
-        }
+        let result = run_contention_cell(index, cell);
+        assert!(result.is_ok(), "{cell:?}: {}", result.unwrap_err());
     }
 
-    assert!(
-        failures.is_empty(),
-        "session contention matrix failures:\n{}",
-        failures.join("\n")
-    );
     assert_eq!(visited.len(), CELLS.len(), "not every matrix cell ran");
     assert_eq!(
         visited,
@@ -1367,19 +1384,7 @@ fn different_runs_can_be_owned_concurrently() {
     }
 }
 
-#[test]
-fn process_death_releases_run_ownership_for_immediate_resume() {
-    let temp = tempfile::tempdir().unwrap();
-    let path = temp.path().join("sessions.sqlite3");
-    let ready = temp.path().join("ready");
-    let mut child = Command::new(std::env::current_exe().unwrap())
-        .args(["--ignored", "--exact", "ownership_child_fixture_holds_run"])
-        .env("HOIMIN_OWNERSHIP_DATABASE", &path)
-        .env("HOIMIN_OWNERSHIP_READY", &ready)
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .unwrap();
+fn await_ownership_child_ready(child: &mut std::process::Child, ready: &std::path::Path) {
     let deadline = Instant::now() + Duration::from_secs(10);
     while !ready.exists() && Instant::now() < deadline {
         assert!(
@@ -1393,6 +1398,22 @@ fn process_death_releases_run_ownership_for_immediate_resume() {
         child.wait().unwrap();
         panic!("ownership child did not become ready");
     }
+}
+
+#[test]
+fn process_death_releases_run_ownership_for_immediate_resume() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("sessions.sqlite3");
+    let ready = temp.path().join("ready");
+    let mut child = Command::new(std::env::current_exe().unwrap())
+        .args(["--ignored", "--exact", "ownership_child_fixture_holds_run"])
+        .env("HOIMIN_OWNERSHIP_DATABASE", &path)
+        .env("HOIMIN_OWNERSHIP_READY", &ready)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    await_ownership_child_ready(&mut child, &ready);
 
     let mut contender = SessionHandler::open(&path).unwrap();
     let contention = contender.load(&LoadSession {
@@ -2081,12 +2102,15 @@ fn lean_resume_budget_cases_match_persistent_selection_and_reuse() {
         let mut begin = begin_request(1, "oracle");
         begin.max_mutants = std::num::NonZeroUsize::new(case.old_budget).unwrap();
         handler.begin(begin).unwrap();
-        let status = match case.status.as_str() {
-            "killed" => MutationStatus::Killed,
-            "survived" => MutationStatus::Survived,
-            "timeout" => MutationStatus::Timeout,
-            other => panic!("unknown status {other}"),
-        };
+        let status = [
+            ("killed", MutationStatus::Killed),
+            ("survived", MutationStatus::Survived),
+            ("timeout", MutationStatus::Timeout),
+        ]
+        .into_iter()
+        .find(|(name, _)| *name == case.status)
+        .unwrap()
+        .1;
         handler
             .persist(&persist_with_status(2, "oracle", "mutant", status))
             .unwrap();
@@ -2102,7 +2126,7 @@ fn lean_resume_budget_cases_match_persistent_selection_and_reuse() {
         let resumed = handler
             .load(&LoadSession {
                 id: EffectId(4),
-                fingerprint: RunFingerprint::from_bytes([if case.compatible { 1 } else { 2 }; 32]),
+                fingerprint: RunFingerprint::from_bytes([[2, 1][usize::from(case.compatible)]; 32]),
                 max_mutants: std::num::NonZeroUsize::new(case.new_budget).unwrap(),
             })
             .unwrap()
@@ -2124,11 +2148,7 @@ fn lean_resume_budget_cases_match_persistent_selection_and_reuse() {
         let budget: Vec<u8> = db
             .query_row("SELECT max_mutants FROM runs", [], |row| row.get(0))
             .unwrap();
-        let expected = if case.eligible {
-            case.new_budget
-        } else {
-            case.old_budget
-        };
+        let expected = [case.old_budget, case.new_budget][usize::from(case.eligible)];
         assert_eq!(budget, (expected as u64).to_be_bytes());
     }
 }

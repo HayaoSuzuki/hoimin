@@ -64,83 +64,133 @@ async fn post_commit_validation_failure_reports_saved_revision() {
 }
 
 #[test]
-fn identity_and_update_contract() {
+fn applicability_reflects_source_state_for_matching_identity() {
     let original = key();
-    assert_eq!(
-        applicability(&original, &original, SourceState::Fresh),
-        Applicability::Current
-    );
-    assert_eq!(
-        applicability(&original, &original, SourceState::Stale),
-        Applicability::Stale
-    );
-    assert_eq!(
-        applicability(&original, &original, SourceState::Unavailable),
-        Applicability::SourceUnavailable
-    );
-    let mut other = original.clone();
-    other.project = "/another".into();
-    assert_eq!(
-        applicability(&original, &other, SourceState::Fresh),
-        Applicability::IdentityConflict
-    );
-    other = original.clone();
-    other.descriptor.original = "9".into();
-    assert_eq!(
-        applicability(&original, &other, SourceState::Fresh),
-        Applicability::IdentityConflict
-    );
+
+    for (source, expected) in [
+        (SourceState::Fresh, Applicability::Current),
+        (SourceState::Stale, Applicability::Stale),
+        (SourceState::Unavailable, Applicability::SourceUnavailable),
+    ] {
+        let actual = applicability(&original, &original, source);
+
+        assert_eq!(actual, expected, "{source:?}");
+    }
+}
+
+#[test]
+fn applicability_rejects_different_project_or_descriptor() {
+    let original = key();
+    let mut different_project = original.clone();
+    different_project.project = "/another".into();
+    let mut different_descriptor = original.clone();
+    different_descriptor.descriptor.original = "9".into();
+
+    for other in [different_project, different_descriptor] {
+        let actual = applicability(&original, &other, SourceState::Fresh);
+
+        assert_eq!(actual, Applicability::IdentityConflict, "{other:?}");
+    }
+}
+
+#[test]
+fn first_update_preserves_empty_input_and_starts_revision_one() {
     let empty = ReviewState::default();
+
     let first = apply_update(&empty, Applicability::Current, 0, draft()).unwrap();
+
     assert_eq!(first.history[0].revision, 1);
     assert_eq!(empty.history, Vec::new());
-    assert_eq!(
-        apply_update(&first, Applicability::Current, 0, draft()),
-        Err(UpdateRejection::RevisionConflict)
-    );
-    assert_eq!(
-        apply_update(&first, Applicability::Stale, 1, draft()),
-        Err(UpdateRejection::NotCurrent)
-    );
+}
+
+#[test]
+fn update_rejects_conflicting_revision_and_stale_source() {
+    let first = apply_update(&ReviewState::default(), Applicability::Current, 0, draft()).unwrap();
+
+    for (applicability, revision, expected) in [
+        (Applicability::Current, 0, UpdateRejection::RevisionConflict),
+        (Applicability::Stale, 1, UpdateRejection::NotCurrent),
+    ] {
+        let result = apply_update(&first, applicability, revision, draft());
+
+        assert_eq!(result, Err(expected), "{applicability:?}");
+    }
+}
+
+#[test]
+fn second_update_preserves_history_and_increments_revision() {
+    let first = apply_update(&ReviewState::default(), Applicability::Current, 0, draft()).unwrap();
+
     let second = apply_update(&first, Applicability::Current, 1, draft()).unwrap();
+
     assert_eq!(&second.history[..1], first.history.as_slice());
     assert_eq!(second.history[1].revision, 2);
+}
+
+#[test]
+fn update_rejects_revision_overflow() {
     let overflow = ReviewState {
         history: vec![ReviewEvent {
             revision: u64::MAX,
             draft: draft(),
         }],
     };
-    assert_eq!(
-        apply_update(&overflow, Applicability::Current, u64::MAX, draft()),
-        Err(UpdateRejection::RevisionOverflow)
-    );
+
+    let result = apply_update(&overflow, Applicability::Current, u64::MAX, draft());
+
+    assert_eq!(result, Err(UpdateRejection::RevisionOverflow));
 }
 
 #[test]
-fn draft_limits() {
+fn draft_accepts_maximum_reason_and_evidence_sizes() {
     let mut value = draft();
     value.reason = "x".repeat(4096);
     value.evidence = vec!["x".repeat(2048); 8];
-    assert!(validate_draft(&value).is_ok());
-    value.reason.push('x');
-    assert!(validate_draft(&value).is_err());
+
+    let result = validate_draft(&value);
+
+    assert!(result.is_ok());
+}
+
+#[test]
+fn draft_rejects_invalid_reason_without_relying_on_other_limits() {
     for invalid in [
+        "x".repeat(4097),
         " \n\t".to_string(),
         "\x1b[31m".to_string(),
         "\0".to_string(),
         "あ".repeat(1366),
     ] {
+        let mut value = draft();
         value.reason = invalid;
-        assert!(validate_draft(&value).is_err());
+
+        let result = validate_draft(&value);
+
+        assert!(result.is_err(), "reason bytes={}", value.reason.len());
     }
+}
+
+#[test]
+fn draft_rejects_excessive_evidence_count_or_item_size() {
+    for evidence in [vec!["x".repeat(2048); 9], vec!["x".repeat(2049)]] {
+        let mut value = draft();
+        value.reason = "reason\n\tmore".into();
+        value.evidence = evidence;
+
+        let result = validate_draft(&value);
+
+        assert!(result.is_err());
+    }
+}
+
+#[test]
+fn draft_accepts_multiline_reason_without_evidence() {
+    let mut value = draft();
     value.reason = "reason\n\tmore".into();
-    value.evidence.push("extra".into());
-    assert!(validate_draft(&value).is_err());
-    value.evidence = vec!["x".repeat(2049)];
-    assert!(validate_draft(&value).is_err());
-    value.evidence.clear();
-    assert!(validate_draft(&value).is_ok());
+
+    let result = validate_draft(&value);
+
+    assert!(result.is_ok());
 }
 
 async fn plan_fixture() -> (tempfile::TempDir, std::path::PathBuf) {
@@ -188,52 +238,84 @@ async fn old_candidate_without_report_is_not_loaded() {
 #[tokio::test]
 async fn read_only_plan_does_not_execute() {
     let (_dir, path) = plan_fixture().await;
+
     let loaded = super::input::load_plan(&path).unwrap();
+
     assert_ne!(loaded.manifest.candidates.len(), 0);
+}
+
+#[tokio::test]
+async fn plan_rejects_forged_candidate_id() {
+    let (_dir, path) = plan_fixture().await;
     let mut value: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
     value["candidates"][0]["id"] = serde_json::Value::String("0".repeat(64));
     std::fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
-    assert!(super::input::load_plan(&path).is_err());
+
+    let result = super::input::load_plan(&path);
+
+    assert!(result.is_err());
 }
 
 #[tokio::test]
-async fn source_freshness_and_plan_reordering() {
+async fn source_state_is_fresh_for_unchanged_file() {
+    let (_dir, path) = plan_fixture().await;
+    let loaded = super::input::load_plan(&path).unwrap();
+    let candidate = &loaded.manifest.candidates[0].candidate;
+
+    let actual = super::input::source_state(&loaded.project, candidate).unwrap();
+
+    assert_eq!(actual, SourceState::Fresh);
+}
+
+#[tokio::test]
+async fn source_state_is_stale_for_changed_file() {
     let (dir, path) = plan_fixture().await;
     let loaded = super::input::load_plan(&path).unwrap();
     let candidate = &loaded.manifest.candidates[0].candidate;
-    assert_eq!(
-        super::input::source_state(&loaded.project, candidate).unwrap(),
-        SourceState::Fresh
-    );
     std::fs::write(dir.path().join("sample.py"), "value = 9\n").unwrap();
-    assert_eq!(
-        super::input::source_state(&loaded.project, candidate).unwrap(),
-        SourceState::Stale
-    );
-    std::fs::remove_file(dir.path().join("sample.py")).unwrap();
-    assert_eq!(
-        super::input::source_state(&loaded.project, candidate).unwrap(),
-        SourceState::Unavailable
-    );
+
+    let actual = super::input::source_state(&loaded.project, candidate).unwrap();
+
+    assert_eq!(actual, SourceState::Stale);
 }
 
 #[tokio::test]
-async fn bounded_artifact_and_alias() {
+async fn source_state_is_unavailable_for_missing_file() {
     let (dir, path) = plan_fixture().await;
     let loaded = super::input::load_plan(&path).unwrap();
-    assert!(super::input::validate_store_destination(&path, &loaded, None).is_err());
-    assert!(
-        super::input::validate_store_destination(&dir.path().join("sample.py"), &loaded, None)
-            .is_err()
-    );
+    let candidate = &loaded.manifest.candidates[0].candidate;
+    std::fs::remove_file(dir.path().join("sample.py")).unwrap();
+
+    let actual = super::input::source_state(&loaded.project, candidate).unwrap();
+
+    assert_eq!(actual, SourceState::Unavailable);
+}
+
+#[tokio::test]
+async fn store_destination_rejects_plan_source_and_hard_link_alias() {
+    let (dir, path) = plan_fixture().await;
+    let loaded = super::input::load_plan(&path).unwrap();
     let alias = dir.path().join("alias.sqlite3");
     std::fs::hard_link(&path, &alias).unwrap();
-    assert!(super::input::validate_store_destination(&alias, &loaded, None).is_err());
+
+    for destination in [path, dir.path().join("sample.py"), alias] {
+        let result = super::input::validate_store_destination(&destination, &loaded, None);
+
+        assert!(result.is_err(), "{}", destination.display());
+    }
+}
+
+#[tokio::test]
+async fn plan_rejects_oversized_artifact() {
+    let dir = tempfile::tempdir().unwrap();
     let oversized = dir.path().join("oversized.json");
     let file = std::fs::File::create(&oversized).unwrap();
     file.set_len(64 * 1024 * 1024 + 1).unwrap();
-    assert!(super::input::load_plan(&oversized).is_err());
+
+    let result = super::input::load_plan(&oversized);
+
+    assert!(result.is_err());
 }
 
 #[tokio::test]
@@ -242,14 +324,20 @@ async fn store_journal_must_not_alias_a_protected_input() {
     let loaded = super::input::load_plan(&path).unwrap();
     let store = dir.path().join("reviews.sqlite3");
     std::fs::hard_link(&path, dir.path().join("reviews.sqlite3-journal")).unwrap();
-    assert!(super::input::validate_store_destination(&store, &loaded, None).is_err());
+
+    let result = super::input::validate_store_destination(&store, &loaded, None);
+
+    assert!(result.is_err());
 }
 
 #[test]
 fn malformed_artifact_reference_is_rejected() {
     let mut value = draft();
     value.plan.content_hash = "invalid".into();
-    assert!(validate_draft(&value).is_err());
+
+    let result = validate_draft(&value);
+
+    assert!(result.is_err());
 }
 
 async fn report_fixture() -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf) {
@@ -273,58 +361,89 @@ async fn report_fixture() -> (tempfile::TempDir, std::path::PathBuf, std::path::
 }
 
 #[tokio::test]
-async fn old_candidate_report_requires_full_descriptor_match() {
+async fn old_candidate_report_retains_matching_execution_result() {
+    let (_dir, path, report_path) = report_fixture().await;
+    let mut plan = super::input::load_plan(&path).unwrap();
+    let (report, _) = super::input::load_report(&report_path, &plan).unwrap();
+    let key =
+        super::input::review_key(&plan.project, &plan.manifest.candidates.remove(0).candidate);
+    let state = apply_update(&ReviewState::default(), Applicability::Current, 0, draft()).unwrap();
+
+    let rows = super::stale_rows(&plan, &[(key, state)], Some(&report)).unwrap();
+
+    assert!(matches!(
+        rows[0].execution,
+        super::render::ReviewExecution::Result(hoimin_core::MutationStatus::Killed)
+    ));
+}
+
+#[tokio::test]
+async fn old_candidate_report_rejects_descriptor_mismatch() {
     let (_dir, path, report_path) = report_fixture().await;
     let mut plan = super::input::load_plan(&path).unwrap();
     let (report, _) = super::input::load_report(&report_path, &plan).unwrap();
     let mut key =
         super::input::review_key(&plan.project, &plan.manifest.candidates.remove(0).candidate);
-    let state = apply_update(&ReviewState::default(), Applicability::Current, 0, draft()).unwrap();
-    let rows = super::stale_rows(&plan, &[(key.clone(), state.clone())], Some(&report)).unwrap();
-    assert!(matches!(
-        rows[0].execution,
-        super::render::ReviewExecution::Result(hoimin_core::MutationStatus::Killed)
-    ));
     key.descriptor.original = "different".into();
-    assert!(super::stale_rows(&plan, &[(key, state)], Some(&report)).is_err());
+    let state = apply_update(&ReviewState::default(), Applicability::Current, 0, draft()).unwrap();
+
+    let result = super::stale_rows(&plan, &[(key, state)], Some(&report));
+
+    assert!(result.is_err());
 }
 
 #[tokio::test]
-async fn review_report_identity() {
+async fn review_accepts_matching_report() {
+    let (_dir, path, report_path) = report_fixture().await;
+    let plan = super::input::load_plan(&path).unwrap();
+
+    let (report, _) = super::input::load_report(&report_path, &plan).unwrap();
+
+    assert_eq!(report.mutants.len(), 1);
+}
+
+#[tokio::test]
+async fn review_rejects_report_with_changed_identity_or_execution() {
+    let changes: [(&str, &str, serde_json::Value); 6] = [
+        ("incomplete", "/summary/complete", false.into()),
+        ("baseline", "/baseline/termination/Exit", 1.into()),
+        (
+            "root",
+            "/run/normalized_config/root",
+            std::env::temp_dir().to_str().unwrap().into(),
+        ),
+        ("summary", "/summary/counts/killed", 9.into()),
+        (
+            "descriptor",
+            "/mutants/0/candidate/original",
+            "wrong".into(),
+        ),
+        ("version", "/schema_version", 3.into()),
+    ];
+    for (change, pointer, replacement) in changes {
+        let (_dir, path, report_path) = report_fixture().await;
+        let plan = super::input::load_plan(&path).unwrap();
+        let mut value: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&report_path).unwrap()).unwrap();
+        *value.pointer_mut(pointer).unwrap() = replacement;
+        std::fs::write(&report_path, serde_json::to_vec(&value).unwrap()).unwrap();
+
+        let result = super::input::load_report(&report_path, &plan);
+
+        assert!(result.is_err(), "{change}");
+    }
+}
+
+#[tokio::test]
+async fn review_rejects_trailing_report_document() {
     let (_dir, path, report_path) = report_fixture().await;
     let plan = super::input::load_plan(&path).unwrap();
     let original = std::fs::read(&report_path).unwrap();
-    let (report, _) = super::input::load_report(&report_path, &plan).unwrap();
-    assert_eq!(report.mutants.len(), 1);
-    for change in [
-        "incomplete",
-        "baseline",
-        "root",
-        "summary",
-        "descriptor",
-        "version",
-    ] {
-        let mut value: serde_json::Value = serde_json::from_slice(&original).unwrap();
-        match change {
-            "incomplete" => value["summary"]["complete"] = false.into(),
-            "baseline" => value["baseline"]["termination"]["Exit"] = 1.into(),
-            "root" => {
-                value["run"]["normalized_config"]["root"] =
-                    std::env::temp_dir().to_str().unwrap().into();
-            }
-            "summary" => value["summary"]["counts"]["killed"] = 9.into(),
-            "descriptor" => value["mutants"][0]["candidate"]["original"] = "wrong".into(),
-            "version" => value["schema_version"] = 3.into(),
-            _ => unreachable!(),
-        }
-        std::fs::write(&report_path, serde_json::to_vec(&value).unwrap()).unwrap();
-        assert!(
-            super::input::load_report(&report_path, &plan).is_err(),
-            "{change}"
-        );
-    }
     std::fs::write(&report_path, [original.as_slice(), b"\n{}\n"].concat()).unwrap();
-    assert!(super::input::load_report(&report_path, &plan).is_err());
+
+    let result = super::input::load_report(&report_path, &plan);
+
+    assert!(result.is_err());
 }
 
 #[tokio::test]
@@ -364,26 +483,26 @@ async fn review_does_not_change_execution_results() {
         panic!("review")
     };
     let mut output = Vec::new();
+
     super::run(&args, &mut output).unwrap();
     let result: serde_json::Value = serde_json::from_slice(&output).unwrap();
-    assert_eq!(result["candidates"][0]["execution"]["status"], "killed");
-    assert_eq!(std::fs::read(&report_path).unwrap(), before);
     let reports = [
         crate::progress::read_report(&report_path).unwrap(),
         crate::progress::read_report(&report_path).unwrap(),
     ];
-    assert_eq!(
-        crate::progress::compare_reports(&reports, std::num::NonZeroUsize::new(2).unwrap()),
-        comparison
-    );
+    let after_comparison =
+        crate::progress::compare_reports(&reports, std::num::NonZeroUsize::new(2).unwrap());
+
+    assert_eq!(result["candidates"][0]["execution"]["status"], "killed");
+    assert_eq!(std::fs::read(&report_path).unwrap(), before);
+    assert_eq!(after_comparison, comparison);
 }
 
-#[tokio::test]
-async fn review_report_missing_candidate_is_not_an_execution_result() {
+async fn missing_report_candidate_fixture() -> (tempfile::TempDir, Vec<String>) {
     let (dir, path, report_path) = report_fixture().await;
     let plan = super::input::load_plan(&path).unwrap();
     let candidate = &plan.manifest.candidates[1].candidate;
-    let mut argv = vec![
+    let argv = vec![
         "hoimin".into(),
         "review".into(),
         "show".into(),
@@ -397,17 +516,28 @@ async fn review_report_missing_candidate_is_not_an_execution_result() {
         "--format".into(),
         "json".into(),
     ];
+    (dir, argv)
+}
+
+#[tokio::test]
+async fn review_report_missing_candidate_is_not_an_execution_result() {
+    let (_dir, argv) = missing_report_candidate_fixture().await;
     let mut output = Vec::new();
     let mut errors = Vec::new();
-    assert_eq!(
-        crate::run_with_io(argv.clone(), &mut output, &mut errors).await,
-        0
-    );
+
+    let code = crate::run_with_io(argv, &mut output, &mut errors).await;
     let value: serde_json::Value = serde_json::from_slice(&output).unwrap();
+
+    assert_eq!(code, 0);
     assert_eq!(
         value["candidates"][0]["execution"]["state"],
         "not_in_report"
     );
+}
+
+#[tokio::test]
+async fn review_record_rejects_candidate_missing_from_report() {
+    let (dir, mut argv) = missing_report_candidate_fixture().await;
     argv[2] = "record".into();
     argv.extend([
         "--assessment".into(),
@@ -417,6 +547,11 @@ async fn review_report_missing_candidate_is_not_an_execution_result() {
         "--expected-revision".into(),
         "0".into(),
     ]);
-    assert_eq!(crate::run_with_io(argv, &mut output, &mut errors).await, 2);
+    let mut output = Vec::new();
+    let mut errors = Vec::new();
+
+    let code = crate::run_with_io(argv, &mut output, &mut errors).await;
+
+    assert_eq!(code, 2);
     assert!(!dir.path().join("reviews.sqlite3").exists());
 }

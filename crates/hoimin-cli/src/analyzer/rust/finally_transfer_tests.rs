@@ -54,14 +54,12 @@ fn analyze(source: &str, selected: bool) -> (Vec<AnalyzerCandidate>, usize, usiz
 
 #[test]
 fn nested_finally_bounds_actual_statement_and_annotation_visits() {
-    for wrapper in ["", "class C:\n", "def f():\n"] {
+    for (wrapper, indent) in [("", ""), ("class C:\n", "    "), ("def f():\n", "    ")] {
         for depth in [1, 2, 4, 8, 16, 17, 18, 19, 20] {
             let mut source = String::from("from typing import Sequence\n");
             source.push_str(wrapper);
             for line in nested_source(depth).lines() {
-                if !wrapper.is_empty() {
-                    source.push_str("    ");
-                }
+                source.push_str(indent);
                 source.push_str(line);
                 source.push('\n');
             }
@@ -223,12 +221,6 @@ fn finally_routing_preserves_callbacks_and_all_exit_categories() {
             let current = observe(&source, false);
             assert_eq!(current, observe(&source, true), "{source}");
             assert!(current.explicit.fallthrough.is_empty(), "{source}");
-            if replacement != "raise Error" {
-                assert!(
-                    current.implicit.is_none(),
-                    "pending exception survived: {source}"
-                );
-            }
             assert_eq!(
                 !current.explicit.breaks.is_empty(),
                 replacement == "break",
@@ -249,6 +241,26 @@ fn finally_routing_preserves_callbacks_and_all_exit_categories() {
                 !current.explicit.terminates.is_empty(),
                 matches!(replacement, "return" | "raise Error"),
                 "{source}"
+            );
+        }
+    }
+    for pending in [
+        "pass",
+        "break",
+        "continue",
+        "return",
+        "raise Error",
+        "hazard()",
+    ] {
+        for replacement in ["break", "continue", "return"] {
+            let source =
+                format!("try:\n {pending}\nfinally:\n try:\n  pass\n finally:\n  {replacement}\n");
+
+            let current = observe(&source, false);
+
+            assert!(
+                current.implicit.is_none(),
+                "pending exception survived: {source}"
             );
         }
     }

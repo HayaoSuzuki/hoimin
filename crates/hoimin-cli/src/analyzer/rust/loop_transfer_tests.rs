@@ -94,20 +94,31 @@ fn archived_audit_import_annotations_bound_clone_cost() {
             writeln!(source, "import typing as t{index}").unwrap();
         }
         source.push_str(&"x: int\n".repeat(size));
-        for selected in [false, true] {
-            IMPORT_CLONE_CALLS.set(0);
-            IMPORT_CLONE_ENTRIES.set(0);
-            let visits = analyze_visits(&source, selected);
-            let calls = IMPORT_CLONE_CALLS.get();
-            let entries = IMPORT_CLONE_ENTRIES.get();
-            if selected {
-                assert!(calls <= 1, "size={size}: {calls} clone calls");
-                assert!(entries <= size, "size={size}: {entries} copied entries");
-            } else {
-                assert_eq!(visits, (0, 0), "size={size}");
-                assert_eq!((calls, entries), (0, 0), "size={size}");
-            }
-        }
+        IMPORT_CLONE_CALLS.set(0);
+        IMPORT_CLONE_ENTRIES.set(0);
+
+        let unselected_visits = analyze_visits(&source, false);
+
+        assert_eq!(unselected_visits, (0, 0), "size={size}");
+        assert_eq!(
+            (IMPORT_CLONE_CALLS.get(), IMPORT_CLONE_ENTRIES.get()),
+            (0, 0),
+            "size={size}"
+        );
+
+        IMPORT_CLONE_CALLS.set(0);
+        IMPORT_CLONE_ENTRIES.set(0);
+
+        analyze_visits(&source, true);
+
+        assert!(
+            IMPORT_CLONE_CALLS.get() <= 1,
+            "size={size}: too many clone calls"
+        );
+        assert!(
+            IMPORT_CLONE_ENTRIES.get() <= size,
+            "size={size}: too many copied entries"
+        );
     }
 }
 

@@ -166,13 +166,14 @@ async fn verify_negative_neighbor_detects_tail_boundary_missed_by_sign_flip() {
             report["mutants"].as_array().unwrap().len(),
             candidates.len()
         );
-        if killed == 1 {
-            let mutant = report["mutants"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .find(|m| m["status"] == "killed")
-                .unwrap();
+        let killed_mutants: Vec<_> = report["mutants"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|mutant| mutant["status"] == "killed")
+            .collect();
+        assert_eq!(killed_mutants.len(), killed);
+        for mutant in killed_mutants {
             assert_eq!(mutant["candidate"]["replacement"], "-2");
         }
         assert_eq!(std::fs::read_to_string(&subject).unwrap(), source);

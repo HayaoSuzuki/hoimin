@@ -111,9 +111,8 @@ impl Fixture {
 
 #[test]
 fn increasing_budget_reuses_stable_prefix_and_keeps_cumulative_accounting() {
-    for killed in [true, false] {
+    for (killed, verdict) in [(true, "killed"), (false, "survived")] {
         let fixture = Fixture::new(killed);
-        let verdict = if killed { "killed" } else { "survived" };
         let (initial, metrics) = fixture.run(1, false, "session.sqlite");
         assert_eq!(metrics["executed"], 1);
         let (same, metrics) = fixture.run(1, true, "session.sqlite");

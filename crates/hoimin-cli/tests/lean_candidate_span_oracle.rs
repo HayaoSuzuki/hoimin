@@ -258,16 +258,20 @@ fn owned_validator_matches_all_representable_lean_rows() {
         let descriptor = descriptor(case).expect("Rust-representable descriptor");
         let result = validate_candidate(&case.source, &descriptor);
         assert_eq!(result.is_ok(), case.expected_valid, "{}", case.id);
-        if let Err(error) = result {
-            let expected = match case.rejection.as_deref() {
-                Some("file_hash") => CandidateValidationError::FileHashMismatch,
-                Some("original") => CandidateValidationError::OriginalMismatch,
-                Some("span") => CandidateValidationError::SpanOutOfBounds,
-                Some("location") => CandidateValidationError::LocationMismatch,
-                rejection => panic!("unmapped rejection {rejection:?}"),
-            };
-            assert_eq!(error, expected, "{}", case.id);
-        }
+        let errors = [
+            ("file_hash", CandidateValidationError::FileHashMismatch),
+            ("original", CandidateValidationError::OriginalMismatch),
+            ("span", CandidateValidationError::SpanOutOfBounds),
+            ("location", CandidateValidationError::LocationMismatch),
+        ];
+        let expected_error = case.rejection.as_deref().map(|rejection| {
+            &errors
+                .iter()
+                .find(|(name, _)| *name == rejection)
+                .expect("registered rejection")
+                .1
+        });
+        assert_eq!(result.as_ref().err(), expected_error, "{}", case.id);
     }
 }
 
@@ -579,20 +583,10 @@ fn workspace_matches_apply_reject_unchanged_and_reset_rows() {
     let mut worker = create_worker(&project);
     for case in &represented {
         let candidate = mutation_candidate(case).unwrap();
-        let before = worker.read(&candidate.path).unwrap();
         let result = worker.apply_mutation(&candidate);
         assert_eq!(result.is_ok(), case.expected_valid, "{}", case.id);
         let after = worker.read(&candidate.path).unwrap();
         assert_eq!(after, case.expected_bytes, "{}", case.id);
-        if result.is_err() {
-            assert_eq!(after, before, "{} changed bytes on rejection", case.id);
-            if case.rejection.as_deref() == Some("location") {
-                assert!(matches!(
-                    result,
-                    Err(WorkspaceError::MutationSpanInvalid { .. })
-                ));
-            }
-        }
         worker.reset().unwrap();
     }
 
@@ -619,4 +613,52 @@ fn workspace_matches_apply_reject_unchanged_and_reset_rows() {
     .to_string();
     worker.apply_mutation(&second).unwrap();
     assert_eq!(worker.read(&second.path).unwrap(), b"x = 1 + 3\n");
+}
+
+#[test]
+fn workspace_rejections_preserve_original_bytes() {
+    let represented: Vec<_> = parse_corpus(CORPUS)
+        .into_iter()
+        .filter(|case| {
+            case.mode != "model-only" && case.mode != "infrastructure-error" && !case.expected_valid
+        })
+        .collect();
+    let project = Project::from_cases(&represented);
+    let mut worker = create_worker(&project);
+    for case in &represented {
+        let candidate = mutation_candidate(case).unwrap();
+        let before = worker.read(&candidate.path).unwrap();
+
+        let result = worker.apply_mutation(&candidate);
+        let after = worker.read(&candidate.path).unwrap();
+
+        assert!(result.is_err(), "{}", case.id);
+        assert_eq!(after, before, "{} changed bytes on rejection", case.id);
+        worker.reset().unwrap();
+    }
+}
+
+#[test]
+fn workspace_rejects_invalid_locations_as_invalid_spans() {
+    let represented: Vec<_> = parse_corpus(CORPUS)
+        .into_iter()
+        .filter(|case| {
+            case.mode != "model-only"
+                && case.mode != "infrastructure-error"
+                && case.rejection.as_deref() == Some("location")
+        })
+        .collect();
+    let project = Project::from_cases(&represented);
+    let mut worker = create_worker(&project);
+    for case in &represented {
+        let candidate = mutation_candidate(case).unwrap();
+
+        let result = worker.apply_mutation(&candidate);
+
+        assert!(matches!(
+            result,
+            Err(WorkspaceError::MutationSpanInvalid { .. })
+        ));
+        worker.reset().unwrap();
+    }
 }

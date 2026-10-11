@@ -980,19 +980,21 @@ async fn explicit_excluded_targets_explain_the_path_and_remediation() {
     fs::create_dir(temp.path().join("venv")).unwrap();
     fs::write(temp.path().join("venv/dep.py"), "value = 1 + 2\n").unwrap();
     let root = Utf8PathBuf::from_path_buf(temp.path().to_path_buf()).unwrap();
-    for files in [true, false] {
-        let mut selection = Selection {
+    for selection in [
+        Selection {
             root: root.clone(),
+            files: vec![root.join("venv/./dep.py")],
             ..Selection::default()
-        };
-        if files {
-            selection.files.push(root.join("venv/./dep.py"));
-        } else {
-            selection.lines.push(LineSelection {
+        },
+        Selection {
+            root: root.clone(),
+            lines: vec![LineSelection {
                 path: "venv/dep.py".into(),
                 range: LineRange { start: 1, end: 1 },
-            });
-        }
+            }],
+            ..Selection::default()
+        },
+    ] {
         let error = TargetHandler::resolve(&selection)
             .await
             .unwrap_err()
@@ -1047,7 +1049,14 @@ async fn a_root_named_venv_is_not_itself_excluded() {
 
 #[tokio::test]
 async fn exclusion_case_rules_follow_the_platform_for_walks_and_selectors() {
-    for actual in ["venv", "VENV"] {
+    #[cfg(windows)]
+    let cases = [
+        ("venv", ["venv", "VENV"].as_slice()),
+        ("VENV", ["venv", "VENV"].as_slice()),
+    ];
+    #[cfg(not(windows))]
+    let cases = [("venv", ["venv"].as_slice())];
+    for (actual, spellings) in cases {
         let temp = tempfile::tempdir().unwrap();
         fs::create_dir(temp.path().join(actual)).unwrap();
         fs::write(temp.path().join(actual).join("dep.py"), "value = 1 + 2\n").unwrap();
@@ -1058,13 +1067,7 @@ async fn exclusion_case_rules_follow_the_platform_for_walks_and_selectors() {
             ..Selection::default()
         })
         .unwrap();
-        let excluded = cfg!(windows) || actual == "venv";
-        assert_eq!(files.is_empty(), excluded);
-        let spellings: &[&str] = if cfg!(windows) {
-            &["venv", "VENV"]
-        } else {
-            &[actual]
-        };
+        assert_eq!(files, [] as [hoimin_core::DiscoveredFile; 0]);
         for spelling in spellings {
             let result = TargetHandler::resolve(&Selection {
                 root: root.clone(),
@@ -1072,17 +1075,38 @@ async fn exclusion_case_rules_follow_the_platform_for_walks_and_selectors() {
                 ..Selection::default()
             })
             .await;
-            if excluded {
-                let error = result.unwrap_err().to_string();
-                assert!(
-                    error.contains("built-in") && error.contains("outside"),
-                    "{error}"
-                );
-            } else {
-                assert_eq!(result.unwrap().len(), 1);
-            }
+            let error = result.unwrap_err().to_string();
+            assert!(
+                error.contains("built-in") && error.contains("outside"),
+                "{error}"
+            );
         }
     }
+}
+
+#[cfg(not(windows))]
+#[tokio::test]
+async fn uppercase_venv_remains_included_on_case_sensitive_platforms() {
+    let temp = tempfile::tempdir().unwrap();
+    fs::create_dir(temp.path().join("VENV")).unwrap();
+    fs::write(temp.path().join("VENV/dep.py"), "value = 1 + 2\n").unwrap();
+    let root = Utf8PathBuf::from_path_buf(temp.path().to_path_buf()).unwrap();
+    let files = hoimin_cli::target::fs::discover_explicit(&Selection {
+        root: root.clone(),
+        includes: vec!["**/*.py".into()],
+        ..Selection::default()
+    })
+    .unwrap();
+    let targets = TargetHandler::resolve(&Selection {
+        root,
+        files: vec!["VENV/dep.py".into()],
+        ..Selection::default()
+    })
+    .await
+    .unwrap();
+
+    assert_eq!(files.len(), 1);
+    assert_eq!(targets.len(), 1);
 }
 
 #[tokio::test]
@@ -1142,24 +1166,29 @@ async fn changed_context_expands_current_lines_and_intersects_explicit_ranges() 
         value["changed_context"] = serde_json::json!(context);
         let mut selection: Selection = serde_json::from_value(value).unwrap();
         let targets = TargetHandler::resolve(&selection).await.unwrap();
-        if expected.is_empty() {
-            assert!(targets.is_empty(), "context={context}: {targets:?}");
-        } else {
-            assert_eq!(targets.len(), 1);
-            assert_eq!(targets[0].path, "src/calc.py");
-            assert_eq!(targets[0].lines, expected);
-        }
+        let expected_targets: Vec<_> = std::iter::once(hoimin_core::TargetSlice {
+            path: "src/calc.py".into(),
+            lines: expected.clone(),
+            symbols: Vec::new(),
+        })
+        .filter(|target| !target.lines.is_empty())
+        .collect();
+        assert_eq!(targets, expected_targets, "context={context}");
         selection.lines = vec![LineSelection {
             path: "src/calc.py".into(),
             range: LineRange { start: 2, end: 2 },
         }];
         let restricted = TargetHandler::resolve(&selection).await.unwrap();
-        let includes_second = expected.iter().any(|r| r.start <= 2 && r.end >= 2);
-        if includes_second {
-            assert_eq!(restricted[0].lines, vec![LineRange { start: 2, end: 2 }]);
-        } else {
-            assert_eq!(restricted, Vec::new());
-        }
+        let expected_restricted: Vec<_> = expected
+            .iter()
+            .filter(|range| range.start <= 2 && range.end >= 2)
+            .map(|_| hoimin_core::TargetSlice {
+                path: "src/calc.py".into(),
+                lines: vec![LineRange { start: 2, end: 2 }],
+                symbols: Vec::new(),
+            })
+            .collect();
+        assert_eq!(restricted, expected_restricted);
     }
 }
 
@@ -1196,9 +1225,9 @@ async fn changed_cr_rows_are_translated_before_explicit_python_line_intersection
         .await
         .unwrap();
         assert_eq!(!targets.is_empty(), selected);
-        if selected {
+        for target in targets {
             assert_eq!(
-                targets[0].lines,
+                target.lines,
                 [LineRange {
                     start: line,
                     end: line
@@ -1220,7 +1249,7 @@ async fn changed_cr_deletion_context_preserves_surviving_byte_coverage() {
         "src/calc.py",
         b"left = 1 + 2\r# left\n# right\rright = 4 + 5\n",
     );
-    for context in [0, 1] {
+    for (context, expected) in [(0, vec![]), (1, vec![LineRange { start: 1, end: 4 }])] {
         let targets = TargetHandler::resolve(&Selection {
             root: repo.root(),
             sources: vec!["src".into()],
@@ -1230,10 +1259,9 @@ async fn changed_cr_deletion_context_preserves_surviving_byte_coverage() {
         })
         .await
         .unwrap();
-        if context == 0 {
-            assert_eq!(targets, Vec::new());
-        } else {
-            assert_eq!(targets[0].lines, [LineRange { start: 1, end: 4 }]);
+        assert_eq!(targets.len(), usize::from(!expected.is_empty()));
+        for target in targets {
+            assert_eq!(target.lines, expected);
         }
     }
 }

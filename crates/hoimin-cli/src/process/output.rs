@@ -591,21 +591,19 @@ mod tests {
         {
             let code = case.expected_error_code.unwrap();
             let (sender, receiver) = pipe_channel();
-            let collector = match case.scenario.as_str() {
-                "create_error" => tokio::spawn(collect_output_with_sink::<FirstWriteFails>(
-                    case.id.clone(),
-                    case.capacity,
-                    receiver,
-                    Err(std::io::Error::other(format!("lean-error-{code}"))),
-                )),
-                "write_error" => tokio::spawn(collect_output_with_sink(
-                    case.id.clone(),
-                    case.capacity,
-                    receiver,
-                    Ok(FirstWriteFails { code }),
-                )),
-                _ => unreachable!(),
-            };
+            let sink = [
+                Err(std::io::Error::other(format!("lean-error-{code}"))),
+                Ok(FirstWriteFails { code }),
+            ]
+            .into_iter()
+            .nth(usize::from(case.scenario == "write_error"))
+            .unwrap();
+            let collector = tokio::spawn(collect_output_with_sink(
+                case.id.clone(),
+                case.capacity,
+                receiver,
+                sink,
+            ));
             for chunk in &case.chunks {
                 sender.send(chunk.clone()).await.unwrap();
             }

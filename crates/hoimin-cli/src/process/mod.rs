@@ -1264,7 +1264,7 @@ mod tests {
         let collector = tokio::spawn(async { pending::<std::io::Result<OutputSpoolRef>>().await });
         let active = AtomicUsize::new(0);
         let failed = AtomicBool::new(false);
-        let mut completion = CompletionGuard::enter(&active, &failed);
+        let completion = CompletionGuard::enter(&active, &failed);
 
         let outcome = await_output(
             EffectId(48),
@@ -1274,12 +1274,9 @@ mod tests {
             tokio::time::Instant::now() + Duration::from_millis(20),
         )
         .await;
-        if outcome.quiescent {
-            completion.complete();
-        }
+        assert!(!outcome.quiescent);
         drop(completion);
 
-        assert!(!outcome.quiescent);
         assert_eq!(
             outcome.result.unwrap_err().failure.code(),
             "process.output.close.timeout"
@@ -1430,55 +1427,69 @@ mod tests {
         cases
     }
 
+    fn combine_process_output_case(
+        case: &ProcessOutputCase,
+    ) -> Result<(ProcessTermination, OutputSpoolRef, ProcessOutputState), EffectFailed> {
+        let process_failure = EffectFailed::other(
+            EffectId(7),
+            "process.wait.failed",
+            "fixture process failure",
+        );
+        let output_failure = match case.output.as_str() {
+            "close_timed_out" => EffectFailed::other(
+                EffectId(7),
+                "process.output.close.timeout",
+                "fixture output timeout",
+            ),
+            "failed" => {
+                EffectFailed::other(EffectId(7), "process.stdout.read", "fixture output failure")
+            }
+            "complete" => EffectFailed::other(EffectId(7), "unreachable.complete", "unreachable"),
+            other => panic!("unknown output {other}"),
+        };
+        let process = match case.input_termination.as_deref() {
+            Some(termination) => Ok(named_termination(termination)),
+            None => Err(process_failure.clone()),
+        };
+        let collected = OutputSpoolRef {
+            token: "collected".to_owned(),
+            retained: 3,
+            observed: 5,
+        };
+        let fallback = output_ref();
+        let output = match case.output.as_str() {
+            "complete" => Ok(collected),
+            _ => Err(output_failure),
+        };
+        let mutant_id = (case.execution == "mutant").then_some("mutant");
+        combine_process_and_output(process, output, mutant_id, fallback)
+    }
+
     #[test]
     fn process_output_combiner_matches_every_lean_decision_row() {
-        for case in process_output_cases() {
+        let cases = process_output_cases();
+        for case in &cases {
             assert_eq!(case.schema, 1, "{}", case.id);
             assert_eq!(case.mode, "strict", "{}", case.id);
-            let process_failure = EffectFailed::other(
-                EffectId(7),
-                "process.wait.failed",
-                "fixture process failure",
-            );
-            let output_failure = match case.output.as_str() {
-                "close_timed_out" => EffectFailed::other(
-                    EffectId(7),
-                    "process.output.close.timeout",
-                    "fixture output timeout",
-                ),
-                "failed" => EffectFailed::other(
-                    EffectId(7),
-                    "process.stdout.read",
-                    "fixture output failure",
-                ),
-                "complete" => {
-                    EffectFailed::other(EffectId(7), "unreachable.complete", "unreachable")
-                }
-                other => panic!("unknown output {other}"),
-            };
-            let process = match case.input_termination.as_deref() {
-                Some(termination) => Ok(named_termination(termination)),
-                None => Err(process_failure.clone()),
-            };
-            let collected = OutputSpoolRef {
-                token: "collected".to_owned(),
-                retained: 3,
-                observed: 5,
-            };
-            let fallback = output_ref();
-            let output = if case.output == "complete" {
-                Ok(collected.clone())
-            } else {
-                Err(output_failure)
-            };
-            let mutant_id = (case.execution == "mutant").then_some("mutant");
-            let actual = combine_process_and_output(process, output, mutant_id, fallback.clone());
-
-            assert_eq!(actual.is_err(), case.expected_fatal, "{}", case.id);
             assert_eq!(case.expected_continue, !case.expected_fatal, "{}", case.id);
-            let Ok((termination, output, output_state)) = actual else {
-                continue;
-            };
+            assert_eq!(case.process == "failed", case.input_termination.is_none());
+        }
+        for case in cases.iter().filter(|case| case.expected_fatal) {
+            let actual = combine_process_output_case(case);
+
+            assert!(actual.is_err(), "{}", case.id);
+        }
+        for case in cases.iter().filter(|case| !case.expected_fatal) {
+            let (termination, output, output_state) = combine_process_output_case(case).unwrap();
+            let expected_output = [
+                OutputSpoolRef {
+                    token: "collected".to_owned(),
+                    retained: 3,
+                    observed: 5,
+                },
+                output_ref(),
+            ];
+
             assert_eq!(
                 Some(termination),
                 case.expected_termination.as_deref().map(named_termination),
@@ -1499,25 +1510,29 @@ mod tests {
             );
             assert_eq!(
                 output,
-                if case.expected_output_incomplete {
-                    fallback
-                } else {
-                    collected
-                },
+                expected_output[usize::from(case.expected_output_incomplete)],
                 "{}",
                 case.id
             );
-            if case.execution == "mutant" {
-                assert_eq!(
-                    classify_mutant_result(termination, output_state),
-                    named_status(case.expected_status.as_deref().unwrap()),
-                    "{}",
-                    case.id
-                );
-            } else {
-                assert!(case.expected_status.is_none(), "{}", case.id);
-            }
-            assert_eq!(case.process == "failed", case.input_termination.is_none());
+        }
+        for case in cases
+            .iter()
+            .filter(|case| !case.expected_fatal && case.execution == "mutant")
+        {
+            let (termination, _, output_state) = combine_process_output_case(case).unwrap();
+
+            assert_eq!(
+                classify_mutant_result(termination, output_state),
+                named_status(case.expected_status.as_deref().unwrap()),
+                "{}",
+                case.id
+            );
+        }
+        for case in cases
+            .iter()
+            .filter(|case| !case.expected_fatal && case.execution != "mutant")
+        {
+            assert!(case.expected_status.is_none(), "{}", case.id);
         }
     }
 

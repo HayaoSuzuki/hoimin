@@ -5,6 +5,8 @@ import json
 import subprocess
 import sys
 import zipfile
+from collections.abc import Callable
+from operator import delitem, setitem
 from pathlib import Path
 
 import pytest
@@ -84,8 +86,10 @@ def test_stages_only_verified_wheels_without_changing_bytes(
     release_assets: Path,
 ) -> None:
     result = prepare(release_assets)
+
     assert result.returncode == 0, result.stderr
     staged = list((release_assets.parent / "dist").iterdir())
+
     assert {path.name for path in staged} == {
         f"hoimin-1.2.3-py3-none-{platform}.whl" for platform in PLATFORMS
     }
@@ -107,6 +111,7 @@ def test_accepts_equivalent_python_specifier_formatting(
             archive.writestr(name, content)
     write_checksums(release_assets)
     result = prepare(release_assets)
+
     assert result.returncode == 0, result.stderr
 
 
@@ -128,6 +133,7 @@ def test_accepts_license_line_endings_without_changing_wheel_bytes(
     write_checksums(release_assets)
     original = wheel.read_bytes()
     result = prepare(release_assets)
+
     assert result.returncode == 0, result.stderr
     assert (release_assets.parent / "dist" / wheel.name).read_bytes() == original
 
@@ -135,96 +141,137 @@ def test_accepts_license_line_endings_without_changing_wheel_bytes(
 @pytest.mark.parametrize(
     "license_name", ["LICENSE", "vendor/ruff_python_parser/LICENSE"]
 )
-@pytest.mark.parametrize("damage", ["text", "whitespace"])
+@pytest.mark.parametrize(
+    ("old", "new"),
+    [(b"License", b"Modified"), (b" ", b"  ")],
+    ids=["text", "whitespace"],
+)
 def test_rejects_license_changes_with_windows_line_endings(
-    release_assets: Path, license_name: str, damage: str
+    release_assets: Path, license_name: str, old: bytes, new: bytes
 ) -> None:
     wheel = release_assets / "hoimin-1.2.3-py3-none-win_amd64.whl"
     with zipfile.ZipFile(wheel) as archive:
         files = {name: archive.read(name) for name in archive.namelist()}
     member = "hoimin-1.2.3.dist-info/licenses/" + license_name
     content = files[member].replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")
-    files[member] = (
-        content.replace(b"License", b"Modified", 1)
-        if damage == "text"
-        else content.replace(b" ", b"  ", 1)
-    )
+    files[member] = content.replace(old, new, 1)
     with zipfile.ZipFile(wheel, "w") as archive:
         for name, content in files.items():
             archive.writestr(name, content)
     write_checksums(release_assets)
     result = prepare(release_assets)
+
     assert result.returncode != 0
     assert "unexpected license text" in result.stderr
     assert not (release_assets.parent / "dist").exists()
 
 
+def add_extra_wheel(assets: Path) -> None:
+    write_wheel(assets / "hoimin-1.2.3-py3-none-any.whl")
+    write_checksums(assets)
+
+
 @pytest.mark.parametrize(
-    "damage",
+    "damage_assets",
     [
-        "missing-platform",
-        "extra-wheel",
-        "corrupt-wheel",
-        "missing-checksum",
-        "duplicate-checksum",
+        pytest.param(
+            lambda assets: (assets / "hoimin-1.2.3-py3-none-win_amd64.whl").unlink(),
+            id="missing-platform",
+        ),
+        pytest.param(add_extra_wheel, id="extra-wheel"),
+        pytest.param(
+            lambda assets: (assets / "hoimin-1.2.3-py3-none-win_amd64.whl").write_bytes(
+                b"corrupted"
+            ),
+            id="corrupt-wheel",
+        ),
+        pytest.param(
+            lambda assets: (assets / "SHA256SUMS").write_text(""), id="missing-checksum"
+        ),
+        pytest.param(
+            lambda assets: (assets / "SHA256SUMS").write_text(
+                (assets / "SHA256SUMS").read_text() * 2
+            ),
+            id="duplicate-checksum",
+        ),
     ],
 )
-def test_rejects_bad_assets_before_staging(release_assets: Path, damage: str) -> None:
-    wheel = release_assets / "hoimin-1.2.3-py3-none-win_amd64.whl"
-    if damage == "missing-platform":
-        wheel.unlink()
-    elif damage == "extra-wheel":
-        write_wheel(release_assets / "hoimin-1.2.3-py3-none-any.whl")
-        write_checksums(release_assets)
-    elif damage == "corrupt-wheel":
-        wheel.write_bytes(b"corrupted")
-    elif damage == "missing-checksum":
-        (release_assets / "SHA256SUMS").write_text("")
-    else:
-        sums = release_assets / "SHA256SUMS"
-        sums.write_text(sums.read_text() * 2)
+def test_rejects_bad_assets_before_staging(
+    release_assets: Path, damage_assets: Callable[[Path], object]
+) -> None:
+    damage_assets(release_assets)
+
     result = prepare(release_assets)
+
     assert result.returncode != 0
     assert not (release_assets.parent / "dist").exists()
 
 
+WHEEL_METADATA = "hoimin-1.2.3.dist-info/METADATA"
+WHEEL_LICENSE = "hoimin-1.2.3.dist-info/licenses/LICENSE"
+
+
 @pytest.mark.parametrize(
-    "damage",
+    "corrupt",
     [
-        "old-license",
-        "wrong-version",
-        "missing-license",
-        "wrong-license-text",
-        "duplicate-metadata",
-        "wrong-project",
-        "wrong-python",
+        pytest.param(
+            lambda files: setitem(
+                files,
+                WHEEL_METADATA,
+                files[WHEEL_METADATA].replace(b"Elastic-2.0", b"MIT"),
+            ),
+            id="old-license",
+        ),
+        pytest.param(
+            lambda files: setitem(
+                files,
+                WHEEL_METADATA,
+                files[WHEEL_METADATA].replace(b"Version: 1.2.3", b"Version: 1.2.4"),
+            ),
+            id="wrong-version",
+        ),
+        pytest.param(lambda files: delitem(files, WHEEL_LICENSE), id="missing-license"),
+        pytest.param(
+            lambda files: setitem(files, WHEEL_LICENSE, b"different terms"),
+            id="wrong-license-text",
+        ),
+        pytest.param(
+            lambda files: setitem(
+                files, "other.dist-info/METADATA", files[WHEEL_METADATA]
+            ),
+            id="duplicate-metadata",
+        ),
+        pytest.param(
+            lambda files: setitem(
+                files,
+                WHEEL_METADATA,
+                files[WHEEL_METADATA].replace(b"Name: hoimin", b"Name: other"),
+            ),
+            id="wrong-project",
+        ),
+        pytest.param(
+            lambda files: setitem(
+                files,
+                WHEEL_METADATA,
+                files[WHEEL_METADATA].replace(b">=3.14,<3.15", b">=3.8"),
+            ),
+            id="wrong-python",
+        ),
     ],
 )
-def test_rejects_invalid_wheel_contents(release_assets: Path, damage: str) -> None:
+def test_rejects_invalid_wheel_contents(
+    release_assets: Path, corrupt: Callable[[dict[str, bytes]], object]
+) -> None:
     wheel = release_assets / "hoimin-1.2.3-py3-none-win_amd64.whl"
     with zipfile.ZipFile(wheel) as archive:
         files = {name: archive.read(name) for name in archive.namelist()}
-    metadata = "hoimin-1.2.3.dist-info/METADATA"
-    license_file = "hoimin-1.2.3.dist-info/licenses/LICENSE"
-    replacements = {
-        "old-license": (b"Elastic-2.0", b"MIT"),
-        "wrong-version": (b"Version: 1.2.3", b"Version: 1.2.4"),
-        "wrong-project": (b"Name: hoimin", b"Name: other"),
-        "wrong-python": (b">=3.14,<3.15", b">=3.8"),
-    }
-    if damage in replacements:
-        files[metadata] = files[metadata].replace(*replacements[damage])
-    elif damage == "missing-license":
-        del files[license_file]
-    elif damage == "wrong-license-text":
-        files[license_file] = b"different terms"
-    else:
-        files["other.dist-info/METADATA"] = files[metadata]
+    corrupt(files)
     with zipfile.ZipFile(wheel, "w") as archive:
         for name, contents in files.items():
             archive.writestr(name, contents)
     write_checksums(release_assets)
     result = prepare(release_assets)
+
     assert result.returncode != 0
     assert not (release_assets.parent / "dist").exists()
 
@@ -245,24 +292,29 @@ def test_requires_matching_published_release(
     state = {"tagName": "v1.2.3", "isDraft": False, "isPrerelease": False}
     state[field] = value
     (release_assets.parent / "release.json").write_text(json.dumps(state))
+
     assert prepare(release_assets).returncode != 0
     assert not (release_assets.parent / "dist").exists()
 
 
 def test_pypi_workflow_keeps_oidc_in_protected_upload_job() -> None:
     workflow = yaml.safe_load((ROOT / ".github/workflows/release.yml").read_text())
+
     assert workflow["permissions"] == {"contents": "read"}
     prepare_job = workflow["jobs"]["pypi-prepare"]
+
     assert "github.ref == 'refs/heads/main'" in prepare_job["if"]
     assert "github.repository == 'HayaoSuzuki/hoimin'" in prepare_job["if"]
     assert "id-token" not in prepare_job.get("permissions", {})
     publish = workflow["jobs"]["pypi-publish"]
+
     assert publish["needs"] == ["pypi-prepare", "pypi-inspect"]
     assert publish["environment"]["name"] == "pypi"
     assert publish["permissions"] == {"id-token": "write"}
     assert len(publish["steps"]) == 2
     assert publish["steps"][0]["uses"].startswith("actions/download-artifact@")
     upload = publish["steps"][1]
+
     assert upload["uses"].startswith("pypa/gh-action-pypi-publish@")
     assert upload["with"]["packages-dir"] == "dist/"
     assert "password" not in upload["with"]
@@ -281,8 +333,10 @@ def test_sbom_checksums_do_not_change_pypi_payload(release_assets: Path) -> None
         + "\n"
     )
     result = prepare(release_assets)
+
     assert result.returncode == 0, result.stderr
     output = release_assets.parent / "dist"
+
     assert len(list(output.iterdir())) == 3
     for path in output.iterdir():
         assert path.suffix == ".whl"

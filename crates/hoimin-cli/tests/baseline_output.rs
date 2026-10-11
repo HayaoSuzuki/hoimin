@@ -40,11 +40,8 @@ async fn run(root: &Path, format: &str, script: &str, extra: &[&str]) -> std::pr
     .unwrap()
 }
 
-fn diagnostics(output: &std::process::Output, format: &str) -> String {
+fn diagnostics(output: &std::process::Output) -> String {
     let stderr = String::from_utf8(output.stderr.clone()).unwrap();
-    if format == "human" {
-        return stderr;
-    }
     stderr
         .lines()
         .map(|line| {
@@ -59,22 +56,21 @@ fn diagnostics(output: &std::process::Output, format: &str) -> String {
 
 #[tokio::test]
 async fn failed_baseline_logs_reach_all_cli_formats_before_clean_cleanup() {
+    type FormatCase = (
+        &'static str,
+        fn(&std::process::Output) -> String,
+        fn(&std::process::Output),
+    );
     let root = tempfile::tempdir().unwrap();
     std::fs::write(root.path().join("case.py"), "value = 1 + 2\n").unwrap();
     let script = "import sys; print('AUDIT_BASELINE_STDOUT', flush=True); print('AUDIT_BASELINE_STDERR', file=sys.stderr, flush=True); raise SystemExit(7)";
-    for format in ["human", "json", "jsonl"] {
-        let output = run(root.path(), format, script, &[]).await;
-        assert_eq!(
-            output.status.code(),
-            Some(3),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        let logs = diagnostics(&output, format);
-        assert!(logs.contains("AUDIT_BASELINE_STDOUT"), "{logs}");
-        assert!(logs.contains("AUDIT_BASELINE_STDERR"), "{logs}");
-        assert!(logs.contains("truncated=false"), "{logs}");
-        if format == "json" {
+    let cases: [FormatCase; 3] = [
+        (
+            "human",
+            |output| String::from_utf8(output.stderr.clone()).unwrap(),
+            |_| {},
+        ),
+        ("json", diagnostics, |output| {
             let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
             assert_eq!(report["baseline"]["termination"]["Exit"], 7);
             assert!(
@@ -84,15 +80,30 @@ async fn failed_baseline_logs_reach_all_cli_formats_before_clean_cleanup() {
                     .iter()
                     .any(|record| record["root_id"] == "execution" && record["status"] == "clean")
             );
-        } else if format == "jsonl" {
+        }),
+        ("jsonl", diagnostics, |output| {
             let events: Vec<serde_json::Value> = output
                 .stdout
-                .split(|b| *b == b'\n')
-                .filter(|s| !s.is_empty())
+                .split(|byte| *byte == b'\n')
+                .filter(|line| !line.is_empty())
                 .map(|line| serde_json::from_slice(line).unwrap())
                 .collect();
             assert_eq!(events.last().unwrap()["kind"], "run_finished");
-        }
+        }),
+    ];
+    for (format, read_diagnostics, assert_report) in cases {
+        let output = run(root.path(), format, script, &[]).await;
+        assert_eq!(
+            output.status.code(),
+            Some(3),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let logs = read_diagnostics(&output);
+        assert!(logs.contains("AUDIT_BASELINE_STDOUT"), "{logs}");
+        assert!(logs.contains("AUDIT_BASELINE_STDERR"), "{logs}");
+        assert!(logs.contains("truncated=false"), "{logs}");
+        assert_report(&output);
     }
 }
 
@@ -108,7 +119,7 @@ async fn baseline_output_retains_tail_and_decodes_split_unicode_and_invalid_byte
     )
     .await;
     assert_eq!(output.status.code(), Some(3));
-    let logs = diagnostics(&output, "json");
+    let logs = diagnostics(&output);
     assert!(
         logs.contains("retained=8 observed=14 truncated=true"),
         "{logs}"
@@ -117,7 +128,7 @@ async fn baseline_output_retains_tail_and_decodes_split_unicode_and_invalid_byte
     assert!(!logs.contains("PREFIX"));
     let output = run(root.path(), "jsonl", "import os; os.write(1, b'x'*16383 + '🦀'.encode() + b'TAIL\\xff\\x1b\\xf0\\x9f'); raise SystemExit(1)", &["--max-output", "64KiB"]).await;
     assert_eq!(output.status.code(), Some(3));
-    let logs = diagnostics(&output, "jsonl");
+    let logs = diagnostics(&output);
     assert_eq!(logs.matches('\u{1f980}').count(), 1);
     assert_eq!(
         logs.matches('\u{fffd}').count(),
@@ -149,12 +160,12 @@ async fn timed_out_baseline_exports_logs_and_success_is_quiet() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(diagnostics(&output, "json").contains("BASELINE_TIMEOUT_LOG"));
+    assert!(diagnostics(&output).contains("BASELINE_TIMEOUT_LOG"));
     let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(report["baseline"]["termination"], "Timeout");
     let output = run(root.path(), "json", "print('SUCCESS_LOG')", &[]).await;
     assert_eq!(output.status.code(), Some(1));
-    assert!(!diagnostics(&output, "json").contains("baseline.output"));
+    assert!(!diagnostics(&output).contains("baseline.output"));
     assert!(!String::from_utf8_lossy(&output.stderr).contains("SUCCESS_LOG"));
 }
 
@@ -209,7 +220,7 @@ async fn verify_failed_baseline_exports_logs_before_cleanup() {
     .expect("verify deadline")
     .unwrap();
     assert_eq!(output.status.code(), Some(3));
-    assert!(diagnostics(&output, "json").contains("VERIFY_BASELINE_LOG"));
+    assert!(diagnostics(&output).contains("VERIFY_BASELINE_LOG"));
     let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(report["baseline"]["termination"]["Exit"], 7);
 }

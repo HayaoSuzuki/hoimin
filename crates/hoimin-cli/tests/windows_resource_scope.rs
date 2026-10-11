@@ -66,11 +66,33 @@ async fn observe(path: &Path) -> Value {
     }
 }
 
+type AssertOccupancy = fn(&Value, &Value, u64, u64);
+
+fn assert_memory_occupancy(first: &Value, second: &Value, memory_bytes: u64, _: u64) {
+    for record in [first, second] {
+        assert_eq!(record["payload_bytes"], 96 * 1024 * 1024);
+        assert!(record["peak_job_memory"].as_u64().unwrap() >= 96 * 1024 * 1024);
+        assert!(record["peak_job_memory"].as_u64().unwrap() < memory_bytes);
+    }
+    assert!(
+        first["payload_bytes"].as_u64().unwrap() + second["payload_bytes"].as_u64().unwrap()
+            > memory_bytes
+    );
+}
+
+fn assert_process_occupancy(first: &Value, second: &Value, _: u64, processes: u64) {
+    assert!(
+        first["active_processes"].as_u64().unwrap() + second["active_processes"].as_u64().unwrap()
+            > processes
+    );
+}
+
 async fn simultaneous_observation(
     shared: &Path,
     mode: &str,
     memory_bytes: u64,
     processes: u64,
+    assert_occupancy: AssertOccupancy,
 ) -> Vec<ObservedProcess> {
     let first_path = shared.join("first.json");
     let second_path = shared.join("second.json");
@@ -87,11 +109,6 @@ async fn simultaneous_observation(
                 | JOB_OBJECT_LIMIT_ACTIVE_PROCESS
         );
         assert_eq!(record["active_processes"], 2);
-        if mode == "memory" {
-            assert_eq!(record["payload_bytes"], 96 * 1024 * 1024);
-            assert!(record["peak_job_memory"].as_u64().unwrap() >= 96 * 1024 * 1024);
-            assert!(record["peak_job_memory"].as_u64().unwrap() < memory_bytes);
-        }
         handles.push(ObservedProcess::open(&record["pid"]));
         handles.push(ObservedProcess::open(&record["child_pid"]));
     }
@@ -99,24 +116,19 @@ async fn simultaneous_observation(
     for handle in &handles {
         assert_eq!(handle.state(), WAIT_TIMEOUT);
     }
-    if mode == "memory" {
-        assert!(
-            first["payload_bytes"].as_u64().unwrap() + second["payload_bytes"].as_u64().unwrap()
-                > memory_bytes
-        );
-    } else {
-        assert!(
-            first["active_processes"].as_u64().unwrap()
-                + second["active_processes"].as_u64().unwrap()
-                > processes
-        );
-    }
+    assert_occupancy(&first, &second, memory_bytes, processes);
     println!("native {mode} simultaneous occupancy: {first}; {second}");
     fs::write(shared.join("release"), b"observed").unwrap();
     handles
 }
 
-async fn assert_scope(mode: &str, memory: &str, memory_bytes: u64, processes: u64) {
+async fn assert_scope(
+    mode: &str,
+    memory: &str,
+    memory_bytes: u64,
+    processes: u64,
+    assert_occupancy: AssertOccupancy,
+) {
     let project = tempfile::tempdir().unwrap();
     let shared = tempfile::tempdir().unwrap();
     fs::write(
@@ -164,7 +176,13 @@ async fn assert_scope(mode: &str, memory: &str, memory_bytes: u64, processes: u6
         .kill_on_drop(true);
     let running = command.output();
     tokio::pin!(running);
-    let observation = simultaneous_observation(shared.path(), mode, memory_bytes, processes);
+    let observation = simultaneous_observation(
+        shared.path(),
+        mode,
+        memory_bytes,
+        processes,
+        assert_occupancy,
+    );
     let handles = tokio::select! {
         output = &mut running => panic!("CLI exited before simultaneous occupancy: {:?}", output.unwrap()),
         observed = tokio::time::timeout(Duration::from_secs(45), observation) => observed.expect("native roots failed to reach barrier"),
@@ -208,10 +226,24 @@ async fn assert_scope(mode: &str, memory: &str, memory_bytes: u64, processes: u6
 
 #[tokio::test]
 async fn cli_jobs_two_memory_caps_are_per_root_with_cleanup() {
-    assert_scope("memory", "160MiB", 160 * 1024 * 1024, 8).await;
+    assert_scope(
+        "memory",
+        "160MiB",
+        160 * 1024 * 1024,
+        8,
+        assert_memory_occupancy,
+    )
+    .await;
 }
 
 #[tokio::test]
 async fn cli_jobs_two_process_caps_are_per_root_with_cleanup() {
-    assert_scope("process", "256MiB", 256 * 1024 * 1024, 3).await;
+    assert_scope(
+        "process",
+        "256MiB",
+        256 * 1024 * 1024,
+        3,
+        assert_process_occupancy,
+    )
+    .await;
 }

@@ -152,16 +152,19 @@ impl Project {
 
 #[test]
 fn file_and_line_import_copied_regular_package_from_explicit_root() {
-    for selector in [
-        ["--file", "src/pkg/calc.py"],
-        ["--line", "src/pkg/calc.py:2"],
+    for (selector, source) in [
+        (
+            ["--file", "src/pkg/calc.py"],
+            "def add(a, b):\n    return a + b\n",
+        ),
+        (
+            ["--line", "src/pkg/calc.py:2"],
+            "def add(a, b):\n    return a + b\n\ndef unused(a, b):\n    return a + b\n",
+        ),
     ] {
         let mut project = Project::new();
-        if selector[0] == "--line" {
-            project.source =
-                "def add(a, b):\n    return a + b\n\ndef unused(a, b):\n    return a + b\n";
-            fs::write(project.root.join("src/pkg/calc.py"), project.source).unwrap();
-        }
+        project.source = source;
+        fs::write(project.root.join("src/pkg/calc.py"), project.source).unwrap();
         let output = project.execute("run", &selector, &["--import-root", "src"], false);
         let report = project.assert_killed(&output);
         assert_eq!(

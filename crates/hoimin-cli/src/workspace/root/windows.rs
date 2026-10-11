@@ -1147,6 +1147,26 @@ mod tests {
         assert!(parent.symlink_metadata("destination").unwrap().is_dir());
     }
 
+    fn attempt_checked_remove_replacement(
+        parent: &cap_std::fs::Dir,
+        calls: &std::cell::Cell<u8>,
+        blocked: &std::cell::Cell<bool>,
+        installed: &std::cell::Cell<bool>,
+    ) -> io::Result<()> {
+        let call = calls.get().saturating_add(1);
+        calls.set(call);
+        if call == 3 {
+            match parent.rename("source", parent, "parked") {
+                Ok(()) => {
+                    parent.write("source", b"replacement")?;
+                    installed.set(true);
+                }
+                Err(_) => blocked.set(true),
+            }
+        }
+        Ok(())
+    }
+
     #[test]
     fn round_six_checked_remove_entry_blocks_replacement_after_identity_validation() {
         let temporary = tempfile::tempdir().unwrap();
@@ -1166,18 +1186,12 @@ mod tests {
             OsStr::new("source"),
             original_identity,
             &|| {
-                let call = hook_calls.get().saturating_add(1);
-                hook_calls.set(call);
-                if call == 3 {
-                    match parent.rename("source", &parent, "parked") {
-                        Ok(()) => {
-                            parent.write("source", b"replacement")?;
-                            replacement_installed.set(true);
-                        }
-                        Err(_) => rename_blocked.set(true),
-                    }
-                }
-                Ok(())
+                attempt_checked_remove_replacement(
+                    &parent,
+                    &hook_calls,
+                    &rename_blocked,
+                    &replacement_installed,
+                )
             },
         )
         .unwrap();

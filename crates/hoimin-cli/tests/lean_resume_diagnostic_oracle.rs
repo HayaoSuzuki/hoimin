@@ -243,15 +243,20 @@ fn fixture_rows_must_match_declared_categories_and_order() {
         .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
         .find(|case| case["mode"] == "strict" && case["rows"].as_array().unwrap().len() == 6)
         .unwrap();
-    for field in ["compatible", "complete", "budget", "name"] {
+    for (field, value) in [
+        (
+            "compatible",
+            serde_json::json!(!original["rows"][0]["compatible"].as_bool().unwrap()),
+        ),
+        (
+            "complete",
+            serde_json::json!(!original["rows"][0]["complete"].as_bool().unwrap()),
+        ),
+        ("budget", serde_json::json!(99)),
+        ("name", serde_json::json!("unknown")),
+    ] {
         let mut changed = original.clone();
-        changed["rows"][0][field] = match field {
-            "compatible" | "complete" => {
-                serde_json::json!(!original["rows"][0][field].as_bool().unwrap())
-            }
-            "budget" => serde_json::json!(99),
-            _ => serde_json::json!("unknown"),
-        };
+        changed["rows"][0][field] = value;
         assert!(
             validate(&serde_json::from_value::<Case>(changed).unwrap()).is_err(),
             "{field}"
@@ -272,14 +277,15 @@ fn fixture_rows_must_match_declared_categories_and_order() {
             "{field}"
         );
     }
-    for remove in [false, true] {
-        let mut changed = original.clone();
-        let rows = changed["rows"].as_array_mut().unwrap();
-        if remove {
+    let mutations: [fn(&mut Vec<serde_json::Value>); 2] = [
+        |rows| {
             rows.pop();
-        } else {
-            rows.swap(0, 1);
-        }
+        },
+        |rows| rows.swap(0, 1),
+    ];
+    for mutate in mutations {
+        let mut changed = original.clone();
+        mutate(changed["rows"].as_array_mut().unwrap());
         assert!(validate(&serde_json::from_value::<Case>(changed).unwrap()).is_err());
     }
 }

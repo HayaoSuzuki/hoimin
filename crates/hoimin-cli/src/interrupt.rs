@@ -129,18 +129,18 @@ mod tests {
         assert!(forced_rx.try_recv().is_err());
     }
 
-    #[tokio::test]
-    async fn dropping_monitor_aborts_its_owned_producer_task() {
-        struct NotifyOnDrop(Option<tokio::sync::oneshot::Sender<()>>);
+    struct NotifyOnDrop(Option<tokio::sync::oneshot::Sender<()>>);
 
-        impl Drop for NotifyOnDrop {
-            fn drop(&mut self) {
-                if let Some(tx) = self.0.take() {
-                    let _ = tx.send(());
-                }
+    impl Drop for NotifyOnDrop {
+        fn drop(&mut self) {
+            if let Some(tx) = self.0.take() {
+                let _ = tx.send(());
             }
         }
+    }
 
+    #[tokio::test]
+    async fn dropping_monitor_aborts_its_owned_producer_task() {
         let (_signal_tx, signal_rx) = tokio::sync::mpsc::unbounded_channel();
         let (producer_dropped_tx, producer_dropped_rx) = tokio::sync::oneshot::channel();
         let (producer_ready_tx, producer_ready_rx) = tokio::sync::oneshot::channel();

@@ -340,11 +340,10 @@ fn ranking_keeps_explicit_symbol_paths_exact() {
 
 #[test]
 fn ranking_normalizes_explicit_line_paths_before_matching_candidates() {
-    let (absolute_root, absolute_selection) = if cfg!(windows) {
-        ("C:/workspace", "C:/workspace/src/calc.py")
-    } else {
-        ("/workspace", "/workspace/src/calc.py")
-    };
+    #[cfg(windows)]
+    let (absolute_root, absolute_selection) = ("C:/workspace", "C:/workspace/src/calc.py");
+    #[cfg(not(windows))]
+    let (absolute_root, absolute_selection) = ("/workspace", "/workspace/src/calc.py");
     for (root, selected_path) in [("", "./src/calc.py"), (absolute_root, absolute_selection)] {
         let selection = Selection {
             root: Utf8PathBuf::from(root),

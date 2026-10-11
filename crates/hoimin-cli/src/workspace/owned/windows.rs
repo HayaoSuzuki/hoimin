@@ -799,6 +799,49 @@ mod tests {
         );
     }
 
+    fn create_test_managed_reparse_entry(
+        parent: &std::path::Path,
+        link: &std::path::Path,
+    ) -> io::Result<io::ErrorKind> {
+        match std::os::windows::fs::symlink_file("not-a-target", link) {
+            Ok(()) => Ok(io::ErrorKind::AlreadyExists),
+            Err(error)
+                if error.kind() == io::ErrorKind::PermissionDenied
+                    || error.kind() == io::ErrorKind::Unsupported
+                    || error.raw_os_error() == Some(1314) =>
+            {
+                let target = parent.join("junction-target");
+                std::fs::create_dir(&target)?;
+                let output = std::process::Command::new("cmd")
+                    .args(["/C", "mklink", "/J"])
+                    .arg(link)
+                    .arg(target)
+                    .output()?;
+                if output.status.success() {
+                    Ok(io::ErrorKind::PermissionDenied)
+                } else {
+                    Err(io::Error::other(
+                        String::from_utf8_lossy(&output.stderr).into_owned(),
+                    ))
+                }
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    fn attempt_and_restore_directory_rename(
+        source: &std::path::Path,
+        replacement: &std::path::Path,
+    ) -> bool {
+        match std::fs::rename(source, replacement) {
+            Ok(()) => {
+                std::fs::rename(replacement, source).unwrap();
+                false
+            }
+            Err(_) => true,
+        }
+    }
+
     #[test]
     fn relative_managed_creates_are_exclusive_and_owned_by_token_user() {
         let temporary = tempfile::tempdir().unwrap();
@@ -862,18 +905,18 @@ mod tests {
         );
 
         let link = temporary.path().join("managed-symlink");
-        if std::os::windows::fs::symlink_file("not-a-target", &link).is_ok() {
-            assert_eq!(
-                super::create_relative_managed_file(
-                    &parent,
-                    OsStr::new("managed-symlink"),
-                    super::ManagedFileAccess::Write,
-                )
-                .unwrap_err()
-                .kind(),
-                io::ErrorKind::AlreadyExists,
-            );
-        }
+        let expected_collision =
+            create_test_managed_reparse_entry(temporary.path(), &link).unwrap();
+        assert_eq!(
+            super::create_relative_managed_file(
+                &parent,
+                OsStr::new("managed-symlink"),
+                super::ManagedFileAccess::Write,
+            )
+            .unwrap_err()
+            .kind(),
+            expected_collision,
+        );
     }
 
     #[test]
@@ -961,11 +1004,10 @@ mod tests {
             OsStr::new("identity-failure-directory"),
             super::ManagedEntryKind::Directory,
             |_, _, _| {
-                let replacement = std::fs::rename(&source_path, &replacement_path);
-                replacement_was_blocked.set(replacement.is_err());
-                if replacement.is_ok() {
-                    std::fs::rename(&replacement_path, &source_path).unwrap();
-                }
+                replacement_was_blocked.set(attempt_and_restore_directory_rename(
+                    &source_path,
+                    &replacement_path,
+                ));
                 Err(io::Error::other("injected created-handle identity failure"))
             },
         )

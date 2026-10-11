@@ -66,11 +66,7 @@ async fn stalled_report_consumer_cannot_outlive_total_timeout_and_grace() {
             stderr.read_to_end(&mut bytes).await.unwrap();
             String::from_utf8(bytes).unwrap()
         });
-        let status = tokio::time::timeout(Duration::from_secs(6), child.wait()).await;
-        if status.is_err() {
-            child.kill().await.unwrap();
-            child.wait().await.unwrap();
-        }
+        let status = wait_and_reap_after_timeout(&mut child, Duration::from_secs(6)).await;
         drop(consumer);
         let diagnostics = diagnostics.await.unwrap();
         let status = status
@@ -1777,9 +1773,9 @@ async fn concurrent_real_cli_runs_refuse_live_session_ownership() {
 
     let child_cleanup = reap_test_child(&mut first).await;
     let process_cleanup = kill_fixture_processes(&active, &readiness).await;
-    if let Err(error) = child_cleanup.and(process_cleanup) {
+    child_cleanup.and(process_cleanup).unwrap_or_else(|error| {
         panic!("test teardown failed: {error}; outcome={outcome:?}");
-    }
+    });
     let (incomplete_runs, second, first_status) = outcome.unwrap_or_else(|error| {
         panic!("session ownership scenario failed after successful teardown: {error}")
     });
@@ -1810,32 +1806,60 @@ async fn concurrent_real_cli_runs_refuse_live_session_ownership() {
 #[tokio::test]
 async fn copy_policy_changes_do_not_reuse_old_verdicts() {
     let _parallel_test_guard = parallel_project_test_guard().await;
-    for (use_include, before_present, after_present) in [
-        (false, true, false),
-        (false, false, true),
-        (true, true, false),
-        (true, false, true),
-        (false, true, true),
-        (false, false, false),
+    for (ignore_contents, before_options, after_options, before_status, after_status, reused) in [
+        (
+            &[][..],
+            &[][..],
+            &["--exclude", "strict.flag"][..],
+            "killed",
+            "survived",
+            false,
+        ),
+        (
+            &[][..],
+            &["--exclude", "strict.flag"][..],
+            &[][..],
+            "survived",
+            "killed",
+            false,
+        ),
+        (
+            &b"strict.flag\n"[..],
+            &["--include", "src/**", "--include", "strict.flag"][..],
+            &["--include", "src/**"][..],
+            "killed",
+            "survived",
+            false,
+        ),
+        (
+            &b"strict.flag\n"[..],
+            &["--include", "src/**"][..],
+            &["--include", "src/**", "--include", "strict.flag"][..],
+            "survived",
+            "killed",
+            false,
+        ),
+        (&[][..], &[][..], &[][..], "killed", "killed", true),
+        (
+            &[][..],
+            &["--exclude", "strict.flag"][..],
+            &["--exclude", "strict.flag"][..],
+            "survived",
+            "survived",
+            true,
+        ),
     ] {
         let project = tempfile::tempdir().unwrap();
         let sessions = tempfile::tempdir().unwrap();
         let database = sessions.path().join("saved.sqlite3");
         write_parallel_project(project.path());
         std::fs::write(project.path().join("strict.flag"), "strict\n").unwrap();
-        if use_include {
-            std::fs::write(project.path().join(".ignore"), "strict.flag\n").unwrap();
+        for contents in std::iter::once(ignore_contents).filter(|contents| !contents.is_empty()) {
+            std::fs::write(project.path().join(".ignore"), contents).unwrap();
         }
-        let options = |present| {
+        let options = |additional: &[&'static str]| {
             let mut options = vec!["--jobs", "1", "--fingerprint-file", "strict.flag"];
-            if use_include {
-                options.extend(["--include", "src/**"]);
-                if present {
-                    options.extend(["--include", "strict.flag"]);
-                }
-            } else if !present {
-                options.extend(["--exclude", "strict.flag"]);
-            }
+            options.extend_from_slice(additional);
             options
         };
         let command = "from pathlib import Path; from src.calc import total; assert not Path('strict.flag').exists() or total(1, 2, 3, 4, 5) == 15";
@@ -1845,7 +1869,7 @@ async fn copy_policy_changes_do_not_reuse_old_verdicts() {
             false,
             1,
             command,
-            &options(before_present),
+            &options(before_options),
         )
         .await;
         let resumed = run_project_with_session_options(
@@ -1854,7 +1878,7 @@ async fn copy_policy_changes_do_not_reuse_old_verdicts() {
             true,
             1,
             command,
-            &options(after_present),
+            &options(after_options),
         )
         .await;
         let fresh = run_project_with_session_options(
@@ -1863,7 +1887,7 @@ async fn copy_policy_changes_do_not_reuse_old_verdicts() {
             false,
             1,
             command,
-            &options(after_present),
+            &options(after_options),
         )
         .await;
         for run in [&first, &resumed, &fresh] {
@@ -1873,35 +1897,21 @@ async fn copy_policy_changes_do_not_reuse_old_verdicts() {
                 serde_json::json!({"Exit": 0})
             );
         }
-        assert_eq!(
-            first.statuses[0],
-            if before_present { "killed" } else { "survived" }
-        );
-        assert_eq!(
-            fresh.statuses[0],
-            if after_present { "killed" } else { "survived" }
-        );
-        assert_eq!(
-            resumed.statuses, fresh.statuses,
-            "include={use_include}, presence {before_present}->{after_present}"
-        );
+        assert_eq!(first.statuses[0], before_status);
+        assert_eq!(fresh.statuses[0], after_status);
+        assert_eq!(resumed.statuses, fresh.statuses);
         assert_eq!(
             first.document["mutants"][0]["candidate"]["id"],
             resumed.document["mutants"][0]["candidate"]["id"]
         );
-        if before_present == after_present {
-            assert_eq!(
-                first.document["run"]["run_id"],
-                resumed.document["run"]["run_id"]
-            );
-            assert!(resumed.document["mutants"][0]["termination"].is_null());
-        } else {
-            assert_ne!(
-                first.document["run"]["run_id"],
-                resumed.document["run"]["run_id"]
-            );
-            assert!(!resumed.document["mutants"][0]["termination"].is_null());
-        }
+        assert_eq!(
+            first.document["run"]["run_id"] == resumed.document["run"]["run_id"],
+            reused
+        );
+        assert_eq!(
+            resumed.document["mutants"][0]["termination"].is_null(),
+            reused
+        );
     }
 }
 
@@ -2017,18 +2027,14 @@ async fn sqlite_session_can_be_resumed_after_repeated_mutant_limits() {
     write_parallel_project(project.path());
     let command = "from src.calc import total; assert total(1, 2, 3, 4, 5) == 15";
 
-    let mut run_id = None;
+    let mut run_ids = Vec::new();
     for resume in [false, true, true] {
         let run = run_project_with_session(project.path(), &database, resume, 1, command).await;
         assert_eq!(run.exit_code, 4, "stderr={}", run.stderr);
         assert!(!run.stderr.contains("session.finish.state"));
         let connection = rusqlite::Connection::open(&database).unwrap();
         let current_run_id = run.document["run"]["run_id"].as_str().unwrap();
-        if let Some(first_run_id) = &run_id {
-            assert_eq!(current_run_id, first_run_id);
-        } else {
-            run_id = Some(current_run_id.to_owned());
-        }
+        run_ids.push(current_run_id.to_owned());
         let (run_count, complete): (i64, i64) = connection
             .query_row("SELECT COUNT(*), MAX(complete) FROM runs", [], |row| {
                 Ok((row.get(0)?, row.get(1)?))
@@ -2037,6 +2043,7 @@ async fn sqlite_session_can_be_resumed_after_repeated_mutant_limits() {
         assert_eq!(run_count, 1);
         assert_eq!(complete, 0);
     }
+    assert_eq!(run_ids, vec![run_ids[0].clone(); 3]);
 }
 
 #[tokio::test]
@@ -2317,9 +2324,9 @@ async fn total_timeout_exits_after_grace_when_session_finish_is_locked() {
         .await
         .expect("stderr drain task must not panic")
         .map_err(|error| error.to_string());
-    if let Err(error) = child_cleanup.and(process_cleanup) {
+    child_cleanup.and(process_cleanup).unwrap_or_else(|error| {
         panic!("test teardown failed: {error}; outcome={outcome:?}");
-    }
+    });
     let (status, lock, descendant_stopped) = outcome.unwrap_or_else(|error| {
         panic!("locked-session timeout scenario failed after successful teardown: {error}")
     });
@@ -2441,27 +2448,24 @@ async fn injected_ctrl_c_finishes_incomplete_or_defers_when_tree_quiescence_is_u
     }))
     .await
     .expect("cancelled run must finish promptly");
-    let cleanup_deferred = match exit {
-        Ok(exit) => {
-            assert_eq!(exit, 130);
-            false
-        }
-        Err(error) => {
-            assert!(
-                error.contains(hoimin_core::WORKSPACE_CLEANUP_DEFERRED),
-                "{error}"
-            );
-            true
-        }
-    };
+    let cleanup_deferred = exit.is_err();
+    assert_eq!(
+        exit.as_ref().ok().copied(),
+        [Some(130), None][usize::from(cleanup_deferred)]
+    );
+    for error in exit.as_ref().err().into_iter().collect::<Vec<_>>() {
+        assert!(
+            error.contains(hoimin_core::WORKSPACE_CLEANUP_DEFERRED),
+            "{error}"
+        );
+    }
     let document: serde_json::Value =
         serde_json::from_slice(&stdout.bytes()).expect("parseable cancelled report");
     assert_eq!(document["summary"]["complete"], false);
-    if cleanup_deferred {
-        assert_eq!(
-            document["summary"]["disk"]["stop"]["code"],
-            hoimin_core::PROCESS_LIFECYCLE_FAILED
-        );
+    for expected in
+        [&[][..], &[hoimin_core::PROCESS_LIFECYCLE_FAILED][..]][usize::from(cleanup_deferred)]
+    {
+        assert_eq!(document["summary"]["disk"]["stop"]["code"], *expected);
     }
     let not_run_count = document["summary"]["counts"]["not_run"]
         .as_u64()
@@ -2483,11 +2487,8 @@ async fn injected_ctrl_c_finishes_incomplete_or_defers_when_tree_quiescence_is_u
     assert_eq!(complete, 0);
     drop(connection);
     for (token, descendant) in descendants {
-        if !descendant
-            .wait_until_stops(Duration::from_millis(500))
-            .await
-        {
-            let heartbeat = descendant_heartbeats.join(token);
+        for () in descendant_heartbeat_observation(&descendant).await {
+            let heartbeat = descendant_heartbeats.join(&token);
             let before = std::fs::read(&heartbeat).unwrap();
             tokio::time::sleep(Duration::from_millis(500)).await;
             let after = std::fs::read(&heartbeat).unwrap();
@@ -2499,6 +2500,15 @@ async fn injected_ctrl_c_finishes_incomplete_or_defers_when_tree_quiescence_is_u
             );
         }
     }
+}
+
+async fn descendant_heartbeat_observation(descendant: &FixtureProcess) -> Vec<()> {
+    (!descendant
+        .wait_until_stops(Duration::from_millis(500))
+        .await)
+        .then_some(())
+        .into_iter()
+        .collect()
 }
 
 async fn first_interrupt_scenario() {
@@ -2554,9 +2564,9 @@ async fn first_interrupt_scenario() {
         .expect("stdout drain task must not panic")
         .map_err(|error| error.to_string())
         .and_then(|bytes| String::from_utf8(bytes).map_err(|error| error.to_string()));
-    if let Err(error) = child_cleanup.and(process_cleanup) {
+    child_cleanup.and(process_cleanup).unwrap_or_else(|error| {
         panic!("test teardown failed: {error}; outcome={outcome:?}");
-    }
+    });
     let (status, descendant_stopped) = outcome.unwrap_or_else(|error| {
         panic!("first-interrupt scenario failed after successful teardown: {error}")
     });
@@ -2699,9 +2709,9 @@ async fn second_interrupt_scenario() {
         .expect("stdout drain task must not panic")
         .map_err(|error| error.to_string())
         .and_then(|bytes| String::from_utf8(bytes).map_err(|error| error.to_string()));
-    if let Err(error) = child_cleanup.and(process_cleanup) {
+    child_cleanup.and(process_cleanup).unwrap_or_else(|error| {
         panic!("test teardown failed: {error}; outcome={outcome:?}");
-    }
+    });
     let (status, forced_elapsed, lock) = outcome.unwrap_or_else(|error| {
         panic!("second-interrupt scenario failed after successful teardown: {error}")
     });
@@ -4263,11 +4273,48 @@ async fn kill_fixture_processes(processes: Option<&FixtureProcesses>) -> Result<
     Ok(())
 }
 
+type ResourceReport = (
+    serde_json::Value,
+    serde_json::Value,
+    Vec<serde_json::Value>,
+    serde_json::Value,
+);
+
+fn parse_resource_json(stdout: &[u8]) -> ResourceReport {
+    let doc: serde_json::Value = serde_json::from_slice(stdout).unwrap();
+    (
+        doc["run"].clone(),
+        doc["baseline"].clone(),
+        doc["mutants"].as_array().unwrap().clone(),
+        doc["summary"].clone(),
+    )
+}
+
+fn parse_resource_jsonl(stdout: &[u8]) -> ResourceReport {
+    let events: Vec<serde_json::Value> = String::from_utf8_lossy(stdout)
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    let event = |kind| events.iter().find(|v| v["kind"] == kind).unwrap().clone();
+    (
+        event("run_started"),
+        event("baseline_finished"),
+        events
+            .iter()
+            .filter(|v| v["kind"] == "mutant_finished")
+            .cloned()
+            .collect(),
+        event("run_finished"),
+    )
+}
+
 // Uses a real timeout to leave the session incomplete; never edits saved results.
 #[tokio::test]
 async fn selected_resource_policy_survives_fresh_and_natural_resume_reports() {
-    let mut mismatches = Vec::new();
-    for format in ["json", "jsonl"] {
+    for (format, parse) in [
+        ("json", parse_resource_json as fn(&[u8]) -> ResourceReport),
+        ("jsonl", parse_resource_jsonl),
+    ] {
         let project = tempfile::tempdir().unwrap();
         let sessions = tempfile::tempdir().unwrap();
         let session = sessions.path().join("session.sqlite");
@@ -4277,35 +4324,10 @@ async fn selected_resource_policy_survives_fresh_and_natural_resume_reports() {
         )
         .unwrap();
 
-        let mut prior_ids = Vec::new();
-        let mut history = Vec::new();
+        let mut reports = Vec::new();
         for resume in [false, true] {
             let stdout = resource_policy_run(project.path(), &session, format, resume).await;
-            let (run, baseline, mutants, summary) = if format == "json" {
-                let doc: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
-                (
-                    doc["run"].clone(),
-                    doc["baseline"].clone(),
-                    doc["mutants"].as_array().unwrap().clone(),
-                    doc["summary"].clone(),
-                )
-            } else {
-                let events: Vec<serde_json::Value> = String::from_utf8_lossy(&stdout)
-                    .lines()
-                    .map(|line| serde_json::from_str(line).unwrap())
-                    .collect();
-                let event = |kind| events.iter().find(|v| v["kind"] == kind).unwrap().clone();
-                (
-                    event("run_started"),
-                    event("baseline_finished"),
-                    events
-                        .iter()
-                        .filter(|v| v["kind"] == "mutant_finished")
-                        .cloned()
-                        .collect(),
-                    event("run_finished"),
-                )
-            };
+            let (run, baseline, mutants, summary) = parse(&stdout);
             assert_eq!(summary["complete"], false);
             assert_eq!(mutants.len(), 2);
             let killed = mutants.iter().find(|v| v["status"] == "killed").unwrap();
@@ -4315,32 +4337,15 @@ async fn selected_resource_policy_survives_fresh_and_natural_resume_reports() {
                 .iter()
                 .map(|v| v["candidate"]["id"].clone())
                 .collect();
-            if resume {
-                assert_eq!(ids, prior_ids);
-                assert!(killed["termination"].is_null());
-                assert!(killed["output"].is_null());
-                assert_eq!(killed["elapsed_ms"], 0);
-            } else {
-                assert!(!killed["termination"].is_null());
-                prior_ids = ids;
-            }
             let mode = baseline["resource_mode"].clone();
-            if cfg!(target_os = "macos") {
+            #[cfg(target_os = "macos")]
+            {
                 assert_eq!(mode, "best_effort");
                 assert_eq!(run["resource_control"]["mechanism"], "portable");
             }
-            if run["resource_control"]["mode"] != mode
-                || run["resource_control"]["mechanism"]
-                    .as_str()
-                    .unwrap()
-                    .is_empty()
-                || mutants.iter().any(|v| v["resource_mode"] != mode)
-            {
-                mismatches.push(format!(
-                    "{format} resume={resume}: {}",
-                    String::from_utf8_lossy(&stdout)
-                ));
-            }
+            assert_eq!(run["resource_control"]["mode"], mode);
+            assert_ne!(run["resource_control"]["mechanism"].as_str().unwrap(), "");
+            assert!(mutants.iter().all(|value| value["resource_mode"] == mode));
             let connection = rusqlite::Connection::open(&session).unwrap();
             let rows = connection.prepare("SELECT * FROM results WHERE status = 'killed' AND run_id = (SELECT run_id FROM runs ORDER BY id LIMIT 1) ORDER BY mutant_id").unwrap()
                 .query_map([], |row| Ok((0..row.as_ref().column_count()).map(|i| row.get::<_, rusqlite::types::Value>(i).unwrap()).collect::<Vec<_>>())).unwrap()
@@ -4356,14 +4361,22 @@ async fn selected_resource_policy_survives_fresh_and_natural_resume_reports() {
                     killed["candidate"]["id"].as_str().unwrap().to_owned()
                 )
             );
-            if resume {
-                assert_eq!(rows, history);
-            } else {
-                history = rows;
-            }
+            reports.push((ids, killed.clone(), rows));
         }
+        let [
+            (first_ids, first_killed, first_rows),
+            (resumed_ids, resumed_killed, resumed_rows),
+        ] = reports.as_slice()
+        else {
+            panic!("fresh and resumed reports");
+        };
+        assert_eq!(resumed_ids, first_ids);
+        assert!(!first_killed["termination"].is_null());
+        assert!(resumed_killed["termination"].is_null());
+        assert!(resumed_killed["output"].is_null());
+        assert_eq!(resumed_killed["elapsed_ms"], 0);
+        assert_eq!(resumed_rows, first_rows);
     }
-    assert!(mismatches.is_empty(), "{}", mismatches.join("\n"));
 }
 
 async fn resource_policy_run(root: &Path, session: &Path, format: &str, resume: bool) -> Vec<u8> {
@@ -4431,6 +4444,20 @@ async fn parenthesized_exception_to_bare_run_survives_value_error_test() {
     assert_eq!(run.document["summary"]["counts"]["survived"], 1);
 }
 
+fn active_session_database(
+    directory: &Path,
+    project: &Path,
+    inside: bool,
+    existing: bool,
+) -> std::path::PathBuf {
+    let parent = if inside { project } else { directory };
+    let database = parent.join("session.sqlite3");
+    if existing {
+        drop(hoimin_cli::session::SessionHandler::open(&database).unwrap());
+    }
+    database
+}
+
 #[tokio::test]
 async fn active_session_artifacts_allow_real_cli_in_root() {
     for inside in [false, true] {
@@ -4441,22 +4468,15 @@ async fn active_session_artifacts_allow_real_cli_in_root() {
                 std::fs::create_dir(&project).unwrap();
                 write_parallel_project(&project);
                 std::fs::write(project.join("fixture.db"), b"ordinary fixture").unwrap();
-                let database = if inside {
-                    project.join("session.sqlite3")
-                } else {
-                    directory.path().join("session.sqlite3")
-                };
-                if existing {
-                    drop(hoimin_cli::session::SessionHandler::open(&database).unwrap());
-                }
-                let session = if relative {
-                    database.strip_prefix(directory.path()).unwrap()
-                } else {
-                    database.as_path()
-                };
+                let database =
+                    active_session_database(directory.path(), &project, inside, existing);
+                let session_paths = [
+                    database.as_path(),
+                    database.strip_prefix(directory.path()).unwrap(),
+                ];
+                let session = session_paths[usize::from(relative)];
                 let command = "from pathlib import Path; assert Path('fixture.db').read_bytes() == b'ordinary fixture'; assert not Path('session.sqlite3').exists(); from src.calc import total; assert total(1,2,3,4,5) == 15";
-                let mut first_id = None;
-                let mut killed_id = None;
+                let mut reports = Vec::new();
                 for resume in [false, true] {
                     let mut args = real_cli_session_args(&project, session, resume, command);
                     let jobs = args.iter().position(|arg| arg == "--jobs").unwrap();
@@ -4482,26 +4502,43 @@ async fn active_session_artifacts_allow_real_cli_in_root() {
                         .iter()
                         .find(|mutant| mutant["status"] == "killed")
                         .expect("an actual mutant must be killed");
-                    if let Some(id) = &killed_id {
-                        let reused = mutants
-                            .iter()
-                            .find(|mutant| &mutant["candidate"]["id"] == id)
-                            .unwrap();
-                        assert_eq!(reused["status"], "killed");
-                        assert!(reused["termination"].is_null());
-                    } else {
-                        killed_id = Some(killed["candidate"]["id"].clone());
-                    }
                     assert_eq!(report["summary"]["complete"], false);
-                    let id = report["run"]["run_id"].clone();
-                    if let Some(first) = &first_id {
-                        assert_eq!(&id, first);
-                    } else {
-                        first_id = Some(id);
-                    }
+                    reports.push((
+                        report["run"]["run_id"].clone(),
+                        killed["candidate"]["id"].clone(),
+                        mutants.clone(),
+                    ));
                 }
+                let [(first_run, killed_id, _), (resumed_run, _, resumed_mutants)] =
+                    reports.as_slice()
+                else {
+                    panic!("fresh and resumed reports");
+                };
+                assert_eq!(resumed_run, first_run);
+                let reused = resumed_mutants
+                    .iter()
+                    .find(|mutant| &mutant["candidate"]["id"] == killed_id)
+                    .unwrap();
+                assert_eq!(reused["status"], "killed");
+                assert!(reused["termination"].is_null());
             }
         }
+    }
+}
+
+#[cfg(unix)]
+fn active_database_alias(
+    directory: &Path,
+    alias: &Path,
+    database: &Path,
+    existing: bool,
+) -> std::path::PathBuf {
+    if existing {
+        let leaf = directory.join("leaf.db");
+        std::os::unix::fs::symlink(database, &leaf).unwrap();
+        leaf
+    } else {
+        alias.join("active*?[1].db")
     }
 }
 
@@ -4516,13 +4553,7 @@ async fn active_session_artifacts_follow_root_parent_and_database_aliases() {
     std::os::unix::fs::symlink(&root, &alias).unwrap();
     let database = root.join("active*?[1].db");
     for existing in [false, true] {
-        let session = if existing {
-            let leaf = directory.path().join("leaf.db");
-            std::os::unix::fs::symlink(&database, &leaf).unwrap();
-            leaf
-        } else {
-            alias.join("active*?[1].db")
-        };
+        let session = active_database_alias(directory.path(), &alias, &database, existing);
         let args = real_cli_session_args(
             &alias,
             &session,
@@ -4547,6 +4578,17 @@ async fn active_session_artifacts_follow_root_parent_and_database_aliases() {
     }
 }
 
+fn configure_session_lock_alias(project: &Path, enabled: bool) {
+    #[cfg(any(unix, windows))]
+    if enabled {
+        let actual = project.join("actual-locks");
+        std::fs::create_dir(&actual).unwrap();
+        session_directory_alias(&actual, &project.join(".session.db.hoimin-locks"));
+    }
+    #[cfg(not(any(unix, windows)))]
+    let _ = (project, enabled);
+}
+
 #[tokio::test]
 async fn active_session_artifacts_do_not_exempt_original_source_or_fixture_edits() {
     for path in ["fixture.db", "src/calc.py"] {
@@ -4555,14 +4597,7 @@ async fn active_session_artifacts_do_not_exempt_original_source_or_fixture_edits
             write_parallel_project(project.path());
             std::fs::write(project.path().join("fixture.db"), b"original fixture").unwrap();
             let session = project.path().join("session.db");
-            #[cfg(any(unix, windows))]
-            if alias {
-                let actual = project.path().join("actual-locks");
-                std::fs::create_dir(&actual).unwrap();
-                session_directory_alias(&actual, &project.path().join(".session.db.hoimin-locks"));
-            }
-            #[cfg(not(any(unix, windows)))]
-            let _ = alias;
+            configure_session_lock_alias(project.path(), alias);
             let original = project.path().join(path);
             let command = format!(
                 "from pathlib import Path; Path({:?}).write_text('changed')",
@@ -4779,8 +4814,7 @@ async fn active_session_lock_tree_alias_supports_natural_resume() {
     let actual = root.join("actual-locks");
     std::fs::create_dir(&actual).unwrap();
     session_directory_alias(&actual, &root.join(".session.db.hoimin-locks"));
-    let mut first_id = None;
-    let mut candidate_ids = Vec::new();
+    let mut reports = Vec::new();
     for resume in [false, true] {
         let stdout = tokio::time::timeout(
             Duration::from_secs(30),
@@ -4800,33 +4834,39 @@ async fn active_session_lock_tree_alias_supports_natural_resume() {
             .iter()
             .map(|m| m["candidate"]["id"].clone())
             .collect();
-        if resume {
-            assert_eq!(first_id.as_ref().unwrap(), &report["run"]["run_id"]);
-            assert_eq!(ids, candidate_ids);
-            assert!(killed["termination"].is_null());
-            assert_eq!(killed["elapsed_ms"], 0);
-        } else {
-            first_id = Some(report["run"]["run_id"].clone());
-            candidate_ids = ids;
-            assert!(!killed["termination"].is_null());
-        }
+        reports.push((report["run"]["run_id"].clone(), ids, killed.clone()));
         assert_eq!(
             std::fs::read_to_string(root.join("calc.py")).unwrap(),
             source
         );
     }
+    let [
+        (first_run, first_ids, first_killed),
+        (resumed_run, resumed_ids, resumed_killed),
+    ] = reports.as_slice()
+    else {
+        panic!("fresh and resumed reports");
+    };
+    assert_eq!(resumed_run, first_run);
+    assert_eq!(resumed_ids, first_ids);
+    assert!(!first_killed["termination"].is_null());
+    assert!(resumed_killed["termination"].is_null());
+    assert_eq!(resumed_killed["elapsed_ms"], 0);
 }
 
 #[cfg(unix)]
 #[tokio::test]
 async fn active_session_lock_tree_invalid_aliases_fail_before_baseline() {
-    for looping in [false, true] {
+    for (target_name, code) in [
+        (".", "workspace.path.invalid"),
+        (".session.db.hoimin-locks", "session.path"),
+    ] {
         let directory = tempfile::tempdir().unwrap();
         let root = directory.path();
         write_parallel_project(root);
         let source = std::fs::read(root.join("src/calc.py")).unwrap();
         let alias = root.join(".session.db.hoimin-locks");
-        session_directory_alias(if looping { &alias } else { root }, &alias);
+        session_directory_alias(&root.join(target_name), &alias);
         let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"));
         command
             .args(real_cli_session_args(
@@ -4842,17 +4882,25 @@ async fn active_session_lock_tree_invalid_aliases_fail_before_baseline() {
             .unwrap();
         assert_eq!(output.status.code(), Some(2));
         let diagnostics = String::from_utf8_lossy(&output.stderr);
-        let code = if looping {
-            "session.path"
-        } else {
-            "workspace.path.invalid"
-        };
         assert!(diagnostics.contains(code), "{diagnostics}");
         let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
         assert!(report["baseline"].is_null());
         assert!(!root.join("session.db").exists());
         assert_eq!(std::fs::read(root.join("src/calc.py")).unwrap(), source);
     }
+}
+
+#[cfg(unix)]
+async fn wait_and_reap_after_timeout(
+    child: &mut tokio::process::Child,
+    timeout: Duration,
+) -> Result<io::Result<std::process::ExitStatus>, tokio::time::error::Elapsed> {
+    let status = tokio::time::timeout(timeout, child.wait()).await;
+    if status.is_err() {
+        child.kill().await.unwrap();
+        child.wait().await.unwrap();
+    }
+    status
 }
 
 #[cfg(unix)]
@@ -4885,11 +4933,7 @@ async fn stalled_baseline_log_consumer_respects_total_timeout_and_grace() {
         .kill_on_drop(true)
         .spawn()
         .unwrap();
-    let status = tokio::time::timeout(Duration::from_secs(6), child.wait()).await;
-    if status.is_err() {
-        child.kill().await.unwrap();
-        child.wait().await.unwrap();
-    }
+    let status = wait_and_reap_after_timeout(&mut child, Duration::from_secs(6)).await;
     drop(consumer);
     assert_eq!(
         status

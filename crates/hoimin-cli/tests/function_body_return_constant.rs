@@ -1,3 +1,6 @@
+#[path = "support/encoded_source.rs"]
+mod encoded_source;
+
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -325,29 +328,21 @@ async fn return_constant_saved_plan_detects_value_assertion_gaps() {
 #[tokio::test]
 async fn return_constant_preserves_encoded_source_and_docstrings() {
     for newline in ["\n", "\r\n", "\r"] {
-        for encoding in ["utf8", "bom", "latin1"] {
+        for encoding in encoded_source::ENCODINGS {
             let root = tempfile::tempdir().unwrap();
+            let encoding_name = encoding.name;
             let text = format!(
                 "# coding: {}{newline}def f(x) -> int:{newline}    'é'{newline}    result=x{newline}    return result{newline}",
-                if encoding == "latin1" {
-                    "latin-1"
-                } else {
-                    "utf-8"
-                }
+                encoding.cookie
             );
-            let mut bytes = if encoding == "latin1" {
-                text.chars()
-                    .map(|c| u8::try_from(u32::from(c)).unwrap())
-                    .collect::<Vec<_>>()
-            } else {
-                text.as_bytes().to_vec()
-            };
-            if encoding == "bom" {
-                bytes.splice(0..0, [0xef, 0xbb, 0xbf]);
-            }
+            let bytes = encoding.source(&text);
             std::fs::write(root.path().join("subject.py"), &bytes).unwrap();
             let doc = plan(root.path(), "function_body_return_constant", "pass").await;
-            assert_eq!(doc["candidates"].as_array().unwrap().len(), 2);
+            assert_eq!(
+                doc["candidates"].as_array().unwrap().len(),
+                2,
+                "{encoding_name} {newline:?}"
+            );
             for c in doc["candidates"].as_array().unwrap() {
                 let start = usize::try_from(c["span"]["start"].as_u64().unwrap()).unwrap();
                 let end = start + usize::try_from(c["span"]["length"].as_u64().unwrap()).unwrap();

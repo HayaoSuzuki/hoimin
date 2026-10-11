@@ -105,33 +105,27 @@ fn arguments(root: &Path, case: &Case, mode: &str) -> Vec<OsString> {
     args
 }
 
-fn assert_stage_paths(case: &Case, selected: &Selection) {
-    let discovered = hoimin_cli::target::fs::discover_explicit(selected).unwrap();
-    let paths: BTreeSet<_> = discovered.iter().map(|file| file.path.as_str()).collect();
-    let expected: BTreeSet<_> = case.expected_paths.iter().map(String::as_str).collect();
-    assert_eq!(paths, expected, "{case:?}");
-    let resolved = resolve_explicit(selected, &discovered);
-    if case.expected_error {
-        assert!(
-            matches!(resolved, Err(TargetError::MissingOrNonPythonFile(_))),
-            "{case:?}: {resolved:?}"
-        );
-    } else {
-        let resolved = resolved.unwrap();
-        let paths: BTreeSet<_> = resolved.iter().map(|slice| slice.path.as_str()).collect();
-        assert_eq!(paths, expected, "{case:?}");
+fn glob_fixture(case: &Case) -> tempfile::TempDir {
+    let directory = tempfile::tempdir().unwrap();
+    fs::create_dir(directory.path().join("src")).unwrap();
+    for file in &case.files {
+        fs::write(directory.path().join(file), "value = 1 + 2\n").unwrap();
     }
+    directory
 }
 
 #[tokio::test]
 async fn glob_discovery_core_and_public_plan_match_lean() {
-    for case in cases() {
-        let directory = tempfile::tempdir().unwrap();
-        fs::create_dir(directory.path().join("src")).unwrap();
-        for file in &case.files {
-            fs::write(directory.path().join(file), "value = 1 + 2\n").unwrap();
-        }
-        assert_stage_paths(&case, &selection(directory.path(), &case));
+    for case in cases().into_iter().filter(|case| !case.expected_error) {
+        let directory = glob_fixture(&case);
+        let selected = selection(directory.path(), &case);
+        let discovered = hoimin_cli::target::fs::discover_explicit(&selected).unwrap();
+        let paths: BTreeSet<_> = discovered.iter().map(|file| file.path.as_str()).collect();
+        let expected: BTreeSet<_> = case.expected_paths.iter().map(String::as_str).collect();
+        assert_eq!(paths, expected, "{case:?}");
+        let resolved = resolve_explicit(&selected, &discovered).unwrap();
+        let paths: BTreeSet<_> = resolved.iter().map(|slice| slice.path.as_str()).collect();
+        assert_eq!(paths, expected, "{case:?}");
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
         let code = hoimin_cli::run_with_io(
@@ -140,15 +134,6 @@ async fn glob_discovery_core_and_public_plan_match_lean() {
             &mut stderr,
         )
         .await;
-        if case.expected_error {
-            assert_eq!(code, 2);
-            assert!(
-                String::from_utf8_lossy(&stderr)
-                    .contains("target is missing or is not a Python file")
-            );
-            assert_eq!(stdout, Vec::<u8>::new());
-            continue;
-        }
         assert_eq!(code, 0, "{case:?}: {}", String::from_utf8_lossy(&stderr));
         let plan: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
         assert_eq!(plan["truncated"], false);
@@ -201,4 +186,36 @@ async fn bracket_filename_public_run_keeps_the_mutation() {
     assert_eq!(report["baseline"]["termination"]["Exit"], 0);
     assert_eq!(report["summary"]["counts"]["killed"], 1);
     assert_eq!(report["summary"]["complete"], true);
+}
+
+#[tokio::test]
+async fn missing_glob_targets_fail_core_resolution_and_public_plan() {
+    for case in cases().into_iter().filter(|case| case.expected_error) {
+        let directory = glob_fixture(&case);
+        let selected = selection(directory.path(), &case);
+        let discovered = hoimin_cli::target::fs::discover_explicit(&selected).unwrap();
+        let paths: BTreeSet<_> = discovered.iter().map(|file| file.path.as_str()).collect();
+        let expected: BTreeSet<_> = case.expected_paths.iter().map(String::as_str).collect();
+        assert_eq!(paths, expected, "{case:?}");
+        let resolved = resolve_explicit(&selected, &discovered);
+        assert!(
+            matches!(resolved, Err(TargetError::MissingOrNonPythonFile(_))),
+            "{case:?}: {resolved:?}"
+        );
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+
+        let code = hoimin_cli::run_with_io(
+            arguments(directory.path(), &case, "plan"),
+            &mut stdout,
+            &mut stderr,
+        )
+        .await;
+
+        assert_eq!(code, 2);
+        assert!(
+            String::from_utf8_lossy(&stderr).contains("target is missing or is not a Python file")
+        );
+        assert_eq!(stdout, Vec::<u8>::new());
+    }
 }

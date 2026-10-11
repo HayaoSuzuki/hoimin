@@ -463,67 +463,154 @@ fn root_relative_file_apis_reject_non_normal_paths_before_io() {
     }
 }
 
-#[test]
-fn root_relative_file_apis_reject_symlink_escape() {
+type CreateSymlink = fn(&Path, &Path) -> std::io::Result<()>;
+
+struct WorkerLinkFixture {
+    handler: WorkspaceHandler,
+    outside: tempfile::TempDir,
+    link: Utf8PathBuf,
+    _project: tempfile::TempDir,
+}
+
+fn worker_link_fixture(
+    effect: EffectId,
+    link_name: &str,
+    sentinel_name: &str,
+    sentinel_bytes: &[u8],
+    create_link: CreateSymlink,
+    target_file: Option<&str>,
+) -> Vec<WorkerLinkFixture> {
     let project = tempfile::tempdir().unwrap();
     let root = Utf8Path::from_path(project.path()).unwrap();
     write(root, "pkg/a.py", b"original\n");
     let outside = tempfile::tempdir().unwrap();
-    fs::write(outside.path().join("secret.txt"), b"secret").unwrap();
+    fs::write(outside.path().join(sentinel_name), sentinel_bytes).unwrap();
     let mut handler = handler(root, 1);
     let (_ledger, grant) = preflight_and_grant(&mut handler, 9);
     handler
-        .handle_create_worker(grant.create_worker(EffectId(135), 0).unwrap())
+        .handle_create_worker(grant.create_worker(effect, 0).unwrap())
         .unwrap();
-    let link = handler.worker(0).unwrap().root().join("escape");
-    if !link_created_or_platform_denied(create_dir_symlink(outside.path(), link.as_std_path())) {
-        return;
+    let link = handler.worker(0).unwrap().root().join(link_name);
+    let target = target_file.map_or_else(
+        || outside.path().to_owned(),
+        |name| outside.path().join(name),
+    );
+    if !link_created_or_platform_denied(create_link(&target, link.as_std_path())) {
+        return Vec::new();
+    }
+    vec![WorkerLinkFixture {
+        handler,
+        outside,
+        link,
+        _project: project,
+    }]
+}
+
+struct WorkerRootFixture {
+    original_root: Utf8PathBuf,
+    moved_root: Option<Utf8PathBuf>,
+    operated_root: Utf8PathBuf,
+    rename_result: Result<(), Option<i32>>,
+    expected_rename_result: Result<(), Option<i32>>,
+    protected_files: Vec<(Utf8PathBuf, Vec<u8>)>,
+}
+
+impl WorkerRootFixture {
+    fn new(
+        original_root: &Utf8Path,
+        moved_root: Utf8PathBuf,
+        sentinel: &str,
+        outside_bytes: &[u8],
+    ) -> Self {
+        match fs::rename(original_root, &moved_root) {
+            Ok(()) => {
+                write(original_root, sentinel, outside_bytes);
+                Self {
+                    original_root: original_root.to_owned(),
+                    operated_root: moved_root.clone(),
+                    moved_root: Some(moved_root),
+                    rename_result: Ok(()),
+                    expected_rename_result: Ok(()),
+                    protected_files: vec![(original_root.join(sentinel), outside_bytes.to_vec())],
+                }
+            }
+            Err(error) => {
+                #[cfg(windows)]
+                {
+                    Self {
+                        original_root: original_root.to_owned(),
+                        moved_root: None,
+                        operated_root: original_root.to_owned(),
+                        rename_result: Err(error.raw_os_error()),
+                        expected_rename_result: Err(Some(32)),
+                        protected_files: Vec::new(),
+                    }
+                }
+                #[cfg(not(windows))]
+                panic!("worker-root rename failed unexpectedly: {error}");
+            }
+        }
     }
 
-    assert!(matches!(
-        handler.worker(0).unwrap().read("escape/secret.txt"),
-        Err(WorkspaceError::InvalidPath { .. })
-    ));
-    assert!(matches!(
-        handler
+    fn restore(self) {
+        if let Some(moved_root) = self.moved_root {
+            fs::remove_dir_all(&self.original_root).unwrap();
+            fs::rename(moved_root, self.original_root).unwrap();
+        }
+    }
+}
+
+#[test]
+fn root_relative_file_apis_reject_symlink_escape() {
+    for mut fixture in worker_link_fixture(
+        EffectId(135),
+        "escape",
+        "secret.txt",
+        b"secret",
+        create_dir_symlink,
+        None,
+    ) {
+        let read = fixture.handler.worker(0).unwrap().read("escape/secret.txt");
+        let write = fixture
+            .handler
             .worker_mut(0)
             .unwrap()
-            .write("escape/new.txt", b"no"),
-        Err(WorkspaceError::InvalidPath { .. })
-    ));
-    assert!(!outside.path().join("new.txt").exists());
+            .write("escape/new.txt", b"no");
+
+        assert!(matches!(read, Err(WorkspaceError::InvalidPath { .. })));
+        assert!(matches!(write, Err(WorkspaceError::InvalidPath { .. })));
+        assert!(!fixture.outside.path().join("new.txt").exists());
+    }
 }
 
 #[test]
 fn root_relative_file_apis_reject_final_link_without_touching_outside() {
-    let project = tempfile::tempdir().unwrap();
-    let root = Utf8Path::from_path(project.path()).unwrap();
-    write(root, "pkg/a.py", b"original\n");
-    let outside = tempfile::tempdir().unwrap();
-    let sentinel = outside.path().join("sentinel.txt");
-    fs::write(&sentinel, b"outside").unwrap();
-    let mut handler = handler(root, 1);
-    let (_ledger, grant) = preflight_and_grant(&mut handler, 9);
-    handler
-        .handle_create_worker(grant.create_worker(EffectId(136), 0).unwrap())
-        .unwrap();
-    let link = handler.worker(0).unwrap().root().join("sentinel-link");
-    if !link_created_or_platform_denied(create_file_symlink(&sentinel, link.as_std_path())) {
-        return;
-    }
-
-    assert!(matches!(
-        handler
+    for mut fixture in worker_link_fixture(
+        EffectId(136),
+        "sentinel-link",
+        "sentinel.txt",
+        b"outside",
+        create_file_symlink,
+        Some("sentinel.txt"),
+    ) {
+        let write = fixture
+            .handler
             .worker_mut(0)
             .unwrap()
-            .write("sentinel-link", b"changed"),
-        Err(WorkspaceError::InvalidPath { .. })
-    ));
-    assert!(matches!(
-        handler.worker_mut(0).unwrap().remove("sentinel-link"),
-        Err(WorkspaceError::InvalidPath { .. })
-    ));
-    assert_eq!(fs::read(&sentinel).unwrap(), b"outside");
+            .write("sentinel-link", b"changed");
+        let remove = fixture
+            .handler
+            .worker_mut(0)
+            .unwrap()
+            .remove("sentinel-link");
+
+        assert!(matches!(write, Err(WorkspaceError::InvalidPath { .. })));
+        assert!(matches!(remove, Err(WorkspaceError::InvalidPath { .. })));
+        assert_eq!(
+            fs::read(fixture.outside.path().join("sentinel.txt")).unwrap(),
+            b"outside"
+        );
+    }
 }
 
 #[test]
@@ -537,27 +624,12 @@ fn root_relative_file_apis_remain_bound_to_open_worker_root() {
         .handle_create_worker(grant.create_worker(EffectId(137), 0).unwrap())
         .unwrap();
     let worker_root = handler.worker(0).unwrap().root().to_owned();
-    let moved_root = worker_root.with_extension("moved");
-    if let Err(error) = fs::rename(&worker_root, &moved_root) {
-        #[cfg(windows)]
-        {
-            assert_eq!(error.raw_os_error(), Some(32));
-            handler
-                .worker_mut(0)
-                .unwrap()
-                .write("sentinel.txt", b"worker")
-                .unwrap();
-            assert_eq!(
-                fs::read(worker_root.join("sentinel.txt")).unwrap(),
-                b"worker"
-            );
-            return;
-        }
-        #[cfg(not(windows))]
-        panic!("worker-root rename failed unexpectedly: {error}");
-    }
-    fs::create_dir(&worker_root).unwrap();
-    fs::write(worker_root.join("sentinel.txt"), b"outside").unwrap();
+    let fixture = WorkerRootFixture::new(
+        &worker_root,
+        worker_root.with_extension("moved"),
+        "sentinel.txt",
+        b"outside",
+    );
 
     handler
         .worker_mut(0)
@@ -565,16 +637,15 @@ fn root_relative_file_apis_remain_bound_to_open_worker_root() {
         .write("sentinel.txt", b"worker")
         .unwrap();
 
+    assert_eq!(fixture.rename_result, fixture.expected_rename_result);
     assert_eq!(
-        fs::read(moved_root.join("sentinel.txt")).unwrap(),
+        fs::read(fixture.operated_root.join("sentinel.txt")).unwrap(),
         b"worker"
     );
-    assert_eq!(
-        fs::read(worker_root.join("sentinel.txt")).unwrap(),
-        b"outside"
-    );
-    fs::remove_dir_all(&worker_root).unwrap();
-    fs::rename(&moved_root, &worker_root).unwrap();
+    for (path, expected) in &fixture.protected_files {
+        assert_eq!(fs::read(path).unwrap(), *expected);
+    }
+    fixture.restore();
 }
 
 #[cfg(unix)]
@@ -624,37 +695,32 @@ fn reset_restores_permissions_even_when_bytes_are_unchanged() {
 
 #[test]
 fn reset_removes_worker_link_without_traversing_outside() {
-    let project = tempfile::tempdir().unwrap();
-    let root = Utf8Path::from_path(project.path()).unwrap();
-    write(root, "pkg/a.py", b"original\n");
-    let mut handler = handler(root, 1);
-    let (_ledger, grant) = preflight_and_grant(&mut handler, 9);
-    handler
-        .handle_create_worker(grant.create_worker(EffectId(143), 0).unwrap())
-        .unwrap();
-    let outside = tempfile::tempdir().unwrap();
-    fs::write(outside.path().join("sentinel"), b"outside").unwrap();
-    let link = handler.worker(0).unwrap().root().join("unexpected");
-    if !link_created_or_platform_denied(create_dir_symlink(outside.path(), link.as_std_path())) {
-        return;
+    for mut fixture in worker_link_fixture(
+        EffectId(143),
+        "unexpected",
+        "sentinel",
+        b"outside",
+        create_dir_symlink,
+        None,
+    ) {
+        fixture
+            .handler
+            .handle_reset_worker(ResetWorker {
+                id: EffectId(144),
+                worker: 0,
+            })
+            .unwrap();
+
+        assert_eq!(
+            fs::read(fixture.outside.path().join("sentinel")).unwrap(),
+            b"outside"
+        );
+        assert!(fs::symlink_metadata(&fixture.link).is_err());
+        assert_eq!(
+            fixture.handler.worker(0).unwrap().read("pkg/a.py").unwrap(),
+            b"original\n"
+        );
     }
-
-    handler
-        .handle_reset_worker(ResetWorker {
-            id: EffectId(144),
-            worker: 0,
-        })
-        .unwrap();
-
-    assert_eq!(
-        fs::read(outside.path().join("sentinel")).unwrap(),
-        b"outside"
-    );
-    assert!(fs::symlink_metadata(link).is_err());
-    assert_eq!(
-        handler.worker(0).unwrap().read("pkg/a.py").unwrap(),
-        b"original\n"
-    );
 }
 
 #[test]
@@ -727,29 +793,13 @@ fn reset_remains_bound_to_the_open_worker_root() {
         .handle_create_worker(grant.create_worker(EffectId(145), 0).unwrap())
         .unwrap();
     let worker_root = handler.worker(0).unwrap().root().to_owned();
-    let moved_root = worker_root.with_file_name("moved-worker");
-    if let Err(error) = fs::rename(&worker_root, &moved_root) {
-        #[cfg(windows)]
-        {
-            assert_eq!(error.raw_os_error(), Some(32));
-            write(&worker_root, "pkg/a.py", b"changed!\n");
-            handler
-                .handle_reset_worker(ResetWorker {
-                    id: EffectId(146),
-                    worker: 0,
-                })
-                .unwrap();
-            assert_eq!(
-                fs::read(worker_root.join("pkg/a.py")).unwrap(),
-                b"original\n"
-            );
-            return;
-        }
-        #[cfg(not(windows))]
-        panic!("worker-root rename failed unexpectedly: {error}");
-    }
-    write(&moved_root, "pkg/a.py", b"changed!\n");
-    write(&worker_root, "pkg/a.py", b"outside!\n");
+    let fixture = WorkerRootFixture::new(
+        &worker_root,
+        worker_root.with_file_name("moved-worker"),
+        "pkg/a.py",
+        b"outside!\n",
+    );
+    write(&fixture.operated_root, "pkg/a.py", b"changed!\n");
 
     handler
         .handle_reset_worker(ResetWorker {
@@ -758,16 +808,15 @@ fn reset_remains_bound_to_the_open_worker_root() {
         })
         .unwrap();
 
+    assert_eq!(fixture.rename_result, fixture.expected_rename_result);
     assert_eq!(
-        fs::read(moved_root.join("pkg/a.py")).unwrap(),
+        fs::read(fixture.operated_root.join("pkg/a.py")).unwrap(),
         b"original\n"
     );
-    assert_eq!(
-        fs::read(worker_root.join("pkg/a.py")).unwrap(),
-        b"outside!\n"
-    );
-    fs::remove_dir_all(&worker_root).unwrap();
-    fs::rename(&moved_root, &worker_root).unwrap();
+    for (path, expected) in &fixture.protected_files {
+        assert_eq!(fs::read(path).unwrap(), *expected);
+    }
+    fixture.restore();
 }
 
 #[test]

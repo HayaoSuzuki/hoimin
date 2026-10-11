@@ -821,9 +821,10 @@ fn oracle_correspondence() {
         .iter()
         .filter(|case| selected.as_ref().is_none_or(|id| id == &case.id))
         .collect::<Vec<_>>();
-    if let Some(id) = &selected {
-        assert!(!selected_cases.is_empty(), "unknown oracle case {id}");
-    }
+    assert!(
+        selected.is_none() || !selected_cases.is_empty(),
+        "unknown oracle case {selected:?}"
+    );
     let results = selected_cases.into_iter().map(run_case).collect::<Vec<_>>();
     let failures = results
         .iter()

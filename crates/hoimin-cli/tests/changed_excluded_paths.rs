@@ -111,44 +111,43 @@ fn identities(manifest: &Value) -> Vec<Value> {
         .collect()
 }
 
+async fn prepare_excluded_repository(root: &std::path::Path, state: &str, bad: &str) {
+    if state != "unborn-indexed" {
+        write(root, "selected/app.py", "value = False\n");
+        if state == "tracked" {
+            write(root, bad, "old\n");
+        }
+        git(root, &["add", "."]).await;
+        git(root, &["commit", "-qm", "before"]).await;
+    }
+    write(root, "selected/app.py", "value = True\n");
+    write(root, bad, "new\n");
+    if state == "unborn-indexed" {
+        git(root, &["add", "."]).await;
+    }
+}
+
 #[tokio::test]
 async fn excluded_git_names_do_not_change_public_plan_in_three_repository_states() {
-    let mut failures = Vec::new();
     for state in ["tracked", "untracked", "unborn-indexed"] {
         for extension in ["txt", "py"] {
             let directory = tempfile::tempdir().unwrap();
             let root = directory.path();
             git(root, &["init", "-q"]).await;
             let bad = format!(r"data/fixture\asset.{extension}");
-            if state != "unborn-indexed" {
-                write(root, "selected/app.py", "value = False\n");
-                if state == "tracked" {
-                    write(root, &bad, "old\n");
-                }
-                git(root, &["add", "."]).await;
-                git(root, &["commit", "-qm", "before"]).await;
-            }
-            write(root, "selected/app.py", "value = True\n");
-            write(root, &bad, "new\n");
-            if state == "unborn-indexed" {
-                git(root, &["add", "."]).await;
-            }
+            prepare_excluded_repository(root, state, &bad).await;
             let (plain_code, baseline, plain_error) = plan(root, false, &[]).await;
             assert_eq!(plain_code, 0, "{state}/{extension}: {plain_error}");
             assert_eq!(identities(&baseline).len(), 1);
             let (changed_code, changed, error) = plan(root, true, &[]).await;
-            if changed_code != 0 {
-                failures.push(format!("{state}/{extension}: exit {changed_code}: {error}"));
-            } else {
-                assert_eq!(
-                    identities(&changed),
-                    identities(&baseline),
-                    "{state}/{extension}"
-                );
-            }
+            assert_eq!(changed_code, 0, "{state}/{extension}: {error}");
+            assert_eq!(
+                identities(&changed),
+                identities(&baseline),
+                "{state}/{extension}"
+            );
         }
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
 #[tokio::test]

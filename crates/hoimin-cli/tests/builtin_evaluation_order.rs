@@ -12,7 +12,7 @@ fn python() -> PathBuf {
     })
 }
 
-fn command(root: &Path, mode: &str, check: &str) -> Vec<OsString> {
+fn command(root: &Path, mode: &str, format: &[&str], check: &str) -> Vec<OsString> {
     let mut args = vec![
         "hoimin".into(),
         mode.into(),
@@ -26,9 +26,7 @@ fn command(root: &Path, mode: &str, check: &str) -> Vec<OsString> {
         "--min-free-space".into(),
         "1B".into(),
     ];
-    if mode == "run" {
-        args.extend(["--format".into(), "json".into()]);
-    }
+    args.extend(format.iter().map(OsString::from));
     args.extend([
         "--".into(),
         python().into_os_string(),
@@ -112,7 +110,7 @@ async fn public_plan_observes_evaluation_order_and_preserves_source_spans() {
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
         let code = hoimin_cli::run_with_io(
-            command(directory.path(), "plan", "pass"),
+            command(directory.path(), "plan", &[], "pass"),
             &mut stdout,
             &mut stderr,
         )
@@ -141,6 +139,7 @@ async fn public_run_does_not_count_a_custom_callable_as_a_killed_mutant() {
         command(
             directory.path(),
             "run",
+            &["--format", "json"],
             "import subject; assert subject.observed == ['custom']",
         ),
         &mut stdout,

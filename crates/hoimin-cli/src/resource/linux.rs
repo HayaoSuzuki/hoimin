@@ -1824,26 +1824,56 @@ mod platform {
             assert!(run.state.lock().unwrap().roots.is_empty());
         }
 
+        fn wait_for_published_close(run: &LinuxRunCgroup, deadline: std::time::Instant) -> bool {
+            while !run.state.try_lock().is_ok_and(|state| state.closed) {
+                if std::time::Instant::now() >= deadline {
+                    return false;
+                }
+                std::thread::yield_now();
+            }
+            true
+        }
+
+        fn remove_fake_cgroup_with_fault(
+            path: &Path,
+            pid: Option<i32>,
+            fail: bool,
+            message: &'static str,
+        ) -> Result<(), super::ResourceError> {
+            if fail {
+                Err(super::cleanup_error(path, io::Error::other(message)))
+            } else {
+                remove_fake_cgroup(path, pid)
+            }
+        }
+
         #[test]
         fn close_cleanup_releases_state_and_publishes_closed_before_waiting() {
             let directory = tempfile::tempdir().unwrap();
             let run = fake_run(&directory.path().join("run"));
             let root = fake_root(&run);
-            let observed = Cell::new(false);
+            let mut observations = Vec::new();
             run.close_with(|path, pid| {
-                if path == root.path
-                    && let Ok(state) = run.state.try_lock()
-                {
-                    assert!(state.closed);
-                    assert!(!state.roots[&root.id].active);
-                    observed.set(true);
-                }
+                observations.push((
+                    path.to_owned(),
+                    run.state.try_lock().ok().map(|state| {
+                        (
+                            state.closed,
+                            state.roots.get(&root.id).is_some_and(|entry| !entry.active),
+                        )
+                    }),
+                ));
                 remove_fake_cgroup(path, pid)
             })
             .unwrap();
-            assert!(
-                observed.get(),
-                "close cleanup must release the shared state mutex"
+            assert_eq!(
+                observations
+                    .iter()
+                    .find(|(path, _)| path == &root.path)
+                    .unwrap()
+                    .1,
+                Some((true, true)),
+                "close cleanup must release state and publish closed before waiting"
             );
             assert!(run.state.lock().unwrap().cleaned);
         }
@@ -1869,15 +1899,7 @@ mod platform {
                 paused_rx.recv_timeout(Duration::from_secs(5)).unwrap();
                 let closing = scope.spawn(|| run.close_with(remove_fake_cgroup));
                 let deadline = std::time::Instant::now() + Duration::from_secs(5);
-                let closed = loop {
-                    if run.state.try_lock().is_ok_and(|state| state.closed) {
-                        break true;
-                    }
-                    if std::time::Instant::now() >= deadline {
-                        break false;
-                    }
-                    std::thread::yield_now();
-                };
+                let closed = wait_for_published_close(run, deadline);
                 let blocked_on_root = root.cleanup_gate.try_lock().is_err();
                 release_tx.send(()).unwrap();
                 terminating.join().unwrap().unwrap();
@@ -1905,11 +1927,7 @@ mod platform {
                     assert!(first.cleanup_gate.try_lock().is_err());
                     assert!(second.cleanup_gate.try_lock().is_err());
                     assert!(run.state.try_lock().is_ok());
-                    if path == first.path {
-                        Err(super::cleanup_error(path, io::Error::other("root retry")))
-                    } else {
-                        remove_fake_cgroup(path, pid)
-                    }
+                    remove_fake_cgroup_with_fault(path, pid, path == first.path, "root retry")
                 })
                 .unwrap_err();
             assert!(matches!(error, super::ResourceError::CgroupCleanup { .. }));
@@ -1958,11 +1976,7 @@ mod platform {
             let root = fake_root(&run);
             let sibling = fake_root(&run);
             run.close_with(|path, pid| {
-                if path == sibling.path {
-                    remove_fake_cgroup(path, pid)
-                } else {
-                    Err(super::cleanup_error(path, io::Error::other("retry")))
-                }
+                remove_fake_cgroup_with_fault(path, pid, path != sibling.path, "retry")
             })
             .unwrap_err();
             {

@@ -15,8 +15,9 @@ from tools import performance_shapes as shapes
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_registry_covers_all_dimensions_and_rejects_duplicates() -> None:
+def test_registry_covers_all_dimensions() -> None:
     registry = shapes.load_registry(ROOT / "docs/performance/shapes.json")
+
     assert {row["dimension"] for row in registry["shapes"]} == {
         "discovery",
         "fingerprint",
@@ -27,37 +28,36 @@ def test_registry_covers_all_dimensions_and_rejects_duplicates() -> None:
         "output",
         "workspace",
     }
+
+
+def test_registry_rejects_duplicate_shapes() -> None:
+    registry = shapes.load_registry(ROOT / "docs/performance/shapes.json")
     duplicate = deepcopy(registry)
     duplicate["shapes"].append(duplicate["shapes"][0])
+
     with pytest.raises(ValueError, match="duplicate"):
         shapes.validate_registry(duplicate)
 
 
-@pytest.mark.parametrize(
-    ("field", "value", "message"),
-    [
-        ("sizes", [2, 2, 4], "sizes must be bounded N/2N/4N"),
-        ("metric", "memory", "invalid metric/status"),
-        ("status", "passing", "invalid metric/status"),
-    ],
-)
-def test_registry_rejects_invalid_growth(
-    field: str, value: object, message: str
-) -> None:
+def test_registry_rejects_invalid_sizes() -> None:
     registry = shapes.load_registry(ROOT / "docs/performance/shapes.json")
-    if field == "sizes":
-        assert isinstance(value, list)
-        assert all(isinstance(item, int) for item in value)
-        registry["shapes"][0]["sizes"] = [
-            item for item in value if isinstance(item, int)
-        ]
-    elif field == "metric":
-        assert isinstance(value, str)
-        registry["shapes"][0]["metric"] = value
-    else:
-        assert isinstance(value, str)
-        registry["shapes"][0]["status"] = value
-    with pytest.raises(ValueError, match=message):
+    value = [2, 2, 4]
+    assert isinstance(value, list)
+    assert all(isinstance(item, int) for item in value)
+    registry["shapes"][0]["sizes"] = value
+
+    with pytest.raises(ValueError, match="sizes must be bounded N/2N/4N"):
+        shapes.validate_registry(registry)
+
+
+@pytest.mark.parametrize("field", ["metric", "status"])
+def test_registry_rejects_invalid_metric_or_status(field: str) -> None:
+    registry = shapes.load_registry(ROOT / "docs/performance/shapes.json")
+    value = {"metric": "memory", "status": "passing"}[field]
+    assert isinstance(value, str)
+    registry["shapes"][0].update({field: value})
+
+    with pytest.raises(ValueError, match="invalid metric/status"):
         shapes.validate_registry(registry)
 
 
@@ -66,6 +66,7 @@ def test_registry_rejects_untraceable_pending_gate() -> None:
     registry["gates"].append(
         {"id": "untraceable", "status": "pending", "metric": "operations", "args": []}
     )
+
     with pytest.raises(ValueError, match="pending dependency required"):
         shapes.validate_registry(registry)
 
@@ -73,6 +74,7 @@ def test_registry_rejects_untraceable_pending_gate() -> None:
 def test_registry_rejects_invalid_gate_metric() -> None:
     registry = shapes.load_registry(ROOT / "docs/performance/shapes.json")
     registry["gates"][0]["metric"] = "memory"
+
     with pytest.raises(ValueError, match="gate metric"):
         shapes.validate_registry(registry)
 
@@ -91,7 +93,9 @@ def test_test_gate_rejects_empty_ignored_and_failed_runs(output: str) -> None:
 
 
 def test_test_gate_accepts_executed_tests() -> None:
-    assert shapes.executed_tests("test result: ok. 1 passed; 0 failed; 0 ignored;") == 1
+    executed = shapes.executed_tests("test result: ok. 1 passed; 0 failed; 0 ignored;")
+
+    assert executed == 1
 
 
 @pytest.mark.parametrize(
@@ -115,16 +119,20 @@ def test_fixtures_have_independent_expected_outputs_and_cleanup(
 ) -> None:
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory) / name
+
         fixture = shapes.make_fixture(name, 4, root)
+
         assert fixture["expected_candidates"] == expected
         assert (root / "case.py").is_file()
         compile((root / "case.py").read_text(), "case.py", "exec")
+
     assert not Path(directory).exists()
 
 
 def test_line_layout_fixtures_have_equal_size(tmp_path: Path) -> None:
     for name in ("long-line", "many-lines"):
         shapes.make_fixture(name, 4, tmp_path / name)
+
     assert (tmp_path / "long-line/case.py").stat().st_size == (
         tmp_path / "many-lines/case.py"
     ).stat().st_size
@@ -135,47 +143,92 @@ def test_minimum_size_is_a_valid_fixture_for_every_shape(
     tmp_path: Path, name: str
 ) -> None:
     root = tmp_path / name
+
     fixture = shapes.make_fixture(name, 1, root)
+
     assert fixture["size"] == 1
     assert fixture["truncated"] == (name == "verify-partial")
     compile((root / "case.py").read_text(), "case.py", "exec")
 
 
-def test_output_validation_does_not_accept_empty_candidates() -> None:
+@pytest.mark.parametrize(
+    ("candidates", "truncated", "message"),
+    [
+        ([], True, "unexpected candidate count"),
+        ([{"id": "m1"}], False, "unexpected truncation"),
+    ],
+    ids=["empty-candidates", "incorrect-truncation"],
+)
+def test_output_validation_rejects_incorrect_plan(
+    candidates: list[dict[str, str]],
+    *,
+    truncated: bool,
+    message: str,
+) -> None:
     fixture: shapes.ExpectedOutput = {
         "mode": "plan",
         "expected_candidates": 1,
         "truncated": True,
     }
-    with pytest.raises(ValueError, match="unexpected candidate count"):
-        shapes.validate_output({"candidates": [], "truncated": True}, fixture)
-    assert (
+
+    with pytest.raises(ValueError, match=message):
         shapes.validate_output(
-            {"candidates": [{"id": "m1"}], "truncated": True}, fixture
-        )["candidates"]
-        == 1
-    )
-    with pytest.raises(ValueError, match="unexpected truncation"):
-        shapes.validate_output(
-            {"candidates": [{"id": "m1"}], "truncated": False}, fixture
+            {"candidates": candidates, "truncated": truncated}, fixture
         )
 
 
-@pytest.mark.parametrize(
-    ("name", "size"), [("ast", 0), ("ast", -1), ("ast", 129), ("unknown", 1)]
-)
-def test_size_bounds_and_unknown_shapes_fail_before_writing(
-    tmp_path: Path, name: str, size: int
-) -> None:
+def test_output_validation_accepts_expected_plan() -> None:
+    fixture: shapes.ExpectedOutput = {
+        "mode": "plan",
+        "expected_candidates": 1,
+        "truncated": True,
+    }
+    output: dict[str, object] = {"candidates": [{"id": "m1"}], "truncated": True}
+
+    result = shapes.validate_output(output, fixture)
+
+    assert result["candidates"] == 1
+
+
+@pytest.mark.parametrize("size", [0, -1, 129])
+def test_size_bound_regressions_fail_before_writing(tmp_path: Path, size: int) -> None:
     root = tmp_path / "project"
+
     with pytest.raises(ValueError, match="unknown shape or out-of-bounds size"):
-        shapes.make_fixture(name, size, root)
+        shapes.make_fixture("ast", size, root)
+
     assert not root.exists()
 
 
-def test_unobserved_rss_is_null() -> None:
-    assert shapes.observed_rss({"reason": "child_exit", "peak_rss_kib": 0}) is None
-    assert shapes.observed_rss({"reason": "child_exit", "peak_rss_kib": 12}) == 12288
+def test_unknown_shape_fails_before_writing(tmp_path: Path) -> None:
+    root = tmp_path / "project"
+
+    with pytest.raises(ValueError, match="unknown shape or out-of-bounds size"):
+        shapes.make_fixture("unknown", 1, root)
+
+    assert not root.exists()
+
+
+def test_observed_rss_preserves_missing_measurements() -> None:
+    observation: shapes.ResourceObservation = {
+        "reason": "child_exit",
+        "peak_rss_kib": 0,
+    }
+
+    result = shapes.observed_rss(observation)
+
+    assert result is None
+
+
+def test_observed_rss_preserves_positive_measurement_regression() -> None:
+    observation: shapes.ResourceObservation = {
+        "reason": "child_exit",
+        "peak_rss_kib": 12,
+    }
+
+    result = shapes.observed_rss(observation)
+
+    assert result == 12288
 
 
 @pytest.mark.parametrize("reason", ["timeout", "rss_limit", "monitor_error"])
@@ -215,7 +268,9 @@ def test_comparisons_include_elapsed_and_nullable_rss_medians() -> None:
             "sampled_tree_rss_bytes": 80,
         },
     ]
+
     ast, output = shapes.summarize_comparisons(medians)
+
     assert ast["elapsed_ms_delta"] == -2
     assert ast["elapsed_ratio"] == 0.8
     assert ast["sampled_tree_rss_bytes_delta"] == -10
@@ -235,6 +290,7 @@ def test_environment_probe_failure_writes_infrastructure_artifact(
         gate.setdefault("metric", "operations")
     registry_path = tmp_path / "registry.json"
     registry_path.write_text(json.dumps(registry))
+
     completed = subprocess.run(  # noqa: S603 - Trusted CLI/test arguments; no shell execution.
         [
             sys.executable,
@@ -256,16 +312,22 @@ def test_environment_probe_failure_writes_infrastructure_artifact(
         timeout=10,
         check=False,
     )
+
     assert completed.returncode == 1
     result = json.loads((output / "result.json").read_text())
+
     assert result["status"] == "infrastructure-error"
     assert result["environment"] == {}
     assert "rustc" in result["error"]
 
 
-def test_large_flat_inputs_do_not_raise_the_ast_depth_limit(tmp_path: Path) -> None:
+def test_large_flat_input_is_allowed(tmp_path: Path) -> None:
     fixture = shapes.make_fixture("long-line", 1000, tmp_path / "flat")
+
     assert fixture["size"] == 1000
+
+
+def test_large_nested_input_is_rejected(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="unknown shape or out-of-bounds size"):
         shapes.make_fixture("ast", 129, tmp_path / "deep")
 
@@ -275,6 +337,7 @@ def test_large_flat_inputs_do_not_raise_the_ast_depth_limit(tmp_path: Path) -> N
 )
 def test_top1_checks_available_manifest_size_before_measurement(tmp_path: Path) -> None:
     parent = tmp_path
+
     fixture = shapes.make_fixture("verify-top1", 4, parent / "project")
     artifact = parent / "artifact"
     artifact.mkdir()
@@ -285,8 +348,10 @@ def test_top1_checks_available_manifest_size_before_measurement(tmp_path: Path) 
         '"truncated": False}))\n'
     )
     binary.chmod(0o755)
+
     with pytest.raises(shapes.SemanticMismatch):
         shapes.measure_once(binary, fixture, parent / "project", artifact, 25)
+
     assert not (artifact / "resource.json").exists()
 
 
@@ -305,8 +370,10 @@ def test_timed_out_gate_keeps_partial_process_log(
         "gates": [{"id": "blocked", "status": "active", "args": ["test"]}]
     }
     mocker.patch.object(shapes.subprocess, "run", side_effect=timeout)
+
     with pytest.raises(subprocess.TimeoutExpired):
         shapes.run_gate(registry, artifact)
+
     assert (artifact / "blocked.log").read_text() == "partial compiler diagnostic\n"
 
 
@@ -337,41 +404,85 @@ def test_added_axes_materialize_independent_sources(
     tmp_path: Path, name: str, count: int
 ) -> None:
     root = tmp_path / name
+
     fixture = shapes.make_fixture(name, 4, root)
+
     assert fixture["expected_candidates"] == count
     for path in root.glob("*.py"):
         compile(path.read_bytes(), str(path), "exec")
 
 
-def test_added_axes_selection_controls(tmp_path: Path) -> None:
-    parent = tmp_path
-    for name in (
-        "target-files",
-        "fingerprint-bytes",
-        "workspace-bytes",
-        "unicode-long-line",
-        "unicode-many-lines",
-    ):
-        shapes.make_fixture(name, 4, parent / name)
-    assert len(list((parent / "target-files").glob("selected*.py"))) == 4
-    assert (parent / "fingerprint-bytes/config.toml").stat().st_size == 4096
-    assert (parent / "workspace-bytes/data.bin").stat().st_size == 4 * 65536
-    assert (parent / "unicode-long-line/case.py").stat().st_size == (
-        parent / "unicode-many-lines/case.py"
+@pytest.mark.parametrize(
+    ("name", "relative_path", "expected_bytes"),
+    [
+        ("fingerprint-bytes", "config.toml", 4096),
+        ("workspace-bytes", "data.bin", 4 * 65536),
+    ],
+)
+def test_byte_axis_materializes_requested_size(
+    tmp_path: Path,
+    name: str,
+    relative_path: str,
+    expected_bytes: int,
+) -> None:
+    root = tmp_path / name
+
+    shapes.make_fixture(name, 4, root)
+
+    assert (root / relative_path).stat().st_size == expected_bytes
+
+
+def test_target_files_axis_materializes_requested_count(tmp_path: Path) -> None:
+    root = tmp_path / "project"
+
+    shapes.make_fixture("target-files", 4, root)
+
+    assert len(list(root.glob("selected*.py"))) == 4
+
+
+def test_unicode_layout_axes_preserve_equal_byte_size(tmp_path: Path) -> None:
+    long_line = tmp_path / "unicode-long-line"
+    many_lines = tmp_path / "unicode-many-lines"
+
+    shapes.make_fixture("unicode-long-line", 4, long_line)
+
+    shapes.make_fixture("unicode-many-lines", 4, many_lines)
+
+    assert (long_line / "case.py").stat().st_size == (
+        many_lines / "case.py"
     ).stat().st_size
-    assert "雪" in (parent / "unicode-long-line/case.py").read_text(encoding="utf-8")
-    assert shapes.make_fixture("workspace-workers", 2, parent / "workers")["jobs"] == 2
-    symbols = shapes.make_fixture("symbol-selectors", 4, parent / "symbols")
-    assert symbols["selectors"] == ["--symbol", "case:subject"] * 4
-    assert symbols["options"] == ["--source", "."]
-    assert (
-        shapes.make_fixture("line-selectors", 4, parent / "lines")["selectors"]
-        == ["--line", "case.py:1-1"] * 4
-    )
-    assert (
-        shapes.make_fixture("file-selectors", 4, parent / "files")["selectors"]
-        == ["--file", "case.py"] * 4
-    )
+    assert "雪" in (long_line / "case.py").read_text(encoding="utf-8")
+
+
+def test_worker_axis_sets_requested_jobs(tmp_path: Path) -> None:
+    root = tmp_path / "project"
+
+    fixture = shapes.make_fixture("workspace-workers", 2, root)
+
+    assert fixture["jobs"] == 2
+
+
+@pytest.mark.parametrize(
+    ("name", "selector", "value", "options"),
+    [
+        ("symbol-selectors", "--symbol", "case:subject", ["--source", "."]),
+        ("line-selectors", "--line", "case.py:1-1", []),
+        ("file-selectors", "--file", "case.py", []),
+    ],
+)
+def test_selector_axis_repeats_requested_selector(
+    tmp_path: Path,
+    name: str,
+    selector: str,
+    value: str,
+    options: list[str],
+) -> None:
+    root = tmp_path / "project"
+
+    fixture = shapes.make_fixture(name, 4, root)
+
+    assert fixture["selectors"] == [selector, value] * 4
+    assert fixture["options"] == options
 
 
 def test_partial_verify_has_explicit_incomplete_contract() -> None:
@@ -381,15 +492,36 @@ def test_partial_verify_has_explicit_incomplete_contract() -> None:
         "truncated": True,
     }
     observed: dict[str, object] = {"mutants": [{}, {}], "summary": {"complete": False}}
-    assert shapes.validate_output(observed, fixture)["candidates"] == 2
-    with pytest.raises(shapes.SemanticMismatch):
-        shapes.validate_output({**observed, "summary": {"complete": True}}, fixture)
-    with pytest.raises(shapes.SemanticMismatch):
-        shapes.validate_output(observed, {**fixture, "truncated": False})
+
+    validated = shapes.validate_output(observed, fixture)
+
+    assert validated["candidates"] == 2
 
 
-def test_growth_compares_each_binary_across_n_2n_4n_separately() -> None:
-    medians: list[shapes.Median] = [
+@pytest.mark.parametrize(
+    ("complete", "truncated"),
+    [(True, True), (False, False)],
+    ids=["complete-report", "untruncated-fixture"],
+)
+def test_partial_verify_rejects_inconsistent_completion(
+    *, complete: bool, truncated: bool
+) -> None:
+    fixture: shapes.ExpectedOutput = {
+        "mode": "verify",
+        "expected_candidates": 2,
+        "truncated": truncated,
+    }
+    observed: dict[str, object] = {
+        "mutants": [{}, {}],
+        "summary": {"complete": complete},
+    }
+
+    with pytest.raises(shapes.SemanticMismatch):
+        shapes.validate_output(observed, fixture)
+
+
+def growth_medians() -> list[shapes.Median]:
+    return [
         {
             "shape": "source",
             "label": label,
@@ -401,15 +533,27 @@ def test_growth_compares_each_binary_across_n_2n_4n_separately() -> None:
         for label, factor in [("baseline", 10), ("candidate", 7)]
         for n in [2, 4, 8]
     ]
+
+
+def test_growth_compares_each_binary_across_n_2n_4n_separately() -> None:
+    medians = growth_medians()
+
     growth = shapes.summarize_growth(medians)
-    assert len(growth) == 4
+
     baseline = [r for r in growth if r["label"] == "baseline"]
     candidate = [r for r in growth if r["label"] == "candidate"]
+
+    assert len(growth) == 4
     assert [r["elapsed_ratio"] for r in baseline] == [2, 4]
     assert [r["output_document_ratio"] for r in candidate] == [2, 4]
     assert all(r["sampled_tree_rss_ratio"] is None for r in candidate)
+
+
+def test_growth_rejects_missing_medians() -> None:
+    medians = growth_medians()[:-1]
+
     with pytest.raises(ValueError, match="missing N/2N/4N medians"):
-        shapes.summarize_growth(medians[:-1])
+        shapes.summarize_growth(medians)
 
 
 @pytest.mark.parametrize(
@@ -421,6 +565,7 @@ def test_registry_load_rejects_invalid_document_structure(
 ) -> None:
     path = tmp_path / "registry.json"
     path.write_text(json.dumps(document))
+
     with pytest.raises(ValueError, match="invalid registry structure"):
         shapes.load_registry(path)
 
@@ -436,6 +581,7 @@ def test_registry_load_rejects_invalid_shape_fields(
     document["shapes"][0][field] = value
     path = tmp_path / "registry.json"
     path.write_text(json.dumps(document))
+
     with pytest.raises(ValueError, match="invalid registry structure"):
         shapes.load_registry(path)
 
@@ -451,6 +597,7 @@ def test_registry_load_rejects_invalid_gate_fields(
     document["gates"][0][field] = value
     path = tmp_path / "registry.json"
     path.write_text(json.dumps(document))
+
     with pytest.raises(ValueError, match="invalid registry structure"):
         shapes.load_registry(path)
 
@@ -459,6 +606,7 @@ def test_registry_load_rejects_invalid_gate_fields(
 def test_cli_document_must_be_an_object(tmp_path: Path, document: object) -> None:
     path = tmp_path / "stdout.json"
     path.write_text(json.dumps(document))
+
     with pytest.raises(ValueError, match="expected a JSON object"):
         shapes.load_object(path)
 
@@ -488,5 +636,6 @@ def test_measurement_rejects_malformed_resource_observations(
         return subprocess.CompletedProcess(command, 0)
 
     mocker.patch.object(shapes.subprocess, "run", side_effect=run_guard)
+
     with pytest.raises(ValueError, match="invalid resource observation"):
         shapes.measure_once(Path("hoimin"), fixture, tmp_path / "project", artifact, 25)

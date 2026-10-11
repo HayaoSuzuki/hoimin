@@ -40,17 +40,10 @@ async fn fixture() -> (tempfile::TempDir, Vec<String>) {
     (dir, args)
 }
 
-#[tokio::test]
-async fn review_cli_contract_and_status_counts() {
-    let (dir, args) = fixture().await;
-    let (code, out, err) = run(args.clone()).await;
-    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&err));
-    assert!(!dir.path().join("reviews.sqlite3").exists());
-    let list: Value = serde_json::from_slice(&out).unwrap();
-    let id = list["candidates"][0]["candidate"]["id"].as_str().unwrap();
-    assert!(list["candidates"][0]["review"].is_null());
-    assert_eq!(list["candidates"][0]["execution"]["state"], "not_loaded");
-    let mut record = args.clone();
+fn record_args(args: &[String]) -> Vec<String> {
+    let plan: Value = serde_json::from_slice(&std::fs::read(&args[3]).unwrap()).unwrap();
+    let id = plan["candidates"][0]["id"].as_str().unwrap();
+    let mut record = args.to_vec();
     record[2] = "record".into();
     record.extend([
         "--candidate".into(),
@@ -62,29 +55,63 @@ async fn review_cli_contract_and_status_counts() {
         "--expected-revision".into(),
         "0".into(),
     ]);
-    let before = std::fs::read(&args[3]).unwrap();
-    let (code, out, err) = run(record.clone()).await;
+    record
+}
+
+#[tokio::test]
+async fn review_list_without_store_has_no_review_or_execution() {
+    let (dir, args) = fixture().await;
+
+    let (code, out, err) = run(args).await;
+    let list: Value = serde_json::from_slice(&out).unwrap();
+
     assert_eq!(code, 0, "{}", String::from_utf8_lossy(&err));
+    assert!(!dir.path().join("reviews.sqlite3").exists());
+    assert!(list["candidates"][0]["review"].is_null());
+    assert_eq!(list["candidates"][0]["execution"]["state"], "not_loaded");
+}
+
+#[tokio::test]
+async fn review_records_revisions_and_rejects_duplicate_expected_revision() {
+    let (_dir, args) = fixture().await;
+    let mut record = record_args(&args);
+    let before = std::fs::read(&args[3]).unwrap();
+
+    let (record_code, out, err) = run(record.clone()).await;
     let recorded: Value = serde_json::from_slice(&out).unwrap();
+    let duplicate_code = run(record.clone()).await.0;
+    *record.last_mut().unwrap() = "1".into();
+    let next_code = run(record).await.0;
+    let (list_code, out, _) = run(args.clone()).await;
+    let list: Value = serde_json::from_slice(&out).unwrap();
+
+    assert_eq!(record_code, 0, "{}", String::from_utf8_lossy(&err));
     assert_eq!(recorded["candidates"][0]["review"]["revision"], 1);
     assert_eq!(
         recorded["candidates"][0]["review"]["draft"]["assessment"],
         "not_useful"
     );
-    assert_eq!(run(record.clone()).await.0, 2);
-    *record.last_mut().unwrap() = "1".into();
-    assert_eq!(run(record).await.0, 0);
-    let (code, out, _) = run(args.clone()).await;
-    assert_eq!(code, 0);
-    let list: Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(duplicate_code, 2);
+    assert_eq!(next_code, 0);
+    assert_eq!(list_code, 0);
     assert_eq!(
         list["candidates"][0]["history"].as_array().unwrap().len(),
         2
     );
     assert_eq!(std::fs::read(&args[3]).unwrap(), before);
+}
+
+#[tokio::test]
+async fn review_list_excludes_stale_reviews_from_operator_counts() {
+    let (dir, args) = fixture().await;
+    let (code, _, err) = run(record_args(&args)).await;
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&err));
     std::fs::write(dir.path().join("sample.py"), "value = 9\n").unwrap();
-    let (_, out, _) = run(args.clone()).await;
+
+    let (code, out, err) = run(args).await;
     let stale: Value = serde_json::from_slice(&out).unwrap();
+
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&err));
     assert_eq!(stale["candidates"][0]["applicability"], "stale");
     assert!(stale["candidates"][0]["review"].is_null());
     assert!(
@@ -94,10 +121,17 @@ async fn review_cli_contract_and_status_counts() {
             .iter()
             .all(|operator| operator["reviewed"] == 0)
     );
-    let mut unknown = args;
-    unknown[2] = "show".into();
-    unknown.extend(["--candidate".into(), "0".repeat(64)]);
-    assert_eq!(run(unknown).await.0, 2);
+}
+
+#[tokio::test]
+async fn review_show_rejects_unknown_candidate() {
+    let (_dir, mut args) = fixture().await;
+    args[2] = "show".into();
+    args.extend(["--candidate".into(), "0".repeat(64)]);
+
+    let (code, _, _) = run(args).await;
+
+    assert_eq!(code, 2);
 }
 
 #[tokio::test]
@@ -126,16 +160,17 @@ async fn review_output_failure_is_not_duplicate_write() {
         "0".into(),
     ]);
     let mut errors = Vec::new();
-    assert_eq!(
-        run_with_io(args.clone(), &mut BrokenOutput, &mut errors).await,
-        2
-    );
-    assert!(String::from_utf8_lossy(&errors).contains("saved at revision 1"));
-    assert_eq!(run(args.clone()).await.0, 2);
+
+    let output_failure_code = run_with_io(args.clone(), &mut BrokenOutput, &mut errors).await;
+    let retry_code = run(args.clone()).await.0;
     args[2] = "show".into();
     args.truncate(10);
     let (_, out, _) = run(args).await;
     let value: Value = serde_json::from_slice(&out).unwrap();
+
+    assert_eq!(output_failure_code, 2);
+    assert!(String::from_utf8_lossy(&errors).contains("saved at revision 1"));
+    assert_eq!(retry_code, 2);
     assert_eq!(
         value["candidates"][0]["history"].as_array().unwrap().len(),
         1

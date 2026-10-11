@@ -40,7 +40,6 @@ fn work() -> ([usize; 7], usize) {
 // Catches eager helpers even when make_candidate later discards their result.
 #[test]
 fn unselected_methods_skip_helpers_but_keep_selected_children() {
-    let mut unexpected_work = Vec::new();
     for source in [
         "obj.append(1 + 2)",
         "obj.insert(0, 1 + 2)",
@@ -57,11 +56,8 @@ fn unselected_methods_skip_helpers_but_keep_selected_children() {
         assert_eq!(candidate.original, "+", "{source}");
         assert_eq!(candidate.replacement, "-", "{source}");
         assert!(!output.truncated, "{source}");
-        if work() != ([0; 7], 0) {
-            unexpected_work.push((source, work()));
-        }
+        assert_eq!(work(), ([0; 7], 0), "{source}");
     }
-    assert!(unexpected_work.is_empty(), "{unexpected_work:?}");
 }
 
 #[test]
@@ -148,52 +144,76 @@ fn selected_method_families_only_enter_their_own_helpers() {
 
 #[test]
 fn counters_observe_direct_helper_entries_and_allocation_boundaries() {
-    let sources = [
-        "obj.append(item)",
-        "obj.insert(0, item)",
-        "obj.append(item)",
-        "obj.extend([item])",
-        "obj.get(key)",
-        "obj.sort()",
-        "obj[key]",
+    type Replacement = fn(&str, &ExprCall, &AstFacts) -> Option<String>;
+    let cases: [(&str, &str, Replacement); 6] = [
+        (
+            "obj.append(item)",
+            "obj.insert(0, item)",
+            append_to_insert_replacement,
+        ),
+        (
+            "obj.insert(0, item)",
+            "obj.append(item)",
+            insert_to_append_replacement,
+        ),
+        (
+            "obj.append(item)",
+            "obj.extend([item])",
+            |source, call, _| append_to_extend_replacement(source, call),
+        ),
+        (
+            "obj.extend([item])",
+            "obj.append(item)",
+            extend_to_append_replacement,
+        ),
+        (
+            "obj.get(key)",
+            "obj[key]",
+            mapping_get_to_subscript_replacement,
+        ),
+        ("obj.sort()", "obj.reverse()", |source, call, _| {
+            renamed_method_call_replacement(source, call, "reverse")
+        }),
     ];
-    let expected = [
-        "obj.insert(0, item)",
-        "obj.append(item)",
-        "obj.extend([item])",
-        "obj.append(item)",
-        "obj[key]",
-        "obj.reverse()",
-        "obj.get(key)",
-    ];
-    for (index, source) in sources.into_iter().enumerate() {
+    for (index, (source, expected, replace)) in cases.into_iter().enumerate() {
         let parsed = parse_unchecked_source(source, ruff_python_ast::PySourceType::Python);
         assert!(parsed.has_valid_syntax());
         let facts = AstFacts::from_module(parsed.syntax(), parsed.tokens(), source);
         let Stmt::Expr(statement) = &parsed.syntax().body[0] else {
             panic!("expression fixture")
         };
-        reset();
-        let replacement = match statement.value.as_ref() {
-            Expr::Call(call) => match index {
-                0 => append_to_insert_replacement(source, call, &facts),
-                1 => insert_to_append_replacement(source, call, &facts),
-                2 => append_to_extend_replacement(source, call),
-                3 => extend_to_append_replacement(source, call, &facts),
-                4 => mapping_get_to_subscript_replacement(source, call, &facts),
-                5 => renamed_method_call_replacement(source, call, "reverse"),
-                _ => unreachable!(),
-            },
-            Expr::Subscript(subscript) => {
-                subscript_to_mapping_get_replacement(source, subscript, &facts)
-            }
-            _ => panic!("call or subscript fixture"),
+        let Expr::Call(call) = statement.value.as_ref() else {
+            panic!("call fixture")
         };
-        assert_eq!(replacement.as_deref(), Some(expected[index]));
         let mut entries = [0; 7];
         entries[index] = 1;
+        reset();
+
+        let replacement = replace(source, call, &facts);
+
+        assert_eq!(replacement.as_deref(), Some(expected));
         assert_eq!(work(), (entries, 1));
     }
+}
+
+#[test]
+fn counters_observe_direct_subscript_helper_entry_and_allocation() {
+    let source = "obj[key]";
+    let parsed = parse_unchecked_source(source, ruff_python_ast::PySourceType::Python);
+    assert!(parsed.has_valid_syntax());
+    let facts = AstFacts::from_module(parsed.syntax(), parsed.tokens(), source);
+    let Stmt::Expr(statement) = &parsed.syntax().body[0] else {
+        panic!("expression fixture")
+    };
+    let Expr::Subscript(subscript) = statement.value.as_ref() else {
+        panic!("subscript fixture")
+    };
+    reset();
+
+    let replacement = subscript_to_mapping_get_replacement(source, subscript, &facts);
+
+    assert_eq!(replacement.as_deref(), Some("obj.get(key)"));
+    assert_eq!(work(), ([0, 0, 0, 0, 0, 0, 1], 1));
 }
 
 #[test]

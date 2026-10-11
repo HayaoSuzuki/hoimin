@@ -58,16 +58,16 @@ async fn literal_selector_fixture_respects_run_overflow_and_partial_verify() {
     let project = tempfile::tempdir().unwrap();
     let reports = tempfile::tempdir().unwrap();
     std::fs::write(project.path().join("case.py"), SOURCE).unwrap();
-    for limit in [1, 2] {
+    for (limit, exit_code, truncated, executed_count) in [(1, 4, true, 0), (2, 0, false, 2)] {
         let plan_output = cli(&source_args("plan", project.path(), limit)).await;
         assert_eq!(
             plan_output.status.code(),
-            Some(if limit == 1 { 4 } else { 0 }),
+            Some(exit_code),
             "{}",
             String::from_utf8_lossy(&plan_output.stderr)
         );
         let plan: Value = serde_json::from_slice(&plan_output.stdout).unwrap();
-        assert_eq!(plan["truncated"], limit == 1);
+        assert_eq!(plan["truncated"], truncated);
         let candidates = plan["candidates"].as_array().unwrap();
         assert_eq!(candidates.len(), limit);
         for (index, (candidate, offset)) in candidates.iter().zip([10, 25]).enumerate() {
@@ -92,36 +92,39 @@ async fn literal_selector_fixture_respects_run_overflow_and_partial_verify() {
         let run_output = cli(&source_args("run", project.path(), limit)).await;
         assert_eq!(
             run_output.status.code(),
-            Some(if limit == 1 { 4 } else { 0 }),
+            Some(exit_code),
             "{}",
             String::from_utf8_lossy(&run_output.stderr)
         );
         let run: Value = serde_json::from_slice(&run_output.stdout).unwrap();
         let run_mutants = run["mutants"].as_array().unwrap();
-        if limit == 1 {
-            assert!(
-                run_mutants.is_empty(),
-                "ordinary overflow must not execute a retained prefix"
-            );
-            assert_eq!(run["summary"]["complete"], false);
-        } else {
-            assert_eq!(
-                run_mutants
-                    .iter()
-                    .map(|m| m["candidate"]["id"].clone())
-                    .collect::<Vec<_>>(),
-                ids
-            );
-            assert_eq!(
-                run_mutants
-                    .iter()
-                    .map(|m| &m["candidate"])
-                    .collect::<Vec<_>>(),
-                projected_candidates.iter().collect::<Vec<_>>()
-            );
-            assert!(run_mutants.iter().all(|m| m["status"] == "killed"));
-            assert_eq!(run["summary"]["complete"], true);
-        }
+        assert_eq!(
+            run_mutants.len(),
+            executed_count,
+            "ordinary overflow must not execute a retained prefix"
+        );
+        assert_eq!(run["summary"]["complete"], !truncated);
+        assert_eq!(
+            run_mutants
+                .iter()
+                .map(|mutant| mutant["candidate"]["id"].clone())
+                .collect::<Vec<_>>(),
+            ids[..executed_count]
+        );
+        assert_eq!(
+            run_mutants
+                .iter()
+                .map(|mutant| &mutant["candidate"])
+                .collect::<Vec<_>>(),
+            projected_candidates[..executed_count]
+                .iter()
+                .collect::<Vec<_>>()
+        );
+        assert!(
+            run_mutants
+                .iter()
+                .all(|mutant| mutant["status"] == "killed")
+        );
         let manifest = reports.path().join(format!("plan-{limit}.json"));
         std::fs::write(&manifest, &plan_output.stdout).unwrap();
         let verify_output = cli(&[
@@ -133,7 +136,7 @@ async fn literal_selector_fixture_respects_run_overflow_and_partial_verify() {
         .await;
         assert_eq!(
             verify_output.status.code(),
-            Some(if limit == 1 { 4 } else { 0 }),
+            Some(exit_code),
             "{}",
             String::from_utf8_lossy(&verify_output.stderr)
         );
@@ -147,7 +150,7 @@ async fn literal_selector_fixture_respects_run_overflow_and_partial_verify() {
                 .collect::<Vec<_>>(),
             ids
         );
-        assert_eq!(verify["summary"]["complete"], limit == 2);
+        assert_eq!(verify["summary"]["complete"], !truncated);
         assert_eq!(
             verify["mutants"]
                 .as_array()

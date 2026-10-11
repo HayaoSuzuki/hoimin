@@ -1723,17 +1723,12 @@ mod tests {
             &root,
             &mut state,
             &|| {
-                if deadline_crossed.get() {
-                    super::MAX_SCAN_DURATION
-                } else {
-                    std::time::Duration::ZERO
-                }
+                [std::time::Duration::ZERO, super::MAX_SCAN_DURATION]
+                    [usize::from(deadline_crossed.get())]
             },
             &|_| deadline_crossed.set(true),
             &|open| {
-                if open > 1 {
-                    child_opened.set(true);
-                }
+                child_opened.set(child_opened.get() || open > 1);
             },
         )
         .unwrap_err();
@@ -1743,10 +1738,34 @@ mod tests {
     }
 
     #[cfg(unix)]
+    fn swap_directory_before_open(
+        display: &Utf8Path,
+        victim: &Utf8Path,
+        parked: &Utf8Path,
+        outside: &Utf8Path,
+        swapped: &std::cell::Cell<bool>,
+    ) {
+        if display == victim && !swapped.replace(true) {
+            std::fs::rename(victim, parked).unwrap();
+            std::os::unix::fs::symlink(outside, victim).unwrap();
+        }
+    }
+
+    #[cfg(unix)]
+    fn remove_directory_before_open(
+        display: &Utf8Path,
+        victim: &Utf8Path,
+        removed: &std::cell::Cell<bool>,
+    ) {
+        if display == victim && !removed.replace(true) {
+            std::fs::remove_dir(display).unwrap();
+        }
+    }
+
+    #[cfg(unix)]
     #[test]
     fn directory_replaced_by_a_symlink_before_open_is_never_followed() {
         use std::cell::Cell;
-        use std::os::unix::fs::symlink;
 
         let temp = tempfile::tempdir().unwrap();
         let outside = tempfile::tempdir().unwrap();
@@ -1763,10 +1782,13 @@ mod tests {
             &mut state,
             &|| std::time::Duration::ZERO,
             &|display| {
-                if display == temp.join("victim") && !swapped.replace(true) {
-                    std::fs::rename(temp.join("victim"), temp.join("parked")).unwrap();
-                    symlink(outside, temp.join("victim")).unwrap();
-                }
+                swap_directory_before_open(
+                    display,
+                    &temp.join("victim"),
+                    &temp.join("parked"),
+                    outside,
+                    &swapped,
+                );
             },
             &|_| {},
         );
@@ -1818,12 +1840,9 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    #[ignore = "subprocess fixture for directory handle bound"]
     fn directory_handle_bound_child() {
         use std::cell::Cell;
-
-        if std::env::var_os("HOIMIN_DISK_HANDLE_BOUND_CHILD").is_none() {
-            return;
-        }
 
         let temp = tempfile::tempdir().unwrap();
         let temp = Utf8Path::from_path(temp.path()).unwrap();
@@ -1857,6 +1876,7 @@ mod tests {
         let output = std::process::Command::new(std::env::current_exe().unwrap())
             .arg("--exact")
             .arg("workspace::disk::tests::directory_handle_bound_child")
+            .arg("--ignored")
             .arg("--nocapture")
             .env("HOIMIN_DISK_HANDLE_BOUND_CHILD", "1")
             .output()
@@ -1886,11 +1906,7 @@ mod tests {
             &root,
             &mut state,
             &|| std::time::Duration::ZERO,
-            &|display| {
-                if display == temp.join("victim") && !removed.replace(true) {
-                    std::fs::remove_dir(display).unwrap();
-                }
-            },
+            &|display| remove_directory_before_open(display, &temp.join("victim"), &removed),
             &|_| {},
         )
         .unwrap();
@@ -1964,8 +1980,6 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn does_not_follow_symlinks_and_counts_hard_links_once() {
-        use std::os::unix::fs::symlink;
-
         let temp = tempfile::tempdir().unwrap();
         let temp = Utf8Path::from_path(temp.path()).unwrap();
         let root = temp.join("root");
@@ -1975,7 +1989,7 @@ mod tests {
         std::fs::write(root.join("data"), b"12345").unwrap();
         std::fs::hard_link(root.join("data"), root.join("alias")).unwrap();
         std::fs::write(outside.join("large"), vec![0_u8; 1_024]).unwrap();
-        symlink(&outside, root.join("escape")).unwrap();
+        std::os::unix::fs::symlink(&outside, root.join("escape")).unwrap();
 
         let reading = DiskMeter::new(vec![capability(&root)], FixedSpace(99))
             .measure()

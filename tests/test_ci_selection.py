@@ -39,14 +39,23 @@ from tools import ci_selection
 def test_classification_keeps_executable_inputs_out_of_documentation(
     path: str, expected: set[str]
 ) -> None:
-    assert {
-        key for key, value in ci_selection.classify([path]).items() if value
-    } == expected
+    flags = ci_selection.classify([path])
+
+    assert {key for key, value in flags.items() if value} == expected
 
 
 def test_mixed_changes_union_their_requirements() -> None:
-    assert all(ci_selection.classify(["LICENSE", "tests/test_example.py"]).values())
-    assert not any(ci_selection.classify([]).values())
+    paths = ["LICENSE", "tests/test_example.py"]
+
+    flags = ci_selection.classify(paths)
+
+    assert all(flags.values())
+
+
+def test_empty_diff_requires_no_checks() -> None:
+    flags = ci_selection.classify([])
+
+    assert not any(flags.values())
 
 
 def git(root: Path, *args: str) -> str:
@@ -68,9 +77,13 @@ def test_diff_includes_deleted_and_both_renamed_paths(tmp_path: Path) -> None:
     (tmp_path / "executable.py").rename(tmp_path / "README.md")
     git(tmp_path, "add", "-A")
     git(tmp_path, "commit", "-m", "rename")
+
     paths = ci_selection.changed_paths(tmp_path, base, "HEAD", merge_base=False)
+
+    classification = ci_selection.classify(paths)
+
     assert set(paths) == {"executable.py", "README.md"}
-    assert all(ci_selection.classify(paths).values())
+    assert all(classification.values())
 
 
 def test_missing_git_revision_falls_back_to_all_checks(tmp_path: Path) -> None:
@@ -79,6 +92,7 @@ def test_missing_git_revision_falls_back_to_all_checks(tmp_path: Path) -> None:
         "pull_request",
         {"pull_request": {"base": {"sha": "missing"}, "head": {"sha": "missing"}}},
     )
+
     assert all(flags.values())
 
 
@@ -86,7 +100,9 @@ def test_missing_git_revision_falls_back_to_all_checks(tmp_path: Path) -> None:
     "event", ["workflow_dispatch", "pull_request_target", "unknown"]
 )
 def test_events_without_a_trustworthy_diff_select_everything(event: str) -> None:
-    assert all(ci_selection.plan(Path.cwd(), event, {}).values())
+    flags = ci_selection.plan(Path.cwd(), event, {})
+
+    assert all(flags.values())
 
 
 def needs_for(flags: dict[str, bool]) -> dict[str, dict[str, object]]:
@@ -108,7 +124,10 @@ def needs_for(flags: dict[str, bool]) -> dict[str, dict[str, object]]:
 
 def test_aggregate_accepts_only_intentional_skips() -> None:
     needs = needs_for(ci_selection.classify(["docs/usage.md"]))
-    assert ci_selection.aggregate(needs) == []
+
+    errors = ci_selection.aggregate(needs)
+
+    assert errors == []
 
 
 @pytest.mark.parametrize("result", ["failure", "cancelled", "skipped", "neutral", ""])
@@ -116,28 +135,44 @@ def test_aggregate_accepts_only_intentional_skips() -> None:
 def test_required_job_never_becomes_success(result: str, job: str) -> None:
     needs = needs_for(dict.fromkeys(ci_selection.CATEGORIES, True))
     needs[job]["result"] = result
-    assert ci_selection.aggregate(needs)
+
+    errors = ci_selection.aggregate(needs)
+
+    assert errors
 
 
 @pytest.mark.parametrize("value", [None, "", "True", "garbage"])
 def test_missing_or_invalid_planner_output_fails_closed(value: object) -> None:
     needs = needs_for(ci_selection.classify(["README.md"]))
     needs["changes"]["outputs"] = {"rust": value}
-    assert ci_selection.aggregate(needs)
+
+    errors = ci_selection.aggregate(needs)
+
+    assert errors
 
 
-def test_missing_required_job_and_unexpected_failure_are_rejected() -> None:
+def test_missing_required_job_is_rejected() -> None:
     needs = needs_for(dict.fromkeys(ci_selection.CATEGORIES, True))
     del needs["rust"]
-    assert ci_selection.aggregate(needs)
+
+    errors = ci_selection.aggregate(needs)
+
+    assert errors
+
+
+def test_unexpected_failure_is_rejected() -> None:
     needs = needs_for(ci_selection.classify(["README.md"]))
     needs["rust"]["result"] = "failure"
-    assert ci_selection.aggregate(needs)
+
+    errors = ci_selection.aggregate(needs)
+
+    assert errors
 
 
 def test_aggregate_cli_propagates_failure() -> None:
     needs = needs_for(dict.fromkeys(ci_selection.CATEGORIES, True))
     needs["rust"]["result"] = "cancelled"
+
     result = subprocess.run(
         [sys.executable, "-m", "tools.ci_selection", "aggregate"],
         input=json.dumps(needs),
@@ -145,12 +180,21 @@ def test_aggregate_cli_propagates_failure() -> None:
         text=True,
         check=False,
     )
+
     assert result.returncode == 1
     assert "rust" in result.stdout
 
 
-def test_pr_diff_uses_merge_base_and_does_not_include_base_only_changes(
+@pytest.mark.parametrize(
+    ("event", "expected"),
+    [("pull_request", False), ("merge_group", True), ("push", True)],
+    ids=["pr-excludes-base-only-changes", "merge-group", "push"],
+)
+def test_event_diff_selects_only_its_changes(
     tmp_path: Path,
+    event: str,
+    *,
+    expected: bool,
 ) -> None:
     git(tmp_path, "init")
     git(tmp_path, "config", "user.name", "CI test")
@@ -170,27 +214,17 @@ def test_pr_diff_uses_merge_base_and_does_not_include_base_only_changes(
     git(tmp_path, "add", ".")
     git(tmp_path, "commit", "-m", "base-only change")
     base = git(tmp_path, "rev-parse", "HEAD")
-    assert not any(
-        ci_selection.plan(
-            tmp_path,
-            "pull_request",
-            {"pull_request": {"base": {"sha": base}, "head": {"sha": head}}},
-        ).values()
-    )
-    assert all(
-        ci_selection.plan(
-            tmp_path,
-            "merge_group",
-            {"merge_group": {"base_sha": common, "head_sha": base}},
-        ).values()
-    )
-    assert all(
-        ci_selection.plan(
-            tmp_path,
-            "push",
-            {"before": common, "after": base},
-        ).values()
-    )
+    payloads: dict[str, dict[str, object]] = {
+        "pull_request": {
+            "pull_request": {"base": {"sha": base}, "head": {"sha": head}}
+        },
+        "merge_group": {"merge_group": {"base_sha": common, "head_sha": base}},
+        "push": {"before": common, "after": base},
+    }
+
+    flags = ci_selection.plan(tmp_path, event, payloads[event])
+
+    assert all(value == expected for value in flags.values())
 
 
 @pytest.mark.parametrize(
@@ -220,6 +254,7 @@ def test_plan_cli_outputs_are_complete_and_cgroup_is_trusted_push_only(
         "GITHUB_OUTPUT": str(output),
         "CI_CGROUP": delegated,
     }
+
     result = subprocess.run(
         [sys.executable, "-m", "tools.ci_selection", "plan"],
         env=environment,
@@ -229,8 +264,10 @@ def test_plan_cli_outputs_are_complete_and_cgroup_is_trusted_push_only(
         encoding="utf-8",
         timeout=60,
     )
-    assert result.returncode == 0
+
     values = dict(line.split("=", 1) for line in output.read_text().splitlines())
+
+    assert result.returncode == 0
     assert set(values) == {*ci_selection.CATEGORIES, "cgroup"}
     assert all(values[key] == "true" for key in ci_selection.CATEGORIES)
     assert values["cgroup"] == expected
@@ -247,4 +284,5 @@ def test_aggregate_cli_rejects_malformed_json(payload: str) -> None:
         check=False,
         timeout=60,
     )
+
     assert result.returncode == 1

@@ -1733,44 +1733,72 @@ mod task_tests {
 
     #[test]
     fn unavailable_import_root_retains_cleanup_without_publishing_worker() {
-        for blocking in [false, true] {
-            let project = tempfile::tempdir().unwrap();
-            std::fs::write(project.path().join("a.py"), "value = 1\n").unwrap();
-            let root = Utf8Path::from_path(project.path()).unwrap().to_owned();
-            let mut handler = WorkspaceHandler::new(root, Vec::new(), 1, CopyOptions::default())
-                .with_import_roots(vec!["missing".into()]);
-            let completed = handler
-                .handle_preflight(Preflight { id: EffectId(1) })
-                .unwrap();
-            let mut ledger = BudgetLedger::new(RunBudgets {
-                memory: 1,
-                copy: completed.aggregate_logical_bytes,
-                processes: 1,
-            });
-            let grant = reserve_workspace_copy(&mut ledger, &completed).unwrap();
-            let request = grant.create_worker(EffectId(2), 0).unwrap();
-            let failed = if blocking {
-                let completion = handler.prepare_create_task(request).unwrap().execute();
-                match handler.accept_task_completion(completion).unwrap() {
-                    RunEvent::EffectFailed(failed) => failed,
-                    event => panic!("unexpected publication: {event:?}"),
-                }
-            } else {
-                handler.handle_create_worker(request).unwrap_err()
-            };
-            assert_eq!(failed.failure.code(), "workspace.import_root.unavailable");
-            assert_eq!(handler.worker_count(), 0);
-            assert_eq!(handler.pending_cleanup_count(), 1);
-            let copied_root = handler.pending_cleanup.get(&0).unwrap().root().to_owned();
-            assert!(copied_root.is_dir());
-            handler.close().unwrap();
-            assert_eq!(handler.pending_cleanup_count(), 0);
-            assert!(!copied_root.exists());
-            assert_eq!(
-                std::fs::read_to_string(project.path().join("a.py")).unwrap(),
-                "value = 1\n"
-            );
-        }
+        let project = tempfile::tempdir().unwrap();
+        std::fs::write(project.path().join("a.py"), "value = 1\n").unwrap();
+        let root = Utf8Path::from_path(project.path()).unwrap().to_owned();
+        let mut handler = WorkspaceHandler::new(root, Vec::new(), 1, CopyOptions::default())
+            .with_import_roots(vec!["missing".into()]);
+        let completed = handler
+            .handle_preflight(Preflight { id: EffectId(1) })
+            .unwrap();
+        let mut ledger = BudgetLedger::new(RunBudgets {
+            memory: 1,
+            copy: completed.aggregate_logical_bytes,
+            processes: 1,
+        });
+        let grant = reserve_workspace_copy(&mut ledger, &completed).unwrap();
+        let request = grant.create_worker(EffectId(2), 0).unwrap();
+        let failed = handler.handle_create_worker(request).unwrap_err();
+
+        assert_eq!(failed.failure.code(), "workspace.import_root.unavailable");
+        assert_eq!(handler.worker_count(), 0);
+        assert_eq!(handler.pending_cleanup_count(), 1);
+        let copied_root = handler.pending_cleanup.get(&0).unwrap().root().to_owned();
+        assert!(copied_root.is_dir());
+        handler.close().unwrap();
+        assert_eq!(handler.pending_cleanup_count(), 0);
+        assert!(!copied_root.exists());
+        assert_eq!(
+            std::fs::read_to_string(project.path().join("a.py")).unwrap(),
+            "value = 1\n"
+        );
+    }
+
+    #[test]
+    fn unavailable_import_root_task_retains_cleanup_without_publishing_worker() {
+        let project = tempfile::tempdir().unwrap();
+        std::fs::write(project.path().join("a.py"), "value = 1\n").unwrap();
+        let root = Utf8Path::from_path(project.path()).unwrap().to_owned();
+        let mut handler = WorkspaceHandler::new(root, Vec::new(), 1, CopyOptions::default())
+            .with_import_roots(vec!["missing".into()]);
+        let completed = handler
+            .handle_preflight(Preflight { id: EffectId(1) })
+            .unwrap();
+        let mut ledger = BudgetLedger::new(RunBudgets {
+            memory: 1,
+            copy: completed.aggregate_logical_bytes,
+            processes: 1,
+        });
+        let grant = reserve_workspace_copy(&mut ledger, &completed).unwrap();
+        let request = grant.create_worker(EffectId(2), 0).unwrap();
+        let completion = handler.prepare_create_task(request).unwrap().execute();
+        let event = handler.accept_task_completion(completion).unwrap();
+        let RunEvent::EffectFailed(failed) = event else {
+            panic!("unexpected publication: {event:?}")
+        };
+
+        assert_eq!(failed.failure.code(), "workspace.import_root.unavailable");
+        assert_eq!(handler.worker_count(), 0);
+        assert_eq!(handler.pending_cleanup_count(), 1);
+        let copied_root = handler.pending_cleanup.get(&0).unwrap().root().to_owned();
+        assert!(copied_root.is_dir());
+        handler.close().unwrap();
+        assert_eq!(handler.pending_cleanup_count(), 0);
+        assert!(!copied_root.exists());
+        assert_eq!(
+            std::fs::read_to_string(project.path().join("a.py")).unwrap(),
+            "value = 1\n"
+        );
     }
 
     fn prepared_handler() -> (
@@ -1975,14 +2003,12 @@ mod task_tests {
         let during_drop = managed_root.cleanup(std::time::Duration::from_secs(5));
         release.wait();
         drop_thread.join().unwrap();
-        if during_drop.status != hoimin_core::DiskCleanupStatus::Clean {
-            let cleanup = managed_root.cleanup(std::time::Duration::from_secs(5));
-            assert_eq!(
-                cleanup.status,
-                hoimin_core::DiskCleanupStatus::Clean,
-                "test cleanup did not recover: {cleanup:?}"
-            );
-        }
+        let cleanup = managed_root.cleanup(std::time::Duration::from_secs(5));
+        assert_eq!(
+            cleanup.status,
+            hoimin_core::DiskCleanupStatus::Clean,
+            "test cleanup did not recover: {cleanup:?}"
+        );
 
         assert_eq!(
             during_drop.status,

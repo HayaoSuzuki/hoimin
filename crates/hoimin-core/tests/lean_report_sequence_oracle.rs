@@ -585,9 +585,12 @@ mod correspondence {
             let result = catch_unwind(AssertUnwindSafe(|| replay(item)))
                 .map_err(|_| format!("{} panicked: infrastructure-error", item.id))
                 .and_then(|result| result);
-            if let Err(error) = result {
-                panic!("mode={}; {error}", item.mode);
-            }
+            assert!(
+                result.is_ok(),
+                "mode={}; {}",
+                item.mode,
+                result.unwrap_err()
+            );
         }
         assert!(exercised > 0, "case filter selected no corpus row");
     }

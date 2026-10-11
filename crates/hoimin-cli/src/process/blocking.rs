@@ -158,17 +158,26 @@ mod tests {
     }
 
     #[tokio::test(flavor = "current_thread")]
-    async fn idle_owner_destruction_runs_off_dispatcher() {
+    async fn dropped_idle_owner_destruction_runs_off_dispatcher() {
         let dispatcher_thread = std::thread::current().id();
-        for explicit_finish in [false, true] {
-            let (dropped, observation) = tokio::sync::oneshot::channel();
-            let mut owner = BlockingOwner::new(DropThread(dropped));
-            if explicit_finish {
-                owner.finish(EffectId(17)).await.unwrap();
-            }
-            drop(owner);
-            assert_ne!(observation.await.unwrap(), dispatcher_thread);
-        }
+        let (dropped, observation) = tokio::sync::oneshot::channel();
+        let owner = BlockingOwner::new(DropThread(dropped));
+
+        drop(owner);
+
+        assert_ne!(observation.await.unwrap(), dispatcher_thread);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn finished_idle_owner_destruction_runs_off_dispatcher() {
+        let dispatcher_thread = std::thread::current().id();
+        let (dropped, observation) = tokio::sync::oneshot::channel();
+        let mut owner = BlockingOwner::new(DropThread(dropped));
+
+        owner.finish(EffectId(17)).await.unwrap();
+        drop(owner);
+
+        assert_ne!(observation.await.unwrap(), dispatcher_thread);
     }
 
     #[tokio::test(flavor = "current_thread")]

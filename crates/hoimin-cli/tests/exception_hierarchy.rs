@@ -39,7 +39,23 @@ fn fixture() -> tempfile::TempDir {
 
 #[tokio::test]
 async fn hierarchy_plan_verify_detects_dependency_changes_additions_and_deletions() {
-    for change in ["modify", "add", "delete"] {
+    type ChangeDependency = fn(&Path);
+    let cases: [(&str, ChangeDependency); 3] = [
+        ("modify", |root| {
+            std::fs::write(root.join("errors.py"), "class Root(Exception): pass\nclass Child(ValueError): pass\nclass Sibling(Root): pass\n").unwrap();
+        }),
+        ("add", |root| {
+            std::fs::write(
+                root.join("additional.py"),
+                "class Additional(Exception): pass\n",
+            )
+            .unwrap();
+        }),
+        ("delete", |root| {
+            std::fs::remove_file(root.join("errors.py")).unwrap();
+        }),
+    ];
+    for (change, change_dependency) in cases {
         let dir = fixture();
         let plan = hoimin_cli::plan::create(config(dir.path(), &[]))
             .await
@@ -57,11 +73,7 @@ async fn hierarchy_plan_verify_detects_dependency_changes_additions_and_deletion
         hoimin_cli::plan::prepare_verify(&saved, &ids, OutputFormat::Json)
             .await
             .unwrap();
-        match change {
-            "modify" => std::fs::write(dir.path().join("errors.py"), "class Root(Exception): pass\nclass Child(ValueError): pass\nclass Sibling(Root): pass\n").unwrap(),
-            "add" => std::fs::write(dir.path().join("additional.py"), "class Additional(Exception): pass\n").unwrap(),
-            _ => std::fs::remove_file(dir.path().join("errors.py")).unwrap(),
-        }
+        change_dependency(dir.path());
         let error = hoimin_cli::plan::prepare_verify(&saved, &ids, OutputFormat::Json)
             .await
             .unwrap_err();
@@ -151,32 +163,42 @@ async fn run_mutants(root: &Path, test: &str) -> serde_json::Value {
 
 #[tokio::test]
 async fn hierarchy_rejects_duplicate_module_identities_and_shadowed_namespace_portions() {
-    for duplicate in [true, false] {
+    let classes = "class Root(Exception): pass\nclass Child(Root): pass\n";
+    for (name, sources) in [
+        (
+            "duplicate",
+            vec![
+                ("lib/errors.py", classes),
+                (
+                    "service.py",
+                    "from lib.errors import Root\nfrom errors import Child\ndef f():\n    raise Child()\n",
+                ),
+            ],
+        ),
+        (
+            "shadowed-namespace",
+            vec![
+                ("pkg/errors.py", classes),
+                ("lib/pkg/__init__.py", ""),
+                (
+                    "lib/pkg/errors.py",
+                    "class Root(Exception): pass\nclass Child(ValueError): pass\n",
+                ),
+                (
+                    "service.py",
+                    "from pkg.errors import Root, Child\ndef f():\n    raise Child()\n",
+                ),
+            ],
+        ),
+    ] {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join("lib/pkg")).unwrap();
         std::fs::create_dir_all(dir.path().join("pkg")).unwrap();
-        let classes = "class Root(Exception): pass\nclass Child(Root): pass\n";
-        if duplicate {
-            std::fs::write(dir.path().join("lib/errors.py"), classes).unwrap();
-            std::fs::write(dir.path().join("service.py"),"from lib.errors import Root\nfrom errors import Child\ndef f():\n    raise Child()\n").unwrap();
-        } else {
-            std::fs::write(dir.path().join("pkg/errors.py"), classes).unwrap();
-            std::fs::write(dir.path().join("lib/pkg/__init__.py"), "").unwrap();
-            std::fs::write(
-                dir.path().join("lib/pkg/errors.py"),
-                "class Root(Exception): pass\nclass Child(ValueError): pass\n",
-            )
-            .unwrap();
-            std::fs::write(
-                dir.path().join("service.py"),
-                "from pkg.errors import Root, Child\ndef f():\n    raise Child()\n",
-            )
-            .unwrap();
-        }
+        write_sources(dir.path(), &sources);
         let plan = hoimin_cli::plan::create(config(dir.path(), &["--import-root", "lib"]))
             .await
             .unwrap();
-        assert!(plan.manifest.candidates.is_empty(), "duplicate={duplicate}");
+        assert!(plan.manifest.candidates.is_empty(), "{name}");
     }
 }
 
@@ -391,29 +413,37 @@ async fn hierarchy_audit_early_submodules_and_nested_stdlib_names_remain_eligibl
 
 #[tokio::test]
 async fn hierarchy_review_submodule_loading_overwrites_package_class_attributes() {
-    for (name, imports, helper) in [
-        ("absent", "", ""),
-        ("aliased", "import pkg.Child as loaded\n", ""),
-        ("from", "from pkg.Child import marker\n", ""),
+    for (name, imports, helper, runtime_imported, expected_candidates) in [
+        ("absent", "", "", "False", 1),
+        ("aliased", "import pkg.Child as loaded\n", "", "True", 0),
+        ("from", "from pkg.Child import marker\n", "", "True", 0),
         (
             "nested-import",
             "def load():\n    import pkg.Child as loaded\nload()\n",
             "",
+            "True",
+            0,
         ),
         (
             "nested-from",
             "def load():\n    from pkg.Child import marker\nload()\n",
             "",
+            "True",
+            0,
         ),
         (
             "relative",
             "import pkg.loader\n",
             "from .Child import marker\n",
+            "True",
+            0,
         ),
         (
             "nested-relative",
             "import pkg.loader\npkg.loader.load()\n",
             "def load():\n    from .Child import marker\n",
+            "True",
+            0,
         ),
     ] {
         let dir = tempfile::tempdir().unwrap();
@@ -430,10 +460,8 @@ async fn hierarchy_review_submodule_loading_overwrites_package_class_attributes(
                 ("service.py", &service),
             ],
         );
-        let imported = name != "absent";
         let runtime = format!(
-            "import service, types; assert isinstance(service.pkg.Child, types.ModuleType) == {}",
-            if imported { "True" } else { "False" }
+            "import service, types; assert isinstance(service.pkg.Child, types.ModuleType) == {runtime_imported}"
         );
         let output = std::process::Command::new(python())
             .current_dir(dir.path())
@@ -450,7 +478,7 @@ async fn hierarchy_review_submodule_loading_overwrites_package_class_attributes(
             .unwrap();
         assert_eq!(
             plan.manifest.candidates.len(),
-            usize::from(!imported),
+            expected_candidates,
             "{name}: {:?}",
             plan.manifest.candidates
         );
@@ -503,16 +531,25 @@ async fn hierarchy_review_bounds_deferred_import_dependencies() {
 
 #[tokio::test]
 async fn hierarchy_review_imported_attribute_writes_invalidate_other_aliases() {
-    for (name, patch) in [
-        ("unchanged", "import errors as e\n"),
-        ("assignment", "import errors as e\ne.Child = object\n"),
+    for (name, patch, runtime_subclass, expected_candidates) in [
+        ("unchanged", "import errors as e\n", "True", 1),
+        (
+            "assignment",
+            "import errors as e\ne.Child = object\n",
+            "False",
+            0,
+        ),
         (
             "nested",
             "def patch():\n    import errors as e\n    e.Child = object\npatch()\n",
+            "False",
+            0,
         ),
         (
             "setattr",
             "import errors as e\nsetattr(e, 'Child', object)\n",
+            "False",
+            0,
         ),
     ] {
         let dir = tempfile::tempdir().unwrap();
@@ -531,8 +568,7 @@ async fn hierarchy_review_imported_attribute_writes_invalidate_other_aliases() {
             ],
         );
         let runtime = format!(
-            "import service; assert issubclass(service.Child, BaseException) == {}",
-            if name == "unchanged" { "True" } else { "False" }
+            "import service; assert issubclass(service.Child, BaseException) == {runtime_subclass}"
         );
         let output = std::process::Command::new(python())
             .current_dir(dir.path())
@@ -549,7 +585,7 @@ async fn hierarchy_review_imported_attribute_writes_invalidate_other_aliases() {
             .unwrap();
         assert_eq!(
             plan.manifest.candidates.len(),
-            usize::from(name == "unchanged"),
+            expected_candidates,
             "{name}: {:?}",
             plan.manifest.candidates
         );
@@ -763,15 +799,11 @@ async fn hierarchy_outcomes_distinguish_skipped_analysis_from_policy_exclusions(
         std::fs::write(dir.path().join("service.py"), source).unwrap();
         let plan = hoimin_cli::plan::create(config(dir.path(), &[])).await.unwrap();
         assert!(plan.manifest.candidates.is_empty(), "{name}");
-        match reason {
-            Some(reason) => {
-                assert_eq!(plan.manifest.diagnostics.len(), 1, "{name}");
-                let diagnostic = &plan.manifest.diagnostics[0];
-                assert!(diagnostic.message.contains(reason), "{diagnostic:?}");
-                assert_eq!(diagnostic.line, Some(5), "{name}");
-                assert!(diagnostic.column.is_some());
-            }
-            None => assert!(plan.manifest.diagnostics.is_empty(), "{name}: {:?}", plan.manifest.diagnostics),
+        assert_eq!(plan.manifest.diagnostics.len(), usize::from(reason.is_some()), "{name}: {:?}", plan.manifest.diagnostics);
+        for (diagnostic, reason) in plan.manifest.diagnostics.iter().zip(reason) {
+            assert!(diagnostic.message.contains(reason), "{diagnostic:?}");
+            assert_eq!(diagnostic.line, Some(5), "{name}");
+            assert!(diagnostic.column.is_some());
         }
         assert!(!plan.manifest.truncated);
     }

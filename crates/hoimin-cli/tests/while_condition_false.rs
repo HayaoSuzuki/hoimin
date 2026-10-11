@@ -89,21 +89,24 @@ async fn plan(root: &Path, operators: &str, test: &str) -> serde_json::Value {
 
 #[tokio::test]
 async fn while_false_replaces_each_loop_test_and_compiles() {
-    for source in [
-        "while[]: pass\n",
-        "while x < 2: x += 1\n",
-        "while a and b: break\n",
-        "while ready():\n    while nested(): break\n    break\nelse: done()\n",
-        "é = '前'\r\nwhile (\r\n    a and # comment\r\n    b\r\n): break\r\n",
+    for (source, expected_count) in [
+        ("while[]: pass\n", 1),
+        ("while x < 2: x += 1\n", 1),
+        ("while a and b: break\n", 1),
+        (
+            "while ready():\n    while nested(): break\n    break\nelse: done()\n",
+            2,
+        ),
+        (
+            "é = '前'\r\nwhile (\r\n    a and # comment\r\n    b\r\n): break\r\n",
+            1,
+        ),
     ] {
         let root = tempfile::tempdir().unwrap();
         std::fs::write(root.path().join("subject.py"), source).unwrap();
         let doc = plan(root.path(), "while_condition_false", "pass").await;
         let candidates = doc["candidates"].as_array().unwrap();
-        assert_eq!(
-            candidates.len(),
-            if source.contains("nested") { 2 } else { 1 }
-        );
+        assert_eq!(candidates.len(), expected_count);
         for c in candidates {
             assert!(matches!(c["replacement"].as_str().unwrap(), "(False)"));
             let start = usize::try_from(c["span"]["start"].as_u64().unwrap()).unwrap();
@@ -186,11 +189,8 @@ async fn while_false_skips_effects_and_runs_else() {
         let mut mutant = source.to_owned();
         let forced = c["replacement"].as_str().unwrap();
         mutant.replace_range(start..end, forced);
-        mutant.push_str(if forced == "(True)" {
-            "assert calls == [] and outcome == 'yes'\n"
-        } else {
-            "assert calls == [] and outcome == 'no'\n"
-        });
+        assert_eq!(forced, "(False)");
+        mutant.push_str("assert calls == [] and outcome == 'no'\n");
         let result = tokio::process::Command::new(python())
             .args(["-c", &mutant])
             .output()

@@ -63,17 +63,16 @@ async fn nullable_builtin_provenance_public_plan_matches_executable_annotations(
         "__annotations__['value'] is int",
     );
     assert_eq!(plan(custom_class).await.candidates, Vec::new());
-    for name in [
-        "str", "int", "float", "bool", "bytes", "list", "set", "dict",
+    for (annotation, assignment) in [
+        ("str", "str = 7"),
+        ("int", "int = 7"),
+        ("float", "float = 7"),
+        ("bool", "bool = 7"),
+        ("bytes", "bytes = 7"),
+        ("list[int]", "list = {int: 7}"),
+        ("set[int]", "set = {int: 7}"),
+        ("dict[str, int]", "dict = {(str, int): 7}"),
     ] {
-        let (annotation, assignment) = match name {
-            "list" | "set" => (format!("{name}[int]"), format!("{name} = {{int: 7}}")),
-            "dict" => (
-                "dict[str, int]".to_owned(),
-                "dict = {(str, int): 7}".to_owned(),
-            ),
-            _ => (name.to_owned(), format!("{name} = 7")),
-        };
         for source in [
             format!("{assignment}\nvalue: {annotation}\n"),
             format!("value: {annotation}\n{assignment}\n"),

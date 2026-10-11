@@ -241,23 +241,27 @@ mod tests {
         let result = project.load(&|| false);
         std::fs::write(&path, original).unwrap();
         crate::fingerprint_inputs::recheck_config(&config, &config.root).unwrap();
-        if let Ok(index) = result {
-            let parsed = ruff_python_parser::parse_module(service).unwrap();
-            let mut replacements = Vec::new();
-            index
-                .collect(
-                    Utf8Path::new("service.py"),
-                    parsed.syntax(),
-                    100,
-                    &|| false,
-                    |_, replacement| replacements.push(replacement),
-                )
-                .unwrap();
-            assert!(
-                replacements.is_empty(),
-                "missing snapshot module exposed {replacements:?}"
-            );
-        }
+        let replacements = result
+            .map(|index| {
+                let parsed = ruff_python_parser::parse_module(service).unwrap();
+                let mut replacements = Vec::new();
+                index
+                    .collect(
+                        Utf8Path::new("service.py"),
+                        parsed.syntax(),
+                        100,
+                        &|| false,
+                        |_, replacement| replacements.push(replacement),
+                    )
+                    .unwrap();
+                replacements
+            })
+            .unwrap_or_default();
+
+        assert!(
+            replacements.is_empty(),
+            "missing snapshot module exposed {replacements:?}"
+        );
     }
 }
 

@@ -71,18 +71,15 @@ fn input_dispatch_preserves_document_field_orders_and_opaque_config() {
         let expected = serde_json::to_value(expected.mutants).unwrap();
         let mut keys = ["schema_version", "run", "baseline", "mutants", "summary"];
         for _ in 0..keys.len() {
-            for pretty in [false, true] {
-                let separator = if pretty { ",\n" } else { "," };
+            for (pretty, separator, prefix, suffix) in
+                [(false, ",", "{", "}\n"), (true, ",\n", "{\n", "\n}\n")]
+            {
                 let fields = keys
                     .iter()
                     .map(|key| format!("\"{key}\":{}", document[key]))
                     .collect::<Vec<_>>()
                     .join(separator);
-                let bytes = if pretty {
-                    format!("{{\n{fields}\n}}\n")
-                } else {
-                    format!("{{{fields}}}\n")
-                };
+                let bytes = format!("{prefix}{fields}{suffix}");
                 let path = fixture.path().join("reordered.json");
                 std::fs::write(&path, bytes).unwrap();
                 let InputReport::Usable(actual) = read_report(&path).unwrap() else {
@@ -884,28 +881,27 @@ fn matching_candidate_ids_pair_mutants_with_the_same_content_key() {
 #[test]
 fn content_fallback_compares_every_identity_field_by_value() {
     // Removing a field from the content key would incorrectly pair one of these.
-    for field in [
-        "path",
-        "original",
-        "replacement",
-        "operator",
-        "symbol",
-        "empty_symbol",
-    ] {
+    type Change = fn(&mut MutantFinished, &mut MutantFinished);
+    let changes: [(&str, Change); 6] = [
+        ("path", |_, after| after.candidate.path = "other.py".into()),
+        ("original", |_, after| after.candidate.original.push('x')),
+        ("replacement", |_, after| {
+            after.candidate.replacement.push('x');
+        }),
+        ("operator", |_, after| after.candidate.operator.push('x')),
+        ("symbol", |_, after| {
+            after.candidate.symbol = Some("other".to_owned());
+        }),
+        ("empty_symbol", |before, after| {
+            before.candidate.symbol = None;
+            after.candidate.symbol = Some(String::new());
+        }),
+    ];
+    for (field, change) in changes {
         let mut before = mutant_with_id("before", "same", MutationStatus::Survived);
         let mut after = mutant_with_id("after", "same", MutationStatus::Killed);
-        match field {
-            "path" => after.candidate.path = "other.py".into(),
-            "original" => after.candidate.original.push('x'),
-            "replacement" => after.candidate.replacement.push('x'),
-            "operator" => after.candidate.operator.push('x'),
-            "symbol" => after.candidate.symbol = Some("other".to_owned()),
-            "empty_symbol" => {
-                before.candidate.symbol = None;
-                after.candidate.symbol = Some(String::new());
-            }
-            _ => unreachable!(),
-        }
+        change(&mut before, &mut after);
+
         let comparison = compare_pair(&[before], &[after]);
         assert_eq!(comparison.common, 0, "{field}");
         assert_eq!(comparison.added, 1, "{field}");
@@ -915,7 +911,10 @@ fn content_fallback_compares_every_identity_field_by_value() {
         assert_eq!(comparison.current_score, None, "{field}");
         assert_eq!(comparison.state, ProgressState::Indeterminate, "{field}");
     }
+}
 
+#[test]
+fn content_fallback_ignores_non_identity_metadata() {
     // Independent allocations with equal values still match. These metadata
     // fields do not belong to the fallback identity, even if all change.
     let before = mutant_with_id("before", "same", MutationStatus::Survived);
@@ -1194,26 +1193,22 @@ fn compare_a_usable_unusable_usable_history_has_no_cross_gap_comparison() {
 proptest! {
     #[test]
     fn compare_property_self_comparison_is_stable(generated in generated_comparison_reports()) {
-        let comparison = compare_pair(&generated.before, &generated.before);
+        let expectations = [
+            (Some(0.0), ProgressState::Stalled),
+            (None, ProgressState::Indeterminate),
+        ];
+        let (score_delta, state) = expectations[usize::from(generated.before.is_empty())];
         let expected = comparison_oracle(&generated.before, &generated.before);
+
+        let comparison = compare_pair(&generated.before, &generated.before);
 
         prop_assert_eq!(&comparison, &expected);
         prop_assert_eq!(comparison.added, 0);
         prop_assert_eq!(comparison.removed, 0);
         prop_assert_eq!(comparison.improvements, 0);
         prop_assert_eq!(comparison.regressions, 0);
-        prop_assert_eq!(
-            comparison.score_delta,
-            if generated.before.is_empty() { None } else { Some(0.0) }
-        );
-        prop_assert_eq!(
-            comparison.state,
-            if generated.before.is_empty() {
-                ProgressState::Indeterminate
-            } else {
-                ProgressState::Stalled
-            }
-        );
+        prop_assert_eq!(comparison.score_delta, score_delta);
+        prop_assert_eq!(comparison.state, state);
     }
 
     #[test]
@@ -1223,6 +1218,7 @@ proptest! {
         let forward = compare_pair(&generated.before, &generated.after);
         let reverse = compare_pair(&generated.after, &generated.before);
         let expected = comparison_oracle(&generated.before, &generated.after);
+        let permuted = compare_pair(&generated.permuted_before, &generated.permuted_after);
 
         prop_assert_eq!(&forward, &expected);
         prop_assert_eq!(forward.improvements, reverse.regressions);
@@ -1231,7 +1227,6 @@ proptest! {
         prop_assert_eq!(forward.removed, reverse.added);
         prop_assert_eq!(forward.score_delta, reverse.score_delta.map(|delta| -delta));
 
-        let permuted = compare_pair(&generated.permuted_before, &generated.permuted_after);
         prop_assert_eq!(permuted, forward);
     }
 
@@ -1251,64 +1246,86 @@ proptest! {
     }
 }
 
-#[tokio::test]
-async fn duplicate_input_paths_and_copies_warn_without_changing_saturation() {
-    let fixture = tempfile::tempdir().unwrap();
-    for jsonl in [false, true] {
-        let original = if jsonl {
-            write_jsonl(&fixture, &jsonl_events(&valid_report()))
+fn duplicate_input_paths(
+    fixture: &tempfile::TempDir,
+    jsonl: bool,
+    copied: bool,
+) -> (PathBuf, Vec<PathBuf>) {
+    let original = if jsonl {
+        write_jsonl(fixture, &jsonl_events(&valid_report()))
+    } else {
+        write_json(fixture, "original.json", &valid_report())
+    };
+
+    let mut reports = vec![original.clone()];
+    for index in 1..4 {
+        let path = if copied {
+            let copy = fixture.path().join(format!("copy-{index}"));
+            std::fs::copy(&original, &copy).unwrap();
+            copy
         } else {
-            write_json(&fixture, "original.json", &valid_report())
+            original.clone()
         };
-        for copied in [false, true] {
-            let mut reports = vec![original.clone()];
-            for index in 1..4 {
-                let path = if copied {
-                    let copy = fixture.path().join(format!("copy-{index}"));
-                    std::fs::copy(&original, &copy).unwrap();
-                    copy
-                } else {
-                    original.clone()
-                };
-                reports.push(path);
-            }
-            for format in ["json", "human"] {
-                let (exit, stdout, stderr) = run_progress(&reports, format).await;
-                assert_eq!(exit, 0);
-                let warnings = String::from_utf8(stderr).unwrap();
-                assert_eq!(warnings.lines().count(), 3, "{warnings}");
-                for index in 2..=4 {
-                    assert!(
-                        warnings.contains(&format!(
-                            "progress input {index} ({})",
-                            reports[index - 1].display()
-                        )),
-                        "{warnings}"
-                    );
-                }
-                assert_eq!(
-                    warnings
-                        .matches(&format!("repeats input 1 ({})", original.display()))
-                        .count(),
-                    3
-                );
-                assert!(warnings.contains(if copied {
-                    "identical bytes"
-                } else {
-                    "same path"
-                }));
-                if format == "json" {
-                    let output: Value = serde_json::from_slice(&stdout).unwrap();
-                    assert_eq!(output["latest"]["state"], "saturated");
-                    assert_eq!(output["consecutive_stalls"], 3);
-                    assert_eq!(output["inputs"].as_array().unwrap().len(), 4);
-                    assert_eq!(output["comparisons"].as_array().unwrap().len(), 3);
-                } else {
-                    let output = String::from_utf8(stdout).unwrap();
-                    assert!(output.contains("state: saturated"));
-                    assert!(output.contains("stalls: 3"));
-                }
-            }
+        reports.push(path);
+    }
+    (original, reports)
+}
+
+fn assert_duplicate_warnings(stderr: Vec<u8>, original: &Path, reports: &[PathBuf], reason: &str) {
+    let warnings = String::from_utf8(stderr).unwrap();
+    assert_eq!(warnings.lines().count(), 3, "{warnings}");
+    for index in 2..=4 {
+        assert!(
+            warnings.contains(&format!(
+                "progress input {index} ({})",
+                reports[index - 1].display()
+            )),
+            "{warnings}"
+        );
+    }
+    assert_eq!(
+        warnings
+            .matches(&format!("repeats input 1 ({})", original.display()))
+            .count(),
+        3
+    );
+    assert!(warnings.contains(reason));
+}
+
+#[tokio::test]
+async fn duplicate_input_paths_and_copies_preserve_json_saturation() {
+    for jsonl in [false, true] {
+        for (copied, reason) in [(false, "same path"), (true, "identical bytes")] {
+            let fixture = tempfile::tempdir().unwrap();
+            let (original, reports) = duplicate_input_paths(&fixture, jsonl, copied);
+
+            let (exit, stdout, stderr) = run_progress(&reports, "json").await;
+
+            assert_eq!(exit, 0);
+            assert_duplicate_warnings(stderr, &original, &reports, reason);
+            let output: Value = serde_json::from_slice(&stdout).unwrap();
+            assert_eq!(output["latest"]["state"], "saturated");
+            assert_eq!(output["consecutive_stalls"], 3);
+            assert_eq!(output["inputs"].as_array().unwrap().len(), 4);
+            assert_eq!(output["comparisons"].as_array().unwrap().len(), 3);
+        }
+    }
+}
+
+#[tokio::test]
+async fn duplicate_input_paths_and_copies_preserve_human_saturation() {
+    for jsonl in [false, true] {
+        for (copied, reason) in [(false, "same path"), (true, "identical bytes")] {
+            let fixture = tempfile::tempdir().unwrap();
+            let (original, reports) = duplicate_input_paths(&fixture, jsonl, copied);
+
+            let (exit, stdout, stderr) = run_progress(&reports, "human").await;
+
+            assert_eq!(exit, 0);
+            assert_duplicate_warnings(stderr, &original, &reports, reason);
+            let output = String::from_utf8(stdout).unwrap();
+            assert!(output.contains("state: saturated"));
+            assert!(output.contains("stalls: 3"));
         }
     }
 }
@@ -2902,49 +2919,53 @@ fn result_report(schema: u32, close_timeout: bool) -> Value {
     document
 }
 
+fn malformed_result_document(schema: u32, defect: &str) -> Value {
+    let mut document = result_report(schema, true);
+    let mutant = &mut document["mutants"][0];
+    match defect {
+        "termination" | "output" => mutant[defect] = Value::Null,
+        "status" => mutant["status"] = json!("killed"),
+        "missing_diagnostic" => mutant["diagnostics"] = json!([]),
+        "duplicate" => {
+            let diagnostic = mutant["diagnostics"][0].clone();
+            mutant["diagnostics"]
+                .as_array_mut()
+                .unwrap()
+                .push(diagnostic);
+        }
+        "wrong_id" => mutant["diagnostics"][0]["mutant_id"] = json!("other"),
+        "wrong_level" => mutant["diagnostics"][0]["level"] = json!("warning"),
+        "wrong_code" => mutant["diagnostics"][0]["code"] = json!("other"),
+        "blank_message" => mutant["diagnostics"][0]["message"] = json!(" \t\n"),
+        "complete_diagnostic" => mutant["output_state"] = json!("complete"),
+        _ => unreachable!(),
+    }
+    if defect == "status" {
+        document["summary"]["counts"] =
+            serde_json::to_value(hoimin_core::summarize(&[MutationStatus::Killed])).unwrap();
+        document["summary"]["complete"] = json!(true);
+        document["summary"]["exit_code"] = json!(0);
+    }
+    document
+}
+
 #[test]
 fn input_rejects_malformed_result_fields_and_diagnostics_in_both_schemas() {
     let fixture = tempfile::tempdir().unwrap();
     for schema in [2, 3] {
-        for defect in [
-            "termination",
-            "output",
-            "status",
-            "missing_diagnostic",
-            "duplicate",
-            "wrong_id",
-            "wrong_level",
-            "wrong_code",
-            "blank_message",
-            "complete_diagnostic",
+        for (defect, reason) in [
+            ("termination", "lacks its required result fields"),
+            ("output", "lacks its required result fields"),
+            ("status", "lacks its required result fields"),
+            ("missing_diagnostic", "disagrees with its diagnostics"),
+            ("duplicate", "disagrees with its diagnostics"),
+            ("wrong_id", "disagrees with its diagnostics"),
+            ("wrong_level", "disagrees with its diagnostics"),
+            ("wrong_code", "disagrees with its diagnostics"),
+            ("blank_message", "disagrees with its diagnostics"),
+            ("complete_diagnostic", "disagrees with its diagnostics"),
         ] {
-            let mut document = result_report(schema, true);
-            let mutant = &mut document["mutants"][0];
-            match defect {
-                "termination" | "output" => mutant[defect] = Value::Null,
-                "status" => mutant["status"] = json!("killed"),
-                "missing_diagnostic" => mutant["diagnostics"] = json!([]),
-                "duplicate" => {
-                    let diagnostic = mutant["diagnostics"][0].clone();
-                    mutant["diagnostics"]
-                        .as_array_mut()
-                        .unwrap()
-                        .push(diagnostic);
-                }
-                "wrong_id" => mutant["diagnostics"][0]["mutant_id"] = json!("other"),
-                "wrong_level" => mutant["diagnostics"][0]["level"] = json!("warning"),
-                "wrong_code" => mutant["diagnostics"][0]["code"] = json!("other"),
-                "blank_message" => mutant["diagnostics"][0]["message"] = json!(" \t\n"),
-                "complete_diagnostic" => mutant["output_state"] = json!("complete"),
-                _ => unreachable!(),
-            }
-            if defect == "status" {
-                document["summary"]["counts"] =
-                    serde_json::to_value(hoimin_core::summarize(&[MutationStatus::Killed]))
-                        .unwrap();
-                document["summary"]["complete"] = json!(true);
-                document["summary"]["exit_code"] = json!(0);
-            }
+            let document = malformed_result_document(schema, defect);
             let path = write_json(&fixture, &format!("v{schema}-{defect}.json"), &document);
             let error = read_report(&path).unwrap_err().to_string();
             assert!(error.contains(path.to_str().unwrap()), "{error}");
@@ -2952,11 +2973,6 @@ fn input_rejects_malformed_result_fields_and_diagnostics_in_both_schemas() {
                 error.contains(document["mutants"][0]["candidate"]["id"].as_str().unwrap()),
                 "{error}"
             );
-            let reason = if matches!(defect, "termination" | "output" | "status") {
-                "lacks its required result fields"
-            } else {
-                "disagrees with its diagnostics"
-            };
             assert!(error.contains(reason), "v{schema} {defect}: {error}");
         }
     }
@@ -3035,6 +3051,50 @@ async fn jsonl_and_document_inputs_have_identical_progress() {
     assert_eq!(actual["comparisons"], expected["comparisons"]);
 }
 
+fn corrupt_lifecycle_events(defect: &str) -> Vec<Value> {
+    let mut events = jsonl_events(&valid_report());
+    match defect {
+        "missing_end" => {
+            events.pop();
+        }
+        "duplicate_run" => {
+            events.insert(1, events[0].clone());
+        }
+        "after_end" => {
+            events.push(events[1].clone());
+        }
+        "duplicate_baseline" => {
+            events.insert(2, events[1].clone());
+        }
+        "late_baseline" => {
+            events.swap(1, 2);
+        }
+        "missing_start" => {
+            events.remove(2);
+        }
+        "active_at_end" => {
+            events.remove(3);
+        }
+        "duplicate_mutant" => {
+            events.insert(4, events[3].clone());
+        }
+        "wrong_run" => events[2]["run_id"] = json!("other"),
+        "sequence" => events[2]["sequence"] = json!(1),
+        "schema" => events[2]["schema_version"] = json!(2),
+        "unknown_kind" => events[2]["kind"] = json!("future_event"),
+        "counts" => events[4]["counts"]["killed"] = json!(2),
+        "result" => events[3]["termination"] = json!({"Exit": 0}),
+        _ => unreachable!(),
+    }
+    // Keep sequence valid unless sequence order itself is under test.
+    if defect != "sequence" {
+        for (index, event) in events.iter_mut().enumerate() {
+            event["sequence"] = json!(index + 1);
+        }
+    }
+    events
+}
+
 #[test]
 fn jsonl_rejects_corrupt_lifecycles_and_results() {
     let fixture = tempfile::tempdir().unwrap();
@@ -3054,46 +3114,7 @@ fn jsonl_rejects_corrupt_lifecycles_and_results() {
         "counts",
         "result",
     ] {
-        let mut events = jsonl_events(&valid_report());
-        match defect {
-            "missing_end" => {
-                events.pop();
-            }
-            "duplicate_run" => {
-                events.insert(1, events[0].clone());
-            }
-            "after_end" => {
-                events.push(events[1].clone());
-            }
-            "duplicate_baseline" => {
-                events.insert(2, events[1].clone());
-            }
-            "late_baseline" => {
-                events.swap(1, 2);
-            }
-            "missing_start" => {
-                events.remove(2);
-            }
-            "active_at_end" => {
-                events.remove(3);
-            }
-            "duplicate_mutant" => {
-                events.insert(4, events[3].clone());
-            }
-            "wrong_run" => events[2]["run_id"] = json!("other"),
-            "sequence" => events[2]["sequence"] = json!(1),
-            "schema" => events[2]["schema_version"] = json!(2),
-            "unknown_kind" => events[2]["kind"] = json!("future_event"),
-            "counts" => events[4]["counts"]["killed"] = json!(2),
-            "result" => events[3]["termination"] = json!({"Exit": 0}),
-            _ => unreachable!(),
-        }
-        // Keep sequence valid unless sequence order itself is under test.
-        if defect != "sequence" {
-            for (index, event) in events.iter_mut().enumerate() {
-                event["sequence"] = json!(index + 1);
-            }
-        }
+        let events = corrupt_lifecycle_events(defect);
         let path = write_jsonl(&fixture, &events);
         assert!(read_report(&path).is_err(), "accepted {defect}");
     }
@@ -3107,6 +3128,37 @@ fn jsonl_rejects_corrupt_lifecycles_and_results() {
     ));
 }
 
+fn opaque_config_document(reason: Option<UnusableReason>) -> Value {
+    let mut document = valid_report();
+    document["run"]["normalized_config"] = json!({"future_config": [1, 2]});
+    match reason {
+        Some(UnusableReason::MissingBaseline) => {
+            document["baseline"] = Value::Null;
+            document["mutants"] = json!([]);
+            document["summary"]["counts"] =
+                serde_json::to_value(hoimin_core::summarize(&[])).unwrap();
+            document["summary"]["complete"] = json!(false);
+            document["summary"]["exit_code"] = json!(4);
+        }
+        Some(UnusableReason::BaselineFailed) => {
+            document["baseline"]["termination"] = json!({"Exit": 1});
+        }
+        Some(UnusableReason::Incomplete) => {
+            document["summary"]["complete"] = json!(false);
+            document["summary"]["exit_code"] = json!(4);
+        }
+        None => {}
+    }
+    document
+}
+
+fn report_unusable_reason(report: &InputReport) -> Option<UnusableReason> {
+    match report {
+        InputReport::Usable(_) => None,
+        InputReport::Unusable { reason, .. } => Some(*reason),
+    }
+}
+
 #[test]
 fn jsonl_preserves_opaque_config_layout_and_unusable_reasons() {
     let fixture = tempfile::tempdir().unwrap();
@@ -3116,26 +3168,7 @@ fn jsonl_preserves_opaque_config_layout_and_unusable_reasons() {
         Some(UnusableReason::BaselineFailed),
         Some(UnusableReason::Incomplete),
     ] {
-        let mut document = valid_report();
-        document["run"]["normalized_config"] = json!({"future_config": [1, 2]});
-        match reason {
-            Some(UnusableReason::MissingBaseline) => {
-                document["baseline"] = Value::Null;
-                document["mutants"] = json!([]);
-                document["summary"]["counts"] =
-                    serde_json::to_value(hoimin_core::summarize(&[])).unwrap();
-                document["summary"]["complete"] = json!(false);
-                document["summary"]["exit_code"] = json!(4);
-            }
-            Some(UnusableReason::BaselineFailed) => {
-                document["baseline"]["termination"] = json!({"Exit": 1});
-            }
-            Some(UnusableReason::Incomplete) => {
-                document["summary"]["complete"] = json!(false);
-                document["summary"]["exit_code"] = json!(4);
-            }
-            None => {}
-        }
+        let document = opaque_config_document(reason);
         let events = jsonl_events(&document);
         let path = write_jsonl(&fixture, &events);
         let text = std::fs::read_to_string(&path).unwrap();
@@ -3147,18 +3180,8 @@ fn jsonl_preserves_opaque_config_layout_and_unusable_reasons() {
         let actual = read_report(&path).unwrap();
         let json_path = write_json(&fixture, "same.json", &document);
         let expected = read_report(&json_path).unwrap();
-        match (actual, expected, reason) {
-            (InputReport::Usable(_), InputReport::Usable(_), None) => {}
-            (
-                InputReport::Unusable { reason: a, .. },
-                InputReport::Unusable { reason: b, .. },
-                Some(r),
-            ) => {
-                assert_eq!(a, r);
-                assert_eq!(a, b);
-            }
-            values => panic!("unexpected classification {values:?}"),
-        }
+        assert_eq!(report_unusable_reason(&actual), reason);
+        assert_eq!(report_unusable_reason(&expected), reason);
     }
 }
 
@@ -3230,23 +3253,22 @@ fn jsonl_checks_discarded_diagnostics_and_rejects_legacy_streams() {
         read_report(&path),
         Err(ProgressError::UnsupportedSchema { found: 2, .. })
     ));
-    for defect in ["none", "schema", "run_id", "sequence"] {
+    for (defect, field, replacement, accepted) in [
+        ("none", "schema_version", json!(REPORT_SCHEMA_VERSION), true),
+        ("schema", "schema_version", json!(2), false),
+        ("run_id", "run_id", json!("another-run"), false),
+        ("sequence", "sequence", json!(4), false),
+    ] {
         let mut events = jsonl_events(&valid_report());
         let mut diagnostic = json!({
             "kind": "diagnostic", "schema_version": REPORT_SCHEMA_VERSION,
             "sequence": 5, "run_id": "run-1", "level": "info", "code": "test", "message": "test"
         });
-        match defect {
-            "schema" => diagnostic["schema_version"] = json!(2),
-            "run_id" => diagnostic["run_id"] = json!("another-run"),
-            "sequence" => diagnostic["sequence"] = json!(4),
-            "none" => {}
-            _ => unreachable!(),
-        }
+        diagnostic[field] = replacement;
         events[4]["sequence"] = json!(6);
         events.insert(4, diagnostic);
         let path = write_jsonl(&fixture, &events);
-        assert_eq!(read_report(&path).is_ok(), defect == "none", "{defect}");
+        assert_eq!(read_report(&path).is_ok(), accepted, "{defect}");
     }
     let path = write_jsonl(&fixture, &jsonl_events(&valid_report()));
     let text = std::fs::read(&path).unwrap();
@@ -3697,7 +3719,12 @@ async fn regression_exit_uses_latest_state_and_preserves_all_output() {
         ),
         (vec![gap, killed.clone(), survived.clone()], "regressing", 1),
     ] {
-        for format in ["human", "json"] {
+        type VerifyState = fn(&[u8], &str);
+        let formats: [(&str, VerifyState); 2] = [
+            ("human", assert_human_regression_state),
+            ("json", assert_json_regression_state),
+        ];
+        for (format, verify_output) in formats {
             for details in [false, true] {
                 let plain = progress_with_gate(&reports, format, details, false).await;
                 assert_eq!(plain.0, 0, "{}", String::from_utf8_lossy(&plain.2));
@@ -3710,14 +3737,7 @@ async fn regression_exit_uses_latest_state_and_preserves_all_output() {
                 );
                 assert_eq!(gated.1, plain.1);
                 assert_eq!(gated.2, plain.2);
-                if format == "json" {
-                    let doc: Value = serde_json::from_slice(&gated.1).unwrap();
-                    assert_eq!(doc["latest"]["state"], state);
-                } else {
-                    assert!(
-                        String::from_utf8_lossy(&gated.1).contains(&format!("state: {state}\n"))
-                    );
-                }
+                verify_output(&gated.1, state);
             }
         }
     }
@@ -3819,13 +3839,13 @@ async fn regression_exit_never_overrides_stdout_or_stderr_errors() {
 #[test]
 fn progress_accepts_historical_v3_and_current_v4_but_rejects_mixed_json_and_jsonl() {
     let fixture = tempfile::tempdir().unwrap();
-    for version in [3, 4] {
+    for (version, mixed_version) in [(3, 4), (4, 3)] {
         let source = repo_root().join(format!(
             "crates/hoimin-cli/tests/golden/reports/schema-v{version}-current.json"
         ));
         assert!(matches!(read_report(&source), Ok(InputReport::Usable(_))));
         let mut value: Value = serde_json::from_slice(&std::fs::read(source).unwrap()).unwrap();
-        value["baseline"]["schema_version"] = json!(if version == 3 { 4 } else { 3 });
+        value["baseline"]["schema_version"] = json!(mixed_version);
         assert!(read_report(&write_json(&fixture, "mixed.json", &value)).is_err());
         let source = repo_root().join(format!(
             "crates/hoimin-cli/tests/golden/events/schema-v{version}-current.jsonl"
@@ -3837,7 +3857,7 @@ fn progress_accepts_historical_v3_and_current_v4_but_rejects_mixed_json_and_json
             .map(|line| serde_json::from_str::<Value>(line).unwrap())
             .collect::<Vec<_>>();
         for index in [1, 4] {
-            lines[index]["schema_version"] = json!(if version == 3 { 4 } else { 3 });
+            lines[index]["schema_version"] = json!(mixed_version);
             let path = fixture.path().join("mixed.jsonl");
             std::fs::write(
                 &path,
@@ -3864,9 +3884,31 @@ fn progress_resume_metadata_rejects_null_and_old_schema_fields() {
         let mut value = original.clone();
         value["run"]["resume"] = Value::Null;
         assert!(read_report(&write_json(&fixture, "null.json", &value)).is_err());
-        if version < 4 {
-            value["run"]["resume"] = json!({"status":"resumed"});
-            assert!(read_report(&write_json(&fixture, "old-field.json", &value)).is_err());
-        }
     }
+}
+
+#[test]
+fn progress_resume_metadata_rejects_fields_in_old_schemas() {
+    let fixture = tempfile::tempdir().unwrap();
+    for version in [2, 3] {
+        let source = repo_root().join(format!(
+            "crates/hoimin-cli/tests/golden/reports/schema-v{version}-current.json"
+        ));
+        let mut value: Value = serde_json::from_slice(&std::fs::read(source).unwrap()).unwrap();
+        value["run"]["resume"] = json!({"status":"resumed"});
+        let path = write_json(&fixture, "old-field.json", &value);
+
+        let result = read_report(&path);
+
+        assert!(result.is_err());
+    }
+}
+
+fn assert_human_regression_state(bytes: &[u8], state: &str) {
+    assert!(String::from_utf8_lossy(bytes).contains(&format!("state: {state}\n")));
+}
+
+fn assert_json_regression_state(bytes: &[u8], state: &str) {
+    let doc: Value = serde_json::from_slice(bytes).unwrap();
+    assert_eq!(doc["latest"]["state"], state);
 }

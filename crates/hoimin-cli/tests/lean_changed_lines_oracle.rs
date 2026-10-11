@@ -299,18 +299,15 @@ async fn changed_lines_public_plan_matches_all_lean_cases() {
             candidates[0]["file_hash"],
             blake3::hash(case.source.as_bytes()).to_hex().as_str()
         );
-        let expected = if case.eligible {
-            identities(candidates)
-        } else {
-            Vec::new()
-        };
+        let expected = identities(candidates)
+            .into_iter()
+            .filter(|_| case.eligible)
+            .collect::<Vec<_>>();
         let changed = invoke(args(root, "plan", true)).await;
         assert_eq!(changed["diagnostics"], json!([]));
         assert_eq!(changed["truncated"], false);
         let actual = identities(changed["candidates"].as_array().unwrap());
-        if actual != expected {
-            mismatches.push((case.id, expected, actual));
-        }
+        mismatches.extend((actual != expected).then_some((case.id, expected, actual)));
     }
     assert!(
         mismatches.is_empty(),
@@ -409,10 +406,10 @@ async fn changed_codec_rows_preserve_public_identity_and_explicit_selectors() {
             expected[0]["file_hash"],
             blake3::hash(&source).to_hex().as_str()
         );
-        for (line, symbol, selected) in [
-            (4, "subject:f", true),
-            (3, "subject:f", false),
-            (6, "subject:g", false),
+        for (line, symbol, expected_ids) in [
+            (4, "subject:f", identities(&expected)),
+            (3, "subject:f", Vec::new()),
+            (6, "subject:g", Vec::new()),
         ] {
             let mut selected_args = args(root, "plan", true);
             let separator = selected_args.iter().position(|arg| arg == "--").unwrap();
@@ -428,11 +425,7 @@ async fn changed_codec_rows_preserve_public_identity_and_explicit_selectors() {
             let plan = invoke(selected_args).await;
             assert_eq!(
                 identities(plan["candidates"].as_array().unwrap()),
-                if selected {
-                    identities(&expected)
-                } else {
-                    Vec::new()
-                }
+                expected_ids
             );
         }
         let report = invoke(args(root, "run", true)).await;

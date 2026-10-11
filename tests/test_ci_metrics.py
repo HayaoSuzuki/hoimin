@@ -28,7 +28,9 @@ def test_metrics_separate_queue_execution_skips_and_attempts() -> None:
             "completed_at": "2026-10-10T01:00:00Z",
         },
     ]
+
     result = ci_metrics.summarize(run, jobs)
+
     assert result["run_attempt"] == 2
     assert result["elapsed_seconds"] == 120
     assert result["executed_jobs"] == 1
@@ -42,5 +44,6 @@ def test_incomplete_measurement_is_not_reported_as_zero() -> None:
         {"name": "Waiting", "conclusion": None, "created_at": "2026-10-10T01:00:00Z"},
         "2026-10-10T01:00:00Z",
     )
+
     assert result["queue_seconds"] is None
     assert result["duration_seconds"] is None

@@ -126,26 +126,31 @@ async fn assert_plan(source: &str, operator: &str, original: &str, replacement: 
 
 #[tokio::test]
 async fn generic_builtin_pairs_respect_both_endpoints_and_restore_outer_scope() {
-    for (operator, original, replacement) in [
-        ("collection_list_tuple", "list", "tuple"),
-        ("collection_any_all", "any", "all"),
-        ("collection_min_max", "min", "max"),
-        ("structure_sorted_reversed", "sorted", "reversed"),
-        ("exception_type_pair", "ValueError", "TypeError"),
+    for (operator, original, replacement, statement) in [
+        (
+            "collection_list_tuple",
+            "list",
+            "tuple",
+            "value = list((1, 2))",
+        ),
+        ("collection_any_all", "any", "all", "value = any((1, 2))"),
+        ("collection_min_max", "min", "max", "value = min((1, 2))"),
+        (
+            "structure_sorted_reversed",
+            "sorted",
+            "reversed",
+            "value = sorted((1, 2))",
+        ),
+        (
+            "exception_type_pair",
+            "ValueError",
+            "TypeError",
+            "raise ValueError()",
+        ),
     ] {
-        let statement = if original == "ValueError" {
-            "raise ValueError()".to_owned()
-        } else {
-            format!("value = {original}((1, 2))")
-        };
         for name in [original, replacement] {
             for prefix in ["", "*", "**"] {
-                for declaration in ["def Generic", "class Generic"] {
-                    let suffix = if declaration.starts_with("def") {
-                        "()"
-                    } else {
-                        ""
-                    };
+                for (declaration, suffix) in [("def Generic", "()"), ("class Generic", "")] {
                     let source = format!(
                         "{statement} # keep\n{declaration}[{prefix}{name}]{suffix}:\n    {statement}\n    def nested():\n        {statement}\n    values = [{original}((1, 2)) for item in (1,)]\n{statement} # keep\ndef outside():\n    {statement} # keep\n"
                     );

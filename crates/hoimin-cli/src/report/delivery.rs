@@ -204,35 +204,35 @@ fn delivery_failed(id: EffectId, message: impl Into<String>) -> EffectFailed {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    struct ProbeWriter {
+        begin: Option<mpsc::SyncSender<()>>,
+        acquired: mpsc::Receiver<()>,
+        interleaved: Arc<AtomicBool>,
+        bytes: Arc<Mutex<Vec<u8>>>,
+    }
+    impl Write for ProbeWriter {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            if let Some(begin) = self.begin.take() {
+                begin.send(()).unwrap();
+                let acquired = self
+                    .acquired
+                    .recv_timeout(Duration::from_millis(100))
+                    .is_ok();
+                self.interleaved.store(acquired, Ordering::Release);
+            }
+            self.bytes.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
     #[test]
     fn owned_stdio_diagnostic_holds_stderr_lock_across_buffer_flushes() {
-        use std::sync::mpsc;
-        use std::time::Duration;
-
-        struct ProbeWriter {
-            begin: Option<mpsc::SyncSender<()>>,
-            acquired: mpsc::Receiver<()>,
-            interleaved: Arc<AtomicBool>,
-            bytes: Arc<Mutex<Vec<u8>>>,
-        }
-        impl Write for ProbeWriter {
-            fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-                if let Some(begin) = self.begin.take() {
-                    begin.send(()).unwrap();
-                    let acquired = self
-                        .acquired
-                        .recv_timeout(Duration::from_millis(100))
-                        .is_ok();
-                    self.interleaved.store(acquired, Ordering::Release);
-                }
-                self.bytes.lock().unwrap().extend_from_slice(bytes);
-                Ok(bytes.len())
-            }
-            fn flush(&mut self) -> io::Result<()> {
-                Ok(())
-            }
-        }
-
         let (begin_tx, begin_rx) = mpsc::sync_channel(1);
         let (acquired_tx, acquired_rx) = mpsc::sync_channel(1);
         let contender = std::thread::spawn(move || {
@@ -281,8 +281,7 @@ mod tests {
         );
     }
 
-    use std::sync::{Mutex, mpsc};
-    use std::time::Duration;
+    use std::sync::Mutex;
 
     use hoimin_core::{OutputEvent, OutputFormat, RunStarted};
 
@@ -363,15 +362,30 @@ mod tests {
 
     #[test]
     fn abandoned_report_does_not_begin_a_queued_write() {
-        assert_queued_write_is_rejected(true);
+        assert_queued_write_is_rejected(abandon_queued_report);
     }
 
     #[test]
     fn expired_report_does_not_begin_a_queued_write_while_driver_is_alive() {
-        assert_queued_write_is_rejected(false);
+        assert_queued_write_is_rejected(expire_queued_report);
     }
 
-    fn assert_queued_write_is_rejected(abandon: bool) {
+    type QueuedReport = ReportDelivery<GatedWriter, io::Sink>;
+
+    fn abandon_queued_report(delivery: QueuedReport) -> Vec<QueuedReport> {
+        drop(delivery);
+        Vec::new()
+    }
+
+    fn expire_queued_report(delivery: QueuedReport) -> Vec<QueuedReport> {
+        delivery
+            .admission()
+            .unwrap()
+            .restrict_to(tokio::time::Instant::now());
+        vec![delivery]
+    }
+
+    fn assert_queued_write_is_rejected(dispose: fn(QueuedReport) -> Vec<QueuedReport>) {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .max_blocking_threads(1)
@@ -409,18 +423,7 @@ mod tests {
                 unreachable!()
             };
             let queued = driver.task.take().unwrap();
-            if !abandon {
-                delivery
-                    .admission()
-                    .unwrap()
-                    .restrict_to(tokio::time::Instant::now());
-            }
-            let retained = if abandon {
-                drop(delivery);
-                None
-            } else {
-                Some(delivery)
-            };
+            let retained = dispose(delivery);
             release_tx.send(()).unwrap();
             blocker.await.unwrap();
             let (_, result) = queued.await.unwrap();

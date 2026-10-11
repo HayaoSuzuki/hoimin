@@ -1548,25 +1548,9 @@ mod tests {
         resume: Mutex<Receiver<()>>,
     }
 
-    enum ParentReplacement {
-        Replaced(TestPermissionFingerprint),
-        #[cfg(windows)]
-        Denied,
-    }
-
-    impl ParentReplacement {
-        fn permissions(self) -> TestPermissionFingerprint {
-            #[cfg(windows)]
-            match self {
-                Self::Replaced(permissions) => permissions,
-                Self::Denied => unreachable!(),
-            }
-            #[cfg(not(windows))]
-            {
-                let Self::Replaced(permissions) = self;
-                permissions
-            }
-        }
+    struct ParentReplacement {
+        operated_parent: &'static str,
+        outside_permissions: Vec<TestPermissionFingerprint>,
     }
 
     impl PausedParent {
@@ -1597,7 +1581,10 @@ mod tests {
                 {
                     assert_eq!(error.raw_os_error(), Some(32));
                     resume.send(()).unwrap();
-                    return ParentReplacement::Denied;
+                    return ParentReplacement {
+                        operated_parent: "swap",
+                        outside_permissions: vec![],
+                    };
                 }
                 #[cfg(not(windows))]
                 panic!("rename of opened parent failed unexpectedly: {error}");
@@ -1608,7 +1595,10 @@ mod tests {
             make_read_only(&outside);
             let permissions = permission_fingerprint(&outside);
             resume.send(()).unwrap();
-            ParentReplacement::Replaced(permissions)
+            ParentReplacement {
+                operated_parent: "held",
+                outside_permissions: vec![permissions],
+            }
         }
     }
 
@@ -2044,18 +2034,17 @@ mod tests {
         let result = operation.join().unwrap();
 
         assert_eq!(result.unwrap(), b"worker");
-        #[cfg(windows)]
-        if matches!(replacement, ParentReplacement::Denied) {
-            assert_eq!(
-                fs::read(fixture.worker.join("swap/target")).unwrap(),
-                b"worker"
-            );
-            return;
+        let operated_target = fixture
+            .worker
+            .join(replacement.operated_parent)
+            .join("target");
+        assert_eq!(fs::read(operated_target).unwrap(), b"worker");
+        for outside_permissions in &replacement.outside_permissions {
+            let outside = fixture.worker.join("swap/target");
+
+            assert_eq!(fs::read(&outside).unwrap(), b"outside");
+            assert_eq!(permission_fingerprint(&outside), *outside_permissions);
         }
-        let outside_permissions = replacement.permissions();
-        let outside = fixture.worker.join("swap/target");
-        assert_eq!(fs::read(&outside).unwrap(), b"outside",);
-        assert_eq!(permission_fingerprint(&outside), outside_permissions);
     }
 
     #[test]
@@ -2075,18 +2064,17 @@ mod tests {
         let result = operation.join().unwrap();
 
         assert_eq!(result.unwrap(), blake3::hash(b"worker"));
-        #[cfg(windows)]
-        if matches!(replacement, ParentReplacement::Denied) {
-            assert_eq!(
-                fs::read(fixture.worker.join("swap/target")).unwrap(),
-                b"worker"
-            );
-            return;
+        let operated_target = fixture
+            .worker
+            .join(replacement.operated_parent)
+            .join("target");
+        assert_eq!(fs::read(operated_target).unwrap(), b"worker");
+        for outside_permissions in &replacement.outside_permissions {
+            let outside = fixture.worker.join("swap/target");
+
+            assert_eq!(fs::read(&outside).unwrap(), b"outside");
+            assert_eq!(permission_fingerprint(&outside), *outside_permissions);
         }
-        let outside_permissions = replacement.permissions();
-        let outside = fixture.worker.join("swap/target");
-        assert_eq!(fs::read(&outside).unwrap(), b"outside",);
-        assert_eq!(permission_fingerprint(&outside), outside_permissions);
     }
 
     #[test]
@@ -2106,22 +2094,17 @@ mod tests {
         let result = operation.join().unwrap();
 
         result.unwrap();
-        #[cfg(windows)]
-        if matches!(replacement, ParentReplacement::Denied) {
-            assert_eq!(
-                fs::read(fixture.worker.join("swap/target")).unwrap(),
-                b"changed"
-            );
-            return;
+        let operated_target = fixture
+            .worker
+            .join(replacement.operated_parent)
+            .join("target");
+        assert_eq!(fs::read(operated_target).unwrap(), b"changed");
+        for outside_permissions in &replacement.outside_permissions {
+            let outside = fixture.worker.join("swap/target");
+
+            assert_eq!(fs::read(&outside).unwrap(), b"outside");
+            assert_eq!(permission_fingerprint(&outside), *outside_permissions);
         }
-        let outside_permissions = replacement.permissions();
-        let outside = fixture.worker.join("swap/target");
-        assert_eq!(
-            fs::read(fixture.worker.join("held/target")).unwrap(),
-            b"changed"
-        );
-        assert_eq!(fs::read(&outside).unwrap(), b"outside");
-        assert_eq!(permission_fingerprint(&outside), outside_permissions);
     }
 
     #[test]
@@ -2141,16 +2124,17 @@ mod tests {
         let result = operation.join().unwrap();
 
         result.unwrap();
-        #[cfg(windows)]
-        if matches!(replacement, ParentReplacement::Denied) {
-            assert!(!fixture.worker.join("swap/target").exists());
-            return;
+        let operated_target = fixture
+            .worker
+            .join(replacement.operated_parent)
+            .join("target");
+        assert!(!operated_target.exists());
+        for outside_permissions in &replacement.outside_permissions {
+            let outside = fixture.worker.join("swap/target");
+
+            assert_eq!(fs::read(&outside).unwrap(), b"outside");
+            assert_eq!(permission_fingerprint(&outside), *outside_permissions);
         }
-        let outside_permissions = replacement.permissions();
-        let outside = fixture.worker.join("swap/target");
-        assert!(!fixture.worker.join("held/target").exists());
-        assert_eq!(fs::read(&outside).unwrap(), b"outside");
-        assert_eq!(permission_fingerprint(&outside), outside_permissions);
     }
 
     #[test]
@@ -2240,9 +2224,7 @@ mod tests {
         assert!(root.remove_any_if_exists(Utf8Path::new("missing")).is_ok());
 
         let link = fixture.worker.join("linked");
-        if fixture.link_dir("outside", "linked").is_err() {
-            return;
-        }
+        fixture.link_dir("outside", "linked").unwrap();
         let (parent, name) = root.open_parent(Utf8Path::new("linked"), false).unwrap();
         assert!(matches!(
             WorkerRoot::reject_link(&parent, &name, Utf8Path::new("linked"), "test link",),

@@ -223,24 +223,26 @@ async fn sample_execution_matches_preview_and_preserves_sample_scope() {
 
 #[tokio::test]
 async fn sample_rejects_truncation_empty_budget_and_tampering_before_tests() {
+    type Tamper = fn(&mut serde_json::Value);
     let (dir, path, plan) = fixture_with_budget(2).await;
-    for (change, count, message) in [
-        ("budget", 3, "max_mutants"),
-        ("truncated", 1, "truncated"),
-        ("empty", 1, "empty"),
-        ("duplicate", 1, "duplicate"),
-        ("rank", 1, "rank"),
-    ] {
+    let cases: [(&str, usize, &str, Tamper); 5] = [
+        ("budget", 3, "max_mutants", |_| {}),
+        ("truncated", 1, "truncated", |plan| {
+            plan["truncated"] = true.into();
+        }),
+        ("empty", 1, "empty", |plan| {
+            plan["candidates"] = serde_json::json!([]);
+        }),
+        ("duplicate", 1, "duplicate", |plan| {
+            plan["candidates"][1]["id"] = plan["candidates"][0]["id"].clone();
+        }),
+        ("rank", 1, "rank", |plan| {
+            plan["candidates"][0]["rank"] = 999.into();
+        }),
+    ];
+    for (change, count, message, tamper) in cases {
         let mut modified = plan.clone();
-        match change {
-            "truncated" => modified["truncated"] = true.into(),
-            "empty" => modified["candidates"] = serde_json::json!([]),
-            "duplicate" => {
-                modified["candidates"][1]["id"] = modified["candidates"][0]["id"].clone();
-            }
-            "rank" => modified["candidates"][0]["rank"] = 999.into(),
-            _ => (),
-        }
+        tamper(&mut modified);
         std::fs::write(&path, serde_json::to_vec(&modified).unwrap()).unwrap();
         let (code, output, err) = cli(verify_args(&path, count, 0)).await;
         assert_eq!(code, 2, "{change}: {err}");
@@ -268,6 +270,28 @@ struct OracleCase {
 
 #[tokio::test]
 async fn sample_public_cli_matches_every_lean_oracle_case() {
+    type AssertPreview = fn(&serde_json::Value, &OracleCase, &serde_json::Value);
+    let outcomes: [(bool, i32, AssertPreview); 2] = [
+        (true, 0, |preview, case, plan| {
+            let ids: Vec<_> = case
+                .indices
+                .iter()
+                .map(|&index| plan["candidates"][index]["id"].clone())
+                .collect();
+            assert_eq!(
+                preview["verification_selection"]["sampling"]["selected_ids"],
+                serde_json::json!(ids)
+            );
+            let actual: Vec<_> = preview["candidates"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|candidate| candidate["id"].clone())
+                .collect();
+            assert_eq!(actual, ids);
+        }),
+        (false, 2, |preview, _, _| assert!(preview.is_null())),
+    ];
     let cases: Vec<OracleCase> = include_str!("../../../formal/HoiminOracle/corpus/sampling.jsonl")
         .lines()
         .map(|line| serde_json::from_str(line).unwrap())
@@ -275,43 +299,25 @@ async fn sample_public_cli_matches_every_lean_oracle_case() {
     assert_eq!(cases.len(), 360);
     for population in [0, 1, 8] {
         let (_dir, path, plan) = fixture_population(8, population).await;
-        for case in cases.iter().filter(|case| case.population == population) {
-            assert_eq!(case.mode, "strict");
-            let mut modified = plan.clone();
-            modified["normalized_config"]["limits"]["max_mutants"] = case.budget.into();
-            modified["truncated"] = case.truncated.into();
-            std::fs::write(&path, serde_json::to_vec(&modified).unwrap()).unwrap();
-            let mut args = verify_args(&path, case.count, case.seed);
-            args.push("--dry-run".into());
-            let (code, preview, err) = cli(args).await;
-            assert_eq!(
-                code,
-                if case.accepted { 0 } else { 2 },
-                "p={population} k={} b={} t={} seed={}: {err}",
-                case.count,
-                case.budget,
-                case.truncated,
-                case.seed
-            );
-            if case.accepted {
-                let ids: Vec<_> = case
-                    .indices
-                    .iter()
-                    .map(|&i| plan["candidates"][i]["id"].clone())
-                    .collect();
+        for (accepted, expected_code, assert_preview) in outcomes {
+            for case in cases
+                .iter()
+                .filter(|case| case.population == population && case.accepted == accepted)
+            {
+                assert_eq!(case.mode, "strict");
+                let mut modified = plan.clone();
+                modified["normalized_config"]["limits"]["max_mutants"] = case.budget.into();
+                modified["truncated"] = case.truncated.into();
+                std::fs::write(&path, serde_json::to_vec(&modified).unwrap()).unwrap();
+                let mut args = verify_args(&path, case.count, case.seed);
+                args.push("--dry-run".into());
+                let (code, preview, err) = cli(args).await;
                 assert_eq!(
-                    preview["verification_selection"]["sampling"]["selected_ids"],
-                    serde_json::json!(ids)
+                    code, expected_code,
+                    "p={population} k={} b={} t={} seed={}: {err}",
+                    case.count, case.budget, case.truncated, case.seed
                 );
-                let actual: Vec<_> = preview["candidates"]
-                    .as_array()
-                    .unwrap()
-                    .iter()
-                    .map(|c| c["id"].clone())
-                    .collect();
-                assert_eq!(actual, ids);
-            } else {
-                assert!(preview.is_null());
+                assert_preview(&preview, case, &plan);
             }
         }
     }
@@ -405,19 +411,32 @@ async fn different_samples_keep_progress_candidate_set_checks() {
 #[ignore = "writes reproducible authored-project measurements; run explicitly with --ignored"]
 async fn sample_authored_project_evaluation() {
     let mut projects = Vec::new();
-    for name in ["constants", "functions"] {
+    let cases = [
+        (
+            "constants",
+            vec![],
+            "import a,b; assert a.a is True; assert a.b is False; assert a.x == 3; assert b.x == 3",
+        ),
+        (
+            "functions",
+            vec![
+                (
+                    "a.py",
+                    "def add(x,y):\n    return x + y\ndef unused(x):\n    return x + 1\nflag = True\n",
+                ),
+                (
+                    "b.py",
+                    "def adjust(x):\n    return x + 1\ndef ignored(x):\n    return x + 2\nflag = True\n",
+                ),
+            ],
+            "import a,b; assert a.add(3,1) == 4; assert b.adjust(2) == 3; assert a.flag; assert b.flag",
+        ),
+    ];
+    for (name, sources, script) in cases {
         let (dir, path, mut document) = fixture().await;
-        let script = if name == "constants" {
-            "import a,b; assert a.a is True; assert a.b is False; assert a.x == 3; assert b.x == 3"
-        } else {
-            std::fs::write(
-                dir.path().join("project/a.py"),
-                "def add(x,y):\n    return x + y\ndef unused(x):\n    return x + 1\nflag = True\n",
-            )
-            .unwrap();
-            std::fs::write(dir.path().join("project/b.py"), "def adjust(x):\n    return x + 1\ndef ignored(x):\n    return x + 2\nflag = True\n").unwrap();
-            "import a,b; assert a.add(3,1) == 4; assert b.adjust(2) == 3; assert a.flag; assert b.flag"
-        };
+        for (path, source) in sources {
+            std::fs::write(dir.path().join("project").join(path), source).unwrap();
+        }
         set_test_program(&mut document, script);
         let manifest: hoimin_cli::plan::PlanManifest = serde_json::from_value(document).unwrap();
         let config = manifest

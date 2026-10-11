@@ -5,7 +5,6 @@ use ruff_python_ast::visitor::Visitor;
 fn lean_exception_hierarchy_alias_extraction_correspondence() {
     let cases = corpus::selected_kind("internal-fixture", Some("alias-extraction"));
     let checked = cases.len();
-    let mut mismatches = Vec::new();
     for case in cases {
         let source = &case
             .files
@@ -40,18 +39,8 @@ fn lean_exception_hierarchy_alias_extraction_correspondence() {
         };
         actual.sort();
         let expected = case.expected_alias_facts.as_ref().unwrap();
-        if &actual != expected {
-            mismatches.push(format!(
-                "case={} expected={expected:?} actual={actual:?}",
-                case.id
-            ));
-        }
+        assert_eq!(&actual, expected, "case={}", case.id);
     }
-    assert!(
-        mismatches.is_empty(),
-        "semantic mismatches:\n{}",
-        mismatches.join("\n")
-    );
     eprintln!("exception hierarchy alias extraction: internal-fixture={checked}");
 }
 

@@ -14,13 +14,13 @@ fn latin1_mapping_matches_scalar_widths_for_every_byte_and_boundary() {
         for raw in 0..=source.len() {
             assert_eq!(decoded.raw_to_utf8(raw), Some(expected));
             assert_eq!(decoded.utf8_to_raw(expected), Some(raw));
-            if let Some(byte) = source.get(raw) {
-                let width = char::from(*byte).len_utf8();
-                for interior in 1..width {
-                    assert_eq!(decoded.utf8_to_raw(expected + interior), None);
-                }
-                expected += width;
+            let width = source
+                .get(raw)
+                .map_or(0, |byte| char::from(*byte).len_utf8());
+            for interior in 1..width {
+                assert_eq!(decoded.utf8_to_raw(expected + interior), None);
             }
+            expected += width;
         }
         assert_eq!(decoded.raw_to_utf8(usize::MAX), None);
         assert_eq!(decoded.utf8_to_raw(usize::MAX), None);
@@ -80,9 +80,9 @@ fn latin1_validation_locations_match_decoded_unicode_index_at_every_boundary() {
                 validate_candidate_with_context(&context, &wrong),
                 Err(CandidateValidationError::LocationMismatch)
             );
-            if let Some(byte) = source.get(raw) {
-                utf8 += char::from(*byte).len_utf8();
-            }
+            utf8 += source
+                .get(raw)
+                .map_or(0, |byte| char::from(*byte).len_utf8());
         }
     }
 }
@@ -130,10 +130,8 @@ fn decoding_maps_every_latin1_boundary_and_reencodes_exactly() {
         assert_eq!(decoded.raw_to_utf8(raw), Some(utf8));
         assert_eq!(decoded.utf8_to_raw(utf8), Some(raw));
     }
-    for offset in 0..=expected.len() {
-        if !expected.is_char_boundary(offset) {
-            assert_eq!(decoded.utf8_to_raw(offset), None);
-        }
+    for offset in (0..=expected.len()).filter(|&offset| !expected.is_char_boundary(offset)) {
+        assert_eq!(decoded.utf8_to_raw(offset), None);
     }
     assert_eq!(decoded.raw_to_utf8(source.len() + 1), None);
     assert_eq!(decoded.utf8_to_raw(expected.len() + 1), None);

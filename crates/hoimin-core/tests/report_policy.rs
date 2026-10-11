@@ -839,19 +839,23 @@ fn sequence_rejects_close_timeout_diagnostic_for_complete_output() {
 #[cfg(not(feature = "contracts"))]
 #[test]
 fn sequence_rejects_close_timeout_without_each_required_result_field() {
+    type RemoveRequiredField = fn(&mut MutantFinished);
     let valid = output_close_timeout_event(vec![close_timeout_diagnostic()]);
-    for missing in ["termination", "status", "output"] {
+    let cases: [(&str, RemoveRequiredField); 3] = [
+        ("termination", |finished| finished.termination = None),
+        ("status", |finished| {
+            finished.status = MutationStatus::Timeout;
+        }),
+        ("output", |finished| finished.output = None),
+    ];
+    for (missing, remove_required_field) in cases {
         let mut event = valid.clone();
         let OutputEvent::MutantFinished(finished) = &mut event else {
             unreachable!()
         };
-        match missing {
-            "termination" => finished.termination = None,
-            "status" => finished.status = MutationStatus::Timeout,
-            "output" => finished.output = None,
-            _ => unreachable!(),
-        }
+        remove_required_field(finished);
         let mut sequence = sequence_with_started_mutant();
+
         assert!(sequence.observe(&event).is_err(), "{missing}");
     }
 }
