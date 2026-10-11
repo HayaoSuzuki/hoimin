@@ -316,6 +316,15 @@ wheels = [
 ]
 
 [[package]]
+name = "deal"
+version = "4.24.6"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/c1/da/76d4c3898ed8901116c8ad9dc1e5babd466e50289ce3808de55f72760d0f/deal-4.24.6.tar.gz", hash = "sha256:1cf4d4bbcb2e84767535e066d3888d2809662d7356dee420331380ff94210a1d", size = 723315, upload-time = "2025-11-30T10:55:43.765Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/71/4d/2a940ef9caa02bb3d6ca2a78ecbcaf158e98da972a54bc3fd8f29f7d86a9/deal-4.24.6-py3-none-any.whl", hash = "sha256:44afc0b11df6be5a4edd81409c7cd02ab0188ad9e90e93a71b4ef3d46d04c546", size = 204440, upload-time = "2025-11-30T10:55:40.954Z" },
+]
+
+[[package]]
 name = "dnspython"
 version = "2.9.0"
 source = { registry = "https://pypi.org/simple" }
@@ -356,6 +365,7 @@ source = { editable = "." }
 
 [package.dev-dependencies]
 dev = [
+    { name = "deal" },
     { name = "hypothesis" },
     { name = "jsonschema" },
     { name = "maturin" },
@@ -368,6 +378,7 @@ dev = [
     { name = "pytest-mock" },
     { name = "pytest-randomly" },
     { name = "pyyaml" },
+    { name = "returns" },
     { name = "ruff" },
     { name = "ty" },
 ]
@@ -379,8 +390,14 @@ fuzz = [
     { name = "hypothesis" },
     { name = "hypothesmith" },
 ]
+internal-tooling = [
+    { name = "deal" },
+    { name = "returns" },
+]
 provenance = [
+    { name = "deal" },
     { name = "pypi-attestations" },
+    { name = "returns" },
 ]
 workflow = [
     { name = "actionlint-py" },
@@ -392,6 +409,7 @@ workflow = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "deal", specifier = "==4.24.6" },
     { name = "hypothesis", specifier = ">=6.93,<7" },
     { name = "jsonschema", specifier = "==4.25.1" },
     { name = "maturin", specifier = ">=1.11,<2" },
@@ -404,6 +422,7 @@ dev = [
     { name = "pytest-mock", specifier = ">=3.15.1,<4" },
     { name = "pytest-randomly", specifier = ">=5,<6" },
     { name = "pyyaml", specifier = ">=6.0.2,<7" },
+    { name = "returns", specifier = "==0.29.0" },
     { name = "ruff", specifier = ">=0.16.1,<0.17" },
     { name = "ty", specifier = ">=0.0.80" },
 ]
@@ -415,7 +434,15 @@ fuzz = [
     { name = "hypothesis", specifier = ">=6.93,<7" },
     { name = "hypothesmith", specifier = "==0.3.3" },
 ]
-provenance = [{ name = "pypi-attestations", specifier = "==0.0.30" }]
+internal-tooling = [
+    { name = "deal", specifier = "==4.24.6" },
+    { name = "returns", specifier = "==0.29.0" },
+]
+provenance = [
+    { name = "deal", specifier = "==4.24.6" },
+    { name = "pypi-attestations", specifier = "==0.0.30" },
+    { name = "returns", specifier = "==0.29.0" },
+]
 workflow = [
     { name = "actionlint-py", specifier = "==1.7.12.25" },
     { name = "shellcheck-py", specifier = "==0.11.0.1" },
@@ -1118,6 +1145,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/ac/c3/e2a2b89f2d3e2179abd6d00ebd70bff6273f37fb3e0cc209f48b39d00cbf/requests-2.34.2.tar.gz", hash = "sha256:f288924cae4e29463698d6d60bc6a4da69c89185ad1e0bcc4104f584e960b9ed", size = 142856, upload-time = "2026-05-14T19:25:27.735Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a0/f4/c67b0b3f1b9245e8d266f0f112c500d50e5b4e83cb6f3b71b6528104182a/requests-2.34.2-py3-none-any.whl", hash = "sha256:2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0", size = 73075, upload-time = "2026-05-14T19:25:26.443Z" },
+]
+
+[[package]]
+name = "returns"
+version = "0.29.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/29/e6/f5ada68dfb47e9c032683813f3cd9a810978d8ce541866d365076215906f/returns-0.29.0.tar.gz", hash = "sha256:fd9831594403229595dc705fee632a9be24a497df10aa3b9b72405d75d54e8ad", size = 106314, upload-time = "2026-08-02T08:36:26.976Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c2/b6/660f9724d574eee210ba89cc8fc2c41a5d960947bcea7d780847ce766e21/returns-0.29.0-py3-none-any.whl", hash = "sha256:db43c06d228f84b3d93c0418313c37c5ee4ecdb7a0f10326c24444f9baaf074c", size = 160951, upload-time = "2026-08-02T08:36:28.291Z" },
 ]
 
 [[package]]

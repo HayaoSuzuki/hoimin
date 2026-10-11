@@ -72,12 +72,17 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.14'
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          enable-cache: true
+      - name: Install internal Python tooling
+        run: uv sync --frozen --only-group internal-tooling --no-install-project
       - name: Reserve release tag
         id: tag
         env:
           COMMIT: ${{ github.event.pull_request.merge_commit_sha }}
         run: |
-          tag=$(python tools/release.py tag --commit "$COMMIT")
+          tag=$(uv run --frozen --no-sync python tools/release.py tag --commit "$COMMIT")
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
   prepare:
@@ -143,11 +148,13 @@ jobs:
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           enable-cache: true
+      - name: Install internal Python tooling
+        run: uv sync --frozen --only-group internal-tooling --no-install-project
       - name: Set release version in manifests and lockfiles
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
         shell: bash
-        run: python tools/release.py set-version "$VERSION"
+        run: uv run --frozen --no-sync python tools/release.py set-version "$VERSION"
       - name: Install repository Rust toolchain
         run: rustup toolchain install
       - name: Install pinned SBOM generator
@@ -189,7 +196,7 @@ jobs:
           VERSION: ${{ needs.prepare.outputs.version }}
         shell: bash
         run: >-
-          python tools/release.py package --binary target/standalone/x86_64-pc-windows-msvc/release/hoimin.exe
+          uv run --frozen --no-sync python tools/release.py package --binary target/standalone/x86_64-pc-windows-msvc/release/hoimin.exe
           --platform windows-x86_64 --version "$VERSION" --directory dist
       - name: Generate and validate release SBOMs
         env:
@@ -229,11 +236,13 @@ jobs:
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           enable-cache: true
+      - name: Install internal Python tooling
+        run: uv sync --frozen --only-group internal-tooling --no-install-project
       - name: Set release version in manifests and lockfiles
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
         shell: bash
-        run: python tools/release.py set-version "$VERSION"
+        run: uv run --frozen --no-sync python tools/release.py set-version "$VERSION"
       - name: Install repository Rust toolchain
         run: rustup toolchain install
       - name: Install pinned SBOM generator
@@ -292,7 +301,7 @@ jobs:
           VERSION: ${{ needs.prepare.outputs.version }}
         shell: bash
         run: >-
-          python tools/release.py package --binary target/standalone/x86_64-unknown-linux-gnu/release/hoimin
+          uv run --frozen --no-sync python tools/release.py package --binary target/standalone/x86_64-unknown-linux-gnu/release/hoimin
           --platform linux-x86_64 --version "$VERSION" --directory dist
       - name: Generate and validate release SBOMs
         env:
@@ -330,11 +339,13 @@ jobs:
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           enable-cache: true
+      - name: Install internal Python tooling
+        run: uv sync --frozen --only-group internal-tooling --no-install-project
       - name: Set release version in manifests and lockfiles
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
         shell: bash
-        run: python tools/release.py set-version "$VERSION"
+        run: uv run --frozen --no-sync python tools/release.py set-version "$VERSION"
       - name: Install repository Rust toolchain
         run: rustup toolchain install
       - name: Install pinned SBOM generator
@@ -376,7 +387,7 @@ jobs:
           VERSION: ${{ needs.prepare.outputs.version }}
         shell: bash
         run: >-
-          python tools/release.py package --binary target/standalone/aarch64-apple-darwin/release/hoimin
+          uv run --frozen --no-sync python tools/release.py package --binary target/standalone/aarch64-apple-darwin/release/hoimin
           --platform macos-aarch64 --version "$VERSION" --directory dist
       - name: Generate and validate release SBOMs
         env:
@@ -515,7 +526,7 @@ jobs:
       - name: Set expected wheel version
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
-        run: python tools/release.py set-version "$VERSION"
+        run: uv run --frozen --no-sync python tools/release.py set-version "$VERSION"
       - name: Check wheel ABI and execute at glibc floor
         env:
           MANYLINUX_IMAGE: quay.io/pypa/manylinux2014_x86_64@sha256:f6a6f153c9cf45470507ebbc27013e5db14ce21331b62fd2c540561f25e5f0a5

@@ -24,6 +24,34 @@ SCRIPT = ROOT / "tools/release.py"
 VERSION_FILES = ("Cargo.toml", "Cargo.lock", "pyproject.toml", "uv.lock")
 
 
+@pytest.mark.parametrize(
+    ("job", "entrypoint"),
+    [
+        ("reserve", "Reserve release tag"),
+        ("windows-wheel", "Set release version in manifests and lockfiles"),
+        ("linux-wheel", "Set release version in manifests and lockfiles"),
+        ("macos-wheel", "Set release version in manifests and lockfiles"),
+    ],
+)
+def test_release_bootstrap_installs_tooling_before_use(
+    job: str, entrypoint: str
+) -> None:
+    workflow = yaml.safe_load((ROOT / ".github/workflows/release.yml").read_text())
+    steps = workflow["jobs"][job]["steps"]
+    names = [step.get("name") for step in steps]
+
+    installation = names.index("Install internal Python tooling")
+    invocation = names.index(entrypoint)
+
+    assert installation < invocation
+    assert steps[installation]["run"] == (
+        "uv sync --frozen --only-group internal-tooling --no-install-project"
+    )
+    assert (
+        "uv run --frozen --no-sync python tools/release.py" in steps[invocation]["run"]
+    )
+
+
 def command(*args: str, cwd: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(  # noqa: S603
         args, cwd=cwd, capture_output=True, text=True, check=False, timeout=30
