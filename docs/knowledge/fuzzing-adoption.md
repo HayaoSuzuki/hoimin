@@ -13,6 +13,10 @@ sources:
   resource: ../superpowers/reports/issue-807/README.md
   working_tree: untracked
   sha256: 4eeaf34be4234443b6d2ffaede55a9a06c64571074cc95585c387d84c0623771
+- id: corpus-experiment
+  resource: ../superpowers/reports/issue-803/README.md
+  working_tree: untracked
+  sha256: e18042e4114ed937a162649afef6dcf1f4a3d39d4dacb8793276797f980a98fe
 ---
 
 # Fuzzing maintenance adoption
@@ -25,8 +29,8 @@ assertion lines per harness did not justify adding a framework or helper yet.[^a
 Small compressed corpus archives can still have material replay costs. Existing
 Linux CI logs imply approximately 17 seconds of initialization for python_analyzer
 within a 55.496-second stage. This is a rounded estimate, not isolated replay
-measurement. #803 remains a manual, bounded merge/feature-identity comparison;
-no replacement cache or automatic cmin was adopted.[^assessment]
+measurement. That observation motivated the bounded #803 experiment below; it was not a
+measurement of compression savings.[^assessment]
 
 No difficult search boundary was demonstrated for #804's ci_selection target;
 target/event instrumentation was declined there. #807 initially suspected a versioned sampling compatibility gap, but independent
@@ -42,3 +46,22 @@ outcomes as implemented product guarantees or measured mutation-score gains.
 [^assessment]: [Adoption assessment](../superpowers/reports/issue-805/README.md), source baseline, standalone probes and remaining Linux/corpus limits.
 
 [^regressions]: [Rejected compatibility regression trial](../superpowers/reports/issue-807/README.md), historical trial evidence, existing corpus coverage and final no-change ruling.
+
+
+# Completed corpus experiment
+
+The #803 hosted follow-up completed in 5m27s on one pinned binary/cache. Median
+replay fell from 19.113 to 9.087 seconds and initial merge cost 36.810 seconds.
+However, exact set comparison found 47 original feature IDs and 3 original PC
+indices absent, with other IDs appearing. Equal PC counts did not establish
+preservation. Original replay observations also varied across unchanged runs;
+this experiment does not attribute the difference solely to compaction.[^corpus-experiment]
+
+Automatic/scheduled replacement was not adopted. The original cache and managed
+seeds were unchanged; temporary workflow changes were removed. Close the bounded
+investigation rather than create a new tracing/determinism project. Revisit only
+with a concrete need, a defensible preservation method and total cost budget.
+The original corpus/binary are not committed; retained hashes and ID sets support
+comparison, not reconstruction of expired inputs.[^corpus-experiment]
+
+[^corpus-experiment]: [Bounded corpus experiment](../superpowers/reports/issue-803/README.md), all six replay measurements, control-set differences and remaining uncertainty.

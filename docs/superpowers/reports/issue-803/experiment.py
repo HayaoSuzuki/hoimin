@@ -6,6 +6,7 @@ import hashlib
 import json
 import shutil
 from pathlib import Path
+from typing import TypedDict, cast
 
 from tools.ci_fuzz import Campaign
 
@@ -14,6 +15,12 @@ MAX_FILES = 50_000
 MAX_BYTES = 64 * 1024 * 1024
 MAX_INPUT = 4096
 HEADER_LINES = 2
+
+
+class Inventory(TypedDict):
+    files: int
+    bytes: int
+    manifest_sha256: str
 
 
 def record_values(line: str, marker: str, index: int) -> list[int]:
@@ -73,7 +80,7 @@ def compare_features(
     }
 
 
-def inventory(directory: Path) -> dict[str, object]:
+def inventory(directory: Path) -> Inventory:
     digest = hashlib.sha256()
     count = 0
     total = 0
@@ -102,7 +109,10 @@ def run(deadline: float, report: Path) -> None:
     seeds = ROOT / "fuzz/seeds/python_analyzer"
     original = inventory(source)
     managed = inventory(seeds)
-    if int(original["files"]) + int(managed["files"]) > MAX_FILES:
+    if (
+        original["files"] + managed["files"] > MAX_FILES
+        or original["bytes"] + managed["bytes"] > MAX_BYTES
+    ):
         msg = "combined snapshot exceeds experiment limits"
         raise ValueError(msg)
     if shutil.disk_usage(ROOT).free < 8 * 1024**3:
@@ -145,7 +155,9 @@ def run(deadline: float, report: Path) -> None:
                 timeout=120,
                 reserve=30,
             )
-            durations[label].append(float(campaign.stages[-1]["elapsed_seconds"]))
+            durations[label].append(
+                cast("float", campaign.stages[-1]["elapsed_seconds"])
+            )
         control = report / f"{label}.control"
         output = compact if label == "before" else report / "verification-output"
         output.mkdir(exist_ok=True)

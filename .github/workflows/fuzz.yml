@@ -5,10 +5,6 @@ on:
     - cron: '17 18 * * *'
   workflow_dispatch:
     inputs:
-      corpus_research:
-        description: Run the bounded read-only corpus experiment instead
-        type: boolean
-        default: false
       seconds:
         description: Fuzzing seconds per target
         type: choice
@@ -24,7 +20,6 @@ concurrency:
 
 jobs:
   fuzz:
-    if: ${{ !inputs.corpus_research }}
     name: Scheduled fuzz
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -97,57 +92,3 @@ jobs:
             fuzz/artifacts
           if-no-files-found: ignore
           retention-days: 14
-
-  corpus-research:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.corpus_research }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    env:
-      CARGO_INCREMENTAL: "0"
-      CARGO_BUILD_JOBS: "1"
-    steps:
-      - name: Start experiment budget
-        run: echo "RESEARCH_DEADLINE=$(( $(date +%s) + 1140 ))" >> "$GITHUB_ENV"
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: '3.14'
-      - name: Install pinned fuzz toolchain
-        run: timeout "$(( RESEARCH_DEADLINE - $(date +%s) ))s" rustup toolchain install nightly-2026-10-08 --profile minimal
-      - name: Restore cargo-fuzz tool without saving
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ runner.temp }}/cargo-fuzz-tool
-          key: cargo-fuzz-${{ runner.os }}-${{ runner.arch }}-0.13.2-nightly-2026-10-08
-          fail-on-cache-miss: true
-      - name: Restore size-checked fixed main corpus without saving
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: fuzz/corpus
-          key: fuzz-corpus-v1-Linux-38172184143-1
-          fail-on-cache-miss: true
-      - name: Record environment and run experiment
-        shell: bash
-        run: |
-          set -euo pipefail
-          report="$RUNNER_TEMP/corpus-research"
-          mkdir -p "$report"
-          git rev-parse HEAD > "$report/source-sha.txt"
-          python --version > "$report/python-version.txt"
-          cargo +nightly-2026-10-08 --version > "$report/cargo-version.txt"
-          export PATH="$RUNNER_TEMP/cargo-fuzz-tool/bin:$PATH"
-          export PYTHONPATH="$GITHUB_WORKSPACE"
-          python docs/superpowers/reports/issue-803/experiment.py \
-            --deadline "$RESEARCH_DEADLINE" --report "$report"
-      - name: Preserve experiment evidence
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: corpus-research
-          path: ${{ runner.temp }}/corpus-research
-          retention-days: 14
-      - name: Clean only this hosted checkout's build
-        if: always()
-        run: cargo +nightly-2026-10-08 clean --manifest-path fuzz/Cargo.toml

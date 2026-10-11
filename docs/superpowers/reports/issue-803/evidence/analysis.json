@@ -1,0 +1,19 @@
+{
+  "run_id": 38177234047,
+  "artifact_id": 11716655657,
+  "artifact_compressed_bytes": 4102770,
+  "cache_key": "fuzz-corpus-v1-Linux-38172184143-1",
+  "cache_compressed_bytes": 3489846,
+  "control_sha256": {
+    "before": "d7c74b7fb2fdf753a8641c038e303ffff6187586fdec46e85ed00409de18bc76",
+    "after": "818acb2f05885b352c41e37d36d0f7d99ad0906d445234ea6cae02ca82b6c5cd"
+  },
+  "replay_median_seconds": {
+    "before": 19.112580547999983,
+    "after": 9.086922066999989
+  },
+  "missing_feature_count": 47,
+  "added_feature_count": 10,
+  "missing_pc_count": 3,
+  "added_pc_count": 3
+}

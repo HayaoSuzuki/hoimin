@@ -820,6 +820,10 @@ sources:
   resource: ../../superpowers/reports/issue-807/README.md
   working_tree: untracked
   sha256: 4eeaf34be4234443b6d2ffaede55a9a06c64571074cc95585c387d84c0623771
+- id: corpus-distillation-803
+  resource: ../../superpowers/reports/issue-803/README.md
+  working_tree: untracked
+  sha256: e18042e4114ed937a162649afef6dcf1f4a3d39d4dacb8793276797f980a98fe
 ---
 
 # 収録一覧
@@ -1432,3 +1436,10 @@ sources:
 - [Rejected sampling compatibility regression trial](../../superpowers/reports/issue-807/README.md) - Existing Lean corpus coverage and removal of redundant trial tests.[^sampling-v1-regressions]
 
 [^sampling-v1-regressions]: [Execution and review record](../../superpowers/reports/issue-807/README.md).
+
+
+## Issue #803 corpus distillation
+
+- [Bounded corpus distillation experiment](../../superpowers/reports/issue-803/README.md) - Replay savings, exact feature/PC set mismatch and no replacement adoption.[^corpus-distillation-803]
+
+[^corpus-distillation-803]: [Executed experiment](../../superpowers/reports/issue-803/README.md), retained IDs/logs and interpretation limits.

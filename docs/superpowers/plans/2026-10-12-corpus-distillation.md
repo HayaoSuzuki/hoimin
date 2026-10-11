@@ -25,14 +25,14 @@ and cargo clean it in the final step. Never clean the shared local build.
 
 ## Steps
 
-- [ ] Implement a research-only script using existing Campaign deadlines/process
+- [x] Implement a research-only script using existing Campaign deadlines/process
   groups; hash the corpus snapshot, record stage times, and strictly parse the
   STARTED/FT/COV records. Test truncated controls and missing features locally.
-- [ ] Add temporary manual-only workflow mode, select one bounded default-branch
+- [x] Add temporary manual-only workflow mode, select one bounded default-branch
   cache and restore exact key without fallback to another corpus.
-- [ ] Dispatch once, acquire bounded results, compare all three replay times,
+- [x] Dispatch once, acquire bounded results, compare all three replay times,
   merge cost and exact feature/PC sets on the identical binary.
-- [ ] Decide adopt/reject/limited evidence, remove temporary dispatch changes,
+- [x] Decide adopt/reject/limited evidence, remove temporary dispatch changes,
   update knowledge/catalog evidence, perform independent review and create PR.
 
 ## Design self-review: five passes

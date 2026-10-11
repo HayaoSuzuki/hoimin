@@ -30,3 +30,16 @@ def test_equal_counts_do_not_hide_a_missing_feature() -> None:
     assert comparison["preserved"] is False
     assert comparison["missing_features"] == [2]
     assert comparison["added_features"] == [3]
+
+
+@given(features=st.sets(st.integers(min_value=0, max_value=100), min_size=1))
+def test_complete_merge_preserves_actual_feature_ids(
+    tmp_path_factory: pytest.TempPathFactory, features: set[int]
+) -> None:
+    control = tmp_path_factory.mktemp("complete") / "complete.control"
+    ids = " ".join(str(value) for value in sorted(features))
+    control.write_text(COMPLETE.replace("FT 0 1", f"FT 0 {ids}"), encoding="utf-8")
+
+    actual = read_features(control)
+
+    assert actual == (features, {7})
