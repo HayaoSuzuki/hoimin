@@ -7,9 +7,9 @@ catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
 - id: readme
   resource: ../../usage.md
-  revision: 5a45bdc3bd444771c4c57e30fe211f174850ce93
-  working_tree: untracked
-  sha256: 6894a34743882cc26fdd1f39cb536c94dfc20d5f1dcf33b3cb7f3da9b13e6bef
+  revision: 2831bde6adf75facf0a379b8a915267c278d8511
+  working_tree: modified
+  sha256: 873ffa0eb321441a2991cd1ea87e1d177c329128f24ad732ab0e81e6ce88a39a
 - id: disk
   resource: ../../superpowers/specs/2026-08-27-disk-safe-mutation-execution-design.md
   revision: a7daea0b557cd435c1e55b540392fbdd116348e1
@@ -59,6 +59,8 @@ Hoiminは、実行にかかった経過時間（wall-clock時間）、子孫プ�
 # OSごとの制限とプロセス終了の保証
 
 利用方法の公開契約では、OSの機能でメモリとプロセス数の上限を強制する方式（hard enforcement）と、利用できる機能の範囲で制御する方式（best-effort）を区別している。WindowsではJob Object、Linuxでは権限を委譲されたcgroup v2が上限強制の基盤となる。これらを利用できない場合の条件は別に定められており、macOSではメモリ上限を強制しない。[^readme]
+
+WindowsのJob ObjectとLinuxのcgroup v2では、baselineまたはmutantの各rootプロセスと子孫に、それぞれメモリ・プロセス数の上限全量を適用する。Linuxのプロセス数制限はスレッドを含むtask数である。並列度をJとすると合計は各上限のJ倍に近づきうる。Hoiminのrun用の親には合計メモリ・プロセス数の上限を設定せず、ホスト側の祖先の制限は引き続き有効である。resource modeのhardは制限の強制方法を表し、run全体の合計制限を意味しない。[^readme]
 
 Unix向けの共通実装（portable経路）では、Hoiminが直接起動して管理するプロセス（root）が生存中にタイムアウトまたはキャンセルを受けると、そのプロセスグループを終了させ、rootの終了状態を回収する（reap）。rootが自然終了した後に残る子孫プロセスの後処理は保証範囲外である。これは利用方法に記載された契約の要約であり、今回すべてのOSで実測した結果ではない。[^readme]
 
