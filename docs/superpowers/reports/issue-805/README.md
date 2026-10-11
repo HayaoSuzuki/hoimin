@@ -12,7 +12,7 @@ See the [design](../../specs/2026-10-12-fuzz-adoption-design.md) and
 | #803 corpus distillation | Continue a manual, bounded experiment on `python_analyzer`; initial replay is material even though compressed caches are small. | Merge and compare feature **identities** on one pinned Linux binary/snapshot before adopting any automatic maintenance. Not executed here. |
 | #802 shared sampling property / Bolero | Keep proptest and cargo-fuzz. A dependency-free oracle works with both random adapters, but about a dozen existing assertion lines per harness do not justify a new framework or cross-directory helper yet. | Linux libFuzzer/Bolero comparison and shrinking equivalence remain unmeasured; reopen adoption only for a concrete replay or maintenance problem. |
 | #804 target/event | Decline instrumentation for the proposed `ci_selection` target. Current path classification has directly expressible examples and a simple union of four flags, with no demonstrated difficult search boundary. | Revisit only with an actual missed semantic boundary, not a length-maximization objective. |
-| #807 Fuzzing Book application | Existing structured generators, runners, lifecycle oracles and failure artifacts already implement the useful architectural separation. One concrete test gap was found: versioned sampling lacks fixed known-answer vectors. | Add small independent compatibility regressions in a separate stacked change; do not add a new product API or fuzzing engine. |
+| #807 Fuzzing Book application | Existing structured generators, runners, lifecycle oracles and failure artifacts already implement the useful architectural separation. An initially suspected sampling gap was disproved by independent review: existing Lean-corpus integration tests already pin the output. | Record no additional justified change; remove the redundant trial vectors. Do not add a product API or fuzzing engine. |
 
 These are maintenance decisions, not evidence of improved survivor discovery,
 mutation score, or automatically correct agent-generated tests. #806 stays
@@ -84,7 +84,7 @@ the existing fuzz harness allows populations up to 4096, while the unit
 property uses population <512 and count <1024. No domains were reduced in CI.
 
 On Windows x86_64 MSVC, Rust 1.99.0, Python 3.14.6, the initial Cargo build
-reported 37.74 seconds including dependency resolution/download/compilation.
+reported 37.74 seconds (Cargo-reported elapsed time; acquisition costs were not timed separately).
 The isolated lockfile resolves 67 dependency packages; it changes neither
 product workspace nor the fuzz workspace. Bolero is pinned to 0.13.7 and
 proptest to the baseline's 1.11.0. This is a research-only crate with
@@ -149,13 +149,16 @@ new reducer, tracer, input format or generic runner abstraction was found.
 All probe code here is original; no book text/code or HypoFuzz implementation
 was imported.
 
-One useful gap is narrower: `splitmix64_fisher_yates_v1` promises stable ordered
-samples, but count/uniqueness/range/prefix and repeated execution would all pass
-after consistently changing a PRNG constant. Current integration tests compare
-preview to execution and themselves, not a versioned known answer. Preserve
-the existing properties and rejection-boundary unit test, and add fixed vectors
-from an independently evaluated reference calculation. Unlike a randomly chosen
-property input, every compatibility vector must execute each time.
+An initial hypothesis was that `splitmix64_fisher_yates_v1` had no fixed
+compatibility outputs. That hypothesis was wrong. Independent review found
+`sample_public_cli_matches_every_lean_oracle_case` in
+`crates/hoimin-cli/tests/sampling.rs`, which checks selected IDs and order against
+360 committed Lean-derived cases. The corpus already includes all three full
+permutations proposed by the trial (seeds 0, 42 and u64::MAX), plus seed 1.
+A changed PRNG constant can pass the generative property but is already covered
+by this independent integration oracle. See the [rejected trial](../issue-807/README.md).
+No additional product-code/test change was justified by this assessment, so the
+redundant trial vectors and their temporary test dependency were removed.
 
 ## Implementation self-review, five separate passes
 
@@ -167,8 +170,9 @@ property input, every compatibility vector must execute each time.
    fixed seeds while retaining engine/distribution limitations in the report.
 4. Corpus evidence: checked log hashes and all eight stage names; separated
    rounded replay estimates from unmeasured merge savings/feature preservation.
-5. Adoption: retained independent rejection tests and identified the separate
-   known-answer gap rather than extracting assertions solely to remove lines.
+5. Adoption: retained independent rejection tests and rechecked the suspected
+   known-answer gap against the full Lean corpus after independent review, and
+   removed redundant trial tests rather than claiming new coverage.
 
 ## Test self-review, five separate passes
 
@@ -181,3 +185,21 @@ property input, every compatibility vector must execute each time.
    integration tests or the ignored 65,536-seed frequency inspection.
 5. Checked explicit gaps: Linux engines, corpus merge, feature identity and
    shrinking were not tested; #803 remains a bounded follow-up.
+
+## Final verification and independent review
+
+The independent reviewer initially rejected the missing-compatibility-coverage
+claim. After reading the full Lean-corpus integration test, the author withdrew
+the redundant trial tests and corrected both reports. The same fresh reviewer
+rechecked the corrections and returned ready with no important findings remaining
+on 2026-10-12. Review was read-only; no heavyweight suite was rerun by the reviewer.
+
+Final-state standalone build, Rustfmt and strict Clippy passed. Existing
+`tests/test_ci_selection.py` and `tests/test_docs_site.py` passed (81 tests,
+5.55 seconds). OKF structure, new source hashes/footnotes and changed-page local
+links passed. Product crates, fuzz targets, tools, tests and product lockfiles
+have no diff against the assessed main. No product behavior was implemented.
+
+The dedicated target directory was cleaned with `cargo clean`: 1,378 files,
+433.7 MiB removed. C: free space afterwards was 187,179,016,192 bytes (about
+174.3 GiB). Shared build directories and corpus caches were not deleted.

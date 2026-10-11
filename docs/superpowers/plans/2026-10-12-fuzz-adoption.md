@@ -28,13 +28,13 @@ each execution <=60 seconds; clean its dedicated build directory afterwards.
 
 ## Tasks
 
-- [ ] Extract source identity, stage times and initialization observations from
+- [x] Extract source identity, stage times and initialization observations from
   run 38172184143; retain small evidence and acquisition instructions in the report.
-- [ ] Exercise a dependency-free sampling oracle on fixed boundaries; deliberately
+- [x] Exercise a dependency-free sampling oracle on fixed boundaries; deliberately
   corrupt results to verify sensitivity before randomized adapter runs.
-- [ ] Compare proptest/Bolero adapters only within the setup budget; record
+- [x] Compare proptest/Bolero adapters only within the setup budget; record
   setup, execution, replay and source-maintenance costs separately.
-- [ ] Assess #804's initial target and #807's candidate list; record adoption,
+- [x] Assess #804's initial target and #807's candidate list; record adoption,
   rejection or a concrete bounded follow-up for each.
 - [ ] Verify research material, update knowledge/source catalogs, obtain an
   independent review, commit and open reviewable PR(s) through `gh stack`.
@@ -51,3 +51,11 @@ each execution <=60 seconds; clean its dedicated build directory afterwards.
    outcomes; speculative CI/framework expansion is excluded.
 5. Delivery: planned both source catalogs, a knowledge decision, recorded
    reviews, PR attachment and issue-specific outcome comments.
+
+
+## Execution ruling
+
+Independent review found the suspected #807 compatibility gap was already
+covered by the committed Lean corpus. Removed the redundant trial tests and
+kept the negative assessment. Consolidate the local two-branch draft into one
+research PR; there is no independent implementation change to stack.

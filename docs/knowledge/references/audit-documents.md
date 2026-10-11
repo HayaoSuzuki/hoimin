@@ -813,8 +813,13 @@ sources:
 
 - id: fuzz-adoption-report
   resource: ../../superpowers/reports/issue-805/README.md
+  revision: 36c0e84e7e93022b3588dede701f3b85212d98ff
+  working_tree: modified
+  sha256: 40ead0b7481a3566451f9fd1dcdac9df068035c1c0ed025db5532c5bb79d7d8e
+- id: sampling-v1-regressions
+  resource: ../../superpowers/reports/issue-807/README.md
   working_tree: untracked
-  sha256: 8e97670911b94e411881ef6f4d0f66bd6180b582592d7c3e204f0bb1759781a4
+  sha256: 4eeaf34be4234443b6d2ffaede55a9a06c64571074cc95585c387d84c0623771
 ---
 
 # 収録一覧
@@ -1420,3 +1425,10 @@ sources:
 - [Fuzzing adoption decisions for #805 and #807](../../superpowers/reports/issue-805/README.md) - Bounded adoption decisions and evidence limitations.[^fuzz-adoption-report]
 
 [^fuzz-adoption-report]: [Fuzzing adoption decisions for #805 and #807](../../superpowers/reports/issue-805/README.md).
+
+
+## Issue #807 versioned sampling
+
+- [Rejected sampling compatibility regression trial](../../superpowers/reports/issue-807/README.md) - Existing Lean corpus coverage and removal of redundant trial tests.[^sampling-v1-regressions]
+
+[^sampling-v1-regressions]: [Execution and review record](../../superpowers/reports/issue-807/README.md).
