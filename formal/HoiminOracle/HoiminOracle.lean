@@ -1,4 +1,6 @@
 import HoiminOracle.Cases
+import HoiminOracle.SurvivorReviewProofs
+import HoiminOracle.SurvivorReviewCases
 import HoiminOracle.Proofs
 import HoiminOracle.ShutdownModel
 import HoiminOracle.ShutdownProofs

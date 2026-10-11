@@ -1,0 +1,299 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/HayaoSuzuki/hoimin/main/docs/json-schema/review-result.schema.json",
+  "title": "hoimin local human review result",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "command": {
+      "enum": [
+        "list",
+        "show",
+        "record"
+      ]
+    },
+    "project": {
+      "type": "string"
+    },
+    "candidates": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/row"
+      }
+    },
+    "stale_candidates": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/row"
+      }
+    },
+    "operators": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "operator": {
+            "type": "string"
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 18446744073709551615
+          },
+          "reviewed": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 18446744073709551615
+          },
+          "unreviewed": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 18446744073709551615
+          },
+          "stale": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 18446744073709551615
+          },
+          "source_unavailable": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 18446744073709551615
+          },
+          "assessments": {
+            "type": "object",
+            "propertyNames": {
+              "enum": [
+                "actionable",
+                "not_useful",
+                "suspected_equivalent",
+                "needs_investigation"
+              ]
+            },
+            "additionalProperties": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 18446744073709551615
+            }
+          }
+        },
+        "required": [
+          "operator",
+          "total",
+          "reviewed",
+          "unreviewed",
+          "stale",
+          "source_unavailable",
+          "assessments"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "command",
+    "project",
+    "candidates",
+    "stale_candidates",
+    "operators"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "event": {
+      "type": "object",
+      "properties": {
+        "revision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 18446744073709551615
+        },
+        "draft": {
+          "type": "object",
+          "properties": {
+            "assessment": {
+              "enum": [
+                "actionable",
+                "not_useful",
+                "suspected_equivalent",
+                "needs_investigation"
+              ]
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "evidence": {
+              "type": "array",
+              "maxItems": 8,
+              "items": {
+                "type": "string",
+                "maxLength": 2048
+              }
+            },
+            "timestamp_ms": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 18446744073709551615
+            },
+            "plan": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "content_hash": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "run_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "path",
+                "content_hash",
+                "run_id"
+              ],
+              "additionalProperties": false
+            },
+            "report": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "content_hash": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "run_id": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "content_hash",
+                    "run_id"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "assessment",
+            "reason",
+            "evidence",
+            "timestamp_ms",
+            "plan",
+            "report"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "revision",
+        "draft"
+      ],
+      "additionalProperties": false
+    },
+    "row": {
+      "type": "object",
+      "properties": {
+        "candidate": {
+          "$ref": "run-event.schema.json#/$defs/candidate"
+        },
+        "execution": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "state": {
+                  "enum": [
+                    "not_loaded",
+                    "not_in_report"
+                  ]
+                }
+              },
+              "required": [
+                "state"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "state": {
+                  "const": "result"
+                },
+                "status": {
+                  "enum": [
+                    "killed",
+                    "survived",
+                    "timeout",
+                    "out_of_memory",
+                    "process_limit",
+                    "error",
+                    "not_run"
+                  ]
+                }
+              },
+              "required": [
+                "state",
+                "status"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "review": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/event"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "applicability": {
+          "enum": [
+            "current",
+            "stale",
+            "source_unavailable",
+            "identity_conflict"
+          ]
+        },
+        "history": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/event"
+          }
+        }
+      },
+      "required": [
+        "candidate",
+        "execution",
+        "review",
+        "applicability",
+        "history"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

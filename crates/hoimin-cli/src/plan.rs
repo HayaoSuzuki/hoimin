@@ -39,6 +39,52 @@ pub use ranking::{RankedPlanCandidate, RankingReason, RankingReasonCode};
 
 pub const PLAN_SCHEMA_VERSION: u32 = 5;
 
+pub(crate) struct ReadOnlyPlan {
+    pub manifest: PlanManifest,
+    pub canonical_path: PathBuf,
+    pub content_hash: String,
+    pub project: Utf8PathBuf,
+}
+
+pub(crate) fn read_for_review(path: &Path) -> Result<ReadOnlyPlan, PlanError> {
+    let invalid = |error: String| PlanError::ManifestInvalid(error);
+    let bytes = crate::review::input::bounded_read(path, 64 * 1024 * 1024)
+        .map_err(|error| invalid(error.to_string()))?;
+    let manifest: PlanManifest =
+        serde_json::from_slice(&bytes).map_err(|error| invalid(error.to_string()))?;
+    validate_header(&manifest)?;
+    manifest
+        .normalized_config
+        .validate()
+        .map_err(|error| invalid(error.to_string()))?;
+    let project = std::fs::canonicalize(&manifest.normalized_config.root)
+        .map_err(|error| invalid(error.to_string()))?;
+    let project = Utf8PathBuf::from_path_buf(project)
+        .map_err(|_| invalid("project root is not UTF-8".into()))?;
+    for candidate in &manifest.candidates {
+        let descriptor = candidate_descriptor(&candidate.candidate);
+        let id = hoimin_core::stable_mutant_id(&hoimin_core::CandidateIdentity::from(&descriptor));
+        if id.as_str() != candidate.id {
+            return Err(invalid("candidate id does not match its descriptor".into()));
+        }
+        if !manifest
+            .sources
+            .iter()
+            .any(|source| source.path == candidate.path && source.hash == candidate.file_hash)
+        {
+            return Err(invalid(
+                "candidate source record is missing or inconsistent".into(),
+            ));
+        }
+    }
+    Ok(ReadOnlyPlan {
+        manifest,
+        canonical_path: std::fs::canonicalize(path).map_err(|error| invalid(error.to_string()))?,
+        content_hash: blake3::hash(&bytes).to_hex().to_string(),
+        project,
+    })
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PlanManifest {
@@ -983,7 +1029,7 @@ fn requested_discovery_targets(
         .collect()
 }
 
-fn candidate_descriptor(candidate: &MutationCandidate) -> CandidateDescriptor {
+pub(crate) fn candidate_descriptor(candidate: &MutationCandidate) -> CandidateDescriptor {
     CandidateDescriptor {
         schema_version: hoimin_core::CANDIDATE_SCHEMA_VERSION,
         path: candidate.path.clone(),

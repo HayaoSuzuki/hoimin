@@ -5,6 +5,10 @@ description: docs/auditsとdocs/superpowers/reports内の全Markdownを追跡状
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-711-review-report
+  resource: ../../superpowers/reports/2026-10-11-issue-711-survivor-review.md
+  working_tree: untracked
+  sha256: 2f388bf417df4054d41765ec4b66d74815880752cfb377956949bc628871c699
 - id: issue-778-kani-report
   resource: ../../superpowers/reports/2026-10-11-issue-778-kani.md
   working_tree: untracked
@@ -1389,3 +1393,9 @@ sources:
 - [Djangoでの制約付き変異探索](../../superpowers/reports/2026-10-11-issue-790-django.md) - 3関数・5 seedの負の結果と比較の制約。[^issue-790-django-report]
 
 [^issue-790-django-report]: [Djangoでの制約付き変異探索](../../superpowers/reports/2026-10-11-issue-790-django.md)。
+
+## Issue #711 survivor評価
+
+- [#711 survivor評価の実装と検証](../../superpowers/reports/2026-10-11-issue-711-survivor-review.md) - 独立履歴、競合・入力境界、Leanモデル証明と実装テスト。[^issue-711-review-report]
+
+[^issue-711-review-report]: [#711 survivor評価の実装と検証](../../superpowers/reports/2026-10-11-issue-711-survivor-review.md)。

@@ -1,7 +1,7 @@
 mod compare;
 mod details;
 mod duplicate;
-mod input;
+pub(crate) mod input;
 mod render;
 
 use std::io::Write;

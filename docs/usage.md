@@ -1110,3 +1110,60 @@ See the [design and paper reference](superpowers/reports/function-body-return-co
 
 The [default-selection policy](superpowers/reports/recent-analyzer-defaults/design.md)
 supersedes the opt-in rollout described in the two original design reports.
+
+## Human review of mutation candidates
+
+`review` records human assessments of saved plan candidates in an explicitly
+selected local SQLite sidecar. It does not run the analyzer or tests, alter the
+plan/report, change mutation scores or progress decisions, or suppress candidates.
+
+```sh
+hoimin review list plan.json --store reviews.sqlite3 --format json
+hoimin review show plan.json --store reviews.sqlite3 --candidate ID
+hoimin review record plan.json --store reviews.sqlite3 --candidate ID \
+  --assessment actionable --reason 'A required field can be omitted without a failure' \
+  --expected-revision 0
+```
+
+Assessments are `actionable`, `not_useful`, `suspected_equivalent`, and
+`needs_investigation`. No record means `unreviewed`, distinct from `not_useful`.
+Suspected equivalence is a human judgment, not a proof. A specification-permitted
+reorder may be unhelpful, while an undetected required-field omission may identify
+a useful test improvement; neither changes the actual mutation outcome.
+
+`record` requires a nonblank reason of at most 4096 UTF-8 bytes. Repeat
+`--evidence TEXT` for at most eight inert references, each at most 2048 bytes.
+References are not opened or executed. Control characters other than newline
+and tab are rejected. Text output escapes control characters.
+
+Use revision 0 for the first assessment. For an update, read the latest revision
+with `show` and pass it to `--expected-revision`. Concurrent or outdated writes
+fail instead of overwriting history. Repeating an assessment with the current
+revision appends an event. If output fails after commit, the diagnostic names
+the saved revision; inspect it before retrying. Retrying the old revision cannot
+append a duplicate event.
+
+The store is bound to one canonical project root and each candidate's full
+descriptor and source hash. It is not automatically transferred to another
+checkout or moved root. Modified sources are `stale`; missing or unreadable
+sources are `source_unavailable`. These assessments do not count as reviewed
+current candidates. `list --stale` includes stored candidates absent from the
+plan separately. List and show do not create a missing store.
+
+Plan-only output has execution state `not_loaded`. Add `--report run.json` for
+actual results from a complete schema-v4 JSON report with a passing baseline and
+matching project/candidates. A plan candidate absent from the report is
+`not_in_report`; recording it with that report is rejected. JSONL and older
+reports are not supported by review. Plan-only recording remains allowed.
+
+Limits are 64 MiB per plan/report, 16 MiB per store, and 10,000 events per store.
+Source inspection is bounded to 64 MiB; larger sources are unavailable for
+review. Writer locks wait at most one second. Journals need additional disk
+space. Corrupt, unknown, or unrelated databases are rejected without automatic
+repair. Use a local filesystem; network filesystem concurrency is outside the
+initial contract. Store files and SQLite auxiliary paths must not alias plan,
+report, source, or fingerprint inputs.
+
+JSON uses the independent [review schema](json-schema/review-result.schema.json).
+See the [review contract](knowledge/design/survivor-review.md) for identity and
+formal verification boundaries.

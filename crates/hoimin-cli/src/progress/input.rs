@@ -62,6 +62,51 @@ pub struct UsableReport {
     pub mutants: Vec<MutantFinished>,
 }
 
+pub(crate) struct ReviewReport {
+    pub project: camino::Utf8PathBuf,
+    pub run_id: String,
+    pub mutants: Vec<MutantFinished>,
+}
+
+pub(crate) fn read_review_json(path: &Path, bytes: &[u8]) -> Result<ReviewReport, ProgressError> {
+    let document: RunReportDocument =
+        serde_json::from_slice(bytes).map_err(|source| ProgressError::Parse {
+            path: path.to_path_buf(),
+            source,
+        })?;
+    if document.schema_version != REPORT_SCHEMA_VERSION {
+        return Err(ProgressError::UnsupportedSchema {
+            path: path.to_path_buf(),
+            found: document.schema_version,
+        });
+    }
+    let run_id = document.run.run_id().to_owned();
+    let config: hoimin_core::RunConfig = serde_json::from_value(
+        document.run.value().normalized_config.clone(),
+    )
+    .map_err(|source| ProgressError::Parse {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    let project = std::fs::canonicalize(config.root).map_err(|source| ProgressError::Read {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    let project = camino::Utf8PathBuf::from_path_buf(project)
+        .map_err(|_| invalid_structure(path, "review project root is not UTF-8"))?;
+    match validate_document(path, document)? {
+        InputReport::Usable(report) => Ok(ReviewReport {
+            project,
+            run_id,
+            mutants: report.mutants,
+        }),
+        InputReport::Unusable { .. } => Err(invalid_structure(
+            path,
+            "review requires a complete report with a passing baseline",
+        )),
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum UnusableReason {
     MissingBaseline,
