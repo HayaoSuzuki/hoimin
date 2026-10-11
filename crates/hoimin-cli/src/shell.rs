@@ -5273,7 +5273,7 @@ fn skip_expired_metrics_finalization(
     reason = "metrics finalization carries the existing run summary and the shared shutdown deadline"
 )]
 async fn finalize_metrics_with_shutdown(
-    path: std::path::PathBuf,
+    path: crate::metrics::MetricsOutput,
     collector: Option<MetricsCollector>,
     run_failure: Option<String>,
     discovered: u64,
@@ -8240,7 +8240,7 @@ mod tests {
         );
         let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
         let (release_tx, release_rx) = std::sync::mpsc::sync_channel(0);
-        let task_path = path.clone();
+        let task_path = crate::metrics::MetricsOutput::open(&path).unwrap();
 
         let finalize = tokio::spawn(async move {
             finalize_metrics_with_shutdown(
