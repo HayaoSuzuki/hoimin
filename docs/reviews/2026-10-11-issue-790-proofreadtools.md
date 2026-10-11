@@ -51,3 +51,44 @@ timeout時に次のarmへ進む経路と、採用した縮小結果を最終照�
 sample lockのnoxを追加し、1GiB上限を維持したままnative threadを各1へ制限した最終確認は5,053成功・PDF依存による6 skip・slow53除外だった。
 最終候補のhash、具体入力、新テストのfingerprint、元成功・変異assertion失敗、清掃完了は[機械可読の証拠](../superpowers/reports/issue-790/evidence.json)へ保存した。
 独立レビュアーは最終の文書・証拠・知識カタログも照合し、未解決の要対応指摘なしと判断した。
+
+## PR #791のCI修正
+
+Wheel smokeのpytestで、自動CIと手動non-Linux CIのquality手順の不一致を既存テストが検出した。
+自動CIだけへ追加した生成テストとstep名を、手動CIにも反映する。
+一致契約のテストは変更せず、修正前の失敗をローカルでも確認した。
+
+### 設計のセルフレビュー5回
+
+1. 失敗ログの直接原因はquality手順の差であり、wheelのビルド失敗ではない。
+2. 手動CIの同等性契約を維持し、assertionを緩めない。
+3. Hypothesisは手動qualityでも既にfuzz groupから導入される。
+4. 追加対象は既存の小さい契約テストで、実サンプルの探索は実行しない。
+5. 製品コード・配布物・バージョン変更は不要。
+
+### 実装計画のセルフレビュー5回
+
+1. 既存の一致検証テストを修正前に実行し、同じ差で失敗することを確認する。
+2. 手動workflowのstep名とpytest引数の2行だけを同期する。
+3. 両workflowに共通するPython 3.14とfuzz groupの設定を維持する。
+4. 関連workflow・選択・生成テストとworkflow lintを検証する。
+5. 既存の作業ブランチへ文書とともにコミットし、mainへ直接pushしない。
+
+### 実装のセルフレビュー5回
+
+1. 追加引数は自動CIと同じtest_proofreadtools_search.pyである。
+2. step名も一致するよう更新した。
+3. workflow_dispatch、OS matrix、permissions、actionsの固定SHAは変えていない。
+4. 依存追加・lint除外・テストの削除はない。
+5. 変更範囲は手動workflowと本記録に限定した。
+
+### テストのセルフレビュー5回
+
+1. 修正前の一致テストがqualityのstep名・コマンド差で失敗し、修正後は1件成功した。
+2. 関連workflow・選択・生成テストの505件が成功した（126.13秒）。
+3. 追加対象のHypothesis契約テストは単独でも9件成功し、skipされていない。
+4. actionlint・ShellCheck・zizmorを実行するworkflow lintは終了コード0。既存の3件のignore以外に指摘はない。
+5. git diff --checkを通し、差分はworkflowの2行と本記録だけ。Rustの再ビルドはなくtargetも存在せず、空き容量は約188GB。
+
+最初の関連suite実行はsandboxによる既存pytest一時ディレクトリへのアクセス拒否で中断した。
+必要な権限で再実行した上記505件を最終検証とする。
