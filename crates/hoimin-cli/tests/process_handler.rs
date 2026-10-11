@@ -280,11 +280,13 @@ mod cgroup_v2 {
     #[tokio::test]
     async fn hard_cgroup_classifies_one_root_oom_kill() {
         let output = tempfile::tempdir().unwrap();
-        for handler in hard_handler_without_swap(
+        let handlers = hard_handler_without_swap(
             Utf8Path::from_path(output.path()).unwrap(),
             512 * 1024 * 1024,
             16,
-        ) {
+        )
+        .into_iter();
+        for handler in handlers {
             let mut process_limits = limits(Duration::from_secs(5), 64);
             process_limits.max_memory_bytes = 160 * 1024 * 1024;
 
@@ -310,7 +312,8 @@ mod cgroup_v2 {
             &hard_run_limits(requested, 16),
             OsString::from(env!("CARGO_BIN_EXE_hoimin")),
         );
-        for backend in decimal_hard_backend(capabilities) {
+        let backends = decimal_hard_backend(capabilities).into_iter();
+        for backend in backends {
             // SAFETY: `_SC_PAGESIZE` is a side-effect-free process configuration query.
             let page_size = u64::try_from(unsafe { libc::sysconf(libc::_SC_PAGESIZE) }).unwrap();
             let expected = requested - requested % page_size;
@@ -338,7 +341,8 @@ mod cgroup_v2 {
             &hard_run_limits(512 * 1024 * 1024, 16),
             OsString::from(env!("CARGO_BIN_EXE_hoimin")),
         );
-        for backend in available_hard_backend(capabilities) {
+        let backends = available_hard_backend(capabilities).into_iter();
+        for backend in backends {
             let run_path = backend.run_cgroup_path_for_tests();
             let handler =
                 ProcessHandler::new(ResourceBackend::LinuxHard(backend), output_dir.into());
@@ -365,11 +369,13 @@ mod cgroup_v2 {
     #[tokio::test]
     async fn hard_cgroup_preserves_non_utf8_argv_without_a_shell() {
         let output = tempfile::tempdir().unwrap();
-        for handler in hard_handler(
+        let handlers = hard_handler(
             Utf8Path::from_path(output.path()).unwrap(),
             512 * 1024 * 1024,
             16,
-        ) {
+        )
+        .into_iter();
+        for handler in handlers {
             let raw = vec![b'n', b'o', b'n', b'-', 0xff, b'-', b'u', b't', b'f', b'8'];
             let request = RunProcess {
                 id: EffectId(201),
@@ -402,7 +408,8 @@ mod cgroup_v2 {
     async fn timeout_kills_a_setsid_descendant_without_killing_a_sibling_root() {
         let output = tempfile::tempdir().unwrap();
         let output_dir = Utf8Path::from_path(output.path()).unwrap();
-        for handler in hard_handler(output_dir, 512 * 1024 * 1024, 16) {
+        let handlers = hard_handler(output_dir, 512 * 1024 * 1024, 16).into_iter();
+        for handler in handlers {
             let handler = Arc::new(handler);
             let pid_file = output_dir.join("setsid-child.pid");
             let guard = FixtureChildGuard::new(pid_file.clone());
@@ -445,7 +452,8 @@ mod cgroup_v2 {
     async fn abnormal_runtime_root_is_classified_and_cleaned_within_six_seconds() {
         let output = tempfile::tempdir().unwrap();
         let output_dir = Utf8Path::from_path(output.path()).unwrap();
-        for handler in hard_handler(output_dir, 512 * 1024 * 1024, 16) {
+        let handlers = hard_handler(output_dir, 512 * 1024 * 1024, 16).into_iter();
+        for handler in handlers {
             let ready_file = output_dir.join("aborting-root.ready");
             let code = "import os,pathlib,signal,sys; ready=pathlib.Path(sys.argv[1]); pending=ready.with_suffix('.pending'); pending.write_text(str(os.getpid())); os.replace(pending,ready); os.kill(os.getpid(),signal.SIGABRT)";
             let started = Instant::now();
@@ -517,7 +525,8 @@ mod cgroup_v2 {
             &hard_run_limits(512 * 1024 * 1024, 16),
             OsString::from(env!("CARGO_BIN_EXE_hoimin")),
         );
-        for backend in available_hard_backend(capabilities) {
+        let backends = available_hard_backend(capabilities).into_iter();
+        for backend in backends {
             let run_path = backend.run_cgroup_path_for_tests();
             let handler =
                 ProcessHandler::new(ResourceBackend::LinuxHard(backend), output_dir.into());
@@ -577,11 +586,13 @@ mod cgroup_v2 {
     #[tokio::test]
     async fn run_cgroup_classifies_concurrent_aggregate_memory_and_process_limits() {
         let memory_output = tempfile::tempdir().unwrap();
-        for memory_handler in hard_handler(
+        let memory_handlers = hard_handler(
             Utf8Path::from_path(memory_output.path()).unwrap(),
             160 * 1024 * 1024,
             16,
-        ) {
+        )
+        .into_iter();
+        for memory_handler in memory_handlers {
             let memory_handler = Arc::new(memory_handler);
             let code = "import time; x=bytearray(96*1024*1024); x[::4096]=b'x'*(len(x[::4096])); time.sleep(2)";
             let (first, second) = tokio::join!(
@@ -595,11 +606,13 @@ mod cgroup_v2 {
             memory_handler.close().unwrap();
 
             let process_output = tempfile::tempdir().unwrap();
-            for process_handler in hard_handler(
+            let process_handlers = hard_handler(
                 Utf8Path::from_path(process_output.path()).unwrap(),
                 512 * 1024 * 1024,
                 3,
-            ) {
+            )
+            .into_iter();
+            for process_handler in process_handlers {
                 let process_handler = Arc::new(process_handler);
                 let code = "import subprocess,sys,time; child=subprocess.Popen([sys.executable,'-c','import time; time.sleep(2)']); time.sleep(1); child.wait()";
                 let (first, second) = tokio::join!(

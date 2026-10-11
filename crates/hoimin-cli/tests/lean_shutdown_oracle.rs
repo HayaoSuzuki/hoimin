@@ -674,7 +674,7 @@ async fn case_panics_are_infrastructure_errors_and_teardown_runs() {
 async fn oracle_correspondence() {
     let cases = parse_corpus(corpus_text()).expect("valid shutdown corpus");
     let selected = std::env::var("HOIMIN_SHUTDOWN_ORACLE_CASE").ok();
-    for id in selected.iter() {
+    for id in selected.as_slice() {
         let case = cases
             .iter()
             .find(|case| &case.id == id)

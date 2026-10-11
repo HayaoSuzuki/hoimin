@@ -1788,7 +1788,7 @@ mod tests {
                     &temp.join("parked"),
                     outside,
                     &swapped,
-                )
+                );
             },
             &|_| {},
         );
