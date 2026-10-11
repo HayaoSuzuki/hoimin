@@ -199,3 +199,18 @@ Maintainer ruling: keep that analyzer investigation outside this library migrati
 and explicitly retain the limitation. If wrong, broader tools mutation planning
 can remain unusable until separately diagnosed; this PR does not promise that
 coverage. There are no deferred minor review findings.
+
+## PR delivery and hosted snapshot
+
+[PR #801](https://github.com/HayaoSuzuki/hoimin/pull/801) was created against
+current main and attached to the task. At reviewed implementation head 78f41c0,
+hosted documentation, workflow lint, both Rust license/source checks, both Rust
+advisory audits and all three Python dependency audits passed. CI and release
+validation were still running; no failure was observed at that snapshot. This
+record is not a claim that subsequent heads or all hosted jobs have passed.
+
+After the full merged-main suite, the final documentation/contract smoke suite
+passed 23 tests in 2.77 seconds; the strict site build passed again after review
+record changes. Production code did not change after the independent review.
+The fresh bootstrap environment was removed after its validation. All changes,
+including design, plan and review documents, are committed on the work branch.
