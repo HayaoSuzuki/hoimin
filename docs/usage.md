@@ -6,6 +6,7 @@ help, defaults and reflected Clap constraints. This guide covers examples and
 runtime contracts, including OS-specific limits and plan/verify inheritance.
 For upgrades, saved-format compatibility and changed defaults, see the
 [compatibility policy](compatibility.md).
+For questions and bug reports, see the [reporting guide](support.md).
 
 - [Run it](#run-it)
 - [Select mutation targets](#select-mutation-targets)

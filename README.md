@@ -33,7 +33,9 @@ on macOS and Linux without delegated cgroup limits; see the
 
 See the [usage reference](https://github.com/HayaoSuzuki/hoimin/blob/main/docs/usage.md)
 for selectors, plan/verify workflows, reports, and configuration, or run `hoimin --help`.
-For contributing, see [development](https://github.com/HayaoSuzuki/hoimin/blob/main/docs/development.md)
+For questions and bug reports, see the [reporting guide](https://github.com/HayaoSuzuki/hoimin/blob/main/docs/support.md).
+External Issues and pull requests are not accepted.
+For maintainer development, see [development](https://github.com/HayaoSuzuki/hoimin/blob/main/docs/development.md)
 and [building and releases](https://github.com/HayaoSuzuki/hoimin/blob/main/docs/releases.md).
 
 Licensed under [Elastic License 2.0](https://github.com/HayaoSuzuki/hoimin/blob/main/LICENSE).

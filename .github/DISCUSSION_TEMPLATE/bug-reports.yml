@@ -1,0 +1,76 @@
+title: "[Bug report] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this category to discuss a possible defect. External Issues and pull requests are not accepted; maintainers use Issues to track accepted work.
+        See the [reporting guide](https://github.com/HayaoSuzuki/hoimin/blob/main/docs/support.md#minimal-reproduction). Share only source and log excerpts you are allowed to publish, with credentials and private paths removed.
+  - type: input
+    id: summary
+    attributes:
+      label: Summary
+      description: What went wrong?
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: hoimin version
+      description: Run hoimin --version. If it cannot start, give the installed/downloaded version or say that the version is unavailable.
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: OS and CPU architecture
+      placeholder: "Example: Windows 11 x86_64, macOS arm64, Ubuntu x86_64"
+    validations:
+      required: true
+  - type: input
+    id: python
+    attributes:
+      label: Python version
+      description: If available, give the version of the Python interpreter used by your test command.
+  - type: textarea
+    id: command
+    attributes:
+      label: Command
+      description: Include arguments, the command after --, and relevant configuration. For installation or startup failures, give the command that failed.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected and actual results
+      description: Describe both results. Include the exit code if available, and distinguish a failing baseline from a mutant result.
+      placeholder: |
+        Expected:
+
+        Actual:
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Paste the smallest source, test, configuration and steps that reproduce the problem. Use Markdown code blocks. A complete repository or attachment is not required; explain if you cannot reduce it.
+  - type: dropdown
+    id: stage
+    attributes:
+      label: Stage, if known
+      options:
+        - Installation or startup
+        - run
+        - plan
+        - verify
+        - Resume
+        - progress
+        - review
+        - Other or unknown
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Relevant diagnostics, if available
+      description: Include a short log/report excerpt, resource-control mode, explicit best-effort flags, and relevant limits. Review the content before sharing; full logs and repositories are not required.
+      render: text

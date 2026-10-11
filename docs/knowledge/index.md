@@ -6,6 +6,7 @@ okf_version: "0.2"
 
 - [このカタログの範囲と読み方](overview.md) - 参照コミット、証拠レベル、未追跡資料、更新方法。
 - [開発での参照・更新手順](../okf-workflow.md) - 作業開始時の確認、概念の作成基準、出典と索引の更新、完了時の検査。
+- [Discussion intake and activation](discussion-intake.md) - 報告フォーム、最小再現例、マージ後のカテゴリ設定と表示確認。
 - [AAA test structure](test-structure.md) - Python・Rustのテストで準備、対象操作、検証を読み取れる構成にする手順。
 - [Rustの固定版と最低対応版の更新](rust-toolchains.md) - 最新stableへの追従、nightly検証、更新PRと配布確認。
 - [PyPIへのwheel公開](pypi-publishing.md) - TestPyPI経由の自動公開、Trusted Publishingの登録値、証明と再実行。
