@@ -100,22 +100,29 @@ SKILLS = {
             ),
             (
                 "2. If it survives, read its original expression, replacement, "
-                "symbol, and line. Add or strengthen\n"
+                "symbol, and line.\n"
+                "   Investigate the contract first. Only for a justified test "
+                "gap, add or strengthen\n"
                 "   the smallest behavioral test that observes the violated "
-                "contract. Do not add implementation-\n"
-                "   detail mocks, unrelated tests, or production-code changes "
-                "made only to kill the mutant."
+                "contract. Do not add\n"
+                "   implementation-detail mocks, unrelated tests, or "
+                "production-code changes made\n"
+                "   only to kill the mutant."
             ),
             (
                 "3. Run the normal test command. If it fails, repair or report "
                 "that failure before verifying again."
             ),
             (
-                "4. Reverify the same candidate. A completed killed result "
-                "closes that candidate; a survivor needs\n"
-                "   another contract investigation; a baseline failure, "
-                "incomplete run, cancellation, or error\n"
-                "   stops the loop for diagnosis."
+                "4. Reverify the same candidate. Confirm that the test passes "
+                "on the original and\n"
+                "   detects the mutant for the intended behavioral reason. "
+                "A completed killed result\n"
+                "   without that reason is insufficient evidence of a useful "
+                "improvement. Investigate\n"
+                "   a remaining survivor only within the agreed budget; a "
+                "baseline failure, incomplete\n"
+                "   run, cancellation, or error stops the loop for diagnosis."
             ),
             (
                 "Use `hoimin progress --format json` only when every supplied "

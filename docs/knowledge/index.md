@@ -4,6 +4,8 @@ okf_version: "0.2"
 
 # hoimin design and audit catalog
 
+- [Product direction](product-direction.md) - Local AI-agent test improvement, score limitations, resource guards, and feature priorities.
+
 - [Agent skill distribution](../agent-skills.md) - Standard skills packages, GitHub CLI installation and release validation.
 
 - [Documentation publication](documentation-publication.md) - Searchable main site, permissions, activation and reruns.

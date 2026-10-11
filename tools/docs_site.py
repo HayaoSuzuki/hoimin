@@ -28,6 +28,7 @@ REPOSITORY = "https://github.com/HayaoSuzuki/hoimin"
 SITE_URL = "https://hayaosuzuki.github.io/hoimin/"
 PUBLIC_PAGES = (
     "README.md",
+    "docs/product-principles.md",
     "docs/usage.md",
     "docs/agent-skills.md",
     "docs/cli-reference.md",

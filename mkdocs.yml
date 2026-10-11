@@ -51,6 +51,7 @@ validation:
 nav:
   - Getting started:
       - Installation and quick start: index.md
+      - Product principles: docs/product-principles.md
       - Questions and bug reports: docs/support.md
       - License: docs/licensing.md
   - Usage and reference:

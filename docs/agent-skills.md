@@ -9,6 +9,15 @@ under `skills/`:
   candidates, preserve plan identity, and report unverified work honestly.
 
 Each skill includes its own PyPI setup reference and can be installed separately.
+
+These skills implement hoimin's primary [local agent workflow](product-principles.md):
+investigate small batches, identify specification-backed test improvements, and
+reverify within resource budgets. A survivor is not automatically a test defect;
+an agent's equivalence judgment is not a proof. Humans resolve unclear requirements
+and review changes. Do not use the skills to maximize a kill ratio or run an
+unbounded loop. Stop and diagnose resource-limit or cleanup failures rather than
+silently increasing limits.
+
 Skills are instructions for an agent; installing them does not install hoimin,
 run tests, or grant permission to execute commands. The repository's
 [Elastic License 2.0](../LICENSE) also applies to the skills.

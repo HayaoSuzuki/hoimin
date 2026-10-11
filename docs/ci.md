@@ -1,5 +1,10 @@
 # CI selection and workflow checks
 
+This page describes CI for developing and releasing hoimin itself. The product's
+primary use is [local, resource-bounded test improvement by an AI agent](product-principles.md).
+Running hoimin against a user's project in CI is optional; a universal mutation-score
+gate is not the default product goal. This distinction does not relax the checks below.
+
 CI always runs change selection and `CI result`.
 For pull requests, it computes the diff from the merge base of the base and head commits; for pushes and merge queues, it uses the event's base commit.
 It also classifies deleted paths and the old paths of renamed files. Unknown paths, failed diff retrieval, and manual runs select all checks.

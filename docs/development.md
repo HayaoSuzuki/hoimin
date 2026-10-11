@@ -5,6 +5,16 @@ packages, GitHub CLI installation, and packaging validation. Current user and
 maintainer guides use English; historical design and audit records retain their
 original language.
 
+## Product direction
+
+Read the [product principles](product-principles.md) when evaluating changes.
+The primary user is an AI agent improving tests locally under explicit resource
+budgets, with humans resolving specification questions and reviewing changes.
+Prioritize useful behavioral tests, reproducible evidence, and safe termination
+over increasing mutation scores or scaling CI. Memory and disk controls, cleanup,
+and honest incomplete results are core requirements. Existing development CI and
+validation remain required; this direction does not relax them.
+
 ## Documentation publication
 
 Edit the existing Markdown and open a PR; the Documentation workflow checks the

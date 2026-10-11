@@ -65,6 +65,12 @@ the run reports; use the reports for complete mutation results.
 
 ### Plan and verify with an agent
 
+This is hoimin's primary workflow: let an external AI agent investigate a small
+batch of survivors and propose specification-backed tests, with humans resolving
+ambiguous requirements and reviewing changes. See the [product principles](product-principles.md).
+Inspect the baseline and resource policy before starting the loop; stop on resource
+or cleanup failures instead of silently raising limits or repeating the run.
+
 Create a ranked plan before improving tests, then verify its highest-ranked retained candidates:
 
 ```console
@@ -268,6 +274,11 @@ explicit symbol validation decodes earlier during target resolution. No Python
 loader or external Python process is used for production source decoding.
 
 ## Limits and defaults
+
+Resource control is central to delegating mutation testing to an agent on a local
+machine. Choose budgets that leave room for the host and other work. A limit stop
+is a reason to diagnose and narrow the next run, not a request to disable the guard.
+The enforcement scopes and platform limitations below still apply.
 
 The defaults are:
 
@@ -629,6 +640,13 @@ hoimin run --profile focused --root . --source src -- python -m pytest -q
 ```
 
 ## Results
+
+Use results to investigate missing behavioral checks, not to maximize a mutation
+score. Equivalent or specification-permitted changes may survive without indicating
+a useful test improvement. An agent's suspected-equivalent assessment is a judgment,
+not a proof, and does not change the execution outcome. Compare scores only with
+their candidate sets and verification conditions in view; they are not a standalone
+quality guarantee or a default CI acceptance target.
 
 ### Mutation-progress reports
 
@@ -1118,6 +1136,11 @@ supersedes the opt-in rollout described in the two original design reports.
 selected local SQLite sidecar. It does not run the analyzer or tests, alter the
 plan/report, change mutation scores or progress decisions, or suppress candidates.
 
+An external agent can also use these commands to record reasoned assessments
+within its authorized task. The command does not invoke an LLM or establish
+equivalence. Humans resolve specification ambiguities and review the proposed
+tests; an agent must retain uncertainty when it lacks evidence.
+
 ```sh
 hoimin review list plan.json --store reviews.sqlite3 --format json
 hoimin review show plan.json --store reviews.sqlite3 --candidate ID
@@ -1128,7 +1151,7 @@ hoimin review record plan.json --store reviews.sqlite3 --candidate ID \
 
 Assessments are `actionable`, `not_useful`, `suspected_equivalent`, and
 `needs_investigation`. No record means `unreviewed`, distinct from `not_useful`.
-Suspected equivalence is a human judgment, not a proof. A specification-permitted
+Suspected equivalence is a reviewer judgment, not a proof. A specification-permitted
 reorder may be unhelpful, while an undetected required-field omission may identify
 a useful test improvement; neither changes the actual mutation outcome.
 
