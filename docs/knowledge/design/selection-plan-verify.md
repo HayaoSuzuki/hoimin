@@ -5,6 +5,10 @@ description: 候補発見と実行の分離、ランキング、部分集合、�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-759-staged-report
+  resource: ../../superpowers/reports/2026-10-11-issue-759-staged-verification.md
+  working_tree: untracked
+  sha256: 728fe755181db6852830289d031d48725115531d2e90b26f7784b44d890a447e
 - id: issue-695-design
   resource: ../../superpowers/reports/issue-695/design.md
   revision: 76f03acdefefdc03aff6973b0d2b49f6f3598837
@@ -415,3 +419,18 @@ previewとrunの選択metadataは `mode: sample`、`scope: sampled_candidates` �
 
 [^issue-695-design]: [Seeded verification sampling](../../superpowers/reports/issue-695/design.md)。
 [^issue-695-review]: [Issue 695: review and verification record](../../superpowers/reports/issue-695/review.md)。
+
+## Issue #759の段階的検証の調査
+
+screen/confirmの別planを作り、screenで確実にsurviveした同一descriptorの候補だけを独立したconfirm verifyへ進める運用は、既存機能で可能だった。
+保存planのcommandをverifyでoverrideしない。
+stageごとにbaseline成功、complete、実terminationを検査し、timeout・失敗・未実行を確認済みsurvivorと混同しない。
+各reportを分けて保持し、異なるcommandのscoreや反復試行を混ぜない。[^issue-759-staged-report]
+
+2026-10-11のWindows/Python 3.14の7候補fixtureでは、二段階と単独全体の最終survivor集合は一致し、生成markerの持越しもなかった。
+ただしbaseline/reset込みwall timeは5.519秒対3.919秒で、二段階の方が長かった。
+confirmに人工sleepを置いた一回の小規模測定であり、実OSSの高速化の根拠ではない。
+具体的な遅い利用projectの需要と費用低減が確認できるまで、product APIや外部manifest/DSLは追加しない。
+stage metadata、自動集約、resumeを製品機能として実装したとは扱わない。[^issue-759-staged-report]
+
+[^issue-759-staged-report]: [#759 段階的検証の実現性調査](../../superpowers/reports/2026-10-11-issue-759-staged-verification.md)。条件、運用手順、セルフレビュー各5回。

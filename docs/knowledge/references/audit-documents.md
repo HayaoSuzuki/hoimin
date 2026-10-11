@@ -5,6 +5,10 @@ description: docs/auditsとdocs/superpowers/reports内の全Markdownを追跡状
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-759-staged-report
+  resource: ../../superpowers/reports/2026-10-11-issue-759-staged-verification.md
+  working_tree: untracked
+  sha256: 728fe755181db6852830289d031d48725115531d2e90b26f7784b44d890a447e
 - id: issue-711-review-report
   resource: ../../superpowers/reports/2026-10-11-issue-711-survivor-review.md
   working_tree: untracked
@@ -1399,3 +1403,9 @@ sources:
 - [#711 survivor評価の実装と検証](../../superpowers/reports/2026-10-11-issue-711-survivor-review.md) - 独立履歴、競合・入力境界、Leanモデル証明と実装テスト。[^issue-711-review-report]
 
 [^issue-711-review-report]: [#711 survivor評価の実装と検証](../../superpowers/reports/2026-10-11-issue-711-survivor-review.md)。
+
+## Issue #759 段階的検証
+
+- [#759 段階的検証の実現性調査](../../superpowers/reports/2026-10-11-issue-759-staged-verification.md) - 既存commandでの実現性、失敗・中断の除外、費用低減なしの測定と製品機能保留。[^issue-759-staged-report]
+
+[^issue-759-staged-report]: [#759 段階的検証の実現性調査](../../superpowers/reports/2026-10-11-issue-759-staged-verification.md)。条件、運用手順、セルフレビュー各5回。
