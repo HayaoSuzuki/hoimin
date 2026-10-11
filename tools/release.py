@@ -14,26 +14,76 @@ import tarfile
 import tomllib
 import zipfile
 from pathlib import Path
+from typing import cast
+
+import deal
+from returns.result import Failure, Result, Success
 
 ROOT = Path(__file__).resolve().parents[1]
 SEMVER = r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
 PLATFORMS = ("windows-x86_64", "linux-x86_64", "macos-aarch64")
 TAG_ATTEMPTS = 5
 RELEASE_STATE_REF = "refs/heads/hoimin-release-state"
+VERSION_COMPONENT_COUNT = 3
+
+type VersionTuple = tuple[int, int, int]
 
 
-def version_tuple(version: str) -> tuple[int, ...]:
+def _stable_result_matches(
+    version: str, *, result: Result[VersionTuple, ValueError]
+) -> bool:
+    parts = result.value_or(None)
+    return parts is None or (
+        len(parts) == VERSION_COMPONENT_COUNT
+        and all(part >= 0 for part in parts)
+        and ".".join(map(str, parts)) == version
+    )
+
+
+def _version_components(major: str, minor: str, patch: str) -> VersionTuple:
+    return int(major), int(minor), int(patch)
+
+
+@deal.ensure(_stable_result_matches)
+def parse_stable_version(version: str) -> Result[VersionTuple, ValueError]:
+    # returns uses Any for a variant's absent type parameter. These immutable
+    # constructors carry only the concrete value/error below; narrow that slot
+    # explicitly for ty without suppressing checks on the surrounding code.
     match = re.fullmatch(SEMVER, version)
     if match is None:
         msg = f"expected MAJOR.MINOR.PATCH, got {version!r}"
-        raise ValueError(msg)
-    return tuple(map(int, match.groups()))
+        return cast("Result[VersionTuple, ValueError]", Failure(ValueError(msg)))
+    try:
+        parts = _version_components(match[1], match[2], match[3])
+    except ValueError as error:
+        return cast("Result[VersionTuple, ValueError]", Failure(error))
+    return cast("Result[VersionTuple, ValueError]", Success(parts))
+
+
+def _release_result_matches(version: str, *, result: Result[None, ValueError]) -> bool:
+    valid = re.fullmatch(SEMVER + r"(?:-dev\.(0|[1-9][0-9]*))?", version) is not None
+    return isinstance(result, Success) == valid and result.value_or(None) is None
+
+
+@deal.ensure(_release_result_matches)
+def check_release_version(version: str) -> Result[None, ValueError]:
+    if re.fullmatch(SEMVER + r"(?:-dev\.(0|[1-9][0-9]*))?", version) is None:
+        msg = f"invalid release version: {version!r}"
+        return cast("Result[None, ValueError]", Failure(ValueError(msg)))
+    return cast("Result[None, ValueError]", Success(None))
+
+
+def version_tuple(version: str) -> tuple[int, ...]:
+    result = parse_stable_version(version)
+    if isinstance(result, Failure):
+        raise result.failure()
+    return result.unwrap()
 
 
 def validate_version(version: str) -> None:
-    if re.fullmatch(SEMVER + r"(?:-dev\.(0|[1-9][0-9]*))?", version) is None:
-        msg = f"invalid release version: {version!r}"
-        raise ValueError(msg)
+    result = check_release_version(version)
+    if isinstance(result, Failure):
+        raise result.failure()
 
 
 def git(root: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:

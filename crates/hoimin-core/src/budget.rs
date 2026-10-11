@@ -87,6 +87,24 @@ impl BudgetLedger {
     ///
     /// Panics if the allocator's next identifier has already been used.
     ///
+    #[cfg_attr(
+        feature = "contracts",
+        contract_checks::ensures(
+            self.invariant(),
+            "budget.total.invariant"
+        )
+    )]
+    #[cfg_attr(
+        feature = "contracts",
+        contract_checks::ensures(
+            old(self.reserved(kind)).checked_add(if ret.is_ok() { amount } else { 0 })
+                == Some(self.reserved(kind)),
+            "budget.reserve.accounting"
+        )
+    )]
+    // contracts 0.6.11 rewrites explicit returns, but not the `?` operator.
+    // Keep the allocator error inside the postcondition's generated return block.
+    #[allow(clippy::question_mark)]
     pub fn reserve(
         &mut self,
         kind: BudgetKind,
@@ -95,7 +113,6 @@ impl BudgetLedger {
         let reserved = self.reserved(kind);
         let available = self.limit(kind).saturating_sub(reserved);
         if amount > available {
-            self.check_invariant();
             return Err(LimitReached {
                 kind,
                 requested: amount,
@@ -106,7 +123,6 @@ impl BudgetLedger {
         let id = match self.allocate_reservation_id() {
             Ok(id) => id,
             Err(error) => {
-                self.check_invariant();
                 return Err(error);
             }
         };
@@ -115,7 +131,6 @@ impl BudgetLedger {
             replaced.is_none(),
             "allocated reservation identifier must be unique"
         );
-        self.check_invariant();
         Ok(id)
     }
 
@@ -134,13 +149,15 @@ impl BudgetLedger {
     ///
     /// Returns [`BudgetError::AlreadyReleased`] for a reservation released before, or [`BudgetError::UnknownReservation`] for an unknown ID.
     ///
+    #[cfg_attr(
+        feature = "contracts",
+        contract_checks::ensures(self.invariant(), "budget.total.invariant")
+    )]
     pub fn release(&mut self, id: ReservationId) -> Result<(), BudgetError> {
         if self.reservations.remove(&id).is_some() {
             self.released.insert(id);
-            self.check_invariant();
             return Ok(());
         }
-        self.check_invariant();
         if self.released.contains(&id) {
             Err(BudgetError::AlreadyReleased(id))
         } else {
@@ -168,12 +185,6 @@ impl BudgetLedger {
             BudgetKind::Copy => self.limits.copy,
             BudgetKind::Processes => self.limits.processes,
         }
-    }
-
-    // The contract macro may compile out while this helper retains its uniform invariant API.
-    #[allow(clippy::unused_self)]
-    fn check_invariant(&self) {
-        crate::contract_ensure!("budget.total.invariant", self.invariant(), self.limits);
     }
 }
 
@@ -210,6 +221,40 @@ mod tests {
             copy: 8,
             processes: 8,
         })
+    }
+
+    #[cfg(feature = "contracts")]
+    #[test]
+    #[should_panic(expected = "budget.total.invariant")]
+    fn reserve_early_error_checks_corrupt_ledger() {
+        let mut ledger = ledger();
+        let id = ledger.reserve(BudgetKind::Copy, 8).unwrap();
+        ledger.released.insert(id);
+
+        let _ = ledger.reserve(BudgetKind::Copy, 1);
+    }
+
+    #[cfg(feature = "contracts")]
+    #[test]
+    #[should_panic(expected = "budget.total.invariant")]
+    fn release_error_checks_corrupt_ledger() {
+        let mut ledger = ledger();
+        let id = ledger.reserve(BudgetKind::Copy, 1).unwrap();
+        ledger.released.insert(id);
+
+        let _ = ledger.release(ReservationId(99));
+    }
+
+    #[cfg(feature = "contracts")]
+    #[test]
+    #[should_panic(expected = "budget.total.invariant")]
+    fn allocator_error_checks_corrupt_ledger() {
+        let mut ledger = ledger();
+        let id = ledger.reserve(BudgetKind::Copy, 1).unwrap();
+        ledger.released.insert(id);
+        ledger.next_id = None;
+
+        let _ = ledger.reserve(BudgetKind::Copy, 1);
     }
 
     #[test]

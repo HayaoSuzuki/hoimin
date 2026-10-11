@@ -27,7 +27,7 @@ are no git-source exceptions. Local paths are reviewed in repository diffs;
 the source check does not prove their origin or safety.
 
 The repository's Elastic-2.0 license is allowed only for `hoimin-core` and
-`hoimin-cli` in the 0.3 series and the private `hoimin-fuzz` 0.0.0 harness. The
+`hoimin-cli` in the 0.4 series and the private `hoimin-fuzz` 0.0.0 harness. The
 harness declares the license that already governs repository code. This does
 not allow unrelated ELv2 dependencies. `libfuzzer-sys` 0.4.13 has a scoped NCSA
 allowance for its bundled libFuzzer. Update these bounded exceptions explicitly
@@ -58,3 +58,9 @@ manual inventory does not certify the contents of build scripts, proc macros or
 dependencies. A dependency version change still needs upstream review even when
 the list of script names is unchanged. Renovate updates use the same checks and
 review procedure; SBOM records remain separate release evidence.
+
+`contracts` 0.6.11 has an exact-version MPL-2.0 exception for optional budget
+postconditions and scalar snapshots. Its proc-macro source and return rewriting
+were reviewed before adoption; it has no custom build script. This exception
+does not admit other MPL dependencies. See [licensing](licensing.md) for the
+preserved notice and custom-build distribution guidance.

@@ -7,14 +7,14 @@ catalog_revision: 79b6bde29b05e9904c8efff59e02d0c45377d7f7
 sources:
 - id: policy
   resource: ../dependency-policy.md
-  revision: 79b6bde29b05e9904c8efff59e02d0c45377d7f7
-  working_tree: untracked
-  sha256: b5cc6a71b5f60ff821dabede82729651f391f5b2fed823acef5da68b5099677f
+  revision: e9acbf4e5da6d749a789405522feab6b6ac8ecc0
+  working_tree: clean
+  sha256: 00f4a2fdc1edf081158f4e35ed39ded9a357f36bf76a7e7d605c63e547735761
 - id: config
   resource: ../../deny.toml
-  revision: 79b6bde29b05e9904c8efff59e02d0c45377d7f7
-  working_tree: untracked
-  sha256: f3558abe6b2875940b85f606023443c7bb0ee4f5e33e859342f9b6081841d789
+  revision: e9acbf4e5da6d749a789405522feab6b6ac8ecc0
+  working_tree: clean
+  sha256: 25b6404c2b676490b995f872907d7aeecab889b26cc4a6dcf202fbf6cca74e69
 - id: workflow
   resource: ../../.github/workflows/dependency-audit.yml
   revision: 79b6bde29b05e9904c8efff59e02d0c45377d7f7
@@ -45,3 +45,5 @@ Maintain vulnerability audits and SBOMs as separate checks and evidence.[^policy
 [^policy]: [Dependency policy](../dependency-policy.md).
 [^config]: [Allowlist configuration](../../deny.toml).
 [^workflow]: [Dependency audit workflow](../../.github/workflows/dependency-audit.yml).
+
+The optional `contracts` 0.6.11 proc macro has an exact-version MPL-2.0 exception; the global allow-list remains unchanged. See [typed results and contracts](typed-results-and-contracts.md).[^policy][^config]

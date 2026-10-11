@@ -1,19 +1,20 @@
 ---
 type: Contract
 title: GitHub Release build provenance
-description: Artifact/attestation identity, source identity, publication gates and hosted evidence.
+description: Artifact/attestation identity, source identity, publication gates and
+  hosted evidence.
 status: draft
 sources:
 - id: workflow
   resource: ../../.github/workflows/release.yml
-  revision: fd416a6965a5732d75fa5519a5932e4a78a9e18a
-  working_tree: modified
-  sha256: 41d0e214da7f797d753143ab8ea6c7d9c36e3adad8b2c701281d543fc131c580
+  revision: e9acbf4e5da6d749a789405522feab6b6ac8ecc0
+  working_tree: clean
+  sha256: eb7bf9a5256861b6ef699965be89c0b3d79f33acb7fdf3f62228acec622a1489
 - id: validator
   resource: ../../tools/release.py
-  revision: a6965910bbc745e74aeb539628b3e2dc66c2a9d3
-  working_tree: modified
-  sha256: 6799cf1bea1690e390e7bfa6b184ce0306105c655c95e8873b28c14b670c2184
+  revision: e9acbf4e5da6d749a789405522feab6b6ac8ecc0
+  working_tree: clean
+  sha256: 2a5ff1d47bdb4f0147db9458d0bccc559d0f7b582d7f78f9542cf1d9d62fec82
 - id: guide
   resource: ../releases.md
   revision: fd416a6965a5732d75fa5519a5932e4a78a9e18a
@@ -69,3 +70,5 @@ Recheck when changing triggers, permissions, official Actions, GH CLI, artifact 
 [^guide]: [Consumer verification and reruns](../releases.md#github-build-provenance).
 [^review]: [Issue #750 verification record](../reviews/2026-10-10-issue-750-release-provenance.md).
 [^hosted]: [v0.3.4 certificate attributes, published digests and rejection results](../reviews/2026-10-10-issue-750-hosted-verification.json).
+
+Release bootstrap installs locked internal-tooling before importing the typed version helpers; provenance-only setup includes the same group. See [typed results and contracts](typed-results-and-contracts.md).[^validator][^workflow]

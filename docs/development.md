@@ -1211,6 +1211,42 @@ status and labels; do not replace the job with a hosted or best-effort runner.
 
 ## Rust test workflow
 
+### Internal Python results and Rust contracts
+
+Install the locked maintenance dependencies before invoking release helpers:
+
+```console
+uv sync --frozen --only-group internal-tooling --no-install-project
+uv run --frozen --no-sync python tools/release.py --help
+```
+
+The normal dev and provenance groups include this group. CI selection remains
+standard-library-only. `tools.release.parse_stable_version` returns
+`Result[VersionTuple, ValueError]`, and `check_release_version` returns
+`Result[None, ValueError]`. Expected input errors are `Failure` values. Existing
+`version_tuple` and `validate_version` adapters raise the contained `ValueError`
+for callers which use exceptions. deal checks relationships on these pure
+transformations; it does not replace input validation or wrap publication I/O.
+An incorrect successful result is a programming error, not an invalid-input error.
+
+Rust's optional `contracts` feature enables `contracts` 0.6.11, imported as
+`contract_checks`. Budget reserve/release postconditions check every explicit
+normal return, including errors; reserve also compares the old scalar total
+with the new total. Default builds do not compile this dependency or evaluate
+snapshots/conditions. Use the contract test commands below for feature builds.
+Keep allocator uniqueness assertions and ordinary validation unconditional.
+
+The upstream macro rewrites `return`, but does not intercept `?`: reserve keeps
+an explicit allocator-error return so postconditions cannot be bypassed. Do not
+replace it with `?` without revalidating the generated code. The internal budget
+panic format now identifies the function, condition and stable
+`budget.total.invariant` or `budget.reserve.accounting` ID, rather than the old
+custom context payload. Other custom checks retain their existing timing and
+diagnostic payloads; the [review record](reviews/2026-10-12-typed-results-and-contracts.md)
+maps these sites. No global contract-disable feature or deal toggle is used.
+
+See [licensing](licensing.md) for the version-scoped MPL allowance and notice.
+
 Use the normal Rust tests, contract tests, and Lean oracle checks to validate
 changes to the Rust implementation. Select a package, integration test, or test
 name when investigating one behavior, then run the workspace checks before

@@ -31,6 +31,7 @@ manifest-path = "crates/hoimin-cli/Cargo.toml"
 [dependency-groups]
 dev = [
     {include-group = "docs"},
+    {include-group = "internal-tooling"},
     {include-group = "provenance"},
     "hypothesis>=6.93,<7",
     "jsonschema==4.25.1",
@@ -46,7 +47,12 @@ dev = [
     "ty>=0.0.80",
 ]
 provenance = [
+    {include-group = "internal-tooling"},
     "pypi-attestations==0.0.30",
+]
+internal-tooling = [
+    "returns==0.29.0",
+    "deal==4.24.6",
 ]
 fuzz = [
     "hypothesis>=6.93,<7",

@@ -38,6 +38,14 @@ name = "libfuzzer-sys"
 version = "=0.4.13"
 allow = ["NCSA"]
 
+# Optional proc macro for boundary postconditions and scalar old() snapshots.
+# Reviewed published source: https://docs.rs/crate/contracts/0.6.11/source/LICENSE
+# Re-review source, generated code, notices and this exact allowance on upgrades.
+[[licenses.exceptions]]
+name = "contracts"
+version = "=0.6.11"
+allow = ["MPL-2.0"]
+
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
