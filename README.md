@@ -3,6 +3,10 @@
 hoimin is a mutation-testing CLI for Python. It makes small changes to copies of
 your source and runs your tests to find behavior they do not check.
 
+Browse the [searchable main documentation](https://hayaosuzuki.github.io/hoimin/)
+after its initial Pages activation. The existing references below remain available
+on GitHub. Maintainers can follow the [publication guide](docs/documentation.md).
+
 ## Install
 
 Install from [PyPI](https://pypi.org/project/hoimin/) with
@@ -32,7 +36,10 @@ on macOS and Linux without delegated cgroup limits; see the
 [resource limits](https://github.com/HayaoSuzuki/hoimin/blob/main/docs/usage.md#limits-and-defaults).
 
 See the [usage reference](https://github.com/HayaoSuzuki/hoimin/blob/main/docs/usage.md)
-for selectors, plan/verify workflows, reports, and configuration, or run `hoimin --help`.
+for selectors and configuration, the
+[plan/verify workflow](https://github.com/HayaoSuzuki/hoimin/blob/main/docs/usage.md#plan-and-verify-with-an-agent),
+and [results](https://github.com/HayaoSuzuki/hoimin/blob/main/docs/usage.md#results),
+or run `hoimin --help`.
 For questions and bug reports, see the [reporting guide](https://github.com/HayaoSuzuki/hoimin/blob/main/docs/support.md).
 External Issues and pull requests are not accepted.
 For maintainer development, see [development](https://github.com/HayaoSuzuki/hoimin/blob/main/docs/development.md)

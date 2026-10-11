@@ -1,6 +1,6 @@
 # Automatic documentation publication implementation plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Publish searchable main documentation when a documentation PR is merged.
 
@@ -54,27 +54,27 @@ modify `pyproject.toml`, `uv.lock`, `.gitignore`.
   document and use `uv sync --frozen --only-group docs --no-install-project`
   followed by `uv run --frozen --no-sync python -m tools.docs_site --output site`.
 
-- [ ] Inspect MkDocs's installed validation behavior and pin its stable version
+- [x] Inspect MkDocs's installed validation behavior and pin its stable version
   in a separate `docs` dependency group. Resolve the lock with uv.
-- [ ] Write focused AAA tests before custom source-preparation logic: existing
+- [x] Write focused AAA tests before custom source-preparation logic: existing
   excluded source becomes a revision-pinned repository link; a missing source
   raises an error; published-page links stay local; literal code is preserved.
   Use separate tests for errors, without conditional expected-result logic.
-- [ ] Run the focused tests and confirm they fail because the helper is absent.
-- [ ] Implement source preparation with the smallest supported Markdown-aware
+- [x] Run the focused tests and confirm they fail because the helper is absent.
+- [x] Implement source preparation with the smallest supported Markdown-aware
   mechanism. Inspect actual document link forms first; avoid a new generic
   Markdown parser or command DSL. Resolve relative paths against original source
   locations and verify containment/existence before making repository links.
-- [ ] Configure built-in MkDocs search and navigation for every allowlisted page.
+- [x] Configure built-in MkDocs search and navigation for every allowlisted page.
   Enable `validation.links.not_found`, `unrecognized_links`, `absolute_links`
   and `anchors` diagnostics as appropriate to enforce local link correctness
   under `--strict`. Enable footnotes/fenced-code/table extensions used by sources.
-- [ ] Prefer native MkDocs validation. Add an HTML link checker only if negative
+- [x] Prefer native MkDocs validation. Add an HTML link checker only if negative
   build probes establish a concrete missing guarantee; use stdlib HTMLParser,
   URL parsing and a bounded local-file resolver with focused tests for that gap.
-- [ ] Run focused tests, strict site build, Ruff and ty; inspect the search index
+- [x] Run focused tests, strict site build, Ruff and ty; inspect the search index
   for exclusion of research pages and the HTML for correct revision links.
-- [ ] Commit the build helper, configuration, dependencies and tests together.
+- [x] Commit the build helper, configuration, dependencies and tests together.
 
 ## Task 2: Validate PRs and publish main automatically
 
@@ -85,25 +85,25 @@ trigger Rust, formal or distribution jobs.
 **Interfaces:** consume Task 1's single build command and `site/` output;
 produce a review artifact for PRs and a Pages artifact for eligible main runs.
 
-- [ ] Read the existing workflow lint and CI path classification contracts.
+- [x] Read the existing workflow lint and CI path classification contracts.
   Resolve official Pages/upload action SHAs against upstream releases.
-- [ ] Define PR and main push path filters covering published Markdown, helper,
+- [x] Define PR and main push path filters covering published Markdown, helper,
   config, dependency files and workflow. Include merge-group validation and
   manual dispatch. Do not accept an arbitrary ref/command input.
-- [ ] Build on Ubuntu with Python 3.14, frozen docs dependencies and read-only
+- [x] Build on Ubuntu with Python 3.14, frozen docs dependencies and read-only
   permissions. Checkout with credentials disabled. Upload `site/` for PR review.
-- [ ] Add deployment gated on a successful build, the canonical repository,
+- [x] Add deployment gated on a successful build, the canonical repository,
   main ref, and push/manual event. Scope write/OIDC permissions to deployment
   and use the `github-pages` environment. Upload Pages artifacts only on trusted
   eligible runs. Keep PR artifacts out of the deployment path.
-- [ ] Serialize the whole trusted publication pipeline, cancelling obsolete
+- [x] Serialize the whole trusted publication pipeline, cancelling obsolete
   runs so an older build cannot queue a later deployment. Give PR runs distinct
   concurrency groups. Set finite job timeouts.
-- [ ] If CI selection needs narrow docs-only exceptions, add behavioral tests
+- [x] If CI selection needs narrow docs-only exceptions, add behavioral tests
   before those exceptions; preserve conservative fallback for unknown paths.
-- [ ] Run strict workflow lint and relevant existing CI-selection tests. Review
+- [x] Run strict workflow lint and relevant existing CI-selection tests. Review
   fork PR, merge group, main push and non-main manual event conditions explicitly.
-- [ ] Commit the workflow and any necessary CI classification changes.
+- [x] Commit the workflow and any necessary CI classification changes.
 
 ## Task 3: Explain operation and verify failure behavior
 
@@ -116,23 +116,25 @@ modify `README.md`, `docs/development.md`, `docs/knowledge/index.md`,
 **Interfaces:** document Task 1's build command and Task 2's deployment triggers;
 expose the site URL while distinguishing pending activation from a live site.
 
-- [ ] Write the short regular procedure: edit Markdown, open PR, review checks
+- [x] Write the short regular procedure: edit Markdown, open PR, review checks
   and artifact, merge. Document optional local build and manual-main retry.
-- [ ] Document one-time Pages Source=GitHub Actions setup after merge, expected
+- [x] Document one-time Pages Source=GitHub Actions setup after merge, expected
   `github-pages` environment behavior, commit identity and main-only scope.
-- [ ] Link the site and publication guide from README/development; retain GitHub
+- [x] Link the site and publication guide from README/development; retain GitHub
   reference URLs. Add the reusable OKF Playbook, source provenance and indexes.
   Include the design in the design-document catalog with source metadata.
-- [ ] Create disposable copies with one broken page link, then one broken anchor;
+- [x] Create disposable copies with one broken page link, then one broken anchor;
   verify each build fails. Restore/discard the copies and obtain a clean build.
   Never commit intentionally broken content or deploy experimental artifacts.
-- [ ] Inspect representative landing, usage/resource/plan sections and search
+- [x] Inspect representative landing, usage/resource/plan sections and search
   in a local browser. Do not execute the displayed mutation commands.
-- [ ] Record five implementation and five verification self-reviews with actual
+- [x] Record five implementation and five verification self-reviews with actual
   command results, plus outstanding post-merge activation checks. Validate
   OKF provenance/links, `git diff --check`, strict build and all affected linters.
-- [ ] Commit the guide and review evidence, push the work branch and create/attach
-  the PR. Explain deferred versioned documentation and post-merge activation.
+- [x] Commit the guide and local review evidence on the work branch.
+- [ ] After release fix PR #798 merges, include latest main, repeat affected checks,
+  push the work branch and create/attach the documentation PR. Explain deferred
+  versioned documentation and post-merge activation.
 - [ ] After the maintainer merges, enable Pages, verify successful deployment and
   the live site's installation/plan/results navigation; only then close #749.
 

@@ -12,6 +12,10 @@ check builds the site and checks internal links and anchors. Download the
 after checks pass; the main workflow publishes automatically. No local deploy
 command, separate content repository or publishing token is required.
 
+The lightweight build runs on every PR, merge group and main push. This also
+detects removal of source files referenced by the documentation and keeps the
+published source commit current. PRs cannot publish, including fork PRs.
+
 ## Local build
 
 Use Python 3.14 and uv from the repository root:
@@ -24,7 +28,8 @@ uv run --frozen --no-sync python -m tools.docs_site --output site
 The helper uses a temporary source tree and builds with `mkdocs build --strict`
 equivalent settings. It replaces the dedicated `site/` output on each build;
 never store hand-written files there. Serve the output with any local static
-server to preview it. Existing source Markdown is not rewritten.
+server to preview it, for example `python -m http.server --directory site 8000`
+and open <http://localhost:8000/>. Existing source Markdown is not rewritten.
 
 `tools/docs_site.py` defines the publication allowlist and `mkdocs.yml` defines
 navigation. Update both when adding a page. Research, audit and knowledge pages

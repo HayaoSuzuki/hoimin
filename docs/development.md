@@ -1,5 +1,13 @@
 # Development
 
+## Documentation publication
+
+Edit the existing Markdown and open a PR; the Documentation workflow checks the
+site, and a main merge publishes it after the one-time Pages activation.
+See the [publication guide](documentation.md) for the local build, review artifact
+and manual retry. The [searchable site](https://hayaosuzuki.github.io/hoimin/)
+tracks main and displays its source commit on every page.
+
 ## Knowledge workflow
 
 Start development work with [the OKF catalog](knowledge/index.md). Read the

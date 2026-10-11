@@ -4,6 +4,8 @@ okf_version: "0.2"
 
 # hoimin 設計・監査カタログ
 
+- [ドキュメント公開](documentation-publication.md) - mainの検索可能なサイト、公開権限、初回設定と再実行。
+
 - [このカタログの範囲と読み方](overview.md) - 参照コミット、証拠レベル、未追跡資料、更新方法。
 - [開発での参照・更新手順](../okf-workflow.md) - 作業開始時の確認、概念の作成基準、出典と索引の更新、完了時の検査。
 - [Discussion intake and activation](discussion-intake.md) - 報告フォーム、最小再現例、マージ後のカテゴリ設定と表示確認。
