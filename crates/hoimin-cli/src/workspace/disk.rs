@@ -1989,7 +1989,7 @@ mod tests {
         std::fs::write(root.join("data"), b"12345").unwrap();
         std::fs::hard_link(root.join("data"), root.join("alias")).unwrap();
         std::fs::write(outside.join("large"), vec![0_u8; 1_024]).unwrap();
-        symlink(&outside, root.join("escape")).unwrap();
+        std::os::unix::fs::symlink(&outside, root.join("escape")).unwrap();
 
         let reading = DiskMeter::new(vec![capability(&root)], FixedSpace(99))
             .measure()

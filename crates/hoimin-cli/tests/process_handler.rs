@@ -284,9 +284,7 @@ mod cgroup_v2 {
             Utf8Path::from_path(output.path()).unwrap(),
             512 * 1024 * 1024,
             16,
-        )
-        .into_iter()
-        {
+        ) {
             let mut process_limits = limits(Duration::from_secs(5), 64);
             process_limits.max_memory_bytes = 160 * 1024 * 1024;
 
@@ -312,7 +310,7 @@ mod cgroup_v2 {
             &hard_run_limits(requested, 16),
             OsString::from(env!("CARGO_BIN_EXE_hoimin")),
         );
-        for backend in decimal_hard_backend(capabilities).into_iter() {
+        for backend in decimal_hard_backend(capabilities) {
             // SAFETY: `_SC_PAGESIZE` is a side-effect-free process configuration query.
             let page_size = u64::try_from(unsafe { libc::sysconf(libc::_SC_PAGESIZE) }).unwrap();
             let expected = requested - requested % page_size;
@@ -340,7 +338,7 @@ mod cgroup_v2 {
             &hard_run_limits(512 * 1024 * 1024, 16),
             OsString::from(env!("CARGO_BIN_EXE_hoimin")),
         );
-        for backend in available_hard_backend(capabilities).into_iter() {
+        for backend in available_hard_backend(capabilities) {
             let run_path = backend.run_cgroup_path_for_tests();
             let handler =
                 ProcessHandler::new(ResourceBackend::LinuxHard(backend), output_dir.into());
@@ -371,9 +369,7 @@ mod cgroup_v2 {
             Utf8Path::from_path(output.path()).unwrap(),
             512 * 1024 * 1024,
             16,
-        )
-        .into_iter()
-        {
+        ) {
             let raw = vec![b'n', b'o', b'n', b'-', 0xff, b'-', b'u', b't', b'f', b'8'];
             let request = RunProcess {
                 id: EffectId(201),
@@ -406,7 +402,7 @@ mod cgroup_v2 {
     async fn timeout_kills_a_setsid_descendant_without_killing_a_sibling_root() {
         let output = tempfile::tempdir().unwrap();
         let output_dir = Utf8Path::from_path(output.path()).unwrap();
-        for handler in hard_handler(output_dir, 512 * 1024 * 1024, 16).into_iter() {
+        for handler in hard_handler(output_dir, 512 * 1024 * 1024, 16) {
             let handler = Arc::new(handler);
             let pid_file = output_dir.join("setsid-child.pid");
             let guard = FixtureChildGuard::new(pid_file.clone());
@@ -449,7 +445,7 @@ mod cgroup_v2 {
     async fn abnormal_runtime_root_is_classified_and_cleaned_within_six_seconds() {
         let output = tempfile::tempdir().unwrap();
         let output_dir = Utf8Path::from_path(output.path()).unwrap();
-        for handler in hard_handler(output_dir, 512 * 1024 * 1024, 16).into_iter() {
+        for handler in hard_handler(output_dir, 512 * 1024 * 1024, 16) {
             let ready_file = output_dir.join("aborting-root.ready");
             let code = "import os,pathlib,signal,sys; ready=pathlib.Path(sys.argv[1]); pending=ready.with_suffix('.pending'); pending.write_text(str(os.getpid())); os.replace(pending,ready); os.kill(os.getpid(),signal.SIGABRT)";
             let started = Instant::now();
@@ -521,7 +517,7 @@ mod cgroup_v2 {
             &hard_run_limits(512 * 1024 * 1024, 16),
             OsString::from(env!("CARGO_BIN_EXE_hoimin")),
         );
-        for backend in available_hard_backend(capabilities).into_iter() {
+        for backend in available_hard_backend(capabilities) {
             let run_path = backend.run_cgroup_path_for_tests();
             let handler =
                 ProcessHandler::new(ResourceBackend::LinuxHard(backend), output_dir.into());
@@ -585,9 +581,7 @@ mod cgroup_v2 {
             Utf8Path::from_path(memory_output.path()).unwrap(),
             160 * 1024 * 1024,
             16,
-        )
-        .into_iter()
-        {
+        ) {
             let memory_handler = Arc::new(memory_handler);
             let code = "import time; x=bytearray(96*1024*1024); x[::4096]=b'x'*(len(x[::4096])); time.sleep(2)";
             let (first, second) = tokio::join!(
@@ -605,9 +599,7 @@ mod cgroup_v2 {
                 Utf8Path::from_path(process_output.path()).unwrap(),
                 512 * 1024 * 1024,
                 3,
-            )
-            .into_iter()
-            {
+            ) {
                 let process_handler = Arc::new(process_handler);
                 let code = "import subprocess,sys,time; child=subprocess.Popen([sys.executable,'-c','import time; time.sleep(2)']); time.sleep(1); child.wait()";
                 let (first, second) = tokio::join!(
