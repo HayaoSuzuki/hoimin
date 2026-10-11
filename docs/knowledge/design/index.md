@@ -9,6 +9,8 @@
 
 - [fingerprint入力globの共有走査](fingerprint-inputs.md) - 複数globの一回走査、入力順エラー、未選択ファイルの境界を整理する。
 
+- [survivorの評価と実行結果の分離](survivor-review.md) - 候補の同定、評価履歴、stale判定の実装前設計。
+
 # 関連
 
 - [カタログの入口](../index.md) - 全体の読み順。

@@ -5,6 +5,10 @@ description: docs/superpowers/specs内の全Markdownを先頭見出しと出典�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-711-survivor-review-design
+  resource: ../../superpowers/specs/2026-10-11-issue-711-survivor-review-design.md
+  working_tree: untracked
+  sha256: de751d275bf32380e52515eee21a1ae364c35c39f0ee984828a7b87d3f67886d
 - id: issue-790-proofreadtools-design
   resource: ../../superpowers/specs/2026-10-11-issue-790-proofreadtools-design.md
   revision: 28fd9bf
@@ -1643,3 +1647,11 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 - [proofreadtoolsを使う変異候補・差分入力探索の評価設計](../../superpowers/specs/2026-10-11-issue-790-proofreadtools-design.md) - 固定proofreadtoolsの設計と実測。[^issue-790-proofreadtools-design]
 
 [^issue-790-proofreadtools-design]: [proofreadtoolsを使う変異候補・差分入力探索の評価設計](../../superpowers/specs/2026-10-11-issue-790-proofreadtools-design.md)。
+
+## Issue #711 survivor評価
+
+| 原文の先頭見出し | 原文 |
+| --- | --- |
+| #711 survivorの評価と履歴の保存設計 | [設計](../../superpowers/specs/2026-10-11-issue-711-survivor-review-design.md) [^issue-711-survivor-review-design] |
+
+[^issue-711-survivor-review-design]: [設計原文](../../superpowers/specs/2026-10-11-issue-711-survivor-review-design.md)。実装前の設計。
