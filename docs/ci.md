@@ -91,3 +91,10 @@ SBOM実装変更の1例であり、文書変更の平均や削減率ではない
 hosted Runnerでの導入後実測はローカル検証から推定しない。
 
 設計と各段階の5回のセルフレビューは[検証記録](reviews/2026-10-10-ci-selection.md)に記載する。
+
+## Rustテストrunnerの評価
+
+2026-10-11に既存Linux Rust jobでcargo-nextest 0.9.148を2並列で評価した。
+テスト一覧は一致したが、workspaceと反復したtimeout系の実行時間に改善を確認できず、今回は既存のcargo testを維持する。
+測定条件、資源使用量、ignoreと実行内skip、再現方法は[評価結果](performance/nextest/2026-10-11-linux.md)を参照する。
+nightly shuffle、contracts、OS固有の検証も維持する。

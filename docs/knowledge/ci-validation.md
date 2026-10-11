@@ -3,13 +3,13 @@ type: Contract
 title: CIの選択と必須チェック
 description: 保守的な差分分類、結果集約、workflow検査の運用条件。
 status: draft
-catalog_revision: 79b6bde29b05e9904c8efff59e02d0c45377d7f7
+catalog_revision: 00893465e0328204453e5008dc3884035b85c7bd
 sources:
 - id: guide
   resource: ../ci.md
-  revision: 1e60e54813dad14f124635496ed773b299bb4b90
+  revision: 00893465e0328204453e5008dc3884035b85c7bd
   working_tree: modified
-  sha256: a3bff387f9c0b52bee9109ea4c925d48dd06646ed0a3bf1fbe2929958b50723b
+  sha256: 68c2906e16a37495208b754a8a6798dcfc2c5b143aeb96a541704fac6206c4c5
 - id: planner
   resource: ../../tools/ci_selection.py
   revision: 1e60e54813dad14f124635496ed773b299bb4b90
@@ -56,6 +56,9 @@ PyPIへの公開は、GitHub Releaseの公開成功後に任意の有効化変�
 ローカルの再現コマンド、各例外、測定方法とツールの限界は運用ガイドを正本とする。[^guide]
 
 # 未確認事項と再確認条件
+
+cargo-nextestの初回Linux評価は一覧一致と実行成功を確認したが、今回の2並列設定では時間短縮を確認できず、cargo testを維持する。
+実行内のcapability skipとignoreを区別した測定条件、資源使用量、再評価の範囲は[評価結果](../performance/nextest/2026-10-11-linux.md)を参照する。[^guide]
 
 hostedで全検証CIと3platform previewの成功・時間、PR再pushによる旧CIのキャンセルを確認した。
 実測の対象はworkflow・配布入力を含むPRに限り、文書のみの削減率やmerge queue実行は未確認である。[^guide]
