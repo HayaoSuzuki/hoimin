@@ -16,3 +16,5 @@
 - [暗黙例外と finally](implicit-finally.md) - typing 由来の合流、Lean 小モデル、公開 plan の対応範囲。
 
 - [2026年9月の解析監査と回帰検証への反映](analysis-2026-09.md) - #545〜#549の原証拠、修正PR、正式なテストの対応。
+
+- [Kaniによる実Rust契約検証の実現性](../../superpowers/reports/2026-10-11-issue-778-kani.md) - 1件の予算契約を資源上限付きで試し、timeout/OOMにより導入を保留。

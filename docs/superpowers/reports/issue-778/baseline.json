@@ -1,0 +1,143 @@
+{
+  "metadata": {
+    "version": "1.0",
+    "timestamp": "2026-10-11T09:41:40.143491881Z",
+    "kani_version": "0.68.0",
+    "target": "x86_64-unknown-linux-gnu",
+    "build_mode": "release"
+  },
+  "project": {
+    "crate_name": [
+      "hoimin_core",
+      "budget",
+      "budget_projection",
+      "candidate_policy",
+      "config_json",
+      "contracts",
+      "disk_policy",
+      "kani_workspace_copy",
+      "lean_budget_oracle",
+      "lean_disk_guard_oracle",
+      "lean_mutation_score_exit_policy_oracle",
+      "lean_oracle",
+      "lean_process_output_oracle",
+      "lean_report_sequence_oracle",
+      "lean_timeout_limit_oracle",
+      "lean_top_budget_projection_oracle",
+      "line_selection_index",
+      "machine",
+      "operator_selection",
+      "plan_config",
+      "report_policy",
+      "report_resume",
+      "resume_policy",
+      "source_encoding",
+      "source_encoding_properties",
+      "target_policy",
+      "telemetry",
+      "workspace_effects"
+    ],
+    "workspace_root": "/var/tmp/hoimin-kani-778/work",
+    "output_dir": "/var/tmp/hoimin-kani-778/work/target/kani/x86_64-unknown-linux-gnu/debug/build/hoimin-core/e1e4b57e113431cb/out"
+  },
+  "tools": {
+    "kani": "0.68.0",
+    "rustc": "rustc 1.100.0-nightly (8925ea358 2026-08-20)",
+    "cbmc": "6.11.0 (cbmc-6.11.0)",
+    "goto_cc": "gcc (goto-cc 6.11.0 (cbmc-6.11.0)) 13.3.0",
+    "goto_instrument": "6.11.0 (cbmc-6.11.0)",
+    "solvers": [
+      {
+        "name": "cadical",
+        "version": null
+      }
+    ]
+  },
+  "harness_metadata": [
+    {
+      "pretty_name": "workspace_copy_contract",
+      "mangled_name": "_RNvCsiHjwQgcELc2_19kani_workspace_copy23workspace_copy_contract",
+      "crate_name": "kani_workspace_copy",
+      "source": {
+        "file": "crates/hoimin-core/tests/kani_workspace_copy.rs",
+        "start_line": 8,
+        "end_line": 42
+      },
+      "goto_file": "/var/tmp/hoimin-kani-778/work/target/kani/x86_64-unknown-linux-gnu/debug/build/hoimin-core/994a823e0e95503b/out/kani_workspace_copy-994a823e0e95503b__RNvCsiHjwQgcELc2_19kani_workspace_copy23workspace_copy_contract.symtab.out",
+      "attributes": {
+        "kind": "Proof",
+        "should_panic": false
+      },
+      "contract": {
+        "contracted_function_name": null,
+        "recursion_tracker": null
+      },
+      "has_loop_contracts": false,
+      "is_automatically_generated": false,
+      "is_bounded": false,
+      "is_ctor_based": false
+    }
+  ],
+  "error_details": [
+    {
+      "harness_id": "workspace_copy_contract",
+      "has_errors": true,
+      "error_type": "unknown_failure",
+      "failed_properties_type": "None",
+      "exit_status": "timeout"
+    }
+  ],
+  "property_details": [
+    {
+      "harness_id": "workspace_copy_contract",
+      "property_details": {
+        "total_properties": null,
+        "passed": null,
+        "failed": null,
+        "unreachable": null,
+        "undetermined": null,
+        "solver_error": null,
+        "satisfied": null,
+        "unsatisfiable": null,
+        "covered": null,
+        "uncovered": null,
+        "error": "Could not extract property details due to verification failure"
+      }
+    }
+  ],
+  "cbmc": [
+    {
+      "harness_id": "workspace_copy_contract",
+      "cbmc_metadata": {
+        "version": "6.11.0",
+        "os_info": "x86_64 linux unix"
+      },
+      "configuration": {
+        "object_bits": 16,
+        "solver": "cadical"
+      },
+      "cbmc_stats": null
+    }
+  ],
+  "verification_results": {
+    "summary": {
+      "total_harnesses": 1,
+      "executed": 1,
+      "status": "completed",
+      "successful": 0,
+      "failed": 1,
+      "duration_ms": 60042
+    },
+    "results": [
+      {
+        "harness_id": "workspace_copy_contract",
+        "status": "Failure",
+        "duration_ms": 60042,
+        "checks": []
+      }
+    ]
+  },
+  "coverage": {
+    "enabled": false
+  }
+}

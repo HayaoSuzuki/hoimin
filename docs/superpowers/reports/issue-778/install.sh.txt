@@ -1,0 +1,20 @@
+set -euo pipefail
+probe=/var/tmp/hoimin-kani-778
+mkdir -p "$probe"
+cd "$probe"
+export RUSTUP_HOME="$probe/rustup" CARGO_HOME="$probe/cargo"
+export PATH="$CARGO_HOME/bin:$PATH"
+printf 'setup-start '; date -u +%FT%TZ
+curl -fL --connect-timeout 15 --max-time 120 --max-filesize 150000000 -o kani.tar.gz https://github.com/model-checking/kani/releases/download/kani-0.68.0/kani-0.68.0-x86_64-unknown-linux-gnu.tar.gz
+sha256sum kani.tar.gz
+mkdir -p bundle
+tar -xzf kani.tar.gz --strip-components=1 -C bundle
+curl -fL --connect-timeout 15 --max-time 60 -o rustup-init https://static.rust-lang.org/rustup/dist/x86_64-unknown-linux-gnu/rustup-init
+chmod +x rustup-init
+./rustup-init -y --no-modify-path --default-toolchain none
+rustup toolchain install nightly-2026-08-21 --profile minimal --component rustc-dev,rust-src,llvm-tools,rustfmt
+ln -s "$RUSTUP_HOME/toolchains/nightly-2026-08-21-x86_64-unknown-linux-gnu" bundle/toolchain
+bundle/bin/kani-driver --version
+bundle/bin/kani-driver --help > kani-help.txt
+printf 'setup-end '; date -u +%FT%TZ
+du -sb .

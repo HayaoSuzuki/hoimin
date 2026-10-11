@@ -1,0 +1,9 @@
+Manually transcribed from systemd-run completion output in this investigation.
+setup (first /tmp bundle): result=success; runtime=9.004s; reported=619M
+install (/var/tmp): result=success; runtime=41.371s; bytes=2285617920
+baseline-v2: result=exit-code; exit_status=1; runtime=1min 33.842s; memory_peak=2.7G
+unwind2: result=oom-kill; main_status=TERM; runtime=23.743s; memory_peak=4.0G
+The transient units were lost after WSL restarted. Later systemctl show defaults are not run results.
+Memory limits: MemoryMax=4G; MemorySwapMax=0; TasksMax=128.
+Cleanup: no cbmc/kani-driver/kani-compiler process remained before cargo clean.
+cargo clean: removed 930 files, 322.4MiB; bytes before=2778174988, after=2447088565.

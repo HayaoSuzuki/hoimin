@@ -1,0 +1,22 @@
+set -euo pipefail
+probe=/var/tmp/hoimin-kani-778
+scratch=/mnt/c/Users/hayao/PycharmProjects/hoimin/.superpowers/sdd/issue-778-kani
+export RUSTUP_HOME="$probe/rustup" CARGO_HOME="$probe/cargo"
+export PATH="$probe/bundle/bin:$CARGO_HOME/bin:$PATH"
+export RUSTUP_TOOLCHAIN=nightly-2026-08-21
+export CARGO_BUILD_JOBS=2
+mkdir -p "$probe/work"
+tar -xf "$scratch/source.tar" -C "$probe/work"
+cp "$scratch/harness.rs" "$probe/work/crates/hoimin-core/tests/kani_workspace_copy.rs"
+ln -sf kani-driver "$probe/bundle/bin/cargo-kani"
+cd "$probe/work"
+printf 'probe-start '; date -u +%FT%TZ
+set +e
+/usr/bin/time -v cargo kani -p hoimin-core --tests --harness workspace_copy_contract --exact -Z unstable-options --harness-timeout 60s --export-json "$probe/baseline.json" > "$scratch/baseline.log" 2>&1
+status=$?
+set -e
+printf 'exit=%s\n' "$status"
+tail -55 "$scratch/baseline.log"
+printf 'probe-end '; date -u +%FT%TZ
+du -sb "$probe"
+exit "$status"
