@@ -55,14 +55,17 @@ async fn check_operator(source: &str, candidates: usize, operator: &str, replace
         .args(["-c", "pass"]);
     let result = output(command).await;
     let manifest: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
-    let original = match operator {
-        "collection_any_all" => "any",
-        "collection_list_tuple" => "list",
-        "collection_set_frozenset" => "set",
-        "collection_min_max" => "min",
-        "structure_sorted_reversed" => "sorted",
-        _ => panic!("unsupported test operator: {operator}"),
-    };
+    let original = [
+        ("collection_any_all", "any"),
+        ("collection_list_tuple", "list"),
+        ("collection_set_frozenset", "set"),
+        ("collection_min_max", "min"),
+        ("structure_sorted_reversed", "sorted"),
+    ]
+    .into_iter()
+    .find(|(name, _)| *name == operator)
+    .unwrap()
+    .1;
     // Literal mutations are separate candidates for collection operators.
     let actual: Vec<_> = manifest["candidates"]
         .as_array()
@@ -90,10 +93,15 @@ async fn check_operator(source: &str, candidates: usize, operator: &str, replace
             &source[start..start + length],
             candidate["original"].as_str().unwrap()
         );
-        if source.contains("[any((0, 1))]") {
-            assert_eq!(start, source.find("any((0, 1))").unwrap());
-            assert_eq!(candidate["original"], "any");
-        }
+        let first_iterable = source.find("[any((0, 1))]");
+        assert_eq!(
+            first_iterable.map(|_| start),
+            first_iterable.map(|offset| offset + 1)
+        );
+        assert_eq!(
+            first_iterable.map(|_| candidate["original"].as_str().unwrap()),
+            first_iterable.map(|_| "any")
+        );
         assert_eq!(candidate["operator"], operator);
         assert_eq!(candidate["replacement"], replacement);
     }

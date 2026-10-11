@@ -17,7 +17,15 @@ fn create_worker(plan: &WorkspacePlan) -> hoimin_cli::workspace::WorkerWorkspace
 
 #[test]
 fn binary_boundaries_and_same_length_changes_restore_from_the_snapshot() {
-    for size in [0_usize, 1, 65_535, 65_536, 65_537, 131_073] {
+    let cases: [(usize, &[usize]); 6] = [
+        (0, &[]),
+        (1, &[0, 0, 0]),
+        (65_535, &[0, 32_767, 65_534]),
+        (65_536, &[0, 32_768, 65_535]),
+        (65_537, &[0, 32_768, 65_536]),
+        (131_073, &[0, 65_536, 131_072]),
+    ];
+    for (size, changed_offsets) in cases {
         let project = tempfile::tempdir().unwrap();
         let expected = (0..size)
             .map(|index| index.to_le_bytes()[0])
@@ -32,14 +40,12 @@ fn binary_boundaries_and_same_length_changes_restore_from_the_snapshot() {
         fs::write(project.path().join("binary.dat"), b"later source").unwrap();
         worker.reset().unwrap();
         assert_eq!(fs::read(&path).unwrap(), expected);
-        if size != 0 {
-            for index in [0, size / 2, size - 1] {
-                let mut changed = expected.clone();
-                changed[index] ^= 0xff;
-                fs::write(&path, changed).unwrap();
-                worker.reset().unwrap();
-                assert_eq!(fs::read(&path).unwrap(), expected);
-            }
+        for &index in changed_offsets {
+            let mut changed = expected.clone();
+            changed[index] ^= 0xff;
+            fs::write(&path, changed).unwrap();
+            worker.reset().unwrap();
+            assert_eq!(fs::read(&path).unwrap(), expected);
         }
         for changed in [vec![], vec![0; size + 1]] {
             fs::write(&path, changed).unwrap();

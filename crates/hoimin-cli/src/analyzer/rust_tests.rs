@@ -29,11 +29,13 @@ fn string_segments_respect_candidate_caps_and_target_selection() {
     assert!(output.truncated);
     assert_eq!(output.candidates[0].original, "prefix:");
     let mut operators = MutationOperatorSelection::default();
-    for name in operators.names() {
-        let operator = MutationOperator::from_name(&name).unwrap();
-        if operator != MutationOperator::StringSegmentEmpty {
-            operators.exclude(operator);
-        }
+    for operator in operators
+        .names()
+        .iter()
+        .map(|name| MutationOperator::from_name(name).unwrap())
+        .filter(|operator| *operator != MutationOperator::StringSegmentEmpty)
+    {
+        operators.exclude(operator);
     }
     let lines = [LineRange { start: 4, end: 4 }];
     let symbols = ["second".to_owned()];
@@ -248,31 +250,44 @@ fn straight_line_import_transfer_preserves_selected_candidates_and_skips_unselec
             }
             source.push_str(&"x: int\n".repeat(annotations));
             source.push_str("value: list[int]\n");
-            for selected in [false, true] {
+            for (
+                operator,
+                expected_candidates,
+                expected_calls,
+                expected_entries,
+                expected_retention,
+            ) in [
+                (MutationOperator::BooleanLiteral, vec![], 0, 0, (0, 0)),
+                (
+                    MutationOperator::TypeListSequence,
+                    vec![("list[int]", "Sequence[int]")],
+                    1,
+                    aliases + 1,
+                    (annotations + 1, 0),
+                ),
+            ] {
                 super::IMPORT_CLONE_CALLS.set(0);
                 super::IMPORT_CLONE_ENTRIES.set(0);
                 reset_annotation_retention_stats();
-                let operator = if selected {
-                    MutationOperator::TypeListSequence
-                } else {
-                    MutationOperator::BooleanLiteral
-                };
+
                 let output = analyze_with_only_operator(&source, operator);
+
                 assert_eq!(output.diagnostics, Vec::new());
                 assert!(!output.truncated);
-                assert_eq!(output.candidates.len(), usize::from(selected));
-                if selected {
-                    let candidate = &output.candidates[0];
-                    assert_eq!(candidate.original, "list[int]");
-                    assert_eq!(candidate.replacement, "Sequence[int]");
-                    assert_eq!(super::IMPORT_CLONE_CALLS.get(), 1);
-                    assert_eq!(super::IMPORT_CLONE_ENTRIES.get(), aliases + 1);
-                    assert_eq!(annotation_retention_stats(), (annotations + 1, 0));
-                } else {
-                    assert_eq!(super::IMPORT_CLONE_CALLS.get(), 0);
-                    assert_eq!(super::IMPORT_CLONE_ENTRIES.get(), 0);
-                    assert_eq!(annotation_retention_stats(), (0, 0));
-                }
+                assert_eq!(
+                    output
+                        .candidates
+                        .iter()
+                        .map(|candidate| (
+                            candidate.original.as_str(),
+                            candidate.replacement.as_str()
+                        ))
+                        .collect::<Vec<_>>(),
+                    expected_candidates
+                );
+                assert_eq!(super::IMPORT_CLONE_CALLS.get(), expected_calls);
+                assert_eq!(super::IMPORT_CLONE_ENTRIES.get(), expected_entries);
+                assert_eq!(annotation_retention_stats(), expected_retention);
             }
         }
     }
@@ -2424,13 +2439,20 @@ fn exception_risky_candidates_require_explicit_selection_and_reparse() {
         candidate.operator == "exception_tuple_remove_member"
             && candidate.original.contains("# keep this comment")
     }));
-    for candidate in &output.candidates {
-        if candidate.operator.starts_with("exception_") {
-            let mutated = apply_candidate_and_reparse(source, candidate);
-            if candidate.original.contains("# keep this comment") {
-                assert!(mutated.contains("# keep this comment"));
-            }
-        }
+    for candidate in output
+        .candidates
+        .iter()
+        .filter(|candidate| candidate.operator.starts_with("exception_"))
+    {
+        apply_candidate_and_reparse(source, candidate);
+    }
+    for candidate in output.candidates.iter().filter(|candidate| {
+        candidate.operator.starts_with("exception_")
+            && candidate.original.contains("# keep this comment")
+    }) {
+        let mutated = apply_candidate_and_reparse(source, candidate);
+
+        assert!(mutated.contains("# keep this comment"));
     }
 
     let unsupported = concat!(
@@ -4503,11 +4525,13 @@ fn benchmark_long_single_line_candidate_columns() {
     assert_eq!(single.len(), multiline.len());
 
     let mut operators = MutationOperatorSelection::default();
-    for name in operators.names() {
-        let operator = MutationOperatorSelection::parse_selector(&name).unwrap()[0];
-        if operator != MutationOperator::BooleanLiteral {
-            operators.exclude(operator);
-        }
+    for operator in operators
+        .names()
+        .iter()
+        .map(|name| MutationOperatorSelection::parse_selector(name).unwrap()[0])
+        .filter(|operator| *operator != MutationOperator::BooleanLiteral)
+    {
+        operators.exclude(operator);
     }
     for (shape, source) in [("single", single), ("multiline", multiline)] {
         let started = std::time::Instant::now();
@@ -4563,11 +4587,7 @@ fn benchmark_adversarial_ast_fact_indexes() {
     assert_eq!(stats.not_operand.queries, FUNCTIONS * 3);
     assert_eq!(stats.not_operand.comparisons, 0);
     for index in [stats.annotation, stats.arid, stats.scope] {
-        let comparisons_per_query = if index.facts == 0 {
-            0
-        } else {
-            usize::BITS as usize - index.facts.leading_zeros() as usize
-        };
+        let comparisons_per_query = usize::BITS as usize - index.facts.leading_zeros() as usize;
         assert!(
             index.comparisons <= index.queries * comparisons_per_query,
             "stats={index:?}",
@@ -6209,13 +6229,18 @@ fn binding_flow_internal_corpus_projects_categorized_exit_facts() {
             expected,
             "case={id}"
         );
-        if let Some(expected_loop_head) = &item.expected_loop_head {
-            assert_eq!(
-                binding_flow_loop_head_snapshot(&item.source, true),
-                *expected_loop_head,
-                "loop head case={id}"
-            );
-        }
+    }
+    for (item, expected_loop_head) in items
+        .iter()
+        .filter(|item| expected_ids.contains(&item.id.as_str()))
+        .filter_map(|item| item.expected_loop_head.as_ref().map(|head| (item, head)))
+    {
+        assert_eq!(
+            binding_flow_loop_head_snapshot(&item.source, true),
+            *expected_loop_head,
+            "loop head case={}",
+            item.id
+        );
     }
 }
 
@@ -7074,56 +7099,64 @@ fn annotation_scope_private_correspondence_matches_lean() {
         .filter(|item| item.mode == "internal-fixture")
         .collect::<Vec<_>>();
     assert_eq!(cases.len(), 20);
-    for item in cases {
+    for item in &cases {
         assert_eq!(item.schema, 1, "{}", item.id);
         assert!(!item.scenario.is_empty(), "{}", item.id);
         assert!(item.expected_operator.is_none(), "{}", item.id);
         assert!(item.expected_original.is_none(), "{}", item.id);
         assert!(item.expected_replacement.is_none(), "{}", item.id);
-        match item.observation_kind.as_str() {
-            "annotation" => {
-                let snapshot = annotation_site_test_snapshot(&item.source, &item.marker)
-                    .unwrap_or_else(|error| panic!("{error}; case={}", item.id));
-                let marker_start = item.source.find(&item.marker).unwrap();
-                let marker_end = marker_start + item.marker.len();
-                assert!(snapshot.start <= marker_start, "{}", item.id);
-                assert!(marker_end <= snapshot.end, "{}", item.id);
-                assert_eq!(snapshot.facts, item.expected_facts, "{}", item.id);
-                assert_eq!(snapshot.symbol, item.expected_symbol, "{}", item.id);
-                assert_eq!(
-                    Some(snapshot.scope),
-                    item.expected_scope.as_deref(),
-                    "{}",
-                    item.id
-                );
-                assert_eq!(
-                    !snapshot.facts.is_empty(),
-                    item.expected_present,
-                    "{}",
-                    item.id
-                );
-            }
-            "resolution" => {
-                let snapshot = name_resolution_test_snapshot(&item.source, &item.marker, "list")
-                    .unwrap_or_else(|error| panic!("{error}; case={}", item.id));
-                let marker_start = item.source.find(&item.marker).unwrap();
-                let name_start = marker_start + item.marker.find("list").unwrap();
-                assert_eq!(snapshot.start, name_start, "{}", item.id);
-                assert_eq!(
-                    Some(snapshot.resolution),
-                    item.expected_resolution.as_deref(),
-                    "{}",
-                    item.id
-                );
-                assert_eq!(
-                    snapshot.resolution == "definitely-builtin",
-                    item.expected_present,
-                    "{}",
-                    item.id
-                );
-            }
-            other => panic!("infrastructure-error: unexpected private kind {other}"),
-        }
+        assert!(
+            matches!(item.observation_kind.as_str(), "annotation" | "resolution"),
+            "{}",
+            item.id
+        );
+    }
+    for item in cases
+        .iter()
+        .filter(|item| item.observation_kind == "annotation")
+    {
+        let snapshot = annotation_site_test_snapshot(&item.source, &item.marker)
+            .unwrap_or_else(|error| panic!("{error}; case={}", item.id));
+        let marker_start = item.source.find(&item.marker).unwrap();
+        let marker_end = marker_start + item.marker.len();
+        assert!(snapshot.start <= marker_start, "{}", item.id);
+        assert!(marker_end <= snapshot.end, "{}", item.id);
+        assert_eq!(snapshot.facts, item.expected_facts, "{}", item.id);
+        assert_eq!(snapshot.symbol, item.expected_symbol, "{}", item.id);
+        assert_eq!(
+            Some(snapshot.scope),
+            item.expected_scope.as_deref(),
+            "{}",
+            item.id
+        );
+        assert_eq!(
+            !snapshot.facts.is_empty(),
+            item.expected_present,
+            "{}",
+            item.id
+        );
+    }
+    for item in cases
+        .iter()
+        .filter(|item| item.observation_kind == "resolution")
+    {
+        let snapshot = name_resolution_test_snapshot(&item.source, &item.marker, "list")
+            .unwrap_or_else(|error| panic!("{error}; case={}", item.id));
+        let marker_start = item.source.find(&item.marker).unwrap();
+        let name_start = marker_start + item.marker.find("list").unwrap();
+        assert_eq!(snapshot.start, name_start, "{}", item.id);
+        assert_eq!(
+            Some(snapshot.resolution),
+            item.expected_resolution.as_deref(),
+            "{}",
+            item.id
+        );
+        assert_eq!(
+            snapshot.resolution == "definitely-builtin",
+            item.expected_present,
+            "{}",
+            item.id
+        );
     }
 }
 
@@ -7154,6 +7187,8 @@ fn annotation_scope_private_projection_detects_wrong_site_and_scope_stage() {
 
 #[test]
 fn exception_match_binding_internal_corpus() {
+    type AnnotationObserver = fn(&str, &str) -> Result<Vec<String>, String>;
+
     let cases = EXCEPTION_MATCH_BINDING_CORPUS
         .lines()
         .map(|line| serde_json::from_str::<ExceptionMatchBindingCorpusCase>(line).unwrap())
@@ -7193,7 +7228,7 @@ fn exception_match_binding_internal_corpus() {
         .collect::<Vec<_>>();
     assert_eq!(cases.len(), 15);
 
-    for item in cases {
+    for item in &cases {
         assert_eq!(item.schema, 1, "{}", item.id);
         assert!(matches!(item.family.as_str(), "handler" | "match-case"));
         assert!(!item.name.is_empty(), "{}", item.id);
@@ -7201,47 +7236,49 @@ fn exception_match_binding_internal_corpus() {
         assert!(item.original.is_none(), "{}", item.id);
         assert!(item.replacement.is_none(), "{}", item.id);
         assert!(item.symbol.is_none(), "{}", item.id);
-        match item.observation_kind.as_str() {
-            "annotation" => {
-                assert!(item.expected_resolution.is_none(), "{}", item.id);
-                assert!(item.expected_exit_category.is_none(), "{}", item.id);
-                let actual_facts = if item.id == "handler_type_before_target" {
-                    binding_flow_marker_snapshot(&item.source, &item.marker)
-                        .unwrap_or_else(|error| panic!("{error}; case={}", item.id))
-                } else {
-                    annotation_site_test_snapshot(&item.source, &item.marker)
-                        .unwrap_or_else(|error| panic!("{error}; case={}", item.id))
-                        .facts
-                };
-                assert_eq!(actual_facts, item.expected_facts, "{}", item.id);
-                assert_eq!(
-                    !actual_facts.is_empty(),
-                    item.expected_present,
-                    "{}",
-                    item.id
-                );
-            }
-            "exits" => {
-                assert!(item.expected_resolution.is_none(), "{}", item.id);
-                let category = match item.expected_exit_category.as_deref() {
-                    Some(category @ ("fallthrough" | "break" | "continue" | "terminate")) => {
-                        category
-                    }
-                    category => panic!("infrastructure-error: invalid exit {category:?}"),
-                };
-                let actual_facts =
-                    binding_flow_handler_exit_snapshot(&item.source, &item.marker, category)
-                        .unwrap_or_else(|error| panic!("{error}; case={}", item.id));
-                assert_eq!(actual_facts, item.expected_facts, "{}", item.id);
-                assert_eq!(
-                    !actual_facts.is_empty(),
-                    item.expected_present,
-                    "{}",
-                    item.id
-                );
-            }
-            other => panic!("infrastructure-error: unexpected private kind {other}"),
+        assert!(
+            matches!(item.observation_kind.as_str(), "annotation" | "exits"),
+            "{}",
+            item.id
+        );
+    }
+    let annotation_observers: [(&str, AnnotationObserver); 2] = [
+        ("handler", binding_flow_marker_snapshot),
+        ("site", |source, marker| {
+            annotation_site_test_snapshot(source, marker).map(|snapshot| snapshot.facts)
+        }),
+    ];
+    for (observer_kind, observe) in annotation_observers {
+        for item in cases.iter().filter(|item| {
+            item.observation_kind == "annotation"
+                && (item.id == "handler_type_before_target") == (observer_kind == "handler")
+        }) {
+            assert!(item.expected_resolution.is_none(), "{}", item.id);
+            assert!(item.expected_exit_category.is_none(), "{}", item.id);
+            let actual_facts = observe(&item.source, &item.marker)
+                .unwrap_or_else(|error| panic!("{error}; case={}", item.id));
+            assert_eq!(actual_facts, item.expected_facts, "{}", item.id);
+            assert_eq!(
+                !actual_facts.is_empty(),
+                item.expected_present,
+                "{}",
+                item.id
+            );
         }
+    }
+    for item in cases.iter().filter(|item| item.observation_kind == "exits") {
+        assert!(item.expected_resolution.is_none(), "{}", item.id);
+        let category = item.expected_exit_category.as_deref().unwrap();
+        assert!(["fallthrough", "break", "continue", "terminate"].contains(&category));
+        let actual_facts = binding_flow_handler_exit_snapshot(&item.source, &item.marker, category)
+            .unwrap_or_else(|error| panic!("{error}; case={}", item.id));
+        assert_eq!(actual_facts, item.expected_facts, "{}", item.id);
+        assert_eq!(
+            !actual_facts.is_empty(),
+            item.expected_present,
+            "{}",
+            item.id
+        );
     }
 }
 
@@ -7324,38 +7361,50 @@ fn exception_match_binding_handler_cleanup_rows_observe_post_cleanup_state() {
         .filter(|item| item.observation_kind == "exits")
         .collect::<Vec<_>>();
     assert_eq!(cases.len(), 5);
+    assert!(cases.iter().all(|item| matches!(
+        item.expected_exit_category.as_deref(),
+        Some("fallthrough" | "break" | "continue" | "terminate")
+    )));
 
-    for item in cases {
-        let category = item
-            .expected_exit_category
-            .as_deref()
-            .expect("handler cleanup category");
-        let mutation = match category {
-            "fallthrough" => BindingFlowTestMutation::OmitHandlerFallthroughCleanup,
-            "break" => BindingFlowTestMutation::OmitHandlerBreakCleanup,
-            "continue" => BindingFlowTestMutation::OmitHandlerContinueCleanup,
-            "terminate" => BindingFlowTestMutation::OmitHandlerTerminateCleanup,
-            other => panic!("unexpected handler cleanup category {other}"),
-        };
-        assert_eq!(
-            binding_flow_handler_exit_snapshot(&item.source, &item.marker, category)
+    for (category, mutation) in [
+        (
+            "fallthrough",
+            BindingFlowTestMutation::OmitHandlerFallthroughCleanup,
+        ),
+        ("break", BindingFlowTestMutation::OmitHandlerBreakCleanup),
+        (
+            "continue",
+            BindingFlowTestMutation::OmitHandlerContinueCleanup,
+        ),
+        (
+            "terminate",
+            BindingFlowTestMutation::OmitHandlerTerminateCleanup,
+        ),
+    ] {
+        for item in cases
+            .iter()
+            .filter(|item| item.expected_exit_category.as_deref() == Some(category))
+        {
+            assert_eq!(
+                binding_flow_handler_exit_snapshot(&item.source, &item.marker, category)
+                    .unwrap_or_else(|error| panic!("{}: {error}", item.id)),
+                item.expected_facts,
+                "{} must observe the categorized exit after handler cleanup",
+                item.id
+            );
+            assert_eq!(
+                binding_flow_handler_exit_snapshot_with_mutation(
+                    &item.source,
+                    &item.marker,
+                    category,
+                    mutation,
+                )
                 .unwrap_or_else(|error| panic!("{}: {error}", item.id)),
-            item.expected_facts,
-            "{} must observe the categorized exit after handler cleanup",
-            item.id
-        );
-        assert_eq!(
-            binding_flow_handler_exit_snapshot_with_mutation(
-                &item.source,
-                &item.marker,
-                category,
-                mutation,
-            )
-            .unwrap_or_else(|error| panic!("{}: {error}", item.id)),
-            vec!["direct:Sequence=typing.Sequence"],
-            "{} must detect omitted {category} cleanup",
-            item.id
-        );
+                vec!["direct:Sequence=typing.Sequence"],
+                "{} must detect omitted {category} cleanup",
+                item.id
+            );
+        }
     }
 }
 
@@ -7933,17 +7982,13 @@ fn implicit_finally_covers_operator_and_statement_exception_entries() {
             "try:\n        pass\n    except hazard():\n        pass",
         ),
     ];
-    let mut mismatches = Vec::new();
     for (label, body) in bodies {
         let source = format!(
             "Sequence = set\ntry:\n    {body}\n    from typing import Sequence\nfinally:\n    value: Sequence[int]\n"
         );
-        if !analyze_with_only_operator(&source, MutationOperator::TypeListSequence)
-            .candidates
-            .is_empty()
-        {
-            mismatches.push(label);
-        }
+        let output = analyze_with_only_operator(&source, MutationOperator::TypeListSequence);
+
+        assert!(output.candidates.is_empty(), "{label}");
     }
     for (label, source) in [
         (
@@ -7955,17 +8000,10 @@ fn implicit_finally_covers_operator_and_statement_exception_entries() {
             "def f():\n    from typing import Sequence\n    try:\n        class C:\n            nonlocal Sequence\n            Sequence = set\n            hazard()\n        from typing import Sequence\n    finally:\n        value: Sequence[int]\n",
         ),
     ] {
-        if !analyze_with_only_operator(source, MutationOperator::TypeListSequence)
-            .candidates
-            .is_empty()
-        {
-            mismatches.push(label);
-        }
+        let output = analyze_with_only_operator(source, MutationOperator::TypeListSequence);
+
+        assert!(output.candidates.is_empty(), "{label}");
     }
-    assert!(
-        mismatches.is_empty(),
-        "missed implicit exception entries: {mismatches:?}"
-    );
 }
 
 #[test]
@@ -7978,17 +8016,13 @@ fn implicit_finally_covers_name_container_format_and_partial_binding_failures() 
         ("starred expansion", "[*values]"),
         ("unpack", "first, second = values"),
     ];
-    let mut mismatches = Vec::new();
     for (label, body) in bodies {
         let source = format!(
             "Sequence = set\ntry:\n    {body}\n    from typing import Sequence\nfinally:\n    value: Sequence[int]\n"
         );
-        if !analyze_with_only_operator(&source, MutationOperator::TypeListSequence)
-            .candidates
-            .is_empty()
-        {
-            mismatches.push(label);
-        }
+        let output = analyze_with_only_operator(&source, MutationOperator::TypeListSequence);
+
+        assert!(output.candidates.is_empty(), "{label}");
     }
     for (label, source) in [
         (
@@ -8004,17 +8038,10 @@ fn implicit_finally_covers_name_container_format_and_partial_binding_failures() 
             "from typing import Sequence\ntry:\n    Sequence = holder.value = supplied\n    from typing import Sequence\nfinally:\n    value: Sequence[int]\n",
         ),
     ] {
-        if !analyze_with_only_operator(source, MutationOperator::TypeListSequence)
-            .candidates
-            .is_empty()
-        {
-            mismatches.push(label);
-        }
+        let output = analyze_with_only_operator(source, MutationOperator::TypeListSequence);
+
+        assert!(output.candidates.is_empty(), "{label}");
     }
-    assert!(
-        mismatches.is_empty(),
-        "missed ordinary exceptions: {mismatches:?}"
-    );
 }
 
 #[test]
@@ -8158,15 +8185,17 @@ fn with_suppression_preserves_nested_flow_and_deferred_boundaries() {
 
 #[test]
 fn with_suppression_preserves_successful_abrupt_categories() {
-    for abrupt in ["return", "break", "continue"] {
+    type ExitStates = fn(BindingFlowTestSnapshot) -> Vec<Vec<String>>;
+    let cases: [(&str, ExitStates); 3] = [
+        ("return", |snapshot| snapshot.terminates),
+        ("break", |snapshot| snapshot.breaks),
+        ("continue", |snapshot| snapshot.continues),
+    ];
+    for (abrupt, exit_states) in cases {
         let source = format!("from typing import Sequence\nwith manager:\n    {abrupt}\n");
         let actual = binding_flow_test_snapshot(&source);
         assert!(actual.fallthrough.is_empty(), "{abrupt}: {actual:?}");
-        let states = match abrupt {
-            "return" => actual.terminates,
-            "break" => actual.breaks,
-            _ => actual.continues,
-        };
+        let states = exit_states(actual);
         assert_eq!(
             states,
             vec![vec!["direct:Sequence=typing.Sequence".to_owned()]]
@@ -8302,12 +8331,7 @@ fn evaluation_order_applies_to_other_builtin_pairs_and_class_suites() {
                 format!("slots[{source}([])] = ({binding} := custom)"),
                 format!("sink(flag={source}([]), *[({binding} := custom)])"),
             ] {
-                for indent in [false, true] {
-                    let source = if indent {
-                        format!("class Example:\n    {body}\n")
-                    } else {
-                        format!("{body}\n")
-                    };
+                for source in [format!("{body}\n"), format!("class Example:\n    {body}\n")] {
                     let output = analyze(&source);
                     assert!(
                         output
@@ -8936,12 +8960,10 @@ fn prepared_annotation_import_qualified_alias_is_checked() {
 fn private_annotation_import_endpoints_and_spelling_boundaries() {
     for class in ["C", "_C", "___"] {
         for alias in ["Alias", "__Alias", "__Alias__"] {
-            for destination in [false, true] {
-                let (outer, inner, original) = if destination {
-                    ("Sequence", "Iterable", "Sequence[int]".to_owned())
-                } else {
-                    ("Iterable", "Sequence", format!("{alias}[int]"))
-                };
+            for (outer, inner, original) in [
+                ("Sequence", "Iterable", "Sequence[int]".to_owned()),
+                ("Iterable", "Sequence", format!("{alias}[int]")),
+            ] {
                 let source = format!(
                     "from typing import {outer}\nclass {class}:\n    from typing import {inner} as {alias}\n    value: {original}\n"
                 );
@@ -8963,7 +8985,6 @@ fn private_annotation_import_endpoints_and_spelling_boundaries() {
 
 #[test]
 fn private_annotation_import_tracks_reverse_writes_and_directives() {
-    let mut unexpected = Vec::new();
     for source in [
         "from typing import Iterable\nclass C:\n    from typing import Sequence as __Alias\n    _C__Alias = tuple\n    value: __Alias[int]\n",
         "from typing import Sequence\nclass C:\n    from typing import Iterable as __Alias\n    _C__Alias = tuple\n    value: Sequence[int]\n",
@@ -8975,15 +8996,15 @@ fn private_annotation_import_tracks_reverse_writes_and_directives() {
         "from typing import Sequence, Iterable\nclass C:\n    import typing as __t\n    _C__t = object()\n    value: __t.Sequence[int]\n",
     ] {
         let output = analyze_types(source);
-        if output
-            .candidates
-            .iter()
-            .any(|c| c.operator == "type_sequence_iterable")
-        {
-            unexpected.push(source);
-        }
+
+        assert!(
+            !output
+                .candidates
+                .iter()
+                .any(|candidate| candidate.operator == "type_sequence_iterable"),
+            "unsafe candidates: {source}"
+        );
     }
-    assert!(unexpected.is_empty(), "unsafe candidates: {unexpected:#?}");
 }
 
 #[test]

@@ -151,6 +151,11 @@ mod tests {
     use super::super::{CopyOptions, WorkerWorkspace, WorkspacePlan};
 
     #[cfg(unix)]
+    type TestPermissionFingerprint = u32;
+    #[cfg(windows)]
+    type TestPermissionFingerprint = bool;
+
+    #[cfg(unix)]
     fn permission_fingerprint(path: &Utf8Path) -> u32 {
         use std::os::unix::fs::PermissionsExt;
         fs::metadata(path).unwrap().permissions().mode()
@@ -316,6 +321,29 @@ mod tests {
         assert_eq!(worker.read("swap/target.py").unwrap(), b"original\n");
     }
 
+    fn replace_paused_parent(
+        root: &Utf8Path,
+    ) -> (
+        Utf8PathBuf,
+        Vec<TestPermissionFingerprint>,
+        Option<std::io::Error>,
+    ) {
+        match fs::rename(root.join("swap"), root.join("held")) {
+            Ok(()) => {
+                fs::create_dir(root.join("swap")).unwrap();
+                let outside = root.join("swap/target.py");
+                fs::write(&outside, b"outside\n").unwrap();
+                make_read_only(&outside);
+                (
+                    root.join("held/target.py"),
+                    vec![permission_fingerprint(&outside)],
+                    None,
+                )
+            }
+            Err(error) => (root.join("swap/target.py"), vec![], Some(error)),
+        }
+    }
+
     #[test]
     fn parent_replacement_mutation_uses_the_opened_parent() {
         let (_project, mut worker, candidate) = worker_and_candidate();
@@ -338,40 +366,33 @@ mod tests {
         });
 
         opened_rx.recv_timeout(Duration::from_secs(5)).unwrap();
-        if let Err(error) = fs::rename(root.join("swap"), root.join("held")) {
-            #[cfg(windows)]
-            {
-                assert_eq!(error.raw_os_error(), Some(32));
-                resume_tx.send(()).unwrap();
-                let (worker, result) = operation.join().unwrap();
-                result.unwrap();
-                assert_eq!(worker.read("swap/target.py").unwrap(), b"mutated!\n");
-                return;
-            }
-            #[cfg(not(windows))]
-            panic!("rename of opened mutation parent failed unexpectedly: {error}");
-        }
-        fs::create_dir(root.join("swap")).unwrap();
-        let outside = root.join("swap/target.py");
-        fs::write(&outside, b"outside\n").unwrap();
-        make_read_only(&outside);
-        let outside_permissions = permission_fingerprint(&outside);
+        let (operated_target, outside_permissions, rename_error) = replace_paused_parent(&root);
         resume_tx.send(()).unwrap();
         let (worker, result) = operation.join().unwrap();
 
         result.unwrap();
-        assert_eq!(
-            fs::read(root.join("held/target.py")).unwrap(),
-            b"mutated!\n"
-        );
+        assert_eq!(fs::read(operated_target.clone()).unwrap(), b"mutated!\n");
         assert!(
-            !fs::metadata(root.join("held/target.py"))
+            !fs::metadata(operated_target.clone())
                 .unwrap()
                 .permissions()
                 .readonly()
         );
-        assert_eq!(fs::read(&outside).unwrap(), b"outside\n");
-        assert_eq!(permission_fingerprint(&outside), outside_permissions);
+        #[cfg(windows)]
+        let expected_rename_error =
+            [Some(Some(32)), None][usize::from(!outside_permissions.is_empty())];
+        #[cfg(not(windows))]
+        let expected_rename_error = None;
+        assert_eq!(
+            rename_error.as_ref().map(std::io::Error::raw_os_error),
+            expected_rename_error
+        );
+        for permissions in &outside_permissions {
+            let outside = root.join("swap/target.py");
+
+            assert_eq!(fs::read(&outside).unwrap(), b"outside\n");
+            assert_eq!(permission_fingerprint(&outside), *permissions);
+        }
         drop(worker);
     }
 }

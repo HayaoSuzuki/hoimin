@@ -73,8 +73,8 @@ async fn changed_context_public_plan_matches_lean() {
         git(root, &["config", "user.name", "Fixture"]);
         fs::create_dir(root.join("src")).unwrap();
         fs::write(root.join("tracked.txt"), "fixture\n").unwrap();
-        if !case.untracked {
-            fs::write(root.join("src/calc.py"), &case.before).unwrap();
+        for before in std::iter::once(&case.before).filter(|_| !case.untracked) {
+            fs::write(root.join("src/calc.py"), before).unwrap();
         }
         git(root, &["add", "."]);
         git(root, &["commit", "--quiet", "-m", "fixture"]);

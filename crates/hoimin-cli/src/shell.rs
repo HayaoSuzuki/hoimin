@@ -5708,6 +5708,35 @@ mod tests {
         assert_eq!(observed.max_process_tasks(), 0);
     }
 
+    async fn wait_for_live_process<F>(run: &mut F, ready: impl Fn() -> bool) -> Result<(), String>
+    where
+        F: std::future::Future + Unpin,
+        F::Output: std::fmt::Debug,
+    {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                tokio::select! {
+                    result = &mut *run => return Err(format!("run finished before fixture readiness: {result:?}")),
+                    () = tokio::time::sleep(Duration::from_millis(5)) => {
+                        if ready() { return Ok(()); }
+                    }
+                }
+            }
+        }).await.map_err(|_| "live process fixture did not become ready".to_owned())?
+    }
+
+    async fn wait_for_disk_stop<F>(run: &mut F, observed: &RunControl) -> Result<F::Output, String>
+    where
+        F: std::future::Future + Unpin,
+    {
+        let Ok(result) = tokio::time::timeout(Duration::from_secs(2), &mut *run).await else {
+            observed.cancel();
+            let _ = tokio::time::timeout(Duration::from_secs(3), run).await;
+            return Err("periodic disk stop did not interrupt the active process".to_owned());
+        };
+        Ok(result)
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn periodic_disk_stop_interrupts_an_active_process() {
         let project = tempfile::tempdir().unwrap();
@@ -5742,31 +5771,15 @@ mod tests {
             Vec::new(),
             control,
         ));
-        tokio::time::timeout(Duration::from_secs(5), async {
-            loop {
-                tokio::select! {
-                    result = &mut run => {
-                        panic!("run finished before baseline dispatch: {result:?}")
-                    }
-                    () = tokio::time::sleep(Duration::from_millis(5)) => {
-                        if observed.max_process_tasks() != 0 {
-                            break;
-                        }
-                    }
-                }
-            }
-        })
-        .await
-        .expect("baseline process was not dispatched");
+        wait_for_live_process(&mut run, || observed.max_process_tasks() != 0)
+            .await
+            .expect("baseline process was not dispatched");
 
         stop.store(true, Ordering::Release);
-        let stopped = tokio::time::timeout(Duration::from_secs(2), &mut run).await;
-        if stopped.is_err() {
-            observed.cancel();
-            let _ = tokio::time::timeout(Duration::from_secs(3), &mut run).await;
-            panic!("periodic disk stop did not interrupt the active process");
-        }
-        let exit = stopped.unwrap().unwrap();
+        let exit = wait_for_disk_stop(&mut run, &observed)
+            .await
+            .unwrap()
+            .unwrap();
 
         assert_ne!(exit, 0);
         let events = observed.finalization_events();
@@ -5837,17 +5850,8 @@ mod tests {
             control,
         ));
 
-        tokio::time::timeout(Duration::from_secs(5), async {
-            loop {
-                tokio::select! {
-                    result = &mut run => panic!("run finished before blocked periodic scan: {result:?}"),
-                    () = tokio::time::sleep(Duration::from_millis(5)) => {
-                        if observed.max_process_tasks() != 0 && entered_rx.try_recv().is_ok() {
-                            break;
-                        }
-                    }
-                }
-            }
+        wait_for_live_process(&mut run, || {
+            observed.max_process_tasks() != 0 && entered_rx.try_recv().is_ok()
         })
         .await
         .expect("periodic scan did not block while the process was live");
@@ -6121,9 +6125,7 @@ mod tests {
         let (probe_request_tx, probe_request_rx) = tokio::sync::oneshot::channel();
         let (probe_observed_tx, probe_observed_rx) = std::sync::mpsc::channel();
         let probe = tokio::spawn(async move {
-            if probe_request_rx.await.is_ok() {
-                let _ = probe_observed_tx.send(());
-            }
+            let _ = probe_request_rx.await.map(|()| probe_observed_tx.send(()));
         });
         let observer = std::thread::spawn(move || {
             pause
@@ -7450,40 +7452,43 @@ mod tests {
 
     #[tokio::test]
     async fn rollback_contention_marks_root_for_immediate_janitor_recovery() {
-        use fs2::FileExt;
-
         const COMPLETED: &str = "hoimin rollback contention assertions completed";
         const CHILD_MARKER: &str = "HOIMIN_ISOLATED_ROLLBACK_CONTENTION_TEST";
-        if std::env::var_os(CHILD_MARKER).as_deref() != Some(std::ffi::OsStr::new("1")) {
-            // A parallel test's fork can inherit the lease's open file description
-            // until exec. Dropping the rollback guard then need not release flock.
-            // Create the fixture in a process with no unrelated child spawns so
-            // the single janitor pass below really observes an abandoned lease.
-            let output = tokio::process::Command::new(std::env::current_exe().unwrap())
-                .arg("--exact")
-                .arg("shell::tests::rollback_contention_marks_root_for_immediate_janitor_recovery")
-                .arg("--test-threads=1")
-                .arg("--nocapture")
-                .env(CHILD_MARKER, "1")
-                .kill_on_drop(true)
-                .output();
-            let output = tokio::time::timeout(Duration::from_secs(30), output)
-                .await
-                .expect("isolated rollback contention test timed out")
-                .expect("isolated rollback contention test failed to start");
-            assert!(
-                output.status.success(),
-                "isolated rollback contention test failed: {}\nstdout:\n{}\nstderr:\n{}",
-                output.status,
-                String::from_utf8_lossy(&output.stdout),
-                String::from_utf8_lossy(&output.stderr),
-            );
-            assert!(
-                String::from_utf8_lossy(&output.stdout).contains(COMPLETED),
-                "isolated rollback contention test did not complete its assertions: {output:?}",
-            );
-            return;
-        }
+        // A parallel test's fork can inherit the lease's open file description
+        // until exec. Dropping the rollback guard then need not release flock.
+        // Create the fixture in a process with no unrelated child spawns so
+        // the single janitor pass below really observes an abandoned lease.
+        let output = tokio::process::Command::new(std::env::current_exe().unwrap())
+            .arg("--exact")
+            .arg("shell::tests::rollback_contention_isolated_child")
+            .arg("--ignored")
+            .arg("--test-threads=1")
+            .arg("--nocapture")
+            .env(CHILD_MARKER, "1")
+            .kill_on_drop(true)
+            .output();
+        let output = tokio::time::timeout(Duration::from_secs(30), output)
+            .await
+            .expect("isolated rollback contention test timed out")
+            .expect("isolated rollback contention test failed to start");
+        assert!(
+            output.status.success(),
+            "isolated rollback contention test failed: {}\nstdout:\n{}\nstderr:\n{}",
+            output.status,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr),
+        );
+        assert!(
+            String::from_utf8_lossy(&output.stdout).contains(COMPLETED),
+            "isolated rollback contention test did not complete its assertions: {output:?}",
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "subprocess fixture for rollback contention"]
+    async fn rollback_contention_isolated_child() {
+        use fs2::FileExt;
+        const COMPLETED: &str = "hoimin rollback contention assertions completed";
 
         let parent = tempfile::tempdir().unwrap();
         let parent = Utf8Path::from_path(parent.path()).unwrap();
@@ -7800,9 +7805,7 @@ mod tests {
         assert_eq!(budget.deadline(), now + Duration::from_millis(70));
     }
 
-    #[test]
-    fn shutdown_grace_falls_back_at_the_instant_representation_boundary() {
-        let now = tokio::time::Instant::now();
+    fn last_representable_instant(now: tokio::time::Instant) -> tokio::time::Instant {
         let mut accepted_seconds = 0_u64;
         let mut rejected_seconds = u64::MAX;
         while accepted_seconds < rejected_seconds {
@@ -7814,9 +7817,14 @@ mod tests {
                 rejected_seconds = candidate - 1;
             }
         }
-        let edge = now
-            .checked_add(Duration::from_secs(accepted_seconds))
-            .expect("binary search retains a representable instant");
+        now.checked_add(Duration::from_secs(accepted_seconds))
+            .expect("binary search retains a representable instant")
+    }
+
+    #[test]
+    fn shutdown_grace_falls_back_at_the_instant_representation_boundary() {
+        let now = tokio::time::Instant::now();
+        let edge = last_representable_instant(now);
         let grace = Duration::from_secs(2);
         assert!(edge.checked_add(grace).is_none());
 
@@ -8435,10 +8443,10 @@ mod tests {
             operation: Box::new(move || {
                 entered_tx.send(()).unwrap();
                 release_rx.recv().unwrap();
-                BlockingEffectCompletion::Workspace(Box::new(match task {
-                    BlockingEffect::Workspace(task) => task.execute(),
-                    _ => unreachable!("prepared apply task was not a workspace task"),
-                }))
+                let BlockingEffect::Workspace(task) = task else {
+                    unreachable!("prepared apply task was not a workspace task");
+                };
+                BlockingEffectCompletion::Workspace(Box::new(task.execute()))
             }),
         };
         let (sender, mut receiver) = mpsc::channel(1);

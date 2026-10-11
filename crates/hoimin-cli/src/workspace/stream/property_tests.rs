@@ -16,6 +16,37 @@ fn contents() -> impl Strategy<Value = Vec<u8>> {
     ]
 }
 
+fn paired_contents() -> impl Strategy<Value = (Vec<u8>, Vec<u8>)> {
+    (
+        contents(),
+        proptest::collection::vec(any::<u8>(), 0..1_024),
+        0u8..4,
+        any::<usize>(),
+    )
+        .prop_map(|(left, independent, mode, at)| {
+            let mut right = left.clone();
+            match mode {
+                0 => {}
+                1 if !right.is_empty() => {
+                    let index = at % right.len();
+                    right[index] ^= 1;
+                }
+                1 => right.push(0),
+                2 => right.truncate(at % (right.len() + 1)),
+                _ => right = independent,
+            }
+            (left, right)
+        })
+}
+
+fn consumer_outcome(call: usize, fail_call: usize) -> Result<(), WorkspaceError> {
+    if call == fail_call {
+        Err(WorkspaceError::CopySizeOverflow)
+    } else {
+        Ok(())
+    }
+}
+
 /// Every read makes progress or interrupts at most once before making progress.
 /// Independent fragment sizes expose assumptions about equal read boundaries.
 struct Reader<'a> {
@@ -68,23 +99,12 @@ proptest! {
 
     #[test]
     fn boundary_property_stream_equality_and_counts_ignore_read_partitioning(
-        left in contents(),
-        independent in proptest::collection::vec(any::<u8>(), 0..1_024),
-        mode in 0u8..4,
-        at in any::<usize>(),
+        (left, right) in paired_contents(),
         left_fragment in 1usize..257,
         right_fragment in 1usize..257,
         left_interrupts in any::<bool>(),
         right_interrupts in any::<bool>(),
     ) {
-        let mut right = left.clone();
-        match mode {
-            0 => {}, // Equal content must remain equal under different short reads.
-            1 if !right.is_empty() => { let index = at % right.len(); right[index] ^= 1; },
-            1 => right.push(0),
-            2 => right.truncate(at % (right.len() + 1)),
-            _ => right = independent,
-        }
         let expected = left == right;
         let mut left_reader = Reader::new(&left, left_fragment, left_interrupts);
         let mut right_reader = Reader::new(&right, right_fragment, right_interrupts);
@@ -164,7 +184,7 @@ proptest! {
         let result = chunks(&mut reader, Utf8Path::new("generated.bin"), "read", |part| {
             calls += 1;
             delivered.extend_from_slice(part);
-            if calls == fail_call { Err(WorkspaceError::CopySizeOverflow) } else { Ok(()) }
+            consumer_outcome(calls, fail_call)
         });
         prop_assert!(matches!(result, Err(WorkspaceError::CopySizeOverflow)));
         prop_assert_eq!(calls, fail_call);

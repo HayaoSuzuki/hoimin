@@ -278,38 +278,43 @@ fn internal_rows_match_complete_production_observations() {
     let cases = parse_corpus(CORPUS).expect("valid Lean corpus");
     let selected = selected_cases(&cases).expect("valid single-case filter");
     for item in selected
-        .into_iter()
+        .iter()
         .filter(|item| item.mode == "internal-fixture")
     {
-        match item.observation_kind {
-            ObservationKind::TryExit => {
-                let actual = binding_flow_try_exit_snapshot(&item.source, &item.marker)
-                    .unwrap_or_else(|error| panic!("{}: {error}", item.id));
-                assert_eq!(
-                    actual.fallthrough, item.expected_exits.fallthrough,
-                    "{}",
-                    item.id
-                );
-                assert_eq!(actual.breaks, item.expected_exits.breaks, "{}", item.id);
-                assert_eq!(
-                    actual.continues, item.expected_exits.continues,
-                    "{}",
-                    item.id
-                );
-                assert_eq!(
-                    actual.terminates, item.expected_exits.terminates,
-                    "{}",
-                    item.id
-                );
-            }
-            ObservationKind::LoopHead => {
-                let actual =
-                    binding_flow_loop_head_snapshot_at_marker(&item.source, &item.marker, None)
-                        .unwrap_or_else(|error| panic!("{}: {error}", item.id));
-                assert_eq!(actual, item.expected_facts, "{}", item.id);
-            }
-            ObservationKind::PublicCandidate => unreachable!(),
-        }
+        assert!(!matches!(
+            item.observation_kind,
+            ObservationKind::PublicCandidate
+        ));
+    }
+    for item in selected.iter().filter(|item| {
+        item.mode == "internal-fixture" && matches!(item.observation_kind, ObservationKind::TryExit)
+    }) {
+        let actual = binding_flow_try_exit_snapshot(&item.source, &item.marker)
+            .unwrap_or_else(|error| panic!("{}: {error}", item.id));
+        assert_eq!(
+            actual.fallthrough, item.expected_exits.fallthrough,
+            "{}",
+            item.id
+        );
+        assert_eq!(actual.breaks, item.expected_exits.breaks, "{}", item.id);
+        assert_eq!(
+            actual.continues, item.expected_exits.continues,
+            "{}",
+            item.id
+        );
+        assert_eq!(
+            actual.terminates, item.expected_exits.terminates,
+            "{}",
+            item.id
+        );
+    }
+    for item in selected.iter().filter(|item| {
+        item.mode == "internal-fixture"
+            && matches!(item.observation_kind, ObservationKind::LoopHead)
+    }) {
+        let actual = binding_flow_loop_head_snapshot_at_marker(&item.source, &item.marker, None)
+            .unwrap_or_else(|error| panic!("{}: {error}", item.id));
+        assert_eq!(actual, item.expected_facts, "{}", item.id);
     }
 }
 

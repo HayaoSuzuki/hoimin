@@ -173,11 +173,13 @@ def test_mutation_skills_require_disk_safe_execution(
     root: str, name: str, phrase: str
 ) -> None:
     skill = ROOT / root / "skills" / name / "SKILL.md"
+
     assert phrase in skill.read_text(encoding="utf-8")
 
 
 def test_macos_memory_policy_is_documented() -> None:
     usage = (ROOT / "docs/usage.md").read_text(encoding="utf-8")
+
     assert "--max-memory" in usage
     assert "not enforced" in usage
 
@@ -185,6 +187,7 @@ def test_macos_memory_policy_is_documented() -> None:
 @pytest.mark.parametrize("root", [".agents", ".claude"])
 def test_macos_memory_policy_is_documented_in_skills(root: str) -> None:
     skill = ROOT / root / "skills" / "hoimin-mutation-testing" / "SKILL.md"
+
     assert "--allow-best-effort-memory" in skill.read_text(encoding="utf-8")
 
 
@@ -193,15 +196,18 @@ def test_skill_mirrors_and_frontmatter(name: str) -> None:
     contract = SKILLS[name]
     codex = ROOT / ".agents" / "skills" / name / "SKILL.md"
     claude = ROOT / ".claude" / "skills" / name / "SKILL.md"
+
     assert codex.is_file(), codex
     assert claude.is_file(), claude
     assert codex.read_bytes() == claude.read_bytes()
 
     lines = codex.read_text(encoding="utf-8").splitlines()
+
     assert len(lines) >= 4
     assert lines[0] == "---"
     closing = lines.index("---", 1)
     frontmatter = dict(line.split(": ", 1) for line in lines[1:closing])
+
     assert frontmatter == {"name": name, "description": contract["description"]}
     assert frontmatter["description"].startswith("Use when")
 
@@ -219,4 +225,5 @@ def test_skill_required_workflows(name: str, block: str) -> None:
     lines = skill.read_text(encoding="utf-8").splitlines()
     closing = lines.index("---", 1)
     body = "\n".join(lines[closing + 1 :])
+
     assert block in body

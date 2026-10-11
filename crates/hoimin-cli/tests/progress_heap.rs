@@ -19,7 +19,11 @@ fn progress_heap_peak_is_independent_of_history_length() {
     let fixture = tempfile::tempdir().unwrap();
     let path = fixture.path().join("large-report.json");
     let mut previous_bytes = 0;
-    for mutants in [500, 1_000, 2_000] {
+    for (mutants, eager_histories, long_histories) in [
+        (500, [].as_slice(), [].as_slice()),
+        (1_000, [].as_slice(), [].as_slice()),
+        (2_000, [8].as_slice(), [16].as_slice()),
+    ] {
         let document = large_report(mutants);
         assert_eq!(document["mutants"].as_array().unwrap().len(), mutants);
         std::fs::write(&path, serde_json::to_vec(&document).unwrap()).unwrap();
@@ -37,8 +41,11 @@ fn progress_heap_peak_is_independent_of_history_length() {
             eprintln!(
                 "progress-peak mutants={mutants} report_bytes={bytes} history={history} peak={peak}"
             );
-            if mutants == 2_000 && history == 8 {
-                let eager_peak = measure_eager_history(&path, history, &document);
+            for &eager_history in eager_histories
+                .iter()
+                .filter(|&&candidate| candidate == history)
+            {
+                let eager_peak = measure_eager_history(&path, eager_history, &document);
                 assert!(
                     eager_peak > short_peak + 512 * 1024,
                     "retaining report history escaped the same bound: baseline={short_peak}, eager={eager_peak}"
@@ -48,9 +55,10 @@ fn progress_heap_peak_is_independent_of_history_length() {
                 );
             }
         }
-        if mutants == 2_000 {
-            let (long_peak, _) = measure_history(&path, 16, mutants);
-            let (details_peak, detailed) = measure_history_with_details(&path, 16, mutants, true);
+        for &history in long_histories {
+            let (long_peak, _) = measure_history(&path, history, mutants);
+            let (details_peak, detailed) =
+                measure_history_with_details(&path, history, mutants, true);
             assert!(
                 details_peak <= short_peak + 512 * 1024,
                 "details retained history: short={short_peak} details={details_peak}"

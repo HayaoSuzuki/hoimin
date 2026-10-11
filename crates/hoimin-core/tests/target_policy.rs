@@ -161,33 +161,33 @@ fn automatic_mutant_timeout_uses_baseline_duration() {
 
 #[test]
 fn raw_timeout_limits_accept_the_ceiling_and_reject_one_nanosecond_more() {
-    for name in [
-        "analyzer_timeout",
-        "baseline_timeout",
-        "mutant_timeout",
-        "total_timeout",
-    ] {
+    type SetTimeout = fn(&mut RawRunConfig, Duration);
+    let cases: [(&str, SetTimeout); 4] = [
+        ("analyzer_timeout", |raw, duration| {
+            raw.limits.analyzer_timeout = duration;
+        }),
+        ("baseline_timeout", |raw, duration| {
+            raw.limits.baseline_timeout = duration;
+        }),
+        ("mutant_timeout", |raw, duration| {
+            raw.limits.mutant_timeout = Some(duration);
+        }),
+        ("total_timeout", |raw, duration| {
+            raw.limits.total_timeout = duration;
+        }),
+    ];
+    for (name, set_timeout) in cases {
         let mut accepted = raw_config();
         accepted.limits.mutant_timeout = Some(Duration::from_secs(5));
-        match name {
-            "analyzer_timeout" => accepted.limits.analyzer_timeout = MAX_TIMEOUT,
-            "baseline_timeout" => accepted.limits.baseline_timeout = MAX_TIMEOUT,
-            "mutant_timeout" => accepted.limits.mutant_timeout = Some(MAX_TIMEOUT),
-            "total_timeout" => accepted.limits.total_timeout = MAX_TIMEOUT,
-            _ => unreachable!(),
-        }
+        set_timeout(&mut accepted, MAX_TIMEOUT);
+
         assert!(RunConfig::try_from(accepted).is_ok(), "accepted {name}");
 
         let mut rejected = raw_config();
         rejected.limits.mutant_timeout = Some(Duration::from_secs(5));
         let oversized = MAX_TIMEOUT + Duration::from_nanos(1);
-        match name {
-            "analyzer_timeout" => rejected.limits.analyzer_timeout = oversized,
-            "baseline_timeout" => rejected.limits.baseline_timeout = oversized,
-            "mutant_timeout" => rejected.limits.mutant_timeout = Some(oversized),
-            "total_timeout" => rejected.limits.total_timeout = oversized,
-            _ => unreachable!(),
-        }
+        set_timeout(&mut rejected, oversized);
+
         assert_eq!(
             RunConfig::try_from(rejected),
             Err(ConfigError::InvalidLimit(name)),
@@ -324,11 +324,10 @@ fn whole_file_and_subfile_selectors_resolve_sorted_targets() {
 
 #[test]
 fn root_equal_source_selects_every_python_file() {
-    let root = if cfg!(windows) {
-        Utf8PathBuf::from("C:/project")
-    } else {
-        Utf8PathBuf::from("/project")
-    };
+    #[cfg(windows)]
+    let root = Utf8PathBuf::from("C:/project");
+    #[cfg(not(windows))]
+    let root = Utf8PathBuf::from("/project");
     let discovered = [
         DiscoveredFile::regular("notes.txt"),
         DiscoveredFile::python("pkg/nested.py"),
@@ -635,20 +634,38 @@ fn resolver_consumes_inventory_after_discovery_exclusion() {
 
 #[test]
 fn discovered_bracket_filename_is_not_reinterpreted_as_a_literal_exclude() {
-    for selector in ["source", "file", "line"] {
-        let mut selection = Selection {
+    for (selector, selection) in [
+        (
+            "source",
+            Selection {
+                sources: vec!["src".into()],
+                ..Selection::default()
+            },
+        ),
+        (
+            "file",
+            Selection {
+                files: vec!["src/[ab].py".into()],
+                ..Selection::default()
+            },
+        ),
+        (
+            "line",
+            Selection {
+                lines: vec![LineSelection {
+                    path: "src/[ab].py".into(),
+                    range: LineRange { start: 1, end: 1 },
+                }],
+                ..Selection::default()
+            },
+        ),
+    ] {
+        let selection = Selection {
             root: "project".into(),
             excludes: vec!["src/[ab].py".into()],
-            ..Selection::default()
+            ..selection
         };
-        match selector {
-            "source" => selection.sources.push("src".into()),
-            "file" => selection.files.push("src/[ab].py".into()),
-            _ => selection.lines.push(LineSelection {
-                path: "src/[ab].py".into(),
-                range: LineRange { start: 1, end: 1 },
-            }),
-        }
+
         let targets =
             resolve_explicit(&selection, &[DiscoveredFile::python("src/[ab].py")]).unwrap();
         assert_eq!(targets.len(), 1, "{selector}");

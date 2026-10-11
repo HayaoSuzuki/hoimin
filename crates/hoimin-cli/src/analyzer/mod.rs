@@ -1081,6 +1081,18 @@ mod tests {
         assert_ne!(recovered.candidates, Vec::new());
     }
 
+    async fn wait_for_discovery_entry(
+        receiver: &std::sync::mpsc::Receiver<()>,
+    ) -> Result<(), std::sync::mpsc::TryRecvError> {
+        loop {
+            match receiver.try_recv() {
+                Ok(()) => return Ok(()),
+                Err(std::sync::mpsc::TryRecvError::Empty) => tokio::task::yield_now().await,
+                Err(error) => return Err(error),
+            }
+        }
+    }
+
     #[test]
     fn controlled_discovery_arms_its_deadline_after_blocking_worker_entry() {
         let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -1148,24 +1160,17 @@ mod tests {
                 .send(())
                 .expect("occupied blocking worker still waits for release");
             blocker.await.expect("blocking worker must not panic");
-            if expired_while_queued {
-                let _ = operation.await;
-                panic!("controlled deadline expired before the blocking worker entered");
-            }
+            assert!(
+                !expired_while_queued,
+                "controlled deadline expired before the blocking worker entered"
+            );
 
             tokio::time::timeout(Duration::from_secs(2), async {
-                loop {
-                    match entered_rx.try_recv() {
-                        Ok(()) => break,
-                        Err(mpsc::TryRecvError::Empty) => tokio::task::yield_now().await,
-                        Err(mpsc::TryRecvError::Disconnected) => {
-                            panic!("controlled discovery ended before entry")
-                        }
-                    }
-                }
+                wait_for_discovery_entry(&entered_rx).await
             })
             .await
-            .expect("controlled discovery must enter after the blocking worker is released");
+            .expect("controlled discovery must enter after the blocking worker is released")
+            .expect("controlled discovery ended before entry");
             let error = tokio::time::timeout(Duration::from_millis(200), operation)
                 .await
                 .expect("entry-armed deadline must expire without awaiting release")

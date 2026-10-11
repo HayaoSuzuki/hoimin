@@ -142,31 +142,27 @@ async fn public_plan_and_verify_match_lean_line_diversity() {
         .iter()
         .map(|candidate| {
             let path = std::path::Path::new(candidate["path"].as_str().unwrap());
-            let role = match (
+            let location = (
                 path.file_name().unwrap().to_str().unwrap(),
                 candidate["line"].as_u64().unwrap(),
                 candidate["column"].as_u64().unwrap(),
-            ) {
-                ("a.py", 1, 4) => "a1",
-                ("a.py", 1, 14) => "a2",
-                ("a.py", 1, 25) => "a3",
-                ("a.py", 2, 4) => "a4",
-                ("a.py", 3, 6) => "a5",
-                ("a.py", 3, 17) => "a6",
-                ("b.py", 1, 4) => "b1",
-                ("b.py", 2, 6) => "b2",
-                other => panic!("unexpected fixture location: {other:?}"),
-            };
-            let high = matches!(role, "a1" | "a2" | "a3" | "a4" | "b1");
-            assert_eq!(candidate["score"], if high { 100 } else { 70 });
-            assert_eq!(
-                candidate["operator"],
-                if high {
-                    "boolean_literal"
-                } else {
-                    "binary_add_sub"
-                }
             );
+            let cases = [
+                (("a.py", 1, 4), ("a1", 100, "boolean_literal")),
+                (("a.py", 1, 14), ("a2", 100, "boolean_literal")),
+                (("a.py", 1, 25), ("a3", 100, "boolean_literal")),
+                (("a.py", 2, 4), ("a4", 100, "boolean_literal")),
+                (("a.py", 3, 6), ("a5", 70, "binary_add_sub")),
+                (("a.py", 3, 17), ("a6", 70, "binary_add_sub")),
+                (("b.py", 1, 4), ("b1", 100, "boolean_literal")),
+                (("b.py", 2, 6), ("b2", 70, "binary_add_sub")),
+            ];
+            let (_, (role, score, operator)) = cases
+                .into_iter()
+                .find(|(expected, _)| *expected == location)
+                .expect("registered fixture location");
+            assert_eq!(candidate["score"], score);
+            assert_eq!(candidate["operator"], operator);
             (
                 candidate["id"].as_str().unwrap().to_owned(),
                 role.to_owned(),
@@ -180,22 +176,23 @@ async fn public_plan_and_verify_match_lean_line_diversity() {
         .collect::<BTreeMap<_, _>>();
     let plan = directory.path().join("plan.json");
     std::fs::write(&plan, &manifest_text).unwrap();
+    let represented: Vec<_> = cases
+        .into_iter()
+        .filter(|case| usize::try_from(case.offset).is_ok() && usize::try_from(case.count).is_ok())
+        .collect();
+    for case in represented.iter().filter(|case| case.policy == "strict") {
+        assert_eq!(
+            candidates
+                .iter()
+                .map(|c| roles[c["id"].as_str().unwrap()].clone())
+                .collect::<Vec<_>>(),
+            case.full_order
+        );
+    }
     let mut executed = 0;
-    for case in cases {
+    for case in represented {
         // Explicit u64::MAX controls describe a 64-bit usize CLI.
         // Ordinary cases still run on narrower hosts; do not truncate inputs.
-        if usize::try_from(case.offset).is_err() || usize::try_from(case.count).is_err() {
-            continue;
-        }
-        if case.policy == "strict" {
-            assert_eq!(
-                candidates
-                    .iter()
-                    .map(|c| roles[c["id"].as_str().unwrap()].clone())
-                    .collect::<Vec<_>>(),
-                case.full_order
-            );
-        }
         let (code, stdout, stderr) = cli(vec![
             "hoimin".into(),
             "verify".into(),
@@ -215,7 +212,7 @@ async fn public_plan_and_verify_match_lean_line_diversity() {
         assert_eq!(std::fs::read_to_string(&plan).unwrap(), manifest_text);
         executed += 1;
     }
-    assert_eq!(executed, if usize::BITS >= 64 { 93 } else { 84 });
+    assert_eq!(executed, [84, 93][usize::from(usize::BITS >= 64)]);
 }
 
 async fn create_plan(root: &std::path::Path) -> String {

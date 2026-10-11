@@ -105,15 +105,11 @@ fn lean_directory_cases_match_public_create_and_repeated_reset() {
         assert!(ids.insert(case.id));
         let temp = tempfile::tempdir().unwrap();
         let root = Utf8Path::from_path(temp.path()).unwrap();
-        if case.selected {
-            fs::create_dir_all(root.join("fixture/empty")).unwrap();
+        for directory in [&[][..], &["fixture/empty"][..]][usize::from(case.selected)] {
+            fs::create_dir_all(root.join(directory)).unwrap();
         }
         let options = CopyOptions {
-            excludes: if case.excluded {
-                vec!["fixture/**".into()]
-            } else {
-                vec![]
-            },
+            excludes: [vec![], vec!["fixture/**".into()]][usize::from(case.excluded)].clone(),
             ..CopyOptions::default()
         };
         let plan = WorkspacePlan::preflight(root, EffectId(1), 1, options).unwrap();
@@ -121,20 +117,24 @@ fn lean_directory_cases_match_public_create_and_repeated_reset() {
         let mut copied = worker(&plan);
         let path = copied.root().join("fixture/empty");
         assert_eq!(path.is_dir(), case.directory);
-        if path.exists() {
-            fs::remove_dir(&path).unwrap();
+        for existing in std::iter::once(&path).filter(|path| path.exists()) {
+            fs::remove_dir(existing).unwrap();
         }
-        match case.initial.as_str() {
-            "absent" => {}
-            "file" => {
+        let arrange_initial: fn(&Utf8Path) = [
+            ("absent", (|_: &Utf8Path| {}) as fn(&Utf8Path)),
+            ("file", |path| {
                 fs::create_dir_all(path.parent().unwrap()).unwrap();
-                fs::write(&path, "wrong type").unwrap();
-            }
-            "directory" => fs::create_dir_all(&path).unwrap(),
-            _ => panic!("unknown entry state"),
-        }
-        if case.extra {
-            fs::create_dir_all(copied.root().join("extra")).unwrap();
+                fs::write(path, "wrong type").unwrap();
+            }),
+            ("directory", |path| fs::create_dir_all(path).unwrap()),
+        ]
+        .into_iter()
+        .find(|(name, _)| *name == case.initial)
+        .unwrap()
+        .1;
+        arrange_initial(&path);
+        for directory in [&[][..], &["extra"][..]][usize::from(case.extra)] {
+            fs::create_dir_all(copied.root().join(directory)).unwrap();
         }
         for _ in 0..2 {
             copied.reset().unwrap();
@@ -178,13 +178,13 @@ async fn public_cli_baseline_and_mutants_see_empty_fixture_directory() {
     let temp = tempfile::tempdir().unwrap();
     fs::create_dir_all(temp.path().join("fixture/empty")).unwrap();
     fs::write(temp.path().join("calc.py"), "a = 1 + 2\nb = 3 + 4\n").unwrap();
+    #[cfg(windows)]
+    let python_relative = ".venv/Scripts/python.exe";
+    #[cfg(not(windows))]
+    let python_relative = ".venv/bin/python";
     let python = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
-        .join(if cfg!(windows) {
-            ".venv/Scripts/python.exe"
-        } else {
-            ".venv/bin/python"
-        });
+        .join(python_relative);
     let output = tokio::time::timeout(std::time::Duration::from_secs(30),
         tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
             .args(["run", "--root"]).arg(temp.path())

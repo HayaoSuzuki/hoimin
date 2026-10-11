@@ -7,6 +7,18 @@ use hoimin_cli::cli::{
 };
 use hoimin_core::{MutationOperator, MutationOperatorSelection, MutationProfile};
 
+type ConfigParser = fn(&[&str]) -> Result<hoimin_core::RunConfig, hoimin_cli::cli::CliError>;
+
+const CONFIG_PARSERS: [(&str, ConfigParser); 2] = [
+    ("run", |args| parse_config_from(args.iter().copied())),
+    ("plan", |args| {
+        let ParsedCommand::Plan(plan) = parse_from(args.iter().copied())? else {
+            panic!("expected plan");
+        };
+        plan.into_run_config()
+    }),
+];
+
 const RUNTIME_DEFAULT_OPERATOR_IDS: [&str; 53] = [
     "compare_eq_ne",
     "compare_order",
@@ -694,7 +706,7 @@ fn run_and_plan_parse_explicit_disk_safety_limits() {
 
 #[test]
 fn disk_safety_limits_reject_zero_malformed_and_overflow_with_the_exact_flag() {
-    for command in ["run", "plan"] {
+    for (command, parse_config) in CONFIG_PARSERS {
         for (flag, value) in [
             ("--max-workspace-size", "0"),
             ("--max-workspace-size", "bogus"),
@@ -704,19 +716,9 @@ fn disk_safety_limits_reject_zero_malformed_and_overflow_with_the_exact_flag() {
             ("--min-free-space", "18446744073709551616B"),
         ] {
             let args = [
-                "hoimin", "plan", "--file", "pkg/a.py", flag, value, "--", "python",
+                "hoimin", command, "--file", "pkg/a.py", flag, value, "--", "python",
             ];
-            let error = if command == "run" {
-                let mut args = args;
-                args[1] = "run";
-                parse_config_from(args).unwrap_err()
-            } else {
-                let ParsedCommand::Plan(plan) = parse_from(args).unwrap() else {
-                    panic!("expected plan");
-                };
-                plan.into_run_config().unwrap_err()
-            }
-            .to_string();
+            let error = parse_config(&args).unwrap_err().to_string();
 
             assert!(
                 error.contains(flag),
@@ -1508,7 +1510,7 @@ fn operator_flags_reject_type_mapping_alias() {
 
 #[test]
 fn import_roots_are_ordered_normalized_and_independent_of_selection() {
-    for command in ["run", "plan"] {
+    for (command, parse_config) in CONFIG_PARSERS {
         let args = [
             "hoimin",
             command,
@@ -1527,11 +1529,7 @@ fn import_roots_are_ordered_normalized_and_independent_of_selection() {
             "--",
             "python",
         ];
-        let config = match parse_from(args).unwrap() {
-            ParsedCommand::Run(_) => parse_config_from(args).unwrap(),
-            ParsedCommand::Plan(args) => args.into_run_config().unwrap(),
-            _ => panic!("unexpected command"),
-        };
+        let config = parse_config(&args).unwrap();
         assert_eq!(config.import_roots, ["vendor", "src", "."]);
         assert_eq!(config.selection.sources, Vec::<camino::Utf8PathBuf>::new());
         assert_eq!(config.selection.files, ["src/pkg/a.py"]);
@@ -1584,7 +1582,7 @@ fn run_help_explains_windows_per_root_resource_scope() {
 
 #[test]
 fn changed_context_parses_for_run_and_plan_and_checks_bounds() {
-    for command in ["run", "plan"] {
+    for (command, parse_config) in CONFIG_PARSERS {
         for context in ["0", "1", "1073741823"] {
             let command_line = [
                 "hoimin",
@@ -1597,14 +1595,7 @@ fn changed_context_parses_for_run_and_plan_and_checks_bounds() {
                 "--",
                 "python",
             ];
-            let config = if command == "run" {
-                parse_config_from(command_line).unwrap()
-            } else {
-                let ParsedCommand::Plan(args) = parse_from(command_line).unwrap() else {
-                    panic!("expected plan")
-                };
-                args.into_run_config().unwrap()
-            };
+            let config = parse_config(&command_line).unwrap();
             assert_eq!(
                 serde_json::to_value(config).unwrap()["selection"]["changed_context"],
                 context.parse::<u32>().unwrap()

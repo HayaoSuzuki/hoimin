@@ -1334,14 +1334,10 @@ mod tests {
             .await
             .expect("plan create timeout must not await detached discovery")
             .unwrap();
-        let mut stdout = Vec::new();
-        let error = match result {
-            Ok(output) => {
-                serde_json::to_writer(&mut stdout, &output.manifest).unwrap();
-                panic!("paused discovery unexpectedly created a plan")
-            }
-            Err(error) => error,
-        };
+        let stdout = Vec::<u8>::new();
+        let error = result
+            .map(|_| ())
+            .expect_err("paused discovery unexpectedly created a plan");
         assert_eq!(
             error.to_string(),
             "plan.discovery: analyzer.timeout: --analyzer-timeout expired after 20ms"

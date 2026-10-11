@@ -395,9 +395,8 @@ fn rejects_oversized_line_before_parsing() {
 fn finished_summary_is_returned_once() {
     let mut protocol = protocol();
     let record = protocol.receive_line(br#"{"kind":"summary","effect_id":7,"candidate_count":0,"diagnostic_count":0,"truncated":false}"#).unwrap();
-    let summary = match record {
-        Some(AnalyzerRecord::Summary(summary)) => summary,
-        other => panic!("unexpected record: {other:?}"),
+    let Some(AnalyzerRecord::Summary(summary)) = record else {
+        panic!("unexpected record: {record:?}");
     };
     assert_eq!(protocol.finish().unwrap(), summary);
 }

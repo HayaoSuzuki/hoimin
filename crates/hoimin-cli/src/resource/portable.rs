@@ -607,6 +607,76 @@ mod unix_tests {
         assert_eq!(observed.rlim_max, expected_hard);
     }
 
+    fn requested_cpu_hard_limit(inherited: libc::rlim_t) -> libc::rlim_t {
+        if inherited == libc::RLIM_INFINITY {
+            31
+        } else {
+            inherited.min(31)
+        }
+    }
+
+    fn install_fixture_cpu_limit(
+        command: &mut Command,
+        requested_soft: libc::rlim_t,
+        requested_hard: libc::rlim_t,
+    ) {
+        // SAFETY: the closure changes only the soon-to-exec child and calls libc setrlimit.
+        unsafe {
+            command.as_std_mut().pre_exec(move || {
+                let requested = libc::rlimit {
+                    rlim_cur: requested_soft,
+                    rlim_max: requested_hard,
+                };
+                if libc::setrlimit(libc::RLIMIT_CPU, std::ptr::addr_of!(requested)) != 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+    }
+
+    async fn complete_rlimit_probe(
+        supervisor: &mut ProcessSupervisor,
+        child: &mut Child,
+        stdout_task: tokio::task::JoinHandle<Vec<u8>>,
+        stderr_task: tokio::task::JoinHandle<Vec<u8>>,
+    ) -> (
+        Result<std::process::ExitStatus, String>,
+        Vec<String>,
+        Vec<u8>,
+        Vec<u8>,
+    ) {
+        if let Err(error) = supervisor.attach(child) {
+            let mut cleanup = cleanup_probe(supervisor, child, false).await;
+            let stdout = finish_pipe(stdout_task, "probe stdout", &mut cleanup).await;
+            let stderr = finish_pipe(stderr_task, "probe stderr", &mut cleanup).await;
+            return (
+                Err(format!("attach RLIMIT_CPU probe: {error}")),
+                cleanup,
+                stdout,
+                stderr,
+            );
+        }
+        let mut diagnostics = Vec::new();
+        let outcome = match tokio::time::timeout(Duration::from_secs(10), child.wait()).await {
+            Ok(Ok(status)) => supervisor
+                .terminate(false)
+                .map(|_| status)
+                .map_err(|error| format!("disarm RLIMIT_CPU supervisor: {error}")),
+            Ok(Err(error)) => {
+                diagnostics.extend(cleanup_probe(supervisor, child, true).await);
+                Err(format!("wait for RLIMIT_CPU probe: {error}"))
+            }
+            Err(_) => {
+                diagnostics.extend(cleanup_probe(supervisor, child, true).await);
+                Err("RLIMIT_CPU probe timed out".to_owned())
+            }
+        };
+        let stdout = finish_pipe(stdout_task, "probe stdout", &mut diagnostics).await;
+        let stderr = finish_pipe(stderr_task, "probe stderr", &mut diagnostics).await;
+        (outcome, diagnostics, stdout, stderr)
+    }
+
     #[tokio::test]
     async fn portable_setup_preserves_inherited_rlimit_cpu() {
         let mut inherited = MaybeUninit::<libc::rlimit>::uninit();
@@ -617,11 +687,7 @@ mod unix_tests {
         );
         // SAFETY: getrlimit succeeded and initialized the value.
         let inherited = unsafe { inherited.assume_init() };
-        let requested_hard = if inherited.rlim_max == libc::RLIM_INFINITY {
-            31
-        } else {
-            inherited.rlim_max.min(31)
-        };
+        let requested_hard = requested_cpu_hard_limit(inherited.rlim_max);
         assert!(
             requested_hard >= 10,
             "inherited RLIMIT_CPU has no safe fixture headroom"
@@ -642,19 +708,7 @@ mod unix_tests {
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        // SAFETY: the closure changes only the soon-to-exec child and calls libc setrlimit.
-        unsafe {
-            command.as_std_mut().pre_exec(move || {
-                let requested = libc::rlimit {
-                    rlim_cur: requested_soft,
-                    rlim_max: requested_hard,
-                };
-                if libc::setrlimit(libc::RLIMIT_CPU, std::ptr::addr_of!(requested)) != 0 {
-                    return Err(std::io::Error::last_os_error());
-                }
-                Ok(())
-            });
-        }
+        install_fixture_cpu_limit(&mut command, requested_soft, requested_hard);
 
         let backend = PortableBackend::for_tests();
         let mut supervisor = backend
@@ -671,33 +725,8 @@ mod unix_tests {
         let mut child = command.spawn().unwrap();
         let stdout_task = tokio::spawn(read_pipe(child.stdout.take().unwrap()));
         let stderr_task = tokio::spawn(read_pipe(child.stderr.take().unwrap()));
-        if let Err(error) = supervisor.attach(&child) {
-            let mut cleanup = cleanup_probe(&mut supervisor, &mut child, false).await;
-            let stdout = finish_pipe(stdout_task, "probe stdout", &mut cleanup).await;
-            let stderr = finish_pipe(stderr_task, "probe stderr", &mut cleanup).await;
-            panic!(
-                "attach RLIMIT_CPU probe: {error}; cleanup={cleanup:?}; stdout={} stderr={}",
-                String::from_utf8_lossy(&stdout),
-                String::from_utf8_lossy(&stderr),
-            );
-        }
-        let mut diagnostics = Vec::new();
-        let outcome = match tokio::time::timeout(Duration::from_secs(10), child.wait()).await {
-            Ok(Ok(status)) => supervisor
-                .terminate(false)
-                .map(|_| status)
-                .map_err(|error| format!("disarm RLIMIT_CPU supervisor: {error}")),
-            Ok(Err(error)) => {
-                diagnostics.extend(cleanup_probe(&mut supervisor, &mut child, true).await);
-                Err(format!("wait for RLIMIT_CPU probe: {error}"))
-            }
-            Err(_) => {
-                diagnostics.extend(cleanup_probe(&mut supervisor, &mut child, true).await);
-                Err("RLIMIT_CPU probe timed out".to_owned())
-            }
-        };
-        let stdout = finish_pipe(stdout_task, "probe stdout", &mut diagnostics).await;
-        let stderr = finish_pipe(stderr_task, "probe stderr", &mut diagnostics).await;
+        let (outcome, diagnostics, stdout, stderr) =
+            complete_rlimit_probe(&mut supervisor, &mut child, stdout_task, stderr_task).await;
         let status = outcome.unwrap_or_else(|error| {
             panic!(
                 "{error}; diagnostics={diagnostics:?}; stdout={} stderr={}",

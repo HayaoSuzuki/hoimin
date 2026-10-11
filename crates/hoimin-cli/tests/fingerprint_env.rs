@@ -38,12 +38,11 @@ async fn selected_environment_change_reruns_and_matches_fresh_weak_control() {
 
 #[tokio::test]
 async fn same_values_reuse_and_unselected_changes_keep_existing_behavior() {
-    for names in [vec![FLAG], vec![]] {
+    for (names, value) in [(vec![FLAG], "1"), (vec![], "0")] {
         let fixture = Fixture::new();
         let first = fixture
             .run("session.sqlite", false, &names, Some(OsStr::new("1")))
             .await;
-        let value = if names.is_empty() { "0" } else { "1" };
         let resumed = fixture
             .run("session.sqlite", true, &names, Some(OsStr::new(value)))
             .await;
@@ -137,17 +136,18 @@ async fn captured_plaintext_is_absent_from_run_and_session_artifacts() {
         .as_str()
         .unwrap();
     assert_eq!(hash.len(), 64);
-    for path in std::fs::read_dir(fixture.directory.path()).unwrap() {
-        let path = path.unwrap().path();
-        if path.is_file() {
-            let bytes = std::fs::read(&path).unwrap();
-            assert!(
-                !bytes
-                    .windows(secret.len())
-                    .any(|part| part == secret.as_bytes()),
-                "{}",
-                path.display()
-            );
-        }
+    for path in std::fs::read_dir(fixture.directory.path())
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.is_file())
+    {
+        let bytes = std::fs::read(&path).unwrap();
+        assert!(
+            !bytes
+                .windows(secret.len())
+                .any(|part| part == secret.as_bytes()),
+            "{}",
+            path.display()
+        );
     }
 }

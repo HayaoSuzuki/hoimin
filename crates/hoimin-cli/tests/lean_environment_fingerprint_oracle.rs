@@ -126,25 +126,18 @@ fn corpus_is_closed_unique_and_complete() {
         .lines()
         .map(|line| serde_json::from_str::<Value>(line).unwrap())
         .collect::<Vec<_>>();
-    for mutation in 0..5 {
+    let mutations: [fn(&mut Vec<Value>); 5] = [
+        |rows| rows[0]["extra"] = json!(true),
+        |rows| rows[0]["schema"] = json!(2),
+        |rows| rows[0] = rows[1].clone(),
+        |rows| rows[0]["before"] = json!("other"),
+        |rows| {
+            rows[0].as_object_mut().unwrap().remove("before");
+        },
+    ];
+    for mutate in mutations {
         let mut changed = rows.clone();
-        match mutation {
-            0 => {
-                changed[0]["extra"] = json!(true);
-            }
-            1 => {
-                changed[0]["schema"] = json!(2);
-            }
-            2 => {
-                changed[0] = changed[1].clone();
-            }
-            3 => {
-                changed[0]["before"] = json!("other");
-            }
-            _ => {
-                changed[0].as_object_mut().unwrap().remove("before");
-            }
-        }
+        mutate(&mut changed);
         let encoded = changed
             .iter()
             .map(Value::to_string)
@@ -169,7 +162,7 @@ fn corpus_is_closed_unique_and_complete() {
 async fn public_environment_resume_matches_all_lean_cases() {
     for row in cases(CORPUS).unwrap() {
         let fixture = Fixture::new();
-        let names = if row.tracked { vec![FLAG] } else { vec![] };
+        let names: Vec<_> = row.tracked.then_some(FLAG).into_iter().collect();
         let initial = fixture
             .run(
                 "session.sqlite",
@@ -200,12 +193,35 @@ async fn public_environment_resume_matches_all_lean_cases() {
             "{} candidate",
             row.id
         );
-        if row.tracked {
-            assert_eq!(
-                resumed.report["mutants"][0]["status"], row.fresh_status,
-                "{} fresh equivalence",
-                row.id
-            );
-        }
+    }
+}
+
+#[tokio::test]
+async fn tracked_environment_resume_matches_fresh_status() {
+    for row in cases(CORPUS).unwrap().into_iter().filter(|row| row.tracked) {
+        let fixture = Fixture::new();
+        fixture
+            .run(
+                "session.sqlite",
+                false,
+                &[FLAG],
+                row.before.as_deref().map(OsStr::new),
+            )
+            .await;
+
+        let resumed = fixture
+            .run(
+                "session.sqlite",
+                true,
+                &[FLAG],
+                row.after.as_deref().map(OsStr::new),
+            )
+            .await;
+
+        assert_eq!(
+            resumed.report["mutants"][0]["status"], row.fresh_status,
+            "{} fresh equivalence",
+            row.id
+        );
     }
 }

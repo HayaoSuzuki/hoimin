@@ -1413,11 +1413,10 @@ mod tests {
             .unwrap();
         plan.verify_originals().unwrap();
 
-        let expected_snapshot_hash_bytes = if cfg!(feature = "contracts") {
-            2 * fixture_bytes
-        } else {
-            0
-        };
+        #[cfg(feature = "contracts")]
+        let expected_snapshot_hash_bytes = 2 * fixture_bytes;
+        #[cfg(not(feature = "contracts"))]
+        let expected_snapshot_hash_bytes = 0;
         assert_eq!(
             plan.materialization_io_snapshot(),
             MaterializationIoSnapshot {

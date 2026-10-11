@@ -25,6 +25,64 @@ signatures must supply this argument; there is no inferred or default backend.
 Tests that supply a policy exercise core reporting, not native OS enforcement.
 The report schema retains its existing `mode` and singular `mechanism` fields.
 
+## Test structure
+
+Write Python and Rust tests using Arrange–Act–Assert (AAA). Group fixtures and
+inputs first, leave a blank line before the operation under test, then leave a
+blank line before assertions. Use names that describe the input, result and
+expected behavior; `Arrange`, `Act` and `Assert` comments are unnecessary.
+
+```python
+def test_empty_diff_requires_no_checks() -> None:
+    paths: list[str] = []
+
+    flags = ci_selection.classify(paths)
+
+    assert not any(flags.values())
+```
+
+```rust
+#[test]
+fn reading_missing_store_does_not_create_it() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("reviews.sqlite3");
+    let project = camino::Utf8Path::new("/project");
+
+    let store = ReviewStore::open_read(&path, project).unwrap();
+
+    assert!(store.is_none());
+    assert!(!path.exists());
+}
+```
+
+Keep assertions about the same result together, including related side effects.
+Split independent successful and rejected inputs into named tests or parameterized
+cases. Each case should start from its own prepared state. Keep ordered operations
+together when testing their interaction, such as retries, concurrent writes or
+persisting history across reopen. Capture intermediate results and verify them
+together after the sequence. Fixture precondition checks can stay with setup;
+keep cleanup in fixtures, context managers or Rust RAII. For exceptions,
+`pytest.raises` naturally contains the action and the exception expectation.
+Property tests follow the same structure for each generated input; preserve their
+strategies, seeds and limits when reorganizing them.
+
+Do not choose different operations or assertions with `if`, conditional
+expressions, or scenario-selecting `match` inside a test. Parameterize inputs and
+expected results, or split the scenarios into named tests. Use `skipif`/fixtures
+and Rust `cfg` for platform or tool availability. Fixture builders and stateful
+test drivers may branch to construct inputs or simulate the system; do not move
+conditional assertions into helpers. A Rust variant guard that fails immediately
+for an unexpected result is an assertion, rather than a choice of test scenario.
+
+Prefer property-based tests when a parameter table samples a wider input domain
+governed by one invariant. Keep the original boundaries as explicit examples,
+use bounded strategies, and retain shrinking. Keep finite categories exhaustive
+(platforms, output formats, error kinds and oracle corpus rows). Avoid generating
+large numbers of expensive subprocess cases when focused examples suffice.
+
+See [Semaphore's AAA guide](https://semaphore.io/blog/aaa-pattern-test-automation)
+and [Alex Nicolas's examples](https://dev.to/alexnicolascode/mastering-unit-testing-the-power-of-the-aaa-arrange-act-assert-oki).
+
 ## Local quality gate
 
 Install [prek](https://github.com/j178/prek) and enable the Git pre-commit hook

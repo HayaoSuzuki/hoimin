@@ -152,22 +152,23 @@ async fn public_plan_and_verify_match_lean_paging() {
         .collect::<BTreeMap<_, _>>();
     let plan = directory.path().join("plan.json");
     std::fs::write(&plan, &manifest_text).unwrap();
+    let represented: Vec<_> = cases
+        .into_iter()
+        .filter(|case| usize::try_from(case.offset).is_ok() && usize::try_from(case.count).is_ok())
+        .collect();
+    for case in represented.iter().filter(|case| case.policy == "strict") {
+        assert_eq!(
+            candidates
+                .iter()
+                .map(|c| roles[c["id"].as_str().unwrap()].clone())
+                .collect::<Vec<_>>(),
+            case.full_order
+        );
+    }
     let mut executed = 0;
-    for case in cases {
+    for case in represented {
         // The two explicit u64::MAX controls describe a 64-bit usize CLI.
         // Ordinary cases still run on narrower hosts; do not truncate inputs.
-        if usize::try_from(case.offset).is_err() || usize::try_from(case.count).is_err() {
-            continue;
-        }
-        if case.policy == "strict" {
-            assert_eq!(
-                candidates
-                    .iter()
-                    .map(|c| roles[c["id"].as_str().unwrap()].clone())
-                    .collect::<Vec<_>>(),
-                case.full_order
-            );
-        }
         let (code, stdout, stderr) = cli(vec![
             "hoimin".into(),
             "verify".into(),
@@ -187,7 +188,7 @@ async fn public_plan_and_verify_match_lean_paging() {
         assert_eq!(std::fs::read_to_string(&plan).unwrap(), manifest_text);
         executed += 1;
     }
-    assert_eq!(executed, if usize::BITS >= 64 { 59 } else { 57 });
+    assert_eq!(executed, [57, 59][usize::from(usize::BITS >= 64)]);
 }
 
 async fn create_plan(root: &std::path::Path) -> String {

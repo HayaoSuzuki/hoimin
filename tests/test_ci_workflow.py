@@ -687,68 +687,127 @@ def assert_release_provenance(jobs: dict[str, dict[str, object]]) -> None:
     assert "unexpectedly accepted" in command
 
 
-@pytest.mark.parametrize(
-    "damage",
-    [
-        "preview-write",
-        "missing-checksum-subject",
-        "rebuild-checksums",
-        "different-artifact",
-        "missing-source-gate",
-        "missing-signature-policy",
-        "publish-without-attest",
-        "attest-without-archive-smoke",
-        "attest-without-linux-abi",
-        "smoke-unverified-bytes",
-    ],
-)
-def test_release_provenance_rejects_broken_publication_contract(damage: str) -> None:
+def test_release_provenance_rejects_preview_write() -> None:
     document = workflow_contract(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
     jobs = workflow_jobs(document)
     attest = jobs["attest"]
-    if damage == "preview-write":
-        attest["if"] = "always()"
-    elif damage == "missing-checksum-subject":
-        action = next(
-            step for step in job_steps(attest) if step.get("uses") == "actions/attest"
-        )
-        action["with"] = {"subject-checksums": "dist/SHA256SUMS"}
-    elif damage == "rebuild-checksums":
-        check = named_step(jobs["publish"], "Verify unchanged release assets")
-        check["run"] = string(check["run"]).replace(" --verify", "")
-    elif damage == "different-artifact":
-        download = next(
-            step
-            for step in job_steps(attest)
-            if step.get("uses") == "actions/download-artifact"
-        )
-        download["with"] = {"pattern": "release-*", "path": "dist"}
-    elif damage == "missing-source-gate":
-        identity = named_step(attest, "Record source and workflow identities")
-        identity["run"] = string(identity["run"]).replace(
-            'test "$SOURCE_SHA" = "$COMMIT"', "true"
-        )
-    elif damage == "missing-signature-policy":
-        verification = named_step(attest, "Verify provenance and rejection policies")
-        verification["run"] = string(verification["run"]).replace(
-            '--signer-digest "$WORKFLOW_SHA"', ""
-        )
-    elif damage == "smoke-unverified-bytes":
-        download = next(
-            step
-            for step in job_steps(jobs["archive-smoke"])
-            if step.get("uses") == "actions/download-artifact"
-        )
-        download["with"] = {"pattern": "release-*", "path": "dist"}
-    elif damage.startswith("attest-without-"):
-        dependency = damage.removeprefix("attest-without-")
-        attest["needs"] = ["prepare", "validate"]
-        attest["if"] = string(attest["if"]).replace(
-            f"needs.{dependency}.result == 'success' && ", ""
-        )
-    else:
-        jobs["publish"]["needs"] = ["prepare", "validate"]
-    # workflow_contract normalizes action identities; inspect the decoded jobs.
+    attest["if"] = "always()"
+
+    with pytest.raises(AssertionError):
+        assert_release_provenance(jobs)
+
+
+def test_release_provenance_rejects_missing_checksum_subject() -> None:
+    document = workflow_contract(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
+    jobs = workflow_jobs(document)
+    attest = jobs["attest"]
+    action = next(
+        step for step in job_steps(attest) if step.get("uses") == "actions/attest"
+    )
+    action["with"] = {"subject-checksums": "dist/SHA256SUMS"}
+
+    with pytest.raises(AssertionError):
+        assert_release_provenance(jobs)
+
+
+def test_release_provenance_rejects_rebuild_checksums() -> None:
+    document = workflow_contract(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
+    jobs = workflow_jobs(document)
+    check = named_step(jobs["publish"], "Verify unchanged release assets")
+    check["run"] = string(check["run"]).replace(" --verify", "")
+
+    with pytest.raises(AssertionError):
+        assert_release_provenance(jobs)
+
+
+def test_release_provenance_rejects_different_artifact() -> None:
+    document = workflow_contract(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
+    jobs = workflow_jobs(document)
+    attest = jobs["attest"]
+    download = next(
+        step
+        for step in job_steps(attest)
+        if step.get("uses") == "actions/download-artifact"
+    )
+    download["with"] = {"pattern": "release-*", "path": "dist"}
+
+    with pytest.raises(AssertionError):
+        assert_release_provenance(jobs)
+
+
+def test_release_provenance_rejects_missing_source_gate() -> None:
+    document = workflow_contract(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
+    jobs = workflow_jobs(document)
+    attest = jobs["attest"]
+    identity = named_step(attest, "Record source and workflow identities")
+    identity["run"] = string(identity["run"]).replace(
+        'test "$SOURCE_SHA" = "$COMMIT"', "true"
+    )
+
+    with pytest.raises(AssertionError):
+        assert_release_provenance(jobs)
+
+
+def test_release_provenance_rejects_missing_signature_policy() -> None:
+    document = workflow_contract(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
+    jobs = workflow_jobs(document)
+    attest = jobs["attest"]
+    verification = named_step(attest, "Verify provenance and rejection policies")
+    verification["run"] = string(verification["run"]).replace(
+        '--signer-digest "$WORKFLOW_SHA"', ""
+    )
+
+    with pytest.raises(AssertionError):
+        assert_release_provenance(jobs)
+
+
+def test_release_provenance_rejects_smoke_unverified_bytes() -> None:
+    document = workflow_contract(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
+    jobs = workflow_jobs(document)
+    download = next(
+        step
+        for step in job_steps(jobs["archive-smoke"])
+        if step.get("uses") == "actions/download-artifact"
+    )
+    download["with"] = {"pattern": "release-*", "path": "dist"}
+
+    with pytest.raises(AssertionError):
+        assert_release_provenance(jobs)
+
+
+def test_release_provenance_rejects_attest_without_archive_smoke() -> None:
+    document = workflow_contract(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
+    jobs = workflow_jobs(document)
+    attest = jobs["attest"]
+    dependency = "archive-smoke"
+    attest["needs"] = ["prepare", "validate"]
+    attest["if"] = string(attest["if"]).replace(
+        f"needs.{dependency}.result == 'success' && ", ""
+    )
+
+    with pytest.raises(AssertionError):
+        assert_release_provenance(jobs)
+
+
+def test_release_provenance_rejects_attest_without_linux_abi() -> None:
+    document = workflow_contract(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
+    jobs = workflow_jobs(document)
+    attest = jobs["attest"]
+    dependency = "linux-abi"
+    attest["needs"] = ["prepare", "validate"]
+    attest["if"] = string(attest["if"]).replace(
+        f"needs.{dependency}.result == 'success' && ", ""
+    )
+
+    with pytest.raises(AssertionError):
+        assert_release_provenance(jobs)
+
+
+def test_release_provenance_rejects_publish_without_attest() -> None:
+    document = workflow_contract(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
+    jobs = workflow_jobs(document)
+    jobs["publish"]["needs"] = ["prepare", "validate"]
+
     with pytest.raises(AssertionError):
         assert_release_provenance(jobs)
 
@@ -771,12 +830,9 @@ def assert_repository_rust_toolchain(toolchain: dict[str, object]) -> None:
     )
 
 
-@pytest.mark.parametrize(
-    "mode", ["valid", "baseline-fails", "modified", "repository", "source"]
-)
-def test_provenance_shell_stops_on_failed_verification(
+def run_provenance_verification(
     tmp_path: Path, mode: str
-) -> None:
+) -> tuple[subprocess.CompletedProcess[str], list[str], bytes]:
     document = workflow_document(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
     step = named_step(
         workflow_jobs(document)["attest"], "Verify provenance and rejection policies"
@@ -812,6 +868,7 @@ gh() {
   esac
 }
 """
+
     result = subprocess.run(  # noqa: S603 -- trusted repository script, fake gh, no network
         [bash_executable(), "-e", "-o", "pipefail"],
         input=double + string(step["run"]),
@@ -822,15 +879,38 @@ gh() {
         check=False,
         timeout=30,
     )
-    assert (result.returncode == 0) == (mode == "valid"), result.stderr
+
     calls = (tmp_path / "calls.txt").read_text().splitlines()
-    if mode == "baseline-fails":
-        assert len(calls) == 1
-    else:
-        assert len([call for call in calls if "--format json" in call]) == 13
-        if mode != "valid":
-            assert "unexpectedly accepted" in result.stdout
-    assert (tmp_path / "provenance/bundle.json").read_bytes() == b"fixture bundle"
+    bundle = (tmp_path / "provenance/bundle.json").read_bytes()
+    return result, calls, bundle
+
+
+def test_provenance_shell_accepts_valid_verification(tmp_path: Path) -> None:
+    result, calls, bundle = run_provenance_verification(tmp_path, "valid")
+
+    assert result.returncode == 0, result.stderr
+    assert len([call for call in calls if "--format json" in call]) == 13
+    assert bundle == b"fixture bundle"
+
+
+def test_provenance_shell_stops_after_baseline_failure(tmp_path: Path) -> None:
+    result, calls, bundle = run_provenance_verification(tmp_path, "baseline-fails")
+
+    assert result.returncode != 0, result.stderr
+    assert len(calls) == 1
+    assert bundle == b"fixture bundle"
+
+
+@pytest.mark.parametrize("mode", ["modified", "repository", "source"])
+def test_provenance_shell_rejects_unexpected_acceptance(
+    tmp_path: Path, mode: str
+) -> None:
+    result, calls, bundle = run_provenance_verification(tmp_path, mode)
+
+    assert result.returncode != 0, result.stderr
+    assert len([call for call in calls if "--format json" in call]) == 13
+    assert "unexpectedly accepted" in result.stdout
+    assert bundle == b"fixture bundle"
 
 
 def test_provenance_evidence_is_not_collected_as_a_platform_build() -> None:
@@ -849,6 +929,7 @@ def test_provenance_evidence_is_not_collected_as_a_platform_build() -> None:
     # Artifacts from the previous attempt can still exist when jobs are rerun.
     pattern = string(mapping(download["with"])["pattern"])
     name = string(mapping(evidence["with"])["name"])
+
     assert not fnmatchcase(name, pattern)
 
 
@@ -884,6 +965,7 @@ def test_every_workflow_uses_known_actions_with_full_commit_pins(path: Path) -> 
         for step in job_steps(job)
         if "uses" in step
     ]
+
     assert actions
     for action in actions:
         assert action in allowed
@@ -892,6 +974,7 @@ def test_every_workflow_uses_known_actions_with_full_commit_pins(path: Path) -> 
 def test_scheduled_fuzz_runs_daily_with_selectable_per_target_time() -> None:
     assert FUZZ_WORKFLOW.exists(), "scheduled fuzz workflow is missing"
     workflow = workflow_contract(FUZZ_WORKFLOW.read_text(encoding="utf-8"))
+
     assert workflow[True] == {
         "schedule": [{"cron": "17 18 * * *"}],
         "workflow_dispatch": {
@@ -912,11 +995,13 @@ def test_scheduled_fuzz_runs_daily_with_selectable_per_target_time() -> None:
     }
 
     job = workflow_jobs(workflow)["fuzz"]
+
     assert job["runs-on"] == "ubuntu-latest"
     assert job["timeout-minutes"] == 60
     restore = named_step(job, "Restore discovered corpus")
     save = named_step(job, "Save discovered corpus")
     artifacts = named_step(job, "Preserve fuzz diagnostics")
+
     assert restore["uses"] == CACHE_RESTORE_ACTION
     assert save["uses"] == CACHE_SAVE_ACTION
     assert save["if"] == "always()"
@@ -926,6 +1011,7 @@ def test_scheduled_fuzz_runs_daily_with_selectable_per_target_time() -> None:
     )
     restore_inputs = mapping(restore["with"])
     save_inputs = mapping(save["with"])
+
     assert restore_inputs == {
         "path": "fuzz/corpus",
         "key": cache_key,
@@ -935,6 +1021,7 @@ def test_scheduled_fuzz_runs_daily_with_selectable_per_target_time() -> None:
     assert artifacts["uses"] == UPLOAD_ARTIFACT_ACTION
     assert artifacts["if"] == "always()"
     artifact_inputs = mapping(artifacts["with"])
+
     assert string(artifact_inputs["path"]).splitlines() == [
         "${{ runner.temp }}/fuzz-report",
         "fuzz/artifacts",
@@ -951,9 +1038,11 @@ def test_scheduled_fuzz_runs_daily_with_selectable_per_target_time() -> None:
     install = string(
         named_step(job, "Install cargo-fuzz within remaining budget")["run"]
     )
+
     assert "cargo +nightly-2026-10-08 install cargo-fuzz" in install
     assert "--version 0.13.2 --locked" in install
     command = string(named_step(job, "Fuzz all targets")["run"])
+
     assert '--seconds-per-target "$FUZZ_SECONDS"' in command
     assert named_step(job, "Fuzz all targets")["env"] == {
         "FUZZ_SECONDS": "${{ inputs.seconds || '60' }}"
@@ -964,6 +1053,7 @@ def test_scheduled_fuzz_runs_daily_with_selectable_per_target_time() -> None:
 def test_accepts_updated_pins_without_changing_release_contract(commit: str) -> None:
     workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
     updated = re.sub(r"(?<=@)[0-9a-f]{40}", commit, workflow)
+
     assert updated != workflow
     assert_github_release(updated)
 
@@ -981,8 +1071,10 @@ def test_rejects_different_actions_even_with_full_pins(
 ) -> None:
     workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
     changed = workflow.replace(original + "@", replacement + "@", 1)
+
     assert changed != workflow
     workflow_contract(changed)  # Pin syntax is valid; identity must fail.
+
     with pytest.raises(AssertionError):
         assert_github_release(changed)
 
@@ -1007,6 +1099,7 @@ def test_rejects_different_actions_even_with_full_pins(
 )
 def test_rejects_unpinned_or_malformed_action_references(reference: object) -> None:
     workflow = yaml.safe_dump({"jobs": {"test": {"steps": [{"uses": reference}]}}})
+
     with pytest.raises(AssertionError, match="full commit SHA"):
         workflow_contract(workflow)
 
@@ -1025,6 +1118,7 @@ def test_normalizes_only_step_action_references() -> None:
     }
     observed = workflow_contract(yaml.safe_dump(document))
     document["jobs"]["test"]["steps"][0]["uses"] = CHECKOUT_ACTION
+
     assert observed == document
 
 
@@ -1068,6 +1162,7 @@ def test_accepts_updated_exact_stable_versions(channel: str) -> None:
 def test_rejects_floating_incomplete_and_nonstable_versions(channel: str) -> None:
     toolchain = mapping(tomllib.loads(RUST_TOOLCHAIN.read_text(encoding="utf-8")))
     mapping(toolchain["toolchain"])["channel"] = channel
+
     with pytest.raises(AssertionError):
         assert_repository_rust_toolchain(toolchain)
 
@@ -1088,6 +1183,7 @@ def test_retains_profile_components_and_declaration_checks(
 ) -> None:
     toolchain = mapping(tomllib.loads(RUST_TOOLCHAIN.read_text(encoding="utf-8")))
     mapping(toolchain["toolchain"])[field] = value
+
     with pytest.raises(AssertionError):
         assert_repository_rust_toolchain(toolchain)
 
@@ -1106,6 +1202,7 @@ def test_type_checks_keep_all_diagnostics_and_strict_analysis_enabled() -> None:
         "respect-type-ignore-comments": False,
     }
     environment = mapping(settings["environment"])
+
     assert environment["python-version"] == "3.14"
     assert environment["python-platform"] == "all"
     assert mapping(settings["terminal"])["error-on-warning"] is True
@@ -1123,6 +1220,7 @@ def test_quality_checks_use_frozen_dev_tools_without_editing_sources(
     python_setup = next(
         step for step in steps if step.get("uses") == SETUP_PYTHON_ACTION
     )
+
     assert mapping(python_setup["with"])["python-version"] == "3.14"
     assert any(step.get("uses") == SETUP_UV_ACTION for step in steps)
     commands = [string(step["run"]) for step in steps if "run" in step]
@@ -1135,10 +1233,12 @@ def test_quality_checks_use_frozen_dev_tools_without_editing_sources(
     for command in checks:
         assert command in commands
         assert commands.index(sync) < commands.index(command)
+
     assert commands.index(checks[-1]) == commands.index(checks[-2]) + 1
     wheel_commands = [
         string(step["run"]) for step in job_steps(jobs["wheel-smoke"]) if "run" in step
     ]
+
     assert "uv run --frozen pytest" in wheel_commands
     assert not any("unittest discover" in cmd for cmd in wheel_commands)
 
@@ -1154,6 +1254,7 @@ def test_boundary_contracts_run_pytest_after_frozen_environment_sync() -> None:
     assert pytest_command in string(adapter_step["run"]).splitlines()
     steps = job_steps(job)
     sync_step = next(step for step in steps if step.get("run") == "uv sync --frozen")
+
     assert steps.index(sync_step) < steps.index(adapter_step)
 
 
@@ -1177,6 +1278,7 @@ def test_rust_jobs_install_only_their_classified_toolchain() -> None:
     all_steps = [
         step for job in workflow_jobs(decoded).values() for step in job_steps(job)
     ]
+
     assert not any(
         "toolchain" in string(step.get("uses", "")).lower() for step in all_steps
     )
@@ -1186,6 +1288,7 @@ def test_rust_jobs_install_only_their_classified_toolchain() -> None:
         for line in string(step.get("run", "")).splitlines()
         if line.strip().startswith("rustup toolchain install")
     ]
+
     assert sorted(install_commands) == sorted(
         ["rustup toolchain install"] * len(REPOSITORY_RUST_JOBS)
         + [
@@ -1212,12 +1315,14 @@ def test_rust_jobs_install_only_their_classified_toolchain() -> None:
                 string(step.get("run", "")),
             )
         ]
+
         assert len(install_indexes) == 1, job_name
         assert rust_command_indexes, job_name
         assert install_indexes[0] < min(rust_command_indexes), job_name
         assert re.search(r"(?:cargo|rustc|rustdoc) \+[^\s]+", job) is None, job_name
 
     shuffle = job_block(workflow, "rust-shuffle")
+
     assert "cargo +nightly-2026-10-08 test" in shuffle
 
 
@@ -1286,18 +1391,21 @@ if args[0] == "run":
 
 def test_toolchain_setup_executes_pinned_lean_without_cache(tmp_path: Path) -> None:
     completed = run_toolchain_setup(tmp_path, cached=False)
+
     assert completed.returncode == 0, completed.stderr
     assert "Lean (version 4.32.2)" in completed.stdout
 
 
 def test_toolchain_setup_reuses_cache_without_installing(tmp_path: Path) -> None:
     completed = run_toolchain_setup(tmp_path, cached=True, install_fails=True)
+
     assert completed.returncode == 0, completed.stderr
     assert "Lean (version 4.32.2)" in completed.stdout
 
 
 def test_toolchain_setup_propagates_install_failure(tmp_path: Path) -> None:
     completed = run_toolchain_setup(tmp_path, cached=False, install_fails=True)
+
     assert completed.returncode == 23, completed.stderr
 
 
@@ -1318,6 +1426,7 @@ def test_job_uses_pinned_tools_repository_toolchain_and_cache() -> None:
         "with": {"python-version": "3.14"},
     }
     cache = job_steps(job)[2]
+
     assert cache["uses"] == LEAN_CACHE_ACTION
     assert set(string(mapping(cache["with"])["path"]).splitlines()) == {
         "~/.elan/toolchains",
@@ -1328,14 +1437,17 @@ def test_job_uses_pinned_tools_repository_toolchain_and_cache() -> None:
     assert "formal/HoiminOracle/**/*.lean" in string(mapping(cache["with"])["key"])
 
     install = string(named_step(job, "Install pinned Lean toolchain")["run"])
+
     assert f"releases/download/{LEAN_ELAN_VERSION}/" in install
     assert 'echo "$HOME/.elan/bin" >> "$GITHUB_PATH"' in install
     assert (
         LEAN_TOOLCHAIN.read_text(encoding="utf-8").strip() == "leanprover/lean4:v4.32.2"
     )
     lakefile = mapping(tomllib.loads(LEAN_LAKEFILE.read_text(encoding="utf-8")))
+
     assert lakefile["moreLeanArgs"] == ["-j1", "-DElab.async=false"]
     artifact = job_steps(job)[-1]
+
     assert artifact["if"] == "always()"
     assert artifact["uses"] == UPLOAD_ARTIFACT_ACTION
     assert mapping(artifact["with"]) == {
@@ -1353,12 +1465,14 @@ def test_bounded_audit_covers_every_module_and_generator(tmp_path: Path) -> None
     assert step["working-directory"] == "formal/HoiminOracle"
     assert step["shell"] == "bash"
     completed, calls = lean_gate_invocations(tmp_path, string(step["run"]))
+
     assert completed.returncode == 0, completed.stderr
 
     guarded_commands: list[list[str]] = []
     stats_paths: list[str] = []
     for call in calls:
         arguments = call["argv"]
+
         assert arguments[0] == "tools/lean_resource_guard.py"
         assert arguments[1:7] == [
             "--timeout-seconds",
@@ -1370,16 +1484,20 @@ def test_bounded_audit_covers_every_module_and_generator(tmp_path: Path) -> None
         ]
         assert arguments[7] == "--stats"
         stats_paths.append(arguments[8])
+
         assert arguments[9] == "--"
         guarded_commands.append(arguments[10:])
+
     assert len(stats_paths) == len(set(stats_paths))
     assert all("/runner/lean-audit/" in path for path in stats_paths)
 
     sources = lean_module_sources()
     module_count = len(sources)
+
     assert sources
     module_commands = guarded_commands[:module_count]
     modules = [command[2][1:-2] for command in module_commands]
+
     assert all(
         command[:2] == ["lake", "build"]
         and command[2].startswith("+")
@@ -1394,13 +1512,13 @@ def test_bounded_audit_covers_every_module_and_generator(tmp_path: Path) -> None
             r"(?m)^import ([A-Za-z0-9_.]+)$",
             source.read_text(encoding="utf-8"),
         )
-        for dependency in imports:
-            if dependency in positions:
-                assert positions[dependency] < positions[module], (
-                    f"{dependency} must be built before {module}"
-                )
+        for dependency in set(imports).intersection(positions):
+            assert positions[dependency] < positions[module], (
+                f"{dependency} must be built before {module}"
+            )
 
     remaining = guarded_commands[module_count:]
+
     assert remaining.pop(0) == ["lake", "build", "HoiminOracle"]
     assert remaining.pop(0) == [
         "lake",
@@ -1424,12 +1542,17 @@ def test_bounded_audit_covers_every_module_and_generator(tmp_path: Path) -> None
     executable_names = [
         string(mapping(item)["name"]) for item in sequence(lakefile["lean_exe"])
     ]
+
     assert executable_names == list(LEAN_CORPUS_BY_EXECUTABLE)
     expected_gates: list[list[str]] = []
     for executable, corpus in LEAN_CORPUS_BY_EXECUTABLE.items():
         expected_gates.append(["lake", "exe", executable, "--", "--check", corpus])
-        if executable in LEAN_SENSITIVITY_EXECUTABLES:
-            expected_gates.append(["lake", "exe", executable, "--", "--sensitivity"])
+        expected_gates.extend(
+            ["lake", "exe", selected, "--", "--sensitivity"]
+            for selected in (executable,)
+            if selected in LEAN_SENSITIVITY_EXECUTABLES
+        )
+
     assert remaining == expected_gates
     assert set(LEAN_CORPUS_BY_EXECUTABLE.values()) == {
         path.relative_to(LEAN_ORACLE).as_posix()
@@ -1491,8 +1614,10 @@ def test_automatic_ci_hosted_matrices_are_linux_only() -> None:
     }
     assert "windows-latest" not in workflow
     assert "macos-14" not in workflow
+    assert all(isinstance(job["runs-on"], (str, list)) for job in jobs.values())
     for job_name in AUTOMATIC_LINUX_MATRIX_JOBS:
         matrix = mapping(jobs[job_name]["strategy"])["matrix"]
+
         assert matrix == {"os": ["ubuntu-latest"]}, job_name
 
     matrix_runner_jobs = {
@@ -1500,16 +1625,33 @@ def test_automatic_ci_hosted_matrices_are_linux_only() -> None:
         for job_name, job in jobs.items()
         if job["runs-on"] == "${{ matrix.os }}"
     }
+
     assert matrix_runner_jobs == AUTOMATIC_LINUX_MATRIX_JOBS
-    for job_name, job in jobs.items():
-        runner = job["runs-on"]
-        if job_name in matrix_runner_jobs:
-            continue
-        if isinstance(runner, list):
-            assert "linux" in runner, job_name
-            assert not {"windows", "macos"}.intersection(runner), job_name
-        else:
-            assert runner == "ubuntu-latest", job_name
+
+
+def test_automatic_ci_label_runners_require_linux() -> None:
+    jobs = workflow_jobs(workflow_document(CI_WORKFLOW.read_text(encoding="utf-8")))
+    runners = {
+        name: runner
+        for name, job in jobs.items()
+        if isinstance(runner := job["runs-on"], list)
+    }
+
+    for job_name, runner in runners.items():
+        assert "linux" in runner, job_name
+        assert not {"windows", "macos"}.intersection(runner), job_name
+
+
+def test_automatic_ci_literal_runners_use_ubuntu() -> None:
+    jobs = workflow_jobs(workflow_document(CI_WORKFLOW.read_text(encoding="utf-8")))
+    runners = {
+        name: runner
+        for name, job in jobs.items()
+        if isinstance(runner := job["runs-on"], str) and runner != "${{ matrix.os }}"
+    }
+
+    for job_name, runner in runners.items():
+        assert runner == "ubuntu-latest", job_name
 
 
 def test_non_linux_ci_has_only_a_manual_trigger() -> None:
@@ -1535,13 +1677,9 @@ def test_manual_non_linux_jobs_are_complete_and_independent() -> None:
     assert "ubuntu-latest" not in workflow
     for job_name, job in jobs.items():
         assert "if" not in job, job_name
-        for step in job_steps(job):
-            if string(step.get("uses", "")).startswith("actions/upload-artifact@"):
-                assert step.get("if") == "always()", job_name
-            else:
-                assert "if" not in step, job_name
     for job_name, expected_name in MANUAL_NON_LINUX_JOB_NAMES.items():
         job = jobs[job_name]
+
         assert job["name"] == expected_name, job_name
         assert "needs" not in job, job_name
         assert "outputs" not in job, job_name
@@ -1553,10 +1691,12 @@ def test_manual_non_linux_jobs_are_complete_and_independent() -> None:
             }
             for step in job_steps(workflow_jobs(automatic)[job_name])
         ]
+
         assert job_steps(job) == automatic_steps, job_name
 
     for job_name, expected_os in MANUAL_NON_LINUX_MATRIX_JOBS.items():
         job = jobs[job_name]
+
         assert mapping(job["strategy"]) == {
             "fail-fast": False,
             "matrix": {"os": expected_os},
@@ -1564,14 +1704,35 @@ def test_manual_non_linux_jobs_are_complete_and_independent() -> None:
         assert job["runs-on"] == "${{ matrix.os }}", job_name
 
     purity = jobs["core-dependency-purity"]
+
     assert "strategy" not in purity
     assert purity["runs-on"] == "windows-latest"
+
+
+@pytest.mark.parametrize("upload", [True, False])
+def test_manual_non_linux_step_conditions(*, upload: bool) -> None:
+    jobs = workflow_jobs(
+        workflow_document(NON_LINUX_CI_WORKFLOW.read_text(encoding="utf-8"))
+    )
+    expected_conditions = {True: {(True, "always()")}, False: {(False, None)}}
+    steps = [
+        step
+        for job in jobs.values()
+        for step in job_steps(job)
+        if string(step.get("uses", "")).startswith("actions/upload-artifact@") == upload
+    ]
+
+    conditions = {("if" in step, step.get("if")) for step in steps}
+
+    assert steps
+    assert conditions == expected_conditions[upload]
 
 
 def test_windows_resource_scope_runs_native_acceptance_independently() -> None:
     jobs = workflow_jobs(
         workflow_contract(NON_LINUX_CI_WORKFLOW.read_text(encoding="utf-8"))
     )
+
     assert "windows-resource-scope" in jobs
     assert jobs["windows-resource-scope"] == {
         "name": "Manual Windows resource scope",
@@ -1671,6 +1832,7 @@ def test_latest_stable_canary_is_isolated_and_environment_complete() -> None:
     assert mapping(decoded[True])["workflow_dispatch"] is None
     assert set(workflow_jobs(decoded)) == {"stable"}
     job = workflow_jobs(decoded)["stable"]
+
     assert set(job) == {"name", "runs-on", "env", "steps"}
     assert job["name"] == "Rust stable canary"
     assert job["runs-on"] == "ubuntu-latest"
@@ -1751,6 +1913,7 @@ def test_development_guide_updates_pin_and_minimum_version_together() -> None:
     )
     start = guide.index(prefix) + len(prefix)
     end = guide.index(f"\n{fence}", start)
+
     assert guide[start:end].splitlines() == expected_commands
     assert "uv run maturin build --release" not in guide
 
@@ -1771,6 +1934,7 @@ def test_minimum_rust_version_matches_the_repository_toolchain() -> None:
     manifest = mapping(tomllib.loads(CARGO_MANIFEST.read_text(encoding="utf-8")))
     toolchain = mapping(tomllib.loads(RUST_TOOLCHAIN.read_text(encoding="utf-8")))
     minimum = mapping(mapping(manifest["workspace"])["package"])["rust-version"]
+
     assert minimum == mapping(toolchain["toolchain"])["channel"]
 
 
@@ -1795,10 +1959,12 @@ def test_shuffle_job_is_pinned_isolated_and_complete() -> None:
     workflow = CI_WORKFLOW.read_text(encoding="utf-8")
 
     stable = job_block(workflow, "rust")
+
     assert "matrix:\n        os: [ubuntu-latest]" in stable
     assert re.search(r"(?m)^      - run: cargo test --workspace$", stable) is not None
     assert "  rust-shuffle:\n" in workflow
     shuffle = job_block(workflow, "rust-shuffle")
+
     assert "    needs: [changes, quality]" in shuffle
     assert re.search(r"(?m)^    runs-on: ubuntu-latest$", shuffle) is not None
     assert "python-version: '3.14'" in shuffle
@@ -1892,6 +2058,7 @@ def test_accepts_updated_matching_maturin_pins(version: str) -> None:
         f'MATURIN_VERSION: "{version}"',
         workflow,
     )
+
     assert count == 3
     updated = re.sub(
         r"ghcr\.io/pyo3/maturin:v[0-9]+\.[0-9]+\.[0-9]+@",
@@ -1924,10 +2091,15 @@ def test_accepts_updated_matching_maturin_pins(version: str) -> None:
 )
 def test_rejects_invalid_maturin_pins(version: object) -> None:
     document = workflow_document(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
-    for job in workflow_jobs(document).values():
-        for step in job_steps(job):
-            if step.get("name") == "Build wheel":
-                mapping(step["env"])["MATURIN_VERSION"] = version
+    build_steps = (
+        step
+        for job in workflow_jobs(document).values()
+        for step in job_steps(job)
+        if step.get("name") == "Build wheel"
+    )
+    for step in build_steps:
+        mapping(step["env"])["MATURIN_VERSION"] = version
+
     with pytest.raises(AssertionError):
         assert_github_release(yaml.safe_dump(document))
 
@@ -1949,34 +2121,49 @@ def test_rejects_unpinned_or_mismatched_linux_maturin_image(image: object) -> No
     document = workflow_document(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
     build = named_step(workflow_jobs(document)["linux-wheel"], "Build wheel")
     mapping(build["env"])["MATURIN_IMAGE"] = image
+
     with pytest.raises(AssertionError):
         assert_github_release(yaml.safe_dump(document))
 
 
 def test_rejects_missing_maturin_pins() -> None:
     document = workflow_document(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
-    for job in workflow_jobs(document).values():
-        for step in job_steps(job):
-            if step.get("name") == "Build wheel":
-                del mapping(step["env"])["MATURIN_VERSION"]
+    build_steps = (
+        step
+        for job in workflow_jobs(document).values()
+        for step in job_steps(job)
+        if step.get("name") == "Build wheel"
+    )
+    for step in build_steps:
+        del mapping(step["env"])["MATURIN_VERSION"]
+
     with pytest.raises(AssertionError):
         assert_github_release(yaml.safe_dump(document))
 
 
-@pytest.mark.parametrize("change", ["version", "args", "extra input"])
-def test_rejects_mismatched_maturin_pins_and_other_input_changes(change: str) -> None:
+def test_rejects_mismatched_maturin_version() -> None:
     document = workflow_document(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
-    step = next(
-        step
-        for step in job_steps(workflow_jobs(document)["windows-wheel"])
-        if step.get("name") == "Build wheel"
-    )
-    if change == "version":
-        mapping(step["env"])["MATURIN_VERSION"] = "9.99.0"
-    elif change == "args":
-        step["run"] = string(step["run"]) + " --features unexpected"
-    else:
-        mapping(step["env"])["UNEXPECTED_VERSION"] = "1.15.0"
+    step = named_step(workflow_jobs(document)["windows-wheel"], "Build wheel")
+    mapping(step["env"])["MATURIN_VERSION"] = "9.99.0"
+
+    with pytest.raises(AssertionError):
+        assert_github_release(yaml.safe_dump(document))
+
+
+def test_rejects_mismatched_maturin_arguments() -> None:
+    document = workflow_document(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
+    step = named_step(workflow_jobs(document)["windows-wheel"], "Build wheel")
+    step["run"] = string(step["run"]) + " --features unexpected"
+
+    with pytest.raises(AssertionError):
+        assert_github_release(yaml.safe_dump(document))
+
+
+def test_rejects_mismatched_maturin_extra_input() -> None:
+    document = workflow_document(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
+    step = named_step(workflow_jobs(document)["windows-wheel"], "Build wheel")
+    mapping(step["env"])["UNEXPECTED_VERSION"] = "1.15.0"
+
     with pytest.raises(AssertionError):
         assert_github_release(yaml.safe_dump(document))
 
@@ -1997,8 +2184,10 @@ def test_linux_wheel_requires_portable_isolated_container_build(required: str) -
     document = workflow_document(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
     build = named_step(workflow_jobs(document)["linux-wheel"], "Build wheel")
     original = string(build["run"])
+
     assert required in original
     build["run"] = original.replace(required, "")
+
     with pytest.raises(AssertionError):
         assert_github_release(yaml.safe_dump(document))
 
@@ -2009,6 +2198,7 @@ def test_wheel_build_rejects_extra_options(job_name: str, option: str) -> None:
     document = workflow_document(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
     build = named_step(workflow_jobs(document)[job_name], "Build wheel")
     build["run"] = string(build["run"]).replace("--locked", f"--locked {option}")
+
     with pytest.raises(AssertionError):
         assert_github_release(yaml.safe_dump(document))
 
@@ -2033,12 +2223,14 @@ def test_release_uses_event_commit_except_after_merging_to_base() -> None:
         "${{ github.event_name == 'pull_request_target' && "
         "github.event.pull_request.merged == true }}"
     )
+
     assert mapping(job_steps(prepare)[0]["with"]) == {
         "ref": trusted_ref,
         "fetch-depth": 0,
         "persist-credentials": False,
     }
     version = named_step(prepare, "Reserve release tag or choose preview version")
+
     assert version["env"] == {
         "PUBLISH": publish_condition,
         "COMMIT": trusted_ref,
@@ -2049,6 +2241,7 @@ def test_release_uses_event_commit_except_after_merging_to_base() -> None:
         mapping(prepare["outputs"])["publish"] == "${{ steps.version.outputs.publish }}"
     )
     publisher = jobs["publish"]
+
     assert mapping(job_steps(publisher)[0]["with"]) == {
         "ref": "${{ needs.prepare.outputs.commit }}",
         "persist-credentials": False,
@@ -2059,6 +2252,7 @@ def test_release_uses_event_commit_except_after_merging_to_base() -> None:
         if string(step.get("uses", "")).startswith("actions/download-artifact@")
     )
     # No other run or repository can supply the release artifacts.
+
     assert download["with"] == {
         "name": "verified-release",
         "path": "dist",
@@ -2201,6 +2395,7 @@ def test_release_sbom_proof_step_supplies_valid_guard_arguments(
     argv = shlex.split(command)
     monkeypatch.setattr(sys, "argv", argv[1:])
     arguments = lean_resource_guard.parse_arguments()
+
     assert arguments.timeout_seconds == 20
     assert arguments.rss_limit_mib == 2048
     assert arguments.sample_ms == 250

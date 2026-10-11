@@ -24,116 +24,115 @@ async fn hierarchy_scoped_writes_distinguish_local_bindings_and_escaping_aliases
         (
             "parameter",
             "import errors as e\ndef patch(e):\n    other = e\n    other.Root = object\n",
-            true,
+            vec![("Child", "Root")],
         ),
         (
             "renamed-parameter",
             "import errors as e\ndef patch(value):\n    other = value\n    other.Root = object\n",
-            true,
+            vec![("Child", "Root")],
         ),
         (
             "local-import",
             "import errors as e\ndef patch():\n    import unrelated as e\n    e.Root = object\n",
-            true,
+            vec![("Child", "Root")],
         ),
         (
             "local-errors-import",
             "import unrelated as e\ndef patch():\n    import errors as e\n    e.Root = object\n",
-            false,
+            vec![],
         ),
         (
             "free",
             "import errors as e\ndef patch():\n    other = e\n    other.Root = object\n",
-            false,
+            vec![],
         ),
         (
             "global",
             "import errors as e\ndef patch():\n    global e\n    other = e\n    other.Root = object\n",
-            false,
+            vec![],
         ),
         (
             "closure-parameter",
             "import errors as e\ndef outer(e):\n    def patch():\n        e.Root = object\n",
-            true,
+            vec![("Child", "Root")],
         ),
         (
             "closure-import",
             "def outer():\n    import errors as e\n    def patch():\n        e.Root = object\n",
-            false,
+            vec![],
         ),
         (
             "nonlocal",
             "def outer():\n    import errors as e\n    def patch():\n        nonlocal e\n        e.Root = object\n",
-            false,
+            vec![],
         ),
         (
             "late-nonlocal",
             "def outer():\n    def patch():\n        nonlocal e\n        e.Root = object\n    import errors as e\n",
-            false,
+            vec![],
         ),
         (
             "late-local-shadow",
             "import errors as e\ndef patch():\n    e.Root = object\n    e = object()\n",
-            true,
+            vec![("Child", "Root")],
         ),
         (
             "method-skips-class",
             "import errors as e\nclass C:\n    e = object()\n    def patch(self):\n        e.Root = object\n",
-            false,
+            vec![],
         ),
         (
             "method-closure",
             "import errors as e\ndef outer(e):\n    class C:\n        e = object()\n        def patch(self):\n            e.Root = object\n",
-            true,
+            vec![("Child", "Root")],
         ),
         (
             "class-read-fallback",
             "import errors as e\nclass C:\n    other = e\n    e = object()\n    other.Root = object\n",
-            false,
+            vec![],
         ),
         (
             "private-parameter",
             "import errors as _P__e\nclass P:\n    def patch(self, __e):\n        other = __e\n        other.Root = object\n",
-            true,
+            vec![("Child", "Root")],
         ),
         (
             "default-in-outer",
             "import errors as e\ndef patch(e=(other := e)):\n    other.Root = object\n",
-            false,
+            vec![],
         ),
         (
             "lambda-parameter",
             "import errors as e\nf = lambda e: setattr(e, 'Root', object)\n",
-            true,
+            vec![("Child", "Root")],
         ),
         (
             "lambda-free",
             "import errors as e\nf = lambda: setattr(e, 'Root', object)\n",
-            false,
+            vec![],
         ),
         (
             "comprehension-target",
             "import errors as e\nvalues = [setattr(e, 'Root', object) for e in ()]\n",
-            true,
+            vec![("Child", "Root")],
         ),
         (
             "comprehension-free",
             "import errors as e\nvalues = [setattr(e, 'Root', object) for value in ()]\n",
-            false,
+            vec![],
         ),
         (
             "comprehension-first-iterable",
             "import errors as e\nvalues = [e for e in [setattr(e, 'Root', object)]]\n",
-            false,
+            vec![],
         ),
         (
             "comprehension-walrus",
             "import errors as e\nvalues = [(other := e) for value in (0,)]\nother.Root = object\n",
-            false,
+            vec![],
         ),
     ];
-    let mut failures = Vec::new();
-    for (name, patch, eligible) in cases {
+    for (name, patch, expected) in cases {
         let dir = tempfile::tempdir().unwrap();
         for (path, source) in [
             (
@@ -162,16 +161,8 @@ async fn hierarchy_scoped_writes_distinguish_local_bindings_and_escaping_aliases
                 )
             })
             .collect();
-        let expected = if eligible {
-            vec![("Child", "Root")]
-        } else {
-            vec![]
-        };
-        if pairs != expected {
-            failures.push(format!("{name}: expected {expected:?}, actual {pairs:?}"));
-        }
+        assert_eq!(pairs, expected, "{name}");
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
 #[tokio::test]
@@ -289,8 +280,8 @@ async fn hierarchy_implicit_class_cell_writes_invalidate_owning_class() {
         std::fs::write(dir.path().join("service.py"), source).unwrap();
         let plan = hoimin_cli::plan::create(config(dir.path())).await.unwrap();
         assert_eq!(plan.manifest.candidates.len(), expected, "{method}");
-        if expected == 1 {
-            assert_eq!(plan.manifest.candidates[0].candidate.replacement, "Child");
+        for candidate in &plan.manifest.candidates {
+            assert_eq!(candidate.candidate.replacement, "Child");
         }
     }
 }

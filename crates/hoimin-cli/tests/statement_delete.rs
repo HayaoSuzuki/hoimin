@@ -1,3 +1,6 @@
+#[path = "support/encoded_source.rs"]
+mod encoded_source;
+
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -173,30 +176,18 @@ async fn statement_deletion_saved_plan_exposes_unobserved_persistence() {
 #[tokio::test]
 async fn statement_deletion_preserves_encoded_bytes_and_newlines() {
     for newline in ["\n", "\r\n", "\r"] {
-        for encoding in ["utf8", "bom", "latin1"] {
+        for encoding in encoded_source::ENCODINGS {
             let root = tempfile::tempdir().unwrap();
+            let encoding_name = encoding.name;
             let text = format!(
                 "# coding: {}{newline}é = 1{newline}call(); other = 2 # tail{newline}",
-                if encoding == "latin1" {
-                    "latin-1"
-                } else {
-                    "utf-8"
-                }
+                encoding.cookie
             );
-            let mut bytes = if encoding == "latin1" {
-                text.chars()
-                    .map(|c| u8::try_from(u32::from(c)).unwrap())
-                    .collect::<Vec<_>>()
-            } else {
-                text.as_bytes().to_vec()
-            };
-            if encoding == "bom" {
-                bytes.splice(0..0, [0xef, 0xbb, 0xbf]);
-            }
+            let mut bytes = encoding.source(&text);
             std::fs::write(root.path().join("subject.py"), &bytes).unwrap();
             let document = plan(root.path(), "statement_delete", "pass").await;
             let candidates = document["candidates"].as_array().unwrap();
-            assert_eq!(candidates.len(), 1, "{encoding} {newline:?}");
+            assert_eq!(candidates.len(), 1, "{encoding_name} {newline:?}");
             let c = &candidates[0];
             let start = usize::try_from(c["span"]["start"].as_u64().unwrap()).unwrap();
             let end = start + usize::try_from(c["span"]["length"].as_u64().unwrap()).unwrap();

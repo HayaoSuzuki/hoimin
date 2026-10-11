@@ -174,14 +174,26 @@ fn source_order_public_resume_matches_lean_and_fresh_execution() {
             mutant(&initial, "a/calc.py")["candidate"]["id"],
             a["candidate"]["id"]
         );
-        if !case.reuse {
-            let (fresh, fresh_metrics) = fixture.run(&case, &case.current, false, "fresh.sqlite");
-            assert_eq!(fresh_metrics["executed"], 1);
-            assert_eq!(mutant(&fresh, "a/calc.py")["status"], a["status"]);
-            assert_eq!(
-                mutant(&fresh, "a/calc.py")["candidate"]["id"],
-                a["candidate"]["id"]
-            );
-        }
+    }
+}
+
+#[test]
+fn incompatible_source_order_resume_matches_fresh_execution() {
+    for case in cases().into_iter().filter(|case| !case.reuse) {
+        let fixture = Fixture::new();
+        fixture.run(&case, &case.old, false, "session.sqlite");
+
+        let (resumed, _) = fixture.run(&case, &case.current, true, "session.sqlite");
+        let (fresh, fresh_metrics) = fixture.run(&case, &case.current, false, "fresh.sqlite");
+
+        assert_eq!(fresh_metrics["executed"], 1);
+        assert_eq!(
+            mutant(&fresh, "a/calc.py")["status"],
+            mutant(&resumed, "a/calc.py")["status"]
+        );
+        assert_eq!(
+            mutant(&fresh, "a/calc.py")["candidate"]["id"],
+            mutant(&resumed, "a/calc.py")["candidate"]["id"]
+        );
     }
 }

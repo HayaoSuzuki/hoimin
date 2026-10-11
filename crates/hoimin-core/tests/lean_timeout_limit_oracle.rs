@@ -163,10 +163,10 @@ fn public_raw_and_normalized_validation_match_every_strict_lean_case() {
             item.id
         );
 
-        let observed_effective = match raw.limits.mutant_timeout {
-            None => auto_mutant_timeout(raw.limits.baseline_timeout),
-            Some(duration) => duration,
-        };
+        let observed_effective = raw
+            .limits
+            .mutant_timeout
+            .unwrap_or_else(|| auto_mutant_timeout(raw.limits.baseline_timeout));
         let expected_effective = parse_duration(
             &item.id,
             "expected_effective_mutant_ns",
@@ -178,14 +178,41 @@ fn public_raw_and_normalized_validation_match_every_strict_lean_case() {
             "effective case={}",
             item.id
         );
+    }
+}
 
-        if item.expected_accepted {
-            let config = RunConfig::try_from(raw).unwrap();
-            let effective = match config.limits.mutant_timeout {
-                MutantTimeout::Auto => auto_mutant_timeout(config.limits.baseline_timeout.get()),
-                MutantTimeout::Fixed(duration) => duration.get(),
-            };
-            assert!(effective <= MAX_TIMEOUT, "case={}", item.id);
-        }
+#[test]
+fn accepted_auto_timeout_cases_stay_within_the_maximum() {
+    for item in parse_corpus()
+        .expect("valid Lean corpus")
+        .into_iter()
+        .filter(|item| item.expected_accepted && item.mutant_mode == "auto")
+    {
+        let config = RunConfig::try_from(raw_for(&item)).unwrap();
+        let MutantTimeout::Auto = config.limits.mutant_timeout else {
+            panic!("expected auto timeout: {}", item.id)
+        };
+
+        assert!(
+            auto_mutant_timeout(config.limits.baseline_timeout.get()) <= MAX_TIMEOUT,
+            "case={}",
+            item.id
+        );
+    }
+}
+
+#[test]
+fn accepted_fixed_timeout_cases_stay_within_the_maximum() {
+    for item in parse_corpus()
+        .expect("valid Lean corpus")
+        .into_iter()
+        .filter(|item| item.expected_accepted && item.mutant_mode == "fixed")
+    {
+        let config = RunConfig::try_from(raw_for(&item)).unwrap();
+        let MutantTimeout::Fixed(duration) = config.limits.mutant_timeout else {
+            panic!("expected fixed timeout: {}", item.id)
+        };
+
+        assert!(duration.get() <= MAX_TIMEOUT, "case={}", item.id);
     }
 }

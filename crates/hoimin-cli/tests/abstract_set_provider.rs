@@ -113,17 +113,20 @@ async fn provider_set_pairs_generate_evaluable_annotations() {
             "collections.abc.Set[int]",
         ),
     ] {
-        for reverse in [false, true] {
-            let original = if reverse {
-                format!("{abstract_name}[int]")
-            } else {
-                "set[int]".to_owned()
-            };
-            let replacement = if reverse {
-                "set[int]".to_owned()
-            } else {
-                format!("{abstract_name}[int]")
-            };
+        for (original, replacement, original_type, replacement_type) in [
+            (
+                "set[int]".to_owned(),
+                format!("{abstract_name}[int]"),
+                "set[int]",
+                runtime_type,
+            ),
+            (
+                format!("{abstract_name}[int]"),
+                "set[int]".to_owned(),
+                runtime_type,
+                "set[int]",
+            ),
+        ] {
             let source = format!("{imports}\ndef f(x: {original}): pass\n");
             let plan: PlanManifest =
                 serde_json::from_value(invoke(&source, "plan", "type_set_abstract_set").await)
@@ -136,8 +139,8 @@ async fn provider_set_pairs_generate_evaluable_annotations() {
             let end = start + usize::try_from(candidate.span.length).unwrap();
             assert_eq!(&source[start..end], original);
             let mutated = format!("{}{}{}", &source[..start], replacement, &source[end..]);
-            evaluate(&source, if reverse { runtime_type } else { "set[int]" });
-            evaluate(&mutated, if reverse { "set[int]" } else { runtime_type });
+            evaluate(&source, original_type);
+            evaluate(&mutated, replacement_type);
         }
     }
 }

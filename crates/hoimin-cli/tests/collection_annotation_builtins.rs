@@ -144,18 +144,14 @@ fn corpus_schema_and_original_annotation_evaluation() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn collection_annotation_public_plan_matches_lean() {
-    let mut mismatches = Vec::new();
     for case in cases() {
         let manifest = plan(&case.source, &case.operator).await;
-        if manifest.candidates.len() != usize::from(case.present) {
-            mismatches.push(format!(
-                "{}: expected {}, observed {}",
-                case.id,
-                usize::from(case.present),
-                manifest.candidates.len()
-            ));
-            continue;
-        }
+        assert_eq!(
+            manifest.candidates.len(),
+            usize::from(case.present),
+            "{}",
+            case.id
+        );
         for candidate in &manifest.candidates {
             assert_eq!(candidate.original, case.original, "{}", case.id);
             assert_eq!(candidate.replacement, case.replacement, "{}", case.id);
@@ -172,11 +168,6 @@ async fn collection_annotation_public_plan_matches_lean() {
             evaluate(&mutated, &case, true);
         }
     }
-    assert!(
-        mismatches.is_empty(),
-        "same-premise mismatches:\n{}",
-        mismatches.join("\n")
-    );
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -224,15 +215,16 @@ async fn collection_annotation_non_header_sites_and_aliases() {
                 assert_eq!(manifest.candidates.len(), count, "{source}");
             }
         }
-        for import in [
-            format!("from typing import {abstract_name} as Alias"),
-            "import typing as t".to_owned(),
+        for (import, base) in [
+            (
+                format!("from typing import {abstract_name} as Alias"),
+                "Alias".to_owned(),
+            ),
+            (
+                "import typing as t".to_owned(),
+                format!("t.{abstract_name}"),
+            ),
         ] {
-            let base = if import.contains(" as Alias") {
-                "Alias".to_owned()
-            } else {
-                format!("t.{abstract_name}")
-            };
             let source = format!("{import}\ndef record(value: {base}[{args}]):\n    pass\n");
             let manifest = plan(&source, operator).await;
             assert_eq!(manifest.candidates.len(), 1, "{source}");

@@ -236,7 +236,13 @@ mod tests {
 
     #[test]
     fn derived_coordinate_search_stays_logarithmic_for_arbitrary_queries() {
-        for length in [0usize, 1, 1_024, 65_536, 524_256] {
+        for (length, limit) in [
+            (0usize, 0),
+            (1, 1),
+            (1_024, 11),
+            (65_536, 17),
+            (524_256, 19),
+        ] {
             for boundary in [length, 0, length / 2, length.saturating_sub(1)] {
                 let mut comparisons = 0;
                 let found = partition_index(length, |index| {
@@ -244,9 +250,27 @@ mod tests {
                     index < boundary
                 });
                 assert_eq!(found, boundary);
-                let limit = if length == 0 { 0 } else { length.ilog2() + 1 };
                 assert!(comparisons <= limit);
             }
+        }
+    }
+    proptest::proptest! {
+        #[test]
+        fn coordinate_search_returns_every_generated_boundary_with_logarithmic_work(
+            length in 0usize..1_048_576,
+            query in proptest::prelude::any::<usize>(),
+        ) {
+            let boundary = query % (length + 1);
+            let mut comparisons = 0;
+            let limit = length.checked_ilog2().map_or(0, |logarithm| logarithm + 1);
+
+            let found = partition_index(length, |index| {
+                comparisons += 1;
+                index < boundary
+            });
+
+            proptest::prop_assert_eq!(found, boundary);
+            proptest::prop_assert!(comparisons <= limit);
         }
     }
 }

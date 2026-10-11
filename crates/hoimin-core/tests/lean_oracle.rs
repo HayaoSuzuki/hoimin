@@ -780,38 +780,40 @@ fn corpus_rejects_duplicate_case_ids() {
 
 #[test]
 fn corpus_rejects_unknown_modes_scenarios_events_and_observations() {
-    for (from, to, expected) in [
+    for (from, to, occurrences, expected) in [
         (
             "\"mode\":\"strict\"",
             "\"mode\":\"future\"",
+            1,
             "unknown mode future",
         ),
         (
             "\"scenario\":\"pending_resolve\"",
             "\"scenario\":\"future\"",
+            1,
             "unknown scenario future",
         ),
         (
             "\"complete_unknown\"",
             "\"future_event\"",
+            usize::MAX,
             "unknown event future_event",
         ),
         (
             "\"phase\":\"running\"",
             "\"phase\":\"future\"",
+            1,
             "unknown phase future",
         ),
         (
             "\"emitted\":[]",
             "\"emitted\":[\"future\"]",
+            1,
             "unknown emitted effect future",
         ),
     ] {
-        let invalid = if expected == "unknown event future_event" {
-            corpus_text().replace(from, to)
-        } else {
-            corpus_text().replacen(from, to, 1)
-        };
+        let invalid = corpus_text().replacen(from, to, occurrences);
+
         let error = parse_corpus(&invalid).unwrap_err();
         assert!(
             error.contains(expected),

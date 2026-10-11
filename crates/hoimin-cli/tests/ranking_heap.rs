@@ -18,7 +18,11 @@ static ALLOCATOR: heap_tracking::TrackingAllocator = heap_tracking::TrackingAllo
 fn ranking_validation_heap_does_not_scale_with_valid_candidate_bodies() {
     const LIMIT: usize = 64 * 1024;
     let mut measurements = Vec::new();
-    for payload_bytes in [32, 32 * 1024, 256 * 1024] {
+    for (payload_bytes, clone_control_thresholds) in [
+        (32, [].as_slice()),
+        (32 * 1024, [].as_slice()),
+        (256 * 1024, [32 * 1024 * 1024].as_slice()),
+    ] {
         let project = tempfile::tempdir().unwrap();
         let payload = "x".repeat(payload_bytes);
         let mut source = String::new();
@@ -76,7 +80,7 @@ fn ranking_validation_heap_does_not_scale_with_valid_candidate_bodies() {
             eprintln!("ranking-peak payload={payload_bytes} repeat={repeat} bytes={peak}");
             measurements.push((payload_bytes, peak));
         }
-        if payload_bytes == 256 * 1024 {
+        for &minimum_peak in clone_control_thresholds {
             heap_tracking::begin();
             let cloned = ranking::rank_candidates(
                 &manifest.normalized_config.selection,
@@ -85,7 +89,7 @@ fn ranking_validation_heap_does_not_scale_with_valid_candidate_bodies() {
             );
             let peak = heap_tracking::finish();
             assert_eq!(cloned, candidates);
-            assert!(peak > 32 * 1024 * 1024, "insensitive clone control: {peak}");
+            assert!(peak > minimum_peak, "insensitive clone control: {peak}");
         }
     }
     for (payload_bytes, peak) in measurements {

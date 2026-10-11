@@ -42,25 +42,40 @@ fn bounded_output(command: &mut Command) -> Output {
     }
 }
 
-fn assert_plan_and_run_depth_rejection(label: &str, source: &str, require_cpython_valid: bool) {
+fn assert_python_valid(label: &str, path: &Path) {
+    let python_output = bounded_output(Command::new(python()).args([
+        "-c", "import pathlib,sys; compile(pathlib.Path(sys.argv[1]).read_bytes(), 'calc.py', 'exec')",
+    ]).arg(path));
+    assert!(
+        python_output.status.success(),
+        "{label}: fixture must compile under CPython: {python_output:?}"
+    );
+}
+
+fn assert_plan_and_run_depth_rejection(
+    label: &str,
+    source: &str,
+    validate_fixture: fn(&str, &Path),
+) {
+    type OperationCase = (&'static str, &'static [&'static str], fn(&Output));
     let root = tempfile::tempdir().unwrap();
     let path = root.path().join("calc.py");
     std::fs::write(&path, source).unwrap();
-    if require_cpython_valid {
-        let python_output = bounded_output(
-            Command::new(python())
-                .args([
-                    "-c",
-                    "import pathlib,sys; compile(pathlib.Path(sys.argv[1]).read_bytes(), 'calc.py', 'exec')",
-                ])
-                .arg(&path),
-        );
-        assert!(
-            python_output.status.success(),
-            "{label}: fixture must compile under CPython: {python_output:?}"
-        );
-    }
-    for operation in ["plan", "run"] {
+    validate_fixture(label, &path);
+    let operations: [OperationCase; 2] = [
+        ("plan", &[], |output| {
+            assert!(output.stdout.is_empty(), "failed analysis emitted a plan");
+        }),
+        ("run", &["--format", "json"], |output| {
+            let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+            assert_eq!(report["summary"]["complete"], false);
+            assert!(
+                !report["baseline"].is_null(),
+                "run still executes its baseline first"
+            );
+        }),
+    ];
+    for (operation, format_args, assert_output) in operations {
         let mut command = Command::new(env!("CARGO_BIN_EXE_hoimin"));
         command
             .args([operation, "--root"])
@@ -77,9 +92,7 @@ fn assert_plan_and_run_depth_rejection(label: &str, source: &str, require_cpytho
                 "--allow-best-effort-memory",
             ])
             .env_remove("RUST_MIN_STACK");
-        if operation == "run" {
-            command.args(["--format", "json"]);
-        }
+        command.args(format_args);
         command.arg("--").arg(python()).args(["-c", "pass"]);
         let output = bounded_output(&mut command);
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -97,16 +110,7 @@ fn assert_plan_and_run_depth_rejection(label: &str, source: &str, require_cpytho
             std::fs::read_to_string(root.path().join("calc.py")).unwrap(),
             source
         );
-        if operation == "plan" {
-            assert!(output.stdout.is_empty(), "failed analysis emitted a plan");
-        } else {
-            let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-            assert_eq!(report["summary"]["complete"], false);
-            assert!(
-                !report["baseline"].is_null(),
-                "run still executes its baseline first"
-            );
-        }
+        assert_output(&output);
     }
 }
 
@@ -117,7 +121,7 @@ fn plan_and_run_reject_deep_ast_with_path_and_cause() {
             &format!("addition-{terms}"),
             &format!("value = {}\n", vec!["1"; terms].join("+")),
             // These existing parser/disposal cases exceed some CPython builds' limits.
-            false,
+            |_, _| {},
         );
     }
 }
@@ -127,7 +131,7 @@ fn unary_parser_recursion_reaches_controlled_depth_rejection() {
     assert_plan_and_run_depth_rejection(
         "unary",
         &format!("value = {}1\n", "-".repeat(1_000)),
-        true,
+        assert_python_valid,
     );
 }
 
@@ -136,7 +140,7 @@ fn power_parser_recursion_reaches_controlled_depth_rejection() {
     assert_plan_and_run_depth_rejection(
         "power",
         &format!("value = {}\n", vec!["1"; 2_000].join("**")),
-        true,
+        assert_python_valid,
     );
 }
 
@@ -145,7 +149,7 @@ fn lambda_parser_recursion_reaches_controlled_depth_rejection() {
     assert_plan_and_run_depth_rejection(
         "lambda",
         &format!("value = {}1\n", "lambda: ".repeat(2_000)),
-        true,
+        assert_python_valid,
     );
 }
 
@@ -154,7 +158,7 @@ fn conditional_parser_recursion_reaches_controlled_depth_rejection() {
     assert_plan_and_run_depth_rejection(
         "conditional",
         &format!("value = {}1\n", "1 if x else ".repeat(2_000)),
-        true,
+        assert_python_valid,
     );
 }
 
@@ -165,7 +169,7 @@ fn speculative_with_expression_reclaims_the_discarded_parse() {
     assert_plan_and_run_depth_rejection(
         "speculative-with",
         &format!("with ({deep}) as context:\n    pass\n"),
-        false,
+        |_, _| {},
     );
 }
 
@@ -173,7 +177,11 @@ fn speculative_with_expression_reclaims_the_discarded_parse() {
 fn speculative_match_call_reclaims_the_discarded_subject() {
     // `match` is a soft keyword here; speculative statement parsing must rewind.
     let deep = vec!["1"; 25_000].join("+");
-    assert_plan_and_run_depth_rejection("speculative-match", &format!("match({deep})\n"), false);
+    assert_plan_and_run_depth_rejection(
+        "speculative-match",
+        &format!("match({deep})\n"),
+        |_, _| {},
+    );
 }
 
 #[test]
@@ -279,9 +287,9 @@ fn parser_fixture(case: &str) -> (String, bool) {
 }
 
 #[test]
-fn parser_and_recovery_survive_small_stack() {
+fn parser_small_stack_child_fixture() {
     const CASE_ENV: &str = "HOIMIN_TEST_PARSER_STACK_CASE";
-    if let Ok(case) = std::env::var(CASE_ENV) {
+    for case in parser_stack_child_cases(CASE_ENV) {
         std::thread::Builder::new()
             .stack_size(512 * 1024)
             .spawn(move || {
@@ -300,9 +308,16 @@ fn parser_and_recovery_survive_small_stack() {
             .unwrap()
             .join()
             .unwrap();
-        return;
     }
-    let mut failures = Vec::new();
+}
+
+fn parser_stack_child_cases(variable: &str) -> Vec<String> {
+    std::env::var(variable).into_iter().collect()
+}
+
+#[test]
+fn parser_and_recovery_survive_small_stack() {
+    const CASE_ENV: &str = "HOIMIN_TEST_PARSER_STACK_CASE";
     for case in [
         "assignment-context",
         "assignment-target",
@@ -318,17 +333,10 @@ fn parser_and_recovery_survive_small_stack() {
     ] {
         let output = bounded_output(
             Command::new(std::env::current_exe().unwrap())
-                .args([
-                    "--exact",
-                    "parser_and_recovery_survive_small_stack",
-                    "--nocapture",
-                ])
+                .args(["--exact", "parser_small_stack_child_fixture", "--nocapture"])
                 .env(CASE_ENV, case)
                 .env_remove("RUST_MIN_STACK"),
         );
-        if !output.status.success() {
-            failures.push(format!("{case}: {output:?}"));
-        }
+        assert!(output.status.success(), "{case}: {output:?}");
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
 }

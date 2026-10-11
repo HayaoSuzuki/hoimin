@@ -252,14 +252,16 @@ async fn raw_v2_and_v3_summaries_follow_lean_before_entering_stall_history() {
                 .unwrap_or_else(|error| {
                     panic!("{} v{schema} infrastructure-error: {error}", case.id)
                 });
-            if observed.disposition != case.expected_disposition
-                || observed.history != case.expected_history
-            {
-                mismatches.push(format!(
-                    "{} v{schema}: expected {:?}/{:?}, observed {observed:?}",
-                    case.id, case.expected_disposition, case.expected_history
-                ));
-            }
+            mismatches.extend(
+                (observed.disposition != case.expected_disposition
+                    || observed.history != case.expected_history)
+                    .then(|| {
+                        format!(
+                            "{} v{schema}: expected {:?}/{:?}, observed {observed:?}",
+                            case.id, case.expected_disposition, case.expected_history
+                        )
+                    }),
+            );
         }
     }
     assert!(
@@ -312,49 +314,60 @@ fn encode_report(document: &Value, jsonl: bool) -> Vec<u8> {
     bytes
 }
 
+fn classify_observation(
+    case: &LeanOracleCase,
+    observed: &Result<CliObservation, String>,
+) -> (&'static str, Option<String>) {
+    match observed {
+        Ok(value)
+            if value.disposition == case.expected_disposition
+                && value.history == case.expected_history =>
+        {
+            ("match", None)
+        }
+        Ok(value) => (
+            "mismatch",
+            Some(format!(
+                "expected {:?}/{:?}, observed {value:?}",
+                case.expected_disposition, case.expected_history
+            )),
+        ),
+        Err(error) => ("infrastructure-error", Some(error.clone())),
+    }
+}
+
 #[tokio::test]
 async fn shared_reader_progress_formats_follow_lean() {
     let mut failures = Vec::new();
     let selected = std::env::var("HOIMIN_BOUNDARY_CASE").ok();
     let mut selected_cases = 0;
-    for case in parse_lean_oracle_cases() {
-        if selected.as_ref().is_some_and(|id| *id != case.id) {
-            continue;
+    for case in parse_lean_oracle_cases()
+        .into_iter()
+        .filter(|case| selected.as_ref().is_none_or(|id| *id == case.id))
+    {
+        for gap in std::iter::once(&case)
+            .filter(|case| case.baseline == "missing" && !case.statuses.is_empty())
+        {
+            println!(
+                "BOUNDARY_OBSERVATION {}",
+                json!({
+                    "fixture": gap.id, "encoding": "jsonl-v3", "boundary": "reader-progress",
+                    "mode": "report", "evidence": "real-cli", "status": "unexecuted",
+                    "reason": "document permits missing baseline with mutant projections; full JSONL lifecycle requires preceding baseline"
+                })
+            );
         }
         selected_cases += 1;
         for (encoding, schema, jsonl) in [
             ("json-v2", 2, false),
             ("json-v3", 3, false),
             ("jsonl-v3", 3, true),
-        ] {
-            if jsonl && case.baseline == "missing" && !case.statuses.is_empty() {
-                println!(
-                    "BOUNDARY_OBSERVATION {}",
-                    json!({
-                        "fixture": case.id, "encoding": encoding, "boundary": "reader-progress",
-                        "mode": "report", "evidence": "real-cli", "status": "unexecuted",
-                        "reason": "document permits missing baseline with mutant projections; full JSONL lifecycle requires preceding baseline"
-                    })
-                );
-                continue;
-            }
+        ]
+        .into_iter()
+        .filter(|(_, _, jsonl)| !jsonl || case.baseline != "missing" || case.statuses.is_empty())
+        {
             let observed = observe_cli_encoding(&case, schema, jsonl).await;
-            let (status, reason) = match &observed {
-                Ok(value)
-                    if value.disposition == case.expected_disposition
-                        && value.history == case.expected_history =>
-                {
-                    ("match", None)
-                }
-                Ok(value) => (
-                    "mismatch",
-                    Some(format!(
-                        "expected {:?}/{:?}, observed {value:?}",
-                        case.expected_disposition, case.expected_history
-                    )),
-                ),
-                Err(error) => ("infrastructure-error", Some(error.clone())),
-            };
+            let (status, reason) = classify_observation(&case, &observed);
             println!(
                 "BOUNDARY_OBSERVATION {}",
                 json!({
@@ -363,9 +376,8 @@ async fn shared_reader_progress_formats_follow_lean() {
                     "expected_disposition": case.expected_disposition
                 })
             );
-            if status != "match" {
-                failures.push(format!("{} {encoding}: {reason:?}", case.id));
-            }
+            failures
+                .extend((status != "match").then(|| format!("{} {encoding}: {reason:?}", case.id)));
         }
     }
     assert!(selected_cases > 0, "unknown HOIMIN_BOUNDARY_CASE");
@@ -405,11 +417,9 @@ fn shared_reader_fixture_encodings_preserve_fields_and_projection_premises() {
                 assert_eq!(event[field], original[field], "{} {field}", case.id);
             }
         }
-        if case.baseline == "missing" && !case.statuses.is_empty() {
-            projection_gaps += 1;
-        } else {
-            applicable += 1;
-        }
+        let has_projection_gap = case.baseline == "missing" && !case.statuses.is_empty();
+        projection_gaps += usize::from(has_projection_gap);
+        applicable += usize::from(!has_projection_gap);
     }
     assert_eq!(applicable + projection_gaps, 282);
     assert_eq!(applicable, 282);

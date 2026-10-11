@@ -86,6 +86,9 @@ async fn python_observe(
     sources: &[Vec<u8>],
     harness: &str,
 ) -> Result<Vec<serde_json::Value>, String> {
+    if sources.is_empty() {
+        return Ok(Vec::new());
+    }
     let input = serde_json::json!({"sources": sources, "harness": harness});
     let script = r"
 import contextlib, io, json, sys
@@ -298,7 +301,7 @@ async fn planned_candidates(
     .expect("infrastructure-error: plan launch");
     assert_eq!(
         process.status.code(),
-        Some(if truncated { 4 } else { 0 }),
+        Some(i32::from(truncated) * 4),
         "plan {} {selection}: {}",
         case.id,
         String::from_utf8_lossy(&process.stderr)
@@ -335,29 +338,30 @@ async fn planned_candidates(
     plan_ids
 }
 
-#[tokio::test]
 #[expect(
     clippy::too_many_lines,
     reason = "one bounded fixture cross-product preserves the sequence of independent compiler, analyzer, validator and plan observations"
 )]
-async fn valid_python_corpus_correspondence() {
+async fn corpus_correspondence(
+    mode: &str,
+    check_eligibility: fn(&Case, &[AnalyzerCandidate], &[Observation]),
+) {
     let mut seen_pairs = BTreeSet::new();
     let mut axis_values: BTreeMap<&str, BTreeSet<String>> = BTreeMap::new();
     let mut checks = 0;
     let mut validated_candidates = 0;
     let mut runtime_candidates = 0;
-    for case in cases() {
+    for case in cases().into_iter().filter(|case| case.mode == mode) {
         assert_eq!((case.schema, case.seed), (1, 489));
         assert!(matches!(case.mode.as_str(), "strict" | "model-only"));
         assert!(
             !case.sites.is_empty(),
             "zero-output must declare ineligible sites"
         );
-        let layouts: &[&str] = if case.variants {
-            &["lf", "crlf", "cr", "mixed", "bom", "no-final-newline"]
-        } else {
-            &["lf"]
-        };
+        let layouts: &[&str] = [
+            &["lf"][..],
+            &["lf", "crlf", "cr", "mixed", "bom", "no-final-newline"][..],
+        ][usize::from(case.variants)];
         for layout_name in layouts {
             let source = layout(&case.source, layout_name);
             let original = python_observe(&[source.as_bytes().to_vec()], &case.harness)
@@ -374,63 +378,79 @@ async fn valid_python_corpus_correspondence() {
                 case.id
             );
             assert_eq!(original[0]["stdout"], case.baseline);
-            let selections: &[&str] = if case.variants {
-                &[
-                    "full",
+            let first_line = location(&source, site_start(&source, &case.sites[0])).0;
+            let chosen = MutationOperatorSelection::parse_selector(&case.operator).unwrap()[0];
+            let selections = [
+                ("full", MutationProfile::Full, chosen, vec![], vec![], 100),
+                (
                     "focused",
+                    MutationProfile::Focused,
+                    chosen,
+                    vec![],
+                    vec![],
+                    100,
+                ),
+                (
                     "excluded",
+                    MutationProfile::Full,
+                    hoimin_core::MutationOperator::BreakContinue,
+                    vec![],
+                    vec![],
+                    100,
+                ),
+                (
                     "line-hit",
+                    MutationProfile::Full,
+                    chosen,
+                    vec![LineRange {
+                        start: first_line,
+                        end: first_line,
+                    }],
+                    vec![],
+                    100,
+                ),
+                (
                     "line-miss",
+                    MutationProfile::Full,
+                    chosen,
+                    vec![LineRange {
+                        start: 999,
+                        end: 999,
+                    }],
+                    vec![],
+                    100,
+                ),
+                (
                     "symbol-hit",
+                    MutationProfile::Full,
+                    chosen,
+                    vec![],
+                    vec!["subject".to_owned()],
+                    100,
+                ),
+                (
                     "symbol-miss",
-                    "cap-1",
-                    "cap-2",
-                    "cap-3",
-                ]
-            } else {
-                &["full"]
-            };
-            for selection in selections {
+                    MutationProfile::Full,
+                    chosen,
+                    vec![],
+                    vec!["empty".to_owned()],
+                    100,
+                ),
+                ("cap-1", MutationProfile::Full, chosen, vec![], vec![], 1),
+                ("cap-2", MutationProfile::Full, chosen, vec![], vec![], 2),
+                ("cap-3", MutationProfile::Full, chosen, vec![], vec![], 3),
+            ];
+            for (selection, profile, included, lines, symbols, cap) in selections
+                .into_iter()
+                .take([1, 10][usize::from(case.variants)])
+            {
                 let mut operators = MutationOperatorSelection::default();
                 for name in MutationOperatorSelection::valid_names() {
                     for operator in MutationOperatorSelection::parse_selector(name).unwrap() {
                         operators.exclude(operator);
                     }
                 }
-                let chosen = MutationOperatorSelection::parse_selector(&case.operator).unwrap()[0];
-                if *selection == "excluded" {
-                    operators.include(hoimin_core::MutationOperator::BreakContinue);
-                } else {
-                    operators.include(chosen);
-                }
-                let profile = if *selection == "focused" {
-                    MutationProfile::Focused
-                } else {
-                    MutationProfile::Full
-                };
-                let first_line = location(&source, site_start(&source, &case.sites[0])).0;
-                let lines = match *selection {
-                    "line-hit" => vec![LineRange {
-                        start: first_line,
-                        end: first_line,
-                    }],
-                    "line-miss" => vec![LineRange {
-                        start: 999,
-                        end: 999,
-                    }],
-                    _ => vec![],
-                };
-                let symbols = match *selection {
-                    "symbol-hit" => vec!["subject".to_owned()],
-                    "symbol-miss" => vec!["empty".to_owned()],
-                    _ => vec![],
-                };
-                let cap = match *selection {
-                    "cap-1" => 1,
-                    "cap-2" => 2,
-                    "cap-3" => 3,
-                    _ => 100,
-                };
+                operators.include(included);
                 let mut expected: Vec<_> = case
                     .sites
                     .iter()
@@ -443,8 +463,8 @@ async fn valid_python_corpus_correspondence() {
                         )
                     })
                     .filter(|(start, _, _)| {
-                        !matches!(*selection, "excluded" | "line-miss" | "symbol-miss")
-                            && (*selection != "line-hit"
+                        !matches!(selection, "excluded" | "line-miss" | "symbol-miss")
+                            && (selection != "line-hit"
                                 || location(&source, *start).0 == first_line)
                     })
                     .collect();
@@ -462,41 +482,8 @@ async fn valid_python_corpus_correspondence() {
                     },
                     &source,
                 );
-                if case.mode == "strict" {
-                    exact_candidates(&output.candidates, &expected).unwrap_or_else(|e| {
-                        panic!("seed=489 {} {layout_name} {selection}: {e}", case.id)
-                    });
-                } else {
-                    let result = exact_candidates(&output.candidates, &expected);
-                    eprintln!(
-                        "model-only fixture={} eligibility_observation={result:?}; no strict source-binding correspondence claim",
-                        case.id
-                    );
-                    assert!(
-                        matches!(
-                            case.id.as_str(),
-                            "annotation_builtin_source_boundary"
-                                | "annotation_generic_source_boundary"
-                        ),
-                        "classify new model-only boundaries explicitly"
-                    );
-                }
+                check_eligibility(&case, &output.candidates, &expected);
                 assert_eq!(output.truncated, truncated);
-                if case.mode == "strict" && *layout_name == "lf" && *selection == "full" {
-                    for site in &case.sites {
-                        if let Some(broken) = site.broken {
-                            let present = output.candidates.iter().any(|c| {
-                                c.span.start == u64::try_from(site_start(&source, site)).unwrap()
-                                    && c.replacement == site.replacement
-                            });
-                            assert_ne!(
-                                present, broken,
-                                "broken {} was not detected via actual analyzer/plan case {}",
-                                site.fault, case.id
-                            );
-                        }
-                    }
-                }
 
                 let mut ids = BTreeMap::new();
                 let mut mutants = Vec::new();
@@ -514,35 +501,21 @@ async fn valid_python_corpus_correspondence() {
                     );
                     let mut bytes = source.as_bytes().to_vec();
                     bytes.splice(start..end, c.replacement.bytes());
-                    if *layout_name == "lf" {
-                        let site = case
-                            .sites
-                            .iter()
-                            .find(|s| {
-                                site_start(&source, s) == start && s.replacement == c.replacement
-                            })
-                            .unwrap();
-                        assert_eq!(bytes, site.expected_bytes, "Lean CandidateSpan composition");
-                    }
                     mutants.push(bytes);
                 }
-                if !mutants.is_empty() {
-                    let observations = python_observe(&mutants, &case.harness).await.unwrap();
-                    for observation in observations {
-                        assert_eq!(
-                            observation["compiled"], true,
-                            "mutant compile {}: {observation}",
-                            case.id
-                        );
-                        assert!(
-                            observation["exception"].is_null(),
-                            "operator runtime contract {}: {observation}",
-                            case.id
-                        );
-                        if !case.harness.is_empty() {
-                            assert_eq!(observation["stdout"], case.mutant, "{}", case.id);
-                        }
-                    }
+                let observations = python_observe(&mutants, &case.harness).await.unwrap();
+                for observation in observations {
+                    assert_eq!(
+                        observation["compiled"], true,
+                        "mutant compile {}: {observation}",
+                        case.id
+                    );
+                    assert!(
+                        observation["exception"].is_null(),
+                        "operator runtime contract {}: {observation}",
+                        case.id
+                    );
+                    assert_eq!(observation["stdout"], case.mutant, "{}", case.id);
                 }
                 let plan_ids =
                     planned_candidates(&case, &source, selection, cap, &lines, &symbols, truncated)
@@ -554,7 +527,7 @@ async fn valid_python_corpus_correspondence() {
                     ("position", case.position.as_str()),
                     ("binding", case.binding.as_str()),
                     ("layout", *layout_name),
-                    ("selection", *selection),
+                    ("selection", selection),
                 ];
                 for (i, (a, av)) in axes.iter().enumerate() {
                     axis_values.entry(a).or_default().insert((*av).into());
@@ -563,9 +536,8 @@ async fn valid_python_corpus_correspondence() {
                     }
                 }
                 validated_candidates += output.candidates.len();
-                if !case.harness.is_empty() {
-                    runtime_candidates += output.candidates.len();
-                }
+                runtime_candidates +=
+                    usize::from(!case.harness.is_empty()) * output.candidates.len();
                 checks += 1;
             }
         }
@@ -588,10 +560,11 @@ async fn valid_python_corpus_correspondence() {
             for av in &axis_values[a] {
                 for bv in &axis_values[b] {
                     let pair = format!("{a}={av}|{b}={bv}");
-                    if !seen_pairs.contains(&pair) {
-                        uncovered += 1;
+                    uncovered += usize::from(!seen_pairs.contains(&pair));
+                    for missing in std::iter::once(&pair).filter(|pair| !seen_pairs.contains(*pair))
+                    {
                         eprintln!(
-                            "uncovered-pair {pair}: not exercised by bounded seed489; no support or correctness claim"
+                            "uncovered-pair {missing}: not exercised by bounded seed489; no support or correctness claim"
                         );
                     }
                 }
@@ -602,6 +575,103 @@ async fn valid_python_corpus_correspondence() {
         "seed=489 checks={checks} validated_and_compiled_candidates={validated_candidates} runtime_candidates={runtime_candidates} observed_pairs={} uncovered_pairs={uncovered}",
         seen_pairs.len()
     );
+}
+
+fn strict_eligibility(case: &Case, candidates: &[AnalyzerCandidate], expected: &[Observation]) {
+    exact_candidates(candidates, expected)
+        .unwrap_or_else(|error| panic!("seed=489 {}: {error}", case.id));
+}
+
+fn model_eligibility(case: &Case, candidates: &[AnalyzerCandidate], expected: &[Observation]) {
+    let result = exact_candidates(candidates, expected);
+    eprintln!(
+        "model-only fixture={} eligibility_observation={result:?}; no strict source-binding correspondence claim",
+        case.id
+    );
+    assert!(
+        matches!(
+            case.id.as_str(),
+            "annotation_builtin_source_boundary" | "annotation_generic_source_boundary"
+        ),
+        "classify new model-only boundaries explicitly"
+    );
+}
+
+#[tokio::test]
+async fn valid_python_strict_corpus_correspondence() {
+    corpus_correspondence("strict", strict_eligibility).await;
+}
+
+#[tokio::test]
+async fn valid_python_model_boundaries_are_explicit() {
+    corpus_correspondence("model-only", model_eligibility).await;
+}
+
+fn full_lf_candidates(case: &Case) -> Vec<AnalyzerCandidate> {
+    let mut operators = MutationOperatorSelection::default();
+    for name in MutationOperatorSelection::valid_names() {
+        for operator in MutationOperatorSelection::parse_selector(name).unwrap() {
+            operators.exclude(operator);
+        }
+    }
+    operators.include(MutationOperatorSelection::parse_selector(&case.operator).unwrap()[0]);
+    rust::analyze_source(
+        &rust::AnalyzeRequest {
+            path: Utf8Path::new("subject.py"),
+            lines: &[],
+            symbols: &[],
+            operators: &operators,
+            profile: MutationProfile::Full,
+            max_candidates: 100,
+        },
+        &case.source,
+    )
+    .candidates
+}
+
+#[test]
+fn valid_python_lf_candidates_compose_the_lean_bytes() {
+    for case in cases() {
+        for candidate in full_lf_candidates(&case) {
+            let start = usize::try_from(candidate.span.start).unwrap();
+            let end = start + usize::try_from(candidate.span.length).unwrap();
+            let site = case
+                .sites
+                .iter()
+                .find(|site| {
+                    site_start(&case.source, site) == start
+                        && site.replacement == candidate.replacement
+                })
+                .unwrap();
+            let mut bytes = case.source.as_bytes().to_vec();
+            bytes.splice(start..end, candidate.replacement.bytes());
+
+            assert_eq!(bytes, site.expected_bytes, "Lean CandidateSpan composition");
+        }
+    }
+}
+
+#[test]
+fn valid_python_strict_analyzer_detects_each_declared_broken_site() {
+    for case in cases().into_iter().filter(|case| case.mode == "strict") {
+        let candidates = full_lf_candidates(&case);
+        for (site, broken) in case
+            .sites
+            .iter()
+            .filter_map(|site| site.broken.map(|broken| (site, broken)))
+        {
+            let present = candidates.iter().any(|candidate| {
+                candidate.span.start == u64::try_from(site_start(&case.source, site)).unwrap()
+                    && candidate.replacement == site.replacement
+            });
+
+            assert_ne!(
+                present, broken,
+                "broken {} was not detected via actual analyzer/plan case {}",
+                site.fault, case.id
+            );
+        }
+    }
 }
 
 #[test]

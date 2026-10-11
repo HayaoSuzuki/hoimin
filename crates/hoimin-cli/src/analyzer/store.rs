@@ -469,9 +469,7 @@ mod tests {
             {
                 replayed.push(candidate);
                 cursor = next_cursor;
-                if replayed.len() < candidates.len() {
-                    observed_cursors.push((replayed.len(), next_cursor));
-                }
+                observed_cursors.push((replayed.len(), next_cursor));
             }
 
             prop_assert_eq!(&replayed, &candidates);
@@ -602,10 +600,16 @@ mod tests {
 
     #[test]
     fn shared_record_size_matches_encoded_escaped_unicode_boundaries() {
-        for payload_length in [
-            MAX_SPOOL_RECORD_BYTES - 2,
-            MAX_SPOOL_RECORD_BYTES - 1,
-            MAX_SPOOL_RECORD_BYTES,
+        for (payload_length, expected_size) in [
+            (
+                MAX_SPOOL_RECORD_BYTES - 2,
+                Ok(usize::try_from(MAX_SPOOL_RECORD_BYTES - 1).unwrap()),
+            ),
+            (
+                MAX_SPOOL_RECORD_BYTES - 1,
+                Ok(usize::try_from(MAX_SPOOL_RECORD_BYTES).unwrap()),
+            ),
+            (MAX_SPOOL_RECORD_BYTES, Err(MAX_SPOOL_RECORD_BYTES)),
         ] {
             let mut candidate = candidate_with_payload_len(payload_length);
             candidate.original = "\n\t\"\\雪🧪".to_owned();
@@ -615,16 +619,14 @@ mod tests {
             encoded.push(b'\n');
             assert_eq!(u64::try_from(encoded.len()).unwrap(), payload_length + 1);
             let result = CandidateStore::record_size(&candidate);
-            if payload_length < MAX_SPOOL_RECORD_BYTES {
-                assert_eq!(result.unwrap(), encoded.len());
-            } else {
-                assert!(matches!(
-                    result,
-                    Err(StoreError::RecordTooLarge {
-                        limit: MAX_SPOOL_RECORD_BYTES
-                    })
-                ));
-            }
+            let actual_size = result.map_err(|error| {
+                let StoreError::RecordTooLarge { limit } = error else {
+                    panic!("record-size failure lost its typed limit: {error}")
+                };
+                limit
+            });
+
+            assert_eq!(actual_size, expected_size);
         }
     }
 

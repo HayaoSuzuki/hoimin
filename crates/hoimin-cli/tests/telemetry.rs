@@ -68,82 +68,86 @@ fn disabled_or_invalid_filter_does_not_change_command_result() {
     }
 }
 
+async fn logged_session_run(
+    root: &std::path::Path,
+    project: &std::path::Path,
+    python: &std::path::Path,
+    budget: &str,
+) -> Output {
+    tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
+        .env("RUST_LOG", "hoimin_cli=debug")
+        .args(["run", "--root"])
+        .arg(project)
+        .args([
+            "--file",
+            "target.py",
+            "--operators",
+            "binary_add_sub",
+            "--jobs",
+            "1",
+            "--format",
+            "json",
+            "--max-mutants",
+            budget,
+            "--min-free-space",
+            "1B",
+            "--allow-best-effort-memory",
+            "--session",
+        ])
+        .arg(root.join("session.db"))
+        .args(["--resume", "--"])
+        .arg(python)
+        .args([
+            "-c",
+            "import target; assert target.value == 3 and target.other == 9",
+        ])
+        .kill_on_drop(true)
+        .output()
+        .await
+        .unwrap()
+}
+
 #[tokio::test]
 async fn reused_result_updates_progress_before_the_next_process_starts() {
     let root = tempfile::tempdir().unwrap();
     let project = root.path().join("project");
     std::fs::create_dir(&project).unwrap();
     std::fs::write(project.join("target.py"), "value = 1 + 2\nother = 4 + 5\n").unwrap();
-    let python = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(if cfg!(windows) {
-        "../../.venv/Scripts/python.exe"
-    } else {
-        "../../.venv/bin/python"
-    });
-    for budget in ["1", "2"] {
-        let output = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
-            .env("RUST_LOG", "hoimin_cli=debug")
-            .args(["run", "--root"])
-            .arg(&project)
-            .args([
-                "--file",
-                "target.py",
-                "--operators",
-                "binary_add_sub",
-                "--jobs",
-                "1",
-                "--format",
-                "json",
-                "--max-mutants",
-                budget,
-                "--min-free-space",
-                "1B",
-                "--allow-best-effort-memory",
-                "--session",
-            ])
-            .arg(root.path().join("session.db"))
-            .args(["--resume", "--"])
-            .arg(&python)
-            .args([
-                "-c",
-                "import target; assert target.value == 3 and target.other == 9",
-            ])
-            .kill_on_drop(true)
-            .output()
-            .await
-            .unwrap();
-        let stderr = String::from_utf8(output.stderr).unwrap();
-        assert_eq!(
-            output.status.code(),
-            Some(if budget == "1" { 4 } else { 0 }),
-            "{stderr}"
-        );
-        if budget == "1" {
-            continue;
-        }
-        let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert_eq!(report["run"]["resume"]["status"], "resumed");
-        let logs: Vec<serde_json::Value> = stderr
-            .lines()
-            .map(|line| serde_json::from_str(line).unwrap())
-            .collect();
-        let progress = logs
-            .iter()
-            .position(|log| {
-                log["fields"]["stage"] == "testing mutants" && log["fields"]["completed"] == 1
-            })
-            .unwrap_or_else(|| panic!("missing reused progress: {stderr}"));
-        let next_process = logs
-            .iter()
-            .position(|log| {
-                log["fields"]["message"] == "starting test process"
-                    && log["span"]["mutant_id"].is_string()
-            })
-            .unwrap();
-        assert!(
-            progress < next_process,
-            "reused result must be counted before the next test: {stderr}"
-        );
-    }
+    let python = controlled_python();
+    let first = logged_session_run(root.path(), &project, &python, "1").await;
+    let output = logged_session_run(root.path(), &project, &python, "2").await;
+
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let logs: Vec<serde_json::Value> = stderr
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    let progress = logs
+        .iter()
+        .position(|log| {
+            log["fields"]["stage"] == "testing mutants" && log["fields"]["completed"] == 1
+        })
+        .unwrap_or_else(|| panic!("missing reused progress: {stderr}"));
+    let next_process = logs
+        .iter()
+        .position(|log| {
+            log["fields"]["message"] == "starting test process"
+                && log["span"]["mutant_id"].is_string()
+        })
+        .unwrap();
+    assert_eq!(
+        first.status.code(),
+        Some(4),
+        "{}",
+        String::from_utf8_lossy(&first.stderr)
+    );
+    assert_eq!(output.status.code(), Some(0), "{stderr}");
+    assert_eq!(report["run"]["resume"]["status"], "resumed");
+    assert!(
+        progress < next_process,
+        "reused result must be counted before the next test: {stderr}"
+    );
 }
 
 #[tokio::test]
@@ -153,11 +157,7 @@ async fn spawned_process_logs_keep_run_and_mutant_context_without_changing_repor
 
     let root = tempfile::tempdir().unwrap();
     std::fs::write(root.path().join("target.py"), "x = 1 + 2\n").unwrap();
-    let python = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(if cfg!(windows) {
-        "../../.venv/Scripts/python.exe"
-    } else {
-        "../../.venv/bin/python"
-    });
+    let python = controlled_python();
     let child = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
         .env("RUST_LOG", "hoimin_cli=debug")
         .args(["run", "--root"])
@@ -267,20 +267,12 @@ fn terminal() -> (std::fs::File, std::fs::File) {
 #[cfg(unix)]
 #[tokio::test]
 async fn debug_logging_to_stalled_stderr_keeps_the_execution_deadline() {
-    use std::io::{self, Write};
     use std::process::Stdio;
     use std::time::Duration;
 
     let (consumer, mut producer) = std::os::unix::net::UnixStream::pair().unwrap();
     producer.set_nonblocking(true).unwrap();
-    loop {
-        match producer.write(&[b'x'; 4096]) {
-            Ok(0) => panic!("stderr transport closed"),
-            Ok(_) => {}
-            Err(error) if error.kind() == io::ErrorKind::WouldBlock => break,
-            Err(error) => panic!("filling stderr: {error}"),
-        }
-    }
+    fill_stderr_transport(&mut producer);
     producer.set_nonblocking(false).unwrap();
     let root = tempfile::tempdir().unwrap();
     std::fs::write(root.path().join("target.py"), "x = 1 + 2\n").unwrap();
@@ -310,10 +302,7 @@ async fn debug_logging_to_stalled_stderr_keeps_the_execution_deadline() {
         .spawn()
         .unwrap();
     let status = tokio::time::timeout(Duration::from_secs(6), child.wait()).await;
-    if status.is_err() {
-        child.kill().await.unwrap();
-        child.wait().await.unwrap();
-    }
+    reap_overdue_child(&mut child, status.is_err()).await;
     drop(consumer);
     assert!(
         !status
@@ -326,27 +315,14 @@ async fn debug_logging_to_stalled_stderr_keeps_the_execution_deadline() {
 #[cfg(unix)]
 #[tokio::test]
 async fn terminal_shows_heartbeat_and_completed_count_with_logging_off() {
-    use std::io::Read;
     use std::process::Stdio;
     use std::time::Duration;
 
     let root = tempfile::tempdir().unwrap();
     std::fs::write(root.path().join("target.py"), "x = 1 + 2\n").unwrap();
     let python = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../.venv/bin/python");
-    let (mut reader, writer) = terminal();
-    let capture = std::thread::spawn(move || {
-        let mut result = Vec::new();
-        let mut buffer = [0; 4096];
-        loop {
-            match reader.read(&mut buffer) {
-                Ok(0) => break,
-                Ok(n) => result.extend_from_slice(&buffer[..n]),
-                Err(error) if error.raw_os_error() == Some(libc::EIO) => break,
-                Err(error) => panic!("terminal read: {error}"),
-            }
-        }
-        String::from_utf8(result).unwrap()
-    });
+    let (reader, writer) = terminal();
+    let capture = std::thread::spawn(move || read_terminal(reader));
     let child = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
         .env("RUST_LOG", "off")
         .args(["run", "--root"])
@@ -385,4 +361,50 @@ async fn terminal_shows_heartbeat_and_completed_count_with_logging_off() {
     );
     assert!(stderr.contains("1 completed"), "{stderr}");
     assert!(!stderr.contains("DEBUG"), "{stderr}");
+}
+
+#[cfg(unix)]
+fn fill_stderr_transport(producer: &mut std::os::unix::net::UnixStream) {
+    use std::io::{self, Write};
+    loop {
+        match producer.write(&[b'x'; 4096]) {
+            Ok(0) => panic!("stderr transport closed"),
+            Ok(_) => {}
+            Err(error) if error.kind() == io::ErrorKind::WouldBlock => break,
+            Err(error) => panic!("filling stderr: {error}"),
+        }
+    }
+}
+
+#[cfg(unix)]
+async fn reap_overdue_child(child: &mut tokio::process::Child, overdue: bool) {
+    if overdue {
+        child.kill().await.unwrap();
+        child.wait().await.unwrap();
+    }
+}
+
+#[cfg(unix)]
+fn read_terminal(mut reader: std::fs::File) -> String {
+    use std::io::Read;
+
+    let mut result = Vec::new();
+    let mut buffer = [0; 4096];
+    loop {
+        match reader.read(&mut buffer) {
+            Ok(0) => break,
+            Ok(n) => result.extend_from_slice(&buffer[..n]),
+            Err(error) if error.raw_os_error() == Some(libc::EIO) => break,
+            Err(error) => panic!("terminal read: {error}"),
+        }
+    }
+    String::from_utf8(result).unwrap()
+}
+
+fn controlled_python() -> PathBuf {
+    #[cfg(windows)]
+    let relative = "../../.venv/Scripts/python.exe";
+    #[cfg(not(windows))]
+    let relative = "../../.venv/bin/python";
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(relative)
 }

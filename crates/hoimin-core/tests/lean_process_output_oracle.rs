@@ -105,11 +105,14 @@ fn lean_process_output_oracle_matches_public_mutant_classification() {
         .into_iter()
         .filter(|case| case.execution == "mutant" && !case.expected_fatal)
     {
-        let output_state = match case.output.as_str() {
-            "complete" => ProcessOutputState::Complete,
-            "close_timed_out" => ProcessOutputState::CloseTimedOut,
-            other => panic!("non-fatal row has unsupported output {other}"),
-        };
+        let output_state = [
+            ("complete", ProcessOutputState::Complete),
+            ("close_timed_out", ProcessOutputState::CloseTimedOut),
+        ]
+        .into_iter()
+        .find(|(name, _)| *name == case.output)
+        .expect("non-fatal row has a supported output state")
+        .1;
         let actual = classify_mutant_result(
             termination(case.input_termination.as_deref().unwrap()),
             output_state,

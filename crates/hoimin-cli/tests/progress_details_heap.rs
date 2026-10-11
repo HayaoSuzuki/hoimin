@@ -45,7 +45,10 @@ fn detail_allocations_do_not_scale_with_candidate_body_size() {
         fixture.path().join("after.json"),
     ];
     for size in [32, 256 * 1024] {
-        for (path, survived) in paths.iter().zip([false, true]) {
+        for (path, (status, killed, survived, score, exit_code)) in paths
+            .iter()
+            .zip([("killed", 12, 0, 1.0, 1), ("survived", 0, 12, 0.0, 0)])
+        {
             let mut doc: Value =
                 serde_json::from_str(include_str!("golden/reports/schema-v3-current.json"))
                     .unwrap();
@@ -59,20 +62,20 @@ fn detail_allocations_do_not_scale_with_candidate_body_size() {
                         event["candidate"]["sequence"] = json!(index + 1);
                         event["candidate"]["original"] = json!("a".repeat(size));
                         event["candidate"]["replacement"] = json!("b".repeat(size));
-                        event["status"] = json!(if survived { "survived" } else { "killed" });
-                        event["termination"] = json!({"Exit": i32::from(!survived)});
+                        event["status"] = json!(status);
+                        event["termination"] = json!({"Exit": exit_code});
                         event
                     })
                     .collect(),
             );
             doc["summary"]["sequence"] = json!(17);
-            doc["summary"]["counts"]["killed"] = json!(if survived { 0 } else { 12 });
-            doc["summary"]["counts"]["survived"] = json!(if survived { 12 } else { 0 });
-            doc["summary"]["counts"]["score"] = json!(if survived { 0.0 } else { 1.0 });
-            doc["summary"]["exit_code"] = json!(i32::from(survived));
+            doc["summary"]["counts"]["killed"] = json!(killed);
+            doc["summary"]["counts"]["survived"] = json!(survived);
+            doc["summary"]["counts"]["score"] = json!(score);
+            doc["summary"]["exit_code"] = json!(i32::from(survived > 0));
             std::fs::write(path, serde_json::to_vec(&doc).unwrap()).unwrap();
         }
-        let measure = |details| {
+        let measure = |details, expected_transitions| {
             let args = ProgressArgs {
                 fail_on_regression: false,
                 reports: paths.to_vec(),
@@ -91,14 +94,22 @@ fn detail_allocations_do_not_scale_with_candidate_body_size() {
             assert_eq!(result.unwrap(), 0);
             let doc: Value = serde_json::from_slice(&out).unwrap();
             assert_eq!(doc["comparisons"][0]["regressions"], 12);
-            if details {
-                assert_eq!(doc["details"]["transitions"].as_array().unwrap().len(), 2);
-                assert_eq!(doc["details"]["omitted"], 10);
-            }
+            assert_eq!(
+                doc["details"]
+                    .as_object()
+                    .map(|_| doc["details"]["transitions"].as_array().unwrap().len()),
+                expected_transitions
+            );
+            assert_eq!(
+                doc["details"]
+                    .as_object()
+                    .map(|_| doc["details"]["omitted"].as_u64().unwrap()),
+                expected_transitions.map(|_| 10)
+            );
             bytes
         };
-        let baseline = measure(false);
-        let detailed = measure(true);
+        let baseline = measure(false, None);
+        let detailed = measure(true, Some(2));
         let overhead = detailed.saturating_sub(baseline);
         eprintln!(
             "details body={size}, baseline={baseline}, detailed={detailed}, overhead={overhead}"

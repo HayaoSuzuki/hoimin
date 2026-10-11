@@ -436,11 +436,11 @@ mod detail_tests {
     #[test]
     fn internal_details_match_lean_generated_inconclusive_and_duplicate_cases() {
         let corpus = include_str!("../../../../formal/HoiminOracle/corpus/progress-decision.jsonl");
-        for line in corpus.lines() {
-            let case: serde_json::Value = serde_json::from_str(line).unwrap();
-            if case["mode"] == "strict" {
-                continue;
-            }
+        for case in corpus
+            .lines()
+            .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+            .filter(|case| case["mode"] != "strict")
+        {
             let reports = case["reports"].as_array().unwrap();
             let build = |value: &serde_json::Value| {
                 let owned: Vec<_> = value["mutants"]

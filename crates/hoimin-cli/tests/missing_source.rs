@@ -138,7 +138,9 @@ async fn missing_sources_are_rejected_before_baseline_even_when_mixed_or_changed
 
 #[tokio::test]
 async fn legitimate_empty_sources_still_succeed() {
-    for command in ["run", "plan"] {
+    for (command, result_field, baseline_exists) in
+        [("run", "mutants", true), ("plan", "candidates", false)]
+    {
         for selectors in [
             vec!["--source", "empty"],
             vec!["--source", "src", "--changed"],
@@ -152,20 +154,15 @@ async fn legitimate_empty_sources_still_succeed() {
                 String::from_utf8_lossy(&output.stderr)
             );
             let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-            if command == "plan" {
-                assert!(
-                    value["candidates"].as_array().unwrap().is_empty(),
-                    "unexpected candidates: {}",
-                    value["candidates"]
-                );
-            } else {
-                assert!(
-                    value["mutants"].as_array().unwrap().is_empty(),
-                    "unexpected mutants: {}",
-                    value["mutants"]
-                );
-                assert!(project.evidence.path().join("baseline").exists());
-            }
+            assert!(
+                value[result_field].as_array().unwrap().is_empty(),
+                "unexpected {result_field}: {}",
+                value[result_field]
+            );
+            assert_eq!(
+                project.evidence.path().join("baseline").exists(),
+                baseline_exists
+            );
         }
     }
 }

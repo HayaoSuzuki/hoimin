@@ -162,15 +162,13 @@ proptest! {
     ) {
         let original = fixture_input();
         let mut reordered = original.clone();
-        if reverse_sources {
-            reordered.sources.reverse();
-        }
-        if reverse_targets {
-            reordered.targets.reverse();
-        }
-        if reverse_operators {
-            reordered.operators.reverse();
-        }
+        let mut reversed = original.clone();
+        reversed.sources.reverse();
+        reversed.targets.reverse();
+        reversed.operators.reverse();
+        reordered.sources = [original.sources.clone(), reversed.sources][usize::from(reverse_sources)].clone();
+        reordered.targets = [original.targets.clone(), reversed.targets][usize::from(reverse_targets)].clone();
+        reordered.operators = [original.operators.clone(), reversed.operators][usize::from(reverse_operators)].clone();
 
         prop_assert_eq!(fingerprint(&original), fingerprint(&reordered));
     }

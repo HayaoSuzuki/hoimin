@@ -187,20 +187,27 @@ async fn clauses_keep_operator_origin_and_short_circuit() {
     .await;
     let candidates = doc["candidates"].as_array().unwrap();
     assert_eq!(candidates.len(), 4);
-    for c in candidates
-        .iter()
-        .filter(|c| c["operator"] == "condition_clause_delete")
-    {
+    for (contains_first_call, assertion) in [
+        (true, "assert calls == [1]\n"),
+        (false, "assert calls == [2]\n"),
+    ] {
+        let c = candidates
+            .iter()
+            .filter(|candidate| candidate["operator"] == "condition_clause_delete")
+            .find(|candidate| {
+                candidate["replacement"]
+                    .as_str()
+                    .unwrap()
+                    .contains("check(1")
+                    == contains_first_call
+            })
+            .unwrap();
         let start = usize::try_from(c["span"]["start"].as_u64().unwrap()).unwrap();
         let end = start + usize::try_from(c["span"]["length"].as_u64().unwrap()).unwrap();
         let replacement = c["replacement"].as_str().unwrap();
         let mut mutant = source.to_owned();
         mutant.replace_range(start..end, replacement);
-        mutant.push_str(if replacement.contains("check(1") {
-            "assert calls == [1]\n"
-        } else {
-            "assert calls == [2]\n"
-        });
+        mutant.push_str(assertion);
         let output = tokio::process::Command::new(python())
             .args(["-c", &mutant])
             .output()

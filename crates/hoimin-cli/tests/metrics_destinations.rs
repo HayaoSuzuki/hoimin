@@ -71,6 +71,18 @@ fn fixture() -> (tempfile::TempDir, PathBuf) {
     (temp, root)
 }
 
+fn observed_metrics_paths(parent: &Path, parked: &Path) -> (PathBuf, Vec<PathBuf>) {
+    // Windows can deny rename while the validated directory handle is live.
+    if parked.exists() {
+        (
+            parked.join("metrics.json"),
+            vec![parent.join("metrics.json")],
+        )
+    } else {
+        (parent.join("metrics.json"), vec![])
+    }
+}
+
 #[tokio::test]
 async fn metrics_parent_replacement_does_not_redirect_final_output() {
     let (temp, root) = fixture();
@@ -89,21 +101,17 @@ async fn metrics_parent_replacement_does_not_redirect_final_output() {
     );
     let output = run_script(&root, Some(&parent.join("metrics.json")), &[], &script).await;
     assert!(output.status.success(), "{output:?}");
-    if parked.exists() {
+    let (metrics_path, replacement_paths) = observed_metrics_paths(&parent, &parked);
+    for replacement in replacement_paths {
         assert_eq!(
-            std::fs::read(parent.join("metrics.json")).unwrap(),
+            std::fs::read(replacement).unwrap(),
             b"replacement sentinel",
             "metrics were redirected into a replacement parent"
         );
-        let metrics: hoimin_core::RunMetrics =
-            serde_json::from_slice(&std::fs::read(parked.join("metrics.json")).unwrap()).unwrap();
-        metrics.validate().unwrap();
-    } else {
-        // Windows can deny rename while the validated directory handle is live.
-        let metrics: hoimin_core::RunMetrics =
-            serde_json::from_slice(&std::fs::read(parent.join("metrics.json")).unwrap()).unwrap();
-        metrics.validate().unwrap();
     }
+    let metrics: hoimin_core::RunMetrics =
+        serde_json::from_slice(&std::fs::read(metrics_path).unwrap()).unwrap();
+    metrics.validate().unwrap();
     assert_eq!(std::fs::read(root.join("calc.py")).unwrap(), SOURCE);
 }
 

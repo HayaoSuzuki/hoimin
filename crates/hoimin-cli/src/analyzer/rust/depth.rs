@@ -219,6 +219,44 @@ match value:
             .unwrap();
     }
 
+    fn nested_format_specification_module(source: &str) -> ModModule {
+        let mut module = ruff_python_parser::parse_module(source)
+            .unwrap()
+            .into_syntax();
+        let Stmt::Assign(assign) = &mut module.body[0] else {
+            panic!("assignment fixture")
+        };
+        let elements = match assign.value.as_mut() {
+            Expr::FString(expr) => {
+                let ruff_python_ast::FStringPart::FString(part) =
+                    expr.value.iter_mut().next().unwrap()
+                else {
+                    panic!("f-string fixture")
+                };
+                &mut part.elements
+            }
+            Expr::TString(expr) => &mut expr.value.iter_mut().next().unwrap().elements,
+            _ => panic!("interpolated string fixture"),
+        };
+        let template = elements.iter().next().unwrap().clone();
+        let mut nested = template.clone();
+        for _ in 0..25_000 {
+            let mut parent = template.clone();
+            let InterpolatedStringElement::Interpolation(interpolation) = &mut parent else {
+                panic!("interpolation fixture")
+            };
+            interpolation.format_spec =
+                Some(Box::new(ruff_python_ast::InterpolatedStringFormatSpec {
+                    range: TextRange::default(),
+                    node_index: AtomicNodeIndex::default(),
+                    elements: vec![nested].into(),
+                }));
+            nested = parent;
+        }
+        *elements = vec![nested].into();
+        module
+    }
+
     #[test]
     fn disposal_cuts_nested_format_specification_ownership() {
         // Synthetic ownership stress, not a claim about Python's format grammar.
@@ -226,41 +264,8 @@ match value:
             .stack_size(2 * 1024 * 1024)
             .spawn(|| {
                 for source in ["value = f'{x}'", "value = t'{x}'"] {
-                    let mut module = ruff_python_parser::parse_module(source)
-                        .unwrap()
-                        .into_syntax();
-                    let Stmt::Assign(assign) = &mut module.body[0] else {
-                        panic!("assignment fixture")
-                    };
-                    let elements = match assign.value.as_mut() {
-                        Expr::FString(expr) => {
-                            let ruff_python_ast::FStringPart::FString(part) =
-                                expr.value.iter_mut().next().unwrap()
-                            else {
-                                panic!("f-string fixture")
-                            };
-                            &mut part.elements
-                        }
-                        Expr::TString(expr) => &mut expr.value.iter_mut().next().unwrap().elements,
-                        _ => panic!("interpolated string fixture"),
-                    };
-                    let template = elements.iter().next().unwrap().clone();
-                    let mut nested = template.clone();
-                    for _ in 0..25_000 {
-                        let mut parent = template.clone();
-                        let InterpolatedStringElement::Interpolation(interpolation) = &mut parent
-                        else {
-                            panic!("interpolation fixture")
-                        };
-                        interpolation.format_spec =
-                            Some(Box::new(ruff_python_ast::InterpolatedStringFormatSpec {
-                                range: TextRange::default(),
-                                node_index: AtomicNodeIndex::default(),
-                                elements: vec![nested].into(),
-                            }));
-                        nested = parent;
-                    }
-                    *elements = vec![nested].into();
+                    let module = nested_format_specification_module(source);
+
                     assert_eq!(
                         check(&module, &|| false),
                         Err(AnalysisError::DepthExceeded { limit: 128 })

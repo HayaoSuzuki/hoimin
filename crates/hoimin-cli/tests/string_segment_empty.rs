@@ -1,3 +1,6 @@
+#[path = "support/encoded_source.rs"]
+mod encoded_source;
+
 use std::{ffi::OsString, path::PathBuf};
 
 fn python() -> PathBuf {
@@ -129,24 +132,45 @@ async fn segments_default_to_enabled_and_allow_explicit_exclusion() {
 #[tokio::test]
 async fn segments_keep_interpolation_evaluation_and_formatting() {
     let prelude = "events=[]\ndef mark(x):\n events.append(x)\n return x\n";
-    for (expression, original, expected) in [
+    for (expression, original, expected, events) in [
         (
             "f'prefix:{mark(1)}:suffix{mark(2)}'",
             "prefix:",
             "1:suffix2",
+            "[1,2]",
         ),
-        ("f'{mark(1)}:suffix'", ":suffix", "1"),
-        ("fr'\\n{{前}}{mark(1)}:suffix'", "\\n{{前}}", "1:suffix"),
-        ("f'''前\\n{mark(1)}後'''", "前\\n", "1後"),
-        ("f'\\N{SNOWMAN}{{}}{mark(1)}'", "\\N{SNOWMAN}{{}}", "1"),
-        ("f'prefix:{mark(1)!r:>{mark(2)}}'", "prefix:", " 1"),
-        ("f'prefix:{mark(1)=}:suffix'", "prefix:", "mark(1)=1:suffix"),
-        ("f'{mark(1)=}:suffix'", ":suffix", "mark(1)=1"),
-        ("f'{{{mark(1)}}}'", "{{", "1}"),
-        ("f'{mark(1)}{{}}'", "{{}}", "1"),
-        ("f'\\\"{mark(1)}'", "\\\"", "1"),
-        ("f'\\\n{mark(1)}:suffix'", ":suffix", "1"),
-        ("'prefix' f'{mark(1)}:suffix'", "'prefix'", "1:suffix"),
+        ("f'{mark(1)}:suffix'", ":suffix", "1", "[1]"),
+        (
+            "fr'\\n{{前}}{mark(1)}:suffix'",
+            "\\n{{前}}",
+            "1:suffix",
+            "[1]",
+        ),
+        ("f'''前\\n{mark(1)}後'''", "前\\n", "1後", "[1]"),
+        (
+            "f'\\N{SNOWMAN}{{}}{mark(1)}'",
+            "\\N{SNOWMAN}{{}}",
+            "1",
+            "[1]",
+        ),
+        ("f'prefix:{mark(1)!r:>{mark(2)}}'", "prefix:", " 1", "[1,2]"),
+        (
+            "f'prefix:{mark(1)=}:suffix'",
+            "prefix:",
+            "mark(1)=1:suffix",
+            "[1]",
+        ),
+        ("f'{mark(1)=}:suffix'", ":suffix", "mark(1)=1", "[1]"),
+        ("f'{{{mark(1)}}}'", "{{", "1}", "[1]"),
+        ("f'{mark(1)}{{}}'", "{{}}", "1", "[1]"),
+        ("f'\\\"{mark(1)}'", "\\\"", "1", "[1]"),
+        ("f'\\\n{mark(1)}:suffix'", ":suffix", "1", "[1]"),
+        (
+            "'prefix' f'{mark(1)}:suffix'",
+            "'prefix'",
+            "1:suffix",
+            "[1]",
+        ),
     ] {
         let root = tempfile::tempdir().unwrap();
         let source = format!("{prelude}result = {expression}\n");
@@ -160,11 +184,6 @@ async fn segments_keep_interpolation_evaluation_and_formatting() {
         let candidates = doc["candidates"].as_array().unwrap();
         assert_eq!(candidates.len(), 1, "{expression}: {doc}");
         assert_eq!(candidates[0]["original"], original, "{expression}");
-        let events = if expression.contains("mark(2)") {
-            "[1,2]"
-        } else {
-            "[1]"
-        };
         execute(
             &mutated(&source, &candidates[0]),
             &format!(
@@ -187,11 +206,11 @@ async fn segments_keep_interpolation_evaluation_and_formatting() {
 
 #[tokio::test]
 async fn segments_empty_one_nonempty_concat_piece_and_keep_comments() {
-    for expression in [
-        "'' r'prefix' 'suffix'",
-        "('prefix' # keep\n 'suffix')",
-        "u'前' '''後'''",
-        "'\\\n' 'prefix' 'suffix'",
+    for (expression, preserved_fragment, expected_result) in [
+        ("'' r'prefix' 'suffix'", "result", "suffix"),
+        ("('prefix' # keep\n 'suffix')", "# keep", "suffix"),
+        ("u'前' '''後'''", "result", "後"),
+        ("'\\\n' 'prefix' 'suffix'", "result", "suffix"),
     ] {
         let root = tempfile::tempdir().unwrap();
         let source = format!("result = {expression}\n");
@@ -205,16 +224,13 @@ async fn segments_empty_one_nonempty_concat_piece_and_keep_comments() {
         let candidates = doc["candidates"].as_array().unwrap();
         assert_eq!(candidates.len(), 1, "{doc}");
         let result = mutated(&source, &candidates[0]);
-        if source.contains("# keep") {
-            assert!(result.contains("# keep"));
-        }
+        assert!(result.contains(preserved_fragment));
         execute(
             &result,
-            if expression.contains('前') {
-                "assert result == '後'"
-            } else {
-                "assert result == 'suffix'"
-            },
+            &format!(
+                "assert result == {}",
+                serde_json::to_string(expected_result).unwrap()
+            ),
         )
         .await;
     }
@@ -222,17 +238,17 @@ async fn segments_empty_one_nonempty_concat_piece_and_keep_comments() {
 
 #[tokio::test]
 async fn segment_emptying_keeps_adjacent_quote_token_boundaries() {
-    for expression in [
-        "'prefix'\"suffix\"",
-        "'prefix'\"\"\"suffix\"\"\"",
-        "'prefix''suffix'",
-        "\"\"'prefix'",
-        "''\"prefix\"'suffix'",
-        "f'prefix''suffix'",
-        "rf'prefix'\"suffix\"",
-        "f'''prefix'''\"\"\"suffix\"\"\"",
-        "'prefix'f'{1}'",
-        "''f'prefix''suffix'",
+    for (expression, expected_result) in [
+        ("'prefix'\"suffix\"", "suffix"),
+        ("'prefix'\"\"\"suffix\"\"\"", "suffix"),
+        ("'prefix''suffix'", "suffix"),
+        ("\"\"'prefix'", ""),
+        ("''\"prefix\"'suffix'", "suffix"),
+        ("f'prefix''suffix'", "suffix"),
+        ("rf'prefix'\"suffix\"", "suffix"),
+        ("f'''prefix'''\"\"\"suffix\"\"\"", "suffix"),
+        ("'prefix'f'{1}'", "1"),
+        ("''f'prefix''suffix'", "suffix"),
     ] {
         let root = tempfile::tempdir().unwrap();
         let source = format!("result={expression}\n");
@@ -248,13 +264,10 @@ async fn segment_emptying_keeps_adjacent_quote_token_boundaries() {
         assert_eq!(cs.len(), 1, "{doc}");
         execute(
             &mutated(&source, &cs[0]),
-            if expression == "\"\"'prefix'" {
-                "assert result == ''"
-            } else if expression == "'prefix'f'{1}'" {
-                "assert result == '1'"
-            } else {
-                "assert result == 'suffix', repr(result)"
-            },
+            &format!(
+                "assert result == {}, repr(result)",
+                serde_json::to_string(expected_result).unwrap()
+            ),
         )
         .await;
         // The same token spellings must also remain valid as a bare expression.
@@ -386,26 +399,14 @@ async fn segment_saved_plans_distinguish_strong_and_weak_assertions() {
 #[tokio::test]
 async fn segment_spans_use_original_encoding_and_newlines() {
     for newline in ["\n", "\r\n", "\r"] {
-        for encoding in ["utf8", "bom", "latin1"] {
+        for encoding in encoded_source::ENCODINGS {
             let root = tempfile::tempdir().unwrap();
+            let encoding_name = encoding.name;
             let text = format!(
                 "# coding: {}{newline}# é{newline}value=1{newline}result=f'é{{value}}:suffix'{newline}",
-                if encoding == "latin1" {
-                    "latin-1"
-                } else {
-                    "utf-8"
-                }
+                encoding.cookie
             );
-            let mut bytes = if encoding == "latin1" {
-                text.chars()
-                    .map(|c| u8::try_from(u32::from(c)).unwrap())
-                    .collect::<Vec<_>>()
-            } else {
-                text.as_bytes().to_vec()
-            };
-            if encoding == "bom" {
-                bytes.splice(0..0, [0xef, 0xbb, 0xbf]);
-            }
+            let mut bytes = encoding.source(&text);
             std::fs::write(root.path().join("subject.py"), &bytes).unwrap();
             let doc = plan(
                 root.path(),
@@ -414,17 +415,10 @@ async fn segment_spans_use_original_encoding_and_newlines() {
             )
             .await;
             let cs = doc["candidates"].as_array().unwrap();
-            assert_eq!(cs.len(), 1, "{doc}");
+            assert_eq!(cs.len(), 1, "{encoding_name} {newline:?}: {doc}");
             let start = usize::try_from(cs[0]["span"]["start"].as_u64().unwrap()).unwrap();
             let len = usize::try_from(cs[0]["span"]["length"].as_u64().unwrap()).unwrap();
-            assert_eq!(
-                &bytes[start..start + len],
-                if encoding == "latin1" {
-                    b"\xe9".as_slice()
-                } else {
-                    "é".as_bytes()
-                }
-            );
+            assert_eq!(&bytes[start..start + len], (encoding.encode)("é"));
             bytes.drain(start..start + len);
             let code = format!(
                 "import json; ns={{}}; exec(compile(bytes(json.loads({})), '<encoded>', 'exec'),ns); assert ns['result']=='1:suffix'",
@@ -437,7 +431,18 @@ async fn segment_spans_use_original_encoding_and_newlines() {
 
 #[tokio::test]
 async fn segment_plan_rejects_changed_source_and_invalid_offsets() {
-    for changed_source in [false, true] {
+    type InvalidatePlan = fn(&std::path::Path, &mut serde_json::Value);
+    let cases: [(InvalidatePlan, &str); 2] = [
+        (
+            |_, document| document["candidates"][0]["span"]["start"] = 0.into(),
+            "plan.candidate.invalid",
+        ),
+        (
+            |root, _| std::fs::write(root.join("subject.py"), "result=f'changed:{1}'\n").unwrap(),
+            "plan.source.changed",
+        ),
+    ];
+    for (invalidate, expected_error) in cases {
         let root = tempfile::tempdir().unwrap();
         std::fs::write(root.path().join("subject.py"), "result=f'prefix:{1}'\n").unwrap();
         let mut doc = plan(
@@ -446,11 +451,7 @@ async fn segment_plan_rejects_changed_source_and_invalid_offsets() {
             "pass",
         )
         .await;
-        if changed_source {
-            std::fs::write(root.path().join("subject.py"), "result=f'changed:{1}'\n").unwrap();
-        } else {
-            doc["candidates"][0]["span"]["start"] = 0.into();
-        }
+        invalidate(root.path(), &mut doc);
         let path = root.path().join("plan.json");
         std::fs::write(&path, serde_json::to_vec(&doc).unwrap()).unwrap();
         let mut stdout = Vec::new();
@@ -468,12 +469,6 @@ async fn segment_plan_rejects_changed_source_and_invalid_offsets() {
         )
         .await;
         assert_eq!(code, 2, "{}", String::from_utf8_lossy(&stderr));
-        assert!(
-            String::from_utf8_lossy(&stderr).contains(if changed_source {
-                "plan.source.changed"
-            } else {
-                "plan.candidate.invalid"
-            })
-        );
+        assert!(String::from_utf8_lossy(&stderr).contains(expected_error));
     }
 }

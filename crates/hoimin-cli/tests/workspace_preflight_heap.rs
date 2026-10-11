@@ -57,10 +57,16 @@ unsafe impl GlobalAlloc for TrackingAllocator {
 // A separate integration binary keeps unrelated parallel tests out of global
 // allocator observations. Only preflight lies inside the measured interval.
 fn observe(files: usize, file_bytes: usize, workers: u32) -> usize {
-    observe_with_eager_read(files, file_bytes, workers, false)
+    observe_with_eager_read(files, file_bytes, workers, false, assert_valid_preflight)
 }
 
-fn observe_with_eager_read(files: usize, file_bytes: usize, workers: u32, broken: bool) -> usize {
+fn observe_with_eager_read(
+    files: usize,
+    file_bytes: usize,
+    workers: u32,
+    broken: bool,
+    assert_preflight: fn(&Result<WorkspacePlan, hoimin_cli::workspace::WorkspaceError>, usize, u32),
+) -> usize {
     let project = tempfile::tempdir().unwrap();
     let source = project.path().join("src");
     fs::create_dir(&source).unwrap();
@@ -83,31 +89,43 @@ fn observe_with_eager_read(files: usize, file_bytes: usize, workers: u32, broken
     let result = WorkspacePlan::preflight(root, EffectId(1), workers, CopyOptions::default());
     let peak = PEAK.load(Ordering::Relaxed).saturating_sub(baseline);
     drop(eager);
-    if workers == 0 {
-        assert!(result.is_err(), "zero workers must remain invalid");
-    } else {
-        let plan = result.unwrap();
-        let per_worker = u64::try_from(files * file_bytes).unwrap();
-        assert_eq!(plan.completed().per_worker_logical_bytes, per_worker);
-        assert_eq!(plan.aggregate_bytes(), per_worker * u64::from(workers));
-        assert_eq!(
-            plan.observed_copy_bytes(),
-            0,
-            "preflight does not copy workers"
-        );
-    }
+    assert_preflight(&result, files * file_bytes, workers);
     peak
+}
+
+fn assert_valid_preflight(
+    result: &Result<WorkspacePlan, hoimin_cli::workspace::WorkspaceError>,
+    logical_bytes: usize,
+    workers: u32,
+) {
+    let plan = result.as_ref().unwrap();
+    let per_worker = u64::try_from(logical_bytes).unwrap();
+    assert_eq!(plan.completed().per_worker_logical_bytes, per_worker);
+    assert_eq!(plan.aggregate_bytes(), per_worker * u64::from(workers));
+    assert_eq!(
+        plan.observed_copy_bytes(),
+        0,
+        "preflight does not copy workers"
+    );
+}
+
+fn assert_zero_workers_rejected(
+    result: &Result<WorkspacePlan, hoimin_cli::workspace::WorkspaceError>,
+    _: usize,
+    _: u32,
+) {
+    assert!(result.is_err(), "zero workers must remain invalid");
 }
 
 #[test]
 fn preflight_peak_tracks_entries_not_file_bytes_or_worker_copies() {
     // Warm allocator/runtime and filesystem setup before comparisons.
     observe(1, 1, 1);
-    observe(0, 0, 0);
+    observe_with_eager_read(0, 0, 0, false, assert_zero_workers_rejected);
     observe(0, 0, 1);
     observe(1, 0, 1);
     let small = observe(8, 64 * 1024, 1);
-    let broken = observe_with_eager_read(8, 1024 * 1024, 4, true);
+    let broken = observe_with_eager_read(8, 1024 * 1024, 4, true, assert_valid_preflight);
     assert!(
         broken > small + 1024 * 1024 + 256 * 1024,
         "eager-read regression must be detected"

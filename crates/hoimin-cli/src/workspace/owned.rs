@@ -236,13 +236,7 @@ mod tests {
         let error = super::select_reclaim_candidates_locked_with_hooks(
             &coordinator,
             std::time::Duration::from_secs(5),
-            &|| {
-                if crossed.get() {
-                    base + std::time::Duration::from_secs(6)
-                } else {
-                    base
-                }
-            },
+            &|| [base, base + std::time::Duration::from_secs(6)][usize::from(crossed.get())],
             &|| crossed.set(true),
         )
         .unwrap_err();
@@ -305,6 +299,36 @@ mod tests {
         assert_eq!(marker.owner, root.owner);
     }
 
+    fn inject_publish_failure(
+        selected: super::PublishBoundary,
+        observed: super::PublishBoundary,
+    ) -> Result<(), super::WorkspaceError> {
+        if observed == selected {
+            Err(super::WorkspaceError::io(
+                "inject publish failure",
+                Utf8Path::new("managed-root"),
+                format!("injected at {selected:?}"),
+            ))
+        } else {
+            Ok(())
+        }
+    }
+
+    fn inject_child_failure(
+        selected: super::ChildCreationBoundary,
+        observed: super::ChildCreationBoundary,
+    ) -> Result<(), super::WorkspaceError> {
+        if observed == selected {
+            Err(super::WorkspaceError::io(
+                "inject child creation failure",
+                Utf8Path::new("managed-child"),
+                format!("injected at {selected:?}"),
+            ))
+        } else {
+            Ok(())
+        }
+    }
+
     #[test]
     fn every_root_constructor_failure_rolls_back_or_is_immediately_reclaimable() {
         for selected in [
@@ -322,17 +346,7 @@ mod tests {
             let result = ManagedRunRoot::create_with_publish_hook(
                 &coordinator,
                 OwnerKind::PublicExecution,
-                &|observed| {
-                    if observed == selected {
-                        Err(super::WorkspaceError::io(
-                            "inject publish failure",
-                            Utf8Path::new("managed-root"),
-                            format!("injected at {selected:?}"),
-                        ))
-                    } else {
-                        Ok(())
-                    }
-                },
+                &|observed| inject_publish_failure(selected, observed),
             );
 
             assert!(result.is_err(), "boundary {selected:?} did not fail");
@@ -361,15 +375,7 @@ mod tests {
             let root = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
 
             let result = root.create_child_with_hook("worker-", &|observed| {
-                if observed == selected {
-                    Err(super::WorkspaceError::io(
-                        "inject child creation failure",
-                        Utf8Path::new("managed-child"),
-                        format!("injected at {selected:?}"),
-                    ))
-                } else {
-                    Ok(())
-                }
+                inject_child_failure(selected, observed)
             });
 
             assert!(result.is_err(), "boundary {selected:?} did not fail");
@@ -676,6 +682,31 @@ mod tests {
     }
 
     #[cfg(windows)]
+    fn replace_published_root(
+        coordinator: &ManagedRootCoordinator,
+        replacement_installed: &std::cell::Cell<bool>,
+        boundary: super::PublishBoundary,
+    ) {
+        if boundary != super::PublishBoundary::RenamedActive {
+            return;
+        }
+        let active_name = only_test_entry_with_prefix(&coordinator.path, super::ACTIVE_PREFIX);
+        if coordinator
+            .dir
+            .rename(
+                &active_name,
+                &coordinator.dir,
+                "parked-round-five-published-root",
+            )
+            .is_err()
+        {
+            return;
+        }
+        create_test_owned_directory_entry(&coordinator.dir, &active_name).unwrap();
+        replacement_installed.set(true);
+    }
+
+    #[cfg(windows)]
     #[test]
     fn round_five_post_rename_replacement_never_builds_a_mixed_managed_root() {
         let parent = tempfile::tempdir().unwrap();
@@ -687,49 +718,31 @@ mod tests {
             &coordinator,
             OwnerKind::PublicExecution,
             &|boundary| {
-                if boundary != super::PublishBoundary::RenamedActive {
-                    return Ok(());
-                }
-                let active_name =
-                    only_test_entry_with_prefix(&coordinator.path, super::ACTIVE_PREFIX);
-                if coordinator
-                    .dir
-                    .rename(
-                        &active_name,
-                        &coordinator.dir,
-                        "parked-round-five-published-root",
-                    )
-                    .is_err()
-                {
-                    return Ok(());
-                }
-                create_test_owned_directory_entry(&coordinator.dir, &active_name).unwrap();
-                replacement_installed.set(true);
+                replace_published_root(&coordinator, &replacement_installed, boundary);
                 Ok(())
             },
         );
 
-        match result {
-            Ok(root) => {
-                let rename_handle = root.rename_handle.lock().unwrap();
-                assert_eq!(
-                    super::directory_identity(&root.dir).unwrap(),
-                    super::directory_identity(rename_handle.as_ref().unwrap()).unwrap(),
-                    "publication returned a path handle from a different object"
-                );
-                assert!(
-                    !replacement_installed.get(),
-                    "publication returned a mixed ManagedRunRoot after replacement"
-                );
-            }
-            Err(error) => {
-                assert!(replacement_installed.get(), "unexpected failure: {error}");
-                assert!(
-                    matches!(&error, super::WorkspaceError::InvalidPath { .. }),
-                    "replacement did not produce the typed hard-mismatch error: {error}"
-                );
-            }
-        }
+        let identities = result.as_ref().ok().map(|root| {
+            let rename_handle = root.rename_handle.lock().unwrap();
+            (
+                super::directory_identity(&root.dir).unwrap(),
+                super::directory_identity(rename_handle.as_ref().unwrap()).unwrap(),
+            )
+        });
+        assert_eq!(
+            identities.as_ref().map(|(opened, _)| opened),
+            identities.as_ref().map(|(_, retained)| retained),
+            "publication returned a path handle from a different object"
+        );
+        let expected = [Ok(()), Err(true)][usize::from(replacement_installed.get())];
+        assert_eq!(
+            result
+                .map(|_| ())
+                .map_err(|error| matches!(error, super::WorkspaceError::InvalidPath { .. })),
+            expected,
+            "replacement must cause a typed mismatch and blocked replacement must preserve a coherent root"
+        );
     }
 
     #[test]
@@ -1228,24 +1241,42 @@ mod tests {
         assert_eq!(coordinator.file.metadata().unwrap().len(), 1_025);
     }
 
-    #[test]
-    fn fresh_process_bootstrap_child() {
-        let Some(parent) = std::env::var_os("HOIMIN_BOOTSTRAP_TEST_PARENT") else {
-            return;
-        };
-        let parent = camino::Utf8PathBuf::from_path_buf(parent.into()).unwrap();
-        if std::env::var_os("HOIMIN_BOOTSTRAP_TEST_BARRIER").is_some() {
-            let ready = parent.join(format!("ready-{}", std::process::id()));
-            std::fs::write(ready, b"ready").unwrap();
-            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-            while !parent.join("go").exists() {
-                assert!(
-                    std::time::Instant::now() < deadline,
-                    "bootstrap barrier timed out"
-                );
-                std::thread::sleep(std::time::Duration::from_millis(5));
-            }
+    fn bootstrap_parent_from_environment() -> camino::Utf8PathBuf {
+        camino::Utf8PathBuf::from_path_buf(
+            std::env::var_os("HOIMIN_BOOTSTRAP_TEST_PARENT")
+                .expect("bootstrap subprocess parent")
+                .into(),
+        )
+        .unwrap()
+    }
+
+    fn wait_for_bootstrap_release(parent: &Utf8Path) {
+        let ready = parent.join(format!("ready-{}", std::process::id()));
+        std::fs::write(ready, b"ready").unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while !parent.join("go").exists() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "bootstrap barrier timed out"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(5));
         }
+    }
+
+    #[test]
+    #[ignore = "subprocess fixture for coordinator bootstrap"]
+    fn fresh_process_bootstrap_child() {
+        let parent = bootstrap_parent_from_environment();
+
+        ManagedRootCoordinator::open(&parent).unwrap();
+    }
+
+    #[test]
+    #[ignore = "subprocess fixture for concurrent coordinator bootstrap"]
+    fn fresh_process_bootstrap_barrier_child() {
+        let parent = bootstrap_parent_from_environment();
+        wait_for_bootstrap_release(&parent);
+
         ManagedRootCoordinator::open(&parent).unwrap();
     }
 
@@ -1257,7 +1288,8 @@ mod tests {
         let spawn = || {
             std::process::Command::new(&executable)
                 .arg("--exact")
-                .arg("workspace::owned::tests::fresh_process_bootstrap_child")
+                .arg("workspace::owned::tests::fresh_process_bootstrap_barrier_child")
+                .arg("--ignored")
                 .env("HOIMIN_BOOTSTRAP_TEST_PARENT", parent)
                 .env("HOIMIN_BOOTSTRAP_TEST_BARRIER", "1")
                 .spawn()
@@ -1266,15 +1298,13 @@ mod tests {
         let mut first = spawn();
         let mut second = spawn();
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-        loop {
-            let ready = std::fs::read_dir(parent)
-                .unwrap()
-                .filter_map(Result::ok)
-                .filter(|entry| entry.file_name().to_string_lossy().starts_with("ready-"))
-                .count();
-            if ready == 2 {
-                break;
-            }
+        while std::fs::read_dir(parent)
+            .unwrap()
+            .map(Result::unwrap)
+            .filter(|entry| entry.file_name().to_string_lossy().starts_with("ready-"))
+            .count()
+            != 2
+        {
             assert!(
                 std::time::Instant::now() < deadline,
                 "child readiness timed out"
@@ -2019,36 +2049,41 @@ mod tests {
     async fn live_managed_child_keeps_the_root_lease_after_the_owner_is_dropped() {
         const COMPLETED: &str = "hoimin managed-child lease assertions completed";
         const CHILD_MARKER: &str = "HOIMIN_ISOLATED_MANAGED_CHILD_LEASE_TEST";
-        if std::env::var_os(CHILD_MARKER).as_deref() != Some(std::ffi::OsStr::new("1")) {
-            // Other parallel tests can fork while this fixture owns its lease.
-            // Their inherited descriptor retains flock until exec, even after
-            // our last local Arc<File> is dropped. Create the fixture only in
-            // a dedicated process with no unrelated tests spawning children.
-            let output = tokio::process::Command::new(std::env::current_exe().unwrap())
-                .arg("--exact")
-                .arg("workspace::owned::tests::live_managed_child_keeps_the_root_lease_after_the_owner_is_dropped")
-                .arg("--test-threads=1")
-                .arg("--nocapture")
-                .env(CHILD_MARKER, "1")
-                .kill_on_drop(true)
-                .output();
-            let output = tokio::time::timeout(std::time::Duration::from_secs(30), output)
-                .await
-                .expect("isolated managed-child lease test timed out")
-                .expect("isolated managed-child lease test failed to start");
-            assert!(
-                output.status.success(),
-                "isolated managed-child lease test failed: {}\nstdout:\n{}\nstderr:\n{}",
-                output.status,
-                String::from_utf8_lossy(&output.stdout),
-                String::from_utf8_lossy(&output.stderr),
-            );
-            assert!(
-                String::from_utf8_lossy(&output.stdout).contains(COMPLETED),
-                "isolated managed-child lease test did not complete its assertions: {output:?}",
-            );
-            return;
-        }
+        // Other parallel tests can fork while this fixture owns its lease.
+        // Their inherited descriptor retains flock until exec, even after
+        // our last local Arc<File> is dropped. Create the fixture only in
+        // a dedicated process with no unrelated tests spawning children.
+        let output = tokio::process::Command::new(std::env::current_exe().unwrap())
+            .arg("--exact")
+            .arg("workspace::owned::tests::managed_child_lease_isolated_child")
+            .arg("--ignored")
+            .arg("--test-threads=1")
+            .arg("--nocapture")
+            .env(CHILD_MARKER, "1")
+            .kill_on_drop(true)
+            .output();
+        let output = tokio::time::timeout(std::time::Duration::from_secs(30), output)
+            .await
+            .expect("isolated managed-child lease test timed out")
+            .expect("isolated managed-child lease test failed to start");
+        assert!(
+            output.status.success(),
+            "isolated managed-child lease test failed: {}\nstdout:\n{}\nstderr:\n{}",
+            output.status,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr),
+        );
+        assert!(
+            String::from_utf8_lossy(&output.stdout).contains(COMPLETED),
+            "isolated managed-child lease test did not complete its assertions: {output:?}",
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "subprocess fixture for managed child lease"]
+    async fn managed_child_lease_isolated_child() {
+        const COMPLETED: &str = "hoimin managed-child lease assertions completed";
+
         let parent = tempfile::tempdir().unwrap();
         let parent = Utf8Path::from_path(parent.path()).unwrap();
         let coordinator = ManagedRootCoordinator::open(parent).unwrap();

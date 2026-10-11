@@ -89,24 +89,27 @@ async fn plan(root: &Path, operators: &str, test: &str) -> serde_json::Value {
 
 #[tokio::test]
 async fn condition_constants_replace_each_if_elif_test_and_compile() {
-    for source in [
-        "if[]: pass\n",
-        "if\"x\": pass\n",
-        "if(): pass\n",
-        "if(1,): pass\n",
-        "if x: pass\nelif[]: pass\n",
-        "if enabled:\n    action()\nelif other():\n    fallback()\nelse:\n    done()\n",
-        "é = '前'\r\nif (\r\n    a and # comment\r\n    b\r\n): run()\r\n",
-        "if a and \\\n    b: run()\n",
+    for (source, expected_count) in [
+        ("if[]: pass\n", 2),
+        ("if\"x\": pass\n", 2),
+        ("if(): pass\n", 2),
+        ("if(1,): pass\n", 2),
+        ("if x: pass\nelif[]: pass\n", 4),
+        (
+            "if enabled:\n    action()\nelif other():\n    fallback()\nelse:\n    done()\n",
+            4,
+        ),
+        (
+            "é = '前'\r\nif (\r\n    a and # comment\r\n    b\r\n): run()\r\n",
+            2,
+        ),
+        ("if a and \\\n    b: run()\n", 2),
     ] {
         let root = tempfile::tempdir().unwrap();
         std::fs::write(root.path().join("subject.py"), source).unwrap();
         let doc = plan(root.path(), "condition_constant", "pass").await;
         let candidates = doc["candidates"].as_array().unwrap();
-        assert_eq!(
-            candidates.len(),
-            if source.contains("elif") { 4 } else { 2 }
-        );
+        assert_eq!(candidates.len(), expected_count);
         for c in candidates {
             assert!(matches!(
                 c["replacement"].as_str().unwrap(),
@@ -190,17 +193,19 @@ async fn condition_constants_skip_predicate_side_effects() {
     let doc = plan(root.path(), "condition_constant", "pass").await;
     let candidates = doc["candidates"].as_array().unwrap();
     assert_eq!(candidates.len(), 2);
-    for c in candidates {
+    for (forced, assertion) in [
+        ("(True)", "assert calls == [] and outcome == 'yes'\n"),
+        ("(False)", "assert calls == [] and outcome == 'no'\n"),
+    ] {
+        let c = candidates
+            .iter()
+            .find(|candidate| candidate["replacement"] == forced)
+            .unwrap();
         let start = usize::try_from(c["span"]["start"].as_u64().unwrap()).unwrap();
         let end = start + usize::try_from(c["span"]["length"].as_u64().unwrap()).unwrap();
         let mut mutant = source.to_owned();
-        let forced = c["replacement"].as_str().unwrap();
         mutant.replace_range(start..end, forced);
-        mutant.push_str(if forced == "(True)" {
-            "assert calls == [] and outcome == 'yes'\n"
-        } else {
-            "assert calls == [] and outcome == 'no'\n"
-        });
+        mutant.push_str(assertion);
         let result = tokio::process::Command::new(python())
             .args(["-c", &mutant])
             .output()

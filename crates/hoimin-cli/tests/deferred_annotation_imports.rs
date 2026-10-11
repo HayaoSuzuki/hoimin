@@ -190,17 +190,13 @@ async fn deferred_import_public_run_does_not_count_invalid_pair_as_killed() {
 
 #[tokio::test]
 async fn deferred_import_late_exception_and_nonlocal_bindings_are_not_missed() {
-    let mut failures = Vec::new();
     for source in [
         "from typing import Sequence\ndef f(x: Sequence[int]): pass\ntry:\n    raise ValueError()\nexcept ValueError as Sequence:\n    pass\n",
         "from typing import Sequence\nclass C:\n    Sequence: object\n    def f(x: Sequence[int]): pass\nSequence = set\n",
         "def outer():\n    from typing import Sequence\n    def middle():\n        def change():\n            nonlocal Sequence\n            Sequence = set\n        return change\n    def f(x: Sequence[int]): pass\n    middle()()\n    return f\n",
     ] {
-        if !plan(source).await.candidates.is_empty() {
-            failures.push(source);
-        }
+        assert!(plan(source).await.candidates.is_empty(), "{source}");
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n---\n"));
 }
 
 #[tokio::test]
@@ -297,7 +293,6 @@ async fn deferred_import_destination_uses_another_stable_alias() {
 
 #[tokio::test]
 async fn deferred_unstable_imports_cannot_hide_prohibited_descendants() {
-    let mut failures = Vec::new();
     for (source, expected) in [
         (
             "import typing as t\ndef f(x: list[t.Any]): pass\nt = type('Custom', (), {'Any': int})\n",
@@ -321,11 +316,8 @@ async fn deferred_unstable_imports_cannot_hide_prohibited_descendants() {
             invoke_operator(source, "plan", "pass\n", "type_nullable_add").await,
         )
         .unwrap();
-        if !manifest.candidates.is_empty() {
-            failures.push(source);
-        }
+        assert!(manifest.candidates.is_empty(), "{source}");
     }
-    assert!(failures.is_empty(), "{}", failures.join("\n---\n"));
 }
 
 #[tokio::test]

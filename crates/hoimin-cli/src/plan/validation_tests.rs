@@ -60,7 +60,12 @@ fn stale_record_details_classify_sort_and_escape_both_record_kinds() {
 
 #[test]
 fn stale_record_details_bound_display_and_count_omitted_paths() {
-    for count in [1, 10, 11, 13] {
+    for (count, omitted) in [
+        (1, ""),
+        (10, ""),
+        (11, "; 1 additional paths omitted"),
+        (13, "; 3 additional paths omitted"),
+    ] {
         let current: Vec<_> = (0..count)
             .rev()
             .map(|index| hoimin_core::FingerprintInputFile {
@@ -79,11 +84,6 @@ fn stale_record_details_bound_display_and_count_omitted_paths() {
                 .map(|index| format!("{label} \"src/{index:02}.py\""))
                 .collect::<Vec<_>>()
                 .join("; ");
-            let omitted = if count > 10 {
-                format!("; {} additional paths omitted", count - 10)
-            } else {
-                String::new()
-            };
             assert_eq!(
                 error,
                 format!(
@@ -172,36 +172,54 @@ async fn descriptor_validation_preserves_each_validation_and_stable_identity() {
     let project = super::tests::Project::new();
     let (source, original) = candidates("src/calc.py", 1, 0);
     std::fs::write(project.root.join("src/calc.py"), &source).unwrap();
-    for (field, message) in [
-        ("hash", "candidate file hash does not match the source"),
-        ("span", "candidate span is outside the source"),
+    let original_candidate = original[0].clone();
+    for (candidate, message) in [
         (
-            "original",
+            MutationCandidate {
+                file_hash: "0".repeat(64),
+                ..original_candidate.clone()
+            },
+            "candidate file hash does not match the source",
+        ),
+        (
+            MutationCandidate {
+                span: ByteSpan {
+                    start: 100,
+                    ..original_candidate.span
+                },
+                ..original_candidate.clone()
+            },
+            "candidate span is outside the source",
+        ),
+        (
+            MutationCandidate {
+                original: "?".into(),
+                ..original_candidate.clone()
+            },
             "candidate original text does not match the source span",
         ),
         (
-            "line",
+            MutationCandidate {
+                line: 2,
+                ..original_candidate.clone()
+            },
             "candidate line or column does not match its byte span",
         ),
         (
-            "column",
+            MutationCandidate {
+                column: 7,
+                ..original_candidate.clone()
+            },
             "candidate line or column does not match its byte span",
         ),
         (
-            "operator",
+            MutationCandidate {
+                operator: String::new(),
+                ..original_candidate
+            },
             "candidate operator is empty or replacement is unchanged",
         ),
     ] {
-        let mut candidate = original[0].clone();
-        match field {
-            "hash" => candidate.file_hash = "0".repeat(64),
-            "span" => candidate.span.start = 100,
-            "original" => candidate.original = "?".into(),
-            "line" => candidate.line = 2,
-            "column" => candidate.column = 7,
-            "operator" => candidate.operator.clear(),
-            _ => unreachable!(),
-        }
         assert_eq!(
             validate_candidate(&source, &candidate_descriptor(&candidate))
                 .unwrap_err()
@@ -409,14 +427,17 @@ async fn target_membership_preserves_path_component_equality() {
     std::fs::write(project.root.join("src/calc.py"), source).unwrap();
     let map = records.iter().map(|c| (c.id.as_str(), c)).collect();
     let ids = records.iter().map(|c| c.id.clone()).collect();
-    for (spelling, selected) in [
-        ("src/calc.py", true),
-        ("src//calc.py", true),
-        ("src/./calc.py", true),
-        ("src/calc.py/", true),
-        ("src/Calc.py", false),
-        ("./src/calc.py", false),
-        ("src/other/../calc.py", false),
+    let selected = Ok(BTreeSet::from([Utf8PathBuf::from("src/calc.py")]));
+    let unselected =
+        Err("plan.candidate.invalid: candidate target is not selected: src/calc.py".to_owned());
+    for (spelling, expected, expected_contexts) in [
+        ("src/calc.py", selected.clone(), 1),
+        ("src//calc.py", selected.clone(), 1),
+        ("src/./calc.py", selected.clone(), 1),
+        ("src/calc.py/", selected, 1),
+        ("src/Calc.py", unselected.clone(), 0),
+        ("./src/calc.py", unselected.clone(), 0),
+        ("src/other/../calc.py", unselected, 0),
     ] {
         let targets = [TargetSlice {
             path: spelling.into(),
@@ -432,20 +453,12 @@ async fn target_membership_preserves_path_component_equality() {
             Some(&mut stats),
         )
         .await;
-        if selected {
-            assert_eq!(
-                result.unwrap(),
-                BTreeSet::from([Utf8PathBuf::from("src/calc.py")])
-            );
-            assert_eq!(stats.contexts, 1, "{spelling}");
-        } else {
-            assert_eq!(
-                result.unwrap_err().to_string(),
-                "plan.candidate.invalid: candidate target is not selected: src/calc.py",
-                "{spelling}"
-            );
-            assert_eq!(stats.contexts, 0, "{spelling}");
-        }
+        assert_eq!(
+            result.map_err(|error| error.to_string()),
+            expected,
+            "{spelling}"
+        );
+        assert_eq!(stats.contexts, expected_contexts, "{spelling}");
     }
     let targets = ["src/calc.py", "src/./calc.py", "src//calc.py"].map(|path| TargetSlice {
         path: path.into(),
@@ -468,40 +481,135 @@ async fn target_membership_preserves_path_component_equality() {
     assert_eq!(stats.contexts, 1);
 }
 
+#[derive(Clone, Copy, Debug)]
+struct MembershipFailure {
+    name: &'static str,
+    present: bool,
+    selected: bool,
+    readable: bool,
+    original: &'static str,
+    contexts: usize,
+}
+
+const MEMBERSHIP_FAILURES: [MembershipFailure; 5] = [
+    MembershipFailure {
+        name: "unknown",
+        present: false,
+        selected: false,
+        readable: false,
+        original: "+",
+        contexts: 0,
+    },
+    MembershipFailure {
+        name: "unselected",
+        present: true,
+        selected: false,
+        readable: false,
+        original: "+",
+        contexts: 0,
+    },
+    MembershipFailure {
+        name: "read",
+        present: true,
+        selected: true,
+        readable: false,
+        original: "+",
+        contexts: 0,
+    },
+    MembershipFailure {
+        name: "descriptor",
+        present: true,
+        selected: true,
+        readable: true,
+        original: "?",
+        contexts: 1,
+    },
+    MembershipFailure {
+        name: "stable",
+        present: true,
+        selected: true,
+        readable: true,
+        original: "+",
+        contexts: 1,
+    },
+];
+
+fn membership_failure_records(
+    project: &super::tests::Project,
+    id: &str,
+    path: &str,
+    failure: MembershipFailure,
+    records: &mut Vec<MutationCandidate>,
+    targets: &mut Vec<TargetSlice>,
+) {
+    let (source, mut candidates) = candidates(path, 1, 0);
+    let mut candidate = candidates.remove(0);
+    candidate.id = id.into();
+    candidate.original = failure.original.into();
+    if failure.readable {
+        std::fs::write(project.root.join(path), source).unwrap();
+    }
+    if failure.selected {
+        targets.push(TargetSlice {
+            path: path.into(),
+            lines: vec![],
+            symbols: vec![],
+        });
+    }
+    if failure.present {
+        records.push(candidate);
+    }
+}
+
+fn membership_failure_message(
+    project: &super::tests::Project,
+    id: &str,
+    path: &str,
+    failure: MembershipFailure,
+) -> String {
+    match failure.name {
+        "unknown" => format!("plan.candidate.invalid: candidate id is not in the plan: {id}"),
+        "unselected" => format!("plan.candidate.invalid: candidate target is not selected: {path}"),
+        "read" => format!(
+            "plan.candidate.invalid: {path}: {}",
+            std::fs::read(project.root.join(path)).unwrap_err()
+        ),
+        "descriptor" => {
+            "plan.candidate.invalid: candidate original text does not match the source span".into()
+        }
+        "stable" => format!("plan.candidate.invalid: candidate stable id differs for {id}"),
+        _ => unreachable!("closed membership failure fixtures"),
+    }
+}
+
 #[tokio::test]
 async fn target_membership_preserves_mixed_error_precedence() {
-    // Every ordered pair makes each failure class compete with all others.
-    for first in ["unknown", "unselected", "read", "descriptor", "stable"] {
-        for second in ["unknown", "unselected", "read", "descriptor", "stable"] {
+    for first in MEMBERSHIP_FAILURES {
+        for second in MEMBERSHIP_FAILURES {
             let project = super::tests::Project::new();
             let mut records = Vec::new();
             let mut targets = Vec::new();
-            for (id, failure) in [("a", first), ("b", second)] {
-                if failure == "unknown" {
-                    continue;
-                }
-                let path = format!("src/{id}.py");
-                let (source, mut file_records) = candidates(&path, 1, 0);
-                let mut candidate = file_records.remove(0);
-                candidate.id = id.into();
-                if failure == "descriptor" {
-                    candidate.original = "?".into();
-                }
-                if failure != "unselected" {
-                    targets.push(TargetSlice {
-                        path: candidate.path.clone(),
-                        lines: vec![],
-                        symbols: vec![],
-                    });
-                }
-                if matches!(failure, "descriptor" | "stable") {
-                    std::fs::write(project.root.join(&path), source).unwrap();
-                }
-                records.push(candidate);
-            }
+            membership_failure_records(
+                &project,
+                "a",
+                "src/a.py",
+                first,
+                &mut records,
+                &mut targets,
+            );
+            membership_failure_records(
+                &project,
+                "b",
+                "src/b.py",
+                second,
+                &mut records,
+                &mut targets,
+            );
             let map = records.iter().map(|c| (c.id.as_str(), c)).collect();
             let ids = BTreeSet::from(["a".into(), "b".into()]);
+            let expected = membership_failure_message(&project, "a", "src/a.py", first);
             let mut stats = ValidationStats::default();
+
             let error = validate_requested_descriptors(
                 &map,
                 &ids,
@@ -512,36 +620,17 @@ async fn target_membership_preserves_mixed_error_precedence() {
             .await
             .unwrap_err()
             .to_string();
-            let expected = match first {
-                "unknown" => "plan.candidate.invalid: candidate id is not in the plan: a",
-                "unselected" => {
-                    "plan.candidate.invalid: candidate target is not selected: src/a.py"
-                }
-                "read" => "plan.candidate.invalid: src/a.py: ",
-                "descriptor" => {
-                    "plan.candidate.invalid: candidate original text does not match the source span"
-                }
-                "stable" => "plan.candidate.invalid: candidate stable id differs for a",
-                _ => unreachable!(),
-            };
-            if first == "read" {
-                assert!(error.starts_with(expected), "{first}/{second}: {error}");
-            } else {
-                assert_eq!(error, expected, "{first}/{second}");
-            }
-            assert_eq!(
-                stats.contexts,
-                usize::from(matches!(first, "descriptor" | "stable")),
-                "{first}/{second}"
-            );
+
+            assert_eq!(error, expected, "{first:?}/{second:?}");
+            assert_eq!(stats.contexts, first.contexts, "{first:?}/{second:?}");
         }
     }
 }
 
 #[tokio::test]
 async fn target_membership_preserves_errors_between_cached_file_results() {
-    for later_failure in ["descriptor", "stable"] {
-        for middle_failure in ["unknown", "unselected", "read", "descriptor", "stable"] {
+    for later_original in ["?", "+"] {
+        for middle_failure in MEMBERSHIP_FAILURES {
             let project = super::tests::Project::new();
             let (source, mut records) = candidates("src/a.py", 2, 0);
             std::fs::write(project.root.join("src/a.py"), source).unwrap();
@@ -549,35 +638,37 @@ async fn target_membership_preserves_errors_between_cached_file_results() {
             let middle_id = format!("{first_id}a");
             let later_id = format!("{first_id}z");
             records[1].id = later_id.clone();
-            if later_failure == "descriptor" {
-                records[1].original = "?".into();
-            }
+            records[1].original = later_original.into();
             let mut targets = vec![TargetSlice {
                 path: "src/a.py".into(),
                 lines: vec![],
                 symbols: vec![],
             }];
-            if middle_failure != "unknown" {
-                let (source, mut middle) = candidates("src/b.py", 1, 0);
-                middle[0].id = middle_id.clone();
-                if middle_failure == "descriptor" {
-                    middle[0].span.start = 100;
-                }
-                if middle_failure != "unselected" {
-                    targets.push(TargetSlice {
-                        path: "src/b.py".into(),
-                        lines: vec![],
-                        symbols: vec![],
-                    });
-                }
-                if matches!(middle_failure, "descriptor" | "stable") {
-                    std::fs::write(project.root.join("src/b.py"), source).unwrap();
-                }
-                records.append(&mut middle);
+            membership_failure_records(
+                &project,
+                &middle_id,
+                "src/b.py",
+                middle_failure,
+                &mut records,
+                &mut targets,
+            );
+            for candidate in records
+                .iter_mut()
+                .filter(|candidate| candidate.id == middle_id && middle_failure.original == "?")
+            {
+                candidate.original = "+".into();
+                candidate.span.start = 100;
             }
             let map = records.iter().map(|c| (c.id.as_str(), c)).collect();
             let ids = BTreeSet::from([first_id, middle_id.clone(), later_id]);
+            let expected =
+                membership_failure_message(&project, &middle_id, "src/b.py", middle_failure)
+                    .replace(
+                        "candidate original text does not match the source span",
+                        "candidate span is outside the source",
+                    );
             let mut stats = ValidationStats::default();
+
             let error = validate_requested_descriptors(
                 &map,
                 &ids,
@@ -588,34 +679,9 @@ async fn target_membership_preserves_errors_between_cached_file_results() {
             .await
             .unwrap_err()
             .to_string();
-            let expected = match middle_failure {
-                "unknown" => {
-                    format!("plan.candidate.invalid: candidate id is not in the plan: {middle_id}")
-                }
-                "unselected" => {
-                    "plan.candidate.invalid: candidate target is not selected: src/b.py".into()
-                }
-                "read" => "plan.candidate.invalid: src/b.py: ".into(),
-                "descriptor" => {
-                    "plan.candidate.invalid: candidate span is outside the source".into()
-                }
-                "stable" => {
-                    format!("plan.candidate.invalid: candidate stable id differs for {middle_id}")
-                }
-                _ => unreachable!(),
-            };
-            if middle_failure == "read" {
-                assert!(
-                    error.starts_with(&expected),
-                    "{middle_failure}/{later_failure}: {error}"
-                );
-            } else {
-                assert_eq!(error, expected, "{middle_failure}/{later_failure}");
-            }
-            assert_eq!(
-                stats.contexts,
-                1 + usize::from(matches!(middle_failure, "descriptor" | "stable"))
-            );
+
+            assert_eq!(error, expected, "{middle_failure:?}/{later_original}");
+            assert_eq!(stats.contexts, 1 + middle_failure.contexts);
         }
     }
 }

@@ -1192,6 +1192,23 @@ mod tests {
         identities.next().is_none().then_some((root, descendant))
     }
 
+    async fn wait_for_process_identities(
+        path: &Utf8Path,
+        deadline: tokio::time::Instant,
+    ) -> (u32, u32) {
+        loop {
+            if let Some(identities) = published_process_identities(path) {
+                break identities;
+            }
+            let now = tokio::time::Instant::now();
+            assert!(
+                now < deadline,
+                "fixture did not publish root and descendant identities before the test deadline"
+            );
+            tokio::time::sleep_until((now + Duration::from_millis(5)).min(deadline)).await;
+        }
+    }
+
     #[tokio::test]
     async fn exited_root_is_observed_before_assigned_descendant_cleanup() {
         let temporary = tempfile::tempdir().unwrap();
@@ -1219,17 +1236,8 @@ mod tests {
             let mut child = command.spawn().unwrap();
             supervisor.attach(&child).unwrap();
 
-            let (root_pid, descendant_pid) = loop {
-                if let Some(identities) = published_process_identities(&identities) {
-                    break identities;
-                }
-                let now = tokio::time::Instant::now();
-                assert!(
-                    now < deadline,
-                    "fixture did not publish root and descendant identities before the test deadline"
-                );
-                tokio::time::sleep_until((now + Duration::from_millis(5)).min(deadline)).await;
-            };
+            let (root_pid, descendant_pid) =
+                wait_for_process_identities(&identities, deadline).await;
             assert_eq!(child.id(), Some(root_pid));
             let root = FixtureProcessHandle::open(root_pid);
             let descendant = FixtureProcessHandle::open(descendant_pid);
@@ -1342,29 +1350,21 @@ mod tests {
             Ok::<(), String>(())
         })
         .await;
-        let failure = match outcome {
-            Ok(Ok(())) => None,
-            Ok(Err(error)) => Some(error),
-            Err(_) => Some("the shared six-second deadline expired".to_owned()),
-        };
-        if let Some(failure) = failure {
+        outcome.map_err(|_| "the shared six-second deadline expired".to_owned()).and_then(std::convert::identity).unwrap_or_else(|failure| {
             let readiness = std::fs::read_to_string(&abnormal_ready);
             let active = active_process_count(backend.inner.job.raw());
             let cleanup = handler.close();
-            panic!(
-                "abnormal Job Object fixture failed while {}; failure={failure}; readiness={readiness:?}; active_processes={active:?}; emergency_close={cleanup:?}",
-                phase.get(),
-            );
-        }
+            panic!("abnormal Job Object fixture failed while {}; failure={failure}; readiness={readiness:?}; active_processes={active:?}; emergency_close={cleanup:?}", phase.get());
+        });
         assert!(started.elapsed() < Duration::from_secs(6));
     }
 
     #[tokio::test]
     async fn attach_failure_cleanup_retains_signaled_assigned_generation() {
-        for (sequence, fault) in [
-            AttachFault::Assign,
-            AttachFault::NestedAssign,
-            AttachFault::Resume,
+        for (sequence, (fault, expected_active)) in [
+            (AttachFault::Assign, 0),
+            (AttachFault::NestedAssign, 1),
+            (AttachFault::Resume, 1),
         ]
         .into_iter()
         .enumerate()
@@ -1417,17 +1417,14 @@ mod tests {
                 .state
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            if fault == AttachFault::Assign {
-                assert!(state.active.is_empty());
-            } else {
-                assert_eq!(state.active.len(), 1);
-                assert_ne!(state.active[0].id, Uuid::nil());
-                assert_ne!(state.active[0].pid, 0);
-                assert!(state.active[0].signal.is_none());
-                assert!(state.active[0].process.is_some());
-                let root_id = state.active[0].id;
+            assert_eq!(state.active.len(), expected_active);
+            for active in &state.active {
+                assert_ne!(active.id, Uuid::nil());
+                assert_ne!(active.pid, 0);
+                assert!(active.signal.is_none());
+                assert!(active.process.is_some());
                 assert!(
-                    root_process_signaled(&state, root_id).unwrap(),
+                    root_process_signaled(&state, active.id).unwrap(),
                     "retained generation process handle must be signaled"
                 );
             }

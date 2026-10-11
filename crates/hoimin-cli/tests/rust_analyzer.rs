@@ -68,101 +68,108 @@ static ALLOCATOR: heap::TrackingAllocator = heap::TrackingAllocator;
 fn repeated_depth_rejections_reclaim_ast_allocations() {
     // Isolate allocator accounting from the harness's parallel tests, and keep an
     // accidental recursive drop in a bounded child rather than the main runner.
-    if std::env::var_os("HOIMIN_DEPTH_CLEANUP_CHILD").is_none() {
-        let log = tempfile::NamedTempFile::new().unwrap();
-        let mut child = std::process::Command::new(std::env::current_exe().unwrap())
-            .args([
-                "--exact",
-                "repeated_depth_rejections_reclaim_ast_allocations",
-            ])
-            .env("HOIMIN_DEPTH_CLEANUP_CHILD", "1")
-            .env_remove("RUST_MIN_STACK")
-            .stdout(log.reopen().unwrap())
-            .stderr(log.reopen().unwrap())
-            .spawn()
-            .unwrap();
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
-        loop {
-            if let Some(status) = child.try_wait().unwrap() {
-                assert!(
-                    status.success(),
-                    "{}",
-                    std::fs::read_to_string(log.path()).unwrap()
-                );
-                return;
-            }
-            if std::time::Instant::now() > deadline {
-                child.kill().unwrap();
-                child.wait().unwrap();
-                panic!("cleanup timed out");
-            }
-            std::thread::sleep(std::time::Duration::from_millis(10));
+    let log = tempfile::NamedTempFile::new().unwrap();
+    let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", "depth_cleanup_child_fixture"])
+        .env("HOIMIN_DEPTH_CLEANUP_CHILD", "1")
+        .env_remove("RUST_MIN_STACK")
+        .stdout(log.reopen().unwrap())
+        .stderr(log.reopen().unwrap())
+        .spawn()
+        .unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            assert!(
+                status.success(),
+                "{}",
+                std::fs::read_to_string(log.path()).unwrap()
+            );
+            return;
         }
+        if std::time::Instant::now() > deadline {
+            child.kill().unwrap();
+            child.wait().unwrap();
+            panic!("cleanup timed out");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
     }
-    std::thread::Builder::new()
-        .stack_size(2 * 1024 * 1024)
-        .spawn(|| {
-            let operators = hoimin_core::MutationOperatorSelection::default();
-            let request = rust::AnalyzeRequest {
-                path: camino::Utf8Path::new("calc.py"),
-                lines: &[],
-                symbols: &[],
-                operators: &operators,
-                profile: hoimin_core::MutationProfile::Full,
-                max_candidates: 1,
-            };
-            let sources = [
-                format!("value = {}\n", vec!["1"; 25_000].join("+")),
-                format!("value = {}1\n", "-".repeat(1_000)),
-                format!("value = {}\n", vec!["1"; 2_000].join("**")),
-                format!("value = {}1\n", "lambda: ".repeat(2_000)),
-                format!("value = {}1\n", "1 if x else ".repeat(2_000)),
-            ];
-            // Warm parser thread-local state before checking retained allocations.
-            for source in &sources {
-                assert!(rust::analyze_source_cancellable(&request, source, || false).is_err());
-            }
-            let baseline = heap::live();
-            for _ in 0..20 {
+}
+
+fn depth_cleanup_child_cases() -> Vec<String> {
+    std::env::var("HOIMIN_DEPTH_CLEANUP_CHILD")
+        .into_iter()
+        .collect()
+}
+
+#[test]
+fn depth_cleanup_child_fixture() {
+    for _ in depth_cleanup_child_cases() {
+        std::thread::Builder::new()
+            .stack_size(2 * 1024 * 1024)
+            .spawn(|| {
+                let operators = hoimin_core::MutationOperatorSelection::default();
+                let request = rust::AnalyzeRequest {
+                    path: camino::Utf8Path::new("calc.py"),
+                    lines: &[],
+                    symbols: &[],
+                    operators: &operators,
+                    profile: hoimin_core::MutationProfile::Full,
+                    max_candidates: 1,
+                };
+                let sources = [
+                    format!("value = {}\n", vec!["1"; 25_000].join("+")),
+                    format!("value = {}1\n", "-".repeat(1_000)),
+                    format!("value = {}\n", vec!["1"; 2_000].join("**")),
+                    format!("value = {}1\n", "lambda: ".repeat(2_000)),
+                    format!("value = {}1\n", "1 if x else ".repeat(2_000)),
+                ];
+                // Warm parser thread-local state before checking retained allocations.
                 for source in &sources {
-                    assert!(matches!(
-                        rust::analyze_source_cancellable(&request, source, || false),
-                        Err(rust::AnalysisError::DepthExceeded { limit: 128 })
-                    ));
-                    assert!(
-                        heap::live() <= baseline + 1024,
-                        "rejection retained AST memory"
-                    );
+                    assert!(rust::analyze_source_cancellable(&request, source, || false).is_err());
                 }
-            }
-            // Recovery discards trees before returning a module. Process-exit
-            // reclamation cannot stand in for releasing those owned subtrees.
-            let recovered = [
-                format!(
-                    "with ({}) as context:\n pass\n",
-                    vec!["1"; 25_000].join("+")
-                ),
-                format!("match({})\n", vec!["1"; 25_000].join("+")),
-                format!("match x:\n case C(a{}=other): pass\n", ".b".repeat(25_000)),
-                format!("match x:\n case (a{} as y)(): pass\n", ".b".repeat(25_000)),
-            ];
-            for source in &recovered {
-                let _ = rust::analyze_source_cancellable(&request, source, || false);
-            }
-            let baseline = heap::live();
-            for _ in 0..10 {
+                let baseline = heap::live();
+                for _ in 0..20 {
+                    for source in &sources {
+                        assert!(matches!(
+                            rust::analyze_source_cancellable(&request, source, || false),
+                            Err(rust::AnalysisError::DepthExceeded { limit: 128 })
+                        ));
+                        assert!(
+                            heap::live() <= baseline + 1024,
+                            "rejection retained AST memory"
+                        );
+                    }
+                }
+                // Recovery discards trees before returning a module. Process-exit
+                // reclamation cannot stand in for releasing those owned subtrees.
+                let recovered = [
+                    format!(
+                        "with ({}) as context:\n pass\n",
+                        vec!["1"; 25_000].join("+")
+                    ),
+                    format!("match({})\n", vec!["1"; 25_000].join("+")),
+                    format!("match x:\n case C(a{}=other): pass\n", ".b".repeat(25_000)),
+                    format!("match x:\n case (a{} as y)(): pass\n", ".b".repeat(25_000)),
+                ];
                 for source in &recovered {
                     let _ = rust::analyze_source_cancellable(&request, source, || false);
-                    assert!(
-                        heap::live() <= baseline + 1024,
-                        "parser recovery retained AST memory"
-                    );
                 }
-            }
-        })
-        .unwrap()
-        .join()
-        .unwrap();
+                let baseline = heap::live();
+                for _ in 0..10 {
+                    for source in &recovered {
+                        let _ = rust::analyze_source_cancellable(&request, source, || false);
+                        assert!(
+                            heap::live() <= baseline + 1024,
+                            "parser recovery retained AST memory"
+                        );
+                    }
+                }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
 }
 
 /// Recovering from an unterminated nested string of the other interpolation
@@ -755,7 +762,10 @@ fn optional_keyword_is_opt_in_selected_bounded_and_cancellable() {
 fn promoted_defaults_keep_profile_filtering_before_bounded_prefix_selection() {
     let operators = MutationOperatorSelection::default();
     let source = "print('skip', 7)\ndef f(x, y):\n    x += 3\n    while x < y:\n        x += 1\n    z = int(x)\n    return x, y\n";
-    for profile in [MutationProfile::Full, MutationProfile::Focused] {
+    for (profile, includes_first_line) in [
+        (MutationProfile::Full, true),
+        (MutationProfile::Focused, false),
+    ] {
         let mut request = rust::AnalyzeRequest {
             path: Utf8Path::new("subject.py"),
             lines: &[],
@@ -767,15 +777,16 @@ fn promoted_defaults_keep_profile_filtering_before_bounded_prefix_selection() {
         let full = rust::analyze_source(&request, source);
         assert!(!full.truncated);
         assert!(full.candidates.len() > 3);
-        if profile == MutationProfile::Focused {
-            assert!(full.candidates.iter().all(|c| c.line != 1));
-        } else {
-            assert!(
-                full.candidates
-                    .iter()
-                    .any(|c| c.line == 1 && c.operator == "statement_delete")
-            );
-        }
+        assert_eq!(
+            full.candidates.iter().any(|candidate| candidate.line == 1),
+            includes_first_line
+        );
+        assert_eq!(
+            full.candidates
+                .iter()
+                .any(|candidate| candidate.line == 1 && candidate.operator == "statement_delete"),
+            includes_first_line
+        );
         request.max_candidates = 3;
         let bounded = rust::analyze_source(&request, source);
         assert_eq!(bounded.candidates, full.candidates[..3]);

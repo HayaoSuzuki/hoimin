@@ -13,33 +13,64 @@ USAGE_ERROR = 2
 MAX_CORPUS_BYTES = 4096
 
 
-def test_preserves_bytes_and_deduplicates(tmp_path: Path) -> None:
+def test_preserves_source_bytes_and_hash_name(tmp_path: Path) -> None:
     source = "value = '日本語'\r\n"
     encoded = source.encode()
-    assert corpus.store_source(source, tmp_path, max_bytes=len(encoded)) == "written"
+
+    result = corpus.store_source(source, tmp_path, max_bytes=len(encoded))
     files = list(tmp_path.iterdir())
+
+    assert result == "written"
     assert len(files) == 1
     assert files[0].name == hashlib.sha256(encoded).hexdigest()
     assert files[0].read_bytes() == encoded
-    assert corpus.store_source(source, tmp_path, max_bytes=len(encoded)) == "existing"
-    assert (
-        corpus.store_source(source, tmp_path, max_bytes=len(encoded) - 1) == "oversize"
+
+
+@pytest.mark.parametrize(
+    ("byte_limit_delta", "expected"),
+    [(0, "existing"), (-1, "oversize")],
+    ids=["duplicate", "oversize"],
+)
+def test_rejected_source_preserves_existing_corpus(
+    tmp_path: Path,
+    byte_limit_delta: int,
+    expected: str,
+) -> None:
+    source = "value = '日本語'\r\n"
+    encoded = source.encode()
+
+    corpus.store_source(source, tmp_path, max_bytes=len(encoded))
+    files = list(tmp_path.iterdir())
+
+    result = corpus.store_source(
+        source, tmp_path, max_bytes=len(encoded) + byte_limit_delta
     )
+
+    assert result == expected
     assert list(tmp_path.iterdir()) == files
+    assert files[0].read_bytes() == encoded
+
+
+@pytest.mark.parametrize("source", ["", " \n\t"])
+def test_blank_source_regressions_write_no_files(tmp_path: Path, source: str) -> None:
+    result = corpus.store_source(source, tmp_path, max_bytes=4096)
+
+    assert result == "empty"
+    assert not list(tmp_path.iterdir())
 
 
 @pytest.mark.parametrize(
     ("source", "expected"),
     [
-        ("", "empty"),
-        (" \n\t", "empty"),
         ("def f(:", "invalid"),
         ("return 1", "invalid"),
         ("x = '\ud800'", "invalid"),
     ],
 )
 def test_rejects_unusable_sources(tmp_path: Path, source: str, expected: str) -> None:
-    assert corpus.store_source(source, tmp_path, max_bytes=4096) == expected
+    status = corpus.store_source(source, tmp_path, max_bytes=4096)
+
+    assert status == expected
     assert not list(tmp_path.iterdir())
 
 
@@ -48,15 +79,22 @@ def test_only_compiles_generated_code(tmp_path: Path) -> None:
     output = tmp_path / "corpus"
     output.mkdir()
     source = f"from pathlib import Path\nPath({str(sentinel)!r}).touch()\n"
-    assert corpus.store_source(source, output, max_bytes=4096) == "written"
+
+    status = corpus.store_source(source, output, max_bytes=4096)
+
+    assert status == "written"
     assert not sentinel.exists()
 
 
-@pytest.mark.parametrize(("options", "expected"), [(["--help"], 0), ([], USAGE_ERROR)])
+@pytest.mark.parametrize(
+    ("options", "expected", "diagnostic"),
+    [(["--help"], 0, ""), ([], USAGE_ERROR, "install fuzz dependencies")],
+)
 def test_cli_without_optional_dependencies(
     tmp_path: Path,
     options: list[str],
     expected: int,
+    diagnostic: str,
 ) -> None:
     # -S excludes site-packages, exercising the real missing-dependency path.
     result = subprocess.run(  # noqa: S603 -- Fixed interpreter and checked-in script.
@@ -73,10 +111,10 @@ def test_cli_without_optional_dependencies(
         text=True,
         timeout=10,
     )
+
     assert result.returncode == expected
     assert not (tmp_path / "corpus").exists()
-    if expected == USAGE_ERROR:
-        assert "install fuzz dependencies" in result.stderr
+    assert diagnostic in result.stderr
 
 
 @pytest.mark.parametrize(
@@ -104,6 +142,7 @@ def test_cli_rejects_invalid_limits(tmp_path: Path, option: str, limit: int) -> 
         capture_output=True,
         text=True,
     )
+
     assert result.returncode == USAGE_ERROR
     assert not (tmp_path / "corpus").exists()
 
@@ -140,6 +179,7 @@ def test_real_generator_is_reproducible_and_reports_existing_inputs(
         reports.append(json.loads(result.stdout))
     first = {p.name: p.read_bytes() for p in outputs[0].iterdir()}
     second = {p.name: p.read_bytes() for p in outputs[1].iterdir()}
+
     assert first == second
     assert first
     assert reports[0]["written"] == len(first)

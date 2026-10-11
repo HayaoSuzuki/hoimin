@@ -123,7 +123,6 @@ async fn conversions_cover_builtins_source_and_precedence() {
         );
     }
     for source in [
-        "value = 2 * int(1 + 2)\n",
         "value = int(1 if True else 2)\n",
         "value = list((1,2))\n",
         "value = str(lambda: 1)\n",
@@ -137,18 +136,31 @@ async fn conversions_cover_builtins_source_and_precedence() {
         let mut mutant = source.to_owned();
         mutant.replace_range(start..end, c["replacement"].as_str().unwrap());
         compile(&mutant).await;
-        if source.starts_with("value = 2") {
-            mutant.push_str("assert value == 6\n");
-            assert!(
-                tokio::process::Command::new(python())
-                    .args(["-c", &mutant])
-                    .status()
-                    .await
-                    .unwrap()
-                    .success()
-            );
-        }
     }
+}
+
+#[tokio::test]
+async fn conversion_removal_keeps_arithmetic_precedence_at_runtime() {
+    let source = "value = 2 * int(1 + 2)\n";
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(root.path().join("subject.py"), source).unwrap();
+    let doc = plan(root.path(), "conversion_call_remove", "pass").await;
+    let candidate = &doc["candidates"][0];
+    let start = usize::try_from(candidate["span"]["start"].as_u64().unwrap()).unwrap();
+    let end = start + usize::try_from(candidate["span"]["length"].as_u64().unwrap()).unwrap();
+    let mut mutant = source.to_owned();
+    mutant.replace_range(start..end, candidate["replacement"].as_str().unwrap());
+    compile(&mutant).await;
+    mutant.push_str("assert value == 6\n");
+
+    assert!(
+        tokio::process::Command::new(python())
+            .args(["-c", &mutant])
+            .status()
+            .await
+            .unwrap()
+            .success()
+    );
 }
 
 #[tokio::test]

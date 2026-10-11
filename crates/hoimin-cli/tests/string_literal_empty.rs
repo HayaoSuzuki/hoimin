@@ -1,3 +1,6 @@
+#[path = "support/encoded_source.rs"]
+mod encoded_source;
+
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -229,30 +232,18 @@ async fn string_empty_uses_decoded_value_and_exact_encoded_occurrence() {
         &Vec::<serde_json::Value>::new()
     );
     for newline in ["\n", "\r\n", "\r"] {
-        for encoding in ["utf8", "bom", "latin1"] {
+        for encoding in encoded_source::ENCODINGS {
             let root = tempfile::tempdir().unwrap();
+            let encoding_name = encoding.name;
             let text = format!(
                 "# coding: {}{newline}# é{newline}first='same'; second='same'{newline}",
-                if encoding == "latin1" {
-                    "latin-1"
-                } else {
-                    "utf-8"
-                }
+                encoding.cookie
             );
-            let mut bytes = if encoding == "latin1" {
-                text.chars()
-                    .map(|c| u8::try_from(u32::from(c)).unwrap())
-                    .collect::<Vec<_>>()
-            } else {
-                text.as_bytes().to_vec()
-            };
-            if encoding == "bom" {
-                bytes.splice(0..0, [0xef, 0xbb, 0xbf]);
-            }
+            let bytes = encoding.source(&text);
             std::fs::write(root.path().join("subject.py"), &bytes).unwrap();
             let doc = plan(root.path(), "string_literal_empty", "pass").await;
             let cs = doc["candidates"].as_array().unwrap();
-            assert_eq!(cs.len(), 2);
+            assert_eq!(cs.len(), 2, "{encoding_name} {newline:?}");
             assert_ne!(cs[0]["span"]["start"], cs[1]["span"]["start"]);
             for c in cs {
                 let start = usize::try_from(c["span"]["start"].as_u64().unwrap()).unwrap();

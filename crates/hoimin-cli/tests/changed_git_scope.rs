@@ -283,20 +283,20 @@ async fn scoped_diff_base_and_unborn_sources_match_unscoped_resolution() {
 
 #[tokio::test]
 async fn selected_and_unrelated_rename_directions_preserve_hunk_ranges() {
-    for direction in ["into", "out", "unrelated"] {
+    for (direction, old, new, expected_count, expected_rename_lines) in [
+        (
+            "into",
+            "data/old.py",
+            "selected/new.py",
+            2,
+            vec![LineRange { start: 41, end: 41 }],
+        ),
+        ("out", "selected/old.py", "data/new.py", 1, vec![]),
+        ("unrelated", "data/old.py", "data/new.py", 1, vec![]),
+    ] {
         let repo = Repository::new().await;
         let header = "# stable rename evidence\n".repeat(40);
         repo.write("selected/ordinary.py", "x = 1\n");
-        let old = if direction == "out" {
-            "selected/old.py"
-        } else {
-            "data/old.py"
-        };
-        let new = if direction == "into" {
-            "selected/new.py"
-        } else {
-            "data/new.py"
-        };
         repo.write(old, format!("{header}x = 1\n"));
         repo.commit().await;
         std::fs::create_dir_all(repo.root().join("data")).unwrap();
@@ -310,17 +310,17 @@ async fn selected_and_unrelated_rename_directions_preserve_hunk_ranges() {
         .unwrap();
         assert!(status.lines().any(|line| line.starts_with('R')), "{status}");
         let changed = repo.compare(0, None).await;
-        assert_eq!(changed.len(), if direction == "into" { 2 } else { 1 });
-        if direction == "into" {
-            assert_eq!(
-                changed
-                    .iter()
-                    .find(|target| target.path == new)
-                    .unwrap()
-                    .lines,
-                [LineRange { start: 41, end: 41 }]
-            );
-        }
+        assert_eq!(changed.len(), expected_count, "{direction}");
+        assert_eq!(
+            changed
+                .iter()
+                .filter(|target| target.path == new)
+                .flat_map(|target| target.lines.iter())
+                .copied()
+                .collect::<Vec<_>>(),
+            expected_rename_lines,
+            "{direction}"
+        );
     }
 }
 

@@ -541,20 +541,6 @@ async fn documentation_contract() {
             "documented command returned an infrastructure error: {exit}; command: {command:?}\nstderr: {}",
             String::from_utf8_lossy(&stderr)
         );
-        match config.output.format {
-            OutputFormat::Json => {
-                let _: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
-            }
-            OutputFormat::Jsonl => {
-                assert!(
-                    stdout
-                        .split(|byte| *byte == b'\n')
-                        .filter(|line| !line.is_empty())
-                        .all(|line| serde_json::from_slice::<serde_json::Value>(line).is_ok())
-                );
-            }
-            OutputFormat::Human => assert_ne!(stdout, Vec::<u8>::new()),
-        }
         documented_outputs.push((config.output.format, stdout, stderr));
     }
 
@@ -568,30 +554,37 @@ async fn documentation_contract() {
         result_schema["$schema"],
         "https://json-schema.org/draft/2020-12/schema"
     );
-    for (format, stdout, stderr) in documented_outputs {
-        match format {
-            OutputFormat::Json => {
-                let document = serde_json::from_slice(&stdout).unwrap();
-                assert_schema_valid(&result_schema, &document, &event_schema);
-                documented_type_operator |= document["mutants"].as_array().is_some_and(|mutants| {
-                    mutants.iter().any(|mutant| {
-                        mutant["candidate"]["operator"]
-                            .as_str()
-                            .is_some_and(|operator| operator.starts_with("type_"))
-                    })
-                });
-            }
-            OutputFormat::Jsonl => {
-                for line in stdout
-                    .split(|byte| *byte == b'\n')
-                    .chain(stderr.split(|byte| *byte == b'\n'))
-                    .filter(|line| !line.is_empty())
-                {
-                    let event = serde_json::from_slice(line).unwrap();
-                    assert_schema_valid(&event_schema, &event, &event_schema);
-                }
-            }
-            OutputFormat::Human => {}
+    for (_, stdout, _) in documented_outputs
+        .iter()
+        .filter(|(format, _, _)| *format == OutputFormat::Human)
+    {
+        assert_ne!(stdout, &Vec::<u8>::new());
+    }
+    for (_, stdout, _) in documented_outputs
+        .iter()
+        .filter(|(format, _, _)| *format == OutputFormat::Json)
+    {
+        let document: serde_json::Value = serde_json::from_slice(stdout).unwrap();
+        assert_schema_valid(&result_schema, &document, &event_schema);
+        documented_type_operator |= document["mutants"].as_array().is_some_and(|mutants| {
+            mutants.iter().any(|mutant| {
+                mutant["candidate"]["operator"]
+                    .as_str()
+                    .is_some_and(|operator| operator.starts_with("type_"))
+            })
+        });
+    }
+    for (_, stdout, stderr) in documented_outputs
+        .iter()
+        .filter(|(format, _, _)| *format == OutputFormat::Jsonl)
+    {
+        for line in stdout
+            .split(|byte| *byte == b'\n')
+            .chain(stderr.split(|byte| *byte == b'\n'))
+            .filter(|line| !line.is_empty())
+        {
+            let event = serde_json::from_slice(line).unwrap();
+            assert_schema_valid(&event_schema, &event, &event_schema);
         }
     }
 
@@ -2026,10 +2019,10 @@ impl Write for DiagnosticFaultWriter {
 fn buffered_diagnostic_failures_do_not_acknowledge_or_retry_on_drop() {
     let spool = tempfile::tempdir().unwrap();
     for format in [OutputFormat::Json, OutputFormat::Jsonl] {
-        for mode in [
-            DiagnosticFault::PartialError,
-            DiagnosticFault::Zero,
-            DiagnosticFault::Flush,
+        for (mode, minimum_writes, maximum_writes, maximum_bytes, expected_flushes) in [
+            (DiagnosticFault::PartialError, 2, 2, 4, 0),
+            (DiagnosticFault::Zero, 1, 1, 0, 0),
+            (DiagnosticFault::Flush, 0, usize::MAX, usize::MAX, 1),
         ] {
             for message in ["small".to_owned(), "x\n".repeat(16384)] {
                 let state = Arc::new(Mutex::new(WriterState::default()));
@@ -2057,19 +2050,12 @@ fn buffered_diagnostic_failures_do_not_acknowledge_or_retry_on_drop() {
                 );
                 drop(handler);
                 let state = state.lock().unwrap();
-                match mode {
-                    DiagnosticFault::PartialError => {
-                        assert_eq!(state.writes, 2, "retried after write error: {format:?}");
-                        assert!(state.bytes.len() <= 4);
-                        assert_eq!(state.flushes, 0);
-                    }
-                    DiagnosticFault::Zero => {
-                        assert_eq!(state.writes, 1);
-                        assert_eq!(state.bytes, Vec::<u8>::new());
-                    }
-                    DiagnosticFault::Flush => assert_eq!(state.flushes, 1),
-                    DiagnosticFault::Interrupted => unreachable!(),
-                }
+                assert!(
+                    (minimum_writes..=maximum_writes).contains(&state.writes),
+                    "retried after write error: {format:?}"
+                );
+                assert!(state.bytes.len() <= maximum_bytes);
+                assert_eq!(state.flushes, expected_flushes);
             }
         }
     }
@@ -2149,17 +2135,17 @@ async fn public_resume_reports_validate_schema_four_in_json_and_jsonl() {
     let repo = repo_root();
     let event_schema = read_schema(&repo.join("docs/json-schema/run-event.schema.json"));
     let result_schema = read_schema(&repo.join("docs/json-schema/run-result.schema.json"));
-    let python = repo.join(if cfg!(windows) {
-        ".venv/Scripts/python.exe"
-    } else {
-        ".venv/bin/python"
-    });
+    let python = repository_python();
+    let mut reports = Vec::new();
     for format in ["json", "jsonl"] {
         let fixture = tempfile::tempdir().unwrap();
         let root = fixture.path().join("project");
         std::fs::create_dir(&root).unwrap();
         std::fs::write(root.join("calc.py"), "value = 1 + 2\nother = 4 + 5\n").unwrap();
-        for resumed in [false, true] {
+        for expected in [
+            serde_json::json!({"status":"fresh","reason":"no_prior_run"}),
+            serde_json::json!({"status":"resumed"}),
+        ] {
             let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"));
             command
                 .args(["run", "--root"])
@@ -2198,27 +2184,25 @@ async fn public_resume_reports_validate_schema_four_in_json_and_jsonl() {
                 String::from_utf8_lossy(&output.stderr)
             );
             assert_eq!(output.stderr, Vec::<u8>::new());
-            let expected = if resumed {
-                serde_json::json!({"status":"resumed"})
-            } else {
-                serde_json::json!({"status":"fresh","reason":"no_prior_run"})
-            };
-            if format == "json" {
-                let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-                assert_schema_valid(&result_schema, &document, &event_schema);
-                assert_eq!(document["schema_version"], 4);
-                assert_eq!(document["run"]["resume"], expected);
-            } else {
-                let text = String::from_utf8(output.stdout).unwrap();
-                for (index, line) in text.lines().enumerate() {
-                    let event: serde_json::Value = serde_json::from_str(line).unwrap();
-                    assert_schema_valid(&event_schema, &event, &event_schema);
-                    if index == 0 {
-                        assert_eq!(event["resume"], expected);
-                    }
-                }
-            }
+            reports.push((format, output.stdout, expected));
         }
+    }
+    for (_, stdout, expected) in reports.iter().filter(|(format, _, _)| *format == "json") {
+        let document: serde_json::Value = serde_json::from_slice(stdout).unwrap();
+        assert_schema_valid(&result_schema, &document, &event_schema);
+        assert_eq!(document["schema_version"], 4);
+        assert_eq!(document["run"]["resume"], *expected);
+    }
+    for (_, stdout, expected) in reports.iter().filter(|(format, _, _)| *format == "jsonl") {
+        let events: Vec<serde_json::Value> = std::str::from_utf8(stdout)
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        for event in &events {
+            assert_schema_valid(&event_schema, event, &event_schema);
+        }
+        assert_eq!(events[0]["resume"], *expected);
     }
 }
 
@@ -2229,11 +2213,7 @@ async fn line_diverse_public_reports_and_previews_match_current_schemas() {
     std::fs::create_dir(&root).unwrap();
     std::fs::write(root.join("calc.py"), "value = 1 + 2\n").unwrap();
     let repo = repo_root();
-    let python = repo.join(if cfg!(windows) {
-        ".venv/Scripts/python.exe"
-    } else {
-        ".venv/bin/python"
-    });
+    let python = repository_python();
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
     let args = vec![
@@ -2262,7 +2242,8 @@ async fn line_diverse_public_reports_and_previews_match_current_schemas() {
     let event_schema = read_schema(&repo.join("docs/json-schema/run-event.schema.json"));
     let result_schema = read_schema(&repo.join("docs/json-schema/run-result.schema.json"));
     let preview_schema = read_schema(&repo.join("docs/json-schema/verify-preview.schema.json"));
-    for dry in [false, true] {
+    let mut reports = Vec::new();
+    for (dry, extra_args, expected_code) in [(false, &[][..], 1), (true, &["--dry-run"][..], 0)] {
         for format in ["json", "jsonl", "human"] {
             stdout.clear();
             stderr.clear();
@@ -2277,33 +2258,35 @@ async fn line_diverse_public_reports_and_previews_match_current_schemas() {
                 "--format".into(),
                 format.into(),
             ];
-            if dry {
-                args.push("--dry-run".into());
-            }
+            args.extend(extra_args.iter().map(std::ffi::OsString::from));
             let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
-            assert_eq!(
-                code,
-                i32::from(!dry),
-                "{}",
-                String::from_utf8_lossy(&stderr)
-            );
+            assert_eq!(code, expected_code, "{}", String::from_utf8_lossy(&stderr));
             let text = std::str::from_utf8(&stdout).unwrap();
             assert!(text.contains("line_round_robin_v1"));
-            if format == "human" {
-                continue;
-            }
-            if dry {
-                let document = serde_json::from_slice(&stdout).unwrap();
-                assert_schema_valid(&preview_schema, &document, &event_schema);
-            } else if format == "json" {
-                let document = serde_json::from_slice(&stdout).unwrap();
-                assert_schema_valid(&result_schema, &document, &event_schema);
-            } else {
-                for line in text.lines() {
-                    let event = serde_json::from_str(line).unwrap();
-                    assert_schema_valid(&event_schema, &event, &event_schema);
-                }
-            }
+            reports.push((dry, format, stdout.clone()));
+        }
+    }
+    for (_, _, bytes) in reports
+        .iter()
+        .filter(|(dry, format, _)| *dry && *format != "human")
+    {
+        let document = serde_json::from_slice(bytes).unwrap();
+        assert_schema_valid(&preview_schema, &document, &event_schema);
+    }
+    for (_, _, bytes) in reports
+        .iter()
+        .filter(|(dry, format, _)| !*dry && *format == "json")
+    {
+        let document = serde_json::from_slice(bytes).unwrap();
+        assert_schema_valid(&result_schema, &document, &event_schema);
+    }
+    for (_, _, bytes) in reports
+        .iter()
+        .filter(|(dry, format, _)| !*dry && *format == "jsonl")
+    {
+        for line in std::str::from_utf8(bytes).unwrap().lines() {
+            let event = serde_json::from_str(line).unwrap();
+            assert_schema_valid(&event_schema, &event, &event_schema);
         }
     }
 }
@@ -2315,11 +2298,7 @@ async fn sample_public_reports_and_previews_match_current_schemas() {
     std::fs::create_dir(&root).unwrap();
     std::fs::write(root.join("calc.py"), "value = 1 + 2\n").unwrap();
     let repo = repo_root();
-    let python = repo.join(if cfg!(windows) {
-        ".venv/Scripts/python.exe"
-    } else {
-        ".venv/bin/python"
-    });
+    let python = repository_python();
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
     let args = vec![
@@ -2348,7 +2327,8 @@ async fn sample_public_reports_and_previews_match_current_schemas() {
     let event_schema = read_schema(&repo.join("docs/json-schema/run-event.schema.json"));
     let result_schema = read_schema(&repo.join("docs/json-schema/run-result.schema.json"));
     let preview_schema = read_schema(&repo.join("docs/json-schema/verify-preview.schema.json"));
-    for dry in [false, true] {
+    let mut reports = Vec::new();
+    for (dry, extra_args, expected_code) in [(false, &[][..], 1), (true, &["--dry-run"][..], 0)] {
         for format in ["json", "jsonl", "human"] {
             stdout.clear();
             stderr.clear();
@@ -2363,33 +2343,35 @@ async fn sample_public_reports_and_previews_match_current_schemas() {
                 "--format".into(),
                 format.into(),
             ];
-            if dry {
-                args.push("--dry-run".into());
-            }
+            args.extend(extra_args.iter().map(std::ffi::OsString::from));
             let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
-            assert_eq!(
-                code,
-                i32::from(!dry),
-                "{}",
-                String::from_utf8_lossy(&stderr)
-            );
+            assert_eq!(code, expected_code, "{}", String::from_utf8_lossy(&stderr));
             let text = std::str::from_utf8(&stdout).unwrap();
             assert!(text.contains("splitmix64_fisher_yates_v1"));
-            if format == "human" {
-                continue;
-            }
-            if dry {
-                let document = serde_json::from_slice(&stdout).unwrap();
-                assert_schema_valid(&preview_schema, &document, &event_schema);
-            } else if format == "json" {
-                let document = serde_json::from_slice(&stdout).unwrap();
-                assert_schema_valid(&result_schema, &document, &event_schema);
-            } else {
-                for line in text.lines() {
-                    let event = serde_json::from_str(line).unwrap();
-                    assert_schema_valid(&event_schema, &event, &event_schema);
-                }
-            }
+            reports.push((dry, format, stdout.clone()));
+        }
+    }
+    for (_, _, bytes) in reports
+        .iter()
+        .filter(|(dry, format, _)| *dry && *format != "human")
+    {
+        let document = serde_json::from_slice(bytes).unwrap();
+        assert_schema_valid(&preview_schema, &document, &event_schema);
+    }
+    for (_, _, bytes) in reports
+        .iter()
+        .filter(|(dry, format, _)| !*dry && *format == "json")
+    {
+        let document = serde_json::from_slice(bytes).unwrap();
+        assert_schema_valid(&result_schema, &document, &event_schema);
+    }
+    for (_, _, bytes) in reports
+        .iter()
+        .filter(|(dry, format, _)| !*dry && *format == "jsonl")
+    {
+        for line in std::str::from_utf8(bytes).unwrap().lines() {
+            let event = serde_json::from_str(line).unwrap();
+            assert_schema_valid(&event_schema, &event, &event_schema);
         }
     }
 }

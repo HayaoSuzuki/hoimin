@@ -7,8 +7,11 @@ import io
 import json
 import subprocess
 import urllib.error
+from collections.abc import Callable
 from email.message import Message
+from operator import setitem
 from pathlib import Path
+from typing import Any
 
 import pytest
 import yaml
@@ -58,43 +61,72 @@ def test_accepts_one_build_and_one_publish_statement() -> None:
         attestation("https://slsa.dev/provenance/v1", "a.whl", "a" * 64),
         attestation("https://docs.pypi.org/attestations/publish/v1", "a.whl", "a" * 64),
     ]
-    assert pypi_provenance.statement_types(statements, "a.whl", "a" * 64) == {
+
+    statement_types_result = pypi_provenance.statement_types(
+        statements, "a.whl", "a" * 64
+    )
+
+    assert statement_types_result == {
         "https://slsa.dev/provenance/v1",
         "https://docs.pypi.org/attestations/publish/v1",
     }
 
 
+def multiple_subject_attestation() -> dict[str, object]:
+    statement = {"subject": [{"name": "a.whl", "digest": {"sha256": "a" * 64}}] * 2}
+    value = attestation("https://slsa.dev/provenance/v1", "a.whl", "a" * 64)
+    value["envelope"] = {
+        "statement": base64.b64encode(json.dumps(statement).encode()).decode()
+    }
+    return value
+
+
 @pytest.mark.parametrize(
-    "damage",
-    ["digest", "name", "subjects", "duplicate", "missing", "unknown", "encoding"],
+    "corrupt",
+    [
+        pytest.param(
+            lambda values: setitem(
+                values,
+                0,
+                attestation("https://slsa.dev/provenance/v1", "a.whl", "b" * 64),
+            ),
+            id="digest",
+        ),
+        pytest.param(
+            lambda values: setitem(
+                values,
+                0,
+                attestation("https://slsa.dev/provenance/v1", "b.whl", "a" * 64),
+            ),
+            id="name",
+        ),
+        pytest.param(
+            lambda values: setitem(values, 0, multiple_subject_attestation()),
+            id="subjects",
+        ),
+        pytest.param(lambda values: setitem(values, 1, values[0]), id="duplicate"),
+        pytest.param(lambda values: values.pop(), id="missing"),
+        pytest.param(
+            lambda values: setitem(
+                values, 0, attestation("unknown", "a.whl", "a" * 64)
+            ),
+            id="unknown",
+        ),
+        pytest.param(
+            lambda values: setitem(values[0], "envelope", {"statement": "!"}),
+            id="encoding",
+        ),
+    ],
 )
-def test_rejects_invalid_index_statement_sets(damage: str) -> None:
+def test_rejects_invalid_index_statement_sets(
+    corrupt: Callable[[list[dict[str, object]]], object],
+) -> None:
     statements = [
         attestation("https://slsa.dev/provenance/v1", "a.whl", "a" * 64),
         attestation("https://docs.pypi.org/attestations/publish/v1", "a.whl", "a" * 64),
     ]
-    if damage == "duplicate":
-        statements[1] = statements[0]
-    elif damage == "missing":
-        statements.pop()
-    elif damage == "encoding":
-        statements[0]["envelope"] = {"statement": "!"}
-    else:
-        predicate = (
-            "unknown" if damage == "unknown" else "https://slsa.dev/provenance/v1"
-        )
-        statements[0] = attestation(
-            predicate,
-            "b.whl" if damage == "name" else "a.whl",
-            "b" * 64 if damage == "digest" else "a" * 64,
-        )
-        if damage == "subjects":
-            statement = {
-                "subject": [{"name": "a.whl", "digest": {"sha256": "a" * 64}}] * 2
-            }
-            statements[0]["envelope"] = {
-                "statement": base64.b64encode(json.dumps(statement).encode()).decode()
-            }
+    corrupt(statements)
+
     with pytest.raises(ValueError, match=r"subject|attestation|base64"):
         pypi_provenance.statement_types(statements, "a.whl", "a" * 64)
 
@@ -107,6 +139,7 @@ def test_index_inventory_rejects_partial_or_changed_publication(tmp_path: Path) 
         "digests": {"sha256": hashlib.sha256(b"wheel").hexdigest()},
         "yanked": False,
     }
+
     pypi_provenance.check_inventory({"urls": [record]}, [wheel])
     for records in (
         [],
@@ -122,6 +155,7 @@ def test_release_automates_test_index_before_production_with_opt_in() -> None:
     root = Path(__file__).resolve().parents[1]
     workflow = yaml.safe_load((root / ".github/workflows/release.yml").read_text())
     jobs = workflow["jobs"]
+
     assert "vars.PYPI_AUTO_PUBLISH == 'true'" in jobs["dispatch-pypi"]["if"]
     assert "publish" in jobs["dispatch-pypi"]["needs"]
     assert "github.event_name == 'workflow_dispatch'" in jobs["pypi-prepare"]["if"]
@@ -134,6 +168,7 @@ def test_release_automates_test_index_before_production_with_opt_in() -> None:
     assert "testpypi" in jobs["pypi-inspect"]["needs"]
     for index in ("testpypi", "pypi"):
         upload = jobs[index + "-publish"]
+
         assert "uses" not in upload
         assert upload["permissions"] == {"id-token": "write"}
         assert upload["environment"]["name"] == index
@@ -143,9 +178,12 @@ def test_release_automates_test_index_before_production_with_opt_in() -> None:
 def test_real_github_aggregate_signature_is_valid_but_not_pypi_compatible() -> None:
     bundle = Bundle.from_json(json.dumps(recorded_bundle()))
     value = Attestation.from_bundle(bundle)
+
     statement = pypi_provenance.statement_of(value.model_dump(mode="json"))
     subjects = statement["subject"]
+
     assert isinstance(subjects, list)
+
     subject = object_mapping(
         next(
             item
@@ -153,7 +191,9 @@ def test_real_github_aggregate_signature_is_valid_but_not_pypi_compatible() -> N
             if object_mapping(item)["name"] == "hoimin-0.3.5-py3-none-win_amd64.whl"
         )
     )
+
     digest = str(object_mapping(subject["digest"])["sha256"])
+
     # Verification reaches the subject-count check only after authenticating
     # the real GitHub certificate, DSSE signature and transparency entry.
     with pytest.raises(VerificationError, match="too many subjects"):
@@ -170,17 +210,26 @@ def test_real_cli_download_contains_individually_verifiable_wheel_proof() -> Non
         .read_text(encoding="utf-8")
         .splitlines()
     )
+    individual_proofs: list[tuple[str, Attestation, list[Any]]] = []
     counts: list[int] = []
     for line in lines:
         bundle = Bundle.from_json(line)
         value = Attestation.from_bundle(bundle)
+
         statement = pypi_provenance.statement_of(value.model_dump(mode="json"))
         subjects = statement["subject"]
+
         assert isinstance(subjects, list)
         counts.append(len(subjects))
-        if len(subjects) != 1:
-            continue
+        individual_proofs.append((line, value, subjects))
+
+    assert sorted(counts) == [1, 13]
+
+    for line, value, subjects in [
+        proof for proof in individual_proofs if len(proof[2]) == 1
+    ]:
         subject = object_mapping(subjects[0])
+
         distribution = Distribution(
             name=str(subject["name"]),
             digest=str(object_mapping(subject["digest"])["sha256"]),
@@ -190,6 +239,7 @@ def test_real_cli_download_contains_individually_verifiable_wheel_proof() -> Non
             distribution,
             offline=True,
         )
+
         assert predicate == "https://slsa.dev/provenance/v1"
         value.verify(
             policy.OIDCSourceRepositoryDigest(
@@ -198,60 +248,105 @@ def test_real_cli_download_contains_individually_verifiable_wheel_proof() -> Non
             distribution,
             offline=True,
         )
+
+        object_mapping_result = object_mapping(json.loads(line)["dsseEnvelope"])
+
         assert value.envelope.statement == base64.b64decode(
-            str(object_mapping(json.loads(line)["dsseEnvelope"])["payload"])
+            str(object_mapping_result["payload"])
         )
-    assert sorted(counts) == [1, 13]
 
 
-@pytest.mark.parametrize("damage", ["signature", "repository", "workflow", "source"])
-def test_real_signature_rejects_corruption_and_wrong_identity(damage: str) -> None:
+def test_real_signature_rejects_corruption() -> None:
     raw = recorded_bundle()
-    if damage == "signature":
-        envelope = object_mapping(raw["dsseEnvelope"])
-        signatures = envelope["signatures"]
-        assert isinstance(signatures, list)
-        signature = object_mapping(signatures[0])
-        signature["sig"] = base64.b64encode(b"invalid signature").decode()
-        envelope["signatures"] = [signature]
-        raw["dsseEnvelope"] = envelope
+    envelope = object_mapping(raw["dsseEnvelope"])
+    signatures = envelope["signatures"]
+    assert isinstance(signatures, list)
+    signature = object_mapping(signatures[0])
+    signature["sig"] = base64.b64encode(b"invalid signature").decode()
+    envelope["signatures"] = [signature]
+    raw["dsseEnvelope"] = envelope
     value = Attestation.from_bundle(Bundle.from_json(json.dumps(raw)))
-    publisher = GitHubPublisher(
-        repository="actions/attest" if damage == "repository" else "HayaoSuzuki/hoimin",
-        workflow="publish-pypi.yml" if damage == "workflow" else "release.yml",
-    )
+
     with pytest.raises(VerificationError, match="Verification failed"):
         value.verify(
-            policy.OIDCSourceRepositoryDigest("0" * 40)
-            if damage == "source"
-            else publisher,
+            GitHubPublisher(repository="HayaoSuzuki/hoimin", workflow="release.yml"),
             Distribution(name="hoimin-0.3.5-py3-none-win_amd64.whl", digest="a" * 64),
             offline=True,
         )
 
 
-@pytest.mark.parametrize("status", [404, 403, 500])
-def test_only_inspection_404_means_not_published(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, status: int
+@pytest.mark.parametrize(
+    "publisher",
+    [
+        pytest.param(
+            GitHubPublisher(repository="actions/attest", workflow="release.yml"),
+            id="repository",
+        ),
+        pytest.param(
+            GitHubPublisher(
+                repository="HayaoSuzuki/hoimin", workflow="publish-pypi.yml"
+            ),
+            id="workflow",
+        ),
+        pytest.param(policy.OIDCSourceRepositoryDigest("0" * 40), id="source"),
+    ],
+)
+def test_real_signature_rejects_wrong_identity(
+    publisher: GitHubPublisher | policy.OIDCSourceRepositoryDigest,
 ) -> None:
-    def unavailable(_url: str) -> dict[str, object]:
-        msg = "fixture"
-        url = "https://pypi.org/"
-        raise urllib.error.HTTPError(url, status, msg, Message(), None)
+    value = Attestation.from_bundle(Bundle.from_json(json.dumps(recorded_bundle())))
 
-    monkeypatch.setattr(pypi_provenance, "fetch_json", unavailable)
-    if status == 404:
-        assert (
-            pypi_provenance.verify_index(
-                "pypi", "v1.2.3", "a" * 40, tmp_path, allow_missing=True
-            )
-            is False
+    with pytest.raises(VerificationError, match="Verification failed"):
+        value.verify(
+            publisher,
+            Distribution(name="hoimin-0.3.5-py3-none-win_amd64.whl", digest="a" * 64),
+            offline=True,
         )
-    else:
-        with pytest.raises(urllib.error.HTTPError):
-            pypi_provenance.verify_index(
-                "pypi", "v1.2.3", "a" * 40, tmp_path, allow_missing=True
-            )
+
+
+@pytest.fixture
+def unavailable_index(monkeypatch: pytest.MonkeyPatch) -> Callable[[int], None]:
+    def install(status: int) -> None:
+        def unavailable(_url: str) -> dict[str, object]:
+            url = "https://pypi.org/"
+            message = "fixture"
+            raise urllib.error.HTTPError(url, status, message, Message(), None)
+
+        monkeypatch.setattr(pypi_provenance, "fetch_json", unavailable)
+
+    return install
+
+
+def test_inspection_404_means_not_published(
+    tmp_path: Path, unavailable_index: Callable[[int], None]
+) -> None:
+    unavailable_index(404)
+
+    result = pypi_provenance.verify_index(
+        "pypi", "v1.2.3", "a" * 40, tmp_path, allow_missing=True
+    )
+
+    assert result is False
+
+
+@pytest.mark.parametrize("status", [403, 500])
+def test_inspection_propagates_http_errors(
+    tmp_path: Path, unavailable_index: Callable[[int], None], status: int
+) -> None:
+    unavailable_index(status)
+
+    with pytest.raises(urllib.error.HTTPError):
+        pypi_provenance.verify_index(
+            "pypi", "v1.2.3", "a" * 40, tmp_path, allow_missing=True
+        )
+
+
+@pytest.mark.parametrize("status", [404, 403, 500])
+def test_required_index_propagates_http_errors(
+    tmp_path: Path, unavailable_index: Callable[[int], None], status: int
+) -> None:
+    unavailable_index(status)
+
     with pytest.raises(urllib.error.HTTPError):
         pypi_provenance.verify_index("pypi", "v1.2.3", "a" * 40, tmp_path)
 
@@ -266,12 +361,20 @@ def test_build_verification_rejects_unpinned_source(
         )
 
 
-@pytest.mark.parametrize(
-    "mode", ["valid", "missing", "digest", "signature", "duplicate", "aggregate"]
-)
-def test_stage_is_atomic_and_preserves_signed_statement_bytes(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, mode: str
-) -> None:
+def reject_signature(arguments: list[str]) -> None:
+    raise subprocess.CalledProcessError(1, arguments)
+
+
+def accept_signature(_arguments: list[str]) -> None:
+    pass
+
+
+@pytest.fixture
+def stage_environment(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> tuple[Path, Path, dict[str, bytes]]:
+    assert isinstance(request.param, str)
+    mode = request.param
     # Only GitHub/TUF signature services are doubled here. The recorded bundle
     # converter, wheel validator, policy arguments and staged bytes are real.
     assets = tmp_path / "assets"
@@ -285,48 +388,48 @@ def test_stage_is_atomic_and_preserves_signed_statement_bytes(
     )
     source_statements: dict[str, bytes] = {}
 
-    def github(arguments: list[str], *, cwd: Path | None = None) -> None:
+    def verify(arguments: list[str], *, cwd: Path | None = None) -> None:
+        assert cwd is None
         wheel = Path(arguments[2])
-        if arguments[1] == "verify":
-            expected = {
-                "--repo": "HayaoSuzuki/hoimin",
-                "--signer-workflow": "HayaoSuzuki/hoimin/.github/workflows/release.yml",
-                "--source-digest": "a" * 40,
-                "--signer-digest": "a" * 40,
-                "--predicate-type": "https://slsa.dev/provenance/v1",
-            }
-            assert all(
-                arguments[arguments.index(key) + 1] == value
-                for key, value in expected.items()
-            )
-            assert "--deny-self-hosted-runners" in arguments
-            verified_bundle = Bundle.from_json(
-                Path(arguments[arguments.index("--bundle") + 1]).read_text(
-                    encoding="utf-8"
-                )
-            )
-            assert (
-                Attestation.from_bundle(verified_bundle).envelope.statement
-                == source_statements[wheel.name]
-            )
-            if mode == "signature":
-                raise subprocess.CalledProcessError(1, arguments)
-            return
+        expected = {
+            "--repo": "HayaoSuzuki/hoimin",
+            "--signer-workflow": "HayaoSuzuki/hoimin/.github/workflows/release.yml",
+            "--source-digest": "a" * 40,
+            "--signer-digest": "a" * 40,
+            "--predicate-type": "https://slsa.dev/provenance/v1",
+        }
+        assert all(
+            arguments[arguments.index(key) + 1] == value
+            for key, value in expected.items()
+        )
+        assert "--deny-self-hosted-runners" in arguments
+        verified_bundle = Bundle.from_json(
+            Path(arguments[arguments.index("--bundle") + 1]).read_text(encoding="utf-8")
+        )
+        assert (
+            Attestation.from_bundle(verified_bundle).envelope.statement
+            == source_statements[wheel.name]
+        )
+        {"signature": reject_signature}.get(mode, accept_signature)(arguments)
+
+    def download_bundle(arguments: list[str], *, cwd: Path | None = None) -> None:
+        wheel = Path(arguments[2])
         assert cwd is not None
-        if mode == "missing":
-            return
         raw = copy.deepcopy(recorded_bundle())
+
         envelope = object_mapping(raw["dsseEnvelope"])
+
         statement = object_mapping(
             json.loads(base64.b64decode(str(envelope["payload"])))
         )
+
         statement["subject"] = [
             {
                 "name": wheel.name,
                 "digest": {
-                    "sha256": "0" * 64
-                    if mode == "digest"
-                    else pypi_provenance.sha256(wheel)
+                    "sha256": {"digest": lambda _wheel: "0" * 64}.get(
+                        mode, pypi_provenance.sha256
+                    )(wheel)
                 },
             }
         ]
@@ -336,9 +439,20 @@ def test_stage_is_atomic_and_preserves_signed_statement_bytes(
         source_statements[wheel.name] = payload
         # gh attestation download writes bare Sigstore bundles, unlike the API.
         line = json.dumps(raw) + "\n"
-        if mode == "aggregate":
-            line = json.dumps(recorded_bundle()) + "\n" + line
-        (cwd / "download.jsonl").write_text(line * (2 if mode == "duplicate" else 1))
+        prefix = {"aggregate": json.dumps(recorded_bundle()) + "\n"}.get(mode, "")
+        (cwd / "download.jsonl").write_text(
+            (prefix + line) * {"duplicate": 2}.get(mode, 1)
+        )
+
+    def missing_download(_arguments: list[str], *, cwd: Path | None = None) -> None:
+        pass
+
+    def github(arguments: list[str], *, cwd: Path | None = None) -> None:
+        handlers = {
+            "verify": verify,
+            "download": {"missing": missing_download}.get(mode, download_bundle),
+        }
+        handlers[arguments[1]](arguments, cwd=cwd)
 
     def authenticated(
         _self: Attestation, _publisher: GitHubPublisher, _dist: Distribution
@@ -347,21 +461,44 @@ def test_stage_is_atomic_and_preserves_signed_statement_bytes(
 
     monkeypatch.setattr(pypi_provenance, "run_gh", github)
     monkeypatch.setattr(Attestation, "verify", authenticated)
+    return assets, release_json, source_statements
+
+
+@pytest.mark.parametrize(
+    "stage_environment", ["missing", "digest", "signature"], indirect=True
+)
+def test_stage_failure_is_atomic(
+    tmp_path: Path, stage_environment: tuple[Path, Path, dict[str, bytes]]
+) -> None:
+    assets, release_json, _source_statements = stage_environment
     output = tmp_path / "dist"
-    if mode not in {"valid", "duplicate", "aggregate"}:
-        with pytest.raises(
-            (ValueError, subprocess.CalledProcessError), match=r"attestation|non-zero"
-        ):
-            pypi_provenance.stage("v1.2.3", "a" * 40, assets, release_json, output)
-        assert not output.exists()
-        return
+
+    with pytest.raises(
+        (ValueError, subprocess.CalledProcessError), match=r"attestation|non-zero"
+    ):
+        pypi_provenance.stage("v1.2.3", "a" * 40, assets, release_json, output)
+
+    assert not output.exists()
+
+
+@pytest.mark.parametrize(
+    "stage_environment", ["valid", "duplicate", "aggregate"], indirect=True
+)
+def test_stage_preserves_signed_statement_bytes(
+    tmp_path: Path, stage_environment: tuple[Path, Path, dict[str, bytes]]
+) -> None:
+    assets, release_json, source_statements = stage_environment
+    output = tmp_path / "dist"
+
     pypi_provenance.stage("v1.2.3", "a" * 40, assets, release_json, output)
+
     assert len(list(output.iterdir())) == 6
     for wheel in output.glob("*.whl"):
         assert wheel.read_bytes() == (assets / wheel.name).read_bytes()
         value = Attestation.model_validate_json(
             wheel.with_suffix(".whl.slsa.attestation").read_text(encoding="utf-8")
         )
+
         assert value.envelope.statement == source_statements[wheel.name]
 
 
@@ -402,12 +539,12 @@ def index_data(
     }
 
 
-@pytest.mark.parametrize(
-    "damage", ["valid", "bytes", "publisher", "missing", "duplicate", "source", "host"]
-)
-def test_index_verification_gates_on_downloads_and_both_signatures(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, damage: str
-) -> None:
+@pytest.fixture
+def verified_index(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> list[str]:
+    assert isinstance(request.param, str)
+    damage = request.param
     # External index and cryptographic services are controlled at their boundaries;
     # separate recorded-bundle tests exercise real signature/identity rejection.
     template = Attestation.from_bundle(
@@ -423,9 +560,9 @@ def test_index_verification_gates_on_downloads_and_both_signatures(
                 "digests": {"sha256": hashlib.sha256(b"wheel").hexdigest()},
                 "yanked": False,
                 "url": (
-                    "http://invalid/"
-                    if damage == "host"
-                    else "https://test-files.pythonhosted.org/packages/"
+                    {"host": "http://invalid/"}.get(
+                        damage, "https://test-files.pythonhosted.org/packages/"
+                    )
                 )
                 + name,
             }
@@ -433,7 +570,7 @@ def test_index_verification_gates_on_downloads_and_both_signatures(
 
     def download(_url: str, *, timeout: int) -> io.BytesIO:
         assert timeout > 0
-        return io.BytesIO(b"modified" if damage == "bytes" else b"wheel")
+        return io.BytesIO({"bytes": b"modified"}.get(damage, b"wheel"))
 
     verified: list[str] = []
 
@@ -450,8 +587,7 @@ def test_index_verification_gates_on_downloads_and_both_signatures(
 
     def build(_wheel: Path, _bundle: Path, commit: str) -> None:
         assert commit == "a" * 40
-        if damage == "source":
-            raise subprocess.CalledProcessError(1, ["gh"])
+        {"source": reject_signature}.get(damage, accept_signature)(["gh"])
 
     monkeypatch.setattr(
         pypi_provenance,
@@ -461,12 +597,31 @@ def test_index_verification_gates_on_downloads_and_both_signatures(
     monkeypatch.setattr(pypi_provenance.urllib.request, "urlopen", download)
     monkeypatch.setattr(Attestation, "verify", signature)
     monkeypatch.setattr(pypi_provenance, "verify_build", build)
-    if damage == "valid":
-        assert pypi_provenance.verify_index("testpypi", "v1.2.3", "a" * 40, tmp_path)
-        assert len(verified) == 6
-    else:
-        with pytest.raises(
-            (ValueError, subprocess.CalledProcessError),
-            match=r"differs|publisher|attestation|non-zero|host",
-        ):
-            pypi_provenance.verify_index("testpypi", "v1.2.3", "a" * 40, tmp_path)
+    return verified
+
+
+@pytest.mark.parametrize("verified_index", ["valid"], indirect=True)
+def test_index_verification_checks_downloads_and_both_signatures(
+    tmp_path: Path, verified_index: list[str]
+) -> None:
+    result = pypi_provenance.verify_index("testpypi", "v1.2.3", "a" * 40, tmp_path)
+
+    assert result
+    assert len(verified_index) == 6
+
+
+@pytest.mark.parametrize(
+    "verified_index",
+    ["bytes", "publisher", "missing", "duplicate", "source", "host"],
+    indirect=True,
+)
+def test_index_verification_rejects_invalid_publication(
+    tmp_path: Path, verified_index: list[str]
+) -> None:
+    assert verified_index == []
+
+    with pytest.raises(
+        (ValueError, subprocess.CalledProcessError),
+        match=r"differs|publisher|attestation|non-zero|host",
+    ):
+        pypi_provenance.verify_index("testpypi", "v1.2.3", "a" * 40, tmp_path)

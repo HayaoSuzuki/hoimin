@@ -100,7 +100,15 @@ async fn bounded(mut command: tokio::process::Command) -> Output {
 #[tokio::test]
 async fn plan_tracks_environment_without_plaintext_and_verify_checks_before_baseline() {
     let secret = "private-plan-environment-marker-628-unique";
-    for changed in [false, true] {
+    for (environment, exit_code, marker_exists, expected_errors) in [
+        (secret, 1, true, [].as_slice()),
+        (
+            "different",
+            2,
+            false,
+            ["plan.fingerprint_env.changed"].as_slice(),
+        ),
+    ] {
         let fixture = Fixture::new();
         let manifest = fixture.plan(true, OsStr::new(secret)).await;
         assert_eq!(manifest["schema_version"], 5);
@@ -109,29 +117,19 @@ async fn plan_tracks_environment_without_plaintext_and_verify_checks_before_base
             json!([FLAG])
         );
         assert!(!manifest.to_string().contains(secret));
-        let output = fixture
-            .verify(
-                &manifest,
-                OsStr::new(if changed { "different" } else { secret }),
-            )
-            .await;
+        let output = fixture.verify(&manifest, OsStr::new(environment)).await;
         assert!(!String::from_utf8_lossy(&output.stdout).contains(secret));
         assert!(!String::from_utf8_lossy(&output.stderr).contains(secret));
-        if changed {
-            assert_eq!(output.status.code(), Some(2));
-            assert_eq!(output.stdout, Vec::<u8>::new());
-            assert!(
-                String::from_utf8_lossy(&output.stderr).contains("plan.fingerprint_env.changed")
-            );
-            assert!(!fixture.marker.exists());
-        } else {
-            assert_eq!(
-                output.status.code(),
-                Some(1),
-                "{}",
-                String::from_utf8_lossy(&output.stderr)
-            );
-            assert!(fixture.marker.exists());
+        assert_eq!(
+            output.status.code(),
+            Some(exit_code),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(fixture.marker.exists(), marker_exists);
+        assert_eq!(output.stdout.is_empty(), !expected_errors.is_empty());
+        for expected_error in expected_errors {
+            assert!(String::from_utf8_lossy(&output.stderr).contains(expected_error));
         }
     }
 }

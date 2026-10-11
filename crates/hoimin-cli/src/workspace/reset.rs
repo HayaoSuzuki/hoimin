@@ -351,7 +351,10 @@ mod tests {
 
         worker.reset().unwrap();
 
-        let expected_reads = if cfg!(feature = "contracts") { 18 } else { 9 };
+        #[cfg(feature = "contracts")]
+        let expected_reads = 18;
+        #[cfg(not(feature = "contracts"))]
+        let expected_reads = 9;
         assert_eq!(current_reset_io_metrics().worker_bytes, expected_reads);
         assert_eq!(worker.read("swap/target.py").unwrap(), b"original\n");
     }
@@ -366,10 +369,9 @@ mod tests {
         reset_io_metrics();
         let started = Instant::now();
 
-        for cycle in 0..CYCLES {
-            if cycle > 0 {
-                worker.write("swap/target.py", b"mutated!\n").unwrap();
-            }
+        worker.reset().unwrap();
+        for _ in 1..CYCLES {
+            worker.write("swap/target.py", b"mutated!\n").unwrap();
             worker.reset().unwrap();
         }
 
@@ -382,6 +384,29 @@ mod tests {
             metrics.snapshot_bytes,
             started.elapsed().as_millis()
         );
+    }
+
+    fn replace_paused_parent(
+        root: &Utf8Path,
+    ) -> (
+        camino::Utf8PathBuf,
+        Vec<TestPermissionFingerprint>,
+        Option<std::io::Error>,
+    ) {
+        match fs::rename(root.join("swap"), root.join("held")) {
+            Ok(()) => {
+                fs::create_dir(root.join("swap")).unwrap();
+                let outside = root.join("swap/target.py");
+                fs::write(&outside, b"outside\n").unwrap();
+                make_read_only(&outside);
+                (
+                    root.join("held/target.py"),
+                    vec![permission_fingerprint(&outside)],
+                    None,
+                )
+            }
+            Err(error) => (root.join("swap/target.py"), vec![], Some(error)),
+        }
     }
 
     #[test]
@@ -409,28 +434,7 @@ mod tests {
         });
 
         opened_rx.recv_timeout(Duration::from_secs(5)).unwrap();
-        if let Err(error) = fs::rename(root.join("swap"), root.join("held")) {
-            #[cfg(windows)]
-            {
-                assert_eq!(error.raw_os_error(), Some(32));
-                resume_tx.send(()).unwrap();
-                let (worker, result) = operation.join().unwrap();
-                assert!(
-                    result.is_ok()
-                        || matches!(result, Err(WorkspaceError::WorkspaceRestore { .. })),
-                    "{result:?}"
-                );
-                assert_eq!(worker.read("swap/target.py").unwrap(), b"original\n");
-                return;
-            }
-            #[cfg(not(windows))]
-            panic!("rename of opened reset parent failed unexpectedly: {error}");
-        }
-        fs::create_dir(root.join("swap")).unwrap();
-        let outside = root.join("swap/target.py");
-        fs::write(&outside, b"outside\n").unwrap();
-        make_read_only(&outside);
-        let outside_permissions = permission_fingerprint(&outside);
+        let (operated_target, outside_permissions, rename_error) = replace_paused_parent(&root);
         resume_tx.send(()).unwrap();
         let (worker, result) = operation.join().unwrap();
 
@@ -438,16 +442,26 @@ mod tests {
             result.is_ok() || matches!(result, Err(WorkspaceError::WorkspaceRestore { .. })),
             "{result:?}"
         );
+        assert_eq!(fs::read(operated_target.clone()).unwrap(), b"original\n");
         assert_eq!(
-            fs::read(root.join("held/target.py")).unwrap(),
-            b"original\n"
-        );
-        assert_eq!(
-            permission_fingerprint(&root.join("held/target.py")),
+            permission_fingerprint(&operated_target.clone()),
             snapshot_permissions
         );
-        assert_eq!(fs::read(&outside).unwrap(), b"outside\n");
-        assert_eq!(permission_fingerprint(&outside), outside_permissions);
+        #[cfg(windows)]
+        let expected_rename_error =
+            [Some(Some(32)), None][usize::from(!outside_permissions.is_empty())];
+        #[cfg(not(windows))]
+        let expected_rename_error = None;
+        assert_eq!(
+            rename_error.as_ref().map(std::io::Error::raw_os_error),
+            expected_rename_error
+        );
+        for permissions in &outside_permissions {
+            let outside = root.join("swap/target.py");
+
+            assert_eq!(fs::read(&outside).unwrap(), b"outside\n");
+            assert_eq!(permission_fingerprint(&outside), *permissions);
+        }
         drop(worker);
     }
 
