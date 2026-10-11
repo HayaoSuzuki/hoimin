@@ -110,8 +110,8 @@ disk space was approximately 190 GB during validation.
 - Strict site build, scoped Ruff/type checks, repository Ruff checks, skill
   validators, and GitHub CLI publish dry-run passed.
 - Full Python suite rerun: 968 passed, 25 skipped in 279.23 seconds. The optional
-  fuzz dependencies were installed during this rerun before their tests were
-  collected/executed, reducing skips relative to the first run; no failure recurred.
+  fuzz dependencies were installed during this rerun before the optional checks
+  ran, reducing skips relative to the first run; no failure recurred.
 - Repository Ruff format/check and `ty check` passed with the fuzz dependency
   group installed. Workflow lint passed with the workflow dependency group and
   its executable directory on PATH; existing Python-shell analysis limitations
@@ -121,3 +121,7 @@ disk space was approximately 190 GB during validation.
   attempts failed with permission errors, not application assertions.
 - Changed Markdown frontmatter/local link targets and independent skill
   references passed a one-off check. Independent final diff review had no findings.
+- After pushing commit `402167021a94418e44463b5a8ff49bf1a1a153d4`, GitHub CLI
+  successfully previewed that revision and installed both skills independently
+  from GitHub with that commit pin into separate temporary directories. Each
+  installation contained `SKILL.md`, `installation.md`, and `LICENSE`.
