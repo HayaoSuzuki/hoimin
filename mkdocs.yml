@@ -1,0 +1,42 @@
+site_name: hoimin
+site_url: https://hayaosuzuki.github.io/hoimin/
+site_description: Bounded mutation testing for focused Python changes
+repo_url: https://github.com/HayaoSuzuki/hoimin
+edit_uri: ''
+theme:
+  name: mkdocs
+plugins:
+  - search
+markdown_extensions:
+  - fenced_code
+  - tables
+  - footnotes
+  - toc:
+      permalink: true
+validation:
+  nav:
+    omitted_files: warn
+    not_found: warn
+  links:
+    not_found: warn
+    unrecognized_links: warn
+    absolute_links: warn
+    anchors: warn
+nav:
+  - Getting started:
+      - Installation and quick start: index.md
+      - Questions and bug reports: docs/support.md
+      - License: docs/licensing.md
+  - Usage and reference:
+      - Usage: docs/usage.md
+      - CLI reference: docs/cli-reference.md
+      - Compatibility: docs/compatibility.md
+  - Maintainer development:
+      - Development: docs/development.md
+      - Documentation publication: docs/documentation.md
+      - CI: docs/ci.md
+      - Releases: docs/releases.md
+      - PyPI publication: docs/pypi-publishing.md
+      - Artifact smoke checks: docs/artifact-smoke.md
+      - Dependency policy: docs/dependency-policy.md
+      - Dependency build scripts: docs/dependency-build-scripts.md

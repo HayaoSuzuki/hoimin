@@ -1,6 +1,7 @@
 .worktrees/
 .superpowers/
 /target/
+/site/
 __pycache__/
 *.py[cod]
 .pytest_cache/
