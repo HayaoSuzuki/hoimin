@@ -611,9 +611,9 @@ dependencies = [
 name = "hoimin-core"
 version = "0.4.0"
 dependencies = [
- "contracts",
  "blake3",
  "camino",
+ "contracts",
  "proptest",
  "serde",
  "serde_json",

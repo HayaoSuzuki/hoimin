@@ -117,3 +117,60 @@ was cleaned with cargo clean after installation (818.4 MiB removed). Shared
 repository artifacts remain until CLI verification has finished.
 
 Rust validation completed: default core 372 passed / 2 ignored; final contract-enabled core 360 passed / 2 ignored; contract-enabled CLI 2,420 passed / 25 ignored across 123 targets. Optimized disabled checks passed 3/3. Strict feature Clippy passed after the sensitivity faults were restored.
+
+## Testing self-reviews
+
+1. **Red/green and sensitivity:** Checked actual missing-interface failures,
+   four bootstrap regressions, the deal incorrect-result rejection, attribute
+   evaluation counts, and two restored Rust source faults. These detect behavior,
+   not decorator presence. A single hoimin identity mutation (`parts is None`
+   to `parts is not None`) was conclusively killed in the final bounded run.
+2. **Malformed input and normal failures:** Reviewed grammar classes, Unicode,
+   integer-conversion limits, stable/dev distinction, unchanged exception messages
+   and ordering properties. Fresh ordinary invalid inputs do not become deal
+   violations; the sensitivity test deliberately introduces a programming defect.
+3. **Bootstrap and platforms:** Fresh Python 3.14.6 minimal-group help/set-version
+   and provenance-only imports passed. All four early release entry points have
+   installation-order regressions; Linux/macOS/Windows uv audits pass. Actual
+   local execution is Windows; workflow inspection does not claim macOS/Linux
+   execution or a real release publication.
+4. **Rust feature and exit behavior:** Default core 372 passed / 2 ignored;
+   feature core 360 passed / 2 ignored; feature CLI 2,420 passed / 25 ignored.
+   Optimized disabled evaluation passed 3/3, corrupt limit/allocator/release
+   paths are checked, and strict feature Clippy passes. Scalar snapshots are
+   bounded; all retained custom checks have timing/context rationale above.
+5. **Completeness and limits:** After merging main PR #800, the full Python suite
+   passed 984 tests / 21 skipped in 294.08 seconds, with no failures. Repository
+   Ruff check/format and ty, strict Material docs build, workflow lint and frozen
+   three-platform uv audits (84 packages) pass. Both Rust license/source and
+   advisory audits pass. This is local evidence; hosted checks are recorded
+   separately after PR creation. Runtime contracts, properties and oracle tests
+   are not a new formal proof.
+
+## Mutation verification scope
+
+Whole-tools planning encountered an analyzer panic, `duplicate unary-not operator
+start`, outside the migrated release parser's isolated source. No whole-tools
+mutation coverage is claimed. An exact-byte projection of the changed release
+module, its eight tests, pyproject.toml and uv.lock passed the normal baseline.
+The initial one-candidate verification exceeded the automatic five-second limit.
+After diagnosis it was replanned with an explicit 30-second mutant timeout,
+retaining one worker, 8 GiB owned-space ceiling and 10 GiB free-space reserve.
+The same candidate completed: 1 killed, 0 survivors, no inconclusive outcomes.
+Peak owned space was 528,131 bytes; cleanup reported no retained roots, and the
+exact temporary project/report directory was removed on exit. The broader
+analyzer panic was not investigated as part of this bounded library migration.
+
+## Distribution and cleanup
+
+Maturin generated ordinary wheel metadata with version 0.4.0, unchanged Python
+requirement and no Requires-Dist entries. The normal dependency graph excludes
+contracts and I/O dependencies in core. This maintenance/optional-check migration
+keeps the existing 0.4 release floor; no artifact was published or tag reserved.
+
+After verification, cargo clean removed 4.3 GiB of core outputs and 27.8 GiB of
+CLI outputs; shared third-party artifacts were retained. Audit-tool build cleanup
+previously removed 818.4 MiB. Final free disk after these operations was
+187,597,234,176 bytes. No active build was cleaned.
+
+Independent whole-branch review and hosted-check status follow below.
