@@ -72,6 +72,42 @@ fn fixture() -> (tempfile::TempDir, PathBuf) {
 }
 
 #[tokio::test]
+async fn metrics_parent_replacement_does_not_redirect_final_output() {
+    let (temp, root) = fixture();
+    let parent = temp.path().join("output");
+    let parked = temp.path().join("parked-output");
+    std::fs::create_dir(&parent).unwrap();
+    let script = format!(
+        "from pathlib import Path\np=Path({:?})\nparked=Path({:?})\n\
+         if not parked.exists():\n\
+         \x20try:\n  p.rename(parked)\n\
+         \x20except PermissionError:\n  pass\n\
+         \x20else:\n  p.mkdir()\n  (p/'metrics.json').write_text('replacement sentinel')\n\
+         from calc import add\nassert add(2,3)==5\n",
+        parent.to_str().unwrap(),
+        parked.to_str().unwrap(),
+    );
+    let output = run_script(&root, Some(&parent.join("metrics.json")), &[], &script).await;
+    assert!(output.status.success(), "{output:?}");
+    if parked.exists() {
+        assert_eq!(
+            std::fs::read(parent.join("metrics.json")).unwrap(),
+            b"replacement sentinel",
+            "metrics were redirected into a replacement parent"
+        );
+        let metrics: hoimin_core::RunMetrics =
+            serde_json::from_slice(&std::fs::read(parked.join("metrics.json")).unwrap()).unwrap();
+        metrics.validate().unwrap();
+    } else {
+        // Windows can deny rename while the validated directory handle is live.
+        let metrics: hoimin_core::RunMetrics =
+            serde_json::from_slice(&std::fs::read(parent.join("metrics.json")).unwrap()).unwrap();
+        metrics.validate().unwrap();
+    }
+    assert_eq!(std::fs::read(root.join("calc.py")).unwrap(), SOURCE);
+}
+
+#[tokio::test]
 async fn metrics_collision_preserves_selected_source_before_baseline() {
     let (temp, root) = fixture();
     let output = run(&root, &root.join("calc.py"), &[]).await;

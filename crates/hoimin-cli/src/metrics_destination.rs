@@ -2,6 +2,10 @@
 use std::ffi::OsString;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+use crate::metrics::MetricsOutput;
+use cap_std::fs::Dir;
 
 use hoimin_core::{EffectFailed, EffectId, RunConfig, TargetSlice};
 
@@ -9,13 +13,14 @@ use hoimin_core::{EffectFailed, EffectId, RunConfig, TargetSlice};
 pub(crate) enum MetricsDestination {
     #[default]
     Disabled,
-    Ready(PathBuf),
+    Ready(MetricsOutput),
     Unavailable(String),
 }
 
 struct Entry {
     path: PathBuf,
     exists: bool,
+    parent: Option<Arc<Dir>>,
 }
 
 #[derive(Default)]
@@ -72,7 +77,7 @@ fn inspect(
     targets: &[TargetSlice],
     protected_inputs: &[PathBuf],
     output: &Path,
-) -> io::Result<Result<PathBuf, PathBuf>> {
+) -> io::Result<Result<MetricsOutput, PathBuf>> {
     if directory_only_syntax(output, cfg!(windows)) {
         return Err(unknown("metrics destination requires a directory"));
     }
@@ -113,36 +118,51 @@ fn inspect(
         }
     }
     for tree in lock_trees {
-        let tree = match inspector.entry(&tree) {
-            Ok(tree) => tree,
-            Err(error) => {
-                uncertainty = Some(error);
-                continue;
+        match inspector.entry(&tree).and_then(|tree| {
+            if same_entry(&destination, &tree)? {
+                return Ok(true);
             }
-        };
-        for ancestor in destination.path.ancestors() {
-            match inspector
-                .entry(ancestor)
-                .and_then(|candidate| same_entry(&candidate, &tree))
-            {
-                Ok(true) => return Ok(Err(tree.path)),
-                Ok(false) => {}
-                Err(error) => uncertainty = Some(error),
+            let Some(parent) = &destination.parent else {
+                // A missing parent can prove a prospective lock-tree collision,
+                // but can never authorize output. Preserve collision precedence.
+                for ancestor in destination.path.ancestors() {
+                    if same_entry(&inspector.entry(ancestor)?, &tree)? {
+                        return Ok(true);
+                    }
+                }
+                return Ok(false);
+            };
+            let directory = match Dir::open_ambient_dir(&tree.path, cap_std::ambient_authority()) {
+                Ok(directory) => directory,
+                Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+                Err(error) => return Err(error),
+            };
+            let protected = directory_identity(&directory)?;
+            let mut ancestor = parent.try_clone()?;
+            loop {
+                let identity = directory_identity(&ancestor)?;
+                if identity == protected {
+                    return Ok(true);
+                }
+                let next = ancestor.open_parent_dir(cap_std::ambient_authority())?;
+                if directory_identity(&next)? == identity {
+                    return Ok(false);
+                }
+                ancestor = next;
             }
+        }) {
+            Ok(true) => return Ok(Err(tree)),
+            Ok(false) => {}
+            Err(error) => uncertainty = Some(error),
         }
     }
     if let Some(error) = uncertainty {
         return Err(error);
     }
-    // A prospective namespace can confirm a collision, but cannot grant rename
-    // permission through a parent that might later become an unrelated symlink.
-    std::fs::canonicalize(
-        destination
-            .path
-            .parent()
-            .ok_or_else(|| unknown("missing parent"))?,
-    )?;
-    Ok(Ok(destination.path))
+    let parent = destination
+        .parent
+        .ok_or_else(|| unknown("metrics parent does not exist"))?;
+    Ok(Ok(MetricsOutput::from_parent(parent, destination.path)?))
 }
 
 fn session_artifacts(
@@ -194,6 +214,7 @@ impl EntryInspector {
             return Ok(Entry {
                 path: std::fs::canonicalize(absolute)?,
                 exists: true,
+                parent: None,
             });
         };
         let parent = prospective_parent(
@@ -202,14 +223,32 @@ impl EntryInspector {
                 .ok_or_else(|| unknown("destination has no parent"))?,
         )?;
         let path = parent.join(name);
-        match std::fs::symlink_metadata(&path) {
+        // Retain the actual parent before inspecting the leaf. A canonical path
+        // is display/prospective-comparison data, never the write capability.
+        let directory = match Dir::open_ambient_dir(&parent, cap_std::ambient_authority()) {
+            Ok(directory) => Arc::new(directory),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                return Ok(Entry {
+                    path,
+                    exists: false,
+                    parent: None,
+                });
+            }
+            Err(error) => return Err(error),
+        };
+        match directory.symlink_metadata(name) {
             Ok(metadata) => {
-                let path = self.existing_entry(&path, &metadata)?;
-                Ok(Entry { path, exists: true })
+                let path = self.existing_entry(&path, &directory, &metadata)?;
+                Ok(Entry {
+                    path,
+                    exists: true,
+                    parent: Some(directory),
+                })
             }
             Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(Entry {
                 path,
                 exists: false,
+                parent: Some(directory),
             }),
             Err(error) => Err(error),
         }
@@ -241,7 +280,7 @@ fn same_entry(left: &Entry, right: &Entry) -> io::Result<bool> {
     if left.path == right.path {
         return Ok(true);
     }
-    if !same_parent(&left.path, &right.path)? {
+    if !same_parent(left, right)? {
         return Ok(false);
     }
     if left.path.file_name() == right.path.file_name() {
@@ -272,75 +311,87 @@ fn same_entry(left: &Entry, right: &Entry) -> io::Result<bool> {
         return Ok(false);
     }
     Ok(!case_sensitive(
-        left.path
-            .parent()
+        left.parent
+            .as_deref()
             .ok_or_else(|| unknown("missing parent"))?,
     )?)
 }
 
-#[cfg_attr(
-    windows,
-    allow(
-        clippy::unnecessary_wraps,
-        reason = "the Unix parent-identity query is fallible"
-    )
-)]
-fn same_parent(left: &Path, right: &Path) -> io::Result<bool> {
-    if left.parent() == right.parent() {
-        return Ok(true);
+fn same_parent(left: &Entry, right: &Entry) -> io::Result<bool> {
+    match (&left.parent, &right.parent) {
+        (Some(left), Some(right)) => Ok(directory_identity(left)? == directory_identity(right)?),
+        (None, None) => Ok(left.path.parent() == right.path.parent()),
+        _ => Ok(false),
     }
-    #[cfg(unix)]
-    if let (Some(left), Some(right)) = (left.parent(), right.parent()) {
-        use std::os::unix::fs::MetadataExt;
-        let metadata = |path| match std::fs::metadata(path) {
-            Ok(value) => Ok(Some(value)),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
-            Err(error) => Err(error),
-        };
-        if let (Some(left), Some(right)) = (metadata(left)?, metadata(right)?) {
-            // Directory identity unifies parent aliases; final-file inode identity is
-            // deliberately never used to equate distinct replacement entries.
-            return Ok((left.dev(), left.ino()) == (right.dev(), right.ino()));
-        }
+}
+
+#[cfg(unix)]
+fn directory_identity(directory: &Dir) -> io::Result<(u64, u64)> {
+    use cap_std::fs::MetadataExt;
+    let metadata = directory.dir_metadata()?;
+    Ok((metadata.dev(), metadata.ino()))
+}
+
+#[cfg(windows)]
+fn directory_identity(directory: &Dir) -> io::Result<(u64, u64)> {
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{
+        BY_HANDLE_FILE_INFORMATION, GetFileInformationByHandle,
+    };
+    let mut info = std::mem::MaybeUninit::<BY_HANDLE_FILE_INFORMATION>::uninit();
+    // SAFETY: directory owns a live handle; info has the required writable size.
+    if unsafe { GetFileInformationByHandle(directory.as_raw_handle(), info.as_mut_ptr()) } == 0 {
+        return Err(io::Error::last_os_error());
     }
-    Ok(false)
+    // SAFETY: successful GetFileInformationByHandle initialized info.
+    let info = unsafe { info.assume_init() };
+    Ok((
+        u64::from(info.dwVolumeSerialNumber),
+        (u64::from(info.nFileIndexHigh) << 32) | u64::from(info.nFileIndexLow),
+    ))
 }
 
 #[cfg(unix)]
 impl EntryInspector {
-    fn existing_entry(&mut self, path: &Path, metadata: &std::fs::Metadata) -> io::Result<PathBuf> {
+    fn existing_entry(
+        &mut self,
+        path: &Path,
+        directory: &Dir,
+        metadata: &cap_std::fs::Metadata,
+    ) -> io::Result<PathBuf> {
+        use cap_std::fs::MetadataExt;
         use std::collections::btree_map::Entry as MapEntry;
-        use std::os::unix::fs::MetadataExt;
         let parent = path.parent().ok_or_else(|| unknown("missing parent"))?;
-        let parent_metadata = std::fs::metadata(parent)?;
+        let parent_metadata = directory.dir_metadata()?;
         let key = (parent_metadata.dev(), parent_metadata.ino());
-        let directory = match self.directories.entry(key) {
+        let index = match self.directories.entry(key) {
             MapEntry::Occupied(value) => value.into_mut(),
             MapEntry::Vacant(value) => value.insert(DirectoryEntries {
-                names: std::fs::read_dir(parent)?
+                names: directory
+                    .entries()?
                     .map(|item| item.map(|item| item.file_name()))
                     .collect::<io::Result<_>>()?,
                 aliases: None,
             }),
         };
         let name = path.file_name().ok_or_else(|| unknown("missing name"))?;
-        if directory.names.contains(name) {
+        if index.names.contains(name) {
             return Ok(parent.join(name));
         }
         // Build the no-follow alias index once, only when an inexact spelling occurs.
         // Exact entries win even when several directory names share an inode.
-        if directory.aliases.is_none() {
+        if index.aliases.is_none() {
             let mut aliases = std::collections::BTreeMap::<_, Vec<_>>::new();
-            for name in &directory.names {
-                let candidate = std::fs::symlink_metadata(parent.join(name))?;
+            for name in &index.names {
+                let candidate = directory.symlink_metadata(name)?;
                 aliases
                     .entry((candidate.dev(), candidate.ino()))
                     .or_default()
                     .push(name.clone());
             }
-            directory.aliases = Some(aliases);
+            index.aliases = Some(aliases);
         }
-        let aliases = directory.aliases.as_ref().expect("initialized above");
+        let aliases = index.aliases.as_ref().expect("initialized above");
         let Some(names) = aliases.get(&(metadata.dev(), metadata.ino())) else {
             return Err(unknown("final entry disappeared during inspection"));
         };
@@ -357,17 +408,28 @@ impl EntryInspector {
         clippy::unused_self,
         reason = "Unix uses the same inspector API with a directory cache"
     )]
-    fn existing_entry(&mut self, path: &Path, _: &std::fs::Metadata) -> io::Result<PathBuf> {
+    fn existing_entry(
+        &mut self,
+        path: &Path,
+        directory: &Dir,
+        _: &cap_std::fs::Metadata,
+    ) -> io::Result<PathBuf> {
+        use cap_fs_ext::OpenOptionsFollowExt;
+        use cap_std::fs::OpenOptionsExt;
         use std::os::windows::ffi::OsStringExt;
-        use std::os::windows::fs::OpenOptionsExt;
         use std::os::windows::io::AsRawHandle;
         use windows_sys::Win32::Storage::FileSystem::{
             FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, GetFinalPathNameByHandleW,
         };
-        let file = std::fs::OpenOptions::new()
+        let mut options = cap_std::fs::OpenOptions::new();
+        options
             .access_mode(0)
             .custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT)
-            .open(path)?;
+            .follow(cap_fs_ext::FollowSymlinks::No);
+        let file = directory.open_with(
+            path.file_name().ok_or_else(|| unknown("missing name"))?,
+            &options,
+        )?;
         let mut buffer = vec![0_u16; 32768];
         // SAFETY: file owns its handle and buffer is writable for the supplied length.
         let length = unsafe {
@@ -385,9 +447,8 @@ impl EntryInspector {
 }
 
 #[cfg(target_os = "macos")]
-fn case_sensitive(parent: &Path) -> io::Result<bool> {
+fn case_sensitive(directory: &Dir) -> io::Result<bool> {
     use std::os::fd::AsRawFd;
-    let directory = std::fs::File::open(parent)?;
     // SAFETY: directory owns a valid descriptor; pathconf only queries its filesystem.
     match unsafe { libc::fpathconf(directory.as_raw_fd(), libc::_PC_CASE_SENSITIVE) } {
         0 => Ok(false),
@@ -397,10 +458,12 @@ fn case_sensitive(parent: &Path) -> io::Result<bool> {
 }
 
 #[cfg(target_os = "linux")]
-fn case_sensitive(parent: &Path) -> io::Result<bool> {
+fn case_sensitive(directory: &Dir) -> io::Result<bool> {
     use std::os::fd::AsRawFd;
     const FS_CASEFOLD_FL: libc::c_int = 0x4000_0000;
-    let directory = std::fs::File::open(parent)?;
+    // Linux directory capabilities may use O_PATH, which rejects ioctl.
+    // Reopen the retained directory itself, without resolving its old pathname.
+    let directory = directory.open(".")?;
     // Only these filesystems expose directory casefold through FS_IOC_GETFLAGS.
     // A zero flag on an arbitrary filesystem is not evidence of sensitive lookup.
     let mut filesystem = std::mem::MaybeUninit::<libc::statfs>::uninit();
@@ -422,17 +485,11 @@ fn case_sensitive(parent: &Path) -> io::Result<bool> {
 }
 
 #[cfg(windows)]
-fn case_sensitive(parent: &Path) -> io::Result<bool> {
-    use std::os::windows::fs::OpenOptionsExt;
+fn case_sensitive(directory: &Dir) -> io::Result<bool> {
     use std::os::windows::io::AsRawHandle;
     use windows_sys::Win32::Storage::FileSystem::{
-        FILE_CASE_SENSITIVE_INFO, FILE_FLAG_BACKUP_SEMANTICS, FileCaseSensitiveInfo,
-        GetFileInformationByHandleEx,
+        FILE_CASE_SENSITIVE_INFO, FileCaseSensitiveInfo, GetFileInformationByHandleEx,
     };
-    let directory = std::fs::OpenOptions::new()
-        .access_mode(0)
-        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
-        .open(parent)?;
     let mut info = FILE_CASE_SENSITIVE_INFO { Flags: 0 };
     // SAFETY: directory owns the handle; info and its size match the requested class.
     if unsafe {
@@ -451,7 +508,7 @@ fn case_sensitive(parent: &Path) -> io::Result<bool> {
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
-fn case_sensitive(_: &Path) -> io::Result<bool> {
+fn case_sensitive(_: &Dir) -> io::Result<bool> {
     Err(unknown("filesystem case sensitivity is unavailable"))
 }
 

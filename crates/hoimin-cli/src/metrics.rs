@@ -4,7 +4,9 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use hoimin_core::{RunMetrics, StageMetric, WorkerMetric};
-use tempfile::NamedTempFile;
+use std::sync::Arc;
+
+use cap_std::fs::Dir;
 use thiserror::Error;
 
 pub(crate) trait Clock {
@@ -239,37 +241,102 @@ impl<C: Clock> MetricsCollector<C> {
     }
 }
 
-pub(crate) fn write_metrics(path: &Path, metrics: &RunMetrics) -> Result<(), MetricsError> {
+/// A validated replacement entry in a retained parent directory.
+pub(crate) struct MetricsOutput {
+    parent: Arc<Dir>,
+    name: std::ffi::OsString,
+    path: PathBuf,
+}
+
+impl MetricsOutput {
+    pub(crate) fn from_parent(parent: Arc<Dir>, path: PathBuf) -> std::io::Result<Self> {
+        let name = path
+            .file_name()
+            .ok_or_else(|| std::io::Error::other("missing metrics filename"))?
+            .to_owned();
+        Ok(Self { parent, name, path })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn open(path: &Path) -> std::io::Result<Self> {
+        let parent = Dir::open_ambient_dir(destination_parent(path), cap_std::ambient_authority())?;
+        Self::from_parent(Arc::new(parent), path.to_owned())
+    }
+}
+
+struct TemporaryMetrics<'a> {
+    parent: &'a Dir,
+    name: String,
+    file: std::fs::File,
+    committed: bool,
+}
+
+impl Drop for TemporaryMetrics<'_> {
+    fn drop(&mut self) {
+        if !self.committed {
+            // Cleanup uses the same retained parent as creation, even if its
+            // original pathname now names another directory.
+            let _ = self.parent.remove_file(&self.name);
+        }
+    }
+}
+
+fn write_output(output: &MetricsOutput, metrics: &RunMetrics) -> Result<(), MetricsError> {
     metrics
         .validate()
         .map_err(|error| MetricsError::Validation(error.to_string()))?;
-    let parent = destination_parent(path);
-    let mut temporary =
-        NamedTempFile::new_in(parent).map_err(|source| MetricsError::TemporaryFileCreation {
-            parent: parent.to_path_buf(),
+    let mut options = cap_std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use cap_std::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let name = format!(".hoimin-metrics-{}.tmp", uuid::Uuid::new_v4());
+    let file = output
+        .parent
+        .open_with(&name, &options)
+        .map_err(|source| MetricsError::TemporaryFileCreation {
+            parent: destination_parent(&output.path).to_owned(),
             source,
-        })?;
-    serde_json::to_writer(temporary.as_file_mut(), metrics).map_err(MetricsError::Serialization)?;
+        })?
+        .into_std();
+    let mut temporary = TemporaryMetrics {
+        parent: &output.parent,
+        name,
+        file,
+        committed: false,
+    };
+    serde_json::to_writer(&mut temporary.file, metrics).map_err(MetricsError::Serialization)?;
     temporary
-        .as_file_mut()
+        .file
         .write_all(b"\n")
         .map_err(MetricsError::Write)?;
-    temporary
-        .as_file_mut()
-        .flush()
-        .map_err(MetricsError::Flush)?;
-    temporary.as_file().sync_all().map_err(MetricsError::Sync)?;
-    temporary
-        .persist(path)
-        .map_err(|error| MetricsError::Persist {
-            path: path.to_path_buf(),
-            source: error.error,
+    temporary.file.flush().map_err(MetricsError::Flush)?;
+    temporary.file.sync_all().map_err(MetricsError::Sync)?;
+    output
+        .parent
+        .rename(&temporary.name, &output.parent, &output.name)
+        .map_err(|source| MetricsError::Persist {
+            path: output.path.clone(),
+            source,
         })?;
+    temporary.committed = true;
     Ok(())
 }
 
+#[cfg(test)]
+pub(crate) fn write_metrics(path: &Path, metrics: &RunMetrics) -> Result<(), MetricsError> {
+    let output =
+        MetricsOutput::open(path).map_err(|source| MetricsError::TemporaryFileCreation {
+            parent: destination_parent(path).to_owned(),
+            source,
+        })?;
+    write_output(&output, metrics)
+}
+
 pub(crate) fn finalize_metrics<C: Clock>(
-    path: &Path,
+    output: &MetricsOutput,
     collector: Option<MetricsCollector<C>>,
     run_failure: Option<&str>,
     discovered: u64,
@@ -288,7 +355,7 @@ pub(crate) fn finalize_metrics<C: Clock>(
     };
     match collector.finish(discovered, executed) {
         Ok(metrics) => {
-            if let Err(error) = write_metrics(path, &metrics) {
+            if let Err(error) = write_output(output, &metrics) {
                 warnings.push(("metrics.write", error.to_string()));
             }
         }
@@ -476,6 +543,57 @@ mod tests {
     }
 
     #[test]
+    fn failed_atomic_replacement_cleans_up_the_temporary_entry() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("metrics.json");
+        fs::create_dir(&path).unwrap();
+        fs::write(path.join("sentinel"), b"preserved").unwrap();
+        let output = MetricsOutput::open(&path).unwrap();
+        assert!(matches!(
+            write_output(&output, &RunMetrics::empty("run-1")),
+            Err(MetricsError::Persist { .. })
+        ));
+        assert_eq!(fs::read(path.join("sentinel")).unwrap(), b"preserved");
+        assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn retained_parent_receives_output_and_failure_cleanup_after_symlink_swap() {
+        let directory = tempfile::tempdir().unwrap();
+        let parent = directory.path().join("output");
+        let parked = directory.path().join("parked");
+        let protected = directory.path().join("project");
+        fs::create_dir(&parent).unwrap();
+        fs::create_dir(&protected).unwrap();
+        fs::write(protected.join("calc.py"), b"protected source").unwrap();
+        let output = MetricsOutput::open(&parent.join("calc.py")).unwrap();
+        fs::rename(&parent, &parked).unwrap();
+        std::os::unix::fs::symlink(&protected, &parent).unwrap();
+        write_output(&output, &RunMetrics::empty("run-1")).unwrap();
+        assert_eq!(
+            fs::read(protected.join("calc.py")).unwrap(),
+            b"protected source"
+        );
+        let actual: RunMetrics =
+            serde_json::from_slice(&fs::read(parked.join("calc.py")).unwrap()).unwrap();
+        actual.validate().unwrap();
+
+        fs::remove_file(parked.join("calc.py")).unwrap();
+        fs::create_dir(parked.join("calc.py")).unwrap();
+        assert!(matches!(
+            write_output(&output, &RunMetrics::empty("run-1")),
+            Err(MetricsError::Persist { .. })
+        ));
+        assert_eq!(fs::read_dir(&parked).unwrap().count(), 1);
+        assert_eq!(fs::read_dir(&protected).unwrap().count(), 1);
+        assert_eq!(
+            fs::read(protected.join("calc.py")).unwrap(),
+            b"protected source"
+        );
+    }
+
+    #[test]
     fn writer_preserves_destination_when_accounting_is_invalid() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("metrics.json");
@@ -499,7 +617,7 @@ mod tests {
         let mut warnings = vec![("metrics.state", "earlier warning".to_owned())];
 
         finalize_metrics(
-            &path,
+            &MetricsOutput::open(&path).unwrap(),
             Some(collector),
             Some("transition rejected"),
             3,

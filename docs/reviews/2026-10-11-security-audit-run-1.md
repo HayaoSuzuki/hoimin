@@ -61,7 +61,23 @@ maturinは現在のバージョンの公式digestを取得し、ビルドとイ�
 
 ## 作業状況
 
-指摘の照合、Issue起票、設計・実装計画の各5回のセルフレビューまで完了。
-設計承認前のため実装と実行テストは未着手。
+所有者から3件それぞれの対応とgh stackでの整理の承認を得た。
+スタックの基点はmainであり、このブランチに#783、その上に#784、#785を積む。
 作業開始時にcargo cleanを実施し、削除対象は0ファイル、Cドライブ空き容量は約175.6 GiBだった。
 セキュリティ監査としての別ユーザー再現は実施しておらず、隔離されたUnix環境での検証が必要という元監査の制約を保持する。
+
+## #783 実装のセルフレビュー
+
+1. 検査開始から最終化までを追跡した。ReadyはPathBufから親Dir・最終名・表示パスを持つMetricsOutputへ変更し、親は葉の検査前に確保する。
+2. 衝突比較を再確認した。親の実体をUnixのdev/inoとWindowsのvolume/file indexで比較し、Unixの名前一覧とalias検査もDir相対へ変更した。異なるhardlink名を同じ置換先とは扱わない。
+3. session lock treeを再確認した。既存の親は保持したDirから祖先をたどる。未作成の親は衝突検出に限り名前空間で比較し、出力を許可しない。独立レビューで見つかった将来のlock treeの判定漏れを修正した。
+4. OS固有処理を再確認した。Windowsのcap Dirはdelete sharingを許可せず親の差し替えを防ぐ。LinuxのO_PATH descriptorではioctlできないため、保持したDirから「.」を読取り用に開き直してcasefoldを照会する。独立レビューの指摘を反映した。
+5. 一時ファイルの失敗経路を確認した。UUID名とcreate_new、Unix0600、serialize・flush・sync・renameを用い、未commit時は同じDirから一時名を削除する。パス名によるNamedTempFileの清掃を残さず、警告・原子的置換の仕様を維持した。
+
+## #783 テストのセルフレビュー
+
+1. 回帰の検出力を確認した。新しいCLIテストは修正前に「metrics were redirected into a replacement parent」で失敗し、修正後に成功した。最初のsandbox内の実行は既存managed rootのACLで停止したため、通常ユーザー権限でダミーfixtureを再実行した。
+2. 失敗時の保護を確認した。置換先を非空ディレクトリにする単体テストでPersistエラー、sentinel維持、一時名が残らないことを検証した。
+3. 既存仕様を確認した。Windowsの関連単体25件、出力先統合19件が成功。将来のlock tree、source/fingerprint/session、hardlink、case alias、missing parent、警告を含む。Windows symlink作成権限がないため関連2ケースの内部skipは残り、成功件数を権限付き実行の証拠とはしない。
+4. OS間の検証範囲を確認した。Unix専用のsymlink差し替え・保持先への書き込み・失敗時清掃テストを追加した。ローカルWindowsでは実行されないためLinux/macOS CIの結果を別途確認する。
+5. lintと変更範囲を確認した。cargo clippy --locked -p hoimin-cli --all-targets --all-features -- -D warningsが成功。新しいlint除外、外部入力、依存関係、schema、公開版の変更はない。Hosted CIと最終レビューの結果は後続記録に残す。
