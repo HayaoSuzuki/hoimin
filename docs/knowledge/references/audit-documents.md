@@ -8,7 +8,7 @@ sources:
 - id: issue-711-review-report
   resource: ../../superpowers/reports/2026-10-11-issue-711-survivor-review.md
   working_tree: untracked
-  sha256: 4ec2669bc56602c6868d8d3df7f715b30b83eb95a8db42fab410c856affd2d07
+  sha256: 96b4f16936c76116c5f3d5b10da9e78e736f00c3a5fc24d02cdb59342bd3df88
 - id: issue-778-kani-report
   resource: ../../superpowers/reports/2026-10-11-issue-778-kani.md
   working_tree: untracked

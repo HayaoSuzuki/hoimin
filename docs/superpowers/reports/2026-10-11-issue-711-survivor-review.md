@@ -17,7 +17,7 @@ list/showは存在しないstoreを作らない。
 plan単独はnot_loaded、report内にない候補はnot_in_reportであり、survivorと推測しない。
 人の評価は元plan/report、実行status、kill率、ranking、progress判断を変更しない。
 外部manifestの取込み、URL取得、学習、候補抑制は追加していない。
-配布物に機能が入るため、workspace/Python/両lockの版floorを0.4.0へ揃えた。
+配布物に機能が入るため、workspace/Python/三lock（fuzzを含む）の版floorを0.4.0へ揃えた。
 
 ## 保存と入力境界
 
@@ -136,3 +136,5 @@ Minor指摘はなかった。
 
 OKFは40 MarkdownのYAML/予約file、相対リンク、source ID重複、出典先、索引到達性、今回のreport hash/脚注を検査した。
 古いcatalogの全sourceに脚注があるという主張はしていない。今回変更した出典を検査対象とした。
+
+CI初回の依存policyはfuzz/Cargo.lockのhoimin-coreが0.3.0のため失敗した。docs/releases.mdの版更新手順に従って0.4.0へ揃え、cargo metadata --manifest-path fuzz/Cargo.toml --locked --offlineが成功した。依存版やlint方針は緩めていない。
