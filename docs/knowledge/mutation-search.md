@@ -1,10 +1,14 @@
 ---
 type: Decision
 title: 制約付き変異探索と差分テスト生成の採否
-description: proofreadtoolsの固定関数による単一編集探索、HypothesisとCrossHairの実測範囲と採否。
+description: proofreadtoolsとDjangoの単一編集探索、HypothesisとCrossHairの実測範囲と採否。
 status: draft
 catalog_revision: f397262
 sources:
+- id: django-experiment
+  resource: ../superpowers/reports/2026-10-11-issue-790-django.md
+  working_tree: untracked
+  sha256: 99e11bcfecf07e56b7a12dce2c00035e4fae683d590899898716ec85f43bc0b0
 - id: experiment
   resource: ../superpowers/reports/2026-10-11-issue-790-proofreadtools.md
   working_tree: untracked
@@ -39,7 +43,19 @@ CrossHairでも同じ差を実CPythonで確認できたが、今回のCLI費用�
 未実測OS、任意の外部入力、汎用adapter、高次変異、モデル取得へ保証を広げない。
 人手で調査しにくい別の具体的survivorが継続して発生した場合に、保守費用とレビュー費用を含む次の評価を検討する。[^experiment]
 
+## Djangoへの拡張
+
+固定SHA `dab0a5c47f159eb58472110dcbc10bd4a9b01adb` の3関数を5 seed・3方式で評価した。
+既存236候補・生成162候補のpoolから71回・35候補IDを評価し、41回はassertion検出、30回はその他エラー、生存は0件だった。
+Djangoの入力探索・生成テスト照合は起動しておらず、新しい採用根拠は得られていない。[^django-experiment]
+
+候補開始予算30秒に対してreset等を含む実wallは最大35.547秒となった。
+fixedの対象関数の偏りと少ない評価件数もあり、優位性を示す比較ではない。
+repository規模だけを増やす前に、評価件数の確保、関数ごとの配分、復元費用の内訳、型不整合を減らす候補生成を検討する。[^django-experiment]
+
 ## 出典
 
 [^experiment]: [実験報告と機械可読の証拠](../superpowers/reports/2026-10-11-issue-790-proofreadtools.md)。
 [^design]: [承認済み設計](../superpowers/specs/2026-10-11-issue-790-proofreadtools-design.md)。
+
+[^django-experiment]: [Djangoでの制約付き変異探索](../superpowers/reports/2026-10-11-issue-790-django.md)。

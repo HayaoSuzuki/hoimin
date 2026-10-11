@@ -95,13 +95,21 @@ impl<'ast> Visitor<'ast> for Edits<'_> {
 }
 
 pub fn candidate_space(source: &str) -> Result<Vec<CandidateDescriptor>, String> {
+    candidate_space_for(source, TARGET, SYMBOL)
+}
+
+pub fn candidate_space_for(
+    source: &str,
+    target: &str,
+    symbol: &str,
+) -> Result<Vec<CandidateDescriptor>, String> {
     let parsed = ruff_python_parser::parse_module(source).map_err(|e| e.to_string())?;
     let function = parsed
         .syntax()
         .body
         .iter()
         .find_map(|stmt| match stmt {
-            Stmt::FunctionDef(def) if def.name.as_str() == SYMBOL => Some(def),
+            Stmt::FunctionDef(def) if def.name.as_str() == symbol => Some(def),
             _ => None,
         })
         .ok_or_else(|| "fixed target function is absent".to_owned())?;
@@ -122,7 +130,7 @@ pub fn candidate_space(source: &str) -> Result<Vec<CandidateDescriptor>, String>
         let prefix = &source[..start];
         result.push(CandidateDescriptor {
             schema_version: CANDIDATE_SCHEMA_VERSION,
-            path: TARGET.into(),
+            path: target.into(),
             span: ByteSpan {
                 start: u64::try_from(start).map_err(|e| e.to_string())?,
                 length: u64::try_from(end - start).map_err(|e| e.to_string())?,
@@ -134,7 +142,7 @@ pub fn candidate_space(source: &str) -> Result<Vec<CandidateDescriptor>, String>
                 .map_err(|e| e.to_string())?,
             column: u32::try_from(prefix.rsplit('\n').next().unwrap_or("").chars().count())
                 .map_err(|e| e.to_string())?,
-            symbol: Some(SYMBOL.into()),
+            symbol: Some(symbol.into()),
             file_hash: blake3::hash(source.as_bytes()).to_hex().to_string(),
         });
     }

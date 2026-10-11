@@ -5,6 +5,10 @@ description: docs/auditsとdocs/superpowers/reports内の全Markdownを追跡状
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-790-django-report
+  resource: ../../superpowers/reports/2026-10-11-issue-790-django.md
+  working_tree: untracked
+  sha256: 99e11bcfecf07e56b7a12dce2c00035e4fae683d590899898716ec85f43bc0b0
 - id: issue-790-proofreadtools-report
   resource: ../../superpowers/reports/2026-10-11-issue-790-proofreadtools.md
   working_tree: untracked
@@ -1368,3 +1372,7 @@ sources:
 - [proofreadtoolsの変異候補探索とテスト生成の評価](../../superpowers/reports/2026-10-11-issue-790-proofreadtools.md) - 固定proofreadtoolsの設計と実測。[^issue-790-proofreadtools-report]
 
 [^issue-790-proofreadtools-report]: [proofreadtoolsの変異候補探索とテスト生成の評価](../../superpowers/reports/2026-10-11-issue-790-proofreadtools.md)。
+
+- [Djangoでの制約付き変異探索](../../superpowers/reports/2026-10-11-issue-790-django.md) - 3関数・5 seedの負の結果と比較の制約。[^issue-790-django-report]
+
+[^issue-790-django-report]: [Djangoでの制約付き変異探索](../../superpowers/reports/2026-10-11-issue-790-django.md)。

@@ -1,3 +1,5 @@
+#[path = "support/proofreadtools_search/django.rs"]
+mod django;
 #[path = "support/proofreadtools_search/generator.rs"]
 mod generator;
 #[path = "support/proofreadtools_search/runner.rs"]
@@ -7,6 +9,21 @@ use generator::{generate_candidates, validate_sample};
 use hoimin_core::validate_candidate;
 
 const SOURCE: &str = "def _length_ratio_upper_bound(x: str, y: str) -> float:\n    return 2 * min(len(x), len(y)) / (len(x) + len(y))\n";
+
+#[test]
+fn generated_edits_are_confined_to_the_selected_django_function() {
+    let source = "def untouched(x):\n    return x + 1\ndef selected(x):\n    return x * 2\n";
+    let candidates =
+        generator::candidate_space_for(source, "django/utils/demo.py", "selected").unwrap();
+    assert_ne!(candidates.len(), 0);
+    for candidate in candidates {
+        assert_eq!(candidate.path, "django/utils/demo.py");
+        assert_eq!(candidate.symbol.as_deref(), Some("selected"));
+        assert!(candidate.line >= 4);
+        validate_candidate(source.as_bytes(), &candidate).unwrap();
+    }
+    assert!(generator::candidate_space_for(source, "demo.py", "missing").is_err());
+}
 
 #[test]
 fn generated_single_edits_are_valid_unique_and_reproducible() {
@@ -144,4 +161,47 @@ fn proofreadtools_experiment() {
         .unwrap()
         .block_on(runner::experiment())
         .unwrap();
+}
+
+#[test]
+#[ignore = "explicit bounded research against the pinned local Django checkout"]
+fn django_experiment() {
+    tokio::runtime::Runtime::new()
+        .unwrap()
+        .block_on(django::experiment())
+        .unwrap();
+}
+
+#[test]
+fn django_suite_verdict_requires_the_same_test_count_and_distinguishes_errors() {
+    assert_eq!(
+        django::suite_status(true, "Ran 20 tests\nOK (skipped=2)", 20, 2),
+        "survived_related_suite"
+    );
+    assert_eq!(
+        django::suite_status(true, "Ran 1 tests\nOK", 20, 2),
+        "invalid_suite"
+    );
+    assert_eq!(
+        django::suite_status(true, "Ran 20 tests\nOK (skipped=3)", 20, 2),
+        "invalid_suite"
+    );
+    assert_eq!(
+        django::suite_status(
+            false,
+            "Ran 20 tests\nAssertionError\nFAILED (failures=1, skipped=2)",
+            20,
+            2
+        ),
+        "detected_assertion"
+    );
+    assert_eq!(
+        django::suite_status(
+            false,
+            "Ran 20 tests\nAssertionError\nFAILED (failures=1, errors=1, skipped=2)",
+            20,
+            2
+        ),
+        "test_failure_other"
+    );
 }

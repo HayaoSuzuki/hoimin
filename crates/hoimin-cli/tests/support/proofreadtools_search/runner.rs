@@ -25,7 +25,7 @@ const COPY_LIMIT: u64 = 8 * 1024 * 1024 * 1024;
 const FREE_RESERVE: u64 = 10 * 1024 * 1024 * 1024;
 const MAX_OUTPUT: u64 = 1024 * 1024;
 
-fn worker(root: &Utf8Path) -> Result<(WorkspacePlan, WorkerWorkspace), String> {
+pub(super) fn worker(root: &Utf8Path) -> Result<(WorkspacePlan, WorkerWorkspace), String> {
     let plan = WorkspacePlan::preflight(root, EffectId(1), 1, CopyOptions::default())
         .map_err(|e| e.to_string())?;
     if plan.aggregate_bytes() > COPY_LIMIT {
@@ -48,7 +48,10 @@ fn worker(root: &Utf8Path) -> Result<(WorkspacePlan, WorkerWorkspace), String> {
     Ok((plan, copy))
 }
 
-fn mutation(source: &[u8], candidate: &CandidateDescriptor) -> Result<MutationCandidate, String> {
+pub(super) fn mutation(
+    source: &[u8],
+    candidate: &CandidateDescriptor,
+) -> Result<MutationCandidate, String> {
     Ok(MutationCandidate {
         id: validate_candidate(source, candidate)
             .map_err(|e| e.to_string())?
@@ -136,7 +139,7 @@ pub async fn exercise_timeout(source: &str) {
     );
 }
 
-fn resource_backend() -> Result<ResourceBackend, String> {
+pub(super) fn resource_backend() -> Result<ResourceBackend, String> {
     #[cfg(windows)]
     {
         hoimin_cli::resource::WindowsBackend::new()
@@ -172,13 +175,13 @@ fn eligible(row: &Value) -> bool {
     row["status"] == "survived_related_suite" && row["witness"]["status"] == "witness"
 }
 
-struct Runtime {
-    handler: ProcessHandler,
-    python: Utf8PathBuf,
-    script: Utf8PathBuf,
-    scratch: Utf8PathBuf,
-    processes: u64,
-    plans: Vec<Value>,
+pub(super) struct Runtime {
+    pub(super) handler: ProcessHandler,
+    pub(super) python: Utf8PathBuf,
+    pub(super) script: Utf8PathBuf,
+    pub(super) scratch: Utf8PathBuf,
+    pub(super) processes: u64,
+    pub(super) plans: Vec<Value>,
 }
 
 impl Runtime {
@@ -196,7 +199,7 @@ impl Runtime {
         }
         Ok(())
     }
-    async fn command(
+    pub(super) async fn command(
         &mut self,
         cwd: &Utf8Path,
         argv: Vec<OsString>,
@@ -700,7 +703,7 @@ async fn evaluate(
     )
 }
 
-fn choose_index(
+pub(super) fn choose_index(
     mode: &str,
     pool: &[CandidateDescriptor],
     weights: &BTreeMap<String, usize>,
