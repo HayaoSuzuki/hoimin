@@ -174,3 +174,28 @@ previously removed 818.4 MiB. Final free disk after these operations was
 187,597,234,176 bytes. No active build was cleaned.
 
 Independent whole-branch review and hosted-check status follow below.
+
+## Independent whole-branch review
+
+A fresh GPT-6-astra reviewer inspected df40d8c..3f4354414505785f9171c99d2dbd8295b8a9fbb3
+against the approved design/plan and actual upstream generation code. It reported
+no Critical, Important or Minor findings and requested no code changes.
+An independent read-only Python 3.14.6 probe compared 2,048 adapter outcomes with
+base, including Unicode, leading zeroes, trailing newlines, dev suffixes and
+oversized integers: all matched. git diff --check passed. The reviewer inspected
+existing Rust/full-suite evidence instead of rerunning expensive builds.
+
+Its assessment was ready to merge subject to hosted checks. Strengths included
+fresh bootstrap coverage, preserved grammar/exception adapters, explicit Rust
+error returns, disabled attribute/snapshot evaluation, retained interior checks,
+scalar storage and version-scoped dependency policy/notices.
+
+Declined to judge: diagnosis/repair of the broader analyzer's duplicate-unary-not
+panic is outside this migration, and no analyzer implementation changes appear
+in the diff. It limits whole-tools evidence without invalidating the byte-identical
+focused projection or its conclusive one-candidate result.
+
+Maintainer ruling: keep that analyzer investigation outside this library migration
+and explicitly retain the limitation. If wrong, broader tools mutation planning
+can remain unusable until separately diagnosed; this PR does not promise that
+coverage. There are no deferred minor review findings.
