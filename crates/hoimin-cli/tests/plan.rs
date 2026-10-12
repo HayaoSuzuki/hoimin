@@ -779,6 +779,44 @@ async fn plan_rejects_a_literal_backslash_source_without_rewriting_it() {
 }
 
 #[tokio::test]
+async fn plan_serialization_output_failure_returns_two_without_execution() {
+    let project = Project::new();
+    let marker = project.path.join("test-command-ran");
+    let args = plan_args(&project, [], &marker);
+    let mut storage = [];
+    let mut stdout = std::io::Cursor::new(storage.as_mut_slice());
+    let mut stderr = Vec::new();
+
+    let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+
+    assert_eq!(code, 2);
+    assert_eq!(stdout.position(), 0);
+    let diagnostic = String::from_utf8(stderr).unwrap();
+    assert!(diagnostic.contains("failed to write whole buffer"));
+    assert_eq!(diagnostic.lines().count(), 1);
+    assert!(!marker.exists());
+}
+
+#[tokio::test]
+async fn plan_newline_output_failure_preserves_complete_json_and_returns_two() {
+    let project = Project::new();
+    let (_, manifest, marker) = write_plan_manifest(&project, &[]).await;
+    let expected = serde_json::to_vec(&manifest).unwrap();
+    let mut args = plan_args(&project, [], &marker);
+    insert_test_min_free_space(&mut args);
+    let mut storage = vec![0; expected.len()];
+    let mut stdout = std::io::Cursor::new(storage.as_mut_slice());
+    let mut stderr = Vec::new();
+
+    let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+
+    assert_eq!(code, 2);
+    assert_eq!(stdout.into_inner(), expected.as_slice());
+    assert_eq!(String::from_utf8(stderr).unwrap().lines().count(), 1);
+    assert!(!marker.exists());
+}
+
+#[tokio::test]
 async fn plan_preparation_failures_return_two_without_a_manifest() {
     let project = Project::new();
     for (case, options) in [

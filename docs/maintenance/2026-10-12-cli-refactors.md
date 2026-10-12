@@ -1,6 +1,6 @@
 # SQLite artifact names and CLI result handling
 
-This record covers [#826](https://github.com/HayaoSuzuki/hoimin/issues/826) and [#827](https://github.com/HayaoSuzuki/hoimin/issues/827), based on main at `73b589630e0330e5410ab3b129ea1fe1bb840373`. These are internal ownership and control-flow changes, with no performance claim or compatibility migration. The package version floor remains 0.4.0.
+For maintainers reviewing [#826](https://github.com/HayaoSuzuki/hoimin/issues/826) and [#827](https://github.com/HayaoSuzuki/hoimin/issues/827), this record explains ownership boundaries and compatibility checks, based on main at `73b589630e0330e5410ab3b129ea1fe1bb840373`. These are internal ownership and control-flow changes, with no performance claim or compatibility migration. The package version floor remains 0.4.0.
 
 ## SQLite companion paths (#826)
 
@@ -62,4 +62,32 @@ Implementation plan self-review passes:
 4. Inspect existing CLI, plan, progress, review, and writer-failure tests; add only missing observable contract coverage.
 5. Run focused integration tests and strict formatting/Clippy checks with two build jobs in a dedicated target directory; clean that directory after verification.
 
-Execution and verification will be recorded on the second stack branch.
+Implementation self-review passes:
+
+1. Compared the owned `run_from` and borrowed `run_with_io` code against the base: neither entry point nor its writer contract changed.
+2. Traced each ordinary failure to the existing `command_result`: one stderr diagnostic and exit 2; ignored diagnostic-write failures still do not recurse.
+3. Traced the plan success and failure sequence: configuration, preparation, JSON, newline, then the original output exit code. Converting errors to strings preserves their previous Display output.
+4. Traced verify selection, dry-run preview, metrics assignment, and execution; no execution or metrics assignment moved into the preview branch.
+5. Checked clap and completions separately: their output streams and exit behavior remain unchanged. The change adds no production helper, trait, dependency, or public contract.
+
+Testing self-review passes:
+
+1. Before changing result handling, ran `cli_config` (56 passed), `plan` (94 passed, including two added writer-failure cases), and `progress` (94 passed). These establish preservation of existing behavior rather than a bug-fix red/green claim.
+2. After the refactor, CLI library tests passed again: 855 passed, 16 ignored. CLI configuration/help tests passed: 56 passed. Review and metrics integrations passed again: 5 and 19 passed.
+3. Plan/verify tests passed: 94 passed. Both added tests use branch-free Arrange/Act/Assert structure and fixed-capacity standard-library writers. They distinguish failure during JSON serialization from failure after complete JSON when the final newline cannot fit. A strengthened diagnostic assertion and the existing preview writer-failure test passed in a final focused run: 3 passed.
+4. Progress tests passed: 94 passed. Real CLI integration tests passed: 68 passed, 1 ignored, including owned-output, newline, interruption, and termination behavior. Ignored tests were not executed.
+5. Final `cargo fmt --all -- --check`, `git diff --check`, and `cargo clippy --workspace --all-targets --all-features -- -D warnings` passed, including after the assertion change. Windows execution is verified here; Unix/macOS execution remains for CI. No Python code changed, so the Python suite was not rerun.
+
+The post-change command was `cargo test -p hoimin-cli --lib --test plan --test cli_config --test progress --test review_cli --test metrics_destinations --test run_e2e`. The final writer selection was `cargo test -p hoimin-cli --test plan output_failure`. Clippy checks all features, but these execution counts use default features; they do not claim contracts-feature execution.
+
+The fresh independent reviewer found no Critical, Important, or Minor issues and confirmed the strengthened diagnostic assertion. The reviewer inspected the complete diff without editing or running heavy builds. Platform execution, non-Unicode filesystem fixtures, and competing-destination first-error fixtures were not independently executed; direct comparison preserves their construction and order. No runtime performance claim was assessed.
+
+The focused software-design-philosophy assessment passed all eight diagnostic rows (10/10): shared naming knowledge has one owner, callers retain their policies, and existing error presentation handles more branches without a new framework. This score applies to these changes, not the whole repository. The documentation check passed all ten technical-documentation diagnostic rows (10/10) for the maintenance record and changed guide; no failed row or blocking factual issue remains.
+
+Consulted the same compatibility and knowledge workflow sources as #826 and the saved-plan/CLI contracts. No public behavior, saved format, acceptance rule, formal-model guarantee, or release floor changed; existing concepts need no revision. No additional formal proof was warranted by this control-flow cleanup.
+
+## Resource and documentation checks
+
+Builds used two jobs and tests used two threads. A resource check during verification reported about 4.4 GiB of free physical memory. After all Rust checks finished, `cargo clean` removed 3,682 files (1.3 GiB) from the checked task-owned `.superpowers/runtime-improvements/target` path. The C: drive then had 182,464,925,696 bytes free (about 170 GiB). The ordinary workspace target was not cleaned.
+
+The strict site build checks the changed maintainer guide and its link to this repository-only record. The record remains outside the publication allowlist. Historical audit results and ignored tests do not contribute to the execution claims here.
