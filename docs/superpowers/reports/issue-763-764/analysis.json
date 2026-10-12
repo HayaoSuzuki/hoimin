@@ -1,0 +1,69 @@
+{
+  "uncompressed_evidence_sha256": "2e527c8967ce1d0883082897f9fe856b07c85495fd0653f6557eb20bb2738c5e",
+  "targets": [
+    {
+      "name": "_length_ratio_upper_bound",
+      "first_order_count": 6,
+      "eligible_pair_count": 14,
+      "first_order_survivors": 0,
+      "pair_survivors": 0,
+      "ssh_count": 6,
+      "strict_ssh_count": 0,
+      "ssh_also_observed_in_broader_validation": 2,
+      "median_arm_seconds": {
+        "first": 0.0006673000752925873,
+        "random": 0.0021019000560045242,
+        "guided": 0.0021600998006761074
+      },
+      "witnessed_pair_position": {
+        "first": [
+          null,
+          null,
+          null
+        ],
+        "random": [
+          null,
+          null,
+          null
+        ],
+        "guided": [
+          null,
+          null,
+          null
+        ]
+      }
+    },
+    {
+      "name": "categories_for",
+      "first_order_count": 10,
+      "eligible_pair_count": 45,
+      "first_order_survivors": 0,
+      "pair_survivors": 1,
+      "ssh_count": 1,
+      "strict_ssh_count": 0,
+      "ssh_also_observed_in_broader_validation": 0,
+      "median_arm_seconds": {
+        "first": 0.0018779002130031586,
+        "random": 0.009770700242370367,
+        "guided": 0.010246700141578913
+      },
+      "witnessed_pair_position": {
+        "first": [
+          null,
+          null,
+          null
+        ],
+        "random": [
+          30,
+          32,
+          44
+        ],
+        "guided": [
+          31,
+          31,
+          31
+        ]
+      }
+    }
+  ]
+}
