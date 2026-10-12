@@ -90,3 +90,11 @@ This is a scoped assessment, not a new score or complete audit of the repository
 The technical-documentation diagnostic for the changed guides and records passes
 all ten rows (10/10), with no failed row or blocking factual finding. This score
 does not cover historical originals or assert that unrun platform checks pass.
+
+## Delivery
+
+`gh stack submit` created Stack #842 with PR #838 (#834), #839 (#835), #840
+(#837) and #841 (#836), in that bottom-to-top order. Every PR is attached to the
+task. Runtime source checks were completed at `7bd0150`; subsequent commits
+record results and delivery only. Hosted CI starts from the submitted heads and
+must still be assessed separately from the local Windows evidence.

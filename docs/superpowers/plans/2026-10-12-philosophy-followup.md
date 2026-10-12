@@ -91,5 +91,5 @@ replacing the two independent attempted/cleaned pairs at existing boundaries.
 - [x] Run contracts-enabled checks for changed runtime behavior.
 - [x] Obtain a fresh independent review of the complete diff and fix findings.
 - [x] Clean the checked task-owned target.
-- [ ] Submit with `gh stack`, write accurate PR descriptions and attach every created
+- [x] Submit with `gh stack`, write accurate PR descriptions and attach every created
   PR. Do not merge or publish releases.
