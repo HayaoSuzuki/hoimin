@@ -48,8 +48,18 @@ pub(crate) struct ReadOnlyPlan {
 
 pub(crate) fn read_for_review(path: &Path) -> Result<ReadOnlyPlan, PlanError> {
     let invalid = |error: String| PlanError::ManifestInvalid(error);
-    let bytes = crate::review::input::bounded_read(path, 64 * 1024 * 1024)
-        .map_err(|error| invalid(error.to_string()))?;
+    let bytes = crate::artifacts::bounded_read(path, crate::artifacts::READ_ONLY_ARTIFACT_LIMIT)
+        .map_err(|error| {
+            // Preserve the historical read-only-plan diagnostics at this boundary.
+            invalid(match error {
+                crate::artifacts::ArtifactReadError::Io(error) => {
+                    format!("review I/O failed: {error}")
+                }
+                crate::artifacts::ArtifactReadError::Invalid(message) => {
+                    format!("invalid review input: {message}")
+                }
+            })
+        })?;
     let manifest: PlanManifest =
         serde_json::from_slice(&bytes).map_err(|error| invalid(error.to_string()))?;
     validate_header(&manifest)?;

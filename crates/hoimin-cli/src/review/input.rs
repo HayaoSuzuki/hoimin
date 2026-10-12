@@ -1,5 +1,4 @@
 use std::fs::File;
-use std::io::Read;
 use std::path::Path;
 
 use camino::Utf8Path;
@@ -7,24 +6,9 @@ use hoimin_core::{CandidateValidationContext, MutationCandidate, validate_candid
 
 use super::ReviewError;
 use super::model::{ArtifactReference, ReviewKey, SourceState};
+use crate::artifacts::run_report::ReviewReport;
+use crate::artifacts::{READ_ONLY_ARTIFACT_LIMIT, bounded_read};
 use crate::plan::ReadOnlyPlan;
-use crate::progress::input::ReviewReport;
-
-pub(crate) fn bounded_read(path: &Path, limit: u64) -> Result<Vec<u8>, ReviewError> {
-    let file = File::open(path)?;
-    if !file.metadata()?.is_file() || file.metadata()?.len() > limit {
-        return Err(ReviewError::Invalid(format!(
-            "input exceeds size limit or is not a file: {}",
-            path.display()
-        )));
-    }
-    let mut bytes = Vec::new();
-    file.take(limit + 1).read_to_end(&mut bytes)?;
-    if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > limit {
-        return Err(ReviewError::Invalid("input exceeds size limit".into()));
-    }
-    Ok(bytes)
-}
 
 pub(crate) fn load_plan(path: &Path) -> Result<ReadOnlyPlan, ReviewError> {
     crate::plan::read_for_review(path).map_err(|error| ReviewError::Invalid(error.to_string()))
@@ -34,8 +18,8 @@ pub(crate) fn load_report(
     path: &Path,
     plan: &ReadOnlyPlan,
 ) -> Result<(ReviewReport, ArtifactReference), ReviewError> {
-    let bytes = bounded_read(path, 64 * 1024 * 1024)?;
-    let report = crate::progress::input::read_review_json(path, &bytes)
+    let bytes = bounded_read(path, READ_ONLY_ARTIFACT_LIMIT)?;
+    let report = crate::artifacts::run_report::read_review_json(path, &bytes)
         .map_err(|error| ReviewError::Invalid(error.to_string()))?;
     if report.project != plan.project {
         return Err(ReviewError::Invalid(
@@ -96,7 +80,7 @@ pub(crate) fn source_state(
         ));
     }
     // Bound allocation before constructing the shared source validator.
-    let Ok(bytes) = bounded_read(&path, 64 * 1024 * 1024) else {
+    let Ok(bytes) = bounded_read(&path, READ_ONLY_ARTIFACT_LIMIT) else {
         return Ok(SourceState::Unavailable);
     };
     let context = CandidateValidationContext::new(&bytes)

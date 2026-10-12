@@ -382,3 +382,76 @@ task scratch directory are retained only until final review.
    do not label timers a CPU-stack or whole-project profile.
 5. Native-permission retained-code verification and independent review remain
    final gates; no extra corpus tests are needed for removed instrumentation.
+
+## #816: artifact contracts own their readers
+
+Retained implementation: a private `artifacts` module owns bounded regular-file
+reading and run-report format validation. `plan` owns plan header/identity checks;
+`review` owns source freshness, assessment and report-to-plan comparison;
+`progress` owns ordered comparison, duplicate-input policy and rendering.
+
+| Knowledge | Owner |
+| --- | --- |
+| Regular-file and growth-aware byte limit | `artifacts::bounded_read` |
+| JSON/JSONL run schema, sequence and summary validation | `artifacts::run_report` |
+| Current-schema read-only review projection | `artifacts::run_report::read_review_json` |
+| Plan schema, descriptors, sources and verify selection | `plan` |
+| Progress input disposition and duplicate handling | `progress` |
+| Historical-source assessment and protected destinations | `review` |
+
+The report decoder and its JSONL/dispatch modules moved without changing their
+validation bodies. Fingerprinting moved beside reading; duplicate confirmation
+remains with progress. Existing public progress exports are re-exported, not
+wrapped in extra forwarding functions. The historical `ProgressError` type name
+and messages remain for compatibility. Read-only plan error formatting preserves
+its historical review-prefixed diagnostics locally; the shared reader itself
+has no dependency on plan, progress or review.
+
+The 64 MiB constant applies to the existing read-only plan/review/source paths;
+progress retains its existing per-format reading behavior and no new size limit.
+Verify's fingerprint/current-source checks, request/real-path protection and
+review's ID/descriptor comparisons did not move into a generic permissive reader.
+No new accepted format, schema, input path or CLI option was introduced.
+
+### #816 design self-review (five passes)
+
+1. Dependencies: artifacts does not import command modules; plan no longer calls
+   review's file reader, and review no longer calls progress's decoder.
+2. Format ownership: plan and run reports remain separate contracts; no universal
+   serializer/plugin abstraction.
+3. Limits: regular-file checks, initial metadata and bounded growing-file read
+   remain; the read-only limit is not imposed on progress.
+4. Semantics: review tolerates historical source states intentionally; verify
+   still requires current-source and fingerprint validation before execution.
+5. Compatibility: retain public exports, all serde attributes, error categories,
+   diagnostic text and JSONL streaming behavior.
+
+### #816 plan self-review (five passes)
+
+1. Move format bodies together with private dispatch/JSONL modules and hash reader.
+2. Keep disposition/duplicate policy in progress rather than importing it back
+   into the new artifact owner.
+3. Convert neutral read errors at the caller boundary, preserving legacy messages.
+4. Add only exact-size arbitrary-byte, oversize and missing-file tests for the
+   new shared read responsibility; reuse existing review/plan/oracle/heap tests.
+5. Verify native Windows behavior, strict lint and workspace tests before delivery;
+   do not mistake sandbox access failures for product regressions.
+
+### #816 implementation self-review (five passes)
+
+1. Compare moved report validator/JSONL/dispatch bodies with their original files.
+2. Check scope of every former `pub(super)` method after moving modules.
+3. Check the neutral error conversion preserves review Io versus Invalid variants.
+4. Keep protected destination paths, candidate validation and verify logic intact.
+5. Search for reverse command dependencies and unnecessary forwarding functions.
+
+### #816 verification self-review (five passes)
+
+1. New shared-reader tests failed before implementation and passed in the native
+   unit run; the property test uses 32 cases of at most 1,024 arbitrary bytes.
+2. Full CLI unit run: 855 passed, zero failed, 16 ignored in 27.45 seconds.
+3. This native run resolves the earlier sandbox-only managed-root access failure;
+   do not delete or weaken the failing security/ownership checks.
+4. Existing partial-final-read fingerprint test moved with its production reader.
+5. Full workspace, strict lint, contract-feature checks and independent final
+   review are recorded at delivery; they are not inferred from unit success.
