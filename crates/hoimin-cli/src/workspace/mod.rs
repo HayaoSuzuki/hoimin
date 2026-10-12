@@ -1571,61 +1571,6 @@ fn validate_copied_import_roots(
     Ok(())
 }
 
-/// # Errors
-/// Returns the corresponding workspace handler `EffectFailed`.
-pub fn handle_preflight(
-    handler: &mut WorkspaceHandler,
-    request: Preflight,
-) -> Result<PreflightCompleted, EffectFailed> {
-    handler.handle_preflight(request)
-}
-
-/// # Errors
-/// Returns the corresponding workspace handler `EffectFailed`.
-pub fn handle_create_worker(
-    handler: &mut WorkspaceHandler,
-    request: CreateWorker,
-) -> Result<WorkerCreated, EffectFailed> {
-    handler.handle_create_worker(request)
-}
-
-/// # Errors
-/// Returns the corresponding workspace handler `EffectFailed`.
-pub fn handle_apply_mutation(
-    handler: &mut WorkspaceHandler,
-    request: ApplyMutation,
-    candidate: &MutationCandidate,
-) -> Result<MutationApplied, EffectFailed> {
-    handler.handle_apply_mutation(request, candidate)
-}
-
-/// # Errors
-/// Returns the corresponding workspace handler `EffectFailed`.
-pub fn handle_reset_worker(
-    handler: &mut WorkspaceHandler,
-    request: ResetWorker,
-) -> Result<WorkerReset, EffectFailed> {
-    handler.handle_reset_worker(request)
-}
-
-/// # Errors
-/// Returns the corresponding workspace handler `EffectFailed`.
-pub fn handle_cleanup(
-    handler: &mut WorkspaceHandler,
-    request: Cleanup,
-) -> Result<CleanupFinished, EffectFailed> {
-    handler.handle_cleanup(request)
-}
-
-/// # Errors
-/// Returns the corresponding workspace handler `EffectFailed`.
-pub fn handle_verify_originals(
-    handler: &WorkspaceHandler,
-    request: VerifyOriginals,
-) -> Result<OriginalsVerified, EffectFailed> {
-    handler.handle_verify_originals(request)
-}
-
 fn effect_failed(id: EffectId, error: WorkspaceError) -> EffectFailed {
     let code = error.code().to_owned();
     let message = error.to_string();
