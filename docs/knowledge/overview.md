@@ -1,20 +1,21 @@
 ---
 type: Reference
 title: Catalog scope and evidence guide
-description: Design, audit and implementation relationships, source revisions, evidence levels and maintenance.
+description: Design, audit and implementation relationships, source revisions, evidence
+  levels and maintenance.
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
 - id: readme
   resource: ../usage.md
-  revision: 5a45bdc3bd444771c4c57e30fe211f174850ce93
-  working_tree: untracked
-  sha256: 6894a34743882cc26fdd1f39cb536c94dfc20d5f1dcf33b3cb7f3da9b13e6bef
+  revision: 4f60a2440fb42ffd7ee54fe8694323b82fdd777f
+  working_tree: modified
+  sha256: e6ba6cae0e0d9f7b37234a7aedf1b8f85b0d0778a86358dbb0972e06e38aca76
 - id: development
   resource: ../development.md
-  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  revision: 4f60a2440fb42ffd7ee54fe8694323b82fdd777f
   working_tree: modified
-  sha256: 0cd970d39487cbdcf589949acacfe39f82d9878df459a3078abcd91639faa40b
+  sha256: d0114ecb39129c82bedc9ac1bf727aae49a786170a9b60dbe3d40408b6de14db
 - id: boundary
   resource: ../superpowers/reports/2026-09-11-boundary-contract-audit/README.md
   working_tree: untracked
@@ -28,15 +29,47 @@ sources:
   revision: 8f2d57610a73efc97d743c9b0b0ecb1002e09fa4
 - id: workflow
   resource: ../okf-workflow.md
-  working_tree: untracked
-  sha256: 223711d00bd253408e373e1df7839435363c5756e9e0f37771d675707b5a57f4
+  working_tree: modified
+  sha256: 01d6a44089f2b7fb2a04ab78edc980156de476954c19c517a4d8b6cf366bae2c
+  revision: 4f60a2440fb42ffd7ee54fe8694323b82fdd777f
 ---
 
 # Purpose and audience
 
-hoimin is a mutation-testing CLI that makes small changes to Python source and checks whether tests detect them. It generates focused mutation candidates and executes them in isolated working copies. Results are machine-readable, and selected candidates can be verified again.[^readme]
+This catalog helps maintainers and AI agents find current procedures, contracts,
+design reasons and supporting evidence for a change. For the user workflow, start
+with the [Usage guide](../usage.md#plan-and-verify-with-an-agent).[^readme]
 
-This OKF bundle organizes designs and audits by topic. Start with [designs](design/index.md) for responsibilities and conditions, then read [audits](audits/index.md) for evidence and limitations. Original issue-specific documents remain in place and are listed in the [design catalog](references/design-documents.md) and [audit/report catalog](references/audit-documents.md).
+Use the [task routes](index.md#start-with-your-task) to choose a guide, then read
+[designs](design/index.md) for responsibilities and [audits](audits/index.md) for
+evidence and limitations. Original issue-specific documents remain in place and
+are listed in the [design catalog](references/design-documents.md) and
+[audit/report catalog](references/audit-documents.md).
+
+# Current guides and original records
+
+Keep each reusable procedure in its existing guide. Use concepts to explain
+contracts, decisions and evidence, and link to the canonical commands rather
+than maintaining a second operational recipe.[^workflow][^development]
+
+| Information needed | Canonical entry point | Supporting material |
+| --- | --- | --- |
+| Installation and first use | [README](../../README.md) and [Usage](../usage.md) | [Product direction](product-direction.md) |
+| Runtime limits, candidate selection and result meaning | [Usage](../usage.md) | [Design contracts](design/index.md) and referenced implementation |
+| CLI names, help and reflected defaults | [Generated CLI reference](../cli-reference.md) | [Generation procedure](../development.md#generated-cli-reference); runtime conditions remain in Usage |
+| Development and required checks | [Development](../development.md) and [CI](../ci.md) | Topic contracts, code, tests and CI configuration |
+| Releases, index publication and documentation deployment | [Releases](../releases.md), [PyPI](../pypi-publishing.md) and [Pages](../documentation.md) | Linked provenance, validation and publication records |
+| Knowledge maintenance | [OKF workflow](../okf-workflow.md) | This scope guide and existing catalogs |
+| A historical decision, audit or experiment | [Original source catalogs](references/index.md) | The original revision, environment, assumptions and outcomes |
+
+Guides describe the maintained procedure or public contract; the referenced
+implementation and configuration determine what the checked revision actually
+does. Record a disagreement and investigate it rather than silently copying an
+old design or changing a safety condition. Dated reports establish observations
+only for their recorded conditions. `status: draft` describes a concept's review
+status, not whether its feature exists or a past audit finding is still open.
+Follow the [OKF workflow](../okf-workflow.md) for source metadata and verification
+status.[^workflow]
 
 # Coverage
 
@@ -51,7 +84,12 @@ Created on 2026-09-11. `catalog_revision` records the repository commit consulte
 
 `sources[].revision` identifies the source revision read; `working_tree` records its tracking state at that time. Untracked or modified sources also record content SHA-256. These fields, `catalog_revision`, and `audit_revision` are local extensions, not standard OKF fields.
 
-The September 11 boundary-audit files were untracked when this catalog was created. Links worked in that working tree but not in a clone of the referenced commit. Sharing requires including those sources or replacing references with shared material.[^boundary]
+The September 11 boundary-audit files were untracked when this catalog was created.
+Links worked in that working tree but not in a clone of the referenced commit.
+That is historical source provenance, not the files' present Git status. When
+reproducing that snapshot, include its untracked sources or use shared material;
+when maintaining the current tree, inspect the current files and Git status.
+Do not mechanically replace the historical revision or counts.[^boundary][^workflow]
 
 | Evidence label | Meaning |
 | --- | --- |

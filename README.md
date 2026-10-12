@@ -30,23 +30,25 @@ Wheels require Python 3.14 and support macOS Apple Silicon, Linux x86_64
 
 ## Quick start
 
-From your project directory, use a Python environment with your test dependencies
-installed. Replace `src/calc.py` with the file you want to check:
+From your project directory, use a Python environment with passing tests and
+their dependencies installed. Choose the [OS memory policy](docs/usage.md#before-execution)
+first, then replace `src/calc.py` with an existing file:
 
 ```console
-hoimin run --root . --file src/calc.py --allow-best-effort-memory --format human -- python -m pytest -q
+hoimin run --root . --file src/calc.py --format human -- python -m pytest -q
 ```
 
 Everything after `--` is your project's test command. hoimin runs it once as a
 baseline, then for each selected mutation. Have your agent investigate a small
 batch of survivors for missing assertions or test cases; a survivor alone does
-not establish a test defect. `--allow-best-effort-memory` permits execution
-on macOS and Linux without delegated cgroup limits; see the
+not establish a test defect. macOS and Linux without delegated cgroups require
+`--allow-best-effort-memory` before `--`; macOS memory is not capped. See the
 [resource limits](https://github.com/HayaoSuzuki/hoimin/blob/main/docs/usage.md#limits-and-defaults).
 
 See the [usage reference](https://github.com/HayaoSuzuki/hoimin/blob/main/docs/usage.md)
 for selectors and configuration, the
-[plan/verify workflow](https://github.com/HayaoSuzuki/hoimin/blob/main/docs/usage.md#plan-and-verify-with-an-agent),
+[step-by-step plan/verify workflow](https://github.com/HayaoSuzuki/hoimin/blob/main/docs/usage.md#plan-and-verify-with-an-agent)
+for a Git-independent example with a before/after test improvement,
 and [results](https://github.com/HayaoSuzuki/hoimin/blob/main/docs/usage.md#results),
 or run `hoimin --help`.
 For questions and bug reports, see the [reporting guide](https://github.com/HayaoSuzuki/hoimin/blob/main/docs/support.md).
