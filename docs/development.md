@@ -17,9 +17,11 @@ validation remain required; this direction does not relax them.
 
 ## Internal ownership and performance changes
 
-The private Rust `artifacts` module owns bounded file reads and run-report
-decoding. Keep plan validation, review assessment, progress comparison and verify
-execution policies with their respective commands. Shared decoding does not make
+The private Rust `artifacts` module owns bounded file reads, run-report
+decoding, and SQLite companion names. Callers retain their path resolution,
+validation order, and destination-protection policies. Keep plan validation,
+review assessment, progress comparison and verify execution policies with their
+respective commands. Shared decoding does not make
 their acceptance rules interchangeable.
 
 `tools/release_policy.py` owns the supported platform identities, Rust targets,
@@ -31,6 +33,8 @@ together; this module does not generate workflow YAML or verify signatures.
 For performance work, measure the affected path before retaining an optimization.
 The [runtime investigation](performance/2026-10-12-runtime-improvements.md)
 records the #813–#817 decisions, reproducible probes and measurement limits.
+The [CLI maintenance record](maintenance/2026-10-12-cli-refactors.md) describes
+the SQLite naming and command-result refactors in #826 and #827.
 
 ## Documentation publication
 

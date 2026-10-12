@@ -104,10 +104,14 @@ pub(crate) fn validate_store_destination(
     plan: &ReadOnlyPlan,
     report: Option<&Path>,
 ) -> Result<(), ReviewError> {
-    for suffix in ["", "-journal", "-wal", "-shm"] {
-        let mut name = store.as_os_str().to_os_string();
-        name.push(suffix);
-        validate_destination_entry(Path::new(&name), plan, report)?;
+    let companions = crate::artifacts::SqliteCompanions::new(store);
+    for path in [
+        store,
+        companions.journal.as_path(),
+        companions.wal.as_path(),
+        companions.shm.as_path(),
+    ] {
+        validate_destination_entry(path, plan, report)?;
     }
     Ok(())
 }

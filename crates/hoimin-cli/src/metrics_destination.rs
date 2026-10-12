@@ -180,10 +180,8 @@ fn session_artifacts(
     let files = {
         let mut files = files;
         let configured = inspector.entry(configured)?.path;
-        for suffix in ["-wal", "-shm", "-journal"] {
-            let mut name = configured.as_os_str().to_owned();
-            name.push(suffix);
-            let path = PathBuf::from(name);
+        let companions = crate::artifacts::SqliteCompanions::new(&configured);
+        for path in [companions.wal, companions.shm, companions.journal] {
             if !files.contains(&path) {
                 files.push(path);
             }
