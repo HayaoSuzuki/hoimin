@@ -15,6 +15,23 @@ over increasing mutation scores or scaling CI. Memory and disk controls, cleanup
 and honest incomplete results are core requirements. Existing development CI and
 validation remain required; this direction does not relax them.
 
+## Internal ownership and performance changes
+
+The private Rust `artifacts` module owns bounded file reads and run-report
+decoding. Keep plan validation, review assessment, progress comparison and verify
+execution policies with their respective commands. Shared decoding does not make
+their acceptance rules interchangeable.
+
+`tools/release_policy.py` owns the supported platform identities, Rust targets,
+wheel tags and version syntax without importing tooling dependencies. Keep the
+broader release-assembly wheel patterns separate from exact PyPI staging tags.
+When changing support, update the release workflow and its artifact validation
+together; this module does not generate workflow YAML or verify signatures.
+
+For performance work, measure the affected path before retaining an optimization.
+The [runtime investigation](performance/2026-10-12-runtime-improvements.md)
+records the #813–#817 decisions, reproducible probes and measurement limits.
+
 ## Documentation publication
 
 Edit the existing Markdown and open a PR; the Documentation workflow checks the

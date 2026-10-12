@@ -82,6 +82,19 @@ def prepare(assets: Path, tag: str = "v1.2.3") -> subprocess.CompletedProcess[st
     )
 
 
+def test_staging_entrypoint_runs_without_site_packages() -> None:
+    result = subprocess.run(
+        [sys.executable, "-S", "-m", "tools.pypi_release", "--help"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
 def test_stages_only_verified_wheels_without_changing_bytes(
     release_assets: Path,
 ) -> None:

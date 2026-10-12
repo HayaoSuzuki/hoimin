@@ -23,6 +23,7 @@ from sigstore.models import Bundle
 
 from tools.ci_selection import object_mapping
 from tools.pypi_release import prepare_wheels
+from tools.release_policy import RELEASE_PLATFORMS, SEMVER
 
 REPOSITORY = "HayaoSuzuki/hoimin"
 WORKFLOW = "release.yml"
@@ -30,7 +31,6 @@ SLSA = "https://slsa.dev/provenance/v1"
 PUBLISH = "https://docs.pypi.org/attestations/publish/v1"
 INDEXES = {"pypi": "https://pypi.org", "testpypi": "https://test.pypi.org"}
 PREDICATES = {SLSA, PUBLISH}
-PLATFORMS = 3
 PROPAGATION_ATTEMPTS = 61
 PROPAGATION_SECONDS = 600
 PROPAGATION_INTERVAL = 10
@@ -205,10 +205,7 @@ def fetch_json(url: str) -> dict[str, object]:
 def verify_index(
     index: str, tag: str, commit: str, directory: Path, *, allow_missing: bool = False
 ) -> bool:
-    if (
-        re.fullmatch(r"v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)", tag)
-        is None
-    ):
+    if re.fullmatch("v" + SEMVER, tag) is None:
         msg = "Expected stable release tag"
         raise ValueError(msg)
     base = INDEXES[index]
@@ -219,7 +216,7 @@ def verify_index(
             return False
         raise
     wheels = sorted(directory.glob("*.whl"))
-    if len(wheels) != PLATFORMS:
+    if len(wheels) != len(RELEASE_PLATFORMS):
         msg = "Expected three staged wheels"
         raise ValueError(msg)
     check_inventory(data, wheels)

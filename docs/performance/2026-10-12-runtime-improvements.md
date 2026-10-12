@@ -455,3 +455,59 @@ No new accepted format, schema, input path or CLI option was introduced.
 4. Existing partial-final-read fingerprint test moved with its production reader.
 5. Full workspace, strict lint, contract-feature checks and independent final
    review are recorded at delivery; they are not inferred from unit success.
+
+## #817: dependency-free release policy
+
+`tools/release_policy.py` now owns version syntax and the existing three platform
+identities, Rust targets, assembly wheel patterns and exact published wheel tags.
+Release assembly, SBOM generation, PyPI staging and provenance wheel counts derive
+their expectations from that table. Existing release version contracts remain in
+`release.py`; cryptographic verification remains in `pypi_provenance.py`.
+
+Assembly intentionally accepts broader compatible wheel tags than stable PyPI
+staging. The refactor preserves that distinction, all metadata/license/checksum
+checks and the historical three-wheel diagnostic. Direct script invocation and
+module invocation both resolve the same policy beside their source. The policy
+does not load external configuration or generate GitHub workflow definitions.
+
+The new regression test runs the staging entry point with Python's site packages
+disabled. It failed before the change because importing the version pattern
+indirectly imported `deal`. Existing staging byte-identity and rejection tests
+continue to cover actual wheels; the new case checks only dependency isolation.
+
+### #817 design self-review (five passes)
+
+1. Keep a pure data owner with standard-library types rather than a release framework.
+2. Keep stable PyPI tags distinct from compatible assembly patterns.
+3. Keep version contracts and signature checks at their existing execution boundaries.
+4. Preserve direct script imports from arbitrary working directories.
+5. Preserve workflow targets and distribution inputs; no release or version bump.
+
+### #817 plan self-review (five passes)
+
+1. First demonstrate the accidental staging dependency with site packages disabled.
+2. Move policy data only, deriving compatible names used by existing callers.
+3. Replace the independent provenance count with the policy's platform count.
+4. Reuse wheel metadata, checksum, SBOM and provenance rejection tests.
+5. Check strict lint, typing, both invocation modes and the complete Python suite.
+
+### #817 implementation self-review (five passes)
+
+1. Compare all three platform names and Rust targets against the release workflow.
+2. Compare broad assembly regexes and escaped exact staging tags with their originals.
+3. Check stable and development version expressions retain their original boundaries.
+4. Check no tooling dependency or network operation enters the pure policy module.
+5. Review the complete diff: signing, publisher identity and SBOM validation stay intact.
+
+### #817 verification self-review (five passes)
+
+1. Confirm the regression's initial failure is missing `deal`, not a fixture error.
+2. Verify the new entry-point check alongside existing byte-preserving staging tests.
+3. Verify existing release and SBOM direct-script fixtures from temporary directories.
+4. Verify all strict Python lint/format/type checks without adding suppressions.
+5. Record full-suite results and independent review below before delivery.
+
+Focused Python verification: 146 passed, 10 skipped in 86.43 seconds, including
+the new site-packages-disabled entry point. Ruff checks, Ruff format checks and
+strict ty checks passed across the repository. Full Python/Rust tests and the
+independent review are still separate completion gates.

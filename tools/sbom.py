@@ -15,12 +15,13 @@ from jsonschema import Draft7Validator, ValidationError
 from jsonschema.protocols import Validator
 from referencing import Registry, Resource
 
+if __package__:
+    from .release_policy import RELEASE_PLATFORMS
+else:
+    from release_policy import RELEASE_PLATFORMS
+
 ROOT = Path(__file__).resolve().parents[1]
-TARGETS = {
-    "windows-x86_64": "x86_64-pc-windows-msvc",
-    "linux-x86_64": "x86_64-unknown-linux-gnu",
-    "macos-aarch64": "aarch64-apple-darwin",
-}
+TARGETS = {platform.name: platform.rust_target for platform in RELEASE_PLATFORMS}
 KINDS = ("standalone", "wheel")
 SCOPE = "Cargo normal and build dependencies; excludes dev/fuzz and OS libraries"
 REPOSITORY = "https://github.com/HayaoSuzuki/hoimin"
