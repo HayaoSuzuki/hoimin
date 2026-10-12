@@ -4,9 +4,31 @@ okf_version: "0.2"
 
 # hoimin design and audit catalog
 
+Use this index to find current maintainer procedures, design rationale and
+historical evidence. Begin with the guide for your task, then follow its linked
+contract and original sources. See the [scope and evidence guide](overview.md)
+before interpreting a historical result as a current guarantee.
+
+## Start with your task
+
+The guides below own reusable procedures; concepts and dated records explain
+their rationale, implementation boundaries and observed evidence:
+
+| Task | Current guide | Contract or evidence |
+| --- | --- | --- |
+| Improve a project's tests | [Plan/verify loop](../usage.md#plan-and-verify-with-an-agent) | [Product direction](product-direction.md) and [selection contract](design/selection-plan-verify.md) |
+| Change execution limits or cleanup | [Limits](../usage.md#limits-and-defaults) and [disk safety](../usage.md#disk-safe-execution) | [Runtime lifecycle](design/runtime-lifecycle.md) |
+| Change saved plans, reports or sessions | [Compatibility](../compatibility.md) | [Selection](design/selection-plan-verify.md) and [session/report contracts](design/session-report.md) |
+| Change or validate the CLI | [Generated CLI procedure](../development.md#generated-cli-reference) and [quality gate](../development.md#local-quality-gate) | [CLI reference scope](cli-reference.md) |
+| Diagnose CI or release publication | [CI](../ci.md), [releases](../releases.md) and [PyPI recovery](../pypi-publishing.md) | [CI validation](ci-validation.md), [provenance](release-provenance.md) and [PyPI evidence](pypi-publishing.md) |
+| Edit documentation or interpret an audit | [OKF update procedure](../okf-workflow.md) and [site publication](../documentation.md) | [Evidence guide](overview.md) and [Lean evidence limits](audits/lean-evidence.md) |
+
+## Maintainer playbooks and scope
+
+These links explain decisions and scope. Follow their guide links for current
+commands rather than copying commands from a dated design or execution report:
+
 - [Product direction](product-direction.md) - Local AI-agent test improvement, score limitations, resource guards, and feature priorities.
-- [Runtime performance and maintenance](../performance/2026-10-12-runtime-improvements.md) - Measured decisions for #813–#815 and artifact-reader/release-policy ownership for #816–#817.
-- [Second-order mutation adoption](second-order-mutation.md) - Bounded research, first-order comparison and the decision to defer composite infrastructure.
 
 - [Agent skill distribution](../agent-skills.md) - Standard skills packages, GitHub CLI installation and release validation.
 
@@ -32,6 +54,9 @@ okf_version: "0.2"
 
 # Designs and contracts
 
+Use these topic summaries to locate rationale and source references. Check their
+recorded revisions against the implementation you are changing:
+
 - [Architecture](design/architecture.md) - Isolated copies, state transitions separated from I/O, and the Rust analyzer migration.
 - [Python analysis and candidates](design/analyzer.md) - Syntax, name resolution, user-defined exceptions, byte ranges and input scale.
 - [Target selection, plan and verify](design/selection-plan-verify.md) - Ranking, subsets, seeded sampling and saved-format revision questions.
@@ -40,8 +65,14 @@ okf_version: "0.2"
 - [JSON mutant spool](design/json-report-spool.md) - Record-level writing and acknowledgement/poison contracts on failure.
 
 - [Fingerprint input globs](design/fingerprint-inputs.md) - Shared traversal across include globs and input-order errors.
+- [Collection annotation references](design/annotation-builtins.md) - Bidirectional concrete types, deferred evaluation and scope checks.
+- [Survivor review](design/survivor-review.md) - Candidate identity, review history and separation from execution outcomes.
+- [Typed results and executable contracts](typed-results-and-contracts.md) - Expected failures, optional budget checks, and evidence limits.
 
 # Audits and verification scope
+
+Treat these as evidence at their recorded revisions, inputs and environments,
+not a claim that every current host or commit passed the same checks:
 
 - [Additional audit Lean integration report](../superpowers/reports/2026-09-15-followup-lean-promotion.md) - Six models, 33 theorems, 58 inputs and unresolved implementation correspondence.
 
@@ -64,23 +95,27 @@ okf_version: "0.2"
 - [Progress-input follow-up](audits/progress-input.md) - Historical 368/564 observations, JSONL reading and verification scope.
 - [July 2026 Rust audit](audits/rust-2026-07.md) - Initial finding classification and host constraints.
 
-# Finding original sources
-
-- [Source catalog entry point](references/index.md) - Design, audit and report lists.
-- [Design catalog](references/design-documents.md) - Index of all original design Markdown.
-- [Audit and report catalog](references/audit-documents.md) - Index of all original audit and report Markdown.
-
 - [Performance validation by input shape](audits/performance-shapes.md) - Execution gates, release measurements, dependent PRs and evidence limits.
 - [Measuring test execution costs](test-execution-costs.md) - Collection/build/runtime separation, measured fixture costs and retained integration coverage.
 
 - [Cross-boundary contract fixtures](audits/boundary-contracts.md) - Strict execution, complete reporting and unverified conditions.
 
-- [Collection annotation references](design/annotation-builtins.md) - Bidirectional concrete types, deferred evaluation and scope checks.
-
 - [September 2026 analysis audits and regression integration](audits/analysis-2026-09.md) - Original evidence, fix PRs and formal tests for #545 through #549.
 
+## Research and adoption decisions
+
+Read the conclusion and limitations before reviving a deferred feature:
+
+- [Runtime performance and maintenance](../performance/2026-10-12-runtime-improvements.md) - Measured decisions for #813–#815 and artifact-reader/release-policy ownership for #816–#817.
+- [Second-order mutation adoption](second-order-mutation.md) - Bounded research, first-order comparison and the decision to defer composite infrastructure.
 - [Constrained mutation search and differential test generation](mutation-search.md) - Measurements on fixed functions, adopted scope, guided search and CrossHair limits.
-
-- [Typed results and executable contracts](typed-results-and-contracts.md) - Expected failures, optional budget checks, and evidence limits.
-
 - [Fuzzing maintenance adoption](fuzzing-adoption.md) - Corpus replay evidence, property reuse and bounded exploration decisions.
+
+# Finding original sources
+
+Use the source catalogs to find original decisions and execution records. Their
+titles and metadata retain the original language and historical scope:
+
+- [Source catalog entry point](references/index.md) - Design, audit and report lists.
+- [Design catalog](references/design-documents.md) - Index of all original design Markdown.
+- [Audit and report catalog](references/audit-documents.md) - Index of all original audit and report Markdown.

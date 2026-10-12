@@ -1,18 +1,24 @@
-# 設計と契約
+# Designs and contracts
 
-- [隔離コピーと状態遷移の設計](architecture.md) - 元ソースへの変異適用を避け、状態遷移と入出力をcrateごとに分離する設計を説明する。
-- [Python解析・変異候補と入力規模](analyzer.md) - 構文・名前解決・ユーザ定義例外・変更するバイト範囲・候補保持上限を別々の契約として整理する。
-- [対象選択・plan・verifyの契約](selection-plan-verify.md) - 候補発見と実行の分離、ランキング、部分集合、seed付き無作為抽出、実行前preview、保存形式の版の不整合を整理する。
-- [資源制限・終了時の後処理・最終出力](runtime-lifecycle.md) - OS別の資源制限と、プロセス終了・一時ファイル削除・レポート出力の完了条件を整理する。
-- [session所有権とレポートの検証](session-report.md) - 保存・復旧の権限、スキーマ移行、結果の生成側と読取り側の検証責務を整理する。
-- [JSONレポートのmutant record書込み](json-report-spool.md) - 一括書込み、ack、short write、poisoned状態を整理する。
+These topic summaries explain responsibilities and link to implementation and
+historical sources. Start with the [current task guide](../index.md#start-with-your-task)
+for operational commands, and check the recorded source revisions before changing
+a contract. A design or model proof alone does not establish current execution
+success; see the [evidence guide](../overview.md#revisions-and-evidence).
 
-- [fingerprint入力globの共有走査](fingerprint-inputs.md) - 複数globの一回走査、入力順エラー、未選択ファイルの境界を整理する。
+The contracts cover these boundaries:
 
-- [survivorの評価と実行結果の分離](survivor-review.md) - 候補の同定、評価履歴、stale判定の実装前設計。
+- [Isolation and state transitions](architecture.md) - Mutations in copies, state decisions and I/O responsibilities.
+- [Python analysis and candidate scale](analyzer.md) - Syntax, name resolution, exception hierarchies, byte ranges and bounded retention.
+- [Target selection, plan and verify](selection-plan-verify.md) - Discovery versus execution, ranking, subsets, sampling, previews and saved-format changes.
+- [Resources, cleanup and final output](runtime-lifecycle.md) - OS-specific limits and process, workspace and report completion conditions.
+- [Session ownership and report validation](session-report.md) - Persistence, recovery, migration and reader/writer responsibilities.
+- [JSON mutant record writing](json-report-spool.md) - Batched writes, acknowledgement, short writes and poisoned output state.
+- [Fingerprint input glob traversal](fingerprint-inputs.md) - Shared traversal, input-order errors and unselected files.
+- [Survivor assessments versus execution outcomes](survivor-review.md) - Candidate identity, review history and stale evidence; inspect current implementation separately from the original design.
+- [Collection annotation references](annotation-builtins.md) - Bidirectional concrete types, deferred evaluation and scope checks.
 
-# 関連
+# Related material
 
-- [カタログの入口](../index.md) - 全体の読み順。
-
-- [コレクション型注釈の参照先](annotation-builtins.md) - 具体型の両方向、遅延評価とscopeの判定。
+- [Catalog entry point](../index.md) - Task routes, playbooks and original source catalogs.
+- [Audit summaries](../audits/index.md) - Recorded evidence and unverified conditions.

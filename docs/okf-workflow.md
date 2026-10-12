@@ -2,6 +2,12 @@
 
 OKF (Open Knowledge Format) organizes knowledge as Markdown concepts and indexes. In hoimin, [docs/knowledge/](knowledge/index.md) records design contracts, decisions, and audit results. Read relevant concepts and their sources before starting work, and update affected explanations in the same change.
 
+This page owns the knowledge-update procedure. Use the
+[catalog's task routes](knowledge/index.md#start-with-your-task) to choose what
+to read and the [guide ownership table](knowledge/overview.md#current-guides-and-original-records)
+to decide where a correction belongs. Keep operational commands in their guide;
+link to that procedure from concepts instead of maintaining a second copy.
+
 ## Before starting work
 
 1. Read the [catalog scope and evidence guide](knowledge/overview.md) to distinguish source revisions and evidence levels.

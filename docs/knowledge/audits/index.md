@@ -1,20 +1,25 @@
-# 監査と検証範囲
+# Audits and verification scope
 
-- [Lean監査の証拠をどう読むか](lean-evidence.md) - モデル内証明・有限探索・Rust対応・実機確認の違いを具体例で示す。
-- [2026-09-11 境界条件の横断監査](boundary-2026-09.md) - 構文・選択・実行・保存の監査結果と、静的確認・未検証の範囲を残す。
-- [progress入力の集計値検証と後続修正](progress-input.md) - 境界監査後の修正、368観測の範囲、既存の比較用テストの前提変更を記録する。
-- [2026年7月 Rustコードベース監査](rust-2026-07.md) - 初期Rust監査の発見分類、品質ゲート、実機未確認範囲を保存する。
+These summaries help maintainers and agents find historical results and their
+limits. Check the target revision, environment, inputs and unresolved conditions
+before using a result as evidence for a change. A test's existence, a model proof
+and an actual host execution are different evidence; see the
+[evidence guide](../overview.md#revisions-and-evidence).
 
-# 関連
+Read the relevant summary and follow its original sources:
 
-- [カタログの入口](../index.md) - 全体の読み順。
+- [Reading Lean evidence](lean-evidence.md) - Model proofs, finite search, Rust comparisons and host execution.
+- [2026-09-11 boundary audit](boundary-2026-09.md) - Syntax, selection, execution and persistence findings, including static and unverified scope.
+- [Progress-input validation and follow-up](progress-input.md) - Later fixes, 368 historical observations and changed comparison-test assumptions.
+- [July 2026 Rust audit](rust-2026-07.md) - Original findings, quality checks and unverified host behavior.
+- [Performance by input shape](performance-shapes.md) - Execution gates, release measurements, dependent PRs and evidence limits.
+- [Cross-boundary contract fixtures](boundary-contracts.md) - Strict execution, complete reporting and unverified conditions.
+- [Implicit exceptions and finally](implicit-finally.md) - Typing-derived merges, small Lean models and public-plan comparisons.
+- [September 2026 analysis regression integration](analysis-2026-09.md) - Original evidence, fix PRs and formal tests for #545–#549.
+- [Kani feasibility investigation](../../superpowers/reports/2026-10-11-issue-778-kani.md) - One bounded Rust budget-contract experiment; adoption deferred after timeout/OOM.
 
-- [入力形状別の性能検証](performance-shapes.md) - 実行ゲート、release計測、依存PRと証拠の限界。
+# Related material
 
-- [境界をまたぐ契約 fixture](boundary-contracts.md) - strict 実行、全件報告と未検証条件。
-
-- [暗黙例外と finally](implicit-finally.md) - typing 由来の合流、Lean 小モデル、公開 plan の対応範囲。
-
-- [2026年9月の解析監査と回帰検証への反映](analysis-2026-09.md) - #545〜#549の原証拠、修正PR、正式なテストの対応。
-
-- [Kaniによる実Rust契約検証の実現性](../../superpowers/reports/2026-10-11-issue-778-kani.md) - 1件の予算契約を資源上限付きで試し、timeout/OOMにより導入を保留。
+- [Catalog entry point](../index.md) - Overall scope and reading order.
+- [Catalog task routes](../index.md#start-with-your-task) - Current operational guides and contracts.
+- [Original audit/report catalog](../references/audit-documents.md) - Original documents and recorded source revisions.

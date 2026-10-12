@@ -1,5 +1,28 @@
 # Development
 
+This guide is for maintainers changing and validating hoimin. Start with the
+procedure for your task, then consult the linked contracts and implementation.
+For using hoimin to improve another project's tests, see the
+[plan/verify workflow](usage.md#plan-and-verify-with-an-agent).
+
+## Find the procedure for your change
+
+Use these entry points before reading implementation or audit notes:
+
+| Task | Procedure | Rationale and evidence |
+| --- | --- | --- |
+| Validate a code change | [Local quality gate](#local-quality-gate) and [CI selection](ci.md) | [Test structure](#test-structure) and affected [contracts](knowledge/index.md#designs-and-contracts) |
+| Change CLI help or arguments | [Generate the CLI reference](#generated-cli-reference) | [Reference scope](knowledge/cli-reference.md) and [runtime usage contracts](usage.md) |
+| Change limits, shutdown or cleanup | [Resource boundary](#resource-policy-at-the-core-boundary) | [Runtime lifecycle](knowledge/design/runtime-lifecycle.md) and linked model comparisons |
+| Publish packages | [GitHub Releases](releases.md) and [PyPI](pypi-publishing.md) | [Build provenance](knowledge/release-provenance.md) and [index verification](knowledge/pypi-publishing.md) |
+| Edit documentation | [Knowledge update procedure](okf-workflow.md) and [site publication](documentation.md) | [Guide ownership and evidence](knowledge/overview.md) |
+
+The procedures in this guide and linked operational guides are maintained with
+the code. Issue-specific counts, measurements and dated records describe their
+recorded revision and environment; they are not evidence for your current change.
+Keep useful originals in place and follow the
+[catalog's task routes](knowledge/index.md#start-with-your-task) for other topics.
+
 The [agent skill guide](agent-skills.md) covers the distributable `skills/`
 packages, GitHub CLI installation, and packaging validation. Current user and
 maintainer guides use English; historical design and audit records retain their
@@ -83,6 +106,10 @@ criteria, source provenance, and validation. Include consulted pages, updated
 pages (or the reason no update was needed), and checks performed in the PR or
 final handoff. These steps also apply when no personal `create-okf` skill is
 installed.
+
+The [documentation navigation record](maintenance/2026-10-12-documentation-navigation.md)
+records the #742/#818 cleanup, representative lookup paths and verification
+scope; it supplements this procedure rather than owning another update checklist.
 
 ## Resource policy at the core boundary
 

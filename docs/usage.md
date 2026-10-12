@@ -9,6 +9,8 @@ For upgrades, saved-format compatibility and changed defaults, see the
 For questions and bug reports, see the [reporting guide](support.md).
 
 - [Run it](#run-it)
+- [Plan and verify with an agent](#plan-and-verify-with-an-agent)
+- [Live progress and debugging](#live-progress-and-debugging)
 - [Select mutation targets](#select-mutation-targets)
 - [Python source encodings](#python-source-encodings)
 - [Limits and defaults](#limits-and-defaults)
@@ -16,52 +18,45 @@ For questions and bug reports, see the [reporting guide](support.md).
 - [Mutation operators](#mutation-operators)
 - [Mutation profiles](#mutation-profiles)
 - [Results](#results)
+- [Human review of mutation candidates](#human-review-of-mutation-candidates)
 - [Sessions and resume](#sessions-and-resume)
 - [Additional runtime mutations](#additional-runtime-mutations)
 
 ## Run it
 
-Install hoimin from [PyPI](https://pypi.org/project/hoimin/) with `uv tool install --python 3.14 hoimin`. Rust performs analysis in-process; the command after `--` is the test command for the project being checked.
+Install hoimin using the [README](../README.md#install). Run commands from your
+project directory with an environment whose `python` has your test dependencies.
+Run the project's tests first and resolve failures before mutation testing.
+Rust performs analysis in-process; everything after `--` is the project's test
+command, passed directly as arguments without a shell.
+
+### Before execution
+
+Choose the resource policy before `run` or `plan`:
+
+| Platform | Initial policy |
+| --- | --- |
+| Windows | Keep the default Job Object hard limits |
+| Linux with delegated cgroup v2 | Keep the default cgroup hard limits |
+| macOS | Explicitly accept `--allow-best-effort-memory`; memory is not capped |
+| Linux without delegated cgroup v2 | Explicitly accept `--allow-best-effort-memory`; fallback address-space limits apply per process, not to the whole tree |
+
+Use the commands as written on Windows or hard-limit Linux. On macOS or fallback
+Linux, add `--allow-best-effort-memory` **before `--`** to the `run` or `plan`
+command only if that policy is acceptable. `verify` inherits the saved policy
+and does not accept this flag. See [limits and defaults](#limits-and-defaults)
+for enforcement scope and cleanup limitations. A limit or cleanup failure is a
+reason to stop and diagnose, not to disable a guard or retry indefinitely.
+
+Single-line commands work in Bash and PowerShell 7. Shell-specific examples
+are labeled. Use PowerShell 7 for JSON redirection; legacy Windows PowerShell
+can write UTF-16 output that hoimin cannot read as a saved JSON plan.
+
+For a direct run, replace `src/calc.py` with an existing target file:
 
 ```console
-hoimin run --root . --file src/calc.py --format json -- python -m pytest -q
+hoimin run --root . --file src/calc.py --format human -- python -m pytest -q
 ```
-
-### Live progress and debugging
-
-When stderr is a terminal, `run`, `plan`, and `verify` show a progress line once
-per second during execution, plus a final line. Each line shows the current stage,
-completed mutant count, and elapsed wall time, including time spent waiting for
-tests. For example:
-
-```text
-hoimin: running baseline | 0 completed | elapsed 2s
-hoimin: testing mutants | 3 completed | elapsed 8s
-hoimin: finished | 4 completed | elapsed 10s
-```
-
-Completed counts include reused results and exclude candidates that were not run.
-`plan` discovers candidates without executing mutants, so its completed count is
-zero. Redirecting stderr disables live progress; stdout keeps its selected report
-format. The `hoimin progress` command compares saved reports and has no live display.
-
-Enable diagnostic logs with `RUST_LOG`:
-
-```console
-RUST_LOG=hoimin_cli=debug hoimin run --root . --file src/calc.py --format json -- python -m pytest -q > result.json 2> debug.jsonl
-```
-
-Logs use text on terminal stderr and JSON Lines on redirected stderr. With logging
-enabled, redirected stderr can contain both tracing records and existing diagnostic
-events; tracing records do not use the versioned run-event schema. Filter by module,
-such as `RUST_LOG=hoimin_cli::process=debug`, to inspect process execution. Run,
-worker, and mutant identifiers connect logs from concurrent test processes.
-
-Logging is off by default. `RUST_LOG=off`, an empty value, or an invalid filter
-disables it without disabling terminal progress. Library callers choose their own
-tracing subscriber. Diagnostic output uses a bounded queue: a slow sink can lose
-log records, and shutdown waits at most 250 ms to flush. These logs supplement
-the run reports; use the reports for complete mutation results.
 
 ### Plan and verify with an agent
 
@@ -71,28 +66,147 @@ ambiguous requirements and reviewing changes. See the [product principles](produ
 Inspect the baseline and resource policy before starting the loop; stop on resource
 or cleanup failures instead of silently raising limits or repeating the run.
 
-Create a ranked plan before improving tests, then verify its highest-ranked retained candidates:
+This example uses a file rather than Git changes. You can follow it in an empty
+directory without initializing Git. Use an environment with pytest installed and
+apply the [execution prerequisites](#before-execution) before planning.
 
-Create the `reports/` directory before redirecting output there. Save an initial
-verification report before editing tests so the agent can identify survivors.
-After a justified test-only change, repeat the same selection from the same plan
-and save a new report; source or fingerprint changes require a new plan.
+1. Create `calc.py`. Its required behavior is to add two numbers:
+
+    ```python
+    def add(left, right):
+        return left + right
+    ```
+
+2. Create `test_calc.py` with a passing but incomplete test:
+
+    ```python
+    from calc import add
+
+
+    def test_add_zero():
+        result = add(0, 0)
+
+        assert result == 0
+    ```
+
+3. Confirm that the original tests pass:
+
+    ```console
+    python -m pytest -q
+    ```
+
+    Expect one passing test. Resolve a collection, import or test failure before
+    proceeding; a failed baseline cannot tell you whether a mutant was detected.
+
+4. Create `reports/` and a plan selecting only addition/subtraction replacement.
+    On Windows or delegated-cgroup Linux, use the command for your shell:
+
+    **Bash:**
+
+    ```bash
+    mkdir -p reports
+    hoimin plan --root . --file calc.py --operators binary_add_sub \
+      --jobs 1 --total-timeout 1m \
+      -- python -m pytest -q > PLAN.json
+    ```
+
+    **PowerShell 7:**
+
+    ```powershell
+    New-Item -ItemType Directory -Force reports | Out-Null
+    hoimin plan --root . --file calc.py --operators binary_add_sub `
+      --jobs 1 --total-timeout 1m `
+      -- python -m pytest -q > PLAN.json
+    ```
+
+    On macOS or fallback Linux, use this Bash plan command instead, after creating
+    `reports/`, only if you accept best-effort memory control:
+
+    ```bash
+    hoimin plan --root . --file calc.py --operators binary_add_sub \
+      --jobs 1 --total-timeout 1m --allow-best-effort-memory \
+      -- python -m pytest -q > PLAN.json
+    ```
+
+    The plan should retain one candidate, replacing `+` with `-`. `plan` does not
+    run tests. For a different project, inspect the plan before verification. If
+    it retains no candidates, check the file and operator selection; `verify
+    --top` rejects an empty selection. If discovery is truncated or fails, narrow
+    the target and resolve the diagnostic before treating the plan as complete.
+
+5. Verify the saved candidate and retain the initial report. These single-line
+    commands work in Bash and PowerShell 7:
+
+    ```console
+    hoimin verify PLAN.json --top 1 --dry-run > reports/preview.json
+    hoimin verify PLAN.json --top 1 --format json > reports/before.json
+    ```
+
+    Inspect `reports/before.json`: the baseline should pass and the candidate
+    should survive because both `0 + 0` and `0 - 0` equal zero. Use the candidate
+    ID and replacement from the plan to investigate the actual change. A timeout,
+    error, resource stop or incomplete report is not a survivor; see [results](#results).
+    This verification exits **1**, meaning a complete run with a survivor; that
+    is the expected observation here, not a broken baseline. Check
+    `summary.complete`, `summary.counts` and `baseline.termination` in the report.
+
+6. Keep `calc.py` unchanged and add this test to `test_calc.py`. The requirement
+    is addition, so distinct nonzero inputs distinguish it from subtraction:
+
+    ```python
+    def test_add_distinct_positive_numbers():
+        result = add(2, 3)
+
+        assert result == 5
+    ```
+
+    Run `python -m pytest -q` again and expect two passing tests. In real projects,
+    have the agent justify the assertion from the specification; ask a human to
+    resolve ambiguous behavior. Do not change production code merely to kill a
+    mutant or treat suspected equivalence as proof.
+
+7. Verify the same selection from the unchanged plan and compare reports:
+
+    ```console
+    hoimin verify PLAN.json --top 1 --format json > reports/after.json
+    hoimin progress reports/before.json reports/after.json
+    ```
+
+    The new baseline should pass and the same candidate should be killed by the
+    new assertion; this verification exits **0**. Preserve both reports with the
+    plan and test diff. Test-only
+    changes can reuse this plan unless those files are explicitly fingerprinted;
+    changing selected source or a fingerprint input requires a new plan.
+
+For your project, replace `calc.py` and the test command, agree a small budget,
+and repeat the same selection after justified test improvements. Stop when the
+scope is covered, the budget is exhausted, or remaining survivors lack a useful
+specification-backed test. Record uncertain or unhelpful candidates with
+[human review](#human-review-of-mutation-candidates) rather than chasing a score.
+
+#### Selection options after the first loop
+
+Create a fresh plan for different targets, operators or execution settings.
+For a real project with `src/`, you can restrict discovery to Git changes; this
+requires Git changes and is not a prerequisite for the example:
+
+```bash
+hoimin plan --root . --source src --changed --total-timeout 15m \
+  -- python -m pytest -q > CHANGED_PLAN.json
+```
+
+Apply the same OS policy choice to this `plan`. Preview a selection before
+executing it, and keep the same mode and parameters for before/after reports.
+On a plan with enough retained candidates, choose one of these alternatives:
 
 ```console
-hoimin plan --root . --source src --changed \
-  --allow-best-effort-memory \
-  --total-timeout 15m \
-  -- python -m pytest -q > PLAN.json
-# first verify the saved top 10 to identify survivors before changing tests
-hoimin verify PLAN.json --top 10 --format json > reports/batch-a-001.json
-# after test-only improvements, repeat this selection into batch-a-002.json
-# alternatively, spread an equal-score tier across production files
-hoimin verify PLAN.json --top 10 --selection-policy diverse
-# or spread an equal-score tier across source start lines
-hoimin verify PLAN.json --top 10 --selection-policy line-diverse
-# or sample across all ranks from a complete plan
-hoimin verify PLAN.json --sample 10 --seed 42
+hoimin verify CHANGED_PLAN.json --top 10 --selection-policy diverse
+hoimin verify CHANGED_PLAN.json --top 10 --selection-policy line-diverse
+hoimin verify CHANGED_PLAN.json --sample 10 --seed 42
 ```
+
+The first two spread equal-score candidates across files or source start lines.
+Sampling requires a complete plan; it is not equivalent to a ranked prefix.
 
 Each plan candidate records `rank`, `score`, and `ranking_reasons`.
 The scores are transparent ordering heuristics for focusing effort; they do not
@@ -151,6 +265,66 @@ hoimin run --root . --source src --symbol calc:add --format jsonl -- python -m p
 ```
 
 Everything after `--` is passed directly as native argv to the child process. hoimin does not join it into a command string, invoke a shell, expand globs or variables, or interpret shell quoting.
+
+### Live progress and debugging
+
+When stderr is a terminal, `run`, `plan`, and `verify` show a progress line once
+per second during execution, plus a final line. Each line shows the current stage,
+completed mutant count, and elapsed wall time, including time spent waiting for
+tests. For example:
+
+```text
+hoimin: running baseline | 0 completed | elapsed 2s
+hoimin: testing mutants | 3 completed | elapsed 8s
+hoimin: finished | 4 completed | elapsed 10s
+```
+
+Completed counts include reused results and exclude candidates that were not run.
+`plan` discovers candidates without executing mutants, so its completed count is
+zero. Redirecting stderr disables live progress; stdout keeps its selected report
+format. The `hoimin progress` command compares saved reports and has no live display.
+
+For the example's `calc.py`, enable diagnostic logs with the command for your
+shell. Keep actively written logs outside the project root: writing a log inside
+the copied project can trigger original-file integrity checks. These examples
+create `../hoimin-diagnostics/`. Apply the [OS policy choice](#before-execution)
+to `run` as well.
+
+**Bash:**
+
+```bash
+mkdir -p ../hoimin-diagnostics
+RUST_LOG=hoimin_cli=debug hoimin run --root . --file calc.py \
+  --format json -- python -m pytest -q \
+  > ../hoimin-diagnostics/result.json 2> ../hoimin-diagnostics/debug.jsonl
+```
+
+**PowerShell 7:**
+
+```powershell
+New-Item -ItemType Directory -Force ../hoimin-diagnostics | Out-Null
+$previousRustLog = $env:RUST_LOG
+try {
+    $env:RUST_LOG = 'hoimin_cli=debug'
+    hoimin run --root . --file calc.py --format json `
+      -- python -m pytest -q `
+      > ../hoimin-diagnostics/result.json 2> ../hoimin-diagnostics/debug.jsonl
+} finally {
+    $env:RUST_LOG = $previousRustLog
+}
+```
+
+Logs use text on terminal stderr and JSON Lines on redirected stderr. With logging
+enabled, redirected stderr can contain both tracing records and existing diagnostic
+events; tracing records do not use the versioned run-event schema. Filter by module,
+such as `RUST_LOG=hoimin_cli::process=debug`, to inspect process execution. Run,
+worker, and mutant identifiers connect logs from concurrent test processes.
+
+Logging is off by default. `RUST_LOG=off`, an empty value, or an invalid filter
+disables it without disabling terminal progress. Library callers choose their own
+tracing subscriber. Diagnostic output uses a bounded queue: a slow sink can lose
+log records, and shutdown waits at most 250 ms to flush. These logs supplement
+the run reports; use the reports for complete mutation results.
 
 ## Select mutation targets
 
@@ -1147,13 +1321,35 @@ within its authorized task. The command does not invoke an LLM or establish
 equivalence. Humans resolve specification ambiguities and review the proposed
 tests; an agent must retain uncertainty when it lacks evidence.
 
-```sh
-hoimin review list plan.json --store reviews.sqlite3 --format json
-hoimin review show plan.json --store reviews.sqlite3 --candidate ID
-hoimin review record plan.json --store reviews.sqlite3 --candidate ID \
+Inspect the saved plan with these single-line commands in Bash or PowerShell 7:
+
+```console
+hoimin review list PLAN.json --store reviews.sqlite3 --format json
+hoimin review show PLAN.json --store reviews.sqlite3 --candidate CANDIDATE_ID
+```
+
+Replace `CANDIDATE_ID` with the ID from your plan, and use your plan's path in
+place of `PLAN.json`. To record a justified assessment, use your shell's form:
+
+**Bash:**
+
+```bash
+hoimin review record PLAN.json --store reviews.sqlite3 --candidate CANDIDATE_ID \
   --assessment actionable --reason 'A required field can be omitted without a failure' \
   --expected-revision 0
 ```
+
+**PowerShell 7:**
+
+```powershell
+hoimin review record PLAN.json --store reviews.sqlite3 --candidate CANDIDATE_ID `
+  --assessment actionable `
+  --reason 'A required field can be omitted without a failure' `
+  --expected-revision 0
+```
+
+Replace the example reason with evidence for the actual selected candidate;
+the required-field example is not an assessment of the addition tutorial.
 
 Assessments are `actionable`, `not_useful`, `suspected_equivalent`, and
 `needs_investigation`. No record means `unreviewed`, distinct from `not_useful`.

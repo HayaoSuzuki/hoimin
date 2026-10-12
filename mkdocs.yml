@@ -35,6 +35,7 @@ plugins:
       lang: en
 markdown_extensions:
   - fenced_code
+  - pymdownx.superfences
   - tables
   - footnotes
   - toc:

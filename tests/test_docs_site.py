@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 import markdown
@@ -7,6 +8,30 @@ from tools import docs_site
 from tools.docs_site import RepositoryLinks, rewrite_url
 
 REVISION = "a" * 40
+
+
+def test_site_renders_code_inside_numbered_steps() -> None:
+    root = Path(__file__).resolve().parents[1]
+    config = docs_site.load_config(config_file=str(root / "mkdocs.yml"))
+    source = (
+        "1. Create the source file:\n\n"
+        "    ```python\n"
+        "    def add(left, right):\n"
+        "        return left + right\n"
+        "    ```\n"
+    )
+
+    rendered = markdown.markdown(
+        source,
+        extensions=config.markdown_extensions,
+        extension_configs=config.mdx_configs,
+    )
+    text = re.sub(r"<[^>]+>", "", rendered)
+
+    assert re.search(
+        r"<li>.*<pre\b.*<code\b.*</code>.*</pre>.*</li>", rendered, re.DOTALL
+    )
+    assert "def add(left, right):\n    return left + right" in text
 
 
 def test_site_preparation_copies_only_allowlisted_theme_assets(

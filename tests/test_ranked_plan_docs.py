@@ -13,7 +13,7 @@ def usage() -> str:
 @pytest.mark.parametrize(
     "text",
     [
-        "hoimin verify PLAN.json --top 10",
+        "hoimin verify PLAN.json --top 1 --format json",
         "ranking_reasons",
         "ordering heuristics",
         "mutually exclusive",
