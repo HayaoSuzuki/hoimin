@@ -261,3 +261,124 @@ The driver bounds records/payloads and removes its spool directory on exit.
 4. Do not claim safety equivalence of an unimplemented reader variant.
 5. Keep native-permission full-suite verification in the final retained-code
    stage; this investigation adds no production code or redundant regression test.
+
+## #815: measured analysis stages, no retained optimization
+
+Use a temporary instrumentation patch to distinguish source read/decode,
+parse, depth validation, facts, token candidates, AST candidates, type candidates,
+merge and candidate validation/record sizing. The
+[discovery driver](probes/analysis.rs) calls the real public `discover_targets`,
+with a 10,000-candidate budget and seven repetitions in one process. Report the
+median of the six repetitions after the initial warm-up. Timers measure wall
+time on the discovery worker, **not sampled CPU stacks** or allocation counts.
+
+[Input inventory](runtime-2026-10-12/analysis-inputs.json) pins revisions, paths,
+byte counts and SHA-256. Inputs are proofreadtools's 2,281-byte variant helper,
+Django's 100,029-byte `django/db/models/base.py`, and a reproducible 57,559-byte
+source containing 1,000 simple functions. No fetched project code was executed,
+imported or added to product inputs. These single files are not a benchmark of
+either complete project, pandas, or CPython.
+
+Warm default/full measurements, in milliseconds:
+
+| Input | Candidates | Total discovery | Parse | Facts | Token work | AST candidates | Validate + size |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| proofreadtools | 31 | 0.700 | 0.094 | 0.042 | 0.026 | 0.093 | 0.050 |
+| Django model base | 1,309 | 8.265 | 2.063 | 0.515 | 0.692 | 1.556 | 1.841 |
+| generated functions | 9,000 | 27.164 | 2.733 | 1.317 | 1.982 | 5.680 | 10.804 |
+
+Other Django medians: source read 0.204 ms, decode/source-validation context
+0.211 ms, depth 0.140 ms, merge 0.218 ms. Generated-input equivalents were
+0.220, 0.113, 0.205 and 2.033 ms. Type-candidate generation was below 0.001 ms
+for these inputs/selections. Token work includes constructing its line/token
+indexes. Validate + size includes byte-span conversion, stable identity and
+candidate guards, JSON size validation, and retention in discovery's Vec; it
+does not include CandidateStore::push or writing a spool. Individual medians
+must not be summed to reconstruct the median total. Total also includes root
+capability setup, scheduling, drops and instrumentation output.
+
+Restricting selection to `boolean_literal` gave warm discovery medians of
+0.568/4.192/7.034 ms for proofreadtools/Django/generated, retaining 0/55/0
+candidates. The existing selector checks already reduce AST work; the source
+must still be parsed and facts validated. The focused profile retained
+31/1,289/9,000 candidates, with warm totals 0.690/8.037/26.395 ms. It is not
+expected to substantially accelerate sources whose candidates it does not omit.
+Process peak working set remained below 17.1 MB across the nine configurations.
+
+Ruling: retain phase evidence, not a traversal rewrite. In the larger real file
+parse and candidate validation/construction matter at least as much as AST
+candidate generation; facts are not the dominant cost. Existing context/index
+reuse and early selector checks are present. The generated case spends most time
+in necessary candidate work, not a demonstrated redundant walk. A few
+milliseconds per file do not justify introducing caches, skipping validation,
+or changing traversal/order semantics without an actual workload bottleneck.
+These results do not rule out future improvements on different input scales.
+
+### Reproduction
+
+1. Run [fetch-analysis-inputs.py](probes/fetch-analysis-inputs.py) with authenticated
+   gh to fetch the pinned files and generate the synthetic input, each below
+   1 MiB. Source code is parsed only.
+2. Apply [the temporary timing patch](probes/815-analysis-timing.patch), copy
+   `analysis.rs` to `crates/hoimin-cli/examples/profile_analysis.rs`, and build
+   that example with the same locked release profile and two-job resource policy.
+3. Run `python docs/performance/probes/analysis-matrix.py EXE instrumented`.
+   Each configuration has a 60-second process deadline. This probe calls discovery,
+   not external test execution; its memory observations are not a hard memory cap.
+4. Reverse the instrumentation patch, rebuild the same example and run the matrix
+   again with label `control`. Compare candidate hashes, counts and diagnostics;
+   remove the copied example afterwards. Profiling must not become production
+   logging or a new runtime input.
+
+[Instrumented observations](runtime-2026-10-12/analysis-instrumented.json) retain
+all seven samples and per-phase stderr. Formatting/logging adds overhead to
+discovery totals, especially the smallest source; phase times are approximate
+diagnostics rather than a performance guarantee.
+
+The [uninstrumented control](runtime-2026-10-12/analysis-control.json) matched
+all 63 candidate hashes, counts, truncation flags and diagnostics, and emitted no
+profiling stderr. Its default/full warm medians were 0.526/7.466/25.120 ms;
+boolean-only medians 0.478/3.880/6.922 ms; focused medians
+0.465/7.496/24.795 ms. The instrumentation therefore affects totals and must not
+be used as evidence of an optimization. No runtime source changes are retained.
+
+After these measurements, `cargo clean --release` on the verified task-owned
+target removed 1,837 files / 742.2 MiB. Debug artifacts remain for the refactors;
+approximately 171 GiB disk space is free. Frozen experiment executables in the
+task scratch directory are retained only until final review.
+
+### #815 design self-review (five passes)
+
+1. Scope: separate parsing, indexing, candidate production and validation rather
+   than call every walk redundant.
+2. Safety: keep syntax disposal, depth checks, source identity and cancellation.
+3. Scale: bound individual source size, candidates, repetitions and deadline.
+4. Selection: inspect default, narrow operator and focused profile independently.
+5. Adoption: only retained code with demonstrated useful savings would be justified.
+
+### #815 plan self-review (five passes)
+
+1. Revisions: fixed upstream commits and content hashes, not moving main branches.
+2. Comparability: same driver/build profile, warm-up separated from six repetitions.
+3. Phases: capture actual paths and exclude post-timer output hashing from discovery.
+4. Controls: rebuild without timers and compare exact candidate hashes/diagnostics.
+5. Delivery: preserve reproducible patches and measurements, remove instrumentation.
+
+### #815 implementation self-review (five passes)
+
+1. No replacement parser, test double, or imported upstream dependency.
+2. Timers surround existing stages without changing candidate production order.
+3. No collected candidate cache or schema/operator extension.
+4. Exact counts, truncation flags, diagnostics and candidate hashes are recorded.
+5. Treat the temporary instrumentation as a probe, not shipped observability.
+
+### #815 verification self-review (five passes)
+
+1. Nine instrumented configurations returned zero, each with seven observations.
+2. Each configuration had stable candidate hashes across its repetitions.
+3. No case reached the 10,000-candidate limit; default/full counts were
+   31/1,309/9,000, so an incomplete prefix was not mistaken for a full comparison.
+4. Report warm wall time, instrumentation overhead and process peak RSS honestly;
+   do not label timers a CPU-stack or whole-project profile.
+5. Native-permission retained-code verification and independent review remain
+   final gates; no extra corpus tests are needed for removed instrumentation.
