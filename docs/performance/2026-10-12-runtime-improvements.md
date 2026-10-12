@@ -455,3 +455,110 @@ No new accepted format, schema, input path or CLI option was introduced.
 4. Existing partial-final-read fingerprint test moved with its production reader.
 5. Full workspace, strict lint, contract-feature checks and independent final
    review are recorded at delivery; they are not inferred from unit success.
+
+## #817: dependency-free release policy
+
+`tools/release_policy.py` now owns version syntax and the existing three platform
+identities, Rust targets, assembly wheel patterns and exact published wheel tags.
+Release assembly, SBOM generation, PyPI staging and provenance wheel counts derive
+their expectations from that table. Existing release version contracts remain in
+`release.py`; cryptographic verification remains in `pypi_provenance.py`.
+
+Assembly intentionally accepts broader compatible wheel tags than stable PyPI
+staging. The refactor preserves that distinction, all metadata/license/checksum
+checks and the historical three-wheel diagnostic. Direct script invocation and
+module invocation both resolve the same policy beside their source. The policy
+does not load external configuration or generate GitHub workflow definitions.
+
+The new regression test runs the staging entry point with Python's site packages
+disabled. It failed before the change because importing the version pattern
+indirectly imported `deal`. Existing staging byte-identity and rejection tests
+continue to cover actual wheels; the new case checks only dependency isolation.
+
+### #817 design self-review (five passes)
+
+1. Keep a pure data owner with standard-library types rather than a release framework.
+2. Keep stable PyPI tags distinct from compatible assembly patterns.
+3. Keep version contracts and signature checks at their existing execution boundaries.
+4. Preserve direct script imports from arbitrary working directories.
+5. Preserve workflow targets and distribution inputs; no release or version bump.
+
+### #817 plan self-review (five passes)
+
+1. First demonstrate the accidental staging dependency with site packages disabled.
+2. Move policy data only, deriving compatible names used by existing callers.
+3. Replace the independent provenance count with the policy's platform count.
+4. Reuse wheel metadata, checksum, SBOM and provenance rejection tests.
+5. Check strict lint, typing, both invocation modes and the complete Python suite.
+
+### #817 implementation self-review (five passes)
+
+1. Compare all three platform names and Rust targets against the release workflow.
+2. Compare broad assembly regexes and escaped exact staging tags with their originals.
+3. Check stable and development version expressions retain their original boundaries.
+4. Check no tooling dependency or network operation enters the pure policy module.
+5. Review the complete diff: signing, publisher identity and SBOM validation stay intact.
+
+### #817 verification self-review (five passes)
+
+1. Confirm the regression's initial failure is missing `deal`, not a fixture error.
+2. Verify the new entry-point check alongside existing byte-preserving staging tests.
+3. Verify existing release and SBOM direct-script fixtures from temporary directories.
+4. Verify all strict Python lint/format/type checks without adding suppressions.
+5. Record full-suite results and independent review below before delivery.
+
+Focused Python verification: 146 passed, 10 skipped in 86.43 seconds, including
+the new site-packages-disabled entry point. Ruff checks, Ruff format checks and
+strict ty checks passed across the repository. Full Python/Rust results and the
+independent review are recorded below as separate completion gates.
+
+## Final verification and independent review
+
+Retained runtime changes were reviewed at `7c6f10f5d4864aa432c35d7585a8ccf6549f4c71`
+against baseline `5b80f08`. A fresh independent read-only reviewer reported no
+critical, important or minor findings. It confirmed the moved validator bodies,
+the 63 control/instrumented analysis observations and the 21 small-replay samples.
+It did not reproduce benchmarks, execute tests, contact publication services or
+infer performance on other machines. Full-suite/build results below were checked
+by the implementer after that review; remaining changes are delivery evidence.
+
+| Check | Result |
+| --- | --- |
+| `cargo test --locked --workspace` | 2,793 passed, 27 ignored; exit 0 |
+| `cargo test --locked -p hoimin-core -p hoimin-cli --lib --features contracts` | 891 passed, 18 ignored; exit 0 |
+| `cargo clippy --locked --workspace --all-targets --all-features -- -D warnings` | exit 0 |
+| `cargo fmt --all -- --check` | exit 0 |
+| Full Python suite, seed 817 | 981 passed, 29 skipped, 282.51 s; exit 0 |
+| Release/SBOM/staging/provenance Python tests, seed 813 | 146 passed, 10 skipped, 86.43 s; exit 0 |
+| Ruff check, Ruff format check and strict ty | exit 0 |
+| `python -m tools.docs_site --output site` | exit 0 |
+| `git diff --check` | exit 0 |
+
+Rust counts exclude nested child-test summaries, which would double-count two
+cases. The contracts run covers library tests, not a second execution of all
+workspace integration tests. Hosted platform builds and actual publication were
+not executed locally. No formal model changed, and no new proof claim is made.
+
+Native Windows permissions were needed for existing managed-root fixtures. The
+full Python command was `python -m pytest -q --randomly-seed=817
+--basetemp=.superpowers/runtime-improvements/pytest-full --tb=short --maxfail=1`.
+Rust used two build jobs and test threads, disabled incremental compilation and
+dev/test debug information, and the task-owned target directory. Compressed
+[workspace log](runtime-2026-10-12/workspace-816.log.gz),
+[contracts log](runtime-2026-10-12/contracts.log.gz),
+[Python log](runtime-2026-10-12/python-full.log.gz),
+[focused Python log](runtime-2026-10-12/policy-green.log.gz),
+[regression RED log](runtime-2026-10-12/policy-red.log.gz),
+[Clippy log](runtime-2026-10-12/clippy.log.gz) and
+[public build log](runtime-2026-10-12/public-docs-build.log.gz) retain the evidence.
+
+The initial direct MkDocs invocation bypassed the repository's public-page
+staging and produced 190 warnings. It is not the supported publication command.
+The CI-equivalent `tools.docs_site` build above passed without changing checks;
+this resolves the documentation gate noted by the independent reviewer.
+
+Resource checks observed approximately 4.5 GiB free RAM during verification;
+parallelism remained at two. After an earlier 742.2 MiB release-output cleanup,
+the final `cargo clean` removed 4,643 files / 4.6 GiB from the verified task-owned
+target only. Free disk space afterward was 182,663,012,352 bytes. The user's other
+Cargo outputs were not cleaned. See the [cleanup log](runtime-2026-10-12/clean-final.log.gz).

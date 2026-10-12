@@ -12,13 +12,11 @@ import zipfile
 from email.parser import Parser
 from pathlib import Path
 
-from tools.release import SEMVER
+from tools.release_policy import RELEASE_PLATFORMS, SEMVER
 
 ROOT = Path(__file__).resolve().parents[1]
-PLATFORM_PATTERNS = (
-    r"win_amd64",
-    r"manylinux_2_17_x86_64\.manylinux2014_x86_64",
-    r"macosx_11_0_arm64",
+PLATFORM_PATTERNS = tuple(
+    re.escape(platform.published_wheel_tag) for platform in RELEASE_PLATFORMS
 )
 LICENSE_FILES = ("LICENSE", "vendor/ruff_python_parser/LICENSE")
 

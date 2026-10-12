@@ -5,6 +5,7 @@ okf_version: "0.2"
 # hoimin design and audit catalog
 
 - [Product direction](product-direction.md) - Local AI-agent test improvement, score limitations, resource guards, and feature priorities.
+- [Runtime performance and maintenance](../performance/2026-10-12-runtime-improvements.md) - Measured decisions for #813–#815 and artifact-reader/release-policy ownership for #816–#817.
 - [Second-order mutation adoption](second-order-mutation.md) - Bounded research, first-order comparison and the decision to defer composite infrastructure.
 
 - [Agent skill distribution](../agent-skills.md) - Standard skills packages, GitHub CLI installation and release validation.

@@ -19,9 +19,13 @@ from typing import cast
 import deal
 from returns.result import Failure, Result, Success
 
+if __package__:
+    from .release_policy import PLATFORM_NAMES, RELEASE_PLATFORMS, SEMVER
+else:
+    from release_policy import PLATFORM_NAMES, RELEASE_PLATFORMS, SEMVER
+
 ROOT = Path(__file__).resolve().parents[1]
-SEMVER = r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
-PLATFORMS = ("windows-x86_64", "linux-x86_64", "macos-aarch64")
+PLATFORMS = PLATFORM_NAMES
 TAG_ATTEMPTS = 5
 RELEASE_STATE_REF = "refs/heads/hoimin-release-state"
 VERSION_COMPONENT_COUNT = 3
@@ -272,11 +276,9 @@ def checksums(
     )
     wheels = {}
     python_version = re.escape(version.replace("-dev.", ".dev"))
-    for platform, wheel_platform in zip(
-        PLATFORMS,
-        (r"win_amd64", r"manylinux[^/]*x86_64", r"macosx_[^/]*arm64"),
-        strict=True,
-    ):
+    for target in RELEASE_PLATFORMS:
+        platform = target.name
+        wheel_platform = target.release_wheel_pattern
         pattern = rf"hoimin-{python_version}-[^-]+-[^-]+-{wheel_platform}\.whl"
         matches = [
             path.name
