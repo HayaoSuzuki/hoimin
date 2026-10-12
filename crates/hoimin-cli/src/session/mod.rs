@@ -83,16 +83,12 @@ impl SessionArtifacts {
 
     #[must_use]
     pub fn files(&self) -> [PathBuf; 4] {
-        let sidecar = |suffix: &str| {
-            let mut name = self.database.as_os_str().to_owned();
-            name.push(suffix);
-            PathBuf::from(name)
-        };
+        let companions = crate::artifacts::SqliteCompanions::new(&self.database);
         [
             self.database.clone(),
-            sidecar("-wal"),
-            sidecar("-shm"),
-            sidecar("-journal"),
+            companions.wal,
+            companions.shm,
+            companions.journal,
         ]
     }
 

@@ -2,11 +2,34 @@
 
 use std::fs::File;
 use std::io::Read;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 pub(crate) mod run_report;
 
 pub(crate) const READ_ONLY_ARTIFACT_LIMIT: u64 = 64 * 1024 * 1024;
+
+/// SQLite companion names in the database's supplied spelling, without filesystem I/O.
+/// Callers own path resolution, protection policy, and validation order.
+pub(crate) struct SqliteCompanions {
+    pub(crate) wal: PathBuf,
+    pub(crate) shm: PathBuf,
+    pub(crate) journal: PathBuf,
+}
+
+impl SqliteCompanions {
+    pub(crate) fn new(database: &Path) -> Self {
+        let companion = |suffix: &str| {
+            let mut name = database.as_os_str().to_owned();
+            name.push(suffix);
+            PathBuf::from(name)
+        };
+        Self {
+            wal: companion("-wal"),
+            shm: companion("-shm"),
+            journal: companion("-journal"),
+        }
+    }
+}
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum ArtifactReadError {
