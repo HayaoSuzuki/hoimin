@@ -193,7 +193,7 @@ async fn excluding_recent_defaults_recovers_and_verifies_previous_fifty_selectio
     let expected: std::collections::BTreeSet<_> = previous.into_iter().collect();
     assert_eq!(
         prepared
-            .config
+            .config()
             .operators
             .names()
             .into_iter()

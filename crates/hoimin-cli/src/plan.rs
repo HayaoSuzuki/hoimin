@@ -125,24 +125,99 @@ pub struct PlanOutput {
     pub exit_code: i32,
 }
 
+/// A checked plan whose execution settings and selected candidates stay coupled.
+/// Inspect shared references; use `with_metrics` for the permitted output override.
+/// Execution still rechecks protected inputs that can change after preparation.
+///
+/// Validated execution settings cannot be changed through public fields:
+///
+/// ```compile_fail
+/// fn enable_resume(mut plan: hoimin_cli::plan::VerifiedPlan) {
+///     plan.config.resume = true;
+/// }
+/// ```
+///
+/// Read-only inspection cannot be used as a mutable configuration handle:
+///
+/// ```compile_fail
+/// fn enable_resume(plan: hoimin_cli::plan::VerifiedPlan) {
+///     plan.config().resume = true;
+/// }
+/// ```
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct VerifiedPlan {
-    pub(crate) manifest_inputs: Vec<PathBuf>,
-    pub preview: VerifyPreview,
-    pub config: RunConfig,
-    pub(crate) fingerprint_copy_inputs: BTreeSet<Utf8PathBuf>,
-    pub selection: ResolvedVerifySelection,
-    pub selection_scope: VerifySelectionScope,
-    pub plan_truncated: bool,
-    pub verification_selection: VerificationSelection,
+    manifest_inputs: Vec<PathBuf>,
+    preview: VerifyPreview,
+    config: RunConfig,
+    fingerprint_copy_inputs: BTreeSet<Utf8PathBuf>,
+    selection: ResolvedVerifySelection,
+    verification_selection: VerificationSelection,
 }
 
 impl VerifiedPlan {
-    #[doc(hidden)]
+    /// Execution settings as validated against the saved plan and current project.
     #[must_use]
-    pub fn fingerprint_copy_inputs(&self) -> BTreeSet<Utf8PathBuf> {
-        self.fingerprint_copy_inputs.clone()
+    pub const fn config(&self) -> &RunConfig {
+        &self.config
     }
+
+    /// Candidate membership or ordered dispatch IDs; no mutable access is exposed.
+    #[must_use]
+    pub const fn selection(&self) -> &ResolvedVerifySelection {
+        &self.selection
+    }
+
+    /// Selection provenance, including scope and whether the source plan was truncated.
+    #[must_use]
+    pub const fn verification_selection(&self) -> &VerificationSelection {
+        &self.verification_selection
+    }
+
+    /// Preview prepared from the same checked selection that execution consumes.
+    #[must_use]
+    pub const fn preview(&self) -> &VerifyPreview {
+        &self.preview
+    }
+
+    /// Overrides only the metrics destination; execution validates destination safety.
+    /// Candidate order, execution limits and protected inputs are unchanged.
+    #[must_use]
+    pub fn with_metrics(mut self, destination: Option<Utf8PathBuf>) -> Self {
+        self.config.output.metrics = destination;
+        self
+    }
+
+    /// Executes the checked selection with borrowed synchronous writers.
+    /// Writes are not interruptible; the CLI uses its owned delivery path instead.
+    ///
+    /// # Errors
+    /// Returns execution preparation or infrastructure errors.
+    pub async fn execute(
+        self,
+        stdout: &mut impl std::io::Write,
+        stderr: &mut impl std::io::Write,
+    ) -> Result<i32, String> {
+        shell::run_verified(self, stdout, stderr, None).await
+    }
+
+    pub(crate) fn into_execution(self) -> VerifiedExecution {
+        VerifiedExecution {
+            manifest_inputs: self.manifest_inputs,
+            config: self.config,
+            fingerprint_copy_inputs: self.fingerprint_copy_inputs,
+            selection: self.selection,
+            verification_selection: self.verification_selection,
+        }
+    }
+}
+
+/// One owned handoff keeps checked selection, configuration and protected inputs together.
+pub(crate) struct VerifiedExecution {
+    pub config: RunConfig,
+    pub selection: ResolvedVerifySelection,
+    pub verification_selection: VerificationSelection,
+    pub manifest_inputs: Vec<PathBuf>,
+    pub fingerprint_copy_inputs: BTreeSet<Utf8PathBuf>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -402,7 +477,7 @@ async fn prepare_verify_selection_inner(
     validate_header(&manifest)?;
     validate_current_plan_config(&manifest.normalized_config)?;
 
-    let (selection, selection_scope, verification_selection) =
+    let (selection, verification_selection) =
         resolve_verify_selection(&manifest, requested_selection)?;
     let candidate_ids = match &selection {
         ResolvedVerifySelection::ExplicitCandidates(candidate_ids) => candidate_ids.clone(),
@@ -472,10 +547,8 @@ async fn prepare_verify_selection_inner(
         preview,
         config,
         fingerprint_copy_inputs,
-        verification_selection,
         selection,
-        selection_scope,
-        plan_truncated: manifest.truncated,
+        verification_selection,
     })
 }
 
@@ -495,14 +568,7 @@ fn validate_current_plan_config(config: &hoimin_core::PlanConfig) -> Result<(), 
 fn resolve_verify_selection(
     manifest: &PlanManifest,
     requested_selection: &VerifySelection,
-) -> Result<
-    (
-        ResolvedVerifySelection,
-        VerifySelectionScope,
-        VerificationSelection,
-    ),
-    PlanError,
-> {
+) -> Result<(ResolvedVerifySelection, VerificationSelection), PlanError> {
     let max_mutants = manifest.normalized_config.limits.max_mutants.get();
     let mut sampling = None;
     let (selection, selection_scope, mode, policy, requested) = match requested_selection {
@@ -589,7 +655,6 @@ fn resolve_verify_selection(
     };
     Ok((
         selection,
-        selection_scope,
         VerificationSelection {
             mode,
             policy,

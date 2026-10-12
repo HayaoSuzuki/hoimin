@@ -2512,6 +2512,7 @@ pub(crate) async fn run_verified<Stdout: Write, Stderr: Write>(
     stderr: Stderr,
     owned_report: Option<OwnedReportFactory<Stdout, Stderr>>,
 ) -> Result<i32, String> {
+    let verified = verified.into_execution();
     if verified.config.session.is_some() || verified.config.resume {
         return Err("selected candidate execution does not support sessions or resume".to_owned());
     }
