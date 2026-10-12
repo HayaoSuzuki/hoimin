@@ -872,6 +872,7 @@ pub(crate) struct WorkspaceTaskCompletion {
 }
 
 impl WorkspaceTaskCompletion {
+    #[cfg(test)]
     pub(crate) fn event(&self) -> &RunEvent {
         &self.event
     }

@@ -720,12 +720,24 @@ impl Default for RunControl {
     }
 }
 
-struct ShellCompletion {
-    event: RunEvent,
-    process_task: bool,
-    io_task: bool,
-    process: Option<(u32, bool)>,
-    blocking: Option<Box<BlockingEffectCompletion>>,
+/// A serial event owns no task; spawned completions retain the data needed to
+/// join and account for their task, or to return blocking-operation ownership.
+enum ShellCompletion {
+    Serial(RunEvent),
+    Process {
+        event: RunEvent,
+        worker: u32,
+        mutant: bool,
+    },
+    Blocking(Result<Box<BlockingEffectCompletion>, EffectFailed>),
+}
+
+/// Task origin survives payload acceptance until transition, accounting, and join.
+#[derive(Clone, Copy)]
+enum CompletionSource {
+    Serial,
+    Process { worker: u32, mutant: bool },
+    Blocking,
 }
 
 enum BlockingEffect {
@@ -2948,17 +2960,13 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
                                 context.spool_dir.execution_root.path().to_owned(),
                             ),
                         });
-                        serial_completion = Some(ShellCompletion {
-                            event: RunEvent::EffectFailed(EffectFailed::other(
+                        serial_completion = Some(ShellCompletion::Serial(RunEvent::EffectFailed(
+                            EffectFailed::other(
                                 id,
                                 hoimin_core::WORKSPACE_CLEANUP_DEFERRED,
                                 CLEANUP_QUIESCENCE_UNPROVEN,
-                            )),
-                            process_task: false,
-                            io_task: false,
-                            process: None,
-                            blocking: None,
-                        });
+                            ),
+                        )));
                         effects.push_front(effect);
                         break;
                     }
@@ -3034,13 +3042,9 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
                                 );
                             }
                             Err(error) => {
-                                serial_completion = Some(ShellCompletion {
-                                    event: RunEvent::EffectFailed(error),
-                                    process_task: false,
-                                    io_task: false,
-                                    process: None,
-                                    blocking: None,
-                                });
+                                serial_completion = Some(ShellCompletion::Serial(
+                                    RunEvent::EffectFailed(error),
+                                ));
                             }
                         }
                         if serial_completion.is_none() {
@@ -3095,13 +3099,9 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
                             }
                             Err(error) => {
                                 cancel_queued_worker(worker, &mut metrics, &mut metrics_warnings);
-                                serial_completion = Some(ShellCompletion {
-                                    event: RunEvent::EffectFailed(error),
-                                    process_task: false,
-                                    io_task: false,
-                                    process: None,
-                                    blocking: None,
-                                });
+                                serial_completion = Some(ShellCompletion::Serial(
+                                    RunEvent::EffectFailed(error),
+                                ));
                             }
                         }
                         if serial_completion.is_none() {
@@ -3121,30 +3121,22 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
                                 control.observe_completion_in_flight(in_flight);
                             }
                             Err(error) => {
-                                serial_completion = Some(ShellCompletion {
-                                    event: RunEvent::EffectFailed(error),
-                                    process_task: false,
-                                    io_task: false,
-                                    process: None,
-                                    blocking: None,
-                                });
+                                serial_completion = Some(ShellCompletion::Serial(
+                                    RunEvent::EffectFailed(error),
+                                ));
                             }
                         }
                     }
                     // Wall-clock observation is scheduler-owned so it reads the same absolute
                     // deadline that enforces the total timeout, without spawning worker work.
                     RunEffect::ObserveRemainingBudget(request) => {
-                        serial_completion = Some(ShellCompletion {
-                            event: RunEvent::RemainingBudgetObserved(remaining_budget_observed(
+                        serial_completion = Some(ShellCompletion::Serial(
+                            RunEvent::RemainingBudgetObserved(remaining_budget_observed(
                                 &request,
                                 deadline,
                                 tokio::time::Instant::now(),
                             )),
-                            process_task: false,
-                            io_task: false,
-                            process: None,
-                            blocking: None,
-                        });
+                        ));
                     }
                     RunEffect::EmitOutput(mut request)
                         if matches!(&request.event, OutputEvent::RunFinished(_)) =>
@@ -3422,13 +3414,7 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
                         let event = RunEvent::OutputEmitted(
                             output.expect("successful finalization retains output acknowledgement"),
                         );
-                        serial_completion = Some(ShellCompletion {
-                            event,
-                            process_task: false,
-                            io_task: false,
-                            process: None,
-                            blocking: None,
-                        });
+                        serial_completion = Some(ShellCompletion::Serial(event));
                     }
                     effect => {
                         let stopping = stop_signalled;
@@ -3634,13 +3620,7 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
                         ) {
                             priority_event = Some(event);
                         } else {
-                            serial_completion = Some(ShellCompletion {
-                                event,
-                                process_task: false,
-                                io_task: false,
-                                process: None,
-                                blocking: None,
-                            });
+                            serial_completion = Some(ShellCompletion::Serial(event));
                         }
                     }
                 }
@@ -3688,13 +3668,7 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
             let completion = if let Some(completion) = serial_completion {
                 completion
             } else if let Some(event) = priority_event {
-                ShellCompletion {
-                    event,
-                    process_task: false,
-                    io_task: false,
-                    process: None,
-                    blocking: None,
-                }
+                ShellCompletion::Serial(event)
             } else if let Some(completion) = ready_process_completion {
                 completion
             } else if stop_signalled {
@@ -3746,13 +3720,7 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
                             tokio::time::Instant::now(),
                             shutdown_grace,
                         );
-                        ShellCompletion {
-                            event,
-                            process_task: false,
-                            io_task: false,
-                            process: None,
-                            blocking: None,
-                        }
+                        ShellCompletion::Serial(event)
                     }
                     () = control.cancelled() => {
                         cancellation.cancel();
@@ -3765,13 +3733,7 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
                             tokio::time::Instant::now(),
                             shutdown_grace,
                         );
-                        ShellCompletion {
-                            event,
-                            process_task: false,
-                            io_task: false,
-                            process: None,
-                            blocking: None,
-                        }
+                        ShellCompletion::Serial(event)
                     }
                     () = tokio::time::sleep_until(deadline) => {
                         cancellation.cancel();
@@ -3784,13 +3746,7 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
                             tokio::time::Instant::now(),
                             shutdown_grace,
                         );
-                        ShellCompletion {
-                            event,
-                            process_task: false,
-                            io_task: false,
-                            process: None,
-                            blocking: None,
-                        }
+                        ShellCompletion::Serial(event)
                     }
                     signal = interrupts.first() => {
                         cancellation.cancel();
@@ -3804,13 +3760,7 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
                                     tokio::time::Instant::now(),
                                     shutdown_grace,
                                 );
-                                ShellCompletion {
-                                    event,
-                                    process_task: false,
-                                    io_task: false,
-                                    process: None,
-                                    blocking: None,
-                                }
+                                ShellCompletion::Serial(event)
                             },
                             Err(error) => {
                                 signal_failure = Some(error);
@@ -3822,13 +3772,7 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
                                         shutdown_grace,
                                     ),
                                 );
-                                ShellCompletion {
-                                    event: RunEvent::CancellationRequested,
-                                    process_task: false,
-                                    io_task: false,
-                                    process: None,
-                                    blocking: None,
-                                }
+                                ShellCompletion::Serial(RunEvent::CancellationRequested)
                             }
                         }
                     }
@@ -3838,7 +3782,9 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
                 }
             };
             let mut completion = completion;
-            let post_drain_failure = if stop_signalled || !completion.process_task {
+            let post_drain_failure = if stop_signalled
+                || !matches!(completion, ShellCompletion::Process { .. })
+            {
                 None
             } else {
                 #[cfg(test)]
@@ -3863,7 +3809,11 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
                 .await
             };
             if let Some(mut failure) = post_drain_failure {
-                if let RunEvent::EffectFailed(error) = &completion.event {
+                if let ShellCompletion::Process {
+                    event: RunEvent::EffectFailed(error),
+                    ..
+                } = &completion
+                {
                     failure.secondary.push(hoimin_core::DiskSecondary::Error {
                         code: error.failure.code().to_owned(),
                         message: error.failure.message(),
@@ -3880,7 +3830,7 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
                         message: error,
                     });
                 }
-                if let Some((worker, _)) = completion.process {
+                if let ShellCompletion::Process { worker, .. } = completion {
                     record_metrics(&mut metrics, &mut metrics_warnings, |metrics| {
                         metrics.process_finished(worker, false)
                     });
@@ -3897,16 +3847,13 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
                     tokio::time::Instant::now(),
                     shutdown_grace,
                 );
-                completion = ShellCompletion {
-                    event,
-                    process_task: false,
-                    io_task: false,
-                    process: None,
-                    blocking: None,
-                };
+                completion = ShellCompletion::Serial(event);
             }
             #[cfg(test)]
-            if matches!(&completion.event, RunEvent::DiskStopRequested(_))
+            if matches!(
+                &completion,
+                ShellCompletion::Serial(RunEvent::DiskStopRequested(_))
+            )
                 && !disk_stop_order_observed
             {
                 disk_stop_order_observed = true;
@@ -3941,21 +3888,36 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
                 .err();
                 return Err(combine_shutdown_errors(error, drain_failure));
             }
-            let ShellCompletion {
-                mut event,
-                process_task: process_completion,
-                io_task: io_completion,
-                process,
-                blocking,
-            } = completion;
             #[cfg(test)]
-            let final_output_completed = matches!(
-                &event,
-                RunEvent::OutputEmitted(value) if final_output_ids.remove(&value.id)
-            );
-            if let Some(blocking) = blocking {
-                event = accept_blocking_completion(&mut context, *blocking);
+            let final_output_completed = match &completion {
+                ShellCompletion::Serial(event) | ShellCompletion::Process { event, .. } => {
+                    Some(event)
+                }
+                ShellCompletion::Blocking(Ok(blocking)) => Some(match blocking.as_ref() {
+                    BlockingEffectCompletion::Workspace(completion) => completion.event(),
+                    BlockingEffectCompletion::Candidate(event)
+                    | BlockingEffectCompletion::OwnedWorkspace { event, .. } => event.as_ref(),
+                }),
+                ShellCompletion::Blocking(Err(_)) => None,
             }
+            .is_some_and(|event| {
+                matches!(event, RunEvent::OutputEmitted(value) if final_output_ids.remove(&value.id))
+            });
+            let (mut event, source) = match completion {
+                ShellCompletion::Serial(event) => (event, CompletionSource::Serial),
+                ShellCompletion::Process {
+                    event,
+                    worker,
+                    mutant,
+                } => (event, CompletionSource::Process { worker, mutant }),
+                ShellCompletion::Blocking(result) => (
+                    match result {
+                        Ok(blocking) => accept_blocking_completion(&mut context, *blocking),
+                        Err(error) => RunEvent::EffectFailed(error),
+                    },
+                    CompletionSource::Blocking,
+                ),
+            };
             finalization_errors.append(&mut context.blocking_secondary_errors);
             if let RunEvent::CleanupFinished(value) = &event
                 && execution_safety_proven
@@ -4087,10 +4049,15 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
             let deadline_stop = matches!(event, RunEvent::DeadlineReached);
             let failed = matches!(event, RunEvent::EffectFailed(_));
             let failed_primary = failed_event_primary(&event);
-            if !external_stop && (process_completion || io_completion) {
+            if !external_stop
+                && matches!(
+                    source,
+                    CompletionSource::Process { .. } | CompletionSource::Blocking
+                )
+            {
                 in_flight = in_flight.saturating_sub(1);
             }
-            if !external_stop && io_completion {
+            if !external_stop && matches!(source, CompletionSource::Blocking) {
                 io_in_flight = io_in_flight.saturating_sub(1);
             }
             if external_stop || failed {
@@ -4148,7 +4115,11 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
                 control.observe_finalization_event("session_finished");
             }
             track_diagnostic_run_id(&mut diagnostic_run_id, &state);
-            if let Some((worker, true)) = process {
+            if let CompletionSource::Process {
+                worker,
+                mutant: true,
+            } = source
+            {
                 record_metrics(&mut metrics, &mut metrics_warnings, |metrics| {
                     metrics.process_finished(worker, accepted_mutant)
                 });
@@ -4218,7 +4189,7 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
                 .await;
                 finish_failed_event_drain(failed_primary, drain_result)?;
                 io_in_flight = 0;
-            } else if process_completion {
+            } else if matches!(source, CompletionSource::Process { .. }) {
                 let process_failure = match process_tasks.join_next().await {
                     Some(Ok(())) => None,
                     Some(Err(error)) => Some(format!("process task failed: {error}")),
@@ -4251,7 +4222,7 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
                     .err();
                     return Err(combine_shutdown_errors(process_failure, drain_failure));
                 }
-            } else if io_completion {
+            } else if matches!(source, CompletionSource::Blocking) {
                 let io_failure = match io_tasks.join_next().await {
                     Some(Ok(())) => None,
                     Some(Err(error)) => Some(format!("blocking I/O task failed: {error}")),
@@ -4909,12 +4880,10 @@ fn spawn_process(
                 Err(error) => RunEvent::EffectFailed(error),
             };
             let _ = sender
-                .send(ShellCompletion {
+                .send(ShellCompletion::Process {
                     event,
-                    process_task: true,
-                    io_task: false,
-                    process: Some((worker, !baseline)),
-                    blocking: None,
+                    worker,
+                    mutant: !baseline,
                 })
                 .await;
         }
@@ -4930,30 +4899,10 @@ fn spawn_blocking_effect(
     tasks.spawn(
         async move {
             let id = task.id();
-            let (event, blocking) = match run_blocking_io(id, move || task.execute()).await {
-                Ok(completion) => {
-                    let event = match &completion {
-                        BlockingEffectCompletion::Workspace(completion) => {
-                            completion.event().clone()
-                        }
-                        BlockingEffectCompletion::Candidate(event)
-                        | BlockingEffectCompletion::OwnedWorkspace { event, .. } => {
-                            event.as_ref().clone()
-                        }
-                    };
-                    (event, Some(Box::new(completion)))
-                }
-                Err(error) => (RunEvent::EffectFailed(error), None),
-            };
-            let _ = sender
-                .send(ShellCompletion {
-                    event,
-                    process_task: false,
-                    io_task: true,
-                    process: None,
-                    blocking,
-                })
-                .await;
+            let result = run_blocking_io(id, move || task.execute())
+                .await
+                .map(Box::new);
+            let _ = sender.send(ShellCompletion::Blocking(result)).await;
         }
         .in_current_span(),
     );
@@ -5083,13 +5032,18 @@ fn accept_drained_completion(
     metrics_warnings: &mut Vec<(&'static str, String)>,
     accept_blocking: &mut impl FnMut(BlockingEffectCompletion),
 ) {
-    if let Some((worker, true)) = completion.process {
-        record_metrics(metrics, metrics_warnings, |metrics| {
+    match completion {
+        ShellCompletion::Process {
+            worker,
+            mutant: true,
+            ..
+        } => record_metrics(metrics, metrics_warnings, |metrics| {
             metrics.process_finished(worker, false)
-        });
-    }
-    if let Some(blocking) = completion.blocking {
-        accept_blocking(*blocking);
+        }),
+        ShellCompletion::Blocking(Ok(blocking)) => accept_blocking(*blocking),
+        ShellCompletion::Serial(_)
+        | ShellCompletion::Process { mutant: false, .. }
+        | ShellCompletion::Blocking(Err(_)) => {}
     }
     *in_flight = in_flight.saturating_sub(1);
 }
@@ -8561,23 +8515,15 @@ mod tests {
         let mut warnings = Vec::new();
         let (sender, mut receiver) = mpsc::channel(2);
         sender
-            .send(ShellCompletion {
+            .send(ShellCompletion::Process {
                 event: RunEvent::CancellationRequested,
-                process_task: true,
-                io_task: false,
-                process: Some((7, true)),
-                blocking: None,
+                worker: 7,
+                mutant: true,
             })
             .await
             .unwrap();
         sender
-            .send(ShellCompletion {
-                event: RunEvent::CancellationRequested,
-                process_task: false,
-                io_task: true,
-                process: None,
-                blocking: Some(Box::new(blocking)),
-            })
+            .send(ShellCompletion::Blocking(Ok(Box::new(blocking))))
             .await
             .unwrap();
         drop(sender);
@@ -8858,6 +8804,53 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn shutdown_drain_failed_blocking_task_releases_its_slot_without_ownership() {
+        let (sender, mut receiver) = mpsc::channel(1);
+        let mut process_tasks = JoinSet::new();
+        let mut io_tasks = JoinSet::new();
+        spawn_blocking_effect(
+            BlockingEffect::TestOperation {
+                id: EffectId(24),
+                operation: Box::new(|| panic!("controlled blocking task failure")),
+            },
+            sender,
+            &mut io_tasks,
+        );
+        let mut in_flight = 1;
+        let mut expiry_reported = false;
+        let mut metrics = Some(MetricsCollector::new("run-1"));
+        let mut warnings = Vec::new();
+        let mut returned_ownership = Vec::new();
+        let budget = ShutdownBudget::after_observation_with_grace(
+            ShutdownCause::Failure,
+            tokio::time::Instant::now(),
+            Duration::from_secs(5),
+        );
+
+        let result = drain_processes(
+            &mut process_tasks,
+            &mut io_tasks,
+            &mut receiver,
+            &mut in_flight,
+            &budget,
+            &mut expiry_reported,
+            &mut metrics,
+            &mut warnings,
+            |completion| returned_ownership.push(completion),
+        )
+        .await;
+
+        assert!(result.is_ok());
+        assert_eq!(in_flight, 0);
+        assert!(!expiry_reported);
+        assert!(process_tasks.is_empty());
+        assert!(io_tasks.is_empty());
+        assert!(returned_ownership.is_empty());
+        assert_eq!(warnings, Vec::new());
+        assert_eq!(metrics.unwrap().finish(0, 0).unwrap().workers, Vec::new());
+    }
+
+    #[tokio::test]
     async fn blocking_io_join_failure_preserves_effect_identity() {
         let id = EffectId(23);
 
@@ -8911,8 +8904,14 @@ mod tests {
         release_first_tx.send(()).unwrap();
         release_second_tx.send(()).unwrap();
 
-        assert!(completion_rx.recv().await.unwrap().io_task);
-        assert!(completion_rx.recv().await.unwrap().io_task);
+        assert!(matches!(
+            completion_rx.recv().await.unwrap(),
+            ShellCompletion::Blocking(Ok(_))
+        ));
+        assert!(matches!(
+            completion_rx.recv().await.unwrap(),
+            ShellCompletion::Blocking(Ok(_))
+        ));
         while let Some(result) = tasks.join_next().await {
             result.unwrap();
         }
@@ -9528,7 +9527,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn drain_closes_failed_and_cancelled_process_metrics() {
+    async fn drain_closes_mutant_metrics_and_ignores_baseline() {
         let mut metrics = Some(MetricsCollector::new("run-1"));
         for worker in [0, 1] {
             metrics.as_mut().unwrap().queued(worker).unwrap();
@@ -9536,33 +9535,37 @@ mod tests {
         }
         let mut warnings = Vec::new();
         let mut tasks = JoinSet::new();
-        let (sender, mut receiver) = mpsc::channel(2);
+        let (sender, mut receiver) = mpsc::channel(3);
         sender
-            .send(ShellCompletion {
+            .send(ShellCompletion::Process {
                 event: RunEvent::EffectFailed(EffectFailed::other(
                     EffectId(1),
                     "process.spawn",
                     "failed",
                 )),
-                process_task: true,
-                io_task: false,
-                process: Some((0, true)),
-                blocking: None,
+                worker: 0,
+                mutant: true,
             })
             .await
             .unwrap();
         sender
-            .send(ShellCompletion {
+            .send(ShellCompletion::Process {
                 event: RunEvent::CancellationRequested,
-                process_task: true,
-                io_task: false,
-                process: Some((1, true)),
-                blocking: None,
+                worker: 1,
+                mutant: true,
+            })
+            .await
+            .unwrap();
+        sender
+            .send(ShellCompletion::Process {
+                event: RunEvent::CancellationRequested,
+                worker: 7,
+                mutant: false,
             })
             .await
             .unwrap();
         drop(sender);
-        let mut in_flight = 2;
+        let mut in_flight = 3;
         let mut io_tasks = JoinSet::new();
         let mut expiry_reported = false;
         let budget = ShutdownBudget::after_observation_with_grace(
@@ -9724,9 +9727,14 @@ mod tests {
             .await
             .expect("spawned process must complete")
             .expect("completion channel must remain open");
-        assert!(matches!(completion.event, RunEvent::EffectFailed(_)));
-        assert!(completion.process_task);
-        assert_eq!(completion.process, Some((4, true)));
+        assert!(matches!(
+            completion,
+            ShellCompletion::Process {
+                event: RunEvent::EffectFailed(_),
+                worker: 4,
+                mutant: true,
+            }
+        ));
         tasks.join_next().await.unwrap().unwrap();
     }
 
