@@ -45,11 +45,11 @@ where
             match plan::prepare_verify_selection(&args.manifest, &args.selection, args.format).await
             {
                 Ok(verified) if args.dry_run => verified
-                    .preview
+                    .preview()
                     .write(args.format, &mut std::io::stdout())
                     .map(|()| 0),
-                Ok(mut verified) => {
-                    verified.config.output.metrics = args.metrics;
+                Ok(verified) => {
+                    let verified = verified.with_metrics(args.metrics);
                     shell::run_owned_verified(verified, std::io::stdout(), std::io::stderr()).await
                 }
                 Err(error) => Err(error.to_string()),
@@ -131,11 +131,11 @@ async fn run_parsed_with_io<Stdout: std::io::Write, Stderr: std::io::Write>(
                     .await
                 {
                     Ok(verified) if args.dry_run => {
-                        verified.preview.write(args.format, stdout).map(|()| 0)
+                        verified.preview().write(args.format, stdout).map(|()| 0)
                     }
-                    Ok(mut verified) => {
-                        verified.config.output.metrics = args.metrics;
-                        shell::run_verified(verified, &mut *stdout, &mut *stderr, None).await
+                    Ok(verified) => {
+                        let verified = verified.with_metrics(args.metrics);
+                        verified.execute(stdout, stderr).await
                     }
                     Err(error) => Err(error.to_string()),
                 };

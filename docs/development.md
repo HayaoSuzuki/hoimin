@@ -65,6 +65,12 @@ finish; event kinds alone do not identify the task that completed. See the
 [typed completion record](maintenance/2026-10-12-shell-completions.md) for the
 normal and shutdown-drain paths.
 
+Keep checked plans immutable after preparation. Inspect shared references and
+use the metrics-only override before consuming the plan for execution; retain
+manifest and fingerprint protection in the owned handoff. The
+[verified-plan record](maintenance/2026-10-12-verified-plan.md) describes the
+internal Rust source migration and validation evidence.
+
 ## Documentation publication
 
 Edit the existing Markdown and open a PR; the Documentation workflow checks the

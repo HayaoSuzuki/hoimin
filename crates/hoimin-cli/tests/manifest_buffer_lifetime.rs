@@ -216,7 +216,7 @@ fn public_prepare_releases_manifest_bytes_before_source_read_and_preserves_previ
         let verified = runtime.block_on(prepare).unwrap();
         let mut api_bytes = Vec::new();
         verified
-            .preview
+            .preview()
             .write(OutputFormat::Json, &mut api_bytes)
             .unwrap();
         let api: serde_json::Value = serde_json::from_slice(&api_bytes).unwrap();
