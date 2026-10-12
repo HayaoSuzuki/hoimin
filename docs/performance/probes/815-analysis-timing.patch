@@ -1,0 +1,105 @@
+diff --git a/crates/hoimin-cli/src/analyzer/mod.rs b/crates/hoimin-cli/src/analyzer/mod.rs
+index 18b54d8..478bd40 100644
+--- a/crates/hoimin-cli/src/analyzer/mod.rs
++++ b/crates/hoimin-cli/src/analyzer/mod.rs
+@@ -387,15 +387,19 @@ fn discover_targets_blocking(work: DiscoveryWork) -> Result<Discovery, EffectFai
+     };
+     for target in &targets {
+         ensure_discovery_active(&cancellation)?;
++        let probe_read_start = std::time::Instant::now();
+         let source = root.read(&target.path).map_err(|error| {
+             EffectFailed::other(EffectId(0), "analyzer.source.read", error.to_string())
+         })?;
++        let probe_read = probe_read_start.elapsed().as_secs_f64();
+         ensure_discovery_active(&cancellation)?;
++        let probe_decode_start = std::time::Instant::now();
+         let validation = source_validation(&source, &target.path, EffectId(0))?;
+         let module = validation
+             .decoded_source()
+             .expect("source was decoded")
+             .text();
++        let probe_decode = probe_decode_start.elapsed().as_secs_f64();
+         #[cfg(test)]
+         if let Some(mut control) = control.take() {
+             if let Some(deadline_arm) = control.deadline_arm.take() {
+@@ -417,6 +421,7 @@ fn discover_targets_blocking(work: DiscoveryWork) -> Result<Discovery, EffectFai
+             exceptions.as_deref(),
+         )
+         .map_err(|error| analysis_failure(EffectId(0), &target.path, error))?;
++        let probe_candidates_start = std::time::Instant::now();
+         for candidate in output.candidates {
+             ensure_discovery_active(&cancellation)?;
+             let sequence = u64::try_from(discovery.candidates.len())
+@@ -434,6 +439,10 @@ fn discover_targets_blocking(work: DiscoveryWork) -> Result<Discovery, EffectFai
+                 .map_err(|error| candidate_store_error(EffectId(0), &candidate, &error))?;
+             discovery.candidates.push(candidate);
+         }
++        eprintln!("HOIMIN_DISCOVERY {}", serde_json::json!({
++            "read": probe_read, "decode": probe_decode,
++            "validate_and_size": probe_candidates_start.elapsed().as_secs_f64(),
++        }));
+         discovery.diagnostics.extend(output.diagnostics);
+         if output.truncated {
+             discovery.truncated = true;
+diff --git a/crates/hoimin-cli/src/analyzer/rust.rs b/crates/hoimin-cli/src/analyzer/rust.rs
+index 36b98e6..9ea476e 100644
+--- a/crates/hoimin-cli/src/analyzer/rust.rs
++++ b/crates/hoimin-cli/src/analyzer/rust.rs
+@@ -365,16 +365,23 @@ pub(crate) fn analyze_source_with_exceptions(
+         None
+     };
+     // Retain invalid partial trees too: parse_module drops those recursively on Err.
++    let probe_start = std::time::Instant::now();
+     let parsed = parse_unchecked_source(source, ruff_python_ast::PySourceType::Python);
+     if !parsed.has_valid_syntax() {
+         depth::dispose(parsed.into_syntax());
+         return Ok(invalid_syntax(request.path));
+     }
++    let probe_parse = probe_start.elapsed().as_secs_f64();
++    let probe_start = std::time::Instant::now();
+     if let Err(error) = depth::check(parsed.syntax(), &cancelled) {
+         depth::dispose(parsed.into_syntax());
+         return Err(error);
+     }
++    let probe_depth = probe_start.elapsed().as_secs_f64();
++    let probe_start = std::time::Instant::now();
+     let facts = AstFacts::from_module(parsed.syntax(), parsed.tokens(), source);
++    let probe_facts = probe_start.elapsed().as_secs_f64();
++    let probe_start = std::time::Instant::now();
+     if cancelled() {
+         return Err(AnalysisError::Cancelled);
+     }
+@@ -488,6 +495,8 @@ pub(crate) fn analyze_source_with_exceptions(
+     if cancelled() {
+         return Err(AnalysisError::Cancelled);
+     }
++    let probe_tokens = probe_start.elapsed().as_secs_f64();
++    let probe_start = std::time::Instant::now();
+     let token_candidates = token_candidates.finish();
+     let (ast_candidates, hierarchy_report, enum_diagnostics) = ast_candidates(
+         parsed.syntax(),
+@@ -501,8 +510,12 @@ pub(crate) fn analyze_source_with_exceptions(
+     if cancelled() {
+         return Err(AnalysisError::Cancelled);
+     }
++    let probe_ast = probe_start.elapsed().as_secs_f64();
++    let probe_start = std::time::Instant::now();
+     let type_annotation_candidates =
+         type_annotation_candidates(parsed.syntax(), source, &line_index, &facts, request);
++    let probe_types = probe_start.elapsed().as_secs_f64();
++    let probe_start = std::time::Instant::now();
+     if cancelled() {
+         return Err(AnalysisError::Cancelled);
+     }
+@@ -570,6 +583,11 @@ pub(crate) fn analyze_source_with_exceptions(
+     let fact_lookups = facts.lookup_stats();
+     #[cfg(test)]
+     let candidate_token_lookups = facts.candidate_token_lookup_stats();
++    eprintln!("HOIMIN_PHASES {}", serde_json::json!({
++        "path": request.path.as_str(), "parse": probe_parse, "depth": probe_depth,
++        "facts": probe_facts, "tokens": probe_tokens, "ast": probe_ast,
++        "types": probe_types, "merge": probe_start.elapsed().as_secs_f64(),
++    }));
+     Ok(AnalyzerOutput {
+         candidates,
+         diagnostics,
