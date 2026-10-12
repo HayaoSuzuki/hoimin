@@ -1,0 +1,74 @@
+{
+  "classification": "post-hoc comparator, not a preregistered search arm",
+  "string_edit": {
+    "start": 419,
+    "original": "\"CONTRIBUTING.md\"",
+    "replacement": "\"\""
+  },
+  "original_tests_sha256": "0d4164336f5cdbb5b132454e0e2d2ea31bcbe4f1f1456219a4ec2cab7278e7bb",
+  "updated_tests_sha256": "b89a641cadcba1e578212bf6eac130471fa988a8606f40afbe074b6fd20a7c0c",
+  "rows": [
+    {
+      "tests": "original",
+      "variant": "baseline",
+      "exit_code": 0,
+      "elapsed_seconds": 6.905450500082225,
+      "log": "original-baseline.log"
+    },
+    {
+      "tests": "original",
+      "variant": "left",
+      "exit_code": 1,
+      "elapsed_seconds": 6.531053900253028,
+      "log": "original-left.log"
+    },
+    {
+      "tests": "original",
+      "variant": "right",
+      "exit_code": 1,
+      "elapsed_seconds": 7.170389499980956,
+      "log": "original-right.log"
+    },
+    {
+      "tests": "original",
+      "variant": "pair",
+      "exit_code": 0,
+      "elapsed_seconds": 7.739039800129831,
+      "log": "original-pair.log"
+    },
+    {
+      "tests": "original",
+      "variant": "string",
+      "exit_code": 0,
+      "elapsed_seconds": 7.626205000095069,
+      "log": "original-string.log"
+    },
+    {
+      "tests": "with_contributing_case",
+      "variant": "baseline",
+      "exit_code": 0,
+      "elapsed_seconds": 7.253486800007522,
+      "log": "with_contributing_case-baseline.log"
+    },
+    {
+      "tests": "with_contributing_case",
+      "variant": "pair",
+      "exit_code": 1,
+      "elapsed_seconds": 7.725770799908787,
+      "log": "with_contributing_case-pair.log"
+    },
+    {
+      "tests": "with_contributing_case",
+      "variant": "string",
+      "exit_code": 1,
+      "elapsed_seconds": 7.228400100022554,
+      "log": "with_contributing_case-string.log"
+    }
+  ],
+  "elapsed_seconds": 58.255547100212425,
+  "updated_tests_lf_sha256": "f78e0b6ca32bdf66f8b02a41bdc9c87d8d729205937f98f7e71a8b05d0543ee2",
+  "preliminary_attempts": [
+    "Initial validation oracle wrongly assigned docs/cli-reference.md no checks; baseline rejected it before measurements were saved. Explicit Rust policy was restored.",
+    "Initial isolated confirmation passed baseline (66 tests), killed left (1 failure) and right (3 failures), then pair exceeded 20 seconds. This was inconclusive, not a kill. Complete confirmation rerun used a 45-second per-run limit within 240 seconds."
+  ]
+}

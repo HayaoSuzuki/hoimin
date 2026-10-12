@@ -39,6 +39,7 @@ def test_documentation_inputs_use_the_dedicated_build(path: str) -> None:
     ("path", "expected"),
     [
         ("README.md", {"distribution"}),
+        ("CONTRIBUTING.md", set()),
         ("docs/usage.md", set()),
         ("docs/cli-reference.md", {"rust"}),
         ("docs/audits/note.md", set()),

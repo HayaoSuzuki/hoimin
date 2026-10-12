@@ -1,0 +1,146 @@
+F...............................F.........F.......................       [100%]
+================================== FAILURES ===================================
+_ test_classification_keeps_executable_inputs_out_of_documentation[docs/usage.md-expected1] _
+
+path = 'docs/usage.md', expected = set()
+
+    @pytest.mark.parametrize(
+        ("path", "expected"),
+        [
+            ("README.md", {"distribution"}),
+            ("docs/usage.md", set()),
+            ("docs/cli-reference.md", {"rust"}),
+            ("docs/audits/note.md", set()),
+            ("crates/hoimin-cli/src/main.rs", {"rust", "formal", "distribution"}),
+            ("vendor/ruff_python_parser/src/lib.rs", {"rust", "formal", "distribution"}),
+            ("tests/test_example.py", {"python", "rust", "formal"}),
+            ("formal/HoiminOracle/Main.lean", {"formal", "rust"}),
+            ("tools/release.py", {"python", "distribution"}),
+            ("tests/wheel_smoke.py", {"python", "rust", "formal", "distribution"}),
+            ("LICENSE", {"distribution"}),
+            ("docs/json-schema/report.json", set(ci_selection.CATEGORIES)),
+            ("docs/audits/repro.py", set(ci_selection.CATEGORIES)),
+            ("tests/fixtures/case.json", set(ci_selection.CATEGORIES)),
+            (".github/workflows/ci.yml", set(ci_selection.CATEGORIES)),
+            ("Cargo.lock", set(ci_selection.CATEGORIES)),
+            ("rust-toolchain.toml", set(ci_selection.CATEGORIES)),
+            ("uv.lock", set(ci_selection.CATEGORIES)),
+            ("unknown-file", set(ci_selection.CATEGORIES)),
+        ],
+    )
+    def test_classification_keeps_executable_inputs_out_of_documentation(
+        path: str, expected: set[str]
+    ) -> None:
+        flags = ci_selection.classify([path])
+    
+>       assert {key for key, value in flags.items() if value} == expected
+E       AssertionError: assert {'distributio...thon', 'rust'} == set()
+E         
+E         Extra items in the left set:
+E         'rust'
+E         'formal'
+E         'distribution'
+E         'python'
+E         Use -v to get more diff
+
+test_ci_selection.py:67: AssertionError
+___ test_event_diff_selects_only_its_changes[pr-excludes-base-only-changes] ___
+
+tmp_path = WindowsPath('C:/Users/hayao/AppData/Local/Temp/pytest-of-hayao/pytest-3577/test_event_diff_selects_only_i2')
+event = 'pull_request', expected = False
+
+    @pytest.mark.parametrize(
+        ("event", "expected"),
+        [("pull_request", False), ("merge_group", True), ("push", True)],
+        ids=["pr-excludes-base-only-changes", "merge-group", "push"],
+    )
+    def test_event_diff_selects_only_its_changes(
+        tmp_path: Path,
+        event: str,
+        *,
+        expected: bool,
+    ) -> None:
+        git(tmp_path, "init")
+        git(tmp_path, "config", "user.name", "CI test")
+        git(tmp_path, "config", "user.email", "ci@example.invalid")
+        (tmp_path / "README.md").write_text("base\n", encoding="utf-8")
+        git(tmp_path, "add", ".")
+        git(tmp_path, "commit", "-m", "base")
+        common = git(tmp_path, "rev-parse", "HEAD")
+        (tmp_path / "docs").mkdir()
+        document = tmp_path / "docs" / "design note.md"
+        document.write_text("feature\n", encoding="utf-8")
+        git(tmp_path, "add", ".")
+        git(tmp_path, "commit", "-m", "documentation")
+        head = git(tmp_path, "rev-parse", "HEAD")
+        git(tmp_path, "switch", "-c", "base-only", common)
+        (tmp_path / "Cargo.lock").write_text("base-only\n", encoding="utf-8")
+        git(tmp_path, "add", ".")
+        git(tmp_path, "commit", "-m", "base-only change")
+        base = git(tmp_path, "rev-parse", "HEAD")
+        payloads: dict[str, dict[str, object]] = {
+            "pull_request": {
+                "pull_request": {"base": {"sha": base}, "head": {"sha": head}}
+            },
+            "merge_group": {"merge_group": {"base_sha": common, "head_sha": base}},
+            "push": {"before": common, "after": base},
+        }
+    
+        flags = ci_selection.plan(tmp_path, event, payloads[event])
+    
+>       assert all(value == expected for value in flags.values())
+E       assert False
+E        +  where False = all(<generator object test_event_diff_selects_only_its_changes.<locals>.<genexpr> at 0x00000247C9904900>)
+
+test_ci_selection.py:250: AssertionError
+---------------------------- Captured stderr call -----------------------------
+Switched to a new branch 'base-only'
+_ test_classification_keeps_executable_inputs_out_of_documentation[docs/audits/note.md-expected3] _
+
+path = 'docs/audits/note.md', expected = set()
+
+    @pytest.mark.parametrize(
+        ("path", "expected"),
+        [
+            ("README.md", {"distribution"}),
+            ("docs/usage.md", set()),
+            ("docs/cli-reference.md", {"rust"}),
+            ("docs/audits/note.md", set()),
+            ("crates/hoimin-cli/src/main.rs", {"rust", "formal", "distribution"}),
+            ("vendor/ruff_python_parser/src/lib.rs", {"rust", "formal", "distribution"}),
+            ("tests/test_example.py", {"python", "rust", "formal"}),
+            ("formal/HoiminOracle/Main.lean", {"formal", "rust"}),
+            ("tools/release.py", {"python", "distribution"}),
+            ("tests/wheel_smoke.py", {"python", "rust", "formal", "distribution"}),
+            ("LICENSE", {"distribution"}),
+            ("docs/json-schema/report.json", set(ci_selection.CATEGORIES)),
+            ("docs/audits/repro.py", set(ci_selection.CATEGORIES)),
+            ("tests/fixtures/case.json", set(ci_selection.CATEGORIES)),
+            (".github/workflows/ci.yml", set(ci_selection.CATEGORIES)),
+            ("Cargo.lock", set(ci_selection.CATEGORIES)),
+            ("rust-toolchain.toml", set(ci_selection.CATEGORIES)),
+            ("uv.lock", set(ci_selection.CATEGORIES)),
+            ("unknown-file", set(ci_selection.CATEGORIES)),
+        ],
+    )
+    def test_classification_keeps_executable_inputs_out_of_documentation(
+        path: str, expected: set[str]
+    ) -> None:
+        flags = ci_selection.classify([path])
+    
+>       assert {key for key, value in flags.items() if value} == expected
+E       AssertionError: assert {'distributio...thon', 'rust'} == set()
+E         
+E         Extra items in the left set:
+E         'rust'
+E         'formal'
+E         'distribution'
+E         'python'
+E         Use -v to get more diff
+
+test_ci_selection.py:67: AssertionError
+=========================== short test summary info ===========================
+FAILED test_ci_selection.py::test_classification_keeps_executable_inputs_out_of_documentation[docs/usage.md-expected1]
+FAILED test_ci_selection.py::test_event_diff_selects_only_its_changes[pr-excludes-base-only-changes]
+FAILED test_ci_selection.py::test_classification_keeps_executable_inputs_out_of_documentation[docs/audits/note.md-expected3]
+3 failed, 63 passed in 6.31s

@@ -1,0 +1,50 @@
+...............................................................F...      [100%]
+================================== FAILURES ===================================
+_ test_classification_keeps_executable_inputs_out_of_documentation[CONTRIBUTING.md-expected1] _
+
+path = 'CONTRIBUTING.md', expected = set()
+
+    @pytest.mark.parametrize(
+        ("path", "expected"),
+        [
+            ("README.md", {"distribution"}),
+            ("CONTRIBUTING.md", set()),
+            ("docs/usage.md", set()),
+            ("docs/cli-reference.md", {"rust"}),
+            ("docs/audits/note.md", set()),
+            ("crates/hoimin-cli/src/main.rs", {"rust", "formal", "distribution"}),
+            ("vendor/ruff_python_parser/src/lib.rs", {"rust", "formal", "distribution"}),
+            ("tests/test_example.py", {"python", "rust", "formal"}),
+            ("formal/HoiminOracle/Main.lean", {"formal", "rust"}),
+            ("tools/release.py", {"python", "distribution"}),
+            ("tests/wheel_smoke.py", {"python", "rust", "formal", "distribution"}),
+            ("LICENSE", {"distribution"}),
+            ("docs/json-schema/report.json", set(ci_selection.CATEGORIES)),
+            ("docs/audits/repro.py", set(ci_selection.CATEGORIES)),
+            ("tests/fixtures/case.json", set(ci_selection.CATEGORIES)),
+            (".github/workflows/ci.yml", set(ci_selection.CATEGORIES)),
+            ("Cargo.lock", set(ci_selection.CATEGORIES)),
+            ("rust-toolchain.toml", set(ci_selection.CATEGORIES)),
+            ("uv.lock", set(ci_selection.CATEGORIES)),
+            ("unknown-file", set(ci_selection.CATEGORIES)),
+        ],
+    )
+    def test_classification_keeps_executable_inputs_out_of_documentation(
+        path: str, expected: set[str]
+    ) -> None:
+        flags = ci_selection.classify([path])
+    
+>       assert {key for key, value in flags.items() if value} == expected
+E       AssertionError: assert {'distributio...thon', 'rust'} == set()
+E         
+E         Extra items in the left set:
+E         'python'
+E         'rust'
+E         'distribution'
+E         'formal'
+E         Use -v to get more diff
+
+test_ci_selection.py:68: AssertionError
+=========================== short test summary info ===========================
+FAILED test_ci_selection.py::test_classification_keeps_executable_inputs_out_of_documentation[CONTRIBUTING.md-expected1]
+1 failed, 66 passed in 6.77s

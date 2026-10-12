@@ -5,7 +5,7 @@ build-backend = "maturin"
 [project]
 name = "hoimin"
 version = "0.4.0"
-description = "Bounded mutation testing for focused Python changes"
+description = "Mutation Testing CLI, Designed for AI Agents"
 readme = "README.md"
 license = "Elastic-2.0"
 license-files = ["LICENSE", "vendor/ruff_python_parser/LICENSE"]
@@ -84,7 +84,6 @@ extend-exclude = [
 
 [tool.ruff.lint]
 select = ["ALL"]
-# Match kraken-hub's applicable policy; omit its Django-specific exceptions.
 ignore = [
     "A003", "COM812", "CPY001", "D", "ERA001", "ISC001", "PLC2401",
     "PLC2403", "RUF001", "S101", "SIM103", "TC001", "TC002", "TC003", "UP040",

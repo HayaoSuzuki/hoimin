@@ -824,6 +824,11 @@ sources:
   resource: ../../superpowers/reports/issue-803/README.md
   working_tree: untracked
   sha256: e18042e4114ed937a162649afef6dcf1f4a3d39d4dacb8793276797f980a98fe
+- id: second-order-assessment
+  resource: ../../superpowers/reports/issue-763-764/README.md
+  revision: 3c3a7d6
+  working_tree: modified
+  sha256: da0624a1c113ab60bc5622a0e4a5d45ebcaa0c86330f4954c9255b3acb353a85
 ---
 
 # 収録一覧
@@ -1443,3 +1448,10 @@ sources:
 - [Bounded corpus distillation experiment](../../superpowers/reports/issue-803/README.md) - Replay savings, exact feature/PC set mismatch and no replacement adoption.[^corpus-distillation-803]
 
 [^corpus-distillation-803]: [Executed experiment](../../superpowers/reports/issue-803/README.md), retained IDs/logs and interpretation limits.
+
+
+## Second-order mutation assessment (2026-10-12)
+
+- [Second-order adoption assessment](../../superpowers/reports/issue-763-764/README.md) - Finite pairs, a first-order comparator and the decision to defer composite infrastructure.[^second-order-assessment]
+
+[^second-order-assessment]: [Measured results and limits](../../superpowers/reports/issue-763-764/README.md), projected cases, isolated confirmation and the retained regression assertion.
