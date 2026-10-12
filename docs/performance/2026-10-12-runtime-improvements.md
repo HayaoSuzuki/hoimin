@@ -600,3 +600,17 @@ types and reader behavior. This follow-up is stacked above #823.
 3. Run Rust formatting and whitespace checks; avoid rebuilding 4.6 GiB for comments.
 4. Distinguish this focused verification from the parent's full-suite evidence.
 5. Obtain fresh independent review of this follow-up before submitting the PR.
+
+Follow-up verification: all 48 provenance tests passed in 1.74 seconds (seed
+825), repository-wide Ruff/format/ty checks passed, and Rust formatting plus
+whitespace checks passed. No Rust runtime content changed, so the parent's full
+workspace results remain historical evidence rather than a repeated test claim.
+No Cargo compilation outputs were created after the preceding cleanup; observed
+free disk space was 182,715,891,712 bytes.
+
+A fresh independent reviewer checked `c2858b4..19fb98e` and reported no findings.
+It confirmed schema/usability comments, filesystem resolution, caller byte limits,
+plan checks, fingerprint scope and policy-derived diagnostics. It did not rerun
+tests or assess broader release security, concurrent file mutation behavior,
+existing error terminology or time spent on design. Those are unchanged and are
+outside this bounded follow-up. Only this delivery record was added after review.
