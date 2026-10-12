@@ -75,6 +75,10 @@ Use `WorkspaceHandler` methods directly; the duplicate free-function entry
 points are removed. See the [workspace API record](maintenance/2026-10-12-workspace-api.md)
 for the internal source migration and compatibility decision.
 
+Execution and delivery cleanup each track local attempt progress separately from
+DiskLifecycle's safety barriers. Preserve that distinction on lifecycle errors;
+see the [cleanup progress record](maintenance/2026-10-12-cleanup-progress.md).
+
 ## Documentation publication
 
 Edit the existing Markdown and open a PR; the Documentation workflow checks the
