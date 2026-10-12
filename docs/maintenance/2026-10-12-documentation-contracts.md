@@ -41,6 +41,26 @@ of explanatory prose; maintainers review that content.
 
 ## Execution
 
-Baseline Python documentation tests passed: 26 tests. Rust baseline, post-change
-checks, negative-probe evidence and final independent review are recorded as they
-complete; this paragraph is not a claim that future checks have run.
+Baseline Python documentation tests passed: 26 tests; baseline report-handler
+tests passed: 33. After deleting the ten Python wording cases, the 16 remaining
+documentation tests passed. All 33 report-handler tests passed after the change.
+Strict site generation passed.
+
+## Implementation self-review
+
+1. Compared the removed Python module with the ownership table: no executable assertion was removed.
+2. Compared the two removed Rust tests: they only loaded and searched prose.
+3. Kept command extraction, both continuation regressions and schema checks unchanged.
+4. Checked metrics coverage through the parsed `RunConfig`, before the actual example executes.
+5. Checked the complete diff for production, Usage and README changes: none.
+
+## Testing self-review
+
+1. Compared the baseline and post-change 33-test report-handler results.
+2. Confirmed the remaining 16 Python documentation tests, including rendering, pass.
+3. Temporarily removed the first run example's `--`; the actual contract failed at the separator check.
+4. Temporarily removed the metrics option from the example; the actual contract failed at the parsed-metrics assertion.
+5. Restored original Usage bytes in `finally`, reran the executable contract successfully, and checked strict site generation and whitespace.
+
+The negative probes are task-local scratch, not permanent prose mirror tests.
+Whole-stack lint, runtime checks and independent review are recorded separately.
