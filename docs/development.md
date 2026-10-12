@@ -79,6 +79,9 @@ Execution and delivery cleanup each track local attempt progress separately from
 DiskLifecycle's safety barriers. Preserve that distinction on lifecycle errors;
 see the [cleanup progress record](maintenance/2026-10-12-cleanup-progress.md).
 
+The [follow-up verification record](maintenance/2026-10-13-philosophy-stack-verification.md)
+collects the four changes' shared checks, independent review and platform limits.
+
 ## Documentation publication
 
 Edit the existing Markdown and open a PR; the Documentation workflow checks the
