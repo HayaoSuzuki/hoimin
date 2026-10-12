@@ -1568,6 +1568,15 @@ async fn run_cleanup_thread_with_spawner<T: Send + 'static>(
         .map_err(|_| CleanupThreadFailure::Stopped)
 }
 
+/// Local attempt progress, distinct from `DiskLifecycle`'s safety/admission state.
+/// Retain a request even if admission fails, so outer finalization does not retry it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CleanupProgress {
+    NotAttempted,
+    Attempted,
+    Cleaned,
+}
+
 #[derive(Debug)]
 enum ManagedCleanupOutcome {
     Clean(CleanupRecord),
@@ -2653,10 +2662,8 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
     let mut disk_monitor = None;
     let mut execution_safety_proven = false;
     let mut final_measurement_joined = true;
-    let mut execution_cleaned = false;
-    let mut delivery_cleaned = false;
-    let mut execution_cleanup_attempted = false;
-    let mut delivery_cleanup_attempted = false;
+    let mut execution_cleanup = CleanupProgress::NotAttempted;
+    let mut delivery_cleanup = CleanupProgress::NotAttempted;
     let mut execution_preclean = None;
     let mut execution_end_available: Option<BTreeMap<FilesystemKey, u64>> = None;
     let mut execution_end_available_observed = false;
@@ -3167,7 +3174,7 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
                                     .unwrap_or(u64::MAX);
                             summary.disk.stale_roots_reclaimed =
                                 context.spool_dir.startup_reclaim.reclaimed_roots;
-                            summary.disk.removed_logical_bytes = execution_cleaned
+                            summary.disk.removed_logical_bytes = (execution_cleanup == CleanupProgress::Cleaned)
                                 .then(|| execution_preclean.as_ref().map(|value| value.owned_bytes))
                                 .flatten();
                             summary.disk.filesystems = disk_stats
@@ -3319,7 +3326,7 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
                         });
                         #[cfg(test)]
                         control.observe_finalization_event("delivery_cleanup_requested_once");
-                        delivery_cleanup_attempted = true;
+                        delivery_cleanup = CleanupProgress::Attempted;
                         if !disk_lifecycle.apply(DiskLifecycleEvent::CleanupRequested {
                             root: DiskRootId::Delivery,
                         }) {
@@ -3345,7 +3352,7 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
                                         "disk lifecycle rejected clean delivery cleanup".to_owned(),
                                     );
                                 }
-                                delivery_cleaned = true;
+                                delivery_cleanup = CleanupProgress::Cleaned;
                                 #[cfg(test)]
                                 {
                                     control.observe_finalization_event("delivery_root_absent");
@@ -3922,7 +3929,7 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
             finalization_errors.append(&mut context.blocking_secondary_errors);
             if let RunEvent::CleanupFinished(value) = &event
                 && execution_safety_proven
-                && !execution_cleaned
+                && execution_cleanup != CleanupProgress::Cleaned
             {
                 let id = value.id;
                 context.analyzer.release_candidate_spool();
@@ -3932,7 +3939,7 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
                 });
                 #[cfg(test)]
                 control.observe_finalization_event("workspace_cleanup_requested_once");
-                execution_cleanup_attempted = true;
+                execution_cleanup = CleanupProgress::Attempted;
                 #[cfg(test)]
                 if control.take_duplicate_execution_cleanup_request()
                     && !disk_lifecycle.apply(DiskLifecycleEvent::CleanupRequested {
@@ -3984,7 +3991,7 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
                                 "disk lifecycle rejected clean execution cleanup".to_owned(),
                             );
                         }
-                        execution_cleaned = true;
+                        execution_cleanup = CleanupProgress::Cleaned;
                         #[cfg(test)]
                         control.observe_finalization_event("workspace_absent");
                         execution_cleanup_record = Some(cleanup);
@@ -4344,7 +4351,7 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
             finalization_errors
                 .push("disk lifecycle rejected outer monitor join completion".to_owned());
         }
-        let mut report_released = delivery_cleaned || delivery_cleanup_attempted;
+        let mut report_released = delivery_cleanup != CleanupProgress::NotAttempted;
         if !report_released
             && (report_admission.is_none() || tokio::time::Instant::now() < budget.deadline())
         {
@@ -4405,10 +4412,10 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
             run_result = append_finalization_error(run_result, error);
         }
         if execution_safe_to_remove {
-            if !execution_cleaned && !execution_cleanup_attempted {
+            if execution_cleanup == CleanupProgress::NotAttempted {
                 context.analyzer.release_candidate_spool();
                 context.spool_dir.release_execution_spool();
-                execution_cleanup_attempted = true;
+                execution_cleanup = CleanupProgress::Attempted;
                 if disk_lifecycle.apply(DiskLifecycleEvent::CleanupRequested {
                     root: DiskRootId::Execution,
                 }) {
@@ -4429,7 +4436,7 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
                                         .to_owned(),
                                 );
                             }
-                            execution_cleaned = true;
+                            execution_cleanup = CleanupProgress::Cleaned;
                         }
                         ManagedCleanupOutcome::Failed { error, .. }
                         | ManagedCleanupOutcome::Deferred { error, .. } => {
@@ -4461,15 +4468,15 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
                     );
                 }
             }
-            if !execution_cleaned {
+            if execution_cleanup != CleanupProgress::Cleaned {
                 context
                     .spool_dir
                     .execution_root
                     .abandon_for_janitor("execution-root cleanup was already attempted".to_owned());
             }
         } else {
-            if !execution_cleaned && !execution_cleanup_attempted {
-                execution_cleanup_attempted = true;
+            if execution_cleanup == CleanupProgress::NotAttempted {
+                execution_cleanup = CleanupProgress::Attempted;
                 let requested = disk_lifecycle.apply(DiskLifecycleEvent::CleanupRequested {
                     root: DiskRootId::Execution,
                 });
@@ -4487,7 +4494,7 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
                     );
                 }
             }
-            if !execution_cleaned {
+            if execution_cleanup != CleanupProgress::Cleaned {
                 context
                     .spool_dir
                     .execution_root
@@ -4495,7 +4502,7 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
             }
         }
         if delivery_safe_to_remove {
-            if !delivery_cleaned && !delivery_cleanup_attempted {
+            if delivery_cleanup == CleanupProgress::NotAttempted {
                 if disk_lifecycle.snapshot().report == DiskComponentState::Pending
                     && !disk_lifecycle.apply(DiskLifecycleEvent::ReportFailed)
                 {
@@ -4505,7 +4512,7 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
                     );
                 }
                 context.spool_dir.release_delivery_spool();
-                delivery_cleanup_attempted = true;
+                delivery_cleanup = CleanupProgress::Attempted;
                 if disk_lifecycle.apply(DiskLifecycleEvent::CleanupRequested {
                     root: DiskRootId::Delivery,
                 }) {
@@ -4523,7 +4530,7 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
                                         .to_owned(),
                                 );
                             }
-                            delivery_cleaned = true;
+                            delivery_cleanup = CleanupProgress::Cleaned;
                             for error in delivery_cleanup_secondary_errors(&cleanup) {
                                 run_result = append_finalization_error(run_result, error);
                             }
@@ -4560,7 +4567,7 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
                     );
                 }
             }
-            if !delivery_cleaned {
+            if delivery_cleanup != CleanupProgress::Cleaned {
                 context
                     .spool_dir
                     .delivery_root
@@ -4570,8 +4577,8 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
             if disk_lifecycle.snapshot().report == DiskComponentState::Pending {
                 let _ = disk_lifecycle.apply(DiskLifecycleEvent::ReportFailed);
             }
-            if !delivery_cleaned && !delivery_cleanup_attempted {
-                delivery_cleanup_attempted = true;
+            if delivery_cleanup == CleanupProgress::NotAttempted {
+                delivery_cleanup = CleanupProgress::Attempted;
                 let requested = disk_lifecycle.apply(DiskLifecycleEvent::CleanupRequested {
                     root: DiskRootId::Delivery,
                 });
@@ -4589,7 +4596,7 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
                     );
                 }
             }
-            if !delivery_cleaned {
+            if delivery_cleanup != CleanupProgress::Cleaned {
                 context
                     .spool_dir
                     .delivery_root

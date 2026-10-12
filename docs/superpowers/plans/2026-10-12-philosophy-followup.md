@@ -35,13 +35,13 @@ forwarders and represent cleanup progress explicitly.
 
 **Interfaces:** Keep existing command extraction and schema checks; no production API.
 
-- [ ] Map each deleted prose assertion to existing behavioral or rendering evidence.
-- [ ] Remove the Python wording-only module and two Rust prose-only tests.
-- [ ] Replace report-handler prose assertions with a parsed metrics-example check.
-- [ ] Run documentation Python tests, report-handler tests and strict site generation.
-- [ ] Run a temporary negative probe removing the separator from an extracted command;
+- [x] Map each deleted prose assertion to existing behavioral or rendering evidence.
+- [x] Remove the Python wording-only module and two Rust prose-only tests.
+- [x] Replace report-handler prose assertions with a parsed metrics-example check.
+- [x] Run documentation Python tests, report-handler tests and strict site generation.
+- [x] Run a temporary negative probe removing the separator from an extracted command;
   confirm failure, then restore the original bytes.
-- [ ] Record five checks at every stage and commit on `refactor/834-doc-contracts`.
+- [x] Record five checks at every stage and commit on `refactor/834-doc-contracts`.
 
 ## Task 2: Verified execution (#835)
 
@@ -52,13 +52,13 @@ return shared references; `with_metrics` consumes self; `execute` consumes self
 and borrows output writers. Internal `VerifiedExecution` owns config, selection,
 selection metadata, manifest inputs and copied fingerprint inputs.
 
-- [ ] Add an API-level behavior test for metrics-only updates preserving inspected
-  configuration, ordered selection and preview; observe failure before implementation.
-- [ ] Privatize fields, remove duplicate metadata and unnecessary fingerprint getter.
-- [ ] Migrate dispatch, shell payload consumption and inspection tests. Use `execute`
+- [x] Observe the public-field compile-fail contract failing before privatization;
+  add metrics-preservation behavior coverage and verify its negative probe during migration.
+- [x] Privatize fields, remove duplicate metadata and unnecessary fingerprint getter.
+- [x] Migrate dispatch, shell payload consumption and inspection tests. Use `execute`
   in the existing changed-after-preparation fingerprint regression.
-- [ ] Run plan/verify, metrics destination and CLI configuration checks.
-- [ ] Document internal Rust source migration and commit a second stack layer.
+- [x] Run plan/verify, metrics destination and CLI configuration checks.
+- [x] Document internal Rust source migration and commit a second stack layer.
 
 ## Task 3: Workspace API (#837)
 
@@ -66,10 +66,10 @@ selection metadata, manifest inputs and copied fingerprint inputs.
 
 **Interfaces:** Retain all existing `WorkspaceHandler::handle_*` methods.
 
-- [ ] Recheck policy and all repository consumer/import sites.
-- [ ] Remove only the six forwarding functions; do not rewrite handler behavior.
-- [ ] Check workspace behavior and compile all targets; document source migration.
-- [ ] Record distinct five-stage checks and commit a third stack layer.
+- [x] Recheck policy and all repository consumer/import sites.
+- [x] Remove only the six forwarding functions; do not rewrite handler behavior.
+- [x] Check workspace behavior and compile all targets; document source migration.
+- [x] Record distinct five-stage checks and commit a third stack layer.
 
 ## Task 4: Cleanup progress (#836)
 
@@ -78,17 +78,18 @@ selection metadata, manifest inputs and copied fingerprint inputs.
 **Interfaces:** Internal `CleanupProgress::{NotAttempted, Attempted, Cleaned}`,
 replacing the two independent attempted/cleaned pairs at existing boundaries.
 
-- [ ] Enumerate original assignment and observation sites before editing.
-- [ ] Replace state representation without moving cleanup or lifecycle operations.
-- [ ] Run existing interruption, clean/deferred/failed cleanup and ordering checks.
-- [ ] Confirm unchanged DiskLifecycle/model correspondence; no new proof claim.
-- [ ] Record five checks at every stage and commit a fourth stack layer.
+- [x] Enumerate original assignment and observation sites before editing.
+- [x] Replace state representation without moving cleanup or lifecycle operations.
+- [x] Run existing interruption, clean/deferred/failed cleanup and ordering checks.
+- [x] Confirm unchanged DiskLifecycle/model correspondence; no new proof claim.
+- [x] Record five checks at every stage and commit a fourth stack layer.
 
 ## Stack verification and delivery
 
-- [ ] Run formatting, strict Clippy for all targets/features, relevant Python checks,
+- [x] Run formatting, strict Clippy for all targets/features, relevant Python checks,
   strict site generation and full Rust workspace tests with `--no-fail-fast`.
-- [ ] Run contracts-enabled checks for changed runtime behavior.
-- [ ] Obtain a fresh independent review of the complete diff and fix findings.
-- [ ] Clean the checked task-owned target, submit with `gh stack`, write accurate PR
-  descriptions and attach every created PR. Do not merge or publish releases.
+- [x] Run contracts-enabled checks for changed runtime behavior.
+- [x] Obtain a fresh independent review of the complete diff and fix findings.
+- [x] Clean the checked task-owned target.
+- [x] Submit with `gh stack`, write accurate PR descriptions and attach every created
+  PR. Do not merge or publish releases.
