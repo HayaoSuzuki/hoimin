@@ -562,3 +562,55 @@ parallelism remained at two. After an earlier 742.2 MiB release-output cleanup,
 the final `cargo clean` removed 4,643 files / 4.6 GiB from the verified task-owned
 target only. Free disk space afterward was 182,663,012,352 bytes. The user's other
 Cargo outputs were not cleaned. See the [cleanup log](runtime-2026-10-12/clean-final.log.gz).
+
+## Philosophy review follow-up
+
+Approved bounded scope: clarify the shared run-report reader contracts and derive
+the staged-wheel count diagnostic from release policy. Keep the existing error
+types and reader behavior. This follow-up is stacked above #823.
+
+### Follow-up design self-review (five passes)
+
+1. Describe actual current acceptance rather than inventing a shared acceptance policy.
+2. State the review reader's current-schema, complete, passing-baseline requirement.
+3. Expose project-root filesystem resolution and caller-owned byte limits in its contract.
+4. Keep compatibility reexports and the broader progress reader intact.
+5. Derive the diagnostic count from the same table as the existing count check.
+
+### Follow-up plan self-review (five passes)
+
+1. Create a separate work branch above the existing stack tip before editing code.
+2. Read JSON/JSONL dispatch, validation and review call sites before writing comments.
+3. Change only comments and the count diagnostic; do not split error types.
+4. Reuse provenance rejection/signature tests and strict lint; avoid tests that only mirror wording.
+5. Obtain independent review, record verification and append a PR to the stack.
+
+### Follow-up implementation self-review (five passes)
+
+1. Check the comments against schema dispatch and whole-document validation.
+2. Check usability conditions against baseline termination and completion checks.
+3. Check project-root resolution and byte-budget ownership against review call sites.
+4. Compare Rust content after excluding comments: runtime code matches parent `c2858b4`.
+5. Confirm the only Python change derives diagnostic text from `RELEASE_PLATFORMS`.
+
+### Follow-up verification self-review (five passes)
+
+1. Run existing provenance tests, including download/signature and rejection policies.
+2. Run repository-wide Ruff, Ruff format and strict ty checks.
+3. Run Rust formatting and whitespace checks; avoid rebuilding 4.6 GiB for comments.
+4. Distinguish this focused verification from the parent's full-suite evidence.
+5. Obtain fresh independent review of this follow-up before submitting the PR.
+
+Follow-up verification: all 48 provenance tests passed in 1.74 seconds (seed
+825), repository-wide Ruff/format/ty checks passed, and Rust formatting plus
+whitespace checks passed. No Rust runtime content changed, so the parent's full
+workspace results remain historical evidence rather than a repeated test claim.
+No Cargo compilation outputs were created after the preceding cleanup; observed
+free disk space was 182,715,891,712 bytes.
+
+A fresh independent reviewer checked `c2858b4..19fb98e` and reported no findings.
+It confirmed schema/usability comments, filesystem resolution, caller byte limits,
+plan checks, fingerprint scope and policy-derived diagnostics. It did not rerun
+tests or assess broader release security, concurrent file mutation behavior,
+existing error terminology or time spent on design. Those are unchanged and are
+outside this bounded follow-up. Only this delivery record was added after review.

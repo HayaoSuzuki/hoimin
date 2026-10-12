@@ -217,7 +217,7 @@ def verify_index(
         raise
     wheels = sorted(directory.glob("*.whl"))
     if len(wheels) != len(RELEASE_PLATFORMS):
-        msg = "Expected three staged wheels"
+        msg = f"Expected {len(RELEASE_PLATFORMS)} staged wheels"
         raise ValueError(msg)
     check_inventory(data, wheels)
     with tempfile.TemporaryDirectory(prefix="hoimin-pypi-verify-") as temporary:
