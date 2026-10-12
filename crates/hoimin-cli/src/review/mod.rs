@@ -3,6 +3,7 @@ pub mod model;
 mod render;
 mod store;
 
+use crate::artifacts::run_report::ReviewReport;
 use crate::cli::ReviewArgs;
 use model::{Applicability, ArtifactReference, ReviewDraft, ReviewState, SourceState};
 use render::{ReviewDocument, ReviewExecution, ReviewRow};
@@ -23,6 +24,15 @@ pub enum ReviewError {
         "review saved at revision {revision}, but output failed: {message}; read it with review show before retrying"
     )]
     SavedOutput { revision: u64, message: String },
+}
+
+impl From<crate::artifacts::ArtifactReadError> for ReviewError {
+    fn from(error: crate::artifacts::ArtifactReadError) -> Self {
+        match error {
+            crate::artifacts::ArtifactReadError::Io(error) => Self::Io(error),
+            crate::artifacts::ArtifactReadError::Invalid(message) => Self::Invalid(message),
+        }
+    }
 }
 
 /// Records or displays bounded local human assessments.
@@ -129,7 +139,7 @@ fn saved_output<T>(
 
 fn execution(
     candidate: &hoimin_core::MutationCandidate,
-    report: Option<&crate::progress::input::ReviewReport>,
+    report: Option<&ReviewReport>,
 ) -> Result<ReviewExecution, ReviewError> {
     let Some(report) = report else {
         return Ok(ReviewExecution::NotLoaded);
@@ -159,7 +169,7 @@ mod tests;
 fn record_store(
     args: &crate::cli::ReviewRecordArgs,
     plan: &crate::plan::ReadOnlyPlan,
-    report: Option<&(crate::progress::input::ReviewReport, ArtifactReference)>,
+    report: Option<&(ReviewReport, ArtifactReference)>,
     candidate: &hoimin_core::MutationCandidate,
 ) -> Result<(model::ReviewKey, ReviewState), ReviewError> {
     if report.is_some_and(|(report, _)| {
@@ -205,7 +215,7 @@ fn record_store(
 fn stale_rows(
     plan: &crate::plan::ReadOnlyPlan,
     snapshot: &[(model::ReviewKey, ReviewState)],
-    report: Option<&crate::progress::input::ReviewReport>,
+    report: Option<&ReviewReport>,
 ) -> Result<Vec<ReviewRow>, ReviewError> {
     let mut stale_candidates = Vec::new();
     for (key, state) in snapshot {

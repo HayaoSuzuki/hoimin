@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{self, BufRead, BufReader, Read};
+use std::io::{self, BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
 use super::input::InputDisposition;
@@ -101,32 +101,6 @@ fn open_regular_file(path: &Path) -> io::Result<Option<File>> {
     Ok(file.metadata()?.is_file().then_some(file))
 }
 
-pub(super) struct FingerprintReader<R> {
-    inner: R,
-    hasher: blake3::Hasher,
-}
-
-impl<R> FingerprintReader<R> {
-    pub(super) fn new(inner: R) -> Self {
-        Self {
-            inner,
-            hasher: blake3::Hasher::new(),
-        }
-    }
-
-    pub(super) fn fingerprint(&self) -> blake3::Hash {
-        self.hasher.finalize()
-    }
-}
-
-impl<R: Read> Read for FingerprintReader<R> {
-    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
-        let count = self.inner.read(buffer)?;
-        self.hasher.update(&buffer[..count]);
-        Ok(count)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -174,15 +148,6 @@ mod tests {
             Ok(true),
             "optional confirmation waited for a FIFO writer"
         );
-    }
-
-    #[test]
-    fn fingerprint_hashes_only_bytes_returned_by_reads() {
-        let bytes = b"partial final read";
-        let mut reader = FingerprintReader::new(bytes.as_slice());
-        let mut buffer = [0xdd; 7];
-        while reader.read(&mut buffer).unwrap() != 0 {}
-        assert_eq!(reader.fingerprint(), blake3::hash(bytes));
     }
 
     #[test]
