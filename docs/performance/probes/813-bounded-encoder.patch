@@ -1,0 +1,126 @@
+diff --git a/crates/hoimin-cli/src/analyzer/store.rs b/crates/hoimin-cli/src/analyzer/store.rs
+index 4147283..00e6e26 100644
+--- a/crates/hoimin-cli/src/analyzer/store.rs
++++ b/crates/hoimin-cli/src/analyzer/store.rs
+@@ -121,14 +121,20 @@ impl CandidateStore {
+                 actual: candidate.sequence,
+             });
+         }
+-        let record_size = Self::record_size(candidate)?;
+-        let mut record = Vec::with_capacity(record_size);
+-        serde_json::to_writer(&mut record, candidate)
+-            .map_err(|error| StoreError::CorruptRecord(error.to_string()))?;
+-        record.push(b'\n');
++        let limit = usize::try_from(MAX_SPOOL_RECORD_BYTES)
++            .expect("the 2 MiB spool limit fits supported address spaces");
++        let mut record = BoundedRecordWriter::new(limit);
++        let encoded = serde_json::to_writer(&mut record, candidate);
++        if record.limit_exceeded {
++            return Err(StoreError::RecordTooLarge {
++                limit: MAX_SPOOL_RECORD_BYTES,
++            });
++        }
++        encoded.map_err(|error| StoreError::CorruptRecord(error.to_string()))?;
++        record.bytes.push(b'\n');
+         self.file
+             .as_file_mut()
+-            .write_all(&record)
++            .write_all(&record.bytes)
+             .map_err(|error| io_error(&error))?;
+         self.count = expected;
+         self.records_written = expected;
+@@ -298,6 +304,51 @@ struct CountingWriter {
+     bytes: u64,
+ }
+ 
++/// Encodes at most one spool record, reserving space for its final newline.
++/// Check each chunk before allocation; Vec's geometric growth is also capped.
++struct BoundedRecordWriter {
++    bytes: Vec<u8>,
++    limit: usize,
++    limit_exceeded: bool,
++}
++
++impl BoundedRecordWriter {
++    fn new(limit: usize) -> Self {
++        Self {
++            bytes: Vec::new(),
++            limit,
++            limit_exceeded: false,
++        }
++    }
++}
++
++impl Write for BoundedRecordWriter {
++    fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
++        let required = self.bytes.len().checked_add(buffer.len());
++        let Some(required) = required.filter(|size| *size < self.limit) else {
++            self.limit_exceeded = true;
++            return Err(std::io::Error::other("candidate spool record exceeds limit"));
++        };
++        // The extra byte prevents push(newline) from doubling a full buffer.
++        if required + 1 > self.bytes.capacity() {
++            let capacity = self
++                .bytes
++                .capacity()
++                .saturating_mul(2)
++                .max(256)
++                .max(required + 1)
++                .min(self.limit);
++            self.bytes.reserve_exact(capacity - self.bytes.len());
++        }
++        self.bytes.extend_from_slice(buffer);
++        Ok(buffer.len())
++    }
++
++    fn flush(&mut self) -> std::io::Result<()> {
++        Ok(())
++    }
++}
++
+ impl Write for CountingWriter {
+     fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
+         self.bytes = self
+@@ -563,6 +614,42 @@ mod tests {
+         assert_eq!(store.file.as_file().metadata().unwrap().len(), 0);
+     }
+ 
++    #[test]
++    fn bounded_encoding_rejects_a_chunk_before_allocating_it() {
++        let mut writer = BoundedRecordWriter::new(16);
++
++        let result = writer.write_all(&[b'x'; 17]);
++
++        assert!(result.is_err());
++        assert!(writer.limit_exceeded);
++        assert!(writer.bytes.is_empty());
++        assert_eq!(writer.bytes.capacity(), 0);
++    }
++
++    #[test]
++    fn bounded_encoding_preserves_the_prefix_on_limit_failure() {
++        let mut writer = BoundedRecordWriter::new(16);
++        writer.write_all(b"12345678").unwrap();
++
++        let result = writer.write_all(b"12345678");
++
++        assert!(result.is_err());
++        assert_eq!(writer.bytes, b"12345678");
++        assert!(writer.bytes.capacity() <= 16);
++    }
++
++    #[test]
++    fn bounded_encoding_accepts_its_exact_payload_budget() {
++        let mut writer = BoundedRecordWriter::new(16);
++
++        writer.write_all(b"12345678").unwrap();
++        writer.write_all(b"1234567").unwrap();
++
++        assert_eq!(writer.bytes, b"123456781234567");
++        assert!(writer.bytes.capacity() <= 16);
++        assert!(!writer.limit_exceeded);
++    }
++
+     #[test]
+     fn push_writes_one_complete_jsonl_record() {
+         let candidate = candidate_with_payload_len(512);

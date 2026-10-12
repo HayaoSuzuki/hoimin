@@ -73,3 +73,110 @@ reported numbers; distinguish local costs from plan/run totals.
   final review. No uncommitted user changes were present.
 - Resource baseline: approximately 172 GB free on C:. System-wide free-memory
   query is unavailable in the sandbox; do not infer a free-memory value from it.
+
+## #813: keep the existing encoder
+
+The bounded single-pass prototype is **not adopted**. For ordinary small records
+it was slower, while the full CLI comparison showed no meaningful improvement.
+The production `store.rs` is unchanged. Retain the
+[experimental patch](probes/813-bounded-encoder.patch) for reproducibility, not as
+a recommended implementation.
+
+Windows, Rust 1.99, locked dependencies, normal release profile (thin LTO), two
+build jobs. The initial test build took 135 seconds; release builds took 286 and
+163 seconds. Build time is excluded from the following observations. Each store
+scenario ran before (three times), after (three times), then before again (three
+times), with no concurrent build. These are warm filesystem-cache observations;
+the spool was freshly written before each replay. Other desktop applications
+were not disabled, and these small samples do not establish confidence intervals.
+
+| Storage scenario | Records | Existing median | Prototype median | Change |
+| --- | ---: | ---: | ---: | ---: |
+| 32 ASCII characters | 100,000 | 0.2591 s | 0.3177 s | 22.6% slower |
+| 32 repetitions of escaped/Unicode text | 50,000 | 0.1801 s | 0.2122 s | 17.8% slower |
+| 256 KiB ASCII payload | 256 | 0.0564 s | 0.0416 s | 26.2% faster |
+
+Storage times measure the push loop: encoding and file writes, excluding store
+creation, final flush/sync and cleanup. The counting and Vec-encoding probes are
+separate diagnostic operations, not subtracted measurements of production
+`record_size`: the diagnostic counter does not implement its overflow/boundary
+checks. Original medians were respectively 0.0122/0.0310 s (small),
+0.0143/0.0316 s (escaped) and 0.0153/0.0204 s (large). The prototype adds a
+per-chunk budget check and capped buffer growth; removing a serializer pass alone
+does not guarantee a faster push.
+
+Alternating three before/after pairs on a synthetic 120-function source gave:
+
+| Command | Existing wall median | Prototype wall median | Process CPU median (before / after) |
+| --- | ---: | ---: | ---: |
+| plan, 1,080 candidates | 0.0283 s | 0.0281 s | 0.0156 / 0.0156 s |
+| run, three executed candidates | 1.0398 s | 1.0276 s | 0.5313 / 0.5625 s |
+
+The plan path does not call push, so it is a control rather than evidence of a
+storage speedup. Run returned the expected exit 4 because the three-mutant budget
+left 1,077 candidates unexecuted: baseline passed, two mutants were killed, one
+survived, no timeout/error/resource stop occurred. The complete plan and all
+1,080 candidate/status/termination projections matched between versions.
+Do not interpret roughly 12 ms less wall time, with higher CPU and noisy pairs,
+as a demonstrated product improvement.
+
+Store-process peak working set was at most 5.6 MB; CLI peak was at most 14.3 MB.
+These are whole-process observations, including setup/cleanup, and exclude child
+process memory. Workers had a 256 MiB limit, one job, 30 seconds total and a 64 MiB
+workspace budget; reported workspace peak stayed below 1 MiB. A normal-permission
+system query showed about 5 GiB free RAM; observed rustc peaks stayed below 1 GiB.
+
+### Reproduction and evidence
+
+1. Check out `5b80f08` and copy [the Rust driver](probes/candidate-store.rs) to
+   `crates/hoimin-cli/examples/profile_candidate_store.rs`.
+2. Set `CARGO_TARGET_DIR` to a task-owned directory, `CARGO_BUILD_JOBS=2`,
+   `CARGO_INCREMENTAL=0`, and build with
+   `cargo build --locked --release -p hoimin-cli --example profile_candidate_store --bin hoimin`.
+3. Preserve the two executables outside the Cargo target; apply the experimental
+   patch and repeat the same build. Do not run measurements during compilation.
+4. With Python 3.14 on Windows run
+   `python docs/performance/probes/store-matrix.py EXE OUTPUT_DIRECTORY LABEL`
+   for each driver. Run
+   `python docs/performance/probes/cli-pairs.py BEFORE.exe AFTER.exe OUTPUT_DIRECTORY`
+   for the full CLI pair. Use literal paths in place of uppercase placeholders.
+5. Remove the copied example and reverse the patch after reproducing the trial.
+
+[Compressed raw observations](runtime-2026-10-12/store-observations.json.gz)
+include argv, wall/CPU time, peak RSS, exit status and complete output. Windows
+process CPU accounting has coarse resolution for very short commands. Store
+inner-loop wall time and whole-process CPU have different scopes, especially
+for replay whose preparation writes the spool.
+
+### Implementation self-review (five passes)
+
+1. Bounds: rejected chunks precede allocation; geometric capacity is capped;
+   reserve the newline before the final push to prevent doubling at the limit.
+2. Identity: count/sequence checks remain before encoding; successful records
+   match the existing compact JSON plus newline, including escaped Unicode.
+3. Failure: typed record-size errors and unchanged counts on failed encoding or
+   writes are preserved; the temporary prototype passed all ten store tests.
+4. Scope: discovery's size check was not removed; no whole-spool memory cache or
+   public format change was introduced.
+5. Adoption: normal-sized records regressed. Reverse only this experiment's
+   patch and retain evidence; do not ship unused writer code or its extra tests.
+
+### Verification self-review (five passes)
+
+1. Baseline: seven existing store tests passed. Three new writer-boundary tests
+   failed before the type existed, then all ten store tests passed.
+2. Boundaries: existing tests cover exact limits including newline, Unicode,
+   failed writes/counts and cleanup; new checks exercise pre-allocation refusal.
+3. Measurements: repeated samples exclude build time and failed commands. The
+   first CLI probe incorrectly supplied plan's nonexistent `--format`; another
+   rejected the intentional budget exit 4. Neither is a valid timing sample.
+4. Equivalence: complete plan equality and all mutant descriptor/status/termination
+   projections matched in the valid paired experiment.
+5. Environment: sandboxed full CLI unit tests had 732 passes, 123 failures and
+   16 ignored, including managed-root access denial. This is not a passing suite;
+   native-permission final verification remains required for retained code work.
+
+Ruling: retain investigation only for #813 — a large-record microbenchmark win
+does not justify slowing the usual small-record path. Revisit only if real input
+profiles demonstrate a different workload. The trial's cost and limitations are
+recorded instead of claiming a general optimization.
