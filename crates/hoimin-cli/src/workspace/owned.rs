@@ -2196,6 +2196,21 @@ mod tests {
         let run_id = root.run_id.clone();
         let active = format!("{}{}", super::ACTIVE_PREFIX, run_id);
         let staging = format!("{}{}", super::STAGING_PREFIX, run_id);
+        // Model a concurrent fork retaining the shared lease description until exec.
+        #[cfg(unix)]
+        let _inherited_lease = root
+            .lease
+            .lock()
+            .unwrap()
+            .as_deref()
+            .unwrap()
+            .try_clone()
+            .unwrap();
+        // Closing the owner's handle alone does not establish an unlocked fixture.
+        {
+            let lease = root.lease.lock().unwrap();
+            fs2::FileExt::unlock(lease.as_deref().unwrap()).unwrap();
+        }
         drop(root);
         coordinator
             .dir

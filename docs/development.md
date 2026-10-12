@@ -36,6 +36,12 @@ records the #813–#817 decisions, reproducible probes and measurement limits.
 The [CLI maintenance record](maintenance/2026-10-12-cli-refactors.md) describes
 the SQLite naming and command-result refactors in #826 and #827.
 
+Shell completions distinguish serial events, process accounting data, and
+blocking ownership results. Retain the completion source until metrics and joins
+finish; event kinds alone do not identify the task that completed. See the
+[typed completion record](maintenance/2026-10-12-shell-completions.md) for the
+normal and shutdown-drain paths.
+
 ## Documentation publication
 
 Edit the existing Markdown and open a PR; the Documentation workflow checks the
