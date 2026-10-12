@@ -1,3 +1,10 @@
+//! Run-report decoding shared by progress and review.
+//!
+//! Progress reads supported historical formats and reports unusable runs without
+//! rejecting their valid structure. Review requires a complete current-schema JSON
+//! document with a passing baseline. Callers own plan matching, source freshness,
+//! duplicate handling and command output.
+
 use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader, Read};
@@ -36,6 +43,17 @@ pub(crate) struct ReviewReport {
     pub mutants: Vec<MutantFinished>,
 }
 
+/// Decode a complete current-schema JSON report with a passing baseline.
+///
+/// Validates report structure and resolves the embedded configuration's project
+/// root through the filesystem. Missing or non-UTF-8 roots are errors. `path`
+/// identifies the report in diagnostics; the caller supplies already-bounded
+/// bytes and checks the resulting project and candidates against its plan.
+///
+/// # Errors
+///
+/// Returns an error for invalid JSON, unsupported schema, invalid configuration
+/// or structure, an unusable run, or failure to resolve the project root.
 pub(crate) fn read_review_json(path: &Path, bytes: &[u8]) -> Result<ReviewReport, ProgressError> {
     let document: RunReportDocument =
         serde_json::from_slice(bytes).map_err(|source| ProgressError::Parse {
@@ -206,6 +224,11 @@ struct LegacyV2RunSummary {
 
 /// Reads and validates one mutation run report.
 ///
+/// Accepts schema 2 JSON documents and schema 3/current JSON or JSONL reports.
+/// Structurally valid runs with no baseline, a failing baseline or incomplete
+/// results return `InputReport::Unusable`. This reader does not apply review's
+/// byte limit or resolve the embedded project root.
+///
 /// # Errors
 ///
 /// Returns an error when the report cannot be read, parsed, or structurally validated.
@@ -213,6 +236,8 @@ pub fn read_report(path: &Path) -> Result<InputReport, ProgressError> {
     read_buffered_report(path, BufReader::new(open_report(path)?))
 }
 
+/// Read with the same acceptance rules as `read_report`, hashing the bytes read.
+/// The fingerprint describes this read; callers own subsequent duplicate checks.
 pub(crate) fn read_report_with_fingerprint(
     path: &Path,
 ) -> Result<(InputReport, blake3::Hash), ProgressError> {
