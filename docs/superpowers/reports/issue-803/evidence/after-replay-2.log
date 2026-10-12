@@ -1,0 +1,13 @@
+INFO: Running with entropic power schedule (0xFF, 100).
+INFO: Seed: 1
+INFO: Loaded 1 modules   (128696 inline 8-bit counters): 128696 [0x55d2a4a37e00, 0x55d2a4a574b8), 
+INFO: Loaded 1 PC tables (128696 PCs): 128696 [0x55d2a4a574b8,0x55d2a4c4e038), 
+INFO:        0 files found in /home/runner/work/_temp/corpus-research/after-replay-2
+INFO:     4687 files found in /home/runner/work/_temp/corpus-research/compact
+INFO:       10 files found in /home/runner/work/hoimin/hoimin/fuzz/seeds/python_analyzer
+INFO: seed corpus: files: 4697 min: 1b max: 497b total: 554477b rss: 64Mb
+#2048	pulse  cov: 21957 ft: 53356 corp: 1995/62Kb exec/s: 1024 rss: 229Mb
+#4096	pulse  cov: 24253 ft: 73308 corp: 3987/332Kb exec/s: 682 rss: 521Mb
+#4698	INITED cov: 24436 ft: 78856 corp: 4578/529Kb exec/s: 587 rss: 589Mb
+#4698	DONE   cov: 24436 ft: 78856 corp: 4578/529Kb lim: 497 exec/s: 587 rss: 589Mb
+Done 4698 runs in 8 second(s)

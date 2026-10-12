@@ -1,0 +1,31 @@
+INFO: Running with entropic power schedule (0xFF, 100).
+INFO: Seed: 1
+INFO: Loaded 1 modules   (128696 inline 8-bit counters): 128696 [0x562133b5de00, 0x562133b7d4b8), 
+INFO: Loaded 1 PC tables (128696 PCs): 128696 [0x562133b7d4b8,0x562133d74038), 
+MERGE-OUTER: 13324 files, 0 in the initial corpus, 0 processed earlier
+MERGE-OUTER: attempt 1
+INFO: Running with entropic power schedule (0xFF, 100).
+INFO: Seed: 1
+INFO: Loaded 1 modules   (128696 inline 8-bit counters): 128696 [0x55b9f6118e00, 0x55b9f61384b8), 
+INFO: Loaded 1 PC tables (128696 PCs): 128696 [0x55b9f61384b8,0x55b9f632f038), 
+MERGE-INNER: using the control file '/home/runner/work/_temp/corpus-research/before.control'
+MERGE-INNER: 13324 total files; 0 processed earlier; will process 13324 files now
+#1	pulse  cov: 2979 ft: 2980 exec/s: 0 rss: 64Mb
+#2	pulse  cov: 2982 ft: 2985 exec/s: 0 rss: 66Mb
+#4	pulse  cov: 3038 ft: 3048 exec/s: 0 rss: 67Mb
+#8	pulse  cov: 4697 ft: 5161 exec/s: 0 rss: 70Mb
+#16	pulse  cov: 5254 ft: 6503 exec/s: 0 rss: 71Mb
+#32	pulse  cov: 5617 ft: 6945 exec/s: 0 rss: 74Mb
+#64	pulse  cov: 6414 ft: 9060 exec/s: 0 rss: 76Mb
+#128	pulse  cov: 7828 ft: 11932 exec/s: 0 rss: 80Mb
+#256	pulse  cov: 9660 ft: 15180 exec/s: 0 rss: 87Mb
+#512	pulse  cov: 11573 ft: 19630 exec/s: 0 rss: 100Mb
+#1024	pulse  cov: 15673 ft: 28544 exec/s: 1024 rss: 131Mb
+#2048	pulse  cov: 18755 ft: 38728 exec/s: 682 rss: 194Mb
+#4096	pulse  cov: 21443 ft: 50802 exec/s: 585 rss: 350Mb
+#8192	pulse  cov: 23801 ft: 64564 exec/s: 481 rss: 538Mb
+#13324	DONE   cov: 24479 ft: 78929 exec/s: 370 rss: 570Mb
+MERGE-OUTER: successful in 1 attempt(s)
+MERGE-OUTER: the control file has 2520350 bytes
+MERGE-OUTER: consumed 1Mb (82Mb rss) to parse the control file
+MERGE-OUTER: 4687 new files with 78929 new features added; 24479 new coverage edges

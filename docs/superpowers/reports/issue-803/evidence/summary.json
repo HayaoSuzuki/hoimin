@@ -1,0 +1,195 @@
+{
+  "status": "feature_mismatch",
+  "error": null,
+  "seed": 1,
+  "remaining_seconds": 823.4996578149702,
+  "completed_targets": [],
+  "stages": [
+    {
+      "name": "build",
+      "argv": [
+        "cargo",
+        "+nightly-2026-10-08",
+        "fuzz",
+        "build",
+        "python_analyzer",
+        "--codegen-units",
+        "16"
+      ],
+      "timeout_seconds": 1004.3328020909703,
+      "status": "success",
+      "returncode": 0,
+      "elapsed_seconds": 164.679592434
+    },
+    {
+      "name": "before-replay-0",
+      "argv": [
+        "prlimit",
+        "--fsize=67108864",
+        "--",
+        "/home/runner/work/hoimin/hoimin/fuzz/target/x86_64-unknown-linux-gnu/release/python_analyzer",
+        "-seed=1",
+        "-max_len=4096",
+        "-timeout=5",
+        "-rss_limit_mb=1024",
+        "-runs=0",
+        "/home/runner/work/_temp/corpus-research/before-replay-0",
+        "/home/runner/work/hoimin/hoimin/fuzz/corpus/python_analyzer",
+        "/home/runner/work/hoimin/hoimin/fuzz/seeds/python_analyzer"
+      ],
+      "timeout_seconds": 120,
+      "status": "success",
+      "returncode": 0,
+      "elapsed_seconds": 18.862271505000024
+    },
+    {
+      "name": "before-replay-1",
+      "argv": [
+        "prlimit",
+        "--fsize=67108864",
+        "--",
+        "/home/runner/work/hoimin/hoimin/fuzz/target/x86_64-unknown-linux-gnu/release/python_analyzer",
+        "-seed=1",
+        "-max_len=4096",
+        "-timeout=5",
+        "-rss_limit_mb=1024",
+        "-runs=0",
+        "/home/runner/work/_temp/corpus-research/before-replay-1",
+        "/home/runner/work/hoimin/hoimin/fuzz/corpus/python_analyzer",
+        "/home/runner/work/hoimin/hoimin/fuzz/seeds/python_analyzer"
+      ],
+      "timeout_seconds": 120,
+      "status": "success",
+      "returncode": 0,
+      "elapsed_seconds": 19.112580547999983
+    },
+    {
+      "name": "before-replay-2",
+      "argv": [
+        "prlimit",
+        "--fsize=67108864",
+        "--",
+        "/home/runner/work/hoimin/hoimin/fuzz/target/x86_64-unknown-linux-gnu/release/python_analyzer",
+        "-seed=1",
+        "-max_len=4096",
+        "-timeout=5",
+        "-rss_limit_mb=1024",
+        "-runs=0",
+        "/home/runner/work/_temp/corpus-research/before-replay-2",
+        "/home/runner/work/hoimin/hoimin/fuzz/corpus/python_analyzer",
+        "/home/runner/work/hoimin/hoimin/fuzz/seeds/python_analyzer"
+      ],
+      "timeout_seconds": 120,
+      "status": "success",
+      "returncode": 0,
+      "elapsed_seconds": 19.56383766099998
+    },
+    {
+      "name": "before-merge",
+      "argv": [
+        "prlimit",
+        "--fsize=67108864",
+        "--",
+        "/home/runner/work/hoimin/hoimin/fuzz/target/x86_64-unknown-linux-gnu/release/python_analyzer",
+        "-seed=1",
+        "-max_len=4096",
+        "-timeout=5",
+        "-rss_limit_mb=1024",
+        "-merge=1",
+        "-merge_control_file=/home/runner/work/_temp/corpus-research/before.control",
+        "/home/runner/work/_temp/corpus-research/compact",
+        "/home/runner/work/hoimin/hoimin/fuzz/corpus/python_analyzer",
+        "/home/runner/work/hoimin/hoimin/fuzz/seeds/python_analyzer"
+      ],
+      "timeout_seconds": 180,
+      "status": "success",
+      "returncode": 0,
+      "elapsed_seconds": 36.80972424599997
+    },
+    {
+      "name": "after-replay-0",
+      "argv": [
+        "prlimit",
+        "--fsize=67108864",
+        "--",
+        "/home/runner/work/hoimin/hoimin/fuzz/target/x86_64-unknown-linux-gnu/release/python_analyzer",
+        "-seed=1",
+        "-max_len=4096",
+        "-timeout=5",
+        "-rss_limit_mb=1024",
+        "-runs=0",
+        "/home/runner/work/_temp/corpus-research/after-replay-0",
+        "/home/runner/work/_temp/corpus-research/compact",
+        "/home/runner/work/hoimin/hoimin/fuzz/seeds/python_analyzer"
+      ],
+      "timeout_seconds": 120,
+      "status": "success",
+      "returncode": 0,
+      "elapsed_seconds": 9.487791276999985
+    },
+    {
+      "name": "after-replay-1",
+      "argv": [
+        "prlimit",
+        "--fsize=67108864",
+        "--",
+        "/home/runner/work/hoimin/hoimin/fuzz/target/x86_64-unknown-linux-gnu/release/python_analyzer",
+        "-seed=1",
+        "-max_len=4096",
+        "-timeout=5",
+        "-rss_limit_mb=1024",
+        "-runs=0",
+        "/home/runner/work/_temp/corpus-research/after-replay-1",
+        "/home/runner/work/_temp/corpus-research/compact",
+        "/home/runner/work/hoimin/hoimin/fuzz/seeds/python_analyzer"
+      ],
+      "timeout_seconds": 120,
+      "status": "success",
+      "returncode": 0,
+      "elapsed_seconds": 8.98626979300002
+    },
+    {
+      "name": "after-replay-2",
+      "argv": [
+        "prlimit",
+        "--fsize=67108864",
+        "--",
+        "/home/runner/work/hoimin/hoimin/fuzz/target/x86_64-unknown-linux-gnu/release/python_analyzer",
+        "-seed=1",
+        "-max_len=4096",
+        "-timeout=5",
+        "-rss_limit_mb=1024",
+        "-runs=0",
+        "/home/runner/work/_temp/corpus-research/after-replay-2",
+        "/home/runner/work/_temp/corpus-research/compact",
+        "/home/runner/work/hoimin/hoimin/fuzz/seeds/python_analyzer"
+      ],
+      "timeout_seconds": 120,
+      "status": "success",
+      "returncode": 0,
+      "elapsed_seconds": 9.086922066999989
+    },
+    {
+      "name": "after-merge",
+      "argv": [
+        "prlimit",
+        "--fsize=67108864",
+        "--",
+        "/home/runner/work/hoimin/hoimin/fuzz/target/x86_64-unknown-linux-gnu/release/python_analyzer",
+        "-seed=1",
+        "-max_len=4096",
+        "-timeout=5",
+        "-rss_limit_mb=1024",
+        "-merge=1",
+        "-merge_control_file=/home/runner/work/_temp/corpus-research/after.control",
+        "/home/runner/work/_temp/corpus-research/verification-output",
+        "/home/runner/work/_temp/corpus-research/compact",
+        "/home/runner/work/hoimin/hoimin/fuzz/seeds/python_analyzer"
+      ],
+      "timeout_seconds": 180,
+      "status": "success",
+      "returncode": 0,
+      "elapsed_seconds": 13.497351382999966
+    }
+  ]
+}
