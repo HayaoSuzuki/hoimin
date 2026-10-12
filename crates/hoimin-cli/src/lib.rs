@@ -96,83 +96,50 @@ async fn run_parsed_with_io<Stdout: std::io::Write, Stderr: std::io::Write>(
     stderr: &mut Stderr,
 ) -> i32 {
     match command {
-        Ok(cli::ParsedCommand::Run(args)) => match cli::run_config_from_args(args) {
-            Ok(config) => match shell::run_loop(config, &mut *stdout, &mut *stderr).await {
-                Ok(code) => code,
-                Err(error) => {
-                    let _ = writeln!(stderr, "{error}");
-                    2
-                }
-            },
-            Err(error) => {
-                let _ = writeln!(stderr, "{error}");
-                2
-            }
-        },
-        Ok(cli::ParsedCommand::Progress(args)) => match progress::run(args, stdout, stderr) {
-            Ok(code) => code,
-            Err(error) => {
-                let _ = writeln!(stderr, "{error}");
-                2
-            }
-        },
+        Ok(cli::ParsedCommand::Run(args)) => {
+            let result = match cli::run_config_from_args(args) {
+                Ok(config) => shell::run_loop(config, &mut *stdout, &mut *stderr).await,
+                Err(error) => Err(error.to_string()),
+            };
+            command_result(result, stderr)
+        }
+        Ok(cli::ParsedCommand::Progress(args)) => {
+            command_result(progress::run(args, stdout, stderr), stderr)
+        }
         Ok(cli::ParsedCommand::Review(args)) => command_result(review::run(&args, stdout), stderr),
         Ok(cli::ParsedCommand::Completions(args)) => {
             cli::write_completions(args.shell, stdout);
             0
         }
-        Ok(cli::ParsedCommand::Plan(args)) => match args.into_run_config() {
-            Ok(config) => match plan::create(config).await {
-                Ok(output) => match serde_json::to_writer(&mut *stdout, &output.manifest) {
-                    Ok(()) => match writeln!(stdout) {
-                        Ok(()) => output.exit_code,
-                        Err(error) => {
-                            let _ = writeln!(stderr, "{error}");
-                            2
-                        }
-                    },
-                    Err(error) => {
-                        let _ = writeln!(stderr, "{error}");
-                        2
-                    }
-                },
-                Err(error) => {
-                    let _ = writeln!(stderr, "{error}");
-                    2
-                }
-            },
-            Err(error) => {
-                let _ = writeln!(stderr, "{error}");
-                2
+        Ok(cli::ParsedCommand::Plan(args)) => {
+            let result = async {
+                let config = args.into_run_config().map_err(|error| error.to_string())?;
+                let output = plan::create(config)
+                    .await
+                    .map_err(|error| error.to_string())?;
+                serde_json::to_writer(&mut *stdout, &output.manifest)
+                    .map_err(|error| error.to_string())?;
+                writeln!(stdout).map_err(|error| error.to_string())?;
+                Ok::<_, String>(output.exit_code)
             }
-        },
+            .await;
+            command_result(result, stderr)
+        }
         Ok(cli::ParsedCommand::Verify(args)) => {
-            match plan::prepare_verify_selection(&args.manifest, &args.selection, args.format).await
-            {
-                Ok(verified) if args.dry_run => match verified.preview.write(args.format, stdout) {
-                    Ok(()) => 0,
-                    Err(error) => {
-                        let _ = writeln!(stderr, "{error}");
-                        2
+            let result =
+                match plan::prepare_verify_selection(&args.manifest, &args.selection, args.format)
+                    .await
+                {
+                    Ok(verified) if args.dry_run => {
+                        verified.preview.write(args.format, stdout).map(|()| 0)
                     }
-                },
-                Ok(mut verified) => {
-                    verified.config.output.metrics = args.metrics;
-                    let result =
-                        shell::run_verified(verified, &mut *stdout, &mut *stderr, None).await;
-                    match result {
-                        Ok(code) => code,
-                        Err(error) => {
-                            let _ = writeln!(stderr, "{error}");
-                            2
-                        }
+                    Ok(mut verified) => {
+                        verified.config.output.metrics = args.metrics;
+                        shell::run_verified(verified, &mut *stdout, &mut *stderr, None).await
                     }
-                }
-                Err(error) => {
-                    let _ = writeln!(stderr, "{error}");
-                    2
-                }
-            }
+                    Err(error) => Err(error.to_string()),
+                };
+            command_result(result, stderr)
         }
         Err(cli::CliError::Clap(error)) => {
             let exit_code = error.exit_code();
@@ -183,10 +150,7 @@ async fn run_parsed_with_io<Stdout: std::io::Write, Stderr: std::io::Write>(
             }
             exit_code
         }
-        Err(error) => {
-            let _ = writeln!(stderr, "{error}");
-            2
-        }
+        Err(error) => command_result(Err(error), stderr),
     }
 }
 
