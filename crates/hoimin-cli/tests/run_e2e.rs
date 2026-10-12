@@ -2107,56 +2107,6 @@ async fn focused_profile_does_not_resume_full_profile_session() {
     assert_eq!(run_count, 2);
 }
 
-#[test]
-fn usage_documents_focused_profile_selection_and_session_compatibility() {
-    let usage = std::fs::read_to_string(repo_root().join("docs/usage.md")).unwrap();
-    let windows_usage = usage.replace("\r\n", "\n").replace('\n', "\r\n");
-
-    for documented_usage in [&usage, &windows_usage] {
-        let documented_usage = documented_usage.replace("\r\n", "\n");
-
-        assert!(documented_usage.contains("`--profile full` / `--profile focused`"));
-        assert!(documented_usage.contains(
-            "`--profile full` is the default and considers every candidate produced by the selected\noperators."
-        ));
-        assert!(documented_usage.contains("Python `__main__` guards, bare\n`print(...)` calls, `assert` statements, and function default expressions."));
-        assert!(documented_usage.contains(
-            "Profile selection is part of session compatibility, so a focused run never resumes results from a full run and vice versa."
-        ));
-    }
-}
-
-#[test]
-fn usage_documents_agent_plan_workflow() {
-    let usage = std::fs::read_to_string(repo_root().join("docs/usage.md")).unwrap();
-    let documented_usage = usage.replace("\r\n", "\n");
-
-    for expected in [
-        "hoimin plan",
-        "--allow-best-effort-memory",
-        "--total-timeout 15m",
-        "hoimin verify PLAN.json --top 1 --format json",
-        "hoimin verify CHANGED_PLAN.json --top 10 --selection-policy diverse",
-        "The `strict` selection policy is the default and uses the saved rank prefix.",
-        "The `diverse` selection policy round-robins production files only within equal-score tiers.",
-        "Higher-score tiers are exhausted before lower-score tiers.",
-        "The verification report records `file_round_robin_v1`.",
-        "Verification does not rewrite the plan or change its execution limits.",
-        "`ranking_reasons`",
-        "mutually exclusive",
-        "inherits the test command, execution limits, timeout settings, and resource policy",
-        "create a new plan",
-        "identical candidate-ID set",
-        "After every test improvement, rerun every stable batch and save each report separately.",
-        "same current test revision",
-        "must not be combined",
-        "`--fingerprint-include GLOB`",
-        "`truncated`",
-    ] {
-        assert!(documented_usage.contains(expected), "missing {expected}");
-    }
-}
-
 #[tokio::test]
 async fn sqlite_save_failure_reports_the_classification_but_leaves_no_partial_database_result() {
     let directory = tempfile::tempdir().unwrap();

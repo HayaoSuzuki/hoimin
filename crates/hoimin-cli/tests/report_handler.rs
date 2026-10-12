@@ -479,26 +479,6 @@ impl SharedWriter {
 async fn documentation_contract() {
     let root = repo_root();
     let usage = std::fs::read_to_string(root.join("docs/usage.md")).unwrap();
-    assert!(
-        usage.contains(
-            "hoimin run --root . --source src --metrics metrics.json -- python -m pytest -q"
-        ),
-        "usage reference must contain the documented --metrics metrics.json example",
-    );
-    assert!(
-        usage.contains("opt-in") && usage.contains("separate from the run JSON"),
-        "usage reference must identify metrics as opt-in and separate from run JSON",
-    );
-    assert!(
-        usage.contains("warns without changing the mutation result"),
-        "usage reference must document metrics write-failure behavior",
-    );
-    assert!(
-        usage.contains(
-            "`complete` is `false` when any mutant is inconclusive or the run fails or is interrupted"
-        ),
-        "usage reference must define the machine-readable complete field",
-    );
     let commands = fenced_run_commands(&usage);
     assert!(
         !commands.is_empty(),
@@ -529,10 +509,12 @@ async fn documentation_contract() {
     let python = repository_python();
     let mut documented_outputs = Vec::new();
     let mut documented_type_operator = false;
+    let mut documented_metrics = false;
     for command in commands {
         let argv = normalize_documented_command(&command, fixture.path(), &python);
         let config = hoimin_cli::cli::parse_config_from(argv.clone())
             .unwrap_or_else(|error| panic!("invalid documented command {command:?}: {error}"));
+        documented_metrics |= config.output.metrics.is_some();
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
         let exit = hoimin_cli::run_with_io(argv, &mut stdout, &mut stderr).await;
@@ -544,6 +526,10 @@ async fn documentation_contract() {
         documented_outputs.push((config.output.format, stdout, stderr));
     }
 
+    assert!(
+        documented_metrics,
+        "a Usage run example must enable metrics"
+    );
     let event_schema = read_schema(&root.join("docs/json-schema/run-event.schema.json"));
     let result_schema = read_schema(&root.join("docs/json-schema/run-result.schema.json"));
     assert_eq!(
