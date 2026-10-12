@@ -668,20 +668,56 @@ async fn documentation_contract() {
     assert_schema_invalid(&event_schema, &invalid_event, &event_schema);
 }
 
+#[test]
+fn documented_bash_continuations_form_one_command() {
+    let markdown = "```bash\nRUST_LOG=debug hoimin run --file calc.py \\\n  --format json -- python -m pytest -q \\\n  > result.json\n```";
+
+    let commands = fenced_run_commands(markdown);
+
+    assert_eq!(commands.len(), 1);
+    assert_eq!(
+        commands[0].join(" "),
+        "RUST_LOG=debug hoimin run --file calc.py --format json -- python -m pytest -q > result.json"
+    );
+}
+
+#[test]
+fn documented_powershell_continuations_form_one_command() {
+    let markdown = "```powershell\ntry {\n    hoimin run --file calc.py --format json `\n      -- python -m pytest -q `\n      > result.json\n} finally {\n    $env:RUST_LOG = $previousRustLog\n}\n```";
+
+    let commands = fenced_run_commands(markdown);
+
+    assert_eq!(commands.len(), 1);
+    assert_eq!(
+        commands[0].join(" "),
+        "hoimin run --file calc.py --format json -- python -m pytest -q > result.json"
+    );
+}
+
 fn fenced_run_commands(markdown: &str) -> Vec<Vec<String>> {
     let mut fenced = false;
+    let mut continued = String::new();
     markdown
         .lines()
         .filter_map(|line| {
             if line.trim_start().as_bytes().starts_with(&[96; 3]) {
                 fenced = !fenced;
+                continued.clear();
                 return None;
             }
             if !fenced {
                 return None;
             }
             let line = line.trim().strip_prefix("$ ").unwrap_or(line.trim());
-            let words = line
+            // The Usage examples use explicit Bash or PowerShell continuations.
+            // Join physical lines before looking for the launch prefix or `--`.
+            if let Some(part) = line.strip_suffix(['\\', '`']) {
+                continued.push_str(part);
+                continued.push(' ');
+                return None;
+            }
+            continued.push_str(line);
+            let words = std::mem::take(&mut continued)
                 .split_ascii_whitespace()
                 .map(str::to_owned)
                 .collect::<Vec<_>>();
@@ -702,6 +738,9 @@ fn normalize_documented_command(command: &[String], root: &Path, python: &Path) 
     for index in 0..argv.len() {
         if index > 0 && argv[index - 1] == "--root" {
             root.clone_into(&mut argv[index]);
+        } else if index > 0 && argv[index - 1] == "--file" && argv[index] == "calc.py" {
+            // Both tutorial layouts use the shared executable fixture's source.
+            "src/calc.py".clone_into(&mut argv[index]);
         } else if index > 0 && argv[index - 1] == "--metrics" {
             argv[index] = Path::new(root)
                 .join("metrics.json")

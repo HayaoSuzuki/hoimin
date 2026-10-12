@@ -152,8 +152,9 @@ The knowledge check parsed all 48 pages and verified the five refreshed source
 hashes, IDs and retained draft status. Strict site generation, whitespace,
 26 documentation tests, full Ruff lint/format and full ty checks passed.
 External URL availability and every link inside historical originals were not
-revalidated. Rust, Lean and native Linux/macOS suites were not rerun for this
-documentation and renderer-configuration change.
+revalidated. At this initial documentation-only review, Rust, Lean and native
+Linux/macOS suites were not rerun. The CI follow-up below records the subsequent
+Rust verification.
 
 The fresh independent reviewer read the complete change and saved examples and
 found no actionable issue or missing Issue acceptance criterion. The scoped
@@ -164,3 +165,64 @@ to have audited the entire Usage reference or historical catalog contents.
 After verification, `cargo clean` on the checked task-owned target removed
 1,680 files (764.7 MiB). C: then had 181,938,376,704 bytes free (about 169 GiB).
 No ordinary workspace target or unrelated cache was cleaned.
+
+## CI follow-up: multiline command extraction
+
+Run 38246773913 failed in the stable, randomized-order and contracts Rust jobs
+at the same `documentation_contract` assertion: the test extracted only the
+first physical line of a continued command, so it could not find `--`.
+The previous verification scope missed this Rust consumer of the Usage page.
+
+Five design checks inspected the three failure logs, traced the failing
+separator assertion, compared old single-line and new shell examples, checked
+the shared fixture paths, and confirmed that command extraction is test-only.
+Five plan checks retained every existing command, limited joining to explicit
+Bash/PowerShell continuations, kept shell redirection outside application argv,
+required separate regression cases for both shells, and selected the complete
+report-handler suite plus strict Rust lint and documentation checks.
+
+The correction belongs to the existing documentation branch and changes no
+production CLI behavior. The shared fixture substitutes its `src/calc.py` for
+the tutorial's root-level `calc.py`, as it already substitutes the project root,
+Python interpreter and metrics path. This fixture adaptation does not claim to
+execute shell redirection or environment assignments; the earlier real-shell
+smoke checks cover those operations.
+
+Five implementation reviews checked fence-boundary buffer reset, buffer reset
+after a complete logical line, preservation of the environment prefix, removal
+of shell redirection before CLI execution, and restriction of the fixture path
+substitution to the exact `--file calc.py` argument. Both new tests use separate
+Arrange–Act–Assert blocks without runtime branches. The helper remains a narrow
+whitespace tokenizer for these examples, not a general shell parser.
+
+Both continuation regressions failed against the original extractor with only
+the launch line returned. After the correction, all 33 report-handler tests,
+including the existing real Usage execution contract, passed. The 26 Python
+documentation tests and strict site build also passed. A fresh independent
+read-only reviewer found no actionable issue; they did not rerun verification.
+
+The first full workspace run then exposed a second stale documentation check:
+`usage_documents_agent_plan_workflow` still expected the old ten-candidate
+`PLAN.json` example. Its two expectations now distinguish the one-candidate
+tutorial from the optional `CHANGED_PLAN.json` diverse-selection example.
+This is the same expectation update already made in the Python documentation
+tests, and does not relax the selection-policy contract assertions.
+
+Five testing reviews checked the observed red/green continuation regressions,
+the executable report-handler contract, the complete Rust workspace result,
+the contracts-enabled report handler, and strict all-target/all-feature Clippy
+plus formatting and documentation checks. The final full workspace run passed
+2,800 tests with zero failures and 27 ignored tests across 151 test groups.
+The contracts-enabled report handler passed all 33 tests. Clippy's string
+allocation warning was addressed with `clone_into`, without a lint exclusion.
+The additional stale assertions were also independently reviewed against Usage.
+
+These runs used Windows, Python 3.14.6 and Rust 1.99.0 with two build jobs and
+two test threads. Native Linux/macOS and the pinned nightly randomized-order
+job remain hosted CI checks; the Rust corpus comparisons do not constitute a
+fresh standalone Lean proof build.
+
+The final default-feature report-handler rerun also passed all 33 tests after
+the Clippy adjustment. The final independent diff review reported no actionable
+finding. Cleanup verified the absolute task-owned target path, then removed
+4,643 files (4.7 GiB) with `cargo clean`; C: had 184,049,463,296 bytes free.
