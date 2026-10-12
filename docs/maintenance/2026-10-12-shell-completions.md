@@ -87,3 +87,82 @@ Consulted `docs/compatibility.md`, `docs/okf-workflow.md`, and `docs/knowledge/d
 Builds used the task-owned `.superpowers/issue-828/target`, two build jobs/test threads, and disabled incremental compilation and debug information. A check during verification reported about 3.7 GiB of free physical memory. After Rust checks completed, `cargo clean` removed 3,671 files (1.3 GiB) from the checked absolute target path. The C: drive then had 182,216,232,960 bytes free (about 170 GiB). The ordinary workspace target was not cleaned.
 
 The strict site build validates the maintainer guide and its link to this repository-only record. This record remains outside the site publication allowlist. The final check uses `python -m tools.docs_site --output site` with the existing Python 3.14 environment.
+
+## CI follow-up: abandoned staging fixture
+
+[CI run 38231895577](https://github.com/HayaoSuzuki/hoimin/actions/runs/38231895577)
+failed one Linux CLI library test: 842 passed, one failed and 18 ignored.
+`stale_staging_root_is_reclaimed_only_with_expected_marker_contents` reported
+zero reclaimed roots and one preserved root. The CI result job propagated that
+failure; it was not a second independent defect.
+
+The fixture dropped a locked lease and assumed that the lock was immediately
+released. A concurrently forked child can retain the shared open-file
+description until exec. Two adjacent reclamation fixtures already account for
+this. The corrected staging fixture follows their pattern: retain a duplicated
+lease handle on Unix and explicitly unlock before dropping the owner. The
+duplicate makes omission of the unlock deterministic on Unix, without relying
+on process timing. On Windows, no duplicate is retained and the owner still
+closes before rename. No production cleanup or locking rule changes.
+
+The CI log alone does not identify every possible preservation path. A separate
+Linux kernel probe using `fcntl.flock` and `os.dup` confirmed that closing the
+owner while retaining a duplicate leaves the lease busy, whereas explicit
+unlocking makes it acquirable. This verifies the OS mechanism; it is not a local
+Linux Rust test run.
+
+### Follow-up self-reviews
+
+Design:
+
+1. Separated the primary Rust failure from the dependent aggregate failure.
+2. Compared the failing fixture with the two existing retained-handle fixtures.
+3. Traced the janitor's busy-lock preservation path and its empty diagnostics.
+4. Kept production locking, marker, age and identity checks unchanged.
+5. Chose deterministic fixture preparation over sleeps, retries or serialization.
+
+Implementation plan:
+
+1. Retain the existing reclaim assertion and the single Arrange/Act/Assert flow.
+2. Duplicate the shared description only on Unix, matching existing fixtures.
+3. Establish the unlocked premise explicitly before owner drop and rename.
+4. Verify the kernel mechanism, owned-root tests, full CLI library and strict lint.
+5. Obtain independent review, update this record and the existing PR, then clean
+   the owned build target after verification.
+
+Implementation:
+
+1. Checked that the duplicated handle remains alive through reclamation.
+2. Checked that unlock acts on the same shared description retained by the copy.
+3. Checked that Windows still drops all owner marker handles before rename.
+4. Kept the test free of runtime branches, timing assumptions and new helpers.
+5. Compared the 15-line test-only diff with the neighboring established pattern;
+   no public behavior, version, dependency or distribution change is introduced.
+
+Testing:
+
+1. Confirmed the original Linux CI failure and exact preservation report before
+   changing the fixture. The deterministic retained-handle variant is Unix-only.
+2. Reproduced the locked-after-close and unlocked-after-explicit-release states
+   with Linux `fcntl.flock`/`os.dup`; no sleep or probabilistic fork was needed.
+3. Ran Windows `cargo test --locked -p hoimin-cli --lib workspace::owned::tests::`:
+   65 passed, three ignored. Live-root preservation and reclaim behavior remain
+   covered by the existing owned-root selection.
+4. Ran Windows `cargo test --locked -p hoimin-cli --lib`: 856 passed, 16 ignored;
+   then `cargo clippy --locked -p hoimin-cli --lib --tests --all-features -- -D warnings`
+   passed. Builds and tests used two jobs/threads and the existing owned target.
+5. Formatting, whitespace and `python -m tools.docs_site --output site` passed.
+   An initial documentation invocation with a scratch output path was rejected
+   by the existing output-directory guard; the supported command succeeded.
+   No Linux Rust execution is claimed by these local checks; hosted CI must
+   confirm the retained-descriptor regression on Unix.
+
+Independent source review found no blocking issue in the fixture delta and
+confirmed its retained-handle lifetime, Windows ordering, branch-free AAA and
+unchanged production guards. The scoped philosophy assessment passed 10/10;
+this does not assess the entire owned-workspace module.
+
+The final independent review also checked the appended record and test/lint
+log tails without finding a blocking issue. After verification, `cargo clean`
+on the checked task-owned target removed 3,341 files (856.0 MiB), leaving
+181,908,611,072 bytes free on C:.
