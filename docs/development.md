@@ -71,6 +71,10 @@ manifest and fingerprint protection in the owned handoff. The
 [verified-plan record](maintenance/2026-10-12-verified-plan.md) describes the
 internal Rust source migration and validation evidence.
 
+Use `WorkspaceHandler` methods directly; the duplicate free-function entry
+points are removed. See the [workspace API record](maintenance/2026-10-12-workspace-api.md)
+for the internal source migration and compatibility decision.
+
 ## Documentation publication
 
 Edit the existing Markdown and open a PR; the Documentation workflow checks the
