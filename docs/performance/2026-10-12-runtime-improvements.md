@@ -180,3 +180,84 @@ Ruling: retain investigation only for #813 — a large-record microbenchmark win
 does not justify slowing the usual small-record path. Revisit only if real input
 profiles demonstrate a different workload. The trial's cost and limitations are
 recorded instead of claiming a general optimization.
+
+## #814: retain stateless replay for small batches
+
+Do not retain a spool reader in the production shell now. The original replay
+loop for 100,000 small records took a median 2.519 seconds (six observations),
+but the primary workflow verifies small selected batches. Seven additional
+observations with freshly prepared spools gave:
+
+| Replayed records | Minimum | Median | Maximum |
+| ---: | ---: | ---: | ---: |
+| 10 | 1.20 ms | 1.45 ms | 10.45 ms |
+| 100 | 10.90 ms | 12.66 ms | 15.13 ms |
+| 1,000 | 33.68 ms | 34.60 ms | 36.88 ms |
+
+The samples are noisy, especially the first small batch, and filesystem cache
+conditions are not a cold-storage benchmark. Even eliminating the complete
+measured ten-record operation would save only about 1.45 ms in its median sample.
+This is an observation for these inputs, not a worst-case bound or a guarantee
+that large workloads cannot benefit. The three-mutant CLI run above took about
+one second. Do not scale the 100,000-record average linearly to small batches.
+
+Source inspection confirms one open and metadata query per replay call, a seek
+and previous-newline check for a nonzero offset, and a fresh BufReader and line
+Vec. These are source-level operations, **not measured syscall/allocation counts**.
+Read-ahead may repeatedly read bytes beyond the requested record. A retained
+buffer could avoid those operations, but can also return cached bytes after
+in-place modification; an open handle can continue reading an old file after
+path replacement (or prevent replacement/deletion on Windows). Comparing length
+alone does not detect same-length corruption. Preserving all existing observations
+would require an explicit ownership/integrity protocol or invalidation work,
+along with shell cancellation and cleanup changes.
+
+Ruling: do not build a retained-reader prototype solely to improve a millisecond
+operation in the selected small-batch workload. The current measured cost does
+not justify weakening checks or adding lifetime/invalidation machinery. No
+reader variant or syscall/allocation profiling was performed, and no speedup is
+claimed. Reconsider with an actual large-batch user bottleneck. This narrows the
+original experiment plan based on measurements rather than completing every
+possible probe regardless of its value.
+
+[Small-batch observations](runtime-2026-10-12/replay-small-batches.json) contain
+argv, time, memory, status and driver output. Reproduce each sample with the
+original driver using `replay COUNT 32`, for COUNT 10, 100 and 1000, seven times.
+The driver bounds records/payloads and removes its spool directory on exit.
+
+### #814 design self-review (five passes)
+
+1. Scope: candidate spool replay is separate from public progress-report input.
+2. Integrity: preserve offsets, previous newline, sequence, count and EOF checks.
+3. Ownership: retaining an open handle changes path-replacement and Windows
+   cleanup behavior; a reader cache is not just a local BufReader optimization.
+4. Memory: avoid entire-spool retention and account for the bounded line buffer
+   plus read-ahead if a future reader is introduced.
+5. Value: measure the intended small-batch use before paying for new state.
+
+### #814 plan self-review (five passes)
+
+1. Baseline: the original production store remains unchanged after #813.
+2. Inputs: measure three bounded batch sizes with seven repetitions each.
+3. Isolation: no builds or other measurement tasks run during samples.
+4. Interpretation: distinguish the inner replay loop from preparation and process
+   startup; avoid pretending source operation counts are OS measurements.
+5. Stop rule: permit investigation-only delivery when the total saving is small.
+
+### #814 implementation self-review (five passes)
+
+1. Probe: use the actual public replay implementation without a mock reader.
+2. State: count/sequence setup and the START cursor match normal replay.
+3. Budget: at most 1,000 small records for the additional probe; no large cache.
+4. Cleanup: store/reader handles are dropped before the owned temp directory.
+5. Outcome: no runtime change, new dependency or unused reader abstraction.
+
+### #814 verification self-review (five passes)
+
+1. All 21 probes returned zero and reported the expected count/mode.
+2. Retain raw observations and report min/median/max rather than the best sample.
+3. Review existing analyzer_handler tests for changed/truncated records, invalid
+   offsets/sequences and caller-owned directory lifetime; no assertions removed.
+4. Do not claim safety equivalence of an unimplemented reader variant.
+5. Keep native-permission full-suite verification in the final retained-code
+   stage; this investigation adds no production code or redundant regression test.

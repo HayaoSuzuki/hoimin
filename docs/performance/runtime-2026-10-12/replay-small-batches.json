@@ -1,0 +1,317 @@
+[
+  {
+    "argv": [
+      ".superpowers\\runtime-improvements\\store-before.exe",
+      "replay",
+      "10",
+      "32"
+    ],
+    "wall_seconds": 0.03377339988946915,
+    "cpu_seconds": 0.015625,
+    "peak_rss_bytes": 4866048,
+    "returncode": 0,
+    "stdout": "{\"mode\":\"replay\",\"count\":10,\"size\":32,\"seconds\":0.0104497,\"bytes\":0}\n",
+    "stderr": "",
+    "sample": "replay-10-0.json"
+  },
+  {
+    "argv": [
+      ".superpowers\\runtime-improvements\\store-before.exe",
+      "replay",
+      "10",
+      "32"
+    ],
+    "wall_seconds": 0.015401100274175406,
+    "cpu_seconds": 0.015625,
+    "peak_rss_bytes": 4861952,
+    "returncode": 0,
+    "stdout": "{\"mode\":\"replay\",\"count\":10,\"size\":32,\"seconds\":0.0014474,\"bytes\":0}\n",
+    "stderr": "",
+    "sample": "replay-10-1.json"
+  },
+  {
+    "argv": [
+      ".superpowers\\runtime-improvements\\store-before.exe",
+      "replay",
+      "10",
+      "32"
+    ],
+    "wall_seconds": 0.016936900094151497,
+    "cpu_seconds": 0.0,
+    "peak_rss_bytes": 4870144,
+    "returncode": 0,
+    "stdout": "{\"mode\":\"replay\",\"count\":10,\"size\":32,\"seconds\":0.0011985,\"bytes\":0}\n",
+    "stderr": "",
+    "sample": "replay-10-2.json"
+  },
+  {
+    "argv": [
+      ".superpowers\\runtime-improvements\\store-before.exe",
+      "replay",
+      "10",
+      "32"
+    ],
+    "wall_seconds": 0.01617950014770031,
+    "cpu_seconds": 0.015625,
+    "peak_rss_bytes": 4866048,
+    "returncode": 0,
+    "stdout": "{\"mode\":\"replay\",\"count\":10,\"size\":32,\"seconds\":0.0011958,\"bytes\":0}\n",
+    "stderr": "",
+    "sample": "replay-10-3.json"
+  },
+  {
+    "argv": [
+      ".superpowers\\runtime-improvements\\store-before.exe",
+      "replay",
+      "10",
+      "32"
+    ],
+    "wall_seconds": 0.016102599911391735,
+    "cpu_seconds": 0.0,
+    "peak_rss_bytes": 4853760,
+    "returncode": 0,
+    "stdout": "{\"mode\":\"replay\",\"count\":10,\"size\":32,\"seconds\":0.0016122,\"bytes\":0}\n",
+    "stderr": "",
+    "sample": "replay-10-4.json"
+  },
+  {
+    "argv": [
+      ".superpowers\\runtime-improvements\\store-before.exe",
+      "replay",
+      "10",
+      "32"
+    ],
+    "wall_seconds": 0.021394900046288967,
+    "cpu_seconds": 0.0,
+    "peak_rss_bytes": 4870144,
+    "returncode": 0,
+    "stdout": "{\"mode\":\"replay\",\"count\":10,\"size\":32,\"seconds\":0.0019008,\"bytes\":0}\n",
+    "stderr": "",
+    "sample": "replay-10-5.json"
+  },
+  {
+    "argv": [
+      ".superpowers\\runtime-improvements\\store-before.exe",
+      "replay",
+      "10",
+      "32"
+    ],
+    "wall_seconds": 0.016446900088340044,
+    "cpu_seconds": 0.015625,
+    "peak_rss_bytes": 4861952,
+    "returncode": 0,
+    "stdout": "{\"mode\":\"replay\",\"count\":10,\"size\":32,\"seconds\":0.001451,\"bytes\":0}\n",
+    "stderr": "",
+    "sample": "replay-10-6.json"
+  },
+  {
+    "argv": [
+      ".superpowers\\runtime-improvements\\store-before.exe",
+      "replay",
+      "100",
+      "32"
+    ],
+    "wall_seconds": 0.027670799754559994,
+    "cpu_seconds": 0.03125,
+    "peak_rss_bytes": 4861952,
+    "returncode": 0,
+    "stdout": "{\"mode\":\"replay\",\"count\":100,\"size\":32,\"seconds\":0.0123188,\"bytes\":0}\n",
+    "stderr": "",
+    "sample": "replay-100-0.json"
+  },
+  {
+    "argv": [
+      ".superpowers\\runtime-improvements\\store-before.exe",
+      "replay",
+      "100",
+      "32"
+    ],
+    "wall_seconds": 0.029076999984681606,
+    "cpu_seconds": 0.0,
+    "peak_rss_bytes": 4866048,
+    "returncode": 0,
+    "stdout": "{\"mode\":\"replay\",\"count\":100,\"size\":32,\"seconds\":0.0130588,\"bytes\":0}\n",
+    "stderr": "",
+    "sample": "replay-100-1.json"
+  },
+  {
+    "argv": [
+      ".superpowers\\runtime-improvements\\store-before.exe",
+      "replay",
+      "100",
+      "32"
+    ],
+    "wall_seconds": 0.028557799756526947,
+    "cpu_seconds": 0.0,
+    "peak_rss_bytes": 4861952,
+    "returncode": 0,
+    "stdout": "{\"mode\":\"replay\",\"count\":100,\"size\":32,\"seconds\":0.0121082,\"bytes\":0}\n",
+    "stderr": "",
+    "sample": "replay-100-2.json"
+  },
+  {
+    "argv": [
+      ".superpowers\\runtime-improvements\\store-before.exe",
+      "replay",
+      "100",
+      "32"
+    ],
+    "wall_seconds": 0.026680899783968925,
+    "cpu_seconds": 0.0,
+    "peak_rss_bytes": 4874240,
+    "returncode": 0,
+    "stdout": "{\"mode\":\"replay\",\"count\":100,\"size\":32,\"seconds\":0.0108967,\"bytes\":0}\n",
+    "stderr": "",
+    "sample": "replay-100-3.json"
+  },
+  {
+    "argv": [
+      ".superpowers\\runtime-improvements\\store-before.exe",
+      "replay",
+      "100",
+      "32"
+    ],
+    "wall_seconds": 0.02701030019670725,
+    "cpu_seconds": 0.03125,
+    "peak_rss_bytes": 4866048,
+    "returncode": 0,
+    "stdout": "{\"mode\":\"replay\",\"count\":100,\"size\":32,\"seconds\":0.0126607,\"bytes\":0}\n",
+    "stderr": "",
+    "sample": "replay-100-4.json"
+  },
+  {
+    "argv": [
+      ".superpowers\\runtime-improvements\\store-before.exe",
+      "replay",
+      "100",
+      "32"
+    ],
+    "wall_seconds": 0.029822999611496925,
+    "cpu_seconds": 0.03125,
+    "peak_rss_bytes": 4878336,
+    "returncode": 0,
+    "stdout": "{\"mode\":\"replay\",\"count\":100,\"size\":32,\"seconds\":0.0151255,\"bytes\":0}\n",
+    "stderr": "",
+    "sample": "replay-100-5.json"
+  },
+  {
+    "argv": [
+      ".superpowers\\runtime-improvements\\store-before.exe",
+      "replay",
+      "100",
+      "32"
+    ],
+    "wall_seconds": 0.03131310036405921,
+    "cpu_seconds": 0.0,
+    "peak_rss_bytes": 4861952,
+    "returncode": 0,
+    "stdout": "{\"mode\":\"replay\",\"count\":100,\"size\":32,\"seconds\":0.0134773,\"bytes\":0}\n",
+    "stderr": "",
+    "sample": "replay-100-6.json"
+  },
+  {
+    "argv": [
+      ".superpowers\\runtime-improvements\\store-before.exe",
+      "replay",
+      "1000",
+      "32"
+    ],
+    "wall_seconds": 0.05279169976711273,
+    "cpu_seconds": 0.046875,
+    "peak_rss_bytes": 4866048,
+    "returncode": 0,
+    "stdout": "{\"mode\":\"replay\",\"count\":1000,\"size\":32,\"seconds\":0.0344543,\"bytes\":0}\n",
+    "stderr": "",
+    "sample": "replay-1000-0.json"
+  },
+  {
+    "argv": [
+      ".superpowers\\runtime-improvements\\store-before.exe",
+      "replay",
+      "1000",
+      "32"
+    ],
+    "wall_seconds": 0.058407200034707785,
+    "cpu_seconds": 0.03125,
+    "peak_rss_bytes": 4861952,
+    "returncode": 0,
+    "stdout": "{\"mode\":\"replay\",\"count\":1000,\"size\":32,\"seconds\":0.0368807,\"bytes\":0}\n",
+    "stderr": "",
+    "sample": "replay-1000-1.json"
+  },
+  {
+    "argv": [
+      ".superpowers\\runtime-improvements\\store-before.exe",
+      "replay",
+      "1000",
+      "32"
+    ],
+    "wall_seconds": 0.05316979996860027,
+    "cpu_seconds": 0.03125,
+    "peak_rss_bytes": 4861952,
+    "returncode": 0,
+    "stdout": "{\"mode\":\"replay\",\"count\":1000,\"size\":32,\"seconds\":0.0346038,\"bytes\":0}\n",
+    "stderr": "",
+    "sample": "replay-1000-2.json"
+  },
+  {
+    "argv": [
+      ".superpowers\\runtime-improvements\\store-before.exe",
+      "replay",
+      "1000",
+      "32"
+    ],
+    "wall_seconds": 0.053525099996477365,
+    "cpu_seconds": 0.03125,
+    "peak_rss_bytes": 4866048,
+    "returncode": 0,
+    "stdout": "{\"mode\":\"replay\",\"count\":1000,\"size\":32,\"seconds\":0.0337263,\"bytes\":0}\n",
+    "stderr": "",
+    "sample": "replay-1000-3.json"
+  },
+  {
+    "argv": [
+      ".superpowers\\runtime-improvements\\store-before.exe",
+      "replay",
+      "1000",
+      "32"
+    ],
+    "wall_seconds": 0.05343300011008978,
+    "cpu_seconds": 0.046875,
+    "peak_rss_bytes": 4866048,
+    "returncode": 0,
+    "stdout": "{\"mode\":\"replay\",\"count\":1000,\"size\":32,\"seconds\":0.034762,\"bytes\":0}\n",
+    "stderr": "",
+    "sample": "replay-1000-4.json"
+  },
+  {
+    "argv": [
+      ".superpowers\\runtime-improvements\\store-before.exe",
+      "replay",
+      "1000",
+      "32"
+    ],
+    "wall_seconds": 0.05235730018466711,
+    "cpu_seconds": 0.03125,
+    "peak_rss_bytes": 4866048,
+    "returncode": 0,
+    "stdout": "{\"mode\":\"replay\",\"count\":1000,\"size\":32,\"seconds\":0.034659,\"bytes\":0}\n",
+    "stderr": "",
+    "sample": "replay-1000-5.json"
+  },
+  {
+    "argv": [
+      ".superpowers\\runtime-improvements\\store-before.exe",
+      "replay",
+      "1000",
+      "32"
+    ],
+    "wall_seconds": 0.05149389989674091,
+    "cpu_seconds": 0.015625,
+    "peak_rss_bytes": 4866048,
+    "returncode": 0,
+    "stdout": "{\"mode\":\"replay\",\"count\":1000,\"size\":32,\"seconds\":0.0336783,\"bytes\":0}\n",
+    "stderr": "",
+    "sample": "replay-1000-6.json"
+  }
+]
