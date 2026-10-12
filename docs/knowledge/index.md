@@ -70,6 +70,7 @@ okf_version: "0.2"
 - [Audit and report catalog](references/audit-documents.md) - Index of all original audit and report Markdown.
 
 - [Performance validation by input shape](audits/performance-shapes.md) - Execution gates, release measurements, dependent PRs and evidence limits.
+- [Measuring test execution costs](test-execution-costs.md) - Collection/build/runtime separation, measured fixture costs and retained integration coverage.
 
 - [Cross-boundary contract fixtures](audits/boundary-contracts.md) - Strict execution, complete reporting and unverified conditions.
 

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 import re
 import shlex
@@ -10,10 +9,13 @@ import sys
 import tomllib
 from fnmatch import fnmatchcase
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import TypedDict, TypeGuard
 
 import pytest
 import yaml
+from hypothesis import example, given, settings
+from hypothesis import strategies as st
 
 from formal.HoiminOracle.tools import lean_resource_guard
 
@@ -219,9 +221,22 @@ class LeanCall(TypedDict):
     cwd: str
 
 
-def lean_call(line: str) -> LeanCall:
-    call = mapping(json.loads(line))
-    return {"argv": string_list(call["argv"]), "cwd": string(call["cwd"])}
+def lean_calls(path: Path) -> list[LeanCall]:
+    if not path.exists():
+        return []
+    fields = path.read_bytes().decode("utf-8").split("\0")
+    assert fields.pop() == "", "incomplete workflow invocation record"
+    values = iter(fields)
+    calls: list[LeanCall] = []
+    for cwd in values:
+        count = int(next(values))
+        calls.append(
+            {
+                "argv": [next(values) for _ in range(count)],
+                "cwd": str(Path(cwd).resolve()),
+            }
+        )
+    return calls
 
 
 def lean_gate_invocations(
@@ -233,20 +248,23 @@ def lean_gate_invocations(
     temporary = tmp_path
     fake_bin = temporary / "bin"
     fake_bin.mkdir()
-    call_log = temporary / "calls.jsonl"
+    call_log = temporary / "calls.nul"
     fake_python = fake_bin / "python3"
+    pwd = "pwd -W" if os.name == "nt" else "pwd -P"
     fake_python.write_text(
-        f"""#!{git_bash_path(Path(sys.executable))}
-import json
-import os
-import sys
-
-record = {{"argv": sys.argv[1:], "cwd": os.getcwd()}}
-with open(os.environ["LEAN_CALL_LOG"], "a", encoding="utf-8") as stream:
-    stream.write(json.dumps(record) + "\\n")
-call_count = len(open(os.environ["LEAN_CALL_LOG"], encoding="utf-8").readlines())
-if call_count == int(os.environ.get("LEAN_FAIL_AT", "0")):
-    raise SystemExit(23)
+        f"""#!/bin/bash
+set -euo pipefail
+count=0
+if [[ -f "$LEAN_CALL_LOG.count" ]]; then
+    read -r count < "$LEAN_CALL_LOG.count"
+fi
+count=$((count + 1))
+printf '%s\\n' "$count" > "$LEAN_CALL_LOG.count"
+# Shell arguments cannot contain NUL; empty strings and newlines remain distinct.
+printf '%s\\0' "$({pwd})" "$#" "$@" >> "$LEAN_CALL_LOG"
+if (( count == LEAN_FAIL_AT )); then
+    exit 23
+fi
 """,
         encoding="utf-8",
         newline="\n",
@@ -272,19 +290,43 @@ if call_count == int(os.environ.get("LEAN_FAIL_AT", "0")):
         check=False,
         capture_output=True,
         text=True,
-        # Each guarded module starts a fake Python interpreter through Git Bash.
-        # Windows launcher overhead accumulates across the full module inventory;
-        # this harness deadline is independent of the real per-command CI guard.
+        encoding="utf-8",
+        # This harness deadline is independent of the real per-command CI guard.
         timeout=120 if os.name == "nt" else 10,
     )
-    calls = (
-        [lean_call(line) for line in call_log.read_text().splitlines()]
-        if call_log.exists()
-        else []
-    )
+    calls = lean_calls(call_log)
     expected_cwd = str(temporary.resolve())
     assert all(call["cwd"] == expected_cwd for call in calls)
     return completed, calls
+
+
+@given(st.lists(st.text(alphabet="abc XYZ012'\"\\\n\t日本語", max_size=20), max_size=5))
+@example(["", "space here", "quote'\"", "line\nbreak", "日本語"])
+@settings(max_examples=10, deadline=None)
+def test_workflow_recorder_preserves_arguments(arguments: list[str]) -> None:
+    with TemporaryDirectory(prefix="hoimin workflow 日本語 ") as temporary:
+        directory = Path(temporary)
+        script = shlex.join(["python3", *arguments])
+
+        completed, calls = lean_gate_invocations(directory, script)
+
+        assert completed.returncode == 0, completed.stderr
+        assert calls == [{"argv": arguments, "cwd": str(directory.resolve())}]
+
+
+@pytest.mark.parametrize("filename", ["ci.yml", "non-linux-ci.yml"])
+def test_rust_workspace_suite_is_not_repeated(filename: str) -> None:
+    document = workflow_document(
+        (ROOT / ".github" / "workflows" / filename).read_text(encoding="utf-8")
+    )
+
+    commands = [
+        string(step.get("run", ""))
+        for step in job_steps(workflow_jobs(document)["rust"])
+    ]
+
+    assert commands.count("cargo test --workspace") == 1
+    assert "cargo test -p hoimin-cli --test run_e2e" not in commands
 
 
 def lean_module_sources() -> dict[str, Path]:
@@ -1900,7 +1942,6 @@ def test_development_guide_updates_pin_and_minimum_version_together() -> None:
             "--lib --no-deps -- -D warnings"
         ),
         "cargo test --workspace",
-        "cargo test -p hoimin-cli --test run_e2e",
         "cargo test -p hoimin-core --features contracts",
         "cargo test -p hoimin-cli --features contracts",
         "uv run --frozen pytest",

@@ -165,7 +165,6 @@ cargo fmt --manifest-path vendor/ruff_python_parser/Cargo.toml -- --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo clippy --locked -p littrs-ruff-python-parser --lib --no-deps -- -D warnings
 cargo test --workspace
-cargo test -p hoimin-cli --test run_e2e
 cargo test -p hoimin-core --features contracts
 cargo test -p hoimin-cli --features contracts
 uv run --frozen pytest
@@ -173,6 +172,35 @@ uvx maturin build --release
 uv sync --frozen --no-install-project
 uv run --frozen --no-sync python tests/wheel_smoke.py
 ```
+
+## Measuring test execution costs
+
+Measure collection separately with `uv run --frozen pytest --collect-only -q`.
+Use `uv run --frozen pytest --randomly-seed=812 --durations=25` to locate expensive
+setup, calls and teardown. Keep the seed, interpreter, collected cases and inputs
+fixed for before/after comparisons. Profile separately with Python's `cProfile`;
+instrumented times are not baseline wall times, and parent profiling does not
+measure CPU work inside subprocesses.
+
+For Rust, first use `cargo test --locked --workspace --no-run`, then time
+`cargo test --locked --workspace` on the same artifacts. The second command still
+includes Cargo startup and freshness checks. Read the per-binary summaries to
+find expensive integration targets. `cargo test --workspace` already includes
+`run_e2e`; use `cargo test -p hoimin-cli --test run_e2e` for a focused run rather
+than repeating it after the workspace suite. Keep the separate reference-example,
+contracts, randomized-order and platform/resource checks: they cover different
+conditions.
+
+Use a task-owned `CARGO_TARGET_DIR` when measuring cold builds or cleaning Cargo
+artifacts. Check free disk between phases and clean that target after preserving
+results; do not remove another task's artifacts. Keep real timeout, child cleanup
+and OS resource tests. Lightweight command-recording stubs are appropriate for
+workflow orchestration tests that already substitute the actual command.
+
+See the [Python and Rust measurements](performance/2026-10-12-test-bottlenecks.md)
+for the measured scope and adopted changes. Do not replace JSON or introduce a
+test runner solely on an isolated serializer microbenchmark; include conversion,
+process startup, I/O, memory, compatibility and dependency costs.
 
 ## CI selection and workflow validation
 

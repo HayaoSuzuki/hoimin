@@ -189,7 +189,6 @@ jobs:
       - run: cargo test --locked -p hoimin-cli --example generate_cli_reference
       - name: Check generated CLI reference
         run: cargo run --locked -p hoimin-cli --example generate_cli_reference -- --check
-      - run: cargo test -p hoimin-cli --test run_e2e
       - name: Performance shape gates
         shell: bash
         run: python tools/performance_shapes.py gate --output "$RUNNER_TEMP/performance-gates"
