@@ -831,10 +831,19 @@ fn output_diagnostics_match(value: &MutantFinished) -> bool {
 #[derive(Clone, Debug, Default)]
 pub struct ReportSequence {
     last: Option<u64>,
-    run_id: Option<String>,
+    lifecycle: ReportLifecycle,
     active_mutants: BTreeSet<(String, u64)>,
     seen_mutants: BTreeMap<String, u64>,
-    finished: bool,
+}
+
+/// The identity is retained after finish so late events report the original run,
+/// even when the rejected event carries a different identity.
+#[derive(Clone, Debug, Default)]
+enum ReportLifecycle {
+    #[default]
+    NotStarted,
+    Running(String),
+    Finished(String),
 }
 
 impl ReportSequence {
@@ -909,27 +918,26 @@ impl ReportSequence {
     /// Returns [`ReportSequenceError`] when the event violates the run,
     /// mutant-lifecycle, or strictly increasing sequence invariants.
     pub fn validate(&self, event: &OutputEvent) -> Result<(), ReportSequenceError> {
-        let lifecycle_error = if self.finished {
-            Some(ReportSequenceError::RunAlreadyFinished {
-                run_id: self.run_id.clone().unwrap_or_default(),
-            })
-        } else {
-            match (event, self.run_id.as_deref()) {
-                (OutputEvent::RunStarted(value), Some(_)) => {
-                    Some(ReportSequenceError::RunAlreadyStarted {
-                        run_id: value.run_id.clone(),
-                    })
-                }
-                (OutputEvent::RunStarted(_), None) => None,
-                (_, None) => Some(ReportSequenceError::RunNotStarted),
-                (_, Some(expected)) if event.run_id() != expected => {
-                    Some(ReportSequenceError::RunIdMismatch {
-                        expected: expected.to_owned(),
-                        received: event.run_id().to_owned(),
-                    })
-                }
-                _ => None,
+        let lifecycle_error = match (&self.lifecycle, event) {
+            (ReportLifecycle::Finished(run_id), _) => {
+                Some(ReportSequenceError::RunAlreadyFinished {
+                    run_id: run_id.clone(),
+                })
             }
+            (ReportLifecycle::Running(_), OutputEvent::RunStarted(value)) => {
+                Some(ReportSequenceError::RunAlreadyStarted {
+                    run_id: value.run_id.clone(),
+                })
+            }
+            (ReportLifecycle::NotStarted, OutputEvent::RunStarted(_)) => None,
+            (ReportLifecycle::NotStarted, _) => Some(ReportSequenceError::RunNotStarted),
+            (ReportLifecycle::Running(expected), _) if event.run_id() != expected => {
+                Some(ReportSequenceError::RunIdMismatch {
+                    expected: expected.to_owned(),
+                    received: event.run_id().to_owned(),
+                })
+            }
+            (ReportLifecycle::Running(_), _) => None,
         };
         let mutant_error = lifecycle_error.or_else(|| self.mutant_error(event));
         let error = mutant_error.or_else(|| {
@@ -956,7 +964,7 @@ impl ReportSequence {
             "report.sequence.invariant",
             result.is_ok(),
             (
-                &self.run_id,
+                &self.lifecycle,
                 &self.active_mutants,
                 &self.seen_mutants,
                 self.last,
@@ -967,7 +975,9 @@ impl ReportSequence {
         result?;
         self.last = Some(event.sequence());
         match event {
-            OutputEvent::RunStarted(value) => self.run_id = Some(value.run_id.clone()),
+            OutputEvent::RunStarted(value) => {
+                self.lifecycle = ReportLifecycle::Running(value.run_id.clone());
+            }
             OutputEvent::MutantStarted(value) => {
                 self.seen_mutants
                     .insert(value.mutant_id.clone(), value.mutant_sequence);
@@ -978,7 +988,14 @@ impl ReportSequence {
                 self.active_mutants
                     .remove(&(value.candidate.id.clone(), value.candidate.sequence));
             }
-            OutputEvent::RunFinished(_) => self.finished = true,
+            OutputEvent::RunFinished(_) => {
+                self.lifecycle = match std::mem::take(&mut self.lifecycle) {
+                    ReportLifecycle::Running(run_id) => ReportLifecycle::Finished(run_id),
+                    ReportLifecycle::NotStarted | ReportLifecycle::Finished(_) => {
+                        unreachable!("validated finish requires a running report")
+                    }
+                };
+            }
             _ => {}
         }
         Ok(())

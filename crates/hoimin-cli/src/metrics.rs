@@ -67,16 +67,26 @@ pub(crate) enum MetricsError {
     },
 }
 
-struct StageState {
-    started: Duration,
-    elapsed_ms: Option<u64>,
+#[derive(Clone, Copy)]
+enum StageState {
+    Running(Duration),
+    Finished(u64),
+}
+
+/// A worker has at most one queued or running process. Rejected operations
+/// leave this state untouched so the accepted process can still finish.
+#[derive(Clone, Copy, Default)]
+enum WorkerProcessState {
+    #[default]
+    Idle,
+    Queued(Duration),
+    Running(Duration),
 }
 
 #[derive(Default)]
 struct WorkerState {
     metric: Option<WorkerMetric>,
-    queued: Option<Duration>,
-    started: Option<Duration>,
+    process: WorkerProcessState,
 }
 
 pub(crate) struct MetricsCollector<C = MonotonicClock> {
@@ -109,13 +119,8 @@ impl<C: Clock> MetricsCollector<C> {
         if self.stages.contains_key(&name) {
             return Err(MetricsError::StageAlreadyStarted { name });
         }
-        self.stages.insert(
-            name,
-            StageState {
-                started: self.clock.elapsed(),
-                elapsed_ms: None,
-            },
-        );
+        self.stages
+            .insert(name, StageState::Running(self.clock.elapsed()));
         Ok(())
     }
 
@@ -125,54 +130,57 @@ impl<C: Clock> MetricsCollector<C> {
             .stages
             .get_mut(name)
             .ok_or_else(|| MetricsError::StageNotStarted { name: name.into() })?;
-        if stage.elapsed_ms.is_some() {
+        let StageState::Running(started) = *stage else {
             return Err(MetricsError::StageAlreadyFinished { name: name.into() });
-        }
-        stage.elapsed_ms = Some(duration_ms(now.saturating_sub(stage.started)));
+        };
+        *stage = StageState::Finished(duration_ms(now.saturating_sub(started)));
         Ok(())
     }
 
     pub(crate) fn queued(&mut self, worker: u32) -> Result<(), MetricsError> {
         let state = self.workers.entry(worker).or_default();
-        if state.queued.is_some() {
-            return Err(MetricsError::ProcessAlreadyQueued { worker });
-        }
-        if state.started.is_some() {
-            return Err(MetricsError::ProcessAlreadyStarted { worker });
+        match state.process {
+            WorkerProcessState::Queued(_) => {
+                return Err(MetricsError::ProcessAlreadyQueued { worker });
+            }
+            WorkerProcessState::Running(_) => {
+                return Err(MetricsError::ProcessAlreadyStarted { worker });
+            }
+            WorkerProcessState::Idle => {}
         }
         state
             .metric
             .get_or_insert_with(|| WorkerMetric::new(worker));
-        state.queued = Some(self.clock.elapsed());
+        state.process = WorkerProcessState::Queued(self.clock.elapsed());
         Ok(())
     }
 
     pub(crate) fn process_started(&mut self, worker: u32) -> Result<(), MetricsError> {
         let now = self.clock.elapsed();
         let state = self.workers.entry(worker).or_default();
-        if state.started.is_some() {
-            return Err(MetricsError::ProcessAlreadyStarted { worker });
-        }
-        let queued = state
-            .queued
-            .take()
-            .ok_or(MetricsError::ProcessNotQueued { worker })?;
+        let queued = match state.process {
+            WorkerProcessState::Running(_) => {
+                return Err(MetricsError::ProcessAlreadyStarted { worker });
+            }
+            WorkerProcessState::Idle => return Err(MetricsError::ProcessNotQueued { worker }),
+            WorkerProcessState::Queued(queued) => queued,
+        };
         let metric = state
             .metric
             .get_or_insert_with(|| WorkerMetric::new(worker));
         metric.queue_wait_ms = metric
             .queue_wait_ms
             .saturating_add(duration_ms(now.saturating_sub(queued)));
-        state.started = Some(now);
+        state.process = WorkerProcessState::Running(now);
         Ok(())
     }
 
     pub(crate) fn cancel_queued(&mut self, worker: u32) -> Result<(), MetricsError> {
         let state = self.workers.entry(worker).or_default();
-        state
-            .queued
-            .take()
-            .ok_or(MetricsError::ProcessNotQueued { worker })?;
+        if !matches!(state.process, WorkerProcessState::Queued(_)) {
+            return Err(MetricsError::ProcessNotQueued { worker });
+        }
+        state.process = WorkerProcessState::Idle;
         Ok(())
     }
 
@@ -183,10 +191,10 @@ impl<C: Clock> MetricsCollector<C> {
     ) -> Result<(), MetricsError> {
         let now = self.clock.elapsed();
         let state = self.workers.entry(worker).or_default();
-        let started = state
-            .started
-            .take()
-            .ok_or(MetricsError::ProcessNotStarted { worker })?;
+        let WorkerProcessState::Running(started) = state.process else {
+            return Err(MetricsError::ProcessNotStarted { worker });
+        };
+        state.process = WorkerProcessState::Idle;
         let metric = state
             .metric
             .get_or_insert_with(|| WorkerMetric::new(worker));
@@ -211,7 +219,7 @@ impl<C: Clock> MetricsCollector<C> {
         if let Some((&worker, _)) = self
             .workers
             .iter()
-            .find(|(_, state)| state.queued.is_some() || state.started.is_some())
+            .find(|(_, state)| !matches!(state.process, WorkerProcessState::Idle))
         {
             return Err(MetricsError::ProcessOutstanding { worker });
         }
@@ -220,10 +228,9 @@ impl<C: Clock> MetricsCollector<C> {
         metrics.stages = self
             .stages
             .into_iter()
-            .filter_map(|(name, state)| {
-                state
-                    .elapsed_ms
-                    .map(|elapsed_ms| StageMetric { name, elapsed_ms })
+            .filter_map(|(name, state)| match state {
+                StageState::Running(_) => None,
+                StageState::Finished(elapsed_ms) => Some(StageMetric { name, elapsed_ms }),
             })
             .collect();
         metrics.workers = self
@@ -407,6 +414,38 @@ mod tests {
     impl Clock for FakeClock {
         fn elapsed(&self) -> Duration {
             self.0.get()
+        }
+    }
+
+    proptest::proptest! {
+        #[test]
+        fn rejected_worker_operations_preserve_accepted_process_timing(
+            wait_ms in 0_u64..10_000,
+            busy_ms in 0_u64..10_000,
+        ) {
+            let mut collector = MetricsCollector::with_clock("run-1", FakeClock::default());
+            collector.queued(7).unwrap();
+            collector.clock.advance_ms(wait_ms);
+
+            let premature_finish = collector.process_finished(7, true);
+            collector.process_started(7).unwrap();
+            let duplicate_queue = collector.queued(7);
+            let duplicate_start = collector.process_started(7);
+            let invalid_cancel = collector.cancel_queued(7);
+            collector.clock.advance_ms(busy_ms);
+            collector.process_finished(7, true).unwrap();
+            let metrics = collector.finish(1, 1).unwrap();
+
+            assert!(matches!(premature_finish, Err(MetricsError::ProcessNotStarted { worker: 7 })));
+            assert!(matches!(duplicate_queue, Err(MetricsError::ProcessAlreadyStarted { worker: 7 })));
+            assert!(matches!(duplicate_start, Err(MetricsError::ProcessAlreadyStarted { worker: 7 })));
+            assert!(matches!(invalid_cancel, Err(MetricsError::ProcessNotQueued { worker: 7 })));
+            assert_eq!(metrics.workers, vec![WorkerMetric {
+                worker: 7,
+                queue_wait_ms: wait_ms,
+                busy_ms,
+                processes: 1,
+            }]);
         }
     }
 

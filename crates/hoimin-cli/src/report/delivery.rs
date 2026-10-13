@@ -36,7 +36,7 @@ impl<Stdout: Write, Stderr: Write> ReportDelivery<Stdout, Stderr> {
         match self {
             Self::Inline(handler) => handler.flush_and_release_spool(),
             Self::Owned(driver) => {
-                if driver.task.is_some() {
+                if matches!(driver.state, OwnedDeliveryState::Running(_)) {
                     let _ = driver.join(EffectId(u64::MAX)).await;
                 }
                 let result = driver.execute(ReportOperation::Flush).await;
@@ -98,15 +98,13 @@ impl<Stdout: Write + Send + 'static, Stderr: Write + Send + 'static>
             return self;
         };
         Self::Owned(OwnedDelivery {
-            handler: Some(ReportHandler {
-                format: handler.format,
+            state: OwnedDeliveryState::Idle(ReportHandler {
+                encoding: handler.encoding,
                 stdout: Box::new(handler.stdout),
                 stderr: Box::new(handler.stderr),
-                json: handler.json,
                 lock_stdio_stderr: std::any::TypeId::of::<Stderr>()
                     == std::any::TypeId::of::<std::io::Stderr>(),
             }),
-            task: None,
             owner: Some(owner),
             admission: Arc::new(ReportAdmission::default()),
         })
@@ -114,10 +112,17 @@ impl<Stdout: Write + Send + 'static, Stderr: Write + Send + 'static>
 }
 
 pub(crate) struct OwnedDelivery {
-    handler: Option<OwnedHandler>,
-    task: Option<JoinHandle<(OwnedHandler, OperationResult)>>,
+    state: OwnedDeliveryState,
     owner: Option<Arc<dyn Send + Sync>>,
     admission: Arc<ReportAdmission>,
+}
+
+/// The handler is either available locally or owned by the blocking task.
+/// Unavailable retains the old post-panic behavior; it is never quiescent.
+enum OwnedDeliveryState {
+    Idle(OwnedHandler),
+    Running(JoinHandle<(OwnedHandler, OperationResult)>),
+    Unavailable,
 }
 
 impl Drop for OwnedDelivery {
@@ -133,7 +138,7 @@ enum ReportOperation {
 
 impl OwnedDelivery {
     fn is_idle(&self) -> bool {
-        self.task.is_none() && self.handler.is_some()
+        matches!(self.state, OwnedDeliveryState::Idle(_))
     }
 
     async fn execute(&mut self, operation: ReportOperation) -> OperationResult {
@@ -141,19 +146,23 @@ impl OwnedDelivery {
             ReportOperation::Emit(request) => request.id,
             ReportOperation::Flush => EffectId(u64::MAX),
         };
-        if self.task.is_some() {
+        if matches!(self.state, OwnedDeliveryState::Running(_)) {
             return Err(delivery_failed(
                 id,
                 "an earlier report operation is still pending",
             ));
         }
-        let mut handler = self
-            .handler
-            .take()
-            .ok_or_else(|| delivery_failed(id, "report handler ownership is unavailable"))?;
+        let OwnedDeliveryState::Idle(mut handler) =
+            std::mem::replace(&mut self.state, OwnedDeliveryState::Unavailable)
+        else {
+            return Err(delivery_failed(
+                id,
+                "report handler ownership is unavailable",
+            ));
+        };
         let owner = self.owner.clone();
         let admission = Arc::clone(&self.admission);
-        self.task = Some(tokio::task::spawn_blocking(move || {
+        self.state = OwnedDeliveryState::Running(tokio::task::spawn_blocking(move || {
             let _owner = owner;
             if !admission.permits_start() {
                 return (
@@ -177,15 +186,16 @@ impl OwnedDelivery {
     }
 
     async fn join(&mut self, id: EffectId) -> OperationResult {
-        let result = self
-            .task
-            .as_mut()
-            .expect("report task ownership is retained until joined")
-            .await;
-        self.task = None;
+        // Borrow the retained handle across await: cancelling this wait must
+        // leave the running task and its handler in the driver for finalization.
+        let OwnedDeliveryState::Running(task) = &mut self.state else {
+            unreachable!("report task ownership is retained until joined");
+        };
+        let result = task.await;
+        self.state = OwnedDeliveryState::Unavailable;
         match result {
             Ok((handler, result)) => {
-                self.handler = Some(handler);
+                self.state = OwnedDeliveryState::Idle(handler);
                 result
             }
             Err(error) => Err(delivery_failed(id, error.to_string())),
@@ -206,6 +216,18 @@ fn delivery_failed(id: EffectId, message: impl Into<String>) -> EffectFailed {
 mod tests {
     use std::sync::mpsc;
     use std::time::Duration;
+
+    fn idle_handler<Stdout, Stderr>(
+        delivery: &mut ReportDelivery<Stdout, Stderr>,
+    ) -> &mut OwnedHandler {
+        match delivery {
+            ReportDelivery::Owned(OwnedDelivery {
+                state: OwnedDeliveryState::Idle(handler),
+                ..
+            }) => handler,
+            _ => panic!("expected idle owned delivery"),
+        }
+    }
 
     struct ProbeWriter {
         begin: Option<mpsc::SyncSender<()>>,
@@ -247,10 +269,7 @@ mod tests {
             io::Cursor::new(Vec::new()),
         );
         let mut delivery = ReportDelivery::Inline(handler).into_owned(Arc::new(()));
-        let ReportDelivery::Owned(driver) = &mut delivery else {
-            panic!("owned delivery");
-        };
-        let handler = driver.handler.as_mut().unwrap();
+        let handler = idle_handler(&mut delivery);
         let interleaved = Arc::new(AtomicBool::new(false));
         let captured = Arc::new(Mutex::new(Vec::new()));
         // Preserve production stdio selection, but observe each serialized fragment
@@ -356,8 +375,16 @@ mod tests {
         );
         let mut delivery = ReportDelivery::Inline(handler).into_owned(Arc::new(()));
         let error = delivery.handle(event(17)).await.unwrap_err();
+        let later_error = delivery.handle(event(18)).await.unwrap_err();
+
         assert_eq!(error.id, EffectId(17));
         assert!(matches!(error.failure, EffectFailure::ReportState { .. }));
+        assert_eq!(later_error.id, EffectId(18));
+        assert!(matches!(
+            later_error.failure,
+            EffectFailure::ReportState { .. }
+        ));
+        assert!(!delivery.is_quiescent());
     }
 
     #[test]
@@ -422,7 +449,11 @@ mod tests {
             let ReportDelivery::Owned(driver) = &mut delivery else {
                 unreachable!()
             };
-            let queued = driver.task.take().unwrap();
+            let OwnedDeliveryState::Running(queued) =
+                std::mem::replace(&mut driver.state, OwnedDeliveryState::Unavailable)
+            else {
+                unreachable!("queued report retains its running task");
+            };
             let retained = dispose(delivery);
             release_tx.send(()).unwrap();
             blocker.await.unwrap();

@@ -13,6 +13,7 @@ from pytest_mock import MockerFixture
 
 from tools.boundary_contracts import (
     REGISTRY,
+    BoundaryStatus,
     classify,
     execute,
     load_registry,
@@ -35,7 +36,8 @@ def test_only_exact_executed_test_is_a_match(
 ) -> None:
     classification = classify(returncode, log, "wanted")
 
-    assert classification == expected
+    assert classification is BoundaryStatus(expected)
+    assert not isinstance(classification, str)
 
 
 @pytest.mark.parametrize(
@@ -67,7 +69,7 @@ def test_skip_and_crash_are_not_semantic_success(
 ) -> None:
     classification = classify(returncode, log, "wanted")
 
-    assert classification == expected
+    assert classification is BoundaryStatus(expected)
 
 
 def test_semantic_matrix_errors_override_outer_test_failure() -> None:
@@ -78,7 +80,7 @@ def test_semantic_matrix_errors_override_outer_test_failure() -> None:
         "wanted",
     )
 
-    assert classification == "infrastructure-error"
+    assert classification is BoundaryStatus.INFRASTRUCTURE_ERROR
 
 
 def test_captured_case_output_can_interrupt_the_named_test_line() -> None:
@@ -89,7 +91,7 @@ def test_captured_case_output_can_interrupt_the_named_test_line() -> None:
 
     classification = classify(0, log, "wanted")
 
-    assert classification == "match"
+    assert classification is BoundaryStatus.MATCH
 
 
 def test_report_mode_preserves_failure_and_complete_unexecuted_rows(
@@ -129,7 +131,7 @@ def test_nested_mismatch_cannot_be_laundered_by_outer_success() -> None:
 
     classification = classify(0, log, "wanted")
 
-    assert classification == "mismatch"
+    assert classification is BoundaryStatus.MISMATCH
 
 
 def test_missing_strict_results_are_reported_as_unexecuted(tmp_path: Path) -> None:
@@ -150,7 +152,7 @@ def test_fixture_setup_failure_is_infrastructure_not_mismatch() -> None:
         "wanted",
     )
 
-    assert classification == "infrastructure-error"
+    assert classification is BoundaryStatus.INFRASTRUCTURE_ERROR
 
 
 @pytest.mark.parametrize(
