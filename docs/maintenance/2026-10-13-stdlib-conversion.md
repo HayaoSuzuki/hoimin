@@ -295,3 +295,86 @@ final Clippy 12.3 s; fuzz Clippy 16.3 s; replay/build 28.7 s; reference check 6.
 The task-owned target was about 5.0 GiB before commit hooks. No resource guard
 fired. Independent final review found no remaining issue in the source, tests,
 index refinement or documentation. All results remain local macOS evidence.
+
+
+## CI follow-up: lease-only deleting fixture
+
+[The randomized-order job](https://github.com/HayaoSuzuki/hoimin/actions/runs/38379861028/job/115237962739)
+at `95ecb2471ac6cb0a60d4f74d3828f4c3fb24f5de` failed
+`lease_only_deleting_root_from_final_marker_cleanup_is_resumed`: 849 passed,
+one failed and 18 ignored. Its seed was `1791885855118714123`. Other independent
+checks succeeded; the aggregate CI result propagated this failure.
+
+A concurrent fork can retain the lease's shared open-file description until
+exec. Dropping the fixture owner then does not necessarily release the lock.
+The janitor correctly preserves a busy lease. The CI log does not distinguish
+all preservation branches, but retaining a duplicate descriptor reproduced the
+exact zero-reclaimed, one-preserved, empty-details assertion locally on macOS.
+Explicitly unlocking before owner drop makes the fixture's abandoned/unlocked
+premise deterministic. The Unix duplicate remains alive through reclamation,
+so removing the unlock reproduces the failure without a timing race. Windows
+keeps no duplicate and still drops the owner before reclaiming.
+
+### Design self-reviews
+
+1. Traced the empty-detail preservation paths and distinguished the busy-lease
+   hypothesis from what the hosted log alone proves.
+2. Compared the existing stale-heartbeat and staging fixtures and the earlier
+   [fork/lease investigation](2026-10-12-shell-completions.md#ci-follow-up-abandoned-staging-fixture).
+3. Confirmed the target tests recovery after final marker removal, not automatic
+   lock release on owner drop; a separate isolated child test covers that behavior.
+4. Kept production lock, identity, retention and age guards unchanged.
+5. Applied software-design-philosophy to this fixture boundary: explicit setup
+   and its comment remove an OS-lifetime assumption without adding an API.
+   All eight scoped diagnostics pass (10/10, no failed rows); this is not a score
+   for the entire workspace module. Existing abstractions and contracts stay intact.
+
+### Plan self-reviews
+
+1. Reproduce the failure deterministically with a real duplicated descriptor.
+2. Establish the unlocked premise through the existing fs2 operation.
+3. Preserve all reclamation assertions, with no sleeps, retries or serialization.
+4. Check owned-root tests and the full workspace with the hosted nightly/seed,
+   followed by strict lint and documentation checks.
+5. Request independent review and push only `feat/decimal-conversion` to the
+   verified origin for the existing PR.
+
+### Implementation self-reviews
+
+1. The duplicate shares the original lease description and survives reclamation.
+2. Unlock addresses that same description before owner destruction.
+3. The duplicate is Unix-only; Windows closes all owner handles before reclaim.
+4. The test still requires exactly one reclaimed root, no preserved root, and
+   disappearance of the deleting entry after a single janitor pass.
+5. The 15-line change is inside the existing test; no production behavior,
+   dependency, default, schema or public guarantee changes. Consulted the OKF
+   overview, runtime lifecycle and update workflow; no runtime concept change
+   is needed for this fixture correction. The analyzer source hash is refreshed
+   because this existing evidence record changed. No additional Lean model or
+   proptest is needed to test this concrete OS descriptor lifetime.
+
+
+### Verification self-reviews
+
+1. **Red:** retaining the Unix duplicate without unlock failed on macOS with the
+   exact hosted assertion (zero reclaimed, one preserved, empty details).
+2. **Green:** owned-root tests passed 60 cases, with three ignored, using
+   `cargo +nightly-2026-10-08 test --locked -p hoimin-cli --lib
+   workspace::owned::tests:: -- -Z unstable-options --shuffle-seed 1791885855118714123`.
+3. **Regression:** `cargo +nightly-2026-10-08 test --locked --workspace --
+   -Z unstable-options --shuffle-seed 1791885855118714123` passed 2,831 cases,
+   with 29 ignored across 150 top-level summaries. Two nested child summaries
+   are excluded from that count. Runtime was 337.2 seconds; sampled peak process
+   group RSS was 1,180,745,728 bytes. The two-job/two-test-thread resource guard
+   did not trigger; this macOS run does not reproduce Linux scheduling exactly.
+4. **Review:** independent source review found no actionable issues and checked
+   the duplicate lifetime, explicit unlock, Windows ordering and unchanged
+   assertions. The reviewer inspected the red log but did not run tests.
+5. **Evidence limits:** local execution confirms the retained-descriptor
+   mechanism and fixture correction. Hosted Linux confirmation belongs to the
+   new revision's CI; the earlier job's exact preservation branch is not proven
+   by its log. Production reclamation rules and formal guarantees are unchanged.
+
+Strict workspace Clippy (`--locked --workspace --all-targets --all-features --
+-D warnings`) and workspace formatting passed. The test fix remains the only
+Rust diff in this follow-up.

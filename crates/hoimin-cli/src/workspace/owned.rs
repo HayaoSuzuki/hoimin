@@ -1794,6 +1794,21 @@ mod tests {
         );
         root.dir.remove_file(super::HEARTBEAT_FILE).unwrap();
         assert!(super::deleting_has_only_lease(&root.dir));
+        // Model a parallel test's fork retaining the lease description until exec.
+        #[cfg(unix)]
+        let _inherited_lease = root
+            .lease
+            .lock()
+            .unwrap()
+            .as_deref()
+            .unwrap()
+            .try_clone()
+            .unwrap();
+        // Establish an abandoned, unlocked fixture even while that copy stays open.
+        {
+            let lease = root.lease.lock().unwrap();
+            fs2::FileExt::unlock(lease.as_deref().unwrap()).unwrap();
+        }
         drop(root);
 
         let report = ManagedRunRoot::reclaim_abandoned(&coordinator, std::time::SystemTime::now());

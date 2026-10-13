@@ -7,9 +7,9 @@ catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
 - id: stdlib-conversion
   resource: ../../maintenance/2026-10-13-stdlib-conversion.md
-  revision: 5a6312f8543d11615ccd48fc190e08ec08187665
+  revision: 95ecb2471ac6cb0a60d4f74d3828f4c3fb24f5de
   working_tree: modified
-  sha256: ae81a9e3a47fadd108e088260afc750beafc0047da49c6758e2c1645e90d1549
+  sha256: 40a2f10b2a203984c5a381bc6feddc6600a95bfca2471c0b81dc58ef5b8aa7fa
 - id: issue-851-protocol
   resource: ../../maintenance/2026-10-13-analyzer-protocol.md
 - id: issue-849-initialization
