@@ -103,6 +103,12 @@ Expected: all tests pass.
 - Test: `crates/hoimin-cli/tests/analyzer_handler.rs`
 
 **Interfaces:**
+
+The following constructor signatures describe the original implementation.
+Issue #849 supersedes them with `AnalyzerHandler::new(root) -> Self` and removes
+`with_backend`; the no-I/O construction contract remains. See the
+[initialization API record](../../maintenance/2026-10-13-analyzer-initialization.md).
+
 - Consumes: `workspace::RootRelativeReader`
 - Preserves: `AnalyzerHandler::new(root) -> Result<Self, std::io::Error>`
 - Preserves: `AnalyzerHandler::with_backend(...) -> Result<Self, std::io::Error>`

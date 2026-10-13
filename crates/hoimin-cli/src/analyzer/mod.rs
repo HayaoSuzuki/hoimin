@@ -23,7 +23,6 @@ use hoimin_core::{
 };
 
 use crate::process::ProcessCancellation;
-use crate::resource::ResourceBackend;
 use crate::workspace::ManagedChild;
 use crate::workspace::PortableFileReader;
 #[cfg(test)]
@@ -456,12 +455,13 @@ fn discovery_cancelled() -> EffectFailed {
 }
 
 impl AnalyzerHandler {
-    #[allow(
-        clippy::missing_errors_doc,
-        reason = "The preserved fallible API currently has no error-producing path."
-    )]
-    pub fn new(root: Utf8PathBuf) -> Result<Self, std::io::Error> {
-        Ok(Self {
+    /// Creates a handler without accessing the project or allocating a candidate store.
+    ///
+    /// Source access and candidate-store creation are deferred until analysis; failures
+    /// are reported by the operation that performs them.
+    #[must_use]
+    pub fn new(root: Utf8PathBuf) -> Self {
+        Self {
             exception_project: None,
             root_path: root,
             root: None,
@@ -469,20 +469,7 @@ impl AnalyzerHandler {
             candidate_spool_owner: None,
             #[cfg(test)]
             analysis_hook: None,
-        })
-    }
-
-    #[allow(
-        clippy::missing_errors_doc,
-        reason = "The preserved fallible API currently has no error-producing path."
-    )]
-    pub fn with_backend(
-        root: Utf8PathBuf,
-        _backend: ResourceBackend,
-        _max_memory_bytes: u64,
-        _max_processes: u32,
-    ) -> Result<Self, std::io::Error> {
-        Self::new(root)
+        }
     }
 
     pub(crate) fn with_exception_project(mut self, config: &hoimin_core::RunConfig) -> Self {
@@ -1269,7 +1256,7 @@ mod tests {
         )
         .unwrap();
         let root = Utf8PathBuf::from_path_buf(directory.path().to_owned()).unwrap();
-        let mut handler = AnalyzerHandler::new(root).unwrap();
+        let mut handler = AnalyzerHandler::new(root);
         let operators = MutationOperatorSelection::default();
         let cancellation = ProcessCancellation::new();
         cancellation.cancel();
@@ -1304,9 +1291,7 @@ mod tests {
         let root = Utf8PathBuf::from_path_buf(directory.path().to_owned()).unwrap();
         let owner = Arc::new(tempfile::tempdir().unwrap());
         let spool_path = owner.path().to_owned();
-        let mut handler = AnalyzerHandler::new(root)
-            .unwrap()
-            .with_candidate_spool_owner(owner.clone());
+        let mut handler = AnalyzerHandler::new(root).with_candidate_spool_owner(owner.clone());
         let operators = MutationOperatorSelection::default();
         for id in 100..103 {
             let error = handler
@@ -1347,9 +1332,8 @@ mod tests {
         let hook_entered = entered.clone();
         let spool_owner = Arc::new(tempfile::tempdir().unwrap());
         let spool_path = spool_owner.path().to_owned();
-        let mut handler = AnalyzerHandler::new(root)
-            .unwrap()
-            .with_candidate_spool_owner(spool_owner.clone());
+        let mut handler =
+            AnalyzerHandler::new(root).with_candidate_spool_owner(spool_owner.clone());
         handler.analysis_hook = Some(Arc::new(move || {
             hook_entered.wait();
             std::thread::sleep(Duration::from_millis(500));

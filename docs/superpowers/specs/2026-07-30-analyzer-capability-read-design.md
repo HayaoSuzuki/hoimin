@@ -31,10 +31,11 @@ ordering, hashing, spool behavior, and UTF-8 error mapping do not change.
 
 ## Error handling
 
-`AnalyzerHandler::new` and `with_backend` preserve their no-project-I/O
-construction behavior and fallible public signatures. A capability-open
-failure on the first analysis request is mapped without exposing workspace
-internals.
+The original implementation preserved the fallible signatures of
+`AnalyzerHandler::new` and `with_backend`. Issue #849 replaces these with
+`AnalyzerHandler::new(root) -> Self`; see the [initialization API record](../../maintenance/2026-10-13-analyzer-initialization.md).
+Construction still performs no project I/O. A capability-open failure on the
+first analysis request is mapped without exposing workspace internals.
 
 Any no-follow traversal, missing file, non-regular final entry, read failure,
 or Windows reparse-point rejection maps to the existing typed

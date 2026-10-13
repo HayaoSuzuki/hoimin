@@ -75,6 +75,10 @@ manifest and fingerprint protection in the owned handoff. The
 [verified-plan record](maintenance/2026-10-12-verified-plan.md) describes the
 internal Rust source migration and validation evidence.
 
+Construct analyzers with `AnalyzerHandler::new(root) -> Self`. Source access and
+candidate-store errors occur during analysis. See the [initialization API record](maintenance/2026-10-13-analyzer-initialization.md)
+for the removed constructor, internal Rust migration and verification.
+
 Use `WorkspaceHandler` methods directly; the duplicate free-function entry
 points are removed. See the [workspace API record](maintenance/2026-10-12-workspace-api.md)
 for the internal source migration and compatibility decision.
