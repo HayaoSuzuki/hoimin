@@ -1,0 +1,8 @@
+from decimal import Decimal as D
+from fractions import Fraction as F
+def convert(value):
+    return D(value), F(value)
+from http import HTTPStatus as Status
+from re import RegexFlag
+def factories(value, code):
+    return D.from_number(value), F.from_float(value), Status(code), RegexFlag(code)

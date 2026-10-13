@@ -609,10 +609,10 @@ the detailed capability and cleanup model.
 
 ## Mutation operators
 
-Without `--operators`, a run selects 53 default runtime operators. `--operators`
+Without `--operators`, a run selects 54 default runtime operators. `--operators`
 (comma-separated) selects an explicit set; `--exclude-operators` then removes
-individual IDs or selector families. Hoimin exposes 72 operator IDs in total:
-53 default runtime IDs, seven opt-in type IDs, five opt-in risky exception IDs,
+individual IDs or selector families. Hoimin exposes 73 operator IDs in total:
+54 default runtime IDs, seven opt-in type IDs, five opt-in risky exception IDs,
 `exception_hierarchy`, and six opt-in analyzers: `condition_constant`,
 `function_body_erase`, `enum_member_replace`, `condition_clause_delete`,
 `container_element_delete`, and `optional_keyword_delete`.
@@ -620,19 +620,22 @@ individual IDs or selector families. Hoimin exposes 72 operator IDs in total:
 The defaults include `statement_delete`, `integer_literal_neighbor`,
 `augmented_to_assignment`, `return_tuple_swap`, `string_literal_empty`,
 `while_condition_false`, `conversion_call_remove`, `method_call_remove`, and
-`function_body_return_constant`, and `string_segment_empty`. To disable any of these,
+`function_body_return_constant`, `string_segment_empty`, and
+`stdlib_conversion_call_remove`. To disable any of these,
 use, for example, `--exclude-operators statement_delete,string_literal_empty`.
-To recover the previous 52-operator selection, use
-`--exclude-operators string_segment_empty`. To recover the earlier 50-operator selection, use:
+To recover the previous 53-operator selection, use
+`--exclude-operators stdlib_conversion_call_remove`. To recover the earlier
+52-operator selection, use
+`--exclude-operators string_segment_empty,stdlib_conversion_call_remove`. To recover the earlier 50-operator selection, use:
 
 ```text
---exclude-operators method_call_remove,function_body_return_constant,string_segment_empty
+--exclude-operators method_call_remove,function_body_return_constant,string_segment_empty,stdlib_conversion_call_remove
 ```
 
-To recover the historical 43-operator selection, exclude all ten:
+To recover the historical 43-operator selection, exclude all eleven:
 
 ```text
---exclude-operators statement_delete,integer_literal_neighbor,augmented_to_assignment,return_tuple_swap,string_literal_empty,while_condition_false,conversion_call_remove,method_call_remove,function_body_return_constant,string_segment_empty
+--exclude-operators statement_delete,integer_literal_neighbor,augmented_to_assignment,return_tuple_swap,string_literal_empty,while_condition_false,conversion_call_remove,method_call_remove,function_body_return_constant,string_segment_empty,stdlib_conversion_call_remove
 ```
 
 New default runs can generate more candidates and take longer. With a candidate
@@ -1277,6 +1280,61 @@ binding/suspension, shadowed names, type roles and assignment targets. The argum
 evaluated once; conversion hooks, validation, copying and iterator consumption disappear.
 Known scope rebinding is checked; arbitrary external builtin monkey patching is not proven.
 This operator is enabled by default.
+
+`--operators stdlib_conversion_call_remove` replaces a supported one-positional-argument
+conversion with its argument in parentheses. It covers these explicit Python 3.14
+constructors and factory methods:
+
+| Module | Supported calls |
+| --- | --- |
+| `decimal` | `Decimal`, `Decimal.from_float`, `Decimal.from_number` |
+| `fractions` | `Fraction`, `Fraction.from_float`, `Fraction.from_decimal`, `Fraction.from_number` |
+| `http` | `HTTPStatus` |
+| `socket` | `AddressFamily`, `SocketKind`, `MsgFlag`, `AddressInfo` |
+| `signal` | `Signals`, `Handlers`, `Sigmasks` (Unix only) |
+| `ssl` | `VerifyMode`, `VerifyFlags`, `Options`, `AlertDescription`, `SSLErrorNumber`, `TLSVersion` |
+| `re` | `RegexFlag` |
+| `calendar` | `Day`, `Month` |
+| `inspect` | `BufferFlags` |
+| `annotationlib` | `Format` |
+
+Both direct imports and module imports, including aliases, are supported, for
+example `from decimal import Decimal as D; D.from_float(value)` and
+`import http as h; h.HTTPStatus(code)`. A unique unconditional module-level import
+must establish the callable's identity. Enum availability and valid member values
+follow the target Python platform; analysis does not import the target modules.
+
+The argument is evaluated once; conversion, validation, copying and conversion
+hooks disappear. Numeric equality can hold while the result's type changes:
+removing `Decimal.from_float(value)` for `value = 1.5` can survive a comparison
+with `Decimal("1.5")`; removing `HTTPStatus(200)` can survive comparison with 200.
+An assertion such as `isinstance(result.amount, Decimal)` or
+`isinstance(result.status, HTTPStatus)` detects the retained float or int.
+
+The operator conservatively skips rebinding anywhere in the file, class-namespace
+loads, local/conditional imports, escaped or modified module objects, and dynamic
+namespace access. Factory methods additionally require that their class is not
+written through or referenced outside an immediate constructor/factory callee.
+This includes class aliases, extracted bound methods, class references in
+annotations, and possible references through duplicate/local imports or class
+scopes. Such uncertainty suppresses that class's factory candidates; direct
+constructor candidates and the other numeric class remain independently eligible.
+Arguments of otherwise accepted calls are still checked for escaping class references.
+
+The builtin conversion operator's argument and syntax-role exclusions also apply.
+Multi-argument calls, keywords (including Decimal's `context`), `typing.cast`,
+custom enum subclasses, enum base classes and types absent from the table are
+outside this operator's scope. `ctypes` conversions are excluded; any future
+support is intended to be opt-in. Static imports do not prove the absence of
+external monkey patching, import-path shadowing, or class recovery and mutation
+through constructed instances or arbitrary dataflow.
+
+This operator is enabled by default starting with the 0.5 version floor; disable
+it with `--exclude-operators stdlib_conversion_call_remove`. Existing saved plans
+retain their explicit operator set and candidates; regenerate plans to include
+new candidates. The larger candidate population can affect retained prefixes,
+runtime and mutation scores. See the
+[design and verification record](maintenance/2026-10-13-stdlib-conversion.md).
 
 `--operators optional_keyword_delete` removes one explicitly supplied optional keyword
 from a uniquely bound, undecorated synchronous top-level function in the same file.

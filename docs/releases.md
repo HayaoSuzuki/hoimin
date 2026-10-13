@@ -63,11 +63,13 @@ checkout and the Linux wheel at glibc 2.17 with Python 3.14. See the
 artifacts and failure gates.
 
 The workspace version is the minimum version for the next release, currently
-`0.4.0`. CI chooses the higher of that minimum and the highest stable tag's
+`0.5.0`. CI chooses the higher of that minimum and the highest stable tag's
 next patch version. When raising the minimum, keep
 `Cargo.toml`, `pyproject.toml`, `Cargo.lock`, and `uv.lock` consistent when
 changing it. Also update the `hoimin-core` entry in `fuzz/Cargo.lock` so
-the separate fuzz workspace remains consistent. CI embeds the reserved version
+the separate fuzz workspace remains consistent. Update the two repository-package
+license exception ranges in `deny.toml` when crossing a minor-version boundary.
+CI embeds the reserved version
 into those four files in its build checkout, without committing version changes back to `main`.
 
 Before reserving a new tag, CI checks that the commit descends from the
