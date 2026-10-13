@@ -203,6 +203,7 @@ async fn plan_fixture() -> (tempfile::TempDir, std::path::PathBuf) {
         dir.path().to_str().unwrap(),
         "--file",
         "sample.py",
+        "--allow-best-effort-memory",
         "--min-free-space",
         "1B",
         "--",

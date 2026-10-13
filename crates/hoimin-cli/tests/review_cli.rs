@@ -18,6 +18,7 @@ async fn fixture() -> (tempfile::TempDir, Vec<String>) {
         dir.path().to_str().unwrap().into(),
         "--file".into(),
         "sample.py".into(),
+        "--allow-best-effort-memory".into(),
         "--min-free-space".into(),
         "1B".into(),
         "--".into(),
