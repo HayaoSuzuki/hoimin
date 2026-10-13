@@ -49,6 +49,37 @@ pub enum MutationStatus {
     NotRun,
 }
 
+impl MutationStatus {
+    /// Returns the canonical name used in reports and persisted sessions.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Killed => "killed",
+            Self::Survived => "survived",
+            Self::Timeout => "timeout",
+            Self::OutOfMemory => "out_of_memory",
+            Self::ProcessLimit => "process_limit",
+            Self::Error => "error",
+            Self::NotRun => "not_run",
+        }
+    }
+
+    /// Accepts only exact canonical names, without case or whitespace normalization.
+    #[must_use]
+    pub fn from_name(name: &str) -> Option<Self> {
+        Some(match name {
+            "killed" => Self::Killed,
+            "survived" => Self::Survived,
+            "timeout" => Self::Timeout,
+            "out_of_memory" => Self::OutOfMemory,
+            "process_limit" => Self::ProcessLimit,
+            "error" => Self::Error,
+            "not_run" => Self::NotRun,
+            _ => return None,
+        })
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ResourceMode {

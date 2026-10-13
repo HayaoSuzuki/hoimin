@@ -809,7 +809,7 @@ fn insert_result(transaction: &Transaction<'_>, result: &MutantResult) -> rusqli
         params![
             result.run_id,
             result.candidate.id,
-            status_name(result.status),
+            result.status.as_str(),
             to_i64(result.elapsed.as_secs())?,
             i64::from(result.elapsed.subsec_nanos()),
             resource_name(result.resource_mode),
@@ -927,7 +927,8 @@ fn decode_stored_result(
         (0, 0, None) => Ok(None),
         (1, 1, Some(status)) => Ok(Some(StoredResult {
             mutant_id: mutant_id.to_owned(),
-            status: decode_status(&status).ok_or_else(|| corrupt("unknown mutation status"))?,
+            status: MutationStatus::from_name(&status)
+                .ok_or_else(|| corrupt("unknown mutation status"))?,
         })),
         _ => Err(corrupt("candidate and result rows are inconsistent")),
     }
@@ -959,31 +960,6 @@ fn to_i64(value: u64) -> rusqlite::Result<i64> {
 
 fn is_constraint(error: &rusqlite::Error) -> bool {
     matches!(error, rusqlite::Error::SqliteFailure(value, _) if value.code == ErrorCode::ConstraintViolation)
-}
-
-fn status_name(status: MutationStatus) -> &'static str {
-    match status {
-        MutationStatus::Killed => "killed",
-        MutationStatus::Survived => "survived",
-        MutationStatus::Timeout => "timeout",
-        MutationStatus::OutOfMemory => "out_of_memory",
-        MutationStatus::ProcessLimit => "process_limit",
-        MutationStatus::Error => "error",
-        MutationStatus::NotRun => "not_run",
-    }
-}
-
-fn decode_status(value: &str) -> Option<MutationStatus> {
-    Some(match value {
-        "killed" => MutationStatus::Killed,
-        "survived" => MutationStatus::Survived,
-        "timeout" => MutationStatus::Timeout,
-        "out_of_memory" => MutationStatus::OutOfMemory,
-        "process_limit" => MutationStatus::ProcessLimit,
-        "error" => MutationStatus::Error,
-        "not_run" => MutationStatus::NotRun,
-        _ => return None,
-    })
 }
 
 fn resource_name(mode: ResourceMode) -> &'static str {
@@ -1056,7 +1032,8 @@ impl RawResult {
     fn into_result(self, run_id: &str, mutant_id: &str) -> Result<MutantResult, String> {
         let nonnegative =
             |value: i64, name: &str| u64::try_from(value).map_err(|_| format!("negative {name}"));
-        let status = decode_status(&self.status).ok_or_else(|| "unknown status".to_owned())?;
+        let status =
+            MutationStatus::from_name(&self.status).ok_or_else(|| "unknown status".to_owned())?;
         let resource_mode = match self.resource_mode.as_str() {
             "hard" => ResourceMode::Hard,
             "best_effort" => ResourceMode::BestEffort,

@@ -3451,6 +3451,16 @@ async fn details_identify_both_directions_and_preserve_default_schema() {
         reverse["details"]["transitions"][0]["current_status"],
         "killed"
     );
+    let human = progress_details(&reports, "human", 100).await;
+    assert!(human.as_str().unwrap().contains("killed -> survived"));
+    let reverse_human =
+        progress_details(&[reports[1].clone(), reports[0].clone()], "human", 100).await;
+    assert!(
+        reverse_human
+            .as_str()
+            .unwrap()
+            .contains("survived -> killed")
+    );
 }
 
 #[tokio::test]

@@ -1488,6 +1488,39 @@ fn zero_progress_mutant_spool_write_fails_before_ack_and_poisons_report() {
 }
 
 #[test]
+fn human_format_preserves_every_canonical_mutation_status_name() {
+    let stdout = SharedWriter::default();
+    let mut handler = ReportHandler::new(
+        OutputFormat::Human,
+        stdout.clone(),
+        io::sink(),
+        std::env::temp_dir(),
+    )
+    .unwrap();
+    for event in documented_events() {
+        emit(&mut handler, event.sequence(), event);
+    }
+
+    let text = stdout.text();
+    let mutant_lines: Vec<_> = text
+        .lines()
+        .filter(|line| line.starts_with("mutant finished:"))
+        .collect();
+    assert_eq!(
+        mutant_lines,
+        [
+            "mutant finished: src/example.py:1:0 binary_add_sub \"+\" -> \"-\" killed",
+            "mutant finished: src/example.py:1:1 binary_add_sub \"+\" -> \"-\" survived",
+            "mutant finished: src/example.py:1:2 binary_add_sub \"+\" -> \"-\" timeout",
+            "mutant finished: src/example.py:1:3 binary_add_sub \"+\" -> \"-\" out_of_memory",
+            "mutant finished: src/example.py:1:4 binary_add_sub \"+\" -> \"-\" process_limit",
+            "mutant finished: src/example.py:1:5 binary_add_sub \"+\" -> \"-\" error",
+            "mutant finished: src/example.py:1:6 binary_add_sub \"+\" -> \"-\" not_run",
+        ]
+    );
+}
+
+#[test]
 fn human_format_writes_progress_to_stdout_and_diagnostics_to_stderr() {
     let stdout = SharedWriter::default();
     let stderr = SharedWriter::default();

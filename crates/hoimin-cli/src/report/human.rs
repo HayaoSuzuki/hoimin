@@ -1,8 +1,8 @@
 use std::io::{self, Write};
 
 use hoimin_core::{
-    MutationStatus, OutputEvent, ProcessTermination, RunSummary, SessionDiagnostic,
-    VerificationSelectionMode, VerificationSelectionPolicy, VerificationSelectionScope,
+    OutputEvent, ProcessTermination, RunSummary, SessionDiagnostic, VerificationSelectionMode,
+    VerificationSelectionPolicy, VerificationSelectionScope,
 };
 
 pub(super) fn write_mutant_diagnostics(
@@ -89,7 +89,7 @@ pub(super) fn write_event(writer: &mut impl Write, event: &OutputEvent) -> io::R
             value.candidate.operator,
             value.candidate.original,
             value.candidate.replacement,
-            status_name(value.status)
+            value.status.as_str()
         )?,
         OutputEvent::Diagnostic(value) => {
             writeln!(writer, "{} {}: {}", value.level, value.code, value.message)?;
@@ -99,18 +99,6 @@ pub(super) fn write_event(writer: &mut impl Write, event: &OutputEvent) -> io::R
         }
     }
     writer.flush()
-}
-
-fn status_name(status: MutationStatus) -> &'static str {
-    match status {
-        MutationStatus::Killed => "killed",
-        MutationStatus::Survived => "survived",
-        MutationStatus::Timeout => "timeout",
-        MutationStatus::OutOfMemory => "out_of_memory",
-        MutationStatus::ProcessLimit => "process_limit",
-        MutationStatus::Error => "error",
-        MutationStatus::NotRun => "not_run",
-    }
 }
 
 fn termination_name(termination: ProcessTermination) -> String {
