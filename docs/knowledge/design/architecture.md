@@ -5,6 +5,10 @@ description: 元ソースへの変異適用を避け、状態遷移と入出力�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: c4-runtime-views
+  resource: ../../architecture/c4-model.md
+  working_tree: untracked
+  sha256: f4f6faa7af1587457e50cec1f63edc80db44dcb45aad62268ca332042b8d4b80
 - id: relative-path-policy
   resource: ../../../crates/hoimin-core/src/relative_path.rs
   working_tree: untracked
@@ -95,6 +99,17 @@ sources:
   working_tree: untracked
   sha256: b146daf296d69374ad01ac86d5a5becd30b721b1983d5a54507cd0f1750ef3e7
 ---
+
+# Current C4 views
+
+The [C4 architecture views](../../architecture/c4-model.md) describe the runtime
+at `4e9f8ab7161cece688eecd6e50a0f16fbed3caec`: system context, application and data
+containers, execution components, selected core types, and a successful-run
+sequence. They distinguish the linked Rust crates from runtime containers and
+the external test command from the in-process analyzer. This is source-based
+architecture documentation, not new runtime, platform or model-proof evidence.[^c4-runtime-views]
+
+[^c4-runtime-views]: [hoimin through the C4 model](../../architecture/c4-model.md).
 
 # 作業コピーへの変異適用
 
