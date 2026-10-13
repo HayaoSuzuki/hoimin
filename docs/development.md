@@ -832,6 +832,8 @@ at 24.625 seconds and also had the highest RSS at 1,033,644 KiB.
 
 Start with the [shell module contract](../crates/hoimin-cli/src/shell.rs) for
 dispatch/completion ownership, cleanup admission and final-output ordering.
+The [process module contract](../crates/hoimin-cli/src/process/mod.rs) describes
+owned tasks, cancellation requests, drain evidence and backend release.
 
 Once total timeout, cancellation, or a fatal failure starts shutdown, the
 first cause and its absolute shutdown deadline are immutable. Total timeout is

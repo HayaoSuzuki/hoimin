@@ -5,6 +5,11 @@ description: OS別の資源制限と、プロセス終了・一時ファイル�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-858-process
+  resource: ../../../crates/hoimin-cli/src/process/mod.rs
+  revision: 6c638da243865273c55886739e9bbf77803f8fcd
+  working_tree: modified
+  sha256: d0ba6dbcdb372619e61909db4eb3fb08d90acfd6891b842fc23ca940d1a36498
 - id: issue-844-shell
   resource: ../../../crates/hoimin-cli/src/shell.rs
   revision: 1713c3a17face763839ecd93793db52de8147f3f
@@ -142,3 +147,25 @@ shutdown guarantee or a fresh proof of Rust/OS behavior. Existing model and
 platform evidence above retains its original scope.
 
 [^issue-844-shell]: [Shell coordination contract](../../../crates/hoimin-cli/src/shell.rs).
+
+# Process lifecycle API (Issue #858)
+
+The [process module contract](../../../crates/hoimin-cli/src/process/mod.rs)
+separates owned lifecycle tasks, cancellation requests, drain evidence and
+backend release. Dropping the caller's waiting future detaches the owned task;
+the runtime must remain alive for it to progress. Cancellation requests do not
+acknowledge termination, reap or output collection.[^issue-858-process]
+
+`drain_for_shutdown` observes tracked activity and then attempts backend close
+within the remaining shutdown budget. Callers coordinate dispatch, in-flight
+setup and cancellation; the observation does not prevent later work. Reap and
+output-quiescence evidence remain distinct from output validity and secondary
+close errors. A close timeout does not erase already-observed drain evidence
+and does not preempt blocking cleanup.[^issue-858-process]
+
+This documents the existing implementation and backend limits. It adds no
+shutdown guarantee, OS coverage or formal proof; the shell contract above and
+[deadline invariants](../../development.md#shutdown-deadline-invariants) retain
+their coordination role.
+
+[^issue-858-process]: [Process lifecycle contract](../../../crates/hoimin-cli/src/process/mod.rs).
