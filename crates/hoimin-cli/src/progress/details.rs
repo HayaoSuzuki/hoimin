@@ -97,8 +97,7 @@ impl Details {
 
 fn status_name(status: MutationStatus) -> &'static str {
     match status {
-        MutationStatus::Killed => "killed",
-        MutationStatus::Survived => "survived",
+        MutationStatus::Killed | MutationStatus::Survived => status.as_str(),
         _ => unreachable!("only changed conclusive statuses become details"),
     }
 }

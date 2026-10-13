@@ -1633,6 +1633,101 @@ fn every_inconclusive_result_can_be_replaced() {
 }
 
 #[test]
+fn session_preserves_every_canonical_status_and_its_reuse_decision() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("sessions.sqlite3");
+    let mut handler = SessionHandler::open(&path).unwrap();
+    handler.begin(begin_request(1, "run-1")).unwrap();
+    let observer = Connection::open(&path).unwrap();
+    for (status, name, decision) in [
+        (MutationStatus::Killed, "killed", ResumeDecision::Reuse),
+        (MutationStatus::Survived, "survived", ResumeDecision::Reuse),
+        (MutationStatus::Timeout, "timeout", ResumeDecision::Rerun),
+        (
+            MutationStatus::OutOfMemory,
+            "out_of_memory",
+            ResumeDecision::Rerun,
+        ),
+        (
+            MutationStatus::ProcessLimit,
+            "process_limit",
+            ResumeDecision::Rerun,
+        ),
+        (MutationStatus::Error, "error", ResumeDecision::Rerun),
+        (MutationStatus::NotRun, "not_run", ResumeDecision::Rerun),
+    ] {
+        handler
+            .persist(&persist_with_status(2, "run-1", name, status))
+            .unwrap();
+        let stored_name: String = observer
+            .query_row(
+                "SELECT status FROM results WHERE run_id='run-1' AND mutant_id=?1",
+                [name],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(stored_name, name);
+        let loaded = handler.lookup(&lookup_request(3, "run-1", name)).unwrap();
+        assert_eq!(
+            loaded.result,
+            Some(StoredResult {
+                mutant_id: name.to_owned(),
+                status,
+            })
+        );
+        assert_eq!(resume_policy(loaded.result.as_ref()), decision);
+    }
+}
+
+#[test]
+fn noncanonical_stored_statuses_preserve_corruption_diagnostics_and_rows() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("sessions.sqlite3");
+    let mut handler = SessionHandler::open(&path).unwrap();
+    handler.begin(begin_request(1, "run-1")).unwrap();
+    handler.persist(&persist_request(2, "run-1", "m1")).unwrap();
+    let observer = Connection::open(&path).unwrap();
+    for name in [
+        "",
+        "bogus",
+        "Killed",
+        "SURVIVED",
+        "Timeout",
+        "OutOfMemory",
+        "ProcessLimit",
+        "Error",
+        "NotRun",
+        "out-of-memory",
+        "process-limit",
+        "not-run",
+        " killed",
+        "killed ",
+    ] {
+        observer
+            .execute("UPDATE results SET status=?1", [name])
+            .unwrap();
+        let expected = EffectFailure::SessionDatabase {
+            code: "session.corrupt".to_owned(),
+            operation: "decode session row".to_owned(),
+            message: "unknown mutation status".to_owned(),
+        };
+        let lookup = handler.lookup(&lookup_request(7, "run-1", "m1"));
+        let failed = lookup.unwrap_err();
+        assert_eq!(failed.id, EffectId(7));
+        assert_eq!(failed.failure, expected, "{name:?}");
+        let failed = handler
+            .persist(&persist_request(8, "run-1", "m1"))
+            .unwrap_err();
+        assert_eq!(failed.id, EffectId(8));
+        assert_eq!(failed.failure, expected, "{name:?}");
+        let retained: String = observer
+            .query_row("SELECT status FROM results", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(retained, name, "{name:?}");
+    }
+}
+
+#[test]
 fn lookup_rejects_corrupt_status_candidate_mismatch_and_completed_runs() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("sessions.sqlite3");
