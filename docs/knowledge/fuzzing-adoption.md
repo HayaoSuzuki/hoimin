@@ -4,6 +4,8 @@ title: Fuzzing maintenance adoption
 description: Evidence gates for corpus distillation, property reuse and targeted exploration.
 status: draft
 sources:
+- id: issue-851-protocol
+  resource: ../maintenance/2026-10-13-analyzer-protocol.md
 - id: assessment
   resource: ../superpowers/reports/issue-805/README.md
   revision: 36c0e84e7e93022b3588dede701f3b85212d98ff
@@ -65,3 +67,9 @@ The original corpus/binary are not committed; retained hashes and ID sets suppor
 comparison, not reconstruction of expired inputs.[^corpus-experiment]
 
 [^corpus-experiment]: [Bounded corpus experiment](../superpowers/reports/issue-803/README.md), all six replay measurements, control-set differences and remaining uncertainty.
+
+# Current analyzer fuzz scope
+
+Issue #851 retires the unused analyzer JSONL parser, its `analyzer_protocol` target and five seeds. The live `python_analyzer` target still compiles production modules, now including `types.rs`; candidate validation and report lifecycle targets remain. CI enumerates the seven remaining manifest targets. Historical #805 counts describe that earlier revision, not the current inventory.[^issue-851-protocol]
+
+[^issue-851-protocol]: [Issue #851 maintenance record](../maintenance/2026-10-13-analyzer-protocol.md).

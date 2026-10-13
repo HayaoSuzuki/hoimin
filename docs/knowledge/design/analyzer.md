@@ -5,6 +5,8 @@ description: 構文・名前解決・変更するバイト範囲・候補保持�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-851-protocol
+  resource: ../../maintenance/2026-10-13-analyzer-protocol.md
 - id: issue-849-initialization
   resource: ../../maintenance/2026-10-13-analyzer-initialization.md
 - id: string-segment-implementation
@@ -833,3 +835,9 @@ CPython 3.14による実行で構文・値・補間の回数と順序・conversi
 未使用の backend・メモリ上限・プロセス数上限を受け取っていた `with_backend` は削除した。実際のプロセス資源制御は引き続き `ProcessHandler` が担う。内部 Rust API の利用者は `new(root)?` などを `new(root)` に変更する。CLI と保存形式の移行は不要である。[^issue-849-initialization]
 
 [^issue-849-initialization]: [初期化 API の変更と互換性・検証記録](../../maintenance/2026-10-13-analyzer-initialization.md)。
+
+# 現行解析器の結果型と旧JSONLパーサー（Issue #851）
+
+現行処理は Rust 解析器を直接呼び、候補と診断を型付きで受け取る。旧 `AnalyzerProtocol` の利用箇所は専用テストと fuzz target に限られ、保持目的を確認できなかったため削除した。候補・診断の3型は `types.rs` に移し、公開名と定義を維持した。候補検証、spool、順序、打ち切り、および CLI の JSON/JSONL レポートは変更していない。削除した Rust API と検証範囲は作業記録を参照。[^issue-851-protocol]
+
+[^issue-851-protocol]: [Issue #851 maintenance record](../../maintenance/2026-10-13-analyzer-protocol.md).

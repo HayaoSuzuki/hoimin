@@ -1,10 +1,10 @@
 #![allow(dead_code)]
 
-#[path = "../src/analyzer/protocol.rs"]
-mod protocol;
-pub use protocol::{AnalyzerCandidate, AnalyzerDiagnostic, AnalyzerDiagnosticCode};
+#[path = "../src/analyzer/types.rs"]
+mod types;
+pub use types::{AnalyzerCandidate, AnalyzerDiagnostic, AnalyzerDiagnosticCode};
 mod analyzer {
-    pub use crate::protocol::AnalyzerDiagnosticCode;
+    pub use crate::types::AnalyzerDiagnosticCode;
 }
 #[path = "../src/analyzer/rust.rs"]
 mod rust;
