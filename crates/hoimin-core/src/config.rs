@@ -48,248 +48,196 @@ impl Default for RawRunLimits {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum MutationOperator {
-    CompareEqNe,
-    CompareOrder,
-    Membership,
-    Identity,
-    BooleanAndOr,
-    BinaryAddSub,
-    AugmentedAddSub,
-    BinaryMulDiv,
-    AugmentedMulDiv,
-    BinaryFloorMod,
-    AugmentedFloorMod,
-    UnarySign,
-    RemoveNot,
-    BooleanLiteral,
-    BreakContinue,
-    CollectionAnyAll,
-    CollectionListTuple,
-    CollectionSetFrozenset,
-    CollectionAppendInsert,
-    CollectionMinMax,
-    CollectionSetAddDiscard,
-    CollectionSetRemoveDiscard,
-    CollectionStringStartsEnds,
-    CollectionStringSplitRsplit,
-    BitwiseAndOr,
-    BitwiseShift,
-    BinaryPower,
-    BinaryMatmul,
-    AugmentedPower,
-    AugmentedMatmul,
-    BitwiseXor,
-    BitwiseInvert,
-    AugmentedBitwiseAndOr,
-    AugmentedBitwiseXor,
-    AugmentedBitwiseShift,
-    OperatorFunction,
-    StructureAppendExtend,
-    StructureMappingGetSubscript,
-    StructureSortReverse,
-    StructureSortedReversed,
-    StructureIndexNeighbor,
-    StructureSliceNeighbor,
-    ExceptionTypePair,
-    ExceptionHierarchy,
-    ExceptionBareToException,
-    ExceptionExceptionToBare,
-    ExceptionBaseBoundary,
-    ExceptionTupleAddPair,
-    ExceptionTupleRemoveMember,
-    TypeNullableRemove,
-    TypeNullableAdd,
-    TypeListSequence,
-    TypeSetAbstractSet,
-    #[serde(rename = "type_dict_mapping", alias = "type_mapping")]
-    TypeMapping,
-    TypeIterableIterator,
-    TypeSequenceIterable,
-    StatementDelete,
-    IntegerLiteralNeighbor,
-    ConditionConstant,
-    FunctionBodyErase,
-    EnumMemberReplace,
-    AugmentedToAssignment,
-    ReturnTupleSwap,
-    StringLiteralEmpty,
-    WhileConditionFalse,
-    ConditionClauseDelete,
-    ContainerElementDelete,
-    ConversionCallRemove,
-    OptionalKeywordDelete,
-    MethodCallRemove,
-    FunctionBodyReturnConstant,
-    StringSegmentEmpty,
-    StdlibConversionCallRemove,
+// Keep declaration order stable: derived Ord determines saved selection ordering.
+// This local declaration owns operator identity, not default or family membership.
+macro_rules! mutation_operators {
+    ($( $(#[$attribute:meta])* $variant:ident => $name:literal, )+) => {
+        #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+        pub enum MutationOperator {
+            $(
+                $(#[$attribute])*
+                #[serde(rename = $name)]
+                $variant,
+            )+
+        }
+
+        impl MutationOperator {
+            /// Looks up a canonical ID; aliases accepted in saved inputs are excluded.
+            #[must_use]
+            pub fn from_name(name: &str) -> Option<Self> {
+                match name {
+                    $($name => Some(Self::$variant),)+
+                    _ => None,
+                }
+            }
+
+            /// Returns the canonical ID used by the CLI and serialized plans.
+            #[must_use]
+            pub fn as_str(self) -> &'static str {
+                match self {
+                    $(Self::$variant => $name,)+
+                }
+            }
+
+            fn all() -> &'static [Self] {
+                &[$(Self::$variant,)+]
+            }
+        }
+    };
 }
 
-impl MutationOperator {
-    #[must_use]
-    pub fn from_name(name: &str) -> Option<Self> {
-        Self::all()
-            .into_iter()
-            .find(|operator| operator.as_str() == name)
-    }
-    #[must_use]
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::StdlibConversionCallRemove => "stdlib_conversion_call_remove",
-            Self::StringSegmentEmpty => "string_segment_empty",
-            Self::OptionalKeywordDelete => "optional_keyword_delete",
-            Self::MethodCallRemove => "method_call_remove",
-            Self::FunctionBodyReturnConstant => "function_body_return_constant",
-            Self::ConversionCallRemove => "conversion_call_remove",
-            Self::ContainerElementDelete => "container_element_delete",
-            Self::ConditionClauseDelete => "condition_clause_delete",
-            Self::WhileConditionFalse => "while_condition_false",
-            Self::FunctionBodyErase => "function_body_erase",
-            Self::EnumMemberReplace => "enum_member_replace",
-            Self::AugmentedToAssignment => "augmented_to_assignment",
-            Self::ReturnTupleSwap => "return_tuple_swap",
-            Self::StringLiteralEmpty => "string_literal_empty",
-            Self::ConditionConstant => "condition_constant",
-            Self::IntegerLiteralNeighbor => "integer_literal_neighbor",
-            Self::StatementDelete => "statement_delete",
-            Self::CompareEqNe => "compare_eq_ne",
-            Self::CompareOrder => "compare_order",
-            Self::Membership => "membership",
-            Self::Identity => "identity",
-            Self::BooleanAndOr => "boolean_and_or",
-            Self::BinaryAddSub => "binary_add_sub",
-            Self::AugmentedAddSub => "augmented_add_sub",
-            Self::BinaryMulDiv => "binary_mul_div",
-            Self::AugmentedMulDiv => "augmented_mul_div",
-            Self::BinaryFloorMod => "binary_floor_mod",
-            Self::AugmentedFloorMod => "augmented_floor_mod",
-            Self::UnarySign => "unary_sign",
-            Self::RemoveNot => "remove_not",
-            Self::BooleanLiteral => "boolean_literal",
-            Self::BreakContinue => "break_continue",
-            Self::CollectionAnyAll => "collection_any_all",
-            Self::CollectionListTuple => "collection_list_tuple",
-            Self::CollectionSetFrozenset => "collection_set_frozenset",
-            Self::CollectionAppendInsert => "collection_append_insert",
-            Self::CollectionMinMax => "collection_min_max",
-            Self::CollectionSetAddDiscard => "collection_set_add_discard",
-            Self::CollectionSetRemoveDiscard => "collection_set_remove_discard",
-            Self::CollectionStringStartsEnds => "collection_string_starts_ends",
-            Self::CollectionStringSplitRsplit => "collection_string_split_rsplit",
-            Self::BitwiseAndOr => "bitwise_and_or",
-            Self::BitwiseShift => "bitwise_shift",
-            Self::BinaryPower => "binary_power",
-            Self::BinaryMatmul => "binary_matmul",
-            Self::AugmentedPower => "augmented_power",
-            Self::AugmentedMatmul => "augmented_matmul",
-            Self::BitwiseXor => "bitwise_xor",
-            Self::BitwiseInvert => "bitwise_invert",
-            Self::AugmentedBitwiseAndOr => "augmented_bitwise_and_or",
-            Self::AugmentedBitwiseXor => "augmented_bitwise_xor",
-            Self::AugmentedBitwiseShift => "augmented_bitwise_shift",
-            Self::OperatorFunction => "operator_function",
-            Self::StructureAppendExtend => "structure_append_extend",
-            Self::StructureMappingGetSubscript => "structure_mapping_get_subscript",
-            Self::StructureSortReverse => "structure_sort_reverse",
-            Self::StructureSortedReversed => "structure_sorted_reversed",
-            Self::StructureIndexNeighbor => "structure_index_neighbor",
-            Self::StructureSliceNeighbor => "structure_slice_neighbor",
-            Self::ExceptionTypePair => "exception_type_pair",
-            Self::ExceptionHierarchy => "exception_hierarchy",
-            Self::ExceptionBareToException => "exception_bare_to_exception",
-            Self::ExceptionExceptionToBare => "exception_exception_to_bare",
-            Self::ExceptionBaseBoundary => "exception_base_boundary",
-            Self::ExceptionTupleAddPair => "exception_tuple_add_pair",
-            Self::ExceptionTupleRemoveMember => "exception_tuple_remove_member",
-            Self::TypeNullableRemove => "type_nullable_remove",
-            Self::TypeNullableAdd => "type_nullable_add",
-            Self::TypeListSequence => "type_list_sequence",
-            Self::TypeSetAbstractSet => "type_set_abstract_set",
-            Self::TypeMapping => "type_dict_mapping",
-            Self::TypeIterableIterator => "type_iterable_iterator",
-            Self::TypeSequenceIterable => "type_sequence_iterable",
-        }
-    }
-    fn all() -> [Self; 73] {
-        [
-            Self::CompareEqNe,
-            Self::CompareOrder,
-            Self::Membership,
-            Self::Identity,
-            Self::BooleanAndOr,
-            Self::BinaryAddSub,
-            Self::AugmentedAddSub,
-            Self::BinaryMulDiv,
-            Self::AugmentedMulDiv,
-            Self::BinaryFloorMod,
-            Self::AugmentedFloorMod,
-            Self::UnarySign,
-            Self::RemoveNot,
-            Self::BooleanLiteral,
-            Self::BreakContinue,
-            Self::CollectionAnyAll,
-            Self::CollectionListTuple,
-            Self::CollectionSetFrozenset,
-            Self::CollectionAppendInsert,
-            Self::CollectionMinMax,
-            Self::CollectionSetAddDiscard,
-            Self::CollectionSetRemoveDiscard,
-            Self::CollectionStringStartsEnds,
-            Self::CollectionStringSplitRsplit,
-            Self::BitwiseAndOr,
-            Self::BitwiseShift,
-            Self::BinaryPower,
-            Self::BinaryMatmul,
-            Self::AugmentedPower,
-            Self::AugmentedMatmul,
-            Self::BitwiseXor,
-            Self::BitwiseInvert,
-            Self::AugmentedBitwiseAndOr,
-            Self::AugmentedBitwiseXor,
-            Self::AugmentedBitwiseShift,
-            Self::OperatorFunction,
-            Self::StructureAppendExtend,
-            Self::StructureMappingGetSubscript,
-            Self::StructureSortReverse,
-            Self::StructureSortedReversed,
-            Self::StructureIndexNeighbor,
-            Self::StructureSliceNeighbor,
-            Self::ExceptionTypePair,
-            Self::ExceptionHierarchy,
-            Self::ExceptionBareToException,
-            Self::ExceptionExceptionToBare,
-            Self::ExceptionBaseBoundary,
-            Self::ExceptionTupleAddPair,
-            Self::ExceptionTupleRemoveMember,
-            Self::TypeNullableRemove,
-            Self::TypeNullableAdd,
-            Self::TypeListSequence,
-            Self::TypeSetAbstractSet,
-            Self::TypeMapping,
-            Self::TypeIterableIterator,
-            Self::TypeSequenceIterable,
-            Self::StatementDelete,
-            Self::IntegerLiteralNeighbor,
-            Self::ConditionConstant,
-            Self::FunctionBodyErase,
-            Self::EnumMemberReplace,
-            Self::AugmentedToAssignment,
-            Self::ReturnTupleSwap,
-            Self::StringLiteralEmpty,
-            Self::WhileConditionFalse,
-            Self::ConditionClauseDelete,
-            Self::ContainerElementDelete,
-            Self::ConversionCallRemove,
-            Self::OptionalKeywordDelete,
-            Self::MethodCallRemove,
-            Self::FunctionBodyReturnConstant,
-            Self::StringSegmentEmpty,
-            Self::StdlibConversionCallRemove,
-        ]
-    }
+mutation_operators! {
+    CompareEqNe => "compare_eq_ne",
+    CompareOrder => "compare_order",
+    Membership => "membership",
+    Identity => "identity",
+    BooleanAndOr => "boolean_and_or",
+    BinaryAddSub => "binary_add_sub",
+    AugmentedAddSub => "augmented_add_sub",
+    BinaryMulDiv => "binary_mul_div",
+    AugmentedMulDiv => "augmented_mul_div",
+    BinaryFloorMod => "binary_floor_mod",
+    AugmentedFloorMod => "augmented_floor_mod",
+    UnarySign => "unary_sign",
+    RemoveNot => "remove_not",
+    BooleanLiteral => "boolean_literal",
+    BreakContinue => "break_continue",
+    CollectionAnyAll => "collection_any_all",
+    CollectionListTuple => "collection_list_tuple",
+    CollectionSetFrozenset => "collection_set_frozenset",
+    CollectionAppendInsert => "collection_append_insert",
+    CollectionMinMax => "collection_min_max",
+    CollectionSetAddDiscard => "collection_set_add_discard",
+    CollectionSetRemoveDiscard => "collection_set_remove_discard",
+    CollectionStringStartsEnds => "collection_string_starts_ends",
+    CollectionStringSplitRsplit => "collection_string_split_rsplit",
+    BitwiseAndOr => "bitwise_and_or",
+    BitwiseShift => "bitwise_shift",
+    BinaryPower => "binary_power",
+    BinaryMatmul => "binary_matmul",
+    AugmentedPower => "augmented_power",
+    AugmentedMatmul => "augmented_matmul",
+    BitwiseXor => "bitwise_xor",
+    BitwiseInvert => "bitwise_invert",
+    AugmentedBitwiseAndOr => "augmented_bitwise_and_or",
+    AugmentedBitwiseXor => "augmented_bitwise_xor",
+    AugmentedBitwiseShift => "augmented_bitwise_shift",
+    OperatorFunction => "operator_function",
+    StructureAppendExtend => "structure_append_extend",
+    StructureMappingGetSubscript => "structure_mapping_get_subscript",
+    StructureSortReverse => "structure_sort_reverse",
+    StructureSortedReversed => "structure_sorted_reversed",
+    StructureIndexNeighbor => "structure_index_neighbor",
+    StructureSliceNeighbor => "structure_slice_neighbor",
+    ExceptionTypePair => "exception_type_pair",
+    ExceptionHierarchy => "exception_hierarchy",
+    ExceptionBareToException => "exception_bare_to_exception",
+    ExceptionExceptionToBare => "exception_exception_to_bare",
+    ExceptionBaseBoundary => "exception_base_boundary",
+    ExceptionTupleAddPair => "exception_tuple_add_pair",
+    ExceptionTupleRemoveMember => "exception_tuple_remove_member",
+    TypeNullableRemove => "type_nullable_remove",
+    TypeNullableAdd => "type_nullable_add",
+    TypeListSequence => "type_list_sequence",
+    TypeSetAbstractSet => "type_set_abstract_set",
+    #[serde(alias = "type_mapping")]
+    TypeMapping => "type_dict_mapping",
+    TypeIterableIterator => "type_iterable_iterator",
+    TypeSequenceIterable => "type_sequence_iterable",
+    StatementDelete => "statement_delete",
+    IntegerLiteralNeighbor => "integer_literal_neighbor",
+    ConditionConstant => "condition_constant",
+    FunctionBodyErase => "function_body_erase",
+    EnumMemberReplace => "enum_member_replace",
+    AugmentedToAssignment => "augmented_to_assignment",
+    ReturnTupleSwap => "return_tuple_swap",
+    StringLiteralEmpty => "string_literal_empty",
+    WhileConditionFalse => "while_condition_false",
+    ConditionClauseDelete => "condition_clause_delete",
+    ContainerElementDelete => "container_element_delete",
+    ConversionCallRemove => "conversion_call_remove",
+    OptionalKeywordDelete => "optional_keyword_delete",
+    MethodCallRemove => "method_call_remove",
+    FunctionBodyReturnConstant => "function_body_return_constant",
+    StringSegmentEmpty => "string_segment_empty",
+    StdlibConversionCallRemove => "stdlib_conversion_call_remove",
 }
+
+// Family membership is an explicit selection policy, separate from the full
+// catalog, historical selection and current defaults. Both CLI advertising and
+// expansion use these names and preserve each family's existing member order.
+const SELECTOR_FAMILIES: &[(&str, &[MutationOperator])] = &[
+    (
+        "type_nullable",
+        &[
+            MutationOperator::TypeNullableRemove,
+            MutationOperator::TypeNullableAdd,
+        ],
+    ),
+    (
+        "type_collections",
+        &[
+            MutationOperator::TypeListSequence,
+            MutationOperator::TypeSetAbstractSet,
+            MutationOperator::TypeMapping,
+        ],
+    ),
+    (
+        "type_iterables",
+        &[
+            MutationOperator::TypeIterableIterator,
+            MutationOperator::TypeSequenceIterable,
+        ],
+    ),
+    (
+        "collection_ops",
+        &[
+            MutationOperator::CollectionAnyAll,
+            MutationOperator::CollectionListTuple,
+            MutationOperator::CollectionSetFrozenset,
+            MutationOperator::CollectionAppendInsert,
+            MutationOperator::CollectionMinMax,
+            MutationOperator::CollectionSetAddDiscard,
+            MutationOperator::CollectionSetRemoveDiscard,
+            MutationOperator::CollectionStringStartsEnds,
+            MutationOperator::CollectionStringSplitRsplit,
+        ],
+    ),
+    (
+        "structure_ops",
+        &[
+            MutationOperator::StructureAppendExtend,
+            MutationOperator::StructureMappingGetSubscript,
+            MutationOperator::StructureSortReverse,
+            MutationOperator::StructureSortedReversed,
+            MutationOperator::StructureIndexNeighbor,
+            MutationOperator::StructureSliceNeighbor,
+        ],
+    ),
+    (
+        "bitwise_ops",
+        &[
+            MutationOperator::BitwiseAndOr,
+            MutationOperator::BitwiseShift,
+            MutationOperator::BitwiseXor,
+            MutationOperator::BitwiseInvert,
+            MutationOperator::AugmentedBitwiseAndOr,
+            MutationOperator::AugmentedBitwiseXor,
+            MutationOperator::AugmentedBitwiseShift,
+        ],
+    ),
+    ("exception_ops", &[MutationOperator::ExceptionTypePair]),
+    (
+        "exception_risky",
+        &[
+            MutationOperator::ExceptionBareToException,
+            MutationOperator::ExceptionExceptionToBare,
+            MutationOperator::ExceptionBaseBoundary,
+            MutationOperator::ExceptionTupleAddPair,
+            MutationOperator::ExceptionTupleRemoveMember,
+        ],
+    ),
+];
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct MutationOperatorSelection(BTreeSet<MutationOperator>);
@@ -299,19 +247,11 @@ impl MutationOperatorSelection {
     #[must_use]
     pub fn valid_names() -> Vec<&'static str> {
         let mut names: Vec<_> = MutationOperator::all()
-            .into_iter()
+            .iter()
+            .copied()
             .map(MutationOperator::as_str)
             .collect();
-        names.extend([
-            "type_nullable",
-            "type_collections",
-            "type_iterables",
-            "collection_ops",
-            "structure_ops",
-            "bitwise_ops",
-            "exception_ops",
-            "exception_risky",
-        ]);
+        names.extend(SELECTOR_FAMILIES.iter().map(|(name, _)| *name));
         names.sort_unstable();
         names
     }
@@ -376,66 +316,19 @@ impl MutationOperatorSelection {
     ///
     /// Returns [`ConfigError::UnknownMutationOperator`] for an unrecognized selector.
     pub fn parse_selector(selector: &str) -> Result<Vec<MutationOperator>, ConfigError> {
-        match selector {
-            "type_nullable" => Ok(vec![
-                MutationOperator::TypeNullableRemove,
-                MutationOperator::TypeNullableAdd,
-            ]),
-            "type_collections" => Ok(vec![
-                MutationOperator::TypeListSequence,
-                MutationOperator::TypeSetAbstractSet,
-                MutationOperator::TypeMapping,
-            ]),
-            "type_iterables" => Ok(vec![
-                MutationOperator::TypeIterableIterator,
-                MutationOperator::TypeSequenceIterable,
-            ]),
-            "collection_ops" => Ok(vec![
-                MutationOperator::CollectionAnyAll,
-                MutationOperator::CollectionListTuple,
-                MutationOperator::CollectionSetFrozenset,
-                MutationOperator::CollectionAppendInsert,
-                MutationOperator::CollectionMinMax,
-                MutationOperator::CollectionSetAddDiscard,
-                MutationOperator::CollectionSetRemoveDiscard,
-                MutationOperator::CollectionStringStartsEnds,
-                MutationOperator::CollectionStringSplitRsplit,
-            ]),
-            "structure_ops" => Ok(vec![
-                MutationOperator::StructureAppendExtend,
-                MutationOperator::StructureMappingGetSubscript,
-                MutationOperator::StructureSortReverse,
-                MutationOperator::StructureSortedReversed,
-                MutationOperator::StructureIndexNeighbor,
-                MutationOperator::StructureSliceNeighbor,
-            ]),
-            "bitwise_ops" => Ok(vec![
-                MutationOperator::BitwiseAndOr,
-                MutationOperator::BitwiseShift,
-                MutationOperator::BitwiseXor,
-                MutationOperator::BitwiseInvert,
-                MutationOperator::AugmentedBitwiseAndOr,
-                MutationOperator::AugmentedBitwiseXor,
-                MutationOperator::AugmentedBitwiseShift,
-            ]),
-            "exception_ops" => Ok(vec![MutationOperator::ExceptionTypePair]),
-            "exception_risky" => Ok(vec![
-                MutationOperator::ExceptionBareToException,
-                MutationOperator::ExceptionExceptionToBare,
-                MutationOperator::ExceptionBaseBoundary,
-                MutationOperator::ExceptionTupleAddPair,
-                MutationOperator::ExceptionTupleRemoveMember,
-            ]),
-            value => MutationOperator::from_name(value).map_or_else(
-                || {
-                    Err(ConfigError::UnknownMutationOperator {
-                        value: value.to_owned(),
-                    })
-                },
-                |operator| Ok(vec![operator]),
-            ),
+        if let Some((_, operators)) = SELECTOR_FAMILIES.iter().find(|(name, _)| *name == selector) {
+            return Ok(operators.to_vec());
         }
+        MutationOperator::from_name(selector).map_or_else(
+            || {
+                Err(ConfigError::UnknownMutationOperator {
+                    value: selector.to_owned(),
+                })
+            },
+            |operator| Ok(vec![operator]),
+        )
     }
+
     pub fn include(&mut self, operator: MutationOperator) {
         self.0.insert(operator);
     }
