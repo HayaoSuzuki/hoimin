@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 use std::num::{NonZeroU64, NonZeroUsize};
 use std::time::Duration;
 
-use camino::{Utf8Component, Utf8PathBuf};
+use camino::{Utf8Component, Utf8Path, Utf8PathBuf};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -644,18 +644,19 @@ pub struct PlanConfig {
 
 impl RunConfig {
     /// Validates normalized run configuration semantics.
+    /// Selection and execution must share the same project root (by path equality).
     ///
     /// # Errors
     ///
     /// Returns [`ConfigError`] when selection, mutation operators, runtime resume state, the test
     /// command, or limits are invalid.
     pub fn validate(&self) -> Result<(), ConfigError> {
+        validate_selection(&self.root, &self.selection)?;
         crate::fingerprint_env::validate_fingerprint_env(
             &self.fingerprint_env,
             self.fingerprint_env_hash.as_deref(),
             false,
         )?;
-        validate_selection(&self.selection)?;
         validate_import_roots(&self.import_roots)?;
         validate_operators(&self.operators)?;
         if self.resume && self.session.is_none() {
@@ -688,18 +689,19 @@ impl RunConfig {
 
 impl PlanConfig {
     /// Validates normalized persisted plan semantics.
+    /// Selection and execution must share the same project root (by path equality).
     ///
     /// # Errors
     ///
     /// Returns [`ConfigError`] when selection, mutation operators, the test command, or limits are
     /// invalid.
     pub fn validate(&self) -> Result<(), ConfigError> {
+        validate_selection(&self.root, &self.selection)?;
         crate::fingerprint_env::validate_fingerprint_env(
             &self.fingerprint_env,
             self.fingerprint_env_hash.as_deref(),
             true,
         )?;
-        validate_selection(&self.selection)?;
         validate_import_roots(&self.import_roots)?;
         validate_operators(&self.operators)?;
         validate_test_argv(&self.test_argv)?;
@@ -741,6 +743,8 @@ pub struct FingerprintInputFile {
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum ConfigError {
+    #[error("selection root differs from normalized config root")]
+    SelectionRootMismatch,
     #[error("fingerprint.env.invalid_name: --fingerprint-env requires [A-Za-z_][A-Za-z0-9_]*")]
     InvalidFingerprintEnvName,
     #[error("fingerprint.env.non_normalized: names must be canonical, sorted, and unique")]
@@ -908,7 +912,10 @@ fn validate_import_roots(roots: &[Utf8PathBuf]) -> Result<(), ConfigError> {
     }
 }
 
-fn validate_selection(selection: &Selection) -> Result<(), ConfigError> {
+fn validate_selection(root: &Utf8Path, selection: &Selection) -> Result<(), ConfigError> {
+    if selection.root != root {
+        return Err(ConfigError::SelectionRootMismatch);
+    }
     let has_selector = !selection.sources.is_empty()
         || !selection.files.is_empty()
         || !selection.lines.is_empty()
@@ -1013,7 +1020,7 @@ impl TryFrom<RawRunConfig> for RunConfig {
             includes: raw.includes,
             excludes: raw.excludes,
         };
-        validate_selection(&selection)?;
+        validate_selection(&raw.root, &selection)?;
         if raw.resume && raw.session.is_none() {
             return Err(ConfigError::ResumeRequiresSession);
         }

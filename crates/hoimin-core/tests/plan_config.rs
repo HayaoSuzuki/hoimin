@@ -135,6 +135,49 @@ fn valid_normalized_plan_and_run_configs_pass_validation() {
 }
 
 #[test]
+fn normalized_configs_reject_mismatched_selection_root_after_mutation() {
+    let mut run = fixture_run_config();
+    run.selection.root = "other-project".into();
+    let mut plan = fixture_run_config().into_plan_config();
+    plan.root = "other-project".into();
+
+    for result in [run.validate(), plan.validate()] {
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "selection root differs from normalized config root"
+        );
+    }
+}
+
+#[test]
+fn normalized_configs_reject_mismatched_selection_root_after_deserialization() {
+    let mut run_value = serde_json::to_value(fixture_run_config()).unwrap();
+    run_value["root"] = serde_json::json!("other-project");
+    let run: RunConfig = serde_json::from_value(run_value).unwrap();
+    let mut value = plan_value();
+    value["selection"]["root"] = serde_json::json!("other-project");
+    let plan: PlanConfig = serde_json::from_value(value).unwrap();
+
+    for result in [run.validate(), plan.validate()] {
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "selection root differs from normalized config root"
+        );
+    }
+}
+
+#[test]
+fn normalized_configs_accept_component_equal_roots_without_filesystem_access() {
+    let mut run = fixture_run_config();
+    run.root = "nonexistent-project/src".into();
+    run.selection.root = "nonexistent-project/./src/".into();
+    let plan = run.clone().into_plan_config();
+
+    assert_eq!(run.validate(), Ok(()));
+    assert_eq!(plan.validate(), Ok(()));
+}
+
+#[test]
 fn plan_config_rejects_invalid_normalized_semantics() {
     let cases: &[InvalidPlanCase] = &[
         (

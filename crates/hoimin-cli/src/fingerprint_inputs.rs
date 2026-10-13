@@ -375,6 +375,59 @@ mod tests {
     use super::*;
 
     #[test]
+    fn recheck_uses_worker_root_without_changing_prepared_configuration() {
+        let original = tempfile::tempdir().unwrap();
+        let worker = tempfile::tempdir().unwrap();
+        let original_root = Utf8Path::from_path(original.path()).unwrap();
+        let worker_root = Utf8Path::from_path(worker.path()).unwrap();
+        for root in [original_root, worker_root] {
+            std::fs::write(root.join("settings.toml"), "value = 1\n").unwrap();
+            std::fs::write(root.join("errors.py"), "class Root(Exception): pass\n").unwrap();
+        }
+        let mut config = hoimin_core::RunConfig::try_from(hoimin_core::RawRunConfig {
+            root: original_root.to_owned(),
+            files: vec!["errors.py".into()],
+            fingerprint_files: vec!["settings.toml".into()],
+            operators: vec!["exception_hierarchy".into()],
+            test_argv: vec![hoimin_core::CommandArg::Unix(
+                b"unused-test-command".to_vec(),
+            )],
+            ..hoimin_core::RawRunConfig::default()
+        })
+        .unwrap();
+        config.fingerprint_inputs = resolve_config(&config).unwrap();
+        let prepared = config.clone();
+        assert_eq!(config.fingerprint_inputs.len(), 2);
+
+        // Revalidation must use the copied worker inputs even if the source changes.
+        std::fs::write(original_root.join("settings.toml"), "value = 2\n").unwrap();
+        std::fs::write(
+            original_root.join("errors.py"),
+            "class Changed(Exception): pass\n",
+        )
+        .unwrap();
+        recheck_config(&config, worker_root).unwrap();
+
+        for (path, original_bytes, changed_bytes) in [
+            ("settings.toml", "value = 1\n", "value = 3\n"),
+            (
+                "errors.py",
+                "class Root(Exception): pass\n",
+                "class Other(Exception): pass\n",
+            ),
+        ] {
+            std::fs::write(worker_root.join(path), changed_bytes).unwrap();
+            assert!(matches!(
+                recheck_config(&config, worker_root),
+                Err(FingerprintInputRecheckError::RecordsChanged)
+            ));
+            std::fs::write(worker_root.join(path), original_bytes).unwrap();
+        }
+        assert_eq!(config, prepared);
+        assert_eq!(config.validate(), Ok(()));
+    }
+
+    #[test]
     fn pattern_count_and_unrelated_tree_size_do_not_multiply_walks() {
         for unrelated in [0, 64] {
             let directory = tempfile::tempdir().unwrap();

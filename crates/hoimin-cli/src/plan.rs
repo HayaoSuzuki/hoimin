@@ -63,10 +63,6 @@ pub(crate) fn read_for_review(path: &Path) -> Result<ReadOnlyPlan, PlanError> {
     let manifest: PlanManifest =
         serde_json::from_slice(&bytes).map_err(|error| invalid(error.to_string()))?;
     validate_header(&manifest)?;
-    manifest
-        .normalized_config
-        .validate()
-        .map_err(|error| invalid(error.to_string()))?;
     let project = std::fs::canonicalize(&manifest.normalized_config.root)
         .map_err(|error| invalid(error.to_string()))?;
     let project = Utf8PathBuf::from_path_buf(project)
@@ -475,7 +471,7 @@ async fn prepare_verify_selection_inner(
         .map_err(|error| PlanError::ManifestInvalid(error.to_string()))?;
     drop(bytes);
     validate_header(&manifest)?;
-    validate_current_plan_config(&manifest.normalized_config)?;
+    validate_current_fingerprint_env(&manifest.normalized_config)?;
 
     let (selection, verification_selection) =
         resolve_verify_selection(&manifest, requested_selection)?;
@@ -552,10 +548,7 @@ async fn prepare_verify_selection_inner(
     })
 }
 
-fn validate_current_plan_config(config: &hoimin_core::PlanConfig) -> Result<(), PlanError> {
-    config
-        .validate()
-        .map_err(|error| PlanError::ManifestInvalid(error.to_string()))?;
+fn validate_current_fingerprint_env(config: &hoimin_core::PlanConfig) -> Result<(), PlanError> {
     let current = crate::fingerprint_env::capture(&config.fingerprint_env)
         .map_err(|error| PlanError::ManifestInvalid(error.to_string()))?;
     if current == config.fingerprint_env_hash {
@@ -740,11 +733,10 @@ fn validate_header(manifest: &PlanManifest) -> Result<(), PlanError> {
             manifest.ranking_rule_version
         )));
     }
-    if manifest.normalized_config.selection.root != manifest.normalized_config.root {
-        return Err(PlanError::ManifestInvalid(
-            "selection root differs from normalized config root".to_owned(),
-        ));
-    }
+    manifest
+        .normalized_config
+        .validate()
+        .map_err(|error| PlanError::ManifestInvalid(error.to_string()))?;
     validate_records("sources", &manifest.sources)?;
     validate_records("fingerprint_inputs", &manifest.fingerprint_inputs)?;
     validate_records(
@@ -1159,8 +1151,8 @@ mod tests {
 
     use camino::Utf8PathBuf;
     use hoimin_core::{
-        ByteSpan, CommandArg, EffectFailed, EffectId, LineRange, MutationCandidate, RawRunConfig,
-        RunConfig, TargetSlice,
+        ByteSpan, CommandArg, EffectFailed, EffectId, FingerprintInputFile, LineRange,
+        MutationCandidate, RawRunConfig, RunConfig, TargetSlice,
     };
 
     use crate::analyzer::DiscoveryControl;
@@ -1169,7 +1161,7 @@ mod tests {
     use super::{
         DiscoveryCaller, PLAN_SCHEMA_VERSION, PlanError, PlanManifest, RANKING_RULE_VERSION,
         RankedPlanCandidate, create_with_discovery_control, map_discovery_error, plan_output,
-        prepare_verify_with_discovery_control, requested_discovery_targets,
+        prepare_verify_with_discovery_control, requested_discovery_targets, validate_header,
     };
 
     pub(super) struct Project {
@@ -1262,6 +1254,38 @@ mod tests {
             truncated: true,
             diagnostics: Vec::new(),
         }
+    }
+
+    #[test]
+    fn header_preserves_root_mismatch_diagnostic_and_version_precedence() {
+        let mut manifest = manifest();
+        manifest.normalized_config.selection.root = "other-project".into();
+        assert!(matches!(
+            validate_header(&manifest),
+            Err(PlanError::ManifestInvalid(message))
+                if message == "selection root differs from normalized config root"
+        ));
+        manifest.schema_version = PLAN_SCHEMA_VERSION + 1;
+        assert!(matches!(
+            validate_header(&manifest),
+            Err(PlanError::ManifestInvalid(message))
+                if message.starts_with("unsupported schema version")
+        ));
+    }
+
+    #[test]
+    fn header_validates_normalized_config_before_manifest_records() {
+        let mut manifest = manifest();
+        manifest.normalized_config.selection.files.clear();
+        manifest.sources.push(FingerprintInputFile {
+            path: "../outside.py".into(),
+            hash: "invalid".into(),
+        });
+        assert!(matches!(
+            validate_header(&manifest),
+            Err(PlanError::ManifestInvalid(message))
+                if message == "at least one target selector is required"
+        ));
     }
 
     #[tokio::test]
