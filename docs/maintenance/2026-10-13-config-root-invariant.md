@@ -188,3 +188,24 @@ checkout's target was cleaned.
 The branch/worktree and ignored verification logs are retained for review. The
 implementation and this record are committed together; no push or merge is
 part of this local completion.
+
+## Full-suite follow-up and PR preparation (2026-10-13)
+
+On the unchanged implementation commit `16285fd`, unfiltered `cargo test`
+completed with exit 0: 2,837 passed, 0 failed and 29 ignored across 149 test
+binaries/doctest groups, excluding nested subprocess result duplication.
+The first full run exposed an incomplete worktree virtual-environment link:
+linking only `bin` did not expose pytest. Linking the existing `pyvenv.cfg`
+and `lib` corrected the local environment; the entire command then passed.
+No production or test source changed. The final run used two build/test threads
+and the same resource monitor (319 MiB sampled peak RSS, 4,038 MiB target).
+The dedicated target was cleaned afterward (3.9 GiB removed).
+
+PR preparation adds the root-validation contract to the existing selection
+OKF concept, referencing the actual implementation commit and content hashes.
+Documentation self-review: (1) checked each claim against both validators and
+manifest callers; (2) verified source revisions/hashes; (3) preserved historical
+sources and version statements; (4) separated the full-suite result from the
+initial focused checks and documented the environment correction; (5) checked
+that the documentation-only follow-up changes no executable code or public
+format. Other operating systems remain unverified locally.
