@@ -73,7 +73,10 @@ Keep checked plans immutable after preparation. Inspect shared references and
 use the metrics-only override before consuming the plan for execution; retain
 manifest and fingerprint protection in the owned handoff. The
 [verified-plan record](maintenance/2026-10-12-verified-plan.md) describes the
-internal Rust source migration and validation evidence.
+internal Rust source migration and validation evidence. The
+[selected execution API record](maintenance/2026-10-13-verified-execution.md)
+identifies the removed unchecked wrappers and the retained `VerifiedPlan::execute`
+entry point, including the placement of runtime negative tests.
 
 Construct analyzers with `AnalyzerHandler::new(root) -> Self`. Source access and
 candidate-store errors occur during analysis. See the [initialization API record](maintenance/2026-10-13-analyzer-initialization.md)

@@ -5,6 +5,8 @@ description: 候補発見と実行の分離、ランキング、部分集合、�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-850-execution
+  resource: ../../maintenance/2026-10-13-verified-execution.md
 - id: issue-843-config
   resource: ../../../crates/hoimin-core/src/config.rs
   revision: 16285fdd71b9db1da6570e7b3dbc4d234c3928fe
@@ -464,3 +466,11 @@ by this validation refactor.[^issue-843-config][^issue-843-plan]
 
 [^issue-843-config]: [Configuration validation](../../../crates/hoimin-core/src/config.rs).
 [^issue-843-plan]: [Manifest validation](../../../crates/hoimin-cli/src/plan.rs).
+
+# 検証済み plan の実行入口（Issue #850）
+
+Rust から保存済み plan を実行する場合は、`prepare_verify` または `prepare_verify_selection` が返す `VerifiedPlan` を使う。設定・候補選択・選択の由来・保護対象は、この値から実行側へまとめて渡す。参照による確認と metrics 出力先だけの上書きを経て、借用 writer では `VerifiedPlan::execute` を呼び出す。CLI の所有 writer も同じ検証済み情報を使い、既存の出力処理を維持する。[^issue-850-execution]
+
+設定や候補 ID を個別に渡せた selected/ordered 実行ラッパーは削除した。公開された設定フィールドや可変参照から `VerifiedPlan` の検証済み設定を書き換えることはできない。実行時に候補 ID が見つからない場合の拒否は、shell 内のテストから非公開の実行関数を呼んで確認する。CLI・候補順序・plan/session/report の保存形式は変更しない。[^issue-850-execution]
+
+[^issue-850-execution]: [実行 API の整理・移行・検証記録](../../maintenance/2026-10-13-verified-execution.md)。
