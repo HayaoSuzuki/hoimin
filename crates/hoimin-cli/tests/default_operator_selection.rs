@@ -66,12 +66,20 @@ async fn plan(root: &Path, selection: &[&str]) -> serde_json::Value {
 #[tokio::test]
 async fn default_candidates_are_opt_out_and_saved_legacy_plans_stay_legacy() {
     let root = tempfile::tempdir().unwrap();
-    let source = "from decimal import Decimal\ndef amount(x): return Decimal(x)\ndef f(x, y):\n    print('message')\n    x += 3\n    while x < y:\n        x += 1\n    z = int(x)\n    return x, y\ndef recent(text) -> str:\n    return text.strip()\ndef segment(x):\n    return f'prefix:{x}'\n";
+    let source = "from decimal import Decimal\nfrom http import HTTPStatus\ndef amount(x): return Decimal(x)\ndef factory(x): return Decimal.from_float(x)\ndef status(x): return HTTPStatus(x)\ndef f(x, y):\n    print('message')\n    x += 3\n    while x < y:\n        x += 1\n    z = int(x)\n    return x, y\ndef recent(text) -> str:\n    return text.strip()\ndef segment(x):\n    return f'prefix:{x}'\n";
     std::fs::write(root.path().join("subject.py"), source).unwrap();
     let default = plan(root.path(), &[]).await;
     let manifest: PlanManifest = serde_json::from_value(default.clone()).unwrap();
     assert_eq!(manifest.normalized_config.operators.names().len(), 54);
     let candidates = default["candidates"].as_array().unwrap();
+    for original in ["Decimal(x)", "Decimal.from_float(x)", "HTTPStatus(x)"] {
+        assert!(
+            candidates
+                .iter()
+                .any(|c| c["operator"] == "stdlib_conversion_call_remove"
+                    && c["original"] == original)
+        );
+    }
     for operator in PROMOTED {
         assert!(
             candidates.iter().any(|c| c["operator"] == operator),

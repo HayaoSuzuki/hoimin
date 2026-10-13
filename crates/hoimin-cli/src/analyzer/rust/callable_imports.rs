@@ -29,6 +29,12 @@ fn dynamic_namespace_name(name: &str) -> bool {
     )
 }
 
+#[derive(Default)]
+struct PossibleOrigins {
+    modules: HashSet<&'static str>,
+    members: HashMap<&'static str, HashSet<String>>,
+}
+
 struct ImportedBinding {
     module: &'static str,
     // None is a module import; Some is the original imported callable name.
@@ -39,6 +45,7 @@ struct ImportedBinding {
 #[derive(Default)]
 pub(super) struct CallableImports {
     trusted: HashMap<String, ImportedBinding>,
+    possible: HashMap<String, PossibleOrigins>,
     import_builtin_available: bool,
     class_ranges: ContainmentIndex,
     class_lookups: HashSet<(usize, usize)>,
@@ -57,6 +64,7 @@ impl CallableImports {
             depth: 0,
             function_scope: false,
             trusted: HashMap::new(),
+            possible: HashMap::new(),
             bindings: HashMap::new(),
             module_names: HashSet::new(),
             attribute_writes: HashSet::new(),
@@ -89,6 +97,7 @@ impl CallableImports {
         }
         Ok(Self {
             trusted: scan.trusted,
+            possible: scan.possible,
             import_builtin_available: !scan.bindings.contains_key("__import__"),
             class_ranges: ContainmentIndex::new(scan.class_ranges),
             class_lookups: lookup_scan.class_lookups,
@@ -141,6 +150,32 @@ impl CallableImports {
             member: name,
             member_range,
         })
+    }
+
+    /// Recognize possible references for mutation/escape detection, not eligibility.
+    /// Includes every recognized import, even rebound/local aliases and references
+    /// before the import or in class scopes. A strict `resolve` failure must not
+    /// hide a write through another alias of the same imported object.
+    pub(super) fn may_reference(&self, expression: &Expr, module: &str, member: &str) -> bool {
+        let (local, attribute) = match expression {
+            Expr::Name(name) => (name.id.as_str(), None),
+            Expr::Attribute(attribute) => {
+                let Expr::Name(base) = attribute.value.as_ref() else {
+                    return false;
+                };
+                (base.id.as_str(), Some(attribute.attr.as_str()))
+            }
+            _ => return false,
+        };
+        self.possible
+            .get(local)
+            .is_some_and(|origins| match attribute {
+                None => origins
+                    .members
+                    .get(module)
+                    .is_some_and(|members| members.contains(member)),
+                Some(attribute) => attribute == member && origins.modules.contains(module),
+            })
     }
 
     pub(super) fn import_builtin_available(&self) -> bool {
@@ -301,6 +336,7 @@ struct ImportScan<'a, F> {
     depth: usize,
     function_scope: bool,
     trusted: HashMap<String, ImportedBinding>,
+    possible: HashMap<String, PossibleOrigins>,
     bindings: HashMap<String, usize>,
     module_names: HashSet<String>,
     attribute_writes: HashSet<String>,
@@ -330,6 +366,16 @@ impl<F: Fn() -> bool> ImportScan<'_, F> {
     ) {
         if member.is_none() {
             self.module_names.insert(local.to_owned());
+        }
+        let possible = self.possible.entry(local.to_owned()).or_default();
+        if let Some(member) = member {
+            possible
+                .members
+                .entry(module)
+                .or_default()
+                .insert(member.to_owned());
+        } else {
+            possible.modules.insert(module);
         }
         if self.depth == 0 {
             self.trusted.insert(

@@ -156,3 +156,142 @@ workspace Clippy 14.3 s; fuzz Clippy 16.4 s; seed replay including compilation
 28.8 s; generated-reference check 6.2 s. The task-owned target reached about
 8.4 GiB before commit hooks. Samples are observations, not hard memory limits or
 complete child-process lifetime measurements.
+
+## Extension requested on the same PR
+
+Starting from `5a6312f8543d11615ccd48fc190e08ec08187665`, the user requested
+Decimal/Fraction factory methods and concrete standard-library integer enums in
+PR #859. The initial constructor-only scope and results above describe that
+first revision. The final supported list is in `docs/usage.md`.
+
+Added five factories: `Decimal.from_float`, `Decimal.from_number`,
+`Fraction.from_float`, `Fraction.from_decimal`, and `Fraction.from_number`.
+Added 19 concrete `IntEnum`/`IntFlag` types from `http`, `socket`, `signal`, `ssl`,
+`re`, `calendar`, `inspect`, and `annotationlib`. This is an explicit list, not
+inference over user-defined subclasses or an exhaustive standard-library enum
+registry. `ctypes` is excluded; the user's preference is opt-in if added later.
+The same operator ID and opt-out cover all of these calls; counts remain 54
+(default) and 73 (total), with the same 0.5.0 floor.
+
+Reviewed the Python 3.14 documentation for [decimal factories](https://docs.python.org/3.14/library/decimal.html#decimal.Decimal.from_number),
+[Fraction factories](https://docs.python.org/3.14/library/fractions.html#fractions.Fraction.from_number),
+[HTTPStatus](https://docs.python.org/3.14/library/http.html#http.HTTPStatus),
+[socket constants](https://docs.python.org/3.14/library/socket.html#constants),
+[signal enums](https://docs.python.org/3.14/library/signal.html#module-contents),
+[ssl constants](https://docs.python.org/3.14/library/ssl.html#constants),
+[RegexFlag](https://docs.python.org/3.14/library/re.html#re.RegexFlag),
+[calendar enums](https://docs.python.org/3.14/library/calendar.html#calendar.Day),
+[BufferFlags](https://docs.python.org/3.14/library/inspect.html#inspect.BufferFlags),
+and [Format](https://docs.python.org/3.14/library/annotationlib.html#annotationlib.Format).
+The two `from_number` methods are available in Python 3.14, already the project's
+required Python version. Enum members depend on the target platform; `Sigmasks`
+is Unix-only. No socket, signal handler or TLS connection is created by the tests.
+
+### Extension design: five self-reviews
+
+1. **Scope:** enumerate the five methods and 19 concrete enum types; reject
+   similarly named unsupported members, enum bases, string enums and ctypes.
+2. **Identity:** preserve strict candidate resolution. Retain all recognized
+   import origins separately for hazard detection, including duplicate, rebound,
+   local, pre-import and class-scope references that strict resolution rejects.
+3. **Mutation evidence:** block factories if the class object can escape via an
+   alias, callback, extracted bound method or annotation, or be written through.
+   Constructor/factory callee references alone are allowed; their arguments are
+   still traversed. Decimal and Fraction hazards are tracked independently.
+4. **Observable result:** test returned type and argument evaluation through
+   actual saved-plan verification. Numeric equality alone is deliberately weak;
+   type assertions are the distinguishing observation.
+5. **Complexity:** `ConversionImports` owns allowed call identities and factory
+   stability; `CallableImports` owns import syntax/origins. The collector retains
+   arity, source-span and syntax-role rules. Philosophy diagnostics for this new
+   boundary: 8/8 (10/10); no failed row in this limited review. This is not a score
+   for the entire analyzer or a proof of complete Python provenance tracking.
+
+### Extension plan: five self-reviews
+
+1. **Red:** require the public CLI to emit the new calls through four import
+   forms; both new test groups must fail before implementation.
+2. **Implementation:** extend the import evidence privately and introduce the
+   conversion-specific boundary; keep the existing operator-function client
+   unchanged and preserve cancellation checks.
+3. **Properties:** extend generated alias/prefix/rebinding cases to factories and
+   enums, then exercise actual weak/strong tests for each supported callable.
+4. **Regressions:** run the workspace suite, contracts checks, strict Clippy,
+   existing operator-function tests, fuzz seed replay and documentation checks.
+5. **Delivery:** update this PR's title/body to the final scope, preserve the
+   explicit remote branch destination, and record verification after review.
+
+### Extension implementation: five self-reviews
+
+1. **Alias hazards:** independent design review identified class-scope writes,
+   writes before textual imports, duplicate/rebound aliases and extracted bound
+   methods as cases strict `resolve` cannot detect. `may_reference` retains those
+   possible origins but can never make a candidate eligible itself.
+2. **Whitelist and roles:** tests cover 20 factory import forms and 76 enum import
+   forms, exact original/replacement spans and CPython compilation. Negative
+   fixtures cover unsupported classes/methods, keywords, unsafe expressions,
+   annotations, assignment targets and local custom enum subclasses.
+3. **Evaluation:** all five factories and 19 enums are exercised by real
+   `plan`/`verify` weak and strong assertions on this macOS host. Each assertion
+   also checks one argument evaluation. The Unix-only Sigmasks execution case
+   is excluded on Windows, while its static AST forms remain tested there.
+4. **Selection:** existing default/exclusion coverage now requires constructor,
+   factory and HTTPStatus candidates and verifies their collective opt-out.
+   Extended the existing bounded proptest and the shipping-analyzer fuzz seed.
+5. **Compatibility and CI:** the first PR revision's dependency-policy CI failed
+   because `deny.toml` still scoped the repository's Elastic-2.0 exceptions to
+   `>=0.4.0,<0.5.0`. Updated only hoimin-core/hoimin-cli ranges to `>=0.5.0,<0.6.0`;
+   other licenses and third-party exceptions are unchanged. Updated release
+   instructions to include this minor-floor step.
+
+Factory safety remains conservative syntactic evidence. It does not track class
+recovery through constructed instances (for example `type(Fraction(0))`) or
+arbitrary interprocedural dataflow, and cannot exclude external monkeypatching
+or import-path shadowing. These cases were explicitly set outside this extension
+in review; direct import-alias hazards are covered. Plain class references in
+annotations can suppress otherwise safe factory candidates. Direct constructors
+retain their earlier eligibility contract.
+
+
+### Extension verification: five self-reviews
+
+1. **Red/green evidence:** both new import-form tests failed with zero candidates
+   before implementation. After implementation, all 13 conversion integration
+   tests passed, including real weak/strong verification for every supported
+   method/enum, 96 new import forms, exact spans, mutation hazards, exclusion
+   boundaries and bounded proptest cases.
+2. **Regression scope:** the complete default-feature workspace run passed 2,831
+   tests with 29 ignored across 150 top-level test/doc targets. Counts exclude
+   child-process summaries. This run preceded the final origin-index refinement.
+3. **Complexity review:** the reviewer identified a potential repeated linear
+   search through alias origins. Replaced it with deduplicated module/member
+   sets and borrowed lookups, preserving strict `resolve` unchanged. Final
+   independent review found no remaining issue; instance/dataflow limits were
+   explicitly retained. No measured speedup is claimed.
+4. **Models and policy:** both existing Lean models passed again. Official
+   cargo-deny 0.20.2 (release checksum verified) passed `--workspace --all-features
+   --locked --config deny.toml check --deny warnings licenses sources` for both
+   Cargo manifests. This confirms the correction of the first PR's CI failures.
+5. **Documentation and delivery:** strict documentation build and 16 document
+   tests passed. Reviewed the final target table, opt-out/default counts,
+   platform restrictions, ctypes exclusion and preserved historical evidence.
+   Final source checks and delivery results are recorded below.
+
+After the final index refinement,
+`cargo test --locked -p hoimin-cli --features contracts --lib
+--test stdlib_conversion_call_remove --test default_operator_selection
+--test operator_function_contracts --test analysis_depth --test valid_python_corpus`
+passed 1,158 tests with 21 ignored across six targets. An initial invocation used
+an incorrect integration-target name and was corrected before this test run.
+The complete workspace was not repeated after the index-only refinement.
+Strict workspace Clippy (all targets/features), fuzz Clippy, the 11-file seed
+replay (12 executions), generated CLI reference check and formatting passed.
+The fuzz command and bounds are the same as in the initial verification above;
+the updated seed includes factories and enum constructors.
+
+Extension resource observations: full workspace 335.1 s, 1,758,887,936 bytes peak
+sampled process-group RSS; final contracts tests 59.5 s, 1,949,286,400 bytes;
+final Clippy 12.3 s; fuzz Clippy 16.3 s; replay/build 28.7 s; reference check 6.2 s.
+The task-owned target was about 5.0 GiB before commit hooks. No resource guard
+fired. Independent final review found no remaining issue in the source, tests,
+index refinement or documentation. All results remain local macOS evidence.

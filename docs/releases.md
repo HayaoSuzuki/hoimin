@@ -67,7 +67,9 @@ The workspace version is the minimum version for the next release, currently
 next patch version. When raising the minimum, keep
 `Cargo.toml`, `pyproject.toml`, `Cargo.lock`, and `uv.lock` consistent when
 changing it. Also update the `hoimin-core` entry in `fuzz/Cargo.lock` so
-the separate fuzz workspace remains consistent. CI embeds the reserved version
+the separate fuzz workspace remains consistent. Update the two repository-package
+license exception ranges in `deny.toml` when crossing a minor-version boundary.
+CI embeds the reserved version
 into those four files in its build checkout, without committing version changes back to `main`.
 
 Before reserving a new tag, CI checks that the commit descends from the

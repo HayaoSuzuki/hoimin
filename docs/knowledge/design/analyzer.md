@@ -7,8 +7,9 @@ catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
 - id: stdlib-conversion
   resource: ../../maintenance/2026-10-13-stdlib-conversion.md
-  working_tree: untracked
-  sha256: 17840b0c701b2108d433ff427a92117a4dded737fb648388c31df99e0ec37376
+  revision: 5a6312f8543d11615ccd48fc190e08ec08187665
+  working_tree: modified
+  sha256: ae81a9e3a47fadd108e088260afc750beafc0047da49c6758e2c1645e90d1549
 - id: issue-851-protocol
   resource: ../../maintenance/2026-10-13-analyzer-protocol.md
 - id: issue-849-initialization
@@ -849,6 +850,6 @@ CPython 3.14による実行で構文・値・補間の回数と順序・conversi
 
 # 標準ライブラリの数値変換削除
 
-`stdlib_conversion_call_remove` は、静的に import 元を確認できる `decimal.Decimal` と `fractions.Fraction` の1引数呼び出しを、括弧付きの引数へ置換する。引数を1回評価し、変換後と数値が等しくても戻り値の型が異なる変異を生成する。既定で有効とし、既定選択は54種類、公開IDは計73種類となる。個別除外で従来の53演算子へ戻せる。再束縛などの除外条件、互換性および検証範囲は作業記録を参照。[^stdlib-conversion]
+`stdlib_conversion_call_remove` は、静的に import 元を確認できる `decimal.Decimal`・`fractions.Fraction` のコンストラクタと変換メソッド5種、および標準ライブラリの具体的な整数列挙型19種の1引数呼び出しを、括弧付きの引数へ置換する。引数を1回評価し、変換後と数値が等しくても戻り値の型が異なる変異を生成する。既定で有効とし、既定選択は54種類、公開IDは計73種類となる。個別除外で従来の53演算子へ戻せる。変換メソッドではクラス参照の持ち出しや別名経由の属性変更も保守的に除外する。`ctypes` は対象外。対象一覧、除外条件、互換性および検証範囲は作業記録と利用ガイドを参照。[^stdlib-conversion]
 
 [^stdlib-conversion]: [Standard-library conversion removal](../../maintenance/2026-10-13-stdlib-conversion.md).

@@ -54,6 +54,8 @@ mod fact_index;
 mod mapping_keys;
 #[path = "rust/operator_functions.rs"]
 mod operator_functions;
+#[path = "rust/stdlib_conversions.rs"]
+mod stdlib_conversions;
 #[cfg(test)]
 use fact_index::IndexLookupStats;
 use fact_index::{ContainmentIndex, NotOperandIndex, ScopeIndex, ScopeInterval};
@@ -2807,7 +2809,7 @@ struct AstCandidateCollector<'a, F> {
     enum_index: enum_members::EnumIndex,
     optional_functions: optional_keywords::FunctionIndex,
     operator_imports: OperatorImports,
-    conversion_imports: callable_imports::CallableImports,
+    conversion_imports: stdlib_conversions::ConversionImports,
     return_scope: ReturnScope,
     integer_suppressed: bool,
     runtime_role: RuntimeRole,
@@ -2874,13 +2876,9 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                 .operators
                 .contains(MutationOperator::StdlibConversionCallRemove)
             {
-                callable_imports::CallableImports::build(
-                    module,
-                    cancelled,
-                    &["decimal", "fractions"],
-                )?
+                stdlib_conversions::ConversionImports::build(module, cancelled)?
             } else {
-                callable_imports::CallableImports::default()
+                stdlib_conversions::ConversionImports::default()
             },
             operator_imports: if request
                 .operators
@@ -3162,13 +3160,7 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         {
             return;
         }
-        let Some(resolved) = self.conversion_imports.resolve(&call.func) else {
-            return;
-        };
-        if !matches!(
-            (resolved.module, resolved.member),
-            ("decimal", "Decimal") | ("fractions", "Fraction")
-        ) {
+        if !self.conversion_imports.is_conversion(&call.func) {
             return;
         }
         let argument = &call.arguments.args[0];
