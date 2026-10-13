@@ -816,6 +816,9 @@ at 24.625 seconds and also had the highest RSS at 1,033,644 KiB.
 
 ## Shutdown deadline invariants
 
+Start with the [shell module contract](../crates/hoimin-cli/src/shell.rs) for
+dispatch/completion ownership, cleanup admission and final-output ordering.
+
 Once total timeout, cancellation, or a fatal failure starts shutdown, the
 first cause and its absolute shutdown deadline are immutable. Total timeout is
 anchored to the original run deadline plus the fixed two-second grace;
@@ -834,11 +837,12 @@ the run future returns and is never reported as accepted. Tokio cannot cancel
 an already-running `spawn_blocking` operation: aborting its wrapper detaches
 that operation. The CLI exits after reporting the infrastructure failure,
 while a library caller may observe the detached operation finish later. This
-deadline cannot preempt
-an arbitrary synchronous `Write`: report output and its flush run inline, so a
-blocked caller-provided writer can delay the run future and even the expiry
-diagnostic. The bounded-return invariant therefore assumes synchronous output
-writes make progress.
+deadline cannot preempt an arbitrary synchronous `Write`. Owned CLI report
+delivery bounds the async wait while the blocking operation retains its writer
+and delivery-root leases. Borrowed library writers run report output and flush
+inline; a blocked writer can delay the run future and even the expiry diagnostic.
+The bounded-return invariant for that path assumes synchronous output writes
+make progress.
 
 ## Metrics destination permission
 

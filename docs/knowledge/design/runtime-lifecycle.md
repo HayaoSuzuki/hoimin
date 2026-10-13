@@ -5,6 +5,11 @@ description: OS別の資源制限と、プロセス終了・一時ファイル�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-844-shell
+  resource: ../../../crates/hoimin-cli/src/shell.rs
+  revision: 1713c3a17face763839ecd93793db52de8147f3f
+  working_tree: modified
+  sha256: 790f2890e17fa91a9da4d776e1d101dc7f2975f7f80e5f764df309494c98635a
 - id: readme
   resource: ../../usage.md
   revision: 2831bde6adf75facf0a379b8a915267c278d8511
@@ -121,3 +126,19 @@ Issue487では、選択済みbackendのmodeと安定したmechanism名を、Star
 [^issue-487]: [2026-09-11-issue-487-resource-report-policy-design.md](../../superpowers/specs/2026-09-11-issue-487-resource-report-policy-design.md)。
 
 [^issue-484]: [2026-09-11-issue-484-metrics-destinations-design.md](../../superpowers/specs/2026-09-11-issue-484-metrics-destinations-design.md)。
+
+# Shell coordination entry point (Issue #844)
+
+The [shell module contract](../../../crates/hoimin-cli/src/shell.rs) maps the
+current dispatch, completion-acceptance and finalization boundaries. Consult it
+before changing cancellation, deadlines or output failure handling; it points
+to the existing guide, native tests and model comparisons. `DiskLifecycle`
+controls safety admission, while `CleanupProgress` records local attempts and
+cannot authorize deletion. Task termination and buffered ownership recovery do
+not by themselves acknowledge completion to core.[^issue-844-shell]
+
+This is a documentation change verified against the implementation, not a new
+shutdown guarantee or a fresh proof of Rust/OS behavior. Existing model and
+platform evidence above retains its original scope.
+
+[^issue-844-shell]: [Shell coordination contract](../../../crates/hoimin-cli/src/shell.rs).

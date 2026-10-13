@@ -1,3 +1,47 @@
+//! Coordinates effects, completion acceptance and resource finalization for a run.
+//!
+//! [`hoimin_core::transition`] computes state and effects without I/O. This module
+//! dispatches those effects and feeds accepted events back to core. Keep stop
+//! observation, pending-effect checks, completion acceptance and transition in
+//! `run_loop_context` in their audited order when changing scheduling.
+//!
+//! Process tasks own requests and share the process handler; their completions
+//! carry worker accounting through acceptance and join. Workspace-bearing blocking
+//! effects take workspace state or capabilities out of [`ShellContext`];
+//! `accept_blocking_completion` restores returned ownership. A task join alone
+//! does not acknowledge a core effect. At shutdown expiry, `drain_processes`
+//! recovers buffered payloads and accounting before aborting async wrappers;
+//! this recovery does not certify cleanup, session or final-output completion.
+//!
+//! The first shutdown cause and absolute deadline remain fixed through draining
+//! and outer finalization. An already-running blocking operation can outlive an
+//! aborted wrapper or timed-out wait. Resource close may detach with ownership;
+//! unsafe workspace removal is deferred to the managed-root janitor. Later task
+//! termination is not evidence of an accepted completion before expiry.
+//!
+//! [`hoimin_core::disk::DiskLifecycle`] governs dispatch, cleanup and finish
+//! admission. `CleanupProgress` records local attempts, including rejected
+//! requests, so outer finalization does not repeat them; it grants no removal
+//! permission. Execution-root removal requires process/output drain, monitor
+//! and final-measurement quiescence. On the successful path, execution cleanup
+//! precedes final report delivery; write/flush and delivery-root cleanup precede
+//! the final `OutputEmitted` event. Failures retain incomplete cleanup evidence.
+//!
+//! Owned CLI report delivery moves the writer and delivery-root leases into
+//! blocking work and bounds the async wait. Expiry cannot stop a running write
+//! or flush, so its ownership must remain live. Borrowed library writers execute
+//! inline, may be non-`Send`, and can delay return if synchronous `Write` blocks.
+//!
+//! For deadline details, see the [development guide]. For cancellation, expiry
+//! or output-failure changes, start with this module's `tests` (budget, drain,
+//! cleanup and finalization), `report::delivery::tests`, and CLI integration tests
+//! `lean_shutdown_oracle.rs` and `lean_disk_shutdown_oracle.rs`. Their model
+//! entry points are `ShutdownModel.lean` and `DiskGuardModel.lean` under
+//! `formal/HoiminOracle/HoiminOracle/`: proofs concern the models, while adapters
+//! compare selected implementation observations, not all Rust/OS executions.
+//!
+//! [development guide]: https://github.com/HayaoSuzuki/hoimin/blob/main/docs/development.md#shutdown-deadline-invariants
+
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::future::Future;
 use std::io::Write;
