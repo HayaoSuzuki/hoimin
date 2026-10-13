@@ -14,7 +14,7 @@ Selected boundaries:
 - Report encoding: human, JSON Lines, JSON with its spool, and released JSON.
 - Owned report delivery: idle with a handler, running with a join handle, and
   unavailable after a task panic. Cancellation retains the running join handle.
-- Python boundary runner: a closed set of result statuses using `StrEnum`,
+- Python boundary runner: a closed set of result statuses using `Enum`,
   retaining the existing JSON strings and raw observation input validation.
 
 Independent observations remain independent: outcome and exit-policy flags can
@@ -63,8 +63,9 @@ deliberate exclusions, not a requirement to eliminate every bool or string.
 4. **Delivery:** a cancelled await retains `Running`; a join panic becomes
    `Unavailable`, rejects later writes and does not claim quiescence. Owners and
    stderr locking retain their original drop order and selection policy.
-5. **Python and scope:** `BoundaryStatus` members retain string comparison and
-   JSON serialization. Membership and count generation share the same closed
+5. **Python and scope:** `BoundaryStatus` members use enum identity; string
+   comparison and JSON serialization explicitly use `.value`. Membership and
+   count generation share the same closed
    set; parsed observation records remain strings until existing validation.
    Independent flags and public schemas are unchanged.
 
@@ -142,3 +143,29 @@ target path was resolved, checked against the exact workspace path and checked
 for redirection, then cleaned with `cargo clean --target-dir`: 4,749 files and
 4.8 GiB removed. Drive C had 181,815,681,024 bytes free afterward. No shared Cargo
 target or cache was cleaned.
+
+## Follow-up: ordinary Python Enum
+
+Use `Enum`, not `StrEnum` or a `str` mixin, as requested. Classification returns
+an enum member; raw observation and report records retain strings. Convert with
+`.value` at those boundaries, including JSON count keys. This replaces the
+initial implicit string compatibility without changing the wire format.
+
+Five design reviews checked type separation, serialization, captured-input
+validation, error precedence and the absence of new dependencies. Five plan
+reviews checked the existing PR branch, a failing type assertion before edits,
+all status-use sites, focused regression coverage and retained Rust results.
+Five implementation reviews checked observation comparisons, all execution exit
+paths, missing-result rows, captured-result membership and count/exit-policy
+comparisons. Five verification reviews checked the expected three red cases,
+40 passing boundary tests with one platform skip, strict lint/typing, baseline
+parity with explicit enum-value serialization, and unchanged Rust sources (no
+Cargo rebuild or additional disk artifacts needed).
+
+The focused suite initially failed three type assertions with `StrEnum`, then
+passed after conversion. The 324-case differential probe also passes after
+explicit `.value` conversion. Ruff check/format and ty pass. The preceding full
+Rust/Python suite results apply to the initial change; this follow-up reruns the
+affected Python suite rather than claiming a fresh full run.
+The supported strict documentation build and link checks pass. A fresh
+independent read-only review of every status-use site found no issues.

@@ -9,7 +9,7 @@ import subprocess
 import sys
 import time
 from collections.abc import Sequence
-from enum import StrEnum
+from enum import Enum
 from pathlib import Path
 from typing import Literal, NotRequired, TypedDict, TypeGuard
 
@@ -19,7 +19,7 @@ MARKER = "BOUNDARY_OBSERVATION "
 MAX_TIMEOUT_SECONDS = 180
 
 
-class BoundaryStatus(StrEnum):
+class BoundaryStatus(Enum):
     """Classified evidence outcomes, serialized with the existing report strings."""
 
     MATCH = "match"
@@ -168,14 +168,14 @@ def observations(log: str) -> list[Observation]:
 
 def classify(code: int, log: str, test: str) -> BoundaryStatus:
     if "BOUNDARY_INFRASTRUCTURE:" in log or any(
-        row["status"] == BoundaryStatus.INFRASTRUCTURE_ERROR
+        row["status"] == BoundaryStatus.INFRASTRUCTURE_ERROR.value
         for row in observations(log)
     ):
         return BoundaryStatus.INFRASTRUCTURE_ERROR
-    if any(row["status"] == BoundaryStatus.MISMATCH for row in observations(log)):
+    if any(row["status"] == BoundaryStatus.MISMATCH.value for row in observations(log)):
         return BoundaryStatus.MISMATCH
     if "SKIP:" in log or any(
-        row["status"] == BoundaryStatus.UNEXECUTED for row in observations(log)
+        row["status"] == BoundaryStatus.UNEXECUTED.value for row in observations(log)
     ):
         return BoundaryStatus.UNEXECUTED
     if code == 0 and f"test {test} ..." in log and "test result: ok. 1 passed;" in log:
@@ -235,7 +235,7 @@ def execute(case: RegistryCase, directory: Path) -> ResultRow:
         return {
             **row,
             "mode": case["mode"],
-            "status": BoundaryStatus.UNEXECUTED,
+            "status": BoundaryStatus.UNEXECUTED.value,
             "reason": case.get("reason", "native platform unavailable"),
         }
     argv = [
@@ -277,7 +277,7 @@ def execute(case: RegistryCase, directory: Path) -> ResultRow:
                 return {
                     **row,
                     "mode": case["mode"],
-                    "status": BoundaryStatus.INFRASTRUCTURE_ERROR,
+                    "status": BoundaryStatus.INFRASTRUCTURE_ERROR.value,
                     "reason": "external deadline expired; process group killed",
                     "command": argv,
                     "log": str(log_path),
@@ -287,7 +287,7 @@ def execute(case: RegistryCase, directory: Path) -> ResultRow:
         return {
             **row,
             "mode": case["mode"],
-            "status": status,
+            "status": status.value,
             "returncode": code,
             "command": argv,
             "seconds": time.monotonic() - start,
@@ -298,7 +298,7 @@ def execute(case: RegistryCase, directory: Path) -> ResultRow:
         return {
             **row,
             "mode": case["mode"],
-            "status": BoundaryStatus.INFRASTRUCTURE_ERROR,
+            "status": BoundaryStatus.INFRASTRUCTURE_ERROR.value,
             "reason": str(error),
             "command": argv,
             "returncode": code,
@@ -330,7 +330,7 @@ def main(argv: list[str] | None = None) -> int:
             for case in registry["cases"]:
                 unexecuted = {
                     **case,
-                    "status": BoundaryStatus.UNEXECUTED,
+                    "status": BoundaryStatus.UNEXECUTED.value,
                     "reason": (
                         "strict results unavailable; earlier gate did not execute"
                     ),
@@ -350,25 +350,26 @@ def main(argv: list[str] | None = None) -> int:
                     "captured results do not match the current complete registry"
                 )
             report = captured
+        valid_statuses = {status.value for status in BoundaryStatus}
         if (
             report["registry_sha256"] != digest
             or len(report["rows"]) != len(registry["cases"])
             or {row["id"] for row in report["rows"]}
             != {case["id"] for case in registry["cases"]}
-            or any(row["status"] not in BoundaryStatus for row in report["rows"])
+            or any(row["status"] not in valid_statuses for row in report["rows"])
         ):
             parser.error("captured results do not match the current complete registry")
     destination = args.output / (args.mode + ".json")
     destination.write_text(json.dumps(report, indent=2) + "\n")
     counts = {
-        status: sum(row["status"] == status for row in report["rows"])
+        status.value: sum(row["status"] == status.value for row in report["rows"])
         for status in BoundaryStatus
     }
     print(json.dumps({"report": str(destination), "counts": counts}))  # noqa: T201 - CLI status or failure diagnostics.
     return int(
         args.mode == "strict"
         and any(
-            row.get("mode") == "strict" and row["status"] != BoundaryStatus.MATCH
+            row.get("mode") == "strict" and row["status"] != BoundaryStatus.MATCH.value
             for row in report["rows"]
         )
     )
