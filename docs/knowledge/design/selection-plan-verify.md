@@ -5,6 +5,16 @@ description: 候補発見と実行の分離、ランキング、部分集合、�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-843-config
+  resource: ../../../crates/hoimin-core/src/config.rs
+  revision: 16285fdd71b9db1da6570e7b3dbc4d234c3928fe
+  working_tree: clean
+  sha256: 16a4ceacacb685bf8d9440da50fa4219a001ec655a64a6d3ab8e94b5ac9dc46d
+- id: issue-843-plan
+  resource: ../../../crates/hoimin-cli/src/plan.rs
+  revision: 16285fdd71b9db1da6570e7b3dbc4d234c3928fe
+  working_tree: clean
+  sha256: 02d0e43624c9f64ac2372b31ebc3a36495024fc0bdc4191b13a57a3144a040ac
 - id: issue-759-staged-report
   resource: ../../superpowers/reports/2026-10-11-issue-759-staged-verification.md
   working_tree: untracked
@@ -434,3 +444,23 @@ confirmに人工sleepを置いた一回の小規模測定であり、実OSSの�
 stage metadata、自動集約、resumeを製品機能として実装したとは扱わない。[^issue-759-staged-report]
 
 [^issue-759-staged-report]: [#759 段階的検証の実現性調査](../../superpowers/reports/2026-10-11-issue-759-staged-verification.md)。条件、運用手順、セルフレビュー各5回。
+
+# Configuration root consistency (Issue #843)
+
+`RunConfig::validate()` and `PlanConfig::validate()` reject a configuration
+whose `root` differs from `selection.root`. The shared selection validator
+owns this rule. Equality compares path components without filesystem access
+or canonicalization; callers must validate after public-field mutation or
+deserialization.[^issue-843-config]
+
+The common manifest header validator delegates normalized configuration checks
+to `PlanConfig::validate()`. Schema, kind and ranking-version errors retain
+precedence, and root mismatch retains the diagnostic `selection root differs
+from normalized config root`. Other selection errors now precede fingerprint
+environment errors, and invalid configuration precedes invalid manifest records
+or candidates. Read-only review does not capture the live environment; verify
+still does. Saved fields, schema versions and fingerprint encoding are unchanged
+by this validation refactor.[^issue-843-config][^issue-843-plan]
+
+[^issue-843-config]: [Configuration validation](../../../crates/hoimin-core/src/config.rs).
+[^issue-843-plan]: [Manifest validation](../../../crates/hoimin-cli/src/plan.rs).

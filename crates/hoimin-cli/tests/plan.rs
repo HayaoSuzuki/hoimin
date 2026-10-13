@@ -1294,7 +1294,10 @@ async fn verify_rejects_incoherent_selection_root_before_baseline() {
         .await
         .unwrap_err();
 
-    assert_error_code(error, "plan.manifest.invalid");
+    assert_eq!(
+        error.to_string(),
+        "plan.manifest.invalid: selection root differs from normalized config root"
+    );
     assert!(!marker.exists());
 }
 
