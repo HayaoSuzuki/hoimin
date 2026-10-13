@@ -1,3 +1,33 @@
+//! Owns each child process lifecycle, resource supervision and output collection.
+//!
+//! Once polled, [`ProcessHandler::run`] starts an owned Tokio task. Dropping the
+//! waiting future detaches that task; it neither requests cancellation nor proves
+//! that the child, supervisor or output work has finished. Keep the runtime alive
+//! for that work to progress. Retain a [`ProcessCancellation`] clone to request
+//! termination, and a handler clone to observe shutdown when the waiter is gone.
+//!
+//! Cancellation requests, lifecycle results, drain evidence and backend release
+//! serve different purposes. [`ProcessHandler::drain_for_shutdown`] observes
+//! tracked process/output activity and then attempts backend close; it does not
+//! stop dispatch or send cancellation requests. The caller must coordinate new
+//! dispatch and in-flight setup: an idle observation cannot prevent later work.
+//! A successful process result alone does not prove tree quiescence on every
+//! backend. [`ProcessDrainReport`] records the available evidence separately from
+//! close errors and from whether output collection produced usable data.
+//!
+//! The drain budget is shared by activity observation and waiting for backend
+//! close. The shell passes the remaining time from its existing absolute shutdown
+//! deadline. A timed-out close wait can leave blocking cleanup running with its
+//! backend ownership; it does not revoke already-observed drain evidence.
+//!
+//! See [`crate::shell`] for dispatch/completion acceptance and workspace cleanup
+//! admission, and the [development guide] for deadline invariants. Local tests
+//! cover detached callers and drain/close evidence; `tests/process_handler.rs`
+//! covers cancellation, descendant cleanup and backend-specific limits. These
+//! contracts do not extend a backend's descendant-tracking guarantees.
+//!
+//! [development guide]: https://github.com/HayaoSuzuki/hoimin/blob/main/docs/development.md#shutdown-deadline-invariants
+
 mod blocking;
 mod output;
 
@@ -33,6 +63,9 @@ enum ProcessSelection<T> {
     Exited(T),
 }
 
+/// A shared, one-way termination request for a process lifecycle.
+///
+/// Clones share the request state. Dropping a token does not cancel the process.
 #[derive(Clone, Debug)]
 pub struct ProcessCancellation {
     state: Arc<CancellationState>,
@@ -109,6 +142,11 @@ impl ProcessCancellation {
         }
     }
 
+    /// Requests cancellation for every request using this token; repeated calls are harmless.
+    ///
+    /// Coordinates with the spawn boundary, but does not wait for termination,
+    /// root reap, supervisor cleanup or output collection. Await the run result
+    /// and, when shutting down, inspect [`ProcessHandler::drain_for_shutdown`].
     pub fn cancel(&self) {
         let _spawn = self
             .state
@@ -148,6 +186,10 @@ impl Default for ProcessCancellation {
     }
 }
 
+/// A process command with its cancellation and optional environment policy.
+///
+/// Conversion from [`RunProcess`] creates a fresh cancellation token. Supply a
+/// retained token with [`Self::with_cancellation`] to request cancellation later.
 #[derive(Clone, Debug)]
 pub struct ProcessRequest {
     process: RunProcess,
@@ -157,6 +199,7 @@ pub struct ProcessRequest {
 }
 
 impl ProcessRequest {
+    /// Uses the supplied shared token, including any cancellation already requested.
     #[must_use]
     pub fn with_cancellation(mut self, cancellation: ProcessCancellation) -> Self {
         self.cancellation = cancellation;
@@ -192,6 +235,10 @@ pub enum ProcessError {
     InvalidSpoolToken(String),
 }
 
+/// Runs owned process lifecycles; clones share backend and shutdown evidence.
+///
+/// The caller owns dispatch admission and cancellation policy. This handler's
+/// drain report is an observation, not a gate preventing future requests.
 #[derive(Clone, Debug)]
 pub struct ProcessHandler {
     backend: ResourceBackend,
@@ -202,10 +249,22 @@ pub struct ProcessHandler {
     output_drain_failed: Arc<AtomicBool>,
 }
 
+/// Shutdown evidence observed by [`ProcessHandler::drain_for_shutdown`].
+///
+/// If a drain poll observes either tracked component still active after the
+/// deadline, both flags are false and backend close is not attempted. Once both
+/// settle, flags retain their observed values even if backend close fails or times out.
+/// Recorded loss of reap/drain evidence persists across handler clones and calls.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ProcessDrainReport {
+    /// Tracked process work settled without failed or unproven reap/cleanup.
+    /// This does not certify future dispatch or descendants outside backend guarantees.
     pub all_reaped: bool,
+    /// Output work settled without losing quiescence evidence.
+    /// This can be true after a completed I/O error; it does not imply complete output.
     pub output_drains_joined: bool,
+    /// Backend-close, close-task join or close-wait timeout errors after activity settled.
+    /// Empty does not by itself prove close was attempted or process/output drain succeeded.
     pub secondary_errors: Vec<String>,
 }
 
@@ -297,7 +356,12 @@ impl ProcessHandler {
         self.backend.mode()
     }
 
-    /// Releases resources owned by the process backend.
+    /// Synchronously releases resources owned by the process backend.
+    ///
+    /// May block and has no shutdown budget. It does not send cancellation tokens,
+    /// await owned lifecycle/output tasks or produce drain evidence, even when the
+    /// backend itself terminates processes. For coordinated shutdown, use
+    /// [`Self::drain_for_shutdown`] after stopping dispatch and requesting cancellation.
     ///
     /// # Errors
     ///
@@ -306,6 +370,20 @@ impl ProcessHandler {
         self.backend.close()
     }
 
+    /// Waits for tracked process/output work to settle, then attempts backend close.
+    ///
+    /// The caller must stop new dispatch and request cancellation as needed before
+    /// calling. Coordinate in-flight setup as well: work not yet registered as
+    /// active can outlive an idle observation. This method neither cancels requests
+    /// nor seals the handler against later runs.
+    ///
+    /// `budget` starts when this future is polled and covers observation plus the
+    /// close wait under one deadline. Pass the remaining duration of an existing
+    /// shutdown deadline, rather than restarting its grace period. This is an async
+    /// waiting deadline, not a hard wall-clock or blocking-cleanup lifetime limit:
+    /// scheduling can delay observation, and close retains the backend after timeout.
+    /// Inspect both flags and errors in the report; a close error does not erase
+    /// completed reap/output observations.
     pub async fn drain_for_shutdown(&self, budget: Duration) -> ProcessDrainReport {
         let deadline = tokio::time::Instant::now()
             .checked_add(budget)
@@ -348,6 +426,10 @@ impl ProcessHandler {
 
     /// Runs a process with default cancellation and environment settings.
     ///
+    /// Has the owned-task and waiter-drop behavior of [`Self::run`]. Use that
+    /// method with [`ProcessRequest::with_cancellation`] when external cancellation
+    /// is needed; this convenience entry point creates an unshared token.
+    ///
     /// # Errors
     ///
     /// Returns an effect failure when process setup, execution, termination, or output collection fails.
@@ -357,10 +439,20 @@ impl ProcessHandler {
 
     /// Runs a process request, including cancellation, resource supervision, and output collection.
     ///
+    /// Once polled, owns the request and a handler clone in a separate Tokio task.
+    /// Dropping this waiting future leaves that lifecycle running, without returning
+    /// its eventual result to the caller. Keep the runtime alive and use the retained
+    /// cancellation token to request termination. Awaiting the result observes the
+    /// lifecycle's termination and output handling attempts; an error, incomplete
+    /// output or backend limitation can still leave quiescence unproven. Use
+    /// [`Self::drain_for_shutdown`] for aggregate shutdown evidence and backend close.
+    ///
     /// # Errors
     ///
-    /// Returns an effect failure for cancellation, invalid arguments, resource setup, process I/O,
-    /// termination, or output collection errors.
+    /// Returns an effect failure for cancellation before spawn, invalid arguments,
+    /// resource setup, lifecycle task failure, process I/O, termination or output
+    /// collection errors. Cancellation after spawn can instead return a
+    /// [`ProcessFinished`] with [`ProcessTermination::Cancelled`].
     #[tracing::instrument(name = "test_process", level = "debug", skip_all, fields(effect_id = request.process.id.0, worker = request.process.worker, mutant_id = request.process.mutant_id.as_deref()))]
     pub async fn run(&self, request: ProcessRequest) -> Result<ProcessFinished, EffectFailed> {
         let id = request.process.id;
