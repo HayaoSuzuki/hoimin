@@ -13,17 +13,26 @@ use hoimin_core::{
 use self::json::{JsonError, JsonReport};
 
 pub(crate) struct PreparedReport {
-    format: OutputFormat,
-    json: Option<JsonReport>,
+    encoding: ReportEncoding,
+}
+
+/// A JSON spool belongs only to JSON output. Releasing it preserves the format
+/// for stderr diagnostics, but further non-diagnostic events must be rejected.
+enum ReportEncoding {
+    Human,
+    Jsonl,
+    Json(JsonReport),
+    JsonReleased,
 }
 
 impl PreparedReport {
     pub(crate) fn new(format: OutputFormat, spool_dir: impl AsRef<Path>) -> io::Result<Self> {
-        let json = match format {
-            OutputFormat::Json => Some(JsonReport::new(spool_dir.as_ref())?),
-            OutputFormat::Jsonl | OutputFormat::Human => None,
+        let encoding = match format {
+            OutputFormat::Json => ReportEncoding::Json(JsonReport::new(spool_dir.as_ref())?),
+            OutputFormat::Jsonl => ReportEncoding::Jsonl,
+            OutputFormat::Human => ReportEncoding::Human,
         };
-        Ok(Self { format, json })
+        Ok(Self { encoding })
     }
 
     pub(crate) fn attach<Stdout, Stderr>(
@@ -36,20 +45,18 @@ impl PreparedReport {
         Stderr: Write,
     {
         ReportHandler {
-            format: self.format,
+            encoding: self.encoding,
             stdout,
             stderr,
-            json: self.json,
             lock_stdio_stderr: false,
         }
     }
 }
 
 pub struct ReportHandler<Stdout, Stderr> {
-    format: OutputFormat,
+    encoding: ReportEncoding,
     stdout: Stdout,
     stderr: Stderr,
-    json: Option<JsonReport>,
     lock_stdio_stderr: bool,
 }
 
@@ -81,15 +88,15 @@ where
     where
         Spool: Read + Write + Seek + Send + 'static,
     {
-        let json = match format {
-            OutputFormat::Json => Some(JsonReport::with_spool(spool)),
-            OutputFormat::Jsonl | OutputFormat::Human => None,
+        let encoding = match format {
+            OutputFormat::Json => ReportEncoding::Json(JsonReport::with_spool(spool)),
+            OutputFormat::Jsonl => ReportEncoding::Jsonl,
+            OutputFormat::Human => ReportEncoding::Human,
         };
         Self {
-            format,
+            encoding,
             stdout,
             stderr,
-            json,
             lock_stdio_stderr: false,
         }
     }
@@ -107,10 +114,10 @@ where
             // arbitrary library writers retain their own synchronization policy.
             let stderr = io::stderr();
             let _record = self.lock_stdio_stderr.then(|| stderr.lock());
-            match self.format {
-                OutputFormat::Human => human::write_event(&mut self.stderr, &event)
+            match &self.encoding {
+                ReportEncoding::Human => human::write_event(&mut self.stderr, &event)
                     .map_err(|error| human_failed(id, &error))?,
-                OutputFormat::Json | OutputFormat::Jsonl => {
+                ReportEncoding::Json(_) | ReportEncoding::Jsonl | ReportEncoding::JsonReleased => {
                     jsonl::write_buffered_event(&mut self.stderr, &event)
                         .map_err(|error| serialization_failed(id, &error))?;
                 }
@@ -118,24 +125,26 @@ where
             return Ok(OutputEmitted { id });
         }
 
-        match self.format {
-            OutputFormat::Jsonl => jsonl::write_event(&mut self.stdout, &event)
+        match &mut self.encoding {
+            ReportEncoding::Jsonl => jsonl::write_event(&mut self.stdout, &event)
                 .map_err(|error| serialization_failed(id, &error))?,
-            OutputFormat::Json => {
-                let report = self.json.as_mut().ok_or_else(|| EffectFailed {
-                    id,
-                    failure: EffectFailure::ReportState {
-                        message: "JSON report state was not initialized".to_owned(),
-                    },
-                })?;
+            ReportEncoding::Json(report) => {
                 report
                     .record(&event, &mut self.stdout)
                     .map_err(|error| json_failed(id, error))?;
             }
-            OutputFormat::Human => human::write_event(&mut self.stdout, &event)
+            ReportEncoding::JsonReleased => {
+                return Err(EffectFailed {
+                    id,
+                    failure: EffectFailure::ReportState {
+                        message: "JSON report state was not initialized".to_owned(),
+                    },
+                });
+            }
+            ReportEncoding::Human => human::write_event(&mut self.stdout, &event)
                 .map_err(|error| human_failed(id, &error))?,
         }
-        if self.format == OutputFormat::Human
+        if matches!(self.encoding, ReportEncoding::Human)
             && let OutputEvent::MutantFinished(value) = &event
             && !value.diagnostics.is_empty()
         {
@@ -152,7 +161,9 @@ where
         let stderr = self.stderr.flush();
         // Release the descendant spool handle even when either external writer fails. Windows
         // cannot claim the delivery directory while any descendant file remains open.
-        self.json = None;
+        if matches!(self.encoding, ReportEncoding::Json(_)) {
+            self.encoding = ReportEncoding::JsonReleased;
+        }
         stdout.and(stderr)
     }
 }
@@ -208,25 +219,46 @@ mod tests {
     fn assert_send<T: Send>() {}
 
     #[test]
-    fn prepared_report_is_send_and_encodes_format_state() {
+    fn prepared_report_is_send() {
         assert_send::<PreparedReport>();
-        let spool_dir = tempfile::tempdir().unwrap();
+    }
 
-        let json = PreparedReport::new(OutputFormat::Json, spool_dir.path())
-            .unwrap()
-            .attach(Vec::new(), Vec::new());
-        let jsonl = PreparedReport::new(OutputFormat::Jsonl, spool_dir.path())
-            .unwrap()
-            .attach(Vec::new(), Vec::new());
-        let human = PreparedReport::new(OutputFormat::Human, spool_dir.path())
-            .unwrap()
-            .attach(Vec::new(), Vec::new());
+    #[test]
+    fn released_json_rejects_report_events_but_retains_stderr_diagnostics() {
+        let mut handler = ReportHandler::with_mutant_spool(
+            OutputFormat::Json,
+            Vec::new(),
+            Vec::new(),
+            io::Cursor::new(Vec::new()),
+        );
+        handler.flush_and_release_spool().unwrap();
+        let diagnostic = EmitOutput {
+            id: hoimin_core::EffectId(1),
+            event: OutputEvent::Diagnostic(hoimin_core::Diagnostic::new(
+                "run",
+                1,
+                "warning",
+                "late",
+                "late diagnostic",
+            )),
+        };
+        let started = EmitOutput {
+            id: hoimin_core::EffectId(2),
+            event: OutputEvent::MutantStarted(hoimin_core::MutantStarted::new("run", 2, "m1", 1)),
+        };
 
-        assert!(json.json.is_some());
-        assert!(jsonl.json.is_none());
-        assert!(human.json.is_none());
-        assert_eq!(json.format, OutputFormat::Json);
-        assert_eq!(jsonl.format, OutputFormat::Jsonl);
-        assert_eq!(human.format, OutputFormat::Human);
+        let acknowledged = handler.handle(diagnostic).unwrap();
+        let rejected = handler.handle(started).unwrap_err();
+
+        assert_eq!(acknowledged.id, hoimin_core::EffectId(1));
+        assert_eq!(rejected.id, hoimin_core::EffectId(2));
+        assert!(matches!(
+            rejected.failure,
+            EffectFailure::ReportState { .. }
+        ));
+        assert_eq!(handler.stdout, [] as [u8; 0]);
+        let emitted: serde_json::Value = serde_json::from_slice(&handler.stderr).unwrap();
+        assert_eq!(emitted["kind"], "diagnostic");
+        assert_eq!(emitted["code"], "late");
     }
 }

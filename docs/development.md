@@ -82,6 +82,11 @@ see the [cleanup progress record](maintenance/2026-10-12-cleanup-progress.md).
 The [follow-up verification record](maintenance/2026-10-13-philosophy-stack-verification.md)
 collects the four changes' shared checks, independent review and platform limits.
 
+Use enums with associated data for mutually exclusive execution states. Keep
+independent observations separate, and retain ownership across cancelled awaits.
+The [enum boundary record](maintenance/2026-10-13-enum-state-boundaries.md)
+explains the metrics and report states, exclusions and verification.
+
 ## Documentation publication
 
 Edit the existing Markdown and open a PR; the Documentation workflow checks the
