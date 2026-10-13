@@ -5,6 +5,10 @@ procedure for your task, then consult the linked contracts and implementation.
 For using hoimin to improve another project's tests, see the
 [plan/verify workflow](usage.md#plan-and-verify-with-an-agent).
 
+For the runtime boundary, component responsibilities and execution flow, start
+with the [C4 architecture views](architecture/c4-model.md), maintained as Markdown
+and Mermaid in the repository.
+
 ## Find the procedure for your change
 
 Use these entry points before reading implementation or audit notes:
