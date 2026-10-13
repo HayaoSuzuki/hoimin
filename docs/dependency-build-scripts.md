@@ -1,16 +1,17 @@
 # Build script inventory
 
-Observed 2026-10-12 from locked, all-feature, unfiltered Cargo metadata.
+Observed 2026-10-14 from locked, all-feature, unfiltered Cargo metadata.
 Regenerate and review with the [dependency policy](dependency-policy.md).
 Names/versions identify build targets; their contents have not been certified.
 
 ## main workspace
 
-Graph packages: 210. Normal, build and dev dependencies included.
+Graph packages: 218. Normal, build and dev dependencies included.
 
 | Package | Version |
 | --- | --- |
 | blake3 | 1.8.7 |
+| borsh | 1.8.1 |
 | camino | 1.2.6 |
 | cap-fs-ext | 4.0.3 |
 | cap-primitives | 4.0.3 |
@@ -19,7 +20,6 @@ Graph packages: 210. Normal, build and dev dependencies included.
 | crossbeam-deque | 0.8.8 |
 | crossbeam-epoch | 0.9.21 |
 | crossbeam-utils | 0.8.23 |
-| getrandom | 0.3.4 |
 | getrandom | 0.4.3 |
 | io-extras | 0.19.0 |
 | io-lifetimes | 2.0.4 |
@@ -61,7 +61,6 @@ Graph packages: 210. Normal, build and dev dependencies included.
 | windows_x86_64_gnullvm | 0.53.1 |
 | windows_x86_64_msvc | 0.52.6 |
 | windows_x86_64_msvc | 0.53.1 |
-| wit-bindgen | 0.57.1 |
 | zerocopy | 0.8.57 |
 | zmij | 1.0.23 |
 

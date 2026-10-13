@@ -189,7 +189,7 @@ def wheel_path(
     supported_tags: Collection[Tag] | None = None,
 ) -> Path:
     override = environment.get("HOIMIN_WHEEL")
-    if override:
+    if bool(override):
         wheel = Path(override).resolve()
         assert wheel.is_file(), f"HOIMIN_WHEEL does not exist: {wheel}"
         expected_name, expected_version = project_identity()
@@ -376,7 +376,7 @@ def main() -> int:
         exercise_cli(
             executable, python, temporary_root / "project", str(project_identity()[1])
         )
-        if report := os.environ.get("HOIMIN_SMOKE_REPORT"):
+        if bool(report := os.environ.get("HOIMIN_SMOKE_REPORT")):
             Path(report).write_text(
                 json.dumps(
                     {

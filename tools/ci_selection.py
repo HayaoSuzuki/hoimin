@@ -200,7 +200,7 @@ def main() -> int:
     )
     outputs = flags | {"cgroup": cgroup}
     print(json.dumps(outputs, sort_keys=True))  # noqa: T201 -- CLI output contract
-    if output := os.environ.get("GITHUB_OUTPUT"):
+    if bool(output := os.environ.get("GITHUB_OUTPUT")):
         with Path(output).open("a", encoding="utf-8") as stream:
             stream.writelines(
                 f"{key}={str(value).lower()}\n" for key, value in outputs.items()

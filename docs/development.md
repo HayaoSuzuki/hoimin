@@ -327,6 +327,13 @@ vulnerabilities; they do not prove the absence of security defects. Renovate
 continues to propose dependency and lockfile updates separately. Review and fix
 findings instead of adding blanket exclusions or allowing failed audits to pass.
 
+CI uses Python 3.14, matching `project.requires-python`. The Renovate rule for
+`actions/python-versions` permits only that minor series; review the rule and
+workflow interpreters together when the supported Python range changes.
+Hypothesis is pinned identically in the `dev` and `fuzz` groups so lockfile
+regeneration cannot select a newer release than the update under review. Keep
+both pins and `uv.lock` synchronized when accepting its next update.
+
 ## Property-based boundary tests
 
 Proptest is already a development dependency in both Rust crates. The
