@@ -1,10 +1,25 @@
 ---
 type: Contract
-title: Rust dependency licenses and sources
-description: Deny-by-default policies for both workspaces and build-script diff review.
+title: Dependency licenses, sources and update constraints
+description: Rust license/source policies, build-script review and development update constraints.
 status: draft
 catalog_revision: 79b6bde29b05e9904c8efff59e02d0c45377d7f7
 sources:
+- id: update-rules
+  resource: ../../renovate.json
+  revision: 0a545ea642275abc38ff501e6727dbedb691c3e7
+  working_tree: modified
+  sha256: 9c86694f5e095191faca959a0c73c67dfaec811306be6e5cdad79733d184288f
+- id: python-pins
+  resource: ../../pyproject.toml
+  revision: 0a545ea642275abc38ff501e6727dbedb691c3e7
+  working_tree: modified
+  sha256: b5b30d8e87b7c8c85f1e8b01defbc8e69cd6788c369301c4cbd8d00d4826532f
+- id: inventory-862
+  resource: ../dependency-build-scripts.md
+  revision: 0a545ea642275abc38ff501e6727dbedb691c3e7
+  working_tree: modified
+  sha256: 730c6d8e081922bc008daf2c52845a69ab7fe8d6447c0ee4ad4495ab9dc2c694
 - id: policy
   resource: ../dependency-policy.md
   revision: 34723ff3f9b19c28140a6efad0651e542e25b8c1
@@ -47,3 +62,20 @@ Maintain vulnerability audits and SBOMs as separate checks and evidence.[^policy
 [^workflow]: [Dependency audit workflow](../../.github/workflows/dependency-audit.yml).
 
 The optional `contracts` 0.6.11 proc macro has an exact-version MPL-2.0 exception; the global allow-list remains unchanged. See [typed results and contracts](typed-results-and-contracts.md).[^policy][^config]
+
+# Development update constraints
+
+CI Python updates are limited to the supported 3.14 minor series. Review the
+Renovate `actions/python-versions` rule alongside package support when changing
+that range. Hypothesis has matching exact dev/fuzz pins so lock regeneration
+cannot select a newer version than the dependency update under review.
+These constraints do not disable Action updates or replace dependency audits.
+[^update-rules][^python-pins]
+
+The October 14 inventory records 218 main-workspace packages and 93 fuzz packages
+from locked, all-feature metadata. Its changed build-script list is review
+input, not a certification of dependency code.[^inventory-862]
+
+[^update-rules]: [Renovate rules](../../renovate.json).
+[^python-pins]: [Python package and development requirements](../../pyproject.toml).
+[^inventory-862]: [Build script inventory](../dependency-build-scripts.md).

@@ -19,7 +19,7 @@ from typing import cast
 import deal
 from returns.result import Failure, Result, Success
 
-if __package__:
+if bool(__package__):
     from .release_policy import PLATFORM_NAMES, RELEASE_PLATFORMS, SEMVER
 else:
     from release_policy import PLATFORM_NAMES, RELEASE_PLATFORMS, SEMVER
@@ -268,7 +268,7 @@ def checksums(
         + ("zip" if platform.startswith("windows") else "tar.gz")
         for platform in PLATFORMS
     }
-    sbom = importlib.import_module("tools.sbom" if __package__ else "sbom")
+    sbom = importlib.import_module("tools.sbom" if bool(__package__) else "sbom")
     expected.update(
         sbom.filename(version, platform, kind)
         for platform in PLATFORMS

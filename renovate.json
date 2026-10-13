@@ -65,6 +65,16 @@
       ],
       "groupName": "workflow linters",
       "minimumReleaseAge": "3 days"
+    },
+    {
+      "description": "Keep CI Python within the supported pyproject.toml range; review together when support changes",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchPackageNames": [
+        "actions/python-versions"
+      ],
+      "allowedVersions": ">=3.14 <3.15"
     }
   ]
 }

@@ -40,7 +40,7 @@ def test_rejects_unsupported_process_groups_before_spawning(
 
 
 requires_posix_guard = pytest.mark.skipif(
-    os.name != "posix" or not shutil.which("ps"),
+    os.name != "posix" or shutil.which("ps") is None,
     reason="Lean RSS guard requires POSIX process groups and ps",
 )
 

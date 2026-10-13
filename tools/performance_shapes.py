@@ -848,7 +848,7 @@ def main() -> int:  # noqa: C901, PLR0912, PLR0915
                 ]
             }
             for row in registry["shapes"]:
-                if args.shape and row["fixture"] not in args.shape:
+                if bool(args.shape) and row["fixture"] not in args.shape:
                     continue
                 for size in row["sizes"]:
                     for label, info in result["binaries"].items():

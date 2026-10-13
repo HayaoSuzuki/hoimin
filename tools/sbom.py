@@ -15,7 +15,7 @@ from jsonschema import Draft7Validator, ValidationError
 from jsonschema.protocols import Validator
 from referencing import Registry, Resource
 
-if __package__:
+if bool(__package__):
     from .release_policy import RELEASE_PLATFORMS
 else:
     from release_policy import RELEASE_PLATFORMS
