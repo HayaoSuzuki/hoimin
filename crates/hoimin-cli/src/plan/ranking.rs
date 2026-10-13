@@ -263,6 +263,7 @@ fn operator_reason(operator: &str) -> Option<RankingReasonCode> {
         MutationOperator::ContainerElementDelete
         | MutationOperator::FunctionBodyReturnConstant
         | MutationOperator::MethodCallRemove
+        | MutationOperator::StdlibConversionCallRemove
         | MutationOperator::ConversionCallRemove
         | MutationOperator::OptionalKeywordDelete
         | MutationOperator::StringLiteralEmpty

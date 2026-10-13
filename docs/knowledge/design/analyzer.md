@@ -5,6 +5,10 @@ description: 構文・名前解決・変更するバイト範囲・候補保持�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: stdlib-conversion
+  resource: ../../maintenance/2026-10-13-stdlib-conversion.md
+  working_tree: untracked
+  sha256: 17840b0c701b2108d433ff427a92117a4dded737fb648388c31df99e0ec37376
 - id: issue-851-protocol
   resource: ../../maintenance/2026-10-13-analyzer-protocol.md
 - id: issue-849-initialization
@@ -810,9 +814,10 @@ docstring・型注釈・明示的な型エイリアス・パターン・bytes・
 debug由来のテキストは対象外だが、その前後に別途書かれた固定テキストは対象になり得る。
 既存の `string_literal_empty` 用の補間文字列全体の除外を保ち、新演算子には別の除外範囲を使う。[^string-segment-exclusions]
 
-ユーザー指定により、この演算子は既定で有効とし、現在の既定選択は53種類、公開IDは計72種類である。
-`--exclude-operators string_segment_empty` で追加前の52種類に戻せる。
-以前の50種類へ戻すには、さらに `method_call_remove,function_body_return_constant` も除外する。
+ユーザー指定により、この演算子は既定で有効とした。導入時の既定選択は53種類、公開IDは計72種類だった。
+導入時は `--exclude-operators string_segment_empty` で追加前の52種類に戻せた。
+以前の50種類へ戻すには、さらに `method_call_remove,function_body_return_constant` も除外した。
+現在の除外指定は [利用ガイド](../../usage.md#mutation-operators) を参照。
 明示選択と保存済みplanの演算子集合は展開し直さず、既存候補IDと `all_legacy()` の意味も保持する。
 新しい既定実行では候補数・所要時間・上限内に残る候補が変わり得る。[^string-segment-selection]
 
@@ -841,3 +846,9 @@ CPython 3.14による実行で構文・値・補間の回数と順序・conversi
 現行処理は Rust 解析器を直接呼び、候補と診断を型付きで受け取る。旧 `AnalyzerProtocol` の利用箇所は専用テストと fuzz target に限られ、保持目的を確認できなかったため削除した。候補・診断の3型は `types.rs` に移し、公開名と定義を維持した。候補検証、spool、順序、打ち切り、および CLI の JSON/JSONL レポートは変更していない。削除した Rust API と検証範囲は作業記録を参照。[^issue-851-protocol]
 
 [^issue-851-protocol]: [Issue #851 maintenance record](../../maintenance/2026-10-13-analyzer-protocol.md).
+
+# 標準ライブラリの数値変換削除
+
+`stdlib_conversion_call_remove` は、静的に import 元を確認できる `decimal.Decimal` と `fractions.Fraction` の1引数呼び出しを、括弧付きの引数へ置換する。引数を1回評価し、変換後と数値が等しくても戻り値の型が異なる変異を生成する。既定で有効とし、既定選択は54種類、公開IDは計73種類となる。個別除外で従来の53演算子へ戻せる。再束縛などの除外条件、互換性および検証範囲は作業記録を参照。[^stdlib-conversion]
+
+[^stdlib-conversion]: [Standard-library conversion removal](../../maintenance/2026-10-13-stdlib-conversion.md).

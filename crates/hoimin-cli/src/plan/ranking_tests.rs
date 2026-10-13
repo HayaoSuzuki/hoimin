@@ -585,6 +585,7 @@ const BEHAVIORAL_OPERATORS: &[&str] = &[
     "string_segment_empty",
     "optional_keyword_delete",
     "conversion_call_remove",
+    "stdlib_conversion_call_remove",
     "container_element_delete",
     "statement_delete",
     "operator_function",
@@ -669,7 +670,7 @@ fn ranking_assigns_every_operator_to_its_fixed_category() {
         .into_iter()
         .filter_map(MutationOperator::from_name)
         .collect::<BTreeSet<_>>();
-    assert_eq!(tested.len(), 72);
+    assert_eq!(tested.len(), 73);
     assert_eq!(tested, canonical);
 
     for (operators, expected) in categories {

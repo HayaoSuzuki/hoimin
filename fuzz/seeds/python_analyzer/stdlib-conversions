@@ -1,0 +1,4 @@
+from decimal import Decimal as D
+from fractions import Fraction as F
+def convert(value):
+    return D(value), F(value)

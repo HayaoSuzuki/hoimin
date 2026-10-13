@@ -740,12 +740,13 @@ Mutation operator IDs and selector families:
   exception_risky, exception_tuple_add_pair, exception_tuple_remove_member, exception_type_pair
   function_body_erase, function_body_return_constant, identity, integer_literal_neighbor
   membership, method_call_remove, operator_function, optional_keyword_delete
-  remove_not, return_tuple_swap, statement_delete, string_literal_empty
-  string_segment_empty, structure_append_extend, structure_index_neighbor, structure_mapping_get_subscript
-  structure_ops, structure_slice_neighbor, structure_sort_reverse, structure_sorted_reversed
-  type_collections, type_dict_mapping, type_iterable_iterator, type_iterables
-  type_list_sequence, type_nullable, type_nullable_add, type_nullable_remove
-  type_sequence_iterable, type_set_abstract_set, unary_sign, while_condition_false
+  remove_not, return_tuple_swap, statement_delete, stdlib_conversion_call_remove
+  string_literal_empty, string_segment_empty, structure_append_extend, structure_index_neighbor
+  structure_mapping_get_subscript, structure_ops, structure_slice_neighbor, structure_sort_reverse
+  structure_sorted_reversed, type_collections, type_dict_mapping, type_iterable_iterator
+  type_iterables, type_list_sequence, type_nullable, type_nullable_add
+  type_nullable_remove, type_sequence_iterable, type_set_abstract_set, unary_sign
+  while_condition_false
 ```
 
 Argument constraints:
@@ -1082,12 +1083,13 @@ Mutation operator IDs and selector families:
   exception_risky, exception_tuple_add_pair, exception_tuple_remove_member, exception_type_pair
   function_body_erase, function_body_return_constant, identity, integer_literal_neighbor
   membership, method_call_remove, operator_function, optional_keyword_delete
-  remove_not, return_tuple_swap, statement_delete, string_literal_empty
-  string_segment_empty, structure_append_extend, structure_index_neighbor, structure_mapping_get_subscript
-  structure_ops, structure_slice_neighbor, structure_sort_reverse, structure_sorted_reversed
-  type_collections, type_dict_mapping, type_iterable_iterator, type_iterables
-  type_list_sequence, type_nullable, type_nullable_add, type_nullable_remove
-  type_sequence_iterable, type_set_abstract_set, unary_sign, while_condition_false
+  remove_not, return_tuple_swap, statement_delete, stdlib_conversion_call_remove
+  string_literal_empty, string_segment_empty, structure_append_extend, structure_index_neighbor
+  structure_mapping_get_subscript, structure_ops, structure_slice_neighbor, structure_sort_reverse
+  structure_sorted_reversed, type_collections, type_dict_mapping, type_iterable_iterator
+  type_iterables, type_list_sequence, type_nullable, type_nullable_add
+  type_nullable_remove, type_sequence_iterable, type_set_abstract_set, unary_sign
+  while_condition_false
 ```
 
 Argument constraints:

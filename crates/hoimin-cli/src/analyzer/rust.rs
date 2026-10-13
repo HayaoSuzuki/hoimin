@@ -44,6 +44,8 @@ mod string_segments;
 #[path = "rust/deletion.rs"]
 mod deletion;
 
+#[path = "rust/callable_imports.rs"]
+mod callable_imports;
 #[path = "rust/depth.rs"]
 mod depth;
 #[path = "rust/fact_index.rs"]
@@ -2805,6 +2807,7 @@ struct AstCandidateCollector<'a, F> {
     enum_index: enum_members::EnumIndex,
     optional_functions: optional_keywords::FunctionIndex,
     operator_imports: OperatorImports,
+    conversion_imports: callable_imports::CallableImports,
     return_scope: ReturnScope,
     integer_suppressed: bool,
     runtime_role: RuntimeRole,
@@ -2839,24 +2842,17 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             } else {
                 optional_keywords::FunctionIndex::default()
             },
-            string_exclusions: if request
-                .operators
-                .contains(MutationOperator::StringLiteralEmpty)
-                || request
-                    .operators
-                    .contains(MutationOperator::StringSegmentEmpty)
-                || request
-                    .operators
-                    .contains(MutationOperator::OptionalKeywordDelete)
-                || request
-                    .operators
-                    .contains(MutationOperator::ConversionCallRemove)
-                || request
-                    .operators
-                    .contains(MutationOperator::MethodCallRemove)
-                || request
-                    .operators
-                    .contains(MutationOperator::ContainerElementDelete)
+            string_exclusions: if [
+                MutationOperator::StringLiteralEmpty,
+                MutationOperator::StringSegmentEmpty,
+                MutationOperator::OptionalKeywordDelete,
+                MutationOperator::ConversionCallRemove,
+                MutationOperator::StdlibConversionCallRemove,
+                MutationOperator::MethodCallRemove,
+                MutationOperator::ContainerElementDelete,
+            ]
+            .into_iter()
+            .any(|operator| request.operators.contains(operator))
             {
                 string_literals::Exclusions::build(module, cancelled)?
             } else {
@@ -2874,6 +2870,18 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             integer_suppressed: false,
             runtime_role: RuntimeRole::Value,
             in_pattern: false,
+            conversion_imports: if request
+                .operators
+                .contains(MutationOperator::StdlibConversionCallRemove)
+            {
+                callable_imports::CallableImports::build(
+                    module,
+                    cancelled,
+                    &["decimal", "fractions"],
+                )?
+            } else {
+                callable_imports::CallableImports::default()
+            },
             operator_imports: if request
                 .operators
                 .contains(MutationOperator::OperatorFunction)
@@ -3108,6 +3116,7 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                 },
             );
         }
+        self.collect_stdlib_conversion_call_remove(call);
         if let Expr::Name(name) = call.func.as_ref() {
             self.collect_conversion_call_remove(call, name);
             self.collect_builtin_call(call, name.id.as_str(), name.range());
@@ -3137,6 +3146,40 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                 call.range(),
                 format!("({text})"),
                 MutationOperator::MethodCallRemove,
+            );
+        }
+    }
+
+    fn collect_stdlib_conversion_call_remove(&mut self, call: &ExprCall) {
+        if !self
+            .request
+            .operators
+            .contains(MutationOperator::StdlibConversionCallRemove)
+            || self.runtime_role != RuntimeRole::Value
+            || self.in_pattern
+            || self.string_exclusions.contains_alias(call.range())
+            || !has_exact_positional_arguments(call, 1)
+        {
+            return;
+        }
+        let Some(resolved) = self.conversion_imports.resolve(&call.func) else {
+            return;
+        };
+        if !matches!(
+            (resolved.module, resolved.member),
+            ("decimal", "Decimal") | ("fractions", "Fraction")
+        ) {
+            return;
+        }
+        let argument = &call.arguments.args[0];
+        if deletion::conversion_argument(argument, self.cancelled)
+            && !self.check_cancelled()
+            && let Some(text) = source_text(self.source, argument.range())
+        {
+            self.add_candidate(
+                call.range(),
+                format!("({text})"),
+                MutationOperator::StdlibConversionCallRemove,
             );
         }
     }

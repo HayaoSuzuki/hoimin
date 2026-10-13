@@ -19,7 +19,7 @@ const CONFIG_PARSERS: [(&str, ConfigParser); 2] = [
     }),
 ];
 
-const RUNTIME_DEFAULT_OPERATOR_IDS: [&str; 53] = [
+const RUNTIME_DEFAULT_OPERATOR_IDS: [&str; 54] = [
     "compare_eq_ne",
     "compare_order",
     "membership",
@@ -73,6 +73,7 @@ const RUNTIME_DEFAULT_OPERATOR_IDS: [&str; 53] = [
     "method_call_remove",
     "function_body_return_constant",
     "string_segment_empty",
+    "stdlib_conversion_call_remove",
 ];
 
 #[test]
@@ -144,8 +145,8 @@ fn usage_documents_all_mutation_operator_ids_and_selector_families() {
         assert!(usage.contains(name), "usage reference is missing {name}");
     }
     for expected in [
-        "53 default runtime operators",
-        "72 operator IDs",
+        "54 default runtime operators",
+        "73 operator IDs",
         "collection_ops",
         "structure_ops",
         "bitwise_ops",

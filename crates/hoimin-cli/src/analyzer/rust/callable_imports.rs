@@ -1,0 +1,534 @@
+//! Conservative identity checks for explicitly selected standard-library modules.
+//!
+//! Trust only top-level imports with a unique binding throughout the file.
+//! Class-namespace loads, module escapes/writes and dynamic namespace access
+//! invalidate that evidence. This does not prove absence of external monkey
+//! patching or import-path shadowing. Clients own the allowed callable names.
+use super::{AnalysisCancelled, ContainmentIndex};
+use ruff_python_ast::visitor::{self, Visitor};
+use ruff_python_ast::{Comprehension, Expr, ExprContext, ModModule, Pattern, Stmt, TypeParam};
+use ruff_text_size::{Ranged, TextRange};
+use std::collections::{HashMap, HashSet};
+
+fn dynamic_namespace_name(name: &str) -> bool {
+    matches!(
+        name,
+        "exec"
+            | "eval"
+            | "globals"
+            | "locals"
+            | "vars"
+            | "setattr"
+            | "delattr"
+            | "__import__"
+            | "__builtins__"
+            | "__dict__"
+            | "__setattr__"
+            | "__delattr__"
+            | "__getattribute__"
+    )
+}
+
+struct ImportedBinding {
+    module: &'static str,
+    // None is a module import; Some is the original imported callable name.
+    member: Option<String>,
+    import_range: TextRange,
+}
+
+#[derive(Default)]
+pub(super) struct CallableImports {
+    trusted: HashMap<String, ImportedBinding>,
+    import_builtin_available: bool,
+    class_ranges: ContainmentIndex,
+    class_lookups: HashSet<(usize, usize)>,
+}
+
+impl CallableImports {
+    pub(super) fn build(
+        module: &ModModule,
+        cancelled: &impl Fn() -> bool,
+        modules: &'static [&'static str],
+    ) -> Result<Self, AnalysisCancelled> {
+        let mut scan = ImportScan {
+            modules,
+            cancelled,
+            cancelled_observed: false,
+            depth: 0,
+            function_scope: false,
+            trusted: HashMap::new(),
+            bindings: HashMap::new(),
+            module_names: HashSet::new(),
+            attribute_writes: HashSet::new(),
+            escaped_names: HashSet::new(),
+            namespace_uncertain: false,
+            class_ranges: Vec::new(),
+        };
+        scan.visit_body(&module.body);
+        if scan.cancelled_observed {
+            return Err(AnalysisCancelled);
+        }
+        if scan.namespace_uncertain
+            || scan.module_names.iter().any(|name| {
+                scan.attribute_writes.contains(name) || scan.escaped_names.contains(name)
+            })
+        {
+            return Ok(Self::default());
+        }
+        scan.trusted
+            .retain(|name, _| scan.bindings.get(name) == Some(&1));
+        let mut lookup_scan = ClassLookupScan {
+            cancelled,
+            cancelled_observed: false,
+            scope: LookupScope::Module,
+            class_lookups: HashSet::new(),
+        };
+        lookup_scan.visit_body(&module.body);
+        if lookup_scan.cancelled_observed {
+            return Err(AnalysisCancelled);
+        }
+        Ok(Self {
+            trusted: scan.trusted,
+            import_builtin_available: !scan.bindings.contains_key("__import__"),
+            class_ranges: ContainmentIndex::new(scan.class_ranges),
+            class_lookups: lookup_scan.class_lookups,
+        })
+    }
+
+    fn trusted_binding(&self, name: &str, range: TextRange) -> Option<&ImportedBinding> {
+        let start = usize::from(range.start());
+        let end = usize::from(range.end());
+        // A metaclass can supply even ordinary names without an AST Store.
+        // Exclude every class-namespace load instead of inferring provenance.
+        if self.class_lookups.contains(&(start, end)) {
+            return None;
+        }
+        // Class compilation can mangle private names or provide implicit names
+        // such as __class__. Raw AST spelling cannot prove identity there.
+        if name.starts_with("__") && self.class_ranges.contains(start, end) {
+            return None;
+        }
+        self.trusted.get(name)
+    }
+
+    pub(super) fn resolve<'a>(&'a self, expression: &'a Expr) -> Option<ResolvedCallable<'a>> {
+        let (binding, name, member_range) = match expression {
+            Expr::Attribute(attribute) if attribute.ctx == ExprContext::Load => {
+                let Expr::Name(module) = attribute.value.as_ref() else {
+                    return None;
+                };
+                let binding = self.trusted_binding(module.id.as_str(), expression.range())?;
+                if binding.member.is_some() {
+                    return None;
+                }
+                (
+                    binding,
+                    attribute.attr.as_str(),
+                    Some(attribute.attr.range()),
+                )
+            }
+            Expr::Name(name) if name.ctx == ExprContext::Load => {
+                let binding = self.trusted_binding(name.id.as_str(), expression.range())?;
+                (binding, binding.member.as_deref()?, None)
+            }
+            _ => return None,
+        };
+        if expression.range().start() < binding.import_range.end() {
+            return None;
+        }
+        Some(ResolvedCallable {
+            module: binding.module,
+            member: name,
+            member_range,
+        })
+    }
+
+    pub(super) fn import_builtin_available(&self) -> bool {
+        self.import_builtin_available
+    }
+}
+
+pub(super) struct ResolvedCallable<'a> {
+    pub(super) module: &'static str,
+    pub(super) member: &'a str,
+    pub(super) member_range: Option<TextRange>,
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum LookupScope {
+    Module,
+    Function,
+    Class,
+}
+
+struct ClassLookupScan<'a, F> {
+    cancelled: &'a F,
+    cancelled_observed: bool,
+    scope: LookupScope,
+    class_lookups: HashSet<(usize, usize)>,
+}
+
+impl<F: Fn() -> bool> ClassLookupScan<'_, F> {
+    fn stop(&mut self) -> bool {
+        if !self.cancelled_observed {
+            self.cancelled_observed = (self.cancelled)();
+        }
+        self.cancelled_observed
+    }
+
+    fn visit_comprehension_scope<'ast>(
+        &mut self,
+        generators: &'ast [Comprehension],
+        produced: impl IntoIterator<Item = &'ast Expr>,
+    ) {
+        let Some((first, remaining)) = generators.split_first() else {
+            return;
+        };
+        self.visit_expr(&first.iter);
+        let outer = self.scope;
+        self.scope = LookupScope::Function;
+        self.visit_expr(&first.target);
+        for condition in &first.ifs {
+            self.visit_expr(condition);
+        }
+        for generator in remaining {
+            self.visit_comprehension(generator);
+        }
+        for expression in produced {
+            self.visit_expr(expression);
+        }
+        self.scope = outer;
+    }
+}
+
+impl<'ast, F: Fn() -> bool> Visitor<'ast> for ClassLookupScan<'_, F> {
+    fn visit_stmt(&mut self, statement: &'ast Stmt) {
+        if self.stop() {
+            return;
+        }
+        match statement {
+            Stmt::FunctionDef(definition) => {
+                for decorator in &definition.decorator_list {
+                    self.visit_decorator(decorator);
+                }
+                if let Some(type_params) = &definition.type_params {
+                    self.visit_type_params(type_params);
+                }
+                self.visit_parameters(&definition.parameters);
+                if let Some(returns) = &definition.returns {
+                    self.visit_annotation(returns);
+                }
+                let outer = self.scope;
+                self.scope = LookupScope::Function;
+                self.visit_body(&definition.body);
+                self.scope = outer;
+            }
+            Stmt::ClassDef(definition) => {
+                for decorator in &definition.decorator_list {
+                    self.visit_decorator(decorator);
+                }
+                if let Some(type_params) = &definition.type_params {
+                    self.visit_type_params(type_params);
+                }
+                if let Some(arguments) = &definition.arguments {
+                    self.visit_arguments(arguments);
+                }
+                let outer = self.scope;
+                self.scope = LookupScope::Class;
+                self.visit_body(&definition.body);
+                self.scope = outer;
+            }
+            _ => visitor::walk_stmt(self, statement),
+        }
+    }
+
+    fn visit_expr(&mut self, expression: &'ast Expr) {
+        if self.stop() {
+            return;
+        }
+        if self.scope == LookupScope::Class
+            && matches!(expression, Expr::Attribute(_) | Expr::Name(_))
+        {
+            self.class_lookups.insert((
+                usize::from(expression.range().start()),
+                usize::from(expression.range().end()),
+            ));
+        }
+        match expression {
+            Expr::Lambda(lambda) => {
+                if let Some(parameters) = &lambda.parameters {
+                    self.visit_parameters(parameters);
+                }
+                let outer = self.scope;
+                self.scope = LookupScope::Function;
+                self.visit_expr(&lambda.body);
+                self.scope = outer;
+            }
+            Expr::ListComp(comprehension) => self.visit_comprehension_scope(
+                &comprehension.generators,
+                std::iter::once(comprehension.elt.as_ref()),
+            ),
+            Expr::SetComp(comprehension) => self.visit_comprehension_scope(
+                &comprehension.generators,
+                std::iter::once(comprehension.elt.as_ref()),
+            ),
+            Expr::DictComp(comprehension) => self.visit_comprehension_scope(
+                &comprehension.generators,
+                [comprehension.key.as_ref(), comprehension.value.as_ref()],
+            ),
+            Expr::Generator(comprehension) => self.visit_comprehension_scope(
+                &comprehension.generators,
+                std::iter::once(comprehension.elt.as_ref()),
+            ),
+            _ => visitor::walk_expr(self, expression),
+        }
+    }
+
+    fn visit_body(&mut self, body: &'ast [Stmt]) {
+        for statement in body {
+            self.visit_stmt(statement);
+            if self.cancelled_observed {
+                break;
+            }
+        }
+    }
+}
+
+struct ImportScan<'a, F> {
+    modules: &'static [&'static str],
+    cancelled: &'a F,
+    cancelled_observed: bool,
+    depth: usize,
+    function_scope: bool,
+    trusted: HashMap<String, ImportedBinding>,
+    bindings: HashMap<String, usize>,
+    module_names: HashSet<String>,
+    attribute_writes: HashSet<String>,
+    escaped_names: HashSet<String>,
+    namespace_uncertain: bool,
+    class_ranges: Vec<(usize, usize)>,
+}
+
+impl<F: Fn() -> bool> ImportScan<'_, F> {
+    fn stop(&mut self) -> bool {
+        if !self.cancelled_observed {
+            self.cancelled_observed = (self.cancelled)();
+        }
+        self.cancelled_observed
+    }
+
+    fn bind(&mut self, name: &str) {
+        *self.bindings.entry(name.to_owned()).or_default() += 1;
+    }
+
+    fn import(
+        &mut self,
+        local: &str,
+        module: &'static str,
+        member: Option<&str>,
+        range: TextRange,
+    ) {
+        if member.is_none() {
+            self.module_names.insert(local.to_owned());
+        }
+        if self.depth == 0 {
+            self.trusted.insert(
+                local.to_owned(),
+                ImportedBinding {
+                    module,
+                    member: member.map(str::to_owned),
+                    import_range: range,
+                },
+            );
+        }
+    }
+}
+
+impl<'ast, F: Fn() -> bool> Visitor<'ast> for ImportScan<'_, F> {
+    fn visit_stmt(&mut self, statement: &'ast Stmt) {
+        if self.stop() {
+            return;
+        }
+        let previous_function_scope = self.function_scope;
+        match statement {
+            Stmt::Import(import) => {
+                for alias in &import.names {
+                    let local = alias.asname.as_ref().map_or_else(
+                        || {
+                            alias
+                                .name
+                                .as_str()
+                                .split('.')
+                                .next()
+                                .unwrap_or(alias.name.as_str())
+                        },
+                        ruff_python_ast::Identifier::as_str,
+                    );
+                    self.bind(local);
+                    if let Some(&module) = self
+                        .modules
+                        .iter()
+                        .find(|&&module| module == alias.name.as_str())
+                    {
+                        self.import(local, module, None, statement.range());
+                    }
+                }
+            }
+            Stmt::ImportFrom(import) => {
+                for alias in &import.names {
+                    if import.level == 0
+                        && import.module.as_ref().is_some_and(|module| {
+                            ((module.as_str() == "builtins"
+                                || self.modules.contains(&module.as_str()))
+                                && dynamic_namespace_name(alias.name.as_str()))
+                                || (module.as_str() == "sys" && alias.name.as_str() == "modules")
+                        })
+                    {
+                        self.namespace_uncertain = true;
+                    }
+                    if alias.name.as_str() == "*" {
+                        self.namespace_uncertain = true;
+                    }
+                    let local = alias.asname.as_ref().unwrap_or(&alias.name).as_str();
+                    self.bind(local);
+                    if import.level == 0
+                        && let Some(name) = &import.module
+                        && let Some(&module) =
+                            self.modules.iter().find(|&&module| module == name.as_str())
+                    {
+                        self.import(local, module, Some(alias.name.as_str()), statement.range());
+                    }
+                }
+            }
+            Stmt::AnnAssign(assign)
+                if assign.value.is_none()
+                    && matches!(assign.target.as_ref(), Expr::Name(_))
+                    && !self.function_scope =>
+            {
+                // Declaration-only names do not overwrite a runtime import.
+                // Keep annotation traversal and all complex-target evaluation.
+                self.visit_annotation(&assign.annotation);
+                return;
+            }
+            Stmt::FunctionDef(definition) => {
+                self.bind(definition.name.as_str());
+                self.function_scope = true;
+            }
+            Stmt::ClassDef(definition) => {
+                self.function_scope = false;
+                self.bind(definition.name.as_str());
+                self.class_ranges.push((
+                    usize::from(definition.range().start()),
+                    usize::from(definition.range().end()),
+                ));
+            }
+            Stmt::Global(global) => {
+                for name in &global.names {
+                    self.bind(name.as_str());
+                }
+            }
+            Stmt::Nonlocal(nonlocal) => {
+                for name in &nonlocal.names {
+                    self.bind(name.as_str());
+                }
+            }
+            _ => {}
+        }
+        self.depth += 1;
+        visitor::walk_stmt(self, statement);
+        self.depth -= 1;
+        self.function_scope = previous_function_scope;
+    }
+
+    fn visit_expr(&mut self, expression: &'ast Expr) {
+        if self.stop() {
+            return;
+        }
+        match expression {
+            Expr::Name(name) => {
+                if name.ctx == ExprContext::Load {
+                    self.escaped_names.insert(name.id.to_string());
+                    // Even taking a reference can hide later indirect namespace writes.
+                    if dynamic_namespace_name(name.id.as_str()) {
+                        self.namespace_uncertain = true;
+                    }
+                } else {
+                    self.bind(name.id.as_str());
+                }
+            }
+            Expr::Attribute(attribute) => {
+                if dynamic_namespace_name(attribute.attr.as_str())
+                    || attribute.attr.as_str() == "modules"
+                {
+                    self.namespace_uncertain = true;
+                }
+                if let Expr::Name(base) = attribute.value.as_ref() {
+                    if attribute.ctx != ExprContext::Load {
+                        self.attribute_writes.insert(base.id.to_string());
+                    }
+                    // A direct member lookup doesn't let the module object escape.
+                    return;
+                }
+            }
+            _ => {}
+        }
+        visitor::walk_expr(self, expression);
+    }
+
+    fn visit_except_handler(&mut self, handler: &'ast ruff_python_ast::ExceptHandler) {
+        if self.stop() {
+            return;
+        }
+        let ruff_python_ast::ExceptHandler::ExceptHandler(exception) = handler;
+        if let Some(name) = &exception.name {
+            self.bind(name.as_str());
+        }
+        visitor::walk_except_handler(self, handler);
+    }
+
+    fn visit_parameter(&mut self, parameter: &'ast ruff_python_ast::Parameter) {
+        if self.stop() {
+            return;
+        }
+        self.bind(parameter.name.as_str());
+        visitor::walk_parameter(self, parameter);
+    }
+
+    fn visit_type_param(&mut self, parameter: &'ast TypeParam) {
+        if self.stop() {
+            return;
+        }
+        let name = match parameter {
+            TypeParam::TypeVar(parameter) => &parameter.name,
+            TypeParam::TypeVarTuple(parameter) => &parameter.name,
+            TypeParam::ParamSpec(parameter) => &parameter.name,
+        };
+        self.bind(name.as_str());
+        visitor::walk_type_param(self, parameter);
+    }
+
+    fn visit_pattern(&mut self, pattern: &'ast Pattern) {
+        if self.stop() {
+            return;
+        }
+        let name = match pattern {
+            Pattern::MatchMapping(pattern) => pattern.rest.as_ref(),
+            Pattern::MatchStar(pattern) => pattern.name.as_ref(),
+            Pattern::MatchAs(pattern) => pattern.name.as_ref(),
+            _ => None,
+        };
+        if let Some(name) = name {
+            self.bind(name.as_str());
+        }
+        visitor::walk_pattern(self, pattern);
+    }
+
+    fn visit_body(&mut self, body: &'ast [Stmt]) {
+        for statement in body {
+            self.visit_stmt(statement);
+            if self.cancelled_observed {
+                break;
+            }
+        }
+    }
+}
