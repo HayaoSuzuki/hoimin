@@ -5,6 +5,8 @@ description: 構文・名前解決・変更するバイト範囲・候補保持�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-849-initialization
+  resource: ../../maintenance/2026-10-13-analyzer-initialization.md
 - id: string-segment-implementation
   resource: ../../../crates/hoimin-cli/src/analyzer/rust/string_segments.rs
   revision: d6f4be7b467b584479250ff01dca034441a92b82
@@ -823,3 +825,11 @@ CPython 3.14による実行で構文・値・補間の回数と順序・conversi
 [^string-segment-implementation]: [ソース範囲と置換](../../../crates/hoimin-cli/src/analyzer/rust/string_segments.rs)、[文字列の役割別除外](../../../crates/hoimin-cli/src/analyzer/rust/string_literals.rs)。
 [^string-segment-selection]: [演算子の定義と既定選択](../../../crates/hoimin-core/src/config.rs)。
 [^string-segment-tests]: [CPython・保存済みplanの回帰テスト](../../../crates/hoimin-cli/tests/string_segment_empty.rs)、[各段階のセルフレビューと評価](../../reviews/2026-10-10-issue-761-string-segments.md)。
+
+# 解析器の初期化（Issue #849）
+
+`AnalyzerHandler::new(root) -> Self` はルートパスを保持するだけで、プロジェクトへの I/O や候補ストアの作成を行わない。ソース読取と候補ストア作成は解析時に行い、それぞれの操作でエラーを返す。キャンセルの確認位置と初期化の順序は維持する。[^issue-849-initialization]
+
+未使用の backend・メモリ上限・プロセス数上限を受け取っていた `with_backend` は削除した。実際のプロセス資源制御は引き続き `ProcessHandler` が担う。内部 Rust API の利用者は `new(root)?` などを `new(root)` に変更する。CLI と保存形式の移行は不要である。[^issue-849-initialization]
+
+[^issue-849-initialization]: [初期化 API の変更と互換性・検証記録](../../maintenance/2026-10-13-analyzer-initialization.md)。

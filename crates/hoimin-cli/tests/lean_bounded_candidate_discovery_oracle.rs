@@ -251,7 +251,7 @@ async fn ordered_target_spools_match_the_lean_terminal_cases() {
             .expect("owned target case");
         let fixture = TargetFixture::new(case_id).expect("target fixture");
         let root = camino::Utf8PathBuf::from_path_buf(fixture.root.clone()).unwrap();
-        let mut handler = AnalyzerHandler::new(root).unwrap();
+        let mut handler = AnalyzerHandler::new(root);
         let mut spool = None;
         let mut requests = 0_u64;
         for (index, path) in fixture.paths.iter().enumerate() {

@@ -46,7 +46,7 @@ fn analysis_request(id: u64, path: &str, final_target: bool, max_candidates: u64
 }
 
 fn handler(root: Utf8PathBuf) -> AnalyzerHandler {
-    AnalyzerHandler::new(root).unwrap()
+    AnalyzerHandler::new(root)
 }
 
 #[cfg(unix)]
@@ -721,7 +721,7 @@ async fn concrete_handler_does_not_spawn_python_for_analysis() {
     )
     .unwrap();
     let root = Utf8PathBuf::from_path_buf(directory.path().to_owned()).unwrap();
-    let mut handler = AnalyzerHandler::new(root).unwrap();
+    let mut handler = AnalyzerHandler::new(root);
     let finished = handler
         .handle(
             AnalyzeFile {

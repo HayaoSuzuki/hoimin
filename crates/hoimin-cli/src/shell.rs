@@ -1405,21 +1405,11 @@ fn prepare_shell_setup_sync_in(
     boundary(ShellSetupBoundary::WorkspaceCreated);
     let backend = resource_backend(&config).map_err(|error| error.to_string())?;
     boundary(ShellSetupBoundary::BackendCreated);
-    let process = Arc::new(ProcessHandler::new(
-        backend.clone(),
-        spool_path.join("process"),
-    ));
+    let process = Arc::new(ProcessHandler::new(backend, spool_path.join("process")));
     boundary(ShellSetupBoundary::ProcessCreated);
-    let analyzer = AnalyzerHandler::with_backend(
-        config.root.clone(),
-        backend,
-        config.limits.max_memory.get(),
-        u32::try_from(config.limits.max_processes.get())
-            .map_err(|_| "--max-processes exceeds the supported process count".to_owned())?,
-    )
-    .map_err(|error| error.to_string())?
-    .with_managed_candidate_spool_owner(Arc::clone(&execution_spool))
-    .with_exception_project(&config);
+    let analyzer = AnalyzerHandler::new(config.root.clone())
+        .with_managed_candidate_spool_owner(Arc::clone(&execution_spool))
+        .with_exception_project(&config);
     boundary(ShellSetupBoundary::AnalyzerCreated);
     let report = PreparedReport::new(config.output.format, delivery_spool.path())
         .map_err(|error| error.to_string())?;
