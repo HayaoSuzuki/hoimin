@@ -27,6 +27,11 @@
 //! precedes final report delivery; write/flush and delivery-root cleanup precede
 //! the final `OutputEmitted` event. Failures retain incomplete cleanup evidence.
 //!
+//! Saved-plan execution consumes [`crate::plan::VerifiedPlan`], keeping checked
+//! configuration, candidate selection, provenance and protected inputs together.
+//! Borrowed callers use [`crate::plan::VerifiedPlan::execute`]; CLI dispatch uses
+//! `run_owned_verified`. Both enter `run_verified` through that owned handoff.
+//!
 //! Owned CLI report delivery moves the writer and delivery-root leases into
 //! blocking work and bounds the async wait. Expiry cannot stop a running write
 //! or flush, so its ownership must remain live. Borrowed library writers execute
@@ -2364,116 +2369,6 @@ where
         RunControl::new(),
         CandidateSelection::All,
         None,
-        None,
-    )
-    .await
-}
-
-/// Runs an already-validated plan configuration for exactly the requested candidate IDs.
-///
-/// # Errors
-///
-/// Returns an error when a session or resume configuration is supplied, or when run
-/// infrastructure, state transitions, or cleanup fail.
-pub async fn run_selected_loop<Stdout, Stderr>(
-    config: RunConfig,
-    candidate_ids: BTreeSet<String>,
-    verification_selection: hoimin_core::VerificationSelection,
-    stdout: Stdout,
-    stderr: Stderr,
-) -> Result<i32, String>
-where
-    Stdout: Write,
-    Stderr: Write,
-{
-    run_selected_loop_with_fingerprint_inputs(
-        config,
-        candidate_ids,
-        verification_selection,
-        BTreeSet::new(),
-        stdout,
-        stderr,
-    )
-    .await
-}
-
-#[doc(hidden)]
-pub async fn run_selected_loop_with_fingerprint_inputs<Stdout, Stderr>(
-    config: RunConfig,
-    candidate_ids: BTreeSet<String>,
-    verification_selection: hoimin_core::VerificationSelection,
-    fingerprint_copy_inputs: BTreeSet<Utf8PathBuf>,
-    stdout: Stdout,
-    stderr: Stderr,
-) -> Result<i32, String>
-where
-    Stdout: Write,
-    Stderr: Write,
-{
-    if config.session.is_some() || config.resume {
-        return Err("selected candidate execution does not support sessions or resume".to_owned());
-    }
-    run_loop_prepared(
-        config,
-        stdout,
-        stderr,
-        RunControl::new(),
-        CandidateSelection::Explicit(candidate_ids, verification_selection),
-        Some(fingerprint_copy_inputs),
-        None,
-    )
-    .await
-}
-
-/// Runs an already-validated plan configuration in saved manifest rank order.
-///
-/// # Errors
-///
-/// Returns an error when run infrastructure, state transitions, or cleanup fail.
-pub async fn run_ordered_selected_loop<Stdout, Stderr>(
-    config: RunConfig,
-    candidate_ids: Vec<String>,
-    verification_selection: hoimin_core::VerificationSelection,
-    stdout: Stdout,
-    stderr: Stderr,
-) -> Result<i32, String>
-where
-    Stdout: Write,
-    Stderr: Write,
-{
-    run_ordered_selected_loop_with_fingerprint_inputs(
-        config,
-        candidate_ids,
-        verification_selection,
-        BTreeSet::new(),
-        stdout,
-        stderr,
-    )
-    .await
-}
-
-pub(crate) async fn run_ordered_selected_loop_with_fingerprint_inputs<Stdout, Stderr>(
-    config: RunConfig,
-    candidate_ids: Vec<String>,
-    verification_selection: hoimin_core::VerificationSelection,
-    fingerprint_copy_inputs: BTreeSet<Utf8PathBuf>,
-    stdout: Stdout,
-    stderr: Stderr,
-) -> Result<i32, String>
-where
-    Stdout: Write,
-    Stderr: Write,
-{
-    if config.session.is_some() || config.resume {
-        return Err("selected candidate execution does not support sessions or resume".to_owned());
-    }
-    run_loop_prepared(
-        config,
-        stdout,
-        stderr,
-        RunControl::new(),
-        CandidateSelection::Ordered(candidate_ids, verification_selection),
-        Some(fingerprint_copy_inputs),
         None,
     )
     .await
@@ -5576,6 +5471,68 @@ mod tests {
         ];
         args.extend(successful_test_command());
         parse_host_independent_shell_test_config(args)
+    }
+
+    // Inject invalid selection inside this module: public saved-plan execution
+    // rejects these IDs during preparation, before runtime spool exhaustion.
+    async fn run_missing_explicit_candidate(source: &str, missing_id: &str) -> (String, Vec<u8>) {
+        let project = tempfile::tempdir().unwrap();
+        let config = output_failure_test_config(&project, "json");
+        std::fs::write(project.path().join("target.py"), source).unwrap();
+        let selection = CandidateSelection::Explicit(
+            BTreeSet::from([missing_id.to_owned()]),
+            hoimin_core::VerificationSelection {
+                mode: hoimin_core::VerificationSelectionMode::CandidateIds,
+                policy: hoimin_core::VerificationSelectionPolicy::ExplicitCandidates,
+                requested: 1,
+                selected: 1,
+                scope: hoimin_core::VerificationSelectionScope::ExplicitCandidates,
+                plan_truncated: false,
+                sampling: None,
+            },
+        );
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let error = run_loop_prepared(
+            config,
+            &mut stdout,
+            &mut stderr,
+            RunControl::new(),
+            selection,
+            Some(BTreeSet::new()),
+            None,
+        )
+        .await
+        .unwrap_err();
+        (error, stdout)
+    }
+
+    #[tokio::test]
+    async fn explicit_candidate_run_rejects_a_missing_candidate() {
+        let missing_id = "candidate-that-is-not-in-the-spool";
+        let (error, stdout) = run_missing_explicit_candidate("value = 1 + 2\n", missing_id).await;
+
+        assert!(error.contains(missing_id), "{error}");
+        assert!(
+            !std::str::from_utf8(&stdout)
+                .unwrap()
+                .contains("\"complete\":true"),
+            "a missing explicit candidate must not produce a complete report"
+        );
+    }
+
+    #[tokio::test]
+    async fn explicit_candidate_run_rejects_an_empty_candidate_spool() {
+        let missing_id = "candidate-missing-from-empty-spool";
+        let (error, stdout) = run_missing_explicit_candidate("pass\n", missing_id).await;
+
+        assert!(error.contains(missing_id), "{error}");
+        assert!(
+            !std::str::from_utf8(&stdout)
+                .unwrap()
+                .contains("\"complete\":true"),
+            "an empty spool must not produce a complete explicit verification report"
+        );
     }
 
     #[tokio::test]

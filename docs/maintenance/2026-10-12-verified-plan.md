@@ -63,3 +63,11 @@ refreshed merely because code moved. No formal-model change is required.
 The all-target check also identified prepared-plan inspection in the default
 operator and manifest-buffer lifetime tests. Both now use shared-reference
 queries; their behavioral and raw-buffer release assertions remain intact.
+
+## Follow-up: selected execution APIs
+
+Issue #850 removes the selected/ordered shell wrappers that still accepted
+configuration and selection as separate arguments. See the
+[execution API record](2026-10-13-verified-execution.md) for the removed APIs,
+negative-test placement, migration and current verification. The results above
+remain evidence for the original #835 change.
