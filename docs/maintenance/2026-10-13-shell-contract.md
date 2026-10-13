@@ -51,7 +51,7 @@ runtime OKF concept. Keep implementation, tests, README and model files unchange
 - [x] Add source contract and guide/OKF navigation.
 - [x] Complete five implementation self-reviews.
 - [x] Run the selected documentation checks and five verification self-reviews.
-- [ ] Obtain independent review, record results, clean target and commit.
+- [x] Obtain independent review, record results, clean target and commit.
 
 ### Implementation self-review
 
@@ -110,3 +110,15 @@ The review confirmed buffered ownership recovery versus core acknowledgement,
 cleanup/final-output ordering, the owned/borrowed writer distinction, and the
 limits of model evidence. Reported build/resource measurements and historical
 workflow steps were not independently certified by that content review.
+
+### Commit checks and cleanup
+
+Commit `63c63e3` contains the contract and review record. Its existing pre-commit
+hooks passed workspace and vendored-parser formatting and Clippy checks, including
+workspace all-targets/all-features Clippy with warnings denied. Hooks inherited
+the same dedicated target, two-job settings and resource guard; sampled peak RSS
+was 737 MiB and target usage 346 MiB. No hook was bypassed.
+
+After the hooks finished, `cargo clean --target-dir target/issue-844` removed
+2,998 files (336.8 MiB); the dedicated target directory no longer exists.
+The working tree was clean before this final documentation-only record update.
