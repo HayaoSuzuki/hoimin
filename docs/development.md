@@ -376,9 +376,6 @@ ordinary `cargo test --workspace` run. The targets supplement proptest:
   single-field corruptions and unencodable Latin-1 replacements. The first five
   input bytes choose the codec and two little-endian scalar boundary indices;
   the remaining bytes supply the source payload.
-- `analyzer_protocol`: parses arbitrary JSONL, checks observed summary counts,
-  and constructs valid records to exercise wrong effect IDs, missing/mismatched
-  summaries, decreasing candidate offsets, records after summary, and byte limits.
 - `python_analyzer`: runs the production Python analyzer with all mutation
   operators and either the full or focused profile (selected by input length
   parity). Checks immediate cancellation, candidate validation, ordering, the
@@ -392,16 +389,22 @@ ordinary `cargo test --workspace` run. The targets supplement proptest:
   bounded discovery inventories with file, line, and symbol selectors. It checks
   exact resolution against an independent reference model, line-index membership,
   and changed-line normalization and intersection.
+- `sampling`: checks sample size, uniqueness, index bounds, and seeded prefix
+  consistency, with populations bounded to 4096 elements.
 
-The analyzer protocol and Python analyzer targets compile production analyzer
+The Python analyzer target compiles production analyzer and shared result-type
 modules directly using `#[path]`, so no fuzz-only API is added to the shipping
-crate. Keep their dependency declarations in `fuzz/Cargo.toml` aligned with
+crate. Keep its dependency declarations in `fuzz/Cargo.toml` aligned with
 `crates/hoimin-cli/Cargo.toml` and retain the root workspace's vendored Ruff
 parser patch in the fuzz workspace.
 These are in-memory checks; filesystem discovery, file I/O, subprocesses, and
-mutation execution are outside their scope. The five structured targets reject
+mutation execution are outside their scope. The four structured targets reject
 inputs larger than 4096 bytes to bound per-input work, including during artifact
 replay.
+
+The unused analyzer JSONL parser and its `analyzer_protocol` target were
+[retired in #851](maintenance/2026-10-13-analyzer-protocol.md). This does not
+affect JSON/JSONL reports or the current in-process analyzer.
 
 Install cargo-fuzz and the pinned nightly (the locked libfuzzer-sys version
 requires a C++17 compiler).
@@ -412,7 +415,7 @@ unchanged:
 cargo install cargo-fuzz --version 0.13.2 --locked
 rustup toolchain install nightly-2026-10-08 --profile minimal
 cargo +nightly-2026-10-08 fuzz build
-for target in source_encoding source_index candidate_validation analyzer_protocol python_analyzer report_sequence target_resolution; do
+for target in source_encoding source_index candidate_validation python_analyzer report_sequence target_resolution sampling; do
   mkdir -p "fuzz/corpus/$target"
   cargo +nightly-2026-10-08 fuzz run "$target" "fuzz/corpus/$target" "fuzz/seeds/$target" -- -max_total_time=30 -max_len=4096 -timeout=5 -rss_limit_mb=1024 || break
 done

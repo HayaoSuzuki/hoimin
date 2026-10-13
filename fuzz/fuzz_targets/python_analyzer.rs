@@ -3,9 +3,9 @@
 // These are the actual shipping modules, not copies. Keep their parser patch
 // and dependency versions aligned with the root and CLI manifests.
 #[allow(dead_code)]
-#[path = "../../crates/hoimin-cli/src/analyzer/protocol.rs"]
-mod protocol;
-use protocol::{AnalyzerCandidate, AnalyzerDiagnostic, AnalyzerDiagnosticCode};
+#[path = "../../crates/hoimin-cli/src/analyzer/types.rs"]
+mod types;
+use types::{AnalyzerCandidate, AnalyzerDiagnostic, AnalyzerDiagnosticCode};
 #[allow(dead_code)]
 #[path = "../../crates/hoimin-cli/src/analyzer/rust.rs"]
 mod analyzer;

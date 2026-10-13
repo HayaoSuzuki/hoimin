@@ -185,7 +185,6 @@ def test_campaign_reports_all_targets(
         "source_encoding",
         "source_index",
         "candidate_validation",
-        "analyzer_protocol",
         "python_analyzer",
         "report_sequence",
         "target_resolution",

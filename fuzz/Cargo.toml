@@ -53,13 +53,6 @@ doc = false
 bench = false
 
 [[bin]]
-name = "analyzer_protocol"
-path = "fuzz_targets/analyzer_protocol.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
 name = "python_analyzer"
 path = "fuzz_targets/python_analyzer.rs"
 test = false

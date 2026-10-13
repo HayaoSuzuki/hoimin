@@ -1,9 +1,12 @@
+//! Runs the in-process Rust analyzer and validates its typed candidates before
+//! storing them for replay. Analyzer results do not use a JSONL transport.
+
 pub(crate) mod exception_project;
 use exception_project::ExceptionProject;
-mod protocol;
 #[allow(dead_code)]
 mod rust;
 mod store;
+mod types;
 
 pub(crate) use rust::definition_names;
 
@@ -11,8 +14,8 @@ use std::fmt::Write as _;
 use std::sync::Arc;
 use std::time::Duration;
 
-pub use protocol::*;
 pub use store::*;
+pub use types::{AnalyzerCandidate, AnalyzerDiagnostic, AnalyzerDiagnosticCode};
 
 use camino::{Utf8Path, Utf8PathBuf};
 use hoimin_core::{
