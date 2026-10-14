@@ -111,7 +111,8 @@ Candidates for a path share its single observation, so an edit during display
 does not cause later candidates for that path to observe another version.
 Different files do not form an atomic snapshot. A subsequent command reads
 again, and record retains an independent freshness check before writing.
-No source cache crosses commands; CLI and saved schemas remain unchanged.
+No source cache crosses commands; this source-observation optimization does not
+change CLI arguments or saved schemas.
 [^issue-874-source-observations]
 
 The issue 874 checks cover source work counts, interleaved result/error order,
@@ -122,3 +123,19 @@ platform cases are recorded separately in the implementation plan.
 [^issue-874-source-observations]
 
 [^issue-874-source-observations]: [Issue 874 implementation and validation](../../superpowers/plans/2026-10-14-issue-874.md).
+
+## Artifact reference responsibilities
+
+For review maintainers, `ArtifactReference` identifies a plan or report by path
+and content hash. `ReportReference` composes that reference under `artifact`
+with a required run ID. `ReviewDraft.plan` cannot carry a run ID, and a supplied
+`ReviewDraft.report` cannot omit its run ID. The report itself remains optional.
+Validation checks nonempty paths, lowercase 64-digit hashes, and nonblank run
+IDs of at most 4096 UTF-8 bytes without control characters. Reason and evidence
+retain their separate bounded text rules.
+
+Review JSON and SQLite store versions are 2. Older stores are rejected without
+migration; old plan `run_id` fields and missing or null report IDs fail strict
+JSON decoding. Human rendering and CLI arguments retain their existing behavior.
+See the [Issue 902 implementation record](../../superpowers/plans/2026-10-15-issue-902.md)
+for design decisions, review passes and executed checks.
