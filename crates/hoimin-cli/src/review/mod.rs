@@ -3,10 +3,31 @@ pub mod model;
 mod render;
 mod store;
 
+use std::collections::HashMap;
+
 use crate::artifacts::run_report::ReviewReport;
 use crate::cli::ReviewArgs;
 use model::{Applicability, ArtifactReference, ReviewDraft, ReviewState, SourceState};
 use render::{ReviewDocument, ReviewExecution, ReviewRow};
+
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct JoinWork {
+    plan_builds: usize,
+    plan_entries: usize,
+    plan_probes: usize,
+    report_builds: usize,
+    report_entries: usize,
+    report_probes: usize,
+    snapshot_builds: usize,
+    snapshot_entries: usize,
+    snapshot_probes: usize,
+}
+
+#[cfg(test)]
+thread_local! {
+    static JOIN_WORK: std::cell::RefCell<JoinWork> = std::cell::RefCell::default();
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum ReviewError {
@@ -47,10 +68,11 @@ pub fn run(args: &ReviewArgs, stdout: &mut dyn std::io::Write) -> Result<i32, Re
     };
     let plan = input::load_plan(&common.plan)?;
     input::validate_store_destination(&common.store, &plan, common.report.as_deref())?;
+    let planned = input::index_plan(&plan);
     let report = common
         .report
         .as_deref()
-        .map(|path| input::load_report(path, &plan))
+        .map(|path| input::load_report(path, &plan, &planned))
         .transpose()?;
     let selected: Vec<_> = plan
         .manifest
@@ -76,13 +98,15 @@ pub fn run(args: &ReviewArgs, stdout: &mut dyn std::io::Write) -> Result<i32, Re
         (snapshot, None)
     };
     saved_output(saved_revision, || {
+        let reported = report.as_ref().map(|(report, _)| index_report(report));
+        let reviewed = index_snapshot(&snapshot);
         let mut candidates = Vec::new();
         for ranked in selected {
             let candidate = &ranked.candidate;
             let key = input::review_key(&plan.project, candidate);
-            let stored = snapshot
-                .iter()
-                .find(|(stored, _)| stored.candidate_id == key.candidate_id);
+            #[cfg(test)]
+            JOIN_WORK.with_borrow_mut(|work| work.snapshot_probes += 1);
+            let stored = reviewed.get(key.candidate_id.as_str()).copied();
             let empty = ReviewState::default();
             let (stored_key, state) = stored.map_or((&key, &empty), |(key, state)| (key, state));
             let applicable = model::applicability(
@@ -95,7 +119,7 @@ pub fn run(args: &ReviewArgs, stdout: &mut dyn std::io::Write) -> Result<i32, Re
                     "stored candidate identity conflict".into(),
                 ));
             }
-            let execution = execution(candidate, report.as_ref().map(|(report, _)| report))?;
+            let execution = execution(candidate, reported.as_ref())?;
             candidates.push(ReviewRow {
                 candidate: candidate.clone(),
                 execution,
@@ -107,7 +131,7 @@ pub fn run(args: &ReviewArgs, stdout: &mut dyn std::io::Write) -> Result<i32, Re
             });
         }
         let stale_candidates = if include_stale {
-            stale_rows(&plan, &snapshot, report.as_ref().map(|(report, _)| report))?
+            stale_rows(&planned, &snapshot, reported.as_ref())?
         } else {
             Vec::new()
         };
@@ -137,18 +161,48 @@ fn saved_output<T>(
     })
 }
 
+type ReportCandidates<'a> = HashMap<&'a str, &'a hoimin_core::MutantFinished>;
+type SnapshotCandidates<'a> = HashMap<&'a str, &'a (model::ReviewKey, ReviewState)>;
+
+fn index_report(report: &ReviewReport) -> ReportCandidates<'_> {
+    #[cfg(test)]
+    JOIN_WORK.with_borrow_mut(|work| work.report_builds += 1);
+    // Report structure validation rejects duplicate stable IDs before indexing.
+    report
+        .mutants
+        .iter()
+        .map(|mutant| {
+            #[cfg(test)]
+            JOIN_WORK.with_borrow_mut(|work| work.report_entries += 1);
+            (mutant.candidate.id.as_str(), mutant)
+        })
+        .collect()
+}
+
+fn index_snapshot(snapshot: &[(model::ReviewKey, ReviewState)]) -> SnapshotCandidates<'_> {
+    #[cfg(test)]
+    JOIN_WORK.with_borrow_mut(|work| work.snapshot_builds += 1);
+    // Store snapshots validate key/ID agreement and have unique SQLite primary keys.
+    snapshot
+        .iter()
+        .map(|entry| {
+            #[cfg(test)]
+            JOIN_WORK.with_borrow_mut(|work| work.snapshot_entries += 1);
+            (entry.0.candidate_id.as_str(), entry)
+        })
+        .collect()
+}
+
 fn execution(
     candidate: &hoimin_core::MutationCandidate,
-    report: Option<&ReviewReport>,
+    report: Option<&ReportCandidates<'_>>,
 ) -> Result<ReviewExecution, ReviewError> {
     let Some(report) = report else {
         return Ok(ReviewExecution::NotLoaded);
     };
-    let Some(mutant) = report
-        .mutants
-        .iter()
-        .find(|mutant| mutant.candidate.id == candidate.id)
-    else {
+    #[cfg(test)]
+    JOIN_WORK.with_borrow_mut(|work| work.report_probes += 1);
+    let Some(mutant) = report.get(candidate.id.as_str()) else {
         return Ok(ReviewExecution::NotInReport);
     };
     if crate::plan::candidate_descriptor(candidate)
@@ -213,18 +267,15 @@ fn record_store(
 }
 
 fn stale_rows(
-    plan: &crate::plan::ReadOnlyPlan,
+    plan: &input::PlanCandidates<'_>,
     snapshot: &[(model::ReviewKey, ReviewState)],
-    report: Option<&ReviewReport>,
+    report: Option<&ReportCandidates<'_>>,
 ) -> Result<Vec<ReviewRow>, ReviewError> {
     let mut stale_candidates = Vec::new();
     for (key, state) in snapshot {
-        if plan
-            .manifest
-            .candidates
-            .iter()
-            .any(|candidate| candidate.id == key.candidate_id)
-        {
+        #[cfg(test)]
+        JOIN_WORK.with_borrow_mut(|work| work.plan_probes += 1);
+        if plan.contains_key(key.candidate_id.as_str()) {
             continue;
         }
         let descriptor = &key.descriptor;

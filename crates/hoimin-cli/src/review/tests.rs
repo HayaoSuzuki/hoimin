@@ -194,8 +194,12 @@ fn draft_accepts_multiline_reason_without_evidence() {
 }
 
 async fn plan_fixture() -> (tempfile::TempDir, std::path::PathBuf) {
+    plan_fixture_with_source("value = 1\n").await
+}
+
+async fn plan_fixture_with_source(source: &str) -> (tempfile::TempDir, std::path::PathBuf) {
     let dir = tempfile::tempdir().unwrap();
-    std::fs::write(dir.path().join("sample.py"), "value = 1\n").unwrap();
+    std::fs::write(dir.path().join("sample.py"), source).unwrap();
     let args = crate::cli::parse_from([
         "hoimin",
         "plan",
@@ -229,7 +233,7 @@ async fn old_candidate_without_report_is_not_loaded() {
     let key =
         super::input::review_key(&plan.project, &plan.manifest.candidates.remove(0).candidate);
     let state = apply_update(&ReviewState::default(), Applicability::Current, 0, draft()).unwrap();
-    let rows = super::stale_rows(&plan, &[(key, state)], None).unwrap();
+    let rows = super::stale_rows(&super::input::index_plan(&plan), &[(key, state)], None).unwrap();
     assert!(matches!(
         rows[0].execution,
         super::render::ReviewExecution::NotLoaded
@@ -365,12 +369,18 @@ async fn report_fixture() -> (tempfile::TempDir, std::path::PathBuf, std::path::
 async fn old_candidate_report_retains_matching_execution_result() {
     let (_dir, path, report_path) = report_fixture().await;
     let mut plan = super::input::load_plan(&path).unwrap();
-    let (report, _) = super::input::load_report(&report_path, &plan).unwrap();
+    let (report, _) =
+        super::input::load_report(&report_path, &plan, &super::input::index_plan(&plan)).unwrap();
     let key =
         super::input::review_key(&plan.project, &plan.manifest.candidates.remove(0).candidate);
     let state = apply_update(&ReviewState::default(), Applicability::Current, 0, draft()).unwrap();
 
-    let rows = super::stale_rows(&plan, &[(key, state)], Some(&report)).unwrap();
+    let rows = super::stale_rows(
+        &super::input::index_plan(&plan),
+        &[(key, state)],
+        Some(&super::index_report(&report)),
+    )
+    .unwrap();
 
     assert!(matches!(
         rows[0].execution,
@@ -382,13 +392,18 @@ async fn old_candidate_report_retains_matching_execution_result() {
 async fn old_candidate_report_rejects_descriptor_mismatch() {
     let (_dir, path, report_path) = report_fixture().await;
     let mut plan = super::input::load_plan(&path).unwrap();
-    let (report, _) = super::input::load_report(&report_path, &plan).unwrap();
+    let (report, _) =
+        super::input::load_report(&report_path, &plan, &super::input::index_plan(&plan)).unwrap();
     let mut key =
         super::input::review_key(&plan.project, &plan.manifest.candidates.remove(0).candidate);
     key.descriptor.original = "different".into();
     let state = apply_update(&ReviewState::default(), Applicability::Current, 0, draft()).unwrap();
 
-    let result = super::stale_rows(&plan, &[(key, state)], Some(&report));
+    let result = super::stale_rows(
+        &super::input::index_plan(&plan),
+        &[(key, state)],
+        Some(&super::index_report(&report)),
+    );
 
     assert!(result.is_err());
 }
@@ -398,7 +413,8 @@ async fn review_accepts_matching_report() {
     let (_dir, path, report_path) = report_fixture().await;
     let plan = super::input::load_plan(&path).unwrap();
 
-    let (report, _) = super::input::load_report(&report_path, &plan).unwrap();
+    let (report, _) =
+        super::input::load_report(&report_path, &plan, &super::input::index_plan(&plan)).unwrap();
 
     assert_eq!(report.mutants.len(), 1);
 }
@@ -429,7 +445,8 @@ async fn review_rejects_report_with_changed_identity_or_execution() {
         *value.pointer_mut(pointer).unwrap() = replacement;
         std::fs::write(&report_path, serde_json::to_vec(&value).unwrap()).unwrap();
 
-        let result = super::input::load_report(&report_path, &plan);
+        let result =
+            super::input::load_report(&report_path, &plan, &super::input::index_plan(&plan));
 
         assert!(result.is_err(), "{change}");
     }
@@ -442,7 +459,7 @@ async fn review_rejects_trailing_report_document() {
     let original = std::fs::read(&report_path).unwrap();
     std::fs::write(&report_path, [original.as_slice(), b"\n{}\n"].concat()).unwrap();
 
-    let result = super::input::load_report(&report_path, &plan);
+    let result = super::input::load_report(&report_path, &plan, &super::input::index_plan(&plan));
 
     assert!(result.is_err());
 }
@@ -555,4 +572,225 @@ async fn review_record_rejects_candidate_missing_from_report() {
 
     assert_eq!(code, 2);
     assert!(!dir.path().join("reviews.sqlite3").exists());
+}
+
+fn write_matching_report(
+    path: &std::path::Path,
+    plan: &crate::plan::ReadOnlyPlan,
+    candidates: &[&hoimin_core::MutationCandidate],
+) {
+    let mut report: serde_json::Value = serde_json::from_str(include_str!(
+        "../../tests/golden/reports/schema-v4-current.json"
+    ))
+    .unwrap();
+    report["run"]["normalized_config"] = serde_json::to_value(
+        plan.manifest
+            .normalized_config
+            .clone()
+            .into_run_config(hoimin_core::OutputConfig::default()),
+    )
+    .unwrap();
+    let template = report["mutants"][0].clone();
+    report["mutants"] = serde_json::Value::Array(
+        candidates
+            .iter()
+            .enumerate()
+            .map(|(index, candidate)| {
+                let mut mutant = template.clone();
+                mutant["candidate"] = serde_json::to_value(candidate).unwrap();
+                mutant["sequence"] = (index + 4).into();
+                mutant
+            })
+            .collect(),
+    );
+    report["summary"]["sequence"] = (candidates.len() + 4).into();
+    report["summary"]["counts"]["killed"] = candidates.len().into();
+    std::fs::write(path, serde_json::to_vec(&report).unwrap()).unwrap();
+}
+
+fn populate_matching_snapshot(store_path: &std::path::Path, plan: &crate::plan::ReadOnlyPlan) {
+    // Initialize through the store, then populate the fixture in one transaction
+    // so append's own validation cost is outside this join-scaling regression.
+    drop(super::store::ReviewStore::open_write(store_path, &plan.project).unwrap());
+    let mut connection = rusqlite::Connection::open(store_path).unwrap();
+    let transaction = connection.transaction().unwrap();
+    for ranked in &plan.manifest.candidates {
+        let key = super::input::review_key(&plan.project, &ranked.candidate);
+        let mut event = draft();
+        event.reason.clone_from(&ranked.id);
+        transaction
+            .execute(
+                "INSERT INTO candidates(id, key_json) VALUES (?1, ?2)",
+                rusqlite::params![ranked.id, serde_json::to_string(&key).unwrap()],
+            )
+            .unwrap();
+        transaction
+            .execute(
+                "INSERT INTO review_events(candidate_id, revision, draft_json) VALUES (?1, ?2, ?3)",
+                rusqlite::params![
+                    ranked.id,
+                    1_u64.to_be_bytes().as_slice(),
+                    serde_json::to_string(&event).unwrap()
+                ],
+            )
+            .unwrap();
+    }
+    transaction.commit().unwrap();
+}
+
+#[tokio::test]
+async fn matching_review_command_joins_once_and_keeps_plan_display_order() {
+    let (dir, path) = plan_fixture_with_source(&"value = 1\n".repeat(300)).await;
+    let plan = super::input::load_plan(&path).unwrap();
+    let count = plan.manifest.candidates.len();
+    assert!(count >= 600, "fixture must exercise repeated joins");
+    let report_path = dir.path().join("report.json");
+    let candidates: Vec<_> = plan
+        .manifest
+        .candidates
+        .iter()
+        .rev()
+        .map(|ranked| &ranked.candidate)
+        .collect();
+    write_matching_report(&report_path, &plan, &candidates);
+    let store_path = dir.path().join("reviews.sqlite3");
+    populate_matching_snapshot(&store_path, &plan);
+    let args = crate::cli::parse_from([
+        "hoimin",
+        "review",
+        "list",
+        path.to_str().unwrap(),
+        "--store",
+        store_path.to_str().unwrap(),
+        "--report",
+        report_path.to_str().unwrap(),
+        "--stale",
+        "--format",
+        "json",
+    ])
+    .unwrap();
+    let crate::cli::ParsedCommand::Review(args) = args else {
+        panic!("review")
+    };
+    super::JOIN_WORK.with_borrow_mut(|work| *work = super::JoinWork::default());
+    let mut output = Vec::new();
+    super::run(&args, &mut output).unwrap();
+    let work = super::JOIN_WORK.with_borrow(|work| *work);
+    let value: serde_json::Value = serde_json::from_slice(&output).unwrap();
+    let rows = value["candidates"].as_array().unwrap();
+    assert_eq!(rows.len(), count);
+    for (row, ranked) in rows.iter().zip(&plan.manifest.candidates) {
+        assert_eq!(row["candidate"]["id"], ranked.id);
+        assert_eq!(row["execution"]["status"], "killed");
+        assert_eq!(row["review"]["draft"]["reason"], ranked.id);
+        assert_eq!(row["history"].as_array().unwrap().len(), 1);
+    }
+    assert_eq!(value["stale_candidates"], serde_json::json!([]));
+    assert_eq!(
+        work.plan_probes,
+        2 * count,
+        "report validation and stale membership each probe once"
+    );
+    assert_eq!(work.report_probes, count);
+    assert_eq!(work.snapshot_probes, count);
+    assert_eq!(
+        (work.plan_builds, work.report_builds, work.snapshot_builds),
+        (1, 1, 1)
+    );
+    assert_eq!(
+        (
+            work.plan_entries,
+            work.report_entries,
+            work.snapshot_entries
+        ),
+        (count, count, count)
+    );
+}
+
+#[tokio::test]
+async fn report_project_error_precedes_identity_and_identity_precedes_descriptor() {
+    let (_dir, path, report_path) = report_fixture().await;
+    let mut plan = super::input::load_plan(&path).unwrap();
+    let mut value: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&report_path).unwrap()).unwrap();
+    value["mutants"][0]["candidate"]["replacement"] = "forged".into();
+    std::fs::write(&report_path, serde_json::to_vec(&value).unwrap()).unwrap();
+    let project = plan.project.clone();
+    plan.project = camino::Utf8PathBuf::from("another-project");
+    let error = super::input::load_report(&report_path, &plan, &super::input::index_plan(&plan))
+        .err()
+        .unwrap();
+    assert_eq!(
+        error.to_string(),
+        "invalid review input: report belongs to another project"
+    );
+    plan.project = project;
+    plan.manifest.candidates[0].candidate.original = "also different".into();
+    let error = super::input::load_report(&report_path, &plan, &super::input::index_plan(&plan))
+        .err()
+        .unwrap();
+    assert_eq!(
+        error.to_string(),
+        "invalid review input: report candidate identity conflict"
+    );
+}
+
+#[tokio::test]
+async fn stale_rows_keep_snapshot_order() {
+    let (_dir, path) = plan_fixture().await;
+    let mut plan = super::input::load_plan(&path).unwrap();
+    let candidates = std::mem::take(&mut plan.manifest.candidates);
+    let state = apply_update(&ReviewState::default(), Applicability::Current, 0, draft()).unwrap();
+    let first = super::input::review_key(&plan.project, &candidates[0].candidate);
+    let second = super::input::review_key(&plan.project, &candidates[1].candidate);
+    let snapshot = [(second.clone(), state.clone()), (first.clone(), state)];
+    let rows = super::stale_rows(&super::input::index_plan(&plan), &snapshot, None).unwrap();
+    let ids: Vec<_> = rows.iter().map(|row| row.candidate.id.as_str()).collect();
+    assert_eq!(
+        ids,
+        [second.candidate_id.as_str(), first.candidate_id.as_str()]
+    );
+}
+
+#[tokio::test]
+async fn checked_report_duplicate_error_precedes_identity_conflict() {
+    let (_dir, path, report_path) = report_fixture().await;
+    let plan = super::input::load_plan(&path).unwrap();
+    let mut value: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&report_path).unwrap()).unwrap();
+    value["mutants"][0]["candidate"]["id"] = "forged".into();
+    let mut duplicate = value["mutants"][0].clone();
+    duplicate["sequence"] = 5.into();
+    value["mutants"].as_array_mut().unwrap().push(duplicate);
+    value["summary"]["counts"]["killed"] = 2.into();
+    std::fs::write(&report_path, serde_json::to_vec(&value).unwrap()).unwrap();
+    let error = super::input::load_report(&report_path, &plan, &super::input::index_plan(&plan))
+        .err()
+        .unwrap();
+    assert!(
+        error
+            .to_string()
+            .contains("mutant stable IDs must appear at most once"),
+        "{error}"
+    );
+}
+
+#[tokio::test]
+async fn checked_plan_keeps_duplicate_id_diagnostic() {
+    let (_dir, path) = plan_fixture().await;
+    let mut plan = super::input::load_plan(&path).unwrap();
+    let mut first = plan.manifest.candidates[0].clone();
+    first.rank = 1;
+    first.candidate.sequence = 1;
+    let mut second = first.clone();
+    second.rank = 2;
+    second.candidate.sequence = 2;
+    let id = first.id.clone();
+    plan.manifest.candidates = vec![first, second];
+    std::fs::write(&path, serde_json::to_vec(&plan.manifest).unwrap()).unwrap();
+    let error = super::input::load_plan(&path).err().unwrap();
+    assert_eq!(
+        error.to_string(),
+        format!("invalid review input: plan.candidate.invalid: duplicate candidate id {id}")
+    );
 }
