@@ -5,6 +5,11 @@ description: モデル内証明・有限探索・Rust対応・実機確認の違
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: current-initialization
+  resource: ../../../formal/HoiminOracle/HoiminOracle/SchemaMigrationModel.lean
+  revision: 97c394760bc02a56be0bfdeb6301257eac80d1c7
+  working_tree: modified
+  sha256: 2d1710df34ea77b0733ca1fbb5b10bb9d74d93603959cc0e69a24f04decd91f3
 - id: development
   resource: ../../development.md
   revision: a7daea0b557cd435c1e55b540392fbdd116348e1
@@ -50,6 +55,11 @@ hoiminのLean監査では、モデル内の性質を証明する作業と、Rust
 
 スキーマ移行では、公開APIから実行順序を固定できるかが問題になる。`forced_stale_reread` は、二つの接続が古い版を読んでから書込み権限を取る順序を公開APIで強制できないため、model-onlyに分類した。同時にopenが成功した結果だけでは、その順序で動いたとは確認できない。[^migration]
 
+Issue #882で旧session DBの移行対応を終了した。
+上記は2026-08-11の監査範囲の説明である。
+現行の同名モデル・corpusは、schema 4の直接初期化と未対応版の拒否を扱い、強制した新規DBのstale readだけをmodel-onlyとして区別する。
+過去の移行証明を現行実装の移行対応の根拠には使わない。[^current-initialization]
+
 資源の後始末を扱う監査では、真偽値による抽象モデルと、独立した内部Rust試験を組み合わせている。strictな対応試験や生成corpusによる比較はなく、モデルの成功とRust試験の成功はそれぞれの証拠として読む。[^cleanup]
 
 実行結果の保存・再利用を担うsessionの所有権監査では、有限探索に含めた操作の集合に、再開時の結果検索（lookup）がない。lookupの根拠は別の定理、固定したcorpus、意図的に壊したモデルの検出結果にある。探索が安全と判定しただけでは、lookupについて説明できない。[^ownership]
@@ -72,3 +82,5 @@ CI監査報告には、キャッシュなしのビルドでのRSS（常駐メモ
 [^cleanup]: [2026-09-08-issue-342-resource-audit.md](../../superpowers/reports/2026-09-08-issue-342-resource-audit.md)。
 [^ownership]: [2026-09-07-issue-363-session-ownership.md](../../superpowers/reports/2026-09-07-issue-363-session-ownership.md)。
 [^ci]: [2026-09-08-issue-369-lean-ci-audit.md](../../superpowers/reports/2026-09-08-issue-369-lean-ci-audit.md)。
+
+[^current-initialization]: [現行session初期化モデル](../../../formal/HoiminOracle/HoiminOracle/SchemaMigrationModel.lean)。

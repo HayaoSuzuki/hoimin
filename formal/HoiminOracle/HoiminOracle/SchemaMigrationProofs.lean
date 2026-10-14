@@ -12,8 +12,8 @@ theorem step_preserves (state : State) (event : Event)
     (holds : Invariant state) : Invariant (step state event) := by
   obtain ⟨leftHolds, rightHolds⟩ := holds
   cases event <;>
-    simp [step, Invariant, observe, begin, migrate, commit, fail, releaseFailed,
-      setPhase, phase, nextVersion?] at leftHolds rightHolds ⊢ <;> grind
+    simp [step, Invariant, observe, begin, initializeSchema, commit, fail, releaseFailed,
+      setPhase, phase] at leftHolds rightHolds ⊢ <;> grind
 
 set_option maxHeartbeats 100000 in
 theorem run_preserves (state : State) (trace : List Event)
@@ -36,8 +36,8 @@ set_option maxHeartbeats 100000 in
 theorem step_preserves_legacy_data (state : State) (event : Event) :
     (step state event).legacyRow = state.legacyRow := by
   cases event <;>
-    simp [step, observe, begin, migrate, commit, fail, releaseFailed,
-      setPhase, phase, nextVersion?] <;> grind
+    simp [step, observe, begin, initializeSchema, commit, fail, releaseFailed,
+      setPhase, phase] <;> grind
 
 set_option maxHeartbeats 100000 in
 theorem run_preserves_legacy_data (state : State) (trace : List Event) :
@@ -69,8 +69,8 @@ theorem step_preserves_future_version
     (state : State) (event : Event) (future : state.version = .future) :
     (step state event).version = .future := by
   cases event <;>
-    simp [step, observe, begin, migrate, commit, fail, releaseFailed,
-      setPhase, phase, nextVersion?, future] <;> grind
+    simp [step, observe, begin, initializeSchema, commit, fail, releaseFailed,
+      setPhase, phase, future] <;> grind
 
 set_option maxHeartbeats 100000 in
 theorem run_preserves_future_version
@@ -81,4 +81,24 @@ theorem run_preserves_future_version
   | cons event rest induction =>
       exact induction (step state event) (step_preserves_future_version state event future)
 
+set_option maxHeartbeats 100000 in
+theorem step_preserves_unsupported_version
+    (state : State) (event : Event)
+    (notFresh : state.version ≠ .fresh) (notCurrent : state.version ≠ .current) :
+    (step state event).version = state.version := by
+  cases event <;>
+    simp [step, observe, begin, initializeSchema, commit, fail, releaseFailed,
+      setPhase, phase] <;> grind
+
+set_option maxHeartbeats 100000 in
+theorem run_preserves_unsupported_version
+    (state : State) (trace : List Event)
+    (notFresh : state.version ≠ .fresh) (notCurrent : state.version ≠ .current) :
+    (run state trace).version = state.version := by
+  induction trace generalizing state with
+  | nil => rfl
+  | cons event rest induction =>
+      have unchanged := step_preserves_unsupported_version state event notFresh notCurrent
+      rw [run, induction (step state event) (by simpa [unchanged] using notFresh)
+        (by simpa [unchanged] using notCurrent), unchanged]
 end HoiminOracle.SchemaMigration

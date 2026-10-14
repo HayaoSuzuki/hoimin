@@ -70,48 +70,38 @@ fn all_optional_session_rows(schema_version: i64) -> GoldenSessionRows {
 }
 
 #[test]
-fn golden_session_schema_eras_migrate_without_semantic_loss() {
+fn golden_session_schema_eras_reject_old_and_reopen_current_without_semantic_loss() {
     let root = repo_root().join("crates/hoimin-cli/tests/golden/sessions");
-    for (version, expected_resume) in [
-        (1, Err("session.resume.incompatible".to_owned())),
-        (2, Err("session.resume.incompatible".to_owned())),
-        (3, Err("session.resume.incompatible".to_owned())),
-        (4, Ok("golden-run".to_owned())),
-    ] {
-        let source = root.join(format!("schema-v{version}.sqlite3"));
+    for version in 1..=4 {
         let temp = tempfile::tempdir().unwrap();
-        let migrated_path = temp.path().join("session.sqlite3");
-        std::fs::copy(&source, &migrated_path).unwrap();
-        let before =
-            Connection::open_with_flags(&migrated_path, OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
-        assert_eq!(user_version(&before), version);
+        let path = temp.path().join("session.sqlite3");
+        std::fs::copy(root.join(format!("schema-v{version}.sqlite3")), &path).unwrap();
+        let before = Connection::open(&path).unwrap();
         assert_golden_session_rows(&before, version);
+        let original_schema = schema_sql(&before);
+        let original_rows = logical_rows(&before);
         drop(before);
-
-        let mut handler = SessionHandler::open(&migrated_path).unwrap();
-        let resumed = handler.load(&LoadSession {
-            max_mutants: std::num::NonZeroUsize::new(100).unwrap(),
-            id: EffectId(89),
-            fingerprint: RunFingerprint::from_bytes([1; 32]),
-        });
-        assert_eq!(
-            resumed
-                .map(|loaded| loaded.resume.unwrap().run_id)
-                .map_err(|error| error.failure.code().to_owned()),
-            expected_resume
-        );
-        drop(handler);
-
-        let migrated = Connection::open(&migrated_path).unwrap();
-        assert_eq!(user_version(&migrated), 4);
-        let budget: Option<Vec<u8>> = migrated
-            .query_row("SELECT max_mutants FROM runs", [], |row| row.get(0))
-            .unwrap();
-        assert_eq!(
-            budget,
-            (version == 4).then(|| 100u64.to_be_bytes().to_vec())
-        );
-        assert_golden_session_rows(&migrated, version);
+        if version == 4 {
+            let mut handler = SessionHandler::open(&path).unwrap();
+            let resumed = handler
+                .load(&LoadSession {
+                    max_mutants: std::num::NonZeroUsize::new(100).unwrap(),
+                    id: EffectId(89),
+                    fingerprint: RunFingerprint::from_bytes([1; 32]),
+                })
+                .unwrap();
+            assert_eq!(resumed.resume.unwrap().run_id, "golden-run");
+        } else {
+            let Err(error) = SessionHandler::open(&path) else {
+                panic!("old session schema {version} was accepted");
+            };
+            assert!(error.to_string().contains("unsupported"));
+            assert!(error.to_string().contains("new session"));
+        }
+        let after = Connection::open(&path).unwrap();
+        assert_eq!(user_version(&after), version);
+        assert_eq!(schema_sql(&after), original_schema);
+        assert_eq!(logical_rows(&after), original_rows);
     }
 }
 
@@ -271,7 +261,15 @@ fn schema_sql(connection: &Connection) -> Vec<(String, String, String, String)> 
         )
         .unwrap()
         .query_map([], |row| {
-            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get::<_, String>(3)?
+                    .split_whitespace()
+                    .collect::<String>()
+                    .replace("\"results\"", "results"),
+            ))
         })
         .unwrap()
         .collect::<Result<Vec<_>, _>>()
@@ -788,7 +786,7 @@ fn assert_exact_outcome(
 }
 
 #[test]
-fn migrates_schema_enables_wal_and_echoes_typed_completion_events() {
+fn initializes_schema_enables_wal_and_echoes_typed_completion_events() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("sessions.sqlite3");
     let mut handler = SessionHandler::open(&path).unwrap();

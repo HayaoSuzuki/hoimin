@@ -5,6 +5,11 @@ description: 保存・復旧の権限、スキーマ移行、結果の生成側�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: current-initialization
+  resource: ../../../formal/HoiminOracle/HoiminOracle/SchemaMigrationModel.lean
+  revision: 97c394760bc02a56be0bfdeb6301257eac80d1c7
+  working_tree: modified
+  sha256: 2d1710df34ea77b0733ca1fbb5b10bb9d74d93603959cc0e69a24f04decd91f3
 - id: tracing-readme
   resource: ../../usage.md
   revision: 5a45bdc3bd444771c4c57e30fe211f174850ce93
@@ -109,11 +114,17 @@ Issue #472 の設計では、指定されたsessionのDB、WAL・SHM・journal�
 
 相対sessionパスは呼出し元のカレントディレクトリを基準に解決する。SQLiteを開くパスとロック名の決定に同じ解決結果を使い、DBを早期作成してsnapshotへ紛れ込ませない。所有権の取得と排他制御は維持し、元ソースや通常fixtureの変更は従来どおり拒否する。これは選択規則の設計であり、過去のLean監査結果を新しい実装全体の保証として扱わない。[^issue-472]
 
-# スキーマ移行の競合と検証範囲
+# session初期化と過去の移行監査
 
-スキーマ移行の監査では、DBの書込みロック取得後の版再確認、失敗時に変更をまとめて取り消す処理、旧データの保持、未対応の新しい版の扱いをモデル化した。公開APIで二つのopenを同時に始める試験では、両者が古い版を読んでからロックを取ったかまでは確定できない。この特定の実行順序を要求するケースは、モデル内だけで確認する `model-only` に分類している。[^migration]
+2026-08-11のスキーマ移行監査では、DBの書込みロック取得後の版再確認、失敗時に変更をまとめて取り消す処理、旧データの保持、未対応の新しい版の扱いをモデル化した。公開APIで二つのopenを同時に始める試験では、両者が古い版を読んでからロックを取ったかまでは確定できない。この特定の実行順序を要求するケースは、モデル内だけで確認する `model-only` に分類している。[^migration]
 
 一方、run所有権の修正報告では、macOSとLinuxの非rootユーザー環境で、Leanの期待値と公開APIの結果を比較する20件の `strict` ケースが一致した。有限の実行順序を調べる探索は深さ4までであり、深さ8は当時の時間制限で完了していない。これらの結果が示す範囲に、Windows・実際のクラッシュ・SQLite自体の正しさは含まれない。[^ownership-report]
+
+Issue #882以降、session DBはschema 4だけを開く。
+新規DB（`user_version = 0`）にはschema 4を一つのトランザクションで直接作成し、旧版1〜3と未対応の新しい版は変更せず拒否する。
+過去の移行監査は当時の実装の記録であり、現在の移行対応を示さない。
+`SchemaMigration`という既存のモジュール名を保つ現行モデルとcorpusは、新規初期化の競合、ロック取得後の版再確認、初期化失敗のrollback、未対応版の拒否を対象とする。
+SQLiteのWAL実装や実際のクラッシュを証明するものではない。[^current-initialization]
 
 # 結果の生成と読取りの責務
 
@@ -207,3 +218,5 @@ CLIはログを容量制限付きキューから別スレッドへ渡す。キ�
 
 [^tracing-readme]: [利用方法](../../usage.md)。
 [^tracing-runtime]: [CLIの診断出力](../../../crates/hoimin-cli/src/telemetry.rs)。
+
+[^current-initialization]: [現行session初期化モデル](../../../formal/HoiminOracle/HoiminOracle/SchemaMigrationModel.lean)。
