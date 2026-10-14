@@ -843,7 +843,7 @@ sources:
   resource: ../../superpowers/reports/issue-895/review.md
   revision: 666505221155fda7fcc7941c339d459c46466b22
   working_tree: modified
-  sha256: ebcf6cff3e8451bde51ac45b23a56ef72a9ac66e5103cf3c6fe731996a976f58
+  sha256: a4dcc18a52f6c98659e9b100ecbfff101330931ed5575463a23693215d58814a
 
 ---
 
