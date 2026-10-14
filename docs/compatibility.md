@@ -20,12 +20,22 @@ representation change alone does not invalidate compatible sessions. If a run is
 rejected for another compatibility reason, choose a different `--session PATH`.
 See [Explicit inherited environment fingerprints](development.md#explicit-inherited-environment-fingerprints).
 
+## Typed session intent
+
+Report schema 6 replaces normalized `session`/`resume` pairs with one `session`
+object. Disabled sessions use `{"mode":"disabled"}`. Fresh and resumed sessions
+use `{"mode":"fresh","config":{"path":"..."}}` and `{"mode":"resume","config":{"path":"..."}}`.
+The raw CLI options remain `--session` and `--resume`. Normalized inputs reject
+old session pairs and the obsolete `resume` field; no conversion is attempted.
+Read older reports with their producing binary or rerun with this version.
+Plan schema 6 and session database schema 4 are unchanged by this representation.
+
 ## Public interfaces
 
 | Interface | Maintenance rule | User action when it changes |
 | --- | --- | --- |
 | CLI arguments, defaults and exit codes | Preserve documented usage within a minor series, except documented bug fixes. Removing or changing a supported contract needs a minor-version floor increase. | Update invocation and CI conditions using the release notice. |
-| JSON and JSONL reports | Treat documented schemas as public. Progress accepts only report schema 5, matching the writer; review accepts current-schema JSON. Adding a field may still affect strict readers. | Read old reports with their producing binary, or rerun with the intended version. Plan regeneration alone cannot reconstruct past reports. Files are not automatically converted. |
+| JSON and JSONL reports | Treat documented schemas as public. Progress accepts only report schema 6, matching the writer; review accepts current-schema JSON. Adding a field may still affect strict readers. | Read old reports with their producing binary, or rerun with the intended version. Plan regeneration alone cannot reconstruct past reports. Files are not automatically converted. |
 | Saved plan, ranking and candidate IDs | These are checked execution inputs, not timeless interchange formats. Changes to schema, ranking, identity, source or fingerprints can invalidate a plan. | Regenerate the plan with the intended version and inputs. Do not hand-edit versions or IDs to bypass validation. |
 | Session database and resume | Resume is allowed only under the implementation's schema and fingerprint checks. Migration support must be stated explicitly. | Keep the old database and binary if needed; start a new session when compatibility is not supported. |
 | Default operators, profiles and selection | Changes can alter candidate count, runtime and the population behind a score. Default expansion is an observable compatibility change. | Review the operator set and budget; use matching candidates and validation settings for comparisons. |

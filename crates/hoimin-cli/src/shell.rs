@@ -909,7 +909,7 @@ impl BlockingEffect {
                         value.fingerprint = run_fingerprint;
                         (
                             RunEvent::PreflightCompleted(value),
-                            config.session.as_ref().map(|session| session.path.clone()),
+                            config.session.config().map(|session| session.path.clone()),
                         )
                     }
                     Err(error) => (RunEvent::EffectFailed(error), None),
@@ -990,7 +990,7 @@ fn prepare_session_artifacts(
     config: &mut RunConfig,
 ) -> Result<Vec<crate::workspace::LiteralExclusion>, String> {
     let mut literal_exclusions = Vec::new();
-    if let Some(session) = &mut config.session {
+    if let Some(session) = config.session.config_mut() {
         let artifacts =
             SessionArtifacts::resolve(&session.path).map_err(|error| error.to_string())?;
         let root = std::fs::canonicalize(&config.root).map_err(|error| error.to_string())?;
@@ -1966,7 +1966,7 @@ impl ShellContext {
             config,
             rollback,
         } = prepared;
-        let session_path = config.session.as_ref().map(|value| value.path.clone());
+        let session_path = config.session.config().map(|value| value.path.clone());
         let delivery_child = spool_dir
             .delivery_spool
             .lock()
@@ -2415,7 +2415,7 @@ where
     Stderr: Write + Send + 'static,
 {
     let verified = verified.into_execution();
-    if verified.config.session.is_some() || verified.config.resume {
+    if verified.config.session.config().is_some() {
         let error = "selected candidate execution does not support sessions or resume".to_owned();
         crate::write_terminal_error(error.clone(), stderr).await;
         return Err(error);

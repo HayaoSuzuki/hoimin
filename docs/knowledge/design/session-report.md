@@ -5,6 +5,21 @@ description: 保存・復旧の権限、スキーマ移行、結果の生成側�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-896-config
+  resource: ../../../crates/hoimin-core/src/config.rs
+  revision: 31245fbf096967b36bc15523067080b506f88fe9
+  working_tree: modified
+  sha256: b8d4ea9dad267336367c965fe24ae50634b3fa774e74cbd914e29bc74db6a4ac
+- id: issue-896-design
+  resource: ../../superpowers/specs/2026-10-15-issue-896-typed-session-design.md
+  revision: 31245fbf096967b36bc15523067080b506f88fe9
+  working_tree: untracked
+  sha256: a21cfb2344b5432b2f38b2e964a30d46d68a5c38c99758ef26c49e52dad25254
+- id: issue-896-review
+  resource: ../../superpowers/reports/2026-10-15-issue-896-review.md
+  revision: 31245fbf096967b36bc15523067080b506f88fe9
+  working_tree: untracked
+  sha256: de3a7b9b7aeec7fd176fb66ad9556693a01c5c5abafb438759eb317934c29377
 - id: session-load-outcome
   resource: ../../../crates/hoimin-core/src/event.rs
   revision: 056cb558953ddf5eb8b229976ee894ae7c6bc87f
@@ -260,3 +275,28 @@ CLIはログを容量制限付きキューから別スレッドへ渡す。キ�
 [^current-initialization]: [現行session初期化モデル](../../../formal/HoiminOracle/HoiminOracle/SchemaMigrationModel.lean)。
 
 [^session-load-outcome]: [Session completion contract](../../../crates/hoimin-core/src/event.rs).
+
+## Normalized session intent (Issue #896)
+
+Raw CLI input retains `--session` and `--resume`. Normalization converts them once
+into `SessionMode::Disabled`, `Fresh(SessionConfig)` or `Resume(SessionConfig)`.
+An enabled mode owns its path; a resumed mode without a session path cannot be
+constructed. Path normalization changes the configuration inside the enabled
+mode without replacing its intent.[^issue-896-config][^issue-896-design]
+
+Report schema 6 serializes disabled intent as `{"mode":"disabled"}` and enabled
+intent as `{"mode":"fresh","config":{"path":"..."}}` or the corresponding
+`resume` mode. Normalized readers reject the obsolete independent `resume` field
+and old session objects. Plan schema 6 still omits runtime session intent, and
+session database schema 4 is unchanged. `SessionLoadOutcome` and report
+`ResumeOutcome` describe the observed selection result, not the request mode.
+CLI options, session exclusions and metrics collision rules remain in their
+existing guides.[^issue-896-config][^issue-896-design]
+
+The branch review distinguishes static inspection, Windows checks and pending
+platform checks. Changing session normalization or path ownership requires
+rechecking all three modes, strict Schema decoding and collision rules.[^issue-896-review]
+
+[^issue-896-config]: [Normalized configuration](../../../crates/hoimin-core/src/config.rs).
+[^issue-896-design]: [Typed session design](../../superpowers/specs/2026-10-15-issue-896-typed-session-design.md).
+[^issue-896-review]: [Review and verification](../../superpowers/reports/2026-10-15-issue-896-review.md).

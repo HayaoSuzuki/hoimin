@@ -5,6 +5,11 @@ description: docs/auditsとdocs/superpowers/reports内の全Markdownを追跡状
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-896-review
+  resource: ../../superpowers/reports/2026-10-15-issue-896-review.md
+  revision: 31245fbf096967b36bc15523067080b506f88fe9
+  working_tree: untracked
+  sha256: de3a7b9b7aeec7fd176fb66ad9556693a01c5c5abafb438759eb317934c29377
 - id: issue-759-staged-report
   resource: ../../superpowers/reports/2026-10-11-issue-759-staged-verification.md
   working_tree: untracked
@@ -839,6 +844,7 @@ sources:
 
 | 原文 | 先頭見出し | 作成時の状態 |
 | --- | --- | --- |
+| [2026-10-15-issue-896-review.md](../../superpowers/reports/2026-10-15-issue-896-review.md) | Issue 896 review and verification [^issue-896-review] | 未追跡（参照時点） |
 | [2026-10-05-exception-alias-lean-audit.md](../../superpowers/reports/2026-10-05-exception-alias-lean-audit.md) | 代入による別名の形式監査 [^issue-692-exception-alias-lean-audit] | 追跡済み（fae3ce3） |
 | [2026-10-05-exception-hierarchy-design-recheck.md](../../superpowers/reports/2026-10-05-exception-hierarchy-design-recheck.md) | 別名伝播修正後の原設計再レビュー [^issue-692-exception-hierarchy-design-recheck] | 追跡済み（fae3ce3） |
 | [2026-10-05-exception-hierarchy-design-review.md](../../superpowers/reports/2026-10-05-exception-hierarchy-design-review.md) | 例外階層ミューテーションの原設計レビュー [^issue-692-exception-hierarchy-design-review] | 追跡済み（fae3ce3） |
@@ -1455,3 +1461,5 @@ sources:
 - [Second-order adoption assessment](../../superpowers/reports/issue-763-764/README.md) - Finite pairs, a first-order comparator and the decision to defer composite infrastructure.[^second-order-assessment]
 
 [^second-order-assessment]: [Measured results and limits](../../superpowers/reports/issue-763-764/README.md), projected cases, isolated confirmation and the retained regression assertion.
+
+[^issue-896-review]: [Issue 896 review and verification](../../superpowers/reports/2026-10-15-issue-896-review.md).

@@ -4812,7 +4812,7 @@ fn waiting_for_baseline_with(config: RunConfig) -> (RunState, Vec<RunEffect>) {
 }
 
 fn waiting_for_preflight_with(config: RunConfig) -> (RunState, Vec<RunEffect>) {
-    let session_enabled = config.session.is_some();
+    let session_enabled = config.session.config().is_some();
     let jobs = u32::try_from(config.limits.jobs.get()).unwrap();
     let initial_state = if session_enabled {
         RunState::with_fingerprint(
@@ -4859,8 +4859,8 @@ fn waiting_for_preflight_with(config: RunConfig) -> (RunState, Vec<RunEffect>) {
 }
 
 fn waiting_for_materialization_verification_with(config: RunConfig) -> (RunState, Vec<RunEffect>) {
-    let session_enabled = config.session.is_some();
-    let resume = config.resume;
+    let session_enabled = config.session.config().is_some();
+    let resume = config.session.is_resume();
     let (state, effects) = waiting_for_preflight_with(config);
     let (mut state, mut effects) = (state, effects);
     if session_enabled {

@@ -851,7 +851,7 @@ detected as a copy. Copy confirmation is best-effort if files change or become
 unreadable after validation; reports should remain unchanged during comparison.
 
 Inputs may mix JSON documents and JSONL event streams saved from
-`hoimin run --format jsonl`, both using report schema 5. Older and unsupported
+`hoimin run --format jsonl`, both using report schema 6. Older and unsupported
 future schemas are rejected with exit code 2. Detection uses content, not
 filename. For example:
 
@@ -1459,7 +1459,7 @@ current candidates. `list --stale` includes stored candidates absent from the
 plan separately. List and show do not create a missing store.
 
 Plan-only output has execution state `not_loaded`. Add `--report run.json` for
-actual results from a complete schema-v5 JSON report with a passing baseline and
+actual results from a complete schema-v6 JSON report with a passing baseline and
 matching project/candidates. A plan candidate absent from the report is
 `not_in_report`; recording it with that report is rejected. JSONL and older
 reports are not supported by review. Plan-only recording remains allowed.

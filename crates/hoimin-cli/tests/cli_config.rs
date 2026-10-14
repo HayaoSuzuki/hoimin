@@ -367,8 +367,7 @@ fn plan_accepts_run_selection_but_rejects_report_and_session_options() {
     };
     let config = args.into_run_config().unwrap();
     assert_eq!(config.output.format, hoimin_core::OutputFormat::Json);
-    assert_eq!(config.session, None);
-    assert!(!config.resume);
+    assert_eq!(config.session, hoimin_core::SessionMode::Disabled);
     assert_eq!(config.fingerprint_includes, ["pyproject.toml"]);
     assert_eq!(config.fingerprint_files, ["pyproject.toml"]);
     assert_eq!(config.test_argv.len(), 3);
