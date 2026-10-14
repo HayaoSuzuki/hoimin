@@ -7,19 +7,19 @@ catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
 - id: issue-897-machine
   resource: ../../../crates/hoimin-core/src/machine.rs
-  revision: 31245fbf096967b36bc15523067080b506f88fe9
-  working_tree: modified
-  sha256: b36b2c5a99d5fddb8f96afb8d7744e71b07b3e66c3826802f906026d0c4aef21
+  revision: 175486b7cb30a665bdf39c1ac7897eb96d9966f7
+  working_tree: clean
+  sha256: b8d9be1d96cd6a15db19960f607fa4f81d22ce4b4dc9538f1cb0ec1e9d35bd0c
 - id: issue-897-design
   resource: ../../superpowers/specs/2026-10-15-issue-897-worker-state-design.md
-  revision: 31245fbf096967b36bc15523067080b506f88fe9
-  working_tree: untracked
-  sha256: 7a0bb2594ea6c5d8b6520bfb4ac8d57bb222f532558dfcf4266700fcf312d234
+  revision: 175486b7cb30a665bdf39c1ac7897eb96d9966f7
+  working_tree: clean
+  sha256: db6d7171357601e158950fa4eeae4dc41fdb79a7411a2e9e5224f9d620997ffb
 - id: issue-897-review
   resource: ../../superpowers/reports/2026-10-15-issue-897-review.md
-  revision: 31245fbf096967b36bc15523067080b506f88fe9
-  working_tree: untracked
-  sha256: 017af981ab629a5fe981c3b3df20ad7bf0ea786a7a2ed2a00cc335d469761198
+  revision: 175486b7cb30a665bdf39c1ac7897eb96d9966f7
+  working_tree: modified
+  sha256: 430b42c148d19c8f86f0ff6a19478c868eb9d1d3aa1a92082a5382bc53a3fc52
 - id: issue-867-shell
   resource: ../../../crates/hoimin-cli/src/shell.rs
   revision: 906ba668de94115ef5ca459af3b5f176d22b1b4e
@@ -286,7 +286,7 @@ remain comparison evidence; this work adds no Lean model or proof.
 
 The private WorkerState enum owns each phase's required data. Ready represents a loaded candidate before dispatch. Persisting and Finishing own the complete result, including its candidate; Idle, Reading and Resetting own neither. An acknowledged finished output releases result data before workspace reset.[^issue-897-machine][^issue-897-design]
 
-Stop recovery consumes worker states. Persisting records the classified result once, while Finishing replays the result without recounting it. Synthetic states preserve output start/finish balancing. Pending-effect identity validation, worker bounds and retirement checks remain separate responsibilities. Existing generated adversarial schedules characterize this behavior; the checkpoint review distinguishes preliminary checks from final verification after the result-outcome dependency is applied.[^issue-897-machine][^issue-897-review]
+Stop recovery consumes worker states. Persisting records the classified result once, while Finishing replays the result without recounting it. Synthetic states preserve output start/finish balancing. Pending-effect identity validation, worker bounds and retirement checks remain separate responsibilities. Existing generated adversarial schedules characterize this behavior; the review distinguishes the original full-run fixture failures from the final contracts and affected-suite checks on the typed-outcome dependency.[^issue-897-machine][^issue-897-review]
 
 [^issue-897-machine]: [Worker state and transitions](../../../crates/hoimin-core/src/machine.rs).
 [^issue-897-design]: [Worker-owned execution state](../../superpowers/specs/2026-10-15-issue-897-worker-state-design.md).

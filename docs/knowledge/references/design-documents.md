@@ -7,9 +7,9 @@ catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
 - id: issue-897-design
   resource: ../../superpowers/specs/2026-10-15-issue-897-worker-state-design.md
-  revision: 31245fbf096967b36bc15523067080b506f88fe9
-  working_tree: untracked
-  sha256: 7a0bb2594ea6c5d8b6520bfb4ac8d57bb222f532558dfcf4266700fcf312d234
+  revision: 175486b7cb30a665bdf39c1ac7897eb96d9966f7
+  working_tree: clean
+  sha256: db6d7171357601e158950fa4eeae4dc41fdb79a7411a2e9e5224f9d620997ffb
 - id: typed-results-and-contracts-design
   resource: ../../superpowers/specs/2026-10-12-typed-results-and-contracts-design.md
   revision: 8ff7c6b
