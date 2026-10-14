@@ -254,3 +254,73 @@ fn store_rejects_unknown_version() {
 
     assert!(result.is_err());
 }
+
+#[test]
+fn reading_version_one_store_is_rejected_without_changes() {
+    // Arrange
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("reviews.sqlite3");
+    drop(ReviewStore::open_write(&path, &key().project).unwrap());
+    let connection = rusqlite::Connection::open(&path).unwrap();
+    connection.pragma_update(None, "user_version", 1).unwrap();
+    drop(connection);
+    let before = std::fs::read(&path).unwrap();
+
+    // Act
+    let result = ReviewStore::open_read(&path, &key().project);
+
+    // Assert
+    assert!(result.is_err());
+    // Assert
+    assert_eq!(std::fs::read(&path).unwrap(), before);
+}
+
+#[test]
+fn writing_version_one_store_is_rejected_without_changes() {
+    // Arrange
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("reviews.sqlite3");
+    drop(ReviewStore::open_write(&path, &key().project).unwrap());
+    let connection = rusqlite::Connection::open(&path).unwrap();
+    connection.pragma_update(None, "user_version", 1).unwrap();
+    drop(connection);
+    let before = std::fs::read(&path).unwrap();
+
+    // Act
+    let result = ReviewStore::open_write(&path, &key().project);
+
+    // Assert
+    assert!(result.is_err());
+    // Assert
+    assert_eq!(std::fs::read(&path).unwrap(), before);
+}
+
+#[test]
+fn reopening_store_preserves_report_reference_history() {
+    // Arrange
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("reviews.sqlite3");
+    let key = key();
+    let mut value = draft();
+    value.report = Some(
+        serde_json::from_value(serde_json::json!({
+            "artifact": {"path": "report.json", "content_hash": "b".repeat(64)},
+            "run_id": "run-1"
+        }))
+        .unwrap(),
+    );
+    let mut store = ReviewStore::open_write(&path, &key.project).unwrap();
+    store
+        .append(&key, SourceState::Fresh, 0, value.clone())
+        .unwrap();
+    drop(store);
+
+    // Act
+    let mut reopened = ReviewStore::open_read(&path, &key.project)
+        .unwrap()
+        .unwrap();
+    let snapshot = reopened.snapshot().unwrap();
+
+    // Assert
+    assert_eq!(snapshot[0].1.history[0].draft, value);
+}

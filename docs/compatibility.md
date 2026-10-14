@@ -4,6 +4,24 @@ hoimin is currently a 0.x CLI. This policy describes how maintainers classify
 changes and tell users what to update. A patch release can fix incorrect
 behavior; it does not promise identical mutation candidates or scores.
 
+## Review references and stores in 0.8.0
+
+Review JSON and SQLite review stores use version 2. Plan references contain only
+path/hash metadata; report references contain that metadata under `artifact` and
+a required `run_id`. A review without a report retains `report: null`. Version-1
+stores and old reference shapes are rejected without conversion or fallback.
+The 0.8.0 floor reflects this incompatible public review format after the released
+0.7 series.
+
+Update strict review JSON consumers to schema 2 and its nested report reference.
+Keep old review stores with their producing binary when their history is needed;
+record new reviews at a different `--store PATH`. Existing stores are not
+converted, overwritten, or deleted automatically. CLI arguments/defaults and
+independent report, plan and session formats do not change for this review
+refactor; no OS support or package layout change is introduced.
+See [review reference and store usage](usage.md#human-review-of-mutation-candidates) for the command
+contract and the [review schema](json-schema/review-result.schema.json) for fields.
+
 ## Environment snapshots in 0.7.0
 
 Plan schema 6 and report schema 5 replace the independent environment-name and

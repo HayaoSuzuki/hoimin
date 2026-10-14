@@ -68,7 +68,7 @@ impl ReviewStore {
                 transaction.execute(sql, [])?;
             }
             transaction.pragma_update(None, "application_id", APPLICATION_ID)?;
-            transaction.pragma_update(None, "user_version", 1)?;
+            transaction.pragma_update(None, "user_version", 2)?;
             transaction.execute(
                 "INSERT INTO metadata(project) VALUES (?1)",
                 [project.as_str()],
@@ -213,7 +213,7 @@ fn configure(connection: &Connection) -> Result<(), ReviewError> {
 fn validate_schema(connection: &Connection, project: &Utf8Path) -> Result<(), ReviewError> {
     let app: i64 = connection.query_row("PRAGMA application_id", [], |row| row.get(0))?;
     let version: i64 = connection.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-    if app != APPLICATION_ID || version != 1 {
+    if app != APPLICATION_ID || version != 2 {
         return Err(invalid("unrecognized review database or schema version"));
     }
     let mut statement =
