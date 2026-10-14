@@ -1472,7 +1472,7 @@ repair. Use a local filesystem; network filesystem concurrency is outside the
 initial contract. Store files and SQLite auxiliary paths must not alias plan,
 report, source, or fingerprint inputs.
 
-Review JSON uses version 2 of the independent
+Starting with hoimin 0.8.0, review JSON uses version 2 of the independent
 [review schema](json-schema/review-result.schema.json). Plan references contain
 `path` and `content_hash`; report references contain an `artifact` object with
 those fields and a required `run_id`. A review without a report keeps `report: null`.
