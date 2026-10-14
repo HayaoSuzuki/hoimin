@@ -1124,16 +1124,7 @@ fn output_config(format: OutputFormat) -> OutputConfig {
 
 fn plan_diagnostic(diagnostic: &AnalyzerDiagnostic) -> PlanDiagnostic {
     PlanDiagnostic {
-        code: match diagnostic.code {
-            AnalyzerDiagnosticCode::UnsupportedEnumDefinition => "enum_definition_skipped",
-            AnalyzerDiagnosticCode::UnsupportedExceptionHierarchy => "exception_hierarchy_skipped",
-            AnalyzerDiagnosticCode::InvalidSyntax => "invalid_syntax",
-            AnalyzerDiagnosticCode::UnreconstructableSpan => "unreconstructable_span",
-            AnalyzerDiagnosticCode::UnparseableReplacement => "unparseable_replacement",
-            AnalyzerDiagnosticCode::CandidateLimitExceeded => "candidate_limit",
-            AnalyzerDiagnosticCode::InvalidRequest => "invalid_request",
-        }
-        .to_owned(),
+        code: diagnostic.code.canonical_name().to_owned(),
         path: diagnostic.path.clone(),
         line: diagnostic.line,
         column: diagnostic.column,
@@ -1163,6 +1154,79 @@ mod tests {
         RankedPlanCandidate, create_with_discovery_control, map_discovery_error, plan_output,
         prepare_verify_with_discovery_control, requested_discovery_targets, validate_header,
     };
+
+    #[test]
+    fn analyzer_diagnostics_preserve_plan_names_and_structured_fields() {
+        use crate::analyzer::{AnalyzerDiagnostic, AnalyzerDiagnosticCode};
+
+        let cases = [
+            (AnalyzerDiagnosticCode::InvalidSyntax, "invalid_syntax"),
+            (
+                AnalyzerDiagnosticCode::UnsupportedExceptionHierarchy,
+                "exception_hierarchy_skipped",
+            ),
+            (
+                AnalyzerDiagnosticCode::UnsupportedEnumDefinition,
+                "enum_definition_skipped",
+            ),
+            (
+                AnalyzerDiagnosticCode::UnreconstructableSpan,
+                "unreconstructable_span",
+            ),
+            (
+                AnalyzerDiagnosticCode::UnparseableReplacement,
+                "unparseable_replacement",
+            ),
+            (
+                AnalyzerDiagnosticCode::CandidateLimitExceeded,
+                "candidate_limit",
+            ),
+            (AnalyzerDiagnosticCode::InvalidRequest, "invalid_request"),
+        ];
+        for (code, expected_name) in cases {
+            let diagnostic = AnalyzerDiagnostic {
+                code,
+                path: Some("src/example.py".into()),
+                line: Some(7),
+                column: Some(12),
+                message: None,
+            };
+
+            let mapped = super::plan_diagnostic(&diagnostic);
+
+            assert_eq!(
+                serde_json::to_value(mapped).unwrap(),
+                serde_json::json!({
+                    "code": expected_name,
+                    "path": "src/example.py",
+                    "line": 7,
+                    "column": 12,
+                    "message": "",
+                }),
+            );
+        }
+
+        let diagnostic = AnalyzerDiagnostic {
+            code: AnalyzerDiagnosticCode::InvalidRequest,
+            path: None,
+            line: None,
+            column: None,
+            message: Some("operators must not be empty".to_owned()),
+        };
+
+        let mapped = super::plan_diagnostic(&diagnostic);
+
+        assert_eq!(
+            serde_json::to_value(mapped).unwrap(),
+            serde_json::json!({
+                "code": "invalid_request",
+                "path": null,
+                "line": null,
+                "column": null,
+                "message": "operators must not be empty",
+            }),
+        );
+    }
 
     pub(super) struct Project {
         _directory: tempfile::TempDir,

@@ -5,6 +5,10 @@ description: 構文・名前解決・変更するバイト範囲・候補保持�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-865-names
+  resource: ../../superpowers/plans/2026-10-14-issue-865.md
+  working_tree: untracked
+  sha256: 9ade2e98bed5c27e32f0eac3daadf1c93b331f9d329d198afdd1e376a8163429
 - id: stdlib-conversion
   resource: ../../maintenance/2026-10-13-stdlib-conversion.md
   revision: 95ecb2471ac6cb0a60d4f74d3828f4c3fb24f5de
@@ -853,3 +857,9 @@ CPython 3.14による実行で構文・値・補間の回数と順序・conversi
 `stdlib_conversion_call_remove` は、静的に import 元を確認できる `decimal.Decimal`・`fractions.Fraction` のコンストラクタと変換メソッド5種、および標準ライブラリの具体的な整数列挙型19種の1引数呼び出しを、括弧付きの引数へ置換する。引数を1回評価し、変換後と数値が等しくても戻り値の型が異なる変異を生成する。既定で有効とし、既定選択は54種類、公開IDは計73種類となる。個別除外で従来の53演算子へ戻せる。変換メソッドではクラス参照の持ち出しや別名経由の属性変更も保守的に除外する。`ctypes` は対象外。対象一覧、除外条件、互換性および検証範囲は作業記録と利用ガイドを参照。[^stdlib-conversion]
 
 [^stdlib-conversion]: [Standard-library conversion removal](../../maintenance/2026-10-13-stdlib-conversion.md).
+
+# Diagnostic name ownership (Issue #865)
+
+`AnalyzerDiagnosticCode::canonical_name` owns the seven external names without a prefix. Plan copies that name and preserves separate path, line and column fields; an absent message becomes an empty string. Run adds `analyzer.` and keeps its own default explanations and location formatting. Centralizing names does not combine these output contracts or change saved-plan schemas, exit codes, defaults or the version floor. The implementation and verification record explains the fixed-value coverage and its limits.[^issue-865-names]
+
+[^issue-865-names]: [Issue #865 design, implementation and validation](../../superpowers/plans/2026-10-14-issue-865.md).
