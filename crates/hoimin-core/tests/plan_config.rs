@@ -116,13 +116,11 @@ fn plan_config_serializes_the_mapping_operator_with_its_canonical_name() {
 }
 
 #[test]
-fn plan_config_accepts_the_historical_mapping_operator_name() {
+fn plan_config_rejects_the_historical_mapping_operator_name() {
     let mut value = plan_value();
     value["operators"] = serde_json::json!(["type_mapping"]);
 
-    let plan: PlanConfig = serde_json::from_value(value).unwrap();
-
-    assert!(plan.operators.contains(MutationOperator::TypeMapping));
+    assert!(serde_json::from_value::<PlanConfig>(value).is_err());
 }
 
 #[test]
@@ -250,7 +248,7 @@ fn plan_config_rejects_invalid_normalized_semantics() {
             "zero mutant duration",
             |value| {
                 value["limits"]["mutant_timeout"] =
-                    serde_json::json!({"Fixed": {"secs": 0, "nanos": 0}});
+                    serde_json::json!({"fixed": {"secs": 0, "nanos": 0}});
             },
             ConfigError::InvalidLimit("mutant_timeout"),
         ),
@@ -320,14 +318,14 @@ fn normalized_timeout_limits_enforce_the_inclusive_ceiling() {
         ("baseline_timeout", maximum.clone(), oversized.clone()),
         (
             "mutant_timeout",
-            serde_json::json!({"Fixed": maximum}),
-            serde_json::json!({"Fixed": oversized}),
+            serde_json::json!({"fixed": maximum}),
+            serde_json::json!({"fixed": oversized}),
         ),
         ("total_timeout", maximum, oversized),
     ] {
         let mut accepted = plan_value();
         accepted["limits"]["mutant_timeout"] = serde_json::json!({
-            "Fixed": {"secs": 5, "nanos": 0}
+            "fixed": {"secs": 5, "nanos": 0}
         });
         accepted["limits"][name] = maximum;
 
@@ -337,7 +335,7 @@ fn normalized_timeout_limits_enforce_the_inclusive_ceiling() {
 
         let mut rejected = plan_value();
         rejected["limits"]["mutant_timeout"] = serde_json::json!({
-            "Fixed": {"secs": 5, "nanos": 0}
+            "fixed": {"secs": 5, "nanos": 0}
         });
         rejected["limits"][name] = oversized;
 
@@ -362,7 +360,7 @@ fn normalized_auto_timeout_rejects_a_baseline_with_oversized_derived_timeout() {
         "secs": maximum_baseline.as_secs(),
         "nanos": maximum_baseline.subsec_nanos() + 1
     });
-    value["limits"]["mutant_timeout"] = serde_json::json!("Auto");
+    value["limits"]["mutant_timeout"] = serde_json::json!("auto");
     let config: PlanConfig = serde_json::from_value(value).unwrap();
 
     assert_eq!(

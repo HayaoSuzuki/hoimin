@@ -709,9 +709,11 @@ leaving the other selected IDs enabled. The type selector families are
 `type_nullable`, `type_collections`, and `type_iterables`. The type operator
 IDs are `type_nullable_remove`, `type_nullable_add`, `type_list_sequence`,
 `type_set_abstract_set`, `type_dict_mapping`, `type_iterable_iterator`, and
-`type_sequence_iterable`. When loading persisted plan configurations, the
-historical `type_mapping` name remains accepted as an alias for
-`type_dict_mapping`.
+`type_sequence_iterable`. Saved configurations require `type_dict_mapping`;
+the historical `type_mapping` alias is rejected. Regenerate plans containing
+old names. Timeout and command-argument variants likewise require `auto` / `fixed`
+and `unix` / `windows`; `Auto`, `Fixed`, `Unix` and `Windows` are rejected.
+This removal of saved-input aliases raises the release floor to 0.7.0.
 
 Builtin call and exception pairs require both names to resolve to builtins.
 Class bodies with bases or keyword arguments may use a metaclass-prepared

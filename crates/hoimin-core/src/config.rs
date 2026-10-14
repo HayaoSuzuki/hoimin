@@ -62,7 +62,7 @@ macro_rules! mutation_operators {
         }
 
         impl MutationOperator {
-            /// Looks up a canonical ID; aliases accepted in saved inputs are excluded.
+            /// Looks up an operator by its canonical ID.
             #[must_use]
             pub fn from_name(name: &str) -> Option<Self> {
                 match name {
@@ -140,7 +140,6 @@ mutation_operators! {
     TypeNullableAdd => "type_nullable_add",
     TypeListSequence => "type_list_sequence",
     TypeSetAbstractSet => "type_set_abstract_set",
-    #[serde(alias = "type_mapping")]
     TypeMapping => "type_dict_mapping",
     TypeIterableIterator => "type_iterable_iterator",
     TypeSequenceIterable => "type_sequence_iterable",
@@ -471,9 +470,7 @@ impl NonZeroDuration {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MutantTimeout {
-    #[serde(alias = "Auto")]
     Auto,
-    #[serde(alias = "Fixed")]
     Fixed(NonZeroDuration),
 }
 

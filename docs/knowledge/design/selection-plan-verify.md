@@ -7,6 +7,9 @@ catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
 - id: issue-850-execution
   resource: ../../maintenance/2026-10-13-verified-execution.md
+- id: issue-888-canonical-enums
+  resource: ../../superpowers/plans/2026-10-14-issue-888.md
+  working_tree: untracked
 - id: issue-843-config
   resource: ../../../crates/hoimin-core/src/config.rs
   revision: 16285fdd71b9db1da6570e7b3dbc4d234c3928fe
@@ -223,6 +226,15 @@ sources:
 `plan` は変異候補と実行条件を記録したファイル（manifest）を作る。この段階では、元コードのテスト実行（baseline）、テスト用コピーの作成、結果保存用sessionの作成を行わない。[^initial][^readme]
 
 続く `verify` は保存した条件で候補を実行する。対象ソースと、利用者が変更検知用に明示した入力（fingerprint入力）が変わっていないかをbaseline前に確認する。baselineは毎回実行し、plan経由ではsessionの結果を再利用しない。manifestには実行条件が含まれるため、利用者が信頼するローカルのファイルを使う契約である。[^initial][^readme]
+
+# 保存したEnumの現行名（Issue #888）
+
+型付きの保存設定は、timeoutの`auto` / `fixed`、引数の`unix` / `windows`、operatorの`type_dict_mapping`を要求する。
+旧名`Auto`、`Fixed`、`Unix`、`Windows`、`type_mapping`のserde aliasは廃止した。
+現行writerの出力表現を変えず、旧名のplanを拒否する。旧planは再生成し、過去のreportは生成元バイナリで読むか実行し直す。
+progressの設定を不透明なJSONとして扱う方針は維持し、typed設定を要求するplan/reviewと区別する。[^issue-888-canonical-enums]
+
+[^issue-888-canonical-enums]: [Issue 888の設計・実装・検証記録](../../superpowers/plans/2026-10-14-issue-888.md)。
 
 # 対象を絞る指定の組合せ
 
