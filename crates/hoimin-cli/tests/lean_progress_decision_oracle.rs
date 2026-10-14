@@ -227,8 +227,8 @@ fn validate_delta(id: &str, delta: Option<&ExpectedDelta>) -> Result<(), String>
 }
 
 fn base_report() -> Value {
-    serde_json::from_str(include_str!("golden/reports/schema-v2-current.json"))
-        .expect("owned schema-v2 golden report must remain valid JSON")
+    serde_json::from_str(include_str!("golden/reports/schema-v4-current.json"))
+        .expect("owned current-schema golden report must remain valid JSON")
 }
 
 fn build_report(case_id: &str, report_index: usize, input: &OracleReport) -> Value {
@@ -247,7 +247,7 @@ fn build_report(case_id: &str, report_index: usize, input: &OracleReport) -> Val
             let content = mutant.content_key;
             json!({
                 "kind": "mutant_finished",
-                "schema_version": 2,
+                "schema_version": hoimin_core::REPORT_SCHEMA_VERSION,
                 "sequence": sequence,
                 "run_id": run_id,
                 "candidate": {

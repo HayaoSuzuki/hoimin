@@ -1,9 +1,9 @@
 use std::io::BufRead;
 use std::path::Path;
 
-use hoimin_core::{OutputEvent, REPORT_SCHEMA_VERSION, ReportSequence, RunStarted};
+use hoimin_core::{OutputEvent, ReportSequence, RunStarted};
 
-use super::{ProgressError, ProgressRunEvent, RunReportDocument, invalid_structure};
+use super::{ProgressError, ProgressRunEvent, RunReportDocument, check_schema, invalid_structure};
 
 /// Reuses storage for one nonblank physical line, including a final line
 /// without a newline. No event-history buffer is retained.
@@ -65,9 +65,6 @@ pub(super) fn read_document(
     while read_line(path, &mut reader, &mut line)? {
         let event: OutputEvent = serde_json::from_slice(&line).map_err(parse_error)?;
         check_schema(path, event.schema_version())?;
-        if event.schema_version() != run.schema_version() {
-            return Err(invalid_structure(path, "report schema versions must match"));
-        }
         sequence
             .validate(&event)
             .and_then(|()| sequence.observe(&event))
@@ -111,15 +108,4 @@ pub(super) fn read_document(
         mutants,
         summary,
     })
-}
-
-fn check_schema(path: &Path, found: u32) -> Result<(), ProgressError> {
-    if matches!(found, 3 | REPORT_SCHEMA_VERSION) {
-        Ok(())
-    } else {
-        Err(ProgressError::UnsupportedSchema {
-            path: path.to_path_buf(),
-            found,
-        })
-    }
 }

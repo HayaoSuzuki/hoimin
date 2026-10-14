@@ -846,8 +846,9 @@ same execution saved as JSON and JSONL, or with different whitespace, is not
 detected as a copy. Copy confirmation is best-effort if files change or become
 unreadable after validation; reports should remain unchanged during comparison.
 
-Inputs may mix JSON documents (schema v2/v3/v4) and JSONL event streams
-(schema v3/v4) saved from `hoimin run --format jsonl`. Detection uses content, not
+Inputs may mix JSON documents and JSONL event streams saved from
+`hoimin run --format jsonl`, both using report schema 4. Older and unsupported
+future schemas are rejected with exit code 2. Detection uses content, not
 filename. For example:
 
 ```console
@@ -862,7 +863,12 @@ counts must be consistent. Truncated lines, missing completion, mixed runs and
 duplicate events are rejected with exit code 2. A valid stream whose completed
 summary marks the run incomplete, or whose baseline failed, is unusable for
 comparison just like its JSON document. CRLF and a complete final line without
-a newline are accepted. Legacy schema v2 JSONL is unsupported.
+a newline are accepted.
+
+Read historical reports with their producing binary, or run the tests again with
+the intended Hoimin version to generate new reports. Reports are not converted
+or rewritten automatically. Regenerating a plan alone cannot recreate a past
+execution report.
 
 The JSONL reader retains comparison candidates and one reusable event buffer;
 it does not retain the diagnostic/start-event history or the entire input
@@ -1108,7 +1114,7 @@ diagnostics.
 
 ## Sessions and resume
 
-Run JSON/JSONL now emit schema 4; consumers validating the closed schema must update. `progress` continues to read historical schema-2 JSON and schema-3 JSON/JSONL, and rejects mixed-version reports. When `--resume` is requested, JSON and JSONL include `run_started.resume` (the `run.resume` field in a JSON report): `{"status":"resumed"}` or `{"status":"fresh","reason":"CODE"}`. Human output also explains whether the saved run is continuing or a new run is starting. Runs without `--resume` omit this field.
+Run JSON/JSONL now emit schema 4; consumers validating the closed schema must update. `progress` accepts only schema-4 JSON/JSONL and rejects historical, unsupported future and mixed-version reports. When `--resume` is requested, JSON and JSONL include `run_started.resume` (the `run.resume` field in a JSON report): `{"status":"resumed"}` or `{"status":"fresh","reason":"CODE"}`. Human output also explains whether the saved run is continuing or a new run is starting. Runs without `--resume` omit this field.
 
 A compatible incomplete run always wins, even if newer runs are incompatible. If an eligible row appears only during the later history inspection, `candidate_changed` takes precedence. Otherwise reasons use this precedence: `budget_decreased` (matching incomplete runs require a higher `--max-mutants`), `matching_run_complete`, `fingerprint_mismatch` (other incomplete history), `no_incomplete_run` (only nonmatching complete history), then `no_prior_run`. `candidate_changed` means session history changed during resume selection; `no_compatible_run` is a fallback for older completion events without diagnostic details. These codes describe observed history, not which configuration field or file changed. Existing old-schema, corrupt-data, database-read, and ownership errors remain errors.
 

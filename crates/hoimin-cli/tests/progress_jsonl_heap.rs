@@ -29,7 +29,7 @@ fn jsonl_peak_does_not_grow_with_diagnostic_history() {
 
 fn write_events(path: &std::path::Path, count: u64) {
     let mut document: Value =
-        serde_json::from_str(include_str!("golden/reports/schema-v3-current.json")).unwrap();
+        serde_json::from_str(include_str!("golden/reports/schema-v4-current.json")).unwrap();
     document["mutants"] = json!([]);
     document["summary"]["counts"] = serde_json::to_value(hoimin_core::summarize(&[])).unwrap();
     document["summary"]["exit_code"] = json!(0);
@@ -46,7 +46,7 @@ fn write_events(path: &std::path::Path, count: u64) {
             file,
             "{}",
             json!({
-                "kind": "diagnostic", "schema_version": 3, "sequence": sequence,
+                "kind": "diagnostic", "schema_version": hoimin_core::REPORT_SCHEMA_VERSION, "sequence": sequence,
                 "run_id": run_id, "level": "info", "code": "test", "message": "x".repeat(1024)
             })
         )

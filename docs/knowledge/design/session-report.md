@@ -63,9 +63,10 @@ sources:
   revision: a7daea0b557cd435c1e55b540392fbdd116348e1
   working_tree: clean
 - id: reader
-  resource: ../../../crates/hoimin-cli/src/progress/input.rs
-  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
-  working_tree: clean
+  resource: ../../../crates/hoimin-cli/src/artifacts/run_report.rs
+  revision: 97c394760bc02a56be0bfdeb6301257eac80d1c7
+  working_tree: modified
+  sha256: 92f348aaf4926712baf0edbe5944f155df64edda8aa69c07eb917e7061fe5525
 - id: schema
   resource: ../../json-schema/run-result.schema.json
   revision: a7daea0b557cd435c1e55b540392fbdd116348e1
@@ -130,7 +131,13 @@ SQLiteのWAL実装や実際のクラッシュを証明するものではない�
 
 JSON Schemaは結果の構造を定める元資料として保持する。ただし、構造上正しいJSONにも、値どうしが矛盾した結果は入り得るため、読取り処理で意味上の整合性も検査する。現在のprogress読取り処理は、件数検査後に `validate_summary_coherence` を呼び、完了状態と終了コードが整合するか確認する。[^schema][^reader]
 
-この集計値の検査の詳細は[progress入力の後続修正](../audits/progress-input.md)を参照する。Issue #460 の設計は、個々の結果の検証を `MutantFinished::validate_result` にまとめ、生成側の `ReportSequence` と、現行・旧形式のprogress読取りで共有する。終了理由がある場合は出力状態も含めてstatusを照合し、矛盾した入力は比較処理へ渡す前に拒否する。旧形式で許容する終了理由のnullは維持する。[^issue-460]
+この集計値の検査の詳細は[progress入力の後続修正](../audits/progress-input.md)を参照する。Issue #460 の設計は、個々の結果の検証を `MutantFinished::validate_result` にまとめ、生成側の `ReportSequence` とprogress読取りで共有する。終了理由がある場合は出力状態も含めてstatusを照合し、矛盾した入力は比較処理へ渡す前に拒否する。現行の再利用・未起動・合成結果に必要な終了理由のnullは維持する。[^issue-460]
+
+# progressのレポート入力スキーマ
+
+progressは `REPORT_SCHEMA_VERSION`（4）に一致するJSON文書とJSONLストリームを読む。旧schema 2/3と未対応の将来版を拒否し、旧形式専用の型・変換・検証は持たない。reviewは現行スキーマのJSONを要求する。[^reader]
+
+スキーマ限定後も、候補ID・run ID・sequence・summary・単一結果の検証を維持する。JSONLの一行ずつの読取り、設定を不透明なJSONとして扱うprogressの方針も維持する。旧レポートは生成元バイナリで読むか、意図する版で実行し直す。planの再生成だけでは過去のreportは復元されない。手順と互換性通知は[利用方法](../../usage.md)と[互換性方針](../../compatibility.md)を参照する。[^reader]
 
 # 再確認条件
 
@@ -156,7 +163,7 @@ Issue487では、実際に選択したbackendのmodeと識別用mechanismを、r
 [^session]: [mod.rs](../../../crates/hoimin-cli/src/session/mod.rs)。
 [^ownership-report]: [2026-09-07-issue-363-session-ownership.md](../../superpowers/reports/2026-09-07-issue-363-session-ownership.md)。
 [^migration]: [2026-08-11-lean-schema-migration-concurrency-audit.md](../../superpowers/reports/2026-08-11-lean-schema-migration-concurrency-audit.md)。
-[^reader]: [input.rs](../../../crates/hoimin-cli/src/progress/input.rs)。
+[^reader]: [run_report.rs](../../../crates/hoimin-cli/src/artifacts/run_report.rs)。
 [^schema]: [run-result.schema.json](../../json-schema/run-result.schema.json)。
 
 [^issue-488]: [2026-09-11-issue-488-windows-resource-scope-design.md](../../superpowers/specs/2026-09-11-issue-488-windows-resource-scope-design.md)。

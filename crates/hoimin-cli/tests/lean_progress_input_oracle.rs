@@ -88,13 +88,10 @@ fn parse_lean_oracle_cases() -> Vec<LeanOracleCase> {
     cases
 }
 
-fn report_json_from_lean_case(case: &LeanOracleCase, schema: u32) -> Value {
+fn report_json_from_lean_case(case: &LeanOracleCase) -> Value {
     let mut doc: Value =
-        serde_json::from_str(include_str!("golden/reports/schema-v2-original.json")).unwrap();
-    doc["schema_version"] = json!(schema);
-    doc["run"]["schema_version"] = json!(schema);
+        serde_json::from_str(include_str!("golden/reports/schema-v4-current.json")).unwrap();
     doc["run"]["normalized_config"] = Value::Null;
-    doc["baseline"]["schema_version"] = json!(schema);
     match case.baseline.as_str() {
         "passed" => doc["baseline"]["termination"] = json!({"Exit": 0}),
         "failed" => doc["baseline"]["termination"] = json!({"Exit": 1}),
@@ -108,7 +105,6 @@ fn report_json_from_lean_case(case: &LeanOracleCase, schema: u32) -> Value {
             .enumerate()
             .map(|(index, status)| {
                 let mut event = template.clone();
-                event["schema_version"] = json!(schema);
                 event["sequence"] = json!(index + 3);
                 event["candidate"]["id"] = json!(format!("mutant-{index}"));
                 event["candidate"]["sequence"] = json!(index);
@@ -144,7 +140,6 @@ fn report_json_from_lean_case(case: &LeanOracleCase, schema: u32) -> Value {
             .collect(),
     );
     let summary = &mut doc["summary"];
-    summary["schema_version"] = json!(schema);
     summary["sequence"] = json!(case.statuses.len() + 3);
     summary["counts"] = case.counts.clone();
     summary["counts"]["score"] = case.score.as_ref().map_or(Value::Null, |score| {
@@ -153,30 +148,23 @@ fn report_json_from_lean_case(case: &LeanOracleCase, schema: u32) -> Value {
     });
     summary["complete"] = json!(case.complete);
     summary["exit_code"] = json!(case.exit_code);
-    if schema == 3 {
-        summary["disk"] =
-            serde_json::to_value(hoimin_core::DiskRunSummary::unmeasured(8, 10)).unwrap();
-    }
+    summary["disk"] = serde_json::to_value(hoimin_core::DiskRunSummary::unmeasured(8, 10)).unwrap();
     doc
 }
 
-async fn observe_cli_self_comparison(
-    case: &LeanOracleCase,
-    schema: u32,
-) -> Result<CliObservation, String> {
-    observe_cli_encoding(case, schema, false).await
+async fn observe_cli_self_comparison(case: &LeanOracleCase) -> Result<CliObservation, String> {
+    observe_cli_encoding(case, false).await
 }
 
 async fn observe_cli_encoding(
     case: &LeanOracleCase,
-    schema: u32,
     jsonl: bool,
 ) -> Result<CliObservation, String> {
     let fixture = tempfile::tempdir().map_err(|error| error.to_string())?;
     let path = fixture.path().join(format!("{}.report", case.id));
     std::fs::write(
         &path,
-        encode_report(&report_json_from_lean_case(case, schema), jsonl),
+        encode_report(&report_json_from_lean_case(case), jsonl),
     )
     .map_err(|error| error.to_string())?;
     let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"));
@@ -243,26 +231,23 @@ async fn observe_cli_encoding(
 }
 
 #[tokio::test]
-async fn raw_v2_and_v3_summaries_follow_lean_before_entering_stall_history() {
+async fn current_summaries_follow_lean_before_entering_stall_history() {
     let mut mismatches = Vec::new();
     for case in parse_lean_oracle_cases() {
-        for schema in [2, 3] {
-            let observed = observe_cli_self_comparison(&case, schema)
-                .await
-                .unwrap_or_else(|error| {
-                    panic!("{} v{schema} infrastructure-error: {error}", case.id)
-                });
-            mismatches.extend(
-                (observed.disposition != case.expected_disposition
-                    || observed.history != case.expected_history)
-                    .then(|| {
-                        format!(
-                            "{} v{schema}: expected {:?}/{:?}, observed {observed:?}",
-                            case.id, case.expected_disposition, case.expected_history
-                        )
-                    }),
-            );
-        }
+        let schema = hoimin_core::REPORT_SCHEMA_VERSION;
+        let observed = observe_cli_self_comparison(&case)
+            .await
+            .unwrap_or_else(|error| panic!("{} v{schema} infrastructure-error: {error}", case.id));
+        mismatches.extend(
+            (observed.disposition != case.expected_disposition
+                || observed.history != case.expected_history)
+                .then(|| {
+                    format!(
+                        "{} v{schema}: expected {:?}/{:?}, observed {observed:?}",
+                        case.id, case.expected_disposition, case.expected_history
+                    )
+                }),
+        );
     }
     assert!(
         mismatches.is_empty(),
@@ -278,13 +263,12 @@ async fn killed_exit_zero_minimal_regression_follows_lean() {
         .into_iter()
         .find(|case| case.id == "result_killed_exit_zero_complete")
         .expect("retain the minimal result-validation witness");
-    for schema in [2, 3] {
-        let observed = observe_cli_self_comparison(&case, schema)
-            .await
-            .unwrap_or_else(|error| panic!("v{schema} infrastructure-error: {error}"));
-        assert_eq!(observed.disposition, case.expected_disposition, "v{schema}");
-        assert_eq!(observed.history, case.expected_history, "v{schema}");
-    }
+    let schema = hoimin_core::REPORT_SCHEMA_VERSION;
+    let observed = observe_cli_self_comparison(&case)
+        .await
+        .unwrap_or_else(|error| panic!("v{schema} infrastructure-error: {error}"));
+    assert_eq!(observed.disposition, case.expected_disposition, "v{schema}");
+    assert_eq!(observed.history, case.expected_history, "v{schema}");
 }
 
 fn encode_report(document: &Value, jsonl: bool) -> Vec<u8> {
@@ -297,7 +281,7 @@ fn encode_report(document: &Value, jsonl: bool) -> Vec<u8> {
     }
     for mutant in document["mutants"].as_array().unwrap() {
         events.push(json!({
-            "kind": "mutant_started", "schema_version": 3,
+            "kind": "mutant_started", "schema_version": document["schema_version"],
             "sequence": 0, "run_id": document["run"]["run_id"],
             "mutant_id": mutant["candidate"]["id"],
             "mutant_sequence": mutant["candidate"]["sequence"]
@@ -351,22 +335,18 @@ async fn shared_reader_progress_formats_follow_lean() {
             println!(
                 "BOUNDARY_OBSERVATION {}",
                 json!({
-                    "fixture": gap.id, "encoding": "jsonl-v3", "boundary": "reader-progress",
+                    "fixture": gap.id, "encoding": "jsonl-v4", "boundary": "reader-progress",
                     "mode": "report", "evidence": "real-cli", "status": "unexecuted",
                     "reason": "document permits missing baseline with mutant projections; full JSONL lifecycle requires preceding baseline"
                 })
             );
         }
         selected_cases += 1;
-        for (encoding, schema, jsonl) in [
-            ("json-v2", 2, false),
-            ("json-v3", 3, false),
-            ("jsonl-v3", 3, true),
-        ]
-        .into_iter()
-        .filter(|(_, _, jsonl)| !jsonl || case.baseline != "missing" || case.statuses.is_empty())
+        for (encoding, jsonl) in [("json-v4", false), ("jsonl-v4", true)]
+            .into_iter()
+            .filter(|(_, jsonl)| !jsonl || case.baseline != "missing" || case.statuses.is_empty())
         {
-            let observed = observe_cli_encoding(&case, schema, jsonl).await;
+            let observed = observe_cli_encoding(&case, jsonl).await;
             let (status, reason) = classify_observation(&case, &observed);
             println!(
                 "BOUNDARY_OBSERVATION {}",
@@ -390,7 +370,7 @@ fn shared_reader_fixture_encodings_preserve_fields_and_projection_premises() {
     let mut applicable = 0;
     let mut projection_gaps = 0;
     for case in cases {
-        let document = report_json_from_lean_case(&case, 3);
+        let document = report_json_from_lean_case(&case);
         let encoded = encode_report(&document, true);
         let events: Vec<Value> = encoded
             .split(|byte| *byte == b'\n')

@@ -25,26 +25,59 @@ use tokio::io::AsyncReadExt;
 
 const TEST_MIN_FREE_SPACE: &str = "1B";
 
-fn original_schema_v2_report() -> PathBuf {
-    repo_root().join("crates/hoimin-cli/tests/golden/reports/schema-v2-original.json")
+#[test]
+fn input_rejects_historical_report_goldens() {
+    let root = repo_root().join("crates/hoimin-cli/tests/golden");
+    for (format, extension) in [("reports", "json"), ("events", "jsonl")] {
+        for version in [2, 3] {
+            for era in ["original", "current"] {
+                let path = root
+                    .join(format)
+                    .join(format!("schema-v{version}-{era}.{extension}"));
+                let result = read_report(&path);
+                assert!(
+                    matches!(result, Err(ProgressError::UnsupportedSchema { found, .. }) if found == version),
+                    "historical input must be rejected: {path:?}: {result:?}"
+                );
+            }
+        }
+    }
 }
 
 #[test]
-fn input_accepts_the_oldest_schema_v2_normalized_config() {
-    let report = original_schema_v2_report();
-
-    let result = read_report(&report);
-    assert!(matches!(result, Ok(InputReport::Usable(_))), "{result:?}");
-}
-
-#[test]
-fn golden_schema_v2_report_eras_are_usable() {
-    let root = repo_root().join("crates/hoimin-cli/tests/golden/reports");
-
-    for name in ["schema-v2-original.json", "schema-v2-current.json"] {
+fn input_rejects_every_noncurrent_schema_in_json_and_jsonl() {
+    let fixture = tempfile::tempdir().unwrap();
+    for version in [0, 1, 2, 3, REPORT_SCHEMA_VERSION + 1] {
+        let mut document = valid_report();
+        document["schema_version"] = json!(version);
+        for key in ["run", "baseline", "summary"] {
+            document[key]["schema_version"] = json!(version);
+        }
+        for mutant in document["mutants"].as_array_mut().unwrap() {
+            mutant["schema_version"] = json!(version);
+        }
+        let path = write_json(&fixture, "old.json", &document);
         assert!(
-            matches!(read_report(&root.join(name)), Ok(InputReport::Usable(_))),
-            "golden report must remain a usable schema-v2 input: {name}"
+            matches!(read_report(&path), Err(ProgressError::UnsupportedSchema { found, .. }) if found == version),
+            "JSON schema {version}"
+        );
+        let mut events = jsonl_events(&document);
+        for event in &mut events {
+            event["schema_version"] = json!(version);
+        }
+        let path = fixture.path().join("old.jsonl");
+        std::fs::write(
+            &path,
+            events
+                .iter()
+                .map(Value::to_string)
+                .collect::<Vec<_>>()
+                .join("\n"),
+        )
+        .unwrap();
+        assert!(
+            matches!(read_report(&path), Err(ProgressError::UnsupportedSchema { found, .. }) if found == version),
+            "JSONL schema {version}"
         );
     }
 }
@@ -52,47 +85,41 @@ fn golden_schema_v2_report_eras_are_usable() {
 #[test]
 fn input_dispatch_preserves_document_field_orders_and_opaque_config() {
     let fixture = tempfile::tempdir().unwrap();
-    for golden in [
-        "schema-v2-original.json",
-        "schema-v2-current.json",
-        "schema-v3-current.json",
-        "schema-v4-current.json",
-    ] {
-        let source = repo_root()
-            .join("crates/hoimin-cli/tests/golden/reports")
-            .join(golden);
-        let mut document: Value = serde_json::from_slice(&std::fs::read(&source).unwrap()).unwrap();
-        document["run"]["normalized_config"] =
-            json!({"kind": "run_finished", "schema_version": 999, "mutants": ["opaque"]});
-        let expected_path = write_json(&fixture, "expected.json", &document);
-        let InputReport::Usable(expected) = read_report(&expected_path).unwrap() else {
-            panic!("usable fixture")
-        };
-        let expected = serde_json::to_value(expected.mutants).unwrap();
-        let mut keys = ["schema_version", "run", "baseline", "mutants", "summary"];
-        for _ in 0..keys.len() {
-            for (pretty, separator, prefix, suffix) in
-                [(false, ",", "{", "}\n"), (true, ",\n", "{\n", "\n}\n")]
-            {
-                let fields = keys
-                    .iter()
-                    .map(|key| format!("\"{key}\":{}", document[key]))
-                    .collect::<Vec<_>>()
-                    .join(separator);
-                let bytes = format!("{prefix}{fields}{suffix}");
-                let path = fixture.path().join("reordered.json");
-                std::fs::write(&path, bytes).unwrap();
-                let InputReport::Usable(actual) = read_report(&path).unwrap() else {
-                    panic!("usable reordered input")
-                };
-                assert_eq!(
-                    serde_json::to_value(actual.mutants).unwrap(),
-                    expected,
-                    "{golden}: {keys:?}, pretty={pretty}"
-                );
-            }
-            keys.rotate_left(1);
+    let golden = "schema-v4-current.json";
+    let source = repo_root()
+        .join("crates/hoimin-cli/tests/golden/reports")
+        .join(golden);
+    let mut document: Value = serde_json::from_slice(&std::fs::read(&source).unwrap()).unwrap();
+    document["run"]["normalized_config"] =
+        json!({"kind": "run_finished", "schema_version": 999, "mutants": ["opaque"]});
+    let expected_path = write_json(&fixture, "expected.json", &document);
+    let InputReport::Usable(expected) = read_report(&expected_path).unwrap() else {
+        panic!("usable fixture")
+    };
+    let expected = serde_json::to_value(expected.mutants).unwrap();
+    let mut keys = ["schema_version", "run", "baseline", "mutants", "summary"];
+    for _ in 0..keys.len() {
+        for (pretty, separator, prefix, suffix) in
+            [(false, ",", "{", "}\n"), (true, ",\n", "{\n", "\n}\n")]
+        {
+            let fields = keys
+                .iter()
+                .map(|key| format!("\"{key}\":{}", document[key]))
+                .collect::<Vec<_>>()
+                .join(separator);
+            let bytes = format!("{prefix}{fields}{suffix}");
+            let path = fixture.path().join("reordered.json");
+            std::fs::write(&path, bytes).unwrap();
+            let InputReport::Usable(actual) = read_report(&path).unwrap() else {
+                panic!("usable reordered input")
+            };
+            assert_eq!(
+                serde_json::to_value(actual.mutants).unwrap(),
+                expected,
+                "{golden}: {keys:?}, pretty={pretty}"
+            );
         }
+        keys.rotate_left(1);
     }
 }
 
@@ -2890,16 +2917,8 @@ fn valid_report() -> Value {
     })
 }
 
-fn result_report(schema: u32, close_timeout: bool) -> Value {
+fn result_report(close_timeout: bool) -> Value {
     let mut document = valid_report();
-    document["schema_version"] = json!(schema);
-    for field in ["run", "baseline", "summary"] {
-        document[field]["schema_version"] = json!(schema);
-    }
-    document["mutants"][0]["schema_version"] = json!(schema);
-    if schema == 2 {
-        document["summary"].as_object_mut().unwrap().remove("disk");
-    }
     if close_timeout {
         let mutant = &mut document["mutants"][0];
         mutant["status"] = json!("error");
@@ -2919,8 +2938,8 @@ fn result_report(schema: u32, close_timeout: bool) -> Value {
     document
 }
 
-fn malformed_result_document(schema: u32, defect: &str) -> Value {
-    let mut document = result_report(schema, true);
+fn malformed_result_document(defect: &str) -> Value {
+    let mut document = result_report(true);
     let mutant = &mut document["mutants"][0];
     match defect {
         "termination" | "output" => mutant[defect] = Value::Null,
@@ -2950,52 +2969,49 @@ fn malformed_result_document(schema: u32, defect: &str) -> Value {
 }
 
 #[test]
-fn input_rejects_malformed_result_fields_and_diagnostics_in_both_schemas() {
+fn input_rejects_malformed_current_result_fields_and_diagnostics() {
     let fixture = tempfile::tempdir().unwrap();
-    for schema in [2, 3] {
-        for (defect, reason) in [
-            ("termination", "lacks its required result fields"),
-            ("output", "lacks its required result fields"),
-            ("status", "lacks its required result fields"),
-            ("missing_diagnostic", "disagrees with its diagnostics"),
-            ("duplicate", "disagrees with its diagnostics"),
-            ("wrong_id", "disagrees with its diagnostics"),
-            ("wrong_level", "disagrees with its diagnostics"),
-            ("wrong_code", "disagrees with its diagnostics"),
-            ("blank_message", "disagrees with its diagnostics"),
-            ("complete_diagnostic", "disagrees with its diagnostics"),
-        ] {
-            let document = malformed_result_document(schema, defect);
-            let path = write_json(&fixture, &format!("v{schema}-{defect}.json"), &document);
-            let error = read_report(&path).unwrap_err().to_string();
-            assert!(error.contains(path.to_str().unwrap()), "{error}");
-            assert!(
-                error.contains(document["mutants"][0]["candidate"]["id"].as_str().unwrap()),
-                "{error}"
-            );
-            assert!(error.contains(reason), "v{schema} {defect}: {error}");
-        }
+    let schema = REPORT_SCHEMA_VERSION;
+    for (defect, reason) in [
+        ("termination", "lacks its required result fields"),
+        ("output", "lacks its required result fields"),
+        ("status", "lacks its required result fields"),
+        ("missing_diagnostic", "disagrees with its diagnostics"),
+        ("duplicate", "disagrees with its diagnostics"),
+        ("wrong_id", "disagrees with its diagnostics"),
+        ("wrong_level", "disagrees with its diagnostics"),
+        ("wrong_code", "disagrees with its diagnostics"),
+        ("blank_message", "disagrees with its diagnostics"),
+        ("complete_diagnostic", "disagrees with its diagnostics"),
+    ] {
+        let document = malformed_result_document(defect);
+        let path = write_json(&fixture, &format!("v{schema}-{defect}.json"), &document);
+        let error = read_report(&path).unwrap_err().to_string();
+        assert!(error.contains(path.to_str().unwrap()), "{error}");
+        assert!(
+            error.contains(document["mutants"][0]["candidate"]["id"].as_str().unwrap()),
+            "{error}"
+        );
+        assert!(error.contains(reason), "v{schema} {defect}: {error}");
     }
 }
 
 #[test]
-fn input_preserves_output_error_override_and_legacy_null_termination() {
+fn input_preserves_output_error_override_and_current_null_termination() {
     let fixture = tempfile::tempdir().unwrap();
-    for schema in [2, 3] {
-        let document = result_report(schema, true);
-        let path = write_json(&fixture, "output-error.json", &document);
-        assert!(matches!(
-            read_report(&path),
-            Ok(InputReport::Unusable {
-                reason: UnusableReason::Incomplete,
-                ..
-            })
-        ));
-        let mut legacy = result_report(schema, false);
-        legacy["mutants"][0]["termination"] = Value::Null;
-        let path = write_json(&fixture, "legacy.json", &legacy);
-        assert!(matches!(read_report(&path), Ok(InputReport::Usable(_))));
-    }
+    let document = result_report(true);
+    let path = write_json(&fixture, "output-error.json", &document);
+    assert!(matches!(
+        read_report(&path),
+        Ok(InputReport::Unusable {
+            reason: UnusableReason::Incomplete,
+            ..
+        })
+    ));
+    let mut synthetic = result_report(false);
+    synthetic["mutants"][0]["termination"] = Value::Null;
+    let path = write_json(&fixture, "synthetic.json", &synthetic);
+    assert!(matches!(read_report(&path), Ok(InputReport::Usable(_))));
 }
 
 fn jsonl_events(document: &Value) -> Vec<Value> {
@@ -3847,71 +3863,51 @@ async fn regression_exit_never_overrides_stdout_or_stderr_errors() {
 }
 
 #[test]
-fn progress_accepts_historical_v3_and_current_v4_but_rejects_mixed_json_and_jsonl() {
+fn progress_accepts_current_but_rejects_mixed_json_and_jsonl() {
     let fixture = tempfile::tempdir().unwrap();
-    for (version, mixed_version) in [(3, 4), (4, 3)] {
-        let source = repo_root().join(format!(
-            "crates/hoimin-cli/tests/golden/reports/schema-v{version}-current.json"
-        ));
-        assert!(matches!(read_report(&source), Ok(InputReport::Usable(_))));
-        let mut value: Value = serde_json::from_slice(&std::fs::read(source).unwrap()).unwrap();
-        value["baseline"]["schema_version"] = json!(mixed_version);
-        assert!(read_report(&write_json(&fixture, "mixed.json", &value)).is_err());
-        let source = repo_root().join(format!(
-            "crates/hoimin-cli/tests/golden/events/schema-v{version}-current.jsonl"
-        ));
-        assert!(matches!(read_report(&source), Ok(InputReport::Usable(_))));
-        let text = std::fs::read_to_string(source).unwrap();
-        let mut lines = text
-            .lines()
-            .map(|line| serde_json::from_str::<Value>(line).unwrap())
-            .collect::<Vec<_>>();
-        for index in [1, 4] {
-            lines[index]["schema_version"] = json!(mixed_version);
-            let path = fixture.path().join("mixed.jsonl");
-            std::fs::write(
-                &path,
-                lines
-                    .iter()
-                    .map(|v| v.to_string() + "\n")
-                    .collect::<String>(),
-            )
-            .unwrap();
-            assert!(read_report(&path).is_err());
-            lines[index]["schema_version"] = json!(version);
-        }
+    let (version, mixed_version) = (REPORT_SCHEMA_VERSION, 3);
+    let source = repo_root().join(format!(
+        "crates/hoimin-cli/tests/golden/reports/schema-v{version}-current.json"
+    ));
+    assert!(matches!(read_report(&source), Ok(InputReport::Usable(_))));
+    let mut value: Value = serde_json::from_slice(&std::fs::read(source).unwrap()).unwrap();
+    value["baseline"]["schema_version"] = json!(mixed_version);
+    assert!(read_report(&write_json(&fixture, "mixed.json", &value)).is_err());
+    let source = repo_root().join(format!(
+        "crates/hoimin-cli/tests/golden/events/schema-v{version}-current.jsonl"
+    ));
+    assert!(matches!(read_report(&source), Ok(InputReport::Usable(_))));
+    let text = std::fs::read_to_string(source).unwrap();
+    let mut lines = text
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).unwrap())
+        .collect::<Vec<_>>();
+    for index in [1, 4] {
+        lines[index]["schema_version"] = json!(mixed_version);
+        let path = fixture.path().join("mixed.jsonl");
+        std::fs::write(
+            &path,
+            lines
+                .iter()
+                .map(|v| v.to_string() + "\n")
+                .collect::<String>(),
+        )
+        .unwrap();
+        assert!(read_report(&path).is_err());
+        lines[index]["schema_version"] = json!(version);
     }
 }
 
 #[test]
-fn progress_resume_metadata_rejects_null_and_old_schema_fields() {
+fn progress_resume_metadata_rejects_null_in_current_json_and_jsonl() {
     let fixture = tempfile::tempdir().unwrap();
-    for version in [2, 3, 4] {
-        let source = repo_root().join(format!(
-            "crates/hoimin-cli/tests/golden/reports/schema-v{version}-current.json"
-        ));
-        let original: Value = serde_json::from_slice(&std::fs::read(source).unwrap()).unwrap();
-        let mut value = original.clone();
-        value["run"]["resume"] = Value::Null;
-        assert!(read_report(&write_json(&fixture, "null.json", &value)).is_err());
-    }
-}
+    let mut document = valid_report();
+    document["run"]["resume"] = Value::Null;
+    let json = write_json(&fixture, "null.json", &document);
+    let jsonl = write_jsonl(&fixture, &jsonl_events(&document));
 
-#[test]
-fn progress_resume_metadata_rejects_fields_in_old_schemas() {
-    let fixture = tempfile::tempdir().unwrap();
-    for version in [2, 3] {
-        let source = repo_root().join(format!(
-            "crates/hoimin-cli/tests/golden/reports/schema-v{version}-current.json"
-        ));
-        let mut value: Value = serde_json::from_slice(&std::fs::read(source).unwrap()).unwrap();
-        value["run"]["resume"] = json!({"status":"resumed"});
-        let path = write_json(&fixture, "old-field.json", &value);
-
-        let result = read_report(&path);
-
-        assert!(result.is_err());
-    }
+    assert!(read_report(&json).is_err());
+    assert!(read_report(&jsonl).is_err());
 }
 
 fn assert_human_regression_state(bytes: &[u8], state: &str) {

@@ -90,7 +90,7 @@ fn measure(scenario: Scenario, text_bytes: usize) -> usize {
 
 fn report(scenario: Scenario, text_bytes: usize, after: bool) -> InputReport {
     let document: Value =
-        serde_json::from_str(include_str!("golden/reports/schema-v3-current.json")).unwrap();
+        serde_json::from_str(include_str!("golden/reports/schema-v4-current.json")).unwrap();
     let template: MutantFinished = serde_json::from_value(document["mutants"][0].clone()).unwrap();
     let payload = "x".repeat(text_bytes);
     let mutants = (0..16)
