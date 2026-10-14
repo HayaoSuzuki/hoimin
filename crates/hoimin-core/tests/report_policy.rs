@@ -1,7 +1,8 @@
 use hoimin_core::{
     ByteSpan, DiskFilesystemReport, ExitPolicy, MutantFinished, MutantStarted, MutationCandidate,
-    MutationStatus, OutputEvent, ProcessTermination, ReportSequence, ReportVersions, ResourceMode,
-    RunStarted, VerificationSelectionPolicy, exit_code, exit_code_for, summarize,
+    MutationOutcome, MutationStatus, OutputEvent, ProcessOutputState, ProcessTermination,
+    ReportSequence, ReportVersions, ResourceMode, RunStarted, VerificationSelectionPolicy,
+    exit_code, exit_code_for, summarize,
 };
 
 #[test]
@@ -22,6 +23,7 @@ fn disk_filesystem_report_rejects_missing_and_unknown_wire_fields() {
     }"#;
     assert!(serde_json::from_str::<DiskFilesystemReport>(unknown).is_err());
 }
+use proptest::prelude::*;
 use serde_json::json;
 
 #[test]
@@ -641,55 +643,54 @@ fn run_finished_rejects_active_mutants() {
     sequence.observe(&run_finished_event(4)).unwrap();
 }
 
-#[cfg(not(feature = "contracts"))]
-#[test]
-fn sequence_accepts_every_classified_typed_outcome() {
-    let cases = [
-        (MutationStatus::Survived, Some(ProcessTermination::Exit(0))),
-        (MutationStatus::Killed, Some(ProcessTermination::Exit(7))),
-        (MutationStatus::Timeout, Some(ProcessTermination::Timeout)),
-        (
-            MutationStatus::OutOfMemory,
-            Some(ProcessTermination::OutOfMemory),
-        ),
-        (
-            MutationStatus::ProcessLimit,
-            Some(ProcessTermination::ProcessLimit),
-        ),
-        (MutationStatus::NotRun, Some(ProcessTermination::Cancelled)),
-        (MutationStatus::Error, None),
-    ];
-    let mut sequence = ReportSequence::new();
-    sequence
-        .observe(&OutputEvent::RunStarted(RunStarted::minimal(
-            "run-1",
-            1,
-            test_resource_control(),
-        )))
-        .unwrap();
+fn typed_outcomes() -> impl Strategy<Value = MutationOutcome> {
+    prop_oneof![
+        any::<i32>().prop_map(|code| executed_outcome(
+            ProcessTermination::Exit(code),
+            ProcessOutputState::Complete
+        )),
+        Just(executed_outcome(
+            ProcessTermination::Timeout,
+            ProcessOutputState::Complete
+        )),
+        Just(executed_outcome(
+            ProcessTermination::OutOfMemory,
+            ProcessOutputState::Complete
+        )),
+        Just(executed_outcome(
+            ProcessTermination::ProcessLimit,
+            ProcessOutputState::Complete
+        )),
+        Just(executed_outcome(
+            ProcessTermination::Cancelled,
+            ProcessOutputState::Complete
+        )),
+        Just(executed_outcome(
+            ProcessTermination::Timeout,
+            ProcessOutputState::CloseTimedOut
+        )),
+        Just(MutationOutcome::Reused {
+            status: hoimin_core::ReusedMutationStatus::Killed
+        }),
+        Just(MutationOutcome::Reused {
+            status: hoimin_core::ReusedMutationStatus::Survived
+        }),
+        Just(MutationOutcome::NotRun),
+    ]
+}
 
-    let mut event_sequence = 2;
-    for (index, (status, termination)) in cases.into_iter().enumerate() {
-        let mutant_id = format!("m{index}");
-        let mutant_sequence = u64::try_from(index).unwrap();
-        sequence
-            .observe(&OutputEvent::MutantStarted(MutantStarted::new(
-                "run-1",
-                event_sequence,
-                &mutant_id,
-                mutant_sequence,
-            )))
-            .unwrap();
-        event_sequence += 1;
-        sequence
-            .observe(&finished_event_with(
-                event_sequence,
-                candidate(&mutant_id, mutant_sequence),
-                status,
-                termination,
-            ))
-            .unwrap();
-        event_sequence += 1;
+proptest! {
+    #[test]
+    fn sequence_accepts_classified_typed_outcome(outcome in typed_outcomes()) {
+        // Arrange
+        let mut sequence = sequence_with_started_mutant();
+        let event = finished_event_with(3, candidate("m1", 7), outcome);
+
+        // Act
+        let result = sequence.observe(&event);
+
+        // Assert
+        prop_assert!(result.is_ok());
     }
 }
 
@@ -723,21 +724,13 @@ fn output_close_timeout_event(diagnostics: Vec<hoimin_core::SessionDiagnostic>) 
     let mut event = finished_event_with(
         3,
         candidate("m1", 7),
-        MutationStatus::Error,
-        Some(ProcessTermination::Timeout),
+        executed_outcome(
+            ProcessTermination::Timeout,
+            ProcessOutputState::CloseTimedOut,
+        ),
     );
     let OutputEvent::MutantFinished(finished) = &mut event else {
         unreachable!()
-    };
-    finished.outcome = hoimin_core::MutationOutcome::Executed {
-        termination: ProcessTermination::Timeout,
-        output_state: hoimin_core::ProcessOutputState::CloseTimedOut,
-        output: hoimin_core::OutputSpoolRef {
-            token: "fallback".into(),
-            retained: 0,
-            observed: 0,
-        },
-        elapsed: std::time::Duration::from_millis(2),
     };
     finished.diagnostics = diagnostics;
     event
@@ -857,7 +850,8 @@ fn cross_run_event_trips_the_ci_contract() {
 #[cfg(feature = "contracts")]
 #[test]
 #[should_panic(expected = "report.sequence.invariant")]
-fn incoherent_mutant_finish_trips_the_ci_contract() {
+fn mutant_finish_without_start_trips_the_ci_contract() {
+    // Arrange: a valid typed result still requires a matching start event.
     let mut sequence = ReportSequence::new();
     sequence
         .observe(&OutputEvent::RunStarted(RunStarted::minimal(
@@ -866,17 +860,16 @@ fn incoherent_mutant_finish_trips_the_ci_contract() {
             test_resource_control(),
         )))
         .unwrap();
-    sequence
-        .observe(&OutputEvent::MutantStarted(MutantStarted::new(
-            "run-1", 2, "m1", 7,
-        )))
-        .unwrap();
-    let _ = sequence.observe(&finished_event_with(
-        3,
+    let event = finished_event_with(
+        2,
         candidate("m1", 7),
-        MutationStatus::Survived,
-        Some(ProcessTermination::Exit(1)),
-    ));
+        executed_outcome(ProcessTermination::Exit(1), ProcessOutputState::Complete),
+    );
+
+    // Act
+    let _ = sequence.observe(&event);
+
+    // Assert: the producer contract panics for the missing lifecycle transition.
 }
 
 fn candidate(id: &str, sequence: u64) -> MutationCandidate {
@@ -898,75 +891,41 @@ fn candidate(id: &str, sequence: u64) -> MutationCandidate {
     }
 }
 
+fn executed_outcome(
+    termination: ProcessTermination,
+    output_state: ProcessOutputState,
+) -> MutationOutcome {
+    MutationOutcome::Executed {
+        termination,
+        output_state,
+        output: hoimin_core::OutputSpoolRef {
+            token: "fixture-output".into(),
+            retained: 0,
+            observed: 0,
+        },
+        elapsed: std::time::Duration::from_millis(2),
+    }
+}
+
 fn finished_event(sequence: u64, candidate: MutationCandidate) -> OutputEvent {
     finished_event_with(
         sequence,
         candidate,
-        MutationStatus::Killed,
-        Some(ProcessTermination::Exit(1)),
+        executed_outcome(ProcessTermination::Exit(1), ProcessOutputState::Complete),
     )
 }
 
 fn finished_event_with(
     sequence: u64,
     candidate: MutationCandidate,
-    status: MutationStatus,
-    termination: Option<ProcessTermination>,
+    outcome: MutationOutcome,
 ) -> OutputEvent {
     OutputEvent::MutantFinished(MutantFinished {
         schema_version: 1,
         sequence,
         run_id: "run-1".to_owned(),
         candidate,
-        outcome: match termination {
-            Some(termination) => hoimin_core::MutationOutcome::Executed {
-                termination,
-                output_state: hoimin_core::ProcessOutputState::Complete,
-                output: hoimin_core::OutputSpoolRef {
-                    token: "fixture-output".into(),
-                    retained: 0,
-                    observed: 0,
-                },
-                elapsed: std::time::Duration::from_millis(2),
-            },
-            None => match status {
-                hoimin_core::MutationStatus::Killed => hoimin_core::MutationOutcome::Reused {
-                    status: hoimin_core::ReusedMutationStatus::Killed,
-                },
-                hoimin_core::MutationStatus::Survived => hoimin_core::MutationOutcome::Reused {
-                    status: hoimin_core::ReusedMutationStatus::Survived,
-                },
-                hoimin_core::MutationStatus::NotRun => hoimin_core::MutationOutcome::NotRun,
-                status => hoimin_core::MutationOutcome::Executed {
-                    termination: match status {
-                        hoimin_core::MutationStatus::Timeout => {
-                            hoimin_core::ProcessTermination::Timeout
-                        }
-                        hoimin_core::MutationStatus::OutOfMemory => {
-                            hoimin_core::ProcessTermination::OutOfMemory
-                        }
-                        hoimin_core::MutationStatus::ProcessLimit => {
-                            hoimin_core::ProcessTermination::ProcessLimit
-                        }
-                        hoimin_core::MutationStatus::Error => {
-                            hoimin_core::ProcessTermination::Exit(1)
-                        }
-                        _ => unreachable!(),
-                    },
-                    output_state: if status == hoimin_core::MutationStatus::Error {
-                        hoimin_core::ProcessOutputState::CloseTimedOut
-                    } else {
-                        hoimin_core::ProcessOutputState::Complete
-                    },
-                    output: hoimin_core::OutputSpoolRef {
-                        token: "fixture-output".into(),
-                        retained: 0,
-                        observed: 0,
-                    },
-                    elapsed: std::time::Duration::from_millis(2),
-                },
-            },
-        },
+        outcome,
         resource_mode: ResourceMode::Hard,
         diagnostics: Vec::new(),
     })
