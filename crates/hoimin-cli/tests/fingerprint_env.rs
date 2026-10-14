@@ -129,10 +129,10 @@ async fn captured_plaintext_is_absent_from_run_and_session_artifacts() {
         .await;
     assert!(!run.report.to_string().contains(secret));
     assert_eq!(
-        run.report["run"]["normalized_config"]["fingerprint_env"],
+        run.report["run"]["normalized_config"]["environment"]["names"],
         serde_json::json!([FLAG])
     );
-    let hash = run.report["run"]["normalized_config"]["fingerprint_env_hash"]
+    let hash = run.report["run"]["normalized_config"]["environment"]["digest"]
         .as_str()
         .unwrap();
     assert_eq!(hash.len(), 64);

@@ -143,7 +143,17 @@ async fn check(
             symbols: vec![],
         })
         .collect();
-    validate_requested_descriptors(&map, &ids, &project.config("30s"), &targets, Some(stats)).await
+    validate_requested_descriptors(
+        &map,
+        &ids,
+        &project
+            .config("30s")
+            .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
+            .unwrap(),
+        &targets,
+        Some(stats),
+    )
+    .await
 }
 
 #[tokio::test]
@@ -296,7 +306,10 @@ async fn descriptor_validation_reports_errors_in_requested_id_order() {
 #[tokio::test]
 async fn descriptor_validation_empty_unknown_and_unselected_do_not_read_sources() {
     let project = super::tests::Project::new();
-    let config = project.config("30s");
+    let config = project
+        .config("30s")
+        .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
+        .unwrap();
     let mut stats = ValidationStats::default();
     assert!(
         validate_requested_descriptors(
@@ -402,7 +415,10 @@ async fn target_membership_cost_does_not_multiply_candidates_and_targets() {
             let paths = validate_requested_descriptors(
                 &map,
                 &ids,
-                &project.config("30s"),
+                &project
+                    .config("30s")
+                    .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
+                    .unwrap(),
                 &targets,
                 Some(&mut stats),
             )
@@ -448,7 +464,10 @@ async fn target_membership_preserves_path_component_equality() {
         let result = validate_requested_descriptors(
             &map,
             &ids,
-            &project.config("30s"),
+            &project
+                .config("30s")
+                .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
+                .unwrap(),
             &targets,
             Some(&mut stats),
         )
@@ -470,7 +489,10 @@ async fn target_membership_preserves_path_component_equality() {
         validate_requested_descriptors(
             &map,
             &ids,
-            &project.config("30s"),
+            &project
+                .config("30s")
+                .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
+                .unwrap(),
             &targets,
             Some(&mut stats),
         )
@@ -613,7 +635,10 @@ async fn target_membership_preserves_mixed_error_precedence() {
             let error = validate_requested_descriptors(
                 &map,
                 &ids,
-                &project.config("30s"),
+                &project
+                    .config("30s")
+                    .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
+                    .unwrap(),
                 &targets,
                 Some(&mut stats),
             )
@@ -672,7 +697,10 @@ async fn target_membership_preserves_errors_between_cached_file_results() {
             let error = validate_requested_descriptors(
                 &map,
                 &ids,
-                &project.config("30s"),
+                &project
+                    .config("30s")
+                    .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
+                    .unwrap(),
                 &targets,
                 Some(&mut stats),
             )

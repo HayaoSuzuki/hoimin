@@ -223,7 +223,10 @@ fn excluding_collection_family_preserves_other_runtime_families() {
         test_argv: vec![CommandArg::Unix(b"python".to_vec())],
         ..RawRunConfig::default()
     };
-    let config = RunConfig::try_from(raw.clone()).unwrap();
+    let config = RunConfig::try_from(raw.clone())
+        .unwrap()
+        .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
+        .unwrap();
 
     for operator in MutationOperatorSelection::parse_selector("collection_ops").unwrap() {
         assert!(
@@ -240,7 +243,10 @@ fn excluding_collection_family_preserves_other_runtime_families() {
     }
 
     raw.exclude_operators = vec!["structure_ops".to_owned()];
-    let config = RunConfig::try_from(raw).unwrap();
+    let config = RunConfig::try_from(raw)
+        .unwrap()
+        .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
+        .unwrap();
     assert!(
         config
             .operators
@@ -266,7 +272,10 @@ fn raw_operator_includes_and_excludes_cannot_normalize_to_empty() {
 
 #[test]
 fn normalized_run_config_rejects_an_empty_operator_selection() {
-    let mut config = RunConfig::try_from(raw_config()).unwrap();
+    let mut config = RunConfig::try_from(raw_config())
+        .unwrap()
+        .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
+        .unwrap();
     config.operators.exclude(MutationOperator::CompareEqNe);
 
     assert_eq!(
@@ -278,6 +287,8 @@ fn normalized_run_config_rejects_an_empty_operator_selection() {
 #[test]
 fn persisted_plan_config_rejects_an_empty_operator_selection() {
     let plan = RunConfig::try_from(raw_config())
+        .unwrap()
+        .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
         .unwrap()
         .into_plan_config();
     let mut value = serde_json::to_value(plan).unwrap();
@@ -353,12 +364,19 @@ fn default_selection_promotes_exactly_eleven_operators() {
 fn omitted_raw_operators_use_defaults_and_all_promotions_are_excludable() {
     let mut raw = raw_config();
     raw.operators.clear();
-    let default = RunConfig::try_from(raw.clone()).unwrap();
+    let default = RunConfig::try_from(raw.clone())
+        .unwrap()
+        .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
+        .unwrap();
     assert_eq!(default.operators.names().len(), 54);
     assert_eq!(default.operators, MutationOperatorSelection::default());
     raw.exclude_operators = PROMOTED.map(str::to_owned).to_vec();
     assert_eq!(
-        RunConfig::try_from(raw).unwrap().operators,
+        RunConfig::try_from(raw)
+            .unwrap()
+            .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
+            .unwrap()
+            .operators,
         MutationOperatorSelection::all_legacy()
     );
 }
@@ -372,7 +390,12 @@ fn explicit_selection_does_not_expand_to_defaults() {
     ];
     raw.exclude_operators = vec!["string_literal_empty".to_owned()];
     assert_eq!(
-        RunConfig::try_from(raw).unwrap().operators.names(),
+        RunConfig::try_from(raw)
+            .unwrap()
+            .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
+            .unwrap()
+            .operators
+            .names(),
         vec!["compare_eq_ne"]
     );
 }
@@ -381,7 +404,11 @@ fn explicit_selection_does_not_expand_to_defaults() {
 fn stored_legacy_plan_selection_is_not_expanded_on_reload() {
     let mut raw = raw_config();
     raw.operators = MutationOperatorSelection::all_legacy().names();
-    let plan = RunConfig::try_from(raw).unwrap().into_plan_config();
+    let plan = RunConfig::try_from(raw)
+        .unwrap()
+        .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
+        .unwrap()
+        .into_plan_config();
     let json = serde_json::to_vec(&plan).unwrap();
     let restored: PlanConfig = serde_json::from_slice(&json).unwrap();
     restored.validate().unwrap();

@@ -7,9 +7,11 @@ catalog_revision: 79b6bde29b05e9904c8efff59e02d0c45377d7f7
 sources:
 - id: policy
   resource: ../compatibility.md
-  revision: 056cb558953ddf5eb8b229976ee894ae7c6bc87f
+  revision: 6fe020f2530883dd2fcbfd5393aa6ada7e635899
   working_tree: modified
-  sha256: 11d5446d66959e1a60cbe562b6c708324b6bb1054e47bf7afa180c418ec61d3e
+  sha256: 22f64c4986ae952cfb87e059e6c37e34cd3f7963233baeedf79432aed3d97eda
+- id: issue-887-environment
+  resource: ../superpowers/plans/2026-10-14-issue-887.md
 - id: release
   resource: ../releases.md
   revision: 056cb558953ddf5eb8b229976ee894ae7c6bc87f
@@ -47,9 +49,13 @@ migration support. [^template][^policy]
 
 The 0.7.0 floor removes the report reason `no_compatible_run` and the old optional
 SessionLoaded fields. Custom event producers provide one explicit resumed reference
-or fresh reason. Reports keep schema 4; read historical fallback-reason reports with
+or fresh reason. Report schema 5 also stores the validated environment snapshot;
+read historical fallback-reason reports with
 the producing binary or rerun. This change alone requires neither plan regeneration
-nor a new SQLite session.[^policy]
+nor a new SQLite session. The environment snapshot format separately requires
+regenerating older plans.[^policy][^issue-887-environment]
+
+[^issue-887-environment]: [Environment snapshot contract and merge verification](../superpowers/plans/2026-10-14-issue-887.md).
 
 # Recheck conditions
 

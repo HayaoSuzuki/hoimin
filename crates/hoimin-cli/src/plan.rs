@@ -37,7 +37,7 @@ mod validation_tests;
 use ranking::{RANKING_RULE_VERSION, rank_candidates, validate_ranking, validate_ranking_against};
 pub use ranking::{RankedPlanCandidate, RankingReason, RankingReasonCode};
 
-pub const PLAN_SCHEMA_VERSION: u32 = 5;
+pub const PLAN_SCHEMA_VERSION: u32 = 6;
 
 pub(crate) struct ReadOnlyPlan {
     pub manifest: PlanManifest,
@@ -291,14 +291,16 @@ async fn discover_plan_targets(
     .await
 }
 
-/// Creates a read-only, versioned mutation candidate plan.
+/// Captures the request once and creates a read-only candidate plan from its validated snapshot.
 ///
 /// # Errors
 ///
 /// Returns an error before manifest serialization when fingerprint inputs, targets, sources, or
 /// analysis cannot be resolved successfully.
 #[tracing::instrument(name = "plan", level = "debug", skip_all)]
-pub async fn create(config: RunConfig) -> Result<PlanOutput, PlanError> {
+pub async fn create(
+    config: RunConfig<hoimin_core::EnvironmentRequest>,
+) -> Result<PlanOutput, PlanError> {
     create_inner(
         config,
         #[cfg(test)]
@@ -309,14 +311,14 @@ pub async fn create(config: RunConfig) -> Result<PlanOutput, PlanError> {
 
 #[cfg(test)]
 async fn create_with_discovery_control(
-    config: RunConfig,
+    config: RunConfig<hoimin_core::EnvironmentRequest>,
     control: Option<DiscoveryControl>,
 ) -> Result<PlanOutput, PlanError> {
     create_inner(config, control).await
 }
 
 async fn create_inner(
-    config: RunConfig,
+    config: RunConfig<hoimin_core::EnvironmentRequest>,
     #[cfg(test)] control: Option<DiscoveryControl>,
 ) -> Result<PlanOutput, PlanError> {
     crate::live_progress::stage("preparing plan");
@@ -549,9 +551,11 @@ async fn prepare_verify_selection_inner(
 }
 
 fn validate_current_fingerprint_env(config: &hoimin_core::PlanConfig) -> Result<(), PlanError> {
-    let current = crate::fingerprint_env::capture(&config.fingerprint_env)
+    let request = hoimin_core::EnvironmentRequest::new(config.environment.names())
+        .map_err(|error| PlanError::FingerprintInput(error.to_string()))?;
+    let current = crate::fingerprint_env::capture(&request)
         .map_err(|error| PlanError::ManifestInvalid(error.to_string()))?;
-    if current == config.fingerprint_env_hash {
+    if current == config.environment {
         Ok(())
     } else {
         Err(PlanError::FingerprintEnvChanged)
@@ -1250,7 +1254,10 @@ mod tests {
             }
         }
 
-        pub(super) fn config(&self, analyzer_timeout: &str) -> RunConfig {
+        pub(super) fn config(
+            &self,
+            analyzer_timeout: &str,
+        ) -> RunConfig<hoimin_core::EnvironmentRequest> {
             let command = format!(
                 "from pathlib import Path; Path({:?}).write_text('ran')",
                 self.marker.to_string_lossy()
@@ -1306,6 +1313,8 @@ mod tests {
             ..RawRunConfig::default()
         })
         .expect("test config is valid")
+        .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
+        .unwrap()
         .into_plan_config();
         PlanManifest {
             schema_version: PLAN_SCHEMA_VERSION,
@@ -1375,7 +1384,7 @@ mod tests {
             super::validate_requested_candidates(
                 &output.manifest,
                 &ids,
-                &config,
+                &crate::shell::prepare_run_config(config).unwrap(),
                 &targets,
                 None,
                 Some(&mut stats),

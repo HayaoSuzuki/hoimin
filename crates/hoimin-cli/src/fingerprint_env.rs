@@ -1,20 +1,18 @@
 use std::ffi::OsString;
 
-use hoimin_core::{ConfigError, normalize_fingerprint_env_names};
+use hoimin_core::{ConfigError, EnvironmentRequest, EnvironmentSnapshot};
 
-pub(crate) fn capture(names: &[String]) -> Result<Option<String>, ConfigError> {
-    capture_with(names, |name| std::env::var_os(name))
+pub(crate) fn capture(request: &EnvironmentRequest) -> Result<EnvironmentSnapshot, ConfigError> {
+    capture_with(request, |name| std::env::var_os(name))
 }
 
 fn capture_with(
-    names: &[String],
+    request: &EnvironmentRequest,
     mut read: impl FnMut(&str) -> Option<OsString>,
-) -> Result<Option<String>, ConfigError> {
-    if normalize_fingerprint_env_names(names)? != names {
-        return Err(ConfigError::NonNormalizedFingerprintEnv);
-    }
+) -> Result<EnvironmentSnapshot, ConfigError> {
+    let names = request.names();
     if names.is_empty() {
-        return Ok(None);
+        return Ok(EnvironmentSnapshot::Untracked);
     }
     let mut hash = blake3::Hasher::new();
     hash.update(b"hoimin.fingerprint.env\0\x01");
@@ -30,7 +28,7 @@ fn capture_with(
             hash.update(&[0]);
         }
     }
-    Ok(Some(hash.finalize().to_hex().to_string()))
+    EnvironmentSnapshot::captured(names.to_vec(), hash.finalize().to_hex().to_string())
 }
 
 #[cfg(unix)]
@@ -59,12 +57,15 @@ mod tests {
             .map(|value| (*value).to_owned())
             .collect::<Vec<_>>();
         let mut index = 0;
-        capture_with(&names, |_| {
+        let request = EnvironmentRequest::new(&names).unwrap();
+        capture_with(&request, |_| {
             let value = values[index].map(OsString::from);
             index += 1;
             value
         })
         .unwrap()
+        .digest()
+        .map(str::to_owned)
     }
 
     #[test]
@@ -85,29 +86,33 @@ mod tests {
         assert_ne!(digest(&["A"], &[Some("BC")]), digest(&["AB"], &[Some("C")]));
         assert_ne!(digest(&["A"], &[None]), digest(&["B"], &[None]));
         assert_eq!(
-            capture_with(&[], |_| panic!("unselected variables must not be read")).unwrap(),
-            None
+            capture_with(&EnvironmentRequest::new(&[]).unwrap(), |_| panic!(
+                "unselected variables must not be read"
+            ))
+            .unwrap(),
+            EnvironmentSnapshot::Untracked
         );
     }
 
     #[test]
-    fn invalid_names_are_rejected_before_environment_lookup() {
-        for names in [
-            vec!["BAD\0NAME".into()],
-            vec!["Z".into(), "A".into()],
-            vec!["A".into(), "A".into()],
-        ] {
-            assert!(
-                capture_with(&names, |_| panic!("invalid names must not reach OS lookup")).is_err()
-            );
-        }
+    fn requests_normalize_names_before_environment_lookup() {
+        let request = EnvironmentRequest::new(&["Z".into(), "A".into(), "A".into()]).unwrap();
+        let mut seen = Vec::new();
+        let snapshot = capture_with(&request, |name| {
+            seen.push(name.to_owned());
+            None
+        })
+        .unwrap();
+        assert_eq!(seen, ["A", "Z"]);
+        assert_eq!(snapshot.names(), seen);
+        assert!(EnvironmentRequest::new(&["BAD\0NAME".into()]).is_err());
     }
 
     #[cfg(unix)]
     #[test]
     fn unix_values_do_not_conflate_invalid_utf8() {
         use std::os::unix::ffi::OsStringExt;
-        let names = vec!["FLAG".into()];
+        let names = EnvironmentRequest::new(&["FLAG".into()]).unwrap();
         let first = capture_with(&names, |_| Some(OsString::from_vec(vec![0x80]))).unwrap();
         let second = capture_with(&names, |_| Some(OsString::from_vec(vec![0x81]))).unwrap();
         assert_ne!(first, second);
@@ -117,7 +122,7 @@ mod tests {
     #[test]
     fn windows_values_preserve_unpaired_utf16_units() {
         use std::os::windows::ffi::OsStringExt;
-        let names = vec!["FLAG".into()];
+        let names = EnvironmentRequest::new(&["FLAG".into()]).unwrap();
         let first = capture_with(&names, |_| Some(OsString::from_wide(&[0xd800]))).unwrap();
         let second = capture_with(&names, |_| Some(OsString::from_wide(&[0xd801]))).unwrap();
         assert_ne!(first, second);

@@ -19,6 +19,8 @@ fn disk_limits_have_mandatory_eight_and_ten_gibibyte_defaults() {
         test_argv: vec![CommandArg::Unix(b"python".to_vec())],
         ..RawRunConfig::default()
     })
+    .unwrap()
+    .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
     .unwrap();
     assert_eq!(
         normalized.limits.max_workspace_size.get(),
@@ -384,6 +386,8 @@ fn fixture_run_config() -> RunConfig {
         },
         ..RawRunConfig::default()
     })
+    .unwrap()
+    .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
     .unwrap();
     config.fingerprint_inputs = vec![FingerprintInputFile {
         path: "pyproject.toml".into(),

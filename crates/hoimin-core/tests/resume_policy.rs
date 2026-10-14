@@ -47,6 +47,8 @@ fn config_with_metrics(path: &str) -> RunConfig {
         ..RawRunConfig::default()
     })
     .unwrap()
+    .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
+    .unwrap()
 }
 
 #[test]
@@ -750,8 +752,7 @@ fn arbitrary_fingerprint_input() -> impl Strategy<Value = FingerprintInput> {
                     excludes: Vec::new(),
                     sources,
                     fingerprint_inputs,
-                    fingerprint_env: Vec::new(),
-                    fingerprint_env_hash: None,
+                    environment: hoimin_core::EnvironmentSnapshot::Untracked,
                     targets,
                     operators,
                     profile: if focused {
@@ -862,8 +863,7 @@ fn fixture_input() -> FingerprintInput {
         test_argv: vec![CommandArg::Unix(vec![0xff, 0, b'x'])],
         limits: (&fixture_raw_limits()).try_into().unwrap(),
         resource_mode: ResourceMode::Hard,
-        fingerprint_env: Vec::new(),
-        fingerprint_env_hash: None,
+        environment: hoimin_core::EnvironmentSnapshot::Untracked,
         fingerprint_inputs: vec![
             FingerprintInputFile {
                 path: "pyproject.toml".into(),
@@ -958,6 +958,8 @@ fn configured_source_root_order_changes_fingerprint() {
             test_argv: vec![CommandArg::Unix(b"python".to_vec())],
             ..RawRunConfig::default()
         })
+        .unwrap()
+        .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
         .unwrap();
         FingerprintInput::from_config(&config, vec![], vec![], ResourceMode::Hard)
     };
@@ -983,6 +985,8 @@ fn equivalent_normalized_import_roots_have_the_same_fingerprint() {
             test_argv: vec![CommandArg::Unix(b"python".to_vec())],
             ..RawRunConfig::default()
         })
+        .unwrap()
+        .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
         .unwrap();
         FingerprintInput::from_config(&config, vec![], vec![], ResourceMode::Hard)
     };
@@ -1001,4 +1005,44 @@ fn mutant_budget_is_checked_separately_from_fingerprint_compatibility() {
     let mut changed = original.clone();
     changed.limits = (&raw).try_into().unwrap();
     assert_eq!(fingerprint(&original), fingerprint(&changed));
+}
+
+#[test]
+fn environment_snapshot_preserves_version_11_fingerprint_goldens() {
+    let mut input = fixture_input();
+    let untracked = fingerprint(&input);
+    input.environment =
+        hoimin_core::EnvironmentSnapshot::captured(vec!["FLAG".into()], "a".repeat(64)).unwrap();
+    let captured = fingerprint(&input);
+    // Recorded before the typed snapshot refactor at base 056cb558953ddf5eb8b229976ee894ae7c6bc87f.
+    assert_eq!(
+        untracked.as_bytes(),
+        &[
+            202, 13, 118, 201, 147, 202, 106, 130, 134, 245, 79, 240, 16, 68, 242, 37, 82, 94, 169,
+            99, 223, 48, 154, 238, 88, 89, 78, 210, 228, 58, 112, 107
+        ]
+    );
+    assert_eq!(
+        captured.as_bytes(),
+        &[
+            215, 228, 119, 128, 79, 83, 188, 49, 200, 158, 113, 124, 118, 79, 101, 161, 242, 190,
+            202, 221, 170, 151, 34, 77, 63, 71, 22, 162, 93, 134, 241, 3
+        ]
+    );
+}
+
+#[test]
+fn captured_snapshot_names_and_digest_both_change_compatibility() {
+    let mut input = fixture_input();
+    let untracked = fingerprint(&input);
+    input.environment =
+        hoimin_core::EnvironmentSnapshot::captured(vec!["FLAG".into()], "a".repeat(64)).unwrap();
+    let captured = fingerprint(&input);
+    assert_ne!(untracked, captured);
+    input.environment =
+        hoimin_core::EnvironmentSnapshot::captured(vec!["FLAG".into()], "b".repeat(64)).unwrap();
+    assert_ne!(captured, fingerprint(&input));
+    input.environment =
+        hoimin_core::EnvironmentSnapshot::captured(vec!["OTHER".into()], "a".repeat(64)).unwrap();
+    assert_ne!(captured, fingerprint(&input));
 }

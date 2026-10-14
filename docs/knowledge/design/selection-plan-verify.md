@@ -225,6 +225,9 @@ sources:
   working_tree: untracked
   sha256: 37e8886b574a7226c882551b72683241c31bcd39ed0654f417c9569f63ed4e31
 
+- id: issue-887-environment
+  resource: ../../superpowers/plans/2026-10-14-issue-887.md
+
 ---
 
 # 候補発見と実行の分離
@@ -453,6 +456,26 @@ previewとrunの選択metadataは `mode: sample`、`scope: sampled_candidates` �
 
 [^issue-695-design]: [Seeded verification sampling](../../superpowers/reports/issue-695/design.md)。
 [^issue-695-review]: [Issue 695: review and verification record](../../superpowers/reports/issue-695/review.md)。
+
+## Typed environment snapshots (Issue #887)
+
+CLI normalization creates `RunConfig<EnvironmentRequest>` with canonical names.
+The run and plan frontends capture native values once during preparation;
+execution, fingerprint generation, and persisted `PlanConfig` use the validated
+`EnvironmentSnapshot`. `Untracked` has no metadata; `Captured` contains private,
+nonempty canonical names and a valid aggregate digest. The transition rejects a
+snapshot for another name set. Verify recaptures the saved names and rejects a
+changed snapshot before the baseline. [^issue-887-environment]
+
+Plan schema 6 and report schema 5 require one explicit `environment` object.
+The earlier omitted-field encoding was also produced by the then-current writer;
+its removal is a versioned format change, not a legacy-only cleanup. Regenerate
+older plans and retain older reports with their producing binary. Fingerprint
+schema 11 preserves the same bytes, checked against pre-refactor exact digests.
+The 32-case environment oracle retains its tracked/untracked and value-state
+semantics; it does not prove digest collision resistance or native OS encoding.
+
+[^issue-887-environment]: [Issue 887 design and verification record](../../superpowers/plans/2026-10-14-issue-887.md).
 
 ## Issue #759の段階的検証の調査
 

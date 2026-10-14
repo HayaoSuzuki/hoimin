@@ -141,8 +141,10 @@ pub fn write_sources(case: &Case, root: &Path) {
 pub fn config<E: std::fmt::Debug>(
     case: &Case,
     root: &Path,
-    parse_config: impl FnOnce(Vec<String>) -> Result<hoimin_core::RunConfig, E>,
-) -> hoimin_core::RunConfig {
+    parse_config: impl FnOnce(
+        Vec<String>,
+    ) -> Result<hoimin_core::RunConfig<hoimin_core::EnvironmentRequest>, E>,
+) -> hoimin_core::RunConfig<hoimin_core::EnvironmentRequest> {
     let limit = case.max_candidates.to_string();
     let mut args = vec![
         "hoimin",

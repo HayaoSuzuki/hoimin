@@ -2188,6 +2188,8 @@ mod tests {
             ..RawRunConfig::default()
         })
         .unwrap()
+        .with_environment(crate::EnvironmentSnapshot::Untracked)
+        .unwrap()
     }
 
     const MUTATION_SCORE_POLICY_CORPUS: &str =

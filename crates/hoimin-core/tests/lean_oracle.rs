@@ -89,6 +89,7 @@ impl Driver {
             output: OutputConfig::default(),
             ..RawRunConfig::default()
         })
+        .and_then(|config| config.with_environment(hoimin_core::EnvironmentSnapshot::Untracked))
         .map_err(|error| format!("fixture config is invalid: {error}"))?;
         let (state, outstanding) = transition(
             RunState::new("lean-oracle", config, test_resource_control()),

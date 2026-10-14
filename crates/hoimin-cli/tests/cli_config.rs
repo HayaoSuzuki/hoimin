@@ -7,7 +7,12 @@ use hoimin_cli::cli::{
 };
 use hoimin_core::{MutationOperator, MutationOperatorSelection, MutationProfile};
 
-type ConfigParser = fn(&[&str]) -> Result<hoimin_core::RunConfig, hoimin_cli::cli::CliError>;
+type ConfigParser = fn(
+    &[&str],
+) -> Result<
+    hoimin_core::RunConfig<hoimin_core::EnvironmentRequest>,
+    hoimin_cli::cli::CliError,
+>;
 
 const CONFIG_PARSERS: [(&str, ConfigParser); 2] = [
     ("run", |args| parse_config_from(args.iter().copied())),

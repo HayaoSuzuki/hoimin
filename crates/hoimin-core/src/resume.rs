@@ -21,8 +21,7 @@ pub struct SourceHash {
 pub struct FingerprintInput {
     pub sources: Vec<SourceHash>,
     pub fingerprint_inputs: Vec<FingerprintInputFile>,
-    pub fingerprint_env: Vec<String>,
-    pub fingerprint_env_hash: Option<String>,
+    pub environment: crate::EnvironmentSnapshot,
     pub targets: Vec<TargetSlice>,
     pub import_roots: Vec<Utf8PathBuf>,
     pub source_roots: Vec<Utf8PathBuf>,
@@ -50,8 +49,7 @@ impl FingerprintInput {
             excludes: config.selection.excludes.clone(),
             sources,
             fingerprint_inputs: config.fingerprint_inputs.clone(),
-            fingerprint_env: config.fingerprint_env.clone(),
-            fingerprint_env_hash: config.fingerprint_env_hash.clone(),
+            environment: config.environment.clone(),
             targets,
             operators: config.operators.names(),
             profile: config.profile,
@@ -118,8 +116,8 @@ pub fn fingerprint(input: &FingerprintInput) -> RunFingerprint {
     }
     encoder.field(12, &source_roots.bytes);
     let mut environment = Encoder::new();
-    environment.bytes(&encode_patterns(&input.fingerprint_env));
-    match &input.fingerprint_env_hash {
+    environment.bytes(&encode_patterns(input.environment.names()));
+    match input.environment.digest() {
         None => environment.raw(&[0]),
         Some(hash) => {
             environment.raw(&[1]);

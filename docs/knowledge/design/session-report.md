@@ -100,6 +100,9 @@ sources:
   revision: 51b4a4b61f9e9e10a621eb3574e5caad28e8111c
   working_tree: clean
 
+- id: issue-887-environment
+  resource: ../../superpowers/plans/2026-10-14-issue-887.md
+
 ---
 
 # Session load result
@@ -109,7 +112,8 @@ reference, and Fresh carries one observed history reason. The machine selects it
 next effects with one match. Missing outcomes and legacy resume/fresh_reason fields
 are rejected; no fallback supplies a reason. Report ResumeOutcome remains a separate
 status/reason contract. The public no_compatible_run reason is removed at floor
-0.7.0; report schema stays 4 and persisted session rows do not change.[^session-load-outcome]
+0.7.0; report schema 5 includes the environment snapshot change, while persisted
+session rows do not change.[^session-load-outcome][^issue-887-environment]
 
 
 # 実行単位ごとの所有権
@@ -150,7 +154,7 @@ JSON Schemaは結果の構造を定める元資料として保持する。ただ
 
 # progressのレポート入力スキーマ
 
-progressは `REPORT_SCHEMA_VERSION`（4）に一致するJSON文書とJSONLストリームを読む。旧schema 2/3と未対応の将来版を拒否し、旧形式専用の型・変換・検証は持たない。reviewは現行スキーマのJSONを要求する。[^reader]
+progressは `REPORT_SCHEMA_VERSION`（5）に一致するJSON文書とJSONLストリームを読む。旧schema 2/3/4と未対応の将来版を拒否し、旧形式専用の型・変換・検証は持たない。reviewは現行スキーマのJSONを要求する。[^reader]
 
 スキーマ限定後も、候補ID・run ID・sequence・summary・単一結果の検証を維持する。JSONLの一行ずつの読取り、設定を不透明なJSONとして扱うprogressの方針も維持する。旧レポートは生成元バイナリで読むか、意図する版で実行し直す。planの再生成だけでは過去のreportは復元されない。手順と互換性通知は[利用方法](../../usage.md)と[互換性方針](../../compatibility.md)を参照する。[^reader]
 
@@ -208,6 +212,18 @@ session の所有権ロックを置くディレクトリについて、指定パ
 macOSで、並列数1・2、root内外の別名、大小文字の別名、実際のタイムアウト後の再開を検証した。Linux・Windowsの実機検証はローカルでは行っていない。既存の I/O 事前処理でのみ実体を解決し、存在しないロックディレクトリを作成しない。元ソース・通常の fixture の変更検知、所有権競合の検出、metrics の安全な別エントリ置換は維持する。[^issue-516]
 
 [^issue-516]: [Issue 516: Share active session ownership-tree identities](../../superpowers/specs/2026-09-12-issue-516-session-ownership-identities-design.md)。
+
+## Environment metadata and report readers (Issue #887)
+
+Report schema 5 replaces separate names and optional hash with one validated
+`environment` snapshot. Progress and review consume the writer's schema; preserve
+schema-4 and older reports with their producing binary or rerun rather than
+rewriting their version fields. Captured plaintext never enters snapshot metadata.
+Plan schema 6 requires regeneration of older plans. Fingerprint schema 11 and its
+exact bytes remain stable, so this format change alone does not require a new
+session or alter SQLite schema 4. [^issue-887-environment]
+
+[^issue-887-environment]: [Issue 887 typed snapshot verification](../../superpowers/plans/2026-10-14-issue-887.md).
 
 ## baseline失敗時の保存済み出力
 
