@@ -12,8 +12,19 @@ sources:
   sha256: bda56c389adde16eecbfdf6ce13726a1138f2a117442cc82ed3c541aa3eeab3c
 - id: issue-871-evidence
   resource: ../../superpowers/plans/2026-10-14-issue-871.md
-  working_tree: untracked
-  sha256: 6c61b477841922bf5bd8359a1cfe228386d27766b6a0f9d3816f9ed16003828d
+  revision: 6f5ce7e61ea43cf76b795570ecc403080888a092
+  working_tree: modified
+  sha256: c3e53304b573959b44bc6f78a11f8701ec623ff39883348777ad18a1a1782679
+- id: issue-873-decoder
+  resource: ../../../crates/hoimin-core/src/source_encoding.rs
+  revision: 30d9d9a0066cea85dfb89c68eb0a4db083a55f58
+  working_tree: modified
+  sha256: b9147eb48c247ca61474b3fe8d4aa13175e594949c077cc2441d6acbdcbcc32a
+- id: issue-873-candidates
+  resource: ../../../crates/hoimin-core/src/candidate.rs
+  revision: 30d9d9a0066cea85dfb89c68eb0a4db083a55f58
+  working_tree: modified
+  sha256: a057e83a8b11bfd82c8c1d3791e33171213d546616a384847bca364450334e5f
 - id: issue-866-contract
   resource: ../../../crates/hoimin-cli/src/analyzer/mod.rs
   revision: 3b79cab70063d688a3484dbb95b86f806a9a9457
@@ -925,3 +936,27 @@ changes.[^issue-866-contract]
 `AnalyzerDiagnosticCode::canonical_name` owns the seven external names without a prefix. Plan copies that name and preserves separate path, line and column fields; an absent message becomes an empty string. Run adds `analyzer.` and keeps its own default explanations and location formatting. Centralizing names does not combine these output contracts or change saved-plan schemas, exit codes, defaults or the version floor. The implementation and verification record explains the fixed-value coverage and its limits.[^issue-865-names]
 
 [^issue-865-names]: [Issue #865 design, implementation and validation](../../superpowers/plans/2026-10-14-issue-865.md).
+
+# Typed source-decoding classification
+
+The decoder returns one public SourceEncodingError enum directly.
+ImplicitUtf8 identifies invalid UTF-8 without an explicit declaration;
+Encoding covers declared-source decoding (including declared UTF-8) and
+mutation-text encoding failures. Candidate validation consumes the variant,
+so relabeling a diagnostic cannot switch InvalidUtf8 and InvalidEncoding.
+There is no separate classified decoder, private error wrapper or diagnostic
+projection. Original-span mismatch still precedes decoding failure, and source
+hashing, byte spans and candidate IDs retain their contracts.
+[^issue-873-decoder][^issue-873-candidates]
+
+SourceEncodingError changed from a public Rust struct to an enum: Rust callers
+construct or match variants rather than accessing struct fields directly.
+The user prioritized structural simplicity over preserving that API shape.
+Display diagnostics and CLI/saved-plan/report/session schemas do not change;
+no saved-plan migration or version-floor increase is required.
+The [issue #873 evidence](../../superpowers/plans/2026-10-14-issue-873.md)
+separates historical wrapper checks from validation of the final enum.
+This classification change adds no new codec or formal guarantee.
+
+[^issue-873-decoder]: [Typed decoder and encoding errors](../../../crates/hoimin-core/src/source_encoding.rs).
+[^issue-873-candidates]: [Candidate validation](../../../crates/hoimin-core/src/candidate.rs).

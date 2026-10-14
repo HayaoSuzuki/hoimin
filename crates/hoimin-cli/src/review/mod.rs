@@ -77,7 +77,14 @@ pub fn run(args: &ReviewArgs, stdout: &mut dyn std::io::Write) -> Result<i32, Re
     };
     saved_output(saved_revision, || {
         let mut candidates = Vec::new();
-        for ranked in selected {
+        let sources = input::source_states(
+            &plan.project,
+            &selected
+                .iter()
+                .map(|ranked| &ranked.candidate)
+                .collect::<Vec<_>>(),
+        );
+        for (ranked, source) in selected.into_iter().zip(sources) {
             let candidate = &ranked.candidate;
             let key = input::review_key(&plan.project, candidate);
             let stored = snapshot
@@ -85,11 +92,7 @@ pub fn run(args: &ReviewArgs, stdout: &mut dyn std::io::Write) -> Result<i32, Re
                 .find(|(stored, _)| stored.candidate_id == key.candidate_id);
             let empty = ReviewState::default();
             let (stored_key, state) = stored.map_or((&key, &empty), |(key, state)| (key, state));
-            let applicable = model::applicability(
-                &key,
-                stored_key,
-                input::source_state(&plan.project, candidate)?,
-            );
+            let applicable = model::applicability(&key, stored_key, source?);
             if applicable == Applicability::IdentityConflict {
                 return Err(ReviewError::Invalid(
                     "stored candidate identity conflict".into(),

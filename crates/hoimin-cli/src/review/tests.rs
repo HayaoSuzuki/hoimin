@@ -556,3 +556,233 @@ async fn review_record_rejects_candidate_missing_from_report() {
     assert_eq!(code, 2);
     assert!(!dir.path().join("reviews.sqlite3").exists());
 }
+
+#[tokio::test]
+async fn review_list_reads_and_indexes_each_source_once_per_command() {
+    let (dir, path) = plan_fixture().await;
+    let loaded = super::input::load_plan(&path).unwrap();
+    assert!(loaded.manifest.candidates.len() > 1);
+    let command_line = vec![
+        "hoimin".to_owned(),
+        "review".into(),
+        "list".into(),
+        path.to_str().unwrap().into(),
+        "--store".into(),
+        dir.path().join("reviews.sqlite3").to_str().unwrap().into(),
+        "--format".into(),
+        "json".into(),
+    ];
+    let crate::cli::ParsedCommand::Review(args) = crate::cli::parse_from(command_line).unwrap()
+    else {
+        panic!("review");
+    };
+    super::input::SOURCE_WORK.with(|count| count.set((0, 0)));
+    let mut output = Vec::new();
+    super::run(&args, &mut output).unwrap();
+    assert_eq!(super::input::SOURCE_WORK.with(std::cell::Cell::get), (1, 1));
+    let result: serde_json::Value = serde_json::from_slice(&output).unwrap();
+    let ids: Vec<_> = result["candidates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|row| row["candidate"]["id"].as_str().unwrap())
+        .collect();
+    let expected: Vec<_> = loaded
+        .manifest
+        .candidates
+        .iter()
+        .map(|ranked| ranked.candidate.id.as_str())
+        .collect();
+    assert_eq!(ids, expected);
+
+    std::fs::write(dir.path().join("sample.py"), "value = 9\n").unwrap();
+    output.clear();
+    super::run(&args, &mut output).unwrap();
+    assert_eq!(super::input::SOURCE_WORK.with(std::cell::Cell::get), (2, 2));
+    let result: serde_json::Value = serde_json::from_slice(&output).unwrap();
+    assert!(
+        result["candidates"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|row| row["applicability"] == "stale")
+    );
+}
+
+fn source_fixture() -> (
+    tempfile::TempDir,
+    Utf8PathBuf,
+    hoimin_core::MutationCandidate,
+) {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("sample.py"), b"1\n").unwrap();
+    let root = Utf8PathBuf::from_path_buf(std::fs::canonicalize(dir.path()).unwrap()).unwrap();
+    let descriptor = key().descriptor;
+    let candidate = hoimin_core::MutationCandidate {
+        id: stable_mutant_id(&CandidateIdentity::from(&descriptor)).to_string(),
+        sequence: 1,
+        path: descriptor.path,
+        span: descriptor.span,
+        original: descriptor.original,
+        replacement: descriptor.replacement,
+        operator: descriptor.operator,
+        line: descriptor.line,
+        column: descriptor.column,
+        symbol: descriptor.symbol,
+        file_hash: descriptor.file_hash,
+    };
+    (dir, root, candidate)
+}
+
+#[test]
+fn source_batch_preserves_hash_descriptor_and_identity_precedence() {
+    let (_dir, root, candidate) = source_fixture();
+    for field in ["span", "original", "location", "mutation", "identity"] {
+        let mut invalid = candidate.clone();
+        match field {
+            "span" => invalid.span.start = 100,
+            "original" => invalid.original = "9".into(),
+            "location" => invalid.line = 9,
+            "mutation" => invalid.replacement = invalid.original.clone(),
+            "identity" => invalid.id = "0".repeat(64),
+            _ => unreachable!(),
+        }
+        assert!(
+            super::input::source_states(&root, &[&candidate, &invalid])
+                .pop()
+                .unwrap()
+                .is_err(),
+            "{field}"
+        );
+        invalid.file_hash = "0".repeat(64);
+        assert_eq!(
+            super::input::source_state(&root, &invalid).unwrap(),
+            SourceState::Stale,
+            "{field}"
+        );
+    }
+}
+
+#[test]
+fn source_state_preserves_encoding_checks_and_stale_precedence() {
+    let (dir, root, mut candidate) = source_fixture();
+    std::fs::write(dir.path().join("sample.py"), b"1\n\xff").unwrap();
+    assert_eq!(
+        super::input::source_state(&root, &candidate).unwrap(),
+        SourceState::Stale
+    );
+    candidate.file_hash = blake3::hash(b"1\n\xff").to_hex().to_string();
+    let error = super::input::source_state(&root, &candidate).unwrap_err();
+    assert!(error.to_string().contains("not valid UTF-8"));
+
+    let latin1 = b"# coding: latin-1\n1\n";
+    std::fs::write(dir.path().join("sample.py"), latin1).unwrap();
+    candidate.file_hash = blake3::hash(latin1).to_hex().to_string();
+    candidate.span.start = 18;
+    candidate.line = 2;
+    candidate.replacement = "\u{100}".into();
+    let error = super::input::source_state(&root, &candidate).unwrap_err();
+    assert!(error.to_string().contains("encoding"));
+}
+
+#[test]
+fn source_state_rejects_path_escape_and_bounds_source_reads() {
+    let (dir, root, mut candidate) = source_fixture();
+    candidate.path = "../sample.py".into();
+    assert!(super::input::source_state(&root, &candidate).is_err());
+    candidate.path = "sample.py".into();
+    std::fs::File::create(dir.path().join("sample.py"))
+        .unwrap()
+        .set_len(64 * 1024 * 1024 + 1)
+        .unwrap();
+    assert_eq!(
+        super::input::source_state(&root, &candidate).unwrap(),
+        SourceState::Unavailable
+    );
+}
+
+#[test]
+fn source_batch_reuses_one_context_for_many_candidates_and_record_reads_again() {
+    let (dir, root, candidate) = source_fixture();
+    super::input::SOURCE_WORK.with(|count| count.set((0, 0)));
+    let candidates = vec![&candidate; 128];
+    let states = super::input::source_states(&root, &candidates);
+    assert_eq!(states.len(), 128);
+    assert!(
+        states
+            .into_iter()
+            .all(|state| matches!(state, Ok(SourceState::Fresh)))
+    );
+    assert_eq!(super::input::SOURCE_WORK.with(std::cell::Cell::get), (1, 1));
+
+    std::fs::write(dir.path().join("sample.py"), b"9\n").unwrap();
+    assert_eq!(
+        super::input::source_state(&root, &candidate).unwrap(),
+        SourceState::Stale
+    );
+    assert_eq!(super::input::SOURCE_WORK.with(std::cell::Cell::get), (2, 2));
+}
+
+#[test]
+fn source_batch_preserves_interleaved_states_and_first_error_order() {
+    let (dir, root, candidate) = source_fixture();
+    std::fs::write(dir.path().join("another.py"), b"1\n").unwrap();
+    let mut other = candidate.clone();
+    other.path = "another.py".into();
+    other.id = stable_mutant_id(&CandidateIdentity::from(
+        &crate::plan::candidate_descriptor(&other),
+    ))
+    .to_string();
+    let mut stale = candidate.clone();
+    stale.file_hash = "0".repeat(64);
+    let mut missing = candidate.clone();
+    missing.path = "missing.py".into();
+    super::input::SOURCE_WORK.with(|count| count.set((0, 0)));
+
+    let states =
+        super::input::source_states(&root, &[&candidate, &other, &stale, &missing, &candidate]);
+    let actual: Vec<_> = states.into_iter().map(Result::unwrap).collect();
+    assert_eq!(
+        actual,
+        [
+            SourceState::Fresh,
+            SourceState::Fresh,
+            SourceState::Stale,
+            SourceState::Unavailable,
+            SourceState::Fresh
+        ]
+    );
+    assert_eq!(super::input::SOURCE_WORK.with(std::cell::Cell::get), (2, 2));
+
+    other.original = "9".into();
+    let mut invalid_span = candidate.clone();
+    invalid_span.span.start = 100;
+    let states = super::input::source_states(&root, &[&candidate, &other, &invalid_span]);
+    // The first file's later span error is discovered before another.py's earlier error.
+    let error = states
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap_err();
+    assert!(error.to_string().contains("original text"));
+}
+
+#[cfg(unix)]
+#[test]
+fn source_batch_rejects_canonical_root_escape() {
+    let (dir, root, candidate) = source_fixture();
+    let outside = tempfile::tempdir().unwrap();
+    std::fs::write(outside.path().join("outside.py"), b"1\n").unwrap();
+    std::fs::remove_file(dir.path().join("sample.py")).unwrap();
+    std::os::unix::fs::symlink(
+        outside.path().join("outside.py"),
+        dir.path().join("sample.py"),
+    )
+    .unwrap();
+    let states = super::input::source_states(&root, &[&candidate, &candidate]);
+    assert!(states.into_iter().all(|state| {
+        state
+            .unwrap_err()
+            .to_string()
+            .contains("escapes project root")
+    }));
+}
