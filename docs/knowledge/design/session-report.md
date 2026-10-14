@@ -114,7 +114,7 @@ sources:
   resource: ../../superpowers/reports/issue-895/review.md
   revision: 666505221155fda7fcc7941c339d459c46466b22
   working_tree: modified
-  sha256: 273d4b256cce6e6d7a346f46c3b99f3d808211bece391c237adc33b2846eddb7
+  sha256: 2512e33beac597c4686d3638de4c610ce3af9d3f159f6e7fba2cdb8b4a06e4ff
 - id: issue-895-outcome
   resource: ../../../crates/hoimin-core/src/resume.rs
   revision: 31245fbf096967b36bc15523067080b506f88fe9

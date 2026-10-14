@@ -1,3 +1,4 @@
+import json
 import os
 import re
 import subprocess
@@ -6,6 +7,8 @@ import zipfile
 from pathlib import Path
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 from packaging.tags import Tag
 from pytest_mock import MockerFixture
 from wheel_smoke import (
@@ -611,30 +614,101 @@ def test_help_output_rejects_the_python_option(
         assert_help_hides_python_option(completed)
 
 
-@pytest.mark.parametrize(
-    "output",
-    [
-        pytest.param('{"mutants": [{"status": "killed"}]}', id="killed"),
-        pytest.param('{"mutants": [{"status": "survived"}]}', id="survived"),
-    ],
-)
-def test_mutation_result_accepts_terminal_mutants(output: str) -> None:
+def executed_smoke_outcome(termination: object, output_state: str) -> dict[str, object]:
+    return {
+        "executed": {
+            "termination": termination,
+            "output_state": output_state,
+            "output": {"token": "smoke-output", "retained": 0, "observed": 0},
+            "elapsed": {"secs": 0, "nanos": 1},
+        }
+    }
+
+
+@given(exit_code=st.integers(min_value=-(2**31), max_value=2**31 - 1))
+def test_mutation_result_accepts_complete_executed_exits(exit_code: int) -> None:
+    # Arrange
+    outcome = executed_smoke_outcome({"Exit": exit_code}, "complete")
+    output = json.dumps({"mutants": [{"outcome": outcome}]})
+
+    # Act
     actual = assert_mutation_result(output)
 
+    # Assert
     assert actual is None
 
 
-def test_mutation_result_rejects_an_empty_mutant_list() -> None:
-    output = '{"mutants": []}'
+@given(status=st.sampled_from(["killed", "survived"]))
+def test_mutation_result_accepts_conclusive_reused_outcomes(status: str) -> None:
+    # Arrange
+    output = json.dumps({"mutants": [{"outcome": {"reused": {"status": status}}}]})
 
-    with pytest.raises(AssertionError, match="mutation run produced no mutants"):
-        assert_mutation_result(output)
+    # Act
+    actual = assert_mutation_result(output)
+
+    # Assert
+    assert actual is None
 
 
-def test_mutation_result_rejects_a_nonterminal_mutant_list() -> None:
-    output = '{"mutants": [{"status": "timeout"}]}'
+@given(
+    termination=st.one_of(
+        st.integers(min_value=-(2**31), max_value=2**31 - 1).map(
+            lambda code: {"Exit": code}
+        ),
+        st.sampled_from(["Timeout", "OutOfMemory", "ProcessLimit", "Cancelled"]),
+    )
+)
+def test_mutation_result_rejects_close_timeout_outcomes(termination: object) -> None:
+    # Arrange
+    outcome = executed_smoke_outcome(termination, "close_timed_out")
+    output = json.dumps({"mutants": [{"outcome": outcome}]})
 
+    # Act / Assert
     with pytest.raises(
         AssertionError, match="mutation run had no killed or survived mutant"
     ):
+        assert_mutation_result(output)
+
+
+@pytest.mark.parametrize(
+    "termination", ["Timeout", "OutOfMemory", "ProcessLimit", "Cancelled"]
+)
+def test_mutation_result_rejects_complete_non_exit_outcomes(termination: str) -> None:
+    # Arrange
+    outcome = executed_smoke_outcome(termination, "complete")
+    output = json.dumps({"mutants": [{"outcome": outcome}]})
+
+    # Act / Assert
+    with pytest.raises(
+        AssertionError, match="mutation run had no killed or survived mutant"
+    ):
+        assert_mutation_result(output)
+
+
+def test_mutation_result_rejects_not_run() -> None:
+    # Arrange
+    output = json.dumps({"mutants": [{"outcome": "not_run"}]})
+
+    # Act / Assert
+    with pytest.raises(
+        AssertionError, match="mutation run had no killed or survived mutant"
+    ):
+        assert_mutation_result(output)
+
+
+def test_mutation_result_rejects_flat_legacy_status() -> None:
+    # Arrange
+    output = json.dumps({"mutants": [{"status": "killed"}]})
+
+    # Act / Assert
+    with pytest.raises(KeyError, match="outcome"):
+        assert_mutation_result(output)
+
+
+def test_mutation_result_rejects_an_empty_mutant_list() -> None:
+    # Arrange
+    output = '{"mutants": []}'
+
+    # Act / Assert
+    with pytest.raises(AssertionError, match="mutation run produced no mutants"):
         assert_mutation_result(output)
