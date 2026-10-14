@@ -1010,9 +1010,7 @@ mod tests {
             let code = "import pathlib,subprocess,sys,time; pathlib.Path(sys.argv[1]).write_text('ran'); child=subprocess.Popen([sys.executable,'-c','import pathlib,sys,time; pathlib.Path(sys.argv[1]).write_text(\"escaped\"); time.sleep(30)',sys.argv[2]], creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP); pathlib.Path(sys.argv[3]).write_text(str(child.pid)); time.sleep(30)";
             let request = RunProcess {
                 id: EffectId(300 + sequence),
-                worker: None,
-                run_id: None,
-                mutant_id: None,
+                context: hoimin_core::ProbeContext,
                 argv: vec![
                     python(),
                     arg("-c"),

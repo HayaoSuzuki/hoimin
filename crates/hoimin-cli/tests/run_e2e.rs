@@ -846,7 +846,14 @@ async fn ty_reports_a_surviving_nullable_contract_mutant() {
 async fn mypy_kills_a_nullable_contract_mutant() {
     let run = run_type_checker(&mypy_executable(), "killed").await;
 
-    assert_eq!(run.statuses, ["killed"]);
+    assert_eq!(
+        run.statuses,
+        ["killed"],
+        "exit={} stderr={} stdout={}",
+        run.exit_code,
+        run.stderr,
+        run.stdout
+    );
 }
 
 #[tokio::test]

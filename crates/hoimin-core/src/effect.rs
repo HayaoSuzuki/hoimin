@@ -83,13 +83,35 @@ pub struct EmitOutput {
     pub event: OutputEvent,
 }
 
+/// A command without workspace identity, used for runtime probes.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct RunProcess {
+pub struct ProbeContext;
+
+/// Required identity for an unmutated workspace test run.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BaselineContext {
+    pub worker: u32,
+    pub run_id: String,
+}
+
+/// Required identity for a mutated workspace test run.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MutantContext {
+    pub worker: u32,
+    pub run_id: String,
+    pub mutant_id: String,
+}
+
+/// Shared execution mechanism with purpose-specific required identity.
+///
+/// The effect variant fixes `C`, so a baseline cannot carry mutant or probe metadata.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RunProcess<C> {
     pub id: EffectId,
-    /// Workspace worker for baseline/mutant processes. Runtime probes use None.
-    pub worker: Option<u32>,
-    pub run_id: Option<String>,
-    pub mutant_id: Option<String>,
+    pub context: C,
     pub argv: Vec<CommandArg>,
     pub cwd: Utf8PathBuf,
     pub limits: ProcessLimits,
@@ -185,12 +207,12 @@ pub enum RunEffect {
     Preflight(Preflight),
     #[serde(skip_deserializing)]
     CreateWorker(CreateWorker),
-    RunBaseline(RunProcess),
+    RunBaseline(RunProcess<BaselineContext>),
     ObserveRemainingBudget(ObserveRemainingBudget),
     AnalyzeFile(AnalyzeFile),
     ReadCandidate(ReadCandidate),
     ApplyMutation(ApplyMutation),
-    RunMutant(RunProcess),
+    RunMutant(RunProcess<MutantContext>),
     ResetWorker(ResetWorker),
     VerifyOriginals(VerifyOriginals),
     LoadSession(LoadSession),
@@ -209,7 +231,8 @@ impl RunEffect {
             Self::ResolveTargets(value) => value.id,
             Self::Preflight(value) => value.id,
             Self::CreateWorker(value) => value.id(),
-            Self::RunBaseline(value) | Self::RunMutant(value) => value.id,
+            Self::RunBaseline(value) => value.id,
+            Self::RunMutant(value) => value.id,
             Self::ObserveRemainingBudget(value) => value.id,
             Self::AnalyzeFile(value) => value.id,
             Self::ReadCandidate(value) => value.id,

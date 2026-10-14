@@ -1888,3 +1888,29 @@ so this invalid-input tightening requires no release-floor increase under the
 [compatibility policy](compatibility.md#choosing-the-release-floor).
 See the [Issue 886 implementation record](superpowers/plans/2026-10-14-issue-886.md)
 for the regression and focused validation evidence.
+
+## Typed process execution requests
+
+`RunProcess<C>` shares argv, cwd and limits while its context fixes the required
+identity. `RunEffect::RunBaseline` accepts `BaselineContext` (worker and run ID);
+`RunEffect::RunMutant` accepts `MutantContext` (worker, run ID and mutant ID).
+Standalone probes use `ProbeContext` and have no workspace identity. The request
+has no default context type. Its serde representation nests required metadata
+under `context`; obsolete sibling metadata and missing context fields fail
+deserialization. This internal change does not change public report schemas.
+
+The shell prepares workspace commands only from baseline or mutant contexts.
+It removes inherited `HOIMIN_WORKER_ROOT`, `HOIMIN_RUN_ID` and `HOIMIN_MUTANT_ID`
+case-insensitively, then writes the actual worker root and required run ID.
+Mutant commands also receive their required mutant ID; baseline commands have
+no mutant variable. Empty supplied IDs retain their existing meaning.
+
+At the process mechanism boundary, `ProcessRequest` consumes the typed command
+and stores one private execution-context enum. The same runner owns resource
+supervision, cancellation and output drains for all contexts. Optional worker
+and mutant tags in tracing and `ProcessFinished` are projections of the typed
+context: probe worker absence and baseline mutant absence are valid. Dispatch
+and queued-mutant metrics use the required workspace worker directly.
+
+See the [Issue 898 design](superpowers/specs/2026-10-15-issue-898-design.md)
+for request ownership and the rejected alternatives.

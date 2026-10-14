@@ -88,6 +88,11 @@ sources:
   working_tree: modified
   sha256: f0eb61d7bfd1bae452fe9993d8a058f902fc42c04d68a308dee995f14b52ca5f
 
+- id: issue-898-design
+  resource: ../../superpowers/specs/2026-10-15-issue-898-design.md
+  working_tree: modified
+  sha256: aac717c0284ee83adf860de48654e43cb9b76bd96b87c41321edaac8fdf60ef1
+
 ---
 
 # 制限する資源とディスク監視の範囲
@@ -265,3 +270,21 @@ remain comparison evidence; this work adds no Lean model or proof.
 [^issue-889-shell]: [Owned writer implementation](../../../crates/hoimin-cli/src/shell.rs).
 
 [^issue-889-delivery]: [Owned writer implementation](../../../crates/hoimin-cli/src/report/delivery.rs).
+
+## Issue 898: プロセス要求の必須メタデータ
+
+`RunProcess<C>` の `context` が用途別の必須情報を持つ。
+Baseline の effect は worker と run ID を持つ `BaselineContext`、
+Mutant の effect はさらに mutant ID を持つ `MutantContext` のみを受け取る。
+単独の probe は workspace 情報を持たない `ProbeContext` を使う。
+旧形式の独立した Option フィールドと、不足した context は読み込まない。
+public report の形式・バージョンは変わらない。
+
+shell は baseline/mutant の context から環境を作り、継承された HOIMIN の
+worker/run/mutant 変数を大文字小文字を区別せず削除する。
+worker root と run ID は必須値を設定し、mutant ID は mutant の場合だけ設定する。
+runner は型付き要求を消費した後に一つの private enum にまとめる。
+ログと completion の Option は probe/baseline の正当な欠如を表す投影であり、
+workspace 要求の不足を補うためには使わない。
+終了時の cancellation、output drain、metrics の順序は維持する。
+根拠は `issue-898-design`。
