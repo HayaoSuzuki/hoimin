@@ -26,8 +26,20 @@ struct OracleEvent {
     sequence: u64,
     mutant_id: Option<String>,
     mutant_sequence: Option<u64>,
-    status: Option<String>,
-    termination: Option<String>,
+    outcome: Option<OracleOutcome>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+enum OracleOutcome {
+    Executed {
+        termination: String,
+        output_state: hoimin_core::ProcessOutputState,
+    },
+    Reused {
+        status: hoimin_core::ReusedMutationStatus,
+    },
+    NotRun,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
@@ -60,7 +72,7 @@ fn parse_corpus(input: &str) -> Result<Vec<OracleCase>, String> {
 }
 
 fn validate_case(item: &OracleCase) -> Result<(), String> {
-    if item.schema != 1 || item.id.is_empty() || item.premise.is_empty() {
+    if item.schema != 2 || item.id.is_empty() || item.premise.is_empty() {
         return Err(format!("{} has invalid schema or identity", item.id));
     }
     if !matches!(item.mode.as_str(), "strict" | "model-only") {
@@ -89,12 +101,10 @@ fn validate_event(id: &str, event: &OracleEvent) -> Result<(), String> {
         return Err(format!("{id} has invalid run identity or sequence"));
     }
     let mutant_shape = event.mutant_id.is_some() && event.mutant_sequence.is_some();
-    let finish_shape = mutant_shape && event.status.is_some();
+    let finish_shape = mutant_shape && event.outcome.is_some();
     let valid = match event.kind.as_str() {
-        "run_started" | "diagnostic" | "run_finished" => {
-            !mutant_shape && event.status.is_none() && event.termination.is_none()
-        }
-        "mutant_started" => mutant_shape && event.status.is_none() && event.termination.is_none(),
+        "run_started" | "diagnostic" | "run_finished" => !mutant_shape && event.outcome.is_none(),
+        "mutant_started" => mutant_shape && event.outcome.is_none(),
         "mutant_finished" => finish_shape,
         _ => false,
     };
@@ -104,29 +114,6 @@ fn validate_event(id: &str, event: &OracleEvent) -> Result<(), String> {
             .as_deref()
             .is_some_and(|value| !matches!(value, "alpha" | "beta"))
         || event.mutant_sequence.is_some_and(|value| value > 1)
-        || event.status.as_deref().is_some_and(|value| {
-            !matches!(
-                value,
-                "survived"
-                    | "killed"
-                    | "timeout"
-                    | "out_of_memory"
-                    | "process_limit"
-                    | "error"
-                    | "not_run"
-            )
-        })
-        || event.termination.as_deref().is_some_and(|value| {
-            !matches!(
-                value,
-                "exit_zero"
-                    | "exit_nonzero"
-                    | "timeout"
-                    | "out_of_memory"
-                    | "process_limit"
-                    | "cancelled"
-            )
-        })
     {
         return Err(format!("{id} has invalid event {event:?}"));
     }
@@ -155,13 +142,6 @@ fn validate_expected(id: &str, expected: &Expected) -> Result<(), String> {
         Some("report.sequence.mutant_identity_sequence_mismatch") if !expected.accepted => {
             &["mutant_id", "expected_sequence", "received_sequence"]
         }
-        Some("report.sequence.mutant_status_termination_mismatch") if !expected.accepted => &[
-            "mutant_id",
-            "mutant_sequence",
-            "status",
-            "expected_status",
-            "termination",
-        ],
         _ => {
             return Err(format!(
                 "{id} has inconsistent expected result {expected:?}"
@@ -183,15 +163,15 @@ fn validate_expected(id: &str, expected: &Expected) -> Result<(), String> {
 #[test]
 fn corpus_is_closed_and_valid() {
     let cases = parse_corpus(CORPUS).expect("Lean corpus must satisfy the adapter schema");
-    assert_eq!(cases.len(), 23);
+    assert_eq!(cases.len(), 24);
 }
 
 #[test]
 fn corpus_rejects_unknown_schema_mode_and_fields() {
     let mut row: serde_json::Value = serde_json::from_str(CORPUS.lines().next().unwrap()).unwrap();
-    row["schema"] = json!(2);
+    row["schema"] = json!(3);
     assert!(parse_corpus(&format!("{row}\n")).is_err());
-    row["schema"] = json!(1);
+    row["schema"] = json!(2);
     row["mode"] = json!("report");
     assert!(parse_corpus(&format!("{row}\n")).is_err());
     row["mode"] = json!("model-only");
@@ -232,9 +212,9 @@ fn corpus_rejects_unknown_or_missing_error_fields() {
 mod correspondence {
     use super::*;
     use hoimin_core::{
-        ByteSpan, Diagnostic, MutantFinished, MutantStarted, MutationCandidate, MutationStatus,
-        MutationSummary, OutputEvent, ProcessTermination, ReportSequence, ReportSequenceError,
-        ResourceMode, RunStarted, RunSummary,
+        ByteSpan, Diagnostic, MutantFinished, MutantStarted, MutationCandidate, MutationSummary,
+        OutputEvent, ProcessTermination, ReportSequence, ReportSequenceError, ResourceMode,
+        RunStarted, RunSummary,
     };
     use std::panic::{AssertUnwindSafe, catch_unwind};
 
@@ -251,19 +231,6 @@ mod correspondence {
             "alpha" => Ok("mutant-alpha"),
             "beta" => Ok("mutant-beta"),
             _ => Err(format!("unknown mutant role {value}")),
-        }
-    }
-
-    fn status(value: &str) -> Result<MutationStatus, String> {
-        match value {
-            "survived" => Ok(MutationStatus::Survived),
-            "killed" => Ok(MutationStatus::Killed),
-            "timeout" => Ok(MutationStatus::Timeout),
-            "out_of_memory" => Ok(MutationStatus::OutOfMemory),
-            "process_limit" => Ok(MutationStatus::ProcessLimit),
-            "error" => Ok(MutationStatus::Error),
-            "not_run" => Ok(MutationStatus::NotRun),
-            _ => Err(format!("unknown status {value}")),
         }
     }
 
@@ -330,12 +297,26 @@ mod correspondence {
                     sequence: event.sequence,
                     run_id: run_id.to_owned(),
                     candidate: candidate(id, mutant_sequence),
-                    status: status(event.status.as_deref().ok_or("missing status")?)?,
-                    termination: event.termination.as_deref().map(termination).transpose()?,
-                    output_state: hoimin_core::ProcessOutputState::Complete,
-                    elapsed_ms: 1,
+                    outcome: match event.outcome.as_ref().ok_or("missing outcome")? {
+                        OracleOutcome::Executed {
+                            termination: value,
+                            output_state,
+                        } => hoimin_core::MutationOutcome::Executed {
+                            termination: termination(value)?,
+                            output_state: *output_state,
+                            output: hoimin_core::OutputSpoolRef {
+                                token: "oracle-output".into(),
+                                retained: 0,
+                                observed: 0,
+                            },
+                            elapsed: std::time::Duration::from_millis(1),
+                        },
+                        OracleOutcome::Reused { status } => {
+                            hoimin_core::MutationOutcome::Reused { status: *status }
+                        }
+                        OracleOutcome::NotRun => hoimin_core::MutationOutcome::NotRun,
+                    },
                     resource_mode: ResourceMode::Hard,
-                    output: None,
                     diagnostics: Vec::new(),
                 })
             }
@@ -435,63 +416,6 @@ mod correspondence {
                 "report.sequence.mutant_not_started",
                 mutant_fields(mutant_id, *mutant_sequence)?,
             ),
-            ReportSequenceError::MutantStatusTerminationMismatch {
-                mutant_id,
-                mutant_sequence,
-                status: actual,
-                termination: actual_termination,
-                expected_status,
-            } => (
-                "report.sequence.mutant_status_termination_mismatch",
-                vec![
-                    ("mutant_id", normalize_mutant_id(mutant_id)?),
-                    ("mutant_sequence", mutant_sequence.to_string()),
-                    ("status", status_name(*actual).to_owned()),
-                    ("expected_status", status_name(*expected_status).to_owned()),
-                    (
-                        "termination",
-                        termination_name(*actual_termination).to_owned(),
-                    ),
-                ],
-            ),
-            ReportSequenceError::MutantOutputDiagnosticMismatch {
-                mutant_id,
-                mutant_sequence,
-                output_state,
-            } => (
-                "report.sequence.mutant_output_diagnostic_mismatch",
-                vec![
-                    ("mutant_id", normalize_mutant_id(mutant_id)?),
-                    ("mutant_sequence", mutant_sequence.to_string()),
-                    (
-                        "output_state",
-                        match output_state {
-                            hoimin_core::ProcessOutputState::Complete => "complete",
-                            hoimin_core::ProcessOutputState::CloseTimedOut => "close_timed_out",
-                        }
-                        .to_owned(),
-                    ),
-                ],
-            ),
-            ReportSequenceError::MutantOutputStateMismatch {
-                mutant_id,
-                mutant_sequence,
-                output_state,
-            } => (
-                "report.sequence.mutant_output_state_mismatch",
-                vec![
-                    ("mutant_id", normalize_mutant_id(mutant_id)?),
-                    ("mutant_sequence", mutant_sequence.to_string()),
-                    (
-                        "output_state",
-                        match output_state {
-                            hoimin_core::ProcessOutputState::Complete => "complete",
-                            hoimin_core::ProcessOutputState::CloseTimedOut => "close_timed_out",
-                        }
-                        .to_owned(),
-                    ),
-                ],
-            ),
         };
         Ok(Expected {
             accepted: false,
@@ -508,29 +432,6 @@ mod correspondence {
             ("mutant_id", normalize_mutant_id(id)?),
             ("mutant_sequence", sequence.to_string()),
         ])
-    }
-
-    fn status_name(value: MutationStatus) -> &'static str {
-        match value {
-            MutationStatus::Survived => "survived",
-            MutationStatus::Killed => "killed",
-            MutationStatus::Timeout => "timeout",
-            MutationStatus::OutOfMemory => "out_of_memory",
-            MutationStatus::ProcessLimit => "process_limit",
-            MutationStatus::Error => "error",
-            MutationStatus::NotRun => "not_run",
-        }
-    }
-
-    fn termination_name(value: ProcessTermination) -> &'static str {
-        match value {
-            ProcessTermination::Exit(0) => "exit_zero",
-            ProcessTermination::Exit(_) => "exit_nonzero",
-            ProcessTermination::Timeout => "timeout",
-            ProcessTermination::OutOfMemory => "out_of_memory",
-            ProcessTermination::ProcessLimit => "process_limit",
-            ProcessTermination::Cancelled => "cancelled",
-        }
     }
 
     fn observe(sequence: &mut ReportSequence, event: &OracleEvent) -> Result<Expected, String> {

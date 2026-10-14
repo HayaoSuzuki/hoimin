@@ -1,3 +1,5 @@
+#[path = "support/mutation_outcome.rs"]
+mod mutation_outcome;
 use serde_json::{Value, json};
 use std::{
     path::{Path, PathBuf},
@@ -123,7 +125,7 @@ async fn literal_selector_fixture_respects_run_overflow_and_partial_verify() {
         assert!(
             run_mutants
                 .iter()
-                .all(|mutant| mutant["status"] == "killed")
+                .all(|mutant| mutation_outcome::status(mutant) == "killed")
         );
         let manifest = reports.path().join(format!("plan-{limit}.json"));
         std::fs::write(&manifest, &plan_output.stdout).unwrap();

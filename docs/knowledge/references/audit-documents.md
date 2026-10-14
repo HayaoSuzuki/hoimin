@@ -829,6 +829,22 @@ sources:
   revision: 3c3a7d6
   working_tree: modified
   sha256: da0624a1c113ab60bc5622a0e4a5d45ebcaa0c86330f4954c9255b3acb353a85
+- id: issue-895-design
+  resource: ../../superpowers/reports/issue-895/design.md
+  revision: 62cee6bbd684d13dd69a67bd3a627901103f8624
+  working_tree: clean
+  sha256: ab8f5b66d8323ebf1da4259bb303636f3d8d3e5fd8b429e4f500c9b4e2a64711
+- id: issue-895-plan
+  resource: ../../superpowers/reports/issue-895/plan.md
+  revision: 62cee6bbd684d13dd69a67bd3a627901103f8624
+  working_tree: clean
+  sha256: 7d4bf73ab2a2ceb9676e247982ef0f9082bdac15bf3451075d5916cdfbb25b0e
+- id: issue-895-review
+  resource: ../../superpowers/reports/issue-895/review.md
+  revision: 62cee6bbd684d13dd69a67bd3a627901103f8624
+  working_tree: modified
+  sha256: c17c19a899e2c5088e60b49a479f932a8a81d57c8afb55c67ec85d65a644d0d8
+
 ---
 
 # 収録一覧
@@ -1455,3 +1471,17 @@ sources:
 - [Second-order adoption assessment](../../superpowers/reports/issue-763-764/README.md) - Finite pairs, a first-order comparator and the decision to defer composite infrastructure.[^second-order-assessment]
 
 [^second-order-assessment]: [Measured results and limits](../../superpowers/reports/issue-763-764/README.md), projected cases, isolated confirmation and the retained regression assertion.
+
+## Issue 895 typed mutation outcomes
+
+| Record | Scope |
+| --- | --- |
+| [design.md](../../superpowers/reports/issue-895/design.md) | Owned outcome and compatibility contract [^issue-895-design] |
+| [plan.md](../../superpowers/reports/issue-895/plan.md) | TDD tasks and verification boundaries [^issue-895-plan] |
+| [review.md](../../superpowers/reports/issue-895/review.md) | Actual findings, corrections, and verification evidence [^issue-895-review] |
+
+[^issue-895-design]: [Issue 895 design record](../../superpowers/reports/issue-895/design.md).
+
+[^issue-895-plan]: [Issue 895 plan record](../../superpowers/reports/issue-895/plan.md).
+
+[^issue-895-review]: [Issue 895 review record](../../superpowers/reports/issue-895/review.md).

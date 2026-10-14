@@ -196,7 +196,7 @@ fn compare_usable_reports(
             continue;
         }
 
-        if is_inconclusive(mutant.status) {
+        if is_inconclusive(mutant.outcome.status()) {
             inconclusive.insert(*key);
         }
 
@@ -206,24 +206,24 @@ fn compare_usable_reports(
         };
         common += 1;
 
-        if is_inconclusive(next.status) {
+        if is_inconclusive(next.outcome.status()) {
             inconclusive.insert(*key);
         }
-        if !is_conclusive(mutant.status) || !is_conclusive(next.status) {
+        if !is_conclusive(mutant.outcome.status()) || !is_conclusive(next.outcome.status()) {
             continue;
         }
 
         comparable_common += 1;
-        previous_killed += usize::from(mutant.status == MutationStatus::Killed);
-        previous_survived += usize::from(mutant.status == MutationStatus::Survived);
-        current_killed += usize::from(next.status == MutationStatus::Killed);
-        current_survived += usize::from(next.status == MutationStatus::Survived);
-        if mutant.status != next.status
+        previous_killed += usize::from(mutant.outcome.status() == MutationStatus::Killed);
+        previous_survived += usize::from(mutant.outcome.status() == MutationStatus::Survived);
+        current_killed += usize::from(next.outcome.status() == MutationStatus::Killed);
+        current_survived += usize::from(next.outcome.status() == MutationStatus::Survived);
+        if mutant.outcome.status() != next.outcome.status()
             && let Some(details) = details.as_mut()
         {
             details.observe(mutant, next);
         }
-        match (mutant.status, next.status) {
+        match (mutant.outcome.status(), next.outcome.status()) {
             (MutationStatus::Survived, MutationStatus::Killed) => improvements += 1,
             (MutationStatus::Killed, MutationStatus::Survived) => regressions += 1,
             (MutationStatus::Survived, MutationStatus::Survived) => carried_survivors += 1,
@@ -236,7 +236,7 @@ fn compare_usable_reports(
         if ambiguous.contains(key) {
             continue;
         }
-        if is_inconclusive(mutant.status) {
+        if is_inconclusive(mutant.outcome.status()) {
             inconclusive.insert(*key);
         }
         if !previous.unique.contains_key(key) {
@@ -373,10 +373,14 @@ mod detail_tests {
 
     fn report(entries: &[(&str, &str, MutationStatus)]) -> UsableReport {
         let value: serde_json::Value = serde_json::from_str(include_str!(
-            "../../tests/golden/reports/schema-v3-current.json"
+            "../../tests/golden/reports/schema-v6-current.json"
         ))
         .unwrap();
-        let template: MutantFinished = serde_json::from_value(value["mutants"][0].clone()).unwrap();
+        let hoimin_core::OutputEvent::MutantFinished(template) =
+            serde_json::from_value(value["mutants"][0].clone()).unwrap()
+        else {
+            unreachable!()
+        };
         UsableReport {
             source: "internal.json".into(),
             mutants: entries
@@ -385,7 +389,38 @@ mod detail_tests {
                     let mut event = template.clone();
                     event.candidate.id = (*id).to_owned();
                     event.candidate.original = (*body).to_owned();
-                    event.status = *status;
+                    event.outcome = match status {
+                        MutationStatus::Killed => hoimin_core::MutationOutcome::Reused {
+                            status: hoimin_core::ReusedMutationStatus::Killed,
+                        },
+                        MutationStatus::Survived => hoimin_core::MutationOutcome::Reused {
+                            status: hoimin_core::ReusedMutationStatus::Survived,
+                        },
+                        MutationStatus::NotRun => hoimin_core::MutationOutcome::NotRun,
+                        status => hoimin_core::MutationOutcome::Executed {
+                            termination: match status {
+                                MutationStatus::Timeout => hoimin_core::ProcessTermination::Timeout,
+                                MutationStatus::OutOfMemory => {
+                                    hoimin_core::ProcessTermination::OutOfMemory
+                                }
+                                MutationStatus::ProcessLimit => {
+                                    hoimin_core::ProcessTermination::ProcessLimit
+                                }
+                                _ => hoimin_core::ProcessTermination::Exit(1),
+                            },
+                            output_state: if *status == MutationStatus::Error {
+                                hoimin_core::ProcessOutputState::CloseTimedOut
+                            } else {
+                                hoimin_core::ProcessOutputState::Complete
+                            },
+                            output: hoimin_core::OutputSpoolRef {
+                                token: "fixture".into(),
+                                retained: 0,
+                                observed: 0,
+                            },
+                            elapsed: std::time::Duration::ZERO,
+                        },
+                    };
                     event
                 })
                 .collect(),

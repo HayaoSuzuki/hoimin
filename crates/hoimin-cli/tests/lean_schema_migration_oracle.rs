@@ -10,7 +10,7 @@ use serde::Deserialize;
 
 const CORPUS: &str =
     include_str!("../../../formal/HoiminOracle/corpus/schema-migration-concurrency.jsonl");
-const CURRENT_VERSION: i64 = 4;
+const CURRENT_VERSION: i64 = 5;
 // Version labels refer to the current-only initialization contract.
 
 #[derive(Debug, Deserialize)]
@@ -89,7 +89,10 @@ fn validate_case(item: &OracleCase) -> Result<(), String> {
         }
         "unsupported" => {
             item.mode == "strict"
-                && matches!(item.initial_version.as_str(), "v1" | "v2" | "v3" | "future")
+                && matches!(
+                    item.initial_version.as_str(),
+                    "v1" | "v2" | "v3" | "v4" | "future"
+                )
                 && item.initial_legacy_row
                 && item.expected_version == item.initial_version
                 && item.expected_legacy_row
@@ -120,8 +123,8 @@ fn known_event(value: &str) -> bool {
 #[test]
 fn lean_schema_migration_corpus_is_valid() {
     let cases = parse_corpus(CORPUS).expect("Lean schema migration corpus must be valid");
-    assert_eq!(cases.len(), 7);
-    assert_eq!(cases.iter().filter(|item| item.mode == "strict").count(), 6);
+    assert_eq!(cases.len(), 8);
+    assert_eq!(cases.iter().filter(|item| item.mode == "strict").count(), 7);
 }
 
 #[test]
@@ -292,8 +295,9 @@ fn expected_version_number(value: &str) -> Result<i64, String> {
         "v1" => Ok(1),
         "v2" => Ok(2),
         "v3" => Ok(3),
+        "v4" => Ok(4),
         "current" => Ok(CURRENT_VERSION),
-        "future" => Ok(5),
+        "future" => Ok(CURRENT_VERSION + 1),
         _ => Err(format!("unknown expected version {value}")),
     }
 }

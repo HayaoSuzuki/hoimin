@@ -1,3 +1,5 @@
+#[path = "support/mutation_outcome.rs"]
+mod mutation_outcome;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -122,17 +124,20 @@ fn increasing_budget_reuses_stable_prefix_and_keeps_cumulative_accounting() {
         assert_eq!(increased["run"]["run_id"], initial["run"]["run_id"]);
         assert_eq!(metrics["executed"], 1);
         assert_eq!(increased["summary"]["complete"], false);
-        assert_eq!(increased["mutants"][0]["status"], verdict);
-        assert!(increased["mutants"][0]["termination"].is_null());
-        assert_eq!(increased["mutants"][1]["status"], verdict);
-        assert!(!increased["mutants"][1]["termination"].is_null());
-        assert_eq!(increased["mutants"][2]["status"], "not_run");
+        assert_eq!(mutation_outcome::status(&increased["mutants"][0]), verdict);
+        assert!(mutation_outcome::termination(&increased["mutants"][0]).is_null());
+        assert_eq!(mutation_outcome::status(&increased["mutants"][1]), verdict);
+        assert!(!mutation_outcome::termination(&increased["mutants"][1]).is_null());
+        assert_eq!(
+            mutation_outcome::status(&increased["mutants"][2]),
+            "not_run"
+        );
         let (fresh, fresh_metrics) = fixture.run(2, false, "fresh.sqlite");
         assert_eq!(fresh_metrics["executed"], 2);
         for index in 0..3 {
             assert_eq!(
-                fresh["mutants"][index]["status"],
-                increased["mutants"][index]["status"]
+                mutation_outcome::status(&fresh["mutants"][index]),
+                mutation_outcome::status(&increased["mutants"][index])
             );
             assert_eq!(
                 fresh["mutants"][index]["candidate"],
@@ -154,7 +159,7 @@ fn increased_budget_can_complete_then_completed_run_remains_ineligible() {
         assert_eq!(completed["run"]["run_id"], initial["run"]["run_id"]);
         assert_eq!(completed["summary"]["complete"], true);
         assert_eq!(metrics["executed"], 2);
-        assert!(completed["mutants"][0]["termination"].is_null());
+        assert!(mutation_outcome::termination(&completed["mutants"][0]).is_null());
         let (increased, metrics) = fixture.run(4, true, "session.sqlite");
         assert_ne!(increased["run"]["run_id"], initial["run"]["run_id"]);
         assert_eq!(metrics["executed"], 3);

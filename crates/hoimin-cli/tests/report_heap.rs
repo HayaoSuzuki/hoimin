@@ -96,12 +96,17 @@ fn mutant_finished(event_sequence: u64, mutant_sequence: u64) -> OutputEvent {
             symbol: None,
             file_hash: "hash".to_owned(),
         },
-        status: MutationStatus::Killed,
-        termination: Some(ProcessTermination::Exit(1)),
-        output_state: hoimin_core::ProcessOutputState::Complete,
-        elapsed_ms: 2,
+        outcome: hoimin_core::MutationOutcome::Executed {
+            termination: ProcessTermination::Exit(1),
+            output_state: hoimin_core::ProcessOutputState::Complete,
+            output: hoimin_core::OutputSpoolRef {
+                token: "fixture-output".into(),
+                retained: 0,
+                observed: 0,
+            },
+            elapsed: std::time::Duration::from_millis(2),
+        },
         resource_mode: ResourceMode::Hard,
-        output: None,
         diagnostics: Vec::new(),
     })
 }

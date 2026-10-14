@@ -56,8 +56,6 @@ def rejectionCode : Rejection → String
   | .mutantIdentitySequenceMismatch _ _ _ =>
       "report.sequence.mutant_identity_sequence_mismatch"
   | .mutantNotStarted _ _ => "report.sequence.mutant_not_started"
-  | .mutantStatusTerminationMismatch _ _ _ _ _ =>
-      "report.sequence.mutant_status_termination_mismatch"
 
 def rejectionFields : Rejection → List (String × String)
   | .runNotStarted => []
@@ -75,12 +73,6 @@ def rejectionFields : Rejection → List (String × String)
       [("mutant_id", mutantIdString id),
        ("expected_sequence", toString expected),
        ("received_sequence", toString received)]
-  | .mutantStatusTerminationMismatch id sequence status expected termination =>
-      [("mutant_id", mutantIdString id),
-       ("mutant_sequence", toString sequence),
-       ("status", statusString status),
-       ("expected_status", statusString expected),
-       ("termination", terminationString termination)]
 
 def expectedOf (verdict : Verdict) : Expected :=
   match verdict.rejection with
@@ -101,10 +93,10 @@ def mutantStart (sequence : Nat) (id : MutantId := .alpha)
   { runId := .first, sequence, kind := .mutantStarted id mutantSequence }
 
 def mutantFinish (sequence : Nat) (id : MutantId := .alpha)
-    (mutantSequence : Nat := 0) (status : Status := .survived)
-    (termination : Option Termination := some .exitZero) : Event :=
+    (mutantSequence : Nat := 0)
+    (outcome : Outcome := .executed .exitZero .complete) : Event :=
   { runId := .first, sequence
-    kind := .mutantFinished id mutantSequence status termination }
+    kind := .mutantFinished id mutantSequence outcome }
 
 def finishRun (sequence : Nat) : Event :=
   { runId := .first, sequence, kind := .runFinished }
@@ -131,7 +123,7 @@ def terminationCases : List Case :=
    (Status.notRun, Termination.cancelled, "accepts_cancelled_status")].map fun entry =>
       makeCase entry.2.2 "matching_present_termination"
         [start, mutantStart 2]
-        (mutantFinish 3 .alpha 0 entry.1 (some entry.2.1))
+        (mutantFinish 3 .alpha 0 (.executed entry.2.1 .complete))
 
 def cases : List Case :=
   [makeCase "requires_run_start" "initial" [] (diagnostic 1)
@@ -158,11 +150,12 @@ def cases : List Case :=
    makeCase "rejects_finish_identity_sequence_mismatch" "alpha_zero_active"
       [start, mutantStart 2] (mutantFinish 3 .alpha 1)
       (some (mutantFinish 3)),
-   makeCase "rejects_status_termination_mismatch" "alpha_active"
-      [start, mutantStart 2] (mutantFinish 3 .alpha 0 .killed (some .exitZero))
-      (some (mutantFinish 3)),
-   makeCase "accepts_absent_termination" "alpha_active"
-      [start, mutantStart 2] (mutantFinish 3 .alpha 0 .error none),
+   makeCase "accepts_reused_killed" "alpha_active"
+      [start, mutantStart 2] (mutantFinish 3 .alpha 0 (.reused .killed)),
+   makeCase "accepts_not_run" "alpha_active"
+      [start, mutantStart 2] (mutantFinish 3 .alpha 0 .notRun),
+   makeCase "accepts_output_close_timeout" "alpha_active"
+      [start, mutantStart 2] (mutantFinish 3 .alpha 0 (.executed .timeout .closeTimedOut)),
    makeCase "rejects_finish_with_active_mutants" "alpha_active"
       [start, mutantStart 2] (finishRun 3) (some (mutantFinish 3)),
    makeCase "accepts_distinct_concurrent_mutants" "alpha_active"

@@ -1,5 +1,7 @@
 #[path = "support/collecting_writer.rs"]
 mod collecting_writer;
+#[path = "support/mutation_outcome.rs"]
+mod mutation_outcome;
 use collecting_writer::CollectingWriter;
 
 use std::collections::BTreeSet;
@@ -345,7 +347,7 @@ async fn explicit_class_symbol_ranks_and_verifies_its_method_before_an_unrelated
     assert_eq!(mutants[0]["candidate"]["id"], planned_id);
     assert_eq!(mutants[0]["candidate"]["path"], "calc.py");
     assert_eq!(mutants[0]["candidate"]["symbol"], "Box.check");
-    assert_eq!(mutants[0]["status"], "killed");
+    assert_eq!(mutation_outcome::status(&mutants[0]), "killed");
     assert_eq!(std::fs::read(&plan_path).unwrap(), plan_before);
     assert_eq!(
         std::fs::read(project.path().join("calc.py")).unwrap(),
@@ -484,7 +486,7 @@ async fn assert_planned_boolean_is_killed(
         .iter()
         .find(|mutant| mutant["candidate"]["id"] == planned_id)
         .unwrap_or_else(|| panic!("{name} {mode}: planned mutant was not executed"));
-    assert_eq!(mutant["status"], "killed", "{name} {mode}");
+    assert_eq!(mutation_outcome::status(mutant), "killed", "{name} {mode}");
     assert_eq!(&mutant["candidate"], planned_candidate, "{name} {mode}");
 }
 

@@ -48,6 +48,12 @@ sources:
   revision: 97c394760bc02a56be0bfdeb6301257eac80d1c7
   working_tree: modified
   sha256: 2409ac3bcad8a1110f4c78ac40a65c729afd2de381fe9d5577ada55f43f2db6a
+- id: issue-895-review
+  resource: ../../superpowers/reports/issue-895/review.md
+  revision: 62cee6bbd684d13dd69a67bd3a627901103f8624
+  working_tree: modified
+  sha256: c17c19a899e2c5088e60b49a479f932a8a81d57c8afb55c67ec85d65a644d0d8
+
 ---
 
 # 境界監査後のsummary検証修正
@@ -129,3 +135,16 @@ progressは `REPORT_SCHEMA_VERSION`（4）に一致するJSON文書とJSONLス�
 上記368件・564件の観測は記録された旧実装の証拠であり、この変更の実行結果ではない。Leanモデルはスキーマ番号を扱わないため変更せず、282ケースの公開CLIアダプターをschema 4のJSON/JSONLへ移す。baseline欠落と候補を含むJSON文書に対応するJSONL lifecycleを作れないという既存の観測範囲の制限も維持する。[^adapter]
 
 終了理由がnullの現行の再利用・未起動・合成結果は引き続き検証対象となる。旧レポートの読取りには生成元バイナリを使うか、意図する版で実行し直す。planの再生成だけでは過去のreportを再現できない。実行検証と自己レビューは[Issue 881 の記録](../../superpowers/plans/2026-10-14-issue-881.md)を参照する。
+
+## Typed outcome boundary (Issue 895)
+
+The preceding nullable-result validation and schema-4 observations describe their
+recorded revisions. Report schema 6 instead requires a typed mutation outcome;
+legacy flat results and incomplete executed payloads fail decoding. Status derives
+from execution evidence, and independent diagnostics do not reconstruct output
+state. Summary counts, exit policy, identity, sequence, and JSONL lifecycle checks
+remain required. See the [session/report outcome contract](../design/session-report.md#typed-mutation-outcomes-issue-895)
+and [Issue 895 verification record](../../superpowers/reports/issue-895/review.md)
+for the current implementation and its measured scope. [^issue-895-review]
+
+[^issue-895-review]: [Issue 895 verification record](../../superpowers/reports/issue-895/review.md).

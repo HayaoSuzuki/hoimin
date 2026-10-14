@@ -1,3 +1,5 @@
+#[path = "support/mutation_outcome.rs"]
+mod mutation_outcome;
 use serde_json::{Value, json};
 use std::path::Path;
 
@@ -122,8 +124,8 @@ async fn fresh_resume_reasons_and_reused_outcomes_are_visible_without_changing_e
     assert_eq!(second.code, 4);
     assert_eq!(second_header["resume"], json!({"status":"resumed"}));
     assert_eq!(first_header["run_id"], second_header["run_id"]);
-    assert_eq!(report["mutants"][0]["status"], "killed");
-    assert!(report["mutants"][0]["termination"].is_null());
+    assert_eq!(mutation_outcome::status(&report["mutants"][0]), "killed");
+    assert!(mutation_outcome::termination(&report["mutants"][0]).is_null());
     assert_eq!(report["baseline"]["termination"], json!({"Exit":0}));
 
     assert_eq!(mismatch.code, 4);

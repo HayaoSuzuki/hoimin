@@ -956,7 +956,7 @@ fn one_active_candidate_is_applied_classified_and_reported() {
         effect,
         RunEffect::EmitOutput(value)
             if matches!(&value.event, OutputEvent::MutantFinished(value)
-                if value.status == MutationStatus::Killed && value.candidate == candidate)
+                if value.outcome.status() == MutationStatus::Killed && value.candidate == candidate)
     )));
 }
 
@@ -1594,7 +1594,7 @@ fn assert_ordered_mid_collection_stop(stop: RunEvent, expected_exit_code: i32) {
         let RunEffect::EmitOutput(finished) = find_effect(&effects, |effect| {
             matches!(effect, RunEffect::EmitOutput(value)
                 if matches!(&value.event, OutputEvent::MutantFinished(event)
-                    if event.status == MutationStatus::NotRun))
+                    if event.outcome.status() == MutationStatus::NotRun))
         }) else {
             unreachable!()
         };
@@ -1862,7 +1862,7 @@ fn four_jobs_fill_four_independent_worker_chains_in_every_completion_order() {
             assert_eq!(finished.candidate.sequence, u64::from(worker) + 1);
             assert_eq!(finished.candidate.id, format!("m{}", worker + 1));
             completion_sequences.push(finished.sequence);
-            finished_candidates.push((finished.candidate.id.clone(), finished.status));
+            finished_candidates.push((finished.candidate.id.clone(), finished.outcome.status()));
         }
         assert!(
             completion_sequences
@@ -2507,14 +2507,13 @@ fn session_result_is_persisted_before_finished_output_and_reset() {
         RunEffect::PersistResult(value) => &value.result,
         _ => unreachable!(),
     };
-    assert_eq!(
-        persisted_result.termination,
-        Some(ProcessTermination::Exit(1))
-    );
-    let mut legacy = serde_json::to_value(persisted_result).unwrap();
-    legacy.as_object_mut().unwrap().remove("termination");
-    let legacy: hoimin_core::MutantResult = serde_json::from_value(legacy).unwrap();
-    assert_eq!(legacy.termination, None);
+    assert!(matches!(
+        persisted_result.outcome,
+        hoimin_core::MutationOutcome::Executed {
+            termination: ProcessTermination::Exit(1),
+            ..
+        }
+    ));
     let persist_id = effect_id(find_effect(&effects, |effect| {
         matches!(effect, RunEffect::PersistResult(_))
     }));
@@ -2538,7 +2537,13 @@ fn session_result_is_persisted_before_finished_output_and_reset() {
         },
         _ => unreachable!(),
     };
-    assert_eq!(finished.termination, Some(ProcessTermination::Exit(1)));
+    assert!(matches!(
+        finished.outcome,
+        hoimin_core::MutationOutcome::Executed {
+            termination: ProcessTermination::Exit(1),
+            ..
+        }
+    ));
 }
 
 #[test]
@@ -2554,7 +2559,10 @@ fn assert_close_timeout_public_result(effects: &[RunEffect]) {
         RunEffect::EmitOutput(value) => serde_json::to_value(&value.event).unwrap(),
         _ => unreachable!(),
     };
-    assert_eq!(public_result["output_state"], "close_timed_out");
+    assert_eq!(
+        public_result["outcome"]["executed"]["output_state"],
+        "close_timed_out"
+    );
     assert_eq!(
         public_result["diagnostics"][0]["code"],
         "process.output.close.timeout"
@@ -2616,8 +2624,14 @@ fn output_close_timeout_becomes_an_error_and_the_worker_continues() {
     };
     let result = &persist.result;
     assert_eq!(result.candidate, candidate);
-    assert_eq!(result.status, MutationStatus::Error);
-    assert_eq!(result.termination, Some(ProcessTermination::Timeout));
+    assert_eq!(result.outcome.status(), MutationStatus::Error);
+    assert!(matches!(
+        result.outcome,
+        hoimin_core::MutationOutcome::Executed {
+            termination: ProcessTermination::Timeout,
+            ..
+        }
+    ));
     assert_eq!(result.diagnostics.len(), 1);
     assert_eq!(result.diagnostics[0].code, "process.output.close.timeout");
 
@@ -2715,10 +2729,13 @@ fn cancellation_during_mutant_execution_still_reports_not_run() {
         unreachable!()
     };
     assert_eq!(result.candidate, candidate);
-    assert_eq!(result.status, MutationStatus::NotRun);
-    assert_eq!(result.termination, None);
-    assert_eq!(result.elapsed_ms, 0);
-    assert_eq!(result.output, None);
+    assert_eq!(result.outcome.status(), MutationStatus::NotRun);
+    assert!(matches!(
+        result.outcome,
+        hoimin_core::MutationOutcome::NotRun
+    ));
+    assert_eq!(result.outcome.elapsed().as_millis(), 0);
+    assert_eq!(result.outcome.output(), None);
 }
 
 #[allow(
@@ -2803,14 +2820,20 @@ fn assert_persisting_stop_preserves_result(stop: RunEvent, expected_exit_code: i
         unreachable!()
     };
     assert_eq!(result.candidate, candidate);
-    assert_eq!(result.status, MutationStatus::Killed);
-    assert_eq!(result.termination, Some(ProcessTermination::Exit(1)));
+    assert_eq!(result.outcome.status(), MutationStatus::Killed);
+    assert!(matches!(
+        result.outcome,
+        hoimin_core::MutationOutcome::Executed {
+            termination: ProcessTermination::Exit(1),
+            ..
+        }
+    ));
     assert_eq!(
-        result.elapsed_ms,
-        u64::try_from(expected_elapsed.as_millis()).unwrap()
+        result.outcome.elapsed().as_millis(),
+        expected_elapsed.as_millis()
     );
     assert_eq!(result.resource_mode, expected_resource_mode);
-    assert_eq!(result.output.as_ref(), Some(&expected_output));
+    assert_eq!(result.outcome.output(), Some(&expected_output));
 
     let (state, effects) = transition(
         state,
@@ -3275,7 +3298,7 @@ fn session_save_failure_reports_the_classified_result_without_scheduling_another
         effect,
         RunEffect::EmitOutput(value)
             if matches!(&value.event, OutputEvent::MutantFinished(result)
-                if result.status == MutationStatus::Killed)
+                if result.outcome.status() == MutationStatus::Killed)
     )));
     assert!(!effects.iter().any(|effect| matches!(
         effect,
@@ -3648,7 +3671,7 @@ fn every_process_termination_is_classified_by_the_machine() {
             effect,
             RunEffect::EmitOutput(value)
                 if matches!(&value.event, OutputEvent::MutantFinished(value)
-                    if value.status == expected)
+                    if value.outcome.status() == expected)
         )));
     }
 }
@@ -3761,7 +3784,7 @@ fn max_mutants_reports_remaining_candidates_as_not_run_in_stable_order() {
         effect,
         RunEffect::EmitOutput(value)
             if matches!(&value.event, OutputEvent::MutantFinished(value)
-                if value.status == MutationStatus::NotRun && value.candidate.sequence == 2)
+                if value.outcome.status() == MutationStatus::NotRun && value.candidate.sequence == 2)
     )));
     let finished_id = effect_id(find_effect(
         &effects,
@@ -4046,7 +4069,7 @@ impl ScheduleHarness {
                 }
                 if let OutputEvent::MutantFinished(finished) = &output.event {
                     self.ledger
-                        .insert(finished.candidate.id.clone(), finished.status);
+                        .insert(finished.candidate.id.clone(), finished.outcome.status());
                 }
                 self.output_events.push((output.id, output.event.clone()));
             }
@@ -4384,7 +4407,7 @@ impl ScheduleHarness {
                     *finished.entry(value.candidate.id.clone()).or_insert(0_u64) += 1;
                     assert_eq!(
                         self.ledger.get(&value.candidate.id),
-                        Some(&value.status),
+                        Some(&value.outcome.status()),
                         "generated completion ledger disagrees for {}",
                         value.candidate.id
                     );
@@ -5355,7 +5378,7 @@ fn finish_not_run_candidate(
     let finished = find_effect(&effects, |effect| {
         matches!(effect, RunEffect::EmitOutput(value)
                 if matches!(&value.event, OutputEvent::MutantFinished(value)
-                    if value.status == MutationStatus::NotRun
+                    if value.outcome.status() == MutationStatus::NotRun
                         && value.candidate.sequence == sequence))
     });
     let finished_id = effect_id(finished);
@@ -5496,16 +5519,32 @@ fn selected_resource_policy_reaches_headers_and_synthetic_transitions_for_every_
                     .collect();
                 assert_eq!(mutants.len(), 2, "{scenario}");
                 assert_eq!(
-                    mutants.iter().filter(|v| v.termination.is_none()).count(),
+                    mutants
+                        .iter()
+                        .filter(|v| !matches!(
+                            v.outcome,
+                            hoimin_core::MutationOutcome::Executed { .. }
+                        ))
+                        .count(),
                     expected_synthetic
                 );
-                for mutant in mutants.iter().filter(|mutant| mutant.termination.is_none()) {
+                for mutant in mutants.iter().filter(|mutant| {
+                    !matches!(
+                        mutant.outcome,
+                        hoimin_core::MutationOutcome::Executed { .. }
+                    )
+                }) {
                     assert_eq!(mutant.resource_mode, mode, "{scenario}");
-                    assert_eq!(mutant.elapsed_ms, 0);
-                    assert!(mutant.output.is_none());
-                    assert_eq!(mutant.status, synthetic_status);
+                    assert_eq!(mutant.outcome.elapsed().as_millis(), 0);
+                    assert!(mutant.outcome.output().is_none());
+                    assert_eq!(mutant.outcome.status(), synthetic_status);
                 }
-                for mutant in mutants.iter().filter(|mutant| mutant.termination.is_some()) {
+                for mutant in mutants.iter().filter(|mutant| {
+                    matches!(
+                        mutant.outcome,
+                        hoimin_core::MutationOutcome::Executed { .. }
+                    )
+                }) {
                     // The harness supplies Hard process observations, even for a BestEffort header.
                     assert_eq!(mutant.resource_mode, ResourceMode::Hard);
                 }

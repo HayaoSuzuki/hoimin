@@ -77,7 +77,7 @@ fn all_optional_session_rows(schema_version: i64) -> GoldenSessionRows {
 }
 
 #[test]
-fn golden_session_schema_eras_reject_old_and_reopen_current_without_semantic_loss() {
+fn golden_session_schema_eras_reject_old_without_semantic_loss() {
     let root = repo_root().join("crates/hoimin-cli/tests/golden/sessions");
     for version in 1..=4 {
         let temp = tempfile::tempdir().unwrap();
@@ -88,23 +88,11 @@ fn golden_session_schema_eras_reject_old_and_reopen_current_without_semantic_los
         let original_schema = schema_sql(&before);
         let original_rows = logical_rows(&before);
         drop(before);
-        if version == 4 {
-            let mut handler = SessionHandler::open(&path).unwrap();
-            let resumed = handler
-                .load(&LoadSession {
-                    max_mutants: std::num::NonZeroUsize::new(100).unwrap(),
-                    id: EffectId(89),
-                    fingerprint: RunFingerprint::from_bytes([1; 32]),
-                })
-                .unwrap();
-            assert_eq!(resumed_run(resumed).run_id, "golden-run");
-        } else {
-            let Err(error) = SessionHandler::open(&path) else {
-                panic!("old session schema {version} was accepted");
-            };
-            assert!(error.to_string().contains("unsupported"));
-            assert!(error.to_string().contains("new session"));
-        }
+        let Err(error) = SessionHandler::open(&path) else {
+            panic!("old session schema {version} was accepted");
+        };
+        assert!(error.to_string().contains("unsupported"));
+        assert!(error.to_string().contains("new session"));
         let after = Connection::open(&path).unwrap();
         assert_eq!(user_version(&after), version);
         assert_eq!(schema_sql(&after), original_schema);
@@ -113,11 +101,11 @@ fn golden_session_schema_eras_reject_old_and_reopen_current_without_semantic_los
 }
 
 #[test]
-fn golden_schema_four_loads_the_stored_mutant_after_resume() {
+fn golden_schema_five_loads_the_stored_mutant_after_resume() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("session.sqlite3");
     std::fs::copy(
-        repo_root().join("crates/hoimin-cli/tests/golden/sessions/schema-v4.sqlite3"),
+        repo_root().join("crates/hoimin-cli/tests/golden/sessions/schema-v5.sqlite3"),
         &path,
     )
     .unwrap();
@@ -164,7 +152,7 @@ fn golden_session_corpus_rejects_extra_legacy_rows() {
 #[test]
 fn current_session_golden_matches_semantic_regeneration() {
     let checked_path =
-        repo_root().join("crates/hoimin-cli/tests/golden/sessions/schema-v4.sqlite3");
+        repo_root().join("crates/hoimin-cli/tests/golden/sessions/schema-v5.sqlite3");
     let temp = tempfile::tempdir().unwrap();
     let checked_copy = temp.path().join("checked.sqlite3");
     std::fs::copy(&checked_path, &checked_copy).unwrap();
@@ -176,8 +164,8 @@ fn current_session_golden_matches_semantic_regeneration() {
 
     let checked = Connection::open(checked_copy).unwrap();
     let regenerated = Connection::open(regenerated_path).unwrap();
-    assert_eq!(user_version(&checked), 4);
-    assert_eq!(user_version(&regenerated), 4);
+    assert_eq!(user_version(&checked), 5);
+    assert_eq!(user_version(&regenerated), 5);
     assert_eq!(schema_sql(&checked), schema_sql(&regenerated));
     let checked_rows = logical_rows(&checked);
     let regenerated_rows = logical_rows(&regenerated);
@@ -229,19 +217,20 @@ fn golden_persist_request() -> PersistResult {
     let rows = all_optional_session_rows(3);
     let mut request = persist_request(2, "golden-run", "golden-mutant");
     request.result.candidate.symbol = Some(rows.symbol.to_owned());
-    request.result.output = Some(OutputSpoolRef {
-        token: rows.output_token.to_owned(),
-        retained: u64::try_from(rows.output_retained).unwrap(),
-        observed: u64::try_from(rows.output_observed).unwrap(),
-    });
+    request.result.outcome = hoimin_core::MutationOutcome::Executed {
+        termination: ProcessTermination::Exit(7),
+        output_state: hoimin_core::ProcessOutputState::Complete,
+        output: OutputSpoolRef {
+            token: rows.output_token.into(),
+            retained: rows.output_retained as u64,
+            observed: rows.output_observed as u64,
+        },
+        elapsed: Duration::from_millis(5),
+    };
     let diagnostic = &mut request.result.diagnostics[0];
     rows.diagnostic_level.clone_into(&mut diagnostic.level);
     rows.diagnostic_code.clone_into(&mut diagnostic.code);
     rows.diagnostic_message.clone_into(&mut diagnostic.message);
-    request.result.termination = rows.termination.map(|(kind, code)| match kind {
-        "exit" => ProcessTermination::Exit(i32::try_from(code).unwrap()),
-        _ => unreachable!("golden v3 pins an exit termination"),
-    });
     request
 }
 
@@ -284,7 +273,9 @@ fn schema_sql(connection: &Connection) -> Vec<(String, String, String, String)> 
 }
 
 fn logical_rows(connection: &Connection) -> Vec<(String, Vec<Value>)> {
-    let result_query = if user_version(connection) >= 3 {
+    let result_query = if user_version(connection) == 5 {
+        "SELECT run_id,mutant_id,outcome_json,resource_mode FROM results ORDER BY run_id,mutant_id"
+    } else if user_version(connection) >= 3 {
         "SELECT run_id,mutant_id,status,elapsed_secs,elapsed_nanos,resource_mode,output_token,output_retained,output_observed,termination_kind,termination_exit_code FROM results ORDER BY run_id,mutant_id"
     } else {
         "SELECT run_id,mutant_id,status,elapsed_secs,elapsed_nanos,resource_mode,output_token,output_retained,output_observed FROM results ORDER BY run_id,mutant_id"
@@ -852,7 +843,7 @@ fn initializes_schema_enables_wal_and_echoes_typed_completion_events() {
         observer
             .query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
             .unwrap(),
-        4
+        5
     );
     assert_eq!(
         observer
@@ -955,48 +946,46 @@ fn timeout_can_be_replaced_then_resumed_and_completed_end_to_end() {
 
 #[test]
 fn persists_every_typed_process_termination_shape() {
+    // Arrange
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("sessions.sqlite3");
     let mut handler = SessionHandler::open(&path).unwrap();
     handler.begin(begin_request(1, "run-1")).unwrap();
-    let cases = [
-        (Some(ProcessTermination::Exit(-7)), Some("exit"), Some(-7)),
-        (Some(ProcessTermination::Timeout), Some("timeout"), None),
-        (
-            Some(ProcessTermination::OutOfMemory),
-            Some("out_of_memory"),
-            None,
-        ),
-        (
-            Some(ProcessTermination::ProcessLimit),
-            Some("process_limit"),
-            None,
-        ),
-        (Some(ProcessTermination::Cancelled), Some("cancelled"), None),
-        (None, None, None),
-    ];
-
-    for (index, (termination, expected_kind, expected_code)) in cases.into_iter().enumerate() {
+    for (index, termination) in [
+        ProcessTermination::Exit(-7),
+        ProcessTermination::Timeout,
+        ProcessTermination::OutOfMemory,
+        ProcessTermination::ProcessLimit,
+        ProcessTermination::Cancelled,
+    ]
+    .into_iter()
+    .enumerate()
+    {
         let mutant_id = format!("m{index}");
         let mut request = persist_request(index as u64 + 2, "run-1", &mutant_id);
-        request.result.termination = termination;
+        request.result.outcome = hoimin_core::MutationOutcome::Executed {
+            termination,
+            output_state: hoimin_core::ProcessOutputState::Complete,
+            output: OutputSpoolRef {
+                token: "spool".into(),
+                retained: 3,
+                observed: 8,
+            },
+            elapsed: Duration::from_millis(5),
+        };
+        // Act
         handler.persist(&request).unwrap();
-
-        let connection = Connection::open(&path).unwrap();
-        let stored = connection
+        let encoded: String = Connection::open(&path)
+            .unwrap()
             .query_row(
-                "SELECT termination_kind,termination_exit_code FROM results
-                 WHERE run_id='run-1' AND mutant_id=?1",
+                "SELECT outcome_json FROM results WHERE run_id='run-1' AND mutant_id=?1",
                 [&mutant_id],
-                |row| {
-                    Ok((
-                        row.get::<_, Option<String>>(0)?,
-                        row.get::<_, Option<i64>>(1)?,
-                    ))
-                },
+                |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(stored, (expected_kind.map(str::to_owned), expected_code));
+        let stored: hoimin_core::MutationOutcome = serde_json::from_str(&encoded).unwrap();
+        // Assert
+        assert_eq!(stored, request.result.outcome);
     }
 }
 
@@ -1662,12 +1651,18 @@ fn session_preserves_every_canonical_status_and_its_reuse_decision() {
             .unwrap();
         let stored_name: String = observer
             .query_row(
-                "SELECT status FROM results WHERE run_id='run-1' AND mutant_id=?1",
+                "SELECT outcome_json FROM results WHERE run_id='run-1' AND mutant_id=?1",
                 [name],
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(stored_name, name);
+        assert_eq!(
+            serde_json::from_str::<hoimin_core::MutationOutcome>(&stored_name)
+                .unwrap()
+                .status()
+                .as_str(),
+            name
+        );
         let loaded = handler.lookup(&lookup_request(3, "run-1", name)).unwrap();
         assert_eq!(
             loaded.result,
@@ -1680,56 +1675,84 @@ fn session_preserves_every_canonical_status_and_its_reuse_decision() {
     }
 }
 
-#[test]
-fn noncanonical_stored_statuses_preserve_corruption_diagnostics_and_rows() {
+fn malformed_outcome_rows() -> [&'static str; 5] {
+    [
+        "bogus",
+        "{\"status\":\"killed\"}",
+        "{\"executed\":{\"termination\":{\"Exit\":0}}}",
+        "{\"reused\":{\"status\":\"timeout\"}}",
+        "{\"reused\":{\"status\":\"killed\",\"output\":null}}",
+    ]
+}
+
+fn corrupted_outcome_fixture(encoded: &str) -> (tempfile::TempDir, SessionHandler, Connection) {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("sessions.sqlite3");
     let mut handler = SessionHandler::open(&path).unwrap();
     handler.begin(begin_request(1, "run-1")).unwrap();
     handler.persist(&persist_request(2, "run-1", "m1")).unwrap();
     let observer = Connection::open(&path).unwrap();
-    for name in [
-        "",
-        "bogus",
-        "Killed",
-        "SURVIVED",
-        "Timeout",
-        "OutOfMemory",
-        "ProcessLimit",
-        "Error",
-        "NotRun",
-        "out-of-memory",
-        "process-limit",
-        "not-run",
-        " killed",
-        "killed ",
-    ] {
-        observer
-            .execute("UPDATE results SET status=?1", [name])
-            .unwrap();
-        let expected = EffectFailure::SessionDatabase {
-            code: "session.corrupt".to_owned(),
-            operation: "decode session row".to_owned(),
-            message: "unknown mutation status".to_owned(),
-        };
-        let lookup = handler.lookup(&lookup_request(7, "run-1", "m1"));
-        let failed = lookup.unwrap_err();
-        assert_eq!(failed.id, EffectId(7));
-        assert_eq!(failed.failure, expected, "{name:?}");
-        let failed = handler
-            .persist(&persist_request(8, "run-1", "m1"))
-            .unwrap_err();
-        assert_eq!(failed.id, EffectId(8));
-        assert_eq!(failed.failure, expected, "{name:?}");
-        let retained: String = observer
-            .query_row("SELECT status FROM results", [], |row| row.get(0))
-            .unwrap();
-        assert_eq!(retained, name, "{name:?}");
+    observer
+        .execute("UPDATE results SET outcome_json=?1", [encoded])
+        .unwrap();
+    (temp, handler, observer)
+}
+
+fn invalid_outcome_failure() -> EffectFailure {
+    EffectFailure::SessionDatabase {
+        code: "session.corrupt".into(),
+        operation: "decode session row".into(),
+        message: "invalid mutation outcome".into(),
     }
 }
 
 #[test]
-fn lookup_rejects_corrupt_status_candidate_mismatch_and_completed_runs() {
+fn lookup_rejects_malformed_stored_outcomes() {
+    for encoded in malformed_outcome_rows() {
+        // Arrange
+        let (_directory, mut handler, _observer) = corrupted_outcome_fixture(encoded);
+        // Act
+        let failed = handler
+            .lookup(&lookup_request(7, "run-1", "m1"))
+            .unwrap_err();
+        // Assert
+        assert_eq!(failed.failure, invalid_outcome_failure(), "{encoded}");
+    }
+}
+
+#[test]
+fn replacement_rejects_malformed_stored_outcomes() {
+    for encoded in malformed_outcome_rows() {
+        // Arrange
+        let (_directory, mut handler, _observer) = corrupted_outcome_fixture(encoded);
+        // Act
+        let failed = handler
+            .persist(&persist_request(8, "run-1", "m1"))
+            .unwrap_err();
+        // Assert
+        assert_eq!(failed.failure, invalid_outcome_failure(), "{encoded}");
+    }
+}
+
+#[test]
+fn rejected_replacement_preserves_malformed_outcome_rows() {
+    for encoded in malformed_outcome_rows() {
+        // Arrange
+        let (_directory, mut handler, observer) = corrupted_outcome_fixture(encoded);
+        // Act
+        handler
+            .persist(&persist_request(8, "run-1", "m1"))
+            .unwrap_err();
+        let retained: String = observer
+            .query_row("SELECT outcome_json FROM results", [], |row| row.get(0))
+            .unwrap();
+        // Assert
+        assert_eq!(retained, encoded);
+    }
+}
+
+#[test]
+fn lookup_rejects_corrupt_outcome_candidate_mismatch_and_completed_runs() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("sessions.sqlite3");
     let mut handler = SessionHandler::open(&path).unwrap();
@@ -1737,7 +1760,7 @@ fn lookup_rejects_corrupt_status_candidate_mismatch_and_completed_runs() {
     handler.persist(&persist_request(2, "run-1", "m1")).unwrap();
     Connection::open(&path)
         .unwrap()
-        .execute("UPDATE results SET status='bogus'", [])
+        .execute("UPDATE results SET outcome_json='bogus'", [])
         .unwrap();
     let failed = handler
         .lookup(&lookup_request(7, "run-1", "m1"))
@@ -1868,15 +1891,44 @@ fn persist_with_status(
                 symbol: None,
                 file_hash: "hash".to_owned(),
             },
-            status,
-            termination: None,
-            elapsed: Duration::from_millis(5),
+            outcome: match status {
+                hoimin_core::MutationStatus::Killed => hoimin_core::MutationOutcome::Reused {
+                    status: hoimin_core::ReusedMutationStatus::Killed,
+                },
+                hoimin_core::MutationStatus::Survived => hoimin_core::MutationOutcome::Reused {
+                    status: hoimin_core::ReusedMutationStatus::Survived,
+                },
+                hoimin_core::MutationStatus::NotRun => hoimin_core::MutationOutcome::NotRun,
+                status => hoimin_core::MutationOutcome::Executed {
+                    termination: match status {
+                        hoimin_core::MutationStatus::Timeout => {
+                            hoimin_core::ProcessTermination::Timeout
+                        }
+                        hoimin_core::MutationStatus::OutOfMemory => {
+                            hoimin_core::ProcessTermination::OutOfMemory
+                        }
+                        hoimin_core::MutationStatus::ProcessLimit => {
+                            hoimin_core::ProcessTermination::ProcessLimit
+                        }
+                        hoimin_core::MutationStatus::Error => {
+                            hoimin_core::ProcessTermination::Exit(1)
+                        }
+                        _ => unreachable!(),
+                    },
+                    output_state: if status == hoimin_core::MutationStatus::Error {
+                        hoimin_core::ProcessOutputState::CloseTimedOut
+                    } else {
+                        hoimin_core::ProcessOutputState::Complete
+                    },
+                    output: OutputSpoolRef {
+                        token: "spool".to_owned(),
+                        retained: 3,
+                        observed: 8,
+                    },
+                    elapsed: Duration::from_millis(5),
+                },
+            },
             resource_mode: ResourceMode::Hard,
-            output: Some(OutputSpoolRef {
-                token: "spool".to_owned(),
-                retained: 3,
-                observed: 8,
-            }),
             diagnostics: vec![hoimin_core::SessionDiagnostic {
                 mutant_id: mutant_id.to_owned(),
                 level: "warning".to_owned(),
@@ -1899,17 +1951,16 @@ fn lookup_request(id: u64, run_id: &str, mutant_id: &str) -> LookupStoredResult 
 fn create_nullable_corrupt_database(path: &std::path::Path) {
     let db = Connection::open(path).unwrap();
     db.execute_batch(
-        "PRAGMA user_version=4;
+        "PRAGMA user_version=5;
          CREATE TABLE runs (id INTEGER PRIMARY KEY, run_id TEXT, fingerprint BLOB, complete INTEGER, max_mutants BLOB);
          CREATE TABLE results (
-             run_id TEXT, mutant_id TEXT, status TEXT,
-             termination_kind TEXT, termination_exit_code INTEGER
+             run_id TEXT, mutant_id TEXT, outcome_json TEXT, resource_mode TEXT
          );
          CREATE TABLE fingerprints (digest BLOB PRIMARY KEY, schema_version INTEGER);
          CREATE TABLE candidates (run_id TEXT, mutant_id TEXT);
          CREATE TABLE diagnostics (id INTEGER PRIMARY KEY, run_id TEXT, level TEXT, code TEXT, message TEXT);
          INSERT INTO runs(id, run_id, fingerprint, complete, max_mutants) VALUES (1, 'run-null', zeroblob(32), 0, x'0000000000000064');
-         INSERT INTO results(run_id, mutant_id, status) VALUES ('run-null', 'm-null', NULL);",
+         INSERT INTO results(run_id, mutant_id, outcome_json) VALUES ('run-null', 'm-null', NULL);",
     )
     .unwrap();
 }
@@ -2241,5 +2292,33 @@ fn lean_resume_budget_cases_match_persistent_selection_and_reuse() {
             .unwrap();
         let expected = [case.old_budget, case.new_budget][usize::from(case.eligible)];
         assert_eq!(budget, (expected as u64).to_be_bytes());
+    }
+}
+
+proptest::proptest! {
+    #![proptest_config(proptest::test_runner::Config::with_cases(32))]
+    #[test]
+    fn persisted_outcome_round_trip_preserves_generated_evidence(
+        code in proptest::prelude::any::<i32>(), seconds in proptest::prelude::any::<u64>(),
+        nanos in 0u32..1_000_000_000, retained in proptest::prelude::any::<u64>(),
+        observed in proptest::prelude::any::<u64>(), close_timeout in proptest::prelude::any::<bool>()) {
+        // Arrange
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("session.sqlite3");
+        let mut handler = SessionHandler::open(&path).unwrap();
+        handler.begin(begin_request(1, "run-1")).unwrap();
+        let mut request = persist_request(2, "run-1", "m1");
+        request.result.outcome = hoimin_core::MutationOutcome::Executed {
+            termination: ProcessTermination::Exit(code),
+            output_state: if close_timeout { hoimin_core::ProcessOutputState::CloseTimedOut } else { hoimin_core::ProcessOutputState::Complete },
+            output: OutputSpoolRef { token: "property-output".into(), retained, observed },
+            elapsed: Duration::new(seconds, nanos),
+        };
+        // Act
+        handler.persist(&request).unwrap();
+        let encoded: String = Connection::open(path).unwrap().query_row("SELECT outcome_json FROM results", [], |row| row.get(0)).unwrap();
+        let stored: hoimin_core::MutationOutcome = serde_json::from_str(&encoded).unwrap();
+        // Assert
+        proptest::prop_assert_eq!(stored, request.result.outcome);
     }
 }

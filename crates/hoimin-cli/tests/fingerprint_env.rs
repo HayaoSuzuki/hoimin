@@ -1,5 +1,7 @@
 #[path = "support/environment.rs"]
 mod environment;
+#[path = "support/mutation_outcome.rs"]
+mod mutation_outcome;
 
 use environment::{FLAG, Fixture};
 use std::ffi::OsStr;
@@ -11,7 +13,10 @@ async fn selected_environment_change_reruns_and_matches_fresh_weak_control() {
         .run("session.sqlite", false, &[FLAG], Some(OsStr::new("1")))
         .await;
     assert_eq!(first.exit_code, 4);
-    assert_eq!(first.report["mutants"][0]["status"], "killed");
+    assert_eq!(
+        mutation_outcome::status(&first.report["mutants"][0]),
+        "killed"
+    );
     assert_eq!(first.metrics["executed"], 1);
     let resumed = fixture
         .run("session.sqlite", true, &[FLAG], Some(OsStr::new("0")))
@@ -23,16 +28,22 @@ async fn selected_environment_change_reruns_and_matches_fresh_weak_control() {
         first.report["run"]["run_id"],
         resumed.report["run"]["run_id"]
     );
-    assert_eq!(resumed.report["mutants"][0]["status"], "survived");
+    assert_eq!(
+        mutation_outcome::status(&resumed.report["mutants"][0]),
+        "survived"
+    );
     assert_eq!(resumed.metrics["executed"], 1);
-    assert_eq!(resumed.report["mutants"][0]["termination"]["Exit"], 0);
+    assert_eq!(
+        mutation_outcome::termination(&resumed.report["mutants"][0])["Exit"],
+        0
+    );
     assert_eq!(
         resumed.report["mutants"][0]["candidate"],
         fresh.report["mutants"][0]["candidate"]
     );
     assert_eq!(
-        resumed.report["mutants"][0]["status"],
-        fresh.report["mutants"][0]["status"]
+        mutation_outcome::status(&resumed.report["mutants"][0]),
+        mutation_outcome::status(&fresh.report["mutants"][0])
     );
 }
 
@@ -50,8 +61,11 @@ async fn same_values_reuse_and_unselected_changes_keep_existing_behavior() {
             first.report["run"]["run_id"],
             resumed.report["run"]["run_id"]
         );
-        assert_eq!(resumed.report["mutants"][0]["status"], "killed");
-        assert!(resumed.report["mutants"][0]["termination"].is_null());
+        assert_eq!(
+            mutation_outcome::status(&resumed.report["mutants"][0]),
+            "killed"
+        );
+        assert!(mutation_outcome::termination(&resumed.report["mutants"][0]).is_null());
         assert_eq!(resumed.metrics["executed"], 0);
     }
 }
@@ -67,8 +81,8 @@ async fn absent_and_empty_values_are_distinct_resume_inputs() {
             resumed.report["run"]["run_id"]
         );
         assert_ne!(
-            first.report["mutants"][0]["status"],
-            resumed.report["mutants"][0]["status"]
+            mutation_outcome::status(&first.report["mutants"][0]),
+            mutation_outcome::status(&resumed.report["mutants"][0])
         );
         assert_eq!(resumed.metrics["executed"], 1);
     }

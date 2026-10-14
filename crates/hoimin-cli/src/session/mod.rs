@@ -6,18 +6,16 @@ use std::path::{Path, PathBuf};
 #[cfg(test)]
 use std::sync::Barrier;
 use std::sync::{Arc, Mutex};
-#[cfg(feature = "contracts")]
-use std::time::Duration;
 
 use hoimin_core::{
     BeginSession, EffectFailed, EffectFailure, EffectId, FINGERPRINT_SCHEMA_VERSION, FinishSession,
-    LoadSession, LookupStoredResult, MutantResult, MutationStatus, PersistResult,
-    ProcessTermination, ResourceMode, ResultPersisted, SessionDiagnostic, SessionFinished,
-    SessionLoadOutcome, SessionLoaded, SessionResumeRef, SessionStarted, StoredResult,
-    StoredResultLoaded, contract_ensure,
+    LoadSession, LookupStoredResult, MutantResult, MutationOutcome, MutationStatus, PersistResult,
+    ResourceMode, ResultPersisted, SessionDiagnostic, SessionFinished, SessionLoadOutcome,
+    SessionLoaded, SessionResumeRef, SessionStarted, StoredResult, StoredResultLoaded,
+    contract_ensure,
 };
 #[cfg(feature = "contracts")]
-use hoimin_core::{ByteSpan, MutationCandidate, OutputSpoolRef};
+use hoimin_core::{ByteSpan, MutationCandidate};
 use rusqlite::{
     Connection, ErrorCode, OptionalExtension, Transaction, TransactionBehavior, params,
 };
@@ -381,10 +379,10 @@ impl SessionHandler {
             }
         }
 
-        let (candidates, results, status) =
+        let (candidates, results, outcome_json) =
             result_shape(&self.connection, &request.run_id, &request.mutant_id)
                 .map_err(|error| failed(id, "session.read", "lookup stored result", &error))?;
-        let result = decode_stored_result(&request.mutant_id, candidates, results, status)
+        let result = decode_stored_result(&request.mutant_id, candidates, results, outcome_json)
             .map_err(|failure| EffectFailed { id, failure })?;
         Ok(StoredResultLoaded { id, worker, result })
     }
@@ -486,7 +484,7 @@ impl SessionHandler {
             }
         }
 
-        let (candidate_count, result_count, status) =
+        let (candidate_count, result_count, outcome_json) =
             result_shape(&transaction, &run_id, &mutant_id)
                 .map_err(|error| failed(id, "session.persist", "read existing result", &error))?;
         #[cfg(test)]
@@ -495,7 +493,7 @@ impl SessionHandler {
             barrier.wait();
         }
         if let Some(stored) =
-            decode_stored_result(&mutant_id, candidate_count, result_count, status)
+            decode_stored_result(&mutant_id, candidate_count, result_count, outcome_json)
                 .map_err(|failure| EffectFailed { id, failure })?
         {
             match stored.status {
@@ -639,9 +637,7 @@ impl SessionHandler {
             .query_row(
                 "SELECT c.sequence,c.path,c.span_start,c.span_length,c.original,c.replacement,
                         c.operator,c.line,c.column_number,c.symbol,c.file_hash,
-                        r.status,r.elapsed_secs,r.elapsed_nanos,r.resource_mode,
-                        r.output_token,r.output_retained,r.output_observed,
-                        r.termination_kind,r.termination_exit_code
+                        r.outcome_json,r.resource_mode
                  FROM candidates c JOIN results r USING(run_id,mutant_id)
                  WHERE c.run_id=?1 AND c.mutant_id=?2",
                 params![run_id, mutant_id],
@@ -658,15 +654,8 @@ impl SessionHandler {
                         column: row.get(8)?,
                         symbol: row.get(9)?,
                         file_hash: row.get(10)?,
-                        status: row.get(11)?,
-                        elapsed_secs: row.get(12)?,
-                        elapsed_nanos: row.get(13)?,
-                        resource_mode: row.get(14)?,
-                        output_token: row.get(15)?,
-                        output_retained: row.get(16)?,
-                        output_observed: row.get(17)?,
-                        termination_kind: row.get(18)?,
-                        termination_exit_code: row.get(19)?,
+                        outcome_json: row.get(11)?,
+                        resource_mode: row.get(12)?,
                     })
                 },
             )
@@ -792,71 +781,18 @@ fn insert_candidate(transaction: &Transaction<'_>, result: &MutantResult) -> rus
 }
 
 fn insert_result(transaction: &Transaction<'_>, result: &MutantResult) -> rusqlite::Result<()> {
-    let (token, retained, observed) = match &result.output {
-        Some(output) => (
-            Some(output.token.as_str()),
-            Some(to_i64(output.retained)?),
-            Some(to_i64(output.observed)?),
-        ),
-        None => (None, None, None),
-    };
-    let (termination_kind, termination_exit_code) = encode_termination(result.termination);
+    let outcome_json = serde_json::to_string(&result.outcome)
+        .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
     transaction.execute(
-        "INSERT INTO results(run_id,mutant_id,status,elapsed_secs,elapsed_nanos,resource_mode,
-         output_token,output_retained,output_observed,termination_kind,termination_exit_code)
-         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
+        "INSERT INTO results(run_id,mutant_id,outcome_json,resource_mode) VALUES (?1,?2,?3,?4)",
         params![
             result.run_id,
             result.candidate.id,
-            result.status.as_str(),
-            to_i64(result.elapsed.as_secs())?,
-            i64::from(result.elapsed.subsec_nanos()),
-            resource_name(result.resource_mode),
-            token,
-            retained,
-            observed,
-            termination_kind,
-            termination_exit_code,
+            outcome_json,
+            resource_name(result.resource_mode)
         ],
     )?;
     Ok(())
-}
-
-fn encode_termination(
-    termination: Option<ProcessTermination>,
-) -> (Option<&'static str>, Option<i64>) {
-    match termination {
-        Some(ProcessTermination::Exit(code)) => (Some("exit"), Some(i64::from(code))),
-        Some(ProcessTermination::Timeout) => (Some("timeout"), None),
-        Some(ProcessTermination::OutOfMemory) => (Some("out_of_memory"), None),
-        Some(ProcessTermination::ProcessLimit) => (Some("process_limit"), None),
-        Some(ProcessTermination::Cancelled) => (Some("cancelled"), None),
-        None => (None, None),
-    }
-}
-
-#[cfg(any(test, feature = "contracts"))]
-fn decode_termination(
-    kind: Option<&str>,
-    exit_code: Option<i64>,
-) -> Result<Option<ProcessTermination>, String> {
-    match (kind, exit_code) {
-        (None, None) => Ok(None),
-        (Some("exit"), Some(code)) => i32::try_from(code)
-            .map(ProcessTermination::Exit)
-            .map(Some)
-            .map_err(|_| "termination exit code is out of range".to_owned()),
-        (Some("timeout"), None) => Ok(Some(ProcessTermination::Timeout)),
-        (Some("out_of_memory"), None) => Ok(Some(ProcessTermination::OutOfMemory)),
-        (Some("process_limit"), None) => Ok(Some(ProcessTermination::ProcessLimit)),
-        (Some("cancelled"), None) => Ok(Some(ProcessTermination::Cancelled)),
-        (Some("exit"), None) => Err("exit termination is missing its code".to_owned()),
-        (None, Some(_)) => Err("termination code has no kind".to_owned()),
-        (Some("timeout" | "out_of_memory" | "process_limit" | "cancelled"), Some(_)) => {
-            Err("non-exit termination has an exit code".to_owned())
-        }
-        (Some(_), _) => Err("unknown termination kind".to_owned()),
-    }
 }
 
 fn persist_diagnostics(
@@ -910,7 +846,7 @@ fn result_shape(
         "SELECT
              (SELECT count(*) FROM candidates WHERE run_id=?1 AND mutant_id=?2),
              (SELECT count(*) FROM results WHERE run_id=?1 AND mutant_id=?2),
-             (SELECT status FROM results WHERE run_id=?1 AND mutant_id=?2)",
+             (SELECT outcome_json FROM results WHERE run_id=?1 AND mutant_id=?2)",
         params![run_id, mutant_id],
         |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
     )
@@ -920,14 +856,15 @@ fn decode_stored_result(
     mutant_id: &str,
     candidate_count: i64,
     result_count: i64,
-    status: Option<String>,
+    outcome_json: Option<String>,
 ) -> Result<Option<StoredResult>, EffectFailure> {
-    match (candidate_count, result_count, status) {
+    match (candidate_count, result_count, outcome_json) {
         (0, 0, None) => Ok(None),
-        (1, 1, Some(status)) => Ok(Some(StoredResult {
+        (1, 1, Some(outcome_json)) => Ok(Some(StoredResult {
             mutant_id: mutant_id.to_owned(),
-            status: MutationStatus::from_name(&status)
-                .ok_or_else(|| corrupt("unknown mutation status"))?,
+            status: serde_json::from_str::<MutationOutcome>(&outcome_json)
+                .map_err(|_| corrupt("invalid mutation outcome"))?
+                .status(),
         })),
         _ => Err(corrupt("candidate and result rows are inconsistent")),
     }
@@ -1015,15 +952,8 @@ struct RawResult {
     column: i64,
     symbol: Option<String>,
     file_hash: String,
-    status: String,
-    elapsed_secs: i64,
-    elapsed_nanos: i64,
+    outcome_json: String,
     resource_mode: String,
-    output_token: Option<String>,
-    output_retained: Option<i64>,
-    output_observed: Option<i64>,
-    termination_kind: Option<String>,
-    termination_exit_code: Option<i64>,
 }
 
 #[cfg(feature = "contracts")]
@@ -1031,28 +961,13 @@ impl RawResult {
     fn into_result(self, run_id: &str, mutant_id: &str) -> Result<MutantResult, String> {
         let nonnegative =
             |value: i64, name: &str| u64::try_from(value).map_err(|_| format!("negative {name}"));
-        let status =
-            MutationStatus::from_name(&self.status).ok_or_else(|| "unknown status".to_owned())?;
         let resource_mode = match self.resource_mode.as_str() {
             "hard" => ResourceMode::Hard,
             "best_effort" => ResourceMode::BestEffort,
             _ => return Err("unknown resource mode".to_owned()),
         };
-        let output = match (
-            self.output_token,
-            self.output_retained,
-            self.output_observed,
-        ) {
-            (None, None, None) => None,
-            (Some(token), Some(retained), Some(observed)) => Some(OutputSpoolRef {
-                token,
-                retained: nonnegative(retained, "retained")?,
-                observed: nonnegative(observed, "observed")?,
-            }),
-            _ => return Err("inconsistent output columns".to_owned()),
-        };
-        let termination =
-            decode_termination(self.termination_kind.as_deref(), self.termination_exit_code)?;
+        let outcome = serde_json::from_str::<MutationOutcome>(&self.outcome_json)
+            .map_err(|error| format!("invalid mutation outcome: {error}"))?;
         Ok(MutantResult {
             run_id: run_id.to_owned(),
             candidate: MutationCandidate {
@@ -1071,15 +986,8 @@ impl RawResult {
                 symbol: self.symbol,
                 file_hash: self.file_hash,
             },
-            status,
-            termination,
-            elapsed: Duration::new(
-                nonnegative(self.elapsed_secs, "elapsed seconds")?,
-                u32::try_from(self.elapsed_nanos)
-                    .map_err(|_| "invalid elapsed nanos".to_owned())?,
-            ),
+            outcome,
             resource_mode,
-            output,
             diagnostics: Vec::new(),
         })
     }
@@ -1090,36 +998,6 @@ mod dispatch_tests {
     use super::*;
     use hoimin_core::{ByteSpan, MutationCandidate, RunFingerprint};
     use std::time::Duration;
-
-    #[test]
-    fn termination_database_encoding_round_trips_and_rejects_corruption() {
-        for termination in [
-            None,
-            Some(ProcessTermination::Exit(i32::MIN)),
-            Some(ProcessTermination::Exit(i32::MAX)),
-            Some(ProcessTermination::Timeout),
-            Some(ProcessTermination::OutOfMemory),
-            Some(ProcessTermination::ProcessLimit),
-            Some(ProcessTermination::Cancelled),
-        ] {
-            let (kind, code) = encode_termination(termination);
-            assert_eq!(decode_termination(kind, code).unwrap(), termination);
-        }
-
-        for (kind, code) in [
-            (Some("unknown"), None),
-            (Some("exit"), None),
-            (None, Some(1)),
-            (Some("timeout"), Some(1)),
-            (Some("exit"), Some(i64::from(i32::MAX) + 1)),
-            (Some("exit"), Some(i64::from(i32::MIN) - 1)),
-        ] {
-            assert!(
-                decode_termination(kind, code).is_err(),
-                "accepted corrupt termination {kind:?}/{code:?}"
-            );
-        }
-    }
 
     #[test]
     fn persist_reserves_the_writer_before_reading_session_state() {
@@ -1185,11 +1063,44 @@ mod dispatch_tests {
                     symbol: None,
                     file_hash: "hash".to_owned(),
                 },
-                status: MutationStatus::Killed,
-                termination: None,
-                elapsed: Duration::from_millis(5),
+                outcome: match MutationStatus::Killed {
+                    hoimin_core::MutationStatus::Killed => hoimin_core::MutationOutcome::Reused {
+                        status: hoimin_core::ReusedMutationStatus::Killed,
+                    },
+                    hoimin_core::MutationStatus::Survived => hoimin_core::MutationOutcome::Reused {
+                        status: hoimin_core::ReusedMutationStatus::Survived,
+                    },
+                    hoimin_core::MutationStatus::NotRun => hoimin_core::MutationOutcome::NotRun,
+                    status => hoimin_core::MutationOutcome::Executed {
+                        termination: match status {
+                            hoimin_core::MutationStatus::Timeout => {
+                                hoimin_core::ProcessTermination::Timeout
+                            }
+                            hoimin_core::MutationStatus::OutOfMemory => {
+                                hoimin_core::ProcessTermination::OutOfMemory
+                            }
+                            hoimin_core::MutationStatus::ProcessLimit => {
+                                hoimin_core::ProcessTermination::ProcessLimit
+                            }
+                            hoimin_core::MutationStatus::Error => {
+                                hoimin_core::ProcessTermination::Exit(1)
+                            }
+                            _ => unreachable!(),
+                        },
+                        output_state: if status == hoimin_core::MutationStatus::Error {
+                            hoimin_core::ProcessOutputState::CloseTimedOut
+                        } else {
+                            hoimin_core::ProcessOutputState::Complete
+                        },
+                        output: hoimin_core::OutputSpoolRef {
+                            token: "fixture-output".into(),
+                            retained: 0,
+                            observed: 0,
+                        },
+                        elapsed: Duration::from_millis(5),
+                    },
+                },
                 resource_mode: ResourceMode::Hard,
-                output: None,
                 diagnostics: Vec::new(),
             },
         }

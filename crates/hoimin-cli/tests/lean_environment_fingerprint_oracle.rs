@@ -1,5 +1,7 @@
 #[path = "support/environment.rs"]
 mod environment;
+#[path = "support/mutation_outcome.rs"]
+mod mutation_outcome;
 
 use std::collections::BTreeSet;
 use std::ffi::OsStr;
@@ -102,18 +104,20 @@ fn assert_observation(id: &str, run: &Run, expected: &Expected) {
         "{id} complete"
     );
     assert_eq!(
-        run.report["mutants"][0]["status"], expected.status,
+        mutation_outcome::status(&run.report["mutants"][0]),
+        expected.status,
         "{id} status"
     );
     assert_eq!(
-        run.report["mutants"][0]["termination"],
+        mutation_outcome::termination(&run.report["mutants"][0]),
         expected
             .termination_exit
             .map_or(Value::Null, |code| json!({"Exit": code})),
         "{id} termination"
     );
     assert_eq!(
-        run.report["mutants"][1]["status"], expected.other_status,
+        mutation_outcome::status(&run.report["mutants"][1]),
+        expected.other_status,
         "{id} other"
     );
     assert_eq!(run.metrics["executed"], expected.executed, "{id} executed");
@@ -219,7 +223,8 @@ async fn tracked_environment_resume_matches_fresh_status() {
             .await;
 
         assert_eq!(
-            resumed.report["mutants"][0]["status"], row.fresh_status,
+            mutation_outcome::status(&resumed.report["mutants"][0]),
+            row.fresh_status,
             "{} fresh equivalence",
             row.id
         );

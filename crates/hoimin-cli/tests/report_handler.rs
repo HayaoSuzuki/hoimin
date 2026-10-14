@@ -32,12 +32,12 @@ struct WriterState {
 }
 
 #[test]
-fn minimal_schema_v5_report_fixture_matches_the_published_schema() {
+fn minimal_schema_v6_report_fixture_matches_the_published_schema() {
     let root = repo_root();
     let event_schema = read_schema(&root.join("docs/json-schema/run-event.schema.json"));
     let result_schema = read_schema(&root.join("docs/json-schema/run-result.schema.json"));
     let report =
-        read_schema(&root.join("crates/hoimin-cli/tests/golden/reports/schema-v5-original.json"));
+        read_schema(&root.join("crates/hoimin-cli/tests/golden/reports/schema-v6-original.json"));
 
     assert_schema_valid(&result_schema, &report, &event_schema);
     assert_report_optionals(&report, false);
@@ -161,7 +161,7 @@ fn current_report_golden_matches_typed_semantic_regeneration() {
     let root = repo_root();
     let event_schema = read_schema(&root.join("docs/json-schema/run-event.schema.json"));
     let result_schema = read_schema(&root.join("docs/json-schema/run-result.schema.json"));
-    let path = root.join("crates/hoimin-cli/tests/golden/reports/schema-v5-current.json");
+    let path = root.join("crates/hoimin-cli/tests/golden/reports/schema-v6-current.json");
     let checked_bytes = std::fs::read(&path).unwrap();
     let checked: GoldenReportDocument = serde_json::from_slice(&checked_bytes).unwrap();
     let checked_value: serde_json::Value = serde_json::from_slice(&checked_bytes).unwrap();
@@ -181,8 +181,8 @@ fn report_event_goldens_are_typed_complete_sequences() {
     let event_schema = read_schema(&repo.join("docs/json-schema/run-event.schema.json"));
     let root = repo.join("crates/hoimin-cli/tests/golden/events");
     for (name, current) in [
-        ("schema-v5-original.jsonl", false),
-        ("schema-v5-current.jsonl", true),
+        ("schema-v6-original.jsonl", false),
+        ("schema-v6-current.jsonl", true),
     ] {
         let text = std::fs::read_to_string(root.join(name)).unwrap();
         let checked = text
@@ -207,7 +207,7 @@ fn report_event_goldens_are_typed_complete_sequences() {
 fn current_event_golden_matches_typed_semantic_regeneration() {
     let root = repo_root();
     let event_schema = read_schema(&root.join("docs/json-schema/run-event.schema.json"));
-    let path = root.join("crates/hoimin-cli/tests/golden/events/schema-v5-current.jsonl");
+    let path = root.join("crates/hoimin-cli/tests/golden/events/schema-v6-current.jsonl");
     let text = std::fs::read_to_string(path).unwrap();
     let first: serde_json::Value = serde_json::from_str(text.lines().next().unwrap()).unwrap();
     assert_canonical_normalized_config(&first);
@@ -240,12 +240,12 @@ fn raw_goldens_reject_unknown_fields_before_typed_comparison() {
     let event_schema = read_schema(&root.join("docs/json-schema/run-event.schema.json"));
     let result_schema = read_schema(&root.join("docs/json-schema/run-result.schema.json"));
     let mut report =
-        read_schema(&root.join("crates/hoimin-cli/tests/golden/reports/schema-v5-current.json"));
+        read_schema(&root.join("crates/hoimin-cli/tests/golden/reports/schema-v6-current.json"));
     report["unexpected"] = serde_json::json!(true);
     assert_schema_invalid(&result_schema, &report, &event_schema);
 
     let line = std::fs::read_to_string(
-        root.join("crates/hoimin-cli/tests/golden/events/schema-v5-current.jsonl"),
+        root.join("crates/hoimin-cli/tests/golden/events/schema-v6-current.jsonl"),
     )
     .unwrap();
     let mut event: serde_json::Value = serde_json::from_str(line.lines().next().unwrap()).unwrap();
@@ -256,16 +256,16 @@ fn raw_goldens_reject_unknown_fields_before_typed_comparison() {
 #[test]
 fn raw_goldens_reject_duplicate_known_fields_before_value_parsing() {
     let root = repo_root();
-    let report_path = root.join("crates/hoimin-cli/tests/golden/reports/schema-v5-current.json");
+    let report_path = root.join("crates/hoimin-cli/tests/golden/reports/schema-v6-current.json");
     let report = std::fs::read_to_string(report_path).unwrap();
     let duplicate_report = report.replacen(
-        "\"schema_version\": 5,",
-        "\"schema_version\": 5,\n  \"schema_version\": 5,",
+        "\"schema_version\": 6,",
+        "\"schema_version\": 6,\n  \"schema_version\": 6,",
         1,
     );
     assert!(serde_json::from_str::<GoldenReportDocument>(&duplicate_report).is_err());
 
-    let event_path = root.join("crates/hoimin-cli/tests/golden/events/schema-v5-current.jsonl");
+    let event_path = root.join("crates/hoimin-cli/tests/golden/events/schema-v6-current.jsonl");
     let events = std::fs::read_to_string(event_path).unwrap();
     let first = events.lines().next().unwrap();
     let duplicate_event = first.replacen(
@@ -376,16 +376,17 @@ fn all_optional_report_events_at(current: bool, version: u32) -> Vec<OutputEvent
             sequence: 4,
             run_id: run_id.to_owned(),
             candidate,
-            status: MutationStatus::Killed,
-            termination: Some(ProcessTermination::Exit(7)),
-            output_state: ProcessOutputState::Complete,
-            elapsed_ms: 13,
+            outcome: hoimin_core::MutationOutcome::Executed {
+                termination: ProcessTermination::Exit(7),
+                output_state: ProcessOutputState::Complete,
+                output: OutputSpoolRef {
+                    token: "golden-mutant-output".to_owned(),
+                    retained: 55,
+                    observed: 89,
+                },
+                elapsed: std::time::Duration::from_millis(13),
+            },
             resource_mode: ResourceMode::Hard,
-            output: Some(OutputSpoolRef {
-                token: "golden-mutant-output".to_owned(),
-                retained: 55,
-                observed: 89,
-            }),
             diagnostics: Vec::new(),
         }),
         OutputEvent::Diagnostic(Diagnostic::new(
@@ -441,8 +442,8 @@ fn assert_report_optionals(document: &serde_json::Value, current: bool) {
         "/run/normalized_config/output/metrics",
         "/run/normalized_config/session",
         "/mutants/0/candidate/symbol",
-        "/mutants/0/termination",
-        "/mutants/0/output",
+        "/mutants/0/outcome/executed/termination",
+        "/mutants/0/outcome/executed/output",
         "/summary/counts/score",
     ] {
         assert!(
@@ -489,9 +490,15 @@ fn assert_event_optionals(events: &[OutputEvent], current: bool) {
         panic!("fourth golden event must finish the mutant");
     };
     assert_eq!(finished.candidate.symbol.as_deref(), Some("calculate"));
-    assert_eq!(finished.termination, Some(ProcessTermination::Exit(7)));
+    assert!(matches!(
+        finished.outcome,
+        hoimin_core::MutationOutcome::Executed {
+            termination: ProcessTermination::Exit(7),
+            ..
+        }
+    ));
     assert_eq!(
-        finished.output.as_ref().unwrap().token,
+        finished.outcome.output().unwrap().token,
         "golden-mutant-output"
     );
     let OutputEvent::RunFinished(summary) = &events[5] else {
@@ -996,16 +1003,52 @@ fn documented_events() -> Vec<OutputEvent> {
                 symbol: None,
                 file_hash: "hash".to_owned(),
             },
-            status,
-            termination,
-            output_state: ProcessOutputState::Complete,
-            elapsed_ms: 2,
+            outcome: match termination {
+                Some(termination) => hoimin_core::MutationOutcome::Executed {
+                    termination,
+                    output_state: ProcessOutputState::Complete,
+                    output: output_ref(),
+                    elapsed: std::time::Duration::from_millis(2),
+                },
+                None => match status {
+                    hoimin_core::MutationStatus::Killed => hoimin_core::MutationOutcome::Reused {
+                        status: hoimin_core::ReusedMutationStatus::Killed,
+                    },
+                    hoimin_core::MutationStatus::Survived => hoimin_core::MutationOutcome::Reused {
+                        status: hoimin_core::ReusedMutationStatus::Survived,
+                    },
+                    hoimin_core::MutationStatus::NotRun => hoimin_core::MutationOutcome::NotRun,
+                    status => hoimin_core::MutationOutcome::Executed {
+                        termination: match status {
+                            hoimin_core::MutationStatus::Timeout => {
+                                hoimin_core::ProcessTermination::Timeout
+                            }
+                            hoimin_core::MutationStatus::OutOfMemory => {
+                                hoimin_core::ProcessTermination::OutOfMemory
+                            }
+                            hoimin_core::MutationStatus::ProcessLimit => {
+                                hoimin_core::ProcessTermination::ProcessLimit
+                            }
+                            hoimin_core::MutationStatus::Error => {
+                                hoimin_core::ProcessTermination::Exit(1)
+                            }
+                            _ => unreachable!(),
+                        },
+                        output_state: if status == hoimin_core::MutationStatus::Error {
+                            hoimin_core::ProcessOutputState::CloseTimedOut
+                        } else {
+                            hoimin_core::ProcessOutputState::Complete
+                        },
+                        output: output_ref(),
+                        elapsed: std::time::Duration::from_millis(2),
+                    },
+                },
+            },
             resource_mode: if mutant_sequence % 2 == 0 {
                 ResourceMode::Hard
             } else {
                 ResourceMode::BestEffort
             },
-            output: termination.map(|_| output_ref()),
             diagnostics: Vec::new(),
         }));
         event_sequence += 1;
@@ -1638,9 +1681,12 @@ fn human_format_writes_mutant_output_timeout_diagnostic_to_stderr() {
     let OutputEvent::MutantFinished(finished) = &mut event else {
         unreachable!()
     };
-    finished.status = MutationStatus::Error;
-    finished.termination = Some(ProcessTermination::Timeout);
-    finished.output_state = ProcessOutputState::CloseTimedOut;
+    finished.outcome = hoimin_core::MutationOutcome::Executed {
+        termination: ProcessTermination::Timeout,
+        output_state: ProcessOutputState::CloseTimedOut,
+        output: output_ref(),
+        elapsed: std::time::Duration::from_millis(2),
+    };
     finished.diagnostics.push(SessionDiagnostic {
         mutant_id: finished.candidate.id.clone(),
         level: "error".to_owned(),
@@ -2012,12 +2058,13 @@ fn mutant_finished(event_sequence: u64, mutant_sequence: u64) -> OutputEvent {
             symbol: None,
             file_hash: "hash".to_owned(),
         },
-        status: MutationStatus::Killed,
-        termination: Some(ProcessTermination::Exit(1)),
-        output_state: ProcessOutputState::Complete,
-        elapsed_ms: 2,
+        outcome: hoimin_core::MutationOutcome::Executed {
+            termination: ProcessTermination::Exit(1),
+            output_state: ProcessOutputState::Complete,
+            output: output_ref(),
+            elapsed: std::time::Duration::from_millis(2),
+        },
         resource_mode: ResourceMode::Hard,
-        output: Some(output_ref()),
         diagnostics: Vec::new(),
     })
 }
@@ -2268,7 +2315,7 @@ fn historical_schema_three_goldens_validate_the_archived_raw_contract() {
 }
 
 #[tokio::test]
-async fn public_resume_reports_validate_schema_five_in_json_and_jsonl() {
+async fn public_resume_reports_validate_schema_six_in_json_and_jsonl() {
     let repo = repo_root();
     let event_schema = read_schema(&repo.join("docs/json-schema/run-event.schema.json"));
     let result_schema = read_schema(&repo.join("docs/json-schema/run-result.schema.json"));
@@ -2327,7 +2374,7 @@ async fn public_resume_reports_validate_schema_five_in_json_and_jsonl() {
     for (_, stdout, expected) in reports.iter().filter(|(format, _, _)| *format == "json") {
         let document: serde_json::Value = serde_json::from_slice(stdout).unwrap();
         assert_schema_valid(&result_schema, &document, &event_schema);
-        assert_eq!(document["schema_version"], 5);
+        assert_eq!(document["schema_version"], 6);
         assert_eq!(document["run"]["resume"], *expected);
     }
     for (_, stdout, expected) in reports.iter().filter(|(format, _, _)| *format == "jsonl") {

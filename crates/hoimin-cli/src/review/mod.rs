@@ -215,7 +215,7 @@ fn execution(
             "report candidate descriptor differs from stored candidate".into(),
         ));
     }
-    Ok(ReviewExecution::Result(mutant.status))
+    Ok(ReviewExecution::Result(mutant.outcome.status()))
 }
 
 #[cfg(test)]

@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use rusqlite::{Connection, ErrorCode, Transaction, TransactionBehavior};
 use thiserror::Error;
 
-pub(crate) const SCHEMA_VERSION: i64 = 4;
+pub(crate) const SCHEMA_VERSION: i64 = 5;
 
 #[derive(Debug, Error)]
 pub enum SchemaError {
@@ -88,29 +88,11 @@ fn initialize(transaction: &Transaction<'_>) -> Result<(), rusqlite::Error> {
          CREATE TABLE results (
              run_id TEXT NOT NULL,
              mutant_id TEXT NOT NULL,
-             status TEXT NOT NULL,
-             elapsed_secs INTEGER NOT NULL,
-             elapsed_nanos INTEGER NOT NULL,
+             outcome_json TEXT NOT NULL,
              resource_mode TEXT NOT NULL,
-             output_token TEXT,
-             output_retained INTEGER,
-             output_observed INTEGER,
-             termination_kind TEXT,
-             termination_exit_code INTEGER,
              PRIMARY KEY(run_id, mutant_id),
              FOREIGN KEY(run_id, mutant_id) REFERENCES candidates(run_id, mutant_id)
-                 DEFERRABLE INITIALLY DEFERRED,
-             CHECK(CASE
-                 WHEN termination_kind IS NULL THEN termination_exit_code IS NULL
-                 WHEN termination_kind = 'exit' THEN
-                     termination_exit_code IS NOT NULL
-                     AND typeof(termination_exit_code) = 'integer'
-                     AND termination_exit_code BETWEEN -2147483648 AND 2147483647
-                 WHEN termination_kind IN (
-                     'timeout', 'out_of_memory', 'process_limit', 'cancelled'
-                 ) THEN termination_exit_code IS NULL
-                 ELSE 0
-             END)
+                 DEFERRABLE INITIALLY DEFERRED
          );
          CREATE TABLE diagnostics (
              id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -164,7 +146,7 @@ mod tests {
 
     #[test]
     fn old_golden_databases_are_rejected_without_schema_or_data_changes() {
-        for version in 1..=3 {
+        for version in 1..=4 {
             let temp = tempfile::tempdir().unwrap();
             let path = temp.path().join("session.sqlite3");
             std::fs::copy(
@@ -256,7 +238,7 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("session.sqlite3");
         std::fs::copy(
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden/sessions/schema-v4.sqlite3"),
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden/sessions/schema-v5.sqlite3"),
             &path,
         )
         .unwrap();
@@ -315,20 +297,11 @@ mod tests {
     }
 
     #[test]
-    fn termination_columns_reject_inconsistent_shapes() {
+    fn outcome_columns_replace_parallel_evidence() {
+        // Arrange
         let mut connection = Connection::open_in_memory().unwrap();
         configure(&mut connection).unwrap();
-        connection
-            .execute_batch(
-                "INSERT INTO fingerprints(digest,schema_version) VALUES (zeroblob(32),1);
-                 INSERT INTO runs(run_id,fingerprint) VALUES ('run-1',zeroblob(32));
-                 INSERT INTO candidates(
-                     run_id,mutant_id,sequence,path,span_start,span_length,original,
-                     replacement,operator,line,column_number,symbol,file_hash
-                 ) VALUES ('run-1','m1',0,'src/a.py',0,1,'+','-','binary',1,0,NULL,'hash');",
-            )
-            .unwrap();
-
+        // Act
         let columns: Vec<String> = connection
             .prepare("PRAGMA table_info(results)")
             .unwrap()
@@ -336,50 +309,11 @@ mod tests {
             .unwrap()
             .collect::<Result<_, _>>()
             .unwrap();
-        assert!(columns.iter().any(|column| column == "termination_kind"));
-        assert!(
-            columns
-                .iter()
-                .any(|column| column == "termination_exit_code")
+        // Assert
+        assert_eq!(
+            columns,
+            ["run_id", "mutant_id", "outcome_json", "resource_mode"]
         );
-
-        for (kind, code) in [
-            ("NULL", "NULL"),
-            ("'exit'", "-2147483648"),
-            ("'exit'", "2147483647"),
-            ("'timeout'", "NULL"),
-            ("'out_of_memory'", "NULL"),
-            ("'process_limit'", "NULL"),
-            ("'cancelled'", "NULL"),
-        ] {
-            let sql = format!(
-                "INSERT INTO results(
-                    run_id,mutant_id,status,elapsed_secs,elapsed_nanos,resource_mode,
-                    termination_kind,termination_exit_code
-                 ) VALUES ('run-1','m1','killed',0,0,'hard',{kind},{code})"
-            );
-            connection.execute(&sql, []).unwrap();
-            connection.execute("DELETE FROM results", []).unwrap();
-        }
-
-        for (kind, code) in [
-            ("'exit'", "NULL"),
-            ("'timeout'", "1"),
-            ("'unknown'", "NULL"),
-            ("NULL", "1"),
-            ("'exit'", "2147483648"),
-        ] {
-            let sql = format!(
-                "INSERT INTO results(
-                    run_id,mutant_id,status,elapsed_secs,elapsed_nanos,resource_mode,
-                    termination_kind,termination_exit_code
-                 ) VALUES ('run-1','m1','killed',0,0,'hard',{kind},{code})"
-            );
-            assert!(
-                connection.execute(&sql, []).is_err(),
-                "accepted {kind}/{code}"
-            );
-        }
     }
 
     #[test]
@@ -389,16 +323,16 @@ mod tests {
             .execute_batch(
                 "CREATE TABLE future_schema_marker(value TEXT);
                  INSERT INTO future_schema_marker VALUES ('preserve me');
-                 PRAGMA user_version=5;",
+                 PRAGMA user_version=6;",
             )
             .unwrap();
 
         let before = database_snapshot(&connection);
         assert!(matches!(
             configure(&mut connection),
-            Err(SchemaError::UnsupportedVersion(5))
+            Err(SchemaError::UnsupportedVersion(6))
         ));
-        assert_eq!(user_version(&connection), 5);
+        assert_eq!(user_version(&connection), 6);
         assert_eq!(database_snapshot(&connection), before);
         assert_eq!(
             connection

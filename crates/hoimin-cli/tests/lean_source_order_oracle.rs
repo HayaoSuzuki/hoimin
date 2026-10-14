@@ -1,3 +1,5 @@
+#[path = "support/mutation_outcome.rs"]
+mod mutation_outcome;
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -151,7 +153,10 @@ fn source_order_public_resume_matches_lean_and_fresh_execution() {
     for case in cases() {
         let fixture = Fixture::new();
         let (initial, initial_metrics) = fixture.run(&case, &case.old, false, "session.sqlite");
-        assert_eq!(mutant(&initial, "a/calc.py")["status"], case.initial_status);
+        assert_eq!(
+            mutation_outcome::status(mutant(&initial, "a/calc.py")),
+            case.initial_status
+        );
         assert_eq!(initial_metrics["executed"], 1);
         let (resumed, metrics) = fixture.run(&case, &case.current, true, "session.sqlite");
         assert_eq!(metrics["executed"], case.executed, "{case:?}");
@@ -162,14 +167,14 @@ fn source_order_public_resume_matches_lean_and_fresh_execution() {
         );
         let a = mutant(&resumed, "a/calc.py");
         let b = mutant(&resumed, "b/calc.py");
-        assert_eq!(a["status"], case.status, "{case:?}");
-        assert_eq!(b["status"], case.other_status);
+        assert_eq!(mutation_outcome::status(a), case.status, "{case:?}");
+        assert_eq!(mutation_outcome::status(b), case.other_status);
         assert_eq!(
-            a["termination"],
+            mutation_outcome::termination(a),
             case.termination_exit
                 .map_or(Value::Null, |exit| serde_json::json!({"Exit": exit}))
         );
-        assert!(b["termination"].is_null());
+        assert!(mutation_outcome::termination(b).is_null());
         assert_eq!(
             mutant(&initial, "a/calc.py")["candidate"]["id"],
             a["candidate"]["id"]
@@ -188,8 +193,8 @@ fn incompatible_source_order_resume_matches_fresh_execution() {
 
         assert_eq!(fresh_metrics["executed"], 1);
         assert_eq!(
-            mutant(&fresh, "a/calc.py")["status"],
-            mutant(&resumed, "a/calc.py")["status"]
+            mutation_outcome::status(mutant(&fresh, "a/calc.py")),
+            mutation_outcome::status(mutant(&resumed, "a/calc.py"))
         );
         assert_eq!(
             mutant(&fresh, "a/calc.py")["candidate"]["id"],

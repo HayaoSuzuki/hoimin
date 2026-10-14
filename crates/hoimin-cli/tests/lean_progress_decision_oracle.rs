@@ -1,3 +1,5 @@
+#[path = "support/mutation_outcome.rs"]
+mod mutation_outcome;
 use std::collections::BTreeSet;
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
@@ -227,7 +229,7 @@ fn validate_delta(id: &str, delta: Option<&ExpectedDelta>) -> Result<(), String>
 }
 
 fn base_report() -> Value {
-    serde_json::from_str(include_str!("golden/reports/schema-v5-current.json"))
+    serde_json::from_str(include_str!("golden/reports/schema-v6-current.json"))
         .expect("owned current-schema golden report must remain valid JSON")
 }
 
@@ -263,11 +265,8 @@ fn build_report(case_id: &str, report_index: usize, input: &OracleReport) -> Val
                     "symbol": format!("symbol-{content}"),
                     "file_hash": format!("hash-{content}")
                 },
-                "status": mutant.status,
-                "termination": null,
-                "elapsed_ms": 1,
-                "resource_mode": "hard",
-                "output": null
+                "outcome": mutation_outcome::executed(serde_json::from_value(json!(mutant.status)).unwrap()),
+                "resource_mode": "hard"
             })
         })
         .collect::<Vec<_>>();
@@ -603,7 +602,14 @@ fn inject_usable_reports_without_reader_validation(item: &OracleCase) -> Vec<Inp
                     .as_array()
                     .unwrap()
                     .iter()
-                    .map(|event| serde_json::from_value(event.clone()).unwrap())
+                    .map(|event| {
+                        let hoimin_core::OutputEvent::MutantFinished(result) =
+                            serde_json::from_value(event.clone()).unwrap()
+                        else {
+                            unreachable!()
+                        };
+                        result
+                    })
                     .collect(),
             })
         })

@@ -31,11 +31,27 @@ inductive Termination
   | cancelled
   deriving Repr, DecidableEq, BEq
 
+inductive OutputState
+  | complete
+  | closeTimedOut
+  deriving Repr, DecidableEq, BEq
+
+inductive ReusedStatus
+  | killed
+  | survived
+  deriving Repr, DecidableEq, BEq
+
+inductive Outcome
+  | executed (termination : Termination) (outputState : OutputState)
+  | reused (status : ReusedStatus)
+  | notRun
+  deriving Repr, DecidableEq, BEq
+
 inductive EventKind
   | runStarted
   | mutantStarted (id : MutantId) (mutantSequence : Nat)
   | mutantFinished (id : MutantId) (mutantSequence : Nat)
-      (status : Status) (termination : Option Termination)
+      (outcome : Outcome)
   | diagnostic
   | runFinished
   deriving Repr, DecidableEq, BEq
@@ -58,9 +74,6 @@ inductive Rejection
   | mutantIdentitySequenceMismatch
       (id : MutantId) (expectedSequence receivedSequence : Nat)
   | mutantNotStarted (id : MutantId) (mutantSequence : Nat)
-  | mutantStatusTerminationMismatch
-      (id : MutantId) (mutantSequence : Nat)
-      (status expectedStatus : Status) (termination : Termination)
   deriving Repr, DecidableEq, BEq
 
 structure State where
@@ -125,21 +138,14 @@ def mutantError? (state : State) (event : Event) : Option Rejection :=
             else
               some (.mutantIdentitySequenceMismatch id expectedSequence mutantSequence)
         | none => none
-  | .mutantFinished id mutantSequence status termination =>
+  | .mutantFinished id mutantSequence _ =>
       match seenSequence? state.seen id with
       | some expectedSequence =>
           if expectedSequence ≠ mutantSequence then
             some (.mutantIdentitySequenceMismatch id expectedSequence mutantSequence)
           else if !state.active.contains (id, mutantSequence) then
             some (.mutantNotStarted id mutantSequence)
-          else
-            match termination with
-            | some value =>
-                let expectedStatus := classify value
-                if status = expectedStatus then none
-                else some (.mutantStatusTerminationMismatch
-                  id mutantSequence status expectedStatus value)
-            | none => none
+          else none
       | none => some (.mutantNotStarted id mutantSequence)
   | .runFinished =>
       if state.active.isEmpty then none
@@ -154,7 +160,7 @@ def accept (state : State) (event : Event) : State :=
       { advanced with
           active := (id, mutantSequence) :: state.active
           seen := (id, mutantSequence) :: state.seen }
-  | .mutantFinished id mutantSequence _ _ =>
+  | .mutantFinished id mutantSequence _ =>
       { advanced with active := state.active.erase (id, mutantSequence) }
   | .runFinished => { advanced with finished := true }
   | .diagnostic => advanced

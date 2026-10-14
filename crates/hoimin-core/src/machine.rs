@@ -8,13 +8,13 @@ use crate::{
     CandidateSpoolRef, Cleanup, Diagnostic, EffectFailed, EffectFailure, EffectId, EmitOutput,
     ExitPolicy, FinishSession, IntegrityCheckpoint, LoadSession, LookupStoredResult,
     MutantFinished as MutantOutput, MutantResult, MutantStarted, MutantTimeout, MutationCandidate,
-    MutationStatus, MutationSummary, ObserveRemainingBudget, OutputEvent,
+    MutationOutcome, MutationStatus, MutationSummary, ObserveRemainingBudget, OutputEvent,
     PROCESS_OUTPUT_CLOSE_TIMEOUT_CODE, PersistResult, Preflight, ProcessFinished, ProcessLimits,
     ProcessOutputState, ProcessTermination, ReadCandidate, ReservationId, ResetWorker,
-    ResolveTargets, ResumeDecision, RunBudgets, RunConfig, RunEffect, RunEvent, RunFingerprint,
-    RunProcess, RunStarted, RunSummary, SessionDiagnostic, TargetSlice, VerificationSelection,
-    VerificationSelectionMode, VerifyOriginals, WorkspaceCopyGrant, auto_mutant_timeout,
-    classify_mutant_result, contract_ensure, exit_code_for, project_top_budget,
+    ResolveTargets, ResumeDecision, ReusedMutationStatus, RunBudgets, RunConfig, RunEffect,
+    RunEvent, RunFingerprint, RunProcess, RunStarted, RunSummary, SessionDiagnostic, TargetSlice,
+    VerificationSelection, VerificationSelectionMode, VerifyOriginals, WorkspaceCopyGrant,
+    auto_mutant_timeout, contract_ensure, exit_code_for, project_top_budget,
     release_workspace_copy, reserve_workspace_copy,
 };
 
@@ -1050,15 +1050,6 @@ impl RunState {
         let id = self.allocate_id()?;
         self.output_actions
             .insert(id, OutputAction::FinishMutant(worker));
-        let output_state = if result
-            .diagnostics
-            .iter()
-            .any(|diagnostic| diagnostic.code == PROCESS_OUTPUT_CLOSE_TIMEOUT_CODE)
-        {
-            ProcessOutputState::CloseTimedOut
-        } else {
-            ProcessOutputState::Complete
-        };
         Ok(vec![RunEffect::EmitOutput(EmitOutput {
             id,
             event: OutputEvent::MutantFinished(MutantOutput {
@@ -1066,12 +1057,8 @@ impl RunState {
                 sequence: self.output_sequence(),
                 run_id: self.run_id.clone(),
                 candidate: result.candidate,
-                status: result.status,
-                termination: result.termination,
-                output_state,
-                elapsed_ms: elapsed_millis(result.elapsed),
+                outcome: result.outcome,
                 resource_mode: result.resource_mode,
-                output: result.output,
                 diagnostics: result.diagnostics,
             }),
         })])
@@ -1094,12 +1081,17 @@ impl RunState {
                 sequence: self.output_sequence(),
                 run_id: self.run_id.clone(),
                 candidate,
-                status,
-                termination: None,
-                output_state: ProcessOutputState::Complete,
-                elapsed_ms: 0,
+                outcome: match status {
+                    MutationStatus::Killed => MutationOutcome::Reused {
+                        status: ReusedMutationStatus::Killed,
+                    },
+                    MutationStatus::Survived => MutationOutcome::Reused {
+                        status: ReusedMutationStatus::Survived,
+                    },
+                    MutationStatus::NotRun => MutationOutcome::NotRun,
+                    _ => return Err(MachineError::WrongPhase { phase: self.phase }),
+                },
                 resource_mode: self.resource_control.mode,
-                output: None,
                 diagnostics: Vec::new(),
             }),
         })])
@@ -1118,7 +1110,7 @@ impl RunState {
                     .map(|candidate| StoppedCandidate::SyntheticNotStarted(candidate, status)),
                 WorkerPhase::Running => candidate.map(StoppedCandidate::StartedNotRun),
                 WorkerPhase::Persisting => worker.result.clone().map(|result| {
-                    stopped_results_to_record.push(result.status);
+                    stopped_results_to_record.push(result.outcome.status());
                     StoppedCandidate::Finished(result)
                 }),
                 WorkerPhase::Finishing => worker.result.clone().map(StoppedCandidate::Finished),
@@ -1689,7 +1681,6 @@ pub fn transition(
                 .worker
                 .ok_or(MachineError::WrongPhase { phase: state.phase })?;
             let candidate = state.candidate(worker)?;
-            let status = classify_mutant_result(value.termination, value.output_state);
             let diagnostics = match value.output_state {
                 ProcessOutputState::Complete => Vec::new(),
                 ProcessOutputState::CloseTimedOut => vec![SessionDiagnostic {
@@ -1708,13 +1699,16 @@ pub fn transition(
                     .clone()
                     .unwrap_or_else(|| state.run_id.clone()),
                 candidate,
-                status,
-                termination: Some(value.termination),
-                elapsed: value.elapsed,
+                outcome: MutationOutcome::Executed {
+                    termination: value.termination,
+                    output_state: value.output_state,
+                    output: value.output,
+                    elapsed: value.elapsed,
+                },
                 resource_mode: value.resource_mode,
-                output: Some(value.output),
                 diagnostics,
             };
+            let status = result.outcome.status();
             state.worker_mut(worker)?.result = Some(result.clone());
             if state.session_run_id.is_some() {
                 state.worker_mut(worker)?.phase = WorkerPhase::Persisting;
@@ -1755,7 +1749,7 @@ pub fn transition(
                     received: value.mutant_id,
                 });
             }
-            state.summary.record(result.status);
+            state.summary.record(result.outcome.status());
             state.finished_output(worker)?
         }
         RunEvent::OutputEmitted(value) if state.output_actions.contains_key(&value.id) => {

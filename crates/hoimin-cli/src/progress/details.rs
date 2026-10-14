@@ -168,13 +168,13 @@ impl<'a> Collector<'a> {
                     previous_line: previous.candidate.line,
                     previous_column: previous.candidate.column,
                     operator: current.candidate.operator.clone(),
-                    classification: if current.status == MutationStatus::Killed {
+                    classification: if current.outcome.status() == MutationStatus::Killed {
                         "improvement"
                     } else {
                         "regression"
                     },
-                    previous_status: previous.status,
-                    current_status: current.status,
+                    previous_status: previous.outcome.status(),
+                    current_status: current.outcome.status(),
                 })
                 .collect(),
         }

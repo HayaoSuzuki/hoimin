@@ -1,4 +1,6 @@
 #![cfg(windows)]
+#[path = "support/mutation_outcome.rs"]
+mod mutation_outcome;
 
 use std::fs;
 use std::path::Path;
@@ -209,8 +211,11 @@ async fn assert_scope(
     let mutants = report["mutants"].as_array().expect("mutant results");
     assert_eq!(mutants.len(), 2);
     for mutant in mutants {
-        assert_eq!(mutant["status"], "survived");
-        assert_eq!(mutant["termination"], serde_json::json!({"Exit": 0}));
+        assert_eq!(mutation_outcome::status(mutant), "survived");
+        assert_eq!(
+            mutation_outcome::termination(mutant),
+            serde_json::json!({"Exit": 0})
+        );
     }
     tokio::time::timeout(Duration::from_secs(5), async {
         loop {

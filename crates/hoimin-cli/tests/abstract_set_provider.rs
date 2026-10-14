@@ -1,5 +1,7 @@
 #[path = "support/collecting_writer.rs"]
 mod collecting_writer;
+#[path = "support/mutation_outcome.rs"]
+mod mutation_outcome;
 use collecting_writer::CollectingWriter;
 
 use std::ffi::OsString;
@@ -179,5 +181,5 @@ async fn provider_set_guards_and_nullable_recognition() {
 async fn provider_set_public_run_survives_annotation_evaluation() {
     let report = invoke("import collections.abc as abc\ndef f(x: set[int]): pass\nobserved = f.__annotations__['x']\n", "run", "type_set_abstract_set").await;
     assert_eq!(report["mutants"].as_array().unwrap().len(), 1);
-    assert_eq!(report["mutants"][0]["status"], "survived");
+    assert_eq!(mutation_outcome::status(&report["mutants"][0]), "survived");
 }

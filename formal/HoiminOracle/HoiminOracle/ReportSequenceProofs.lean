@@ -105,9 +105,8 @@ theorem run_finish_requires_no_active (state : State) (event : Event)
 
 set_option maxHeartbeats 100000 in
 theorem finish_removes_active (state : State) (event : Event)
-    (id : MutantId) (mutantSequence : Nat) (status : Status)
-    (termination : Option Termination)
-    (kind : event.kind = .mutantFinished id mutantSequence status termination)
+    (id : MutantId) (mutantSequence : Nat) (outcome : Outcome)
+    (kind : event.kind = .mutantFinished id mutantSequence outcome)
     (accepted : (step state event).rejection = none) :
     (step state event).state.active =
       state.active.erase (id, mutantSequence) := by

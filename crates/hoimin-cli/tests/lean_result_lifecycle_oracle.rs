@@ -1,3 +1,5 @@
+#[path = "support/mutation_outcome.rs"]
+mod mutation_outcome;
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -908,7 +910,8 @@ fn report_results(
         let id = mutant["candidate"]["id"]
             .as_str()
             .ok_or_else(|| format!("mutant {role} has no candidate id"))?;
-        let status = mutant["status"]
+        let status_value = mutation_outcome::status(mutant);
+        let status = status_value
             .as_str()
             .filter(|status| known_status(status))
             .ok_or_else(|| format!("mutant {role} has unknown status"))?;

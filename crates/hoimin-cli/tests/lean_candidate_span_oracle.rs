@@ -330,11 +330,44 @@ fn serde_spool_machine_and_session_preserve_the_lean_identity_projection() {
             result: MutantResult {
                 run_id: "candidate-span".to_owned(),
                 candidate: candidate.clone(),
-                status: MutationStatus::Killed,
-                termination: None,
-                elapsed: Duration::from_millis(1),
+                outcome: match MutationStatus::Killed {
+                    hoimin_core::MutationStatus::Killed => hoimin_core::MutationOutcome::Reused {
+                        status: hoimin_core::ReusedMutationStatus::Killed,
+                    },
+                    hoimin_core::MutationStatus::Survived => hoimin_core::MutationOutcome::Reused {
+                        status: hoimin_core::ReusedMutationStatus::Survived,
+                    },
+                    hoimin_core::MutationStatus::NotRun => hoimin_core::MutationOutcome::NotRun,
+                    status => hoimin_core::MutationOutcome::Executed {
+                        termination: match status {
+                            hoimin_core::MutationStatus::Timeout => {
+                                hoimin_core::ProcessTermination::Timeout
+                            }
+                            hoimin_core::MutationStatus::OutOfMemory => {
+                                hoimin_core::ProcessTermination::OutOfMemory
+                            }
+                            hoimin_core::MutationStatus::ProcessLimit => {
+                                hoimin_core::ProcessTermination::ProcessLimit
+                            }
+                            hoimin_core::MutationStatus::Error => {
+                                hoimin_core::ProcessTermination::Exit(1)
+                            }
+                            _ => unreachable!(),
+                        },
+                        output_state: if status == hoimin_core::MutationStatus::Error {
+                            hoimin_core::ProcessOutputState::CloseTimedOut
+                        } else {
+                            hoimin_core::ProcessOutputState::Complete
+                        },
+                        output: hoimin_core::OutputSpoolRef {
+                            token: "fixture-output".into(),
+                            retained: 0,
+                            observed: 0,
+                        },
+                        elapsed: Duration::from_millis(1),
+                    },
+                },
                 resource_mode: ResourceMode::Hard,
-                output: None,
                 diagnostics: Vec::new(),
             },
         })

@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     CommandArg, FingerprintInputFile, MutantTimeout, MutationCandidate, MutationProfile,
-    MutationStatus, OutputSpoolRef, ProcessTermination, ResourceMode, RunConfig, RunLimits,
-    TargetSlice,
+    MutationStatus, OutputSpoolRef, ProcessOutputState, ProcessTermination, ResourceMode,
+    RunConfig, RunLimits, TargetSlice,
 };
 
 pub const FINGERPRINT_SCHEMA_VERSION: u8 = 11;
@@ -143,16 +143,78 @@ pub struct StoredResult {
     pub status: MutationStatus,
 }
 
+/// A completed execution, a reusable conclusive result, or no classified completion.
+/// Diagnostics are independent evidence and never determine this outcome.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum MutationOutcome {
+    Executed {
+        termination: ProcessTermination,
+        output_state: ProcessOutputState,
+        output: OutputSpoolRef,
+        elapsed: Duration,
+    },
+    Reused {
+        status: ReusedMutationStatus,
+    },
+    /// No classified completed result is available; the process may have started.
+    NotRun,
+}
+
+/// Only conclusive outcomes qualify for reuse under the resume policy.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReusedMutationStatus {
+    Killed,
+    Survived,
+}
+
+impl MutationOutcome {
+    /// Derives the domain status from owned execution evidence or reuse provenance.
+    #[must_use]
+    pub fn status(&self) -> MutationStatus {
+        match self {
+            Self::Executed {
+                termination,
+                output_state,
+                ..
+            } => crate::classify_mutant_result(*termination, *output_state),
+            Self::Reused {
+                status: ReusedMutationStatus::Killed,
+            } => MutationStatus::Killed,
+            Self::Reused {
+                status: ReusedMutationStatus::Survived,
+            } => MutationStatus::Survived,
+            Self::NotRun => MutationStatus::NotRun,
+        }
+    }
+
+    /// Synthetic and reused results contribute no execution time to this run.
+    #[must_use]
+    pub const fn elapsed(&self) -> Duration {
+        match self {
+            Self::Executed { elapsed, .. } => *elapsed,
+            Self::Reused { .. } | Self::NotRun => Duration::ZERO,
+        }
+    }
+
+    /// Only a completed execution owns an output spool reference.
+    #[must_use]
+    pub const fn output(&self) -> Option<&OutputSpoolRef> {
+        match self {
+            Self::Executed { output, .. } => Some(output),
+            Self::Reused { .. } | Self::NotRun => None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MutantResult {
     pub run_id: String,
     pub candidate: MutationCandidate,
-    pub status: MutationStatus,
-    #[serde(default)]
-    pub termination: Option<ProcessTermination>,
-    pub elapsed: Duration,
+    pub outcome: MutationOutcome,
     pub resource_mode: ResourceMode,
-    pub output: Option<OutputSpoolRef>,
     pub diagnostics: Vec<SessionDiagnostic>,
 }
 

@@ -330,15 +330,44 @@ fn persist_request(
                 symbol: None,
                 file_hash: format!("hash-{payload}"),
             },
-            status: status(status_name)?,
-            termination: None,
-            elapsed: Duration::from_millis(5),
+            outcome: match status(status_name)? {
+                hoimin_core::MutationStatus::Killed => hoimin_core::MutationOutcome::Reused {
+                    status: hoimin_core::ReusedMutationStatus::Killed,
+                },
+                hoimin_core::MutationStatus::Survived => hoimin_core::MutationOutcome::Reused {
+                    status: hoimin_core::ReusedMutationStatus::Survived,
+                },
+                hoimin_core::MutationStatus::NotRun => hoimin_core::MutationOutcome::NotRun,
+                status => hoimin_core::MutationOutcome::Executed {
+                    termination: match status {
+                        hoimin_core::MutationStatus::Timeout => {
+                            hoimin_core::ProcessTermination::Timeout
+                        }
+                        hoimin_core::MutationStatus::OutOfMemory => {
+                            hoimin_core::ProcessTermination::OutOfMemory
+                        }
+                        hoimin_core::MutationStatus::ProcessLimit => {
+                            hoimin_core::ProcessTermination::ProcessLimit
+                        }
+                        hoimin_core::MutationStatus::Error => {
+                            hoimin_core::ProcessTermination::Exit(1)
+                        }
+                        _ => unreachable!(),
+                    },
+                    output_state: if status == hoimin_core::MutationStatus::Error {
+                        hoimin_core::ProcessOutputState::CloseTimedOut
+                    } else {
+                        hoimin_core::ProcessOutputState::Complete
+                    },
+                    output: OutputSpoolRef {
+                        token: format!("output-{payload}"),
+                        retained: payload_number + 1,
+                        observed: payload_number + 2,
+                    },
+                    elapsed: Duration::from_millis(5),
+                },
+            },
             resource_mode: ResourceMode::Hard,
-            output: Some(OutputSpoolRef {
-                token: format!("output-{payload}"),
-                retained: payload_number + 1,
-                observed: payload_number + 2,
-            }),
             diagnostics: vec![SessionDiagnostic {
                 mutant_id: diagnostic_mutant.to_owned(),
                 level: "warning".to_owned(),
@@ -657,7 +686,7 @@ fn observe_database(path: &Path) -> Result<(Vec<RunObservation>, Vec<ResultObser
 
     let mut result_statement = connection
         .prepare(
-            "SELECT r.run_id, r.mutant_id, r.status, c.replacement
+            "SELECT r.run_id, r.mutant_id, r.outcome_json, c.replacement
              FROM results r JOIN candidates c USING(run_id, mutant_id)
              ORDER BY r.run_id, r.mutant_id",
         )
@@ -684,7 +713,11 @@ fn observe_database(path: &Path) -> Result<(Vec<RunObservation>, Vec<ResultObser
             Ok(ResultObservation {
                 run: run_role(&run)?,
                 mutant: mutant_role(&mutant)?,
-                status,
+                status: serde_json::from_str::<hoimin_core::MutationOutcome>(&status)
+                    .map_err(|error| format!("invalid outcome: {error}"))?
+                    .status()
+                    .as_str()
+                    .to_owned(),
                 payload: payload.to_owned(),
             })
         })

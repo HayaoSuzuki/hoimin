@@ -30,12 +30,14 @@ def terminationStatus : Termination → Status
   | .processLimit => .processLimit
   | .cancelled => .notRun
 
--- Spool and diagnostic payloads are canonical in the generated result cases.
+-- Raw executed payloads require termination. Status is the reported summary
+-- assertion checked against classification; spool payloads are canonical and
+-- diagnostics are independent evidence in the generated cases.
 def validResult (status : Status) (fields : ResultFields) : Bool :=
   match fields.outputState with
   | .closeTimedOut => fields.termination.isSome && status == .error
   | .complete => match fields.termination with
-    | none => true
+    | none => false
     | some termination => status == terminationStatus termination
 
 structure Input where

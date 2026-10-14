@@ -1,5 +1,7 @@
 #[path = "support/collecting_writer.rs"]
 mod collecting_writer;
+#[path = "support/mutation_outcome.rs"]
+mod mutation_outcome;
 use collecting_writer::CollectingWriter;
 
 use std::ffi::OsString;
@@ -174,7 +176,7 @@ async fn verify_negative_neighbor_detects_tail_boundary_missed_by_sign_flip() {
             .as_array()
             .unwrap()
             .iter()
-            .filter(|mutant| mutant["status"] == "killed")
+            .filter(|mutant| mutation_outcome::status(mutant) == "killed")
             .collect();
         assert_eq!(killed_mutants.len(), killed);
         for mutant in killed_mutants {

@@ -58,7 +58,7 @@
     },
     "schemaVersion": {
       "type": "integer",
-      "const": 5
+      "const": 6
     },
     "resumeOutcome": {
       "oneOf": [
@@ -579,6 +579,116 @@
       },
       "additionalProperties": false
     },
+    "mutationDuration": {
+      "type": "object",
+      "required": [
+        "secs",
+        "nanos"
+      ],
+      "properties": {
+        "secs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "nanos": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 999999999
+        }
+      },
+      "additionalProperties": false
+    },
+    "mutationOutcome": {
+      "oneOf": [
+        {
+          "const": "not_run"
+        },
+        {
+          "type": "object",
+          "required": [
+            "reused"
+          ],
+          "properties": {
+            "reused": {
+              "type": "object",
+              "required": [
+                "status"
+              ],
+              "properties": {
+                "status": {
+                  "enum": [
+                    "killed",
+                    "survived"
+                  ]
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "executed"
+          ],
+          "properties": {
+            "executed": {
+              "type": "object",
+              "required": [
+                "termination",
+                "output_state",
+                "output",
+                "elapsed"
+              ],
+              "properties": {
+                "termination": {
+                  "$ref": "#/$defs/termination"
+                },
+                "output_state": {
+                  "enum": [
+                    "complete",
+                    "close_timed_out"
+                  ]
+                },
+                "output": {
+                  "$ref": "#/$defs/output"
+                },
+                "elapsed": {
+                  "$ref": "#/$defs/mutationDuration"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "sessionDiagnostic": {
+      "type": "object",
+      "required": [
+        "mutant_id",
+        "level",
+        "code",
+        "message"
+      ],
+      "properties": {
+        "mutant_id": {
+          "type": "string"
+        },
+        "level": {
+          "type": "string"
+        },
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
     "mutantFinished": {
       "type": "object",
       "required": [
@@ -587,32 +697,37 @@
         "sequence",
         "run_id",
         "candidate",
-        "status",
-        "termination",
-        "elapsed_ms",
         "resource_mode",
-        "output"
+        "outcome"
       ],
       "properties": {
-        "kind": { "const": "mutant_finished" },
-        "schema_version": { "$ref": "#/$defs/schemaVersion" },
-        "sequence": { "type": "integer", "minimum": 0 },
-        "run_id": { "type": "string" },
-        "candidate": { "$ref": "#/$defs/candidate" },
-        "status": { "$ref": "#/$defs/status" },
-        "termination": {
-          "oneOf": [
-            { "$ref": "#/$defs/termination" },
-            { "type": "null" }
-          ]
+        "kind": {
+          "const": "mutant_finished"
         },
-        "elapsed_ms": { "type": "integer", "minimum": 0 },
-        "resource_mode": { "$ref": "#/$defs/resourceMode" },
-        "output": {
-          "oneOf": [
-            { "$ref": "#/$defs/output" },
-            { "type": "null" }
-          ]
+        "schema_version": {
+          "$ref": "#/$defs/schemaVersion"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "run_id": {
+          "type": "string"
+        },
+        "candidate": {
+          "$ref": "#/$defs/candidate"
+        },
+        "resource_mode": {
+          "$ref": "#/$defs/resourceMode"
+        },
+        "outcome": {
+          "$ref": "#/$defs/mutationOutcome"
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/sessionDiagnostic"
+          }
         }
       },
       "additionalProperties": false

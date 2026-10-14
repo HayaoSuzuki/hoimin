@@ -4,6 +4,23 @@ hoimin is currently a 0.x CLI. This policy describes how maintainers classify
 changes and tell users what to update. A patch release can fix incorrect
 behavior; it does not promise identical mutation candidates or scores.
 
+## Typed mutation outcomes in 0.7.0
+
+Report schema 6 replaces independently stored mutation status and optional evidence
+with `outcome`: executed results require termination, output state, output, and
+elapsed time; reused results permit only killed or survived; `not_run` means no
+classified completed result is available and does not imply the process never
+started. Status derives from the outcome. Diagnostics do not reconstruct state.
+See [Mutation result outcomes](usage.md#mutation-result-outcomes).
+
+Update report consumers to schema 6. Read schema-5 and older reports with their
+producing binary, or rerun with the intended version. Session schema 5 stores the
+typed outcome directly and rejects initialized schemas 1-4 and unsupported future
+versions. Preserve old databases and choose a different `--session PATH` for a new
+run. There are no compatibility adapters or automatic file conversions. Plan
+schema 6 and fingerprint schema 11 remain unchanged by this change. The existing
+unreleased 0.7.0 floor covers these incompatible saved formats.
+
 ## Environment snapshots in 0.7.0
 
 Plan schema 6 and report schema 5 replace the independent environment-name and
@@ -13,10 +30,12 @@ optional-hash fields with one `environment` snapshot. Untracked inputs use
 The 0.7.0 floor reflects this incompatible saved-format and report-reader change.
 
 Regenerate schema-5 and older plans with the intended environment. Update strict
-report consumers to schema 5; read schema-4 and older reports with their producing
+report consumers to schema 6; read schema-5 and older reports with their producing
 binary or rerun with this version. Existing files are not automatically converted,
 deleted, or replaced. Fingerprint schema 11 and its bytes are unchanged, so the
-representation change alone does not invalidate compatible sessions. If a run is
+environment representation change alone does not invalidate compatible sessions;
+the typed-outcome session schema change described above independently requires a
+new database. If a run is
 rejected for another compatibility reason, choose a different `--session PATH`.
 See [Explicit inherited environment fingerprints](development.md#explicit-inherited-environment-fingerprints).
 
@@ -25,7 +44,7 @@ See [Explicit inherited environment fingerprints](development.md#explicit-inheri
 | Interface | Maintenance rule | User action when it changes |
 | --- | --- | --- |
 | CLI arguments, defaults and exit codes | Preserve documented usage within a minor series, except documented bug fixes. Removing or changing a supported contract needs a minor-version floor increase. | Update invocation and CI conditions using the release notice. |
-| JSON and JSONL reports | Treat documented schemas as public. Progress accepts only report schema 5, matching the writer; review accepts current-schema JSON. Adding a field may still affect strict readers. | Read old reports with their producing binary, or rerun with the intended version. Plan regeneration alone cannot reconstruct past reports. Files are not automatically converted. |
+| JSON and JSONL reports | Treat documented schemas as public. Progress accepts only report schema 6, matching the writer; review accepts current-schema JSON. Adding a field may still affect strict readers. | Read old reports with their producing binary, or rerun with the intended version. Plan regeneration alone cannot reconstruct past reports. Files are not automatically converted. |
 | Saved plan, ranking and candidate IDs | These are checked execution inputs, not timeless interchange formats. Changes to schema, ranking, identity, source or fingerprints can invalidate a plan. | Regenerate the plan with the intended version and inputs. Do not hand-edit versions or IDs to bypass validation. |
 | Session database and resume | Resume is allowed only under the implementation's schema and fingerprint checks. Migration support must be stated explicitly. | Keep the old database and binary if needed; start a new session when compatibility is not supported. |
 | Default operators, profiles and selection | Changes can alter candidate count, runtime and the population behind a score. Default expansion is an observable compatibility change. | Review the operator set and budget; use matching candidates and validation settings for comparisons. |
@@ -155,9 +174,10 @@ required. Revisit the policy before a 1.0 release or a new distribution interfac
 
 ## Session initialization change (Issue 882)
 
-The release floor is 0.6.0 because schema versions 1-3 are no longer automatically
-upgraded. New databases receive schema 4 directly; existing schema-4 databases
-reopen. All other initialized versions produce an unsupported-version error.
+Issue 882 originally raised the release floor to 0.6.0 by removing automatic
+upgrades from schemas 1-3. At that revision, new databases received schema 4 and
+existing schema-4 databases reopened. The typed-outcome schema-5 contract above
+supersedes that schema-4 policy: initialized versions 1-4 are now rejected.
 Keep old databases with their producing binary, and choose a different
 `--session PATH` for a new run. hoimin does not transform, remove or replace the
 old database. See [Sessions and resume](usage.md#sessions-and-resume).
