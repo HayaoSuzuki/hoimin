@@ -1,5 +1,3 @@
-use std::io::Write;
-
 use hoimin_core::{BaselineFinished, Diagnostic, EffectId, EmitOutput, OutputEvent};
 use tokio::io::AsyncReadExt;
 
@@ -13,9 +11,9 @@ enum ExportError {
     Write,
 }
 
-pub(crate) async fn emit<Stdout: Write, Stderr: Write>(
+pub(crate) async fn emit(
     process: &ProcessHandler,
-    report: &mut ReportDelivery<Stdout, Stderr>,
+    report: &mut ReportDelivery,
     baseline: &BaselineFinished,
 ) {
     if let Err(ExportError::Read(error)) = stream(process, report, baseline).await {
@@ -23,9 +21,9 @@ pub(crate) async fn emit<Stdout: Write, Stderr: Write>(
     }
 }
 
-async fn stream<Stdout: Write, Stderr: Write>(
+async fn stream(
     process: &ProcessHandler,
-    report: &mut ReportDelivery<Stdout, Stderr>,
+    report: &mut ReportDelivery,
     baseline: &BaselineFinished,
 ) -> Result<(), ExportError> {
     let path = process
@@ -119,8 +117,8 @@ fn terminal_text(text: &str) -> String {
     escaped
 }
 
-async fn diagnostic<Stdout: Write, Stderr: Write>(
-    report: &mut ReportDelivery<Stdout, Stderr>,
+async fn diagnostic(
+    report: &mut ReportDelivery,
     baseline: &BaselineFinished,
     code: &str,
     message: String,

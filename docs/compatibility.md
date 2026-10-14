@@ -52,6 +52,18 @@ that floor yields the next patch in that series. Merely updating the floor
 does not migrate saved data. Never rewrite published tags or replace published
 files to repair a release.
 
+## Owned Rust writer APIs
+
+The internal Rust entry `run_with_io` is replaced by `run_with_writers`, which
+accepts owned `Write + Send + 'static` outputs. Shell run entry points and
+`VerifiedPlan::execute` require the same ownership. Shared collecting writers
+can supply snapshots after execution. Shell errors have already been reported;
+callers must not print them again. See the [developer migration](development.md).
+
+This internal Rust source migration does not require a version-floor increase.
+CLI arguments, exit codes, report schemas, plans and sessions do not change;
+existing files require no conversion or deletion.
+
 ## PR and release notices
 
 Fill in the PR template's compatibility section before merging. Describe:

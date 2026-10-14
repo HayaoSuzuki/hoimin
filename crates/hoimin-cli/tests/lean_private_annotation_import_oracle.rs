@@ -1,5 +1,10 @@
 //! Public correspondence for the Lean private-name import policy. Expected
 //! identity and candidate eligibility come only from the generated corpus.
+
+#[path = "support/collecting_writer.rs"]
+mod collecting_writer;
+use collecting_writer::CollectingWriter;
+
 use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -232,14 +237,14 @@ async fn private_annotation_import_public_plan_and_cpython_match_lean() {
             case.id
         );
 
-        let mut stdout = Vec::new();
-        let mut stderr = Vec::new();
+        let stdout = CollectingWriter::default();
+        let stderr = CollectingWriter::default();
         let exit = tokio::time::timeout(
             Duration::from_secs(15),
-            hoimin_cli::run_with_io(
+            hoimin_cli::run_with_writers(
                 command(directory.path(), &case, "plan"),
-                &mut stdout,
-                &mut stderr,
+                stdout.clone(),
+                stderr.clone(),
             ),
         )
         .await
@@ -249,10 +254,10 @@ async fn private_annotation_import_public_plan_and_cpython_match_lean() {
             0,
             "infrastructure error: {}: {}",
             case.id,
-            String::from_utf8_lossy(&stderr)
+            String::from_utf8_lossy(&stderr.snapshot())
         );
         let plan: PlanManifest =
-            serde_json::from_slice(&stdout).expect("infrastructure error: plan JSON");
+            serde_json::from_slice(&stdout.snapshot()).expect("infrastructure error: plan JSON");
         assert_eq!(
             plan.candidates.len(),
             case.candidate_count,
@@ -321,11 +326,11 @@ async fn private_annotation_import_public_run_does_not_count_custom_pairs() {
             case.id,
             String::from_utf8_lossy(&baseline.stderr)
         );
-        let mut stdout = Vec::new();
-        let mut stderr = Vec::new();
+        let stdout = CollectingWriter::default();
+        let stderr = CollectingWriter::default();
         let exit = tokio::time::timeout(
             Duration::from_secs(30),
-            hoimin_cli::run_with_io(args, &mut stdout, &mut stderr),
+            hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()),
         )
         .await
         .expect("infrastructure error: run timeout");
@@ -334,9 +339,9 @@ async fn private_annotation_import_public_run_does_not_count_custom_pairs() {
             0,
             "infrastructure error: {}: {}",
             case.id,
-            String::from_utf8_lossy(&stderr)
+            String::from_utf8_lossy(&stderr.snapshot())
         );
-        let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+        let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
         assert_eq!(report["summary"]["complete"], true, "{}", case.id);
         assert_eq!(report["summary"]["counts"]["killed"], 0, "{}", case.id);
         assert!(
@@ -430,16 +435,16 @@ async fn private_alias_reverse_writes_and_lexical_context_public_controls() {
             "-c".into(),
             "import subject".into(),
         ];
-        let mut stdout = Vec::new();
-        let mut stderr = Vec::new();
+        let stdout = CollectingWriter::default();
+        let stderr = CollectingWriter::default();
         let exit = tokio::time::timeout(
             Duration::from_secs(15),
-            hoimin_cli::run_with_io(args, &mut stdout, &mut stderr),
+            hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()),
         )
         .await
         .expect("infrastructure error: boundary plan timeout");
-        assert_eq!(exit, 0, "{}", String::from_utf8_lossy(&stderr));
-        let plan: PlanManifest = serde_json::from_slice(&stdout).unwrap();
+        assert_eq!(exit, 0, "{}", String::from_utf8_lossy(&stderr.snapshot()));
+        let plan: PlanManifest = serde_json::from_slice(&stdout.snapshot()).unwrap();
         assert_eq!(plan.candidates.len(), expected, "{source}");
     }
 }

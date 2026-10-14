@@ -540,11 +540,11 @@ async fn missing_report_candidate_fixture() -> (tempfile::TempDir, Vec<String>) 
 #[tokio::test]
 async fn review_report_missing_candidate_is_not_an_execution_result() {
     let (_dir, argv) = missing_report_candidate_fixture().await;
-    let mut output = Vec::new();
-    let mut errors = Vec::new();
+    let output = crate::test_writer::CollectingWriter::default();
+    let errors = crate::test_writer::CollectingWriter::default();
 
-    let code = crate::run_with_io(argv, &mut output, &mut errors).await;
-    let value: serde_json::Value = serde_json::from_slice(&output).unwrap();
+    let code = crate::run_with_writers(argv, output.clone(), errors.clone()).await;
+    let value: serde_json::Value = serde_json::from_slice(&output.snapshot()).unwrap();
 
     assert_eq!(code, 0);
     assert_eq!(
@@ -565,10 +565,10 @@ async fn review_record_rejects_candidate_missing_from_report() {
         "--expected-revision".into(),
         "0".into(),
     ]);
-    let mut output = Vec::new();
-    let mut errors = Vec::new();
+    let output = crate::test_writer::CollectingWriter::default();
+    let errors = crate::test_writer::CollectingWriter::default();
 
-    let code = crate::run_with_io(argv, &mut output, &mut errors).await;
+    let code = crate::run_with_writers(argv, output.clone(), errors.clone()).await;
 
     assert_eq!(code, 2);
     assert!(!dir.path().join("reviews.sqlite3").exists());

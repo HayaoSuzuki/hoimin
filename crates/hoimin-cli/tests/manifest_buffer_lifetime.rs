@@ -1,3 +1,7 @@
+#[path = "support/collecting_writer.rs"]
+mod collecting_writer;
+use collecting_writer::CollectingWriter;
+
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::ffi::OsString;
 use std::fmt::Write as _;
@@ -140,19 +144,23 @@ fn write_public_manifest(
         )
         .into(),
     ];
-    let mut bytes = Vec::new();
-    let mut stderr = Vec::new();
+    let bytes = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
     assert_eq!(
-        runtime.block_on(hoimin_cli::run_with_io(arguments, &mut bytes, &mut stderr)),
+        runtime.block_on(hoimin_cli::run_with_writers(
+            arguments,
+            bytes.clone(),
+            stderr.clone()
+        )),
         0,
         "{stderr:?}"
     );
-    let manifest: PlanManifest = serde_json::from_slice(&bytes).unwrap();
+    let manifest: PlanManifest = serde_json::from_slice(&bytes.snapshot()).unwrap();
     assert_eq!(manifest.candidates.len(), 24);
     let manifest_size = bytes.len();
     assert!(manifest_size > 12 * 1024 * 1024);
     let path = directory.join("plan.json");
-    std::fs::write(&path, bytes).unwrap();
+    std::fs::write(&path, bytes.snapshot()).unwrap();
     (path, manifest, manifest_size)
 }
 

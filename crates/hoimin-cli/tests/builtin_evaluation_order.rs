@@ -1,3 +1,7 @@
+#[path = "support/collecting_writer.rs"]
+mod collecting_writer;
+use collecting_writer::CollectingWriter;
+
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -107,16 +111,21 @@ async fn public_plan_observes_evaluation_order_and_preserves_source_spans() {
         );
         let directory = tempfile::tempdir().unwrap();
         std::fs::write(directory.path().join("subject.py"), &source).unwrap();
-        let mut stdout = Vec::new();
-        let mut stderr = Vec::new();
-        let code = hoimin_cli::run_with_io(
+        let stdout = CollectingWriter::default();
+        let stderr = CollectingWriter::default();
+        let code = hoimin_cli::run_with_writers(
             command(directory.path(), "plan", &[], "pass"),
-            &mut stdout,
-            &mut stderr,
+            stdout.clone(),
+            stderr.clone(),
         )
         .await;
-        assert_eq!(code, 0, "{body}: {}", String::from_utf8_lossy(&stderr));
-        let manifest: PlanManifest = serde_json::from_slice(&stdout).unwrap();
+        assert_eq!(
+            code,
+            0,
+            "{body}: {}",
+            String::from_utf8_lossy(&stderr.snapshot())
+        );
+        let manifest: PlanManifest = serde_json::from_slice(&stdout.snapshot()).unwrap();
         assert_eq!(manifest.candidates.len(), expected, "{body}");
         for candidate in &manifest.candidates {
             let start = usize::try_from(candidate.span.start).unwrap();
@@ -133,21 +142,21 @@ async fn public_run_does_not_count_a_custom_callable_as_a_killed_mutant() {
     let source = "def custom(values): return 'custom'\nslots = {}\nany, slots[any([])] = custom, 7\nobserved = list(slots)\n";
     let directory = tempfile::tempdir().unwrap();
     std::fs::write(directory.path().join("subject.py"), source).unwrap();
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
-    let code = hoimin_cli::run_with_io(
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
+    let code = hoimin_cli::run_with_writers(
         command(
             directory.path(),
             "run",
             &["--format", "json"],
             "import subject; assert subject.observed == ['custom']",
         ),
-        &mut stdout,
-        &mut stderr,
+        stdout.clone(),
+        stderr.clone(),
     )
     .await;
-    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
-    let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr.snapshot()));
+    let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
     assert_eq!(report["summary"]["complete"], true);
     assert_eq!(report["summary"]["counts"]["killed"], 0);
     assert!(

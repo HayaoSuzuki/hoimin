@@ -1,3 +1,7 @@
+#[path = "support/collecting_writer.rs"]
+mod collecting_writer;
+use collecting_writer::CollectingWriter;
+
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -112,11 +116,11 @@ async fn plan(source: &str, operator: &str) -> PlanManifest {
         "-c".into(),
         "pass".into(),
     ];
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
     let code = tokio::time::timeout(
         Duration::from_secs(10),
-        hoimin_cli::run_with_io(args, &mut stdout, &mut stderr),
+        hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()),
     )
     .await
     .expect("infrastructure error: public plan timed out");
@@ -124,9 +128,9 @@ async fn plan(source: &str, operator: &str) -> PlanManifest {
         code,
         0,
         "infrastructure error: {}",
-        String::from_utf8_lossy(&stderr)
+        String::from_utf8_lossy(&stderr.snapshot())
     );
-    serde_json::from_slice(&stdout).unwrap()
+    serde_json::from_slice(&stdout.snapshot()).unwrap()
 }
 
 #[test]

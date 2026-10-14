@@ -1,5 +1,9 @@
 #![cfg(unix)]
 
+#[path = "support/collecting_writer.rs"]
+mod collecting_writer;
+use collecting_writer::CollectingWriter;
+
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -81,18 +85,18 @@ async fn plan(root: &Path, changed: bool, extra: &[&str]) -> (i32, Value, String
         "-c".into(),
         "pass".into(),
     ]);
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
     let code = tokio::time::timeout(
         Duration::from_secs(30),
-        hoimin_cli::run_with_io(args, &mut stdout, &mut stderr),
+        hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()),
     )
     .await
     .expect("plan deadline");
     (
         code,
-        serde_json::from_slice(&stdout).unwrap_or(Value::Null),
-        String::from_utf8(stderr).unwrap(),
+        serde_json::from_slice(&stdout.snapshot()).unwrap_or(Value::Null),
+        String::from_utf8(stderr.snapshot()).unwrap(),
     )
 }
 

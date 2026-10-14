@@ -1,3 +1,7 @@
+#[path = "support/collecting_writer.rs"]
+mod collecting_writer;
+use collecting_writer::CollectingWriter;
+
 use std::ffi::OsString;
 use std::path::Path;
 use std::process::Command;
@@ -73,16 +77,22 @@ async fn declaration_only_lean_corpus_matches_public_plan() {
             "--".into(),
             "true".into(),
         ];
-        let mut stdout = Vec::new();
-        let mut stderr = Vec::new();
+        let stdout = CollectingWriter::default();
+        let stderr = CollectingWriter::default();
         let exit = tokio::time::timeout(
             Duration::from_secs(10),
-            hoimin_cli::run_with_io(args, &mut stdout, &mut stderr),
+            hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()),
         )
         .await
         .expect("public plan timed out");
-        assert_eq!(exit, 0, "{}: {}", case.id, String::from_utf8_lossy(&stderr));
-        let manifest: PlanManifest = serde_json::from_slice(&stdout).unwrap();
+        assert_eq!(
+            exit,
+            0,
+            "{}: {}",
+            case.id,
+            String::from_utf8_lossy(&stderr.snapshot())
+        );
+        let manifest: PlanManifest = serde_json::from_slice(&stdout.snapshot()).unwrap();
         let mut actual = Vec::new();
         for candidate in manifest.candidates {
             let start = usize::try_from(candidate.span.start).unwrap();

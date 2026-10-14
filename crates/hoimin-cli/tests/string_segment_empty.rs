@@ -1,3 +1,7 @@
+#[path = "support/collecting_writer.rs"]
+mod collecting_writer;
+use collecting_writer::CollectingWriter;
+
 #[path = "support/encoded_source.rs"]
 mod encoded_source;
 
@@ -19,15 +23,15 @@ fn python() -> PathBuf {
 }
 
 async fn cli(arguments: Vec<OsString>) -> serde_json::Value {
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
-    let code = hoimin_cli::run_with_io(arguments, &mut stdout, &mut stderr).await;
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
+    let code = hoimin_cli::run_with_writers(arguments, stdout.clone(), stderr.clone()).await;
     assert!(
         code <= 1,
         "exit={code}: {}",
-        String::from_utf8_lossy(&stderr)
+        String::from_utf8_lossy(&stderr.snapshot())
     );
-    serde_json::from_slice(&stdout).unwrap()
+    serde_json::from_slice(&stdout.snapshot()).unwrap()
 }
 
 async fn plan(root: &std::path::Path, selection: &[&str], test: &str) -> serde_json::Value {
@@ -454,9 +458,9 @@ async fn segment_plan_rejects_changed_source_and_invalid_offsets() {
         invalidate(root.path(), &mut doc);
         let path = root.path().join("plan.json");
         std::fs::write(&path, serde_json::to_vec(&doc).unwrap()).unwrap();
-        let mut stdout = Vec::new();
-        let mut stderr = Vec::new();
-        let code = hoimin_cli::run_with_io(
+        let stdout = CollectingWriter::default();
+        let stderr = CollectingWriter::default();
+        let code = hoimin_cli::run_with_writers(
             vec![
                 "hoimin".into(),
                 "verify".into(),
@@ -464,11 +468,11 @@ async fn segment_plan_rejects_changed_source_and_invalid_offsets() {
                 "--top".into(),
                 "1".into(),
             ],
-            &mut stdout,
-            &mut stderr,
+            stdout.clone(),
+            stderr.clone(),
         )
         .await;
-        assert_eq!(code, 2, "{}", String::from_utf8_lossy(&stderr));
-        assert!(String::from_utf8_lossy(&stderr).contains(expected_error));
+        assert_eq!(code, 2, "{}", String::from_utf8_lossy(&stderr.snapshot()));
+        assert!(String::from_utf8_lossy(&stderr.snapshot()).contains(expected_error));
     }
 }

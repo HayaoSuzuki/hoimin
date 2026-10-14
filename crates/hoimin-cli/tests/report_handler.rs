@@ -1,3 +1,7 @@
+#[path = "support/collecting_writer.rs"]
+mod collecting_writer;
+use collecting_writer::CollectingWriter;
+
 use std::io::{self, Cursor, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{
@@ -515,15 +519,15 @@ async fn documentation_contract() {
         let config = hoimin_cli::cli::parse_config_from(argv.clone())
             .unwrap_or_else(|error| panic!("invalid documented command {command:?}: {error}"));
         documented_metrics |= config.output.metrics.is_some();
-        let mut stdout = Vec::new();
-        let mut stderr = Vec::new();
-        let exit = hoimin_cli::run_with_io(argv, &mut stdout, &mut stderr).await;
+        let stdout = CollectingWriter::default();
+        let stderr = CollectingWriter::default();
+        let exit = hoimin_cli::run_with_writers(argv, stdout.clone(), stderr.clone()).await;
         assert!(
             matches!(exit, 0 | 1),
             "documented command returned an infrastructure error: {exit}; command: {command:?}\nstderr: {}",
-            String::from_utf8_lossy(&stderr)
+            String::from_utf8_lossy(&stderr.snapshot())
         );
-        documented_outputs.push((config.output.format, stdout, stderr));
+        documented_outputs.push((config.output.format, stdout.snapshot(), stderr.snapshot()));
     }
 
     assert!(
@@ -2272,8 +2276,8 @@ async fn line_diverse_public_reports_and_previews_match_current_schemas() {
     std::fs::write(root.join("calc.py"), "value = 1 + 2\n").unwrap();
     let repo = repo_root();
     let python = repository_python();
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
     let args = vec![
         "hoimin".into(),
         "plan".into(),
@@ -2292,11 +2296,11 @@ async fn line_diverse_public_reports_and_previews_match_current_schemas() {
         "import calc".into(),
     ];
     assert_eq!(
-        hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await,
+        hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await,
         0
     );
     let plan = directory.path().join("plan.json");
-    std::fs::write(&plan, &stdout).unwrap();
+    std::fs::write(&plan, stdout.snapshot()).unwrap();
     let event_schema = read_schema(&repo.join("docs/json-schema/run-event.schema.json"));
     let result_schema = read_schema(&repo.join("docs/json-schema/run-result.schema.json"));
     let preview_schema = read_schema(&repo.join("docs/json-schema/verify-preview.schema.json"));
@@ -2317,11 +2321,16 @@ async fn line_diverse_public_reports_and_previews_match_current_schemas() {
                 format.into(),
             ];
             args.extend(extra_args.iter().map(std::ffi::OsString::from));
-            let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
-            assert_eq!(code, expected_code, "{}", String::from_utf8_lossy(&stderr));
-            let text = std::str::from_utf8(&stdout).unwrap();
+            let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
+            assert_eq!(
+                code,
+                expected_code,
+                "{}",
+                String::from_utf8_lossy(&stderr.snapshot())
+            );
+            let text = String::from_utf8(stdout.snapshot()).unwrap();
             assert!(text.contains("line_round_robin_v1"));
-            reports.push((dry, format, stdout.clone()));
+            reports.push((dry, format, stdout.snapshot()));
         }
     }
     for (_, _, bytes) in reports
@@ -2357,8 +2366,8 @@ async fn sample_public_reports_and_previews_match_current_schemas() {
     std::fs::write(root.join("calc.py"), "value = 1 + 2\n").unwrap();
     let repo = repo_root();
     let python = repository_python();
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
     let args = vec![
         "hoimin".into(),
         "plan".into(),
@@ -2377,11 +2386,11 @@ async fn sample_public_reports_and_previews_match_current_schemas() {
         "import calc".into(),
     ];
     assert_eq!(
-        hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await,
+        hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await,
         0
     );
     let plan = directory.path().join("plan.json");
-    std::fs::write(&plan, &stdout).unwrap();
+    std::fs::write(&plan, stdout.snapshot()).unwrap();
     let event_schema = read_schema(&repo.join("docs/json-schema/run-event.schema.json"));
     let result_schema = read_schema(&repo.join("docs/json-schema/run-result.schema.json"));
     let preview_schema = read_schema(&repo.join("docs/json-schema/verify-preview.schema.json"));
@@ -2402,11 +2411,16 @@ async fn sample_public_reports_and_previews_match_current_schemas() {
                 format.into(),
             ];
             args.extend(extra_args.iter().map(std::ffi::OsString::from));
-            let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
-            assert_eq!(code, expected_code, "{}", String::from_utf8_lossy(&stderr));
-            let text = std::str::from_utf8(&stdout).unwrap();
+            let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
+            assert_eq!(
+                code,
+                expected_code,
+                "{}",
+                String::from_utf8_lossy(&stderr.snapshot())
+            );
+            let text = String::from_utf8(stdout.snapshot()).unwrap();
             assert!(text.contains("splitmix64_fisher_yates_v1"));
-            reports.push((dry, format, stdout.clone()));
+            reports.push((dry, format, stdout.snapshot()));
         }
     }
     for (_, _, bytes) in reports

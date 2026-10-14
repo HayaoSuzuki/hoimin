@@ -1,4 +1,9 @@
 //! Lean owns the expected line sets; the adapter executes real Git and public plan.
+
+#[path = "support/collecting_writer.rs"]
+mod collecting_writer;
+use collecting_writer::CollectingWriter;
+
 use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::fs;
@@ -105,11 +110,17 @@ async fn changed_context_public_plan_matches_lean() {
             OsString::from("-c"),
             OsString::from("pass"),
         ]);
-        let mut stdout = Vec::new();
-        let mut stderr = Vec::new();
-        let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
-        assert_eq!(code, 0, "{}: {}", case.id, String::from_utf8_lossy(&stderr));
-        let manifest: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+        let stdout = CollectingWriter::default();
+        let stderr = CollectingWriter::default();
+        let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
+        assert_eq!(
+            code,
+            0,
+            "{}: {}",
+            case.id,
+            String::from_utf8_lossy(&stderr.snapshot())
+        );
+        let manifest: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
         let candidates = manifest["candidates"].as_array().unwrap();
         let mut observed = Vec::new();
         for candidate in candidates {

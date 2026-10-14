@@ -1,3 +1,7 @@
+#[path = "support/collecting_writer.rs"]
+mod collecting_writer;
+use collecting_writer::CollectingWriter;
+
 use std::ffi::OsString;
 use std::path::PathBuf;
 use std::process::Command;
@@ -39,13 +43,18 @@ async fn invoke(source: &str, mode: &str, operator: &str) -> serde_json::Value {
         "-c".into(),
         "import subject".into(),
     ]);
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
-    let exit = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
+    let exit = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
     // The import-only command leaves the valid mutant alive (score below 1).
     let expected_exit = i32::from(mode == "run");
-    assert_eq!(exit, expected_exit, "{}", String::from_utf8_lossy(&stderr));
-    serde_json::from_slice(&stdout).unwrap()
+    assert_eq!(
+        exit,
+        expected_exit,
+        "{}",
+        String::from_utf8_lossy(&stderr.snapshot())
+    );
+    serde_json::from_slice(&stdout.snapshot()).unwrap()
 }
 
 fn evaluate(source: &str, expected: &str) {

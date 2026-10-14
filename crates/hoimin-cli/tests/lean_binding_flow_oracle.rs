@@ -1,3 +1,7 @@
+#[path = "support/collecting_writer.rs"]
+mod collecting_writer;
+use collecting_writer::CollectingWriter;
+
 use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -495,14 +499,14 @@ fn plan_args(fixture: &Fixture, operator: &str) -> Vec<OsString> {
 
 async fn public_plan(item: &OracleCase) -> Result<PlanManifest, String> {
     let fixture = Fixture::new(&item.source)?;
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
     let code = tokio::time::timeout(
         Duration::from_secs(10),
-        hoimin_cli::run_with_io(
+        hoimin_cli::run_with_writers(
             plan_args(&fixture, &item.operator),
-            &mut stdout,
-            &mut stderr,
+            stdout.clone(),
+            stderr.clone(),
         ),
     )
     .await
@@ -511,10 +515,10 @@ async fn public_plan(item: &OracleCase) -> Result<PlanManifest, String> {
         return Err(format!(
             "infrastructure-error: {} public plan exit={code}, stderr={}",
             item.id,
-            String::from_utf8_lossy(&stderr)
+            String::from_utf8_lossy(&stderr.snapshot())
         ));
     }
-    serde_json::from_slice(&stdout)
+    serde_json::from_slice(&stdout.snapshot())
         .map_err(|error| format!("infrastructure-error: {} malformed plan: {error}", item.id))
 }
 

@@ -1,3 +1,7 @@
+#[path = "support/collecting_writer.rs"]
+mod collecting_writer;
+use collecting_writer::CollectingWriter;
+
 use std::{
     collections::{BTreeMap, BTreeSet},
     num::NonZeroUsize,
@@ -1676,10 +1680,10 @@ async fn documented_progress_invocation_accepts_ordered_reports() {
     let fixture = tempfile::tempdir().unwrap();
     let first = write_json(&fixture, "before.json", &valid_report());
     let second = write_json(&fixture, "after.json", &valid_report());
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
 
-    let code = hoimin_cli::run_with_io(
+    let code = hoimin_cli::run_with_writers(
         [
             "hoimin",
             "progress",
@@ -1688,8 +1692,8 @@ async fn documented_progress_invocation_accepts_ordered_reports() {
             first.to_str().unwrap(),
             second.to_str().unwrap(),
         ],
-        &mut stdout,
-        &mut stderr,
+        stdout.clone(),
+        stderr.clone(),
     )
     .await;
 
@@ -2308,10 +2312,10 @@ async fn run_progress(reports: &[PathBuf], format: &str) -> (i32, Vec<u8>, Vec<u
             .iter()
             .map(|report| report.to_str().unwrap().to_owned()),
     );
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
-    let code = hoimin_cli::run_with_io(argv, &mut stdout, &mut stderr).await;
-    (code, stdout, stderr)
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
+    let code = hoimin_cli::run_with_writers(argv, stdout.clone(), stderr.clone()).await;
+    (code, stdout.snapshot(), stderr.snapshot())
 }
 
 async fn run_real_binary(project: &Path, test_command: &str, timeout: Duration) -> Output {
@@ -3372,14 +3376,14 @@ async fn progress_details(reports: &[PathBuf], format: &str, limit: usize) -> Va
         format.to_owned(),
     ];
     args.extend(reports.iter().map(|path| path.to_str().unwrap().to_owned()));
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
-    let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
-    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
+    let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr.snapshot()));
     if format == "json" {
-        serde_json::from_slice(&stdout).unwrap()
+        serde_json::from_slice(&stdout.snapshot()).unwrap()
     } else {
-        json!(String::from_utf8(stdout).unwrap())
+        json!(String::from_utf8(stdout.snapshot()).unwrap())
     }
 }
 
@@ -3610,11 +3614,14 @@ async fn details_limit_requires_opt_in_and_nonnegative_integer() {
         let mut args = vec!["hoimin", "progress"];
         args.extend(options);
         args.extend(["before.json", "after.json"]);
-        let mut out = Vec::new();
-        let mut err = Vec::new();
-        assert_eq!(hoimin_cli::run_with_io(args, &mut out, &mut err).await, 2);
-        assert_eq!(out, Vec::<u8>::new());
-        assert_ne!(err, Vec::<u8>::new());
+        let out = CollectingWriter::default();
+        let err = CollectingWriter::default();
+        assert_eq!(
+            hoimin_cli::run_with_writers(args, out.clone(), err.clone()).await,
+            2
+        );
+        assert_eq!(out.snapshot(), Vec::<u8>::new());
+        assert!(!err.is_empty());
     }
 }
 
@@ -3632,9 +3639,9 @@ async fn details_default_cap_and_partial_sets_are_explicit() {
         .collect();
     let before = write_json(&fixture, "before.json", &detail_report(&before_entries));
     let after = write_json(&fixture, "after.json", &detail_report(&after_entries));
-    let mut out = Vec::new();
-    let mut err = Vec::new();
-    let code = hoimin_cli::run_with_io(
+    let out = CollectingWriter::default();
+    let err = CollectingWriter::default();
+    let code = hoimin_cli::run_with_writers(
         [
             "hoimin",
             "progress",
@@ -3644,12 +3651,12 @@ async fn details_default_cap_and_partial_sets_are_explicit() {
             before.to_str().unwrap(),
             after.to_str().unwrap(),
         ],
-        &mut out,
-        &mut err,
+        out.clone(),
+        err.clone(),
     )
     .await;
-    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&err));
-    let value: Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&err.snapshot()));
+    let value: Value = serde_json::from_slice(&out.snapshot()).unwrap();
     assert_eq!(value["details"]["limit"], 100);
     assert_eq!(value["details"]["omitted"], 1);
     assert_eq!(
@@ -3696,15 +3703,15 @@ async fn progress_with_gate(
     details: bool,
     gate: bool,
 ) -> (i32, Vec<u8>, Vec<u8>) {
-    let mut out = Vec::new();
-    let mut err = Vec::new();
-    let status = hoimin_cli::run_with_io(
+    let out = CollectingWriter::default();
+    let err = CollectingWriter::default();
+    let status = hoimin_cli::run_with_writers(
         regression_gate_args(reports, format, details, gate),
-        &mut out,
-        &mut err,
+        out.clone(),
+        err.clone(),
     )
     .await;
-    (status, out, err)
+    (status, out.snapshot(), err.snapshot())
 }
 
 #[tokio::test]
@@ -3832,33 +3839,33 @@ async fn regression_exit_never_overrides_stdout_or_stderr_errors() {
         &detail_report(&[("a", MutationStatus::Survived)]),
     );
     for format in ["human", "json"] {
-        let mut error = Vec::new();
-        let status = hoimin_cli::run_with_io(
+        let error = CollectingWriter::default();
+        let status = hoimin_cli::run_with_writers(
             regression_gate_args(&[killed.clone(), survived.clone()], format, true, true),
-            &mut GateFailingWriter,
-            &mut error,
+            GateFailingWriter,
+            error.clone(),
         )
         .await;
         assert_eq!(status, 2);
         assert!(
-            String::from_utf8(error)
+            String::from_utf8(error.snapshot())
                 .unwrap()
                 .contains("gate fixture write failure")
         );
-        let mut out = Vec::new();
-        let status = hoimin_cli::run_with_io(
+        let out = CollectingWriter::default();
+        let status = hoimin_cli::run_with_writers(
             regression_gate_args(
                 &[killed.clone(), killed.clone(), survived.clone()],
                 format,
                 true,
                 true,
             ),
-            &mut out,
-            &mut GateFailingWriter,
+            out.clone(),
+            GateFailingWriter,
         )
         .await;
         assert_eq!(status, 2);
-        assert_eq!(out, Vec::<u8>::new());
+        assert_eq!(out.snapshot(), Vec::<u8>::new());
     }
 }
 

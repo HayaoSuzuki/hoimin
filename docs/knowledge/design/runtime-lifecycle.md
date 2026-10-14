@@ -70,6 +70,24 @@ sources:
   revision: 49a34a63ac4e995bfefb156f85ff3a934b594e6b
   working_tree: modified
   sha256: ab7dd10ba3e60ee0a841115ff81ff36656572587e25dbb3ad19aa7968e91c173
+- id: issue-889-lib
+  resource: ../../../crates/hoimin-cli/src/lib.rs
+  revision: 056cb558953ddf5eb8b229976ee894ae7c6bc87f
+  working_tree: modified
+  sha256: 34e86caeada4fd917bd334d151fce0efdadc150d351436a28edba38db7e8bd65
+
+- id: issue-889-shell
+  resource: ../../../crates/hoimin-cli/src/shell.rs
+  revision: 056cb558953ddf5eb8b229976ee894ae7c6bc87f
+  working_tree: modified
+  sha256: 51eca85455570c83cf7ccbd39d1f24391e87f7cffca85f8075246a171d811f39
+
+- id: issue-889-delivery
+  resource: ../../../crates/hoimin-cli/src/report/delivery.rs
+  revision: 056cb558953ddf5eb8b229976ee894ae7c6bc87f
+  working_tree: modified
+  sha256: f0eb61d7bfd1bae452fe9993d8a058f902fc42c04d68a308dee995f14b52ca5f
+
 ---
 
 # 制限する資源とディスク監視の範囲
@@ -104,9 +122,11 @@ Unix向けの共通実装（portable経路）では、Hoiminが直接起動し�
 
 ディスク設計では、一時ディレクトリを用途ごとに分ける。実行用のディレクトリ（execution root）には、ソースのコピー、ワーカーの作業領域、プロセス出力、解析用の一時ファイルを置く。レポート出力用のディレクトリ（delivery root）には、最終出力まで保持するJSONレポートの一時データを置く。ここでのrootはディレクトリであり、前述のプロセスのrootとは対象が異なる。[^disk]
 
-レポート出力の後続設計では、CLIが所有する書込み先（writer）を、完了まで呼出しが戻らない可能性のある処理（blocking操作）へ渡す。書込み完了の通知（acknowledge）は、実際の書込みが成功した後に行う。待機側がタイムアウトしても、blocking操作がwriterとdelivery rootを所有している間は、別の書込みや `flush` を開始せず、そのディレクトリも削除しない。タイムアウトは待機の終了を示すだけで、実行中のI/Oが停止した証拠にはならないためである。[^delivery]
+CLIとライブラリのrun/verify実行入口は、所有する `Write + Send + 'static` の書込み先（writer）を、完了まで呼出しが戻らない可能性のある処理（blocking操作）へ渡す。書込み完了の通知（acknowledge）は、実際の書込みが成功した後に行う。待機側がタイムアウトしても、blocking操作がwriterとdelivery rootを所有している間は、別の書込みや `flush` を開始せず、そのディレクトリも削除しない。タイムアウトは待機の終了を示すだけで、実行中のI/Oが停止した証拠にはならないためである。[^delivery][^issue-889-delivery]
 
-一方、execution rootの削除可否は、プロセスと作業領域を使う処理が終了したかどうかで判断する。レポート出力が終わっていなくても、独立に安全条件を満たした実行用ディレクトリの後処理は進められる。この出力方式の保証はCLIが所有するwriterを対象とし、呼出し元から借用した、別スレッドへ移せないwriter（非 `Send` writer）を受け取る同期APIにまで広げていない。[^delivery]
+一方、execution rootの削除可否は、プロセスと作業領域を使う処理が終了したかどうかで判断する。レポート出力が終わっていなくても、独立に安全条件を満たした実行用ディレクトリの後処理は進められる。借用writer向けの実行経路は廃止され、`run_with_writers` と `VerifiedPlan::execute` は所有writerを同じ配送経路へ渡す。短いprogress/review出力は、実行入口が所有するwriterへ同期的に書き込む。[^delivery][^issue-889-lib][^issue-889-shell]
+
+書込み中に停止を観測した場合、停止要求を保持したまま同じ終了期限まで完了を待つ。期限内に完了した書込みの通知を先に受理し、その後で停止要求を適用する。完了通知を捨てると、終了処理が書込み済みの出力を再送する可能性がある。保持中の停止要求は新しい処理の開始を止め、期限後に観測した完了は出力完了として受理しない。[^issue-889-shell]
 
 metricsは元ソースの検証後に書き込まれるため、出力先の衝突検査と最終書込みの許可を結び付ける必要がある。Issue484の設計ではbaseline前の検査結果を最終処理へ渡し、衝突時の書込みを防ぐ。通常のbaseline失敗時のmetricsと、書込み不能時の警告は維持する。[^issue-484]
 
@@ -239,3 +259,9 @@ remain comparison evidence; this work adds no Lean model or proof.
 
 [^issue-872-operations]: [Shared create and reset policy](../../../crates/hoimin-cli/src/workspace/operation.rs).
 [^issue-872-handler]: [Workspace ownership entry points](../../../crates/hoimin-cli/src/workspace/mod.rs).
+
+[^issue-889-lib]: [Owned writer implementation](../../../crates/hoimin-cli/src/lib.rs).
+
+[^issue-889-shell]: [Owned writer implementation](../../../crates/hoimin-cli/src/shell.rs).
+
+[^issue-889-delivery]: [Owned writer implementation](../../../crates/hoimin-cli/src/report/delivery.rs).

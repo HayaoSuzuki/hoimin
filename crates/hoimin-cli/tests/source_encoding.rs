@@ -1,3 +1,7 @@
+#[path = "support/collecting_writer.rs"]
+mod collecting_writer;
+use collecting_writer::CollectingWriter;
+
 use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -45,16 +49,16 @@ async fn assert_latin1_flow(source: &[u8], first_candidate_line: u32) {
     std::fs::write(project.path().join("calc.py"), source).unwrap();
     let log = output.path().join("executions.jsonl");
     let plan_args = args(project.path(), &log);
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
     // pins: issue #480
     assert_eq!(
-        hoimin_cli::run_with_io(plan_args.clone(), &mut stdout, &mut stderr).await,
+        hoimin_cli::run_with_writers(plan_args.clone(), stdout.clone(), stderr.clone()).await,
         0,
         "{}",
-        String::from_utf8_lossy(&stderr)
+        String::from_utf8_lossy(&stderr.snapshot())
     );
-    let manifest: PlanManifest = serde_json::from_slice(&stdout).unwrap();
+    let manifest: PlanManifest = serde_json::from_slice(&stdout.snapshot()).unwrap();
     assert_eq!(manifest.candidates.len(), 3);
     assert!(!log.exists());
     let planned_ids = manifest
@@ -95,7 +99,7 @@ async fn assert_latin1_flow(source: &[u8], first_candidate_line: u32) {
         expected_files.insert(bytes);
     }
     let plan_path = output.path().join("plan.json");
-    std::fs::write(&plan_path, &stdout).unwrap();
+    std::fs::write(&plan_path, stdout.snapshot()).unwrap();
     let mut run_args = plan_args;
     run_args[1] = "run".into();
     let verify_args = vec![
@@ -109,12 +113,12 @@ async fn assert_latin1_flow(source: &[u8], first_candidate_line: u32) {
         stdout.clear();
         stderr.clear();
         assert_eq!(
-            hoimin_cli::run_with_io(command, &mut stdout, &mut stderr).await,
+            hoimin_cli::run_with_writers(command, stdout.clone(), stderr.clone()).await,
             1,
             "{}",
-            String::from_utf8_lossy(&stderr)
+            String::from_utf8_lossy(&stderr.snapshot())
         );
-        let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+        let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
         assert_eq!(
             report["baseline"]["termination"],
             serde_json::json!({"Exit": 0})
@@ -171,18 +175,18 @@ async fn encoding_diagnostics_include_path_and_declaration() {
                 marker.to_string_lossy()
             )
             .into();
-            let mut stdout = Vec::new();
-            let mut stderr = Vec::new();
+            let stdout = CollectingWriter::default();
+            let stderr = CollectingWriter::default();
             assert_eq!(
-                hoimin_cli::run_with_io(command_args, &mut stdout, &mut stderr).await,
+                hoimin_cli::run_with_writers(command_args, stdout.clone(), stderr.clone()).await,
                 2,
                 "{command}: {}",
-                String::from_utf8_lossy(&stderr)
+                String::from_utf8_lossy(&stderr.snapshot())
             );
             let error = format!(
                 "{}{}",
-                String::from_utf8_lossy(&stdout),
-                String::from_utf8_lossy(&stderr)
+                String::from_utf8_lossy(&stdout.snapshot()),
+                String::from_utf8_lossy(&stderr.snapshot())
             );
             assert!(error.contains("calc.py"), "{error}");
             assert!(error.contains(name), "{error}");
@@ -213,18 +217,18 @@ async fn accepted_cookie_placements_preserve_original_plan_hashes() {
         let project = tempfile::tempdir().unwrap();
         let output = tempfile::tempdir().unwrap();
         std::fs::write(project.path().join("calc.py"), source).unwrap();
-        let mut stdout = Vec::new();
-        let mut stderr = Vec::new();
+        let stdout = CollectingWriter::default();
+        let stderr = CollectingWriter::default();
         assert_eq!(
-            hoimin_cli::run_with_io(
+            hoimin_cli::run_with_writers(
                 args(project.path(), &output.path().join("baseline")),
-                &mut stdout,
-                &mut stderr
+                stdout.clone(),
+                stderr.clone()
             )
             .await,
             0,
             "{}",
-            String::from_utf8_lossy(&stderr)
+            String::from_utf8_lossy(&stderr.snapshot())
         );
         let compiled = std::process::Command::new(python())
             .args(["-c", "import sys; from pathlib import Path; compile(Path(sys.argv[1]).read_bytes(), sys.argv[1], 'exec')"])
@@ -234,7 +238,7 @@ async fn accepted_cookie_placements_preserve_original_plan_hashes() {
             "{}",
             String::from_utf8_lossy(&compiled.stderr)
         );
-        let manifest: PlanManifest = serde_json::from_slice(&stdout).unwrap();
+        let manifest: PlanManifest = serde_json::from_slice(&stdout.snapshot()).unwrap();
         assert_eq!(manifest.candidates.len(), 1);
         assert_eq!(
             manifest.candidates[0].file_hash,
@@ -261,19 +265,19 @@ async fn latin1_symbol_selection_uses_shared_decoding_in_plan_run_and_verify() {
         ["--source", ".", "--symbol", "calc:café"].map(OsString::from),
     );
     *command_args.last_mut().unwrap() = "import calc; assert calc.café()".into();
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
     assert_eq!(
-        hoimin_cli::run_with_io(command_args.clone(), &mut stdout, &mut stderr).await,
+        hoimin_cli::run_with_writers(command_args.clone(), stdout.clone(), stderr.clone()).await,
         0,
         "{}",
-        String::from_utf8_lossy(&stderr)
+        String::from_utf8_lossy(&stderr.snapshot())
     );
-    let manifest: PlanManifest = serde_json::from_slice(&stdout).unwrap();
+    let manifest: PlanManifest = serde_json::from_slice(&stdout.snapshot()).unwrap();
     assert_eq!(manifest.candidates.len(), 1);
     assert_eq!(manifest.candidates[0].symbol.as_deref(), Some("café"));
     let plan_path = output.path().join("plan.json");
-    std::fs::write(&plan_path, &stdout).unwrap();
+    std::fs::write(&plan_path, stdout.snapshot()).unwrap();
     command_args[1] = "run".into();
     let verify_args = vec![
         "hoimin".into(),
@@ -286,12 +290,12 @@ async fn latin1_symbol_selection_uses_shared_decoding_in_plan_run_and_verify() {
         stdout.clear();
         stderr.clear();
         assert_eq!(
-            hoimin_cli::run_with_io(command, &mut stdout, &mut stderr).await,
+            hoimin_cli::run_with_writers(command, stdout.clone(), stderr.clone()).await,
             0,
             "{}",
-            String::from_utf8_lossy(&stderr)
+            String::from_utf8_lossy(&stderr.snapshot())
         );
-        let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+        let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
         assert_eq!(
             report["mutants"][0]["candidate"]["id"],
             manifest.candidates[0].id

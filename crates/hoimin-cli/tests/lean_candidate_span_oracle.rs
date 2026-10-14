@@ -1,3 +1,7 @@
+#[path = "support/collecting_writer.rs"]
+mod collecting_writer;
+use collecting_writer::CollectingWriter;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -476,11 +480,16 @@ async fn public_plan_and_verify_preserve_all_strict_candidate_fields() {
         OsString::from("-c"),
         OsString::from("pass"),
     ]);
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
-    let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
-    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
-    let manifest: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
+    let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
+    assert_eq!(
+        code,
+        0,
+        "stderr={}",
+        String::from_utf8_lossy(&stderr.snapshot())
+    );
+    let manifest: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
     let candidates = manifest["candidates"].as_array().unwrap();
     let mut selected_ids = Vec::new();
     for case in &cases {
@@ -498,7 +507,7 @@ async fn public_plan_and_verify_preserve_all_strict_candidate_fields() {
     }
 
     let plan = project.root.join("plan.json");
-    std::fs::write(&plan, &stdout).unwrap();
+    std::fs::write(&plan, stdout.snapshot()).unwrap();
     let mut verify = vec![
         OsString::from("hoimin"),
         OsString::from("verify"),
@@ -511,9 +520,14 @@ async fn public_plan_and_verify_preserve_all_strict_candidate_fields() {
     }
     stdout.clear();
     stderr.clear();
-    let code = hoimin_cli::run_with_io(verify, &mut stdout, &mut stderr).await;
-    assert_eq!(code, 1, "stderr={}", String::from_utf8_lossy(&stderr));
-    let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+    let code = hoimin_cli::run_with_writers(verify, stdout.clone(), stderr.clone()).await;
+    assert_eq!(
+        code,
+        1,
+        "stderr={}",
+        String::from_utf8_lossy(&stderr.snapshot())
+    );
+    let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
     let mutants = report["mutants"].as_array().unwrap();
     assert_eq!(mutants.len(), selected_ids.len());
     assert_eq!(

@@ -1,3 +1,7 @@
+#[path = "support/collecting_writer.rs"]
+mod collecting_writer;
+use collecting_writer::CollectingWriter;
+
 use hoimin_cli::plan::PlanManifest;
 use serde::Deserialize;
 use std::ffi::OsString;
@@ -36,16 +40,16 @@ async fn implicit_finally_matches_lean_public_plan() {
             "--".into(),
             "true".into(),
         ];
-        let mut stdout = Vec::new();
-        let mut stderr = Vec::new();
+        let stdout = CollectingWriter::default();
+        let stderr = CollectingWriter::default();
         let exit = tokio::time::timeout(
             Duration::from_secs(10),
-            hoimin_cli::run_with_io(args, &mut stdout, &mut stderr),
+            hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()),
         )
         .await
         .expect("plan deadline");
         assert_eq!(exit, 0, "infrastructure error: {}: {:?}", case.id, stderr);
-        let manifest: PlanManifest = serde_json::from_slice(&stdout).expect("plan JSON");
+        let manifest: PlanManifest = serde_json::from_slice(&stdout.snapshot()).expect("plan JSON");
         assert_eq!(
             manifest.candidates.len(),
             case.candidate_count,

@@ -1,3 +1,7 @@
+#[path = "support/collecting_writer.rs"]
+mod collecting_writer;
+use collecting_writer::CollectingWriter;
+
 use hoimin_cli::cli::{ParsedCommand, parse_from};
 
 #[test]
@@ -47,13 +51,13 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 async fn cli(args: Vec<OsString>) -> (i32, serde_json::Value, String) {
-    let mut out = Vec::new();
-    let mut err = Vec::new();
-    let code = hoimin_cli::run_with_io(args, &mut out, &mut err).await;
+    let out = CollectingWriter::default();
+    let err = CollectingWriter::default();
+    let code = hoimin_cli::run_with_writers(args, out.clone(), err.clone()).await;
     (
         code,
-        serde_json::from_slice(&out).unwrap_or(serde_json::Value::Null),
-        String::from_utf8(err).unwrap(),
+        serde_json::from_slice(&out.snapshot()).unwrap_or(serde_json::Value::Null),
+        String::from_utf8(err.snapshot()).unwrap(),
     )
 }
 

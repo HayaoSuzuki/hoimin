@@ -1,3 +1,7 @@
+#[path = "support/collecting_writer.rs"]
+mod collecting_writer;
+use collecting_writer::CollectingWriter;
+
 #[path = "support/encoded_source.rs"]
 mod encoded_source;
 
@@ -46,17 +50,17 @@ async fn compile(source: &str) {
 }
 
 async fn cli(args: Vec<OsString>) -> (i32, serde_json::Value) {
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
-    let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
+    let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
     assert!(
         code <= 1,
         "exit={code}, stderr={}",
-        String::from_utf8_lossy(&stderr)
+        String::from_utf8_lossy(&stderr.snapshot())
     );
     (
         code,
-        serde_json::from_slice(&stdout).expect("one JSON document"),
+        serde_json::from_slice(&stdout.snapshot()).expect("one JSON document"),
     )
 }
 

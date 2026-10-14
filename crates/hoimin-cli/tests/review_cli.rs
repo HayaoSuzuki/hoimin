@@ -1,11 +1,15 @@
-use hoimin_cli::run_with_io;
+#[path = "support/collecting_writer.rs"]
+mod collecting_writer;
+use collecting_writer::CollectingWriter;
+
+use hoimin_cli::run_with_writers;
 use serde_json::Value;
 
 async fn run(args: Vec<String>) -> (i32, Vec<u8>, Vec<u8>) {
-    let mut out = Vec::new();
-    let mut err = Vec::new();
-    let code = run_with_io(args, &mut out, &mut err).await;
-    (code, out, err)
+    let out = CollectingWriter::default();
+    let err = CollectingWriter::default();
+    let code = run_with_writers(args, out.clone(), err.clone()).await;
+    (code, out.snapshot(), err.snapshot())
 }
 
 async fn fixture() -> (tempfile::TempDir, Vec<String>) {
@@ -160,9 +164,9 @@ async fn review_output_failure_is_not_duplicate_write() {
         "--expected-revision".into(),
         "0".into(),
     ]);
-    let mut errors = Vec::new();
+    let errors = CollectingWriter::default();
 
-    let output_failure_code = run_with_io(args.clone(), &mut BrokenOutput, &mut errors).await;
+    let output_failure_code = run_with_writers(args.clone(), BrokenOutput, errors.clone()).await;
     let retry_code = run(args.clone()).await.0;
     args[2] = "show".into();
     args.truncate(10);
@@ -170,7 +174,7 @@ async fn review_output_failure_is_not_duplicate_write() {
     let value: Value = serde_json::from_slice(&out).unwrap();
 
     assert_eq!(output_failure_code, 2);
-    assert!(String::from_utf8_lossy(&errors).contains("saved at revision 1"));
+    assert!(String::from_utf8_lossy(&errors.snapshot()).contains("saved at revision 1"));
     assert_eq!(retry_code, 2);
     assert_eq!(
         value["candidates"][0]["history"].as_array().unwrap().len(),

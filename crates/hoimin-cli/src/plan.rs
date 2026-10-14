@@ -183,17 +183,21 @@ impl VerifiedPlan {
         self
     }
 
-    /// Executes the checked selection with borrowed synchronous writers.
-    /// Writes are not interruptible; the CLI uses its owned delivery path instead.
+    /// Executes the checked selection with owned deadline-aware output writers.
     ///
     /// # Errors
-    /// Returns execution preparation or infrastructure errors.
-    pub async fn execute(
+    /// Owns preparation and infrastructure diagnostics; callers may inspect errors
+    /// but must not print them again. Deadline expiry can omit a final diagnostic.
+    pub async fn execute<Stdout, Stderr>(
         self,
-        stdout: &mut impl std::io::Write,
-        stderr: &mut impl std::io::Write,
-    ) -> Result<i32, String> {
-        shell::run_verified(self, stdout, stderr, None).await
+        stdout: Stdout,
+        stderr: Stderr,
+    ) -> Result<i32, String>
+    where
+        Stdout: std::io::Write + Send + 'static,
+        Stderr: std::io::Write + Send + 'static,
+    {
+        shell::run_verified(self, stdout, stderr).await
     }
 
     pub(crate) fn into_execution(self) -> VerifiedExecution {
