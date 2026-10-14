@@ -5,6 +5,10 @@ description: 候補発見と実行の分離、ランキング、部分集合、�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-886-duration
+  resource: ../../superpowers/plans/2026-10-14-issue-886.md
+  working_tree: untracked
+  sha256: 788e07872b540e6db6952d7c8bdfd3c7f15ca55435f4996480793343a4198d93
 - id: issue-850-execution
   resource: ../../maintenance/2026-10-13-verified-execution.md
 - id: issue-843-config
@@ -474,3 +478,23 @@ Rust から保存済み plan を実行する場合は、`prepare_verify` また�
 設定や候補 ID を個別に渡せた selected/ordered 実行ラッパーは削除した。公開された設定フィールドや可変参照から `VerifiedPlan` の検証済み設定を書き換えることはできない。実行時に候補 ID が見つからない場合の拒否は、shell 内のテストから非公開の実行関数を呼んで確認する。CLI・候補順序・plan/session/report の保存形式は変更しない。[^issue-850-execution]
 
 [^issue-850-execution]: [実行 API の整理・移行・検証記録](../../maintenance/2026-10-13-verified-execution.md)。
+
+# Nonzero duration input boundary (Issue #886)
+
+`NonZeroDuration` rejects zero during raw CLI conversion and serde
+construction through the same checked constructor. Saved run and plan
+configurations therefore reject zero before semantic validation. Plan verify
+and review retain their invalid-input categories and exit code 2; the serde
+diagnostic identifies `duration`, while raw CLI errors retain the timeout flag.
+Later validation already rejected zero before this change; this is a type
+invariant repair, not an unchecked-execution finding.[^issue-886-duration]
+
+The wrapper guarantees positivity only. The inclusive timeout ceiling,
+automatic timeout calculation, overflow checks, and jobs/process relationships
+remain configuration-validation responsibilities. Valid Duration objects,
+fixed timeout variant names, and schemas remain intact. This invalid-input
+tightening does not require a release-floor increase.
+The verification record covers the existing Lean corpus adapter, not a new
+formal proof.[^issue-886-duration]
+
+[^issue-886-duration]: [Issue 886 implementation and verification record](../../superpowers/plans/2026-10-14-issue-886.md).

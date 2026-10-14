@@ -1,8 +1,8 @@
 use std::time::Duration;
 
 use hoimin_core::{
-    CommandArg, MutantTimeout, OutputEvent, PlanConfig, RawRunConfig, RawRunLimits, RunConfig,
-    RunStarted,
+    CommandArg, MAX_TIMEOUT, MutantTimeout, NonZeroDuration, OutputEvent, PlanConfig, RawRunConfig,
+    RawRunLimits, RunConfig, RunStarted,
 };
 
 #[test]
@@ -190,5 +190,81 @@ fn test_resource_control() -> hoimin_core::ResourceControl {
     hoimin_core::ResourceControl {
         mode: hoimin_core::ResourceMode::Hard,
         mechanism: "test_supplied_hard".into(),
+    }
+}
+
+#[test]
+fn nonzero_duration_rejects_zero_during_deserialization() {
+    let error =
+        serde_json::from_value::<NonZeroDuration>(serde_json::json!({"secs": 0, "nanos": 0}))
+            .unwrap_err();
+    assert!(error.to_string().contains("duration"), "{error}");
+}
+
+#[test]
+fn nonzero_duration_preserves_positive_duration_representation() {
+    // The type guarantees positivity; timeout policy owns the upper bound.
+    for duration in [
+        Duration::from_nanos(1),
+        MAX_TIMEOUT,
+        MAX_TIMEOUT + Duration::from_nanos(1),
+        Duration::MAX,
+    ] {
+        let value =
+            serde_json::json!({"secs": duration.as_secs(), "nanos": duration.subsec_nanos()});
+        let decoded: NonZeroDuration = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(decoded.get(), duration);
+        assert_eq!(serde_json::to_value(decoded).unwrap(), value);
+    }
+}
+
+#[test]
+fn nonzero_duration_rejects_invalid_duration_representation() {
+    for value in [
+        serde_json::json!({"secs": -1, "nanos": 0}),
+        serde_json::json!({"secs": 1}),
+        serde_json::json!({"secs": 1, "nanos": "invalid"}),
+        serde_json::json!({"secs": u64::MAX, "nanos": 1_000_000_000_u64}),
+    ] {
+        assert!(
+            serde_json::from_value::<NonZeroDuration>(value.clone()).is_err(),
+            "{value}"
+        );
+    }
+}
+
+#[test]
+fn saved_configs_reject_zero_durations_before_semantic_validation() {
+    let config = config(
+        CommandArg::Unix(b"python".to_vec()),
+        Some(Duration::from_secs(7)),
+    );
+    let run = serde_json::to_value(&config).unwrap();
+    let plan = serde_json::to_value(config.into_plan_config()).unwrap();
+    for (field, variant) in [
+        ("analyzer_timeout", ""),
+        ("baseline_timeout", ""),
+        ("total_timeout", ""),
+        ("mutant_timeout", "fixed"),
+        ("mutant_timeout", "Fixed"),
+    ] {
+        let zero = serde_json::json!({"secs": 0, "nanos": 0});
+        let duration = if field == "mutant_timeout" {
+            serde_json::json!({variant: zero})
+        } else {
+            zero
+        };
+        let mut run = run.clone();
+        let mut plan = plan.clone();
+        run["limits"][field] = duration.clone();
+        plan["limits"][field] = duration;
+        assert!(
+            serde_json::from_value::<RunConfig>(run).is_err(),
+            "run {field} {variant}"
+        );
+        assert!(
+            serde_json::from_value::<PlanConfig>(plan).is_err(),
+            "plan {field} {variant}"
+        );
     }
 }

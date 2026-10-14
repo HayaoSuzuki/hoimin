@@ -450,8 +450,22 @@ pub struct SessionConfig {
     pub path: Utf8PathBuf,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+/// A strictly positive duration, checked during raw conversion and deserialization.
+///
+/// Timeout ceilings and automatic timeout arithmetic belong to configuration
+/// validation, not this representation invariant.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 pub struct NonZeroDuration(Duration);
+
+impl<'de> Deserialize<'de> for NonZeroDuration {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = Duration::deserialize(deserializer)?;
+        Self::new(value, "duration").map_err(serde::de::Error::custom)
+    }
+}
 
 impl NonZeroDuration {
     #[must_use]
@@ -894,7 +908,7 @@ fn validate_limits(limits: &RunLimits) -> Result<(), ConfigError> {
 }
 
 fn validate_timeout(name: &'static str, duration: Duration) -> Result<(), ConfigError> {
-    if duration.is_zero() || duration > MAX_TIMEOUT {
+    if duration > MAX_TIMEOUT {
         Err(ConfigError::InvalidLimit(name))
     } else {
         Ok(())
