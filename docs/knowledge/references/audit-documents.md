@@ -5,6 +5,11 @@ description: docs/auditsとdocs/superpowers/reports内の全Markdownを追跡状
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-898-process-review
+  resource: ../../superpowers/reports/2026-10-15-issue-898-review.md
+  revision: 80c1062748c56ddbecede40043fc0cf68c839feb
+  working_tree: clean
+  sha256: 7bc6ac731db75d59b43efa9b139b6b666fa587d8565d16888d00d83d664433c6
 - id: issue-759-staged-report
   resource: ../../superpowers/reports/2026-10-11-issue-759-staged-verification.md
   working_tree: untracked
@@ -1455,3 +1460,11 @@ sources:
 - [Second-order adoption assessment](../../superpowers/reports/issue-763-764/README.md) - Finite pairs, a first-order comparator and the decision to defer composite infrastructure.[^second-order-assessment]
 
 [^second-order-assessment]: [Measured results and limits](../../superpowers/reports/issue-763-764/README.md), projected cases, isolated confirmation and the retained regression assertion.
+
+## Issue 898 process requests
+
+| Original heading | Source |
+| --- | --- |
+| Issue 898 review and verification | [Review and verification](../../superpowers/reports/2026-10-15-issue-898-review.md) [^issue-898-process-review] |
+
+[^issue-898-process-review]: [Review and verification](../../superpowers/reports/2026-10-15-issue-898-review.md). Windows execution evidence: one unconfirmed initial mypy failure, followed by passing focused and contracts checks; no green full-workspace claim.

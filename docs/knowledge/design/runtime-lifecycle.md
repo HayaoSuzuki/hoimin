@@ -90,8 +90,14 @@ sources:
 
 - id: issue-898-design
   resource: ../../superpowers/specs/2026-10-15-issue-898-design.md
-  working_tree: modified
+  revision: 80c1062748c56ddbecede40043fc0cf68c839feb
+  working_tree: clean
   sha256: aac717c0284ee83adf860de48654e43cb9b76bd96b87c41321edaac8fdf60ef1
+- id: issue-898-review
+  resource: ../../superpowers/reports/2026-10-15-issue-898-review.md
+  revision: 80c1062748c56ddbecede40043fc0cf68c839feb
+  working_tree: clean
+  sha256: 7bc6ac731db75d59b43efa9b139b6b666fa587d8565d16888d00d83d664433c6
 
 ---
 
@@ -278,7 +284,7 @@ Baseline の effect は worker と run ID を持つ `BaselineContext`、
 Mutant の effect はさらに mutant ID を持つ `MutantContext` のみを受け取る。
 単独の probe は workspace 情報を持たない `ProbeContext` を使う。
 旧形式の独立した Option フィールドと、不足した context は読み込まない。
-public report の形式・バージョンは変わらない。
+public report の形式・バージョンは変わらない。[^issue-898-design]
 
 shell は baseline/mutant の context から環境を作り、継承された HOIMIN の
 worker/run/mutant 変数を大文字小文字を区別せず削除する。
@@ -287,4 +293,10 @@ runner は型付き要求を消費した後に一つの private enum にまと�
 ログと completion の Option は probe/baseline の正当な欠如を表す投影であり、
 workspace 要求の不足を補うためには使わない。
 終了時の cancellation、output drain、metrics の順序は維持する。
-根拠は `issue-898-design`。
+Windows での検証では、最初の全体実行で mypy の1件が `not_run` となった。
+原因は未確定である。単独再実行と contracts を有効にした end-to-end 全体は通過した。
+実行した範囲と未確認事項はレビュー記録を参照する。[^issue-898-review]
+
+[^issue-898-design]: [Issue 898 typed process requests](../../superpowers/specs/2026-10-15-issue-898-design.md)。用途ごとの必須値と共有 runner の責務。
+
+[^issue-898-review]: [Issue 898 review and verification](../../superpowers/reports/2026-10-15-issue-898-review.md)。実行結果、5回の検証レビュー、未確定の mypy 失敗。

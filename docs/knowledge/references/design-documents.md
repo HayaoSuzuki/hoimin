@@ -5,6 +5,11 @@ description: docs/superpowers/specs内の全Markdownを先頭見出しと出典�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-898-process-design
+  resource: ../../superpowers/specs/2026-10-15-issue-898-design.md
+  revision: 80c1062748c56ddbecede40043fc0cf68c839feb
+  working_tree: clean
+  sha256: aac717c0284ee83adf860de48654e43cb9b76bd96b87c41321edaac8fdf60ef1
 - id: typed-results-and-contracts-design
   resource: ../../superpowers/specs/2026-10-12-typed-results-and-contracts-design.md
   revision: 8ff7c6b
@@ -1687,3 +1692,11 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 - [Bounded fuzzing adoption assessment](../../superpowers/specs/2026-10-12-fuzz-adoption-design.md) - Bounded adoption decisions and evidence limitations.[^fuzz-adoption-design]
 
 [^fuzz-adoption-design]: [Bounded fuzzing adoption assessment](../../superpowers/specs/2026-10-12-fuzz-adoption-design.md).
+
+## Issue 898 process requests
+
+| Original heading | Source |
+| --- | --- |
+| Issue 898 typed process requests | [Design](../../superpowers/specs/2026-10-15-issue-898-design.md) [^issue-898-process-design] |
+
+[^issue-898-process-design]: [Design](../../superpowers/specs/2026-10-15-issue-898-design.md). Typed request ownership and internal wire boundaries; the original heading is preserved.
