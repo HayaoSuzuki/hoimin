@@ -11,11 +11,18 @@ use hoimin_core::{
     BeginSession, ByteSpan, EffectFailed, EffectFailure, EffectId, FinishSession, LoadSession,
     LookupStoredResult, MutantResult, MutationCandidate, MutationStatus, OutputSpoolRef,
     PersistResult, ProcessTermination, ResourceMode, ResultPersisted, ResumeDecision,
-    RunFingerprint, SessionFinished, SessionLoaded, SessionResumeRef, SessionStarted, StoredResult,
-    StoredResultLoaded, resume_policy,
+    RunFingerprint, SessionFinished, SessionLoadOutcome, SessionLoaded, SessionResumeRef,
+    SessionStarted, StoredResult, StoredResultLoaded, resume_policy,
 };
 use rusqlite::types::Value;
 use rusqlite::{Connection, OpenFlags};
+
+fn resumed_run(loaded: SessionLoaded) -> SessionResumeRef {
+    match loaded.outcome {
+        SessionLoadOutcome::Resumed(reference) => reference,
+        SessionLoadOutcome::Fresh(reason) => panic!("expected resumed run, got {reason:?}"),
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum ContendedOperation {
@@ -90,7 +97,7 @@ fn golden_session_schema_eras_reject_old_and_reopen_current_without_semantic_los
                     fingerprint: RunFingerprint::from_bytes([1; 32]),
                 })
                 .unwrap();
-            assert_eq!(resumed.resume.unwrap().run_id, "golden-run");
+            assert_eq!(resumed_run(resumed).run_id, "golden-run");
         } else {
             let Err(error) = SessionHandler::open(&path) else {
                 panic!("old session schema {version} was accepted");
@@ -126,7 +133,7 @@ fn golden_schema_four_loads_the_stored_mutant_after_resume() {
         .lookup(&lookup_request(90, "golden-run", "golden-mutant"))
         .unwrap();
 
-    assert_eq!(resumed.resume.unwrap().run_id, "golden-run");
+    assert_eq!(resumed_run(resumed).run_id, "golden-run");
     assert_eq!(
         loaded.result,
         Some(StoredResult {
@@ -769,9 +776,8 @@ fn assert_exact_outcome(
         }
         (ContendedOperation::Load, ContendedOutcome::Load(Ok(actual))) => {
             let expected = SessionLoaded {
-                fresh_reason: None,
                 id,
-                resume: Some(SessionResumeRef {
+                outcome: SessionLoadOutcome::Resumed(SessionResumeRef {
                     run_id: run_id.to_owned(),
                 }),
             };
@@ -826,7 +832,7 @@ fn initializes_schema_enables_wal_and_echoes_typed_completion_events() {
         })
         .unwrap();
     assert_eq!(loaded.id, EffectId(3));
-    assert_eq!(loaded.resume.unwrap().run_id, "run-1");
+    assert_eq!(resumed_run(loaded).run_id, "run-1");
     let stored = handler.lookup(&lookup_request(30, "run-1", "m1")).unwrap();
     assert_eq!(stored.id, EffectId(30));
     assert_eq!(stored.result.unwrap().status, MutationStatus::Killed);
@@ -908,7 +914,7 @@ fn timeout_can_be_replaced_then_resumed_and_completed_end_to_end() {
             fingerprint,
         })
         .unwrap();
-    assert_eq!(loaded.resume.unwrap().run_id, "run-1");
+    assert_eq!(resumed_run(loaded).run_id, "run-1");
     let stored = handler.lookup(&lookup_request(5, "run-1", "m1")).unwrap();
     assert_eq!(resume_policy(stored.result.as_ref()), ResumeDecision::Rerun);
 
@@ -923,7 +929,7 @@ fn timeout_can_be_replaced_then_resumed_and_completed_end_to_end() {
     let stored = handler.lookup(&lookup_request(7, "run-1", "m1")).unwrap();
     assert_eq!(resume_policy(stored.result.as_ref()), ResumeDecision::Reuse);
     handler.finish(finish_request(8, "run-1")).unwrap();
-    assert!(
+    assert!(matches!(
         handler
             .load(&LoadSession {
                 max_mutants: std::num::NonZeroUsize::new(100).unwrap(),
@@ -931,9 +937,9 @@ fn timeout_can_be_replaced_then_resumed_and_completed_end_to_end() {
                 fingerprint,
             })
             .unwrap()
-            .resume
-            .is_none()
-    );
+            .outcome,
+        SessionLoadOutcome::Fresh(hoimin_core::ResumeFreshReason::MatchingRunComplete)
+    ));
 
     let failed = handler
         .persist(&persist_with_status(
@@ -1020,8 +1026,8 @@ fn load_selects_only_the_newest_compatible_incomplete_run() {
         })
         .unwrap();
     assert_eq!(loaded.id, EffectId(6));
-    assert_eq!(loaded.resume.unwrap().run_id, "new");
-    assert!(
+    assert_eq!(resumed_run(loaded).run_id, "new");
+    assert!(matches!(
         handler
             .load(&LoadSession {
                 max_mutants: std::num::NonZeroUsize::new(100).unwrap(),
@@ -1029,9 +1035,9 @@ fn load_selects_only_the_newest_compatible_incomplete_run() {
                 fingerprint: RunFingerprint::from_bytes([9; 32]),
             })
             .unwrap()
-            .resume
-            .is_none()
-    );
+            .outcome,
+        SessionLoadOutcome::Fresh(hoimin_core::ResumeFreshReason::FingerprintMismatch)
+    ));
 }
 
 #[test]
@@ -1116,7 +1122,7 @@ fn non_owner_finish_is_rejected_without_changing_run_state() {
             fingerprint,
         })
         .unwrap();
-    assert_eq!(loaded.resume.unwrap().run_id, "owned");
+    assert_eq!(resumed_run(loaded).run_id, "owned");
 }
 
 #[test]
@@ -1187,10 +1193,7 @@ fn non_owner_lookup_requires_successful_load_for_the_requested_run() {
     assert_eq!(failed.failure.code(), "session.persist.owner");
 
     drop(owner);
-    assert_eq!(
-        contender.load(&load).unwrap().resume.unwrap().run_id,
-        "owned"
-    );
+    assert_eq!(resumed_run(contender.load(&load).unwrap()).run_id, "owned");
     let stored = contender.lookup(&lookup_request(7, "owned", "m1")).unwrap();
     assert_eq!(stored.result.unwrap().status, MutationStatus::Killed);
     contender
@@ -1234,7 +1237,7 @@ fn former_owner_result_operations_require_reacquisition_after_finish() {
             .code(),
         "session.lookup.owner"
     );
-    resumer.load(&load).unwrap().resume.unwrap();
+    resumed_run(resumer.load(&load).unwrap());
     let observer = Connection::open(&path).unwrap();
     let before = logical_rows(&observer);
     assert_eq!(
@@ -1265,7 +1268,7 @@ fn former_owner_result_operations_require_reacquisition_after_finish() {
             complete: false,
         })
         .unwrap();
-    former.load(&load).unwrap().resume.unwrap();
+    resumed_run(former.load(&load).unwrap());
     assert_eq!(
         former
             .lookup(&lookup_request(10, "partial", "m1"))
@@ -1304,7 +1307,7 @@ fn incomplete_finish_releases_run_ownership_for_resume() {
             fingerprint,
         })
         .unwrap();
-    assert_eq!(loaded.resume.unwrap().run_id, "partial");
+    assert_eq!(resumed_run(loaded).run_id, "partial");
 }
 
 #[test]
@@ -1325,7 +1328,7 @@ fn dropping_handler_releases_run_ownership_for_resume() {
             fingerprint,
         })
         .unwrap();
-    assert_eq!(loaded.resume.unwrap().run_id, "abandoned");
+    assert_eq!(resumed_run(loaded).run_id, "abandoned");
 }
 
 #[test]
@@ -1339,7 +1342,7 @@ fn completed_finish_releases_ownership_and_removes_run_from_resume() {
 
     owner.finish(finish_request(2, "complete")).unwrap();
 
-    assert!(
+    assert!(matches!(
         observer
             .load(&LoadSession {
                 max_mutants: std::num::NonZeroUsize::new(100).unwrap(),
@@ -1347,9 +1350,9 @@ fn completed_finish_releases_ownership_and_removes_run_from_resume() {
                 fingerprint,
             })
             .unwrap()
-            .resume
-            .is_none()
-    );
+            .outcome,
+        SessionLoadOutcome::Fresh(hoimin_core::ResumeFreshReason::MatchingRunComplete)
+    ));
 }
 
 #[test]
@@ -1433,7 +1436,7 @@ fn process_death_releases_run_ownership_for_immediate_resume() {
             fingerprint: RunFingerprint::from_bytes([1; 32]),
         })
         .unwrap();
-    assert_eq!(resumed.resume.unwrap().run_id, "crashed");
+    assert_eq!(resumed_run(resumed).run_id, "crashed");
 }
 
 #[test]
@@ -1793,7 +1796,7 @@ fn lookup_rejects_corrupt_status_candidate_mismatch_and_completed_runs() {
             fingerprint: RunFingerprint::from_bytes([0; 32]),
         })
         .unwrap();
-    assert_eq!(resumed.resume.unwrap().run_id, "run-null");
+    assert_eq!(resumed_run(resumed).run_id, "run-null");
     let failed = handler
         .lookup(&lookup_request(14, "run-null", "m-null"))
         .unwrap_err();
@@ -2047,16 +2050,13 @@ fn resume_budget_is_monotone_and_selects_latest_eligible_incomplete_run() {
         max_mutants: std::num::NonZeroUsize::new(budget).unwrap(),
     };
     let initial = handler.load(&load(2)).unwrap();
-    assert_eq!(initial.resume.unwrap().run_id, "older");
-    assert!(handler.load(&load(1)).unwrap().resume.is_none());
-    assert_eq!(
-        handler.load(&load(2)).unwrap().resume.unwrap().run_id,
-        "older"
-    );
-    assert_eq!(
-        handler.load(&load(3)).unwrap().resume.unwrap().run_id,
-        "newer"
-    );
+    assert_eq!(resumed_run(initial).run_id, "older");
+    assert!(matches!(
+        handler.load(&load(1)).unwrap().outcome,
+        SessionLoadOutcome::Fresh(hoimin_core::ResumeFreshReason::BudgetDecreased)
+    ));
+    assert_eq!(resumed_run(handler.load(&load(2)).unwrap()).run_id, "older");
+    assert_eq!(resumed_run(handler.load(&load(3)).unwrap()).run_id, "newer");
     let connection = Connection::open(&path).unwrap();
     let budget: Vec<u8> = connection
         .query_row(
@@ -2073,10 +2073,7 @@ fn resume_budget_is_monotone_and_selects_latest_eligible_incomplete_run() {
             complete: true,
         })
         .unwrap();
-    assert_eq!(
-        handler.load(&load(4)).unwrap().resume.unwrap().run_id,
-        "older"
-    );
+    assert_eq!(resumed_run(handler.load(&load(4)).unwrap()).run_id, "older");
 }
 
 #[test]
@@ -2092,10 +2089,7 @@ fn persisted_budget_preserves_unsigned_range_and_rejects_malformed_storage() {
         fingerprint: RunFingerprint::from_bytes([1; 32]),
         max_mutants: std::num::NonZeroUsize::new(usize::MAX).unwrap(),
     };
-    assert_eq!(
-        handler.load(&request).unwrap().resume.unwrap().run_id,
-        "wide"
-    );
+    assert_eq!(resumed_run(handler.load(&request).unwrap()).run_id, "wide");
     let connection = Connection::open(&path).unwrap();
     let budget: Vec<u8> = connection
         .query_row("SELECT max_mutants FROM runs", [], |row| row.get(0))
@@ -2223,7 +2217,11 @@ fn lean_resume_budget_cases_match_persistent_selection_and_reuse() {
                 max_mutants: std::num::NonZeroUsize::new(case.new_budget).unwrap(),
             })
             .unwrap()
-            .resume;
+            .outcome;
+        let resumed = match resumed {
+            SessionLoadOutcome::Resumed(reference) => Some(reference),
+            SessionLoadOutcome::Fresh(_) => None,
+        };
         assert_eq!(resumed.is_some(), case.eligible);
         let stored = resumed.map(|reference| {
             assert_eq!(reference.run_id, "oracle");

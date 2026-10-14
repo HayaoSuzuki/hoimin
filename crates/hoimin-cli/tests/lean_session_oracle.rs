@@ -7,7 +7,7 @@ use hoimin_cli::session::SessionHandler;
 use hoimin_core::{
     BeginSession, ByteSpan, EffectId, FinishSession, LoadSession, LookupStoredResult, MutantResult,
     MutationCandidate, MutationStatus, OutputSpoolRef, PersistResult, ResourceMode, RunFingerprint,
-    SessionDiagnostic,
+    SessionDiagnostic, SessionLoadOutcome,
 };
 use rusqlite::{Connection, OpenFlags};
 use serde::Deserialize;
@@ -522,10 +522,10 @@ impl Driver {
         };
         match self.handler(handler)?.load(&request) {
             Ok(value) => {
-                let selected = value
-                    .resume
-                    .map(|resume| run_role(&resume.run_id))
-                    .transpose()?;
+                let selected = match value.outcome {
+                    SessionLoadOutcome::Resumed(resume) => Some(run_role(&resume.run_id)?),
+                    SessionLoadOutcome::Fresh(_) => None,
+                };
                 if let Some(run) = &selected {
                     self.owners.insert(run.clone(), handler.to_owned());
                 }

@@ -21,6 +21,21 @@ See the [usage guide](usage.md) for runtime contracts and the generated
 [CLI reference](cli-reference.md) for argument definitions. This policy does
 not make a newer binary accept an older schema or weaken input validation.
 
+## Session load outcomes in 0.7.0
+
+The 0.7.0 floor removes the fallback report reason `no_compatible_run`. Reports
+retain schema 4 and the six reasons produced by session selection; the removed
+reason described only externally supplied legacy completion events. Read reports
+containing that reason with their producing binary, or rerun with this version.
+
+Rust event callers construct `SessionLoaded { id, outcome }` with
+`SessionLoadOutcome::Resumed(SessionResumeRef)` or `Fresh(ResumeFreshReason)`.
+The old `resume`/`fresh_reason` fields and missing outcomes are rejected. Update
+event producers; no compatibility adapter supplies a reason. This changes no
+SQLite, fingerprint or plan format, so this change alone requires no new session
+or plan regeneration. Existing schema/fingerprint compatibility checks still apply.
+Existing files are retained without automatic conversion.
+
 ## Report reader support in 0.6.0
 
 The 0.6.0 version floor removes progress support for schema-2 JSON and schema-3

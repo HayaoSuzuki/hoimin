@@ -177,6 +177,14 @@ fn raw_timeout_limits_accept_the_ceiling_and_reject_one_nanosecond_more() {
         }),
     ];
     for (name, set_timeout) in cases {
+        let mut zero = raw_config();
+        set_timeout(&mut zero, Duration::ZERO);
+        assert_eq!(
+            RunConfig::try_from(zero),
+            Err(ConfigError::InvalidLimit(name)),
+            "zero {name}"
+        );
+
         let mut accepted = raw_config();
         accepted.limits.mutant_timeout = Some(Duration::from_secs(5));
         set_timeout(&mut accepted, MAX_TIMEOUT);

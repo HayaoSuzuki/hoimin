@@ -231,35 +231,6 @@ fn plan_config_rejects_invalid_normalized_semantics() {
             },
         ),
         (
-            "zero analyzer duration",
-            |value| {
-                value["limits"]["analyzer_timeout"] = serde_json::json!({"secs": 0, "nanos": 0});
-            },
-            ConfigError::InvalidLimit("analyzer_timeout"),
-        ),
-        (
-            "zero baseline duration",
-            |value| {
-                value["limits"]["baseline_timeout"] = serde_json::json!({"secs": 0, "nanos": 0});
-            },
-            ConfigError::InvalidLimit("baseline_timeout"),
-        ),
-        (
-            "zero mutant duration",
-            |value| {
-                value["limits"]["mutant_timeout"] =
-                    serde_json::json!({"fixed": {"secs": 0, "nanos": 0}});
-            },
-            ConfigError::InvalidLimit("mutant_timeout"),
-        ),
-        (
-            "zero total duration",
-            |value| {
-                value["limits"]["total_timeout"] = serde_json::json!({"secs": 0, "nanos": 0});
-            },
-            ConfigError::InvalidLimit("total_timeout"),
-        ),
-        (
             "baseline arithmetic overflow",
             |value| {
                 value["limits"]["baseline_timeout"] =

@@ -5,11 +5,17 @@ description: 候補発見と実行の分離、ランキング、部分集合、�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-886-duration
+  resource: ../../superpowers/plans/2026-10-14-issue-886.md
+  working_tree: untracked
+  sha256: 788e07872b540e6db6952d7c8bdfd3c7f15ca55435f4996480793343a4198d93
 - id: issue-850-execution
   resource: ../../maintenance/2026-10-13-verified-execution.md
 - id: issue-888-canonical-enums
   resource: ../../superpowers/plans/2026-10-14-issue-888.md
-  working_tree: untracked
+  revision: 5c0215cb65e57d2758c4ec1708cd50d96b1bcdfd
+  working_tree: modified
+  sha256: ac7f3e70687df6d1beab5fe896a50efa15e6ffd62dfd5a0d0832d7e6dc48c5c0
 - id: issue-843-config
   resource: ../../../crates/hoimin-core/src/config.rs
   revision: 16285fdd71b9db1da6570e7b3dbc4d234c3928fe
@@ -233,6 +239,10 @@ sources:
 旧名`Auto`、`Fixed`、`Unix`、`Windows`、`type_mapping`のserde aliasは廃止した。
 現行writerの出力表現を変えず、旧名のplanを拒否する。旧planは再生成し、過去のreportは生成元バイナリで読むか実行し直す。
 progressの設定を不透明なJSONとして扱う方針は維持し、typed設定を要求するplan/reviewと区別する。[^issue-888-canonical-enums]
+
+旧名の拒否とdurationの正値制約は別の入力条件として扱う。
+正準名の`fixed`ではzeroがserdeで拒否され、正の値では上限の意味検証へ進む。
+旧名`Fixed`のunknown-variantエラーをzero検証の証拠には数えない。[^issue-888-canonical-enums][^issue-886-duration]
 
 [^issue-888-canonical-enums]: [Issue 888の設計・実装・検証記録](../../superpowers/plans/2026-10-14-issue-888.md)。
 
@@ -486,3 +496,23 @@ Rust から保存済み plan を実行する場合は、`prepare_verify` また�
 設定や候補 ID を個別に渡せた selected/ordered 実行ラッパーは削除した。公開された設定フィールドや可変参照から `VerifiedPlan` の検証済み設定を書き換えることはできない。実行時に候補 ID が見つからない場合の拒否は、shell 内のテストから非公開の実行関数を呼んで確認する。CLI・候補順序・plan/session/report の保存形式は変更しない。[^issue-850-execution]
 
 [^issue-850-execution]: [実行 API の整理・移行・検証記録](../../maintenance/2026-10-13-verified-execution.md)。
+
+# Nonzero duration input boundary (Issue #886)
+
+`NonZeroDuration` rejects zero during raw CLI conversion and serde
+construction through the same checked constructor. Saved run and plan
+configurations therefore reject zero before semantic validation. Plan verify
+and review retain their invalid-input categories and exit code 2; the serde
+diagnostic identifies `duration`, while raw CLI errors retain the timeout flag.
+Later validation already rejected zero before this change; this is a type
+invariant repair, not an unchecked-execution finding.[^issue-886-duration]
+
+The wrapper guarantees positivity only. The inclusive timeout ceiling,
+automatic timeout calculation, overflow checks, and jobs/process relationships
+remain configuration-validation responsibilities. Valid Duration objects,
+fixed timeout variant names, and schemas remain intact. This invalid-input
+tightening does not require a release-floor increase.
+The verification record covers the existing Lean corpus adapter, not a new
+formal proof.[^issue-886-duration]
+
+[^issue-886-duration]: [Issue 886 implementation and verification record](../../superpowers/plans/2026-10-14-issue-886.md).
