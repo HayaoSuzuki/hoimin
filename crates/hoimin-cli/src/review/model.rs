@@ -40,12 +40,20 @@ pub enum Applicability {
     IdentityConflict,
 }
 
+/// Identifies an artifact by its path and content, independently of execution.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ArtifactReference {
     pub path: PathBuf,
     pub content_hash: String,
-    pub run_id: Option<String>,
+}
+
+/// Associates a report artifact with the execution that produced it.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReportReference {
+    pub artifact: ArtifactReference,
+    pub run_id: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -56,7 +64,7 @@ pub struct ReviewDraft {
     pub evidence: Vec<String>,
     pub timestamp_ms: u64,
     pub plan: ArtifactReference,
-    pub report: Option<ArtifactReference>,
+    pub report: Option<ReportReference>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -142,13 +150,11 @@ pub fn validate_draft(draft: &ReviewDraft) -> Result<(), super::ReviewError> {
                 .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
     }
     if !valid_reference(&draft.plan)
-        || draft.plan.run_id.is_some()
         || draft.report.as_ref().is_some_and(|reference| {
-            !valid_reference(reference)
-                || reference
-                    .run_id
-                    .as_ref()
-                    .is_none_or(|id| id.trim().is_empty() || !safe_text(id, 4096))
+            !valid_reference(&reference.artifact)
+                || reference.run_id.trim().is_empty()
+                || reference.run_id.len() > 4096
+                || reference.run_id.chars().any(char::is_control)
         })
     {
         return Err(super::ReviewError::Invalid(

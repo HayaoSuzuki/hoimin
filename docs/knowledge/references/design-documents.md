@@ -7,9 +7,9 @@ catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
 - id: issue-898-process-design
   resource: ../../superpowers/specs/2026-10-15-issue-898-design.md
-  revision: 80c1062748c56ddbecede40043fc0cf68c839feb
+  revision: 51c9e26b9d0006cac150b3833cb797a59349bac1
   working_tree: clean
-  sha256: aac717c0284ee83adf860de48654e43cb9b76bd96b87c41321edaac8fdf60ef1
+  sha256: 1d6af0050e74da72c5e0fd51f897999a5516350b45ef60a2f4611aaafabdd0c0
 - id: typed-results-and-contracts-design
   resource: ../../superpowers/specs/2026-10-12-typed-results-and-contracts-design.md
   revision: 8ff7c6b

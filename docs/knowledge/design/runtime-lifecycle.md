@@ -5,6 +5,10 @@ description: OS別の資源制限と、プロセス終了・一時ファイル�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-900-disk-failure
+  resource: disk-failure.md
+  working_tree: untracked
+  sha256: 30398836956f8fd8687b718ba2c81e835125665d45e0e9ca3a470198b0f1eb60
 - id: issue-867-shell
   resource: ../../../crates/hoimin-cli/src/shell.rs
   revision: 906ba668de94115ef5ca459af3b5f176d22b1b4e
@@ -90,15 +94,14 @@ sources:
 
 - id: issue-898-design
   resource: ../../superpowers/specs/2026-10-15-issue-898-design.md
-  revision: 80c1062748c56ddbecede40043fc0cf68c839feb
+  revision: 51c9e26b9d0006cac150b3833cb797a59349bac1
   working_tree: clean
-  sha256: aac717c0284ee83adf860de48654e43cb9b76bd96b87c41321edaac8fdf60ef1
+  sha256: 1d6af0050e74da72c5e0fd51f897999a5516350b45ef60a2f4611aaafabdd0c0
 - id: issue-898-review
   resource: ../../superpowers/reports/2026-10-15-issue-898-review.md
-  revision: 80c1062748c56ddbecede40043fc0cf68c839feb
-  working_tree: clean
-  sha256: 7bc6ac731db75d59b43efa9b139b6b666fa587d8565d16888d00d83d664433c6
-
+  revision: 51c9e26b9d0006cac150b3833cb797a59349bac1
+  working_tree: modified
+  sha256: d2f05d57de9a1197e06c9a509d34dff2ac6ef26fa34f91c06eb54e04311c8367
 ---
 
 # 制限する資源とディスク監視の範囲
@@ -300,3 +303,12 @@ Windows での検証では、最初の全体実行で mypy の1件が `not_run` 
 [^issue-898-design]: [Issue 898 typed process requests](../../superpowers/specs/2026-10-15-issue-898-design.md)。用途ごとの必須値と共有 runner の責務。
 
 [^issue-898-review]: [Issue 898 review and verification](../../superpowers/reports/2026-10-15-issue-898-review.md)。実行結果、5回の検証レビュー、未確定の mypy 失敗。
+
+## Typed disk stop evidence
+
+The [disk failure contract](disk-failure.md) describes required reason payloads,
+first-stop retention, complete secondary evidence equality, and the intentional
+saved failure format change. Report projection keeps its existing byte-count and
+message fields. This representation change does not add an OS cleanup guarantee.[^issue-900-disk-failure]
+
+[^issue-900-disk-failure]: [Typed disk failure contract](disk-failure.md).

@@ -116,6 +116,24 @@ independent observations separate, and retain ownership across cancelled awaits.
 The [enum boundary record](maintenance/2026-10-13-enum-state-boundaries.md)
 explains the metrics and report states, exclusions and verification.
 
+## Disk failure contracts
+
+Construct disk stops with `DiskFailureReason` and its required observation or
+message. Derive codes from the variant and use the shared evidence/report
+conversions. See the [disk failure contract](knowledge/design/disk-failure.md)
+for exact evidence equality and the saved failure format change.
+
+Run the policy, payload, lifecycle and disk oracle checks from the repository root:
+
+```sh
+cargo test -p hoimin-core --test disk_policy --test lean_disk_guard_oracle
+cargo test -p hoimin-cli --test lean_disk_shutdown_oracle
+```
+
+The full workspace suite also checks monitor, shutdown, report delivery and
+cleanup behavior. See the [issue #900 review record](superpowers/reports/issue-900/review.md)
+for executed checks and platform limits.
+
 ## Documentation publication
 
 Edit the existing Markdown and open a PR; the Documentation workflow checks the

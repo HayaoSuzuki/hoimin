@@ -1879,20 +1879,7 @@ fn apply_execution_cleanup_evidence(
 }
 
 fn merge_monitor_stop(report: &mut hoimin_core::DiskStopReport, latest: hoimin_core::DiskFailure) {
-    let mut incoming = Vec::with_capacity(latest.secondary.len().saturating_add(1));
-    if let Some(observation) = latest.observation {
-        incoming.push(hoimin_core::DiskSecondary::Observation {
-            reason: latest.reason,
-            value: observation,
-        });
-    } else {
-        incoming.push(hoimin_core::DiskSecondary::Error {
-            code: latest.code,
-            message: latest
-                .message
-                .unwrap_or_else(|| "disk monitor reported a secondary stop".to_owned()),
-        });
-    }
+    let mut incoming = vec![latest.reason.to_secondary()];
     incoming.extend(latest.secondary);
     for secondary in incoming {
         if disk_secondary_matches_primary(report, &secondary)
@@ -1909,13 +1896,7 @@ fn merge_lifecycle_stop(summary: &mut hoimin_core::RunSummary, failure: hoimin_c
         merge_monitor_stop(report, failure);
         return;
     }
-    summary.disk.stop = Some(hoimin_core::DiskStopReport {
-        code: failure.code,
-        owned_bytes: failure.observation.map(|value| value.owned_bytes),
-        available_bytes: failure.observation.map(|value| value.available_bytes),
-        message: failure.message,
-        secondary: failure.secondary,
-    });
+    summary.disk.stop = Some(failure.into());
 }
 
 pub struct ShellContext {
@@ -2773,10 +2754,7 @@ async fn run_loop_context(
                             disk_stop_delivered = true;
                             let event = RunEvent::DiskStopRequested(DiskStopRequested {
                                 failure: hoimin_core::DiskFailure {
-                                    code: hoimin_core::DISK_MEASUREMENT_FAILED.to_owned(),
-                                    reason: hoimin_core::DiskStopReason::MeasurementFailed,
-                                    observation: None,
-                                    message: Some(error.to_string()),
+                                    reason: hoimin_core::DiskFailureReason::MeasurementFailed(error.to_string()),
                                     secondary: Vec::new(),
                                 },
                             });
@@ -5805,7 +5783,7 @@ mod tests {
             .expect("post-drain reserve stop");
 
         assert_eq!(
-            failure.reason,
+            failure.reason.kind(),
             hoimin_core::DiskStopReason::FilesystemReserveReached
         );
         assert!(monitor.stop_and_join(Duration::from_secs(1)).await);
@@ -5836,14 +5814,11 @@ mod tests {
             elapsed: Duration::from_millis(1),
         }));
         control.inject_post_drain_disk_failure(hoimin_core::DiskFailure {
-            code: hoimin_core::FILESYSTEM_RESERVE_REACHED.to_owned(),
-            reason: hoimin_core::DiskStopReason::FilesystemReserveReached,
-            observation: Some(DiskObservation {
+            reason: hoimin_core::DiskFailureReason::FilesystemReserveReached(DiskObservation {
                 owned_bytes: 0,
                 available_bytes: 1,
                 measured_in: Duration::from_millis(1),
             }),
-            message: None,
             secondary: Vec::new(),
         });
         let stdout = CollectingWriter::default();
@@ -6349,10 +6324,9 @@ mod tests {
             elapsed: Duration::from_millis(1),
         }));
         control.inject_post_drain_disk_failure(hoimin_core::DiskFailure {
-            code: hoimin_core::DISK_MEASUREMENT_FAILED.to_owned(),
-            reason: hoimin_core::DiskStopReason::MeasurementFailed,
-            observation: None,
-            message: Some("injected prior measurement failure".to_owned()),
+            reason: hoimin_core::DiskFailureReason::MeasurementFailed(
+                "injected prior measurement failure".to_owned(),
+            ),
             secondary: Vec::new(),
         });
         control.inject_inner_monitor_join_timeout_once();

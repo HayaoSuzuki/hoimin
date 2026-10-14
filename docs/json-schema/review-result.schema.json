@@ -5,7 +5,7 @@
   "type": "object",
   "properties": {
     "schema_version": {
-      "const": 1
+      "const": 2
     },
     "command": {
       "enum": [
@@ -140,51 +140,27 @@
               "maximum": 18446744073709551615
             },
             "plan": {
-              "type": "object",
-              "properties": {
-                "path": {
-                  "type": "string"
-                },
-                "content_hash": {
-                  "type": "string",
-                  "pattern": "^[0-9a-f]{64}$"
-                },
-                "run_id": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                }
-              },
-              "required": [
-                "path",
-                "content_hash",
-                "run_id"
-              ],
-              "additionalProperties": false
+              "$ref": "#/$defs/artifact"
             },
             "report": {
               "oneOf": [
                 {
                   "type": "object",
                   "properties": {
-                    "path": {
-                      "type": "string"
-                    },
-                    "content_hash": {
-                      "type": "string",
-                      "pattern": "^[0-9a-f]{64}$"
+                    "artifact": {
+                      "$ref": "#/$defs/artifact"
                     },
                     "run_id": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4096,
+                      "not": {
+                        "pattern": "[\\u0000-\\u001f\\u007f-\\u009f]"
+                      }
                     }
                   },
                   "required": [
-                    "path",
-                    "content_hash",
+                    "artifact",
                     "run_id"
                   ],
                   "additionalProperties": false
@@ -292,6 +268,24 @@
         "review",
         "applicability",
         "history"
+      ],
+      "additionalProperties": false
+    },
+    "artifact": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "content_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "path",
+        "content_hash"
       ],
       "additionalProperties": false
     }

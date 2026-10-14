@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use hoimin_core::{
     AnalysisDiagnostic, AnalysisFinished, ByteSpan, CandidateCursor, CandidateLoaded,
-    CandidateSpoolRef, CleanupFinished, CommandArg, DiskFailure, DiskObservation, DiskStopReason,
+    CandidateSpoolRef, CleanupFinished, CommandArg, DiskFailure, DiskObservation,
     DiskStopRequested, EffectFailed, EffectFailure, EffectId, FILESYSTEM_RESERVE_REACHED,
     IntegrityCheckpoint, MachineError, MutationApplied, MutationCandidate, MutationProfile,
     MutationStatus, MutationSummary, OriginalsVerified, OutputConfig, OutputEmitted, OutputEvent,
@@ -584,14 +584,11 @@ fn deadline_and_cancellation_stop_scheduling_new_mutants() {
 fn disk_stop_is_a_global_infrastructure_stop_before_new_mutant_dispatch() {
     let (state, _) = waiting_for_baseline();
     let failure = DiskFailure {
-        code: FILESYSTEM_RESERVE_REACHED.to_owned(),
-        reason: DiskStopReason::FilesystemReserveReached,
-        observation: Some(DiskObservation {
+        reason: hoimin_core::DiskFailureReason::FilesystemReserveReached(DiskObservation {
             owned_bytes: 4096,
             available_bytes: 1024,
             measured_in: Duration::from_millis(7),
         }),
-        message: None,
         secondary: Vec::new(),
     };
 
