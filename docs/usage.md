@@ -1148,7 +1148,7 @@ results remain available in the database.
 Report schema 6 replaces each mutant's independent `status`, nullable
 `termination`/`output`, `output_state`, and `elapsed_ms` with one `outcome`:
 
-- `{"executed": {"termination": {"Exit": 1}, "output_state": "complete", "output": {"token": "spool", "retained": 3, "observed": 8}, "elapsed": {"secs": 0, "nanos": 5000000}}}` carries all execution evidence. Elapsed time uses seconds and nanoseconds.
+- `{"executed": {"termination": {"Exit": 1}, "output_state": "complete", "output": {"token": "spool", "retained": 3, "observed": 8}, "elapsed": {"secs": 0, "nanos": 5000000}}}` carries all execution evidence. Elapsed time requires a closed object with `secs` in the u64 range and `nanos` from 0 through 999,999,999; array aliases and normalized oversized nanoseconds are rejected.
 - `{"reused": {"status": "killed"}}` or `{"reused": {"status": "survived"}}` identifies reuse from a compatible session. It contributes zero elapsed time and no output to this run.
 - `"not_run"` means no classified completed result is available. A process may have started before interruption. It contributes zero elapsed time and no output.
 

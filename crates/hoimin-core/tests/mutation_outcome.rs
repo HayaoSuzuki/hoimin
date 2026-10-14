@@ -187,3 +187,68 @@ proptest! {
         prop_assert!(result.is_err());
     }
 }
+
+fn executed_wire_with_elapsed(elapsed: &serde_json::Value) -> serde_json::Value {
+    serde_json::json!({"executed":{"termination":{"Exit":0},"output_state":"complete",
+        "output":{"token":"output","retained":0,"observed":0},"elapsed":elapsed}})
+}
+
+#[test]
+fn executed_elapsed_rejects_sequence_alias() {
+    // Arrange
+    let encoded = executed_wire_with_elapsed(&serde_json::json!([0, 0]));
+    // Act
+    let result = serde_json::from_value::<MutationOutcome>(encoded);
+    // Assert
+    assert!(result.is_err());
+}
+
+proptest! {
+    #[test]
+    fn executed_elapsed_rejects_unnormalized_nanos(nanos in 1_000_000_000u32..=u32::MAX) {
+        // Arrange
+        let encoded = executed_wire_with_elapsed(&serde_json::json!({"secs":0,"nanos":nanos}));
+        // Act
+        let result = serde_json::from_value::<MutationOutcome>(encoded);
+        // Assert
+        prop_assert!(result.is_err());
+    }
+}
+
+#[test]
+fn finished_event_rejects_nested_unknown_diagnostic_field() {
+    // Arrange
+    let mut document: serde_json::Value = serde_json::from_str(include_str!(
+        "../../hoimin-cli/tests/golden/reports/schema-v6-current.json"
+    ))
+    .unwrap();
+    document["mutants"][0]["diagnostics"] = serde_json::json!([{
+        "mutant_id":"golden-mutant","level":"error","code":"evidence","message":"detail","unknown":true
+    }]);
+    // Act
+    let result = serde_json::from_value::<hoimin_core::OutputEvent>(document["mutants"][0].clone());
+    // Assert
+    assert!(result.is_err());
+}
+
+macro_rules! duplicate_elapsed_field_test {
+    ($name:ident, $field:literal) => {
+        #[test]
+        fn $name() {
+            // Arrange
+            let mut document: serde_json::Value = serde_json::from_str(include_str!(
+                "../../hoimin-cli/tests/golden/reports/schema-v6-current.json"
+            )).unwrap();
+            let event = &mut document["mutants"][0];
+            event["outcome"]["executed"]["elapsed"] = serde_json::json!({"secs":0,"nanos":0});
+            let raw = serde_json::to_string(event).unwrap().replacen(
+                &format!("\"{}\":0", $field), &format!("\"{}\":0,\"{}\":1", $field, $field), 1);
+            // Act
+            let result = serde_json::from_str::<hoimin_core::OutputEvent>(&raw);
+            // Assert
+            assert!(result.is_err());
+        }
+    };
+}
+duplicate_elapsed_field_test!(elapsed_raw_wire_rejects_duplicate_seconds, "secs");
+duplicate_elapsed_field_test!(elapsed_raw_wire_rejects_duplicate_nanoseconds, "nanos");

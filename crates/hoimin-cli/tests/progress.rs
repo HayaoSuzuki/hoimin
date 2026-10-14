@@ -1374,12 +1374,11 @@ async fn duplicate_input_detection_distinguishes_independent_and_resumed_reports
         mutant["run_id"] = json!("independent-run");
     }
     let mut resumed = original.clone();
-    resumed["mutants"][0]["outcome"]["executed"]["elapsed"] = json!({"secs":0,"nanos":42000000});
+    resumed["mutants"][0]["outcome"]["executed"]["elapsed"] = json!({"secs":0,"nanos":42_000_000});
     let mut incomplete = original.clone();
     incomplete["summary"]["complete"] = json!(false);
     incomplete["summary"]["exit_code"] = json!(4);
     let mut changed_result = original.clone();
-    changed_result["mutants"][0]["outcome"]["executed"]["termination"] = json!({"Exit":0});
     changed_result["mutants"][0]["outcome"]["executed"]["termination"] = json!({"Exit": 0});
     changed_result["summary"]["counts"]["killed"] = json!(0);
     changed_result["summary"]["counts"]["survived"] = json!(1);
@@ -1515,7 +1514,6 @@ async fn output_human_includes_latest_comparison_fields() {
 async fn output_labels_the_intersection_score_as_comparable() {
     let fixture = tempfile::tempdir().unwrap();
     let mut before = valid_report();
-    before["mutants"][0]["outcome"]["executed"]["termination"] = json!({"Exit":0});
     before["mutants"][0]["outcome"]["executed"]["termination"] = json!({ "Exit": 0 });
     let mut added = before["mutants"][0].clone();
     added["sequence"] = json!(4);
@@ -1575,7 +1573,6 @@ async fn output_labels_the_intersection_score_as_comparable() {
 async fn output_human_omits_stale_comparison_fields_after_an_unusable_report() {
     let fixture = tempfile::tempdir().unwrap();
     let mut before = valid_report();
-    before["mutants"][0]["outcome"]["executed"]["termination"] = json!({"Exit":0});
     before["mutants"][0]["outcome"]["executed"]["termination"] = json!({ "Exit": 0 });
     before["summary"]["counts"]["killed"] = json!(0);
     before["summary"]["counts"]["survived"] = json!(1);
@@ -2921,7 +2918,7 @@ fn valid_report() -> Value {
                 "symbol": null,
                 "file_hash": "hash"
             },
-            "outcome": { "executed": { "termination": {"Exit":1}, "output_state":"complete", "elapsed":{"secs":0,"nanos":1000000}, "output":{"token":"mutant-1","retained":0,"observed":0} } },
+            "outcome": { "executed": { "termination": {"Exit":1}, "output_state":"complete", "elapsed":{"secs":0,"nanos":1_000_000}, "output":{"token":"mutant-1","retained":0,"observed":0} } },
             "resource_mode": "hard"
         }],
         "summary": {

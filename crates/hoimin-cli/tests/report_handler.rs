@@ -1,5 +1,7 @@
 #[path = "support/collecting_writer.rs"]
 mod collecting_writer;
+#[path = "support/mutation_outcome.rs"]
+mod mutation_outcome;
 use collecting_writer::CollectingWriter;
 
 use std::io::{self, Cursor, Read, Seek, SeekFrom, Write};
@@ -694,9 +696,9 @@ async fn documentation_contract() {
         .find(|event| event["kind"] == "mutant_finished")
         .unwrap()
         .clone();
-    invalid_event["status"] = serde_json::json!("unknown");
+    invalid_event["outcome"] = serde_json::json!({"reused":{"status":"unknown"}});
     assert_schema_invalid(&event_schema, &invalid_event, &event_schema);
-    invalid_event["status"] = serde_json::json!("killed");
+    invalid_event["outcome"]["reused"]["status"] = serde_json::json!("killed");
     invalid_event["resource_mode"] = serde_json::json!("soft");
     assert_schema_invalid(&event_schema, &invalid_event, &event_schema);
 
@@ -974,15 +976,6 @@ fn documented_events() -> Vec<OutputEvent> {
         )));
         event_sequence += 1;
         summary.record(status);
-        let termination = match status {
-            MutationStatus::Killed => Some(ProcessTermination::Exit(1)),
-            MutationStatus::Survived => Some(ProcessTermination::Exit(0)),
-            MutationStatus::Timeout => Some(ProcessTermination::Timeout),
-            MutationStatus::OutOfMemory => Some(ProcessTermination::OutOfMemory),
-            MutationStatus::ProcessLimit => Some(ProcessTermination::ProcessLimit),
-            MutationStatus::NotRun => Some(ProcessTermination::Cancelled),
-            MutationStatus::Error => None,
-        };
         events.push(OutputEvent::MutantFinished(MutantFinished {
             schema_version: REPORT_SCHEMA_VERSION,
             sequence: event_sequence,
@@ -1003,47 +996,7 @@ fn documented_events() -> Vec<OutputEvent> {
                 symbol: None,
                 file_hash: "hash".to_owned(),
             },
-            outcome: match termination {
-                Some(termination) => hoimin_core::MutationOutcome::Executed {
-                    termination,
-                    output_state: ProcessOutputState::Complete,
-                    output: output_ref(),
-                    elapsed: std::time::Duration::from_millis(2),
-                },
-                None => match status {
-                    hoimin_core::MutationStatus::Killed => hoimin_core::MutationOutcome::Reused {
-                        status: hoimin_core::ReusedMutationStatus::Killed,
-                    },
-                    hoimin_core::MutationStatus::Survived => hoimin_core::MutationOutcome::Reused {
-                        status: hoimin_core::ReusedMutationStatus::Survived,
-                    },
-                    hoimin_core::MutationStatus::NotRun => hoimin_core::MutationOutcome::NotRun,
-                    status => hoimin_core::MutationOutcome::Executed {
-                        termination: match status {
-                            hoimin_core::MutationStatus::Timeout => {
-                                hoimin_core::ProcessTermination::Timeout
-                            }
-                            hoimin_core::MutationStatus::OutOfMemory => {
-                                hoimin_core::ProcessTermination::OutOfMemory
-                            }
-                            hoimin_core::MutationStatus::ProcessLimit => {
-                                hoimin_core::ProcessTermination::ProcessLimit
-                            }
-                            hoimin_core::MutationStatus::Error => {
-                                hoimin_core::ProcessTermination::Exit(1)
-                            }
-                            _ => unreachable!(),
-                        },
-                        output_state: if status == hoimin_core::MutationStatus::Error {
-                            hoimin_core::ProcessOutputState::CloseTimedOut
-                        } else {
-                            hoimin_core::ProcessOutputState::Complete
-                        },
-                        output: output_ref(),
-                        elapsed: std::time::Duration::from_millis(2),
-                    },
-                },
-            },
+            outcome: mutation_outcome::executed(status),
             resource_mode: if mutant_sequence % 2 == 0 {
                 ResourceMode::Hard
             } else {

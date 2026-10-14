@@ -19,6 +19,10 @@ pub fn termination(event: &Value) -> Value {
     }
 }
 
+pub fn output(event: &Value) -> Value {
+    serde_json::to_value(outcome(event).output()).unwrap()
+}
+
 pub fn elapsed_ms(event: &Value) -> Value {
     serde_json::to_value(u64::try_from(outcome(event).elapsed().as_millis()).unwrap()).unwrap()
 }

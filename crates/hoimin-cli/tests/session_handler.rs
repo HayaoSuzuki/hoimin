@@ -222,8 +222,8 @@ fn golden_persist_request() -> PersistResult {
         output_state: hoimin_core::ProcessOutputState::Complete,
         output: OutputSpoolRef {
             token: rows.output_token.into(),
-            retained: rows.output_retained as u64,
-            observed: rows.output_observed as u64,
+            retained: u64::try_from(rows.output_retained).unwrap(),
+            observed: u64::try_from(rows.output_observed).unwrap(),
         },
         elapsed: Duration::from_millis(5),
     };

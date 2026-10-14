@@ -152,6 +152,7 @@ pub enum MutationOutcome {
         termination: ProcessTermination,
         output_state: ProcessOutputState,
         output: OutputSpoolRef,
+        #[serde(deserialize_with = "deserialize_execution_elapsed")]
         elapsed: Duration,
     },
     Reused {
@@ -159,6 +160,45 @@ pub enum MutationOutcome {
     },
     /// No classified completed result is available; the process may have started.
     NotRun,
+}
+
+// Keep the new elapsed wire equal to the public schema. Serde's standard Duration
+// decoder also accepts sequences and normalizes oversized nanoseconds.
+fn deserialize_execution_elapsed<'de, D>(deserializer: D) -> Result<Duration, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    struct ElapsedVisitor;
+
+    impl<'de> serde::de::Visitor<'de> for ElapsedVisitor {
+        type Value = Duration;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            formatter.write_str("an elapsed object with u64 secs and nanos below 1000000000")
+        }
+
+        fn visit_map<M>(self, map: M) -> Result<Duration, M::Error>
+        where
+            M: serde::de::MapAccess<'de>,
+        {
+            #[derive(Deserialize)]
+            #[serde(deny_unknown_fields)]
+            struct Elapsed {
+                secs: u64,
+                nanos: u32,
+            }
+
+            let elapsed = Elapsed::deserialize(serde::de::value::MapAccessDeserializer::new(map))?;
+            if elapsed.nanos >= 1_000_000_000 {
+                return Err(serde::de::Error::custom(
+                    "elapsed nanos must be below 1000000000",
+                ));
+            }
+            Ok(Duration::new(elapsed.secs, elapsed.nanos))
+        }
+    }
+
+    deserializer.deserialize_map(ElapsedVisitor)
 }
 
 /// Only conclusive outcomes qualify for reuse under the resume policy.
@@ -219,6 +259,7 @@ pub struct MutantResult {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SessionDiagnostic {
     pub mutant_id: String,
     pub level: String,

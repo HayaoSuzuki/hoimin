@@ -112,14 +112,14 @@ sources:
   sha256: ab8f5b66d8323ebf1da4259bb303636f3d8d3e5fd8b429e4f500c9b4e2a64711
 - id: issue-895-review
   resource: ../../superpowers/reports/issue-895/review.md
-  revision: 62cee6bbd684d13dd69a67bd3a627901103f8624
+  revision: 6416d501b3758531ca247fa904706c14d89c23b6
   working_tree: modified
-  sha256: c17c19a899e2c5088e60b49a479f932a8a81d57c8afb55c67ec85d65a644d0d8
+  sha256: ce2f9838b67ada618e013cad4f1f1c0f0b721b00faffc6d5068d0ac9c534f15b
 - id: issue-895-outcome
   resource: ../../../crates/hoimin-core/src/resume.rs
   revision: 31245fbf096967b36bc15523067080b506f88fe9
   working_tree: modified
-  sha256: b40ccd34dbeedb26145b11d6652e7181b9ddcba437a36793d4b20f2b775de1cf
+  sha256: 657834488419381773ecc3b2c4da69574ad00328723db2f35e729e97b2d6e92e
 - id: issue-895-session-schema
   resource: ../../../crates/hoimin-cli/src/session/schema.rs
   revision: 31245fbf096967b36bc15523067080b506f88fe9

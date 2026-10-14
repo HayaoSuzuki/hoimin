@@ -2,9 +2,8 @@ use std::io;
 
 use hoimin_cli::report::ReportHandler;
 use hoimin_core::{
-    ByteSpan, EffectId, EmitOutput, MutantFinished, MutationCandidate, MutationStatus,
-    MutationSummary, OutputEvent, OutputFormat, ProcessTermination, ResourceMode, RunStarted,
-    RunSummary,
+    ByteSpan, EffectId, EmitOutput, MutantFinished, MutationCandidate, MutationSummary,
+    OutputEvent, OutputFormat, ProcessTermination, ResourceMode, RunStarted, RunSummary,
 };
 
 #[path = "support/heap_tracking.rs"]

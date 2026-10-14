@@ -1625,7 +1625,7 @@ async fn sqlite_session_reuses_results_after_jobs_and_output_retention_change() 
         "a reused result is emitted synthetically without process termination"
     );
     assert_eq!(
-        resumed.document["mutants"][0]["output"],
+        mutation_outcome::output(&resumed.document["mutants"][0]),
         serde_json::Value::Null,
         "a reused result does not import output retained under the earlier limit"
     );
@@ -1669,7 +1669,7 @@ async fn fresh_session_and_sessionless_results_preserve_the_same_termination() {
     let reused = run_fixture_with_session(&command, &database, true).await;
     assert_eq!(reused.exit_code, 0, "{}", reused.stderr);
     assert_eq!(
-        mutation_outcome::termination(reused.document["mutants"][0]),
+        mutation_outcome::termination(&reused.document["mutants"][0]),
         serde_json::Value::Null
     );
 }
@@ -4286,9 +4286,9 @@ async fn selected_resource_policy_survives_fresh_and_natural_resume_reports() {
         };
         assert_eq!(resumed_ids, first_ids);
         assert!(!mutation_outcome::termination(first_killed).is_null());
-        assert!(resumed_killed["termination"].is_null());
-        assert!(resumed_killed["output"].is_null());
-        assert_eq!(resumed_killed["elapsed_ms"], 0);
+        assert!(mutation_outcome::termination(resumed_killed).is_null());
+        assert!(mutation_outcome::output(resumed_killed).is_null());
+        assert_eq!(mutation_outcome::elapsed_ms(resumed_killed), 0);
         assert_eq!(resumed_rows, first_rows);
     }
 }
@@ -4770,8 +4770,8 @@ async fn active_session_lock_tree_alias_supports_natural_resume() {
     assert_eq!(resumed_run, first_run);
     assert_eq!(resumed_ids, first_ids);
     assert!(!mutation_outcome::termination(first_killed).is_null());
-    assert!(resumed_killed["termination"].is_null());
-    assert_eq!(resumed_killed["elapsed_ms"], 0);
+    assert!(mutation_outcome::termination(resumed_killed).is_null());
+    assert_eq!(mutation_outcome::elapsed_ms(resumed_killed), 0);
 }
 
 #[cfg(unix)]

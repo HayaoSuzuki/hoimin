@@ -135,7 +135,7 @@ async fn fresh_resume_reasons_and_reused_outcomes_are_visible_without_changing_e
     );
     assert_ne!(header["run_id"], first_header["run_id"]);
     assert_eq!(
-        mismatch.report.unwrap()["mutants"][0]["termination"],
+        mutation_outcome::termination(&mismatch.report.unwrap()["mutants"][0]),
         json!({"Exit":1})
     );
 }
