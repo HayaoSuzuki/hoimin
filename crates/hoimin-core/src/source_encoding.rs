@@ -10,34 +10,16 @@ pub enum PythonSourceEncoding {
     Latin1,
 }
 
+/// A decoding or mutation-encoding failure classified independently of its diagnostic text.
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
-#[error("source encoding '{encoding}': {reason}")]
-pub struct SourceEncodingError {
-    pub encoding: String,
-    pub reason: String,
+pub enum SourceEncodingError {
+    /// Invalid UTF-8 source without an explicit encoding declaration.
+    #[error("source encoding '{encoding}': {reason}")]
+    ImplicitUtf8 { encoding: String, reason: String },
+    /// A declared-source-encoding (including UTF-8) or mutation-text-encoding failure.
+    #[error("source encoding '{encoding}': {reason}")]
+    Encoding { encoding: String, reason: String },
 }
-
-/// Internal source-origin classification, independent of diagnostic wording.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum SourceDecodeFailure {
-    ImplicitUtf8(SourceEncodingError),
-    DeclaredEncoding(SourceEncodingError),
-}
-
-impl SourceDecodeFailure {
-    pub(crate) fn diagnostic(&self) -> &SourceEncodingError {
-        match self {
-            Self::ImplicitUtf8(error) | Self::DeclaredEncoding(error) => error,
-        }
-    }
-
-    fn into_diagnostic(self) -> SourceEncodingError {
-        match self {
-            Self::ImplicitUtf8(error) | Self::DeclaredEncoding(error) => error,
-        }
-    }
-}
-
 impl PythonSourceEncoding {
     /// Encodes mutation text without adding a BOM or changing line endings.
     ///
@@ -47,7 +29,7 @@ impl PythonSourceEncoding {
         match self {
             Self::Utf8 => Ok(Cow::Borrowed(text.as_bytes())),
             Self::Ascii if text.is_ascii() => Ok(Cow::Borrowed(text.as_bytes())),
-            Self::Ascii => Err(SourceEncodingError {
+            Self::Ascii => Err(SourceEncodingError::Encoding {
                 encoding: "ascii".into(),
                 reason: "mutation text contains a non-ASCII character".into(),
             }),
@@ -56,7 +38,7 @@ impl PythonSourceEncoding {
                 .map(|character| u8::try_from(u32::from(character)))
                 .collect::<Result<Vec<_>, _>>()
                 .map(Cow::Owned)
-                .map_err(|_| SourceEncodingError {
+                .map_err(|_| SourceEncodingError::Encoding {
                     encoding: "latin-1".into(),
                     reason: "mutation text contains a character outside U+0000..U+00FF".into(),
                 }),
@@ -129,12 +111,6 @@ fn partition_index(length: usize, mut before: impl FnMut(usize) -> bool) -> usiz
 /// Returns the declared encoding and a reason for unknown/unsupported codecs,
 /// BOM conflicts, and bytes that do not match UTF-8 or ASCII.
 pub fn decode_python_source(source: &[u8]) -> Result<DecodedPythonSource<'_>, SourceEncodingError> {
-    decode_python_source_classified(source).map_err(SourceDecodeFailure::into_diagnostic)
-}
-
-pub(crate) fn decode_python_source_classified(
-    source: &[u8],
-) -> Result<DecodedPythonSource<'_>, SourceDecodeFailure> {
     let bom = source.starts_with(b"\xef\xbb\xbf");
     let cookie_bytes = if bom { &source[3..] } else { source };
     let declared = encoding_cookie(cookie_bytes);
@@ -145,14 +121,16 @@ pub(crate) fn decode_python_source_classified(
         .replace('_', "-");
     let tokenizer_utf8 = normalized == "utf-8" || normalized.starts_with("utf-8-");
     let failure = |reason: String| {
-        let diagnostic = SourceEncodingError {
-            encoding: name.into(),
-            reason,
-        };
         if declared.is_some() {
-            SourceDecodeFailure::DeclaredEncoding(diagnostic)
+            SourceEncodingError::Encoding {
+                encoding: name.into(),
+                reason,
+            }
         } else {
-            SourceDecodeFailure::ImplicitUtf8(diagnostic)
+            SourceEncodingError::ImplicitUtf8 {
+                encoding: name.into(),
+                reason,
+            }
         }
     };
     if bom && !tokenizer_utf8 {

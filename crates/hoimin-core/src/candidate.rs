@@ -6,9 +6,9 @@ use camino::Utf8PathBuf;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::{ByteSpan, DecodedPythonSource, PythonSourceEncoding, SourceEncodingError};
-
-use crate::source_encoding::{SourceDecodeFailure, decode_python_source_classified};
+use crate::{
+    ByteSpan, DecodedPythonSource, PythonSourceEncoding, SourceEncodingError, decode_python_source,
+};
 
 pub const CANDIDATE_SCHEMA_VERSION: u32 = 1;
 const MUTANT_ID_DOMAIN: &[u8] = b"hoimin.mutant-id.v1\0";
@@ -95,7 +95,7 @@ pub enum CandidateValidationError {
 #[derive(Debug)]
 pub struct CandidateValidationContext<'source> {
     source: &'source [u8],
-    decoded: Result<DecodedPythonSource<'source>, SourceDecodeFailure>,
+    decoded: Result<DecodedPythonSource<'source>, SourceEncodingError>,
     file_hash: String,
     source_index: Option<CandidateSourceIndex>,
 }
@@ -140,7 +140,7 @@ impl<'source> CandidateValidationContext<'source> {
     /// Returns [`CandidateValidationError::SourceTooLarge`] when the source exceeds `u32::MAX` bytes.
     pub fn new(source: &'source [u8]) -> Result<Self, CandidateValidationError> {
         u32::try_from(source.len()).map_err(|_| CandidateValidationError::SourceTooLarge)?;
-        let decoded = decode_python_source_classified(source);
+        let decoded = decode_python_source(source);
         let source_index = decoded
             .as_ref()
             .ok()
@@ -159,9 +159,7 @@ impl<'source> CandidateValidationContext<'source> {
     /// # Errors
     /// Returns the decoding error retained when this context was constructed.
     pub fn decoded_source(&self) -> Result<&DecodedPythonSource<'source>, &SourceEncodingError> {
-        self.decoded
-            .as_ref()
-            .map_err(SourceDecodeFailure::diagnostic)
+        self.decoded.as_ref()
     }
 
     #[must_use]
@@ -464,8 +462,8 @@ pub fn validate_candidate_with_context(
         return Err(CandidateValidationError::OriginalMismatch);
     }
     let decoded = context.decoded.as_ref().map_err(|failure| match failure {
-        SourceDecodeFailure::ImplicitUtf8(_) => CandidateValidationError::InvalidUtf8,
-        SourceDecodeFailure::DeclaredEncoding(error) => {
+        SourceEncodingError::ImplicitUtf8 { .. } => CandidateValidationError::InvalidUtf8,
+        error @ SourceEncodingError::Encoding { .. } => {
             CandidateValidationError::InvalidEncoding(error.to_string())
         }
     })?;
@@ -533,9 +531,9 @@ mod tests {
         ] {
             let mut context = super::CandidateValidationContext::new(source).unwrap();
             match context.decoded.as_mut().unwrap_err() {
-                super::SourceDecodeFailure::ImplicitUtf8(error)
-                | super::SourceDecodeFailure::DeclaredEncoding(error) => {
-                    error.encoding = label.to_owned();
+                super::SourceEncodingError::ImplicitUtf8 { encoding, .. }
+                | super::SourceEncodingError::Encoding { encoding, .. } => {
+                    *encoding = label.to_owned();
                 }
             }
             let candidate = super::CandidateDescriptor {

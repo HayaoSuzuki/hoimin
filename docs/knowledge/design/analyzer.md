@@ -7,14 +7,14 @@ catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
 - id: issue-873-decoder
   resource: ../../../crates/hoimin-core/src/source_encoding.rs
-  revision: 49a34a63ac4e995bfefb156f85ff3a934b594e6b
+  revision: 30d9d9a0066cea85dfb89c68eb0a4db083a55f58
   working_tree: modified
-  sha256: ed3fac5f5f56ed48e32bfa6a10709ccc5d201a9037ad6c5ee3791728fb572192
+  sha256: b9147eb48c247ca61474b3fe8d4aa13175e594949c077cc2441d6acbdcbcc32a
 - id: issue-873-candidates
   resource: ../../../crates/hoimin-core/src/candidate.rs
-  revision: 49a34a63ac4e995bfefb156f85ff3a934b594e6b
+  revision: 30d9d9a0066cea85dfb89c68eb0a4db083a55f58
   working_tree: modified
-  sha256: e47e0785164109400753f09ee27e8d344481d8dfcdacda717240aee33dba08d7
+  sha256: a057e83a8b11bfd82c8c1d3791e33171213d546616a384847bca364450334e5f
 - id: issue-866-contract
   resource: ../../../crates/hoimin-cli/src/analyzer/mod.rs
   revision: 3b79cab70063d688a3484dbb95b86f806a9a9457
@@ -910,16 +910,24 @@ changes.[^issue-866-contract]
 
 # Typed source-decoding classification
 
-The decoder retains implicit UTF-8 versus declared-encoding failure as a private
-variant, independently of its diagnostic label. Candidate validation consumes
-that variant; relabeling the diagnostic cannot switch InvalidUtf8 and
-InvalidEncoding. The public decoder and SourceEncodingError fields/display
-remain unchanged. Original-span mismatch still precedes decoding failure,
-and source hashing, byte spans and candidate IDs retain their contracts.[^issue-873-decoder][^issue-873-candidates]
+The decoder returns one public SourceEncodingError enum directly.
+ImplicitUtf8 identifies invalid UTF-8 without an explicit declaration;
+Encoding covers declared-source decoding (including declared UTF-8) and
+mutation-text encoding failures. Candidate validation consumes the variant,
+so relabeling a diagnostic cannot switch InvalidUtf8 and InvalidEncoding.
+There is no separate classified decoder, private error wrapper or diagnostic
+projection. Original-span mismatch still precedes decoding failure, and source
+hashing, byte spans and candidate IDs retain their contracts.
+[^issue-873-decoder][^issue-873-candidates]
 
-The [issue #873 evidence](../../superpowers/plans/2026-10-14-issue-873.md) records
-regression failure before the refactor, bounded native checks and their limits.
-This internal classification change adds no new codec or formal guarantee.
+SourceEncodingError changed from a public Rust struct to an enum: Rust callers
+construct or match variants rather than accessing struct fields directly.
+The user prioritized structural simplicity over preserving that API shape.
+Display diagnostics and CLI/saved-plan/report/session schemas do not change;
+no saved-plan migration or version-floor increase is required.
+The [issue #873 evidence](../../superpowers/plans/2026-10-14-issue-873.md)
+separates historical wrapper checks from validation of the final enum.
+This classification change adds no new codec or formal guarantee.
 
-[^issue-873-decoder]: [Classified internal decoder](../../../crates/hoimin-core/src/source_encoding.rs).
+[^issue-873-decoder]: [Typed decoder and encoding errors](../../../crates/hoimin-core/src/source_encoding.rs).
 [^issue-873-candidates]: [Candidate validation](../../../crates/hoimin-core/src/candidate.rs).
