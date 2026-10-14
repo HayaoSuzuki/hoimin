@@ -1079,6 +1079,15 @@ parser tokens, AST facts, and small per-node replacement lists remain
 proportional to source size. `--max-memory` controls descendants rather than
 the Hoimin CLI, so it does not bound these analyzer structures.
 
+`depth::parse_checked` owns AST acquisition for symbol definitions, mutation
+analysis, and exception module summaries. It retains the unchecked parser result
+until syntax and depth checks pass, and disposes rejected partial trees through
+the parser's iterative cleanup. It checks syntax before depth and polls
+cancellation only in the depth traversal; callers keep their pre-parse checks.
+Invalid syntax remains a symbol-validation error, a mutation diagnostic, or a
+skipped hierarchy module, respectively. Accepted results retain their module and
+tokens without changing candidate discovery.
+
 Before facts, name resolution, or annotation analysis, `rust/depth.rs` checks
 AST depth using a borrowed `AnyNodeRef` worklist. The module has depth 1; every
 child exposed by Ruff's source-order visitor adds one, including auxiliary

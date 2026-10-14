@@ -5,6 +5,16 @@ description: 構文・名前解決・変更するバイト範囲・候補保持�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-871-acquisition
+  resource: ../../../crates/hoimin-cli/src/analyzer/rust/depth.rs
+  revision: 49a34a63ac4e995bfefb156f85ff3a934b594e6b
+  working_tree: modified
+  sha256: bda56c389adde16eecbfdf6ce13726a1138f2a117442cc82ed3c541aa3eeab3c
+- id: issue-871-evidence
+  resource: ../../superpowers/plans/2026-10-14-issue-871.md
+  revision: 6f5ce7e61ea43cf76b795570ecc403080888a092
+  working_tree: modified
+  sha256: c3e53304b573959b44bc6f78a11f8701ec623ff39883348777ad18a1a1782679
 - id: issue-873-decoder
   resource: ../../../crates/hoimin-core/src/source_encoding.rs
   revision: 30d9d9a0066cea85dfb89c68eb0a4db083a55f58
@@ -497,6 +507,25 @@ Ruffや `ast.parse` が受け入れても、重複リテラルキーはCPython�
 2万項の有効な式では、通常のAST破棄も2MiBのスレッドで異常終了した。子ノードを所有する作業リストへ切り離して浅いノードから破棄し、拒否・キャンセル・構文エラー時の所有権をそろえる。この破棄用走査はRuffの子ノード定義との対応を維持する必要がある。[^issue-478]
 
 深さ128は、moduleを1としてRuffが報告する子ノードごとに1を加えて数える。128で実際の候補を維持し、129で拒否する境界を2MiBのスレッドで確認する実装上の上限であり、任意のOS stackやRuff parserの安全性を形式的に証明する値ではない。候補保持に関する既存Lean監査の証拠を、これらの安全性へ拡張して解釈しない。[^issue-478]
+
+`depth::parse_checked` owns unchecked parser results until syntax and depth
+checks pass for symbol validation, mutation analysis, and hierarchy summaries.
+It disposes invalid, too-deep, and cancelled partial trees nonrecursively before
+returning. Syntax precedes depth, and the helper adds no cancellation poll before
+syntax validation. Callers retain their pre-parse checks and their distinct
+invalid-source policies: symbol error, mutation diagnostic, and skipped hierarchy
+summary with its source hash retained. The checked result preserves the original
+module and tokens; the depth limit and candidate production are unchanged.[^issue-871-acquisition]
+
+The [issue #871 evidence record](../../superpowers/plans/2026-10-14-issue-871.md)
+records characterization, sensitivity, bounded-stack and subprocess checks.
+Existing candidate and exception-flow Lean models do not model parser ownership,
+recursive destruction, or depth/cancellation observation order. Recheck the Rust
+contract if parser ownership, syntax validity, traversal order, or cleanup
+changes.[^issue-871-evidence]
+
+[^issue-871-acquisition]: [Checked AST acquisition](../../../crates/hoimin-cli/src/analyzer/rust/depth.rs).
+[^issue-871-evidence]: [Issue #871 design and validation](../../superpowers/plans/2026-10-14-issue-871.md).
 
 [^operators]: [2026-08-06-collection-and-structural-mutation-operators-design.md](../../superpowers/specs/2026-08-06-collection-and-structural-mutation-operators-design.md)。
 [^implementation]: [rust.rs](../../../crates/hoimin-cli/src/analyzer/rust.rs)。

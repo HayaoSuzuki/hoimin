@@ -17,8 +17,7 @@ use ruff_python_ast::{
     ModModule, Number, Operator, Pattern, Singleton, Stmt, TypeParam, TypeParams, UnaryOp, visitor,
 };
 #[cfg(test)]
-use ruff_python_parser::parse_module;
-use ruff_python_parser::parse_unchecked_source;
+use ruff_python_parser::{parse_module, parse_unchecked_source};
 use ruff_text_size::{Ranged, TextRange};
 
 use super::{AnalyzerCandidate, AnalyzerDiagnostic, AnalyzerDiagnosticCode};
@@ -137,15 +136,15 @@ pub(crate) fn definition_names(source: &str) -> Result<BTreeSet<String>, String>
             }
         }
     }
-    let parsed = parse_unchecked_source(source, ruff_python_ast::PySourceType::Python);
-    if !parsed.has_valid_syntax() {
-        depth::dispose(parsed.into_syntax());
-        return Err("invalid Python syntax; cannot validate symbol definitions".into());
-    }
-    if let Err(error) = depth::check(parsed.syntax(), &|| false) {
-        depth::dispose(parsed.into_syntax());
-        return Err(format!("cannot validate symbol definitions: {error:?}"));
-    }
+    let parsed = match depth::parse_checked(source, &|| false) {
+        Ok(parsed) => parsed,
+        Err(depth::CheckedParseError::InvalidSyntax) => {
+            return Err("invalid Python syntax; cannot validate symbol definitions".into());
+        }
+        Err(depth::CheckedParseError::Analysis(error)) => {
+            return Err(format!("cannot validate symbol definitions: {error:?}"));
+        }
+    };
     let mut definitions = Definitions::default();
     for statement in &parsed.syntax().body {
         definitions.visit_stmt(statement);
@@ -368,16 +367,11 @@ pub(crate) fn analyze_source_with_exceptions(
     } else {
         None
     };
-    // Retain invalid partial trees too: parse_module drops those recursively on Err.
-    let parsed = parse_unchecked_source(source, ruff_python_ast::PySourceType::Python);
-    if !parsed.has_valid_syntax() {
-        depth::dispose(parsed.into_syntax());
-        return Ok(invalid_syntax(request.path));
-    }
-    if let Err(error) = depth::check(parsed.syntax(), &cancelled) {
-        depth::dispose(parsed.into_syntax());
-        return Err(error);
-    }
+    let parsed = match depth::parse_checked(source, cancelled) {
+        Ok(parsed) => parsed,
+        Err(depth::CheckedParseError::InvalidSyntax) => return Ok(invalid_syntax(request.path)),
+        Err(depth::CheckedParseError::Analysis(error)) => return Err(error),
+    };
     let facts = AstFacts::from_module(parsed.syntax(), parsed.tokens(), source);
     if cancelled() {
         return Err(AnalysisError::Cancelled);

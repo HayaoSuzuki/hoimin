@@ -848,18 +848,11 @@ impl ExceptionIndex {
             index
                 .source_hashes
                 .insert(path.clone(), blake3::hash(source.as_bytes()));
-            let parsed = ruff_python_parser::parse_unchecked_source(
-                source,
-                ruff_python_ast::PySourceType::Python,
-            );
-            if !parsed.has_valid_syntax() {
-                depth::dispose(parsed.into_syntax());
-                continue;
-            }
-            if let Err(error) = depth::check(parsed.syntax(), cancelled) {
-                depth::dispose(parsed.into_syntax());
-                return Err(error);
-            }
+            let parsed = match depth::parse_checked(source, cancelled) {
+                Ok(parsed) => parsed,
+                Err(depth::CheckedParseError::InvalidSyntax) => continue,
+                Err(depth::CheckedParseError::Analysis(error)) => return Err(error),
+            };
             let summary = Module::parse(parsed.syntax())?;
             binding_count += summary.bindings.len();
             dependency_count += summary.dependencies.len();
@@ -1601,4 +1594,40 @@ fn map_modules(
         module_paths.remove(&name);
     }
     Ok(module_paths)
+}
+
+#[cfg(test)]
+mod checked_parse_tests {
+    use super::*;
+
+    #[test]
+    fn invalid_partial_module_is_skipped_while_valid_neighbor_is_indexed() {
+        std::thread::Builder::new()
+            .stack_size(2 * 1024 * 1024)
+            .spawn(|| {
+                let invalid_path = Utf8PathBuf::from("broken.py");
+                let valid_path = Utf8PathBuf::from("valid.py");
+                let sources = [
+                    (
+                        invalid_path.clone(),
+                        format!(
+                            "class PartialError(Exception):\n    pass\nvalue = {}\ndef broken(:\n",
+                            vec!["1"; 25_000].join("+")
+                        ),
+                    ),
+                    (
+                        valid_path.clone(),
+                        "class ValidError(Exception):\n    pass\n".to_owned(),
+                    ),
+                ];
+                let index = ExceptionIndex::from_sources(&sources, &[], &|| false).unwrap();
+                assert!(!index.modules.contains_key(&invalid_path));
+                assert!(index.modules.contains_key(&valid_path));
+                assert!(index.source_matches(&invalid_path, &sources[0].1));
+                assert!(!index.source_matches(&invalid_path, "changed"));
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
 }
