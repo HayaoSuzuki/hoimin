@@ -1414,21 +1414,17 @@ pub fn transition(
             state.preflight_effects()?
         }
         RunEvent::SessionLoaded(value) if state.phase == RunPhase::Preflight => {
-            state.resume_outcome = Some(if value.resume.is_some() {
-                crate::ResumeOutcome::Resumed
-            } else {
-                crate::ResumeOutcome::Fresh {
-                    reason: value
-                        .fresh_reason
-                        .unwrap_or(crate::ResumeFreshReason::NoCompatibleRun),
+            match value.outcome {
+                crate::SessionLoadOutcome::Resumed(resume) => {
+                    state.resume_outcome = Some(crate::ResumeOutcome::Resumed);
+                    state.run_id.clone_from(&resume.run_id);
+                    state.session_run_id = Some(resume.run_id);
+                    state.start_run_effects()?
                 }
-            });
-            if let Some(resume) = value.resume {
-                state.run_id.clone_from(&resume.run_id);
-                state.session_run_id = Some(resume.run_id);
-                state.start_run_effects()?
-            } else {
-                state.begin_session_effects()?
+                crate::SessionLoadOutcome::Fresh(reason) => {
+                    state.resume_outcome = Some(crate::ResumeOutcome::Fresh { reason });
+                    state.begin_session_effects()?
+                }
             }
         }
         RunEvent::SessionStarted(value) if state.phase == RunPhase::Preflight => {

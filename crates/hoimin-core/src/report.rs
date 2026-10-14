@@ -429,7 +429,6 @@ pub enum ResumeFreshReason {
     FingerprintMismatch,
     NoIncompleteRun,
     CandidateChanged,
-    NoCompatibleRun,
 }
 
 impl ResumeFreshReason {
@@ -442,7 +441,6 @@ impl ResumeFreshReason {
             Self::FingerprintMismatch => "fingerprint_mismatch",
             Self::NoIncompleteRun => "no_incomplete_run",
             Self::CandidateChanged => "candidate_changed",
-            Self::NoCompatibleRun => "no_compatible_run",
         }
     }
 
@@ -455,7 +453,6 @@ impl ResumeFreshReason {
             Self::FingerprintMismatch => "incomplete runs have a different fingerprint",
             Self::NoIncompleteRun => "saved runs are complete and none match this fingerprint",
             Self::CandidateChanged => "session history changed during resume selection",
-            Self::NoCompatibleRun => "no compatible incomplete run is available",
         }
     }
 }

@@ -40,6 +40,34 @@ fn minimal_schema_v5_report_fixture_matches_the_published_schema() {
 }
 
 #[test]
+fn published_resume_schema_accepts_producer_reasons_and_rejects_retired_fallback() {
+    use hoimin_core::{ResumeFreshReason, ResumeOutcome};
+    let event_schema = read_schema(&repo_root().join("docs/json-schema/run-event.schema.json"));
+    let schema = &event_schema["$defs"]["resumeOutcome"];
+    assert_schema_valid(
+        schema,
+        &serde_json::to_value(ResumeOutcome::Resumed).unwrap(),
+        &event_schema,
+    );
+    for reason in [
+        ResumeFreshReason::NoPriorRun,
+        ResumeFreshReason::MatchingRunComplete,
+        ResumeFreshReason::BudgetDecreased,
+        ResumeFreshReason::FingerprintMismatch,
+        ResumeFreshReason::NoIncompleteRun,
+        ResumeFreshReason::CandidateChanged,
+    ] {
+        let value = serde_json::to_value(ResumeOutcome::Fresh { reason }).unwrap();
+        assert_schema_valid(schema, &value, &event_schema);
+    }
+    for reason in ["no_compatible_run", "unknown"] {
+        let value = serde_json::json!({"status":"fresh","reason":reason});
+        assert_schema_invalid(schema, &value, &event_schema);
+        assert!(serde_json::from_value::<ResumeOutcome>(value).is_err());
+    }
+}
+
+#[test]
 fn disk_stop_secondary_evidence_matches_the_published_event_schema() {
     let root = repo_root();
     let event_schema = read_schema(&root.join("docs/json-schema/run-event.schema.json"));

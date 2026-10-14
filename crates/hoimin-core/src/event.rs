@@ -60,12 +60,25 @@ pub struct CandidateLoaded {
     pub next_cursor: CandidateCursor,
 }
 
+/// Completed session selection, with exactly one owned run or fresh-start reason.
+///
+/// An outcome is required; legacy optional fields are rejected rather than repaired.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SessionLoaded {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub fresh_reason: Option<crate::ResumeFreshReason>,
+    /// Identifies the pending load effect that this completion satisfies.
     pub id: EffectId,
-    pub resume: Option<SessionResumeRef>,
+    /// The decision made by session selection and ownership acquisition.
+    pub outcome: SessionLoadOutcome,
+}
+
+/// Session selection result, distinct from the reference-free report outcome.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum SessionLoadOutcome {
+    /// Continues the saved run after successful ownership acquisition.
+    Resumed(SessionResumeRef),
+    /// Starts a new run for the observed session-history reason.
+    Fresh(crate::ResumeFreshReason),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

@@ -1006,7 +1006,7 @@ fn invalid_normalized_config_cases() -> Vec<InvalidManifestCase> {
                 value["normalized_config"]["limits"]["total_timeout"] =
                     serde_json::json!({"secs": 0, "nanos": 0});
             },
-            "invalid zero or overflowing limit: --total-timeout",
+            "invalid zero or overflowing limit: duration",
         ),
         (
             "missing selector",
@@ -1091,17 +1091,21 @@ async fn verify_rejects_invalid_normalized_config_before_project_work() {
         let requested = vec![manifest.candidates[0].id.clone()];
         let mut value = serde_json::to_value(manifest).unwrap();
         mutate(&mut value);
-        let tampered: PlanManifest = serde_json::from_value(value.clone())
-            .unwrap_or_else(|error| panic!("{name} must remain structurally valid: {error}"));
-        assert_eq!(
-            tampered
+        let actual_message = match serde_json::from_value::<PlanManifest>(value.clone()) {
+            Ok(tampered) => tampered
                 .normalized_config
                 .validate()
                 .unwrap_err()
                 .to_string(),
-            expected_message,
-            "{name}"
-        );
+            Err(error) => {
+                assert_eq!(
+                    name, "zero total timeout",
+                    "unexpected serde rejection: {error}"
+                );
+                error.to_string()
+            }
+        };
+        assert_eq!(actual_message, expected_message, "{name}");
         write_json(&path, &value);
 
         std::fs::remove_file(project.path.join("src/calc.py")).unwrap();

@@ -73,7 +73,7 @@
           "required": ["status", "reason"],
           "properties": {
             "status": { "const": "fresh" },
-            "reason": { "type": "string", "enum": ["no_prior_run", "matching_run_complete", "budget_decreased", "fingerprint_mismatch", "no_incomplete_run", "candidate_changed", "no_compatible_run"] }
+            "reason": { "type": "string", "enum": ["no_prior_run", "matching_run_complete", "budget_decreased", "fingerprint_mismatch", "no_incomplete_run", "candidate_changed"] }
           },
           "additionalProperties": false
         }
