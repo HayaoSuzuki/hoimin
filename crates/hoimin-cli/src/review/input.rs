@@ -6,7 +6,7 @@ use camino::Utf8Path;
 use hoimin_core::{CandidateValidationContext, MutationCandidate, validate_candidate_with_context};
 
 use super::ReviewError;
-use super::model::{ArtifactReference, ReviewKey, SourceState};
+use super::model::{ArtifactReference, ReportReference, ReviewKey, SourceState};
 use crate::artifacts::run_report::ReviewReport;
 use crate::artifacts::{READ_ONLY_ARTIFACT_LIMIT, bounded_read};
 use crate::plan::ReadOnlyPlan;
@@ -37,7 +37,7 @@ pub(crate) fn load_report(
     path: &Path,
     plan: &ReadOnlyPlan,
     planned: &PlanCandidates<'_>,
-) -> Result<(ReviewReport, ArtifactReference), ReviewError> {
+) -> Result<(ReviewReport, ReportReference), ReviewError> {
     let bytes = bounded_read(path, READ_ONLY_ARTIFACT_LIMIT)?;
     let report = crate::artifacts::run_report::read_review_json(path, &bytes)
         .map_err(|error| ReviewError::Invalid(error.to_string()))?;
@@ -64,10 +64,12 @@ pub(crate) fn load_report(
             ));
         }
     }
-    let reference = ArtifactReference {
-        path: std::fs::canonicalize(path)?,
-        content_hash: blake3::hash(&bytes).to_hex().to_string(),
-        run_id: Some(report.run_id.clone()),
+    let reference = ReportReference {
+        artifact: ArtifactReference {
+            path: std::fs::canonicalize(path)?,
+            content_hash: blake3::hash(&bytes).to_hex().to_string(),
+        },
+        run_id: report.run_id.clone(),
     };
     Ok((report, reference))
 }

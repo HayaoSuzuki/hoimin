@@ -7,19 +7,19 @@ catalog_revision: 79b6bde29b05e9904c8efff59e02d0c45377d7f7
 sources:
 - id: issue-899-changed-selection
   resource: ../superpowers/specs/2026-10-15-issue-899-design.md
-  revision: 36dd548543b0eaf72f060b163d0af6ab5d227330
-  working_tree: modified
-  sha256: ce5f03920ef09f08647227e566596ccc47a0de862d969df5a70220c3ec3118e6
+  revision: 7b6cb19ba0181759f6b5726f985c5fd7700d313e
+  working_tree: clean
+  sha256: fa68b3e4aa56ab0ee3dd19f818a0b932a033dce550dbc869f956c261578b501f
 - id: issue-899-changed-review
   resource: ../superpowers/reports/2026-10-15-issue-899-review.md
-  revision: 36dd548543b0eaf72f060b163d0af6ab5d227330
+  revision: 7b6cb19ba0181759f6b5726f985c5fd7700d313e
   working_tree: modified
-  sha256: 6a931830d32f7fef3c479a4faa528d44d1cf667b1014ff3f27f45245568ed733
+  sha256: efb3dde4ed6b19551a6ddc0bf29a57a063176aa1e84fe8efb2b3ab7effb48605
 - id: policy
   resource: ../compatibility.md
-  revision: 36dd548543b0eaf72f060b163d0af6ab5d227330
+  revision: 7b6cb19ba0181759f6b5726f985c5fd7700d313e
   working_tree: modified
-  sha256: ca5b0b4265006a40385482b6665822ae376f76c7056d33119d0e11d344b790fc
+  sha256: 7cd3a1699ce65bdcdba7f5c1ceac0e6b60f01ea8333e07b9a2e6c87c41d2bde3
 - id: issue-887-environment
   resource: ../superpowers/plans/2026-10-14-issue-887.md
 - id: release

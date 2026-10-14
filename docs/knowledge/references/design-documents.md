@@ -7,9 +7,9 @@ catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
 - id: issue-899-changed-selection-design
   resource: ../../superpowers/specs/2026-10-15-issue-899-design.md
-  revision: 36dd548543b0eaf72f060b163d0af6ab5d227330
-  working_tree: modified
-  sha256: ce5f03920ef09f08647227e566596ccc47a0de862d969df5a70220c3ec3118e6
+  revision: 7b6cb19ba0181759f6b5726f985c5fd7700d313e
+  working_tree: clean
+  sha256: fa68b3e4aa56ab0ee3dd19f818a0b932a033dce550dbc869f956c261578b501f
 - id: typed-results-and-contracts-design
   resource: ../../superpowers/specs/2026-10-12-typed-results-and-contracts-design.md
   revision: 8ff7c6b
