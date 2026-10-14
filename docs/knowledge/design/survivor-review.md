@@ -14,6 +14,10 @@ sources:
   resource: ../../superpowers/reports/2026-10-11-issue-711-survivor-review.md
   working_tree: untracked
   sha256: 2f388bf417df4054d41765ec4b66d74815880752cfb377956949bc628871c699
+- id: issue-874-source-observations
+  resource: ../../superpowers/plans/2026-10-14-issue-874.md
+  working_tree: untracked
+  sha256: 9d6b521515606b342e212481e191bb71ad6d8d9af0446326ab028bd54566d970
 ---
 
 # survivorの評価と実行結果の分離
@@ -46,3 +50,29 @@ Rust/SQLite/OSまで形式検証した保証ではなく、ローカルWindows L
 [^issue-711-survivor-review-design]: [#711 survivorの評価と履歴の保存設計](../../superpowers/specs/2026-10-11-issue-711-survivor-review-design.md)。2026-10-11の実装前設計。
 
 [^issue-711-review-report]: [#711 survivor評価の実装と検証](../../superpowers/reports/2026-10-11-issue-711-survivor-review.md)。実装、試験、証明の条件と限界。
+
+## Source observations during a command
+
+Review display validates selected candidates in file groups. Each path has one
+bounded source read and one validation context per command; every candidate
+still receives its own hash, descriptor, encoding and identity checks.
+Results and errors are consumed in the original candidate order, including
+interleaved paths. Source bytes and context are released before reading the next
+file. This bounds retained source storage to one file rather than all sources.
+[^issue-874-source-observations]
+
+Candidates for a path share its single observation, so an edit during display
+does not cause later candidates for that path to observe another version.
+Different files do not form an atomic snapshot. A subsequent command reads
+again, and record retains an independent freshness check before writing.
+No source cache crosses commands; CLI and saved schemas remain unchanged.
+[^issue-874-source-observations]
+
+The issue 874 checks cover source work counts, interleaved result/error order,
+stale and unavailable states, validation precedence, and the existing review
+integration and Lean corpus adapter. The adapter checks the unchanged pure
+model, not source I/O or SQLite/OS behavior. Executed results and unverified
+platform cases are recorded separately in the implementation plan.
+[^issue-874-source-observations]
+
+[^issue-874-source-observations]: [Issue 874 implementation and validation](../../superpowers/plans/2026-10-14-issue-874.md).
