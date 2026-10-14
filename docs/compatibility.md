@@ -21,6 +21,13 @@ See the [usage guide](usage.md) for runtime contracts and the generated
 [CLI reference](cli-reference.md) for argument definitions. This policy does
 not make a newer binary accept an older schema or weaken input validation.
 
+## Report reader support in 0.6.0
+
+The 0.6.0 version floor removes progress support for schema-2 JSON and schema-3
+JSON/JSONL. Schema-4 JSON and JSONL remain supported. Keep the old binary with
+historical reports or rerun with the intended version; do not hand-edit schema
+numbers. This is a reader-support removal; report output remains schema 4.
+
 ## Choosing the release floor
 
 The manifests contain a minimum version, not the next exact patch number.
@@ -93,10 +100,3 @@ The operator and changes above are examples, not claims about a shipped release.
 This is a review checklist, not a claim of formal compatibility verification.
 No retrospective rewrite of reports, session databases or old release notes is
 required. Revisit the policy before a 1.0 release or a new distribution interface.
-
-## Report reader support in 0.6.0
-
-The 0.6.0 version floor removes progress support for schema-2 JSON and schema-3
-JSON/JSONL. Schema-4 JSON and JSONL remain supported. Keep the old binary with
-historical reports or rerun with the intended version; do not hand-edit schema
-numbers. This is a reader-support removal; report output remains schema 4.
