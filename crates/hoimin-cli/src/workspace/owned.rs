@@ -200,6 +200,7 @@ mod tests {
             truncated_detail_count: 1,
         };
         let mut cleanup = super::CleanupRecord {
+            retry_reason: None,
             status: hoimin_core::DiskCleanupStatus::Clean,
             examined_entries: 4,
             removed_entries: 4,
@@ -1542,6 +1543,53 @@ mod tests {
         assert_ne!(reclaim.details, Vec::<String>::new());
         assert!(started.elapsed() < std::time::Duration::from_secs(1));
         drop(held);
+        assert_eq!(
+            root.cleanup(std::time::Duration::from_secs(5)).status,
+            hoimin_core::DiskCleanupStatus::Clean
+        );
+    }
+
+    #[test]
+    fn cleanup_retry_uses_contention_reason_even_when_details_change() {
+        let parent = tempfile::tempdir().unwrap();
+        let parent = Utf8Path::from_path(parent.path()).unwrap();
+        let coordinator = ManagedRootCoordinator::open(parent).unwrap();
+        let root = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
+        let held = super::CoordinatorLockGuard::acquire(&coordinator).unwrap();
+        let mut cleanup = root.cleanup(std::time::Duration::from_secs(5));
+        cleanup.details = vec!["translated diagnostic without lock wording".to_owned()];
+        assert!(cleanup.retryable_contention());
+        drop(held);
+        let live_root = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
+        let child = live_root.create_child("live-").unwrap();
+        let mut cleanup = live_root.cleanup(std::time::Duration::from_secs(5));
+        cleanup.details =
+            vec!["coordinator process lock is busy; coordinator lock failed".to_owned()];
+        assert!(!cleanup.retryable_contention());
+        drop(child);
+        assert_eq!(
+            live_root.cleanup(std::time::Duration::from_secs(5)).status,
+            hoimin_core::DiskCleanupStatus::Clean
+        );
+    }
+
+    #[test]
+    fn file_lock_contention_retries_without_diagnostic_details() {
+        let parent = tempfile::tempdir().unwrap();
+        let parent = Utf8Path::from_path(parent.path()).unwrap();
+        let coordinator = ManagedRootCoordinator::open(parent).unwrap();
+        let root = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
+        let competing =
+            super::open_regular_file_nofollow(&coordinator.dir, COORDINATOR_FILE).unwrap();
+        fs2::FileExt::try_lock_exclusive(&competing).unwrap();
+
+        let mut cleanup = root.cleanup(std::time::Duration::from_secs(5));
+        cleanup.details.clear();
+
+        assert_eq!(cleanup.status, hoimin_core::DiskCleanupStatus::Deferred);
+        assert!(cleanup.retryable_contention());
+        assert!(root.path().exists());
+        drop(competing);
         assert_eq!(
             root.cleanup(std::time::Duration::from_secs(5)).status,
             hoimin_core::DiskCleanupStatus::Clean
@@ -3742,8 +3790,15 @@ struct PreRenamePublication<'a> {
     mutation_barrier: windows::RootMutationBarrier,
 }
 
+/// Workspace admission evidence, independent of bounded diagnostic details.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum CleanupRetryReason {
+    CoordinatorContention,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CleanupRecord {
+    pub(crate) retry_reason: Option<CleanupRetryReason>,
     pub(crate) status: DiskCleanupStatus,
     pub(crate) examined_entries: u64,
     pub(crate) removed_entries: u64,
@@ -3753,6 +3808,13 @@ pub(crate) struct CleanupRecord {
 }
 
 impl CleanupRecord {
+    /// Only coordinator admission contention may be retried by the owning shell.
+    /// Deadline, live-child and integrity deferrals remain the janitor's responsibility.
+    pub(crate) fn retryable_contention(&self) -> bool {
+        self.status == DiskCleanupStatus::Deferred
+            && self.retry_reason == Some(CleanupRetryReason::CoordinatorContention)
+    }
+
     pub(crate) fn push_detail(&mut self, detail: String) {
         if self.details.len() >= MAX_DIAGNOSTIC_DETAILS {
             self.omitted_detail_count = self.omitted_detail_count.saturating_add(1);
@@ -4819,6 +4881,7 @@ impl ManagedRunRoot {
     pub(crate) fn cleanup(&self, budget: Duration) -> CleanupRecord {
         let started = std::time::Instant::now();
         let mut record = CleanupRecord {
+            retry_reason: None,
             status: DiskCleanupStatus::Failed,
             examined_entries: 0,
             removed_entries: 0,
@@ -4862,6 +4925,7 @@ impl ManagedRunRoot {
                 Ok(guard) => guard,
                 Err(std::sync::TryLockError::WouldBlock) => {
                     record.status = DiskCleanupStatus::Deferred;
+                    record.retry_reason = Some(CleanupRetryReason::CoordinatorContention);
                     record.push_detail("coordinator process lock is busy".to_owned());
                     return record;
                 }
@@ -4873,6 +4937,7 @@ impl ManagedRunRoot {
             if let Err(error) = FileExt::try_lock_exclusive(&self.coordinator_file) {
                 if lock_error_is_busy(&error) {
                     record.status = DiskCleanupStatus::Deferred;
+                    record.retry_reason = Some(CleanupRetryReason::CoordinatorContention);
                 }
                 record.push_detail(format!("coordinator lock failed: {error}"));
                 return record;
@@ -5065,6 +5130,7 @@ impl ManagedRunRoot {
             Err(error) => (None, Some(error)),
         };
         let mut record = CleanupRecord {
+            retry_reason: None,
             status: if failed && remaining_root.is_some() {
                 DiskCleanupStatus::Failed
             } else {
@@ -5091,6 +5157,7 @@ impl ManagedRunRoot {
     )]
     pub(crate) fn abandon_for_janitor(&self, reason: String) -> CleanupRecord {
         let mut record = CleanupRecord {
+            retry_reason: None,
             status: DiskCleanupStatus::Deferred,
             examined_entries: 0,
             removed_entries: 0,
