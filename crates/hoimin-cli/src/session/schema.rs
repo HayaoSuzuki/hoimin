@@ -8,14 +8,18 @@ pub(crate) const SCHEMA_VERSION: i64 = 4;
 
 #[derive(Debug, Error)]
 pub enum SchemaError {
-    #[error("SQLite schema version {0} is newer than this hoimin build")]
-    FutureVersion(i64),
+    #[error(
+        "SQLite schema version {0} is unsupported by this hoimin build (supported version: {SCHEMA_VERSION}); start a new session at a different --session path"
+    )]
+    UnsupportedVersion(i64),
     #[error("SQLite refused WAL journal mode and remained in {0} mode")]
     JournalMode(String),
-    #[error("failed to configure or migrate SQLite session: {0}")]
+    #[error("failed to configure or initialize SQLite session: {0}")]
     Database(#[from] rusqlite::Error),
 }
 
+/// Configures session access and initializes fresh databases at the current schema.
+/// Rejects unsupported schemas without changing their tables or data.
 pub(crate) fn configure(connection: &mut Connection) -> Result<(), SchemaError> {
     configure_observed(connection, || {})
 }
@@ -37,63 +41,16 @@ fn configure_observed(
 
     let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let version: i64 = transaction.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-    if version > SCHEMA_VERSION {
-        return Err(SchemaError::FutureVersion(version));
-    }
-    if version == 0 {
-        migrate_v1(&transaction)?;
-    }
-    if version <= 1 {
-        migrate_v2(&transaction)?;
-    }
-    if version <= 2 {
-        migrate_v3(&transaction)?;
-    }
-    if version <= 3 {
-        migrate_v4(&transaction)?;
+    match version {
+        0 => initialize(&transaction)?,
+        SCHEMA_VERSION => {}
+        _ => return Err(SchemaError::UnsupportedVersion(version)),
     }
     transaction.commit()?;
     Ok(())
 }
 
-fn migrate_v4(transaction: &Transaction<'_>) -> Result<(), rusqlite::Error> {
-    transaction.execute_batch(
-        "ALTER TABLE runs ADD COLUMN max_mutants BLOB
-         CHECK(max_mutants IS NULL OR
-               (typeof(max_mutants)='blob' AND length(max_mutants)=8
-                AND max_mutants > zeroblob(8)));
-         PRAGMA user_version=4;",
-    )
-}
-
-fn enable_wal(connection: &Connection, timeout: Duration) -> Result<(), SchemaError> {
-    const RETRY_BACKOFF: Duration = Duration::from_millis(5);
-
-    let deadline = Instant::now() + timeout;
-    loop {
-        match connection.query_row("PRAGMA journal_mode=WAL", [], |row| row.get::<_, String>(0)) {
-            Ok(mode) if mode.eq_ignore_ascii_case("wal") || mode.eq_ignore_ascii_case("memory") => {
-                return Ok(());
-            }
-            Ok(mode) => return Err(SchemaError::JournalMode(mode)),
-            Err(error) if is_lock_contention(&error) && Instant::now() < deadline => {
-                let remaining = deadline.saturating_duration_since(Instant::now());
-                thread::sleep(RETRY_BACKOFF.min(remaining));
-            }
-            Err(error) => return Err(error.into()),
-        }
-    }
-}
-
-fn is_lock_contention(error: &rusqlite::Error) -> bool {
-    matches!(
-        error,
-        rusqlite::Error::SqliteFailure(failure, _)
-            if matches!(failure.code, ErrorCode::DatabaseBusy | ErrorCode::DatabaseLocked)
-    )
-}
-
-fn migrate_v1(transaction: &Transaction<'_>) -> Result<(), rusqlite::Error> {
+fn initialize(transaction: &Transaction<'_>) -> Result<(), rusqlite::Error> {
     transaction.execute_batch(
         "CREATE TABLE fingerprints (
              digest BLOB PRIMARY KEY NOT NULL CHECK(length(digest) = 32),
@@ -104,7 +61,11 @@ fn migrate_v1(transaction: &Transaction<'_>) -> Result<(), rusqlite::Error> {
              run_id TEXT NOT NULL UNIQUE,
              fingerprint BLOB NOT NULL REFERENCES fingerprints(digest),
              finished INTEGER NOT NULL DEFAULT 0 CHECK(finished IN (0, 1)),
-             complete INTEGER NOT NULL DEFAULT 0 CHECK(complete IN (0, 1))
+             complete INTEGER NOT NULL DEFAULT 0 CHECK(complete IN (0, 1)),
+             max_mutants BLOB
+             CHECK(max_mutants IS NULL OR
+                   (typeof(max_mutants)='blob' AND length(max_mutants)=8
+                    AND max_mutants > zeroblob(8)))
          );
          CREATE INDEX runs_resume ON runs(fingerprint, complete, id DESC);
          CREATE TABLE candidates (
@@ -134,45 +95,6 @@ fn migrate_v1(transaction: &Transaction<'_>) -> Result<(), rusqlite::Error> {
              output_token TEXT,
              output_retained INTEGER,
              output_observed INTEGER,
-             PRIMARY KEY(run_id, mutant_id),
-             FOREIGN KEY(run_id, mutant_id) REFERENCES candidates(run_id, mutant_id)
-                 DEFERRABLE INITIALLY DEFERRED
-         );
-         CREATE TABLE diagnostics (
-             id INTEGER PRIMARY KEY AUTOINCREMENT,
-             run_id TEXT NOT NULL,
-             mutant_id TEXT NOT NULL,
-             level TEXT NOT NULL,
-             code TEXT NOT NULL,
-             message TEXT NOT NULL,
-             FOREIGN KEY(run_id, mutant_id) REFERENCES candidates(run_id, mutant_id)
-                 DEFERRABLE INITIALLY DEFERRED
-         );
-         PRAGMA user_version=1;",
-    )?;
-    Ok(())
-}
-
-fn migrate_v2(transaction: &Transaction<'_>) -> Result<(), rusqlite::Error> {
-    transaction.execute_batch(
-        "CREATE INDEX diagnostics_result ON diagnostics(run_id, mutant_id, id);
-         PRAGMA user_version=2;",
-    )?;
-    Ok(())
-}
-
-fn migrate_v3(transaction: &Transaction<'_>) -> Result<(), rusqlite::Error> {
-    transaction.execute_batch(
-        "CREATE TABLE results_v3 (
-             run_id TEXT NOT NULL,
-             mutant_id TEXT NOT NULL,
-             status TEXT NOT NULL,
-             elapsed_secs INTEGER NOT NULL,
-             elapsed_nanos INTEGER NOT NULL,
-             resource_mode TEXT NOT NULL,
-             output_token TEXT,
-             output_retained INTEGER,
-             output_observed INTEGER,
              termination_kind TEXT,
              termination_exit_code INTEGER,
              PRIMARY KEY(run_id, mutant_id),
@@ -190,18 +112,46 @@ fn migrate_v3(transaction: &Transaction<'_>) -> Result<(), rusqlite::Error> {
                  ELSE 0
              END)
          );
-         INSERT INTO results_v3(
-             run_id,mutant_id,status,elapsed_secs,elapsed_nanos,resource_mode,
-             output_token,output_retained,output_observed
-         ) SELECT
-             run_id,mutant_id,status,elapsed_secs,elapsed_nanos,resource_mode,
-             output_token,output_retained,output_observed
-         FROM results;
-         DROP TABLE results;
-         ALTER TABLE results_v3 RENAME TO results;
-         PRAGMA user_version=3;",
+         CREATE TABLE diagnostics (
+             id INTEGER PRIMARY KEY AUTOINCREMENT,
+             run_id TEXT NOT NULL,
+             mutant_id TEXT NOT NULL,
+             level TEXT NOT NULL,
+             code TEXT NOT NULL,
+             message TEXT NOT NULL,
+             FOREIGN KEY(run_id, mutant_id) REFERENCES candidates(run_id, mutant_id)
+                 DEFERRABLE INITIALLY DEFERRED
+         );
+         CREATE INDEX diagnostics_result ON diagnostics(run_id, mutant_id, id);",
     )?;
-    Ok(())
+    transaction.pragma_update(None, "user_version", SCHEMA_VERSION)
+}
+
+fn enable_wal(connection: &Connection, timeout: Duration) -> Result<(), SchemaError> {
+    const RETRY_BACKOFF: Duration = Duration::from_millis(5);
+
+    let deadline = Instant::now() + timeout;
+    loop {
+        match connection.query_row("PRAGMA journal_mode=WAL", [], |row| row.get::<_, String>(0)) {
+            Ok(mode) if mode.eq_ignore_ascii_case("wal") || mode.eq_ignore_ascii_case("memory") => {
+                return Ok(());
+            }
+            Ok(mode) => return Err(SchemaError::JournalMode(mode)),
+            Err(error) if is_lock_contention(&error) && Instant::now() < deadline => {
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                thread::sleep(RETRY_BACKOFF.min(remaining));
+            }
+            Err(error) => return Err(error.into()),
+        }
+    }
+}
+
+fn is_lock_contention(error: &rusqlite::Error) -> bool {
+    matches!(
+        error,
+        rusqlite::Error::SqliteFailure(failure, _)
+            if matches!(failure.code, ErrorCode::DatabaseBusy | ErrorCode::DatabaseLocked)
+    )
 }
 
 #[cfg(test)]
@@ -211,6 +161,64 @@ mod tests {
     use std::sync::{Arc, Condvar, Mutex, PoisonError};
     use std::thread;
     use std::time::Duration;
+
+    #[test]
+    fn old_golden_databases_are_rejected_without_schema_or_data_changes() {
+        for version in 1..=3 {
+            let temp = tempfile::tempdir().unwrap();
+            let path = temp.path().join("session.sqlite3");
+            std::fs::copy(
+                Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join(format!("tests/golden/sessions/schema-v{version}.sqlite3")),
+                &path,
+            )
+            .unwrap();
+            let mut connection = Connection::open(path).unwrap();
+            let before = database_snapshot(&connection);
+            let error = configure(&mut connection).expect_err("old schema must be rejected");
+            let message = error.to_string();
+            assert!(message.contains("unsupported"), "{message}");
+            assert!(message.contains("new session"), "{message}");
+            assert_eq!(user_version(&connection), version);
+            assert_eq!(database_snapshot(&connection), before);
+        }
+    }
+
+    fn database_snapshot(connection: &Connection) -> Vec<String> {
+        let mut snapshot = Vec::new();
+        let mut statement = connection
+            .prepare("SELECT name,sql FROM sqlite_master ORDER BY type,name")
+            .unwrap();
+        let objects: Vec<(String, Option<String>)> = statement
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        for (name, sql) in objects {
+            snapshot.push(format!("{name}: {sql:?}"));
+            if sql
+                .as_deref()
+                .is_some_and(|sql| sql.starts_with("CREATE TABLE"))
+            {
+                let mut rows = connection
+                    .prepare(&format!("SELECT * FROM \"{name}\" ORDER BY rowid"))
+                    .unwrap();
+                let count = rows.column_count();
+                snapshot.extend(
+                    rows.query_map([], |row| {
+                        let values = (0..count)
+                            .map(|i| row.get::<_, rusqlite::types::Value>(i))
+                            .collect::<Result<Vec<_>, _>>()?;
+                        Ok(format!("{values:?}"))
+                    })
+                    .unwrap()
+                    .collect::<Result<Vec<_>, _>>()
+                    .unwrap(),
+                );
+            }
+        }
+        snapshot
+    }
 
     #[test]
     fn configures_busy_timeout_on_the_handler_connection() {
@@ -244,51 +252,66 @@ mod tests {
     }
 
     #[test]
-    fn upgrades_v1_preserves_data_and_reopens_idempotently() {
+    fn current_golden_reopens_without_changing_schema_or_data() {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("session.sqlite3");
-        let mut connection = Connection::open(&path).unwrap();
-        create_v1_fixture(&mut connection, true);
-        drop(connection);
-
+        std::fs::copy(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden/sessions/schema-v4.sqlite3"),
+            &path,
+        )
+        .unwrap();
+        let before = database_snapshot(&Connection::open(&path).unwrap());
         for _ in 0..2 {
             let mut connection = Connection::open(&path).unwrap();
             configure(&mut connection).unwrap();
-            assert_eq!(user_version(&connection), 4);
-            assert_eq!(
-                connection
-                    .query_row("SELECT message FROM diagnostics WHERE id=7", [], |row| {
-                        row.get::<_, String>(0)
-                    })
-                    .unwrap(),
-                "preserve me"
-            );
-            assert_eq!(
-                connection
-                    .query_row(
-                        "SELECT count(*) FROM sqlite_master
-                         WHERE type='index' AND name='diagnostics_result'",
-                        [],
-                        |row| row.get::<_, i64>(0),
-                    )
-                    .unwrap(),
-                1
-            );
-            assert_eq!(
-                connection
-                    .query_row(
-                        "SELECT termination_kind,termination_exit_code FROM results
-                         WHERE run_id='run-1' AND mutant_id='m1'",
-                        [],
-                        |row| Ok((
-                            row.get::<_, Option<String>>(0)?,
-                            row.get::<_, Option<i64>>(1)?
-                        )),
-                    )
-                    .unwrap(),
-                (None, None)
-            );
+            assert_eq!(user_version(&connection), SCHEMA_VERSION);
+            assert_eq!(database_snapshot(&connection), before);
         }
+    }
+
+    #[test]
+    fn failed_fresh_initialization_rolls_back_tables_indexes_and_version() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        connection.execute_batch("CREATE TABLE diagnostics(marker TEXT); INSERT INTO diagnostics VALUES ('preserve me');").unwrap();
+        let before = database_snapshot(&connection);
+        assert!(matches!(
+            configure(&mut connection),
+            Err(SchemaError::Database(_))
+        ));
+        assert_eq!(user_version(&connection), 0);
+        assert_eq!(database_snapshot(&connection), before);
+    }
+
+    #[test]
+    fn negative_version_is_rejected_without_initialization() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        connection.execute_batch("PRAGMA user_version=-1;").unwrap();
+        assert!(matches!(
+            configure(&mut connection),
+            Err(SchemaError::UnsupportedVersion(-1))
+        ));
+        assert_eq!(user_version(&connection), -1);
+        assert_eq!(database_snapshot(&connection), Vec::<String>::new());
+    }
+
+    #[test]
+    fn configures_foreign_keys_on_the_handler_connection() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        configure(&mut connection).unwrap();
+        assert_eq!(
+            connection
+                .query_row("PRAGMA foreign_keys", [], |row| row.get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+        assert!(
+            connection
+                .execute(
+                    "INSERT INTO runs(run_id,fingerprint) VALUES ('invalid',zeroblob(32))",
+                    []
+                )
+                .is_err()
+        );
     }
 
     #[test]
@@ -360,140 +383,23 @@ mod tests {
     }
 
     #[test]
-    fn upgrades_v2_results_with_legacy_null_termination() {
-        let mut connection = Connection::open_in_memory().unwrap();
-        create_v1_fixture(&mut connection, true);
-        let transaction = connection.transaction().unwrap();
-        migrate_v2(&transaction).unwrap();
-        transaction.commit().unwrap();
-
-        configure(&mut connection).unwrap();
-
-        assert_eq!(user_version(&connection), 4);
-        assert_eq!(
-            connection
-                .query_row(
-                    "SELECT status,termination_kind,termination_exit_code FROM results
-                     WHERE run_id='run-1' AND mutant_id='m1'",
-                    [],
-                    |row| {
-                        Ok((
-                            row.get::<_, String>(0)?,
-                            row.get::<_, Option<String>>(1)?,
-                            row.get::<_, Option<i64>>(2)?,
-                        ))
-                    },
-                )
-                .unwrap(),
-            ("killed".to_owned(), None, None)
-        );
-    }
-
-    #[test]
-    fn failed_v1_upgrade_rolls_back_version_and_index() {
-        let mut connection = Connection::open_in_memory().unwrap();
-        create_v1_fixture(&mut connection, false);
-
-        assert!(configure(&mut connection).is_err());
-        assert_eq!(user_version(&connection), 1);
-        assert_eq!(
-            connection
-                .query_row(
-                    "SELECT count(*) FROM sqlite_master
-                     WHERE type='index' AND name='diagnostics_result'",
-                    [],
-                    |row| row.get::<_, i64>(0),
-                )
-                .unwrap(),
-            0
-        );
-    }
-
-    #[test]
-    fn failed_v2_upgrade_rolls_back_the_replacement_results_table() {
-        let mut connection = Connection::open_in_memory().unwrap();
-        let transaction = connection.transaction().unwrap();
-        migrate_v1(&transaction).unwrap();
-        migrate_v2(&transaction).unwrap();
-        transaction.commit().unwrap();
-        connection
-            .execute_batch(
-                "ALTER TABLE results RENAME TO valid_results;
-                 CREATE TABLE results(run_id TEXT);",
-            )
-            .unwrap();
-
-        assert!(configure(&mut connection).is_err());
-        assert_eq!(user_version(&connection), 2);
-        assert_eq!(
-            connection
-                .query_row(
-                    "SELECT count(*) FROM sqlite_master
-                     WHERE type='table' AND name='results_v3'",
-                    [],
-                    |row| row.get::<_, i64>(0),
-                )
-                .unwrap(),
-            0
-        );
-        assert_eq!(
-            connection
-                .query_row(
-                    "SELECT count(*) FROM pragma_table_info('results')",
-                    [],
-                    |row| row.get::<_, i64>(0),
-                )
-                .unwrap(),
-            1
-        );
-    }
-
-    #[test]
-    fn failed_budget_upgrade_rolls_back_prior_migration_steps() {
-        let mut connection = Connection::open_in_memory().unwrap();
-        create_v1_fixture(&mut connection, true);
-        let transaction = connection.transaction().unwrap();
-        migrate_v2(&transaction).unwrap();
-        transaction.commit().unwrap();
-        connection
-            .execute_batch("ALTER TABLE runs ADD COLUMN max_mutants BLOB")
-            .unwrap();
-        assert!(configure(&mut connection).is_err());
-        assert_eq!(user_version(&connection), 2);
-        assert_eq!(connection.query_row(
-            "SELECT count(*) FROM pragma_table_info('results') WHERE name='termination_kind'",
-            [], |row| row.get::<_, i64>(0)).unwrap(), 0);
-        assert_eq!(
-            connection
-                .query_row("SELECT status FROM results", [], |row| row
-                    .get::<_, String>(0))
-                .unwrap(),
-            "killed"
-        );
-        assert_eq!(
-            connection
-                .query_row("SELECT count(*) FROM diagnostics", [], |row| row
-                    .get::<_, i64>(0))
-                .unwrap(),
-            1
-        );
-    }
-
-    #[test]
     fn future_version_is_rejected_without_modifying_the_database() {
         let mut connection = Connection::open_in_memory().unwrap();
         connection
             .execute_batch(
                 "CREATE TABLE future_schema_marker(value TEXT);
+                 INSERT INTO future_schema_marker VALUES ('preserve me');
                  PRAGMA user_version=5;",
             )
             .unwrap();
 
+        let before = database_snapshot(&connection);
         assert!(matches!(
             configure(&mut connection),
-            Err(SchemaError::FutureVersion(5))
+            Err(SchemaError::UnsupportedVersion(5))
         ));
         assert_eq!(user_version(&connection), 5);
+        assert_eq!(database_snapshot(&connection), before);
         assert_eq!(
             connection
                 .query_row(
@@ -522,59 +428,34 @@ mod tests {
         assert_eq!(user_version(&connection), SCHEMA_VERSION);
     }
 
-    #[test]
-    fn concurrent_v1_upgrade_succeeds_and_preserves_data() {
-        let temp = tempfile::tempdir().unwrap();
-        let path = temp.path().join("session.sqlite3");
-        let mut connection = Connection::open(&path).unwrap();
-        create_v1_fixture(&mut connection, true);
-        connection
-            .query_row("PRAGMA journal_mode=WAL", [], |row| row.get::<_, String>(0))
-            .unwrap();
-        drop(connection);
-
-        let results = configure_concurrently(&path);
-
-        assert!(
-            results.iter().all(Result::is_ok),
-            "concurrent schema upgrade failed: {results:?}"
-        );
-        let connection = Connection::open(path).unwrap();
-        assert_eq!(user_version(&connection), SCHEMA_VERSION);
-        assert_eq!(
-            connection
-                .query_row("SELECT message FROM diagnostics WHERE id=7", [], |row| {
-                    row.get::<_, String>(0)
-                })
-                .unwrap(),
-            "preserve me"
-        );
-    }
-
     fn configure_concurrently(path: &Path) -> Vec<Result<(), String>> {
-        let start = Arc::new(MigrationRendezvous::default());
-        let migration = Arc::new(MigrationRendezvous::default());
+        let start = Arc::new(InitializationRendezvous::default());
+        let initialization = Arc::new(InitializationRendezvous::default());
         let handles: Vec<_> = (0..2)
             .map(|_| {
                 let path = path.to_owned();
                 let start = Arc::clone(&start);
-                let migration = Arc::clone(&migration);
+                let initialization = Arc::clone(&initialization);
                 thread::spawn(move || {
                     let mut connection =
                         Connection::open(path).map_err(|error| error.to_string())?;
                     start.arrive_and_wait();
                     configure_observed(&mut connection, || {
-                        migration.arrive_and_wait();
+                        initialization.arrive_and_wait();
                     })
                     .map_err(|error| error.to_string())
                 })
             })
             .collect();
         start.release_when_ready();
-        migration.release_when_ready();
+        initialization.release_when_ready();
         let joined: Vec<_> = handles.into_iter().map(thread::JoinHandle::join).collect();
         assert_eq!(start.failure(), None, "configure start rendezvous failed");
-        assert_eq!(migration.failure(), None, "migration rendezvous failed");
+        assert_eq!(
+            initialization.failure(),
+            None,
+            "initialization rendezvous failed"
+        );
         joined
             .into_iter()
             .map(|result| result.expect("configure thread panicked"))
@@ -582,7 +463,7 @@ mod tests {
     }
 
     #[derive(Default)]
-    struct MigrationRendezvous {
+    struct InitializationRendezvous {
         state: Mutex<RendezvousState>,
         changed: Condvar,
     }
@@ -594,7 +475,7 @@ mod tests {
         failure: Option<&'static str>,
     }
 
-    impl MigrationRendezvous {
+    impl InitializationRendezvous {
         fn arrive_and_wait(&self) {
             let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
             state.arrived += 1;
@@ -644,49 +525,5 @@ mod tests {
         connection
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap()
-    }
-
-    fn create_v1_fixture(connection: &mut Connection, valid: bool) {
-        if valid {
-            let transaction = connection.transaction().unwrap();
-            migrate_v1(&transaction).unwrap();
-            transaction.commit().unwrap();
-            connection
-                .execute_batch(
-                    "INSERT INTO fingerprints(digest,schema_version) VALUES (zeroblob(32),1);
-                     INSERT INTO runs(run_id,fingerprint) VALUES ('run-1',zeroblob(32));
-                     INSERT INTO candidates(
-                         run_id,mutant_id,sequence,path,span_start,span_length,original,
-                         replacement,operator,line,column_number,symbol,file_hash
-                     ) VALUES (
-                         'run-1','m1',0,'src/a.py',0,1,'+','-','binary',1,0,NULL,'hash'
-                     );
-                     INSERT INTO results(
-                         run_id,mutant_id,status,elapsed_secs,elapsed_nanos,resource_mode,
-                         output_token,output_retained,output_observed
-                     ) VALUES ('run-1','m1','killed',0,0,'hard',NULL,NULL,NULL);",
-                )
-                .unwrap();
-            connection
-                .execute(
-                    "INSERT INTO diagnostics(id,run_id,mutant_id,level,code,message)
-                     VALUES (7,'run-1','m1','warning','fixture','preserve me')",
-                    [],
-                )
-                .unwrap();
-        } else {
-            connection
-                .execute_batch(
-                    "PRAGMA user_version=1;
-                     CREATE TABLE diagnostics (
-                         id INTEGER PRIMARY KEY,
-                         run_id TEXT NOT NULL,
-                         level TEXT NOT NULL,
-                         code TEXT NOT NULL,
-                         message TEXT NOT NULL
-                     );",
-                )
-                .unwrap();
-        }
     }
 }

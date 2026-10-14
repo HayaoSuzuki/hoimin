@@ -93,3 +93,12 @@ The operator and changes above are examples, not claims about a shipped release.
 This is a review checklist, not a claim of formal compatibility verification.
 No retrospective rewrite of reports, session databases or old release notes is
 required. Revisit the policy before a 1.0 release or a new distribution interface.
+
+## Session initialization change (Issue 882)
+
+The release floor is 0.6.0 because schema versions 1-3 are no longer automatically
+upgraded. New databases receive schema 4 directly; existing schema-4 databases
+reopen. All other initialized versions produce an unsupported-version error.
+Keep old databases with their producing binary, and choose a different
+`--session PATH` for a new run. hoimin does not transform, remove or replace the
+old database. See [Sessions and resume](usage.md#sessions-and-resume).

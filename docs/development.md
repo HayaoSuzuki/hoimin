@@ -1581,8 +1581,9 @@ existing UTF-8 Lean/source-index proofs do not establish codec correspondence.
 
 Fingerprint schema 10 omits only `max_mutants` from verdict compatibility.
 SQLite schema 4 persists each run's accepted limit as a positive eight-byte
-big-endian unsigned value. Legacy rows retain NULL and remain non-resumable;
-the migration does not rewrite candidate/results. Selection finds the newest
+big-endian unsigned value. Existing schema-4 rows with a NULL historical budget
+remain non-resumable. Opening a database does not rewrite candidate/results.
+Selection finds the newest
 compatible incomplete run whose accepted limit does not exceed the requested
 limit. After acquiring the existing run ownership lock, a conditional update
 checks the exact validated old budget before reserving the new limit. Invalid
@@ -1593,8 +1594,29 @@ reused results against the cumulative limit.
 public SessionHandler operations in `session_handler`. Lean proves no decreases
 and monotonic eligibility; it does not model SQLite locking or the scheduler.
 Public CLI tests cover baseline execution, cumulative reuse/execution, completion,
-and equality with fresh execution. The existing migration oracle's abstract
-current version maps to SQLite 4; its current migration step includes v3 and v4.
+and equality with fresh execution.
+
+## Session schema initialization
+
+`session/schema.rs` owns a single current DDL batch. A version-0 database is
+initialized directly as schema 4 inside an immediate transaction. After acquiring
+the write lock, the initializer rereads `user_version`; a concurrent opener that
+now sees 4 commits without creating tables again. A failed DDL batch rolls back
+all tables, indexes and the version change. WAL, foreign keys, a five-second busy
+timeout and WAL contention retry remain enabled.
+
+Existing schema-4 databases reopen. Versions 1-3, negative versions and future
+versions produce `SchemaError::UnsupportedVersion` with new-session guidance;
+existing tables, data and `user_version` are preserved. Old golden databases test
+refusal and preservation, while the current golden tests reopen, stored results,
+diagnostics and budgets. Current results can still have NULL termination.
+
+The `SchemaMigration` model and executable names retain their audit lineage.
+Their live model now creates current directly from fresh and rejects initialized
+unsupported versions. The strict Rust adapter checks public session opens;
+the forced stale-read schedule remains model-only there, and a schema unit test
+uses a rendezvous to force both fresh reads before either initializer takes the
+write lock. Historical migration reports describe the earlier implementation.
 
 ## Target discovery inventory
 

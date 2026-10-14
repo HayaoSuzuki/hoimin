@@ -1,18 +1,15 @@
 import Std
 
+-- The module name is retained for audit continuity. The live contract is direct
+-- initialization of a fresh database and rejection of unsupported versions.
 namespace HoiminOracle.SchemaMigration
 
 inductive Version
-  | fresh
-  | v1
-  | v2
-  | current
-  | future
+  | fresh | v1 | v2 | v3 | current | future
   deriving Repr, DecidableEq, BEq, ReflBEq, LawfulBEq
 
 inductive Actor
-  | left
-  | right
+  | left | right
   deriving Repr, DecidableEq, BEq, ReflBEq, LawfulBEq
 
 inductive Phase
@@ -20,14 +17,14 @@ inductive Phase
   | waiting (observed : Version)
   | locked
   | succeeded
-  | futureRejected
-  | migrationFailed
+  | unsupportedRejected
+  | initializationFailed
   deriving Repr, DecidableEq, BEq, ReflBEq, LawfulBEq
 
 inductive Event
   | observe (actor : Actor)
   | begin (actor : Actor)
-  | migrate (actor : Actor)
+  | initializeSchema (actor : Actor)
   | commit (actor : Actor)
   | fail (actor : Actor)
   deriving Repr, DecidableEq, BEq, ReflBEq, LawfulBEq
@@ -66,47 +63,38 @@ def observe (state : State) (actor : Actor) : State :=
       else setPhase state actor (.waiting state.version)
   | _ => state
 
+-- Re-read the committed version after obtaining the writer transaction.
 def begin (state : State) (actor : Actor) : State :=
   match phase state actor, state.lock with
   | .waiting _, none =>
       match state.version with
-      | .future => setPhase state actor .futureRejected
-      | version =>
-          setPhase { state with lock := some actor, txVersion := some version } actor .locked
+      | .fresh | .current =>
+          setPhase { state with lock := some actor, txVersion := some state.version } actor .locked
+      | .v1 | .v2 | .v3 | .future => setPhase state actor .unsupportedRejected
   | _, _ => state
 
-def nextVersion? : Version → Option Version
-  | .fresh => some .v1
-  | .v1 => some .v2
-  | .v2 => some .current
-  | .current | .future => none
-
 def releaseFailed (state : State) (actor : Actor) : State :=
-  setPhase { state with lock := none, txVersion := none } actor .migrationFailed
+  setPhase { state with lock := none, txVersion := none } actor .initializationFailed
 
-def migrate (state : State) (actor : Actor) : State :=
+def initializeSchema (state : State) (actor : Actor) : State :=
   if state.lock == some actor && phase state actor == .locked then
     match state.txVersion with
-    | some transactionVersion =>
-        match nextVersion? transactionVersion with
-        | some next =>
-            if state.version == .current || state.version == .future then
-              releaseFailed state actor
-            else
-              { state with txVersion := some next }
-        | none => state
-    | none => state
+    | some .fresh =>
+        if state.version == .fresh then { state with txVersion := some .current }
+        else releaseFailed state actor
+    | _ => state
   else state
 
 def commit (state : State) (actor : Actor) : State :=
   if state.lock == some actor && phase state actor == .locked then
     match state.txVersion with
     | some .current =>
-        if state.version == .future then releaseFailed state actor
-        else
-          setPhase {
-            state with version := .current, lock := none, txVersion := none
-          } actor .succeeded
+        match state.version with
+        | .fresh | .current =>
+            setPhase {
+              state with version := .current, lock := none, txVersion := none
+            } actor .succeeded
+        | .v1 | .v2 | .v3 | .future => releaseFailed state actor
     | _ => state
   else state
 
@@ -118,7 +106,7 @@ def fail (state : State) (actor : Actor) : State :=
 def step (state : State) : Event → State
   | .observe actor => observe state actor
   | .begin actor => begin state actor
-  | .migrate actor => migrate state actor
+  | .initializeSchema actor => initializeSchema state actor
   | .commit actor => commit state actor
   | .fail actor => fail state actor
 

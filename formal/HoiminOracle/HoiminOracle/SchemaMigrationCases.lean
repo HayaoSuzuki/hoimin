@@ -5,7 +5,7 @@ namespace HoiminOracle.SchemaMigration
 def actors : List Actor := [.left, .right]
 
 def events : List Event := actors.flatMap fun actor => [
-  .observe actor, .begin actor, .migrate actor, .commit actor, .fail actor
+  .observe actor, .begin actor, .initializeSchema actor, .commit actor, .fail actor
 ]
 
 def phaseIsSuccessful (item : Phase) : Bool := item == .succeeded
@@ -25,13 +25,13 @@ def reachableStates : Nat → List State → List State
   | 0, states => states.eraseDups
   | depth + 1, states => reachableStates depth (expand states)
 
-def auditDepth : Nat := 9
-def stateCeiling : Nat := 128
+def auditDepth : Nat := 7
+def stateCeiling : Nat := 256
 
 def auditInitials : List State := [
-  initial .fresh false,
-  initial .v1 true,
-  initial .future true
+  initial .fresh false, initial .fresh true,
+  initial .v1 true, initial .v2 true, initial .v3 true,
+  initial .current true, initial .future true
 ]
 
 def auditedStates : List State := reachableStates auditDepth auditInitials
@@ -45,7 +45,7 @@ def brokenFailPublishes (state : State) (actor : Actor) : State :=
     | some staged =>
         setPhase {
           state with version := staged, lock := none, txVersion := none
-        } actor .migrationFailed
+        } actor .initializationFailed
     | none => state
   else state
 
@@ -53,23 +53,23 @@ def brokenBeginUsesObserved (state : State) (actor : Actor) : State :=
   match phase state actor, state.lock with
   | .waiting observed, none =>
       match observed with
-      | .future => setPhase state actor .futureRejected
-      | version =>
-          setPhase { state with lock := some actor, txVersion := some version } actor .locked
+      | .fresh | .current =>
+          setPhase { state with lock := some actor, txVersion := some observed } actor .locked
+      | .v1 | .v2 | .v3 | .future => setPhase state actor .unsupportedRejected
   | _, _ => state
 
-def brokenBeginMigratesFuture (state : State) (actor : Actor) : State :=
+def brokenBeginAcceptsUnsupported (state : State) (actor : Actor) : State :=
   match phase state actor, state.lock with
-  | .waiting .future, none =>
-      setPhase { state with lock := some actor, txVersion := some .v1 } actor .locked
+  | .waiting _, none =>
+      setPhase { state with lock := some actor, txVersion := some .fresh } actor .locked
   | _, _ => begin state actor
 
 def brokenStepStale (state : State) : Event → State
   | .begin actor => brokenBeginUsesObserved state actor
   | event => step state event
 
-def brokenStepFuture (state : State) : Event → State
-  | .begin actor => brokenBeginMigratesFuture state actor
+def brokenStepUnsupported (state : State) : Event → State
+  | .begin actor => brokenBeginAcceptsUnsupported state actor
   | event => step state event
 
 def runWith (next : State → Event → State) : State → List Event → State
@@ -78,57 +78,49 @@ def runWith (next : State → Event → State) : State → List Event → State
 
 def freshConcurrentTrace : List Event := [
   .observe .left, .observe .right,
-  .begin .left, .migrate .left, .migrate .left, .migrate .left, .commit .left,
-  .begin .right, .commit .right
-]
-
-def v1ConcurrentTrace : List Event := [
-  .observe .left, .observe .right,
-  .begin .left, .migrate .left, .migrate .left, .commit .left,
+  .begin .left, .initializeSchema .left, .commit .left,
   .begin .right, .commit .right
 ]
 
 def staleReadTrace : List Event := [
   .observe .left, .observe .right,
-  .begin .left, .migrate .left, .migrate .left, .commit .left,
-  .begin .right, .migrate .right, .commit .right
+  .begin .left, .initializeSchema .left, .commit .left,
+  .begin .right, .initializeSchema .right, .commit .right
 ]
 
 def rollbackTrace : List Event := [
-  .observe .left, .begin .left, .migrate .left, .fail .left
+  .observe .left, .begin .left, .initializeSchema .left, .fail .left
 ]
 
-def futureTrace : List Event := [
-  .observe .left, .begin .left
-]
+def unsupportedTrace : List Event := [.observe .left, .begin .left]
 
-def futureBrokenTrace : List Event := [
-  .observe .left, .begin .left,
-  .migrate .left, .migrate .left, .commit .left
+def unsupportedBrokenTrace : List Event := [
+  .observe .left, .begin .left, .initializeSchema .left, .commit .left
 ]
 
 def atomicitySensitivity : Bool :=
-  let before := initial .v1 true
-  let staged := run before [.observe .left, .begin .left, .migrate .left]
-  (fail staged .left).version == .v1 &&
-    (brokenFailPublishes staged .left).version == .v2
+  let before := initial .fresh true
+  let staged := run before [.observe .left, .begin .left, .initializeSchema .left]
+  (fail staged .left).version == .fresh &&
+    (brokenFailPublishes staged .left).version == .current
 
 def staleReadSensitivity : Bool :=
-  let before := initial .v1 true
+  let before := initial .fresh false
   let correct := run before staleReadTrace
   let broken := runWith brokenStepStale before staleReadTrace
   correct.leftPhase == .succeeded && correct.rightPhase == .succeeded &&
-    broken.leftPhase == .succeeded && broken.rightPhase == .migrationFailed
+    broken.leftPhase == .succeeded && broken.rightPhase == .initializationFailed
 
-def futurePrecedenceSensitivity : Bool :=
-  let before := initial .future true
-  let correct := run before futureBrokenTrace
-  let broken := runWith brokenStepFuture before futureBrokenTrace
-  correct.version == .future && correct.leftPhase == .futureRejected &&
-    broken.version == .future && broken.leftPhase == .migrationFailed
+def unsupportedPrecedenceSensitivity : Bool :=
+  ([Version.v1, .v2, .v3, .future]).all fun version =>
+    let before := initial version true
+    let correct := run before unsupportedBrokenTrace
+    let broken := runWith brokenStepUnsupported before unsupportedBrokenTrace
+    correct.version == version && correct.leftPhase == .unsupportedRejected &&
+      broken.version == version && broken.leftPhase == .initializationFailed
 
 def sensitivityPasses : Bool :=
-  atomicitySensitivity && staleReadSensitivity && futurePrecedenceSensitivity
+  atomicitySensitivity && staleReadSensitivity && unsupportedPrecedenceSensitivity
 
 structure OracleCase where
   schema : Nat
@@ -144,19 +136,20 @@ def cases : List OracleCase := [
   { schema := 1, id := "concurrent_fresh_open", mode := "strict",
     scenario := "concurrent_fresh", initialVersion := .fresh,
     legacyRow := false, trace := freshConcurrentTrace },
-  { schema := 1, id := "concurrent_v1_upgrade", mode := "strict",
-    scenario := "concurrent_v1", initialVersion := .v1,
-    legacyRow := true, trace := v1ConcurrentTrace },
-  { schema := 1, id := "forced_stale_reread", mode := "model-only",
-    scenario := "stale_reread", initialVersion := .v1,
-    legacyRow := true, trace := staleReadTrace },
-  { schema := 1, id := "failed_v1_upgrade_rollback", mode := "strict",
-    scenario := "rollback", initialVersion := .v1,
-    legacyRow := true, trace := rollbackTrace },
-  { schema := 1, id := "future_version_precedence", mode := "strict",
-    scenario := "future", initialVersion := .future,
-    legacyRow := true, trace := futureTrace }
-]
+  { schema := 1, id := "forced_stale_fresh_reread", mode := "model-only",
+    scenario := "stale_reread", initialVersion := .fresh,
+    legacyRow := false, trace := staleReadTrace },
+  { schema := 1, id := "failed_fresh_initialization_rollback", mode := "strict",
+    scenario := "rollback", initialVersion := .fresh,
+    legacyRow := true, trace := rollbackTrace }
+] ++ ([Version.v1, .v2, .v3, .future]).map fun version =>
+  { schema := 1, id := match version with
+      | .v1 => "reject_schema_v1"
+      | .v2 => "reject_schema_v2"
+      | .v3 => "reject_schema_v3"
+      | _ => "reject_future_schema",
+    mode := "strict", scenario := "unsupported", initialVersion := version,
+    legacyRow := true, trace := unsupportedTrace }
 
 def caseResult (item : OracleCase) : State :=
   run (initial item.initialVersion item.legacyRow) item.trace

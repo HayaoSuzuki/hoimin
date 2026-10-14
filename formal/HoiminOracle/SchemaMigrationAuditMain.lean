@@ -9,6 +9,7 @@ private def versionName : Version → String
   | .fresh => "fresh"
   | .v1 => "v1"
   | .v2 => "v2"
+  | .v3 => "v3"
   | .current => "current"
   | .future => "future"
 
@@ -16,8 +17,8 @@ private def phaseName : Phase → String
   | .ready => "not_run"
   | .waiting _ | .locked => "incomplete"
   | .succeeded => "ok"
-  | .futureRejected => "future_version"
-  | .migrationFailed => "database_error"
+  | .unsupportedRejected => "unsupported_version"
+  | .initializationFailed => "database_error"
 
 private def actorName : Actor → String
   | .left => "left"
@@ -26,7 +27,7 @@ private def actorName : Actor → String
 private def eventName : Event → String
   | .observe actor => s!"observe:{actorName actor}"
   | .begin actor => s!"begin:{actorName actor}"
-  | .migrate actor => s!"migrate:{actorName actor}"
+  | .initializeSchema actor => s!"initialize:{actorName actor}"
   | .commit actor => s!"commit:{actorName actor}"
   | .fail actor => s!"fail:{actorName actor}"
 
@@ -98,7 +99,7 @@ private def printStats : IO UInt32 := do
 private def printSensitivity : IO UInt32 := do
   IO.println s!"atomicity_detected={atomicitySensitivity}"
   IO.println s!"stale_reread_detected={staleReadSensitivity}"
-  IO.println s!"future_precedence_detected={futurePrecedenceSensitivity}"
+  IO.println s!"unsupported_precedence_detected={unsupportedPrecedenceSensitivity}"
   return if sensitivityPasses then 0 else 2
 
 private def printCases : IO UInt32 := do

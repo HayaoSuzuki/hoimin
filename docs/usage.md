@@ -1121,9 +1121,17 @@ The limit counts reused results as well as newly executed mutants: increasing
 the latest accepted limit, and a lower limit cannot resume that run. A baseline
 still runs on every invocation. Other verdict-affecting limits must remain compatible.
 
-SQLite session schema 4 preserves older rows but does not invent their missing
-historical budget. Start a new session run when an old incomplete run reports
-`session.resume.incompatible`; completed results remain available in the database.
+SQLite sessions use schema 4. hoimin creates this schema directly for an
+uninitialized database and reopens existing schema-4 databases without rewriting
+saved rows. Schema versions 1-3 and unsupported future versions are rejected;
+hoimin does not migrate, delete or replace them. To start fresh, choose a different
+`--session PATH`. Keep an older database with its producing binary if you need to
+read or resume it. This removal of automatic upgrades raises the release floor
+to 0.6.0.
+
+An existing schema-4 run can still lack a recorded historical budget. Start a new
+run when that incomplete run reports `session.resume.incompatible`; completed
+results remain available in the database.
 
 Plan schema version 5 stores explicit environment names/digest and independent
 import roots (ranking rule version 4). Regenerate older plans before verification.
