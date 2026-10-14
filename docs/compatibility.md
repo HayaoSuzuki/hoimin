@@ -20,7 +20,11 @@ representation change alone does not invalidate compatible sessions. If a run is
 rejected for another compatibility reason, choose a different `--session PATH`.
 See [Explicit inherited environment fingerprints](development.md#explicit-inherited-environment-fingerprints).
 
-## Saved changed selection in 0.7.0
+## Saved changed selection in 0.8.0
+
+The release floor is 0.8.0 because this saved-format and public report-reader
+redesign is incompatible with the published 0.7 series. The latest stable
+release checked for this change was v0.7.3.
 
 Plan schema 7 and report schema 6 encode normalized `changed` as null when disabled, or as an object
 containing `context` and optional `diff_base` when enabled. The former boolean

@@ -5,6 +5,11 @@ description: docs/superpowers/specs内の全Markdownを先頭見出しと出典�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-899-changed-selection-design
+  resource: ../../superpowers/specs/2026-10-15-issue-899-design.md
+  revision: 36dd548543b0eaf72f060b163d0af6ab5d227330
+  working_tree: modified
+  sha256: ce5f03920ef09f08647227e566596ccc47a0de862d969df5a70220c3ec3118e6
 - id: typed-results-and-contracts-design
   resource: ../../superpowers/specs/2026-10-12-typed-results-and-contracts-design.md
   revision: 8ff7c6b
@@ -1687,3 +1692,11 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 - [Bounded fuzzing adoption assessment](../../superpowers/specs/2026-10-12-fuzz-adoption-design.md) - Bounded adoption decisions and evidence limitations.[^fuzz-adoption-design]
 
 [^fuzz-adoption-design]: [Bounded fuzzing adoption assessment](../../superpowers/specs/2026-10-12-fuzz-adoption-design.md).
+
+## Issue 899 changed selection
+
+| Original heading | Source |
+| --- | --- |
+| Issue 899: Typed changed selection | [Design](../../superpowers/specs/2026-10-15-issue-899-design.md) [^issue-899-changed-selection-design] |
+
+[^issue-899-changed-selection-design]: [Design](../../superpowers/specs/2026-10-15-issue-899-design.md). Typed changed selection, strict saved-shape rejection and the 0.8.0 public-schema floor.

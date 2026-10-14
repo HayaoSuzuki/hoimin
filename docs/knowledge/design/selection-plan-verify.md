@@ -7,6 +7,14 @@ catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
 - id: issue-899-changed-selection
   resource: ../../superpowers/specs/2026-10-15-issue-899-design.md
+  revision: 36dd548543b0eaf72f060b163d0af6ab5d227330
+  working_tree: modified
+  sha256: ce5f03920ef09f08647227e566596ccc47a0de862d969df5a70220c3ec3118e6
+- id: issue-899-changed-review
+  resource: ../../superpowers/reports/2026-10-15-issue-899-review.md
+  revision: 36dd548543b0eaf72f060b163d0af6ab5d227330
+  working_tree: modified
+  sha256: 6a931830d32f7fef3c479a4faa528d44d1cf667b1014ff3f27f45245568ed733
 - id: issue-886-duration
   resource: ../../superpowers/plans/2026-10-14-issue-886.md
   working_tree: untracked
@@ -551,6 +559,8 @@ when enabled. Boolean changed values and the former sibling context/base fields
 are rejected. Regenerate older plans; preserve older reports with their producing
 binary or rerun. No conversion updates existing files. The CLI's flags, explicit
 selector intersections, Git base semantics, and effective target fingerprints
-retain their meaning. [^issue-899-changed-selection]
+retain their meaning. [^issue-899-changed-selection][^issue-899-changed-review]
 
 [^issue-899-changed-selection]: [Typed changed selection design](../../superpowers/specs/2026-10-15-issue-899-design.md).
+
+[^issue-899-changed-review]: [Issue 899 review and verification](../../superpowers/reports/2026-10-15-issue-899-review.md). Current executed scopes, fixture corrections, limitations and release-floor checks.
