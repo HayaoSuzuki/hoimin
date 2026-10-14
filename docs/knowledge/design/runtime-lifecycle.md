@@ -5,6 +5,10 @@ description: OS別の資源制限と、プロセス終了・一時ファイル�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-900-disk-failure
+  resource: disk-failure.md
+  working_tree: untracked
+  sha256: 30398836956f8fd8687b718ba2c81e835125665d45e0e9ca3a470198b0f1eb60
 - id: issue-867-shell
   resource: ../../../crates/hoimin-cli/src/shell.rs
   revision: 906ba668de94115ef5ca459af3b5f176d22b1b4e
@@ -265,3 +269,13 @@ remain comparison evidence; this work adds no Lean model or proof.
 [^issue-889-shell]: [Owned writer implementation](../../../crates/hoimin-cli/src/shell.rs).
 
 [^issue-889-delivery]: [Owned writer implementation](../../../crates/hoimin-cli/src/report/delivery.rs).
+
+
+## Typed disk stop evidence
+
+The [disk failure contract](disk-failure.md) describes required reason payloads,
+first-stop retention, complete secondary evidence equality, and the intentional
+saved failure format change. Report projection keeps its existing byte-count and
+message fields. This representation change does not add an OS cleanup guarantee.[^issue-900-disk-failure]
+
+[^issue-900-disk-failure]: [Typed disk failure contract](disk-failure.md).

@@ -1939,13 +1939,7 @@ pub fn transition(
             state.flags.outcome.incomplete = true;
             state.flags.scheduling.stop_requested = true;
             if state.disk_summary.stop.is_none() {
-                state.disk_summary.stop = Some(crate::DiskStopReport {
-                    code: value.failure.code,
-                    owned_bytes: value.failure.observation.map(|item| item.owned_bytes),
-                    available_bytes: value.failure.observation.map(|item| item.available_bytes),
-                    message: value.failure.message,
-                    secondary: value.failure.secondary,
-                });
+                state.disk_summary.stop = Some(value.failure.into());
             }
             let was_mutating = state.phase == RunPhase::Mutants;
             state.retire_pending();
