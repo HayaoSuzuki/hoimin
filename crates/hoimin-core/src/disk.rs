@@ -159,6 +159,21 @@ pub enum DiskCleanupOutcome {
     Retained,
 }
 
+/// One root's cleanup observation. Deferred records an outcome but blocks finish.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DiskCleanupState {
+    NotRequested,
+    Requested,
+    Completed(DiskCleanupOutcome),
+}
+
+/// An owned root and its single cleanup state, kept in registration order.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DiskRootEntry {
+    pub root: DiskRootId,
+    pub cleanup: DiskCleanupState,
+}
+
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
 pub enum DiskLifecycleError {
     #[error("duplicate disk root {0:?}")]
@@ -207,13 +222,8 @@ pub struct DiskLifecycleSnapshot {
     pub secondary: Vec<DiskSecondary>,
     pub active: u64,
     pub dispatched: u64,
-    pub owned_roots: Vec<DiskRootId>,
-    pub delivery_roots: Vec<DiskRootId>,
-    pub cleanup_requested: Vec<DiskRootId>,
-    pub cleanup_clean: Vec<DiskRootId>,
-    pub cleanup_failed: Vec<DiskRootId>,
-    pub cleanup_deferred: Vec<DiskRootId>,
-    pub cleanup_retained: Vec<DiskRootId>,
+    /// Owned roots and cleanup observations in their original registration order.
+    pub roots: Vec<DiskRootEntry>,
     pub process_drain: DiskComponentState,
     pub output_drain: DiskComponentState,
     pub monitor_join: DiskComponentState,
@@ -227,13 +237,7 @@ pub struct DiskLifecycle {
     secondary: Vec<DiskSecondary>,
     active: u64,
     dispatched: u64,
-    owned_roots: Vec<DiskRootId>,
-    delivery_roots: Vec<DiskRootId>,
-    cleanup_requested: Vec<DiskRootId>,
-    cleanup_clean: Vec<DiskRootId>,
-    cleanup_failed: Vec<DiskRootId>,
-    cleanup_deferred: Vec<DiskRootId>,
-    cleanup_retained: Vec<DiskRootId>,
+    roots: Vec<DiskRootEntry>,
     process_drain: DiskComponentState,
     output_drain: DiskComponentState,
     monitor_join: DiskComponentState,
@@ -250,30 +254,22 @@ impl DiskLifecycle {
     pub fn new(
         owned_roots: impl IntoIterator<Item = DiskRootId>,
     ) -> Result<Self, DiskLifecycleError> {
-        let mut roots = Vec::new();
+        let mut roots: Vec<DiskRootEntry> = Vec::new();
         for root in owned_roots {
-            if roots.contains(&root) {
+            if roots.iter().any(|entry| entry.root == root) {
                 return Err(DiskLifecycleError::DuplicateRoot(root));
             }
-            roots.push(root);
+            roots.push(DiskRootEntry {
+                root,
+                cleanup: DiskCleanupState::NotRequested,
+            });
         }
-        let delivery_roots = roots
-            .iter()
-            .copied()
-            .filter(|root| *root == DiskRootId::Delivery)
-            .collect();
         Ok(Self {
             stop: None,
             secondary: Vec::new(),
             active: 0,
             dispatched: 0,
-            owned_roots: roots,
-            delivery_roots,
-            cleanup_requested: Vec::new(),
-            cleanup_clean: Vec::new(),
-            cleanup_failed: Vec::new(),
-            cleanup_deferred: Vec::new(),
-            cleanup_retained: Vec::new(),
+            roots,
             process_drain: DiskComponentState::Pending,
             output_drain: DiskComponentState::Pending,
             monitor_join: DiskComponentState::Pending,
@@ -292,17 +288,19 @@ impl DiskLifecycle {
             && settled(self.process_drain)
             && settled(self.output_drain)
             && settled(self.monitor_join)
-            && self.cleanup_deferred.is_empty()
             && self.report == DiskComponentState::Succeeded
-            && self.owned_roots.iter().all(|root| {
-                self.cleanup_clean.contains(root)
-                    || self.cleanup_failed.contains(root)
-                    || self.cleanup_retained.contains(root)
+            && self.roots.iter().all(|entry| {
+                matches!(
+                    entry.cleanup,
+                    DiskCleanupState::Completed(DiskCleanupOutcome::Clean)
+                ) || (entry.root != DiskRootId::Delivery
+                    && matches!(
+                        entry.cleanup,
+                        DiskCleanupState::Completed(
+                            DiskCleanupOutcome::Failed(_) | DiskCleanupOutcome::Retained
+                        )
+                    ))
             })
-            && self
-                .delivery_roots
-                .iter()
-                .all(|root| self.cleanup_clean.contains(root))
     }
 
     #[must_use]
@@ -316,13 +314,7 @@ impl DiskLifecycle {
             secondary: self.secondary.clone(),
             active: self.active,
             dispatched: self.dispatched,
-            owned_roots: self.owned_roots.clone(),
-            delivery_roots: self.delivery_roots.clone(),
-            cleanup_requested: self.cleanup_requested.clone(),
-            cleanup_clean: self.cleanup_clean.clone(),
-            cleanup_failed: self.cleanup_failed.clone(),
-            cleanup_deferred: self.cleanup_deferred.clone(),
-            cleanup_retained: self.cleanup_retained.clone(),
+            roots: self.roots.clone(),
             process_drain: self.process_drain,
             output_drain: self.output_drain,
             monitor_join: self.monitor_join,
@@ -459,16 +451,19 @@ fn complete_component(component: &mut DiskComponentState, state: DiskComponentSt
 }
 
 fn request_cleanup(lifecycle: &mut DiskLifecycle, root: DiskRootId) -> bool {
-    if !lifecycle.owned_roots.contains(&root)
-        || lifecycle.cleanup_requested.contains(&root)
-        || lifecycle.active != 0
+    if lifecycle.active != 0
         || !all_safety_settled(lifecycle)
-        || (lifecycle.delivery_roots.contains(&root)
-            && lifecycle.report == DiskComponentState::Pending)
+        || (root == DiskRootId::Delivery && lifecycle.report == DiskComponentState::Pending)
     {
         return false;
     }
-    lifecycle.cleanup_requested.push(root);
+    let Some(entry) = lifecycle.roots.iter_mut().find(|entry| entry.root == root) else {
+        return false;
+    };
+    if entry.cleanup != DiskCleanupState::NotRequested {
+        return false;
+    }
+    entry.cleanup = DiskCleanupState::Requested;
     true
 }
 
@@ -477,28 +472,27 @@ fn complete_cleanup(
     root: DiskRootId,
     outcome: DiskCleanupOutcome,
 ) -> bool {
-    if !lifecycle.cleanup_requested.contains(&root) || has_outcome(lifecycle, root) {
+    let Some(index) = lifecycle.roots.iter().position(|entry| entry.root == root) else {
+        return false;
+    };
+    if lifecycle.roots[index].cleanup != DiskCleanupState::Requested
+        || (matches!(
+            &outcome,
+            DiskCleanupOutcome::Clean | DiskCleanupOutcome::Failed(_)
+        ) && !all_safety_succeeded(lifecycle))
+    {
         return false;
     }
-    match outcome {
-        DiskCleanupOutcome::Clean => {
-            if !all_safety_succeeded(lifecycle) {
-                return false;
-            }
-            lifecycle.cleanup_clean.push(root);
-        }
-        DiskCleanupOutcome::Failed(message) => {
-            if !all_safety_succeeded(lifecycle) {
-                return false;
-            }
-            lifecycle.cleanup_failed.push(root);
-            add_error(lifecycle, WORKSPACE_CLEANUP_FAILED, message);
-        }
+    let diagnostic = match &outcome {
+        DiskCleanupOutcome::Failed(message) => Some((WORKSPACE_CLEANUP_FAILED, message.clone())),
         DiskCleanupOutcome::Deferred(message) => {
-            lifecycle.cleanup_deferred.push(root);
-            add_error(lifecycle, WORKSPACE_CLEANUP_DEFERRED, message);
+            Some((WORKSPACE_CLEANUP_DEFERRED, message.clone()))
         }
-        DiskCleanupOutcome::Retained => lifecycle.cleanup_retained.push(root),
+        DiskCleanupOutcome::Clean | DiskCleanupOutcome::Retained => None,
+    };
+    lifecycle.roots[index].cleanup = DiskCleanupState::Completed(outcome);
+    if let Some((code, message)) = diagnostic {
+        add_error(lifecycle, code, message);
     }
     true
 }
@@ -559,13 +553,6 @@ fn all_safety_succeeded(lifecycle: &DiskLifecycle) -> bool {
     lifecycle.process_drain == DiskComponentState::Succeeded
         && lifecycle.output_drain == DiskComponentState::Succeeded
         && lifecycle.monitor_join == DiskComponentState::Succeeded
-}
-
-fn has_outcome(lifecycle: &DiskLifecycle, root: DiskRootId) -> bool {
-    lifecycle.cleanup_clean.contains(&root)
-        || lifecycle.cleanup_failed.contains(&root)
-        || lifecycle.cleanup_deferred.contains(&root)
-        || lifecycle.cleanup_retained.contains(&root)
 }
 
 #[cfg(test)]
