@@ -1560,19 +1560,24 @@ enum CleanupThreadFailure {
     Stopped,
 }
 
+impl CleanupThreadFailure {
+    fn message(&self) -> String {
+        match self {
+            Self::Spawn(error) => format!("cleanup thread could not start: {error}"),
+            Self::TimedOut => "cleanup operation timed out".to_owned(),
+            Self::Stopped => "cleanup thread stopped without a result".to_owned(),
+        }
+    }
+}
+
 impl std::fmt::Display for CleanupThreadFailure {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Spawn(error) => write!(
-                formatter,
-                "workspace.cleanup.failed: cleanup thread could not start: {error}"
-            ),
-            Self::TimedOut => {
-                formatter.write_str("workspace.cleanup.deferred: cleanup operation timed out")
-            }
-            Self::Stopped => formatter
-                .write_str("workspace.cleanup.failed: cleanup thread stopped without a result"),
-        }
+        let code = if matches!(self, Self::TimedOut) {
+            hoimin_core::WORKSPACE_CLEANUP_DEFERRED
+        } else {
+            hoimin_core::WORKSPACE_CLEANUP_FAILED
+        };
+        write!(formatter, "{code}: {}", self.message())
     }
 }
 
@@ -1629,20 +1634,36 @@ enum ManagedCleanupOutcome {
     },
 }
 
+impl ManagedCleanupOutcome {
+    /// Preserve cleanup classification even when its display diagnostic changes.
+    fn disk_outcome(&self) -> DiskCleanupOutcome {
+        match self {
+            Self::Clean(_) => DiskCleanupOutcome::Clean,
+            Self::Failed { error, .. } => DiskCleanupOutcome::Failed(error.clone()),
+            Self::Deferred { error, .. } => DiskCleanupOutcome::Deferred(error.clone()),
+        }
+    }
+}
+
 fn recordless_cleanup_outcome(
-    mut error: String,
+    failure: &CleanupThreadFailure,
     stable_remaining_root: Option<Utf8PathBuf>,
 ) -> ManagedCleanupOutcome {
+    // A failed wait cannot certify the root identity after cleanup may have renamed it.
     let deferred =
-        error.starts_with("workspace.cleanup.deferred:") || stable_remaining_root.is_none();
-    let detail = error.clone();
-    if deferred && !error.starts_with("workspace.cleanup.deferred:") {
-        let message = error
-            .strip_prefix("workspace.cleanup.failed:")
-            .map_or(error.as_str(), str::trim);
-        error = format!("workspace.cleanup.deferred: {message}");
-    }
+        matches!(failure, CleanupThreadFailure::TimedOut) || stable_remaining_root.is_none();
+    let detail = failure.to_string();
+    let error = if deferred {
+        format!(
+            "{}: {}",
+            hoimin_core::WORKSPACE_CLEANUP_DEFERRED,
+            failure.message()
+        )
+    } else {
+        detail.clone()
+    };
     let mut record = CleanupRecord {
+        retry_reason: None,
         status: if deferred {
             hoimin_core::DiskCleanupStatus::Deferred
         } else {
@@ -1668,7 +1689,7 @@ fn cleanup_thread_failure_outcome(
 ) -> ManagedCleanupOutcome {
     let stable_remaining_root =
         matches!(failure, CleanupThreadFailure::Spawn(_)).then(|| root.path().to_owned());
-    recordless_cleanup_outcome(failure.to_string(), stable_remaining_root)
+    recordless_cleanup_outcome(failure, stable_remaining_root)
 }
 
 fn cleanup_with_panic_recovery(
@@ -1729,7 +1750,7 @@ async fn cleanup_managed_root(
             Ok(result) => result.err().map(|error| error.to_string()),
             Err(error) => {
                 return attach_cleanup_ready_error(
-                    recordless_cleanup_outcome(error.to_string(), Some(root.path().to_owned())),
+                    recordless_cleanup_outcome(&error, Some(root.path().to_owned())),
                     Some("cleanup-ready operation did not complete"),
                 );
             }
@@ -1763,12 +1784,7 @@ async fn cleanup_managed_root(
                 );
             }
         };
-        let retryable_contention = cleanup.status == hoimin_core::DiskCleanupStatus::Deferred
-            && cleanup.details.iter().any(|detail| {
-                detail.contains("coordinator process lock is busy")
-                    || detail.contains("coordinator lock failed")
-            });
-        if retryable_contention && tokio::time::Instant::now() < budget.deadline() {
+        if cleanup.retryable_contention() && tokio::time::Instant::now() < budget.deadline() {
             tokio::time::sleep(Duration::from_millis(10)).await;
             continue;
         }
@@ -1865,6 +1881,7 @@ fn apply_execution_cleanup_evidence(
     startup_reclaim: &ReclaimReport,
 ) {
     let mut cleanup = cleanup.cloned().unwrap_or_else(|| CleanupRecord {
+        retry_reason: None,
         status: report.status,
         examined_entries: report.examined_entries,
         removed_entries: report.removed_entries,
@@ -2888,6 +2905,7 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
                     ]) {
                         let id = effect.id();
                         execution_cleanup_record = Some(CleanupRecord {
+                            retry_reason: None,
                             status: hoimin_core::DiskCleanupStatus::Deferred,
                             examined_entries: 0,
                             removed_entries: 0,
@@ -3264,12 +3282,13 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
                             );
                         }
                         if execution_safety_proven {
-                            match cleanup_managed_root(
+                            let cleanup_result = cleanup_managed_root(
                                 Arc::clone(&context.spool_dir.delivery_root),
                                 &cleanup_budget,
                             )
-                            .await
-                            {
+                            .await;
+                            let disk_cleanup_outcome = cleanup_result.disk_outcome();
+                            match cleanup_result {
                             ManagedCleanupOutcome::Clean(cleanup) => {
                                 delivery_errors
                                     .extend(delivery_cleanup_secondary_errors(&cleanup));
@@ -3291,11 +3310,7 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
                             }
                             ManagedCleanupOutcome::Failed { error, .. }
                             | ManagedCleanupOutcome::Deferred { error, .. } => {
-                                let outcome = if error.starts_with("workspace.cleanup.deferred:") {
-                                    DiskCleanupOutcome::Deferred(error.clone())
-                                } else {
-                                    DiskCleanupOutcome::Failed(error.clone())
-                                };
+                                let outcome = disk_cleanup_outcome;
                                 if !disk_lifecycle.apply(DiskLifecycleEvent::CleanupCompleted {
                                     root: DiskRootId::Delivery,
                                     outcome,
@@ -3889,12 +3904,12 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
                 #[cfg(test)]
                 let cleanup_result = if control.take_execution_cleanup_failed_without_record() {
                     recordless_cleanup_outcome(
-                        "workspace.cleanup.failed: injected cleanup thread failure".to_owned(),
+                        &CleanupThreadFailure::Spawn("injected cleanup thread failure".to_owned()),
                         Some(context.spool_dir.execution_root.path().to_owned()),
                     )
                 } else if control.take_execution_cleanup_deferred() {
                     recordless_cleanup_outcome(
-                        "workspace.cleanup.deferred: injected execution cleanup timeout".to_owned(),
+                        &CleanupThreadFailure::TimedOut,
                         None,
                     )
                 } else {
@@ -3910,6 +3925,7 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
                     &cleanup_budget,
                 )
                 .await;
+                let disk_cleanup_outcome = cleanup_result.disk_outcome();
                 match cleanup_result {
                     ManagedCleanupOutcome::Clean(cleanup) => {
                         if !disk_lifecycle.apply(DiskLifecycleEvent::CleanupCompleted {
@@ -3929,7 +3945,7 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
                         execution_cleanup_record = Some(record);
                         if !disk_lifecycle.apply(DiskLifecycleEvent::CleanupCompleted {
                             root: DiskRootId::Execution,
-                            outcome: DiskCleanupOutcome::Failed(error.clone()),
+                            outcome: disk_cleanup_outcome,
                         }) {
                             return Err(
                                 "disk lifecycle rejected failed execution cleanup".to_owned(),
@@ -3945,7 +3961,7 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
                         execution_cleanup_record = Some(record);
                         if !disk_lifecycle.apply(DiskLifecycleEvent::CleanupCompleted {
                             root: DiskRootId::Execution,
-                            outcome: DiskCleanupOutcome::Deferred(error.clone()),
+                            outcome: disk_cleanup_outcome,
                         }) {
                             return Err(
                                 "disk lifecycle rejected deferred execution cleanup".to_owned(),
@@ -4348,12 +4364,11 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
                 if disk_lifecycle.apply(DiskLifecycleEvent::CleanupRequested {
                     root: DiskRootId::Execution,
                 }) {
-                    match cleanup_managed_root(
-                        Arc::clone(&context.spool_dir.execution_root),
-                        budget,
-                    )
-                    .await
-                    {
+                    let cleanup_result =
+                        cleanup_managed_root(Arc::clone(&context.spool_dir.execution_root), budget)
+                            .await;
+                    let disk_cleanup_outcome = cleanup_result.disk_outcome();
+                    match cleanup_result {
                         ManagedCleanupOutcome::Clean(_) => {
                             if !disk_lifecycle.apply(DiskLifecycleEvent::CleanupCompleted {
                                 root: DiskRootId::Execution,
@@ -4369,11 +4384,7 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
                         }
                         ManagedCleanupOutcome::Failed { error, .. }
                         | ManagedCleanupOutcome::Deferred { error, .. } => {
-                            let outcome = if error.starts_with("workspace.cleanup.deferred:") {
-                                DiskCleanupOutcome::Deferred(error.clone())
-                            } else {
-                                DiskCleanupOutcome::Failed(error.clone())
-                            };
+                            let outcome = disk_cleanup_outcome;
                             if !disk_lifecycle.apply(DiskLifecycleEvent::CleanupCompleted {
                                 root: DiskRootId::Execution,
                                 outcome,
@@ -4445,9 +4456,11 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
                 if disk_lifecycle.apply(DiskLifecycleEvent::CleanupRequested {
                     root: DiskRootId::Delivery,
                 }) {
-                    match cleanup_managed_root(Arc::clone(&context.spool_dir.delivery_root), budget)
-                        .await
-                    {
+                    let cleanup_result =
+                        cleanup_managed_root(Arc::clone(&context.spool_dir.delivery_root), budget)
+                            .await;
+                    let disk_cleanup_outcome = cleanup_result.disk_outcome();
+                    match cleanup_result {
                         ManagedCleanupOutcome::Clean(cleanup) => {
                             if !disk_lifecycle.apply(DiskLifecycleEvent::CleanupCompleted {
                                 root: DiskRootId::Delivery,
@@ -4468,11 +4481,7 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
                         }
                         ManagedCleanupOutcome::Failed { error, .. }
                         | ManagedCleanupOutcome::Deferred { error, .. } => {
-                            let outcome = if error.starts_with("workspace.cleanup.deferred:") {
-                                DiskCleanupOutcome::Deferred(error.clone())
-                            } else {
-                                DiskCleanupOutcome::Failed(error.clone())
-                            };
+                            let outcome = disk_cleanup_outcome;
                             if !disk_lifecycle.apply(DiskLifecycleEvent::CleanupCompleted {
                                 root: DiskRootId::Delivery,
                                 outcome,
@@ -6453,11 +6462,74 @@ mod tests {
     }
 
     #[test]
-    fn recordless_failed_cleanup_without_a_verified_path_is_deferred() {
-        let outcome = recordless_cleanup_outcome(
-            "workspace.cleanup.failed: cleanup worker stopped".to_owned(),
-            None,
+    fn managed_cleanup_disk_classification_ignores_diagnostic_wording() {
+        let record = CleanupRecord {
+            retry_reason: None,
+            status: hoimin_core::DiskCleanupStatus::Failed,
+            examined_entries: 0,
+            removed_entries: 0,
+            details: Vec::new(),
+            omitted_detail_count: 0,
+            remaining_root: None,
+        };
+        let failed = ManagedCleanupOutcome::Failed {
+            record: record.clone(),
+            error: "workspace.cleanup.deferred: misleading diagnostic".to_owned(),
+        };
+        let deferred = ManagedCleanupOutcome::Deferred {
+            record,
+            error: "workspace.cleanup.failed: misleading diagnostic".to_owned(),
+        };
+        assert!(
+            matches!(failed.disk_outcome(), DiskCleanupOutcome::Failed(error)
+            if error == "workspace.cleanup.deferred: misleading diagnostic")
         );
+        assert!(
+            matches!(deferred.disk_outcome(), DiskCleanupOutcome::Deferred(error)
+            if error == "workspace.cleanup.failed: misleading diagnostic")
+        );
+    }
+
+    #[test]
+    fn recordless_thread_failure_preserves_kind_and_root_evidence() {
+        let stable = Utf8PathBuf::from("stable-active-root");
+        for (failure, remaining_root, want_deferred) in [
+            (
+                CleanupThreadFailure::Spawn("diagnostic changed".to_owned()),
+                Some(stable.clone()),
+                false,
+            ),
+            (
+                CleanupThreadFailure::Spawn("diagnostic changed".to_owned()),
+                None,
+                true,
+            ),
+            (CleanupThreadFailure::Stopped, Some(stable.clone()), false),
+            (CleanupThreadFailure::Stopped, None, true),
+            (CleanupThreadFailure::TimedOut, Some(stable.clone()), true),
+            (CleanupThreadFailure::TimedOut, None, true),
+        ] {
+            let outcome = recordless_cleanup_outcome(&failure, remaining_root.clone());
+
+            match outcome {
+                ManagedCleanupOutcome::Deferred { record, .. } => {
+                    assert!(want_deferred, "{failure:?}");
+                    assert_eq!(record.status, hoimin_core::DiskCleanupStatus::Deferred);
+                    assert_eq!(record.remaining_root, remaining_root);
+                }
+                ManagedCleanupOutcome::Failed { record, .. } => {
+                    assert!(!want_deferred, "{failure:?}");
+                    assert_eq!(record.status, hoimin_core::DiskCleanupStatus::Failed);
+                    assert_eq!(record.remaining_root, remaining_root);
+                }
+                ManagedCleanupOutcome::Clean(_) => panic!("thread failure cannot be clean"),
+            }
+        }
+    }
+
+    #[test]
+    fn recordless_failed_cleanup_without_a_verified_path_is_deferred() {
+        let outcome = recordless_cleanup_outcome(&CleanupThreadFailure::Stopped, None);
 
         let ManagedCleanupOutcome::Deferred { record, error } = outcome else {
             panic!("unverified cleanup failure must be deferred");
@@ -6467,7 +6539,7 @@ mod tests {
         assert!(error.starts_with("workspace.cleanup.deferred:"), "{error}");
         assert_eq!(
             record.details,
-            vec!["workspace.cleanup.failed: cleanup worker stopped"]
+            vec!["workspace.cleanup.failed: cleanup thread stopped without a result"]
         );
     }
 
@@ -7308,6 +7380,7 @@ mod tests {
     #[test]
     fn startup_janitor_diagnostics_reach_the_execution_cleanup_report() {
         let cleanup = CleanupRecord {
+            retry_reason: None,
             status: hoimin_core::DiskCleanupStatus::Clean,
             examined_entries: 4,
             removed_entries: 3,
@@ -8123,6 +8196,7 @@ mod tests {
     #[test]
     fn clean_delivery_cleanup_surfaces_cleanup_ready_secondary() {
         let record = CleanupRecord {
+            retry_reason: None,
             status: hoimin_core::DiskCleanupStatus::Clean,
             examined_entries: 1,
             removed_entries: 1,
