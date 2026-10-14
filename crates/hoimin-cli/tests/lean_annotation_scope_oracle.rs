@@ -1,3 +1,7 @@
+#[path = "support/collecting_writer.rs"]
+mod collecting_writer;
+use collecting_writer::CollectingWriter;
+
 use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -467,11 +471,15 @@ async fn public_plan_observation(item: &OracleCase) -> Result<PublicObservation,
         .expected_operator
         .as_deref()
         .ok_or_else(|| format!("infrastructure-error: {} operator missing", item.id))?;
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
     let code = tokio::time::timeout(
         Duration::from_secs(10),
-        hoimin_cli::run_with_io(plan_args(&fixture, operator), &mut stdout, &mut stderr),
+        hoimin_cli::run_with_writers(
+            plan_args(&fixture, operator),
+            stdout.clone(),
+            stderr.clone(),
+        ),
     )
     .await
     .map_err(|_| format!("infrastructure-error: {} public plan timed out", item.id))?;
@@ -479,10 +487,10 @@ async fn public_plan_observation(item: &OracleCase) -> Result<PublicObservation,
         return Err(format!(
             "infrastructure-error: {} public plan exit={code}, stderr={}",
             item.id,
-            String::from_utf8_lossy(&stderr)
+            String::from_utf8_lossy(&stderr.snapshot())
         ));
     }
-    let manifest: PlanManifest = serde_json::from_slice(&stdout)
+    let manifest: PlanManifest = serde_json::from_slice(&stdout.snapshot())
         .map_err(|error| format!("infrastructure-error: {} malformed plan: {error}", item.id))?;
     let marker_start = item
         .source

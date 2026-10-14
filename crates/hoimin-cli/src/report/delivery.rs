@@ -10,58 +10,63 @@ use super::ReportHandler;
 type OwnedHandler = ReportHandler<Box<dyn Write + Send>, Box<dyn Write + Send>>;
 type OperationResult = Result<Option<OutputEmitted>, EffectFailed>;
 
-pub(crate) enum ReportDelivery<Stdout, Stderr> {
-    Inline(ReportHandler<Stdout, Stderr>),
-    Owned(OwnedDelivery),
+/// Owns every report operation and retains its delivery lease across cancelled waits.
+pub(crate) struct ReportDelivery {
+    state: OwnedDeliveryState,
+    owner: Option<Arc<dyn Send + Sync>>,
+    admission: Arc<ReportAdmission>,
 }
 
-impl<Stdout: Write, Stderr: Write> ReportDelivery<Stdout, Stderr> {
+impl ReportDelivery {
+    pub(crate) fn new<Stdout, Stderr>(
+        handler: ReportHandler<Stdout, Stderr>,
+        owner: Arc<dyn Send + Sync>,
+    ) -> Self
+    where
+        Stdout: Write + Send + 'static,
+        Stderr: Write + Send + 'static,
+    {
+        Self {
+            state: OwnedDeliveryState::Idle(ReportHandler {
+                encoding: handler.encoding,
+                stdout: Box::new(handler.stdout),
+                stderr: Box::new(handler.stderr),
+                lock_stdio_stderr: std::any::TypeId::of::<Stderr>()
+                    == std::any::TypeId::of::<std::io::Stderr>(),
+            }),
+            owner: Some(owner),
+            admission: Arc::new(ReportAdmission::default()),
+        }
+    }
+
     pub(crate) async fn handle(
         &mut self,
         request: EmitOutput,
     ) -> Result<OutputEmitted, EffectFailed> {
-        match self {
-            Self::Inline(handler) => handler.handle(request),
-            Self::Owned(driver) => {
-                let id = request.id;
-                driver
-                    .execute(ReportOperation::Emit(Box::new(request)))
-                    .await?
-                    .ok_or_else(|| delivery_failed(id, "output acknowledgement was missing"))
-            }
-        }
+        let id = request.id;
+        self.execute(ReportOperation::Emit(Box::new(request)))
+            .await?
+            .ok_or_else(|| delivery_failed(id, "output acknowledgement was missing"))
     }
 
     pub(crate) async fn flush_and_release_spool(&mut self) -> io::Result<()> {
-        match self {
-            Self::Inline(handler) => handler.flush_and_release_spool(),
-            Self::Owned(driver) => {
-                if matches!(driver.state, OwnedDeliveryState::Running(_)) {
-                    let _ = driver.join(EffectId(u64::MAX)).await;
-                }
-                let result = driver.execute(ReportOperation::Flush).await;
-                if driver.is_idle() {
-                    driver.owner = None;
-                }
-                result
-                    .map(|_| ())
-                    .map_err(|error| io::Error::other(format!("{error:?}")))
-            }
+        if matches!(self.state, OwnedDeliveryState::Running(_)) {
+            let _ = self.join(EffectId(u64::MAX)).await;
         }
+        let result = self.execute(ReportOperation::Flush).await;
+        if self.is_idle() {
+            self.owner = None;
+        }
+        result
+            .map(|_| ())
+            .map_err(|error| io::Error::other(format!("{error:?}")))
     }
 
     pub(crate) fn is_quiescent(&self) -> bool {
-        match self {
-            Self::Inline(_) => true,
-            Self::Owned(driver) => driver.is_idle(),
-        }
+        self.is_idle()
     }
-
-    pub(crate) fn admission(&self) -> Option<Arc<ReportAdmission>> {
-        match self {
-            Self::Inline(_) => None,
-            Self::Owned(driver) => Some(Arc::clone(&driver.admission)),
-        }
+    pub(crate) fn admission(&self) -> Arc<ReportAdmission> {
+        Arc::clone(&self.admission)
     }
 }
 
@@ -90,33 +95,6 @@ impl ReportAdmission {
     }
 }
 
-impl<Stdout: Write + Send + 'static, Stderr: Write + Send + 'static>
-    ReportDelivery<Stdout, Stderr>
-{
-    pub(crate) fn into_owned(self, owner: Arc<dyn Send + Sync>) -> Self {
-        let Self::Inline(handler) = self else {
-            return self;
-        };
-        Self::Owned(OwnedDelivery {
-            state: OwnedDeliveryState::Idle(ReportHandler {
-                encoding: handler.encoding,
-                stdout: Box::new(handler.stdout),
-                stderr: Box::new(handler.stderr),
-                lock_stdio_stderr: std::any::TypeId::of::<Stderr>()
-                    == std::any::TypeId::of::<std::io::Stderr>(),
-            }),
-            owner: Some(owner),
-            admission: Arc::new(ReportAdmission::default()),
-        })
-    }
-}
-
-pub(crate) struct OwnedDelivery {
-    state: OwnedDeliveryState,
-    owner: Option<Arc<dyn Send + Sync>>,
-    admission: Arc<ReportAdmission>,
-}
-
 /// The handler is either available locally or owned by the blocking task.
 /// Unavailable retains the old post-panic behavior; it is never quiescent.
 enum OwnedDeliveryState {
@@ -125,7 +103,7 @@ enum OwnedDeliveryState {
     Unavailable,
 }
 
-impl Drop for OwnedDelivery {
+impl Drop for ReportDelivery {
     fn drop(&mut self) {
         self.admission.abandoned.store(true, Ordering::Release);
     }
@@ -136,7 +114,7 @@ enum ReportOperation {
     Flush,
 }
 
-impl OwnedDelivery {
+impl ReportDelivery {
     fn is_idle(&self) -> bool {
         matches!(self.state, OwnedDeliveryState::Idle(_))
     }
@@ -217,14 +195,9 @@ mod tests {
     use std::sync::mpsc;
     use std::time::Duration;
 
-    fn idle_handler<Stdout, Stderr>(
-        delivery: &mut ReportDelivery<Stdout, Stderr>,
-    ) -> &mut OwnedHandler {
-        match delivery {
-            ReportDelivery::Owned(OwnedDelivery {
-                state: OwnedDeliveryState::Idle(handler),
-                ..
-            }) => handler,
+    fn idle_handler(delivery: &mut ReportDelivery) -> &mut OwnedHandler {
+        match &mut delivery.state {
+            OwnedDeliveryState::Idle(handler) => handler,
             _ => panic!("expected idle owned delivery"),
         }
     }
@@ -268,7 +241,7 @@ mod tests {
             io::stderr(),
             io::Cursor::new(Vec::new()),
         );
-        let mut delivery = ReportDelivery::Inline(handler).into_owned(Arc::new(()));
+        let mut delivery = ReportDelivery::new(handler, Arc::new(()));
         let handler = idle_handler(&mut delivery);
         let interleaved = Arc::new(AtomicBool::new(false));
         let captured = Arc::new(Mutex::new(Vec::new()));
@@ -373,7 +346,7 @@ mod tests {
             io::sink(),
             io::Cursor::new(Vec::new()),
         );
-        let mut delivery = ReportDelivery::Inline(handler).into_owned(Arc::new(()));
+        let mut delivery = ReportDelivery::new(handler, Arc::new(()));
         let error = delivery.handle(event(17)).await.unwrap_err();
         let later_error = delivery.handle(event(18)).await.unwrap_err();
 
@@ -397,7 +370,7 @@ mod tests {
         assert_queued_write_is_rejected(expire_queued_report);
     }
 
-    type QueuedReport = ReportDelivery<GatedWriter, io::Sink>;
+    type QueuedReport = ReportDelivery;
 
     fn abandon_queued_report(delivery: QueuedReport) -> Vec<QueuedReport> {
         drop(delivery);
@@ -407,7 +380,6 @@ mod tests {
     fn expire_queued_report(delivery: QueuedReport) -> Vec<QueuedReport> {
         delivery
             .admission()
-            .unwrap()
             .restrict_to(tokio::time::Instant::now());
         vec![delivery]
     }
@@ -438,7 +410,7 @@ mod tests {
                 io::sink(),
                 io::Cursor::new(Vec::new()),
             );
-            let mut delivery = ReportDelivery::Inline(handler).into_owned(Arc::new(()));
+            let mut delivery = ReportDelivery::new(handler, Arc::new(()));
             let mut write = Box::pin(delivery.handle(event(1)));
             tokio::select! {
                 biased;
@@ -446,9 +418,7 @@ mod tests {
                 () = tokio::task::yield_now() => {}
             }
             drop(write);
-            let ReportDelivery::Owned(driver) = &mut delivery else {
-                unreachable!()
-            };
+            let driver = &mut delivery;
             let OwnedDeliveryState::Running(queued) =
                 std::mem::replace(&mut driver.state, OwnedDeliveryState::Unavailable)
             else {
@@ -485,7 +455,7 @@ mod tests {
             io::sink(),
             io::Cursor::new(Vec::new()),
         );
-        let mut delivery = ReportDelivery::Inline(handler).into_owned(owner);
+        let mut delivery = ReportDelivery::new(handler, owner);
         let mut write = Box::pin(delivery.handle(event(7)));
         tokio::select! {
             result = &mut write => panic!("acknowledged a blocked write: {result:?}"),
@@ -527,7 +497,7 @@ mod tests {
             io::sink(),
             io::Cursor::new(Vec::new()),
         );
-        let mut delivery = ReportDelivery::Inline(handler).into_owned(owner);
+        let mut delivery = ReportDelivery::new(handler, owner);
         let mut flush = Box::pin(delivery.flush_and_release_spool());
         tokio::select! {
             result = &mut flush => panic!("acknowledged a blocked flush: {result:?}"),

@@ -1,3 +1,7 @@
+#[path = "support/collecting_writer.rs"]
+mod collecting_writer;
+use collecting_writer::CollectingWriter;
+
 use std::env;
 use std::ffi::OsString;
 use std::fs;
@@ -43,11 +47,16 @@ async fn plan(root: &Path, operator: &str) -> serde_json::Value {
         OsString::from("-c"),
         OsString::from("pass"),
     ];
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
-    let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
-    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
-    serde_json::from_slice(&stdout).expect("plan writes one JSON document")
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
+    let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
+    assert_eq!(
+        code,
+        0,
+        "stderr={}",
+        String::from_utf8_lossy(&stderr.snapshot())
+    );
+    serde_json::from_slice(&stdout.snapshot()).expect("plan writes one JSON document")
 }
 
 fn run_python(root: &Path, harness: &str) -> Output {

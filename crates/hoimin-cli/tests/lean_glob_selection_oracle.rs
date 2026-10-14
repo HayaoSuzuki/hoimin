@@ -1,5 +1,10 @@
 //! The finite oracle's escaped-glob semantics are specific to Unix.
+
 #![cfg(unix)]
+
+#[path = "support/collecting_writer.rs"]
+mod collecting_writer;
+use collecting_writer::CollectingWriter;
 
 use std::collections::BTreeSet;
 use std::ffi::OsString;
@@ -126,16 +131,21 @@ async fn glob_discovery_core_and_public_plan_match_lean() {
         let resolved = resolve_explicit(&selected, &discovered).unwrap();
         let paths: BTreeSet<_> = resolved.iter().map(|slice| slice.path.as_str()).collect();
         assert_eq!(paths, expected, "{case:?}");
-        let mut stdout = Vec::new();
-        let mut stderr = Vec::new();
-        let code = hoimin_cli::run_with_io(
+        let stdout = CollectingWriter::default();
+        let stderr = CollectingWriter::default();
+        let code = hoimin_cli::run_with_writers(
             arguments(directory.path(), &case, "plan"),
-            &mut stdout,
-            &mut stderr,
+            stdout.clone(),
+            stderr.clone(),
         )
         .await;
-        assert_eq!(code, 0, "{case:?}: {}", String::from_utf8_lossy(&stderr));
-        let plan: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+        assert_eq!(
+            code,
+            0,
+            "{case:?}: {}",
+            String::from_utf8_lossy(&stderr.snapshot())
+        );
+        let plan: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
         assert_eq!(plan["truncated"], false);
         assert_eq!(plan["diagnostics"], serde_json::json!([]));
         let candidates = plan["candidates"].as_array().unwrap();
@@ -173,16 +183,16 @@ async fn bracket_filename_public_run_keeps_the_mutation() {
     let directory = tempfile::tempdir().unwrap();
     fs::create_dir(directory.path().join("src")).unwrap();
     fs::write(directory.path().join("src/[ab].py"), "value = 1 + 2\n").unwrap();
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
-    let code = hoimin_cli::run_with_io(
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
+    let code = hoimin_cli::run_with_writers(
         arguments(directory.path(), &case, "run"),
-        &mut stdout,
-        &mut stderr,
+        stdout.clone(),
+        stderr.clone(),
     )
     .await;
-    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
-    let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr.snapshot()));
+    let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
     assert_eq!(report["baseline"]["termination"]["Exit"], 0);
     assert_eq!(report["summary"]["counts"]["killed"], 1);
     assert_eq!(report["summary"]["complete"], true);
@@ -202,20 +212,21 @@ async fn missing_glob_targets_fail_core_resolution_and_public_plan() {
             matches!(resolved, Err(TargetError::MissingOrNonPythonFile(_))),
             "{case:?}: {resolved:?}"
         );
-        let mut stdout = Vec::new();
-        let mut stderr = Vec::new();
+        let stdout = CollectingWriter::default();
+        let stderr = CollectingWriter::default();
 
-        let code = hoimin_cli::run_with_io(
+        let code = hoimin_cli::run_with_writers(
             arguments(directory.path(), &case, "plan"),
-            &mut stdout,
-            &mut stderr,
+            stdout.clone(),
+            stderr.clone(),
         )
         .await;
 
         assert_eq!(code, 2);
         assert!(
-            String::from_utf8_lossy(&stderr).contains("target is missing or is not a Python file")
+            String::from_utf8_lossy(&stderr.snapshot())
+                .contains("target is missing or is not a Python file")
         );
-        assert_eq!(stdout, Vec::<u8>::new());
+        assert_eq!(stdout.snapshot(), Vec::<u8>::new());
     }
 }

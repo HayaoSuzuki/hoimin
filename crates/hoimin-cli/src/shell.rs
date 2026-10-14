@@ -29,13 +29,12 @@
 //!
 //! Saved-plan execution consumes [`crate::plan::VerifiedPlan`], keeping checked
 //! configuration, candidate selection, provenance and protected inputs together.
-//! Borrowed callers use [`crate::plan::VerifiedPlan::execute`]; CLI dispatch uses
-//! `run_owned_verified`. Both enter `run_verified` through that owned handoff.
+//! [`crate::plan::VerifiedPlan::execute`] consumes owned output writers and enters
+//! the same report lifecycle as configured runs.
 //!
-//! Owned CLI report delivery moves the writer and delivery-root leases into
+//! Run and verify report delivery moves the writer and delivery-root leases into
 //! blocking work and bounds the async wait. Expiry cannot stop a running write
-//! or flush, so its ownership must remain live. Borrowed library writers execute
-//! inline, may be non-`Send`, and can delay return if synchronous `Write` blocks.
+//! or flush, so its ownership must remain live.
 //!
 //! For deadline details, see the [development guide]. For cancellation, expiry
 //! or output-failure changes, start with this module's `tests` (budget, drain,
@@ -1021,14 +1020,10 @@ fn prepare_session_artifacts(
     Ok(literal_exclusions)
 }
 
-fn prepare_blocking_effect<Stdout, Stderr>(
-    context: &mut ShellContext<Stdout, Stderr>,
+fn prepare_blocking_effect(
+    context: &mut ShellContext,
     effect: RunEffect,
-) -> Result<BlockingEffect, EffectFailed>
-where
-    Stdout: Write,
-    Stderr: Write,
-{
+) -> Result<BlockingEffect, EffectFailed> {
     let task = match effect {
         RunEffect::Preflight(request) => {
             let id = request.id;
@@ -1083,14 +1078,10 @@ where
     task.map(Box::new).map(BlockingEffect::Workspace)
 }
 
-fn accept_blocking_completion<Stdout, Stderr>(
-    context: &mut ShellContext<Stdout, Stderr>,
+fn accept_blocking_completion(
+    context: &mut ShellContext,
     completion: BlockingEffectCompletion,
-) -> RunEvent
-where
-    Stdout: Write,
-    Stderr: Write,
-{
+) -> RunEvent {
     match completion {
         BlockingEffectCompletion::Workspace(completion) => context
             .workspace_mut()
@@ -1126,14 +1117,7 @@ where
 }
 
 #[cfg(test)]
-fn execute_direct_io_effect<Stdout, Stderr>(
-    context: &mut ShellContext<Stdout, Stderr>,
-    effect: RunEffect,
-) -> RunEvent
-where
-    Stdout: Write,
-    Stderr: Write,
-{
+fn execute_direct_io_effect(context: &mut ShellContext, effect: RunEffect) -> RunEvent {
     let result = match effect {
         RunEffect::CreateWorker(request) => context
             .workspace_mut()
@@ -1502,14 +1486,10 @@ fn create_managed_shell_roots_in(
     ))
 }
 
-async fn start_disk_monitor<Stdout, Stderr>(
-    context: &ShellContext<Stdout, Stderr>,
+async fn start_disk_monitor(
+    context: &ShellContext,
     control: &RunControl,
-) -> Result<DiskMonitor, String>
-where
-    Stdout: Write,
-    Stderr: Write,
-{
+) -> Result<DiskMonitor, String> {
     #[cfg(not(test))]
     let _ = control;
     let policy = DiskPolicy {
@@ -1938,11 +1918,11 @@ fn merge_lifecycle_stop(summary: &mut hoimin_core::RunSummary, failure: hoimin_c
     });
 }
 
-pub struct ShellContext<Stdout, Stderr> {
+pub struct ShellContext {
     workspace: Option<WorkspaceHandler>,
     analyzer: AnalyzerHandler,
     process: Arc<ProcessHandler>,
-    report: ReportDelivery<Stdout, Stderr>,
+    report: ReportDelivery,
     session: Option<SessionDispatcher>,
     session_path: Option<Utf8PathBuf>,
     spool_dir: Arc<ManagedShellRoots>,
@@ -1957,22 +1937,26 @@ pub struct ShellContext<Stdout, Stderr> {
     setup_rollback: Option<SetupRollback>,
 }
 
-impl<Stdout, Stderr> ShellContext<Stdout, Stderr>
-where
-    Stdout: Write,
-    Stderr: Write,
-{
+impl ShellContext {
     /// Creates all handlers required for a run.
     ///
     /// # Errors
     ///
     /// Returns an error when local run infrastructure cannot be initialized.
-    pub async fn new(config: &RunConfig, stdout: Stdout, stderr: Stderr) -> Result<Self, String> {
+    pub async fn new<Stdout: Write + Send + 'static, Stderr: Write + Send + 'static>(
+        config: &RunConfig,
+        stdout: Stdout,
+        stderr: Stderr,
+    ) -> Result<Self, String> {
         let prepared = prepare_shell_setup(config.clone(), Box::new(|| {})).await?;
         Ok(Self::from_prepared(prepared, stdout, stderr))
     }
 
-    fn from_prepared(prepared: PreparedShellSetup, stdout: Stdout, stderr: Stderr) -> Self {
+    fn from_prepared<Stdout: Write + Send + 'static, Stderr: Write + Send + 'static>(
+        prepared: PreparedShellSetup,
+        stdout: Stdout,
+        stderr: Stderr,
+    ) -> Self {
         let PreparedShellSetup {
             workspace,
             analyzer,
@@ -1983,12 +1967,18 @@ where
             rollback,
         } = prepared;
         let session_path = config.session.as_ref().map(|value| value.path.clone());
+        let delivery_child = spool_dir
+            .delivery_spool
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        let delivery_owner = Arc::new((Arc::clone(&spool_dir.delivery_root), delivery_child));
 
         Self {
             workspace: Some(workspace),
             analyzer,
             process,
-            report: ReportDelivery::Inline(report.attach(stdout, stderr)),
+            report: ReportDelivery::new(report.attach(stdout, stderr), delivery_owner),
             session: None,
             session_path,
             spool_dir,
@@ -2013,7 +2003,7 @@ where
     }
 
     #[cfg(test)]
-    async fn new_in(
+    async fn new_in<Stdout: Write + Send + 'static, Stderr: Write + Send + 'static>(
         config: &RunConfig,
         stdout: Stdout,
         stderr: Stderr,
@@ -2121,14 +2111,7 @@ fn resource_backend(config: &RunConfig) -> Result<ResourceBackend, crate::resour
     PortableBackend::new(config.allow_best_effort_memory).map(ResourceBackend::Portable)
 }
 
-pub async fn execute_effect<Stdout, Stderr>(
-    context: &mut ShellContext<Stdout, Stderr>,
-    effect: RunEffect,
-) -> RunEvent
-where
-    Stdout: Write,
-    Stderr: Write,
-{
+pub async fn execute_effect(context: &mut ShellContext, effect: RunEffect) -> RunEvent {
     if is_blocking_io_effect(&effect) {
         return match prepare_blocking_effect(context, effect) {
             Ok(task) => {
@@ -2144,15 +2127,11 @@ where
     execute_effect_with_cancellation(context, effect, ProcessCancellation::new()).await
 }
 
-async fn execute_effect_with_cancellation<Stdout, Stderr>(
-    context: &mut ShellContext<Stdout, Stderr>,
+async fn execute_effect_with_cancellation(
+    context: &mut ShellContext,
     effect: RunEffect,
     cancellation: ProcessCancellation,
-) -> RunEvent
-where
-    Stdout: Write,
-    Stderr: Write,
-{
+) -> RunEvent {
     debug_assert!(!is_blocking_io_effect(&effect));
     let id = effect.id();
     let result: Result<RunEvent, EffectFailed> = match effect {
@@ -2252,8 +2231,8 @@ where
     result.unwrap_or_else(RunEvent::EffectFailed)
 }
 
-fn worker_process_request<Stdout, Stderr>(
-    context: &ShellContext<Stdout, Stderr>,
+fn worker_process_request(
+    context: &ShellContext,
     id: EffectId,
     mut request: RunProcess,
     cancellation: ProcessCancellation,
@@ -2328,8 +2307,8 @@ fn remove_environment_key(
     }
 }
 
-async fn session<Stdout, Stderr>(
-    context: &mut ShellContext<Stdout, Stderr>,
+async fn session(
+    context: &mut ShellContext,
     id: EffectId,
 ) -> Result<SessionDispatcher, EffectFailed> {
     if context.session.is_none() {
@@ -2367,33 +2346,28 @@ pub fn prepare_run_config(
     Ok(config)
 }
 
-/// Captures the request once, then runs the mutation-test state machine with its validated snapshot.
+/// Captures the request once, then runs its validated snapshot with owned output writers.
 ///
 /// # Errors
-///
-/// Returns an error when run infrastructure, state transitions, or cleanup fail.
+/// Owns preparation and infrastructure diagnostics; callers may inspect errors
+/// but must not print them again. Deadline expiry can omit a final diagnostic.
 pub async fn run_loop<Stdout, Stderr>(
     config: RunConfig<hoimin_core::EnvironmentRequest>,
     stdout: Stdout,
     stderr: Stderr,
 ) -> Result<i32, String>
 where
-    Stdout: Write,
-    Stderr: Write,
+    Stdout: Write + Send + 'static,
+    Stderr: Write + Send + 'static,
 {
-    let config = prepare_run_config(config).map_err(|error| error.to_string())?;
-    run_loop_prepared(
-        config,
-        stdout,
-        stderr,
-        RunControl::new(),
-        CandidateSelection::All,
-        None,
-        None,
-    )
-    .await
+    run_loop_with_control(config, stdout, stderr, RunControl::new()).await
 }
 
+/// Runs with caller-controlled cancellation and owned output writers.
+///
+/// # Errors
+/// Owns error reporting; callers must not print returned errors again.
+/// Deadline expiry can omit a final diagnostic.
 #[doc(hidden)]
 pub async fn run_loop_with_control<Stdout, Stderr>(
     config: RunConfig<hoimin_core::EnvironmentRequest>,
@@ -2402,17 +2376,24 @@ pub async fn run_loop_with_control<Stdout, Stderr>(
     control: RunControl,
 ) -> Result<i32, String>
 where
-    Stdout: Write,
-    Stderr: Write,
+    Stdout: Write + Send + 'static,
+    Stderr: Write + Send + 'static,
 {
-    let config = prepare_run_config(config).map_err(|error| error.to_string())?;
+    crate::live_progress::stage("preparing run");
+    let config = match prepare_run_config(config) {
+        Ok(config) => config,
+        Err(error) => {
+            let error = error.to_string();
+            crate::write_terminal_error(error.clone(), stderr).await;
+            return Err(error);
+        }
+    };
     run_loop_prepared(
         config,
         stdout,
         stderr,
         control,
         CandidateSelection::All,
-        None,
         None,
     )
     .await
@@ -2424,35 +2405,7 @@ enum CandidateSelection {
     Ordered(Vec<String>, hoimin_core::VerificationSelection),
 }
 
-type OwnedReportFactory<Stdout, Stderr> =
-    fn(ReportDelivery<Stdout, Stderr>, Arc<dyn Send + Sync>) -> ReportDelivery<Stdout, Stderr>;
-
-pub(crate) async fn run_owned_loop<Stdout, Stderr>(
-    config: RunConfig<hoimin_core::EnvironmentRequest>,
-    stdout: Stdout,
-    stderr: Stderr,
-    control: RunControl,
-) -> Result<i32, String>
-where
-    Stdout: Write + Send + 'static,
-    Stderr: Write + Send + 'static,
-{
-    crate::live_progress::stage("preparing run");
-    let config = prepare_run_config(config).map_err(|error| error.to_string())?;
-    let context = prepare_loop_context(&config, stdout, stderr, &control).await?;
-    Ok(Box::pin(run_loop_context(
-        config,
-        context,
-        control,
-        CandidateSelection::All,
-        None,
-        Some(ReportDelivery::into_owned),
-    ))
-    .await
-    .unwrap_or(2))
-}
-
-pub(crate) async fn run_owned_verified<Stdout, Stderr>(
+pub(crate) async fn run_verified<Stdout, Stderr>(
     verified: crate::plan::VerifiedPlan,
     stdout: Stdout,
     stderr: Stderr,
@@ -2461,18 +2414,11 @@ where
     Stdout: Write + Send + 'static,
     Stderr: Write + Send + 'static,
 {
-    run_verified(verified, stdout, stderr, Some(ReportDelivery::into_owned)).await
-}
-
-pub(crate) async fn run_verified<Stdout: Write, Stderr: Write>(
-    verified: crate::plan::VerifiedPlan,
-    stdout: Stdout,
-    stderr: Stderr,
-    owned_report: Option<OwnedReportFactory<Stdout, Stderr>>,
-) -> Result<i32, String> {
     let verified = verified.into_execution();
     if verified.config.session.is_some() || verified.config.resume {
-        return Err("selected candidate execution does not support sessions or resume".to_owned());
+        let error = "selected candidate execution does not support sessions or resume".to_owned();
+        crate::write_terminal_error(error.clone(), stderr).await;
+        return Err(error);
     }
     let selection = match verified.selection {
         crate::plan::ResolvedVerifySelection::ExplicitCandidates(ids) => {
@@ -2485,22 +2431,14 @@ pub(crate) async fn run_verified<Stdout: Write, Stderr: Write>(
     let control = RunControl::new();
     let mut context = prepare_loop_context(&verified.config, stdout, stderr, &control).await?;
     context.metrics_protected_inputs = verified.manifest_inputs;
-    let result = Box::pin(run_loop_context(
+    Box::pin(run_loop_context(
         verified.config,
         context,
         control,
         selection,
         Some(verified.fingerprint_copy_inputs),
-        owned_report,
     ))
-    .await;
-    // Owned report delivery already emits loop failures; borrowed callers
-    // retain the error so their dispatch layer can print the diagnostic.
-    if owned_report.is_some() {
-        Ok(result.unwrap_or(2))
-    } else {
-        result
-    }
+    .await
 }
 
 async fn run_loop_prepared<Stdout, Stderr>(
@@ -2510,11 +2448,10 @@ async fn run_loop_prepared<Stdout, Stderr>(
     control: RunControl,
     candidate_selection: CandidateSelection,
     fingerprint_copy_inputs: Option<BTreeSet<Utf8PathBuf>>,
-    owned_report: Option<OwnedReportFactory<Stdout, Stderr>>,
 ) -> Result<i32, String>
 where
-    Stdout: Write,
-    Stderr: Write,
+    Stdout: Write + Send + 'static,
+    Stderr: Write + Send + 'static,
 {
     let context = prepare_loop_context(&config, stdout, stderr, &control).await?;
     Box::pin(run_loop_context(
@@ -2523,31 +2460,38 @@ where
         control,
         candidate_selection,
         fingerprint_copy_inputs,
-        owned_report,
     ))
     .await
 }
 
-async fn prepare_loop_context<Stdout: Write, Stderr: Write>(
+async fn prepare_loop_context<Stdout, Stderr>(
     config: &RunConfig,
     stdout: Stdout,
     stderr: Stderr,
     control: &RunControl,
-) -> Result<ShellContext<Stdout, Stderr>, String> {
+) -> Result<ShellContext, String>
+where
+    Stdout: Write + Send + 'static,
+    Stderr: Write + Send + 'static,
+{
     #[cfg(not(test))]
     let _ = control;
     #[cfg(not(test))]
-    let context = ShellContext::new(config, stdout, stderr).await?;
+    let prepared = prepare_shell_setup(config.clone(), Box::new(|| {})).await;
     #[cfg(test)]
-    let context = ShellContext::new_in(
-        config,
-        stdout,
-        stderr,
+    let prepared = prepare_shell_setup_in(
+        config.clone(),
         Utf8PathBuf::from_path_buf(control.managed_parent.path().to_owned())
             .map_err(|_| "test managed parent is not UTF-8".to_owned())?,
     )
-    .await?;
-    Ok(context)
+    .await;
+    match prepared {
+        Ok(prepared) => Ok(ShellContext::from_prepared(prepared, stdout, stderr)),
+        Err(error) => {
+            crate::write_terminal_error(error.clone(), stderr).await;
+            Err(error)
+        }
+    }
 }
 
 #[expect(
@@ -2555,27 +2499,14 @@ async fn prepare_loop_context<Stdout: Write, Stderr: Write>(
     reason = "the loop keeps cancellation, completion, and state-transition ordering in one auditable sequence"
 )]
 #[tracing::instrument(name = "mutation_run", level = "debug", skip_all, fields(run_id = tracing::field::Empty))]
-async fn run_loop_context<Stdout: Write, Stderr: Write>(
+async fn run_loop_context(
     config: RunConfig,
-    mut context: ShellContext<Stdout, Stderr>,
+    mut context: ShellContext,
     control: RunControl,
     candidate_selection: CandidateSelection,
     fingerprint_copy_inputs: Option<BTreeSet<Utf8PathBuf>>,
-    owned_report: Option<OwnedReportFactory<Stdout, Stderr>>,
 ) -> Result<i32, String> {
     let metrics_requested = config.output.metrics.is_some();
-    if let Some(own_report) = owned_report {
-        let delivery_child = context
-            .spool_dir
-            .delivery_spool
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone();
-        context.report = own_report(
-            context.report,
-            Arc::new((Arc::clone(&context.spool_dir.delivery_root), delivery_child)),
-        );
-    }
     #[cfg(test)]
     control.observe_managed_roots(&context.spool_dir);
     #[cfg(test)]
@@ -2592,11 +2523,9 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
     let deadline = tokio::time::Instant::now() + config.limits.total_timeout.get();
     let shutdown_grace = control.shutdown_grace();
     let report_admission = context.report.admission();
-    if let Some(admission) = &report_admission {
-        admission.restrict_to(
-            ShutdownBudget::for_total_timeout_with_grace(deadline, shutdown_grace).deadline(),
-        );
-    }
+    report_admission.restrict_to(
+        ShutdownBudget::for_total_timeout_with_grace(deadline, shutdown_grace).deadline(),
+    );
     let max_jobs = config.limits.jobs.get();
     let channel_capacity = config.limits.jobs.get().saturating_add(1);
     let mut metrics = None;
@@ -2676,19 +2605,18 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
         let mut in_flight = 0_usize;
         let mut io_in_flight = 0_usize;
         let mut stop_signalled = false;
+        let mut priority_event = None;
 
         while state.phase() != RunPhase::Finished {
             let mut serial_completion = None;
-            let mut priority_event = if disk_stop_delivered {
-                None
-            } else {
-                disk_stop.borrow_and_update().clone().map(|failure| {
+            if priority_event.is_none() && !disk_stop_delivered {
+                priority_event = disk_stop.borrow_and_update().clone().map(|failure| {
                     disk_stop_delivered = true;
                     cancellation.cancel();
                     stop_signalled = true;
                     RunEvent::DiskStopRequested(DiskStopRequested { failure })
-                })
-            };
+                });
+            }
             if let Some(event) = &priority_event {
                 establish_event_shutdown_budget(
                     &mut shutdown_budget,
@@ -3213,15 +3141,13 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
                                 let limit = shutdown_budget.unwrap_or_else(|| {
                                     ShutdownBudget::for_total_timeout_with_grace(deadline, shutdown_grace)
                                 });
-                                if let Some(admission) = &report_admission {
-                                    admission.restrict_to(limit.deadline());
-                                }
+                                report_admission.restrict_to(limit.deadline());
                                 tokio::select! {
                                     biased;
-                                    () = tokio::time::sleep_until(limit.deadline()), if report_admission.is_some() => {
+                                    () = tokio::time::sleep_until(limit.deadline()) => {
                                         return Err(limit.expiry_error(process_tasks.len(), io_tasks.len() + 1));
                                     }
-                                    () = control.cancelled(), if report_admission.is_some() && !stop_signalled => {
+                                    () = control.cancelled(), if !stop_signalled => {
                                         cancellation.cancel();
                                         stop_signalled = true;
                                         establish_event_shutdown_budget(
@@ -3229,7 +3155,7 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
                                             deadline, tokio::time::Instant::now(), shutdown_grace,
                                         );
                                     }
-                                    signal = interrupts.first(), if report_admission.is_some() && !stop_signalled => {
+                                    signal = interrupts.first(), if !stop_signalled => {
                                         cancellation.cancel();
                                         stop_signalled = true;
                                         let event = first_interrupt_event(signal)?;
@@ -3238,7 +3164,7 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
                                             tokio::time::Instant::now(), shutdown_grace,
                                         );
                                     }
-                                    () = tokio::time::sleep_until(deadline), if report_admission.is_some() && !stop_signalled => {
+                                    () = tokio::time::sleep_until(deadline), if !stop_signalled => {
                                         cancellation.cancel();
                                         stop_signalled = true;
                                         establish_event_shutdown_budget(
@@ -3376,9 +3302,7 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
                         let event = if stopping {
                             let budget = shutdown_budget
                                 .ok_or_else(|| "stopping run has no shutdown budget".to_owned())?;
-                            if let Some(admission) = &report_admission {
-                                admission.restrict_to(budget.deadline());
-                            }
+                            report_admission.restrict_to(budget.deadline());
                             let mut execution = Box::pin(execute_effect_with_cancellation(
                                 &mut context,
                                 effect,
@@ -3533,37 +3457,41 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
                                     budget,
                                     signal_failure: pending_signal_failure,
                                 } => {
-                                    if let Some(admission) = &report_admission {
-                                        admission.restrict_to(budget.deadline());
-                                    }
-                                    if budget.wait(&mut execution).await.is_err() {
-                                        drop(execution);
-                                        let expiry_error = shutdown_expiry_error(
-                                            &mut process_tasks,
-                                            &mut io_tasks,
-                                            &mut completion_rx,
-                                            &mut in_flight,
-                                            &budget,
-                                            &mut shutdown_expiry_reported,
-                                            &mut metrics,
-                                            &mut metrics_warnings,
-                                            |completion| {
-                                                let _ = accept_blocking_completion(
-                                                    &mut context,
-                                                    completion,
-                                                );
-                                            },
-                                        )
-                                        .await;
-                                        return Err(match pending_signal_failure {
-                                            Some(primary) => {
-                                                combine_shutdown_errors(primary, Some(expiry_error))
-                                            }
-                                            None => expiry_error,
-                                        });
-                                    }
+                                    report_admission.restrict_to(budget.deadline());
+                                    let completed = match budget.wait(&mut execution).await {
+                                        Ok(completed) if tokio::time::Instant::now() < budget.deadline() => completed,
+                                        _ => {
+                                            drop(execution);
+                                            let expiry_error = shutdown_expiry_error(
+                                                &mut process_tasks,
+                                                &mut io_tasks,
+                                                &mut completion_rx,
+                                                &mut in_flight,
+                                                &budget,
+                                                &mut shutdown_expiry_reported,
+                                                &mut metrics,
+                                                &mut metrics_warnings,
+                                                |completion| {
+                                                    let _ = accept_blocking_completion(
+                                                        &mut context,
+                                                        completion,
+                                                    );
+                                                },
+                                            )
+                                            .await;
+                                            return Err(match pending_signal_failure {
+                                                Some(primary) => {
+                                                    combine_shutdown_errors(primary, Some(expiry_error))
+                                                }
+                                                None => expiry_error,
+                                            });
+                                        }
+                                    };
                                     signal_failure = pending_signal_failure;
-                                    event
+                                    // Accept the completed effect before its observed stop.
+                                    // Otherwise finalization can replay output already written.
+                                    priority_event = Some(event);
+                                    completed
                                 }
                             }
                         };
@@ -3622,7 +3550,7 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
 
             let completion = if let Some(completion) = serial_completion {
                 completion
-            } else if let Some(event) = priority_event {
+            } else if let Some(event) = priority_event.take() {
                 ShellCompletion::Serial(event)
             } else if let Some(completion) = ready_process_completion {
                 completion
@@ -4233,9 +4161,7 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
         let budget = shutdown_budget
             .as_ref()
             .expect("outer finalization established a shutdown budget");
-        if let Some(admission) = &report_admission {
-            admission.restrict_to(budget.deadline());
-        }
+        report_admission.restrict_to(budget.deadline());
         let _disk_stats = disk_monitor.as_ref().map(DiskMonitor::stats);
         let (process_reaped, output_drained, process_errors) = if execution_safety_proven {
             (true, true, Vec::new())
@@ -4300,9 +4226,7 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
                 .push("disk lifecycle rejected outer monitor join completion".to_owned());
         }
         let mut report_released = delivery_cleanup != CleanupProgress::NotAttempted;
-        if !report_released
-            && (report_admission.is_none() || tokio::time::Instant::now() < budget.deadline())
-        {
+        if !report_released && tokio::time::Instant::now() < budget.deadline() {
             match budget.wait(context.report.flush_and_release_spool()).await {
                 Ok(result) => {
                     report_released = context.report.is_quiescent();
@@ -4612,8 +4536,7 @@ async fn run_loop_context<Stdout: Write, Stderr: Write>(
             close.workspace,
             close.process,
         );
-        if owned_report.is_some()
-            && let Err(error) = &result
+        if let Err(error) = &result
             && context.report.is_quiescent()
             && tokio::time::Instant::now() < budget.deadline()
         {
@@ -4787,8 +4710,8 @@ fn phase_stage(phase: RunPhase) -> Option<&'static str> {
     }
 }
 
-async fn emit_metrics_warning<Stdout: Write, Stderr: Write>(
-    context: &mut ShellContext<Stdout, Stderr>,
+async fn emit_metrics_warning(
+    context: &mut ShellContext,
     run_id: &str,
     code: &str,
     message: String,
@@ -5056,8 +4979,8 @@ fn detach_resource_cleanup(
     }));
 }
 
-fn detach_context_resources<Stdout, Stderr>(
-    context: &mut ShellContext<Stdout, Stderr>,
+fn detach_context_resources(
+    context: &mut ShellContext,
     close_workspace: bool,
     before_start: OwnedStartHook,
 ) {
@@ -5068,17 +4991,13 @@ fn detach_context_resources<Stdout, Stderr>(
     );
 }
 
-async fn close_context_resources<Stdout, Stderr>(
-    context: &mut ShellContext<Stdout, Stderr>,
+async fn close_context_resources(
+    context: &mut ShellContext,
     budget: &ShutdownBudget,
     shutdown_already_expired: bool,
     close_workspace: bool,
     before_start: OwnedStartHook,
-) -> ResourceCloseResults
-where
-    Stdout: Write,
-    Stderr: Write,
-{
+) -> ResourceCloseResults {
     if !close_workspace && let Some(workspace) = context.workspace.as_mut() {
         workspace.retain_workers_for_janitor();
     }
@@ -5240,6 +5159,7 @@ fn combine_close_results(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_writer::CollectingWriter;
     use std::collections::{BTreeMap, VecDeque};
     use std::ffi::OsString;
     use std::time::{Duration, Instant};
@@ -5510,20 +5430,19 @@ mod tests {
                 sampling: None,
             },
         );
-        let mut stdout = Vec::new();
-        let mut stderr = Vec::new();
+        let stdout = CollectingWriter::default();
+        let stderr = CollectingWriter::default();
         let error = run_loop_prepared(
             config,
-            &mut stdout,
-            &mut stderr,
+            stdout.clone(),
+            stderr.clone(),
             RunControl::new(),
             selection,
             Some(BTreeSet::new()),
-            None,
         )
         .await
         .unwrap_err();
-        (error, stdout)
+        (error, stdout.snapshot())
     }
 
     #[tokio::test]
@@ -5597,15 +5516,15 @@ mod tests {
         .unwrap();
         let control = RunControl::new();
         let observed = control.clone();
-        let mut stdout = Vec::new();
+        let stdout = CollectingWriter::default();
 
-        let exit = run_loop_with_control(config, &mut stdout, Vec::new(), control)
+        let exit = run_loop_with_control(config, stdout.clone(), Vec::new(), control)
             .await
             .expect("initial threshold must use the typed stop lifecycle");
 
         assert_ne!(exit, 0);
         assert_eq!(observed.dispatched_effect_count(), 0);
-        let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+        let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
         assert_eq!(
             report["summary"]["disk"]["stop"]["code"],
             hoimin_core::FILESYSTEM_RESERVE_REACHED
@@ -5632,15 +5551,15 @@ mod tests {
         .unwrap();
         let control = RunControl::with_disk_meter(FailingDiskMeter);
         let observed = control.clone();
-        let mut stdout = Vec::new();
+        let stdout = CollectingWriter::default();
 
-        let exit = run_loop_with_control(config, &mut stdout, Vec::new(), control)
+        let exit = run_loop_with_control(config, stdout.clone(), Vec::new(), control)
             .await
             .expect("initial measurement failure must use the typed stop lifecycle");
 
         assert_ne!(exit, 0);
         assert_eq!(observed.dispatched_effect_count(), 0);
-        let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+        let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
         assert_eq!(
             report["summary"]["disk"]["stop"]["code"],
             hoimin_core::DISK_MEASUREMENT_FAILED
@@ -5914,14 +5833,14 @@ mod tests {
             message: None,
             secondary: Vec::new(),
         });
-        let mut stdout = Vec::new();
+        let stdout = CollectingWriter::default();
 
-        let exit = run_loop_with_control(config, &mut stdout, Vec::new(), control)
+        let exit = run_loop_with_control(config, stdout.clone(), Vec::new(), control)
             .await
             .expect("disk stop should complete through the typed state machine");
 
         assert_ne!(exit, 0);
-        let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+        let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
         let stop = &report["summary"]["disk"]["stop"];
         assert_eq!(stop["code"], hoimin_core::FILESYSTEM_RESERVE_REACHED);
         assert!(
@@ -5969,14 +5888,14 @@ mod tests {
             fail_at: 2,
         };
         let control = RunControl::with_disk_meter_and_interval(meter, Duration::from_secs(60));
-        let mut stdout = Vec::new();
+        let stdout = CollectingWriter::default();
 
-        let exit = run_loop_with_control(config, &mut stdout, Vec::new(), control)
+        let exit = run_loop_with_control(config, stdout.clone(), Vec::new(), control)
             .await
             .expect("monitor stop should complete through the typed state machine");
 
         assert_ne!(exit, 0);
-        let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+        let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
         let stop = &report["summary"]["disk"]["stop"];
         assert_eq!(stop["code"], hoimin_core::DISK_MEASUREMENT_FAILED);
         assert_eq!(stop["message"], "post-drain statvfs failed");
@@ -6155,7 +6074,7 @@ mod tests {
         control.final_measurement_pause = Some(pause_hook);
         control.shutdown_grace = Duration::from_millis(30);
         let observed = control.clone();
-        let mut stdout = Vec::new();
+        let stdout = CollectingWriter::default();
         let release = std::thread::spawn(move || {
             pause
                 .wait_until_entered()
@@ -6166,7 +6085,7 @@ mod tests {
                 .map_err(|error| format!("release final measurement pause: {error}"))
         });
 
-        let error = run_loop_with_control(config, &mut stdout, Vec::new(), control)
+        let error = run_loop_with_control(config, stdout.clone(), Vec::new(), control)
             .await
             .expect_err("expired final measurement must defer recursive cleanup");
         let release_result = release
@@ -6187,15 +6106,16 @@ mod tests {
             roots.iter().all(|root| root.exists()),
             "cleanup raced an unjoined final measurement: {roots:?}"
         );
-        let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
-        let execution_cleanup = report["summary"]["disk"]["cleanup"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|record| record["root_id"] == "execution")
-            .expect("execution cleanup evidence");
-        assert_eq!(execution_cleanup["status"], "deferred");
-        assert_eq!(execution_cleanup["remaining_root"], roots[0].as_str());
+        assert!(
+            stdout.is_empty(),
+            "expired delivery admitted a final report"
+        );
+        assert!(
+            !observed
+                .finalization_events()
+                .contains(&"output_acknowledged"),
+            "expired delivery acknowledged final output",
+        );
     }
 
     #[tokio::test]
@@ -6219,9 +6139,9 @@ mod tests {
         let control = RunControl::new();
         control.inject_process_reap_failure();
         let observed = control.clone();
-        let mut stdout = Vec::new();
+        let stdout = CollectingWriter::default();
 
-        let error = run_loop_with_control(config, &mut stdout, Vec::new(), control)
+        let error = run_loop_with_control(config, stdout.clone(), Vec::new(), control)
             .await
             .expect_err("unproven process reap must leave cleanup incomplete");
 
@@ -6229,7 +6149,7 @@ mod tests {
             error.contains(hoimin_core::WORKSPACE_CLEANUP_DEFERRED),
             "{error}"
         );
-        let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+        let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
         assert_eq!(
             report["summary"]["disk"]["stop"]["code"],
             hoimin_core::PROCESS_LIFECYCLE_FAILED
@@ -6272,9 +6192,9 @@ mod tests {
             elapsed: Duration::from_millis(1),
         }));
         control.inject_process_reap_failure();
-        let mut stdout = Vec::new();
+        let stdout = CollectingWriter::default();
 
-        let error = run_loop_with_control(config, &mut stdout, Vec::new(), control)
+        let error = run_loop_with_control(config, stdout.clone(), Vec::new(), control)
             .await
             .expect_err("disk stop plus unproven reap must remain incomplete");
 
@@ -6282,7 +6202,7 @@ mod tests {
             error.contains(hoimin_core::WORKSPACE_CLEANUP_DEFERRED),
             "{error}"
         );
-        let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+        let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
         let stop = &report["summary"]["disk"]["stop"];
         assert_eq!(stop["code"], hoimin_core::FILESYSTEM_RESERVE_REACHED);
         assert!(
@@ -6343,9 +6263,9 @@ mod tests {
         control.inject_execution_cleanup_deferred();
         control.override_end_available(Ok(BTreeMap::from([(FilesystemKey(7), 500)])));
         let observed = control.clone();
-        let mut stdout = Vec::new();
+        let stdout = CollectingWriter::default();
 
-        let error = run_loop_with_control(config, &mut stdout, Vec::new(), control)
+        let error = run_loop_with_control(config, stdout.clone(), Vec::new(), control)
             .await
             .expect_err("deferred execution cleanup must keep the run incomplete");
 
@@ -6362,7 +6282,7 @@ mod tests {
             roots[0].exists(),
             "outer finalization retried and removed the deferred execution root"
         );
-        let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+        let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
         let execution_cleanup = report["summary"]["disk"]["cleanup"]
             .as_array()
             .unwrap()
@@ -6425,14 +6345,14 @@ mod tests {
         control.inject_inner_monitor_join_timeout_once();
         control.override_end_available(Ok(BTreeMap::from([(FilesystemKey(7), 500)])));
         let observed = control.clone();
-        let mut stdout = Vec::new();
+        let stdout = CollectingWriter::default();
 
-        let error = run_loop_with_control(config, &mut stdout, Vec::new(), control)
+        let error = run_loop_with_control(config, stdout.clone(), Vec::new(), control)
             .await
             .expect_err("an unjoined monitor must keep the run incomplete");
 
         assert!(error.contains("disk.measurement.failed"), "{error}");
-        let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+        let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
         assert_eq!(
             report["summary"]["disk"]["stop"]["code"],
             hoimin_core::DISK_MEASUREMENT_FAILED
@@ -6652,11 +6572,11 @@ mod tests {
         control.inject_execution_cleanup_failed_without_record();
         control.override_end_available(Ok(BTreeMap::from([(FilesystemKey(7), 500)])));
         let observed = control.clone();
-        let mut stdout = Vec::new();
+        let stdout = CollectingWriter::default();
 
-        let _result = run_loop_with_control(config, &mut stdout, Vec::new(), control).await;
+        let _result = run_loop_with_control(config, stdout.clone(), Vec::new(), control).await;
 
-        let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+        let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
         let execution_cleanup = report["summary"]["disk"]["cleanup"]
             .as_array()
             .unwrap()
@@ -6804,16 +6724,16 @@ mod tests {
         ];
         args.extend(successful_test_command());
         let config = parse_host_independent_shell_test_config(args);
-        let mut stdout = Vec::new();
+        let stdout = CollectingWriter::default();
 
         assert_eq!(
-            run_loop_with_control(config, &mut stdout, Vec::new(), RunControl::new())
+            run_loop_with_control(config, stdout.clone(), Vec::new(), RunControl::new())
                 .await
                 .unwrap(),
             0
         );
 
-        let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+        let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
         let disk = &report["summary"]["disk"];
         assert!(disk["sample_count"].as_u64().unwrap() >= 3, "{disk}");
         assert!(disk["minimum_available_bytes"].as_u64().is_some());
@@ -6869,15 +6789,15 @@ mod tests {
             elapsed: Duration::from_millis(1),
         }));
         control.override_end_available(Ok(BTreeMap::from([(FilesystemKey(7), 500)])));
-        let mut stdout = Vec::new();
+        let stdout = CollectingWriter::default();
 
         assert_eq!(
-            run_loop_with_control(config, &mut stdout, Vec::new(), control)
+            run_loop_with_control(config, stdout.clone(), Vec::new(), control)
                 .await
                 .unwrap(),
             0
         );
-        let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+        let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
         assert_eq!(
             report["summary"]["disk"]["filesystems"][0]["available_bytes_change"],
             -500
@@ -6905,14 +6825,14 @@ mod tests {
         let control = RunControl::new();
         control.override_end_available(Err("injected end query failure".to_owned()));
         let observed = control.clone();
-        let mut stdout = Vec::new();
+        let stdout = CollectingWriter::default();
 
-        let error = run_loop_with_control(config, &mut stdout, Vec::new(), control)
+        let error = run_loop_with_control(config, stdout.clone(), Vec::new(), control)
             .await
             .expect_err("required end-free evidence failure must keep the run incomplete");
 
         assert!(error.contains("disk.measurement.failed"), "{error}");
-        let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+        let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
         assert_eq!(report["summary"]["complete"], false);
         assert_eq!(
             report["summary"]["disk"]["stop"]["code"],
@@ -6925,11 +6845,6 @@ mod tests {
                 .contains(&"output_acknowledged"),
             "failed final disk evidence must not be acknowledged"
         );
-    }
-
-    struct BorrowedNonSendWriter<'a> {
-        buffer: &'a mut Vec<u8>,
-        _not_send: std::rc::Rc<()>,
     }
 
     struct AlwaysFailingWriter;
@@ -7000,7 +6915,7 @@ mod tests {
             };
             let diagnostics = SharedDiagnosticCapture::default();
             let captured = diagnostics.clone();
-            let mut run = Box::pin(run_owned_loop(config, writer, diagnostics, control));
+            let mut run = Box::pin(run_loop_with_control(config, writer, diagnostics, control));
             tokio::select! {
                 result = &mut run => panic!(
                     "run finished before report pause: {result:?}; stderr={}",
@@ -7038,7 +6953,7 @@ mod tests {
                 .contains(&"output_acknowledged");
             release_tx.send(()).unwrap();
             drop(run);
-            assert_eq!(result.unwrap().unwrap(), 2);
+            assert_eq!(result.unwrap().unwrap_or(2), 2);
             assert!(
                 retained,
                 "cleanup removed a report resource while its operation was blocked"
@@ -7069,9 +6984,9 @@ mod tests {
             let control = RunControl::new();
             let observed = control.clone();
             assert_eq!(
-                run_owned_loop(config, AlwaysFailingWriter, Vec::new(), control)
+                run_loop_with_control(config, AlwaysFailingWriter, Vec::new(), control)
                     .await
-                    .unwrap(),
+                    .unwrap_or(2),
                 2
             );
             assert!(
@@ -7150,9 +7065,9 @@ mod tests {
         let control = RunControl::new();
         control.inject_delivery_cleanup_identity_failure();
         let observed = control.clone();
-        let mut stdout = Vec::new();
+        let stdout = CollectingWriter::default();
 
-        let error = run_loop_with_control(config, &mut stdout, Vec::new(), control)
+        let error = run_loop_with_control(config, stdout.clone(), Vec::new(), control)
             .await
             .expect_err("delivery cleanup failure must not be acknowledged");
 
@@ -7237,40 +7152,6 @@ mod tests {
                 "format={format}: cleanup failure was acknowledged"
             );
         }
-    }
-
-    impl Write for BorrowedNonSendWriter<'_> {
-        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-            self.buffer.extend_from_slice(bytes);
-            Ok(bytes.len())
-        }
-
-        fn flush(&mut self) -> std::io::Result<()> {
-            Ok(())
-        }
-    }
-
-    #[test]
-    fn shell_context_constructor_accepts_borrowed_non_send_writers() {
-        let project = tempfile::tempdir().unwrap();
-        let config = shell_setup_test_config(&project)
-            .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
-            .unwrap();
-        let mut stdout = Vec::new();
-        let mut stderr = Vec::new();
-        let future = ShellContext::new(
-            &config,
-            BorrowedNonSendWriter {
-                buffer: &mut stdout,
-                _not_send: std::rc::Rc::new(()),
-            },
-            BorrowedNonSendWriter {
-                buffer: &mut stderr,
-                _not_send: std::rc::Rc::new(()),
-            },
-        );
-
-        drop(future);
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -7586,7 +7467,7 @@ mod tests {
     async fn context_with_worker() -> (
         TempDir,
         TempDir,
-        ShellContext<Vec<u8>, Vec<u8>>,
+        ShellContext,
         MutationCandidate,
         CreateWorker,
     ) {
@@ -7814,12 +7695,12 @@ mod tests {
         let config = parse_host_independent_shell_test_config(args);
         let control = RunControl::cancelling_before_run_finished();
         let observed_control = control.clone();
-        let mut stdout = Vec::new();
-        let mut stderr = Vec::new();
+        let stdout = CollectingWriter::default();
+        let stderr = CollectingWriter::default();
 
         let exit = tokio::time::timeout(
             Duration::from_secs(10),
-            run_loop_with_control(config, &mut stdout, &mut stderr, control),
+            run_loop_with_control(config, stdout.clone(), stderr.clone(), control),
         )
         .await
         .expect("final report dispatch must not stall")
@@ -7832,10 +7713,12 @@ mod tests {
                 .load(Ordering::Acquire),
             "the cancellation hook did not observe RunFinished"
         );
-        let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+        let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
         assert_eq!(report["summary"]["complete"], true);
         assert!(
-            !String::from_utf8(stderr).unwrap().contains("run stalled"),
+            !String::from_utf8(stderr.snapshot())
+                .unwrap()
+                .contains("run stalled"),
             "the scheduler reported a false stall"
         );
     }
@@ -9054,16 +8937,16 @@ mod tests {
             drop(release);
             mutation.expect("change original during active worker materialization");
         });
-        let mut stdout = Vec::new();
-        let mut stderr = Vec::new();
+        let stdout = CollectingWriter::default();
+        let stderr = CollectingWriter::default();
 
-        let exit = run_loop_with_control(config, &mut stdout, &mut stderr, control)
+        let exit = run_loop_with_control(config, stdout.clone(), stderr.clone(), control)
             .await
             .unwrap();
         mutation.await.unwrap();
 
         assert_ne!(exit, 0);
-        let stderr = String::from_utf8(stderr).unwrap();
+        let stderr = String::from_utf8(stderr.snapshot()).unwrap();
         assert!(stderr.contains("workspace.original.changed"), "{stderr}");
         assert_eq!(
             observed_control.max_process_tasks(),

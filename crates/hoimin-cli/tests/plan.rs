@@ -1,3 +1,7 @@
+#[path = "support/collecting_writer.rs"]
+mod collecting_writer;
+use collecting_writer::CollectingWriter;
+
 use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::fmt::Write as _;
@@ -48,12 +52,12 @@ async fn source_scoped_plan_preserves_candidates_as_unrelated_files_grow() {
                 .unwrap();
             args[source] = selector.into();
             args[source + 1] = path.into();
-            let mut stdout = Vec::new();
-            let mut stderr = Vec::new();
-            let exit = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
-            assert_eq!(exit, 0, "{}", String::from_utf8_lossy(&stderr));
-            assert_eq!(stderr, Vec::<u8>::new());
-            let value: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+            let stdout = CollectingWriter::default();
+            let stderr = CollectingWriter::default();
+            let exit = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
+            assert_eq!(exit, 0, "{}", String::from_utf8_lossy(&stderr.snapshot()));
+            assert_eq!(stderr.snapshot(), Vec::<u8>::new());
+            let value: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
             assert_eq!(value["diagnostics"], serde_json::json!([]));
             assert_eq!(value["candidates"].as_array().unwrap().len(), 1);
             candidates.push(value["candidates"].clone());
@@ -84,14 +88,14 @@ async fn plan_rejects_unapproved_best_effort_memory_before_project_work() {
     let project = Project::new();
     let marker = project.path.join("test-command-ran");
     let args = plan_args_without_best_effort(&project, &marker);
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
 
-    let exit = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+    let exit = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
 
     assert_eq!(exit, 2);
     assert!(stdout.is_empty(), "failed plan emitted stdout");
-    let stderr = String::from_utf8(stderr).unwrap();
+    let stderr = String::from_utf8(stderr.snapshot()).unwrap();
     assert!(stderr.contains("--allow-best-effort-memory"));
     assert!(stderr.contains("max-memory is not enforced"));
     assert!(!marker.exists(), "test command ran during plan validation");
@@ -114,13 +118,18 @@ async fn create_plan_emits_versioned_manifest_without_runtime_side_effects() {
         ],
         &workspace_marker,
     );
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
 
-    let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+    let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
 
-    assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
-    let stdout = String::from_utf8(stdout).unwrap();
+    assert_eq!(
+        code,
+        0,
+        "stderr={}",
+        String::from_utf8_lossy(&stderr.snapshot())
+    );
+    let stdout = String::from_utf8(stdout.snapshot()).unwrap();
     assert_eq!(stdout.matches('\n').count(), 1);
     let manifest: serde_json::Value = serde_json::from_str(&stdout).unwrap();
     assert_eq!(manifest["schema_version"], 6);
@@ -167,7 +176,7 @@ async fn create_plan_emits_versioned_manifest_without_runtime_side_effects() {
     assert!(manifest["normalized_config"].get("resume").is_none());
     assert!(!workspace_marker.exists());
     assert!(!session_path.exists());
-    assert_eq!(stderr, Vec::<u8>::new());
+    assert_eq!(stderr.snapshot(), Vec::<u8>::new());
 }
 
 #[tokio::test]
@@ -268,19 +277,19 @@ async fn explicit_class_symbol_ranks_and_verifies_its_method_before_an_unrelated
         OsString::from("-c"),
         OsString::from("from calc import Box; assert Box().check()"),
     ];
-    let mut plan_stdout = Vec::new();
-    let mut plan_stderr = Vec::new();
+    let plan_out = CollectingWriter::default();
+    let plan_err = CollectingWriter::default();
 
-    let plan_exit = hoimin_cli::run_with_io(args, &mut plan_stdout, &mut plan_stderr).await;
+    let plan_exit = hoimin_cli::run_with_writers(args, plan_out.clone(), plan_err.clone()).await;
 
     assert_eq!(
         plan_exit,
         0,
         "stderr={}",
-        String::from_utf8_lossy(&plan_stderr)
+        String::from_utf8_lossy(&plan_err.snapshot())
     );
-    assert_eq!(plan_stderr, Vec::<u8>::new());
-    let manifest: PlanManifest = serde_json::from_slice(&plan_stdout).unwrap();
+    assert_eq!(plan_err.snapshot(), Vec::<u8>::new());
+    let manifest: PlanManifest = serde_json::from_slice(&plan_out.snapshot()).unwrap();
     assert_eq!(manifest.candidates.len(), 2);
     assert_eq!(
         manifest
@@ -303,7 +312,7 @@ async fn explicit_class_symbol_ranks_and_verifies_its_method_before_an_unrelated
     let planned = &manifest.candidates[0];
     let planned_id = planned.id.clone();
     let plan_path = project.path().join("plan.json");
-    std::fs::write(&plan_path, &plan_stdout).unwrap();
+    std::fs::write(&plan_path, plan_out.snapshot()).unwrap();
     let source_before = std::fs::read(project.path().join("calc.py")).unwrap();
     let plan_before = std::fs::read(&plan_path).unwrap();
     let verify_args = [
@@ -313,20 +322,20 @@ async fn explicit_class_symbol_ranks_and_verifies_its_method_before_an_unrelated
         OsString::from("--top"),
         OsString::from("1"),
     ];
-    let mut verify_stdout = Vec::new();
-    let mut verify_stderr = Vec::new();
+    let verify_out = CollectingWriter::default();
+    let verify_err = CollectingWriter::default();
 
     let verify_exit =
-        hoimin_cli::run_with_io(verify_args, &mut verify_stdout, &mut verify_stderr).await;
+        hoimin_cli::run_with_writers(verify_args, verify_out.clone(), verify_err.clone()).await;
 
     assert_eq!(
         verify_exit,
         0,
         "stderr={}",
-        String::from_utf8_lossy(&verify_stderr)
+        String::from_utf8_lossy(&verify_err.snapshot())
     );
-    assert_eq!(verify_stderr, Vec::<u8>::new());
-    let report: serde_json::Value = serde_json::from_slice(&verify_stdout).unwrap();
+    assert_eq!(verify_err.snapshot(), Vec::<u8>::new());
+    let report: serde_json::Value = serde_json::from_slice(&verify_out.snapshot()).unwrap();
     assert_eq!(
         report["baseline"]["termination"],
         serde_json::json!({"Exit": 0})
@@ -455,16 +464,16 @@ async fn assert_planned_boolean_is_killed(
     planned_id: &str,
     planned_candidate: &serde_json::Value,
 ) {
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
-    let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
+    let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
     assert_eq!(
         code,
         0,
         "{name} {mode}: stderr={}",
-        String::from_utf8_lossy(&stderr),
+        String::from_utf8_lossy(&stderr.snapshot()),
     );
-    let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+    let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
     assert_eq!(
         report["baseline"]["termination"]["Exit"], 0,
         "{name} {mode}",
@@ -507,15 +516,15 @@ async fn cli_verify_rejects_a_bom_counted_column_before_baseline() {
         OsString::from("--format"),
         OsString::from("json"),
     ];
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
 
-    let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+    let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
 
     assert_eq!(code, 2);
-    assert_eq!(stdout, Vec::<u8>::new());
+    assert_eq!(stdout.snapshot(), Vec::<u8>::new());
     assert_eq!(
-        String::from_utf8(stderr).unwrap(),
+        String::from_utf8(stderr.snapshot()).unwrap(),
         "plan.candidate.invalid: candidate line or column does not match its byte span\n",
     );
     assert!(!marker.exists(), "invalid coordinate ran the baseline");
@@ -537,13 +546,18 @@ async fn plan_candidates_match_shared_discovery_for_normalized_selectors() {
         let marker = project.path.join("test-command-ran");
         let args = plan_args(&project, options.iter().copied(), &marker);
         let mut expected = discover_for_plan_args(args.clone()).await;
-        let mut stdout = Vec::new();
-        let mut stderr = Vec::new();
+        let stdout = CollectingWriter::default();
+        let stderr = CollectingWriter::default();
 
-        let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+        let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
 
-        assert_eq!(code, 0, "stderr={}", String::from_utf8_lossy(&stderr));
-        let manifest: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+        assert_eq!(
+            code,
+            0,
+            "stderr={}",
+            String::from_utf8_lossy(&stderr.snapshot())
+        );
+        let manifest: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
         let mut actual: Vec<MutationCandidate> =
             serde_json::from_value(manifest["candidates"].clone()).unwrap();
         actual.sort_by(|left, right| left.id.cmp(&right.id));
@@ -575,16 +589,17 @@ async fn changed_selection_plan_matches_the_real_run_candidate_and_id() {
     insert_test_min_free_space(&mut run_args);
     run_args[1] = OsString::from("run");
     *run_args.last_mut().unwrap() = OsString::from("pass");
-    let mut run_stdout = Vec::new();
-    let mut run_stderr = Vec::new();
-    let run_code = hoimin_cli::run_with_io(run_args, &mut run_stdout, &mut run_stderr).await;
+    let run_stdout = CollectingWriter::default();
+    let run_stderr = CollectingWriter::default();
+    let run_code =
+        hoimin_cli::run_with_writers(run_args, run_stdout.clone(), run_stderr.clone()).await;
     assert_eq!(
         run_code,
         1,
         "stderr={}",
-        String::from_utf8_lossy(&run_stderr)
+        String::from_utf8_lossy(&run_stderr.snapshot())
     );
-    let run_report: serde_json::Value = serde_json::from_slice(&run_stdout).unwrap();
+    let run_report: serde_json::Value = serde_json::from_slice(&run_stdout.snapshot()).unwrap();
     let run_mutants = run_report["mutants"].as_array().unwrap();
     assert_eq!(run_mutants.len(), 1);
     assert_eq!(json_candidate_tuples(run_mutants), expected);
@@ -600,16 +615,17 @@ async fn changed_selection_plan_matches_the_real_run_candidate_and_id() {
         ],
         &marker,
     );
-    let mut plan_stdout = Vec::new();
-    let mut plan_stderr = Vec::new();
-    let plan_code = hoimin_cli::run_with_io(plan_args, &mut plan_stdout, &mut plan_stderr).await;
+    let plan_stdout = CollectingWriter::default();
+    let plan_stderr = CollectingWriter::default();
+    let plan_code =
+        hoimin_cli::run_with_writers(plan_args, plan_stdout.clone(), plan_stderr.clone()).await;
     assert_eq!(
         plan_code,
         0,
         "stderr={}",
-        String::from_utf8_lossy(&plan_stderr)
+        String::from_utf8_lossy(&plan_stderr.snapshot())
     );
-    let manifest: PlanManifest = serde_json::from_slice(&plan_stdout).unwrap();
+    let manifest: PlanManifest = serde_json::from_slice(&plan_stdout.snapshot()).unwrap();
     assert_eq!(manifest.candidates.len(), 1);
     assert_eq!(candidate_tuples(&manifest.candidates), expected);
 
@@ -681,9 +697,9 @@ async fn changed_plan_fifo_child() {
             .changed
             .contains_key(camino::Utf8Path::new("src/stalled.py"))
     );
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
-    let exit = hoimin_cli::run_with_io(
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
+    let exit = hoimin_cli::run_with_writers(
         [
             OsString::from("hoimin"),
             OsString::from("plan"),
@@ -702,13 +718,18 @@ async fn changed_plan_fifo_child() {
             OsString::from("-c"),
             OsString::from("pass"),
         ],
-        &mut stdout,
-        &mut stderr,
+        stdout.clone(),
+        stderr.clone(),
     )
     .await;
 
-    assert_eq!(exit, 0, "stderr={}", String::from_utf8_lossy(&stderr));
-    assert_ne!(stdout, Vec::<u8>::new());
+    assert_eq!(
+        exit,
+        0,
+        "stderr={}",
+        String::from_utf8_lossy(&stderr.snapshot())
+    );
+    assert!(!stdout.is_empty());
 }
 
 #[tokio::test]
@@ -720,13 +741,18 @@ async fn plan_candidate_limit_emits_partial_manifest_and_exit_four() {
         ["--file", "src/calc.py", "--max-candidates", "1"],
         &marker,
     );
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
 
-    let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+    let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
 
-    assert_eq!(code, 4, "stderr={}", String::from_utf8_lossy(&stderr));
-    let manifest: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+    assert_eq!(
+        code,
+        4,
+        "stderr={}",
+        String::from_utf8_lossy(&stderr.snapshot())
+    );
+    let manifest: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
     assert_eq!(manifest["truncated"], true);
     assert!(
         manifest["diagnostics"]
@@ -743,14 +769,14 @@ async fn plan_invalid_syntax_returns_two_without_a_manifest() {
     let project = Project::new_with_source("def broken(:\n");
     let marker = project.path.join("test-command-ran");
     let args = plan_args(&project, ["--file", "src/calc.py"], &marker);
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
 
-    let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+    let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
 
     assert_eq!(code, 2);
-    assert_eq!(stdout, Vec::<u8>::new());
-    assert_ne!(stderr, Vec::<u8>::new());
+    assert_eq!(stdout.snapshot(), Vec::<u8>::new());
+    assert!(!stderr.is_empty());
     assert!(!marker.exists());
 }
 
@@ -763,14 +789,14 @@ async fn plan_rejects_a_literal_backslash_source_without_rewriting_it() {
     )]);
     let marker = project.path.join("test-command-ran");
     let args = plan_args(&project, std::iter::empty(), &marker);
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
 
-    let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+    let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
 
     assert_eq!(code, 2);
     assert!(stdout.is_empty(), "failed plan emitted stdout");
-    let stderr = String::from_utf8(stderr).unwrap();
+    let stderr = String::from_utf8(stderr.snapshot()).unwrap();
     assert!(stderr.contains(r"src/literal\calc.py"), "{stderr}");
     assert!(
         !stderr.contains("src/literal/calc.py: No such file"),
@@ -784,15 +810,18 @@ async fn plan_serialization_output_failure_returns_two_without_execution() {
     let project = Project::new();
     let marker = project.path.join("test-command-ran");
     let args = plan_args(&project, [], &marker);
-    let mut storage = [];
-    let mut stdout = std::io::Cursor::new(storage.as_mut_slice());
-    let mut stderr = Vec::new();
+    let captured = CollectingWriter::default();
+    let stdout = CappedOutput {
+        captured: captured.clone(),
+        remaining: 0,
+    };
+    let stderr = CollectingWriter::default();
 
-    let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+    let code = hoimin_cli::run_with_writers(args, stdout, stderr.clone()).await;
 
     assert_eq!(code, 2);
-    assert_eq!(stdout.position(), 0);
-    let diagnostic = String::from_utf8(stderr).unwrap();
+    assert!(captured.is_empty());
+    let diagnostic = String::from_utf8(stderr.snapshot()).unwrap();
     assert!(diagnostic.contains("failed to write whole buffer"));
     assert_eq!(diagnostic.lines().count(), 1);
     assert!(!marker.exists());
@@ -805,15 +834,24 @@ async fn plan_newline_output_failure_preserves_complete_json_and_returns_two() {
     let expected = serde_json::to_vec(&manifest).unwrap();
     let mut args = plan_args(&project, [], &marker);
     insert_test_min_free_space(&mut args);
-    let mut storage = vec![0; expected.len()];
-    let mut stdout = std::io::Cursor::new(storage.as_mut_slice());
-    let mut stderr = Vec::new();
+    let captured = CollectingWriter::default();
+    let stdout = CappedOutput {
+        captured: captured.clone(),
+        remaining: expected.len(),
+    };
+    let stderr = CollectingWriter::default();
 
-    let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+    let code = hoimin_cli::run_with_writers(args, stdout, stderr.clone()).await;
 
     assert_eq!(code, 2);
-    assert_eq!(stdout.into_inner(), expected.as_slice());
-    assert_eq!(String::from_utf8(stderr).unwrap().lines().count(), 1);
+    assert_eq!(captured.snapshot(), expected);
+    assert_eq!(
+        String::from_utf8(stderr.snapshot())
+            .unwrap()
+            .lines()
+            .count(),
+        1
+    );
     assert!(!marker.exists());
 }
 
@@ -834,16 +872,16 @@ async fn plan_preparation_failures_return_two_without_a_manifest() {
     ] {
         let marker = project.path.join(format!("test-command-ran-{case}"));
         let args = plan_args(&project, options, &marker);
-        let mut stdout = Vec::new();
-        let mut stderr = Vec::new();
+        let stdout = CollectingWriter::default();
+        let stderr = CollectingWriter::default();
 
-        let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+        let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
 
         assert_eq!(
             code,
             2,
             "case={case}, stderr={}",
-            String::from_utf8_lossy(&stderr)
+            String::from_utf8_lossy(&stderr.snapshot())
         );
         assert!(stdout.is_empty(), "case={case}");
         assert!(!stderr.is_empty(), "case={case}");
@@ -860,15 +898,15 @@ async fn plan_analyzer_timeout_dispatch_returns_two_without_a_manifest() {
         ["--file", "src/calc.py", "--analyzer-timeout", "1ns"],
         &marker,
     );
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
 
-    let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+    let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
 
     assert_eq!(code, 2);
     assert!(stdout.is_empty(), "timed-out plan emitted a manifest");
     assert_eq!(
-        String::from_utf8(stderr).unwrap(),
+        String::from_utf8(stderr.snapshot()).unwrap(),
         "plan.discovery: analyzer.timeout: --analyzer-timeout expired after 1ns\n"
     );
     assert!(!marker.exists(), "plan launched the test command");
@@ -888,15 +926,15 @@ async fn plan_oversized_analyzer_timeout_returns_two_without_panicking() {
         ],
         &marker,
     );
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
 
-    let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+    let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
 
     assert_eq!(code, 2);
     assert!(stdout.is_empty(), "invalid deadline emitted a manifest");
     assert_eq!(
-        String::from_utf8(stderr).unwrap(),
+        String::from_utf8(stderr.snapshot()).unwrap(),
         "invalid zero or overflowing limit: --analyzer-timeout\n"
     );
     assert!(!marker.exists(), "plan launched the test command");
@@ -927,15 +965,15 @@ async fn verify_analyzer_timeout_dispatch_stops_before_the_test_command() {
         OsString::from("--format"),
         OsString::from("jsonl"),
     ];
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
 
-    let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+    let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
 
     assert_eq!(code, 2);
     assert!(stdout.is_empty(), "timed-out verify emitted run output");
     assert_eq!(
-        String::from_utf8(stderr).unwrap(),
+        String::from_utf8(stderr.snapshot()).unwrap(),
         "plan.discovery: analyzer.timeout: --analyzer-timeout expired after 1ns\n"
     );
     assert!(!marker.exists(), "verify launched the test command");
@@ -1209,13 +1247,22 @@ async fn verify_rejects_fingerprint_input_deleted_after_preparation_before_execu
         .await
         .unwrap();
     std::fs::remove_file(project.path.join("config.toml")).unwrap();
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
 
-    let exit = verified.execute(&mut stdout, &mut stderr).await.unwrap();
+    let exit = verified
+        .execute(stdout.clone(), stderr.clone())
+        .await
+        .unwrap();
 
-    assert_eq!(exit, 2, "stderr={}", String::from_utf8_lossy(&stderr));
-    let diagnostics = stderr
+    assert_eq!(
+        exit,
+        2,
+        "stderr={}",
+        String::from_utf8_lossy(&stderr.snapshot())
+    );
+    let stderr_bytes = stderr.snapshot();
+    let diagnostics = stderr_bytes
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
         .map(|line| serde_json::from_slice::<serde_json::Value>(line).unwrap())
@@ -1225,9 +1272,10 @@ async fn verify_rejects_fingerprint_input_deleted_after_preparation_before_execu
             .iter()
             .any(|diagnostic| diagnostic["code"] == "plan.fingerprint_input.changed"),
         "missing changed-input diagnostic: {}",
-        String::from_utf8_lossy(&stderr)
+        String::from_utf8_lossy(&stderr.snapshot())
     );
-    let events = stdout
+    let stdout_bytes = stdout.snapshot();
+    let events = stdout_bytes
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
         .map(|line| serde_json::from_slice::<serde_json::Value>(line).unwrap())
@@ -1916,13 +1964,19 @@ async fn assert_real_cli_top_selection(
         args.extend([OsString::from("--selection-policy"), OsString::from(policy)]);
     }
     args.extend([OsString::from("--format"), OsString::from("jsonl")]);
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
 
-    let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+    let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
 
-    assert_eq!(code, 1, "stderr={}", String::from_utf8_lossy(&stderr));
-    let events = stdout
+    assert_eq!(
+        code,
+        1,
+        "stderr={}",
+        String::from_utf8_lossy(&stderr.snapshot())
+    );
+    let stdout_bytes = stdout.snapshot();
+    let events = stdout_bytes
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
         .map(|line| serde_json::from_slice::<serde_json::Value>(line).unwrap())
@@ -1967,7 +2021,7 @@ async fn assert_real_cli_top_selection(
     assert!(
         stderr.is_empty(),
         "unexpected policy warning or parse error: {}",
-        String::from_utf8_lossy(&stderr)
+        String::from_utf8_lossy(&stderr.snapshot())
     );
     assert_eq!(std::fs::read(path).unwrap(), plan_before);
 }
@@ -1994,18 +2048,24 @@ async fn verify_runs_only_requested_candidates() {
     for candidate_id in &requested {
         args.extend([OsString::from("--candidate"), OsString::from(candidate_id)]);
     }
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
 
-    let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+    let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
 
-    assert_eq!(code, 1, "stderr={}", String::from_utf8_lossy(&stderr));
+    assert_eq!(
+        code,
+        1,
+        "stderr={}",
+        String::from_utf8_lossy(&stderr.snapshot())
+    );
     assert!(marker.exists(), "verify must execute a fresh baseline");
     assert!(
         !session_path.exists(),
         "verify must not create a session database"
     );
-    let events = stdout
+    let stdout_bytes = stdout.snapshot();
+    let events = stdout_bytes
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
         .map(|line| serde_json::from_slice::<serde_json::Value>(line).unwrap())
@@ -2092,14 +2152,14 @@ async fn assert_empty_top_selection_is_rejected(policy: &str) {
             OsString::from("--format"),
             OsString::from(format),
         ];
-        let mut stdout = Vec::new();
-        let mut stderr = Vec::new();
+        let stdout = CollectingWriter::default();
+        let stderr = CollectingWriter::default();
 
-        let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+        let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
 
         assert_eq!(code, 2, "policy={policy}, format={format}");
         assert!(stdout.is_empty(), "empty verification emitted run output");
-        let stderr = String::from_utf8(stderr).unwrap();
+        let stderr = String::from_utf8(stderr.snapshot()).unwrap();
         for expected in ["plan.candidate.invalid", "--top", "no retained candidates"] {
             assert!(stderr.contains(expected), "stderr={stderr}");
         }
@@ -2124,17 +2184,22 @@ async fn verify_top_executes_the_highest_ranked_retained_candidate() {
         OsString::from("--top"),
         OsString::from("1"),
     ];
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
 
-    let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+    let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
 
-    assert_eq!(code, 4, "stderr={}", String::from_utf8_lossy(&stderr));
+    assert_eq!(
+        code,
+        4,
+        "stderr={}",
+        String::from_utf8_lossy(&stderr.snapshot())
+    );
     assert!(
         marker.exists(),
         "verify must execute the baseline and selected mutant"
     );
-    let document: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+    let document: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
     assert!(!document["baseline"].is_null());
     assert_selected_resource_policy(&document["run"], &document["baseline"]);
     let expected_selection = serde_json::json!({
@@ -2183,18 +2248,23 @@ async fn verify_top_budget_shortfall_warns_on_stderr_and_preserves_json_and_plan
         OsString::from("--format"),
         OsString::from("json"),
     ];
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
 
-    let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+    let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
 
-    assert_eq!(code, 1, "stderr={}", String::from_utf8_lossy(&stderr));
-    let _: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+    assert_eq!(
+        code,
+        1,
+        "stderr={}",
+        String::from_utf8_lossy(&stderr.snapshot())
+    );
+    let _: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
     assert!(
-        !String::from_utf8_lossy(&stdout).contains("budget.projected_shortfall"),
+        !String::from_utf8_lossy(&stdout.snapshot()).contains("budget.projected_shortfall"),
         "budget warning leaked to JSON stdout"
     );
-    assert_budget_shortfall_warning(&stderr);
+    assert_budget_shortfall_warning(&stderr.snapshot());
     assert_eq!(std::fs::read(&path).unwrap(), plan_before);
     let reloaded: PlanManifest = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
     let limits_after =
@@ -2219,13 +2289,19 @@ async fn verify_top_budget_shortfall_preserves_jsonl_stdout() {
         OsString::from("--format"),
         OsString::from("jsonl"),
     ];
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
 
-    let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+    let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
 
-    assert_eq!(code, 1, "stderr={}", String::from_utf8_lossy(&stderr));
-    let lines = stdout
+    assert_eq!(
+        code,
+        1,
+        "stderr={}",
+        String::from_utf8_lossy(&stderr.snapshot())
+    );
+    let stdout_bytes = stdout.snapshot();
+    let lines = stdout_bytes
         .split(|byte| *byte == b'\n')
         .filter(|line| !line.is_empty())
         .collect::<Vec<_>>();
@@ -2237,7 +2313,7 @@ async fn verify_top_budget_shortfall_preserves_jsonl_stdout() {
             "budget warning leaked to JSONL stdout"
         );
     }
-    assert_budget_shortfall_warning(&stderr);
+    assert_budget_shortfall_warning(&stderr.snapshot());
 }
 
 #[tokio::test]
@@ -2257,15 +2333,20 @@ async fn verify_explicit_candidates_do_not_emit_budget_shortfall_warning() {
     for candidate in manifest.candidates.iter().take(2) {
         args.extend([OsString::from("--candidate"), OsString::from(&candidate.id)]);
     }
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
 
-    let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+    let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
 
-    assert_eq!(code, 1, "stderr={}", String::from_utf8_lossy(&stderr));
-    let _: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+    assert_eq!(
+        code,
+        1,
+        "stderr={}",
+        String::from_utf8_lossy(&stderr.snapshot())
+    );
+    let _: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
     assert!(
-        !String::from_utf8_lossy(&stderr).contains("budget.projected_shortfall"),
+        !String::from_utf8_lossy(&stderr.snapshot()).contains("budget.projected_shortfall"),
         "explicit candidate IDs must not emit the top-ranked budget warning"
     );
 }
@@ -2598,20 +2679,20 @@ async fn root_selection_excludes_uncopyable_sources_in_plan_run_and_verify() {
         &marker,
     );
     insert_test_min_free_space(&mut args);
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
     assert_eq!(
-        hoimin_cli::run_with_io(args.clone(), &mut stdout, &mut stderr).await,
+        hoimin_cli::run_with_writers(args.clone(), stdout.clone(), stderr.clone()).await,
         0,
         "{}",
-        String::from_utf8_lossy(&stderr)
+        String::from_utf8_lossy(&stderr.snapshot())
     );
-    let manifest: PlanManifest = serde_json::from_slice(&stdout).unwrap();
+    let manifest: PlanManifest = serde_json::from_slice(&stdout.snapshot()).unwrap();
     assert_eq!(manifest.candidates.len(), 1);
     assert_eq!(manifest.candidates[0].path, "src/calc.py");
     assert!(!marker.exists());
     let path = coordinator.path().join("plan.json");
-    std::fs::write(&path, &stdout).unwrap();
+    std::fs::write(&path, stdout.snapshot()).unwrap();
     let verify_args = vec![
         "hoimin".into(),
         "verify".into(),
@@ -2623,9 +2704,9 @@ async fn root_selection_excludes_uncopyable_sources_in_plan_run_and_verify() {
     for command in [verify_args, args] {
         stdout.clear();
         stderr.clear();
-        let code = hoimin_cli::run_with_io(command, &mut stdout, &mut stderr).await;
-        assert_eq!(code, 1, "{}", String::from_utf8_lossy(&stderr));
-        let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+        let code = hoimin_cli::run_with_writers(command, stdout.clone(), stderr.clone()).await;
+        assert_eq!(code, 1, "{}", String::from_utf8_lossy(&stderr.snapshot()));
+        let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
         // pins: issue #452 — source discovery previously admitted files omitted from copying.
         assert_eq!(report["summary"]["complete"], true);
         assert_eq!(report["baseline"]["termination"]["Exit"], 0);
@@ -2643,12 +2724,12 @@ async fn plan_rejects_an_explicit_uncopyable_file_before_baseline() {
     std::fs::write(project.path.join("src/venv/dep.py"), "value = 3 + 4\n").unwrap();
     let marker = project.path.join("test-command-ran");
     let args = plan_args(&project, ["--file", "src/venv/dep.py"], &marker);
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
-    let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
+    let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
     assert_eq!(code, 2);
-    assert_eq!(stdout, Vec::<u8>::new());
-    let error = String::from_utf8(stderr).unwrap();
+    assert_eq!(stdout.snapshot(), Vec::<u8>::new());
+    let error = String::from_utf8(stderr.snapshot()).unwrap();
     assert!(error.contains("src/venv/dep.py"), "{error}");
     assert!(error.contains("outside"), "{error}");
     assert!(!marker.exists());
@@ -2671,15 +2752,15 @@ async fn python_physical_lines_match_plan_run_and_verify_selection() {
             marker.to_string_lossy()
         ));
         insert_test_min_free_space(&mut args);
-        let mut stdout = Vec::new();
-        let mut stderr = Vec::new();
+        let stdout = CollectingWriter::default();
+        let stderr = CollectingWriter::default();
         assert_eq!(
-            hoimin_cli::run_with_io(args.clone(), &mut stdout, &mut stderr).await,
+            hoimin_cli::run_with_writers(args.clone(), stdout.clone(), stderr.clone()).await,
             0,
             "{}",
-            String::from_utf8_lossy(&stderr)
+            String::from_utf8_lossy(&stderr.snapshot())
         );
-        let manifest: PlanManifest = serde_json::from_slice(&stdout).unwrap();
+        let manifest: PlanManifest = serde_json::from_slice(&stdout.snapshot()).unwrap();
         assert_eq!(manifest.candidates.len(), 1, "{source:?}");
         let candidate = &manifest.candidates[0];
         assert_eq!((candidate.line, candidate.column), (2, 13));
@@ -2692,7 +2773,7 @@ async fn python_physical_lines_match_plan_run_and_verify_selection() {
             blake3::hash(source.as_bytes()).to_hex().to_string()
         );
         let path = coordinator.path().join("plan.json");
-        std::fs::write(&path, &stdout).unwrap();
+        std::fs::write(&path, stdout.snapshot()).unwrap();
         let verify_args = vec![
             "hoimin".into(),
             "verify".into(),
@@ -2704,9 +2785,9 @@ async fn python_physical_lines_match_plan_run_and_verify_selection() {
         for command in [verify_args.clone(), args] {
             stdout.clear();
             stderr.clear();
-            let code = hoimin_cli::run_with_io(command, &mut stdout, &mut stderr).await;
-            assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
-            let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+            let code = hoimin_cli::run_with_writers(command, stdout.clone(), stderr.clone()).await;
+            assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr.snapshot()));
+            let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
             assert_eq!(report["summary"]["complete"], true);
             // pins: issue #455 — lone CR previously produced an empty successful run.
             assert_eq!(report["summary"]["counts"]["killed"], 1);
@@ -2735,13 +2816,13 @@ async fn verify_rejects_stale_lone_cr_coordinates_before_baseline() {
         manifest.candidates[0].candidate.line = 1;
         manifest.candidates[0].candidate.column = 22;
         write_json(&path, &serde_json::to_value(&manifest).unwrap());
-        let mut stdout = Vec::new();
-        let mut stderr = Vec::new();
+        let stdout = CollectingWriter::default();
+        let stderr = CollectingWriter::default();
 
-        let code = hoimin_cli::run_with_io(
+        let code = hoimin_cli::run_with_writers(
             ["hoimin", "verify", path.to_str().unwrap(), "--top", "1"],
-            &mut stdout,
-            &mut stderr,
+            stdout.clone(),
+            stderr.clone(),
         )
         .await;
 
@@ -2760,14 +2841,14 @@ async fn oversized_candidate_plan_fails_with_context_before_baseline() {
     let project = Project::new_with_source(&source);
     let marker = project.path.join("test-command-ran");
     let args = plan_args(&project, ["--operators", "collection_list_tuple"], &marker);
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
-    let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
+    let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
     // pins: issue #459 — plan used to succeed for a candidate the spool cannot encode.
     assert_eq!(code, 2);
-    assert_eq!(stdout, Vec::<u8>::new());
+    assert_eq!(stdout.snapshot(), Vec::<u8>::new());
     assert!(!marker.exists());
-    let error = String::from_utf8(stderr).unwrap();
+    let error = String::from_utf8(stderr.snapshot()).unwrap();
     for detail in ["src/calc.py:1", "collection_list_tuple", "2097152"] {
         assert!(error.contains(detail), "missing {detail}: {error}");
     }
@@ -2810,14 +2891,14 @@ async fn oversized_legacy_candidate_is_rejected_before_verify_baseline() {
         "--top".into(),
         "1".into(),
     ];
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
-    let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
+    let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
     assert_eq!(code, 2);
     // pins: issue #459 — an old valid oversized plan used to start baseline first.
     assert!(!marker.exists());
-    assert_eq!(stdout, Vec::<u8>::new());
-    let error = String::from_utf8(stderr).unwrap();
+    assert_eq!(stdout.snapshot(), Vec::<u8>::new());
+    let error = String::from_utf8(stderr.snapshot()).unwrap();
     for detail in ["src/calc.py:1", "collection_list_tuple", "2097152"] {
         assert!(error.contains(detail), "missing {detail}: {error}");
     }
@@ -2832,12 +2913,13 @@ async fn fitting_candidate_record_limits_agree_for_plan_verify_and_direct_run() 
     let marker = coordinator.path().join("test-command-ran");
     let mut args = plan_args(&project, ["--operators", "collection_list_tuple"], &marker);
     insert_test_min_free_space(&mut args);
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
 
-    let plan_exit = hoimin_cli::run_with_io(args.clone(), &mut stdout, &mut stderr).await;
+    let plan_exit =
+        hoimin_cli::run_with_writers(args.clone(), stdout.clone(), stderr.clone()).await;
     let path = coordinator.path().join("plan.json");
-    std::fs::write(&path, &stdout).unwrap();
+    std::fs::write(&path, stdout.snapshot()).unwrap();
     stdout.clear();
     stderr.clear();
     let verify = vec![
@@ -2847,21 +2929,21 @@ async fn fitting_candidate_record_limits_agree_for_plan_verify_and_direct_run() 
         "--top".into(),
         "1".into(),
     ];
-    let verify_exit = hoimin_cli::run_with_io(verify, &mut stdout, &mut stderr).await;
-    let verify_stderr = String::from_utf8_lossy(&stderr).into_owned();
-    let verified_report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+    let verify_exit = hoimin_cli::run_with_writers(verify, stdout.clone(), stderr.clone()).await;
+    let verify_stderr = String::from_utf8_lossy(&stderr.snapshot()).into_owned();
+    let verified_report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
 
     args[1] = "run".into();
     stdout.clear();
     stderr.clear();
-    let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
-    let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+    let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
+    let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
 
     assert_eq!(plan_exit, 0);
     assert_eq!(verify_exit, 1, "{verify_stderr}");
     assert_eq!(verified_report["summary"]["complete"], true);
     assert_eq!(verified_report["summary"]["counts"]["survived"], 1);
-    assert_eq!(code, 1, "{}", String::from_utf8_lossy(&stderr));
+    assert_eq!(code, 1, "{}", String::from_utf8_lossy(&stderr.snapshot()));
     assert_eq!(report["summary"]["complete"], true);
     assert_eq!(report["baseline"]["termination"]["Exit"], 0);
 
@@ -2877,20 +2959,20 @@ async fn oversized_candidate_record_limits_agree_for_plan_verify_and_direct_run(
     let marker = coordinator.path().join("test-command-ran");
     let mut args = plan_args(&project, ["--operators", "collection_list_tuple"], &marker);
     insert_test_min_free_space(&mut args);
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
 
     args[1] = "run".into();
     stdout.clear();
     stderr.clear();
-    let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
-    assert_eq!(code, 2, "{}", String::from_utf8_lossy(&stderr));
-    let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+    let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
+    assert_eq!(code, 2, "{}", String::from_utf8_lossy(&stderr.snapshot()));
+    let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
     assert_eq!(report["summary"]["complete"], false);
     assert_eq!(report["baseline"]["termination"]["Exit"], 0);
 
     assert!(report["mutants"].as_array().unwrap().is_empty(), "{report}");
-    let error = String::from_utf8(stderr).unwrap();
+    let error = String::from_utf8(stderr.snapshot()).unwrap();
     for detail in ["src/calc.py:1", "collection_list_tuple", "2097152"] {
         assert!(error.contains(detail), "missing {detail}: {error}");
     }
@@ -3141,11 +3223,11 @@ async fn verify_metrics_exports_existing_sidecar_for_each_selection() {
             OsString::from("--metrics"),
             metrics_path.as_os_str().to_owned(),
         ]);
-        let mut stdout = Vec::new();
-        let mut stderr = Vec::new();
-        let exit = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
-        assert_eq!(exit, 1, "{}", String::from_utf8_lossy(&stderr));
-        let report: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+        let stdout = CollectingWriter::default();
+        let stderr = CollectingWriter::default();
+        let exit = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
+        assert_eq!(exit, 1, "{}", String::from_utf8_lossy(&stderr.snapshot()));
+        let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
         let metrics: hoimin_core::RunMetrics =
             serde_json::from_slice(&std::fs::read(&metrics_path).unwrap()).unwrap();
         metrics.validate().unwrap();
@@ -3193,14 +3275,19 @@ async fn verify_metrics_preserves_write_warning_and_source_collision_contracts()
             OsString::from("--metrics"),
             destination.into_os_string(),
         ];
-        let mut stdout = Vec::new();
-        let mut stderr = Vec::new();
-        let exit = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
-        assert_eq!(exit, expected_exit, "{}", String::from_utf8_lossy(&stderr));
-        assert!(
-            String::from_utf8_lossy(&stderr).contains(diagnostic),
+        let stdout = CollectingWriter::default();
+        let stderr = CollectingWriter::default();
+        let exit = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
+        assert_eq!(
+            exit,
+            expected_exit,
             "{}",
-            String::from_utf8_lossy(&stderr)
+            String::from_utf8_lossy(&stderr.snapshot())
+        );
+        assert!(
+            String::from_utf8_lossy(&stderr.snapshot()).contains(diagnostic),
+            "{}",
+            String::from_utf8_lossy(&stderr.snapshot())
         );
         assert_eq!(marker.exists(), expected_exit == 1);
         assert_eq!(std::fs::read(&source).unwrap(), original);
@@ -3216,9 +3303,9 @@ async fn verify_metrics_is_not_written_when_plan_validation_fails() {
     std::fs::write(project.path.join("src/calc.py"), "changed = True\n").unwrap();
     let metrics_path = coordinator.path().join("metrics.json");
     std::fs::write(&metrics_path, "previous sidecar").unwrap();
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
-    let exit = hoimin_cli::run_with_io(
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
+    let exit = hoimin_cli::run_with_writers(
         [
             OsString::from("hoimin"),
             OsString::from("verify"),
@@ -3228,13 +3315,13 @@ async fn verify_metrics_is_not_written_when_plan_validation_fails() {
             OsString::from("--metrics"),
             metrics_path.as_os_str().to_owned(),
         ],
-        &mut stdout,
-        &mut stderr,
+        stdout.clone(),
+        stderr.clone(),
     )
     .await;
     assert_eq!(exit, 2);
-    assert!(String::from_utf8_lossy(&stderr).contains("plan.source.changed"));
-    assert_eq!(stdout, Vec::<u8>::new());
+    assert!(String::from_utf8_lossy(&stderr.snapshot()).contains("plan.source.changed"));
+    assert_eq!(stdout.snapshot(), Vec::<u8>::new());
     assert!(!marker.exists());
     assert_eq!(
         std::fs::read_to_string(metrics_path).unwrap(),
@@ -3339,9 +3426,9 @@ async fn verify_metrics_exports_baseline_failure_with_jsonl_output() {
     let path = project.path.join("plan.json");
     write_json(&path, &serde_json::to_value(&planned.manifest).unwrap());
     let metrics_path = coordinator.path().join("metrics.json");
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
-    let exit = hoimin_cli::run_with_io(
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
+    let exit = hoimin_cli::run_with_writers(
         [
             OsString::from("hoimin"),
             OsString::from("verify"),
@@ -3353,12 +3440,18 @@ async fn verify_metrics_exports_baseline_failure_with_jsonl_output() {
             OsString::from("--metrics"),
             metrics_path.as_os_str().to_owned(),
         ],
-        &mut stdout,
-        &mut stderr,
+        stdout.clone(),
+        stderr.clone(),
     )
     .await;
-    assert_eq!(exit, expected_exit, "{}", String::from_utf8_lossy(&stderr));
-    let events: Vec<serde_json::Value> = stdout
+    assert_eq!(
+        exit,
+        expected_exit,
+        "{}",
+        String::from_utf8_lossy(&stderr.snapshot())
+    );
+    let stdout_bytes = stdout.snapshot();
+    let events: Vec<serde_json::Value> = stdout_bytes
         .split(|b| *b == b'\n')
         .filter(|s| !s.is_empty())
         .map(|line| serde_json::from_slice(line).unwrap())
@@ -3392,9 +3485,9 @@ async fn verify_metrics_exports_total_timeout_with_jsonl_output() {
     let path = project.path.join("plan.json");
     write_json(&path, &serde_json::to_value(&planned.manifest).unwrap());
     let metrics_path = coordinator.path().join("metrics.json");
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
-    let exit = hoimin_cli::run_with_io(
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
+    let exit = hoimin_cli::run_with_writers(
         [
             OsString::from("hoimin"),
             OsString::from("verify"),
@@ -3406,12 +3499,18 @@ async fn verify_metrics_exports_total_timeout_with_jsonl_output() {
             OsString::from("--metrics"),
             metrics_path.as_os_str().to_owned(),
         ],
-        &mut stdout,
-        &mut stderr,
+        stdout.clone(),
+        stderr.clone(),
     )
     .await;
-    assert_eq!(exit, expected_exit, "{}", String::from_utf8_lossy(&stderr));
-    let events: Vec<serde_json::Value> = stdout
+    assert_eq!(
+        exit,
+        expected_exit,
+        "{}",
+        String::from_utf8_lossy(&stderr.snapshot())
+    );
+    let stdout_bytes = stdout.snapshot();
+    let events: Vec<serde_json::Value> = stdout_bytes
         .split(|b| *b == b'\n')
         .filter(|s| !s.is_empty())
         .map(|line| serde_json::from_slice(line).unwrap())
@@ -3495,12 +3594,17 @@ async fn symbol_definition_missing_is_rejected_before_baseline() {
         );
         args[1] = command.into();
         insert_test_min_free_space(&mut args);
-        let mut stdout = Vec::new();
-        let mut stderr = Vec::new();
-        let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+        let stdout = CollectingWriter::default();
+        let stderr = CollectingWriter::default();
+        let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
         // pins: issue #476
-        assert_eq!(code, 2, "{command}: {}", String::from_utf8_lossy(&stderr));
-        assert!(String::from_utf8_lossy(&stderr).contains("calc:missing"));
+        assert_eq!(
+            code,
+            2,
+            "{command}: {}",
+            String::from_utf8_lossy(&stderr.snapshot())
+        );
+        assert!(String::from_utf8_lossy(&stderr.snapshot()).contains("calc:missing"));
         assert!(!marker.exists(), "{command} ran baseline");
     }
 }
@@ -3511,11 +3615,11 @@ async fn symbol_definition_missing_is_rejected_with_clean_git() {
     run_git(&project.path, &["checkout", "--", "src/calc.py"]);
     let marker = project.path.join("baseline-marker");
     let args = plan_args(&project, ["--symbol", "calc:missing", "--changed"], &marker);
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
-    let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
-    assert_eq!(code, 2, "{}", String::from_utf8_lossy(&stderr));
-    assert!(String::from_utf8_lossy(&stderr).contains("calc:missing"));
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
+    let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
+    assert_eq!(code, 2, "{}", String::from_utf8_lossy(&stderr.snapshot()));
+    assert!(String::from_utf8_lossy(&stderr.snapshot()).contains("calc:missing"));
     assert!(!marker.exists());
 }
 
@@ -3532,20 +3636,20 @@ async fn symbol_definition_verify_checks_unrequested_symbol_files() {
         ["--symbol", "other:empty", "--operators", "binary_add_sub"],
         &marker,
     );
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
     assert_eq!(
-        hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await,
+        hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await,
         0
     );
-    let mut manifest: PlanManifest = serde_json::from_slice(&stdout).unwrap();
+    let mut manifest: PlanManifest = serde_json::from_slice(&stdout.snapshot()).unwrap();
     assert_eq!(manifest.candidates.len(), 1);
     manifest.normalized_config.selection.symbols[0].qualname = "missing".into();
     let path = coordinator.path().join("plan.json");
     std::fs::write(&path, serde_json::to_vec(&manifest).unwrap()).unwrap();
     stdout.clear();
     stderr.clear();
-    let code = hoimin_cli::run_with_io(
+    let code = hoimin_cli::run_with_writers(
         vec![
             "hoimin".into(),
             "verify".into(),
@@ -3553,12 +3657,12 @@ async fn symbol_definition_verify_checks_unrequested_symbol_files() {
             "--top".into(),
             "1".into(),
         ],
-        &mut stdout,
-        &mut stderr,
+        stdout.clone(),
+        stderr.clone(),
     )
     .await;
-    assert_eq!(code, 2, "{}", String::from_utf8_lossy(&stderr));
-    assert!(String::from_utf8_lossy(&stderr).contains("other:missing"));
+    assert_eq!(code, 2, "{}", String::from_utf8_lossy(&stderr.snapshot()));
+    assert!(String::from_utf8_lossy(&stderr.snapshot()).contains("other:missing"));
     assert!(!marker.exists());
 }
 
@@ -3582,15 +3686,15 @@ async fn symbol_definition_existing_empty_scopes_are_valid() {
             ],
             &marker,
         );
-        let mut stdout = Vec::new();
-        let mut stderr = Vec::new();
+        let stdout = CollectingWriter::default();
+        let stderr = CollectingWriter::default();
         assert_eq!(
-            hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await,
+            hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await,
             0,
             "{name}: {}",
-            String::from_utf8_lossy(&stderr)
+            String::from_utf8_lossy(&stderr.snapshot())
         );
-        let manifest: PlanManifest = serde_json::from_slice(&stdout).unwrap();
+        let manifest: PlanManifest = serde_json::from_slice(&stdout.snapshot()).unwrap();
         assert_eq!(manifest.candidates, Vec::new());
         assert!(manifest.diagnostics.is_empty());
     }
@@ -3608,15 +3712,15 @@ async fn symbol_definition_existing_unchanged_scope_is_valid() {
             ["--symbol", "calc:untouched", "--changed"],
             &marker,
         );
-        let mut stdout = Vec::new();
-        let mut stderr = Vec::new();
+        let stdout = CollectingWriter::default();
+        let stderr = CollectingWriter::default();
         assert_eq!(
-            hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await,
+            hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await,
             0,
             "{}",
-            String::from_utf8_lossy(&stderr)
+            String::from_utf8_lossy(&stderr.snapshot())
         );
-        let manifest: PlanManifest = serde_json::from_slice(&stdout).unwrap();
+        let manifest: PlanManifest = serde_json::from_slice(&stdout.snapshot()).unwrap();
         assert_eq!(manifest.candidates, Vec::new());
         assert!(manifest.diagnostics.is_empty());
     }
@@ -3633,15 +3737,15 @@ async fn symbol_definition_package_init_is_valid() {
     .unwrap();
     let marker = project.path.join("baseline-marker");
     let args = plan_args(&project, ["--symbol", "pkg:empty"], &marker);
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
     assert_eq!(
-        hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await,
+        hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await,
         0,
         "{}",
-        String::from_utf8_lossy(&stderr)
+        String::from_utf8_lossy(&stderr.snapshot())
     );
-    let manifest: PlanManifest = serde_json::from_slice(&stdout).unwrap();
+    let manifest: PlanManifest = serde_json::from_slice(&stdout.snapshot()).unwrap();
     assert!(
         manifest
             .candidates
@@ -3662,11 +3766,11 @@ async fn symbol_definition_requires_exact_definition_not_assignment_or_prefix() 
             ["--symbol", selector, "--max-candidates", "1"],
             &marker,
         );
-        let mut stdout = Vec::new();
-        let mut stderr = Vec::new();
-        let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
-        assert_eq!(code, 2, "{}", String::from_utf8_lossy(&stderr));
-        assert!(String::from_utf8_lossy(&stderr).contains(selector));
+        let stdout = CollectingWriter::default();
+        let stderr = CollectingWriter::default();
+        let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
+        assert_eq!(code, 2, "{}", String::from_utf8_lossy(&stderr.snapshot()));
+        assert!(String::from_utf8_lossy(&stderr.snapshot()).contains(selector));
     }
 }
 
@@ -3675,13 +3779,13 @@ async fn symbol_definition_invalid_syntax_is_not_diagnosed_as_missing() {
     let project = Project::new_with_source("def broken(:\n    pass\n");
     let marker = project.path.join("baseline-marker");
     let args = plan_args(&project, ["--symbol", "calc:broken"], &marker);
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
     assert_eq!(
-        hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await,
+        hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await,
         2
     );
-    let stderr = String::from_utf8_lossy(&stderr);
+    let stderr = String::from_utf8_lossy(&stderr.snapshot()).into_owned();
     assert!(stderr.contains("invalid Python syntax"));
     assert!(stderr.contains("src/calc.py"));
     assert!(!stderr.contains("symbol definition not found"));
@@ -3726,17 +3830,17 @@ async fn verify_ranking_large_bodies_preserves_public_preview_and_checks_unselec
     let marker = temporary.path().join("test-command-ran");
     let mut args = plan_args(&project, ["--operators", "collection_list_tuple"], &marker);
     insert_test_min_free_space(&mut args);
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
     assert_eq!(
-        hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await,
+        hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await,
         0,
         "{stderr:?}"
     );
-    let manifest: PlanManifest = serde_json::from_slice(&stdout).unwrap();
+    let manifest: PlanManifest = serde_json::from_slice(&stdout.snapshot()).unwrap();
     assert_eq!(manifest.candidates.len(), 64);
     let path = project.path.join("plan.json");
-    std::fs::write(&path, stdout).unwrap();
+    std::fs::write(&path, stdout.snapshot()).unwrap();
     for count in [1, 7] {
         let output = preview_cli(
             &path,
@@ -4113,7 +4217,7 @@ async fn verify_preview_explicit_ids_follow_discovery_not_rank_argument_or_saved
 }
 
 #[tokio::test]
-async fn verify_preview_truncated_formats_borrowed_dispatch_and_runtime_boundary() {
+async fn verify_preview_truncated_formats_owned_dispatch_and_runtime_boundary() {
     let project = Project::new();
     let (path, mut manifest, marker) =
         write_plan_manifest(&project, &["--max-candidates", "1"]).await;
@@ -4175,19 +4279,19 @@ async fn verify_preview_truncated_formats_borrowed_dispatch_and_runtime_boundary
             "{}",
             String::from_utf8_lossy(&output.stderr)
         );
-        let mut stdout = Vec::new();
-        let mut stderr = Vec::new();
-        let code = hoimin_cli::run_with_io(
+        let stdout = CollectingWriter::default();
+        let stderr = CollectingWriter::default();
+        let code = hoimin_cli::run_with_writers(
             ["hoimin", "verify", path.to_str().unwrap()]
                 .into_iter()
                 .chain(args),
-            &mut stdout,
-            &mut stderr,
+            stdout.clone(),
+            stderr.clone(),
         )
         .await;
-        assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
-        assert_eq!(stdout, output.stdout);
-        verify_output(&stdout, &manifest);
+        assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr.snapshot()));
+        assert_eq!(stdout.snapshot(), output.stdout);
+        verify_output(&stdout.snapshot(), &manifest);
     }
     assert!(!marker.exists());
     assert_eq!(std::fs::read_dir(temporary.path()).unwrap().count(), 0);
@@ -4313,8 +4417,8 @@ async fn verify_preview_output_failure_returns_error_without_execution() {
     }
     let project = Project::new();
     let (path, _, marker) = write_plan_manifest(&project, &[]).await;
-    let mut stderr = Vec::new();
-    let code = hoimin_cli::run_with_io(
+    let stderr = CollectingWriter::default();
+    let code = hoimin_cli::run_with_writers(
         [
             "hoimin",
             "verify",
@@ -4323,12 +4427,12 @@ async fn verify_preview_output_failure_returns_error_without_execution() {
             "1",
             "--dry-run",
         ],
-        &mut FailingWriter,
-        &mut stderr,
+        FailingWriter,
+        stderr.clone(),
     )
     .await;
     assert_eq!(code, 2);
-    assert!(String::from_utf8_lossy(&stderr).contains("preview destination failed"));
+    assert!(String::from_utf8_lossy(&stderr.snapshot()).contains("preview destination failed"));
     assert!(!marker.exists());
 }
 
@@ -4385,15 +4489,15 @@ async fn changed_context_discovers_neighbor_operators_and_survives_verify() {
                 ],
                 &marker,
             );
-            let mut stdout = Vec::new();
-            let mut stderr = Vec::new();
+            let stdout = CollectingWriter::default();
+            let stderr = CollectingWriter::default();
             assert_eq!(
-                hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await,
+                hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await,
                 0,
                 "{}",
-                String::from_utf8_lossy(&stderr)
+                String::from_utf8_lossy(&stderr.snapshot())
             );
-            let manifest: PlanManifest = serde_json::from_slice(&stdout).unwrap();
+            let manifest: PlanManifest = serde_json::from_slice(&stdout.snapshot()).unwrap();
             assert_eq!(manifest.candidates.len(), usize::from(context != "0"));
 
             let candidate = &manifest.candidates[0];
@@ -4407,7 +4511,7 @@ async fn changed_context_discovers_neighbor_operators_and_survives_verify() {
                     .any(|reason| reason["code"] == "changed_line" && reason["score"] == 200)
             );
             let plan_path = project.path.join("saved-plan.json");
-            std::fs::write(&plan_path, stdout).unwrap();
+            std::fs::write(&plan_path, stdout.snapshot()).unwrap();
             let verified = prepare_verify(
                 &plan_path,
                 std::slice::from_ref(&candidate.id),
@@ -4479,15 +4583,15 @@ async fn zero_changed_context_excludes_neighbor_operators() {
                 ],
                 &marker,
             );
-            let mut stdout = Vec::new();
-            let mut stderr = Vec::new();
+            let stdout = CollectingWriter::default();
+            let stderr = CollectingWriter::default();
             assert_eq!(
-                hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await,
+                hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await,
                 0,
                 "{}",
-                String::from_utf8_lossy(&stderr)
+                String::from_utf8_lossy(&stderr.snapshot())
             );
-            let manifest: PlanManifest = serde_json::from_slice(&stdout).unwrap();
+            let manifest: PlanManifest = serde_json::from_slice(&stdout.snapshot()).unwrap();
             assert_eq!(manifest.candidates.len(), usize::from(context != "0"));
 
             assert!(!marker.exists());
@@ -4559,7 +4663,7 @@ async fn verify_metrics_manifest_collisions_reject_before_baseline_in_public_cli
 }
 
 #[tokio::test]
-async fn verify_metrics_manifest_collision_is_also_rejected_with_borrowed_writers() {
+async fn verify_metrics_manifest_collision_is_also_rejected_with_owned_writers() {
     let project = Project::new();
     let coordinator = tempfile::tempdir().unwrap();
     let marker = coordinator.path().join("marker");
@@ -4569,9 +4673,9 @@ async fn verify_metrics_manifest_collision_is_also_rejected_with_borrowed_writer
         ["--top", "1"],
         ["--candidate", manifest.candidates[0].candidate.id.as_str()],
     ] {
-        let mut stdout = Vec::new();
-        let mut stderr = Vec::new();
-        let exit = hoimin_cli::run_with_io(
+        let stdout = CollectingWriter::default();
+        let stderr = CollectingWriter::default();
+        let exit = hoimin_cli::run_with_writers(
             [
                 "hoimin",
                 "verify",
@@ -4581,12 +4685,14 @@ async fn verify_metrics_manifest_collision_is_also_rejected_with_borrowed_writer
                 "--metrics",
                 path.to_str().unwrap(),
             ],
-            &mut stdout,
-            &mut stderr,
+            stdout.clone(),
+            stderr.clone(),
         )
         .await;
-        assert_eq!(exit, 2, "{}", String::from_utf8_lossy(&stderr));
-        assert!(String::from_utf8_lossy(&stderr).contains("metrics.destination.collision"));
+        assert_eq!(exit, 2, "{}", String::from_utf8_lossy(&stderr.snapshot()));
+        assert!(
+            String::from_utf8_lossy(&stderr.snapshot()).contains("metrics.destination.collision")
+        );
         assert_eq!(std::fs::read(&path).unwrap(), original);
         assert!(!marker.exists());
     }
@@ -4989,5 +5095,21 @@ fn wait_for_plan_child(child: &mut TestChild) -> std::process::ExitStatus {
             return child.0.wait().unwrap();
         }
         std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+struct CappedOutput {
+    captured: CollectingWriter,
+    remaining: usize,
+}
+impl std::io::Write for CappedOutput {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        let count = bytes.len().min(self.remaining);
+        self.remaining -= count;
+        std::io::Write::write_all(&mut self.captured, &bytes[..count])?;
+        Ok(count)
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
     }
 }

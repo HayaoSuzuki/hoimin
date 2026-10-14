@@ -1,3 +1,7 @@
+#[path = "support/collecting_writer.rs"]
+mod collecting_writer;
+use collecting_writer::CollectingWriter;
+
 use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -187,11 +191,15 @@ async fn strict_public_plan_matches_the_lean_truncation_projection() {
         .find(|item| item.id == "public_truncated_plan")
         .expect("strict public case");
     let fixture = Fixture::new().expect("isolated public fixture");
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
     let code = tokio::time::timeout(
         Duration::from_secs(10),
-        hoimin_cli::run_with_io(plan_args(&fixture, item.limit), &mut stdout, &mut stderr),
+        hoimin_cli::run_with_writers(
+            plan_args(&fixture, item.limit),
+            stdout.clone(),
+            stderr.clone(),
+        ),
     )
     .await
     .expect("public plan timed out");
@@ -200,9 +208,10 @@ async fn strict_public_plan_matches_the_lean_truncation_projection() {
         u64::try_from(code).expect("nonnegative plan exit"),
         item.expected_exit_code,
         "stderr={}",
-        String::from_utf8_lossy(&stderr)
+        String::from_utf8_lossy(&stderr.snapshot())
     );
-    let manifest: serde_json::Value = serde_json::from_slice(&stdout).expect("plan JSON");
+    let manifest: serde_json::Value =
+        serde_json::from_slice(&stdout.snapshot()).expect("plan JSON");
     let candidates = manifest["candidates"].as_array().expect("plan candidates");
     assert_eq!(candidates.len(), item.expected_identities.len());
     assert_eq!(manifest["truncated"], item.expected_truncated);

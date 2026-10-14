@@ -362,13 +362,12 @@ does not substitute for the state machine or enumerate every event.
 On cancellation, timeout or fatal failure, the first shutdown cause and absolute
 deadline stay fixed through draining and outer finalization. Recovering a queued
 ownership payload after expiry does not certify successful core completion.
-Already-running blocking work can outlive its async wait. Owned CLI report work
-retains its writer and delivery-root ownership; a borrowed synchronous writer
-can block the caller. Unsafe removal can be deferred for later managed-root
+Already-running blocking work can outlive its async wait. Run and verify report
+work requires owned writers and retains its writer and delivery-root ownership. Unsafe removal can be deferred for later managed-root
 reclamation, and failures preserve incomplete-cleanup evidence.
 
 Sources: [shell orchestration and finalization](../../crates/hoimin-cli/src/shell.rs),
-[owned and inline report delivery](../../crates/hoimin-cli/src/report/delivery.rs),
+[owned report delivery](../../crates/hoimin-cli/src/report/delivery.rs),
 [shutdown deadline contract](../development.md#shutdown-deadline-invariants).
 
 ## Deployment and evidence limits

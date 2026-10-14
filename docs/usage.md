@@ -1112,9 +1112,9 @@ cleanup cannot finish before the shutdown grace expires, the run is an
 infrastructure failure with exit code `2`. CLI report writes and flushes share
 that shutdown deadline. Once the budget expires, the CLI can exit without a
 final stderr diagnostic; stdout can contain a partial report if its consumer
-stalls. The library's caller-provided, borrowed `Write` APIs retain synchronous
-behavior: those writers cannot be forcibly cancelled and can delay return or
-diagnostics.
+stalls. Library run and verify entry points require owned `Write + Send + 'static`
+writers and use the same delivery deadline. A started blocking operation can
+outlive the wait; it retains its writer and delivery resources until it returns.
 
 ## Sessions and resume
 

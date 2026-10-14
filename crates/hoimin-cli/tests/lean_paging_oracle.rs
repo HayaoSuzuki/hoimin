@@ -1,5 +1,10 @@
 //! Lean generates expected order; this adapter only maps public manifest IDs
 //! to file/line identities and observes public plan/verify dry-run behavior.
+
+#[path = "support/collecting_writer.rs"]
+mod collecting_writer;
+use collecting_writer::CollectingWriter;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
@@ -104,18 +109,18 @@ fn corpus_requires_the_complete_strict_matrix_and_rejects_invalid_rows() {
 }
 
 async fn cli(args: Vec<String>) -> (i32, String, String) {
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
     let code = tokio::time::timeout(
         Duration::from_secs(20),
-        hoimin_cli::run_with_io(args, &mut stdout, &mut stderr),
+        hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()),
     )
     .await
     .expect("infrastructure error: public CLI timed out");
     (
         code,
-        String::from_utf8(stdout).unwrap(),
-        String::from_utf8(stderr).unwrap(),
+        String::from_utf8(stdout.snapshot()).unwrap(),
+        String::from_utf8(stderr.snapshot()).unwrap(),
     )
 }
 

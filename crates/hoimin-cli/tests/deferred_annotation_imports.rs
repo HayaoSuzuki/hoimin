@@ -1,3 +1,7 @@
+#[path = "support/collecting_writer.rs"]
+mod collecting_writer;
+use collecting_writer::CollectingWriter;
+
 use std::ffi::OsString;
 use std::path::PathBuf;
 use std::process::Command;
@@ -48,16 +52,16 @@ async fn invoke_operator(
         args.extend(["--format".into(), "json".into()]);
     }
     args.extend(["--".into(), python().into_os_string(), "check.py".into()]);
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
     let code = tokio::time::timeout(
         Duration::from_secs(30),
-        hoimin_cli::run_with_io(args, &mut stdout, &mut stderr),
+        hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()),
     )
     .await
     .expect("public command timed out");
-    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
-    serde_json::from_slice(&stdout).unwrap()
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr.snapshot()));
+    serde_json::from_slice(&stdout.snapshot()).unwrap()
 }
 
 async fn plan(source: &str) -> PlanManifest {

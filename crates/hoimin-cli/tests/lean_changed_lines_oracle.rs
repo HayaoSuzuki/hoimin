@@ -1,4 +1,9 @@
 //! Issue 612 correspondence uses real Git, `CPython`, and public plan/run/verify.
+
+#[path = "support/collecting_writer.rs"]
+mod collecting_writer;
+use collecting_writer::CollectingWriter;
+
 use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -172,11 +177,11 @@ fn args(root: &Path, mode: &str, changed: bool) -> Vec<OsString> {
 }
 
 async fn invoke(args: Vec<OsString>) -> Value {
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
     let code = tokio::time::timeout(
         Duration::from_secs(40),
-        hoimin_cli::run_with_io(args, &mut stdout, &mut stderr),
+        hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()),
     )
     .await
     .expect("infrastructure error: public CLI deadline");
@@ -184,9 +189,9 @@ async fn invoke(args: Vec<OsString>) -> Value {
         code,
         0,
         "infrastructure error: {}",
-        String::from_utf8_lossy(&stderr)
+        String::from_utf8_lossy(&stderr.snapshot())
     );
-    serde_json::from_slice(&stdout).expect("infrastructure error: invalid CLI JSON")
+    serde_json::from_slice(&stdout.snapshot()).expect("infrastructure error: invalid CLI JSON")
 }
 
 async fn assert_external_coordinates(root: &Path, case: &Case) {

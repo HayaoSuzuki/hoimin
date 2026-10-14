@@ -1,3 +1,7 @@
+#[path = "support/collecting_writer.rs"]
+mod collecting_writer;
+use collecting_writer::CollectingWriter;
+
 use std::ffi::OsString;
 use std::path::Path;
 
@@ -19,15 +23,15 @@ const PROMOTED: [&str; 11] = [
 ];
 
 async fn cli(args: Vec<OsString>) -> serde_json::Value {
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
-    let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
+    let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
     assert!(
         matches!(code, 0 | 1),
         "exit={code}: {}",
-        String::from_utf8_lossy(&stderr)
+        String::from_utf8_lossy(&stderr.snapshot())
     );
-    serde_json::from_slice(&stdout).unwrap()
+    serde_json::from_slice(&stdout.snapshot()).unwrap()
 }
 
 async fn plan(root: &Path, selection: &[&str]) -> serde_json::Value {

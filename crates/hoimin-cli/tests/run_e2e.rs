@@ -1,3 +1,7 @@
+#[path = "support/collecting_writer.rs"]
+mod collecting_writer;
+use collecting_writer::CollectingWriter;
+
 use std::ffi::OsString;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -184,9 +188,9 @@ async fn first_sigint_bounds_a_started_report_write() {
 
 #[test]
 fn cli_entrypoint_future_keeps_large_run_state_out_of_line() {
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
-    let future = hoimin_cli::run_with_io(["hoimin", "--help"], &mut stdout, &mut stderr);
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
+    let future = hoimin_cli::run_with_writers(["hoimin", "--help"], stdout.clone(), stderr.clone());
 
     assert!(
         size_of_val(&future) <= 14 * 1024,
@@ -201,14 +205,14 @@ async fn successful_clap_displays_use_stdout() {
         (["hoimin", "--help"], "Usage:"),
         (["hoimin", "--version"], env!("CARGO_PKG_VERSION")),
     ] {
-        let mut stdout = Vec::new();
-        let mut stderr = Vec::new();
+        let stdout = CollectingWriter::default();
+        let stderr = CollectingWriter::default();
 
-        let exit = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+        let exit = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
 
         assert_eq!(exit, 0, "args: {args:?}");
         assert!(stderr.is_empty(), "args: {args:?}: {stderr:?}");
-        let stdout = String::from_utf8(stdout).unwrap();
+        let stdout = String::from_utf8(stdout.snapshot()).unwrap();
         assert!(
             stdout.contains(expected),
             "args: {args:?}, missing {expected:?} from:\n{stdout}"
@@ -218,15 +222,19 @@ async fn successful_clap_displays_use_stdout() {
 
 #[tokio::test]
 async fn completions_command_writes_shell_script_to_stdout() {
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
 
-    let exit =
-        hoimin_cli::run_with_io(["hoimin", "completions", "bash"], &mut stdout, &mut stderr).await;
+    let exit = hoimin_cli::run_with_writers(
+        ["hoimin", "completions", "bash"],
+        stdout.clone(),
+        stderr.clone(),
+    )
+    .await;
 
     assert_eq!(exit, 0);
     assert!(stderr.is_empty(), "{stderr:?}");
-    let stdout = String::from_utf8(stdout).unwrap();
+    let stdout = String::from_utf8(stdout.snapshot()).unwrap();
     assert!(
         stdout.contains("_hoimin"),
         "missing hoimin completion function"
@@ -236,16 +244,20 @@ async fn completions_command_writes_shell_script_to_stdout() {
 
 #[tokio::test]
 async fn invalid_clap_arguments_remain_on_stderr() {
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
 
-    let exit =
-        hoimin_cli::run_with_io(["hoimin", "--definitely-invalid"], &mut stdout, &mut stderr).await;
+    let exit = hoimin_cli::run_with_writers(
+        ["hoimin", "--definitely-invalid"],
+        stdout.clone(),
+        stderr.clone(),
+    )
+    .await;
 
     assert_ne!(exit, 0);
     assert!(stdout.is_empty(), "{stdout:?}");
     assert!(
-        String::from_utf8(stderr)
+        String::from_utf8(stderr.snapshot())
             .unwrap()
             .contains("--definitely-invalid")
     );
@@ -285,14 +297,14 @@ async fn oversized_runtime_timeouts_are_rejected_before_project_execution() {
             OsString::from("-c"),
             OsString::from(command),
         ];
-        let mut stdout = Vec::new();
-        let mut stderr = Vec::new();
+        let stdout = CollectingWriter::default();
+        let stderr = CollectingWriter::default();
 
-        let exit = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+        let exit = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
 
         assert_eq!(exit, 2, "flag={flag}");
         assert!(stdout.is_empty(), "flag={flag}");
-        let stderr = String::from_utf8(stderr).unwrap();
+        let stderr = String::from_utf8(stderr.snapshot()).unwrap();
         assert_eq!(
             stderr,
             format!("invalid zero or overflowing limit: {flag}\n")
@@ -1362,11 +1374,11 @@ async fn fingerprint_include_unmatched_fails_before_creating_session() {
         OsString::from("-q"),
         OsString::from("tests"),
     ];
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
 
-    let exit_code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
-    let stderr = String::from_utf8(stderr).unwrap();
+    let exit_code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
+    let stderr = String::from_utf8(stderr.snapshot()).unwrap();
 
     assert_eq!(exit_code, 2);
     assert!(stderr.contains("fingerprint.include.unmatched"));
@@ -1400,14 +1412,14 @@ async fn fingerprint_file_missing_fails_before_creating_session() {
         OsString::from("-q"),
         OsString::from("tests"),
     ];
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
 
-    let exit_code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
+    let exit_code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
 
     assert_eq!(exit_code, 2);
     assert!(
-        String::from_utf8(stderr)
+        String::from_utf8(stderr.snapshot())
             .unwrap()
             .contains("fingerprint.file.not_found")
     );
@@ -2691,19 +2703,20 @@ async fn serial_output_that_requests_stop_is_accepted_before_cancellation() {
     ];
     let config = hoimin_cli::cli::parse_config_from(args).unwrap();
     let control = hoimin_cli::shell::RunControl::new();
-    let mut stdout = CancelOnMutantFinished {
-        accepted: Vec::new(),
+    let accepted = CollectingWriter::default();
+    let stdout = CancelOnMutantFinished {
+        accepted: accepted.clone(),
         cancelled: false,
         control: control.clone(),
     };
-    let mut stderr = Vec::new();
+    let stderr = CollectingWriter::default();
 
-    let exit = hoimin_cli::shell::run_loop_with_control(config, &mut stdout, &mut stderr, control)
+    let exit = hoimin_cli::shell::run_loop_with_control(config, stdout, stderr.clone(), control)
         .await
         .unwrap();
 
     assert_eq!(exit, 130);
-    let events = String::from_utf8(stdout.accepted).unwrap();
+    let events = String::from_utf8(accepted.snapshot()).unwrap();
     let events = events
         .lines()
         .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
@@ -2764,12 +2777,13 @@ async fn failed_mutant_started_output_prevents_process_start() {
         OsString::from("-c"),
         OsString::from(command),
     ];
-    let mut stdout = RejectMutantStarted::default();
-    let mut stderr = Vec::new();
+    let stdout = RejectMutantStarted::default();
+    let accepted = stdout.accepted.clone();
+    let stderr = CollectingWriter::default();
 
     let exit = tokio::time::timeout(
         Duration::from_secs(5),
-        hoimin_cli::run_with_io(args, &mut stdout, &mut stderr),
+        hoimin_cli::run_with_writers(args, stdout, stderr.clone()),
     )
     .await
     .expect("report output failure must terminate without retrying the failed sink");
@@ -2777,8 +2791,8 @@ async fn failed_mutant_started_output_prevents_process_start() {
     assert_eq!(exit, 2);
     assert_eq!(std::fs::read_to_string(counter).unwrap(), "1");
     assert!(
-        !stdout
-            .accepted
+        !accepted
+            .snapshot()
             .windows(b"run_finished".len())
             .any(|window| window == b"run_finished"),
         "an irrecoverable report stream must not receive a terminal retry"
@@ -2999,10 +3013,10 @@ async fn run_type_checker(checker: &Path, expected_status: &str) -> FixtureRun {
         checker.as_os_str().to_owned(),
     ];
     args.extend(checker_args.iter().map(OsString::from));
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
-    let exit_code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
-    fixture_run(exit_code, stdout, stderr)
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
+    let exit_code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
+    fixture_run(exit_code, stdout.snapshot(), stderr.snapshot())
 }
 
 async fn run_fixture_with_session(test_args: &[&str], session: &Path, resume: bool) -> FixtureRun {
@@ -3066,11 +3080,11 @@ async fn run_fixture_options_extra_with_format(
         extra_options.iter().copied().map(OsString::from),
     );
     args.extend(test_args.iter().map(OsString::from));
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
-    let exit_code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
-    let stdout = String::from_utf8(stdout).unwrap();
-    let stderr = String::from_utf8(stderr).unwrap();
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
+    let exit_code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
+    let stdout = String::from_utf8(stdout.snapshot()).unwrap();
+    let stderr = String::from_utf8(stderr.snapshot()).unwrap();
     let document = if format == "json" {
         serde_json::from_str(stdout.trim()).unwrap_or_else(|error| {
             panic!(
@@ -3122,21 +3136,22 @@ fn fixture_run(exit_code: i32, stdout: Vec<u8>, stderr: Vec<u8>) -> FixtureRun {
 
 #[derive(Default)]
 struct RejectMutantStarted {
-    accepted: Vec<u8>,
+    accepted: CollectingWriter,
 }
 
 struct CancelOnMutantFinished {
-    accepted: Vec<u8>,
+    accepted: CollectingWriter,
     cancelled: bool,
     control: hoimin_cli::shell::RunControl,
 }
 
 impl Write for CancelOnMutantFinished {
     fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        self.accepted.extend_from_slice(bytes);
+        self.accepted.write_all(bytes)?;
         if !self.cancelled
             && self
                 .accepted
+                .snapshot()
                 .windows(b"mutant_finished".len())
                 .any(|window| window == b"mutant_finished")
         {
@@ -3153,7 +3168,7 @@ impl Write for CancelOnMutantFinished {
 
 impl Write for RejectMutantStarted {
     fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        let mut combined = self.accepted.clone();
+        let mut combined = self.accepted.snapshot();
         combined.extend_from_slice(bytes);
         if combined
             .windows(b"mutant_started".len())
@@ -3161,7 +3176,7 @@ impl Write for RejectMutantStarted {
         {
             return Err(io::Error::other("injected mutant_started failure"));
         }
-        self.accepted.extend_from_slice(bytes);
+        self.accepted.write_all(bytes)?;
         Ok(bytes.len())
     }
 
@@ -3396,11 +3411,11 @@ async fn run_focused_profile(
         args.splice(separator..separator, [OsString::from("--resume")]);
     }
 
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
-    let exit_code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
-    let stdout = String::from_utf8(stdout).unwrap();
-    let stderr = String::from_utf8(stderr).unwrap();
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
+    let exit_code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
+    let stdout = String::from_utf8(stdout.snapshot()).unwrap();
+    let stderr = String::from_utf8(stderr.snapshot()).unwrap();
     let document = if format == "json" {
         serde_json::from_str(stdout.trim()).unwrap_or_else(|error| {
             panic!(
@@ -3476,11 +3491,11 @@ async fn run_project_with_session_options(
         OsString::from("-c"),
         OsString::from(command),
     ]);
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
-    let exit_code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
-    let stdout = String::from_utf8(stdout).unwrap();
-    let stderr = String::from_utf8(stderr).unwrap();
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
+    let exit_code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
+    let stdout = String::from_utf8(stdout.snapshot()).unwrap();
+    let stderr = String::from_utf8(stderr.snapshot()).unwrap();
     let document: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap_or_else(|error| {
         panic!(
             "invalid JSON report ({error}); exit={exit_code}; stdout={stdout:?}; stderr={stderr:?}"
@@ -3537,11 +3552,11 @@ async fn run_project_options(
         separator..separator,
         extra_options.iter().copied().map(OsString::from),
     );
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
-    let exit_code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
-    let stdout = String::from_utf8(stdout).unwrap();
-    let stderr = String::from_utf8(stderr).unwrap();
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
+    let exit_code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
+    let stdout = String::from_utf8(stdout.snapshot()).unwrap();
+    let stderr = String::from_utf8(stderr.snapshot()).unwrap();
     let document: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap_or_else(|error| {
         panic!(
             "invalid JSON report ({error}); exit={exit_code}; stdout={stdout:?}; stderr={stderr:?}"
@@ -4272,11 +4287,11 @@ async fn resource_policy_run(root: &Path, session: &Path, format: &str, resume: 
         "-c".into(),
         command.into(),
     ]);
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
-    let exit = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
-    assert_eq!(exit, 4, "{}", String::from_utf8_lossy(&stderr));
-    stdout
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
+    let exit = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
+    assert_eq!(exit, 4, "{}", String::from_utf8_lossy(&stderr.snapshot()));
+    stdout.snapshot()
 }
 
 #[tokio::test]

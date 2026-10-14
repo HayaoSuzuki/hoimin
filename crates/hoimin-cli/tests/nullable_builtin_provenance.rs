@@ -1,3 +1,7 @@
+#[path = "support/collecting_writer.rs"]
+mod collecting_writer;
+use collecting_writer::CollectingWriter;
+
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -32,11 +36,11 @@ async fn plan(source: &str) -> PlanManifest {
         "-c".into(),
         "pass".into(),
     ];
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
-    let code = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
-    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
-    serde_json::from_slice(&stdout).unwrap()
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
+    let code = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr.snapshot()));
+    serde_json::from_slice(&stdout.snapshot()).unwrap()
 }
 
 fn evaluate(source: &str, expression: &str) {

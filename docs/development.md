@@ -78,6 +78,17 @@ internal Rust source migration and validation evidence. The
 identifies the removed unchecked wrappers and the retained `VerifiedPlan::execute`
 entry point, including the placement of runtime negative tests.
 
+Run CLI commands through `run_with_writers(args, stdout, stderr)` with owned
+`Write + Send + 'static` outputs; `run_from` delegates using stdio. Replace
+`run_with_io` calls and borrowed shell writers with owned values. For collected
+output, give the run a clone of a shared collecting writer and inspect a snapshot
+after it returns. `VerifiedPlan::execute` also consumes owned writers;
+`ShellContext` no longer has writer type parameters. Shell
+execution errors are already diagnosed; inspect the returned error if needed,
+but do not print it again. Short progress, review, help and completion output
+still uses the locally owned synchronous writers. See the
+[owned writer plan and evidence](superpowers/plans/2026-10-14-issue-889.md).
+
 Construct analyzers with `AnalyzerHandler::new(root) -> Self`. Source access and
 candidate-store errors occur during analysis. See the [initialization API record](maintenance/2026-10-13-analyzer-initialization.md)
 for the removed constructor, internal Rust migration and verification. The
@@ -858,6 +869,12 @@ budget. Every cancellable post-stop scheduler wait, completion receive, process
 drain, blocking-I/O drain, resource close, and internal metrics finalization
 must use the same deadline.
 
+When a stop arrives during an owned serial report operation, retain the stop
+while waiting for that operation within the fixed shutdown budget. Accept a
+completed operation before applying the retained stop; otherwise finalization
+can repeat output whose acknowledgement was discarded. The pending stop blocks
+further dispatch. A completion observed after expiry does not acknowledge output.
+
 At grace expiry, accept already-buffered completions before aborting Tokio task
 wrappers so returned workspace ownership is recovered when possible. Do not
 claim cleanup, session completion, or `run_finished` unless its completion was
@@ -865,14 +882,13 @@ accepted before expiry. Resource ownership still held by the shell is moved to
 a detached blocking cleanup rather than leaked; that cleanup may finish after
 the run future returns and is never reported as accepted. Tokio cannot cancel
 an already-running `spawn_blocking` operation: aborting its wrapper detaches
-that operation. The CLI exits after reporting the infrastructure failure,
-while a library caller may observe the detached operation finish later. This
-deadline cannot preempt an arbitrary synchronous `Write`. Owned CLI report
-delivery bounds the async wait while the blocking operation retains its writer
-and delivery-root leases. Borrowed library writers run report output and flush
-inline; a blocked writer can delay the run future and even the expiry diagnostic.
-The bounded-return invariant for that path assumes synchronous output writes
-make progress.
+that operation. The CLI can exit with infrastructure failure even when the
+expired budget prevents a final diagnostic; a library caller may observe the
+detached operation finish later. Run and verify entry points require owned
+`Write + Send + 'static` outputs. Delivery bounds the async wait while the
+blocking operation retains its writer and delivery-root leases. The deadline
+cannot preempt the blocking `Write` itself. Short commands still write locally
+and synchronously.
 
 ## Metrics destination permission
 

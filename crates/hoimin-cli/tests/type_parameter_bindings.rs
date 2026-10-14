@@ -1,3 +1,7 @@
+#[path = "support/collecting_writer.rs"]
+mod collecting_writer;
+use collecting_writer::CollectingWriter;
+
 use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::fs;
@@ -55,15 +59,15 @@ async fn assert_plan(source: &str, operator: &str, original: &str, replacement: 
         OsString::from("-c"),
         OsString::from("pass"),
     ];
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
     assert_eq!(
-        hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await,
+        hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await,
         0,
         "{}",
-        String::from_utf8_lossy(&stderr)
+        String::from_utf8_lossy(&stderr.snapshot())
     );
-    let manifest: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
+    let manifest: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
     let candidates: Vec<_> = manifest["candidates"]
         .as_array()
         .unwrap()

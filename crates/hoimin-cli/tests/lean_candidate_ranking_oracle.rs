@@ -1,3 +1,7 @@
+#[path = "support/collecting_writer.rs"]
+mod collecting_writer;
+use collecting_writer::CollectingWriter;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -357,17 +361,17 @@ struct CliOutput {
 }
 
 async fn run_cli(args: Vec<OsString>) -> Result<CliOutput, String> {
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
     let code = tokio::time::timeout(
         Duration::from_secs(10),
-        hoimin_cli::run_with_io(args, &mut stdout, &mut stderr),
+        hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()),
     )
     .await
     .map_err(|_| "Hoimin public CLI timed out after 10 seconds".to_owned())?;
     Ok(CliOutput {
         code,
-        stdout: String::from_utf8(stdout).map_err(|error| error.to_string())?,
-        stderr: String::from_utf8(stderr).map_err(|error| error.to_string())?,
+        stdout: String::from_utf8(stdout.snapshot()).map_err(|error| error.to_string())?,
+        stderr: String::from_utf8(stderr.snapshot()).map_err(|error| error.to_string())?,
     })
 }

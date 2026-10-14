@@ -1,3 +1,7 @@
+#[path = "support/collecting_writer.rs"]
+mod collecting_writer;
+use collecting_writer::CollectingWriter;
+
 use hoimin_cli::cli::OutputFormat;
 use hoimin_cli::plan::RankedPlanCandidate;
 use hoimin_core::RunConfig;
@@ -154,11 +158,11 @@ async fn run_mutants(root: &Path, test: &str) -> serde_json::Value {
         "-c",
         test,
     ];
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
-    let status = hoimin_cli::run_with_io(args, &mut stdout, &mut stderr).await;
-    assert_eq!(status, 0, "{}", String::from_utf8_lossy(&stderr));
-    serde_json::from_slice(&stdout).unwrap()
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
+    let status = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
+    assert_eq!(status, 0, "{}", String::from_utf8_lossy(&stderr.snapshot()));
+    serde_json::from_slice(&stdout.snapshot()).unwrap()
 }
 
 #[tokio::test]
