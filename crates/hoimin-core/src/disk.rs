@@ -39,13 +39,66 @@ pub enum DiskDecision {
     Stop(DiskFailure),
 }
 
+/// A primary disk stop with required reason data and independent diagnostics.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DiskFailure {
-    pub code: String,
-    pub reason: DiskStopReason,
-    pub observation: Option<DiskObservation>,
-    pub message: Option<String>,
+    pub reason: DiskFailureReason,
     pub secondary: Vec<DiskSecondary>,
+}
+
+impl DiskFailure {
+    /// Returns the stable diagnostic code derived from the reason.
+    #[must_use]
+    pub const fn code(&self) -> &'static str {
+        self.reason.kind().code()
+    }
+}
+
+/// Required evidence for each primary stop. Codes derive from the variant.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum DiskFailureReason {
+    /// The owned workspace reaches its configured size limit.
+    WorkspaceSizeExceeded(DiskObservation),
+    /// The filesystem reaches its configured free-space reserve.
+    FilesystemReserveReached(DiskObservation),
+    /// Disk measurement fails with the supplied explanation.
+    MeasurementFailed(String),
+    /// Process drain fails with the supplied explanation.
+    ProcessFailed(String),
+}
+
+impl DiskFailureReason {
+    /// Returns the payload-free label used by secondary evidence and oracles.
+    #[must_use]
+    pub const fn kind(&self) -> DiskStopReason {
+        match self {
+            Self::WorkspaceSizeExceeded(_) => DiskStopReason::WorkspaceSizeExceeded,
+            Self::FilesystemReserveReached(_) => DiskStopReason::FilesystemReserveReached,
+            Self::MeasurementFailed(_) => DiskStopReason::MeasurementFailed,
+            Self::ProcessFailed(_) => DiskStopReason::ProcessFailed,
+        }
+    }
+
+    /// Projects the complete primary evidence without dropping measurement duration.
+    #[must_use]
+    pub fn to_secondary(&self) -> DiskSecondary {
+        match self {
+            Self::WorkspaceSizeExceeded(value) | Self::FilesystemReserveReached(value) => {
+                DiskSecondary::Observation {
+                    reason: self.kind(),
+                    value: *value,
+                }
+            }
+            Self::MeasurementFailed(message) | Self::ProcessFailed(message) => {
+                DiskSecondary::Error {
+                    code: self.kind().code().into(),
+                    message: message.clone(),
+                }
+            }
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -283,15 +336,9 @@ impl DiskLifecycle {
 pub fn evaluate_disk_policy(policy: DiskPolicy, observation: DiskObservation) -> DiskDecision {
     let reserve = observation.available_bytes <= policy.min_free_bytes.get();
     let size = observation.owned_bytes >= policy.max_owned_bytes.get();
-    let Some(reason) = (if reserve {
-        Some(DiskStopReason::FilesystemReserveReached)
-    } else if size {
-        Some(DiskStopReason::WorkspaceSizeExceeded)
-    } else {
-        None
-    }) else {
+    if !reserve && !size {
         return DiskDecision::Continue;
-    };
+    }
     let secondary = if reserve && size {
         vec![DiskSecondary::Observation {
             reason: DiskStopReason::WorkspaceSizeExceeded,
@@ -301,10 +348,11 @@ pub fn evaluate_disk_policy(policy: DiskPolicy, observation: DiskObservation) ->
         Vec::new()
     };
     DiskDecision::Stop(DiskFailure {
-        code: reason.code().to_owned(),
-        reason,
-        observation: Some(observation),
-        message: None,
+        reason: if reserve {
+            DiskFailureReason::FilesystemReserveReached(observation)
+        } else {
+            DiskFailureReason::WorkspaceSizeExceeded(observation)
+        },
         secondary,
     })
 }
@@ -339,10 +387,7 @@ pub fn apply_disk_lifecycle_event(
             record_failure(
                 lifecycle,
                 DiskFailure {
-                    code: DISK_MEASUREMENT_FAILED.to_owned(),
-                    reason: DiskStopReason::MeasurementFailed,
-                    observation: None,
-                    message: Some(message),
+                    reason: DiskFailureReason::MeasurementFailed(message),
                     secondary: Vec::new(),
                 },
             );
@@ -357,10 +402,7 @@ pub fn apply_disk_lifecycle_event(
             record_failure(
                 lifecycle,
                 DiskFailure {
-                    code: PROCESS_LIFECYCLE_FAILED.to_owned(),
-                    reason: DiskStopReason::ProcessFailed,
-                    observation: None,
-                    message: Some("process drain failed".to_owned()),
+                    reason: DiskFailureReason::ProcessFailed("process drain failed".to_owned()),
                     secondary: Vec::new(),
                 },
             );
@@ -468,18 +510,7 @@ fn record_failure(lifecycle: &mut DiskLifecycle, mut failure: DiskFailure) {
         lifecycle.stop = Some(failure);
         return;
     }
-    let mut values = Vec::with_capacity(1 + failure.secondary.len());
-    if let Some(observation) = failure.observation {
-        values.push(DiskSecondary::Observation {
-            reason: failure.reason,
-            value: observation,
-        });
-    } else if let Some(message) = failure.message {
-        values.push(DiskSecondary::Error {
-            code: failure.code,
-            message,
-        });
-    }
+    let mut values = vec![failure.reason.to_secondary()];
     values.append(&mut failure.secondary);
     for value in values {
         if lifecycle
@@ -511,14 +542,7 @@ fn add_error(lifecycle: &mut DiskLifecycle, code: &'static str, message: String)
 }
 
 fn failure_matches_secondary(failure: &DiskFailure, secondary: &DiskSecondary) -> bool {
-    match secondary {
-        DiskSecondary::Observation { reason, value } => {
-            failure.reason == *reason && failure.observation.as_ref() == Some(value)
-        }
-        DiskSecondary::Error { code, message } => {
-            failure.code == *code && failure.message.as_ref() == Some(message)
-        }
-    }
+    failure.reason.to_secondary() == *secondary
 }
 
 fn settled(state: DiskComponentState) -> bool {

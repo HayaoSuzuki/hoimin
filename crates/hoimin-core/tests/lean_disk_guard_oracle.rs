@@ -193,7 +193,7 @@ fn assert_policy_case(case: &CorpusCase) {
     let actual_stop = snapshot
         .stop
         .as_ref()
-        .map(|failure| reason_name(failure.reason));
+        .map(|failure| reason_name(failure.reason.kind()));
     let secondary = snapshot
         .stop
         .as_ref()
