@@ -17,6 +17,27 @@ pub struct SourceEncodingError {
     pub reason: String,
 }
 
+/// Internal source-origin classification, independent of diagnostic wording.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum SourceDecodeFailure {
+    ImplicitUtf8(SourceEncodingError),
+    DeclaredEncoding(SourceEncodingError),
+}
+
+impl SourceDecodeFailure {
+    pub(crate) fn diagnostic(&self) -> &SourceEncodingError {
+        match self {
+            Self::ImplicitUtf8(error) | Self::DeclaredEncoding(error) => error,
+        }
+    }
+
+    fn into_diagnostic(self) -> SourceEncodingError {
+        match self {
+            Self::ImplicitUtf8(error) | Self::DeclaredEncoding(error) => error,
+        }
+    }
+}
+
 impl PythonSourceEncoding {
     /// Encodes mutation text without adding a BOM or changing line endings.
     ///
@@ -108,6 +129,12 @@ fn partition_index(length: usize, mut before: impl FnMut(usize) -> bool) -> usiz
 /// Returns the declared encoding and a reason for unknown/unsupported codecs,
 /// BOM conflicts, and bytes that do not match UTF-8 or ASCII.
 pub fn decode_python_source(source: &[u8]) -> Result<DecodedPythonSource<'_>, SourceEncodingError> {
+    decode_python_source_classified(source).map_err(SourceDecodeFailure::into_diagnostic)
+}
+
+pub(crate) fn decode_python_source_classified(
+    source: &[u8],
+) -> Result<DecodedPythonSource<'_>, SourceDecodeFailure> {
     let bom = source.starts_with(b"\xef\xbb\xbf");
     let cookie_bytes = if bom { &source[3..] } else { source };
     let declared = encoding_cookie(cookie_bytes);
@@ -117,9 +144,16 @@ pub fn decode_python_source(source: &[u8]) -> Result<DecodedPythonSource<'_>, So
         .to_ascii_lowercase()
         .replace('_', "-");
     let tokenizer_utf8 = normalized == "utf-8" || normalized.starts_with("utf-8-");
-    let failure = |reason: String| SourceEncodingError {
-        encoding: name.into(),
-        reason,
+    let failure = |reason: String| {
+        let diagnostic = SourceEncodingError {
+            encoding: name.into(),
+            reason,
+        };
+        if declared.is_some() {
+            SourceDecodeFailure::DeclaredEncoding(diagnostic)
+        } else {
+            SourceDecodeFailure::ImplicitUtf8(diagnostic)
+        }
     };
     if bom && !tokenizer_utf8 {
         return Err(failure("declaration conflicts with UTF-8 BOM".into()));

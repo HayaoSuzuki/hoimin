@@ -5,6 +5,16 @@ description: 構文・名前解決・変更するバイト範囲・候補保持�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-873-decoder
+  resource: ../../../crates/hoimin-core/src/source_encoding.rs
+  revision: 49a34a63ac4e995bfefb156f85ff3a934b594e6b
+  working_tree: modified
+  sha256: ed3fac5f5f56ed48e32bfa6a10709ccc5d201a9037ad6c5ee3791728fb572192
+- id: issue-873-candidates
+  resource: ../../../crates/hoimin-core/src/candidate.rs
+  revision: 49a34a63ac4e995bfefb156f85ff3a934b594e6b
+  working_tree: modified
+  sha256: e47e0785164109400753f09ee27e8d344481d8dfcdacda717240aee33dba08d7
 - id: issue-866-contract
   resource: ../../../crates/hoimin-cli/src/analyzer/mod.rs
   revision: 3b79cab70063d688a3484dbb95b86f806a9a9457
@@ -897,3 +907,19 @@ changes.[^issue-866-contract]
 `AnalyzerDiagnosticCode::canonical_name` owns the seven external names without a prefix. Plan copies that name and preserves separate path, line and column fields; an absent message becomes an empty string. Run adds `analyzer.` and keeps its own default explanations and location formatting. Centralizing names does not combine these output contracts or change saved-plan schemas, exit codes, defaults or the version floor. The implementation and verification record explains the fixed-value coverage and its limits.[^issue-865-names]
 
 [^issue-865-names]: [Issue #865 design, implementation and validation](../../superpowers/plans/2026-10-14-issue-865.md).
+
+# Typed source-decoding classification
+
+The decoder retains implicit UTF-8 versus declared-encoding failure as a private
+variant, independently of its diagnostic label. Candidate validation consumes
+that variant; relabeling the diagnostic cannot switch InvalidUtf8 and
+InvalidEncoding. The public decoder and SourceEncodingError fields/display
+remain unchanged. Original-span mismatch still precedes decoding failure,
+and source hashing, byte spans and candidate IDs retain their contracts.[^issue-873-decoder][^issue-873-candidates]
+
+The [issue #873 evidence](../../superpowers/plans/2026-10-14-issue-873.md) records
+regression failure before the refactor, bounded native checks and their limits.
+This internal classification change adds no new codec or formal guarantee.
+
+[^issue-873-decoder]: [Classified internal decoder](../../../crates/hoimin-core/src/source_encoding.rs).
+[^issue-873-candidates]: [Candidate validation](../../../crates/hoimin-core/src/candidate.rs).
