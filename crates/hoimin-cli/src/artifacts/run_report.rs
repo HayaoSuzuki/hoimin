@@ -1,6 +1,6 @@
 //! Run-report decoding shared by progress and review.
 //!
-//! Progress reads supported historical formats and reports unusable runs without
+//! Progress reads current-schema JSON/JSONL and reports unusable runs without
 //! rejecting their valid structure. Review requires a complete current-schema JSON
 //! document with a passing baseline. Callers own plan matching, source freshness,
 //! duplicate handling and command output.
@@ -12,7 +12,7 @@ use std::io::{self, BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 
 use hoimin_core::{
-    BaselineFinished, ExitPolicy, MutantFinished, MutationSummary, OutputEvent, ProcessTermination,
+    ExitPolicy, MutantFinished, MutationSummary, OutputEvent, ProcessTermination,
     REPORT_SCHEMA_VERSION, ReportVersions, ResourceControl, VerificationSelection, exit_code_for,
     summarize,
 };
@@ -60,12 +60,7 @@ pub(crate) fn read_review_json(path: &Path, bytes: &[u8]) -> Result<ReviewReport
             path: path.to_path_buf(),
             source,
         })?;
-    if document.schema_version != REPORT_SCHEMA_VERSION {
-        return Err(ProgressError::UnsupportedSchema {
-            path: path.to_path_buf(),
-            found: document.schema_version,
-        });
-    }
+    check_schema(path, document.schema_version)?;
     let run_id = document.run.run_id().to_owned();
     let config: hoimin_core::RunConfig = serde_json::from_value(
         document.run.value().normalized_config.clone(),
@@ -115,7 +110,7 @@ pub enum ProgressError {
         source: serde_json::Error,
     },
     #[error(
-        "unsupported schema version {found} in progress report {path}; expected 3 or {REPORT_SCHEMA_VERSION} (schema 2 JSON is supported separately)"
+        "unsupported schema version {found} in progress report {path}; expected {REPORT_SCHEMA_VERSION}"
     )]
     UnsupportedSchema { path: PathBuf, found: u32 },
     #[error("invalid structure in progress report {path}: {message}")]
@@ -159,8 +154,8 @@ struct ProgressRunStarted {
     resource_control: ResourceControl,
     #[serde(default, rename = "verification_selection")]
     _verification_selection: Option<VerificationSelection>,
-    #[serde(default, deserialize_with = "present_resume")]
-    resume: Option<hoimin_core::ResumeOutcome>,
+    #[serde(default, rename = "resume", deserialize_with = "present_resume")]
+    _resume: Option<hoimin_core::ResumeOutcome>,
 }
 
 fn present_resume<'de, D: serde::Deserializer<'de>>(
@@ -199,32 +194,9 @@ struct RunReportDocument {
     summary: OutputEvent,
 }
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct LegacyV2ReportDocument {
-    schema_version: u32,
-    run: serde_json::Value,
-    baseline: Option<serde_json::Value>,
-    mutants: Vec<serde_json::Value>,
-    summary: serde_json::Value,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct LegacyV2RunSummary {
-    schema_version: u32,
-    sequence: u64,
-    run_id: String,
-    counts: MutationSummary,
-    complete: bool,
-    exit_code: i32,
-    #[serde(default, rename = "verification_selection")]
-    _verification_selection: Option<VerificationSelection>,
-}
-
 /// Reads and validates one mutation run report.
 ///
-/// Accepts schema 2 JSON documents and schema 3/current JSON or JSONL reports.
+/// Accepts only current-schema JSON documents or JSONL reports.
 /// Structurally valid runs with no baseline, a failing baseline or incomplete
 /// results return `InputReport::Unusable`. This reader does not apply review's
 /// byte limit or resolve the embedded project root.
@@ -260,8 +232,11 @@ fn read_buffered_report(
     let mut bytes = Vec::new();
     jsonl::read_line(path, &mut reader, &mut bytes)?;
     let header = dispatch::probe(&bytes);
-    if header.is_some_and(|header| header.format == dispatch::Format::Jsonl) {
-        return validate_document(path, jsonl::read_document(path, reader, bytes)?);
+    if let Some(header) = header {
+        check_schema(path, header.schema_version)?;
+        if header.format == dispatch::Format::Jsonl {
+            return validate_document(path, jsonl::read_document(path, reader, bytes)?);
+        }
     }
     reader
         .read_to_end(&mut bytes)
@@ -271,8 +246,8 @@ fn read_buffered_report(
         })?;
     // Pretty documents may not expose both discriminators on the first line.
     let header = header.or_else(|| dispatch::probe(&bytes));
-    if header.is_some_and(|header| header.schema_version == 2) {
-        return read_legacy_v2(path, &bytes);
+    if let Some(header) = header {
+        check_schema(path, header.schema_version)?;
     }
     let document = serde_json::from_slice::<RunReportDocument>(&bytes).map_err(|source| {
         ProgressError::Parse {
@@ -325,105 +300,8 @@ fn validate_document(
     Ok(InputReport::Usable(UsableReport { source, mutants }))
 }
 
-fn read_legacy_v2(path: &Path, bytes: &[u8]) -> Result<InputReport, ProgressError> {
-    let document = serde_json::from_slice::<LegacyV2ReportDocument>(bytes).map_err(|source| {
-        ProgressError::Parse {
-            path: path.to_path_buf(),
-            source,
-        }
-    })?;
-    if document.schema_version != 2 {
-        return Err(ProgressError::UnsupportedSchema {
-            path: path.to_path_buf(),
-            found: document.schema_version,
-        });
-    }
-    let run = decode_legacy_event::<ProgressRunStarted>(path, &document.run, "run_started")?;
-    validate_legacy_version(path, run.schema_version)?;
-    if run.resume.is_some() {
-        return Err(invalid_structure(
-            path,
-            "resume metadata requires report schema 4",
-        ));
-    }
-    if !run.normalized_config.is_null() && !run.normalized_config.is_object() {
-        return Err(invalid_structure(
-            path,
-            "normalized_config must be null or an object",
-        ));
-    }
-    let baseline = document
-        .baseline
-        .map(|value| decode_legacy_event::<BaselineFinished>(path, &value, "baseline_finished"))
-        .transpose()?;
-    let mutants = document
-        .mutants
-        .into_iter()
-        .map(|value| decode_legacy_event::<MutantFinished>(path, &value, "mutant_finished"))
-        .collect::<Result<Vec<_>, _>>()?;
-    let summary =
-        decode_legacy_event::<LegacyV2RunSummary>(path, &document.summary, "run_finished")?;
-
-    for version in baseline
-        .iter()
-        .map(|value| value.schema_version)
-        .chain(mutants.iter().map(|value| value.schema_version))
-        .chain(std::iter::once(summary.schema_version))
-    {
-        validate_legacy_version(path, version)?;
-    }
-    validate_legacy_structure(path, &run, baseline.as_ref(), &mutants, &summary)?;
-
-    let source = path.to_path_buf();
-    let Some(baseline) = baseline else {
-        return Ok(InputReport::Unusable {
-            source,
-            reason: UnusableReason::MissingBaseline,
-        });
-    };
-    if baseline.termination != ProcessTermination::Exit(0) {
-        return Ok(InputReport::Unusable {
-            source,
-            reason: UnusableReason::BaselineFailed,
-        });
-    }
-    if !summary.complete {
-        return Ok(InputReport::Unusable {
-            source,
-            reason: UnusableReason::Incomplete,
-        });
-    }
-    Ok(InputReport::Usable(UsableReport { source, mutants }))
-}
-
-fn decode_legacy_event<T: for<'de> Deserialize<'de>>(
-    path: &Path,
-    value: &serde_json::Value,
-    expected_kind: &'static str,
-) -> Result<T, ProgressError> {
-    let mut object = value
-        .as_object()
-        .cloned()
-        .ok_or_else(|| invalid_structure(path, "legacy report events must be JSON objects"))?;
-    let kind = object
-        .remove("kind")
-        .and_then(|value| value.as_str().map(str::to_owned));
-    if kind.as_deref() != Some(expected_kind) {
-        return Err(invalid_structure(
-            path,
-            "legacy report event kind is invalid",
-        ));
-    }
-    serde_json::from_value(serde_json::Value::Object(object)).map_err(|source| {
-        ProgressError::Parse {
-            path: path.to_path_buf(),
-            source,
-        }
-    })
-}
-
-fn validate_legacy_version(path: &Path, found: u32) -> Result<(), ProgressError> {
-    if found == 2 {
+fn check_schema(path: &Path, found: u32) -> Result<(), ProgressError> {
+    if found == REPORT_SCHEMA_VERSION {
         Ok(())
     } else {
         Err(ProgressError::UnsupportedSchema {
@@ -433,90 +311,17 @@ fn validate_legacy_version(path: &Path, found: u32) -> Result<(), ProgressError>
     }
 }
 
-fn validate_legacy_structure(
-    path: &Path,
-    run: &ProgressRunStarted,
-    baseline: Option<&BaselineFinished>,
-    mutants: &[MutantFinished],
-    summary: &LegacyV2RunSummary,
-) -> Result<(), ProgressError> {
-    let mut stable_identities = BTreeMap::new();
-    for mutant in mutants {
-        if let Some(expected_sequence) =
-            stable_identities.insert(&mutant.candidate.id, mutant.candidate.sequence)
-        {
-            let message = if expected_sequence == mutant.candidate.sequence {
-                "mutant stable IDs must appear at most once"
-            } else {
-                "mutant stable IDs must map to one candidate sequence"
-            };
-            return Err(invalid_structure(path, message));
-        }
-    }
-    if summarize(&mutants.iter().map(|value| value.status).collect::<Vec<_>>()) != summary.counts {
-        return Err(invalid_structure(
-            path,
-            "summary counts must match mutant events",
-        ));
-    }
-    let mut previous = run.sequence;
-    for (run_id, sequence) in baseline
-        .map(|value| (value.run_id.as_str(), value.sequence))
-        .into_iter()
-        .chain(
-            mutants
-                .iter()
-                .map(|value| (value.run_id.as_str(), value.sequence)),
-        )
-        .chain(std::iter::once((summary.run_id.as_str(), summary.sequence)))
-    {
-        if run_id != run.run_id {
-            return Err(invalid_structure(
-                path,
-                "all present events must share run.run_id",
-            ));
-        }
-        if sequence <= previous {
-            return Err(invalid_structure(
-                path,
-                "event sequences must be strictly increasing in document order",
-            ));
-        }
-        previous = sequence;
-    }
-    validate_summary_coherence(path, &summary.counts, summary.complete, summary.exit_code)?;
-    for mutant in mutants {
-        validate_mutant_result(path, mutant)?;
-    }
-    Ok(())
-}
-
 fn validate_schema_versions(
     path: &Path,
     document: &RunReportDocument,
 ) -> Result<(), ProgressError> {
-    let started = document.run.value();
-    if started.schema_version < 4 && started.resume.is_some() {
-        return Err(invalid_structure(
-            path,
-            "resume metadata requires report schema 4",
-        ));
-    }
     let versions = std::iter::once(document.schema_version)
         .chain(std::iter::once(document.run.schema_version()))
         .chain(document.baseline.iter().map(OutputEvent::schema_version))
         .chain(document.mutants.iter().map(OutputEvent::schema_version))
         .chain(std::iter::once(document.summary.schema_version()));
     for found in versions {
-        if !matches!(found, 3 | REPORT_SCHEMA_VERSION) {
-            return Err(ProgressError::UnsupportedSchema {
-                path: path.to_path_buf(),
-                found,
-            });
-        }
-        if found != document.schema_version {
-            return Err(invalid_structure(path, "report schema versions must match"));
-        }
+        check_schema(path, found)?;
     }
     Ok(())
 }

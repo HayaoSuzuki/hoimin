@@ -9,7 +9,7 @@ behavior; it does not promise identical mutation candidates or scores.
 | Interface | Maintenance rule | User action when it changes |
 | --- | --- | --- |
 | CLI arguments, defaults and exit codes | Preserve documented usage within a minor series, except documented bug fixes. Removing or changing a supported contract needs a minor-version floor increase. | Update invocation and CI conditions using the release notice. |
-| JSON and JSONL reports | Treat documented schemas as public. Readers must check the schema version; adding a field may still affect strict readers. | Update readers before consuming the new format; retain old reports with their producing version. |
+| JSON and JSONL reports | Treat documented schemas as public. Progress accepts only report schema 4, matching the writer; review accepts current-schema JSON. Adding a field may still affect strict readers. | Read old reports with their producing binary, or rerun with the intended version. Plan regeneration alone cannot reconstruct past reports. Files are not automatically converted. |
 | Saved plan, ranking and candidate IDs | These are checked execution inputs, not timeless interchange formats. Changes to schema, ranking, identity, source or fingerprints can invalidate a plan. | Regenerate the plan with the intended version and inputs. Do not hand-edit versions or IDs to bypass validation. |
 | Session database and resume | Resume is allowed only under the implementation's schema and fingerprint checks. Migration support must be stated explicitly. | Keep the old database and binary if needed; start a new session when compatibility is not supported. |
 | Default operators, profiles and selection | Changes can alter candidate count, runtime and the population behind a score. Default expansion is an observable compatibility change. | Review the operator set and budget; use matching candidates and validation settings for comparisons. |
@@ -93,3 +93,10 @@ The operator and changes above are examples, not claims about a shipped release.
 This is a review checklist, not a claim of formal compatibility verification.
 No retrospective rewrite of reports, session databases or old release notes is
 required. Revisit the policy before a 1.0 release or a new distribution interface.
+
+## Report reader support in 0.6.0
+
+The 0.6.0 version floor removes progress support for schema-2 JSON and schema-3
+JSON/JSONL. Schema-4 JSON and JSONL remain supported. Keep the old binary with
+historical reports or rerun with the intended version; do not hand-edit schema
+numbers. This is a reader-support removal; report output remains schema 4.

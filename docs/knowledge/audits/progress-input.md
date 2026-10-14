@@ -17,10 +17,10 @@ sources:
   working_tree: untracked
   sha256: 49ab2810c65360e6e65c1c44b8e625871e17b179e775b5e72a2b653a38a8dfb1
 - id: issue-467-reader
-  resource: ../../../crates/hoimin-cli/src/progress/input/jsonl.rs
-  revision: 8b33167a049e3cae0fc05e96ccf2253c660b7023
-  working_tree: untracked
-  sha256: ca242438209ae995dacbb85273c0a4966c0c3fbd38a4717f1750f78eff8ccfee
+  resource: ../../../crates/hoimin-cli/src/artifacts/run_report/jsonl.rs
+  revision: 97c394760bc02a56be0bfdeb6301257eac80d1c7
+  working_tree: modified
+  sha256: 6d27ae2b022d8ab12372a9bc5dab2d93a8c56c614600f57be773f8cdb136ba32
 - id: issue-467-sequence
   resource: ../../../crates/hoimin-core/src/report.rs
   revision: 8b33167a049e3cae0fc05e96ccf2253c660b7023
@@ -39,14 +39,15 @@ sources:
   revision: a7daea0b557cd435c1e55b540392fbdd116348e1
   working_tree: clean
 - id: input
-  resource: ../../../crates/hoimin-cli/src/progress/input.rs
-  revision: 8b33167a049e3cae0fc05e96ccf2253c660b7023
+  resource: ../../../crates/hoimin-cli/src/artifacts/run_report.rs
+  revision: 97c394760bc02a56be0bfdeb6301257eac80d1c7
   working_tree: modified
-  sha256: 5a3f6e6e11720f6e0ff88dd916a7455072f185fb851e6acf39389d5eed78eddb
+  sha256: 92f348aaf4926712baf0edbe5944f155df64edda8aa69c07eb917e7061fe5525
 - id: adapter
   resource: ../../../crates/hoimin-cli/tests/lean_progress_input_oracle.rs
-  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
-  working_tree: clean
+  revision: 97c394760bc02a56be0bfdeb6301257eac80d1c7
+  working_tree: modified
+  sha256: 2409ac3bcad8a1110f4c78ac40a65c729afd2de381fe9d5577ada55f43f2db6a
 ---
 
 # 境界監査後のsummary検証修正
@@ -57,7 +58,7 @@ progressは、変異試験の結果を読み込んで進捗を比較する処理
 
 # 完了状態・件数・終了コードの整合性
 
-修正後は、両スキーマの読取り処理で件数を検査した後、`validate_summary_coherence` を呼ぶ。完了を表す `complete` がtrueなら、結果を確定できない候補の件数 `inconclusive` が0であり、終了コードも集計に基づく方針と一致する必要がある。[^input]
+当時の修正後は、両スキーマの読取り処理で件数を検査した後、`validate_summary_coherence` を呼ぶ。完了を表す `complete` がtrueなら、結果を確定できない候補の件数 `inconclusive` が0であり、終了コードも集計に基づく方針と一致する必要がある。[^input]
 
 未完了の場合は、入力にない実行状態フラグについて、既存の終了コード規則と矛盾しない組合せが存在するかを確認する。フラグが書かれていないことからfalseとは推定せず、矛盾するsummaryを修復する処理も加えていない。これらの呼出しと判定は、カタログ作成時に実装を読んで確認した。[^input]
 
@@ -86,7 +87,7 @@ progressは、変異試験の結果を読み込んで進捗を比較する処理
 
 # Issue #460 の単一結果検証
 
-Issue #460 の修正では、`MutantFinished::validate_result` を生成側とprogressの両スキーマ読取りで共有する。出力状態に必要な結果欄、出力回収タイムアウトの診断、終了理由に対するstatusの順に検査する。終了理由がnullで出力状態がcompleteの旧レポートは受理し、出力回収タイムアウトによる正当なerrorも維持する。矛盾した入力は終了コード2と対象パス付き診断で拒否し、比較用JSONを出力しない。[^issue-460-audit]
+Issue #460 の修正では、`MutantFinished::validate_result` を生成側とprogressの両スキーマ読取りで共有する。出力状態に必要な結果欄、出力回収タイムアウトの診断、終了理由に対するstatusの順に検査する。終了理由がnullで出力状態がcompleteのレポートを当時は受理し、出力回収タイムアウトによる正当なerrorも維持する。矛盾した入力は終了コード2と対象パス付き診断で拒否し、比較用JSONを出力しない。[^issue-460-audit]
 
 既存184ケースに、7種類のstatus、終了理由6種類とnull、2種類の出力状態からなる98ケースを追加した。両スキーマで564件の公開CLI観測を行い、修正前は158件が不一致、修正後は全件が一致した。最小の不一致はkilledとExit(0)の組合せで、修正前は両スキーマでusableかつsaturatedになった。旧ケースの期待値を変えずに、単一結果の検査漏れと出力状態の無視を検出するモデルも加えた。[^issue-460-audit]
 
@@ -98,14 +99,14 @@ summary、終了コードの優先順位、読取り処理の受理条件、元�
 
 [^report]: [2026-09-11-progress-input-lean.md](../../superpowers/reports/2026-09-11-progress-input-lean.md)。
 [^evidence]: [2026-09-11-progress-input-verification.json](../../superpowers/reports/2026-09-11-progress-input-verification.json)。
-[^input]: [input.rs](../../../crates/hoimin-cli/src/progress/input.rs)。
+[^input]: [run_report.rs](../../../crates/hoimin-cli/src/artifacts/run_report.rs)。
 [^adapter]: [lean_progress_input_oracle.rs](../../../crates/hoimin-cli/tests/lean_progress_input_oracle.rs)。
 
 [^issue-460-audit]: [2026-09-11-issue-460-progress-result-audit.md](../../superpowers/reports/2026-09-11-issue-460-progress-result-audit.md)。
 
 # Issue #467 のJSONL読取り
 
-今回の変更はschema v3のJSONLイベント列を1行ずつ読み、終了した変異候補を既存の文書検証へ渡す。schema v2/v3のJSON文書も従来どおり受理する。形式は拡張子によらず、最初の空行以外の行が `kind` を持つJSONオブジェクトかで判定する。v2のJSONLは対象外である。[^issue-467-design][^issue-467-reader]
+Issue #467 当時の変更はschema v3のJSONLイベント列を1行ずつ読み、終了した変異候補を文書検証へ渡した。当時はschema v2/v3のJSON文書も受理した。形式は拡張子によらず、最初の空行以外の行が `kind` を持つJSONオブジェクトかで判定する。v2のJSONLは対象外である。[^issue-467-design][^issue-467-reader]
 
 JSONLでは `run_started` と最後の `run_finished` が必要で、同一run、単調増加するsequence、変異候補の開始と終了の対応を検査する。baselineは変異候補の開始より前に一度だけ現れる。diagnosticもrunとsequenceを検査してから破棄する。検査用の `ReportSequence::validate` は状態を変更せず、契約検査ビルドでも不正な入力を通常のエラーとして返す。生成側の `observe` による契約assertionは維持する。[^issue-467-reader][^issue-467-sequence]
 
@@ -117,6 +118,14 @@ JSONLでは `run_started` と最後の `run_finished` が必要で、同一run�
 
 [^issue-467-review]: [2026-09-14-issue-467-jsonl-progress-review.md](../../superpowers/reports/2026-09-14-issue-467-jsonl-progress-review.md)。
 
-[^issue-467-reader]: [jsonl.rs](../../../crates/hoimin-cli/src/progress/input/jsonl.rs)。
+[^issue-467-reader]: [jsonl.rs](../../../crates/hoimin-cli/src/artifacts/run_report/jsonl.rs)。
 
 [^issue-467-sequence]: [report.rs](../../../crates/hoimin-core/src/report.rs)。
+
+# Issue #881 の現行スキーマ限定
+
+progressは `REPORT_SCHEMA_VERSION`（4）に一致するJSON文書とJSONLストリームだけを受理する。旧版と未対応の将来版はunsupported-schemaエラーとして拒否し、旧v2の型・変換・並行検証を持たない。設定を不透明なJSONとして扱う方針、単一結果・集計値・候補ID・run ID・sequenceの検証、一行ずつのJSONL読取りと読取りバイトのfingerprintは維持する。[^input][^issue-467-reader]
+
+上記368件・564件の観測は記録された旧実装の証拠であり、この変更の実行結果ではない。Leanモデルはスキーマ番号を扱わないため変更せず、282ケースの公開CLIアダプターをschema 4のJSON/JSONLへ移す。baseline欠落と候補を含むJSON文書に対応するJSONL lifecycleを作れないという既存の観測範囲の制限も維持する。[^adapter]
+
+終了理由がnullの現行の再利用・未起動・合成結果は引き続き検証対象となる。旧レポートの読取りには生成元バイナリを使うか、意図する版で実行し直す。planの再生成だけでは過去のreportを再現できない。実行検証と自己レビューは[Issue 881 の記録](../../superpowers/plans/2026-10-14-issue-881.md)を参照する。
