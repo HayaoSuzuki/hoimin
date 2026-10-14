@@ -13,8 +13,8 @@ use hoimin_core::{
     BeginSession, EffectFailed, EffectFailure, EffectId, FINGERPRINT_SCHEMA_VERSION, FinishSession,
     LoadSession, LookupStoredResult, MutantResult, MutationStatus, PersistResult,
     ProcessTermination, ResourceMode, ResultPersisted, SessionDiagnostic, SessionFinished,
-    SessionLoaded, SessionResumeRef, SessionStarted, StoredResult, StoredResultLoaded,
-    contract_ensure,
+    SessionLoadOutcome, SessionLoaded, SessionResumeRef, SessionStarted, StoredResult,
+    StoredResultLoaded, contract_ensure,
 };
 #[cfg(feature = "contracts")]
 use hoimin_core::{ByteSpan, MutationCandidate, OutputSpoolRef};
@@ -241,8 +241,7 @@ impl SessionHandler {
             }
             return Ok(SessionLoaded {
                 id,
-                resume: None,
-                fresh_reason: Some(self.fresh_resume_reason(request)?),
+                outcome: SessionLoadOutcome::Fresh(self.fresh_resume_reason(request)?),
             });
         };
         let run_id = run_id.ok_or_else(|| EffectFailed {
@@ -272,17 +271,17 @@ impl SessionHandler {
         if !eligible {
             return Ok(SessionLoaded {
                 id,
-                resume: None,
-                fresh_reason: Some(hoimin_core::ResumeFreshReason::CandidateChanged),
+                outcome: SessionLoadOutcome::Fresh(
+                    hoimin_core::ResumeFreshReason::CandidateChanged,
+                ),
             });
         }
         if let Some(ownership) = ownership {
             self.ownerships.insert(run_id.clone(), ownership);
         }
         Ok(SessionLoaded {
-            fresh_reason: None,
             id,
-            resume: Some(SessionResumeRef { run_id }),
+            outcome: SessionLoadOutcome::Resumed(SessionResumeRef { run_id }),
         })
     }
 
