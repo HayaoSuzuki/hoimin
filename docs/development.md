@@ -1456,6 +1456,27 @@ resolved module provider, including unaliased `collections.abc`. Existing
 source and destination shadowing checks still apply. Tests evaluate generated
 annotations under CPython 3.14 in addition to reparsing their source.
 
+## Session load completion contract
+
+`SessionLoaded` carries an effect ID and one required `SessionLoadOutcome`:
+`Resumed(SessionResumeRef)` identifies the owned saved run; `Fresh(ResumeFreshReason)`
+explains why a new run starts. Serde encodes these as
+`{"id":1,"outcome":{"Resumed":{"run_id":"saved"}}}` and
+`{"id":1,"outcome":{"Fresh":"no_prior_run"}}`. Missing outcomes and old or mixed
+`resume`/`fresh_reason` fields are rejected. The machine validates the completion ID
+before one match selects start-run or begin-session effects. Fresh reasons survive
+BeginSession until the real RunStarted report event.
+
+Report `ResumeOutcome` remains separate: it records status/reason without the run
+reference. The six current reasons and selection precedence are described in the
+[resume usage contract](usage.md). `NoCompatibleRun` and its implicit fallback are
+removed; update custom event producers rather than synthesizing a missing reason.
+Candidate SQL, conditional budget update, ownership acquisition and the
+`candidate_changed` race outcome retain their behavior. The diagnostic oracle
+adapts the enum into its existing two observation columns; its 64 strict cases
+and 17 model-only race cases retain their input and expected outcomes. Running
+that corpus checks bounded selection behavior, not SQLite scheduling or a new proof.
+
 ## Worker import roots
 
 `RawRunConfig.import_roots` normalizes to an ordered, duplicate-free list in

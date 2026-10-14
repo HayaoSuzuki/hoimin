@@ -2,7 +2,9 @@ use std::collections::BTreeSet;
 use std::num::NonZeroUsize;
 
 use hoimin_cli::session::SessionHandler;
-use hoimin_core::{BeginSession, EffectId, FinishSession, LoadSession, RunFingerprint};
+use hoimin_core::{
+    BeginSession, EffectId, FinishSession, LoadSession, RunFingerprint, SessionLoadOutcome,
+};
 use serde::Deserialize;
 
 const CORPUS: &str = include_str!("../../../formal/HoiminOracle/corpus/resume-diagnostic.jsonl");
@@ -200,9 +202,15 @@ fn execute(case: &Case) -> Result<Observation, String> {
     if loaded.id != EffectId(3) {
         return Err("reader returned unexpected effect id".into());
     }
-    Ok(Observation {
-        selected_run: loaded.resume.map(|resume| resume.run_id),
-        reason: loaded.fresh_reason.map(|reason| reason.code().to_owned()),
+    Ok(match loaded.outcome {
+        SessionLoadOutcome::Resumed(resume) => Observation {
+            selected_run: Some(resume.run_id),
+            reason: None,
+        },
+        SessionLoadOutcome::Fresh(reason) => Observation {
+            selected_run: None,
+            reason: Some(reason.code().to_owned()),
+        },
     })
 }
 
