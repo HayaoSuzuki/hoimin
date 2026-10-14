@@ -7,9 +7,21 @@ catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
 - id: issue-896-review
   resource: ../../superpowers/reports/2026-10-15-issue-896-review.md
-  revision: f1e16dd7f3ba745cfab8bcfa1302dce7692e7d45
+  revision: e7e3cae8c4e048ee77d2bf644b47da1792211cbe
   working_tree: modified
-  sha256: e62ad9315066b16573969fa9aa4b79c27a356868f5724876e1828f76001070f8
+  sha256: 01f6c1cb4bbd07a56eba9df40235dbb6df9abe179fa0f33b4716bdf22c6d7316
+- id: issue-900-design
+  resource: ../../superpowers/reports/issue-900/design.md
+  working_tree: untracked
+  sha256: 7c10b5c8a7898a374e985e773d4c758478b02e7927d9fd2e7b3873684fe49d50
+- id: issue-900-plan
+  resource: ../../superpowers/reports/issue-900/plan.md
+  working_tree: untracked
+  sha256: f932d8acd44ac936c52d470ca85b590c8707cb0dd66801336013ea4195a19269
+- id: issue-900-review
+  resource: ../../superpowers/reports/issue-900/review.md
+  working_tree: untracked
+  sha256: 9664c6be4e1e048ad59b7a4380fa151e008687e6f4e71cea538b8f1104fb1c4d
 - id: issue-759-staged-report
   resource: ../../superpowers/reports/2026-10-11-issue-759-staged-verification.md
   working_tree: untracked
@@ -845,6 +857,9 @@ sources:
 | 原文 | 先頭見出し | 作成時の状態 |
 | --- | --- | --- |
 | [2026-10-15-issue-896-review.md](../../superpowers/reports/2026-10-15-issue-896-review.md) | Issue 896 review and verification [^issue-896-review] | 未追跡（参照時点） |
+| [design.md](../../superpowers/reports/issue-900/design.md) | Typed disk failure design [^issue-900-design] | untracked at reference time |
+| [plan.md](../../superpowers/reports/issue-900/plan.md) | Implementation plan [^issue-900-plan] | untracked at reference time |
+| [review.md](../../superpowers/reports/issue-900/review.md) | Issue #900 review record [^issue-900-review] | untracked at reference time |
 | [2026-10-05-exception-alias-lean-audit.md](../../superpowers/reports/2026-10-05-exception-alias-lean-audit.md) | 代入による別名の形式監査 [^issue-692-exception-alias-lean-audit] | 追跡済み（fae3ce3） |
 | [2026-10-05-exception-hierarchy-design-recheck.md](../../superpowers/reports/2026-10-05-exception-hierarchy-design-recheck.md) | 別名伝播修正後の原設計再レビュー [^issue-692-exception-hierarchy-design-recheck] | 追跡済み（fae3ce3） |
 | [2026-10-05-exception-hierarchy-design-review.md](../../superpowers/reports/2026-10-05-exception-hierarchy-design-review.md) | 例外階層ミューテーションの原設計レビュー [^issue-692-exception-hierarchy-design-review] | 追跡済み（fae3ce3） |
@@ -1463,3 +1478,8 @@ sources:
 [^second-order-assessment]: [Measured results and limits](../../superpowers/reports/issue-763-764/README.md), projected cases, isolated confirmation and the retained regression assertion.
 
 [^issue-896-review]: [Issue 896 review and verification](../../superpowers/reports/2026-10-15-issue-896-review.md).
+[^issue-900-design]: [Typed disk failure design](../../superpowers/reports/issue-900/design.md).
+
+[^issue-900-plan]: [Implementation plan](../../superpowers/reports/issue-900/plan.md).
+
+[^issue-900-review]: [Issue #900 review record](../../superpowers/reports/issue-900/review.md).

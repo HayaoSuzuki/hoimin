@@ -1118,7 +1118,7 @@ outlive the wait; it retains its writer and delivery resources until it returns.
 
 ## Sessions and resume
 
-Run JSON/JSONL emit schema 5; consumers validating the closed schema must update. `progress` accepts only schema-5 JSON/JSONL and rejects historical, unsupported future and mixed-version reports. When `--resume` is requested, JSON and JSONL include `run_started.resume` (the `run.resume` field in a JSON report): `{"status":"resumed"}` or `{"status":"fresh","reason":"CODE"}`. Human output also explains whether the saved run is continuing or a new run is starting. Runs without `--resume` omit this field.
+Run JSON/JSONL emit schema 6; consumers validating the closed schema must update. `progress` accepts only schema-6 JSON/JSONL and rejects historical, unsupported future and mixed-version reports. When `--resume` is requested, JSON and JSONL include `run_started.resume` (the `run.resume` field in a JSON report): `{"status":"resumed"}` or `{"status":"fresh","reason":"CODE"}`. Human output also explains whether the saved run is continuing or a new run is starting. Runs without `--resume` omit this field.
 
 A compatible incomplete run always wins, even if newer runs are incompatible. If an eligible row appears only during the later history inspection, `candidate_changed` takes precedence. Otherwise reasons use this precedence: `budget_decreased` (matching incomplete runs require a higher `--max-mutants`), `matching_run_complete`, `fingerprint_mismatch` (other incomplete history), `no_incomplete_run` (only nonmatching complete history), then `no_prior_run`. `candidate_changed` means session history changed during resume selection. These codes describe observed history, not which configuration field or file changed. Existing old-schema, corrupt-data, database-read, and ownership errors remain errors.
 
@@ -1145,11 +1145,11 @@ results remain available in the database.
 
 Plan schema version 6 stores an explicit validated environment snapshot and independent
 import roots (ranking rule version 4). Regenerate schema-5 and older plans before verification.
-Report schema 5 replaces the independent `fingerprint_env` / `fingerprint_env_hash`
-fields with that snapshot. Update strict report consumers; read schema-4 and older
-reports with their producing binary, or rerun with this version. The release floor is
-0.7.0. Files are not automatically converted or deleted. Environment fingerprint
-bytes remain unchanged, so this representation change alone does not require a new
+Report schema 6 retains the environment snapshot introduced in schema 5 in place
+of the independent `fingerprint_env` / `fingerprint_env_hash` fields. Update strict
+report consumers to schema 6; read schema-5 and older reports with their producing
+binary, or rerun with this version. The release floor is 0.8.0. Files are not
+automatically converted or deleted. Environment fingerprint bytes remain unchanged, so this representation change alone does not require a new
 session; if an existing run is rejected, choose a different `--session PATH`.
 Fingerprint schema version 11
 includes ordered import roots and source roots and the ordered `--include` / `--exclude` copy
@@ -1472,6 +1472,12 @@ repair. Use a local filesystem; network filesystem concurrency is outside the
 initial contract. Store files and SQLite auxiliary paths must not alias plan,
 report, source, or fingerprint inputs.
 
-JSON uses the independent [review schema](json-schema/review-result.schema.json).
+Starting with hoimin 0.8.0, review JSON uses version 2 of the independent
+[review schema](json-schema/review-result.schema.json). Plan references contain
+`path` and `content_hash`; report references contain an `artifact` object with
+those fields and a required `run_id`. A review without a report keeps `report: null`.
+SQLite review stores use `user_version = 2`. Version 1 stores are rejected on
+read and write; there is no automatic conversion. Keep an old store separately
+and use another `--store` path to record reviews in version 2.
 See the [review contract](knowledge/design/survivor-review.md) for identity and
 formal verification boundaries.

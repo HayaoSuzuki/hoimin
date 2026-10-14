@@ -29,9 +29,15 @@ fn inclusive_boundaries_prefer_reserve_and_retain_size_as_secondary() {
     let DiskDecision::Stop(failure) = decision else {
         panic!("both inclusive boundaries must stop");
     };
-    assert_eq!(failure.code, FILESYSTEM_RESERVE_REACHED);
-    assert_eq!(failure.reason, DiskStopReason::FilesystemReserveReached);
-    assert_eq!(failure.observation, Some(observation(10, 10)));
+    assert_eq!(failure.code(), FILESYSTEM_RESERVE_REACHED);
+    assert_eq!(
+        failure.reason.kind(),
+        DiskStopReason::FilesystemReserveReached
+    );
+    assert_eq!(
+        failure.reason,
+        hoimin_core::DiskFailureReason::FilesystemReserveReached(observation(10, 10))
+    );
     assert_eq!(failure.secondary.len(), 1);
     assert_eq!(failure.secondary[0].code(), WORKSPACE_SIZE_EXCEEDED);
 }
@@ -53,9 +59,12 @@ fn measurement_failure_uses_stable_code_without_an_observation() {
     }));
 
     let failure = lifecycle.snapshot().stop.unwrap();
-    assert_eq!(failure.code, DISK_MEASUREMENT_FAILED);
-    assert_eq!(failure.reason, DiskStopReason::MeasurementFailed);
-    assert_eq!(failure.observation, None);
+    assert_eq!(failure.code(), DISK_MEASUREMENT_FAILED);
+    assert_eq!(failure.reason.kind(), DiskStopReason::MeasurementFailed);
+    assert!(matches!(
+        failure.reason,
+        hoimin_core::DiskFailureReason::MeasurementFailed(_)
+    ));
 }
 
 #[test]
@@ -74,7 +83,7 @@ fn first_stop_is_sticky_and_only_exact_secondary_evidence_is_deduplicated() {
 
     let snapshot = lifecycle.snapshot();
     let failure = snapshot.stop.unwrap();
-    assert_eq!(failure.reason, DiskStopReason::MeasurementFailed);
+    assert_eq!(failure.reason.kind(), DiskStopReason::MeasurementFailed);
     assert_eq!(
         failure.secondary,
         vec![
@@ -118,8 +127,8 @@ fn process_drain_failure_is_a_sticky_primary_or_secondary_stop() {
     let mut process_first = DiskLifecycle::new([]).unwrap();
     assert!(process_first.apply(DiskLifecycleEvent::ProcessDrainFailed));
     let failure = process_first.snapshot().stop.unwrap();
-    assert_eq!(failure.code, PROCESS_LIFECYCLE_FAILED);
-    assert_eq!(failure.reason, DiskStopReason::ProcessFailed);
+    assert_eq!(failure.code(), PROCESS_LIFECYCLE_FAILED);
+    assert_eq!(failure.reason.kind(), DiskStopReason::ProcessFailed);
 
     let mut disk_first = DiskLifecycle::new([]).unwrap();
     assert!(disk_first.apply(DiskLifecycleEvent::Observation {
@@ -128,7 +137,7 @@ fn process_drain_failure_is_a_sticky_primary_or_secondary_stop() {
     }));
     assert!(disk_first.apply(DiskLifecycleEvent::ProcessDrainFailed));
     let failure = disk_first.snapshot().stop.unwrap();
-    assert_eq!(failure.reason, DiskStopReason::WorkspaceSizeExceeded);
+    assert_eq!(failure.reason.kind(), DiskStopReason::WorkspaceSizeExceeded);
     assert_eq!(failure.secondary.len(), 1);
     assert_eq!(failure.secondary[0].code(), PROCESS_LIFECYCLE_FAILED);
 }
@@ -285,4 +294,241 @@ fn settle_safety(lifecycle: &mut DiskLifecycle) {
 fn cleanup(lifecycle: &mut DiskLifecycle, root: DiskRootId, outcome: DiskCleanupOutcome) {
     assert!(lifecycle.apply(DiskLifecycleEvent::CleanupRequested { root }));
     assert!(lifecycle.apply(DiskLifecycleEvent::CleanupCompleted { root, outcome }));
+}
+
+#[test]
+fn legacy_disk_failure_wire_is_rejected() {
+    // Arrange: the obsolete independent fields could contradict one another.
+    let legacy = serde_json::json!({
+        "code": "wrong", "reason": "measurement_failed",
+        "observation": null, "message": null, "secondary": []
+    });
+
+    // Act.
+    let result = serde_json::from_value::<hoimin_core::DiskFailure>(legacy);
+
+    // Assert.
+    assert!(result.is_err());
+}
+
+proptest::proptest! {
+    #[test]
+    fn typed_failure_evidence_matches_its_variant(
+        owned in proptest::prelude::any::<u64>(),
+        available in proptest::prelude::any::<u64>(),
+        nanos in proptest::prelude::any::<u64>(),
+        message in ".*",
+    ) {
+        // Arrange.
+        use hoimin_core::{DiskFailure, DiskFailureReason, DiskSecondary};
+        let value = DiskObservation { owned_bytes: owned, available_bytes: available,
+            measured_in: Duration::from_nanos(nanos) };
+        let cases = [
+            (DiskFailureReason::WorkspaceSizeExceeded(value),
+                DiskSecondary::Observation { reason: DiskStopReason::WorkspaceSizeExceeded, value }),
+            (DiskFailureReason::FilesystemReserveReached(value),
+                DiskSecondary::Observation { reason: DiskStopReason::FilesystemReserveReached, value }),
+            (DiskFailureReason::MeasurementFailed(message.clone()),
+                DiskSecondary::Error { code: DISK_MEASUREMENT_FAILED.into(), message: message.clone() }),
+            (DiskFailureReason::ProcessFailed(message.clone()),
+                DiskSecondary::Error { code: PROCESS_LIFECYCLE_FAILED.into(), message }),
+        ];
+        for (reason, evidence) in cases {
+            let failure = DiskFailure { reason, secondary: vec![] };
+            // Act.
+            let actual = failure.reason.to_secondary();
+            // Assert.
+            proptest::prop_assert_eq!(actual, evidence);
+        }
+    }
+}
+
+proptest::proptest! {
+    #[test]
+    fn typed_failure_wire_round_trips_required_payload(
+        owned in proptest::prelude::any::<u64>(),
+        available in proptest::prelude::any::<u64>(),
+        nanos in proptest::prelude::any::<u64>(),
+        message in ".*",
+    ) {
+        // Arrange.
+        use hoimin_core::{DiskFailure, DiskFailureReason};
+        let value = DiskObservation { owned_bytes: owned, available_bytes: available,
+            measured_in: Duration::from_nanos(nanos) };
+        for reason in [DiskFailureReason::WorkspaceSizeExceeded(value),
+            DiskFailureReason::FilesystemReserveReached(value),
+            DiskFailureReason::MeasurementFailed(message.clone()),
+            DiskFailureReason::ProcessFailed(message)] {
+            let failure = DiskFailure { reason, secondary: vec![] };
+            // Act.
+            let restored = serde_json::from_value::<DiskFailure>(
+                serde_json::to_value(&failure).unwrap()).unwrap();
+            // Assert.
+            proptest::prop_assert_eq!(restored, failure);
+        }
+    }
+}
+
+#[test]
+fn typed_failure_wire_rejects_missing_required_payloads() {
+    // Arrange: every stop reason requires its associated payload.
+    let cases = [
+        serde_json::json!({"reason": {"measurement_failed": null}, "secondary": []}),
+        serde_json::json!({"reason": {"process_failed": null}, "secondary": []}),
+        serde_json::json!({"reason": {"workspace_size_exceeded": null}, "secondary": []}),
+        serde_json::json!({"reason": {"filesystem_reserve_reached": null}, "secondary": []}),
+    ];
+    for wire in cases {
+        // Act.
+        let result = serde_json::from_value::<hoimin_core::DiskFailure>(wire);
+        // Assert.
+        assert!(result.is_err());
+    }
+}
+
+#[test]
+fn report_projection_preserves_each_variant_payload() {
+    // Arrange.
+    use hoimin_core::{DiskFailure, DiskFailureReason, DiskStopReport};
+    let value = observation(20, 7);
+    let cases = [
+        (
+            DiskFailureReason::WorkspaceSizeExceeded(value),
+            WORKSPACE_SIZE_EXCEEDED,
+            Some(20),
+            Some(7),
+            None,
+        ),
+        (
+            DiskFailureReason::FilesystemReserveReached(value),
+            FILESYSTEM_RESERVE_REACHED,
+            Some(20),
+            Some(7),
+            None,
+        ),
+        (
+            DiskFailureReason::MeasurementFailed("measure".into()),
+            DISK_MEASUREMENT_FAILED,
+            None,
+            None,
+            Some("measure"),
+        ),
+        (
+            DiskFailureReason::ProcessFailed("drain".into()),
+            PROCESS_LIFECYCLE_FAILED,
+            None,
+            None,
+            Some("drain"),
+        ),
+    ];
+    for (reason, code, owned_bytes, available_bytes, message) in cases {
+        let secondary = Vec::new();
+        let failure = DiskFailure {
+            reason,
+            secondary: secondary.clone(),
+        };
+        let expected = DiskStopReport {
+            code: code.into(),
+            owned_bytes,
+            available_bytes,
+            message: message.map(str::to_owned),
+            secondary,
+        };
+        // Act.
+        let actual = DiskStopReport::from(failure);
+        // Assert.
+        assert_eq!(actual, expected);
+    }
+}
+
+proptest::proptest! {
+    #[test]
+    fn secondary_observation_deduplication_includes_measurement_duration(
+        nanos in 0_u64..u64::MAX,
+    ) {
+        // Arrange: a later observation differs only in measurement duration.
+        let mut lifecycle = DiskLifecycle::new([]).unwrap();
+        let first = DiskObservation { measured_in: Duration::from_nanos(nanos), ..observation(10, 11) };
+        let later = DiskObservation { measured_in: Duration::from_nanos(nanos + 1), ..first };
+        lifecycle.apply(DiskLifecycleEvent::Observation { policy: policy(10, 10), value: first });
+        // Act: repeat both primary and secondary evidence.
+        for value in [first, later, later] {
+            lifecycle.apply(DiskLifecycleEvent::Observation { policy: policy(10, 10), value });
+        }
+        // Assert: only the distinct complete observation survives.
+        proptest::prop_assert_eq!(lifecycle.snapshot().secondary, vec![hoimin_core::DiskSecondary::Observation {
+            reason: DiskStopReason::WorkspaceSizeExceeded, value: later,
+        }]);
+    }
+}
+
+#[test]
+fn typed_failure_wire_rejects_an_independent_code() {
+    // Arrange: a valid typed reason cannot also supply an independent code.
+    let wire = serde_json::json!({
+        "reason": {"measurement_failed": "failed"}, "code": "wrong", "secondary": []
+    });
+    // Act.
+    let result = serde_json::from_value::<hoimin_core::DiskFailure>(wire);
+    // Assert.
+    assert!(result.is_err());
+}
+
+#[test]
+fn failure_code_derives_from_its_variant() {
+    // Arrange.
+    use hoimin_core::{DiskFailure, DiskFailureReason};
+    let value = observation(20, 7);
+    let cases = [
+        (
+            DiskFailureReason::WorkspaceSizeExceeded(value),
+            WORKSPACE_SIZE_EXCEEDED,
+        ),
+        (
+            DiskFailureReason::FilesystemReserveReached(value),
+            FILESYSTEM_RESERVE_REACHED,
+        ),
+        (
+            DiskFailureReason::MeasurementFailed("measure".into()),
+            DISK_MEASUREMENT_FAILED,
+        ),
+        (
+            DiskFailureReason::ProcessFailed("drain".into()),
+            PROCESS_LIFECYCLE_FAILED,
+        ),
+    ];
+    for (reason, expected) in cases {
+        let failure = DiskFailure {
+            reason,
+            secondary: vec![],
+        };
+        // Act.
+        let actual = failure.code();
+        // Assert.
+        assert_eq!(actual, expected);
+    }
+}
+
+#[test]
+fn report_projection_retains_independent_secondary_diagnostics() {
+    // Arrange.
+    use hoimin_core::{DiskFailure, DiskFailureReason, DiskSecondary, DiskStopReport};
+    let secondary = vec![
+        DiskSecondary::Error {
+            code: "cleanup.failed".into(),
+            message: "retained".into(),
+        },
+        DiskSecondary::Error {
+            code: "report.failed".into(),
+            message: "delivery".into(),
+        },
+    ];
+    let failure = DiskFailure {
+        reason: DiskFailureReason::MeasurementFailed("measurement".into()),
+        secondary: secondary.clone(),
+    };
+    // Act.
+    let report = DiskStopReport::from(failure);
+    // Assert.
+    assert_eq!(report.secondary, secondary);
 }

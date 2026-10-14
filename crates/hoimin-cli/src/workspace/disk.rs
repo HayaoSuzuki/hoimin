@@ -628,10 +628,7 @@ pub(crate) fn available_for_managed_roots(
 
 fn measurement_failure(message: impl Into<String>) -> hoimin_core::DiskFailure {
     hoimin_core::DiskFailure {
-        code: hoimin_core::DISK_MEASUREMENT_FAILED.to_owned(),
-        reason: hoimin_core::DiskStopReason::MeasurementFailed,
-        observation: None,
-        message: Some(message.into()),
+        reason: hoimin_core::DiskFailureReason::MeasurementFailed(message.into()),
         secondary: Vec::new(),
     }
 }
@@ -644,18 +641,7 @@ fn publish_stop(
         stop.send_replace(Some(failure.clone()));
         return failure;
     };
-    let mut secondary = Vec::with_capacity(1 + failure.secondary.len());
-    if let Some(observation) = failure.observation {
-        secondary.push(hoimin_core::DiskSecondary::Observation {
-            reason: failure.reason,
-            value: observation,
-        });
-    } else if let Some(message) = failure.message.take() {
-        secondary.push(hoimin_core::DiskSecondary::Error {
-            code: failure.code.clone(),
-            message,
-        });
-    }
+    let mut secondary = vec![failure.reason.to_secondary()];
     secondary.append(&mut failure.secondary);
     for value in secondary {
         if stop_matches_secondary(&primary, &value) || primary.secondary.contains(&value) {
@@ -671,14 +657,7 @@ fn stop_matches_secondary(
     stop: &hoimin_core::DiskFailure,
     secondary: &hoimin_core::DiskSecondary,
 ) -> bool {
-    match secondary {
-        hoimin_core::DiskSecondary::Observation { reason, value } => {
-            stop.reason == *reason && stop.observation.as_ref() == Some(value)
-        }
-        hoimin_core::DiskSecondary::Error { code, message } => {
-            stop.code == *code && stop.message.as_ref() == Some(message)
-        }
-    }
+    stop.reason.to_secondary() == *secondary
 }
 
 #[derive(Default)]
@@ -1480,7 +1459,7 @@ mod tests {
         assert!(monitor.stop_receiver().borrow().is_none());
         let first = monitor.sample_now().await.expect("reserve stop");
         assert_eq!(
-            first.reason,
+            first.reason.kind(),
             hoimin_core::DiskStopReason::FilesystemReserveReached
         );
         let second = monitor.sample_now().await.expect("sticky stop");
@@ -1565,12 +1544,15 @@ mod tests {
             .borrow()
             .clone()
             .expect("initial measurement failure");
-        assert_eq!(failure.code, hoimin_core::DISK_MEASUREMENT_FAILED);
+        assert_eq!(failure.code(), hoimin_core::DISK_MEASUREMENT_FAILED);
         assert_eq!(
-            failure.reason,
+            failure.reason.kind(),
             hoimin_core::DiskStopReason::MeasurementFailed
         );
-        assert_eq!(failure.message.as_deref(), Some("initial statvfs failed"));
+        assert_eq!(
+            failure.reason,
+            hoimin_core::DiskFailureReason::MeasurementFailed("initial statvfs failed".into())
+        );
         assert_eq!(monitor.stats().sample_count, 0);
         assert!(
             monitor
@@ -1617,10 +1599,12 @@ mod tests {
             .borrow()
             .clone()
             .expect("empty-filesystem failure");
-        assert_eq!(failure.code, hoimin_core::DISK_MEASUREMENT_FAILED);
+        assert_eq!(failure.code(), hoimin_core::DISK_MEASUREMENT_FAILED);
         assert_eq!(
-            failure.message.as_deref(),
-            Some("disk measurement returned no filesystem capacity")
+            failure.reason,
+            hoimin_core::DiskFailureReason::MeasurementFailed(
+                "disk measurement returned no filesystem capacity".into()
+            )
         );
         assert_eq!(monitor.stats().sample_count, 0);
         assert!(
@@ -1682,7 +1666,7 @@ mod tests {
         .expect("heartbeat failure must stop dispatch");
         assert_eq!(refreshes.get(), 1);
         assert_eq!(
-            failure.reason,
+            failure.reason.kind(),
             hoimin_core::DiskStopReason::MeasurementFailed
         );
         assert_eq!(last_refresh, Some(base));

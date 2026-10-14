@@ -998,3 +998,25 @@ impl ReportSequence {
         Ok(())
     }
 }
+
+impl From<crate::DiskFailure> for DiskStopReport {
+    fn from(failure: crate::DiskFailure) -> Self {
+        use crate::DiskFailureReason;
+        let code = failure.code().to_owned();
+        let (owned_bytes, available_bytes, message) = match failure.reason {
+            DiskFailureReason::WorkspaceSizeExceeded(value)
+            | DiskFailureReason::FilesystemReserveReached(value) => {
+                (Some(value.owned_bytes), Some(value.available_bytes), None)
+            }
+            DiskFailureReason::MeasurementFailed(message)
+            | DiskFailureReason::ProcessFailed(message) => (None, None, Some(message)),
+        };
+        Self {
+            code,
+            owned_bytes,
+            available_bytes,
+            message,
+            secondary: failure.secondary,
+        }
+    }
+}

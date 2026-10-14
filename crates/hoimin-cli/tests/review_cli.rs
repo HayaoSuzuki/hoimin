@@ -232,3 +232,22 @@ async fn review_rejects_zero_timeout_before_reading_source_or_creating_store() {
     );
     assert!(!dir.path().join("reviews.sqlite3").exists());
 }
+
+#[tokio::test]
+async fn review_record_plan_reference_has_no_run_identity() {
+    // Arrange
+    let (_dir, args) = fixture().await;
+
+    // Act
+    let (code, out, err) = run(record_args(&args)).await;
+    let recorded: Value = serde_json::from_slice(&out).unwrap();
+
+    // Assert
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&err));
+    // Assert
+    assert!(
+        recorded["candidates"][0]["review"]["draft"]["plan"]
+            .get("run_id")
+            .is_none()
+    );
+}
