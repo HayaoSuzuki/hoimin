@@ -469,7 +469,7 @@ impl PlanArgs {
     /// # Errors
     ///
     /// Returns an error when the shared mutation arguments are invalid.
-    pub fn into_run_config(self) -> Result<RunConfig, CliError> {
+    pub fn into_run_config(self) -> Result<RunConfig<hoimin_core::EnvironmentRequest>, CliError> {
         run_config_from_args(self.run_args)
     }
 }
@@ -765,7 +765,9 @@ where
 /// # Errors
 ///
 /// Returns an error when an argument or configuration value is invalid.
-pub fn parse_config_from<I, T>(args: I) -> Result<RunConfig, CliError>
+pub fn parse_config_from<I, T>(
+    args: I,
+) -> Result<RunConfig<hoimin_core::EnvironmentRequest>, CliError>
 where
     I: IntoIterator<Item = T>,
     T: Into<OsString> + Clone,
@@ -776,7 +778,9 @@ where
     run_config_from_args(args)
 }
 
-pub(crate) fn run_config_from_args(args: RunArgs) -> Result<RunConfig, CliError> {
+pub(crate) fn run_config_from_args(
+    args: RunArgs,
+) -> Result<RunConfig<hoimin_core::EnvironmentRequest>, CliError> {
     RunConfig::try_from(raw_config(args)?).map_err(CliError::from)
 }
 

@@ -437,19 +437,35 @@ async fn sample_authored_project_evaluation() {
         ),
     ];
     for (name, sources, script) in cases {
-        let (dir, path, mut document) = fixture().await;
+        let (dir, path, _) = fixture().await;
         for (path, source) in sources {
             std::fs::write(dir.path().join("project").join(path), source).unwrap();
         }
-        set_test_program(&mut document, script);
-        let manifest: hoimin_cli::plan::PlanManifest = serde_json::from_value(document).unwrap();
-        let config = manifest
-            .normalized_config
-            .into_run_config(hoimin_core::OutputConfig {
-                format: hoimin_core::OutputFormat::Json,
-                metrics: None,
-            });
-        let plan = hoimin_cli::plan::create(config).await.unwrap().manifest;
+        let (code, plan, error) = cli(vec![
+            "hoimin".into(),
+            "plan".into(),
+            "--root".into(),
+            dir.path().join("project").into_os_string(),
+            "--source".into(),
+            ".".into(),
+            "--operators".into(),
+            "boolean_literal,binary_add_sub".into(),
+            "--max-mutants".into(),
+            "20".into(),
+            "--jobs".into(),
+            "1".into(),
+            "--min-free-space".into(),
+            "1B".into(),
+            "--allow-best-effort-memory".into(),
+            "--".into(),
+            python().into_os_string(),
+            "-B".into(),
+            "-c".into(),
+            script.into(),
+        ])
+        .await;
+        assert_eq!(code, 0, "{error}");
+        let plan: hoimin_cli::plan::PlanManifest = serde_json::from_value(plan).unwrap();
         std::fs::write(&path, serde_json::to_vec(&plan).unwrap()).unwrap();
         let mut sources = serde_json::Map::new();
         for file in ["a.py", "b.py"] {

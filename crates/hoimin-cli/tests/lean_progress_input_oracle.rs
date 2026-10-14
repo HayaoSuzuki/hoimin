@@ -90,7 +90,7 @@ fn parse_lean_oracle_cases() -> Vec<LeanOracleCase> {
 
 fn report_json_from_lean_case(case: &LeanOracleCase) -> Value {
     let mut doc: Value =
-        serde_json::from_str(include_str!("golden/reports/schema-v4-current.json")).unwrap();
+        serde_json::from_str(include_str!("golden/reports/schema-v5-current.json")).unwrap();
     doc["run"]["normalized_config"] = Value::Null;
     match case.baseline.as_str() {
         "passed" => doc["baseline"]["termination"] = json!({"Exit": 0}),
@@ -335,14 +335,14 @@ async fn shared_reader_progress_formats_follow_lean() {
             println!(
                 "BOUNDARY_OBSERVATION {}",
                 json!({
-                    "fixture": gap.id, "encoding": "jsonl-v4", "boundary": "reader-progress",
+                    "fixture": gap.id, "encoding": "jsonl-v5", "boundary": "reader-progress",
                     "mode": "report", "evidence": "real-cli", "status": "unexecuted",
                     "reason": "document permits missing baseline with mutant projections; full JSONL lifecycle requires preceding baseline"
                 })
             );
         }
         selected_cases += 1;
-        for (encoding, jsonl) in [("json-v4", false), ("jsonl-v4", true)]
+        for (encoding, jsonl) in [("json-v5", false), ("jsonl-v5", true)]
             .into_iter()
             .filter(|(_, jsonl)| !jsonl || case.baseline != "missing" || case.statuses.is_empty())
         {

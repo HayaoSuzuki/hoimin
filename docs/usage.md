@@ -405,7 +405,9 @@ unselected variables retain their existing behavior. Values are hashed using
 native Unix bytes or Windows UTF-16 code units without lossy Unicode conversion.
 
 Capture occurs during command preparation, before worker `PYTHONPATH` and
-metadata rewriting. Only the selected names and a digest enter normalized config,
+metadata rewriting. Normalized config stores one `environment` snapshot: `{"state":"untracked"}`
+when no names are selected, or `{"state":"captured","names":["FLAG"],"digest":"…"}`
+with a nonempty canonical name set and aggregate digest. Only that metadata enters
 reports, sessions, and plan manifests; this option does not add captured values
 in plaintext. Hashing does not guarantee secrecy for low-entropy values.
 `verify` reads the names saved by `plan` and rejects a changed inherited snapshot
@@ -709,9 +711,11 @@ leaving the other selected IDs enabled. The type selector families are
 `type_nullable`, `type_collections`, and `type_iterables`. The type operator
 IDs are `type_nullable_remove`, `type_nullable_add`, `type_list_sequence`,
 `type_set_abstract_set`, `type_dict_mapping`, `type_iterable_iterator`, and
-`type_sequence_iterable`. When loading persisted plan configurations, the
-historical `type_mapping` name remains accepted as an alias for
-`type_dict_mapping`.
+`type_sequence_iterable`. Saved configurations require `type_dict_mapping`;
+the historical `type_mapping` alias is rejected. Regenerate plans containing
+old names. Timeout and command-argument variants likewise require `auto` / `fixed`
+and `unix` / `windows`; `Auto`, `Fixed`, `Unix` and `Windows` are rejected.
+This removal of saved-input aliases raises the release floor to 0.7.0.
 
 Builtin call and exception pairs require both names to resolve to builtins.
 Class bodies with bases or keyword arguments may use a metaclass-prepared
@@ -847,7 +851,7 @@ detected as a copy. Copy confirmation is best-effort if files change or become
 unreadable after validation; reports should remain unchanged during comparison.
 
 Inputs may mix JSON documents and JSONL event streams saved from
-`hoimin run --format jsonl`, both using report schema 4. Older and unsupported
+`hoimin run --format jsonl`, both using report schema 5. Older and unsupported
 future schemas are rejected with exit code 2. Detection uses content, not
 filename. For example:
 
@@ -1114,9 +1118,9 @@ outlive the wait; it retains its writer and delivery resources until it returns.
 
 ## Sessions and resume
 
-Run JSON/JSONL now emit schema 4; consumers validating the closed schema must update. `progress` accepts only schema-4 JSON/JSONL and rejects historical, unsupported future and mixed-version reports. When `--resume` is requested, JSON and JSONL include `run_started.resume` (the `run.resume` field in a JSON report): `{"status":"resumed"}` or `{"status":"fresh","reason":"CODE"}`. Human output also explains whether the saved run is continuing or a new run is starting. Runs without `--resume` omit this field.
+Run JSON/JSONL emit schema 5; consumers validating the closed schema must update. `progress` accepts only schema-5 JSON/JSONL and rejects historical, unsupported future and mixed-version reports. When `--resume` is requested, JSON and JSONL include `run_started.resume` (the `run.resume` field in a JSON report): `{"status":"resumed"}` or `{"status":"fresh","reason":"CODE"}`. Human output also explains whether the saved run is continuing or a new run is starting. Runs without `--resume` omit this field.
 
-A compatible incomplete run always wins, even if newer runs are incompatible. If an eligible row appears only during the later history inspection, `candidate_changed` takes precedence. Otherwise reasons use this precedence: `budget_decreased` (matching incomplete runs require a higher `--max-mutants`), `matching_run_complete`, `fingerprint_mismatch` (other incomplete history), `no_incomplete_run` (only nonmatching complete history), then `no_prior_run`. `candidate_changed` means session history changed during resume selection; `no_compatible_run` is a fallback for older completion events without diagnostic details. These codes describe observed history, not which configuration field or file changed. Existing old-schema, corrupt-data, database-read, and ownership errors remain errors.
+A compatible incomplete run always wins, even if newer runs are incompatible. If an eligible row appears only during the later history inspection, `candidate_changed` takes precedence. Otherwise reasons use this precedence: `budget_decreased` (matching incomplete runs require a higher `--max-mutants`), `matching_run_complete`, `fingerprint_mismatch` (other incomplete history), `no_incomplete_run` (only nonmatching complete history), then `no_prior_run`. `candidate_changed` means session history changed during resume selection. These codes describe observed history, not which configuration field or file changed. Existing old-schema, corrupt-data, database-read, and ownership errors remain errors.
 
 
 No database is created by default. `--session PATH` stores a run in SQLite and commits each mutant result independently. `--resume` requires `--session` and looks up the newest compatible incomplete run. Compatibility includes ordered import roots and source roots, source and configuration fingerprints, test argv, verdict-affecting limits, resource policy, and the operator set. Profile selection is part of session compatibility, so a focused run never resumes results from a full run and vice versa. `--jobs` and `--max-output` are operational settings and may change when resuming; reports record their current values, and reused results do not import output retained under the earlier limit. Completed `killed` and `survived` results can be reused; `timeout`, `out_of_memory`, `process_limit`, `error`, and `not_run` are run again under the current settings. An incompatible or already complete run is not silently mixed with new results.
@@ -1139,8 +1143,14 @@ An existing schema-4 run can still lack a recorded historical budget. Start a ne
 run when that incomplete run reports `session.resume.incompatible`; completed
 results remain available in the database.
 
-Plan schema version 5 stores explicit environment names/digest and independent
-import roots (ranking rule version 4). Regenerate older plans before verification.
+Plan schema version 6 stores an explicit validated environment snapshot and independent
+import roots (ranking rule version 4). Regenerate schema-5 and older plans before verification.
+Report schema 5 replaces the independent `fingerprint_env` / `fingerprint_env_hash`
+fields with that snapshot. Update strict report consumers; read schema-4 and older
+reports with their producing binary, or rerun with this version. The release floor is
+0.7.0. Files are not automatically converted or deleted. Environment fingerprint
+bytes remain unchanged, so this representation change alone does not require a new
+session; if an existing run is rejected, choose a different `--session PATH`.
 Fingerprint schema version 11
 includes ordered import roots and source roots and the ordered `--include` / `--exclude` copy
 patterns, including empty lists for default invocations. Changing source-root order or either copy
@@ -1449,7 +1459,7 @@ current candidates. `list --stale` includes stored candidates absent from the
 plan separately. List and show do not create a missing store.
 
 Plan-only output has execution state `not_loaded`. Add `--report run.json` for
-actual results from a complete schema-v4 JSON report with a passing baseline and
+actual results from a complete schema-v5 JSON report with a passing baseline and
 matching project/candidates. A plan candidate absent from the report is
 `not_in_report`; recording it with that report is rejected. JSONL and older
 reports are not supported by review. Plan-only recording remains allowed.

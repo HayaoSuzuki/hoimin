@@ -132,7 +132,7 @@ async fn create_plan_emits_versioned_manifest_without_runtime_side_effects() {
     let stdout = String::from_utf8(stdout.snapshot()).unwrap();
     assert_eq!(stdout.matches('\n').count(), 1);
     let manifest: serde_json::Value = serde_json::from_str(&stdout).unwrap();
-    assert_eq!(manifest["schema_version"], 5);
+    assert_eq!(manifest["schema_version"], 6);
     assert_eq!(manifest["ranking_rule_version"], 4);
     assert_eq!(manifest["kind"], "plan");
     assert!(
@@ -307,7 +307,7 @@ async fn explicit_class_symbol_ranks_and_verifies_its_method_before_an_unrelated
             ("a.py", Some("other"), 2, 100),
         ]
     );
-    assert_eq!(manifest.schema_version, 5);
+    assert_eq!(manifest.schema_version, 6);
     assert_eq!(manifest.ranking_rule_version, 4);
     let planned = &manifest.candidates[0];
     let planned_id = planned.id.clone();
@@ -1044,7 +1044,7 @@ fn invalid_normalized_config_cases() -> Vec<InvalidManifestCase> {
                 value["normalized_config"]["limits"]["total_timeout"] =
                     serde_json::json!({"secs": 0, "nanos": 0});
             },
-            "invalid zero or overflowing limit: --total-timeout",
+            "invalid zero or overflowing limit: duration",
         ),
         (
             "missing selector",
@@ -1129,17 +1129,21 @@ async fn verify_rejects_invalid_normalized_config_before_project_work() {
         let requested = vec![manifest.candidates[0].id.clone()];
         let mut value = serde_json::to_value(manifest).unwrap();
         mutate(&mut value);
-        let tampered: PlanManifest = serde_json::from_value(value.clone())
-            .unwrap_or_else(|error| panic!("{name} must remain structurally valid: {error}"));
-        assert_eq!(
-            tampered
+        let actual_message = match serde_json::from_value::<PlanManifest>(value.clone()) {
+            Ok(tampered) => tampered
                 .normalized_config
                 .validate()
                 .unwrap_err()
                 .to_string(),
-            expected_message,
-            "{name}"
-        );
+            Err(error) => {
+                assert_eq!(
+                    name, "zero total timeout",
+                    "unexpected serde rejection: {error}"
+                );
+                error.to_string()
+            }
+        };
+        assert_eq!(actual_message, expected_message, "{name}");
         write_json(&path, &value);
 
         std::fs::remove_file(project.path.join("src/calc.py")).unwrap();
@@ -1440,7 +1444,7 @@ async fn verify_rejects_a_ranking_version_three_plan_before_baseline_with_regene
     let (path, manifest, marker) = write_plan_manifest(&project, &[]).await;
     let requested = vec![manifest.candidates[0].id.clone()];
     let mut value = serde_json::to_value(manifest).unwrap();
-    assert_eq!(value["schema_version"], 5);
+    assert_eq!(value["schema_version"], 6);
     value["ranking_rule_version"] = serde_json::json!(3);
     write_json(&path, &value);
 
@@ -4104,7 +4108,7 @@ async fn verify_preview_public_cli_preserves_policy_range_and_execution_order_wi
         let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
         assert_eq!(value["kind"], "verify_preview");
         assert_eq!(value["schema_version"], 2);
-        assert_eq!(value["plan_schema_version"], 5);
+        assert_eq!(value["plan_schema_version"], 6);
         assert_eq!(value["ranking_rule_version"], 4);
         assert_eq!(value["offset"], offset.parse::<usize>().unwrap());
         assert_eq!(value["retained_candidates"], 6);

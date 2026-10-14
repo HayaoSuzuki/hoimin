@@ -7,7 +7,7 @@ use hoimin_cli::plan::RankedPlanCandidate;
 use hoimin_core::RunConfig;
 use std::path::{Path, PathBuf};
 
-fn config(root: &Path, extra: &[&str]) -> RunConfig {
+fn config(root: &Path, extra: &[&str]) -> RunConfig<hoimin_core::EnvironmentRequest> {
     let mut args = vec![
         "hoimin",
         "run",

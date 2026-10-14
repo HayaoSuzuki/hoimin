@@ -227,7 +227,7 @@ fn validate_delta(id: &str, delta: Option<&ExpectedDelta>) -> Result<(), String>
 }
 
 fn base_report() -> Value {
-    serde_json::from_str(include_str!("golden/reports/schema-v4-current.json"))
+    serde_json::from_str(include_str!("golden/reports/schema-v5-current.json"))
         .expect("owned current-schema golden report must remain valid JSON")
 }
 

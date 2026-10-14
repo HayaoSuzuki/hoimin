@@ -62,7 +62,7 @@ macro_rules! mutation_operators {
         }
 
         impl MutationOperator {
-            /// Looks up a canonical ID; aliases accepted in saved inputs are excluded.
+            /// Looks up an operator by its canonical ID.
             #[must_use]
             pub fn from_name(name: &str) -> Option<Self> {
                 match name {
@@ -140,7 +140,6 @@ mutation_operators! {
     TypeNullableAdd => "type_nullable_add",
     TypeListSequence => "type_list_sequence",
     TypeSetAbstractSet => "type_set_abstract_set",
-    #[serde(alias = "type_mapping")]
     TypeMapping => "type_dict_mapping",
     TypeIterableIterator => "type_iterable_iterator",
     TypeSequenceIterable => "type_sequence_iterable",
@@ -450,8 +449,22 @@ pub struct SessionConfig {
     pub path: Utf8PathBuf,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+/// A strictly positive duration, checked during raw conversion and deserialization.
+///
+/// Timeout ceilings and automatic timeout arithmetic belong to configuration
+/// validation, not this representation invariant.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 pub struct NonZeroDuration(Duration);
+
+impl<'de> Deserialize<'de> for NonZeroDuration {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = Duration::deserialize(deserializer)?;
+        Self::new(value, "duration").map_err(serde::de::Error::custom)
+    }
+}
 
 impl NonZeroDuration {
     #[must_use]
@@ -471,9 +484,7 @@ impl NonZeroDuration {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MutantTimeout {
-    #[serde(alias = "Auto")]
     Auto,
-    #[serde(alias = "Fixed")]
     Fixed(NonZeroDuration),
 }
 
@@ -495,18 +506,18 @@ pub struct RunLimits {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct RunConfig {
+/// Normalized invocation with a canonical capture request before preparation.
+/// The default environment state is a validated snapshot consumed by execution.
+pub struct RunConfig<E = crate::EnvironmentSnapshot> {
     pub root: Utf8PathBuf,
     pub selection: Selection,
     #[serde(default)]
     pub import_roots: Vec<Utf8PathBuf>,
     pub fingerprint_includes: Vec<String>,
     pub fingerprint_files: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub fingerprint_env: Vec<String>,
+    /// Canonical capture request before preparation, validated metadata afterward.
+    pub environment: E,
     pub fingerprint_inputs: Vec<FingerprintInputFile>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub fingerprint_env_hash: Option<String>,
     pub limits: RunLimits,
     pub test_argv: Vec<CommandArg>,
     pub output: OutputConfig,
@@ -532,15 +543,14 @@ pub struct PlanConfig {
     pub fingerprint_includes: Vec<String>,
     #[serde(default)]
     pub fingerprint_files: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub fingerprint_env: Vec<String>,
+    /// Validated inherited-environment metadata.
+    pub environment: crate::EnvironmentSnapshot,
     pub fingerprint_inputs: Vec<FingerprintInputFile>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub fingerprint_env_hash: Option<String>,
 }
 
-impl RunConfig {
-    /// Validates normalized run configuration semantics.
+impl<E> RunConfig<E> {
+    /// Validates common normalized run fields.
+    /// Environment constructors and deserialization own their state invariants.
     /// Selection and execution must share the same project root (by path equality).
     ///
     /// # Errors
@@ -549,11 +559,6 @@ impl RunConfig {
     /// command, or limits are invalid.
     pub fn validate(&self) -> Result<(), ConfigError> {
         validate_selection(&self.root, &self.selection)?;
-        crate::fingerprint_env::validate_fingerprint_env(
-            &self.fingerprint_env,
-            self.fingerprint_env_hash.as_deref(),
-            false,
-        )?;
         validate_import_roots(&self.import_roots)?;
         validate_operators(&self.operators)?;
         if self.resume && self.session.is_none() {
@@ -562,7 +567,9 @@ impl RunConfig {
         validate_test_argv(&self.test_argv)?;
         validate_limits(&self.limits)
     }
+}
 
+impl RunConfig {
     #[must_use]
     pub fn into_plan_config(self) -> PlanConfig {
         PlanConfig {
@@ -577,10 +584,49 @@ impl RunConfig {
             profile: self.profile,
             fingerprint_includes: self.fingerprint_includes,
             fingerprint_files: self.fingerprint_files,
-            fingerprint_env: self.fingerprint_env,
-            fingerprint_env_hash: self.fingerprint_env_hash,
+            environment: self.environment,
             fingerprint_inputs: self.fingerprint_inputs,
         }
+    }
+}
+
+impl RunConfig<crate::EnvironmentRequest> {
+    /// Finishes environment preparation with a snapshot of exactly the requested names.
+    ///
+    /// Execution and fingerprint generation accept only the returned snapshot configuration.
+    ///
+    /// ```compile_fail
+    /// use hoimin_core::{FingerprintInput, RawRunConfig, ResourceMode, RunConfig};
+    /// let request = RunConfig::try_from(RawRunConfig::default()).unwrap();
+    /// FingerprintInput::from_config(&request, vec![], vec![], ResourceMode::Hard);
+    /// ```
+    ///
+    /// # Errors
+    /// Returns an error when the snapshot's name set differs from the request.
+    pub fn with_environment(
+        self,
+        environment: crate::EnvironmentSnapshot,
+    ) -> Result<RunConfig, ConfigError> {
+        if self.environment.names() != environment.names() {
+            return Err(ConfigError::FingerprintEnvSnapshotMismatch);
+        }
+        Ok(RunConfig {
+            root: self.root,
+            selection: self.selection,
+            import_roots: self.import_roots,
+            fingerprint_includes: self.fingerprint_includes,
+            fingerprint_files: self.fingerprint_files,
+            environment,
+            fingerprint_inputs: self.fingerprint_inputs,
+            limits: self.limits,
+            test_argv: self.test_argv,
+            output: self.output,
+            session: self.session,
+            operators: self.operators,
+            allow_best_effort_memory: self.allow_best_effort_memory,
+            profile: self.profile,
+            resume: self.resume,
+        })
     }
 }
 
@@ -594,11 +640,6 @@ impl PlanConfig {
     /// invalid.
     pub fn validate(&self) -> Result<(), ConfigError> {
         validate_selection(&self.root, &self.selection)?;
-        crate::fingerprint_env::validate_fingerprint_env(
-            &self.fingerprint_env,
-            self.fingerprint_env_hash.as_deref(),
-            true,
-        )?;
         validate_import_roots(&self.import_roots)?;
         validate_operators(&self.operators)?;
         validate_test_argv(&self.test_argv)?;
@@ -613,8 +654,7 @@ impl PlanConfig {
             import_roots: self.import_roots,
             fingerprint_includes: self.fingerprint_includes,
             fingerprint_files: self.fingerprint_files,
-            fingerprint_env: self.fingerprint_env,
-            fingerprint_env_hash: self.fingerprint_env_hash,
+            environment: self.environment,
             fingerprint_inputs: self.fingerprint_inputs,
             limits: self.limits,
             test_argv: self.test_argv,
@@ -648,6 +688,8 @@ pub enum ConfigError {
     NonNormalizedFingerprintEnv,
     #[error("fingerprint.env.invalid_hash: selected names require a lowercase 64-hex digest")]
     InvalidFingerprintEnvHash,
+    #[error("fingerprint.env.snapshot_mismatch: captured names differ from requested names")]
+    FingerprintEnvSnapshotMismatch,
     #[error(
         "invalid --import-root {path}: expected a project-root-relative directory without escaping parent components"
     )]
@@ -894,14 +936,14 @@ fn validate_limits(limits: &RunLimits) -> Result<(), ConfigError> {
 }
 
 fn validate_timeout(name: &'static str, duration: Duration) -> Result<(), ConfigError> {
-    if duration.is_zero() || duration > MAX_TIMEOUT {
+    if duration > MAX_TIMEOUT {
         Err(ConfigError::InvalidLimit(name))
     } else {
         Ok(())
     }
 }
 
-impl TryFrom<RawRunConfig> for RunConfig {
+impl TryFrom<RawRunConfig> for RunConfig<crate::EnvironmentRequest> {
     type Error = ConfigError;
 
     fn try_from(raw: RawRunConfig) -> Result<Self, Self::Error> {
@@ -946,8 +988,7 @@ impl TryFrom<RawRunConfig> for RunConfig {
             import_roots: normalize_import_roots(&raw.import_roots)?,
             fingerprint_includes: raw.fingerprint_includes,
             fingerprint_files: raw.fingerprint_files,
-            fingerprint_env: crate::normalize_fingerprint_env_names(&raw.fingerprint_env)?,
-            fingerprint_env_hash: None,
+            environment: crate::EnvironmentRequest::new(&raw.fingerprint_env)?,
             fingerprint_inputs: Vec::new(),
             limits,
             test_argv: raw.test_argv,

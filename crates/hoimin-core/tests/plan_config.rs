@@ -19,6 +19,8 @@ fn disk_limits_have_mandatory_eight_and_ten_gibibyte_defaults() {
         test_argv: vec![CommandArg::Unix(b"python".to_vec())],
         ..RawRunConfig::default()
     })
+    .unwrap()
+    .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
     .unwrap();
     assert_eq!(
         normalized.limits.max_workspace_size.get(),
@@ -116,13 +118,11 @@ fn plan_config_serializes_the_mapping_operator_with_its_canonical_name() {
 }
 
 #[test]
-fn plan_config_accepts_the_historical_mapping_operator_name() {
+fn plan_config_rejects_the_historical_mapping_operator_name() {
     let mut value = plan_value();
     value["operators"] = serde_json::json!(["type_mapping"]);
 
-    let plan: PlanConfig = serde_json::from_value(value).unwrap();
-
-    assert!(plan.operators.contains(MutationOperator::TypeMapping));
+    assert!(serde_json::from_value::<PlanConfig>(value).is_err());
 }
 
 #[test]
@@ -233,35 +233,6 @@ fn plan_config_rejects_invalid_normalized_semantics() {
             },
         ),
         (
-            "zero analyzer duration",
-            |value| {
-                value["limits"]["analyzer_timeout"] = serde_json::json!({"secs": 0, "nanos": 0});
-            },
-            ConfigError::InvalidLimit("analyzer_timeout"),
-        ),
-        (
-            "zero baseline duration",
-            |value| {
-                value["limits"]["baseline_timeout"] = serde_json::json!({"secs": 0, "nanos": 0});
-            },
-            ConfigError::InvalidLimit("baseline_timeout"),
-        ),
-        (
-            "zero mutant duration",
-            |value| {
-                value["limits"]["mutant_timeout"] =
-                    serde_json::json!({"Fixed": {"secs": 0, "nanos": 0}});
-            },
-            ConfigError::InvalidLimit("mutant_timeout"),
-        ),
-        (
-            "zero total duration",
-            |value| {
-                value["limits"]["total_timeout"] = serde_json::json!({"secs": 0, "nanos": 0});
-            },
-            ConfigError::InvalidLimit("total_timeout"),
-        ),
-        (
             "baseline arithmetic overflow",
             |value| {
                 value["limits"]["baseline_timeout"] =
@@ -320,14 +291,14 @@ fn normalized_timeout_limits_enforce_the_inclusive_ceiling() {
         ("baseline_timeout", maximum.clone(), oversized.clone()),
         (
             "mutant_timeout",
-            serde_json::json!({"Fixed": maximum}),
-            serde_json::json!({"Fixed": oversized}),
+            serde_json::json!({"fixed": maximum}),
+            serde_json::json!({"fixed": oversized}),
         ),
         ("total_timeout", maximum, oversized),
     ] {
         let mut accepted = plan_value();
         accepted["limits"]["mutant_timeout"] = serde_json::json!({
-            "Fixed": {"secs": 5, "nanos": 0}
+            "fixed": {"secs": 5, "nanos": 0}
         });
         accepted["limits"][name] = maximum;
 
@@ -337,7 +308,7 @@ fn normalized_timeout_limits_enforce_the_inclusive_ceiling() {
 
         let mut rejected = plan_value();
         rejected["limits"]["mutant_timeout"] = serde_json::json!({
-            "Fixed": {"secs": 5, "nanos": 0}
+            "fixed": {"secs": 5, "nanos": 0}
         });
         rejected["limits"][name] = oversized;
 
@@ -362,7 +333,7 @@ fn normalized_auto_timeout_rejects_a_baseline_with_oversized_derived_timeout() {
         "secs": maximum_baseline.as_secs(),
         "nanos": maximum_baseline.subsec_nanos() + 1
     });
-    value["limits"]["mutant_timeout"] = serde_json::json!("Auto");
+    value["limits"]["mutant_timeout"] = serde_json::json!("auto");
     let config: PlanConfig = serde_json::from_value(value).unwrap();
 
     assert_eq!(
@@ -415,6 +386,8 @@ fn fixture_run_config() -> RunConfig {
         },
         ..RawRunConfig::default()
     })
+    .unwrap()
+    .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
     .unwrap();
     config.fingerprint_inputs = vec![FingerprintInputFile {
         path: "pyproject.toml".into(),

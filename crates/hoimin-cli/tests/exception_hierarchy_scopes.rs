@@ -1,4 +1,4 @@
-fn config(root: &std::path::Path) -> hoimin_core::RunConfig {
+fn config(root: &std::path::Path) -> hoimin_core::RunConfig<hoimin_core::EnvironmentRequest> {
     hoimin_cli::cli::parse_config_from([
         "hoimin",
         "run",

@@ -11,9 +11,54 @@
     { "$ref": "#/$defs/runFinished" }
   ],
   "$defs": {
+    "environmentSnapshot": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "state"
+          ],
+          "properties": {
+            "state": {
+              "const": "untracked"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "state",
+            "names",
+            "digest"
+          ],
+          "properties": {
+            "state": {
+              "const": "captured"
+            },
+            "names": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "pattern": "^[A-Za-z_][A-Za-z0-9_]*(?![\\s\\S])"
+              }
+            },
+            "digest": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$",
+              "minLength": 64,
+              "maxLength": 64
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
     "schemaVersion": {
       "type": "integer",
-      "const": 4
+      "const": 5
     },
     "resumeOutcome": {
       "oneOf": [
@@ -28,7 +73,7 @@
           "required": ["status", "reason"],
           "properties": {
             "status": { "const": "fresh" },
-            "reason": { "type": "string", "enum": ["no_prior_run", "matching_run_complete", "budget_decreased", "fingerprint_mismatch", "no_incomplete_run", "candidate_changed", "no_compatible_run"] }
+            "reason": { "type": "string", "enum": ["no_prior_run", "matching_run_complete", "budget_decreased", "fingerprint_mismatch", "no_incomplete_run", "candidate_changed"] }
           },
           "additionalProperties": false
         }
@@ -452,9 +497,20 @@
         "sequence": { "type": "integer", "minimum": 0 },
         "run_id": { "type": "string" },
         "normalized_config": {
-          "type": ["object", "null"],
-          "description": "Normalized invocation config, including ordered import_roots and optional fingerprint_env names plus fingerprint_env_hash when present; captured environment values are not included. New config fields may be added without changing the run-event schema version.",
-          "additionalProperties": true
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "Normalized invocation config includes an explicit validated environment snapshot; captured environment values are not included. Other config fields may be added without changing the run-event schema version.",
+          "additionalProperties": true,
+          "required": [
+            "environment"
+          ],
+          "properties": {
+            "environment": {
+              "$ref": "#/$defs/environmentSnapshot"
+            }
+          }
         },
         "versions": {
           "type": "object",

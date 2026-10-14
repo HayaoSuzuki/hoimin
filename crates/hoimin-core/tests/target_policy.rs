@@ -23,14 +23,22 @@ fn mutation_profile_defaults_to_full_and_is_normalized() {
     let raw = raw_config();
     assert_eq!(raw.profile, MutationProfile::Full);
     assert_eq!(
-        RunConfig::try_from(raw.clone()).unwrap().profile,
+        RunConfig::try_from(raw.clone())
+            .unwrap()
+            .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
+            .unwrap()
+            .profile,
         MutationProfile::Full
     );
 
     let mut raw = raw;
     raw.profile = MutationProfile::Focused;
     assert_eq!(
-        RunConfig::try_from(raw).unwrap().profile,
+        RunConfig::try_from(raw)
+            .unwrap()
+            .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
+            .unwrap()
+            .profile,
         MutationProfile::Focused
     );
 }
@@ -177,6 +185,14 @@ fn raw_timeout_limits_accept_the_ceiling_and_reject_one_nanosecond_more() {
         }),
     ];
     for (name, set_timeout) in cases {
+        let mut zero = raw_config();
+        set_timeout(&mut zero, Duration::ZERO);
+        assert_eq!(
+            RunConfig::try_from(zero),
+            Err(ConfigError::InvalidLimit(name)),
+            "zero {name}"
+        );
+
         let mut accepted = raw_config();
         accepted.limits.mutant_timeout = Some(Duration::from_secs(5));
         set_timeout(&mut accepted, MAX_TIMEOUT);
@@ -933,7 +949,10 @@ fn run_config_normalizes_operator_selectors() {
     let mut raw = raw_config();
     raw.operators = vec!["type_iterables".to_owned(), "type_dict_mapping".to_owned()];
     raw.exclude_operators = vec!["type_iterable_iterator".to_owned()];
-    let config = RunConfig::try_from(raw).unwrap();
+    let config = RunConfig::try_from(raw)
+        .unwrap()
+        .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
+        .unwrap();
     assert!(
         config
             .operators

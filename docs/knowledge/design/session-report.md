@@ -5,6 +5,11 @@ description: 保存・復旧の権限、スキーマ移行、結果の生成側�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: session-load-outcome
+  resource: ../../../crates/hoimin-core/src/event.rs
+  revision: 056cb558953ddf5eb8b229976ee894ae7c6bc87f
+  working_tree: modified
+  sha256: bca9bd30a23da838ee97a3bcd4ad11933e738ac5c3a07afd298c185823daebe2
 - id: current-initialization
   resource: ../../../formal/HoiminOracle/HoiminOracle/SchemaMigrationModel.lean
   revision: 97c394760bc02a56be0bfdeb6301257eac80d1c7
@@ -12,9 +17,9 @@ sources:
   sha256: 2d1710df34ea77b0733ca1fbb5b10bb9d74d93603959cc0e69a24f04decd91f3
 - id: tracing-readme
   resource: ../../usage.md
-  revision: 5a45bdc3bd444771c4c57e30fe211f174850ce93
-  working_tree: untracked
-  sha256: 6894a34743882cc26fdd1f39cb536c94dfc20d5f1dcf33b3cb7f3da9b13e6bef
+  revision: 056cb558953ddf5eb8b229976ee894ae7c6bc87f
+  working_tree: modified
+  sha256: 5accad1142fd4cab767e93140cc40d1fb945e025446ecee13e6440e87244a744
 - id: tracing-runtime
   resource: ../../../crates/hoimin-cli/src/telemetry.rs
   revision: 3912d73220917308ce6a966ad2b57ec9b566490c
@@ -95,7 +100,21 @@ sources:
   revision: 51b4a4b61f9e9e10a621eb3574e5caad28e8111c
   working_tree: clean
 
+- id: issue-887-environment
+  resource: ../../superpowers/plans/2026-10-14-issue-887.md
+
 ---
+
+# Session load result
+
+SessionLoaded carries exactly one SessionLoadOutcome: Resumed owns the saved run
+reference, and Fresh carries one observed history reason. The machine selects its
+next effects with one match. Missing outcomes and legacy resume/fresh_reason fields
+are rejected; no fallback supplies a reason. Report ResumeOutcome remains a separate
+status/reason contract. The public no_compatible_run reason is removed at floor
+0.7.0; report schema 5 includes the environment snapshot change, while persisted
+session rows do not change.[^session-load-outcome][^issue-887-environment]
+
 
 # 実行単位ごとの所有権
 
@@ -135,7 +154,7 @@ JSON Schemaは結果の構造を定める元資料として保持する。ただ
 
 # progressのレポート入力スキーマ
 
-progressは `REPORT_SCHEMA_VERSION`（4）に一致するJSON文書とJSONLストリームを読む。旧schema 2/3と未対応の将来版を拒否し、旧形式専用の型・変換・検証は持たない。reviewは現行スキーマのJSONを要求する。[^reader]
+progressは `REPORT_SCHEMA_VERSION`（5）に一致するJSON文書とJSONLストリームを読む。旧schema 2/3/4と未対応の将来版を拒否し、旧形式専用の型・変換・検証は持たない。reviewは現行スキーマのJSONを要求する。[^reader]
 
 スキーマ限定後も、候補ID・run ID・sequence・summary・単一結果の検証を維持する。JSONLの一行ずつの読取り、設定を不透明なJSONとして扱うprogressの方針も維持する。旧レポートは生成元バイナリで読むか、意図する版で実行し直す。planの再生成だけでは過去のreportは復元されない。手順と互換性通知は[利用方法](../../usage.md)と[互換性方針](../../compatibility.md)を参照する。[^reader]
 
@@ -194,6 +213,18 @@ macOSで、並列数1・2、root内外の別名、大小文字の別名、実際
 
 [^issue-516]: [Issue 516: Share active session ownership-tree identities](../../superpowers/specs/2026-09-12-issue-516-session-ownership-identities-design.md)。
 
+## Environment metadata and report readers (Issue #887)
+
+Report schema 5 replaces separate names and optional hash with one validated
+`environment` snapshot. Progress and review consume the writer's schema; preserve
+schema-4 and older reports with their producing binary or rerun rather than
+rewriting their version fields. Captured plaintext never enters snapshot metadata.
+Plan schema 6 requires regeneration of older plans. Fingerprint schema 11 and its
+exact bytes remain stable, so this format change alone does not require a new
+session or alter SQLite schema 4. [^issue-887-environment]
+
+[^issue-887-environment]: [Issue 887 typed snapshot verification](../../superpowers/plans/2026-10-14-issue-887.md).
+
 ## baseline失敗時の保存済み出力
 
 `run` と `verify` は失敗またはプロセスの時間切れとなったbaselineについて、cleanup前に保存済みの標準出力・標準エラーをstderr診断へ逐次出力する。`--max-output` の末尾保持上限に従い、保持量・観測量・切詰め有無とraw byte offsetを示す。非UTF8は置換文字、端末制御文字はエスケープで表す。stdoutのスキーマは変えない。保存にはstderrのリダイレクトを使う。キャンセルや出力先の詰まりで総時間制限に達すると出力は途中で止まりうる。[^issue-464]
@@ -227,3 +258,5 @@ CLIはログを容量制限付きキューから別スレッドへ渡す。キ�
 [^tracing-runtime]: [CLIの診断出力](../../../crates/hoimin-cli/src/telemetry.rs)。
 
 [^current-initialization]: [現行session初期化モデル](../../../formal/HoiminOracle/HoiminOracle/SchemaMigrationModel.lean)。
+
+[^session-load-outcome]: [Session completion contract](../../../crates/hoimin-core/src/event.rs).

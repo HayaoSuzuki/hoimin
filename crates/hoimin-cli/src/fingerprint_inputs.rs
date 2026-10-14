@@ -394,6 +394,8 @@ mod tests {
             )],
             ..hoimin_core::RawRunConfig::default()
         })
+        .unwrap()
+        .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
         .unwrap();
         config.fingerprint_inputs = resolve_config(&config).unwrap();
         let prepared = config.clone();

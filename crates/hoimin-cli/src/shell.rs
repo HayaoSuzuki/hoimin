@@ -2337,19 +2337,22 @@ pub enum PrepareRunConfigError {
 /// # Errors
 ///
 /// Returns an error when a configured fingerprint input pattern cannot be resolved.
-pub fn prepare_run_config(mut config: RunConfig) -> Result<RunConfig, PrepareRunConfigError> {
-    config.fingerprint_env_hash = crate::fingerprint_env::capture(&config.fingerprint_env)?;
+pub fn prepare_run_config(
+    config: RunConfig<hoimin_core::EnvironmentRequest>,
+) -> Result<RunConfig, PrepareRunConfigError> {
+    let environment = crate::fingerprint_env::capture(&config.environment)?;
+    let mut config = config.with_environment(environment)?;
     config.fingerprint_inputs = crate::fingerprint_inputs::resolve_config(&config)?;
     Ok(config)
 }
 
-/// Runs the configured mutation-test state machine with owned output writers.
+/// Captures the request once, then runs its validated snapshot with owned output writers.
 ///
 /// # Errors
 /// Owns preparation and infrastructure diagnostics; callers may inspect errors
 /// but must not print them again. Deadline expiry can omit a final diagnostic.
 pub async fn run_loop<Stdout, Stderr>(
-    config: RunConfig,
+    config: RunConfig<hoimin_core::EnvironmentRequest>,
     stdout: Stdout,
     stderr: Stderr,
 ) -> Result<i32, String>
@@ -2367,7 +2370,7 @@ where
 /// Deadline expiry can omit a final diagnostic.
 #[doc(hidden)]
 pub async fn run_loop_with_control<Stdout, Stderr>(
-    config: RunConfig,
+    config: RunConfig<hoimin_core::EnvironmentRequest>,
     stdout: Stdout,
     stderr: Stderr,
     control: RunControl,
@@ -5342,7 +5345,7 @@ mod tests {
         ]
     }
 
-    fn shell_setup_test_config(project: &TempDir) -> RunConfig {
+    fn shell_setup_test_config(project: &TempDir) -> RunConfig<hoimin_core::EnvironmentRequest> {
         std::fs::write(project.path().join("target.py"), b"value = 1\n").unwrap();
         crate::cli::parse_config_from([
             OsString::from("hoimin"),
@@ -5358,7 +5361,7 @@ mod tests {
         .unwrap()
     }
 
-    fn assert_host_independent_test_reserve(config: &RunConfig) {
+    fn assert_host_independent_test_reserve<E>(config: &RunConfig<E>) {
         assert_eq!(
             config.limits.min_free_space.get(),
             1,
@@ -5366,7 +5369,9 @@ mod tests {
         );
     }
 
-    fn parse_host_independent_shell_test_config(mut args: Vec<OsString>) -> RunConfig {
+    fn parse_host_independent_shell_test_config(
+        mut args: Vec<OsString>,
+    ) -> RunConfig<hoimin_core::EnvironmentRequest> {
         assert!(
             !args.iter().any(|argument| argument == "--min-free-space"),
             "host-independent shell test config must not override an explicit reserve"
@@ -5384,7 +5389,10 @@ mod tests {
         config
     }
 
-    fn output_failure_test_config(project: &TempDir, format: &str) -> RunConfig {
+    fn output_failure_test_config(
+        project: &TempDir,
+        format: &str,
+    ) -> RunConfig<hoimin_core::EnvironmentRequest> {
         std::fs::write(project.path().join("target.py"), b"pass\n").unwrap();
         let mut args = vec![
             OsString::from("hoimin"),
@@ -5406,7 +5414,9 @@ mod tests {
     // rejects these IDs during preparation, before runtime spool exhaustion.
     async fn run_missing_explicit_candidate(source: &str, missing_id: &str) -> (String, Vec<u8>) {
         let project = tempfile::tempdir().unwrap();
-        let config = output_failure_test_config(&project, "json");
+        let config = output_failure_test_config(&project, "json")
+            .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
+            .unwrap();
         std::fs::write(project.path().join("target.py"), source).unwrap();
         let selection = CandidateSelection::Explicit(
             BTreeSet::from([missing_id.to_owned()]),
@@ -7147,7 +7157,9 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn shell_setup_does_not_block_the_async_runtime() {
         let project = tempfile::tempdir().unwrap();
-        let config = shell_setup_test_config(&project);
+        let config = shell_setup_test_config(&project)
+            .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
+            .unwrap();
         let (entered_tx, entered_rx) = std::sync::mpsc::channel();
         let (release_tx, release_rx) = std::sync::mpsc::sync_channel(0);
         let (heartbeat_tx, heartbeat_rx) = std::sync::mpsc::channel();
@@ -7182,7 +7194,9 @@ mod tests {
     #[tokio::test]
     async fn shell_setup_panic_is_reported_as_a_setup_join_failure() {
         let project = tempfile::tempdir().unwrap();
-        let config = shell_setup_test_config(&project);
+        let config = shell_setup_test_config(&project)
+            .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
+            .unwrap();
         let result =
             prepare_shell_setup(config, Box::new(|| panic!("controlled shell setup panic"))).await;
         let Err(error) = result else {
@@ -7319,7 +7333,9 @@ mod tests {
             let project = tempfile::tempdir().unwrap();
             let managed_parent = tempfile::tempdir().unwrap();
             let parent = Utf8Path::from_path(managed_parent.path()).unwrap();
-            let config = shell_setup_test_config(&project);
+            let config = shell_setup_test_config(&project)
+                .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
+                .unwrap();
 
             let unwind = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 let _ = prepare_shell_setup_sync_in(config, parent, &|observed| {
@@ -7346,9 +7362,14 @@ mod tests {
         let project = tempfile::tempdir().unwrap();
         let managed_parent = tempfile::tempdir().unwrap();
         let parent = Utf8Path::from_path(managed_parent.path()).unwrap();
-        let prepared =
-            prepare_shell_setup_sync_in(shell_setup_test_config(&project), parent, &|_| {})
-                .unwrap();
+        let prepared = prepare_shell_setup_sync_in(
+            shell_setup_test_config(&project)
+                .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
+                .unwrap(),
+            parent,
+            &|_| {},
+        )
+        .unwrap();
         let roots = prepared.spool_dir.paths();
 
         drop(prepared);
@@ -7465,6 +7486,8 @@ mod tests {
             OsString::from("--"),
             OsString::from("unused-test-command"),
         ])
+        .unwrap()
+        .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
         .unwrap();
         let mut context = ShellContext::new_in(
             &config,
@@ -7581,6 +7604,8 @@ mod tests {
         let config = crate::cli::parse_config_from([
             "hoimin", "run", "--root", ".", "--source", ".", "--", "python", "-m", "pytest",
         ])
+        .unwrap()
+        .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
         .unwrap();
         let state = RunState::new(
             "persisted-session-run",
@@ -8566,6 +8591,8 @@ mod tests {
             OsString::from("--"),
             OsString::from("unused-test-command"),
         ])
+        .unwrap()
+        .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
         .unwrap();
         let mut context = ShellContext::new(&config, Vec::new(), Vec::new())
             .await
@@ -8637,6 +8664,8 @@ mod tests {
             OsString::from("--"),
             OsString::from("unused-test-command"),
         ])
+        .unwrap()
+        .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
         .unwrap();
         let targets = vec![TargetSlice {
             path: Utf8PathBuf::from("target.py"),
@@ -8684,6 +8713,8 @@ mod tests {
             OsString::from("--"),
             OsString::from("unused-test-command"),
         ])
+        .unwrap()
+        .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
         .unwrap();
         let targets = vec![TargetSlice {
             path: Utf8PathBuf::from("target.py"),
@@ -8731,6 +8762,8 @@ mod tests {
             OsString::from("--"),
             OsString::from("unused-test-command"),
         ])
+        .unwrap()
+        .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
         .unwrap();
         let targets = vec![TargetSlice {
             path: Utf8PathBuf::from("target.py"),
@@ -8922,7 +8955,10 @@ mod tests {
         );
     }
 
-    fn paused_materialization_config(project: &TempDir, total_timeout: &str) -> RunConfig {
+    fn paused_materialization_config(
+        project: &TempDir,
+        total_timeout: &str,
+    ) -> RunConfig<hoimin_core::EnvironmentRequest> {
         std::fs::write(project.path().join("target.py"), b"value = 1\n").unwrap();
         parse_host_independent_shell_test_config(vec![
             OsString::from("hoimin"),
@@ -9423,6 +9459,8 @@ mod tests {
             "--",
             "unused-test-command",
         ])
+        .unwrap()
+        .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
         .unwrap();
         let (state, pending_effects) = transition(
             RunState::new(

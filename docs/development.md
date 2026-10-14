@@ -1472,12 +1472,33 @@ resolved module provider, including unaliased `collections.abc`. Existing
 source and destination shadowing checks still apply. Tests evaluate generated
 annotations under CPython 3.14 in addition to reparsing their source.
 
+## Session load completion contract
+
+`SessionLoaded` carries an effect ID and one required `SessionLoadOutcome`:
+`Resumed(SessionResumeRef)` identifies the owned saved run; `Fresh(ResumeFreshReason)`
+explains why a new run starts. Serde encodes these as
+`{"id":1,"outcome":{"Resumed":{"run_id":"saved"}}}` and
+`{"id":1,"outcome":{"Fresh":"no_prior_run"}}`. Missing outcomes and old or mixed
+`resume`/`fresh_reason` fields are rejected. The machine validates the completion ID
+before one match selects start-run or begin-session effects. Fresh reasons survive
+BeginSession until the real RunStarted report event.
+
+Report `ResumeOutcome` remains separate: it records status/reason without the run
+reference. The six current reasons and selection precedence are described in the
+[resume usage contract](usage.md). `NoCompatibleRun` and its implicit fallback are
+removed; update custom event producers rather than synthesizing a missing reason.
+Candidate SQL, conditional budget update, ownership acquisition and the
+`candidate_changed` race outcome retain their behavior. The diagnostic oracle
+adapts the enum into its existing two observation columns; its 64 strict cases
+and 17 model-only race cases retain their input and expected outcomes. Running
+that corpus checks bounded selection behavior, not SQLite scheduling or a new proof.
+
 ## Worker import roots
 
 `RawRunConfig.import_roots` normalizes to an ordered, duplicate-free list in
 `RunConfig` and `PlanConfig`, separate from `Selection.sources`. The normalized
 config validators reject escaped or non-normalized paths from persisted data.
-Historical run configs decode a missing list as empty. Plan schema 5 requires
+Historical run configs decode a missing list as empty. Plan schema 6 requires
 regeneration of earlier manifests before any baseline runs; fingerprint schema
 11 frames the ordered import roots under field tag 9, the ordered include/exclude
 copy patterns under tags 10/11, and configured source roots under tag 12,
@@ -1663,13 +1684,30 @@ contains a domain/version tag, platform tag, entry count, framed name, presence
 byte, and framed native value. Unset and empty are distinct; Windows stores UTF-16
 units in little-endian order, and Unix uses raw bytes.
 
-Only normalized names and the digest are retained in config. New serde fields
-default to untracked when absent and are omitted when empty. Plan schema5 validates
-canonical names and a matching digest presence/format, then verify compares the
-current captured digest before project work or baseline execution. Fingerprint
-schema11 binds the names and digest under field13; SQLite schema4 and budget
-selection are unchanged. Captured plaintext is not added to persistence or output;
-digests are not an encryption or low-entropy secrecy guarantee.
+`EnvironmentRequest` owns normalized names before capture. `RunConfig<E>` has one
+environment state parameter; its default is `EnvironmentSnapshot`. CLI normalization
+returns `RunConfig<EnvironmentRequest>`. The `run_loop` and `plan::create` frontends
+own OS capture through `prepare_run_config`, which consumes the request and returns
+a snapshot configuration. `RunConfig::with_environment` requires the captured names
+to match the request. `RunState`, fingerprint generation, and persisted `PlanConfig`
+accept only snapshots. Common config validation checks other fields; environment
+constructors and deserialization enforce environment invariants.
+
+`EnvironmentSnapshot` is `Untracked` or `Captured` with private, immutable metadata.
+The captured constructor and deserializer reject empty, duplicate, unsorted, or
+noncanonical name sets and digests outside 64 lowercase hexadecimal characters.
+No `prepared` mode or separate optional hash exists. Reports and plans write an
+explicit `environment` object with a `state` tag; omission in the prior writer
+was also a valid current untracked encoding. Plan schema 6/report schema 5 require
+the explicit snapshot and reject the older representation rather than adapting it.
+Regenerate older plans; retain old reports with their producing binary.
+
+Fingerprint schema 11 retains the original field-13 name/digest framing. Exact
+untracked and captured pre-refactor digest goldens verify byte compatibility.
+SQLite schema 4 and budget selection are unchanged. Verify captures the same saved
+name set and compares the complete snapshot before project work or the baseline.
+Captured plaintext is not added to persistence or output; digests do not guarantee
+secrecy for low-entropy values.
 
 `EnvironmentFingerprintModel` generates 32 strict cases for tracking on/off and
 four before/after values (absent, empty, one, zero). Its proofs cover tracked
@@ -1827,3 +1865,26 @@ corpus/survivor-review.jsonl` and `-- --sensitivity` through the existing POSIX
 resource guard described above. Corpus content is generated by Lean.
 See the [implementation evidence](superpowers/reports/2026-10-11-issue-711-survivor-review.md)
 for local toolchain and OS limitations.
+
+## Nonzero duration configuration boundary
+
+`NonZeroDuration` guarantees a strictly positive `Duration`. Raw CLI limit
+conversion and serde deserialization use the same checked constructor; the
+private tuple field prevents unchecked construction outside its module.
+The saved representation remains `{ "secs": N, "nanos": N }`.
+A zero duration fails while reading a saved configuration, before
+`RunConfig::validate()` or `PlanConfig::validate()` runs. The serde diagnostic
+identifies `duration`; raw CLI errors retain the specific timeout flag.
+Plan verify and review reject these inputs with their existing invalid-input
+error categories and exit code 2, before project work or review-store creation.
+
+The type does not enforce `MAX_TIMEOUT`. Configuration validation separately
+checks the inclusive timeout ceiling, the derived automatic mutant timeout,
+and jobs/process relationships. Callers must still validate configurations
+after deserialization or public-field mutation. Existing later validation
+already rejected zero timeouts; this boundary closes a type-invariant gap.
+Valid saved plans and timeout values keep their schemas and representation,
+so this invalid-input tightening requires no release-floor increase under the
+[compatibility policy](compatibility.md#choosing-the-release-floor).
+See the [Issue 886 implementation record](superpowers/plans/2026-10-14-issue-886.md)
+for the regression and focused validation evidence.
