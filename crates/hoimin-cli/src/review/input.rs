@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fs::File;
 use std::path::Path;
 
@@ -14,9 +15,28 @@ pub(crate) fn load_plan(path: &Path) -> Result<ReadOnlyPlan, ReviewError> {
     crate::plan::read_for_review(path).map_err(|error| ReviewError::Invalid(error.to_string()))
 }
 
+pub(crate) type PlanCandidates<'a> = HashMap<&'a str, &'a MutationCandidate>;
+
+/// Borrows the checked plan for report matching and stale membership.
+/// `load_plan` rejects duplicate IDs before this index is built.
+pub(super) fn index_plan(plan: &ReadOnlyPlan) -> PlanCandidates<'_> {
+    #[cfg(test)]
+    super::JOIN_WORK.with_borrow_mut(|work| work.plan_builds += 1);
+    plan.manifest
+        .candidates
+        .iter()
+        .map(|ranked| {
+            #[cfg(test)]
+            super::JOIN_WORK.with_borrow_mut(|work| work.plan_entries += 1);
+            (ranked.id.as_str(), &ranked.candidate)
+        })
+        .collect()
+}
+
 pub(crate) fn load_report(
     path: &Path,
     plan: &ReadOnlyPlan,
+    planned: &PlanCandidates<'_>,
 ) -> Result<(ReviewReport, ArtifactReference), ReviewError> {
     let bytes = bounded_read(path, READ_ONLY_ARTIFACT_LIMIT)?;
     let report = crate::artifacts::run_report::read_review_json(path, &bytes)
@@ -34,12 +54,10 @@ pub(crate) fn load_report(
                 "report candidate identity conflict".into(),
             ));
         }
-        if let Some(planned) = plan
-            .manifest
-            .candidates
-            .iter()
-            .find(|item| item.id == mutant.candidate.id)
-            && crate::plan::candidate_descriptor(&planned.candidate) != descriptor
+        #[cfg(test)]
+        super::JOIN_WORK.with_borrow_mut(|work| work.plan_probes += 1);
+        if let Some(planned) = planned.get(mutant.candidate.id.as_str())
+            && crate::plan::candidate_descriptor(planned) != descriptor
         {
             return Err(ReviewError::Invalid(
                 "report candidate descriptor differs from plan".into(),
