@@ -113,7 +113,12 @@ def test_preview_version_matches_python_metadata_spelling(
         side_effect=[
             subprocess.CompletedProcess([], 0, "hoimin 0.3.0-dev.123\n", ""),
             subprocess.CompletedProcess([], 0, "Usage: hoimin", ""),
-            subprocess.CompletedProcess([], 0, '{"mutants":[{"status":"killed"}]}', ""),
+            subprocess.CompletedProcess(
+                [],
+                0,
+                '{"mutants":[{"outcome":{"executed":{"termination":{"Exit":1},"output_state":"complete","output":{"token":"smoke-output","retained":0,"observed":0},"elapsed":{"secs":0,"nanos":1}}}}]}',
+                "",
+            ),
         ],
     )
 
@@ -157,7 +162,12 @@ def test_venv_interpreter_symlink_keeps_its_environment(
         side_effect=[
             subprocess.CompletedProcess([], 0, "hoimin 0.3.0", ""),
             subprocess.CompletedProcess([], 0, "Usage: hoimin", ""),
-            subprocess.CompletedProcess([], 0, '{"mutants":[{"status":"killed"}]}', ""),
+            subprocess.CompletedProcess(
+                [],
+                0,
+                '{"mutants":[{"outcome":{"executed":{"termination":{"Exit":1},"output_state":"complete","output":{"token":"smoke-output","retained":0,"observed":0},"elapsed":{"secs":0,"nanos":1}}}}]}',
+                "",
+            ),
         ],
     )
 
