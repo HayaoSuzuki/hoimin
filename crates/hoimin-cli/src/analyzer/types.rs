@@ -14,6 +14,21 @@ pub enum AnalyzerDiagnosticCode {
     InvalidRequest,
 }
 
+impl AnalyzerDiagnosticCode {
+    /// Returns the stable external name without a caller-specific prefix.
+    pub(crate) const fn canonical_name(self) -> &'static str {
+        match self {
+            Self::InvalidSyntax => "invalid_syntax",
+            Self::UnsupportedExceptionHierarchy => "exception_hierarchy_skipped",
+            Self::UnsupportedEnumDefinition => "enum_definition_skipped",
+            Self::UnreconstructableSpan => "unreconstructable_span",
+            Self::UnparseableReplacement => "unparseable_replacement",
+            Self::CandidateLimitExceeded => "candidate_limit",
+            Self::InvalidRequest => "invalid_request",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AnalyzerCandidate {
     pub path: Utf8PathBuf,
