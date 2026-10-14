@@ -42,6 +42,35 @@ enum OracleOutcome {
     NotRun,
 }
 
+fn to_mutation_outcome(value: &OracleOutcome) -> Result<hoimin_core::MutationOutcome, String> {
+    use hoimin_core::{MutationOutcome, ProcessTermination};
+    Ok(match value {
+        OracleOutcome::Executed {
+            termination,
+            output_state,
+        } => MutationOutcome::Executed {
+            termination: match termination.as_str() {
+                "exit_zero" => ProcessTermination::Exit(0),
+                "exit_nonzero" => ProcessTermination::Exit(7),
+                "timeout" => ProcessTermination::Timeout,
+                "out_of_memory" => ProcessTermination::OutOfMemory,
+                "process_limit" => ProcessTermination::ProcessLimit,
+                "cancelled" => ProcessTermination::Cancelled,
+                _ => return Err(format!("unknown termination {termination}")),
+            },
+            output_state: *output_state,
+            output: hoimin_core::OutputSpoolRef {
+                token: "oracle-output".into(),
+                retained: 0,
+                observed: 0,
+            },
+            elapsed: std::time::Duration::from_millis(1),
+        },
+        OracleOutcome::Reused { status } => MutationOutcome::Reused { status: *status },
+        OracleOutcome::NotRun => MutationOutcome::NotRun,
+    })
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 struct Expected {
@@ -114,6 +143,10 @@ fn validate_event(id: &str, event: &OracleEvent) -> Result<(), String> {
             .as_deref()
             .is_some_and(|value| !matches!(value, "alpha" | "beta"))
         || event.mutant_sequence.is_some_and(|value| value > 1)
+        || event
+            .outcome
+            .as_ref()
+            .is_some_and(|value| to_mutation_outcome(value).is_err())
     {
         return Err(format!("{id} has invalid event {event:?}"));
     }
@@ -213,8 +246,7 @@ mod correspondence {
     use super::*;
     use hoimin_core::{
         ByteSpan, Diagnostic, MutantFinished, MutantStarted, MutationCandidate, MutationSummary,
-        OutputEvent, ProcessTermination, ReportSequence, ReportSequenceError, ResourceMode,
-        RunStarted, RunSummary,
+        OutputEvent, ReportSequence, ReportSequenceError, ResourceMode, RunStarted, RunSummary,
     };
     use std::panic::{AssertUnwindSafe, catch_unwind};
 
@@ -231,18 +263,6 @@ mod correspondence {
             "alpha" => Ok("mutant-alpha"),
             "beta" => Ok("mutant-beta"),
             _ => Err(format!("unknown mutant role {value}")),
-        }
-    }
-
-    fn termination(value: &str) -> Result<ProcessTermination, String> {
-        match value {
-            "exit_zero" => Ok(ProcessTermination::Exit(0)),
-            "exit_nonzero" => Ok(ProcessTermination::Exit(7)),
-            "timeout" => Ok(ProcessTermination::Timeout),
-            "out_of_memory" => Ok(ProcessTermination::OutOfMemory),
-            "process_limit" => Ok(ProcessTermination::ProcessLimit),
-            "cancelled" => Ok(ProcessTermination::Cancelled),
-            _ => Err(format!("unknown termination {value}")),
         }
     }
 
@@ -297,25 +317,7 @@ mod correspondence {
                     sequence: event.sequence,
                     run_id: run_id.to_owned(),
                     candidate: candidate(id, mutant_sequence),
-                    outcome: match event.outcome.as_ref().ok_or("missing outcome")? {
-                        OracleOutcome::Executed {
-                            termination: value,
-                            output_state,
-                        } => hoimin_core::MutationOutcome::Executed {
-                            termination: termination(value)?,
-                            output_state: *output_state,
-                            output: hoimin_core::OutputSpoolRef {
-                                token: "oracle-output".into(),
-                                retained: 0,
-                                observed: 0,
-                            },
-                            elapsed: std::time::Duration::from_millis(1),
-                        },
-                        OracleOutcome::Reused { status } => {
-                            hoimin_core::MutationOutcome::Reused { status: *status }
-                        }
-                        OracleOutcome::NotRun => hoimin_core::MutationOutcome::NotRun,
-                    },
+                    outcome: to_mutation_outcome(event.outcome.as_ref().ok_or("missing outcome")?)?,
                     resource_mode: ResourceMode::Hard,
                     diagnostics: Vec::new(),
                 })
@@ -503,4 +505,21 @@ fn test_resource_control() -> hoimin_core::ResourceControl {
         mode: hoimin_core::ResourceMode::Hard,
         mechanism: "test_supplied_hard".into(),
     }
+}
+
+#[test]
+fn corpus_rejects_unknown_executed_termination_role() {
+    // Arrange
+    let mut row: serde_json::Value = serde_json::from_str(
+        CORPUS
+            .lines()
+            .find(|line| line.contains("accepts_exit_zero_status"))
+            .unwrap(),
+    )
+    .unwrap();
+    row["target"]["outcome"]["executed"]["termination"] = json!("unknown");
+    // Act
+    let result = parse_corpus(&format!("{row}\n"));
+    // Assert
+    assert!(result.is_err());
 }

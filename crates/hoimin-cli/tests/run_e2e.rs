@@ -4261,9 +4261,19 @@ async fn selected_resource_policy_survives_fresh_and_natural_resume_reports() {
             assert_ne!(run["resource_control"]["mechanism"].as_str().unwrap(), "");
             assert!(mutants.iter().all(|value| value["resource_mode"] == mode));
             let connection = rusqlite::Connection::open(&session).unwrap();
-            let rows = connection.prepare("SELECT * FROM results WHERE status = 'killed' AND run_id = (SELECT run_id FROM runs ORDER BY id LIMIT 1) ORDER BY mutant_id").unwrap()
+            let rows = connection.prepare("SELECT * FROM results WHERE run_id = (SELECT run_id FROM runs ORDER BY id LIMIT 1) ORDER BY mutant_id").unwrap()
                 .query_map([], |row| Ok((0..row.as_ref().column_count()).map(|i| row.get::<_, rusqlite::types::Value>(i).unwrap()).collect::<Vec<_>>())).unwrap()
-                .collect::<Result<Vec<_>, _>>().unwrap();
+                .collect::<Result<Vec<_>, _>>().unwrap()
+                .into_iter()
+                .filter(|row| {
+                    let rusqlite::types::Value::Text(encoded) = &row[2] else {
+                        panic!("stored outcome must be JSON text");
+                    };
+                    serde_json::from_str::<hoimin_core::MutationOutcome>(encoded)
+                        .expect("strict stored mutation outcome")
+                        .status() == hoimin_core::MutationStatus::Killed
+                })
+                .collect::<Vec<_>>();
             assert_eq!(rows.len(), 1);
             assert_eq!(
                 rows[0][0],

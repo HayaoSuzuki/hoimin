@@ -4,7 +4,7 @@ hoimin is currently a 0.x CLI. This policy describes how maintainers classify
 changes and tell users what to update. A patch release can fix incorrect
 behavior; it does not promise identical mutation candidates or scores.
 
-## Typed mutation outcomes in 0.7.0
+## Typed mutation outcomes in 0.8.0
 
 Report schema 6 replaces independently stored mutation status and optional evidence
 with `outcome`: executed results require termination, output state, output, and
@@ -18,8 +18,8 @@ producing binary, or rerun with the intended version. Session schema 5 stores th
 typed outcome directly and rejects initialized schemas 1-4 and unsupported future
 versions. Preserve old databases and choose a different `--session PATH` for a new
 run. There are no compatibility adapters or automatic file conversions. Plan
-schema 6 and fingerprint schema 11 remain unchanged by this change. The existing
-unreleased 0.7.0 floor covers these incompatible saved formats.
+schema 6 and fingerprint schema 11 remain unchanged by this change. The 0.8.0 floor covers these incompatible saved formats because the 0.7.x line
+has already shipped.
 
 ## Environment snapshots in 0.7.0
 

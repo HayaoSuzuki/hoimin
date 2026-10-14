@@ -499,7 +499,7 @@ Reports identify `hard` or `best_effort` resource mode. This describes enforceme
 
 Rust callers construct `WindowsBackend::new()` without run limits and supply caps through each `ProcessLimits` request; the formerly ignored constructor argument has been removed.
 
-The run header records the selected backend in `resource_control.mode` and the stable `resource_control.mechanism` identifier (`portable`, `linux_cgroup_v2`, or `windows_job_object`). Synthetic reused and not-run results report the current run’s selected mode; reused results retain null termination/output and zero elapsed time. Actual process results retain their observed mode.
+The run header records the selected backend in `resource_control.mode` and the stable `resource_control.mechanism` identifier (`portable`, `linux_cgroup_v2`, or `windows_job_object`). Synthetic reused and not-run results report the current run’s selected mode; reused outcomes carry only a conclusive killed/survived status, project zero elapsed time, and own no execution output. Actual process results retain their observed mode.
 
 Linux cgroup hard enforcement requires `--max-memory` to be at least one host
 page. Smaller values fail before a test-process cgroup is created or the test command starts;
@@ -1137,7 +1137,7 @@ existing schema-5 databases without rewriting saved rows. Schema versions 1-4
 and unsupported future versions are rejected. Choose a different `--session PATH`
 to start fresh, and keep older databases with their producing binary if you need
 to read or resume them. Files are not automatically converted, deleted, or
-replaced. The existing unreleased 0.7.0 floor covers this incompatible change.
+replaced. The 0.8.0 floor covers this incompatible change.
 
 An existing schema-5 run can still lack a recorded historical budget. Start a new
 run when that incomplete run reports `session.resume.incompatible`; completed
@@ -1148,9 +1148,26 @@ results remain available in the database.
 Report schema 6 replaces each mutant's independent `status`, nullable
 `termination`/`output`, `output_state`, and `elapsed_ms` with one `outcome`:
 
-- `{"executed": {"termination": {"Exit": 1}, "output_state": "complete", "output": {"token": "spool", "retained": 3, "observed": 8}, "elapsed": {"secs": 0, "nanos": 5000000}}}` carries all execution evidence. Elapsed time requires a closed object with `secs` in the u64 range and `nanos` from 0 through 999,999,999; array aliases and normalized oversized nanoseconds are rejected.
+- `executed` carries termination, output state, output spool, and elapsed duration.
 - `{"reused": {"status": "killed"}}` or `{"reused": {"status": "survived"}}` identifies reuse from a compatible session. It contributes zero elapsed time and no output to this run.
 - `"not_run"` means no classified completed result is available. A process may have started before interruption. It contributes zero elapsed time and no output.
+
+An executed outcome has this form:
+
+```json
+{
+  "executed": {
+    "termination": {"Exit": 1},
+    "output_state": "complete",
+    "output": {"token": "spool", "retained": 3, "observed": 8},
+    "elapsed": {"secs": 0, "nanos": 5000000}
+  }
+}
+```
+
+Elapsed time requires a closed object with `secs` in the u64 range and `nanos`
+from 0 through 999,999,999. Array aliases and normalized oversized nanoseconds
+are rejected.
 
 For executed outcomes, `close_timed_out` means `error` regardless of termination.
 With `complete` output, exit 0 means `survived`, any other exit means `killed`,

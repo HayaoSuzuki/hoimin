@@ -612,11 +612,15 @@ async fn wait_for_first_durable_kill(
         let ready = session.is_file()
             && Connection::open_with_flags(session, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
                 .and_then(|connection| {
-                    connection.query_row(
-                        "SELECT COUNT(*) = 1 AND MIN(status) = 'killed' AND MAX(status) = 'killed' FROM results",
-                        [],
-                        |row| row.get::<_, bool>(0),
-                    )
+                    let mut statement = connection.prepare("SELECT outcome_json FROM results")?;
+                    let outcomes = statement
+                        .query_map([], |row| row.get::<_, String>(0))?
+                        .collect::<Result<Vec<_>, _>>()?;
+                    Ok(outcomes.len() == 1
+                        && serde_json::from_str::<hoimin_core::MutationOutcome>(&outcomes[0])
+                            .is_ok_and(|outcome| {
+                                outcome.status() == hoimin_core::MutationStatus::Killed
+                            }))
                 })
                 .unwrap_or(false);
         if ready {
@@ -953,7 +957,7 @@ fn session_observation(
         )
         .map_err(|error| format!("read latest run: {error}"))?;
     let mut statement = connection
-        .prepare("SELECT mutant_id, status FROM results WHERE run_id=?1 ORDER BY mutant_id")
+        .prepare("SELECT mutant_id, outcome_json FROM results WHERE run_id=?1 ORDER BY mutant_id")
         .map_err(|error| format!("prepare result query: {error}"))?;
     let rows = statement
         .query_map([&run_id], |row| {
@@ -962,7 +966,14 @@ fn session_observation(
         .map_err(|error| format!("query results: {error}"))?;
     let mut durable = Vec::new();
     for row in rows {
-        let (id, status) = row.map_err(|error| format!("read result: {error}"))?;
+        let (id, outcome_json) = row.map_err(|error| format!("read result: {error}"))?;
+        let outcome: hoimin_core::MutationOutcome = serde_json::from_str(&outcome_json)
+            .map_err(|error| format!("decode durable mutation outcome: {error}"))?;
+        let status = serde_json::to_value(outcome.status())
+            .map_err(|error| format!("encode derived status: {error}"))?
+            .as_str()
+            .ok_or_else(|| "derived status must be a string".to_owned())?
+            .to_owned();
         let role = roles
             .get(&id)
             .ok_or_else(|| format!("durable result {id} is absent from report"))?
