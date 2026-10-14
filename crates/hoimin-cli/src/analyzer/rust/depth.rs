@@ -14,6 +14,35 @@ use super::AnalysisError;
 /// including auxiliary nodes (parameters, type parameters, patterns and string elements).
 pub(crate) const MAX_ANALYSIS_DEPTH: usize = 128;
 
+/// A syntax rejection stays distinct from the existing depth/cancellation errors
+/// so each caller can preserve its own invalid-source policy.
+#[derive(Debug)]
+pub(super) enum CheckedParseError {
+    InvalidSyntax,
+    Analysis(AnalysisError),
+}
+
+/// Returns a syntax-valid module and tokens within the supported analysis depth.
+/// Owns partial trees until both checks pass and disposes every rejected tree
+/// without recursive drop. Syntax is checked before depth; cancellation is only
+/// polled by depth traversal, leaving callers' pre-parse checks unchanged.
+pub(super) fn parse_checked(
+    source: &str,
+    cancelled: &impl Fn() -> bool,
+) -> Result<ruff_python_parser::Parsed<ModModule>, CheckedParseError> {
+    let parsed =
+        ruff_python_parser::parse_unchecked_source(source, ruff_python_ast::PySourceType::Python);
+    if !parsed.has_valid_syntax() {
+        dispose(parsed.into_syntax());
+        return Err(CheckedParseError::InvalidSyntax);
+    }
+    if let Err(error) = check(parsed.syntax(), cancelled) {
+        dispose(parsed.into_syntax());
+        return Err(CheckedParseError::Analysis(error));
+    }
+    Ok(parsed)
+}
+
 pub(super) fn check(
     module: &ModModule,
     cancelled: &impl Fn() -> bool,
@@ -53,7 +82,7 @@ pub(super) fn check(
 /// a statement, expression, pattern or interpolated element; these callbacks enqueue
 /// ownership instead of recursing. The remaining auxiliary paths have fixed depth.
 /// Do not replace this with ordinary drop: a 20,000-term binary AST overflows 2 MiB.
-pub(super) fn dispose(module: ModModule) {
+fn dispose(module: ModModule) {
     ruff_python_parser::ast_cleanup::dispose_module(module);
 }
 
@@ -66,6 +95,111 @@ mod tests {
 
     fn expression(terms: usize) -> String {
         vec!["1"; terms].join("+")
+    }
+
+    #[test]
+    fn adapters_preserve_syntax_precedence_and_rejection_policy() {
+        std::thread::Builder::new()
+            .stack_size(2 * 1024 * 1024)
+            .spawn(|| {
+                let operators = MutationOperatorSelection::default();
+                let request = AnalyzeRequest {
+                    path: Utf8Path::new("calc.py"),
+                    lines: &[],
+                    symbols: &[],
+                    operators: &operators,
+                    profile: MutationProfile::Full,
+                    max_candidates: 1,
+                };
+                for terms in [2, 126, 127, 25_000] {
+                    let valid = format!("value = {}\n", expression(terms));
+                    let invalid = format!("{valid}def broken(:\n");
+                    assert_eq!(
+                        super::super::definition_names(&invalid).unwrap_err(),
+                        "invalid Python syntax; cannot validate symbol definitions"
+                    );
+                    let calls = std::cell::Cell::new(0);
+                    let output = analyze_source_cancellable(&request, &invalid, || {
+                        calls.set(calls.get() + 1);
+                        calls.get() > 1
+                    })
+                    .unwrap();
+                    assert_eq!(
+                        calls.get(),
+                        1,
+                        "invalid syntax never enters depth traversal"
+                    );
+                    assert_eq!(output.candidates, Vec::new());
+                    assert!(!output.truncated);
+                    assert_eq!(output.diagnostics.len(), 1);
+                    let diagnostic = &output.diagnostics[0];
+                    assert_eq!(
+                        diagnostic.code,
+                        super::super::AnalyzerDiagnosticCode::InvalidSyntax
+                    );
+                    assert_eq!(diagnostic.path.as_deref(), Some(request.path));
+                    assert_eq!((diagnostic.line, diagnostic.column), (None, None));
+                    assert_eq!(diagnostic.message, None);
+                    let index = super::super::exception_hierarchy::ExceptionIndex::from_sources(
+                        &[(request.path.to_owned(), invalid.clone())],
+                        &[],
+                        &|| false,
+                    )
+                    .unwrap();
+                    assert!(index.source_matches(request.path, &invalid));
+                    assert!(!index.source_matches(request.path, &valid));
+                    if terms >= 127 {
+                        assert_eq!(
+                            super::super::definition_names(&valid).unwrap_err(),
+                            "cannot validate symbol definitions: DepthExceeded { limit: 128 }"
+                        );
+                        assert!(matches!(
+                            super::super::exception_hierarchy::ExceptionIndex::from_sources(
+                                &[(request.path.to_owned(), valid)],
+                                &[],
+                                &|| false,
+                            ),
+                            Err(AnalysisError::DepthExceeded { limit: 128 })
+                        ));
+                    } else {
+                        assert!(super::super::definition_names(&valid).unwrap().is_empty());
+                        assert!(
+                            super::super::exception_hierarchy::ExceptionIndex::from_sources(
+                                &[(request.path.to_owned(), valid)],
+                                &[],
+                                &|| false,
+                            )
+                            .is_ok()
+                        );
+                    }
+                }
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    #[test]
+    fn hierarchy_cancels_at_first_depth_node_after_module_precheck() {
+        let path = Utf8Path::new("calc.py").to_owned();
+        // With no roots, mapping does not poll. The module precheck is call
+        // one, and depth's module node must remain call two.
+        for source in [
+            "value = 1\n".to_owned(),
+            format!("value = {}\n", expression(25_000)),
+        ] {
+            let calls = std::cell::Cell::new(0);
+            let result = super::super::exception_hierarchy::ExceptionIndex::from_sources(
+                &[(path.clone(), source)],
+                &[],
+                &|| {
+                    calls.set(calls.get() + 1);
+                    calls.get() == 2
+                },
+            );
+            assert!(matches!(result, Err(AnalysisError::Cancelled)));
+            assert_eq!(calls.get(), 2);
+        }
     }
 
     #[test]
