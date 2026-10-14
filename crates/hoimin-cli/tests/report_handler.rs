@@ -2185,7 +2185,7 @@ fn buffered_diagnostics_retry_interrupted_writes_and_flush_each_record() {
 }
 
 #[test]
-fn historical_schema_three_goldens_remain_typed_and_validate_the_archived_contract() {
+fn historical_schema_three_goldens_validate_the_archived_raw_contract() {
     let root = repo_root();
     let schema = read_schema(&root.join("docs/json-schema/run-event-v3.schema.json"));
     let result_schema = read_schema(&root.join("docs/json-schema/run-result-v3.schema.json"));
@@ -2195,24 +2195,43 @@ fn historical_schema_three_goldens_remain_typed_and_validate_the_archived_contra
         )));
         assert_schema_valid(&result_schema, &value, &schema);
     }
-    for (name, current) in [
-        ("schema-v3-original.jsonl", false),
-        ("schema-v3-current.jsonl", true),
-    ] {
+    for name in ["schema-v3-original.jsonl", "schema-v3-current.jsonl"] {
         let text = std::fs::read_to_string(
             root.join("crates/hoimin-cli/tests/golden/events")
                 .join(name),
         )
         .unwrap();
-        let events: Vec<OutputEvent> = text
+        let events: Vec<serde_json::Value> = text
             .lines()
             .map(|line| {
-                let value: serde_json::Value = serde_json::from_str(line).unwrap();
+                let value = serde_json::from_str(line).unwrap();
                 assert_schema_valid(&schema, &value, &schema);
-                serde_json::from_str(line).unwrap()
+                value
             })
             .collect();
-        assert_eq!(events, all_optional_report_events_at(current, 3));
+        let kinds: Vec<_> = events
+            .iter()
+            .map(|event| event["kind"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            kinds,
+            [
+                "run_started",
+                "baseline_finished",
+                "mutant_started",
+                "mutant_finished",
+                "diagnostic",
+                "run_finished"
+            ]
+        );
+        for (index, event) in events.iter().enumerate() {
+            assert_eq!(event["schema_version"], 3);
+            assert_eq!(
+                event["sequence"].as_u64().unwrap(),
+                u64::try_from(index + 1).unwrap()
+            );
+            assert_eq!(event["run_id"], events[0]["run_id"]);
+        }
     }
 }
 

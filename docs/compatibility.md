@@ -43,6 +43,15 @@ JSON/JSONL. Schema-4 JSON and JSONL remain supported. Keep the old binary with
 historical reports or rerun with the intended version; do not hand-edit schema
 numbers. This is a reader-support removal; report output remains schema 4.
 
+## Canonical saved enum names in 0.7.0
+
+Saved typed configurations accept only `auto` / `fixed`, `unix` / `windows`,
+and `type_dict_mapping`. The former aliases `Auto`, `Fixed`, `Unix`, `Windows`
+and `type_mapping` are rejected. Regenerate plans containing old names; do not
+hand-edit saved inputs to bypass validation. Read historical reports with their
+producing binary or rerun to obtain current output. Plan regeneration alone
+does not recover past reports. Canonical output shapes are unchanged.
+
 ## Choosing the release floor
 
 The manifests contain a minimum version, not the next exact patch number.

@@ -117,8 +117,8 @@ fn normalized_plan_for(item: &OracleCase) -> Result<PlanConfig, serde_json::Erro
     value["limits"]["baseline_timeout"] = duration_json(raw.limits.baseline_timeout);
     value["limits"]["total_timeout"] = duration_json(raw.limits.total_timeout);
     value["limits"]["mutant_timeout"] = match raw.limits.mutant_timeout {
-        None => serde_json::json!("Auto"),
-        Some(duration) => serde_json::json!({"Fixed": duration_json(duration)}),
+        None => serde_json::json!("auto"),
+        Some(duration) => serde_json::json!({"fixed": duration_json(duration)}),
     };
     serde_json::from_value(value)
 }

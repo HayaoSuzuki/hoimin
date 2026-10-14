@@ -11,6 +11,11 @@ sources:
   sha256: 788e07872b540e6db6952d7c8bdfd3c7f15ca55435f4996480793343a4198d93
 - id: issue-850-execution
   resource: ../../maintenance/2026-10-13-verified-execution.md
+- id: issue-888-canonical-enums
+  resource: ../../superpowers/plans/2026-10-14-issue-888.md
+  revision: 5c0215cb65e57d2758c4ec1708cd50d96b1bcdfd
+  working_tree: modified
+  sha256: ac7f3e70687df6d1beab5fe896a50efa15e6ffd62dfd5a0d0832d7e6dc48c5c0
 - id: issue-843-config
   resource: ../../../crates/hoimin-core/src/config.rs
   revision: 16285fdd71b9db1da6570e7b3dbc4d234c3928fe
@@ -227,6 +232,19 @@ sources:
 `plan` は変異候補と実行条件を記録したファイル（manifest）を作る。この段階では、元コードのテスト実行（baseline）、テスト用コピーの作成、結果保存用sessionの作成を行わない。[^initial][^readme]
 
 続く `verify` は保存した条件で候補を実行する。対象ソースと、利用者が変更検知用に明示した入力（fingerprint入力）が変わっていないかをbaseline前に確認する。baselineは毎回実行し、plan経由ではsessionの結果を再利用しない。manifestには実行条件が含まれるため、利用者が信頼するローカルのファイルを使う契約である。[^initial][^readme]
+
+# 保存したEnumの現行名（Issue #888）
+
+型付きの保存設定は、timeoutの`auto` / `fixed`、引数の`unix` / `windows`、operatorの`type_dict_mapping`を要求する。
+旧名`Auto`、`Fixed`、`Unix`、`Windows`、`type_mapping`のserde aliasは廃止した。
+現行writerの出力表現を変えず、旧名のplanを拒否する。旧planは再生成し、過去のreportは生成元バイナリで読むか実行し直す。
+progressの設定を不透明なJSONとして扱う方針は維持し、typed設定を要求するplan/reviewと区別する。[^issue-888-canonical-enums]
+
+旧名の拒否とdurationの正値制約は別の入力条件として扱う。
+正準名の`fixed`ではzeroがserdeで拒否され、正の値では上限の意味検証へ進む。
+旧名`Fixed`のunknown-variantエラーをzero検証の証拠には数えない。[^issue-888-canonical-enums][^issue-886-duration]
+
+[^issue-888-canonical-enums]: [Issue 888の設計・実装・検証記録](../../superpowers/plans/2026-10-14-issue-888.md)。
 
 # 対象を絞る指定の組合せ
 

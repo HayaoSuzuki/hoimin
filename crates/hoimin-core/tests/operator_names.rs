@@ -237,12 +237,10 @@ fn advertised_names_are_exactly_the_canonical_operators_and_families() {
 }
 
 #[test]
-fn legacy_mapping_alias_is_accepted_only_in_saved_inputs() {
-    let restored: MutationOperator =
-        serde_json::from_value(serde_json::json!("type_mapping")).unwrap();
-    assert_eq!(restored, MutationOperator::TypeMapping);
+fn legacy_mapping_alias_is_rejected_in_saved_inputs_and_selectors() {
+    assert!(serde_json::from_value::<MutationOperator>(serde_json::json!("type_mapping")).is_err());
     assert_eq!(
-        serde_json::to_value(restored).unwrap(),
+        serde_json::to_value(MutationOperator::TypeMapping).unwrap(),
         serde_json::json!("type_dict_mapping")
     );
     assert_eq!(MutationOperator::from_name("type_mapping"), None);
