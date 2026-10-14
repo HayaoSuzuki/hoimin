@@ -5,6 +5,21 @@ description: OS別の資源制限と、プロセス終了・一時ファイル�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-897-machine
+  resource: ../../../crates/hoimin-core/src/machine.rs
+  revision: 175486b7cb30a665bdf39c1ac7897eb96d9966f7
+  working_tree: clean
+  sha256: b8d9be1d96cd6a15db19960f607fa4f81d22ce4b4dc9538f1cb0ec1e9d35bd0c
+- id: issue-897-design
+  resource: ../../superpowers/specs/2026-10-15-issue-897-worker-state-design.md
+  revision: 175486b7cb30a665bdf39c1ac7897eb96d9966f7
+  working_tree: clean
+  sha256: db6d7171357601e158950fa4eeae4dc41fdb79a7411a2e9e5224f9d620997ffb
+- id: issue-897-review
+  resource: ../../superpowers/reports/2026-10-15-issue-897-review.md
+  revision: 0a148fcf5ca511b6ccca489feda2ccbc2429008f
+  working_tree: modified
+  sha256: c4c11806e1e8b6e9ad722f65c1ce42da8b0277809b4c2b9b039a222058d3bd48
 - id: issue-867-shell
   resource: ../../../crates/hoimin-cli/src/shell.rs
   revision: 906ba668de94115ef5ca459af3b5f176d22b1b4e
@@ -265,3 +280,14 @@ remain comparison evidence; this work adds no Lean model or proof.
 [^issue-889-shell]: [Owned writer implementation](../../../crates/hoimin-cli/src/shell.rs).
 
 [^issue-889-delivery]: [Owned writer implementation](../../../crates/hoimin-cli/src/report/delivery.rs).
+
+
+## Worker execution ownership
+
+The private WorkerState enum owns each phase's required data. Ready represents a loaded candidate before dispatch. Persisting and Finishing own the complete result, including its candidate; Idle, Reading and Resetting own neither. An acknowledged finished output releases result data before workspace reset.[^issue-897-machine][^issue-897-design]
+
+Stop recovery consumes worker states. Persisting records the classified result once, while Finishing replays the result without recounting it. Synthetic states preserve output start/finish balancing. Pending-effect identity validation, worker bounds and retirement checks remain separate responsibilities. Existing generated adversarial schedules characterize this behavior; the review distinguishes the original full-run fixture failures from the final contracts and affected-suite checks on the typed-outcome dependency.[^issue-897-machine][^issue-897-review]
+
+[^issue-897-machine]: [Worker state and transitions](../../../crates/hoimin-core/src/machine.rs).
+[^issue-897-design]: [Worker-owned execution state](../../superpowers/specs/2026-10-15-issue-897-worker-state-design.md).
+[^issue-897-review]: [Review and verification record](../../superpowers/reports/2026-10-15-issue-897-review.md).
