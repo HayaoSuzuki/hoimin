@@ -5,6 +5,11 @@ description: docs/auditsとdocs/superpowers/reports内の全Markdownを追跡状
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-897-review
+  resource: ../../superpowers/reports/2026-10-15-issue-897-review.md
+  revision: 31245fbf096967b36bc15523067080b506f88fe9
+  working_tree: untracked
+  sha256: 017af981ab629a5fe981c3b3df20ad7bf0ea786a7a2ed2a00cc335d469761198
 - id: issue-759-staged-report
   resource: ../../superpowers/reports/2026-10-11-issue-759-staged-verification.md
   working_tree: untracked
@@ -1485,3 +1490,12 @@ sources:
 [^issue-895-plan]: [Issue 895 plan record](../../superpowers/reports/issue-895/plan.md).
 
 [^issue-895-review]: [Issue 895 review record](../../superpowers/reports/issue-895/review.md).
+
+
+## Issue #897 Worker ownership
+
+| Original heading | Source |
+| --- | --- |
+| Worker-owned state review and verification | [Original](../../superpowers/reports/2026-10-15-issue-897-review.md) [^issue-897-review] |
+
+[^issue-897-review]: [Original record](../../superpowers/reports/2026-10-15-issue-897-review.md). Implementation design and explicitly scoped execution evidence.
