@@ -5,6 +5,11 @@ description: 構文・名前解決・変更するバイト範囲・候補保持�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-866-contract
+  resource: ../../../crates/hoimin-cli/src/analyzer/mod.rs
+  revision: 906ba668de94115ef5ca459af3b5f176d22b1b4e
+  working_tree: modified
+  sha256: 82bebcd51a552e14fe7b9e50b17f2ba46ce421b8d040d607af381efee0155ee9
 - id: stdlib-conversion
   resource: ../../maintenance/2026-10-13-stdlib-conversion.md
   revision: 95ecb2471ac6cb0a60d4f74d3828f4c3fb24f5de
@@ -853,3 +858,32 @@ CPython 3.14による実行で構文・値・補間の回数と順序・conversi
 `stdlib_conversion_call_remove` は、静的に import 元を確認できる `decimal.Decimal`・`fractions.Fraction` のコンストラクタと変換メソッド5種、および標準ライブラリの具体的な整数列挙型19種の1引数呼び出しを、括弧付きの引数へ置換する。引数を1回評価し、変換後と数値が等しくても戻り値の型が異なる変異を生成する。既定で有効とし、既定選択は54種類、公開IDは計73種類となる。個別除外で従来の53演算子へ戻せる。変換メソッドではクラス参照の持ち出しや別名経由の属性変更も保守的に除外する。`ctypes` は対象外。対象一覧、除外条件、互換性および検証範囲は作業記録と利用ガイドを参照。[^stdlib-conversion]
 
 [^stdlib-conversion]: [Standard-library conversion removal](../../maintenance/2026-10-13-stdlib-conversion.md).
+
+# Handler accumulation and interruption
+
+For Rust callers, an analyzer session accumulates serial requests into one spool.
+Keep root, operators, profile, and the positive candidate limit consistent. The
+first request fixes the store cap; later analysis budgets subtract the accumulated
+count from each request's limit. Candidates receive contiguous, one-based
+sequences across targets. Successful `spool: None` retains accumulation;
+`final_target` or truncation returns the complete spool and ends that session.
+A later request starts a new store and sequence. See the
+[module/interface contract](../../../crates/hoimin-cli/src/analyzer/mod.rs).[^issue-866-contract]
+
+Cancellation observed before store transfer, or a source-read error, preserves
+an initialized store. After transfer to blocking analysis, cancellation or error
+leaves no accumulated store in the handler. Dropping the future does not request
+cancellation or join the worker. The worker retains its configured directory
+owner until exit; a cancelled wait does not authorize recursive deletion.
+Finalization persists the spool file, and its reference does not clean it up.
+The caller coordinates cleanup, including when a detached worker finalizes an
+abandoned result. The shell provides managed directory ownership and its own
+cleanup admission contract.[^issue-866-contract]
+
+The [issue #866 review and evidence record](../../superpowers/plans/2026-10-14-issue-866.md)
+distinguishes static control-flow evidence from existing native tests. No new
+retry, process-drain, or worker-exit guarantee is introduced. Recheck this contract
+if transfer order, cancellation, finalization, session limits, or spool ownership
+changes.[^issue-866-contract]
+
+[^issue-866-contract]: [Analyzer handler session contract](../../../crates/hoimin-cli/src/analyzer/mod.rs), compared with main `906ba668`; [review and validation scope](../../superpowers/plans/2026-10-14-issue-866.md).

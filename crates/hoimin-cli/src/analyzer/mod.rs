@@ -1,5 +1,54 @@
 //! Runs the in-process Rust analyzer and validates its typed candidates before
 //! storing them for replay. Analyzer results do not use a JSONL transport.
+//!
+//! # Handler session contract
+//!
+//! For callers of [`AnalyzerHandler`], a session is the serial sequence of requests
+//! contributing to one candidate spool. Keep the root, operators, profile, and
+//! positive `AnalyzeFile::max_candidates` limit consistent throughout a session.
+//! The handler does not validate configuration consistency between requests.
+//! The first request creates the store with that limit; each request subtracts
+//! the accumulated count from its own limit to set the analysis budget. Changing
+//! the limit mid-session does not resize the store.
+//!
+//! Accepted candidates have contiguous, one-based sequences across requests.
+//! A successful non-final, non-truncated request returns `spool: None`: candidates
+//! remain in the handler, even when that request adds no candidates. Success with
+//! `final_target` or truncation finalizes the entire accumulated spool (including
+//! an empty spool), then removes the store from the handler. Truncation can end a
+//! session before the final target. A subsequent request starts a fresh store and
+//! sequence; it does not append to a returned spool. Diagnostics belong to each
+//! request's result rather than to the accumulated spool.
+//!
+//! # Interruption and ownership
+//!
+//! Store creation and source reading precede transfer of the store to blocking
+//! analysis. Cancellation observed before that transfer, or a source-read error,
+//! leaves an initialized store and its accumulated candidates in the handler.
+//! Store-creation failure leaves no store. After transfer, cancellation, analysis
+//! or store errors, and task-join failure leave the handler without that store;
+//! only a successful non-final, non-truncated result restores it. Reusing the
+//! handler then starts an empty session, not a retry or resume of earlier files.
+//! If the interruption stage is unknown, abandon the session rather than assume
+//! accumulated candidates survived.
+//!
+//! Dropping a polled handler future does not request cancellation or join its
+//! blocking task. Before transfer, the store stays in the handler; after transfer,
+//! the result cannot restore it. Explicit cancellation is cooperative and can
+//! return before blocking work exits. The worker retains its store and a cloned
+//! spool-directory owner, when configured, until the worker exits. Neither a
+//! dropped future nor a cancellation result proves that analysis has stopped or
+//! that files are safe to remove.
+//!
+//! An unfinished store owns its temporary file. Finalization preserves the file
+//! and returns a `CandidateSpoolRef`, which is a reference, not a cleanup guard.
+//! The caller owns cleanup of a finalized spool, including arranging directory
+//! ownership if a detached worker can finalize after its result is abandoned.
+//! The shell supplies a managed directory owner and coordinates cleanup; dropping
+//! the handler only releases its own store/owner references and does not delete a
+//! finalized standalone spool. See the [shell coordination contract](crate::shell)
+//! and the [development guide](https://github.com/HayaoSuzuki/hoimin/blob/main/docs/development.md#internal-ownership-and-performance-changes)
+//! for the surrounding ownership boundaries and analysis documentation.
 
 pub(crate) mod exception_project;
 use exception_project::ExceptionProject;
@@ -48,6 +97,10 @@ impl CandidateSpoolOwner {
     }
 }
 
+/// Accumulates validated candidates across serial requests until finalization.
+///
+/// See the [module contract](self) for session limits, interruption state, and
+/// spool cleanup responsibilities. Use one handler for one active session.
 pub struct AnalyzerHandler {
     root_path: Utf8PathBuf,
     exception_project: Option<ExceptionProject>,
@@ -496,6 +549,14 @@ impl AnalyzerHandler {
         self.candidate_spool_owner = None;
     }
 
+    /// Analyzes one target and either retains candidates or finalizes the session spool.
+    ///
+    /// Keep `operators`, `profile`, and `request.max_candidates` consistent with
+    /// earlier requests. `spool: None` on success means accumulation continues;
+    /// `request.final_target` or truncation returns the full spool and ends it.
+    /// See the [module contract](self) before retrying after an interruption or
+    /// dropping this future: blocking work and spool cleanup have separate lifetimes.
+    ///
     /// # Errors
     ///
     /// Returns an error when analysis is cancelled, the source cannot be read or decoded, a

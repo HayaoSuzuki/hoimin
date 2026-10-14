@@ -80,7 +80,14 @@ entry point, including the placement of runtime negative tests.
 
 Construct analyzers with `AnalyzerHandler::new(root) -> Self`. Source access and
 candidate-store errors occur during analysis. See the [initialization API record](maintenance/2026-10-13-analyzer-initialization.md)
-for the removed constructor, internal Rust migration and verification.
+for the removed constructor, internal Rust migration and verification. The
+[handler session contract](../crates/hoimin-cli/src/analyzer/mod.rs) explains
+accumulation across targets, finalization, interruption state, and spool cleanup.
+Keep session settings and limits consistent; an interrupted wait does not prove
+blocking analysis has stopped. See the [issue #866 evidence record](superpowers/plans/2026-10-14-issue-866.md)
+for the implementation and existing tests behind that contract. The
+[shell coordination contract](../crates/hoimin-cli/src/shell.rs) governs acceptance,
+drain, and managed-root cleanup outside the handler.
 
 Use `WorkspaceHandler` methods directly; the duplicate free-function entry
 points are removed. See the [workspace API record](maintenance/2026-10-12-workspace-api.md)
