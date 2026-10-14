@@ -32,7 +32,6 @@ fn pure_review_matches_lean_identity_and_history_cases() {
         plan: ArtifactReference {
             path: "plan.json".into(),
             content_hash: "a".repeat(64),
-            run_id: None,
         },
         report: None,
     };

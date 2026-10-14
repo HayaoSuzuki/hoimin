@@ -7,14 +7,12 @@ catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
 - id: issue-901-core
   resource: ../../../crates/hoimin-core/src/disk.rs
-  revision: 13444f3eb3299c840320c83ccc07f7ff5699e1e8
-  working_tree: modified
-  sha256: 8286ae8254bc1c944a56b8553d261171d06f8ad8b2a0342078c988e1c4c0d853
+  revision: 48ae4c0e565656ddf3f0a83dcc8a840bd6b4fec8
+  working_tree: clean
 - id: issue-901-oracle
   resource: ../../../crates/hoimin-cli/tests/lean_disk_shutdown_oracle.rs
-  revision: 13444f3eb3299c840320c83ccc07f7ff5699e1e8
-  working_tree: modified
-  sha256: b46ccdb0d152645afe6734f9b94cc66a6a0b7093cfe57b1f9782d9ffccbb788b
+  revision: 48ae4c0e565656ddf3f0a83dcc8a840bd6b4fec8
+  working_tree: clean
 - id: issue-900-disk-failure
   resource: disk-failure.md
   working_tree: untracked

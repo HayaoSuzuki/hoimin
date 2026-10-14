@@ -5,6 +5,26 @@ description: 候補の同定、評価履歴、stale判定、実行結果へ影�
 status: draft
 catalog_revision: d46f13a43667323b8d0374d6c5409942f4c3c822
 sources:
+- id: issue-902-model
+  resource: ../../../crates/hoimin-cli/src/review/model.rs
+  revision: 51c72b5ec1255959e2d5e072cd9e85d8497ed1c8
+  working_tree: clean
+  sha256: 700c562060f5ea3a8ae59f316ad90433db6b291cea342c01fa8e4d9b46dc6477
+- id: issue-902-input
+  resource: ../../../crates/hoimin-cli/src/review/input.rs
+  revision: 51c72b5ec1255959e2d5e072cd9e85d8497ed1c8
+  working_tree: clean
+  sha256: 9f339e0702be57c75776a3e89f41bf8e3e87311444aadaf47e62a334a217437b
+- id: issue-902-store
+  resource: ../../../crates/hoimin-cli/src/review/store.rs
+  revision: 51c72b5ec1255959e2d5e072cd9e85d8497ed1c8
+  working_tree: clean
+  sha256: bf344f8da739070ce894d6d5adec8f5690499dd96ad7831c4fa78e5c72b5e55c
+- id: issue-902-record
+  resource: ../../superpowers/plans/2026-10-15-issue-902.md
+  revision: 51c72b5ec1255959e2d5e072cd9e85d8497ed1c8
+  working_tree: clean
+  sha256: 79698341b1048dbef9634d217f925e2385903c8a89eeae64e15335a650e3996a
 - id: issue-875-indexes
   resource: ../../../crates/hoimin-cli/src/review/mod.rs
   revision: 5399bc05ade9d4a1651bdbe6d61bfc2dd5cdc8a4
@@ -111,7 +131,8 @@ Candidates for a path share its single observation, so an edit during display
 does not cause later candidates for that path to observe another version.
 Different files do not form an atomic snapshot. A subsequent command reads
 again, and record retains an independent freshness check before writing.
-No source cache crosses commands; CLI and saved schemas remain unchanged.
+No source cache crosses commands; this source-observation optimization does not
+change CLI arguments or saved schemas.
 [^issue-874-source-observations]
 
 The issue 874 checks cover source work counts, interleaved result/error order,
@@ -122,3 +143,27 @@ platform cases are recorded separately in the implementation plan.
 [^issue-874-source-observations]
 
 [^issue-874-source-observations]: [Issue 874 implementation and validation](../../superpowers/plans/2026-10-14-issue-874.md).
+
+## Artifact reference responsibilities
+
+For review maintainers, `ArtifactReference` identifies a plan or report by path
+and content hash. `ReportReference` composes that reference under `artifact`
+with a required run ID. `ReviewDraft.plan` cannot carry a run ID, and a supplied
+`ReviewDraft.report` cannot omit its run ID. The report itself remains optional.
+Validation checks nonempty paths, lowercase 64-digit hashes, and nonblank run
+IDs of at most 4096 UTF-8 bytes without control characters. Reason and evidence
+retain their separate bounded text rules.[^issue-902-model][^issue-902-input]
+
+Review JSON and SQLite store versions are 2. Older stores are rejected without
+migration; old plan `run_id` fields and missing or null report IDs fail strict
+JSON decoding. Human rendering and CLI arguments retain their existing behavior.[^issue-902-store]
+See the [Issue 902 implementation record](../../superpowers/plans/2026-10-15-issue-902.md)
+for design decisions, review passes and executed checks.[^issue-902-record]
+
+[^issue-902-model]: [Artifact and report reference types](../../../crates/hoimin-cli/src/review/model.rs).
+
+[^issue-902-input]: [Bounded review reference validation](../../../crates/hoimin-cli/src/review/input.rs).
+
+[^issue-902-store]: [Versioned review store validation](../../../crates/hoimin-cli/src/review/store.rs).
+
+[^issue-902-record]: [Issue 902 design and verification record](../../superpowers/plans/2026-10-15-issue-902.md).

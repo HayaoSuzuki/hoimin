@@ -19,12 +19,12 @@ unused-license-exception = "allow"
 # ELv2 is the repository's license, not a blanket approval for third parties.
 [[licenses.exceptions]]
 name = "hoimin-core"
-version = ">=0.7.0, <0.8.0"
+version = ">=0.8.0, <0.9.0"
 allow = ["Elastic-2.0"]
 
 [[licenses.exceptions]]
 name = "hoimin-cli"
-version = ">=0.7.0, <0.8.0"
+version = ">=0.8.0, <0.9.0"
 allow = ["Elastic-2.0"]
 
 [[licenses.exceptions]]
