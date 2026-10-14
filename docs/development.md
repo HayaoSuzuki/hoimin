@@ -1336,7 +1336,7 @@ cargo test -p hoimin-cli --lib analyzer::rust::rust_tests::comprehension_excepti
 
 ## Extending plan ranking
 
-Plan manifests use schema version 5 and ranking rule version 4. The schema
+Plan manifests use schema version 7 and ranking rule version 4. The schema
 version describes the manifest's serialized shape; the ranking rule version
 describes the category and scoring semantics used to order its candidates.
 Change the ranking rule version whenever those semantics change, even when the
@@ -1498,7 +1498,7 @@ that corpus checks bounded selection behavior, not SQLite scheduling or a new pr
 `RawRunConfig.import_roots` normalizes to an ordered, duplicate-free list in
 `RunConfig` and `PlanConfig`, separate from `Selection.sources`. The normalized
 config validators reject escaped or non-normalized paths from persisted data.
-Historical run configs decode a missing list as empty. Plan schema 6 requires
+Historical run configs decode a missing list as empty. Plan schema 7 requires
 regeneration of earlier manifests before any baseline runs; fingerprint schema
 11 frames the ordered import roots under field tag 9, the ordered include/exclude
 copy patterns under tags 10/11, and configured source roots under tag 12,
@@ -1698,7 +1698,7 @@ The captured constructor and deserializer reject empty, duplicate, unsorted, or
 noncanonical name sets and digests outside 64 lowercase hexadecimal characters.
 No `prepared` mode or separate optional hash exists. Reports and plans write an
 explicit `environment` object with a `state` tag; omission in the prior writer
-was also a valid current untracked encoding. Plan schema 6/report schema 5 require
+was also a valid current untracked encoding. Plan schema 7/report schema 6 require
 the explicit snapshot and reject the older representation rather than adapting it.
 Regenerate older plans; retain old reports with their producing binary.
 
@@ -1888,3 +1888,28 @@ so this invalid-input tightening requires no release-floor increase under the
 [compatibility policy](compatibility.md#choosing-the-release-floor).
 See the [Issue 886 implementation record](superpowers/plans/2026-10-14-issue-886.md)
 for the regression and focused validation evidence.
+
+## Typed changed selection
+
+`Selection.changed` is `Option<ChangedSelection>`. A disabled selection stores
+`None`; an enabled selection owns its context and optional Git base together.
+`ChangedSelection::new(context, diff_base)` rejects context above 1073741823.
+Its private fields and validated deserializer keep this bound true after
+construction and loading. Read-only `context()` and `diff_base()` accessors
+supply Git resolution. An absent base uses the HEAD/worktree comparison;
+an explicit base uses the merge-base/worktree comparison.
+
+`RawRunConfig` retains the CLI's independent `changed`, `changed_context`, and
+`diff_base` inputs. Raw normalization checks their relationships once. The
+shared selection validator still requires a source for changed selection and
+keeps file, line, and symbol selectors available for intersection. Ranking
+uses the presence of the changed value, including selected context lines.
+
+Plan schema 7 and report schema 6 encode disabled state as `"changed": null` and enabled state
+as `"changed": {"context": 2, "diff_base": "main"}`. The enabled object's
+`context` is required; `diff_base` can be null or omitted. Selection rejects
+unknown fields, including the obsolete sibling `changed_context` and
+`diff_base`. Boolean `changed` values are rejected. Regenerate old plans;
+there is no compatibility conversion. Report consumers that load typed
+configuration must use this shape or read old reports with their producing
+binary. Effective target ranges and fingerprint bytes keep their meaning.

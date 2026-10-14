@@ -5,11 +5,13 @@ description: Public interfaces, version floors and migration notices.
 status: draft
 catalog_revision: 79b6bde29b05e9904c8efff59e02d0c45377d7f7
 sources:
+- id: issue-899-changed-selection
+  resource: ../superpowers/specs/2026-10-15-issue-899-design.md
 - id: policy
   resource: ../compatibility.md
   revision: 6fe020f2530883dd2fcbfd5393aa6ada7e635899
   working_tree: modified
-  sha256: 22f64c4986ae952cfb87e059e6c37e34cd3f7963233baeedf79432aed3d97eda
+  sha256: d5571b5ea29e42495e9271f0973da9b010c3492456539c5ae9feb0022c6bbd18
 - id: issue-887-environment
   resource: ../superpowers/plans/2026-10-14-issue-887.md
 - id: release
@@ -66,3 +68,16 @@ review procedure, not proof of compatibility or retrospective migration.
 [^policy]: [Compatibility policy](../compatibility.md).
 [^release]: [Release guide](../releases.md).
 [^template]: [PR template](../../.github/pull_request_template.md).
+
+
+## Typed changed selection (Issue #899)
+
+Plan schema 7 and report schema 6 store changed selection as null when disabled,
+or as an object containing required bounded `context` and optional `diff_base`
+when enabled. Boolean changed values and the former sibling context/base fields
+are rejected. Regenerate older plans; preserve older reports with their producing
+binary or rerun. No conversion updates existing files. The CLI's flags, explicit
+selector intersections, Git base semantics, and effective target fingerprints
+retain their meaning. [^issue-899-changed-selection]
+
+[^issue-899-changed-selection]: [Typed changed selection design](../superpowers/specs/2026-10-15-issue-899-design.md).

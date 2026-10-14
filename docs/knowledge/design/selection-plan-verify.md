@@ -5,6 +5,8 @@ description: 候補発見と実行の分離、ランキング、部分集合、�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-899-changed-selection
+  resource: ../../superpowers/specs/2026-10-15-issue-899-design.md
 - id: issue-886-duration
   resource: ../../superpowers/plans/2026-10-14-issue-886.md
   working_tree: untracked
@@ -539,3 +541,16 @@ The verification record covers the existing Lean corpus adapter, not a new
 formal proof.[^issue-886-duration]
 
 [^issue-886-duration]: [Issue 886 implementation and verification record](../../superpowers/plans/2026-10-14-issue-886.md).
+
+
+## Typed changed selection (Issue #899)
+
+Plan schema 7 and report schema 6 store changed selection as null when disabled,
+or as an object containing required bounded `context` and optional `diff_base`
+when enabled. Boolean changed values and the former sibling context/base fields
+are rejected. Regenerate older plans; preserve older reports with their producing
+binary or rerun. No conversion updates existing files. The CLI's flags, explicit
+selector intersections, Git base semantics, and effective target fingerprints
+retain their meaning. [^issue-899-changed-selection]
+
+[^issue-899-changed-selection]: [Typed changed selection design](../../superpowers/specs/2026-10-15-issue-899-design.md).

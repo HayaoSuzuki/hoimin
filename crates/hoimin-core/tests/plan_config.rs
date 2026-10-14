@@ -187,23 +187,15 @@ fn plan_config_rejects_invalid_normalized_semantics() {
                 value["selection"]["files"] = serde_json::json!([]);
                 value["selection"]["lines"] = serde_json::json!([]);
                 value["selection"]["symbols"] = serde_json::json!([]);
-                value["selection"]["changed"] = serde_json::json!(false);
+                value["selection"]["changed"] = serde_json::json!(null);
             },
             ConfigError::MissingSelector,
-        ),
-        (
-            "diff base without changed",
-            |value| {
-                value["selection"]["diff_base"] = serde_json::json!("main");
-                value["selection"]["changed"] = serde_json::json!(false);
-            },
-            ConfigError::DiffBaseRequiresChanged,
         ),
         (
             "changed without source",
             |value| {
                 value["selection"]["sources"] = serde_json::json!([]);
-                value["selection"]["changed"] = serde_json::json!(true);
+                value["selection"]["changed"] = serde_json::json!({"context":0,"diff_base":null});
             },
             ConfigError::ChangedRequiresSource,
         ),
@@ -432,68 +424,16 @@ fn normalized_run_and_plan_import_roots_cannot_bypass_validation() {
 }
 
 #[test]
-fn changed_context_survives_plan_roundtrip_and_legacy_defaults() {
-    let mut value = plan_value();
-    value["selection"]["changed"] = serde_json::json!(true);
-    value["selection"]["sources"] = serde_json::json!(["src"]);
-    value["selection"]["changed_context"] = serde_json::json!(1_073_741_823);
-    let plan: PlanConfig = serde_json::from_value(value.clone()).unwrap();
-    assert_eq!(plan.validate(), Ok(()));
-    let run = plan.into_run_config(OutputConfig {
-        format: OutputFormat::Json,
-        metrics: None,
-    });
-    assert_eq!(
-        serde_json::to_value(run.into_plan_config()).unwrap()["selection"]["changed_context"],
-        1_073_741_823
-    );
-    value["selection"]
-        .as_object_mut()
-        .unwrap()
-        .remove("changed_context");
-    let old: PlanConfig = serde_json::from_value(value).unwrap();
-    assert_eq!(
-        serde_json::to_value(old).unwrap()["selection"]["changed_context"],
-        0
-    );
-}
-
-#[test]
-fn changed_context_rejects_invalid_deserialized_config() {
-    for (changed, context) in [(false, 1_u32), (true, 1_073_741_824)] {
+fn saved_selection_rejects_obsolete_sibling_fields() {
+    // Arrange: an otherwise valid saved selection with a discarded legacy field.
+    for field in ["changed_context", "diff_base"] {
         let mut value = plan_value();
-        value["selection"]["changed"] = serde_json::json!(changed);
-        value["selection"]["sources"] = serde_json::json!(["src"]);
-        value["selection"]["changed_context"] = serde_json::json!(context);
-        let plan: PlanConfig = serde_json::from_value(value).unwrap();
-        assert!(
-            plan.validate()
-                .unwrap_err()
-                .to_string()
-                .contains("--changed-context")
-        );
-        let run = plan.into_run_config(OutputConfig {
-            format: OutputFormat::Json,
-            metrics: None,
-        });
-        assert!(
-            run.validate()
-                .unwrap_err()
-                .to_string()
-                .contains("--changed-context")
-        );
-        let raw = RawRunConfig {
-            sources: vec!["src".into()],
-            changed,
-            changed_context: context,
-            test_argv: vec![CommandArg::Unix(b"python".to_vec())],
-            ..RawRunConfig::default()
-        };
-        assert!(
-            RunConfig::try_from(raw)
-                .unwrap_err()
-                .to_string()
-                .contains("--changed-context")
-        );
+        value["selection"][field] = serde_json::json!(null);
+
+        // Act.
+        let result = serde_json::from_value::<PlanConfig>(value);
+
+        // Assert: silently dropping the field could change the selected targets.
+        assert!(result.is_err(), "accepted obsolete {field}");
     }
 }

@@ -37,7 +37,7 @@ mod validation_tests;
 use ranking::{RANKING_RULE_VERSION, rank_candidates, validate_ranking, validate_ranking_against};
 pub use ranking::{RankedPlanCandidate, RankingReason, RankingReasonCode};
 
-pub const PLAN_SCHEMA_VERSION: u32 = 6;
+pub const PLAN_SCHEMA_VERSION: u32 = 7;
 
 pub(crate) struct ReadOnlyPlan {
     pub manifest: PlanManifest,

@@ -859,23 +859,11 @@ fn validate_selection(root: &Utf8Path, selection: &Selection) -> Result<(), Conf
         || !selection.files.is_empty()
         || !selection.lines.is_empty()
         || !selection.symbols.is_empty()
-        || selection.changed;
+        || selection.changed.is_some();
     if !has_selector {
         return Err(ConfigError::MissingSelector);
     }
-    if selection.changed_context > crate::MAX_CHANGED_CONTEXT {
-        return Err(ConfigError::ChangedContextTooLarge {
-            context: selection.changed_context,
-            maximum: crate::MAX_CHANGED_CONTEXT,
-        });
-    }
-    if selection.changed_context != 0 && !selection.changed {
-        return Err(ConfigError::ChangedContextRequiresChanged);
-    }
-    if selection.diff_base.is_some() && !selection.changed {
-        return Err(ConfigError::DiffBaseRequiresChanged);
-    }
-    if selection.changed && selection.sources.is_empty() {
+    if selection.changed.is_some() && selection.sources.is_empty() {
         return Err(ConfigError::ChangedRequiresSource);
     }
     if !selection.symbols.is_empty() && selection.sources.is_empty() {
@@ -943,6 +931,25 @@ fn validate_timeout(name: &'static str, duration: Duration) -> Result<(), Config
     }
 }
 
+/// Consume CLI-only relationships before passing a coherent value to consumers.
+fn normalize_changed_selection(
+    enabled: bool,
+    context: u32,
+    diff_base: Option<String>,
+) -> Result<Option<crate::ChangedSelection>, ConfigError> {
+    let changed = crate::ChangedSelection::new(context, diff_base)?;
+    if enabled {
+        return Ok(Some(changed));
+    }
+    if context != 0 {
+        return Err(ConfigError::ChangedContextRequiresChanged);
+    }
+    if changed.diff_base().is_some() {
+        return Err(ConfigError::DiffBaseRequiresChanged);
+    }
+    Ok(None)
+}
+
 impl TryFrom<RawRunConfig> for RunConfig<crate::EnvironmentRequest> {
     type Error = ConfigError;
 
@@ -953,9 +960,7 @@ impl TryFrom<RawRunConfig> for RunConfig<crate::EnvironmentRequest> {
             files: raw.files,
             lines: raw.lines,
             symbols: raw.symbols,
-            changed: raw.changed,
-            changed_context: raw.changed_context,
-            diff_base: raw.diff_base,
+            changed: normalize_changed_selection(raw.changed, raw.changed_context, raw.diff_base)?,
             includes: raw.includes,
             excludes: raw.excludes,
         };

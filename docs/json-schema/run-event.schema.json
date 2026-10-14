@@ -56,9 +56,29 @@
         }
       ]
     },
+    "changedSelection": {
+      "type": "object",
+      "required": [
+        "context"
+      ],
+      "properties": {
+        "context": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1073741823
+        },
+        "diff_base": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
     "schemaVersion": {
       "type": "integer",
-      "const": 5
+      "const": 6
     },
     "resumeOutcome": {
       "oneOf": [
@@ -509,6 +529,36 @@
           "properties": {
             "environment": {
               "$ref": "#/$defs/environmentSnapshot"
+            },
+            "selection": {
+              "type": "object",
+              "properties": {
+                "changed": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "#/$defs/changedSelection"
+                    }
+                  ]
+                }
+              },
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "changed_context"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "diff_base"
+                    ]
+                  }
+                ]
+              },
+              "additionalProperties": true
             }
           }
         },

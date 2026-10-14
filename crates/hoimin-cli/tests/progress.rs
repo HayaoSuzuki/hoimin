@@ -33,7 +33,7 @@ const TEST_MIN_FREE_SPACE: &str = "1B";
 fn input_rejects_historical_report_goldens() {
     let root = repo_root().join("crates/hoimin-cli/tests/golden");
     for (format, extension) in [("reports", "json"), ("events", "jsonl")] {
-        for version in [2, 3, 4] {
+        for version in [2, 3, 4, 5] {
             for era in ["original", "current"] {
                 let path = root
                     .join(format)
@@ -51,7 +51,7 @@ fn input_rejects_historical_report_goldens() {
 #[test]
 fn input_rejects_every_noncurrent_schema_in_json_and_jsonl() {
     let fixture = tempfile::tempdir().unwrap();
-    for version in [0, 1, 2, 3, 4, REPORT_SCHEMA_VERSION + 1] {
+    for version in [0, 1, 2, 3, 4, 5, REPORT_SCHEMA_VERSION + 1] {
         let mut document = valid_report();
         document["schema_version"] = json!(version);
         for key in ["run", "baseline", "summary"] {
@@ -89,7 +89,7 @@ fn input_rejects_every_noncurrent_schema_in_json_and_jsonl() {
 #[test]
 fn input_dispatch_preserves_document_field_orders_and_opaque_config() {
     let fixture = tempfile::tempdir().unwrap();
-    let golden = "schema-v5-current.json";
+    let golden = "schema-v6-current.json";
     let source = repo_root()
         .join("crates/hoimin-cli/tests/golden/reports")
         .join(golden);

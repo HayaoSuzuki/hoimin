@@ -6,26 +6,37 @@ behavior; it does not promise identical mutation candidates or scores.
 
 ## Environment snapshots in 0.7.0
 
-Plan schema 6 and report schema 5 replace the independent environment-name and
+Plan schema 7 and report schema 6 replace the independent environment-name and
 optional-hash fields with one `environment` snapshot. Untracked inputs use
 `{"state":"untracked"}`; captured inputs include `state`, canonical nonempty
 `names`, and a lowercase 64-hex `digest`. Captured values remain absent from output.
 The 0.7.0 floor reflects this incompatible saved-format and report-reader change.
 
-Regenerate schema-5 and older plans with the intended environment. Update strict
-report consumers to schema 5; read schema-4 and older reports with their producing
+Regenerate schema-6 and older plans with the intended environment. Update strict
+report consumers to schema 6; read schema-5 and older reports with their producing
 binary or rerun with this version. Existing files are not automatically converted,
 deleted, or replaced. Fingerprint schema 11 and its bytes are unchanged, so the
 representation change alone does not invalidate compatible sessions. If a run is
 rejected for another compatibility reason, choose a different `--session PATH`.
 See [Explicit inherited environment fingerprints](development.md#explicit-inherited-environment-fingerprints).
 
+## Saved changed selection in 0.7.0
+
+Plan schema 7 and report schema 6 encode normalized `changed` as null when disabled, or as an object
+containing `context` and optional `diff_base` when enabled. The former boolean
+`changed` and sibling `changed_context` / `diff_base` fields are rejected.
+Regenerate plans containing the former representation. Read historical reports
+with their producing binary, or rerun to obtain current output; regenerating a
+plan does not recover a past report. Files are not automatically converted or
+deleted. CLI flags, Git comparison semantics, and effective target fingerprints
+retain their meaning.
+
 ## Public interfaces
 
 | Interface | Maintenance rule | User action when it changes |
 | --- | --- | --- |
 | CLI arguments, defaults and exit codes | Preserve documented usage within a minor series, except documented bug fixes. Removing or changing a supported contract needs a minor-version floor increase. | Update invocation and CI conditions using the release notice. |
-| JSON and JSONL reports | Treat documented schemas as public. Progress accepts only report schema 5, matching the writer; review accepts current-schema JSON. Adding a field may still affect strict readers. | Read old reports with their producing binary, or rerun with the intended version. Plan regeneration alone cannot reconstruct past reports. Files are not automatically converted. |
+| JSON and JSONL reports | Treat documented schemas as public. Progress accepts only report schema 6, matching the writer; review accepts current-schema JSON. Adding a field may still affect strict readers. | Read old reports with their producing binary, or rerun with the intended version. Plan regeneration alone cannot reconstruct past reports. Files are not automatically converted. |
 | Saved plan, ranking and candidate IDs | These are checked execution inputs, not timeless interchange formats. Changes to schema, ranking, identity, source or fingerprints can invalidate a plan. | Regenerate the plan with the intended version and inputs. Do not hand-edit versions or IDs to bypass validation. |
 | Session database and resume | Resume is allowed only under the implementation's schema and fingerprint checks. Migration support must be stated explicitly. | Keep the old database and binary if needed; start a new session when compatibility is not supported. |
 | Default operators, profiles and selection | Changes can alter candidate count, runtime and the population behind a score. Default expansion is an observable compatibility change. | Review the operator set and budget; use matching candidates and validation settings for comparisons. |
@@ -39,8 +50,8 @@ not make a newer binary accept an older schema or weaken input validation.
 
 ## Session load outcomes in 0.7.0
 
-The 0.7.0 floor removes the fallback report reason `no_compatible_run`. Report
-schema 5 retains the six reasons produced by session selection; the removed
+The 0.7.0 floor removes the fallback report reason `no_compatible_run`.
+Report schema 6 retains the six reasons produced by session selection; the removed
 reason described only externally supplied legacy completion events. Read reports
 containing that reason with their producing binary, or rerun with this version.
 

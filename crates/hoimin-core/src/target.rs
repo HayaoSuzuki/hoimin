@@ -9,17 +9,71 @@ use crate::{LineRange, TargetSlice, contract_ensure};
 /// Keeps `2 * context` within a signed 32-bit C long in older Git versions.
 pub const MAX_CHANGED_CONTEXT: u32 = (i32::MAX as u32) / 2;
 
+/// Git-selected scope, with context bounded for supported Git implementations.
+///
+/// An omitted base compares HEAD with the worktree; an explicit base compares
+/// its merge base with the worktree. Construction and loading enforce the bound.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "ChangedSelectionRepr")]
+pub struct ChangedSelection {
+    context: u32,
+    diff_base: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ChangedSelectionRepr {
+    context: u32,
+    diff_base: Option<String>,
+}
+
+impl ChangedSelection {
+    /// Creates an enabled Git selection with optional surrounding lines and base.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if context exceeds `MAX_CHANGED_CONTEXT`.
+    pub fn new(context: u32, diff_base: Option<String>) -> Result<Self, crate::ConfigError> {
+        if context > MAX_CHANGED_CONTEXT {
+            return Err(crate::ConfigError::ChangedContextTooLarge {
+                context,
+                maximum: MAX_CHANGED_CONTEXT,
+            });
+        }
+        Ok(Self { context, diff_base })
+    }
+
+    /// Returns the surrounding-line count passed to Git.
+    #[must_use]
+    pub fn context(&self) -> u32 {
+        self.context
+    }
+
+    /// Returns the explicit comparison revision, if one was supplied.
+    #[must_use]
+    pub fn diff_base(&self) -> Option<&str> {
+        self.diff_base.as_deref()
+    }
+}
+
+impl TryFrom<ChangedSelectionRepr> for ChangedSelection {
+    type Error = crate::ConfigError;
+
+    fn try_from(value: ChangedSelectionRepr) -> Result<Self, Self::Error> {
+        Self::new(value.context, value.diff_base)
+    }
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Selection {
     pub root: Utf8PathBuf,
     pub sources: Vec<Utf8PathBuf>,
     pub files: Vec<Utf8PathBuf>,
     pub lines: Vec<LineSelection>,
     pub symbols: Vec<SymbolSelection>,
-    pub changed: bool,
-    #[serde(default)]
-    pub changed_context: u32,
-    pub diff_base: Option<String>,
+    /// Optional Git scope intersected with the explicit selectors.
+    pub changed: Option<ChangedSelection>,
     pub includes: Vec<String>,
     pub excludes: Vec<String>,
 }

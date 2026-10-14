@@ -5,6 +5,8 @@ description: 保存・復旧の権限、スキーマ移行、結果の生成側�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-899-changed-selection
+  resource: ../../superpowers/specs/2026-10-15-issue-899-design.md
 - id: session-load-outcome
   resource: ../../../crates/hoimin-core/src/event.rs
   revision: 056cb558953ddf5eb8b229976ee894ae7c6bc87f
@@ -260,3 +262,16 @@ CLIはログを容量制限付きキューから別スレッドへ渡す。キ�
 [^current-initialization]: [現行session初期化モデル](../../../formal/HoiminOracle/HoiminOracle/SchemaMigrationModel.lean)。
 
 [^session-load-outcome]: [Session completion contract](../../../crates/hoimin-core/src/event.rs).
+
+
+## Typed changed selection (Issue #899)
+
+Plan schema 7 and report schema 6 store changed selection as null when disabled,
+or as an object containing required bounded `context` and optional `diff_base`
+when enabled. Boolean changed values and the former sibling context/base fields
+are rejected. Regenerate older plans; preserve older reports with their producing
+binary or rerun. No conversion updates existing files. The CLI's flags, explicit
+selector intersections, Git base semantics, and effective target fingerprints
+retain their meaning. [^issue-899-changed-selection]
+
+[^issue-899-changed-selection]: [Typed changed selection design](../../superpowers/specs/2026-10-15-issue-899-design.md).

@@ -132,7 +132,7 @@ async fn create_plan_emits_versioned_manifest_without_runtime_side_effects() {
     let stdout = String::from_utf8(stdout.snapshot()).unwrap();
     assert_eq!(stdout.matches('\n').count(), 1);
     let manifest: serde_json::Value = serde_json::from_str(&stdout).unwrap();
-    assert_eq!(manifest["schema_version"], 6);
+    assert_eq!(manifest["schema_version"], 7);
     assert_eq!(manifest["ranking_rule_version"], 4);
     assert_eq!(manifest["kind"], "plan");
     assert!(
@@ -307,7 +307,7 @@ async fn explicit_class_symbol_ranks_and_verifies_its_method_before_an_unrelated
             ("a.py", Some("other"), 2, 100),
         ]
     );
-    assert_eq!(manifest.schema_version, 6);
+    assert_eq!(manifest.schema_version, 7);
     assert_eq!(manifest.ranking_rule_version, 4);
     let planned = &manifest.candidates[0];
     let planned_id = planned.id.clone();
@@ -1054,25 +1054,16 @@ fn invalid_normalized_config_cases() -> Vec<InvalidManifestCase> {
                 selection["files"] = serde_json::json!([]);
                 selection["lines"] = serde_json::json!([]);
                 selection["symbols"] = serde_json::json!([]);
-                selection["changed"] = serde_json::json!(false);
+                selection["changed"] = serde_json::json!(null);
             },
             "at least one target selector is required",
-        ),
-        (
-            "diff base without changed",
-            |value| {
-                let selection = &mut value["normalized_config"]["selection"];
-                selection["diff_base"] = serde_json::json!("HEAD");
-                selection["changed"] = serde_json::json!(false);
-            },
-            "--diff-base requires --changed",
         ),
         (
             "changed without source",
             |value| {
                 let selection = &mut value["normalized_config"]["selection"];
                 selection["sources"] = serde_json::json!([]);
-                selection["changed"] = serde_json::json!(true);
+                selection["changed"] = serde_json::json!({"context":0,"diff_base":null});
             },
             "--changed requires --source",
         ),
@@ -1158,6 +1149,84 @@ async fn verify_rejects_invalid_normalized_config_before_project_work() {
         );
         assert!(!baseline_marker.exists(), "{name}");
     }
+}
+
+#[tokio::test]
+async fn verify_rejects_obsolete_selection_representation_before_project_work() {
+    let cases: &[InvalidManifestCase] = &[
+        (
+            "disabled boolean",
+            |value| value["normalized_config"]["selection"]["changed"] = serde_json::json!(false),
+            "invalid type: boolean",
+        ),
+        (
+            "enabled boolean",
+            |value| value["normalized_config"]["selection"]["changed"] = serde_json::json!(true),
+            "invalid type: boolean",
+        ),
+        (
+            "sibling context",
+            |value| {
+                value["normalized_config"]["selection"]["changed_context"] = serde_json::json!(0);
+            },
+            "unknown field `changed_context`",
+        ),
+        (
+            "sibling base",
+            |value| {
+                value["normalized_config"]["selection"]["diff_base"] = serde_json::json!("HEAD");
+            },
+            "unknown field `diff_base`",
+        ),
+    ];
+    for (name, mutate, fragment) in cases {
+        // Arrange: make project work fail if decoding does not reject first.
+        let project = Project::new();
+        let (path, manifest, baseline_marker) = write_plan_manifest(&project, &[]).await;
+        let requested = vec![manifest.candidates[0].id.clone()];
+        let mut value = serde_json::to_value(manifest).unwrap();
+        mutate(&mut value);
+        write_json(&path, &value);
+        std::fs::remove_file(project.path.join("src/calc.py")).unwrap();
+
+        // Act.
+        let error = prepare_verify(&path, &requested, OutputFormat::Json)
+            .await
+            .unwrap_err();
+
+        // Assert.
+        let diagnostic = error.to_string();
+        assert!(
+            diagnostic.starts_with("plan.manifest.invalid:"),
+            "{name}: {diagnostic}"
+        );
+        assert!(diagnostic.contains(fragment), "{name}: {diagnostic}");
+        assert!(!baseline_marker.exists(), "{name}");
+    }
+}
+
+#[tokio::test]
+async fn verify_rejects_previous_plan_schema_before_project_work() {
+    // Arrange.
+    let project = Project::new();
+    let (path, manifest, baseline_marker) = write_plan_manifest(&project, &[]).await;
+    let requested = vec![manifest.candidates[0].id.clone()];
+    let mut value = serde_json::to_value(manifest).unwrap();
+    value["schema_version"] = serde_json::json!(6);
+    write_json(&path, &value);
+    std::fs::remove_file(project.path.join("src/calc.py")).unwrap();
+
+    // Act.
+    let error = prepare_verify(&path, &requested, OutputFormat::Json)
+        .await
+        .unwrap_err();
+
+    // Assert.
+    assert_eq!(
+        error.to_string(),
+        "plan.manifest.invalid: unsupported schema version 6; regenerate the plan with this hoimin version"
+    );
+    assert!(!baseline_marker.exists());
 }
 
 #[tokio::test]
@@ -1444,7 +1513,7 @@ async fn verify_rejects_a_ranking_version_three_plan_before_baseline_with_regene
     let (path, manifest, marker) = write_plan_manifest(&project, &[]).await;
     let requested = vec![manifest.candidates[0].id.clone()];
     let mut value = serde_json::to_value(manifest).unwrap();
-    assert_eq!(value["schema_version"], 6);
+    assert_eq!(value["schema_version"], 7);
     value["ranking_rule_version"] = serde_json::json!(3);
     write_json(&path, &value);
 
@@ -4108,7 +4177,7 @@ async fn verify_preview_public_cli_preserves_policy_range_and_execution_order_wi
         let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
         assert_eq!(value["kind"], "verify_preview");
         assert_eq!(value["schema_version"], 2);
-        assert_eq!(value["plan_schema_version"], 6);
+        assert_eq!(value["plan_schema_version"], 7);
         assert_eq!(value["ranking_rule_version"], 4);
         assert_eq!(value["offset"], offset.parse::<usize>().unwrap());
         assert_eq!(value["retained_candidates"], 6);
@@ -4520,7 +4589,13 @@ async fn changed_context_discovers_neighbor_operators_and_survives_verify() {
             .await
             .unwrap();
             assert_eq!(
-                verified.config().selection.changed_context,
+                verified
+                    .config()
+                    .selection
+                    .changed
+                    .as_ref()
+                    .unwrap()
+                    .context(),
                 context.parse::<u32>().unwrap()
             );
             assert_eq!(verified.config().selection.symbols.len(), 1);
