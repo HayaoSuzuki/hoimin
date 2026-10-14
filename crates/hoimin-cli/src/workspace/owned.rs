@@ -2080,11 +2080,27 @@ mod tests {
         let root = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
         let published = root.path().to_owned();
         root.mark_cleanup_ready().unwrap();
+        // A concurrent fork can retain the shared lease description until exec.
+        // Establish the unlocked premise explicitly instead of relying on close.
+        #[cfg(unix)]
+        let _inherited_lease = root
+            .lease
+            .lock()
+            .unwrap()
+            .as_deref()
+            .unwrap()
+            .try_clone()
+            .unwrap();
+        {
+            let lease = root.lease.lock().unwrap();
+            fs2::FileExt::unlock(lease.as_deref().unwrap()).unwrap();
+        }
         drop(root);
 
         let report = ManagedRunRoot::reclaim_abandoned(&coordinator, std::time::SystemTime::now());
 
         assert_eq!(report.reclaimed_roots, 1, "{report:?}");
+        assert_eq!(report.preserved_roots, 0, "{report:?}");
         assert!(!published.exists());
     }
 
