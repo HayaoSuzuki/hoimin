@@ -111,9 +111,9 @@ async fn plan_tracks_environment_without_plaintext_and_verify_checks_before_base
     ] {
         let fixture = Fixture::new();
         let manifest = fixture.plan(true, OsStr::new(secret)).await;
-        assert_eq!(manifest["schema_version"], 5);
+        assert_eq!(manifest["schema_version"], 6);
         assert_eq!(
-            manifest["normalized_config"]["fingerprint_env"],
+            manifest["normalized_config"]["environment"]["names"],
             json!([FLAG])
         );
         assert!(!manifest.to_string().contains(secret));
@@ -147,7 +147,7 @@ async fn verify_rejects_inconsistent_environment_metadata_and_old_plan_schema() 
         json!(42),
     ] {
         let mut changed = manifest.clone();
-        changed["normalized_config"]["fingerprint_env_hash"] = hash;
+        changed["normalized_config"]["environment"]["digest"] = hash;
         cases.push(changed);
     }
     for names in [
@@ -157,12 +157,14 @@ async fn verify_rejects_inconsistent_environment_metadata_and_old_plan_schema() 
         json!(["NAME=VALUE"]),
     ] {
         let mut changed = manifest.clone();
-        changed["normalized_config"]["fingerprint_env"] = names;
+        changed["normalized_config"]["environment"]["names"] = names;
         cases.push(changed);
     }
-    let mut old = manifest.clone();
-    old["schema_version"] = json!(4);
-    cases.push(old);
+    for version in [4, 5] {
+        let mut old = manifest.clone();
+        old["schema_version"] = json!(version);
+        cases.push(old);
+    }
     for changed in cases {
         let output = fixture.verify(&changed, OsStr::new("value")).await;
         assert_eq!(output.status.code(), Some(2));
@@ -172,20 +174,29 @@ async fn verify_rejects_inconsistent_environment_metadata_and_old_plan_schema() 
 }
 
 #[tokio::test]
-async fn untracked_plan_omits_optional_fields_and_ignores_environment_changes() {
+async fn untracked_plan_persists_explicit_state_and_ignores_environment_changes() {
     let fixture = Fixture::new();
     let manifest = fixture.plan(false, OsStr::new("before")).await;
-    assert!(
-        manifest["normalized_config"]
-            .get("fingerprint_env")
-            .is_none()
-    );
-    assert!(
-        manifest["normalized_config"]
-            .get("fingerprint_env_hash")
-            .is_none()
+    assert_eq!(
+        manifest["normalized_config"]["environment"],
+        json!({"state":"untracked"})
     );
     let output = fixture.verify(&manifest, OsStr::new("after")).await;
     assert_eq!(output.status.code(), Some(1));
     assert!(fixture.marker.exists());
+}
+
+#[tokio::test]
+async fn plan_persists_one_explicit_environment_snapshot() {
+    let fixture = Fixture::new();
+    let manifest = fixture
+        .plan(true, OsStr::new("private-snapshot-value"))
+        .await;
+    let config = &manifest["normalized_config"];
+    assert_eq!(config["environment"]["state"], "captured");
+    assert_eq!(config["environment"]["names"], json!([FLAG]));
+    assert_eq!(config["environment"]["digest"].as_str().unwrap().len(), 64);
+    assert!(config.get("fingerprint_env").is_none());
+    assert!(config.get("fingerprint_env_hash").is_none());
+    assert!(!manifest.to_string().contains("private-snapshot-value"));
 }

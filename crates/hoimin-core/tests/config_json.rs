@@ -184,6 +184,8 @@ fn config(test_arg: CommandArg, mutant_timeout: Option<Duration>) -> RunConfig {
         ..RawRunConfig::default()
     })
     .unwrap()
+    .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
+    .unwrap()
 }
 
 fn test_resource_control() -> hoimin_core::ResourceControl {

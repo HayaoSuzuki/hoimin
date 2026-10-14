@@ -95,6 +95,9 @@ sources:
   revision: 51b4a4b61f9e9e10a621eb3574e5caad28e8111c
   working_tree: clean
 
+- id: issue-887-environment
+  resource: ../../superpowers/plans/2026-10-14-issue-887.md
+
 ---
 
 # 実行単位ごとの所有権
@@ -193,6 +196,18 @@ session の所有権ロックを置くディレクトリについて、指定パ
 macOSで、並列数1・2、root内外の別名、大小文字の別名、実際のタイムアウト後の再開を検証した。Linux・Windowsの実機検証はローカルでは行っていない。既存の I/O 事前処理でのみ実体を解決し、存在しないロックディレクトリを作成しない。元ソース・通常の fixture の変更検知、所有権競合の検出、metrics の安全な別エントリ置換は維持する。[^issue-516]
 
 [^issue-516]: [Issue 516: Share active session ownership-tree identities](../../superpowers/specs/2026-09-12-issue-516-session-ownership-identities-design.md)。
+
+## Environment metadata and report readers (Issue #887)
+
+Report schema 5 replaces separate names and optional hash with one validated
+`environment` snapshot. Progress and review consume the writer's schema; preserve
+schema-4 and older reports with their producing binary or rerun rather than
+rewriting their version fields. Captured plaintext never enters snapshot metadata.
+Plan schema 6 requires regeneration of older plans. Fingerprint schema 11 and its
+exact bytes remain stable, so this format change alone does not require a new
+session or alter SQLite schema 4. [^issue-887-environment]
+
+[^issue-887-environment]: [Issue 887 typed snapshot verification](../../superpowers/plans/2026-10-14-issue-887.md).
 
 ## baseline失敗時の保存済み出力
 

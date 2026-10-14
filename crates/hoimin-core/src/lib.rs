@@ -1,7 +1,9 @@
 #![forbid(unsafe_code)]
 
 mod fingerprint_env;
-pub use fingerprint_env::normalize_fingerprint_env_names;
+pub use fingerprint_env::{
+    CapturedEnvironment, EnvironmentRequest, EnvironmentSnapshot, normalize_fingerprint_env_names,
+};
 
 mod source_encoding;
 pub use source_encoding::*;

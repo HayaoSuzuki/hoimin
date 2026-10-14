@@ -12,7 +12,12 @@ fn fixed_timeout(value: Duration) -> MutantTimeout {
         ..RawRunConfig::default()
     };
     raw.limits.mutant_timeout = Some(value);
-    RunConfig::try_from(raw).unwrap().limits.mutant_timeout
+    RunConfig::try_from(raw)
+        .unwrap()
+        .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
+        .unwrap()
+        .limits
+        .mutant_timeout
 }
 
 #[test]

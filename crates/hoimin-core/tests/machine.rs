@@ -21,8 +21,12 @@ use proptest::prelude::*;
 fn all_workers_are_verified_once_before_baseline() {
     let mut raw = fixture_raw_config();
     raw.limits.jobs = 2;
-    let (state, effects) =
-        waiting_for_materialization_verification_with(RunConfig::try_from(raw).unwrap());
+    let (state, effects) = waiting_for_materialization_verification_with(
+        RunConfig::try_from(raw)
+            .unwrap()
+            .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
+            .unwrap(),
+    );
 
     assert_eq!(state.phase(), RunPhase::MaterializationVerification);
     let [RunEffect::VerifyOriginals(verify)] = effects.as_slice() else {
@@ -1749,7 +1753,12 @@ fn assert_mutant_started_id(effects: &[RunEffect], expected: &str) {
 fn four_jobs_fill_four_independent_worker_chains_in_every_completion_order() {
     let mut raw = fixture_raw_config();
     raw.limits.jobs = 4;
-    let (state, effects) = waiting_for_analysis_with(RunConfig::try_from(raw).unwrap());
+    let (state, effects) = waiting_for_analysis_with(
+        RunConfig::try_from(raw)
+            .unwrap()
+            .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
+            .unwrap(),
+    );
     let analysis_id = effect_id(find_effect(&effects, |effect| {
         matches!(effect, RunEffect::AnalyzeFile(_))
     }));
@@ -2018,7 +2027,12 @@ fn cleanup_failure_reports_before_attempting_incomplete_session_finalization() {
     raw.session = Some(hoimin_core::SessionConfig {
         path: "session.sqlite3".into(),
     });
-    let (state, effects) = waiting_for_analysis_with(RunConfig::try_from(raw).unwrap());
+    let (state, effects) = waiting_for_analysis_with(
+        RunConfig::try_from(raw)
+            .unwrap()
+            .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
+            .unwrap(),
+    );
     let analysis_id = effect_id(find_effect(&effects, |effect| {
         matches!(effect, RunEffect::AnalyzeFile(_))
     }));
@@ -2245,7 +2259,12 @@ fn resumed_session_id_becomes_the_report_run_id_before_worker_creation() {
         path: "session.sqlite3".into(),
     });
     raw.resume = true;
-    let (state, _) = waiting_for_baseline_with(RunConfig::try_from(raw).unwrap());
+    let (state, _) = waiting_for_baseline_with(
+        RunConfig::try_from(raw)
+            .unwrap()
+            .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
+            .unwrap(),
+    );
 
     assert_eq!(state.run_id(), "session-run");
 }
@@ -3538,7 +3557,12 @@ fn every_process_termination_is_classified_by_the_machine() {
 fn max_mutants_reports_remaining_candidates_as_not_run_in_stable_order() {
     let mut raw = fixture_raw_config();
     raw.limits.max_mutants = 1;
-    let (state, effects) = waiting_for_analysis_with(RunConfig::try_from(raw).unwrap());
+    let (state, effects) = waiting_for_analysis_with(
+        RunConfig::try_from(raw)
+            .unwrap()
+            .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
+            .unwrap(),
+    );
     let analysis_id = effect_id(find_effect(&effects, |effect| {
         matches!(effect, RunEffect::AnalyzeFile(_))
     }));
@@ -3651,7 +3675,12 @@ fn max_mutants_reports_remaining_candidates_as_not_run_in_stable_order() {
 fn completion_ledger_stays_bounded_across_ten_thousand_mutants() {
     let mut raw = fixture_raw_config();
     raw.limits.max_mutants = 10_000;
-    let (state, effects) = waiting_for_analysis_with(RunConfig::try_from(raw).unwrap());
+    let (state, effects) = waiting_for_analysis_with(
+        RunConfig::try_from(raw)
+            .unwrap()
+            .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
+            .unwrap(),
+    );
     let analysis_id = effect_id(find_effect(&effects, |effect| {
         matches!(effect, RunEffect::AnalyzeFile(_))
     }));
@@ -3850,7 +3879,10 @@ impl ScheduleHarness {
                 path: "session.sqlite3".into(),
             });
         }
-        let config = RunConfig::try_from(raw).unwrap();
+        let config = RunConfig::try_from(raw)
+            .unwrap()
+            .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
+            .unwrap();
         let candidate_ids: Vec<_> = candidates
             .iter()
             .rev()
@@ -4977,7 +5009,10 @@ fn waiting_for_ordered_analysis_with_jobs(
     raw.limits.jobs = usize::try_from(jobs).unwrap();
     let initial_state = RunState::with_ordered_candidate_filter(
         "run-1",
-        RunConfig::try_from(raw).unwrap(),
+        RunConfig::try_from(raw)
+            .unwrap()
+            .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
+            .unwrap(),
         candidate_ids,
         test_resource_control(),
     );
@@ -5068,7 +5103,12 @@ fn waiting_for_session_candidate(resume: bool) -> (RunState, Vec<RunEffect>) {
         path: "session.sqlite3".into(),
     });
     raw.resume = resume;
-    let (state, effects) = waiting_for_analysis_with(RunConfig::try_from(raw).unwrap());
+    let (state, effects) = waiting_for_analysis_with(
+        RunConfig::try_from(raw)
+            .unwrap()
+            .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
+            .unwrap(),
+    );
     let analysis_id = effect_id(find_effect(&effects, |effect| {
         matches!(effect, RunEffect::AnalyzeFile(_))
     }));
@@ -5134,13 +5174,19 @@ fn waiting_for_reset(termination: ProcessTermination) -> (RunState, Vec<RunEffec
 }
 
 fn fixture_config() -> RunConfig {
-    RunConfig::try_from(fixture_raw_config()).unwrap()
+    RunConfig::try_from(fixture_raw_config())
+        .unwrap()
+        .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
+        .unwrap()
 }
 
 fn focused_config() -> RunConfig {
     let mut raw = fixture_raw_config();
     raw.profile = MutationProfile::Focused;
-    RunConfig::try_from(raw).unwrap()
+    RunConfig::try_from(raw)
+        .unwrap()
+        .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
+        .unwrap()
 }
 
 fn fixture_raw_config() -> RawRunConfig {

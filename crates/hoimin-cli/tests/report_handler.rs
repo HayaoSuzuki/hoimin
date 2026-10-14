@@ -28,12 +28,12 @@ struct WriterState {
 }
 
 #[test]
-fn original_schema_v3_report_fixture_matches_the_published_schema() {
+fn minimal_schema_v5_report_fixture_matches_the_published_schema() {
     let root = repo_root();
     let event_schema = read_schema(&root.join("docs/json-schema/run-event.schema.json"));
     let result_schema = read_schema(&root.join("docs/json-schema/run-result.schema.json"));
     let report =
-        read_schema(&root.join("crates/hoimin-cli/tests/golden/reports/schema-v4-original.json"));
+        read_schema(&root.join("crates/hoimin-cli/tests/golden/reports/schema-v5-original.json"));
 
     assert_schema_valid(&result_schema, &report, &event_schema);
     assert_report_optionals(&report, false);
@@ -95,6 +95,26 @@ fn disk_filesystem_schema_requires_a_delta_for_two_endpoints() {
     assert_schema_invalid(filesystem_schema, &incomplete, &event_schema);
 }
 
+#[test]
+fn environment_snapshot_schema_requires_a_complete_closed_state() {
+    let root = repo_root();
+    let event_schema = read_schema(&root.join("docs/json-schema/run-event.schema.json"));
+    let snapshot_schema = &event_schema["$defs"]["environmentSnapshot"];
+    for valid in [
+        serde_json::json!({"state":"untracked"}),
+        serde_json::json!({"state":"captured","names":["FLAG"],"digest":"a".repeat(64)}),
+    ] {
+        assert_schema_valid(snapshot_schema, &valid, &event_schema);
+    }
+    for invalid in [
+        serde_json::json!({"state":"untracked","names":[]}),
+        serde_json::json!({"state":"captured","names":["FLAG"]}),
+        serde_json::json!({"state":"captured","names":["FLAG"],"digest":"a".repeat(64),"value":"private"}),
+    ] {
+        assert_schema_invalid(snapshot_schema, &invalid, &event_schema);
+    }
+}
+
 #[derive(Debug, Deserialize, PartialEq, Serialize)]
 struct GoldenReportDocument {
     schema_version: u32,
@@ -109,7 +129,7 @@ fn current_report_golden_matches_typed_semantic_regeneration() {
     let root = repo_root();
     let event_schema = read_schema(&root.join("docs/json-schema/run-event.schema.json"));
     let result_schema = read_schema(&root.join("docs/json-schema/run-result.schema.json"));
-    let path = root.join("crates/hoimin-cli/tests/golden/reports/schema-v4-current.json");
+    let path = root.join("crates/hoimin-cli/tests/golden/reports/schema-v5-current.json");
     let checked_bytes = std::fs::read(&path).unwrap();
     let checked: GoldenReportDocument = serde_json::from_slice(&checked_bytes).unwrap();
     let checked_value: serde_json::Value = serde_json::from_slice(&checked_bytes).unwrap();
@@ -129,8 +149,8 @@ fn report_event_goldens_are_typed_complete_sequences() {
     let event_schema = read_schema(&repo.join("docs/json-schema/run-event.schema.json"));
     let root = repo.join("crates/hoimin-cli/tests/golden/events");
     for (name, current) in [
-        ("schema-v4-original.jsonl", false),
-        ("schema-v4-current.jsonl", true),
+        ("schema-v5-original.jsonl", false),
+        ("schema-v5-current.jsonl", true),
     ] {
         let text = std::fs::read_to_string(root.join(name)).unwrap();
         let checked = text
@@ -155,7 +175,7 @@ fn report_event_goldens_are_typed_complete_sequences() {
 fn current_event_golden_matches_typed_semantic_regeneration() {
     let root = repo_root();
     let event_schema = read_schema(&root.join("docs/json-schema/run-event.schema.json"));
-    let path = root.join("crates/hoimin-cli/tests/golden/events/schema-v4-current.jsonl");
+    let path = root.join("crates/hoimin-cli/tests/golden/events/schema-v5-current.jsonl");
     let text = std::fs::read_to_string(path).unwrap();
     let first: serde_json::Value = serde_json::from_str(text.lines().next().unwrap()).unwrap();
     assert_canonical_normalized_config(&first);
@@ -188,12 +208,12 @@ fn raw_goldens_reject_unknown_fields_before_typed_comparison() {
     let event_schema = read_schema(&root.join("docs/json-schema/run-event.schema.json"));
     let result_schema = read_schema(&root.join("docs/json-schema/run-result.schema.json"));
     let mut report =
-        read_schema(&root.join("crates/hoimin-cli/tests/golden/reports/schema-v4-current.json"));
+        read_schema(&root.join("crates/hoimin-cli/tests/golden/reports/schema-v5-current.json"));
     report["unexpected"] = serde_json::json!(true);
     assert_schema_invalid(&result_schema, &report, &event_schema);
 
     let line = std::fs::read_to_string(
-        root.join("crates/hoimin-cli/tests/golden/events/schema-v4-current.jsonl"),
+        root.join("crates/hoimin-cli/tests/golden/events/schema-v5-current.jsonl"),
     )
     .unwrap();
     let mut event: serde_json::Value = serde_json::from_str(line.lines().next().unwrap()).unwrap();
@@ -204,16 +224,16 @@ fn raw_goldens_reject_unknown_fields_before_typed_comparison() {
 #[test]
 fn raw_goldens_reject_duplicate_known_fields_before_value_parsing() {
     let root = repo_root();
-    let report_path = root.join("crates/hoimin-cli/tests/golden/reports/schema-v4-current.json");
+    let report_path = root.join("crates/hoimin-cli/tests/golden/reports/schema-v5-current.json");
     let report = std::fs::read_to_string(report_path).unwrap();
     let duplicate_report = report.replacen(
-        "\"schema_version\": 4,",
-        "\"schema_version\": 4,\n  \"schema_version\": 4,",
+        "\"schema_version\": 5,",
+        "\"schema_version\": 5,\n  \"schema_version\": 5,",
         1,
     );
     assert!(serde_json::from_str::<GoldenReportDocument>(&duplicate_report).is_err());
 
-    let event_path = root.join("crates/hoimin-cli/tests/golden/events/schema-v4-current.jsonl");
+    let event_path = root.join("crates/hoimin-cli/tests/golden/events/schema-v5-current.jsonl");
     let events = std::fs::read_to_string(event_path).unwrap();
     let first = events.lines().next().unwrap();
     let duplicate_event = first.replacen(
@@ -258,6 +278,8 @@ fn all_optional_report_events_at(current: bool, version: u32) -> Vec<OutputEvent
         "-m",
         "pytest",
     ])
+    .unwrap()
+    .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
     .unwrap();
     config.root = ".".into();
     config.selection.root = ".".into();
@@ -1667,6 +1689,8 @@ fn human_format_includes_profile_and_fingerprint_provenance_for_normalized_runs(
             "--",
             "check",
         ])
+        .unwrap()
+        .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
         .unwrap();
         config.fingerprint_inputs = vec![hoimin_core::FingerprintInputFile {
             path: "pyproject.toml".into(),
@@ -1717,6 +1741,8 @@ fn human_format_includes_verification_selection_policy() {
     let mut started = RunStarted::minimal("run-1", 1, test_resource_control());
     started.normalized_config = Some(
         hoimin_cli::cli::parse_config_from(["hoimin", "run", "--file", "x.py", "--", "check"])
+            .unwrap()
+            .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
             .unwrap(),
     );
     started.verification_selection = Some(VerificationSelection {
@@ -1763,6 +1789,8 @@ fn human_format_omits_fingerprint_provenance_without_patterns() {
             "--",
             "check",
         ])
+        .unwrap()
+        .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
         .unwrap(),
     );
 
@@ -2157,7 +2185,7 @@ fn buffered_diagnostics_retry_interrupted_writes_and_flush_each_record() {
 }
 
 #[test]
-fn historical_schema_three_goldens_remain_typed_and_validate_the_archived_contract() {
+fn historical_schema_three_goldens_validate_the_archived_raw_contract() {
     let root = repo_root();
     let schema = read_schema(&root.join("docs/json-schema/run-event-v3.schema.json"));
     let result_schema = read_schema(&root.join("docs/json-schema/run-result-v3.schema.json"));
@@ -2167,29 +2195,48 @@ fn historical_schema_three_goldens_remain_typed_and_validate_the_archived_contra
         )));
         assert_schema_valid(&result_schema, &value, &schema);
     }
-    for (name, current) in [
-        ("schema-v3-original.jsonl", false),
-        ("schema-v3-current.jsonl", true),
-    ] {
+    for name in ["schema-v3-original.jsonl", "schema-v3-current.jsonl"] {
         let text = std::fs::read_to_string(
             root.join("crates/hoimin-cli/tests/golden/events")
                 .join(name),
         )
         .unwrap();
-        let events: Vec<OutputEvent> = text
+        let events: Vec<serde_json::Value> = text
             .lines()
             .map(|line| {
-                let value: serde_json::Value = serde_json::from_str(line).unwrap();
+                let value = serde_json::from_str(line).unwrap();
                 assert_schema_valid(&schema, &value, &schema);
-                serde_json::from_str(line).unwrap()
+                value
             })
             .collect();
-        assert_eq!(events, all_optional_report_events_at(current, 3));
+        let kinds: Vec<_> = events
+            .iter()
+            .map(|event| event["kind"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            kinds,
+            [
+                "run_started",
+                "baseline_finished",
+                "mutant_started",
+                "mutant_finished",
+                "diagnostic",
+                "run_finished"
+            ]
+        );
+        for (index, event) in events.iter().enumerate() {
+            assert_eq!(event["schema_version"], 3);
+            assert_eq!(
+                event["sequence"].as_u64().unwrap(),
+                u64::try_from(index + 1).unwrap()
+            );
+            assert_eq!(event["run_id"], events[0]["run_id"]);
+        }
     }
 }
 
 #[tokio::test]
-async fn public_resume_reports_validate_schema_four_in_json_and_jsonl() {
+async fn public_resume_reports_validate_schema_five_in_json_and_jsonl() {
     let repo = repo_root();
     let event_schema = read_schema(&repo.join("docs/json-schema/run-event.schema.json"));
     let result_schema = read_schema(&repo.join("docs/json-schema/run-result.schema.json"));
@@ -2248,7 +2295,7 @@ async fn public_resume_reports_validate_schema_four_in_json_and_jsonl() {
     for (_, stdout, expected) in reports.iter().filter(|(format, _, _)| *format == "json") {
         let document: serde_json::Value = serde_json::from_slice(stdout).unwrap();
         assert_schema_valid(&result_schema, &document, &event_schema);
-        assert_eq!(document["schema_version"], 4);
+        assert_eq!(document["schema_version"], 5);
         assert_eq!(document["run"]["resume"], *expected);
     }
     for (_, stdout, expected) in reports.iter().filter(|(format, _, _)| *format == "jsonl") {

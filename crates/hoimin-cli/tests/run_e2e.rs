@@ -1508,6 +1508,9 @@ async fn shell_context_construction_performs_no_project_io() {
         OsString::from("test-command"),
     ])
     .unwrap();
+    let config = config
+        .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
+        .unwrap();
     let context = hoimin_cli::shell::ShellContext::new(&config, Vec::new(), Vec::new())
         .await
         .unwrap();

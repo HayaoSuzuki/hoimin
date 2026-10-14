@@ -110,8 +110,14 @@ fn duration_json(duration: Duration) -> serde_json::Value {
 }
 
 fn normalized_plan_for(item: &OracleCase) -> PlanConfig {
-    let mut value =
-        serde_json::to_value(RunConfig::try_from(base_raw()).unwrap().into_plan_config()).unwrap();
+    let mut value = serde_json::to_value(
+        RunConfig::try_from(base_raw())
+            .unwrap()
+            .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
+            .unwrap()
+            .into_plan_config(),
+    )
+    .unwrap();
     let raw = raw_for(item);
     value["limits"]["analyzer_timeout"] = duration_json(raw.limits.analyzer_timeout);
     value["limits"]["baseline_timeout"] = duration_json(raw.limits.baseline_timeout);
@@ -188,7 +194,10 @@ fn accepted_auto_timeout_cases_stay_within_the_maximum() {
         .into_iter()
         .filter(|item| item.expected_accepted && item.mutant_mode == "auto")
     {
-        let config = RunConfig::try_from(raw_for(&item)).unwrap();
+        let config = RunConfig::try_from(raw_for(&item))
+            .unwrap()
+            .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
+            .unwrap();
         let MutantTimeout::Auto = config.limits.mutant_timeout else {
             panic!("expected auto timeout: {}", item.id)
         };
@@ -208,7 +217,10 @@ fn accepted_fixed_timeout_cases_stay_within_the_maximum() {
         .into_iter()
         .filter(|item| item.expected_accepted && item.mutant_mode == "fixed")
     {
-        let config = RunConfig::try_from(raw_for(&item)).unwrap();
+        let config = RunConfig::try_from(raw_for(&item))
+            .unwrap()
+            .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
+            .unwrap();
         let MutantTimeout::Fixed(duration) = config.limits.mutant_timeout else {
             panic!("expected fixed timeout: {}", item.id)
         };
