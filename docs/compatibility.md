@@ -20,7 +20,7 @@ representation change alone does not invalidate compatible sessions. If a run is
 rejected for another compatibility reason, choose a different `--session PATH`.
 See [Explicit inherited environment fingerprints](development.md#explicit-inherited-environment-fingerprints).
 
-## Typed session intent
+## Typed session intent in 0.8.0
 
 Report schema 6 replaces normalized `session`/`resume` pairs with one `session`
 object. Disabled sessions use `{"mode":"disabled"}`. Fresh and resumed sessions
@@ -28,7 +28,12 @@ use `{"mode":"fresh","config":{"path":"..."}}` and `{"mode":"resume","config":{"
 The raw CLI options remain `--session` and `--resume`. Normalized inputs reject
 old session pairs and the obsolete `resume` field; no conversion is attempted.
 Read older reports with their producing binary or rerun with this version.
-Plan schema 6 and session database schema 4 are unchanged by this representation.
+The minimum release version is 0.8.0: the 0.7 series is already published, so
+this incompatible report/configuration change starts a new minor series.
+Regenerate saved plans with the intended binary and inputs; update report
+readers to schema 6. Plan schema 6 and session database schema 4 are unchanged
+by this representation. Existing session compatibility checks still apply;
+choose a new session path if those checks reject an old session.
 
 ## Public interfaces
 

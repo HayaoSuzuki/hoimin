@@ -7,9 +7,9 @@ catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
 - id: issue-896-review
   resource: ../../superpowers/reports/2026-10-15-issue-896-review.md
-  revision: 31245fbf096967b36bc15523067080b506f88fe9
-  working_tree: untracked
-  sha256: de3a7b9b7aeec7fd176fb66ad9556693a01c5c5abafb438759eb317934c29377
+  revision: f1e16dd7f3ba745cfab8bcfa1302dce7692e7d45
+  working_tree: modified
+  sha256: eea0d9ecfd3c0205b196670bf34b7a9b5868bf43d87dc99d208352f45e390d54
 - id: issue-759-staged-report
   resource: ../../superpowers/reports/2026-10-11-issue-759-staged-verification.md
   working_tree: untracked
