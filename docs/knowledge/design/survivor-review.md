@@ -7,18 +7,19 @@ catalog_revision: d46f13a43667323b8d0374d6c5409942f4c3c822
 sources:
 - id: issue-875-indexes
   resource: ../../../crates/hoimin-cli/src/review/mod.rs
-  revision: 49a34a63ac4e995bfefb156f85ff3a934b594e6b
+  revision: 5399bc05ade9d4a1651bdbe6d61bfc2dd5cdc8a4
   working_tree: modified
-  sha256: a9dbab96ba87528d7c89c684ca6f1b3f1d75d093384d7cfa55d3eee614ddc5f0
+  sha256: 2d825fcc8e68bca8cabb64e9088c19e1eb72ebf74e1f2039c781805f56c3c113
 - id: issue-875-input
   resource: ../../../crates/hoimin-cli/src/review/input.rs
-  revision: 49a34a63ac4e995bfefb156f85ff3a934b594e6b
+  revision: 5399bc05ade9d4a1651bdbe6d61bfc2dd5cdc8a4
   working_tree: modified
-  sha256: 74bbf62383d4faeba56df171681eb1fb2fdd2622480012a8bc5d3b2847a76336
+  sha256: f3bd085b553a69c3eb35203d0c83a7463eeddbb298d1099aeedf59a5418dd23d
 - id: issue-875-record
   resource: ../../superpowers/plans/2026-10-14-issue-875.md
-  working_tree: untracked
-  sha256: 61a3e70da87b03be3b37156873e811196cf6e3894448e71af775463c81cb870e
+  revision: 5399bc05ade9d4a1651bdbe6d61bfc2dd5cdc8a4
+  working_tree: modified
+  sha256: c4d57f4fb9963974b673bacbe70960eedac3ff6e275b0e8440ad5baa0d58ae3e
 - id: issue-711-survivor-review-design
   resource: ../../superpowers/specs/2026-10-11-issue-711-survivor-review-design.md
   revision: fdf80af
@@ -28,6 +29,10 @@ sources:
   resource: ../../superpowers/reports/2026-10-11-issue-711-survivor-review.md
   working_tree: untracked
   sha256: 2f388bf417df4054d41765ec4b66d74815880752cfb377956949bc628871c699
+- id: issue-874-source-observations
+  resource: ../../superpowers/plans/2026-10-14-issue-874.md
+  working_tree: untracked
+  sha256: 9d6b521515606b342e212481e191bb71ad6d8d9af0446326ab028bd54566d970
 ---
 
 # survivorの評価と実行結果の分離
@@ -73,7 +78,7 @@ Index construction uses expected O(P + R + S) hash-map work and O(P + R + S)
 additional key/value references and bucket storage for P plan entries, R report
 entries and S snapshot entries. Lookup counts describe logical ID joins, not
 bucket probes, elapsed time, total command memory, or source-validation work.
-Per-candidate source checks and checked-reader costs remain outside this claim.
+Source validation and checked-reader costs remain outside this ID-join claim.
 The implementation record distinguishes real-command work-count tests and review
 regressions from the existing Lean applicability/update model, which does not
 model hash-map complexity or Rust error ordering.[^issue-875-record]
@@ -91,3 +96,29 @@ model hash-map complexity or Rust error ordering.[^issue-875-record]
 [^issue-875-record]: [Issue #875 design, implementation and validation](../../superpowers/plans/2026-10-14-issue-875.md).
 
 [^issue-875-input]: [Checked plan and report matching](../../../crates/hoimin-cli/src/review/input.rs).
+
+## Source observations during a command
+
+Review display validates selected candidates in file groups. Each path has one
+bounded source read and one validation context per command; every candidate
+still receives its own hash, descriptor, encoding and identity checks.
+Results and errors are consumed in the original candidate order, including
+interleaved paths. Source bytes and context are released before reading the next
+file. This bounds retained source storage to one file rather than all sources.
+[^issue-874-source-observations]
+
+Candidates for a path share its single observation, so an edit during display
+does not cause later candidates for that path to observe another version.
+Different files do not form an atomic snapshot. A subsequent command reads
+again, and record retains an independent freshness check before writing.
+No source cache crosses commands; CLI and saved schemas remain unchanged.
+[^issue-874-source-observations]
+
+The issue 874 checks cover source work counts, interleaved result/error order,
+stale and unavailable states, validation precedence, and the existing review
+integration and Lean corpus adapter. The adapter checks the unchanged pure
+model, not source I/O or SQLite/OS behavior. Executed results and unverified
+platform cases are recorded separately in the implementation plan.
+[^issue-874-source-observations]
+
+[^issue-874-source-observations]: [Issue 874 implementation and validation](../../superpowers/plans/2026-10-14-issue-874.md).

@@ -60,6 +60,16 @@ sources:
   resource: ../../superpowers/specs/2026-09-11-issue-484-metrics-destinations-design.md
   working_tree: untracked
   sha256: b146daf296d69374ad01ac86d5a5becd30b721b1983d5a54507cd0f1750ef3e7
+- id: issue-872-operations
+  resource: ../../../crates/hoimin-cli/src/workspace/operation.rs
+  working_tree: untracked
+  sha256: b71290b610725a6db3859f1fb47afb8550df81e4c85d138a24469c19810792c5
+
+- id: issue-872-handler
+  resource: ../../../crates/hoimin-cli/src/workspace/mod.rs
+  revision: 49a34a63ac4e995bfefb156f85ff3a934b594e6b
+  working_tree: modified
+  sha256: ab7dd10ba3e60ee0a841115ff81ff36656572587e25dbb3ad19aa7968e91c173
 ---
 
 # 制限する資源とディスク監視の範囲
@@ -203,3 +213,29 @@ the Unix shutdown correspondence case is outside this Windows run.
 
 [^issue-867-shell]: [Typed shell cleanup boundaries](../../../crates/hoimin-cli/src/shell.rs).
 [^issue-867-owned]: [Owned workspace cleanup evidence](../../../crates/hoimin-cli/src/workspace/owned.rs).
+
+
+# Shared workspace operation policy (Issue #872)
+
+Synchronous handlers and owned tasks use one private create/reset policy.
+Creation validates a grant before touching pending cleanup, drops cleaned
+ownership before replacement, and retains copied-import-root rejection as
+pending cleanup. Reset discards a failed worker and retains pending ownership
+if discard also fails. Depth errors remain primary; other reset failures retain
+the original error followed by the discard diagnostic.[^issue-872-operations]
+
+The operation outcome carries either one active workspace or an error with
+optional pending ownership. Prepare transfers ownership to an owned task;
+execute returns surviving ownership in its completion; acceptance restores the
+handler registries. These boundaries preserve parallel execution and the
+existing duplicate-completion checks. Synchronous apply still uses its explicit
+candidate argument; owned apply uses the request candidate.[^issue-872-handler]
+
+The [implementation and verification record](../../superpowers/plans/2026-10-14-issue-872.md)
+records characterization-first tests and the Windows validation scope. This
+extraction changes no retry condition, reservation contract, state transition,
+public signature, report or saved format. The existing Lean workspace adapters
+remain comparison evidence; this work adds no Lean model or proof.
+
+[^issue-872-operations]: [Shared create and reset policy](../../../crates/hoimin-cli/src/workspace/operation.rs).
+[^issue-872-handler]: [Workspace ownership entry points](../../../crates/hoimin-cli/src/workspace/mod.rs).

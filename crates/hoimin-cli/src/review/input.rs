@@ -80,34 +80,114 @@ pub(crate) fn review_key(root: &Utf8Path, candidate: &MutationCandidate) -> Revi
     }
 }
 
+#[cfg(test)]
+thread_local! {
+    pub(super) static SOURCE_WORK: std::cell::Cell<(usize, usize)> = const { std::cell::Cell::new((0, 0)) };
+}
+
+/// Validates each path's source once, retaining results in candidate order.
+/// Errors remain individual results so callers preserve their other validation precedence.
+/// Only one file's bytes and borrowed context are alive at a time.
+pub(crate) fn source_states(
+    root: &Utf8Path,
+    candidates: &[&MutationCandidate],
+) -> Vec<Result<SourceState, ReviewError>> {
+    let mut groups = std::collections::BTreeMap::<&Utf8Path, Vec<usize>>::new();
+    for (index, candidate) in candidates.iter().enumerate() {
+        groups
+            .entry(candidate.path.as_path())
+            .or_default()
+            .push(index);
+    }
+    let mut results: Vec<_> = candidates.iter().map(|_| None).collect();
+    // Visit files in first-occurrence order, including interleaved candidate paths.
+    for candidate in candidates {
+        let Some(indices) = groups.remove(candidate.path.as_path()) else {
+            continue;
+        };
+        let group: Vec<_> = indices.iter().map(|&index| candidates[index]).collect();
+        for (index, result) in indices
+            .into_iter()
+            .zip(source_states_for_file(root, &group))
+        {
+            results[index] = Some(result);
+        }
+    }
+    results
+        .into_iter()
+        .map(|result| result.expect("every candidate belongs to a file group"))
+        .collect()
+}
+
+/// Reads a new observation, independently of a display batch or previous command.
 pub(crate) fn source_state(
     root: &Utf8Path,
     candidate: &MutationCandidate,
 ) -> Result<SourceState, ReviewError> {
-    if !hoimin_core::normalized_relative_path(candidate.path.as_str()) {
-        return Err(ReviewError::Invalid(
-            "candidate path must be root-relative".into(),
-        ));
+    source_states_for_file(root, &[candidate])
+        .pop()
+        .expect("one candidate has one source result")
+}
+
+fn source_states_for_file(
+    root: &Utf8Path,
+    candidates: &[&MutationCandidate],
+) -> Vec<Result<SourceState, ReviewError>> {
+    let source_path = &candidates[0].path;
+    let invalid = |message: String| {
+        candidates
+            .iter()
+            .map(|_| Err(ReviewError::Invalid(message.clone())))
+            .collect()
+    };
+    if !hoimin_core::normalized_relative_path(source_path.as_str()) {
+        return invalid("candidate path must be root-relative".into());
     }
-    let Ok(path) = std::fs::canonicalize(root.join(&candidate.path)) else {
-        return Ok(SourceState::Unavailable);
+    let Ok(path) = std::fs::canonicalize(root.join(source_path)) else {
+        return candidates
+            .iter()
+            .map(|_| Ok(SourceState::Unavailable))
+            .collect();
     };
     if !path.starts_with(root.as_std_path()) {
-        return Err(ReviewError::Invalid(
-            "candidate source escapes project root".into(),
-        ));
+        return invalid("candidate source escapes project root".into());
     }
     // Bound allocation before constructing the shared source validator.
+    #[cfg(test)]
+    SOURCE_WORK.with(|count| {
+        let (reads, contexts) = count.get();
+        count.set((reads + 1, contexts));
+    });
     let Ok(bytes) = bounded_read(&path, READ_ONLY_ARTIFACT_LIMIT) else {
-        return Ok(SourceState::Unavailable);
+        return candidates
+            .iter()
+            .map(|_| Ok(SourceState::Unavailable))
+            .collect();
     };
-    let context = CandidateValidationContext::new(&bytes)
-        .map_err(|error| ReviewError::Invalid(error.to_string()))?;
+    #[cfg(test)]
+    SOURCE_WORK.with(|count| {
+        let (reads, contexts) = count.get();
+        count.set((reads, contexts + 1));
+    });
+    let context = match CandidateValidationContext::new(&bytes) {
+        Ok(context) => context,
+        Err(error) => return invalid(error.to_string()),
+    };
+    candidates
+        .iter()
+        .map(|candidate| validate_source_state(&context, candidate))
+        .collect()
+}
+
+fn validate_source_state(
+    context: &CandidateValidationContext<'_>,
+    candidate: &MutationCandidate,
+) -> Result<SourceState, ReviewError> {
     if context.file_hash() != candidate.file_hash {
         return Ok(SourceState::Stale);
     }
     let descriptor = crate::plan::candidate_descriptor(candidate);
-    validate_candidate_with_context(&context, &descriptor)
+    validate_candidate_with_context(context, &descriptor)
         .map_err(|error| ReviewError::Invalid(error.to_string()))?;
     if hoimin_core::stable_mutant_id(&hoimin_core::CandidateIdentity::from(&descriptor)).as_str()
         != candidate.id
@@ -116,7 +196,6 @@ pub(crate) fn source_state(
     }
     Ok(SourceState::Fresh)
 }
-
 pub(crate) fn validate_store_destination(
     store: &Path,
     plan: &ReadOnlyPlan,
