@@ -10,13 +10,16 @@ pub enum PythonSourceEncoding {
     Latin1,
 }
 
+/// A decoding or mutation-encoding failure classified independently of its diagnostic text.
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
-#[error("source encoding '{encoding}': {reason}")]
-pub struct SourceEncodingError {
-    pub encoding: String,
-    pub reason: String,
+pub enum SourceEncodingError {
+    /// Invalid UTF-8 source without an explicit encoding declaration.
+    #[error("source encoding '{encoding}': {reason}")]
+    ImplicitUtf8 { encoding: String, reason: String },
+    /// A declared-source-encoding (including UTF-8) or mutation-text-encoding failure.
+    #[error("source encoding '{encoding}': {reason}")]
+    Encoding { encoding: String, reason: String },
 }
-
 impl PythonSourceEncoding {
     /// Encodes mutation text without adding a BOM or changing line endings.
     ///
@@ -26,7 +29,7 @@ impl PythonSourceEncoding {
         match self {
             Self::Utf8 => Ok(Cow::Borrowed(text.as_bytes())),
             Self::Ascii if text.is_ascii() => Ok(Cow::Borrowed(text.as_bytes())),
-            Self::Ascii => Err(SourceEncodingError {
+            Self::Ascii => Err(SourceEncodingError::Encoding {
                 encoding: "ascii".into(),
                 reason: "mutation text contains a non-ASCII character".into(),
             }),
@@ -35,7 +38,7 @@ impl PythonSourceEncoding {
                 .map(|character| u8::try_from(u32::from(character)))
                 .collect::<Result<Vec<_>, _>>()
                 .map(Cow::Owned)
-                .map_err(|_| SourceEncodingError {
+                .map_err(|_| SourceEncodingError::Encoding {
                     encoding: "latin-1".into(),
                     reason: "mutation text contains a character outside U+0000..U+00FF".into(),
                 }),
@@ -117,9 +120,18 @@ pub fn decode_python_source(source: &[u8]) -> Result<DecodedPythonSource<'_>, So
         .to_ascii_lowercase()
         .replace('_', "-");
     let tokenizer_utf8 = normalized == "utf-8" || normalized.starts_with("utf-8-");
-    let failure = |reason: String| SourceEncodingError {
-        encoding: name.into(),
-        reason,
+    let failure = |reason: String| {
+        if declared.is_some() {
+            SourceEncodingError::Encoding {
+                encoding: name.into(),
+                reason,
+            }
+        } else {
+            SourceEncodingError::ImplicitUtf8 {
+                encoding: name.into(),
+                reason,
+            }
+        }
     };
     if bom && !tokenizer_utf8 {
         return Err(failure("declaration conflicts with UTF-8 BOM".into()));

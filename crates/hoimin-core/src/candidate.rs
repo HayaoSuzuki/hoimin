@@ -461,10 +461,9 @@ pub fn validate_candidate_with_context(
     if context.source.get(start..end) != Some(original.as_ref()) {
         return Err(CandidateValidationError::OriginalMismatch);
     }
-    let decoded = context.decoded.as_ref().map_err(|error| {
-        if error.encoding == "utf-8 (default)" {
-            CandidateValidationError::InvalidUtf8
-        } else {
+    let decoded = context.decoded.as_ref().map_err(|failure| match failure {
+        SourceEncodingError::ImplicitUtf8 { .. } => CandidateValidationError::InvalidUtf8,
+        error @ SourceEncodingError::Encoding { .. } => {
             CandidateValidationError::InvalidEncoding(error.to_string())
         }
     })?;
@@ -515,6 +514,55 @@ fn canonical_identity_path(path: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{CandidateValidationError, PythonSourceIndex, source_line_starts};
+
+    #[test]
+    fn decoding_classification_is_independent_of_diagnostic_labels() {
+        for (source, label, default_utf8) in [
+            (
+                b"x\xff".as_slice(),
+                "renamed default UTF-8 diagnostic",
+                true,
+            ),
+            (
+                b"# coding: utf-8\nx\xff".as_slice(),
+                "utf-8 (default)",
+                false,
+            ),
+        ] {
+            let mut context = super::CandidateValidationContext::new(source).unwrap();
+            match context.decoded.as_mut().unwrap_err() {
+                super::SourceEncodingError::ImplicitUtf8 { encoding, .. }
+                | super::SourceEncodingError::Encoding { encoding, .. } => {
+                    *encoding = label.to_owned();
+                }
+            }
+            let candidate = super::CandidateDescriptor {
+                schema_version: super::CANDIDATE_SCHEMA_VERSION,
+                path: "source.py".into(),
+                span: crate::ByteSpan {
+                    start: u64::try_from(source.iter().position(|byte| *byte == b'x').unwrap())
+                        .unwrap(),
+                    length: 1,
+                },
+                original: "x".into(),
+                replacement: "y".into(),
+                operator: "replace".into(),
+                line: if default_utf8 { 1 } else { 2 },
+                column: 0,
+                symbol: None,
+                file_hash: blake3::hash(source).to_hex().to_string(),
+            };
+            let result = super::validate_candidate_with_context(&context, &candidate);
+            if default_utf8 {
+                assert_eq!(result, Err(CandidateValidationError::InvalidUtf8));
+            } else {
+                assert!(
+                    matches!(result, Err(CandidateValidationError::InvalidEncoding(_))),
+                    "{result:?}"
+                );
+            }
+        }
+    }
 
     #[test]
     fn ascii_source_uses_no_unicode_correction_entries() {
