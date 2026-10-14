@@ -7,9 +7,13 @@ catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
 - id: issue-866-contract
   resource: ../../../crates/hoimin-cli/src/analyzer/mod.rs
-  revision: 906ba668de94115ef5ca459af3b5f176d22b1b4e
+  revision: 3b79cab70063d688a3484dbb95b86f806a9a9457
   working_tree: modified
-  sha256: 82bebcd51a552e14fe7b9e50b17f2ba46ce421b8d040d607af381efee0155ee9
+  sha256: 264196bfd07a1c3dc2a820c42ca658e1fc3be0937d489553b1f49e2ad6b9a9d7
+- id: issue-865-names
+  resource: ../../superpowers/plans/2026-10-14-issue-865.md
+  working_tree: untracked
+  sha256: 9ade2e98bed5c27e32f0eac3daadf1c93b331f9d329d198afdd1e376a8163429
 - id: stdlib-conversion
   resource: ../../maintenance/2026-10-13-stdlib-conversion.md
   revision: 95ecb2471ac6cb0a60d4f74d3828f4c3fb24f5de
@@ -886,4 +890,10 @@ retry, process-drain, or worker-exit guarantee is introduced. Recheck this contr
 if transfer order, cancellation, finalization, session limits, or spool ownership
 changes.[^issue-866-contract]
 
-[^issue-866-contract]: [Analyzer handler session contract](../../../crates/hoimin-cli/src/analyzer/mod.rs), compared with main `906ba668`; [review and validation scope](../../superpowers/plans/2026-10-14-issue-866.md).
+[^issue-866-contract]: [Analyzer handler session contract](../../../crates/hoimin-cli/src/analyzer/mod.rs), compared with main `3b79cab`; [review and validation scope](../../superpowers/plans/2026-10-14-issue-866.md).
+
+# Diagnostic name ownership (Issue #865)
+
+`AnalyzerDiagnosticCode::canonical_name` owns the seven external names without a prefix. Plan copies that name and preserves separate path, line and column fields; an absent message becomes an empty string. Run adds `analyzer.` and keeps its own default explanations and location formatting. Centralizing names does not combine these output contracts or change saved-plan schemas, exit codes, defaults or the version floor. The implementation and verification record explains the fixed-value coverage and its limits.[^issue-865-names]
+
+[^issue-865-names]: [Issue #865 design, implementation and validation](../../superpowers/plans/2026-10-14-issue-865.md).

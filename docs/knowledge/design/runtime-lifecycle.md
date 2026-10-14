@@ -5,6 +5,16 @@ description: OS別の資源制限と、プロセス終了・一時ファイル�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-867-shell
+  resource: ../../../crates/hoimin-cli/src/shell.rs
+  revision: 906ba668de94115ef5ca459af3b5f176d22b1b4e
+  working_tree: modified
+  sha256: 2713fa8220e276dd5e31e06dffde7828c1a61ecacd45786701adb91aae72a9ad
+- id: issue-867-owned
+  resource: ../../../crates/hoimin-cli/src/workspace/owned.rs
+  revision: 906ba668de94115ef5ca459af3b5f176d22b1b4e
+  working_tree: modified
+  sha256: c2fb5ed580bf0ad852fbc43c42504c3cbd9cc418c673c3922b6b88b2c6697e33
 - id: issue-858-process
   resource: ../../../crates/hoimin-cli/src/process/mod.rs
   revision: 6c638da243865273c55886739e9bbf77803f8fcd
@@ -169,3 +179,27 @@ shutdown guarantee, OS coverage or formal proof; the shell contract above and
 their coordination role.
 
 [^issue-858-process]: [Process lifecycle contract](../../../crates/hoimin-cli/src/process/mod.rs).
+
+# Cleanup classification and retry evidence (Issue #867)
+
+The shell keeps Failed and Deferred cleanup variants through ordinary execution,
+delivery and outer finalization. Recordless thread failures carry their typed
+kind; an unverified remaining root still forces deferral. Marker work cannot
+rename the root, so its failure may retain the known active path. Production
+diagnostic codes and text, bounded details and primary/secondary errors retain
+their existing meaning.[^issue-867-shell]
+
+Workspace cleanup attaches internal coordinator-contention evidence for busy
+process and file locks. The shell retries that evidence within the original
+absolute deadline; diagnostic wording and detail truncation do not decide retry
+eligibility. Live-child, deadline and integrity deferrals carry no contention
+reason. This metadata adds no report field or state-machine transition, and the
+janitor and output acknowledgement conditions remain unchanged.[^issue-867-owned][^issue-867-shell]
+
+The [implementation and verification record](../../superpowers/plans/2026-10-14-issue-867.md)
+separates behavioral regression failures, executed Windows checks and static
+review. The existing Lean-model adapters do not prove every Rust/OS execution;
+the Unix shutdown correspondence case is outside this Windows run.
+
+[^issue-867-shell]: [Typed shell cleanup boundaries](../../../crates/hoimin-cli/src/shell.rs).
+[^issue-867-owned]: [Owned workspace cleanup evidence](../../../crates/hoimin-cli/src/workspace/owned.rs).

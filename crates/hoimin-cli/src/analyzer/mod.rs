@@ -756,33 +756,20 @@ fn analyze_and_store(
 }
 
 fn map_analyzer_diagnostic(diagnostic: AnalyzerDiagnostic) -> RunAnalysisDiagnostic {
-    let (code, default_message) = match diagnostic.code {
-        AnalyzerDiagnosticCode::UnsupportedEnumDefinition => (
-            "analyzer.enum_definition_skipped",
-            "unsupported enum definition",
-        ),
-        AnalyzerDiagnosticCode::UnsupportedExceptionHierarchy => (
-            "analyzer.exception_hierarchy_skipped",
-            "unsupported exception hierarchy reference",
-        ),
-        AnalyzerDiagnosticCode::InvalidSyntax => {
-            ("analyzer.invalid_syntax", "source could not be parsed")
+    let default_message = match diagnostic.code {
+        AnalyzerDiagnosticCode::UnsupportedEnumDefinition => "unsupported enum definition",
+        AnalyzerDiagnosticCode::UnsupportedExceptionHierarchy => {
+            "unsupported exception hierarchy reference"
         }
-        AnalyzerDiagnosticCode::UnreconstructableSpan => (
-            "analyzer.unreconstructable_span",
-            "source span could not be reconstructed",
-        ),
-        AnalyzerDiagnosticCode::UnparseableReplacement => (
-            "analyzer.unparseable_replacement",
-            "generated replacement could not be parsed",
-        ),
-        AnalyzerDiagnosticCode::CandidateLimitExceeded => (
-            "analyzer.candidate_limit",
-            "candidate limit reached before analysis completed",
-        ),
-        AnalyzerDiagnosticCode::InvalidRequest => {
-            ("analyzer.invalid_request", "analyzer request was invalid")
+        AnalyzerDiagnosticCode::InvalidSyntax => "source could not be parsed",
+        AnalyzerDiagnosticCode::UnreconstructableSpan => "source span could not be reconstructed",
+        AnalyzerDiagnosticCode::UnparseableReplacement => {
+            "generated replacement could not be parsed"
         }
+        AnalyzerDiagnosticCode::CandidateLimitExceeded => {
+            "candidate limit reached before analysis completed"
+        }
+        AnalyzerDiagnosticCode::InvalidRequest => "analyzer request was invalid",
     };
     let explanation = diagnostic
         .message
@@ -813,7 +800,7 @@ fn map_analyzer_diagnostic(diagnostic: AnalyzerDiagnostic) -> RunAnalysisDiagnos
     };
 
     RunAnalysisDiagnostic {
-        code: code.to_owned(),
+        code: format!("analyzer.{}", diagnostic.code.canonical_name()),
         message,
     }
 }
@@ -1237,6 +1224,28 @@ mod tests {
     #[test]
     fn maps_every_analyzer_diagnostic_to_a_stable_run_diagnostic() {
         let cases = [
+            (
+                AnalyzerDiagnostic {
+                    code: AnalyzerDiagnosticCode::UnsupportedEnumDefinition,
+                    path: None,
+                    line: None,
+                    column: None,
+                    message: None,
+                },
+                "analyzer.enum_definition_skipped",
+                "unsupported enum definition",
+            ),
+            (
+                AnalyzerDiagnostic {
+                    code: AnalyzerDiagnosticCode::UnsupportedExceptionHierarchy,
+                    path: None,
+                    line: None,
+                    column: None,
+                    message: None,
+                },
+                "analyzer.exception_hierarchy_skipped",
+                "unsupported exception hierarchy reference",
+            ),
             (
                 AnalyzerDiagnostic {
                     code: AnalyzerDiagnosticCode::InvalidSyntax,
