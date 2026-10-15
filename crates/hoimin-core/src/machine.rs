@@ -1440,20 +1440,18 @@ pub fn transition(
             let grant = reserve_workspace_copy(&mut state.budgets, &value)
                 .map_err(|error| MachineError::Budget(error.to_string()))?;
             state.copy_grant = Some(grant);
-            if state.config.session.is_some() {
-                let fingerprint = state.fingerprint.ok_or(MachineError::MissingFingerprint)?;
-                if state.config.resume {
+            match &state.config.session {
+                crate::SessionMode::Disabled => state.start_run_effects()?,
+                crate::SessionMode::Fresh(_) => state.begin_session_effects()?,
+                crate::SessionMode::Resume(_) => {
+                    let fingerprint = state.fingerprint.ok_or(MachineError::MissingFingerprint)?;
                     let id = state.allocate_id()?;
                     vec![RunEffect::LoadSession(LoadSession {
                         id,
                         fingerprint,
                         max_mutants: state.config.limits.max_mutants,
                     })]
-                } else {
-                    state.begin_session_effects()?
                 }
-            } else {
-                state.start_run_effects()?
             }
         }
         RunEvent::OutputEmitted(value) if state.run_started_output_id == Some(value.id) => {

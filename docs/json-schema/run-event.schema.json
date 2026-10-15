@@ -11,6 +11,12 @@
     { "$ref": "#/$defs/runFinished" }
   ],
   "$defs": {
+    "sessionMode": {
+      "oneOf": [
+        { "type": "object", "required": ["mode"], "properties": { "mode": { "const": "disabled" } }, "additionalProperties": false },
+        { "type": "object", "required": ["mode", "config"], "properties": { "mode": { "enum": ["fresh", "resume"] }, "config": { "type": "object", "required": ["path"], "properties": { "path": { "type": "string" } }, "additionalProperties": false } }, "additionalProperties": false }
+      ]
+    },
     "environmentSnapshot": {
       "oneOf": [
         {
@@ -58,7 +64,7 @@
     },
     "schemaVersion": {
       "type": "integer",
-      "const": 5
+      "const": 6
     },
     "resumeOutcome": {
       "oneOf": [
@@ -501,12 +507,15 @@
             "object",
             "null"
           ],
-          "description": "Normalized invocation config includes an explicit validated environment snapshot; captured environment values are not included. Other config fields may be added without changing the run-event schema version.",
+          "description": "Normalized invocation config includes an explicit validated environment snapshot; captured environment values are not included. Session intent uses mode disabled, fresh, or resume; enabled modes include config.path. Legacy session/resume pairs are rejected by normalized configuration readers.",
           "additionalProperties": true,
           "required": [
-            "environment"
+            "environment",
+            "session"
           ],
           "properties": {
+            "resume": false,
+            "session": { "$ref": "#/$defs/sessionMode" },
             "environment": {
               "$ref": "#/$defs/environmentSnapshot"
             }

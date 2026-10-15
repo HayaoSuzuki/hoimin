@@ -5,6 +5,14 @@ description: OS別の資源制限と、プロセス終了・一時ファイル�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-901-core
+  resource: ../../../crates/hoimin-core/src/disk.rs
+  revision: 48ae4c0e565656ddf3f0a83dcc8a840bd6b4fec8
+  working_tree: clean
+- id: issue-901-oracle
+  resource: ../../../crates/hoimin-cli/tests/lean_disk_shutdown_oracle.rs
+  revision: 48ae4c0e565656ddf3f0a83dcc8a840bd6b4fec8
+  working_tree: clean
 - id: issue-900-disk-failure
   resource: disk-failure.md
   working_tree: untracked
@@ -101,7 +109,7 @@ sources:
   resource: ../../superpowers/reports/2026-10-15-issue-898-review.md
   revision: 51c9e26b9d0006cac150b3833cb797a59349bac1
   working_tree: modified
-  sha256: d2f05d57de9a1197e06c9a509d34dff2ac6ef26fa34f91c06eb54e04311c8367
+  sha256: 90aa456a79e030b5bd6babcd6d4595c60bd4875d9b99d980e84831f8c738498d
 ---
 
 # 制限する資源とディスク監視の範囲
@@ -312,3 +320,34 @@ saved failure format change. Report projection keeps its existing byte-count and
 message fields. This representation change does not add an OS cleanup guarantee.[^issue-900-disk-failure]
 
 [^issue-900-disk-failure]: [Typed disk failure contract](disk-failure.md).
+
+# Root cleanup state
+
+For maintainers changing core cleanup transitions, `DiskLifecycle` owns one
+registration-ordered `Vec<DiskRootEntry>`. Each entry contains a root ID and one
+`DiskCleanupState`: `NotRequested`, `Requested`, or
+`Completed(DiskCleanupOutcome)`. Snapshots clone these entries in registration
+order, independently of cleanup request/completion order. Failed and Deferred
+outcomes retain their complete messages.[^issue-901-core] Secondary diagnostics retain their
+existing observation order and exact-evidence deduplication.
+
+Requests require an owned, unrequested root, no active work, and settled process,
+output and monitor components. Delivery requests also wait for the report to
+settle. Clean and Failed completions require all safety components to succeed;
+Retained and Deferred preserve their separate meaning. A
+`Completed(Deferred(...))` entry records the observed attempt and keeps finish
+blocked. Execution may finish with Clean, Failed or Retained after other finish
+conditions settle; Delivery must be Clean. Finish always requires report success.
+
+The typed root collection replaces the earlier membership-list snapshot API.
+Delivery identity derives from `DiskRootId`; there is one state to replace for
+each request/completion. CLI arguments and disk report serialization stay the
+same. The Lean oracle keeps its abstract membership representation; the runtime
+adapter validates those memberships and constructs typed expected entries in
+registration order. It compares stop, secondary stop labels, components,
+acceptance and rejection points separately. See the
+[Issue 901 implementation record](../../superpowers/plans/2026-10-15-issue-901.md)
+for review findings, tests and the boundary of that correspondence.[^issue-901-oracle]
+
+[^issue-901-core]: [Typed root cleanup lifecycle](../../../crates/hoimin-core/src/disk.rs).
+[^issue-901-oracle]: [Validated formal-to-typed root observation adapter](../../../crates/hoimin-cli/tests/lean_disk_shutdown_oracle.rs).

@@ -9,7 +9,7 @@ use crate::{
     contract_ensure,
 };
 
-pub const REPORT_SCHEMA_VERSION: u32 = 5;
+pub const REPORT_SCHEMA_VERSION: u32 = 6;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct DiskRunSummary {

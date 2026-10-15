@@ -9,7 +9,13 @@ sources:
   resource: ../../superpowers/reports/2026-10-15-issue-898-review.md
   revision: 51c9e26b9d0006cac150b3833cb797a59349bac1
   working_tree: modified
-  sha256: d2f05d57de9a1197e06c9a509d34dff2ac6ef26fa34f91c06eb54e04311c8367
+  sha256: 90aa456a79e030b5bd6babcd6d4595c60bd4875d9b99d980e84831f8c738498d
+
+- id: issue-896-review
+  resource: ../../superpowers/reports/2026-10-15-issue-896-review.md
+  revision: e7e3cae8c4e048ee77d2bf644b47da1792211cbe
+  working_tree: modified
+  sha256: 01f6c1cb4bbd07a56eba9df40235dbb6df9abe179fa0f33b4716bdf22c6d7316
 - id: issue-900-design
   resource: ../../superpowers/reports/issue-900/design.md
   working_tree: untracked
@@ -856,6 +862,7 @@ sources:
 
 | 原文 | 先頭見出し | 作成時の状態 |
 | --- | --- | --- |
+| [2026-10-15-issue-896-review.md](../../superpowers/reports/2026-10-15-issue-896-review.md) | Issue 896 review and verification [^issue-896-review] | 未追跡（参照時点） |
 | [design.md](../../superpowers/reports/issue-900/design.md) | Typed disk failure design [^issue-900-design] | untracked at reference time |
 | [plan.md](../../superpowers/reports/issue-900/plan.md) | Implementation plan [^issue-900-plan] | untracked at reference time |
 | [review.md](../../superpowers/reports/issue-900/review.md) | Issue #900 review record [^issue-900-review] | untracked at reference time |
@@ -1484,6 +1491,8 @@ sources:
 
 [^issue-898-process-review]: [Review and verification](../../superpowers/reports/2026-10-15-issue-898-review.md). Windows execution evidence: one unconfirmed initial mypy failure, followed by passing focused and contracts checks; no green full-workspace claim.
 
+
+[^issue-896-review]: [Issue 896 review and verification](../../superpowers/reports/2026-10-15-issue-896-review.md).
 [^issue-900-design]: [Typed disk failure design](../../superpowers/reports/issue-900/design.md).
 
 [^issue-900-plan]: [Implementation plan](../../superpowers/reports/issue-900/plan.md).
