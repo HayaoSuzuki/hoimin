@@ -5,6 +5,11 @@ description: docs/auditsとdocs/superpowers/reports内の全Markdownを追跡状
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-896-review
+  resource: ../../superpowers/reports/2026-10-15-issue-896-review.md
+  revision: e7e3cae8c4e048ee77d2bf644b47da1792211cbe
+  working_tree: modified
+  sha256: 01f6c1cb4bbd07a56eba9df40235dbb6df9abe179fa0f33b4716bdf22c6d7316
 - id: issue-900-design
   resource: ../../superpowers/reports/issue-900/design.md
   working_tree: untracked
@@ -851,6 +856,7 @@ sources:
 
 | 原文 | 先頭見出し | 作成時の状態 |
 | --- | --- | --- |
+| [2026-10-15-issue-896-review.md](../../superpowers/reports/2026-10-15-issue-896-review.md) | Issue 896 review and verification [^issue-896-review] | 未追跡（参照時点） |
 | [design.md](../../superpowers/reports/issue-900/design.md) | Typed disk failure design [^issue-900-design] | untracked at reference time |
 | [plan.md](../../superpowers/reports/issue-900/plan.md) | Implementation plan [^issue-900-plan] | untracked at reference time |
 | [review.md](../../superpowers/reports/issue-900/review.md) | Issue #900 review record [^issue-900-review] | untracked at reference time |
@@ -1471,6 +1477,7 @@ sources:
 
 [^second-order-assessment]: [Measured results and limits](../../superpowers/reports/issue-763-764/README.md), projected cases, isolated confirmation and the retained regression assertion.
 
+[^issue-896-review]: [Issue 896 review and verification](../../superpowers/reports/2026-10-15-issue-896-review.md).
 [^issue-900-design]: [Typed disk failure design](../../superpowers/reports/issue-900/design.md).
 
 [^issue-900-plan]: [Implementation plan](../../superpowers/reports/issue-900/plan.md).
