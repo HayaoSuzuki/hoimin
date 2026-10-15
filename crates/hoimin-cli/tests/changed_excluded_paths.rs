@@ -216,7 +216,7 @@ async fn excluded_backslash_spelling_cannot_alias_a_selected_slash_path() {
         .await
         .unwrap();
     assert_eq!(baseline.len(), 1);
-    selection.changed = true;
+    selection.changed = Some(hoimin_core::ChangedSelection::default());
     let changed = hoimin_cli::target::TargetHandler::resolve(&selection)
         .await
         .unwrap();

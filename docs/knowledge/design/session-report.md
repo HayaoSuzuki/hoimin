@@ -5,6 +5,17 @@ description: 保存・復旧の権限、スキーマ移行、結果の生成側�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-899-changed-selection
+  resource: ../../superpowers/specs/2026-10-15-issue-899-design.md
+  revision: 7b6cb19ba0181759f6b5726f985c5fd7700d313e
+  working_tree: clean
+  sha256: fa68b3e4aa56ab0ee3dd19f818a0b932a033dce550dbc869f956c261578b501f
+- id: issue-899-changed-review
+  resource: ../../superpowers/reports/2026-10-15-issue-899-review.md
+  revision: ad65b8ce55b0dabc59712775e362d5d614b27559
+  working_tree: modified
+  sha256: 50a53fa428a46289ede33f60ae1bcc342f8cfa3b2a03e37ebc5ad127ff5444bc
+
 - id: issue-896-config
   resource: ../../../crates/hoimin-core/src/config.rs
   revision: e7e3cae8c4e048ee77d2bf644b47da1792211cbe
@@ -170,7 +181,7 @@ JSON Schemaは結果の構造を定める元資料として保持する。ただ
 
 # progressのレポート入力スキーマ
 
-progressは `REPORT_SCHEMA_VERSION`（5）に一致するJSON文書とJSONLストリームを読む。旧schema 2/3/4と未対応の将来版を拒否し、旧形式専用の型・変換・検証は持たない。reviewは現行スキーマのJSONを要求する。[^reader]
+progressは `REPORT_SCHEMA_VERSION`（6）に一致するJSON文書とJSONLストリームを読む。旧schema 2/3/4/5と未対応の将来版を拒否し、旧形式専用の型・変換・検証は持たない。reviewは現行スキーマのJSONを要求する。[^reader]
 
 スキーマ限定後も、候補ID・run ID・sequence・summary・単一結果の検証を維持する。JSONLの一行ずつの読取り、設定を不透明なJSONとして扱うprogressの方針も維持する。旧レポートは生成元バイナリで読むか、意図する版で実行し直す。planの再生成だけでは過去のreportは復元されない。手順と互換性通知は[利用方法](../../usage.md)と[互換性方針](../../compatibility.md)を参照する。[^reader]
 
@@ -235,7 +246,7 @@ Report schema 6 retains the validated `environment` snapshot introduced in schem
 5 in place of separate names and an optional hash. Progress and review consume
 the writer's schema; preserve schema-5 and older reports with their producing
 binary or rerun rather than rewriting their version fields. Captured plaintext never enters snapshot metadata.
-Plan schema 6 requires regeneration of older plans. Fingerprint schema 11 and its
+Plan schema 7 requires regeneration of older plans. Fingerprint schema 11 and its
 exact bytes remain stable, so this format change alone does not require a new
 session or alter SQLite schema 4. [^issue-887-environment]
 
@@ -277,6 +288,21 @@ CLIはログを容量制限付きキューから別スレッドへ渡す。キ�
 
 [^session-load-outcome]: [Session completion contract](../../../crates/hoimin-core/src/event.rs).
 
+
+## Typed changed selection (Issue #899)
+
+Plan schema 7 and report schema 6 store changed selection as null when disabled,
+or as an object containing required bounded `context` and optional `diff_base`
+when enabled. Boolean changed values and the former sibling context/base fields
+are rejected. Regenerate older plans; preserve older reports with their producing
+binary or rerun. No conversion updates existing files. The CLI's flags, explicit
+selector intersections, Git base semantics, and effective target fingerprints
+retain their meaning. [^issue-899-changed-selection][^issue-899-changed-review]
+
+[^issue-899-changed-selection]: [Typed changed selection design](../../superpowers/specs/2026-10-15-issue-899-design.md).
+
+[^issue-899-changed-review]: [Issue 899 review and verification](../../superpowers/reports/2026-10-15-issue-899-review.md). Current executed scopes, fixture corrections, limitations and release-floor checks.
+
 ## Normalized session intent (Issue #896)
 
 Raw CLI input retains `--session` and `--resume`. Normalization converts them once
@@ -288,7 +314,7 @@ mode without replacing its intent.[^issue-896-config][^issue-896-design]
 Report schema 6 serializes disabled intent as `{"mode":"disabled"}` and enabled
 intent as `{"mode":"fresh","config":{"path":"..."}}` or the corresponding
 `resume` mode. Normalized readers reject the obsolete independent `resume` field
-and old session objects. Plan schema 6 still omits runtime session intent, and
+and old session objects. Plan schema 7 still omits runtime session intent, and
 session database schema 4 is unchanged. `SessionLoadOutcome` and report
 `ResumeOutcome` describe the observed selection result, not the request mode.
 CLI options, session exclusions and metrics collision rules remain in their

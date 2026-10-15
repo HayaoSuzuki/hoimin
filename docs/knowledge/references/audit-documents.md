@@ -5,6 +5,12 @@ description: docs/auditsとdocs/superpowers/reports内の全Markdownを追跡状
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-899-changed-selection-review
+  resource: ../../superpowers/reports/2026-10-15-issue-899-review.md
+  revision: ad65b8ce55b0dabc59712775e362d5d614b27559
+  working_tree: modified
+  sha256: 50a53fa428a46289ede33f60ae1bcc342f8cfa3b2a03e37ebc5ad127ff5444bc
+
 - id: issue-896-review
   resource: ../../superpowers/reports/2026-10-15-issue-896-review.md
   revision: e7e3cae8c4e048ee77d2bf644b47da1792211cbe
@@ -1476,6 +1482,14 @@ sources:
 - [Second-order adoption assessment](../../superpowers/reports/issue-763-764/README.md) - Finite pairs, a first-order comparator and the decision to defer composite infrastructure.[^second-order-assessment]
 
 [^second-order-assessment]: [Measured results and limits](../../superpowers/reports/issue-763-764/README.md), projected cases, isolated confirmation and the retained regression assertion.
+
+## Issue 899 changed selection
+
+| Original heading | Source |
+| --- | --- |
+| Issue 899 review and verification | [Review and verification](../../superpowers/reports/2026-10-15-issue-899-review.md) [^issue-899-changed-selection-review] |
+
+[^issue-899-changed-selection-review]: [Review and verification](../../superpowers/reports/2026-10-15-issue-899-review.md). Windows execution evidence, initial fixture failures with focused corrections, CRLF formal-check limits, and the separately checked release-floor follow-up.
 
 [^issue-896-review]: [Issue 896 review and verification](../../superpowers/reports/2026-10-15-issue-896-review.md).
 [^issue-900-design]: [Typed disk failure design](../../superpowers/reports/issue-900/design.md).
