@@ -419,6 +419,62 @@ async fn review_accepts_matching_report() {
 }
 
 #[tokio::test]
+async fn review_rejects_absent_report_import_roots() {
+    for replacement in [None, Some(serde_json::Value::Null)] {
+        // Arrange
+        let (_dir, path, report_path) = report_fixture().await;
+        let plan = super::input::load_plan(&path).unwrap();
+        let mut report: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&report_path).unwrap()).unwrap();
+        report["run"]["normalized_config"]
+            .as_object_mut()
+            .unwrap()
+            .remove("import_roots");
+        if let Some(replacement) = replacement {
+            report["run"]["normalized_config"]["import_roots"] = replacement;
+        }
+        std::fs::write(&report_path, serde_json::to_vec(&report).unwrap()).unwrap();
+
+        // Act
+        let result =
+            super::input::load_report(&report_path, &plan, &super::input::index_plan(&plan));
+
+        // Assert
+        assert!(
+            result.is_err(),
+            "review accepted absent report import_roots"
+        );
+    }
+}
+
+#[tokio::test]
+async fn progress_preserves_opaque_report_import_roots() {
+    for replacement in [None, Some(serde_json::Value::Null)] {
+        // Arrange
+        let (_dir, _path, report_path) = report_fixture().await;
+        let mut report: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&report_path).unwrap()).unwrap();
+        report["run"]["normalized_config"]
+            .as_object_mut()
+            .unwrap()
+            .remove("import_roots");
+        if let Some(replacement) = replacement {
+            report["run"]["normalized_config"]["import_roots"] = replacement;
+        }
+        std::fs::write(&report_path, serde_json::to_vec(&report).unwrap()).unwrap();
+
+        // Act
+        let result = crate::progress::read_report(&report_path);
+
+        // Assert
+        assert!(matches!(
+            result.unwrap(),
+            crate::progress::InputReport::Usable(_)
+        ));
+    }
+}
+
+#[tokio::test]
 async fn review_rejects_report_with_changed_identity_or_execution() {
     let changes: [(&str, &str, serde_json::Value); 6] = [
         ("incomplete", "/summary/complete", false.into()),

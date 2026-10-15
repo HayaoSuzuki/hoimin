@@ -548,11 +548,11 @@ pub struct RunLimits {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 /// Normalized invocation with a canonical capture request before preparation.
 /// The default environment state is a validated snapshot consumed by execution.
+/// Saved array fields are required; an explicit empty array means no configured entries.
 #[serde(deny_unknown_fields)]
 pub struct RunConfig<E = crate::EnvironmentSnapshot> {
     pub root: Utf8PathBuf,
     pub selection: Selection,
-    #[serde(default)]
     pub import_roots: Vec<Utf8PathBuf>,
     pub fingerprint_includes: Vec<String>,
     pub fingerprint_files: Vec<String>,
@@ -581,7 +581,6 @@ pub struct PlanConfig {
     pub allow_best_effort_memory: bool,
     pub profile: MutationProfile,
     pub fingerprint_includes: Vec<String>,
-    #[serde(default)]
     pub fingerprint_files: Vec<String>,
     /// Validated inherited-environment metadata.
     pub environment: crate::EnvironmentSnapshot,

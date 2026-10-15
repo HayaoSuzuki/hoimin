@@ -5,6 +5,16 @@ description: 候補発見と実行の分離、ランキング、部分集合、�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-923-config
+  resource: ../../../crates/hoimin-core/src/config.rs
+  revision: 7c3a9105c432ec1e0ba2483ada42b10133d071a6
+  working_tree: modified
+  sha256: 1c0680d4872c468f4c1c3fb6433b589da1f7752bc6f10b70d71eba876bcefb08
+- id: issue-923-compatibility
+  resource: ../../compatibility.md
+  revision: 7c3a9105c432ec1e0ba2483ada42b10133d071a6
+  working_tree: modified
+  sha256: b060c02db7f6e3adc035a61f2d954caa387674b64cbb273269587e170baf0c1c
 - id: issue-915-design
   resource: ../../superpowers/plans/issue-915/design.md
   working_tree: untracked
@@ -635,3 +645,15 @@ cross-platform execution claim. [^issue-915-review]
 [^issue-915-git]: [Git resolution and consuming conversion](../../../crates/hoimin-cli/src/target/git.rs).
 [^issue-915-tracked]: [Tracked patch collection](../../../crates/hoimin-cli/src/target/git/tracked.rs).
 [^issue-915-review]: [Review and verification](../../superpowers/plans/issue-915/review.md).
+
+# Required saved plan arrays (Issue #923)
+
+`PlanConfig` requires explicit `import_roots` and `fingerprint_files` arrays.
+Missing and null values fail decoding before verify can start a baseline; `[]`
+remains a valid configured list. Raw CLI defaults, candidate selection and
+fingerprint calculation remain unchanged. Plan schema 7 is unchanged; regenerate
+plans missing either array, while current writer-produced plans need no update.
+The compatibility notice records the 0.9.0 release floor.[^issue-923-config][^issue-923-compatibility]
+
+[^issue-923-config]: [Normalized configuration types](../../../crates/hoimin-core/src/config.rs).
+[^issue-923-compatibility]: [Required saved arrays compatibility notice](../../compatibility.md#required-saved-configuration-arrays-in-090).
