@@ -1419,6 +1419,270 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
+    fn root_delete_failure_after_lease_removal_preserves_owner_retry() {
+        let parent = tempfile::tempdir().unwrap();
+        let parent = Utf8Path::from_path(parent.path()).unwrap();
+        let coordinator = ManagedRootCoordinator::open(parent).unwrap();
+        let root = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
+        let active = format!("{}{}", super::ACTIVE_PREFIX, root.run_id);
+        let deleting = format!("{}{}", super::DELETING_PREFIX, root.run_id);
+        root.claim_with_handle_handoff(&coordinator.dir, &active, &deleting, &|| Ok(()))
+            .unwrap();
+        let identity = super::directory_identity(&root.dir).unwrap();
+        let mut capabilities = root.take_owner_cleanup_capabilities().unwrap();
+        let budget = std::time::Duration::from_secs(5);
+        super::remove_root_control_markers(
+            &root.dir,
+            std::time::Instant::now(),
+            budget,
+            &mut capabilities,
+        )
+        .unwrap();
+        assert!(capabilities.lease_guard.is_none());
+        assert_eq!(
+            root.dir
+                .symlink_metadata(super::LEASE_FILE)
+                .unwrap_err()
+                .kind(),
+            std::io::ErrorKind::NotFound
+        );
+        // A late child makes the real deletion API fail after the lease is gone.
+        root.dir.write("late-child", b"retry me").unwrap();
+
+        let failed = super::remove_cleanup_root_checked(
+            &coordinator.dir,
+            std::ffi::OsStr::new(&deleting),
+            Utf8Path::new(&deleting),
+            identity,
+            std::time::Instant::now(),
+            budget,
+            &mut capabilities,
+        );
+
+        assert!(failed.is_err());
+        assert!(matches!(
+            capabilities.root_authority,
+            super::RootCleanupAuthority::Pinned(_)
+        ));
+        root.restore_owner_cleanup_capabilities(capabilities);
+        assert!(root.rename_handle.lock().unwrap().is_some());
+        assert!(root.lease.lock().unwrap().is_none());
+        let resumed = root.cleanup(budget);
+        assert_eq!(
+            resumed.status,
+            hoimin_core::DiskCleanupStatus::Clean,
+            "{resumed:?}"
+        );
+        assert_eq!(
+            coordinator
+                .dir
+                .symlink_metadata(&deleting)
+                .unwrap_err()
+                .kind(),
+            std::io::ErrorKind::NotFound
+        );
+    }
+
+    #[cfg(windows)]
+    fn pinned_cleanup_directory(
+        parent: &cap_std::fs::Dir,
+        name: &str,
+    ) -> super::CleanupCapabilities {
+        let root =
+            super::windows::create_relative_managed_directory(parent, std::ffi::OsStr::new(name))
+                .unwrap();
+        super::CleanupCapabilities {
+            lease_guard: None,
+            root_authority: super::RootCleanupAuthority::Pinned(cap_std::fs::Dir::from_std_file(
+                root,
+            )),
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn root_delete_identity_failure_preserves_original_pin_for_retry() {
+        let parent = tempfile::tempdir().unwrap();
+        let coordinator =
+            ManagedRootCoordinator::open(Utf8Path::from_path(parent.path()).unwrap()).unwrap();
+        let mut capabilities = pinned_cleanup_directory(&coordinator.dir, "identity-retry");
+        let identity =
+            super::metadata_identity(&coordinator.dir.symlink_metadata("identity-retry").unwrap());
+        let budget = std::time::Duration::from_secs(5);
+
+        let failed = super::remove_cleanup_root_checked(
+            &coordinator.dir,
+            std::ffi::OsStr::new("identity-retry"),
+            Utf8Path::new("identity-retry"),
+            (identity.0, identity.1 ^ 1),
+            std::time::Instant::now(),
+            budget,
+            &mut capabilities,
+        );
+
+        assert!(failed.is_err());
+        assert!(matches!(
+            capabilities.root_authority,
+            super::RootCleanupAuthority::Pinned(_)
+        ));
+        super::remove_claimed_tree_bounded_with_capabilities(
+            &coordinator.dir,
+            "identity-retry",
+            Some(identity),
+            budget,
+            &mut capabilities,
+        )
+        .unwrap();
+        assert_eq!(
+            coordinator
+                .dir
+                .symlink_metadata("identity-retry")
+                .unwrap_err()
+                .kind(),
+            std::io::ErrorKind::NotFound
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn successful_root_delete_consumes_authority_despite_postcheck_failure() {
+        // The pin deletes the original root; these names affect only the final lookup.
+        for postcheck_name in ["invalid\0name", "survivor"] {
+            let parent = tempfile::tempdir().unwrap();
+            let coordinator =
+                ManagedRootCoordinator::open(Utf8Path::from_path(parent.path()).unwrap()).unwrap();
+            let mut capabilities = pinned_cleanup_directory(&coordinator.dir, "deleted");
+            let identity =
+                super::metadata_identity(&coordinator.dir.symlink_metadata("deleted").unwrap());
+            create_test_owned_directory_entry(&coordinator.dir, "survivor").unwrap();
+            std::fs::write(coordinator.path.join("survivor/sentinel"), b"untouched").unwrap();
+
+            let result = super::remove_cleanup_root_checked(
+                &coordinator.dir,
+                std::ffi::OsStr::new(postcheck_name),
+                Utf8Path::new("deleted"),
+                identity,
+                std::time::Instant::now(),
+                std::time::Duration::from_secs(5),
+                &mut capabilities,
+            );
+
+            let error = result.unwrap_err();
+            assert_ne!(error.kind(), std::io::ErrorKind::NotFound);
+            assert!(matches!(
+                capabilities.root_authority,
+                super::RootCleanupAuthority::Consumed
+            ));
+            assert_eq!(
+                coordinator
+                    .dir
+                    .symlink_metadata("deleted")
+                    .unwrap_err()
+                    .kind(),
+                std::io::ErrorKind::NotFound
+            );
+            assert_eq!(
+                std::fs::read(coordinator.path.join("survivor/sentinel")).unwrap(),
+                b"untouched"
+            );
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn consumed_root_authority_rejects_same_name_replacement_with_matching_identity() {
+        let parent = tempfile::tempdir().unwrap();
+        let coordinator =
+            ManagedRootCoordinator::open(Utf8Path::from_path(parent.path()).unwrap()).unwrap();
+        let mut capabilities = pinned_cleanup_directory(&coordinator.dir, "replacement");
+        let identity =
+            super::metadata_identity(&coordinator.dir.symlink_metadata("replacement").unwrap());
+        let budget = std::time::Duration::from_secs(5);
+        super::remove_claimed_tree_bounded_with_capabilities(
+            &coordinator.dir,
+            "replacement",
+            Some(identity),
+            budget,
+            &mut capabilities,
+        )
+        .unwrap();
+        create_test_owned_directory_entry(&coordinator.dir, "replacement").unwrap();
+        std::fs::write(coordinator.path.join("replacement/sentinel"), b"untouched").unwrap();
+        let replacement_identity =
+            super::metadata_identity(&coordinator.dir.symlink_metadata("replacement").unwrap());
+
+        let result = super::remove_claimed_tree_bounded_with_capabilities(
+            &coordinator.dir,
+            "replacement",
+            Some(replacement_identity),
+            budget,
+            &mut capabilities,
+        );
+
+        assert!(result.is_err());
+        assert!(matches!(
+            capabilities.root_authority,
+            super::RootCleanupAuthority::Consumed
+        ));
+        assert_eq!(
+            std::fs::read(coordinator.path.join("replacement/sentinel")).unwrap(),
+            b"untouched"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn consumed_root_removal_preserves_an_empty_same_name_replacement() {
+        let parent = tempfile::tempdir().unwrap();
+        let coordinator =
+            ManagedRootCoordinator::open(Utf8Path::from_path(parent.path()).unwrap()).unwrap();
+        let mut capabilities = pinned_cleanup_directory(&coordinator.dir, "replacement");
+        let identity =
+            super::metadata_identity(&coordinator.dir.symlink_metadata("replacement").unwrap());
+        let budget = std::time::Duration::from_secs(5);
+        super::remove_claimed_tree_bounded_with_capabilities(
+            &coordinator.dir,
+            "replacement",
+            Some(identity),
+            budget,
+            &mut capabilities,
+        )
+        .unwrap();
+        // Consumed authority may confirm absence but has no authority over a new entry.
+        assert!(
+            super::remove_claimed_tree_bounded_with_capabilities(
+                &coordinator.dir,
+                "replacement",
+                Some(identity),
+                budget,
+                &mut capabilities,
+            )
+            .unwrap()
+            .complete
+        );
+        create_test_owned_directory_entry(&coordinator.dir, "replacement").unwrap();
+        let replacement_identity =
+            super::metadata_identity(&coordinator.dir.symlink_metadata("replacement").unwrap());
+
+        let result = super::remove_cleanup_root_checked(
+            &coordinator.dir,
+            std::ffi::OsStr::new("replacement"),
+            Utf8Path::new("replacement"),
+            replacement_identity,
+            std::time::Instant::now(),
+            budget,
+            &mut capabilities,
+        );
+
+        assert!(result.is_err());
+        assert_eq!(
+            super::metadata_identity(&coordinator.dir.symlink_metadata("replacement").unwrap()),
+            replacement_identity
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
     fn round_six_review_lease_delete_pin_can_clear_readonly_lease() {
         let parent = tempfile::tempdir().unwrap();
         let parent = Utf8Path::from_path(parent.path()).unwrap();
@@ -4858,8 +5122,7 @@ impl ManagedRunRoot {
                 }
                 return Ok(CleanupCapabilities {
                     lease_guard: None,
-                    root_pin: Some(root_pin),
-                    exact_root: true,
+                    root_authority: RootCleanupAuthority::Pinned(root_pin),
                 });
             };
             Ok(CleanupCapabilities::claimed(root_pin, lease_guard))
@@ -4880,7 +5143,7 @@ impl ManagedRunRoot {
             *slot = Some(Arc::new(lease));
         }
         #[cfg(windows)]
-        if let Some(root) = capabilities.root_pin.take() {
+        if let RootCleanupAuthority::Pinned(root) = capabilities.root_authority {
             let mut slot = self
                 .rename_handle
                 .lock()
@@ -6499,9 +6762,19 @@ struct RemovalSlice {
 struct CleanupCapabilities {
     lease_guard: Option<File>,
     #[cfg(windows)]
-    root_pin: Option<cap_std::fs::Dir>,
-    #[cfg(windows)]
-    exact_root: bool,
+    root_authority: RootCleanupAuthority,
+}
+
+/// Whether cleanup may resolve a name or must use its originally claimed handle.
+#[cfg(windows)]
+#[derive(Default)]
+enum RootCleanupAuthority {
+    #[default]
+    ByName,
+    Pinned(cap_std::fs::Dir),
+    /// The exact handle was consumed, not necessarily that the name is absent.
+    /// Never reopen a same-name replacement to regain deletion authority.
+    Consumed,
 }
 
 impl CleanupCapabilities {
@@ -6514,8 +6787,7 @@ impl CleanupCapabilities {
     fn claimed(root_pin: cap_std::fs::Dir, lease_guard: File) -> Self {
         Self {
             lease_guard: Some(lease_guard),
-            root_pin: Some(root_pin),
-            exact_root: true,
+            root_authority: RootCleanupAuthority::Pinned(root_pin),
         }
     }
 }
@@ -6855,7 +7127,9 @@ fn remove_root_control_markers(
         }
         let marker_name = std::ffi::OsStr::new(marker);
         #[cfg(windows)]
-        if marker == LEASE_FILE && capabilities.exact_root {
+        if marker == LEASE_FILE
+            && !matches!(capabilities.root_authority, RootCleanupAuthority::ByName)
+        {
             if remove_pinned_cleanup_lease(root, started, budget, capabilities)? {
                 removed = removed.saturating_add(1);
             }
@@ -7050,28 +7324,30 @@ fn open_cleanup_root(
     capabilities: &CleanupCapabilities,
 ) -> std::io::Result<cap_std::fs::Dir> {
     #[cfg(windows)]
-    if capabilities.exact_root {
-        let Some(root) = capabilities.root_pin.as_ref() else {
+    match &capabilities.root_authority {
+        RootCleanupAuthority::ByName => {}
+        RootCleanupAuthority::Consumed => {
             return match parent.symlink_metadata(name) {
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => Err(error),
                 Err(error) => Err(error),
                 Ok(_) => Err(std::io::Error::other(
                     "claimed cleanup root remains after its exact deletion capability was consumed",
                 )),
             };
-        };
-        ensure_cleanup_deadline(started, budget)?;
-        let owner_verifier = root.try_clone()?.into_std_file();
-        windows::verify_current_user_owner(&owner_verifier)?;
-        drop(owner_verifier);
-        let identity = directory_identity(root)?;
-        if expected_identity.is_some_and(|expected| expected != identity) {
-            return Err(std::io::Error::other(
-                "claimed cleanup root capability changed identity",
-            ));
         }
-        ensure_cleanup_deadline(started, budget)?;
-        return root.try_clone();
+        RootCleanupAuthority::Pinned(root) => {
+            ensure_cleanup_deadline(started, budget)?;
+            let owner_verifier = root.try_clone()?.into_std_file();
+            windows::verify_current_user_owner(&owner_verifier)?;
+            drop(owner_verifier);
+            let identity = directory_identity(root)?;
+            if expected_identity.is_some_and(|expected| expected != identity) {
+                return Err(std::io::Error::other(
+                    "claimed cleanup root capability changed identity",
+                ));
+            }
+            ensure_cleanup_deadline(started, budget)?;
+            return root.try_clone();
+        }
     }
     #[cfg(unix)]
     let _ = capabilities;
@@ -7348,29 +7624,34 @@ fn remove_cleanup_root_checked(
     capabilities: &mut CleanupCapabilities,
 ) -> std::io::Result<()> {
     #[cfg(windows)]
-    if capabilities.exact_root {
+    if !matches!(capabilities.root_authority, RootCleanupAuthority::ByName) {
         ensure_cleanup_deadline(started, budget)?;
-        let root = capabilities.root_pin.take().ok_or_else(|| {
-            std::io::Error::other("claimed cleanup root deletion capability is unavailable")
-        })?;
+        let RootCleanupAuthority::Pinned(root) = std::mem::replace(
+            &mut capabilities.root_authority,
+            RootCleanupAuthority::Consumed,
+        ) else {
+            return Err(std::io::Error::other(
+                "claimed cleanup root deletion capability is unavailable",
+            ));
+        };
         let owner_verification = root
             .try_clone()
             .map(cap_std::fs::Dir::into_std_file)
             .and_then(|file| windows::verify_current_user_owner(&file));
         if let Err(error) = owner_verification {
-            capabilities.root_pin = Some(root);
+            capabilities.root_authority = RootCleanupAuthority::Pinned(root);
             return Err(error);
         }
         match directory_identity(&root) {
             Ok(identity) if identity == expected_identity => {}
             Ok(_) => {
-                capabilities.root_pin = Some(root);
+                capabilities.root_authority = RootCleanupAuthority::Pinned(root);
                 return Err(std::io::Error::other(
                     "claimed cleanup root capability changed identity before removal",
                 ));
             }
             Err(error) => {
-                capabilities.root_pin = Some(root);
+                capabilities.root_authority = RootCleanupAuthority::Pinned(root);
                 return Err(error);
             }
         }
@@ -7378,10 +7659,12 @@ fn remove_cleanup_root_checked(
         if let Err(error) = super::root::windows::remove_open_entry_io_with_guard(&root, &|| {
             ensure_cleanup_deadline(started, budget)
         }) {
-            capabilities.root_pin = Some(cap_std::fs::Dir::from_std_file(root));
+            capabilities.root_authority =
+                RootCleanupAuthority::Pinned(cap_std::fs::Dir::from_std_file(root));
             return Err(error);
         }
         drop(root);
+        // Successful deletion consumes authority even if the absence check fails.
         return match parent.symlink_metadata(name) {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
             Err(error) => Err(error),
