@@ -134,6 +134,50 @@
               ]
             }
           }
+        },
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "candidate_ids"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "policy": {
+                "enum": [
+                  "explicit_candidates"
+                ]
+              },
+              "scope": {
+                "const": "explicit_candidates"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "top"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "policy": {
+                "enum": [
+                  "strict",
+                  "file_round_robin_v1",
+                  "line_round_robin_v1"
+                ]
+              },
+              "scope": {
+                "const": "retained_candidates"
+              }
+            }
+          }
         }
       ]
     },

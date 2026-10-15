@@ -17,7 +17,6 @@ use hoimin_core::{
     MutantFinished, MutantStarted, MutationCandidate, MutationStatus, MutationSummary, OutputEvent,
     OutputFormat, OutputSpoolRef, ProcessOutputState, ProcessTermination, REPORT_SCHEMA_VERSION,
     ReportSequence, ResourceMode, RunStarted, RunSummary, SessionDiagnostic, VerificationSelection,
-    VerificationSelectionMode, VerificationSelectionPolicy, VerificationSelectionScope,
 };
 use serde::{Deserialize, Serialize};
 
@@ -935,15 +934,13 @@ fn actual_pre_baseline_report() -> serde_json::Value {
 }
 
 fn documented_verification_selection() -> VerificationSelection {
-    VerificationSelection {
-        mode: VerificationSelectionMode::Top,
-        policy: VerificationSelectionPolicy::FileRoundRobinV1,
-        requested: 3,
-        selected: 3,
-        scope: VerificationSelectionScope::RetainedCandidates,
-        plan_truncated: false,
-        sampling: None,
-    }
+    VerificationSelection::top(
+        3,
+        3,
+        hoimin_core::VerificationTopPolicy::FileRoundRobinV1,
+        false,
+    )
+    .unwrap()
 }
 
 fn documented_events() -> Vec<OutputEvent> {
@@ -1783,15 +1780,15 @@ fn human_format_includes_verification_selection_policy() {
             .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
             .unwrap(),
     );
-    started.verification_selection = Some(VerificationSelection {
-        mode: VerificationSelectionMode::Top,
-        policy: VerificationSelectionPolicy::FileRoundRobinV1,
-        requested: 3,
-        selected: 3,
-        scope: VerificationSelectionScope::RetainedCandidates,
-        plan_truncated: false,
-        sampling: None,
-    });
+    started.verification_selection = Some(
+        VerificationSelection::top(
+            3,
+            3,
+            hoimin_core::VerificationTopPolicy::FileRoundRobinV1,
+            false,
+        )
+        .unwrap(),
+    );
 
     handler
         .handle(EmitOutput {

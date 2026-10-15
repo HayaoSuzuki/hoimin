@@ -342,13 +342,14 @@ impl RunState {
     }
 
     fn is_ordered_verification(&self) -> bool {
-        matches!(
-            self.verification_selection,
-            Some(VerificationSelection {
-                mode: VerificationSelectionMode::Top | VerificationSelectionMode::Sample,
-                ..
+        self.verification_selection
+            .as_ref()
+            .is_some_and(|selection| {
+                matches!(
+                    selection.mode(),
+                    VerificationSelectionMode::Top | VerificationSelectionMode::Sample
+                )
             })
-        )
     }
 
     #[must_use]
@@ -1488,7 +1489,7 @@ pub fn transition(
                 .as_ref()
                 .ok_or(MachineError::WrongPhase { phase: state.phase })?;
             let projection = project_top_budget(
-                selection.selected,
+                selection.selected(),
                 state.config.limits.jobs,
                 state.config.limits.total_timeout.get(),
                 state.baseline_elapsed,

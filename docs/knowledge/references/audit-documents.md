@@ -5,6 +5,14 @@ description: docs/auditsとdocs/superpowers/reports内の全Markdownを追跡状
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-911-design
+  resource: ../../superpowers/reports/issue-911/design.md
+  working_tree: untracked
+  sha256: 9cafb2a20f48f581aa311e1bd6b0b8bd0676d75e2552363d5f33a61cc8256644
+- id: issue-911-review
+  resource: ../../superpowers/reports/issue-911/review.md
+  working_tree: untracked
+  sha256: 7f51e40d998ae77447b6cf6c02d229901c332c49685e946ee5da210a72231088
 - id: issue-897-review
   resource: ../../superpowers/reports/2026-10-15-issue-897-review.md
   revision: 0a148fcf5ca511b6ccca489feda2ccbc2429008f
@@ -1558,3 +1566,14 @@ sources:
 [^issue-900-plan]: [Implementation plan](../../superpowers/reports/issue-900/plan.md).
 
 [^issue-900-review]: [Issue #900 review record](../../superpowers/reports/issue-900/review.md).
+
+## Issue 911 verification selection
+
+| Document | Scope |
+| --- | --- |
+| [Design](../../superpowers/reports/issue-911/design.md) [^issue-911-design] | Validated selection ownership and compatibility |
+| [Review](../../superpowers/reports/issue-911/review.md) [^issue-911-review] | Five passes per stage and verification evidence |
+
+[^issue-911-design]: [Typed verification selection design](../../superpowers/reports/issue-911/design.md).
+
+[^issue-911-review]: [Review and verification](../../superpowers/reports/issue-911/review.md).

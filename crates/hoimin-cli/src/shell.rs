@@ -5411,15 +5411,7 @@ mod tests {
         std::fs::write(project.path().join("target.py"), source).unwrap();
         let selection = CandidateSelection::Explicit(
             BTreeSet::from([missing_id.to_owned()]),
-            hoimin_core::VerificationSelection {
-                mode: hoimin_core::VerificationSelectionMode::CandidateIds,
-                policy: hoimin_core::VerificationSelectionPolicy::ExplicitCandidates,
-                requested: 1,
-                selected: 1,
-                scope: hoimin_core::VerificationSelectionScope::ExplicitCandidates,
-                plan_truncated: false,
-                sampling: None,
-            },
+            hoimin_core::VerificationSelection::candidate_ids(1, 1, false).unwrap(),
         );
         let stdout = CollectingWriter::default();
         let stderr = CollectingWriter::default();

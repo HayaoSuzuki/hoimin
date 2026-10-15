@@ -88,6 +88,23 @@ readers to schema 6. Runtime session intent remains absent from plan schema 7; t
 require session database schema 5. Existing session compatibility checks still apply;
 choose a new session path if those checks reject an old session.
 
+## Validated verification selection in 0.8.0
+
+Verification metadata retains its current JSON shape and schema numbers. Readers
+now reject known fields that disagree: mode/policy/scope mismatches, sampling on
+non-sampled selections (including null), missing sample evidence, truncated sample
+populations, zero requests, selected counts above requests, and empty, duplicate
+or oversized sample IDs. A sample's selected count must equal its ID count.
+Reports continue to accept non-sample selected=0 and additional outer metadata.
+The nested sampling object retains its documented closed shape.
+
+Correct writer-produced data needs no conversion. For contradictory hand-built
+metadata, regenerate the report or correct the producer; readers do not guess or
+repair provenance. Current preview/report schemas express the mode relationships;
+Rust additionally checks cross-field counts. The existing 0.8.0 release floor
+is unchanged. Internal Rust callers use validated `VerificationSelection`
+constructors and read-only accessors instead of public struct fields.
+
 ## Public interfaces
 
 | Interface | Maintenance rule | User action when it changes |

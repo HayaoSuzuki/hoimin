@@ -12,8 +12,7 @@ use hoimin_core::{
     ResourceMode, ResultPersisted, RunConfig, RunEffect, RunEvent, RunFingerprint, RunPhase,
     RunState, SessionFinished, SessionLoadOutcome, SessionLoaded, SessionResumeRef, SessionStarted,
     StartRequested, StoredResult, StoredResultLoaded, TargetSlice, TargetsResolved,
-    VerificationSelection, VerificationSelectionMode, VerificationSelectionPolicy,
-    VerificationSelectionScope, WorkerCreated, WorkerReset, transition,
+    VerificationSelection, WorkerCreated, WorkerReset, transition,
 };
 use proptest::prelude::*;
 
@@ -134,15 +133,10 @@ fn baseline_success_requests_analysis_without_performing_io() {
 #[test]
 fn top_verification_observes_budget_after_successful_baseline() {
     let initial_state = RunState::new("run-1", fixture_config(), test_resource_control())
-        .with_verification_selection(VerificationSelection {
-            mode: VerificationSelectionMode::Top,
-            policy: VerificationSelectionPolicy::Strict,
-            requested: 30,
-            selected: 30,
-            scope: VerificationSelectionScope::RetainedCandidates,
-            plan_truncated: false,
-            sampling: None,
-        });
+        .with_verification_selection(
+            VerificationSelection::top(30, 30, hoimin_core::VerificationTopPolicy::Strict, false)
+                .unwrap(),
+        );
     let (state, effects) = waiting_for_baseline_from(initial_state);
     let baseline_id = effect_id(find_effect(&effects, |effect| {
         matches!(effect, RunEffect::RunBaseline(_))
@@ -169,15 +163,7 @@ fn top_verification_observes_budget_after_successful_baseline() {
 #[test]
 fn explicit_verification_skips_budget_observation() {
     let initial_state = RunState::new("run-1", fixture_config(), test_resource_control())
-        .with_verification_selection(VerificationSelection {
-            mode: VerificationSelectionMode::CandidateIds,
-            policy: VerificationSelectionPolicy::ExplicitCandidates,
-            requested: 30,
-            selected: 30,
-            scope: VerificationSelectionScope::ExplicitCandidates,
-            plan_truncated: false,
-            sampling: None,
-        });
+        .with_verification_selection(VerificationSelection::candidate_ids(30, 30, false).unwrap());
     let (state, effects) = waiting_for_baseline_from(initial_state);
     let baseline_id = effect_id(find_effect(&effects, |effect| {
         matches!(effect, RunEffect::RunBaseline(_))
@@ -4791,15 +4777,10 @@ fn waiting_for_baseline_from(initial_state: RunState) -> (RunState, Vec<RunEffec
 
 fn waiting_for_top_budget_observation() -> (RunState, Vec<RunEffect>) {
     let initial_state = RunState::new("run-1", fixture_config(), test_resource_control())
-        .with_verification_selection(VerificationSelection {
-            mode: VerificationSelectionMode::Top,
-            policy: VerificationSelectionPolicy::Strict,
-            requested: 30,
-            selected: 30,
-            scope: VerificationSelectionScope::RetainedCandidates,
-            plan_truncated: false,
-            sampling: None,
-        });
+        .with_verification_selection(
+            VerificationSelection::top(30, 30, hoimin_core::VerificationTopPolicy::Strict, false)
+                .unwrap(),
+        );
     let (state, effects) = waiting_for_baseline_from(initial_state);
     let baseline_id = effect_id(find_effect(&effects, |effect| {
         matches!(effect, RunEffect::RunBaseline(_))
@@ -5569,19 +5550,12 @@ fn test_resource_control() -> hoimin_core::ResourceControl {
 #[test]
 fn sample_cancellation_and_deadline_keep_provenance_and_incomplete_results() {
     for event in [RunEvent::CancellationRequested, RunEvent::DeadlineReached] {
-        let selection = VerificationSelection {
-            mode: VerificationSelectionMode::Sample,
-            policy: VerificationSelectionPolicy::Splitmix64FisherYatesV1,
-            requested: 2,
-            selected: 2,
-            scope: VerificationSelectionScope::SampledCandidates,
-            plan_truncated: false,
-            sampling: Some(hoimin_core::VerificationSampling {
-                population: 100,
-                seed: 42,
-                selected_ids: vec!["m2".into(), "m1".into()],
-            }),
-        };
+        let selection = VerificationSelection::sample(
+            2,
+            hoimin_core::VerificationSampling::new(100, 42, vec!["m2".into(), "m1".into()])
+                .unwrap(),
+        )
+        .unwrap();
         let mut harness = ScheduleHarness::new(2, 1, ScheduleFilter::Ordered, false, vec![0]);
         harness.state = harness.state.with_verification_selection(selection.clone());
         harness.complete_until(|effect| matches!(effect, RunEffect::ApplyMutation(_)));
