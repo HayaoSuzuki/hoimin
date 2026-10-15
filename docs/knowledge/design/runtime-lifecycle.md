@@ -5,6 +5,20 @@ description: OS別の資源制限と、プロセス終了・一時ファイル�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-942-handler
+  resource: ../../../crates/hoimin-cli/src/workspace/mod.rs
+  revision: 465ff928c1f2ceb9f9b8f8084465475e45799ee8
+  working_tree: modified
+  sha256: 8f7149948240914e2fdab37b0083bcf5824cdb13cce45b85f1740c50c080b7ab
+- id: issue-942-oracle
+  resource: ../../../crates/hoimin-cli/src/workspace/lean_oracle_tests.rs
+  revision: 465ff928c1f2ceb9f9b8f8084465475e45799ee8
+  working_tree: modified
+  sha256: 05d556049045d6b04d1c2455ab1745d377579315d6f58993d5303d9f4850821c
+- id: issue-942-record
+  resource: ../../maintenance/2026-10-16-issue-942.md
+  working_tree: untracked
+  sha256: 2a681e9327d9ce4c9c1cd23af5772e1760b346aa31232a3bcc6af12ace49695a
 - id: issue-931-handler
   resource: ../../../crates/hoimin-cli/src/workspace/mod.rs
   revision: 0d3fbc1a1821074d6ba8a2a212116241adc85c4e
@@ -458,3 +472,38 @@ separates new two-path filesystem tests from existing Lean-derived lifecycle
 comparisons. This change adds no formal model or proof.
 
 [^issue-931-handler]: [Single-candidate workspace apply entry point](../../../crates/hoimin-cli/src/workspace/mod.rs).
+
+
+## Exclusive worker workspace ownership (Issue #942)
+
+The handler has one worker-ID registry. Each `WorkerSlot` owns an Active workspace
+or a workspace awaiting cleanup. Task completions carry one Active workspace,
+one PendingCleanup workspace, or no workspace. Failed Apply still returns
+Active ownership; Verify returns none. Acceptance rejects an already-registered
+ID across both classifications and preserves the first owner. These private
+states replace independent maps and completion options; they do not extend
+scheduler in-flight or managed-root lifecycle state.[^issue-942-handler]
+
+Active-only lookup, command environment construction, Apply and Reset leave
+pending ownership untouched. Create validates its grant before cleaning pending
+state and drops cleaned ownership before replacement. Cleanup and close attempt
+both classes, retain slots on failure, and report the first active-worker error
+before pending-worker errors, with worker-ID order within each class. Janitor
+transfer retains both classes. Copy allowance and reset/discard error policy
+remain in the existing operation implementation.[^issue-942-handler]
+
+The implementation record separates actual cross-state rejection RED/GREEN
+regressions from preserved-behavior characterizations. New filesystem tables
+cover duplicate acceptance, Verify, reset discard success, cleanup failure and
+janitor transfer; a generated operation-sequence property checks pending
+admission. Existing Lean adapters project the enum back to their original
+active/pending/task-owned observations. The existing corpus and model are
+unchanged, with no new proof claim. No public interface, CLI or saved-format
+migration is required.[^issue-942-record][^issue-942-oracle]
+
+Recheck these contracts when changing completion acceptance, active-only
+admission, cleanup traversal or ownership accounting.
+
+[^issue-942-handler]: [Worker registry and completion ownership](../../../crates/hoimin-cli/src/workspace/mod.rs).
+[^issue-942-oracle]: [Existing workspace lifecycle oracle adapter](../../../crates/hoimin-cli/src/workspace/lean_oracle_tests.rs).
+[^issue-942-record]: [Issue 942 implementation and verification](../../maintenance/2026-10-16-issue-942.md).
