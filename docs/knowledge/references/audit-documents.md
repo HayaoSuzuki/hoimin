@@ -11,6 +11,12 @@ sources:
   working_tree: modified
   sha256: c4c11806e1e8b6e9ad722f65c1ce42da8b0277809b4c2b9b039a222058d3bd48
 
+
+- id: issue-896-review
+  resource: ../../superpowers/reports/2026-10-15-issue-896-review.md
+  revision: e7e3cae8c4e048ee77d2bf644b47da1792211cbe
+  working_tree: modified
+  sha256: 01f6c1cb4bbd07a56eba9df40235dbb6df9abe179fa0f33b4716bdf22c6d7316
 - id: issue-900-design
   resource: ../../superpowers/reports/issue-900/design.md
   working_tree: untracked
@@ -859,9 +865,9 @@ sources:
   sha256: 2447ba6b0a732455911e9cb9737854c9a4c973e86f8334b36674faa201473302
 - id: issue-895-review
   resource: ../../superpowers/reports/issue-895/review.md
-  revision: f5bbee7d64c04798cef79e143a65dc15cdb88ce4
+  revision: 353cd427615cb29024f2b413b7b9ef6dd8b4260d
   working_tree: modified
-  sha256: a9d30afabd63e186041fb329bc9a1df5e98dd42b3efa2aeba1093beecbc08be2
+  sha256: d2fc29793e5c70c22ad55acc7612282092952a57305fdc6a9df51b8e12e3c4de
 
 ---
 
@@ -873,6 +879,7 @@ sources:
 
 | 原文 | 先頭見出し | 作成時の状態 |
 | --- | --- | --- |
+| [2026-10-15-issue-896-review.md](../../superpowers/reports/2026-10-15-issue-896-review.md) | Issue 896 review and verification [^issue-896-review] | 未追跡（参照時点） |
 | [design.md](../../superpowers/reports/issue-900/design.md) | Typed disk failure design [^issue-900-design] | untracked at reference time |
 | [plan.md](../../superpowers/reports/issue-900/plan.md) | Implementation plan [^issue-900-plan] | untracked at reference time |
 | [review.md](../../superpowers/reports/issue-900/review.md) | Issue #900 review record [^issue-900-review] | untracked at reference time |
@@ -1516,6 +1523,8 @@ sources:
 
 [^issue-897-review]: [Original record](../../superpowers/reports/2026-10-15-issue-897-review.md). Implementation design and explicitly scoped execution evidence.
 
+
+[^issue-896-review]: [Issue 896 review and verification](../../superpowers/reports/2026-10-15-issue-896-review.md).
 [^issue-900-design]: [Typed disk failure design](../../superpowers/reports/issue-900/design.md).
 
 [^issue-900-plan]: [Implementation plan](../../superpowers/reports/issue-900/plan.md).

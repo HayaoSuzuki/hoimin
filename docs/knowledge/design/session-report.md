@@ -5,6 +5,21 @@ description: 保存・復旧の権限、スキーマ移行、結果の生成側�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-896-config
+  resource: ../../../crates/hoimin-core/src/config.rs
+  revision: e7e3cae8c4e048ee77d2bf644b47da1792211cbe
+  working_tree: clean
+  sha256: b8d4ea9dad267336367c965fe24ae50634b3fa774e74cbd914e29bc74db6a4ac
+- id: issue-896-design
+  resource: ../../superpowers/specs/2026-10-15-issue-896-typed-session-design.md
+  revision: e7e3cae8c4e048ee77d2bf644b47da1792211cbe
+  working_tree: clean
+  sha256: 889039df4653837fba4f306bc7bf5ba3b24e1d2a54425d8682c6b92a66502644
+- id: issue-896-review
+  resource: ../../superpowers/reports/2026-10-15-issue-896-review.md
+  revision: e7e3cae8c4e048ee77d2bf644b47da1792211cbe
+  working_tree: modified
+  sha256: 01f6c1cb4bbd07a56eba9df40235dbb6df9abe179fa0f33b4716bdf22c6d7316
 - id: session-load-outcome
   resource: ../../../crates/hoimin-core/src/event.rs
   revision: 056cb558953ddf5eb8b229976ee894ae7c6bc87f
@@ -17,9 +32,9 @@ sources:
   sha256: 2d1710df34ea77b0733ca1fbb5b10bb9d74d93603959cc0e69a24f04decd91f3
 - id: tracing-readme
   resource: ../../usage.md
-  revision: 056cb558953ddf5eb8b229976ee894ae7c6bc87f
+  revision: e7e3cae8c4e048ee77d2bf644b47da1792211cbe
   working_tree: modified
-  sha256: 5accad1142fd4cab767e93140cc40d1fb945e025446ecee13e6440e87244a744
+  sha256: b399ad551c4e410c3cbae8f4a03def0422847e89b7f2d839d573a2129e17e10b
 - id: tracing-runtime
   resource: ../../../crates/hoimin-cli/src/telemetry.rs
   revision: 3912d73220917308ce6a966ad2b57ec9b566490c
@@ -112,9 +127,9 @@ sources:
   sha256: 283d6d959f953906bb88271e7146d18ecc9a39a7ca12813f13552247a30f544d
 - id: issue-895-review
   resource: ../../superpowers/reports/issue-895/review.md
-  revision: f5bbee7d64c04798cef79e143a65dc15cdb88ce4
+  revision: 353cd427615cb29024f2b413b7b9ef6dd8b4260d
   working_tree: modified
-  sha256: a9d30afabd63e186041fb329bc9a1df5e98dd42b3efa2aeba1093beecbc08be2
+  sha256: d2fc29793e5c70c22ad55acc7612282092952a57305fdc6a9df51b8e12e3c4de
 - id: issue-895-outcome
   resource: ../../../crates/hoimin-core/src/resume.rs
   revision: 31245fbf096967b36bc15523067080b506f88fe9
@@ -238,13 +253,13 @@ macOSで、並列数1・2、root内外の別名、大小文字の別名、実際
 
 ## Environment metadata and report readers (Issue #887)
 
-Report schema 5 replaces separate names and optional hash with one validated
-`environment` snapshot. Progress and review consume the writer's schema; preserve
-schema-4 and older reports with their producing binary or rerun rather than
-rewriting their version fields. Captured plaintext never enters snapshot metadata.
+Report schema 6 retains the validated `environment` snapshot introduced in schema
+5 in place of separate names and an optional hash. Progress and review consume
+the writer's schema; preserve schema-5 and older reports with their producing
+binary or rerun rather than rewriting their version fields. Captured plaintext never enters snapshot metadata.
 Plan schema 6 requires regeneration of older plans. Fingerprint schema 11 and its
 exact bytes remain stable, so this format change alone does not require a new
-session or alter SQLite schema 4. [^issue-887-environment]
+session; the current typed-outcome contract uses SQLite schema 5. [^issue-887-environment]
 
 [^issue-887-environment]: [Issue 887 typed snapshot verification](../../superpowers/plans/2026-10-14-issue-887.md).
 
@@ -312,3 +327,28 @@ and both report/progress oracle projections when changing this boundary.
 
 [^issue-895-outcome]: [MutationOutcome and result domain](../../../crates/hoimin-core/src/resume.rs).
 [^issue-895-session-schema]: [Current session schema](../../../crates/hoimin-cli/src/session/schema.rs).
+
+## Normalized session intent (Issue #896)
+
+Raw CLI input retains `--session` and `--resume`. Normalization converts them once
+into `SessionMode::Disabled`, `Fresh(SessionConfig)` or `Resume(SessionConfig)`.
+An enabled mode owns its path; a resumed mode without a session path cannot be
+constructed. Path normalization changes the configuration inside the enabled
+mode without replacing its intent.[^issue-896-config][^issue-896-design]
+
+Report schema 6 serializes disabled intent as `{"mode":"disabled"}` and enabled
+intent as `{"mode":"fresh","config":{"path":"..."}}` or the corresponding
+`resume` mode. Normalized readers reject the obsolete independent `resume` field
+and old session objects. Plan schema 6 still omits runtime session intent, and
+session database schema 5 stores typed mutation outcomes. `SessionLoadOutcome` and report
+`ResumeOutcome` describe the observed selection result, not the request mode.
+CLI options, session exclusions and metrics collision rules remain in their
+existing guides.[^issue-896-config][^issue-896-design]
+
+The branch review distinguishes static inspection, Windows checks and pending
+platform checks. Changing session normalization or path ownership requires
+rechecking all three modes, strict Schema decoding and collision rules.[^issue-896-review]
+
+[^issue-896-config]: [Normalized configuration](../../../crates/hoimin-core/src/config.rs).
+[^issue-896-design]: [Typed session design](../../superpowers/specs/2026-10-15-issue-896-typed-session-design.md).
+[^issue-896-review]: [Review and verification](../../superpowers/reports/2026-10-15-issue-896-review.md).

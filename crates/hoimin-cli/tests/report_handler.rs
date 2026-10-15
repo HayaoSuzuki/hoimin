@@ -322,14 +322,18 @@ fn all_optional_report_events_at(current: bool, version: u32) -> Vec<OutputEvent
         .map(|argument| CommandArg::Unix(argument.as_bytes().to_vec()))
         .collect();
     config.output.metrics = Some("metrics.json".into());
-    config.session.as_mut().unwrap().path = "session.sqlite3".into();
+    config.session.config_mut().unwrap().path = "session.sqlite3".into();
     let verification_selection = current.then(documented_verification_selection);
     let run_id_text = format!(
         "schema-v{version}-{}",
         if current { "current" } else { "original" }
     );
     let run_id = run_id_text.as_str();
-    config.resume = current && version >= 4;
+    config.session = if current && version >= 4 {
+        hoimin_core::SessionMode::Resume(config.session.config().unwrap().clone())
+    } else {
+        hoimin_core::SessionMode::Fresh(config.session.config().unwrap().clone())
+    };
     let mut started = RunStarted::minimal(run_id, 1, test_resource_control());
     started.normalized_config = Some(config);
     started.resume = (current && version >= 4).then_some(hoimin_core::ResumeOutcome::Fresh {
@@ -484,7 +488,7 @@ fn assert_event_optionals(events: &[OutputEvent], current: bool) {
         Some("metrics.json")
     );
     assert_eq!(
-        config.session.as_ref().map(|session| session.path.as_str()),
+        config.session.config().map(|session| session.path.as_str()),
         Some("session.sqlite3")
     );
     assert_eq!(started.verification_selection.is_some(), current);
@@ -2327,7 +2331,7 @@ async fn public_resume_reports_validate_schema_six_in_json_and_jsonl() {
     for (_, stdout, expected) in reports.iter().filter(|(format, _, _)| *format == "json") {
         let document: serde_json::Value = serde_json::from_slice(stdout).unwrap();
         assert_schema_valid(&result_schema, &document, &event_schema);
-        assert_eq!(document["schema_version"], 6);
+        assert_eq!(document["schema_version"], REPORT_SCHEMA_VERSION);
         assert_eq!(document["run"]["resume"], *expected);
     }
     for (_, stdout, expected) in reports.iter().filter(|(format, _, _)| *format == "jsonl") {

@@ -445,8 +445,48 @@ impl Default for OutputConfig {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SessionConfig {
     pub path: Utf8PathBuf,
+}
+
+/// Session intent after CLI validation; enabled variants always own their path.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(
+    tag = "mode",
+    content = "config",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
+pub enum SessionMode {
+    #[default]
+    Disabled,
+    Fresh(SessionConfig),
+    Resume(SessionConfig),
+}
+
+impl SessionMode {
+    /// Returns the session configuration for either enabled mode.
+    #[must_use]
+    pub fn config(&self) -> Option<&SessionConfig> {
+        match self {
+            Self::Disabled => None,
+            Self::Fresh(config) | Self::Resume(config) => Some(config),
+        }
+    }
+
+    /// Exposes the enabled path for filesystem normalization without changing intent.
+    pub fn config_mut(&mut self) -> Option<&mut SessionConfig> {
+        match self {
+            Self::Disabled => None,
+            Self::Fresh(config) | Self::Resume(config) => Some(config),
+        }
+    }
+
+    #[must_use]
+    pub const fn is_resume(&self) -> bool {
+        matches!(self, Self::Resume(_))
+    }
 }
 
 /// A strictly positive duration, checked during raw conversion and deserialization.
@@ -508,6 +548,7 @@ pub struct RunLimits {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 /// Normalized invocation with a canonical capture request before preparation.
 /// The default environment state is a validated snapshot consumed by execution.
+#[serde(deny_unknown_fields)]
 pub struct RunConfig<E = crate::EnvironmentSnapshot> {
     pub root: Utf8PathBuf,
     pub selection: Selection,
@@ -521,11 +562,10 @@ pub struct RunConfig<E = crate::EnvironmentSnapshot> {
     pub limits: RunLimits,
     pub test_argv: Vec<CommandArg>,
     pub output: OutputConfig,
-    pub session: Option<SessionConfig>,
+    pub session: SessionMode,
     pub operators: MutationOperatorSelection,
     pub allow_best_effort_memory: bool,
     pub profile: MutationProfile,
-    pub resume: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -555,15 +595,12 @@ impl<E> RunConfig<E> {
     ///
     /// # Errors
     ///
-    /// Returns [`ConfigError`] when selection, mutation operators, runtime resume state, the test
-    /// command, or limits are invalid.
+    /// Returns [`ConfigError`] when selection, mutation operators, the test command,
+    /// or limits are invalid.
     pub fn validate(&self) -> Result<(), ConfigError> {
         validate_selection(&self.root, &self.selection)?;
         validate_import_roots(&self.import_roots)?;
         validate_operators(&self.operators)?;
-        if self.resume && self.session.is_none() {
-            return Err(ConfigError::ResumeRequiresSession);
-        }
         validate_test_argv(&self.test_argv)?;
         validate_limits(&self.limits)
     }
@@ -625,7 +662,6 @@ impl RunConfig<crate::EnvironmentRequest> {
             operators: self.operators,
             allow_best_effort_memory: self.allow_best_effort_memory,
             profile: self.profile,
-            resume: self.resume,
         })
     }
 }
@@ -659,11 +695,10 @@ impl PlanConfig {
             limits: self.limits,
             test_argv: self.test_argv,
             output,
-            session: None,
+            session: SessionMode::Disabled,
             operators: self.operators,
             allow_best_effort_memory: self.allow_best_effort_memory,
             profile: self.profile,
-            resume: false,
         }
     }
 }
@@ -960,9 +995,12 @@ impl TryFrom<RawRunConfig> for RunConfig<crate::EnvironmentRequest> {
             excludes: raw.excludes,
         };
         validate_selection(&raw.root, &selection)?;
-        if raw.resume && raw.session.is_none() {
-            return Err(ConfigError::ResumeRequiresSession);
-        }
+        let session = match (raw.session, raw.resume) {
+            (None, false) => SessionMode::Disabled,
+            (Some(config), false) => SessionMode::Fresh(config),
+            (Some(config), true) => SessionMode::Resume(config),
+            (None, true) => return Err(ConfigError::ResumeRequiresSession),
+        };
         validate_test_argv(&raw.test_argv)?;
         let mut operators = if raw.operators.is_empty() {
             MutationOperatorSelection::default()
@@ -993,11 +1031,10 @@ impl TryFrom<RawRunConfig> for RunConfig<crate::EnvironmentRequest> {
             limits,
             test_argv: raw.test_argv,
             output: raw.output,
-            session: raw.session,
+            session,
             operators,
             allow_best_effort_memory: raw.allow_best_effort_memory,
             profile: raw.profile,
-            resume: raw.resume,
         })
     }
 }

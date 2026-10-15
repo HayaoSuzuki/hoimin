@@ -1,0 +1,15 @@
+# 正規化済みセッションモード
+
+仕様: https://github.com/HayaoSuzuki/hoimin/issues/896
+
+RawRunConfigはCLI入力としてsessionとresumeを保持する。正規化時にSessionModeへ一度だけ変換する。SessionModeはDisabled、Fresh(SessionConfig)、Resume(SessionConfig)を持ち、パスなしのResumeを表現できない。RunConfigに独立したresumeは持たせない。保存時はmodeをタグ、configを付随データに使い、旧形式は拒否する。
+
+パス取得とパス正規化はSessionModeのconfig/config_mutを使う。実行時の新規・再開・無効の選択はEnumをmatchする。planから生成する実行設定はDisabled。セッションモードは既存通りresume fingerprintの対象外とする。
+
+CLIの--session/--resumeと診断、metricsの衝突検証、workerからsession管理ファイルを除外する規則を保持する。保存形式を読み替える移行層は追加しない。
+
+検証はraw入口の不正入力、3状態のroundtrip、旧形式拒否、path正規化、new/resumeの状態機械、metrics/session衝突。AAA・1関数1観点とし、状態と任意の安全なパスの組み合わせはproptestで検証する。型で排除した不正状態をruntimeで再検査しない。
+
+設計レビュー5回: ①raw CLIのboolが必要な入口を区別した。②plan保存にsessionがない契約を確認しDisabled生成とした。③shellのパス正規化・metrics衝突の利用を確認してconfig_mutを設けた。④レポートresume outcomeと要求モードは別概念のため混同しない。⑤旧resumeフィールドの黙殺を避けるためRunConfigのunknown fieldを拒否する。
+
+設計評価: 対象領域の変更前は4/8項目（5/10）。インターフェースの単純さ、モードの知識の局所化、抽象のコメント、境界の理解しやすさが未達だった。SessionModeによる所有、一度だけの正規化、config/config_mutの意図を示すコメントでこれらを改善した。変更後は評価可能な7/8項目が合格（8.75/10相当）。残る時間配分の項目は計測していないため未評価で、10/10と断定するには設計改善に使う作業時間の記録が必要。コードベース全体の点数ではない。

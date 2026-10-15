@@ -129,7 +129,7 @@ pub struct PlanOutput {
 ///
 /// ```compile_fail
 /// fn enable_resume(mut plan: hoimin_cli::plan::VerifiedPlan) {
-///     plan.config.resume = true;
+///     plan.config.session = hoimin_core::SessionMode::Disabled;
 /// }
 /// ```
 ///
@@ -137,7 +137,7 @@ pub struct PlanOutput {
 ///
 /// ```compile_fail
 /// fn enable_resume(plan: hoimin_cli::plan::VerifiedPlan) {
-///     plan.config().resume = true;
+///     plan.config().session = hoimin_core::SessionMode::Disabled;
 /// }
 /// ```
 #[derive(Clone, Debug, Eq, PartialEq)]

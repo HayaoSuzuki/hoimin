@@ -100,7 +100,6 @@
         "metrics": "metrics.json"
       },
       "profile": "full",
-      "resume": true,
       "root": ".",
       "selection": {
         "changed": true,
@@ -117,7 +116,10 @@
         "symbols": []
       },
       "session": {
-        "path": "session.sqlite3"
+        "config": {
+          "path": "session.sqlite3"
+        },
+        "mode": "resume"
       },
       "test_argv": [
         {

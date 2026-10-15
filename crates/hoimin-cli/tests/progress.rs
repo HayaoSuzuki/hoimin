@@ -35,7 +35,7 @@ const TEST_MIN_FREE_SPACE: &str = "1B";
 fn input_rejects_historical_report_goldens() {
     let root = repo_root().join("crates/hoimin-cli/tests/golden");
     for (format, extension) in [("reports", "json"), ("events", "jsonl")] {
-        for version in [2, 3, 4] {
+        for version in [2, 3, 4, 5] {
             for era in ["original", "current"] {
                 let path = root
                     .join(format)

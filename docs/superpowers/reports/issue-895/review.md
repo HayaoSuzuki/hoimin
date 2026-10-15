@@ -189,3 +189,44 @@ Integrated main 978a68ccc59f7cb4dec9081cdcb5f59a4bcc9334 into the published f5bb
 Independent read-only integration review found no actionable issue: worker ownership/counting remained intact, outcome/session/schema source was unchanged from the published head, main's disk/review models were retained, and both parents' documentation sources survived.
 
 Fresh verification completed: cargo test --workspace --all-features --no-fail-fast produced 156 successful result summaries, 2,897 passes, zero failures and 27 ignored (including nested subprocess summaries). All-workspace/all-target/all-feature Clippy passed with warnings denied. Complete Python: 1,009 passed, 29 skipped, one temporary-file cleanup warning. No production or test expectation edits were required by this integration.
+
+
+## SessionMode and root-cleanup main integration (2026-10-15)
+
+Merged main 42e2b5b63bd92e3f926c4bec74b1c230e8fc9240 (squashed PRs 905 and 907) into published head 353cd427615cb29024f2b413b7b9ef6dd8b4260d. Eleven conflicted paths covered four schema-6 golden files, two test readers/assertions and five documentation pages. No production file required manual resolution. Both saved-format changes now coexist in the current-only report contract: SessionMode owns normalized intent and MutationOutcome owns execution evidence; session database schema 5 remains required.
+
+### Design review passes
+
+1. Read main's normalized SessionMode and the automatic machine transition merge. Disabled, Fresh and Resume remain exhaustive and do not restore independent resume flags.
+2. Read the automatic shell path normalization and selected-execution guards; enabled session path ownership remains in SessionMode configuration.
+3. Compared typed disk-root cleanup against main: registration order, deferred blocking, delivery completion and sticky evidence remain in the typed lifecycle.
+4. Compared WorkerState and MutationOutcome against the published feature head; the main integration changes session entry rather than result ownership/classification.
+5. Read both schema changes together. Keeping schema-6 labels requires fixtures to carry both current SessionMode and current MutationOutcome; adopting either whole parent fixture would lose a contract.
+
+### Integration plan review passes
+
+1. Preserved the published ancestry with a non-rebased merge of SHA-verified main obtained through gh.
+2. Selected field-level golden composition: retain the typed outcome document, copy main's normalized session intent and remove only the obsolete normalized resume field.
+3. Kept the existing OutputEvent decoder in progress_compare_heap and accepted main's report version constant assertion; neither needs a compatibility adapter.
+4. Selected complete core contracts, CLI library and related session/report/progress/heap/oracle/E2E targets, all-feature/all-target lint and complete Python verification.
+5. Isolated Cargo output with one build job, two test threads, debug0/incremental0; kept logs outside the target and cleaned only after all processes finished.
+
+### Implementation review passes
+
+1. Read the four golden compositions and verified typed outcomes, both session modes, sequence IDs and summaries stayed intact; historical schema-5 and older golden files were not edited.
+2. Read report_handler's normalized fixture builder after the automatic SessionMode changes and the retained REPORT_SCHEMA_VERSION assertion.
+3. Verified progress_compare_heap still decodes the tagged OutputEvent before taking MutantFinished, matching the outcome wire shape.
+4. Retained both parents' documentation sections, source IDs, rows and footnotes; updated current session database wording to schema 5.
+5. Read compatibility and usage together. Corrected the merged compatibility sentence so the session-intent change and typed-outcome database requirement have separate clear scopes.
+
+### Verification review passes
+
+1. Inspected fresh core contracts result summaries and ignored counts, covering SessionMode, root cleanup, machine and mutation outcome boundaries.
+2. Inspected fresh CLI library and complete selected integration target results, including report goldens, progress/heap readers, session resume and runtime cleanup adapters.
+3. Read the complete Python test summary separately from lint/type results; platform skips and warnings remain explicit.
+4. Checked fresh all-target/all-feature Clippy, workspace formatting, documented site build, unresolved paths and whitespace errors.
+5. Refreshed only the edited review's three modified source observations, preserved canonical historical source revisions and rechecked owned hashes/citations after this record.
+
+Independent read-only review covered five distinct boundaries (production types, schema/goldens, test adapters, migration guidance, and catalog/provenance). It identified the same compatibility grammar defect, corrected before commit; any further findings and actual verification results follow below.
+
+Fresh validation: core all-target contracts produced 32 successful summaries, 431 passed, zero failed, two ignored. CLI contracts library plus 14 selected integration targets produced 17 successful summaries, 1,217 passed, zero failed and 18 ignored, including nested subprocess summaries (not a unique-test count). Complete Python: 1,010 passed, 29 skipped. All-workspace/all-target/all-feature Clippy with warnings denied, Ruff lint/format, ty, workspace formatting and documented site build passed. Independent review found no additional actionable finding after the compatibility grammar correction. No production or test expectation change was needed beyond composing the current-schema fixtures and retaining the correct reader/assertion. A repeated full workspace behavioral suite is not claimed.
