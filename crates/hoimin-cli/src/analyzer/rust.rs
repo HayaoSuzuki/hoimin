@@ -1541,8 +1541,7 @@ impl<'ast> Visitor<'ast> for ImportedNames {
             Stmt::ImportFrom(import) => imports.transfer_import_from(import),
             _ => {}
         }
-        self.0.extend(imports.direct.into_keys());
-        self.0.extend(imports.modules.into_keys());
+        self.0.extend(imports.bindings.into_keys());
         visitor::walk_stmt(self, statement);
     }
 }
@@ -4656,30 +4655,32 @@ mod compound_pattern_guard_oracle_tests;
 #[path = "except_star_flow_oracle_tests.rs"]
 mod except_star_flow_oracle_tests;
 
+#[cfg(test)]
+#[path = "known_imports_tests.rs"]
+mod known_imports_tests;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum KnownBinding {
+    Direct(String),
+    Module(String),
+    TypeVar,
+}
+
+// A local name has at most one known binding category, including type parameters.
 #[derive(Debug, Default, Eq, PartialEq)]
 #[cfg_attr(not(test), derive(Clone))]
 struct KnownImports {
-    direct: HashMap<String, String>,
-    modules: HashMap<String, String>,
-    type_vars: HashSet<String>,
+    bindings: HashMap<String, KnownBinding>,
 }
 
 #[cfg(test)]
 impl Clone for KnownImports {
     fn clone(&self) -> Self {
         IMPORT_CLONE_CALLS.set(IMPORT_CLONE_CALLS.get().checked_add(1).unwrap());
-        let entries = self
-            .direct
-            .len()
-            .checked_add(self.modules.len())
-            .unwrap()
-            .checked_add(self.type_vars.len())
-            .unwrap();
+        let entries = self.bindings.len();
         IMPORT_CLONE_ENTRIES.set(IMPORT_CLONE_ENTRIES.get().checked_add(entries).unwrap());
         Self {
-            direct: self.direct.clone(),
-            modules: self.modules.clone(),
-            type_vars: self.type_vars.clone(),
+            bindings: self.bindings.clone(),
         }
     }
 }
@@ -4729,17 +4730,12 @@ impl KnownImports {
     }
 
     fn intersect_with(&mut self, state: &Self) {
-        self.direct
-            .retain(|name, resolved| state.direct.get(name) == Some(resolved));
-        self.modules
-            .retain(|name, resolved| state.modules.get(name) == Some(resolved));
-        self.type_vars.retain(|name| state.type_vars.contains(name));
+        self.bindings
+            .retain(|name, binding| state.bindings.get(name) == Some(binding));
     }
 
     fn invalidate(&mut self, name: &str) {
-        self.direct.remove(name);
-        self.modules.remove(name);
-        self.type_vars.remove(name);
+        self.bindings.remove(name);
     }
 
     fn enter_type_params(&mut self, type_params: &TypeParams) {
@@ -4749,21 +4745,15 @@ impl KnownImports {
                 TypeParam::TypeVarTuple(parameter) => parameter.name.as_str(),
                 TypeParam::ParamSpec(parameter) => parameter.name.as_str(),
             };
-            self.invalidate(name);
-            self.type_vars.insert(name.to_owned());
+            self.bindings.insert(name.to_owned(), KnownBinding::TypeVar);
         }
     }
 
     fn copy_name_from(&mut self, source: &Self, name: &str) {
-        self.invalidate(name);
-        if let Some(resolved) = source.direct.get(name) {
-            self.direct.insert(name.to_owned(), resolved.clone());
-        }
-        if let Some(resolved) = source.modules.get(name) {
-            self.modules.insert(name.to_owned(), resolved.clone());
-        }
-        if source.type_vars.contains(name) {
-            self.type_vars.insert(name.to_owned());
+        if let Some(binding) = source.bindings.get(name) {
+            self.bindings.insert(name.to_owned(), binding.clone());
+        } else {
+            self.invalidate(name);
         }
     }
 
@@ -4788,7 +4778,8 @@ impl KnownImports {
     fn mark_type_vars(&mut self, target: &Expr) {
         match target {
             Expr::Name(name) => {
-                self.type_vars.insert(name.id.as_str().to_owned());
+                self.bindings
+                    .insert(name.id.as_str().to_owned(), KnownBinding::TypeVar);
             }
             Expr::List(list) => {
                 for element in &list.elts {
@@ -4815,7 +4806,8 @@ impl KnownImports {
             self.invalidate(local);
             if matches!(name, "typing" | "collections.abc") {
                 let resolved = if alias.asname.is_some() { name } else { local };
-                self.modules.insert(local.to_owned(), resolved.to_owned());
+                self.bindings
+                    .insert(local.to_owned(), KnownBinding::Module(resolved.to_owned()));
             }
         }
     }
@@ -4832,10 +4824,11 @@ impl KnownImports {
         for alias in &import.names {
             let imported = alias.name.as_str();
             if imported == "*" {
-                self.direct.clear();
-                self.type_vars.clear();
-                if !matches!(module_name, Some("typing" | "collections.abc")) {
-                    self.modules.clear();
+                if matches!(module_name, Some("typing" | "collections.abc")) {
+                    self.bindings
+                        .retain(|_, binding| matches!(binding, KnownBinding::Module(_)));
+                } else {
+                    self.bindings.clear();
                 }
                 continue;
             }
@@ -4849,8 +4842,10 @@ impl KnownImports {
                 && (is_known_type_name(imported)
                     || (module_name == "collections.abc" && imported == "Set"))
             {
-                self.direct
-                    .insert(local.to_owned(), format!("{module_name}.{imported}"));
+                self.bindings.insert(
+                    local.to_owned(),
+                    KnownBinding::Direct(format!("{module_name}.{imported}")),
+                );
             }
         }
     }
@@ -4897,14 +4892,14 @@ impl KnownImports {
             match current {
                 Expr::Name(name) => {
                     let first = name.id.as_str();
-                    if let Some(name) = self.direct.get(first) {
-                        parts.push(name.clone());
-                    } else if let Some(module) = self.modules.get(first) {
-                        parts.push(module.clone());
-                    } else if parts.is_empty() {
-                        parts.push(first.to_owned());
-                    } else {
-                        return None;
+                    match self.bindings.get(first) {
+                        Some(KnownBinding::Direct(resolved) | KnownBinding::Module(resolved)) => {
+                            parts.push(resolved.clone());
+                        }
+                        Some(KnownBinding::TypeVar) | None if parts.is_empty() => {
+                            parts.push(first.to_owned());
+                        }
+                        _ => return None,
                     }
                     break;
                 }
@@ -4932,9 +4927,12 @@ impl KnownImports {
     ) -> Option<String> {
         if let Some((prefix, _)) = source.rsplit_once('.') {
             return self
-                .modules
+                .bindings
                 .iter()
-                .filter_map(|(local, module)| {
+                .filter_map(|(local, binding)| {
+                    let KnownBinding::Module(module) = binding else {
+                        return None;
+                    };
                     let suffix = if prefix == local {
                         ""
                     } else {
@@ -4954,14 +4952,24 @@ impl KnownImports {
                 .min();
         }
         let direct = self
-            .direct
+            .bindings
             .iter()
-            .filter(|(local, resolved)| targets.contains(&resolved.as_str()) && allowed(local))
-            .map(|(local, _)| local.clone())
+            .filter_map(|(local, binding)| match binding {
+                KnownBinding::Direct(resolved)
+                    if targets.contains(&resolved.as_str()) && allowed(local) =>
+                {
+                    Some(local.clone())
+                }
+                _ => None,
+            })
             .min();
         direct.or_else(|| {
-            self.modules
+            self.bindings
                 .iter()
+                .filter_map(|(local, binding)| match binding {
+                    KnownBinding::Module(module) => Some((local, module)),
+                    _ => None,
+                })
                 .flat_map(|(local, module)| {
                     let allowed = &allowed;
                     targets.iter().filter_map(move |target| {
@@ -5904,9 +5912,7 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
     fn try_handler_imports(mut incoming: KnownImports, body: &[Stmt]) -> KnownImports {
         let try_effects = FunctionLocalCollector::scan(body);
         if try_effects.unknown_wildcard {
-            incoming.direct.clear();
-            incoming.modules.clear();
-            incoming.type_vars.clear();
+            incoming.bindings.clear();
         }
         for name in try_effects.locals {
             incoming.invalidate(&name);
@@ -6886,21 +6892,13 @@ pub(super) struct BindingFlowTestSnapshot {
 #[cfg(test)]
 fn normalize_binding_flow_imports(imports: &KnownImports) -> Vec<String> {
     let mut facts = imports
-        .direct
+        .bindings
         .iter()
-        .map(|(name, resolved)| format!("direct:{name}={resolved}"))
-        .chain(
-            imports
-                .modules
-                .iter()
-                .map(|(name, resolved)| format!("module:{name}={resolved}")),
-        )
-        .chain(
-            imports
-                .type_vars
-                .iter()
-                .map(|name| format!("type-var:{name}")),
-        )
+        .map(|(name, binding)| match binding {
+            KnownBinding::Direct(resolved) => format!("direct:{name}={resolved}"),
+            KnownBinding::Module(resolved) => format!("module:{name}={resolved}"),
+            KnownBinding::TypeVar => format!("type-var:{name}"),
+        })
         .collect::<Vec<_>>();
     facts.sort();
     facts
@@ -7334,7 +7332,10 @@ struct AnnotationImports<'a> {
 
 impl AnnotationImports<'_> {
     fn stable_name(&self, local: &str) -> bool {
-        let known = self.known.direct.contains_key(local) || self.known.modules.contains_key(local);
+        let known = matches!(
+            self.known.bindings.get(local),
+            Some(KnownBinding::Direct(_) | KnownBinding::Module(_))
+        );
         if !known && !self.resolution.imported_names.contains(local) {
             return true;
         }
@@ -7656,7 +7657,10 @@ fn contains_disallowed_annotation(annotation: &Expr, imports: &AnnotationImports
         Expr::StringLiteral(_) => true,
         Expr::Name(name) => {
             !matches!(name.id.as_str(), "str" | "int" | "float" | "bool" | "bytes")
-                || imports.known.type_vars.contains(name.id.as_str())
+                || matches!(
+                    imports.known.bindings.get(name.id.as_str()),
+                    Some(KnownBinding::TypeVar)
+                )
                 || imports.resolved_name(annotation).as_deref() == Some("typing.Any")
         }
         Expr::Attribute(_) => matches!(
@@ -7866,9 +7870,13 @@ mod performance_cost_tests {
     #[test]
     fn actual_import_clone_counts_entries_at_the_clone_boundary() {
         let mut imports = KnownImports::default();
-        imports.direct.insert("A".into(), "Optional".into());
-        imports.modules.insert("t".into(), "typing".into());
-        imports.type_vars.insert("T".into());
+        imports
+            .bindings
+            .insert("A".into(), KnownBinding::Direct("Optional".into()));
+        imports
+            .bindings
+            .insert("t".into(), KnownBinding::Module("typing".into()));
+        imports.bindings.insert("T".into(), KnownBinding::TypeVar);
         IMPORT_CLONE_CALLS.set(0);
         IMPORT_CLONE_ENTRIES.set(0);
         let copied = imports.clone();
