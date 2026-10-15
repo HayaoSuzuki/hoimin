@@ -33,21 +33,28 @@
         },
         "symbol": "calculate"
       },
-      "elapsed_ms": 13,
       "kind": "mutant_finished",
-      "output": {
-        "observed": 89,
-        "retained": 55,
-        "token": "golden-mutant-output"
+      "outcome": {
+        "executed": {
+          "elapsed": {
+            "nanos": 13000000,
+            "secs": 0
+          },
+          "output": {
+            "observed": 89,
+            "retained": 55,
+            "token": "golden-mutant-output"
+          },
+          "output_state": "complete",
+          "termination": {
+            "Exit": 7
+          }
+        }
       },
       "resource_mode": "hard",
       "run_id": "schema-v6-original",
       "schema_version": 6,
-      "sequence": 4,
-      "status": "killed",
-      "termination": {
-        "Exit": 7
-      }
+      "sequence": 4
     }
   ],
   "run": {

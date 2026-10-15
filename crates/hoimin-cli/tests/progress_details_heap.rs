@@ -45,7 +45,7 @@ fn detail_allocations_do_not_scale_with_candidate_body_size() {
         fixture.path().join("after.json"),
     ];
     for size in [32, 256 * 1024] {
-        for (path, (status, killed, survived, score, exit_code)) in paths
+        for (path, (_status, killed, survived, score, exit_code)) in paths
             .iter()
             .zip([("killed", 12, 0, 1.0, 1), ("survived", 0, 12, 0.0, 0)])
         {
@@ -62,8 +62,7 @@ fn detail_allocations_do_not_scale_with_candidate_body_size() {
                         event["candidate"]["sequence"] = json!(index + 1);
                         event["candidate"]["original"] = json!("a".repeat(size));
                         event["candidate"]["replacement"] = json!("b".repeat(size));
-                        event["status"] = json!(status);
-                        event["termination"] = json!({"Exit": exit_code});
+                        event["outcome"]["executed"]["termination"] = json!({"Exit": exit_code});
                         event
                     })
                     .collect(),

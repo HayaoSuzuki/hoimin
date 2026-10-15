@@ -5,6 +5,12 @@ description: docs/superpowers/specs内の全Markdownを先頭見出しと出典�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-897-design
+  resource: ../../superpowers/specs/2026-10-15-issue-897-worker-state-design.md
+  revision: 175486b7cb30a665bdf39c1ac7897eb96d9966f7
+  working_tree: clean
+  sha256: db6d7171357601e158950fa4eeae4dc41fdb79a7411a2e9e5224f9d620997ffb
+
 - id: issue-898-process-design
   resource: ../../superpowers/specs/2026-10-15-issue-898-design.md
   revision: 51c9e26b9d0006cac150b3833cb797a59349bac1
@@ -1705,6 +1711,15 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 - [Bounded fuzzing adoption assessment](../../superpowers/specs/2026-10-12-fuzz-adoption-design.md) - Bounded adoption decisions and evidence limitations.[^fuzz-adoption-design]
 
 [^fuzz-adoption-design]: [Bounded fuzzing adoption assessment](../../superpowers/specs/2026-10-12-fuzz-adoption-design.md).
+
+
+## Issue #897 Worker ownership
+
+| Original heading | Source |
+| --- | --- |
+| Worker-owned execution state | [Original](../../superpowers/specs/2026-10-15-issue-897-worker-state-design.md) [^issue-897-design] |
+
+[^issue-897-design]: [Original record](../../superpowers/specs/2026-10-15-issue-897-worker-state-design.md). Implementation design and explicitly scoped execution evidence.
 
 ## Issue 898 process requests
 

@@ -5,7 +5,7 @@ import Std
 namespace HoiminOracle.SchemaMigration
 
 inductive Version
-  | fresh | v1 | v2 | v3 | current | future
+  | fresh | v1 | v2 | v3 | v4 | current | future
   deriving Repr, DecidableEq, BEq, ReflBEq, LawfulBEq
 
 inductive Actor
@@ -70,7 +70,7 @@ def begin (state : State) (actor : Actor) : State :=
       match state.version with
       | .fresh | .current =>
           setPhase { state with lock := some actor, txVersion := some state.version } actor .locked
-      | .v1 | .v2 | .v3 | .future => setPhase state actor .unsupportedRejected
+      | .v1 | .v2 | .v3 | .v4 | .future => setPhase state actor .unsupportedRejected
   | _, _ => state
 
 def releaseFailed (state : State) (actor : Actor) : State :=
@@ -94,7 +94,7 @@ def commit (state : State) (actor : Actor) : State :=
             setPhase {
               state with version := .current, lock := none, txVersion := none
             } actor .succeeded
-        | .v1 | .v2 | .v3 | .future => releaseFailed state actor
+        | .v1 | .v2 | .v3 | .v4 | .future => releaseFailed state actor
     | _ => state
   else state
 

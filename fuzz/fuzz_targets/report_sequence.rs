@@ -2,9 +2,9 @@
 
 use hoimin_core::{
     BaselineFinished, ByteSpan, Diagnostic, DiskRunSummary, MutantFinished, MutantStarted,
-    MutationCandidate, MutationStatus, OutputEvent, OutputSpoolRef, ProcessOutputState,
-    ProcessTermination, ReportSequence, ResourceControl, ResourceMode, RunStarted, RunSummary,
-    classify_mutant, summarize,
+    MutationCandidate, MutationOutcome, OutputEvent, OutputSpoolRef, ProcessOutputState,
+    ProcessTermination, ReportSequence, ResourceControl, ResourceMode, ReusedMutationStatus,
+    RunStarted, RunSummary, summarize,
 };
 use libfuzzer_sys::fuzz_target;
 
@@ -81,7 +81,32 @@ fuzz_target!(|data: &[u8]| {
         mechanism: "fuzz".into(),
     };
     let termination = termination(data.get(1).copied().unwrap_or(0));
-    let status = classify_mutant(termination);
+    let selector = data.get(2).copied().unwrap_or(0);
+    let outcome = match selector % 4 {
+        0 | 1 => MutationOutcome::Executed {
+            termination,
+            output_state: if selector & 1 == 0 {
+                ProcessOutputState::Complete
+            } else {
+                ProcessOutputState::CloseTimedOut
+            },
+            output: OutputSpoolRef {
+                token: "mutant".into(),
+                retained: 0,
+                observed: u64::try_from(data.len()).unwrap(),
+            },
+            elapsed: std::time::Duration::from_millis(u64::from(selector)),
+        },
+        2 => MutationOutcome::Reused {
+            status: if data.first().copied().unwrap_or(0) & 1 == 0 {
+                ReusedMutationStatus::Killed
+            } else {
+                ReusedMutationStatus::Survived
+            },
+        },
+        _ => MutationOutcome::NotRun,
+    };
+    let status = outcome.status();
     let candidate = candidate(mutant_id.clone(), 1, &payload);
     let events = [
         OutputEvent::RunStarted(RunStarted::minimal(run_id.clone(), 1, resource_control)),
@@ -111,12 +136,8 @@ fuzz_target!(|data: &[u8]| {
             sequence: 5,
             run_id: run_id.clone(),
             candidate,
-            status,
-            termination: Some(termination),
-            output_state: ProcessOutputState::Complete,
-            elapsed_ms: 0,
+            outcome,
             resource_mode,
-            output: None,
             diagnostics: Vec::new(),
         }),
         OutputEvent::RunFinished(RunSummary {
@@ -144,19 +165,9 @@ fuzz_target!(|data: &[u8]| {
             .is_err()
     );
 
-    // A rejected result must not consume its sequence number or active mutant.
-    let mut recoverable = ReportSequence::new();
-    recoverable.observe(&events[0]).unwrap();
-    recoverable.observe(&events[3]).unwrap();
-    let OutputEvent::MutantFinished(good) = &events[4] else {
-        unreachable!();
-    };
-    let mut bad = good.clone();
-    bad.status = MutationStatus::Error;
-    assert!(
-        recoverable
-            .validate(&OutputEvent::MutantFinished(bad))
-            .is_err()
-    );
-    recoverable.observe(&events[4]).unwrap();
+    // Malformed wire is rejected before it reaches lifecycle validation.
+    let mut malformed = serde_json::to_value(&events[4]).unwrap();
+    malformed["status"] = serde_json::json!("error");
+    let encoded = serde_json::to_vec(&malformed).unwrap();
+    assert!(serde_json::from_slice::<OutputEvent>(&encoded).is_err());
 });

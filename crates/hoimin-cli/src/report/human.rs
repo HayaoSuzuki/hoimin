@@ -89,7 +89,7 @@ pub(super) fn write_event(writer: &mut impl Write, event: &OutputEvent) -> io::R
             value.candidate.operator,
             value.candidate.original,
             value.candidate.replacement,
-            value.status.as_str()
+            value.outcome.status().as_str()
         )?,
         OutputEvent::Diagnostic(value) => {
             writeln!(writer, "{} {}: {}", value.level, value.code, value.message)?;

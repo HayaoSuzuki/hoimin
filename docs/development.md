@@ -1906,6 +1906,45 @@ so this invalid-input tightening requires no release-floor increase under the
 [compatibility policy](compatibility.md#choosing-the-release-floor).
 See the [Issue 886 implementation record](superpowers/plans/2026-10-14-issue-886.md)
 for the regression and focused validation evidence.
+## Typed mutation outcome producers
+
+`MutantResult` and report `MutantFinished` carry one owned `MutationOutcome`.
+Construct `Executed` only when a completed process event supplies termination,
+explicit output state, output spool, and elapsed duration. Use `Reused` with
+`ReusedMutationStatus::Killed` or `Survived` for cache reuse. `NotRun` means no
+classified completed result is available; a process may have started. Project
+status, elapsed time, and optional output through the outcome's domain methods.
+Keep diagnostics independent, and never reconstruct output state from a code.
+`ProcessFinished` JSON requires explicit `output_state`; no legacy default applies.
+
+Report schema 6 and session schema 5 replace the flat result format. Update strict
+consumers and start a different session path for older databases; no conversion
+adapter is provided. Preserve historical golden files when adding current ones.
+Read the [outcome design](superpowers/reports/issue-895/design.md),
+[implementation plan](superpowers/reports/issue-895/plan.md), and
+[review evidence](superpowers/reports/issue-895/review.md) before changing this boundary.
+
+Use the focused tests for this contract before the workspace checks:
+
+```console
+cargo test -p hoimin-core --test mutation_outcome --test machine --test report_policy --test lean_report_sequence_oracle --test lean_process_output_oracle -- --test-threads=2
+cargo test -p hoimin-cli --test session_handler --test report_handler --test progress --test lean_session_oracle --test lean_progress_input_oracle --test lean_schema_migration_oracle -- --test-threads=2
+```
+
+From `formal/HoiminOracle`, build the changed proofs and check current corpora:
+
+```console
+lake build HoiminOracle.ReportSequenceProofs HoiminOracle.ProgressInputProofs HoiminOracle.SchemaMigrationProofs
+lake exe generate_report_sequence --check corpus/report-sequence.jsonl
+lake exe generate_progress_input --check corpus/progress-input.jsonl
+lake exe generate_schema_migration --check corpus/schema-migration-concurrency.jsonl
+```
+
+Each generator also accepts `--sensitivity`. The progress model's status variables
+are reported summary assertions; typed execution evidence supplies actual status.
+Missing executed termination is a decoding failure. These finite correspondence
+checks do not establish operating-system execution or cancellation guarantees.
+
 
 ## Typed process execution requests
 

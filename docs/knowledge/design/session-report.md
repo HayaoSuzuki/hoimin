@@ -83,8 +83,9 @@ sources:
   working_tree: clean
 - id: session
   resource: ../../../crates/hoimin-cli/src/session/mod.rs
-  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
-  working_tree: clean
+  revision: 31245fbf096967b36bc15523067080b506f88fe9
+  working_tree: modified
+  sha256: b58af93b83f10a4617c60327ea98c74b35a5841dd70aa357b7c3ef55df637ecd
 - id: ownership-report
   resource: ../../superpowers/reports/2026-09-07-issue-363-session-ownership.md
   revision: a7daea0b557cd435c1e55b540392fbdd116348e1
@@ -95,14 +96,14 @@ sources:
   working_tree: clean
 - id: reader
   resource: ../../../crates/hoimin-cli/src/artifacts/run_report.rs
-  revision: 97c394760bc02a56be0bfdeb6301257eac80d1c7
+  revision: 31245fbf096967b36bc15523067080b506f88fe9
   working_tree: modified
-  sha256: 92f348aaf4926712baf0edbe5944f155df64edda8aa69c07eb917e7061fe5525
+  sha256: c6d0546d6e35310263c0af07e69ec7a2a96b5cd4ff21063ad59265c2ee562d90
 - id: schema
   resource: ../../json-schema/run-result.schema.json
-  revision: e7e3cae8c4e048ee77d2bf644b47da1792211cbe
-  working_tree: clean
-  sha256: e895341e994e3e1e39ae037899b1266b14e0df042fcf27fbce798953a2f26d91
+  revision: 31245fbf096967b36bc15523067080b506f88fe9
+  working_tree: modified
+  sha256: 52016f274d790ac4aca7a220a2214d79bb31ab20a3815035b7105e63719584a7
 - id: issue-488
   resource: ../../superpowers/specs/2026-09-11-issue-488-windows-resource-scope-design.md
   working_tree: untracked
@@ -129,6 +130,27 @@ sources:
 
 - id: issue-887-environment
   resource: ../../superpowers/plans/2026-10-14-issue-887.md
+
+- id: issue-895-design
+  resource: ../../superpowers/reports/issue-895/design.md
+  revision: 62cee6bbd684d13dd69a67bd3a627901103f8624
+  working_tree: clean
+  sha256: 283d6d959f953906bb88271e7146d18ecc9a39a7ca12813f13552247a30f544d
+- id: issue-895-review
+  resource: ../../superpowers/reports/issue-895/review.md
+  revision: 48d7f94968289be7a8469fd06f42d0702fc9ffba
+  working_tree: modified
+  sha256: e40737eaa4b50c6cfaa94d52f2859040c7f69c1813bb011f12f6493fbf1fb946
+- id: issue-895-outcome
+  resource: ../../../crates/hoimin-core/src/resume.rs
+  revision: 31245fbf096967b36bc15523067080b506f88fe9
+  working_tree: modified
+  sha256: 657834488419381773ecc3b2c4da69574ad00328723db2f35e729e97b2d6e92e
+- id: issue-895-session-schema
+  resource: ../../../crates/hoimin-cli/src/session/schema.rs
+  revision: 31245fbf096967b36bc15523067080b506f88fe9
+  working_tree: modified
+  sha256: fc255db429a29687c107b9d9eb1acaaa87b97ac0bd1aad84de000cb5891ae38f
 
 ---
 
@@ -167,8 +189,8 @@ Issue #472 の設計では、指定されたsessionのDB、WAL・SHM・journal�
 
 一方、run所有権の修正報告では、macOSとLinuxの非rootユーザー環境で、Leanの期待値と公開APIの結果を比較する20件の `strict` ケースが一致した。有限の実行順序を調べる探索は深さ4までであり、深さ8は当時の時間制限で完了していない。これらの結果が示す範囲に、Windows・実際のクラッシュ・SQLite自体の正しさは含まれない。[^ownership-report]
 
-Issue #882以降、session DBはschema 4だけを開く。
-新規DB（`user_version = 0`）にはschema 4を一つのトランザクションで直接作成し、旧版1〜3と未対応の新しい版は変更せず拒否する。
+Issue #895以降、session DBはschema 5だけを開く。
+新規DB（`user_version = 0`）にはschema 5を一つのトランザクションで直接作成し、旧版1〜4と未対応の新しい版は変更せず拒否する。
 過去の移行監査は当時の実装の記録であり、現在の移行対応を示さない。
 `SchemaMigration`という既存のモジュール名を保つ現行モデルとcorpusは、新規初期化の競合、ロック取得後の版再確認、初期化失敗のrollback、未対応版の拒否を対象とする。
 SQLiteのWAL実装や実際のクラッシュを証明するものではない。[^current-initialization]
@@ -177,7 +199,7 @@ SQLiteのWAL実装や実際のクラッシュを証明するものではない�
 
 JSON Schemaは結果の構造を定める元資料として保持する。ただし、構造上正しいJSONにも、値どうしが矛盾した結果は入り得るため、読取り処理で意味上の整合性も検査する。現在のprogress読取り処理は、件数検査後に `validate_summary_coherence` を呼び、完了状態と終了コードが整合するか確認する。[^schema][^reader]
 
-この集計値の検査の詳細は[progress入力の後続修正](../audits/progress-input.md)を参照する。Issue #460 の設計は、個々の結果の検証を `MutantFinished::validate_result` にまとめ、生成側の `ReportSequence` とprogress読取りで共有する。終了理由がある場合は出力状態も含めてstatusを照合し、矛盾した入力は比較処理へ渡す前に拒否する。現行の再利用・未起動・合成結果に必要な終了理由のnullは維持する。[^issue-460]
+この集計値の検査の詳細は[progress入力の後続修正](../audits/progress-input.md)を参照する。Issue #460 の設計は、個々の結果の検証を `MutantFinished::validate_result` にまとめ、生成側の `ReportSequence` とprogress読取りで共有する。終了理由がある場合は出力状態も含めてstatusを照合し、矛盾した入力は比較処理へ渡す前に拒否する。この旧検証はIssue #895のtyped outcomeへ置き換わり、独立したstatusやnullable実行証拠を現行形式では受理しない。[^issue-460]
 
 # progressのレポート入力スキーマ
 
@@ -248,7 +270,7 @@ the writer's schema; preserve schema-5 and older reports with their producing
 binary or rerun rather than rewriting their version fields. Captured plaintext never enters snapshot metadata.
 Plan schema 7 requires regeneration of older plans. Fingerprint schema 11 and its
 exact bytes remain stable, so this format change alone does not require a new
-session or alter SQLite schema 4. [^issue-887-environment]
+session; the current typed-outcome contract uses SQLite schema 5. [^issue-887-environment]
 
 [^issue-887-environment]: [Issue 887 typed snapshot verification](../../superpowers/plans/2026-10-14-issue-887.md).
 
@@ -288,6 +310,35 @@ CLIはログを容量制限付きキューから別スレッドへ渡す。キ�
 
 [^session-load-outcome]: [Session completion contract](../../../crates/hoimin-core/src/event.rs).
 
+## Typed mutation outcomes (Issue 895)
+
+`MutantResult` and report-schema-6 `MutantFinished` own one `MutationOutcome`.
+Executed outcomes require termination, explicit output state, output spool, and
+elapsed duration. Status derives centrally from this evidence, including the
+output-close-timeout error override. Reused outcomes permit only killed or
+survived; `NotRun` means no classified completed result is available, even when
+a process started. Synthetic outcomes project zero elapsed and absent output.
+Diagnostics remain independent evidence and never reconstruct output state.
+Baseline execution policy and report fields are unchanged. [^issue-895-design][^issue-895-outcome]
+
+Session schema 5 stores outcome JSON directly and derives the narrow StoredResult
+status on lookup. Old flat result wire and initialized session versions 1-4 are
+rejected without adapters. [^issue-895-session-schema] New current report/session goldens retain historical
+files separately. Report lifecycle sequence, identity, and summary coherence
+remain independently validated. The typed report-sequence Lean model retains
+lifecycle proofs and explicit synthetic/output-close cases; those claims do not
+prove operating-system execution or cancellation behavior. [^issue-895-review]
+
+Recheck execution classification, reuse and stopped-drain semantics, strict JSON
+payloads, transaction replacement and diagnostic preservation, schema fixtures,
+and both report/progress oracle projections when changing this boundary.
+
+[^issue-895-design]: [Typed mutation outcome design](../../superpowers/reports/issue-895/design.md).
+[^issue-895-review]: [Issue 895 review and verification ledger](../../superpowers/reports/issue-895/review.md).
+
+[^issue-895-outcome]: [MutationOutcome and result domain](../../../crates/hoimin-core/src/resume.rs).
+[^issue-895-session-schema]: [Current session schema](../../../crates/hoimin-cli/src/session/schema.rs).
+
 
 ## Typed changed selection (Issue #899)
 
@@ -315,7 +366,7 @@ Report schema 6 serializes disabled intent as `{"mode":"disabled"}` and enabled
 intent as `{"mode":"fresh","config":{"path":"..."}}` or the corresponding
 `resume` mode. Normalized readers reject the obsolete independent `resume` field
 and old session objects. Plan schema 7 still omits runtime session intent, and
-session database schema 4 is unchanged. `SessionLoadOutcome` and report
+session database schema 5 stores typed mutation outcomes. `SessionLoadOutcome` and report
 `ResumeOutcome` describe the observed selection result, not the request mode.
 CLI options, session exclusions and metrics collision rules remain in their
 existing guides.[^issue-896-config][^issue-896-design]

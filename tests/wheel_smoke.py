@@ -86,11 +86,24 @@ def assert_help_hides_python_option(
     )
 
 
+def _has_conclusive_outcome(outcome: object) -> bool:
+    # Smoke checks need only the killed/survived projection, not a second decoder.
+    match outcome:
+        case {
+            "executed": {"termination": {"Exit": int(code)}, "output_state": "complete"}
+        }:
+            return type(code) is int
+        case {"reused": {"status": "killed" | "survived"}}:
+            return True
+        case _:
+            return False
+
+
 def assert_mutation_result(output: str) -> None:
     document = json.loads(output)
     mutants = document["mutants"]
     assert mutants, "mutation run produced no mutants"
-    assert any(mutant["status"] in {"killed", "survived"} for mutant in mutants), (
+    assert any(_has_conclusive_outcome(mutant["outcome"]) for mutant in mutants), (
         f"mutation run had no killed or survived mutant: {mutants!r}"
     )
 

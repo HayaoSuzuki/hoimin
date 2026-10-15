@@ -1,3 +1,5 @@
+#[path = "support/mutation_outcome.rs"]
+mod mutation_outcome;
 use std::path::{Path, PathBuf};
 use std::process::Output;
 use std::time::Duration;
@@ -268,8 +270,8 @@ async fn metrics_allows_in_root_creation_and_existing_file_updates() {
             ordinary["mutants"][0]["candidate"]
         );
         assert_eq!(
-            report["mutants"][0]["status"],
-            ordinary["mutants"][0]["status"]
+            mutation_outcome::status(&report["mutants"][0]),
+            mutation_outcome::status(&ordinary["mutants"][0])
         );
         assert_eq!(report["summary"]["counts"], ordinary["summary"]["counts"]);
         let metrics: hoimin_core::RunMetrics =

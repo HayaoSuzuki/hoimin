@@ -127,7 +127,8 @@ fn lean_process_output_oracle_matches_public_mutant_classification() {
 }
 
 #[test]
-fn legacy_process_completion_defaults_to_complete_output() {
+fn legacy_process_completion_without_output_state_is_rejected() {
+    // Arrange
     let completion = ProcessFinished {
         id: EffectId(7),
         worker: Some(0),
@@ -144,7 +145,9 @@ fn legacy_process_completion_defaults_to_complete_output() {
     let mut legacy = serde_json::to_value(&completion).unwrap();
     legacy.as_object_mut().unwrap().remove("output_state");
 
-    let restored: ProcessFinished = serde_json::from_value(legacy).unwrap();
+    // Act
+    let result = serde_json::from_value::<ProcessFinished>(legacy);
 
-    assert_eq!(restored, completion);
+    // Assert
+    assert!(result.is_err());
 }

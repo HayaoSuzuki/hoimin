@@ -1,5 +1,7 @@
 #[path = "support/collecting_writer.rs"]
 mod collecting_writer;
+#[path = "support/mutation_outcome.rs"]
+mod mutation_outcome;
 use collecting_writer::CollectingWriter;
 
 use std::io::{self, Cursor, Read, Seek, SeekFrom, Write};
@@ -380,16 +382,17 @@ fn all_optional_report_events_at(current: bool, version: u32) -> Vec<OutputEvent
             sequence: 4,
             run_id: run_id.to_owned(),
             candidate,
-            status: MutationStatus::Killed,
-            termination: Some(ProcessTermination::Exit(7)),
-            output_state: ProcessOutputState::Complete,
-            elapsed_ms: 13,
+            outcome: hoimin_core::MutationOutcome::Executed {
+                termination: ProcessTermination::Exit(7),
+                output_state: ProcessOutputState::Complete,
+                output: OutputSpoolRef {
+                    token: "golden-mutant-output".to_owned(),
+                    retained: 55,
+                    observed: 89,
+                },
+                elapsed: std::time::Duration::from_millis(13),
+            },
             resource_mode: ResourceMode::Hard,
-            output: Some(OutputSpoolRef {
-                token: "golden-mutant-output".to_owned(),
-                retained: 55,
-                observed: 89,
-            }),
             diagnostics: Vec::new(),
         }),
         OutputEvent::Diagnostic(Diagnostic::new(
@@ -445,8 +448,8 @@ fn assert_report_optionals(document: &serde_json::Value, current: bool) {
         "/run/normalized_config/output/metrics",
         "/run/normalized_config/session",
         "/mutants/0/candidate/symbol",
-        "/mutants/0/termination",
-        "/mutants/0/output",
+        "/mutants/0/outcome/executed/termination",
+        "/mutants/0/outcome/executed/output",
         "/summary/counts/score",
     ] {
         assert!(
@@ -496,9 +499,15 @@ fn assert_event_optionals(events: &[OutputEvent], current: bool) {
         panic!("fourth golden event must finish the mutant");
     };
     assert_eq!(finished.candidate.symbol.as_deref(), Some("calculate"));
-    assert_eq!(finished.termination, Some(ProcessTermination::Exit(7)));
+    assert!(matches!(
+        finished.outcome,
+        hoimin_core::MutationOutcome::Executed {
+            termination: ProcessTermination::Exit(7),
+            ..
+        }
+    ));
     assert_eq!(
-        finished.output.as_ref().unwrap().token,
+        finished.outcome.output().unwrap().token,
         "golden-mutant-output"
     );
     let OutputEvent::RunFinished(summary) = &events[5] else {
@@ -694,9 +703,9 @@ async fn documentation_contract() {
         .find(|event| event["kind"] == "mutant_finished")
         .unwrap()
         .clone();
-    invalid_event["status"] = serde_json::json!("unknown");
+    invalid_event["outcome"] = serde_json::json!({"reused":{"status":"unknown"}});
     assert_schema_invalid(&event_schema, &invalid_event, &event_schema);
-    invalid_event["status"] = serde_json::json!("killed");
+    invalid_event["outcome"]["reused"]["status"] = serde_json::json!("killed");
     invalid_event["resource_mode"] = serde_json::json!("soft");
     assert_schema_invalid(&event_schema, &invalid_event, &event_schema);
 
@@ -974,15 +983,6 @@ fn documented_events() -> Vec<OutputEvent> {
         )));
         event_sequence += 1;
         summary.record(status);
-        let termination = match status {
-            MutationStatus::Killed => Some(ProcessTermination::Exit(1)),
-            MutationStatus::Survived => Some(ProcessTermination::Exit(0)),
-            MutationStatus::Timeout => Some(ProcessTermination::Timeout),
-            MutationStatus::OutOfMemory => Some(ProcessTermination::OutOfMemory),
-            MutationStatus::ProcessLimit => Some(ProcessTermination::ProcessLimit),
-            MutationStatus::NotRun => Some(ProcessTermination::Cancelled),
-            MutationStatus::Error => None,
-        };
         events.push(OutputEvent::MutantFinished(MutantFinished {
             schema_version: REPORT_SCHEMA_VERSION,
             sequence: event_sequence,
@@ -1003,16 +1003,12 @@ fn documented_events() -> Vec<OutputEvent> {
                 symbol: None,
                 file_hash: "hash".to_owned(),
             },
-            status,
-            termination,
-            output_state: ProcessOutputState::Complete,
-            elapsed_ms: 2,
+            outcome: mutation_outcome::executed(status),
             resource_mode: if mutant_sequence % 2 == 0 {
                 ResourceMode::Hard
             } else {
                 ResourceMode::BestEffort
             },
-            output: termination.map(|_| output_ref()),
             diagnostics: Vec::new(),
         }));
         event_sequence += 1;
@@ -1645,9 +1641,12 @@ fn human_format_writes_mutant_output_timeout_diagnostic_to_stderr() {
     let OutputEvent::MutantFinished(finished) = &mut event else {
         unreachable!()
     };
-    finished.status = MutationStatus::Error;
-    finished.termination = Some(ProcessTermination::Timeout);
-    finished.output_state = ProcessOutputState::CloseTimedOut;
+    finished.outcome = hoimin_core::MutationOutcome::Executed {
+        termination: ProcessTermination::Timeout,
+        output_state: ProcessOutputState::CloseTimedOut,
+        output: output_ref(),
+        elapsed: std::time::Duration::from_millis(2),
+    };
     finished.diagnostics.push(SessionDiagnostic {
         mutant_id: finished.candidate.id.clone(),
         level: "error".to_owned(),
@@ -2019,12 +2018,13 @@ fn mutant_finished(event_sequence: u64, mutant_sequence: u64) -> OutputEvent {
             symbol: None,
             file_hash: "hash".to_owned(),
         },
-        status: MutationStatus::Killed,
-        termination: Some(ProcessTermination::Exit(1)),
-        output_state: ProcessOutputState::Complete,
-        elapsed_ms: 2,
+        outcome: hoimin_core::MutationOutcome::Executed {
+            termination: ProcessTermination::Exit(1),
+            output_state: ProcessOutputState::Complete,
+            output: output_ref(),
+            elapsed: std::time::Duration::from_millis(2),
+        },
         resource_mode: ResourceMode::Hard,
-        output: Some(output_ref()),
         diagnostics: Vec::new(),
     })
 }

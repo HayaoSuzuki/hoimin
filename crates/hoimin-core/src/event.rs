@@ -131,7 +131,6 @@ pub struct ProcessFinished {
     pub id: EffectId,
     pub worker: Option<u32>,
     pub termination: ProcessTermination,
-    #[serde(default)]
     pub output_state: ProcessOutputState,
     pub output: OutputSpoolRef,
     pub elapsed: Duration,

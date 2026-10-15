@@ -1,5 +1,7 @@
 #[path = "support/collecting_writer.rs"]
 mod collecting_writer;
+#[path = "support/mutation_outcome.rs"]
+mod mutation_outcome;
 use collecting_writer::CollectingWriter;
 
 use std::ffi::OsString;
@@ -419,7 +421,10 @@ async fn mutation_timeout_propagates_to_the_final_report_and_exit_policy() {
     );
     assert_eq!(run.statuses, ["timeout"]);
     assert_eq!(run.document["summary"]["counts"]["timeout"], 1);
-    assert_eq!(run.document["mutants"][0]["termination"], "Timeout");
+    assert_eq!(
+        mutation_outcome::termination(&run.document["mutants"][0]),
+        "Timeout"
+    );
     assert_eq!(run.document["summary"]["complete"], false);
 }
 
@@ -882,7 +887,10 @@ async fn jobs_one_and_four_produce_the_same_candidates_and_statuses() {
             .map(|mutant| {
                 (
                     mutant["candidate"]["id"].as_str().unwrap().to_owned(),
-                    mutant["status"].as_str().unwrap().to_owned(),
+                    mutation_outcome::status(mutant)
+                        .as_str()
+                        .unwrap()
+                        .to_owned(),
                 )
             })
             .collect::<Vec<_>>();
@@ -1619,12 +1627,12 @@ async fn sqlite_session_reuses_results_after_jobs_and_output_retention_change() 
         2 * 1_024
     );
     assert_eq!(
-        resumed.document["mutants"][0]["termination"],
+        mutation_outcome::termination(&resumed.document["mutants"][0]),
         serde_json::Value::Null,
         "a reused result is emitted synthetically without process termination"
     );
     assert_eq!(
-        resumed.document["mutants"][0]["output"],
+        mutation_outcome::output(&resumed.document["mutants"][0]),
         serde_json::Value::Null,
         "a reused result does not import output retained under the earlier limit"
     );
@@ -1648,15 +1656,15 @@ async fn fresh_session_and_sessionless_results_preserve_the_same_termination() {
 
     let normalize = |mut value: serde_json::Value| {
         value["run_id"] = serde_json::Value::Null;
-        value["elapsed_ms"] = serde_json::Value::Null;
-        value["output"]["token"] = serde_json::Value::Null;
+        value["outcome"]["executed"]["elapsed"] = serde_json::Value::Null;
+        value["outcome"]["executed"]["output"]["token"] = serde_json::Value::Null;
         value
     };
     let sessionless_mutant = normalize(sessionless.document["mutants"][0].clone());
     let session_mutant = normalize(session.document["mutants"][0].clone());
     assert_eq!(sessionless_mutant, session_mutant);
     assert_eq!(
-        session_mutant["termination"],
+        session_mutant["outcome"]["executed"]["termination"],
         serde_json::json!({ "Exit": 1 })
     );
 
@@ -1668,7 +1676,7 @@ async fn fresh_session_and_sessionless_results_preserve_the_same_termination() {
     let reused = run_fixture_with_session(&command, &database, true).await;
     assert_eq!(reused.exit_code, 0, "{}", reused.stderr);
     assert_eq!(
-        reused.document["mutants"][0]["termination"],
+        mutation_outcome::termination(&reused.document["mutants"][0]),
         serde_json::Value::Null
     );
 }
@@ -1880,7 +1888,7 @@ async fn copy_policy_changes_do_not_reuse_old_verdicts() {
             reused
         );
         assert_eq!(
-            resumed.document["mutants"][0]["termination"].is_null(),
+            mutation_outcome::termination(&resumed.document["mutants"][0]).is_null(),
             reused
         );
     }
@@ -2101,7 +2109,7 @@ async fn sqlite_save_failure_reports_the_classification_but_leaves_no_partial_da
     assert_eq!(failed.document["summary"]["counts"]["killed"], 1);
     let mutants = failed.document["mutants"].as_array().unwrap();
     assert_eq!(mutants.len(), 1);
-    assert_eq!(mutants[0]["status"], "killed");
+    assert_eq!(mutation_outcome::status(&mutants[0]), "killed");
     assert!(failed.stderr.contains("session"), "{}", failed.stderr);
     let connection = rusqlite::Connection::open(&database).unwrap();
     let results: i64 = connection
@@ -2395,7 +2403,7 @@ async fn injected_ctrl_c_finishes_incomplete_or_defers_when_tree_quiescence_is_u
         .as_array()
         .expect("cancelled mutant array")
         .iter()
-        .filter(|mutant| mutant["status"] == "not_run")
+        .filter(|mutant| mutation_outcome::status(mutant) == "not_run")
         .count() as u64;
     assert!(not_run_count > 0);
     assert_eq!(not_run_count, not_run_mutants);
@@ -2741,7 +2749,11 @@ async fn serial_output_that_requests_stop_is_accepted_before_cancellation() {
         mutants.len(),
         "a completed output was re-emitted"
     );
-    assert!(mutants.iter().any(|event| event["status"] != "not_run"));
+    assert!(
+        mutants
+            .iter()
+            .any(|event| mutation_outcome::status(event) != "not_run")
+    );
     let metrics: hoimin_core::RunMetrics =
         serde_json::from_slice(&std::fs::read(metrics_path).unwrap()).unwrap();
     metrics.validate().unwrap();
@@ -2749,7 +2761,7 @@ async fn serial_output_that_requests_stop_is_accepted_before_cancellation() {
         metrics.executed,
         mutants
             .iter()
-            .filter(|event| event["status"] != "not_run")
+            .filter(|event| mutation_outcome::status(event) != "not_run")
             .count() as u64
     );
     assert!(metrics.workers.iter().all(|worker| worker.processes > 0));
@@ -2847,7 +2859,7 @@ async fn worker_pythonpath_rewrites_an_original_src_root_to_the_mutated_copy() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert_eq!(document["mutants"][0]["status"], "killed");
+    assert_eq!(mutation_outcome::status(&document["mutants"][0]), "killed");
 }
 
 struct FixtureRun {
@@ -2977,7 +2989,7 @@ async fn baseline_and_mutants_can_read_colon_named_workspace_fixtures() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert_eq!(report["mutants"].as_array().unwrap().len(), 1);
-    assert_eq!(report["mutants"][0]["status"], "killed");
+    assert_eq!(mutation_outcome::status(&report["mutants"][0]), "killed");
     assert_eq!(report["summary"]["complete"], true);
     assert_eq!(std::fs::read(sample).unwrap(), b"fixture\n");
 }
@@ -3106,7 +3118,12 @@ async fn run_fixture_options_extra_with_format(
         .map(|mutants| {
             mutants
                 .iter()
-                .map(|mutant| mutant["status"].as_str().unwrap().to_owned())
+                .map(|mutant| {
+                    mutation_outcome::status(mutant)
+                        .as_str()
+                        .unwrap()
+                        .to_owned()
+                })
                 .collect()
         })
         .unwrap_or_default();
@@ -3130,7 +3147,12 @@ fn fixture_run(exit_code: i32, stdout: Vec<u8>, stderr: Vec<u8>) -> FixtureRun {
         .as_array()
         .unwrap()
         .iter()
-        .map(|mutant| mutant["status"].as_str().unwrap().to_owned())
+        .map(|mutant| {
+            mutation_outcome::status(mutant)
+                .as_str()
+                .unwrap()
+                .to_owned()
+        })
         .collect();
     FixtureRun {
         exit_code,
@@ -3437,7 +3459,12 @@ async fn run_focused_profile(
         .map(|mutants| {
             mutants
                 .iter()
-                .map(|mutant| mutant["status"].as_str().unwrap().to_owned())
+                .map(|mutant| {
+                    mutation_outcome::status(mutant)
+                        .as_str()
+                        .unwrap()
+                        .to_owned()
+                })
                 .collect()
         })
         .unwrap_or_default();
@@ -3512,7 +3539,12 @@ async fn run_project_with_session_options(
         .as_array()
         .unwrap()
         .iter()
-        .map(|mutant| mutant["status"].as_str().unwrap().to_owned())
+        .map(|mutant| {
+            mutation_outcome::status(mutant)
+                .as_str()
+                .unwrap()
+                .to_owned()
+        })
         .collect();
     FixtureRun {
         exit_code,
@@ -3573,7 +3605,12 @@ async fn run_project_options(
         .as_array()
         .unwrap()
         .iter()
-        .map(|mutant| mutant["status"].as_str().unwrap().to_owned())
+        .map(|mutant| {
+            mutation_outcome::status(mutant)
+                .as_str()
+                .unwrap()
+                .to_owned()
+        })
         .collect();
     FixtureRun {
         exit_code,
@@ -4208,9 +4245,15 @@ async fn selected_resource_policy_survives_fresh_and_natural_resume_reports() {
             let (run, baseline, mutants, summary) = parse(&stdout);
             assert_eq!(summary["complete"], false);
             assert_eq!(mutants.len(), 2);
-            let killed = mutants.iter().find(|v| v["status"] == "killed").unwrap();
-            let timeout = mutants.iter().find(|v| v["status"] == "timeout").unwrap();
-            assert_eq!(timeout["termination"], "Timeout");
+            let killed = mutants
+                .iter()
+                .find(|v| mutation_outcome::status(v) == "killed")
+                .unwrap();
+            let timeout = mutants
+                .iter()
+                .find(|v| mutation_outcome::status(v) == "timeout")
+                .unwrap();
+            assert_eq!(mutation_outcome::termination(timeout), "Timeout");
             let ids: Vec<_> = mutants
                 .iter()
                 .map(|v| v["candidate"]["id"].clone())
@@ -4225,9 +4268,19 @@ async fn selected_resource_policy_survives_fresh_and_natural_resume_reports() {
             assert_ne!(run["resource_control"]["mechanism"].as_str().unwrap(), "");
             assert!(mutants.iter().all(|value| value["resource_mode"] == mode));
             let connection = rusqlite::Connection::open(&session).unwrap();
-            let rows = connection.prepare("SELECT * FROM results WHERE status = 'killed' AND run_id = (SELECT run_id FROM runs ORDER BY id LIMIT 1) ORDER BY mutant_id").unwrap()
+            let rows = connection.prepare("SELECT * FROM results WHERE run_id = (SELECT run_id FROM runs ORDER BY id LIMIT 1) ORDER BY mutant_id").unwrap()
                 .query_map([], |row| Ok((0..row.as_ref().column_count()).map(|i| row.get::<_, rusqlite::types::Value>(i).unwrap()).collect::<Vec<_>>())).unwrap()
-                .collect::<Result<Vec<_>, _>>().unwrap();
+                .collect::<Result<Vec<_>, _>>().unwrap()
+                .into_iter()
+                .filter(|row| {
+                    let rusqlite::types::Value::Text(encoded) = &row[2] else {
+                        panic!("stored outcome must be JSON text");
+                    };
+                    serde_json::from_str::<hoimin_core::MutationOutcome>(encoded)
+                        .expect("strict stored mutation outcome")
+                        .status() == hoimin_core::MutationStatus::Killed
+                })
+                .collect::<Vec<_>>();
             assert_eq!(rows.len(), 1);
             assert_eq!(
                 rows[0][0],
@@ -4249,10 +4302,10 @@ async fn selected_resource_policy_survives_fresh_and_natural_resume_reports() {
             panic!("fresh and resumed reports");
         };
         assert_eq!(resumed_ids, first_ids);
-        assert!(!first_killed["termination"].is_null());
-        assert!(resumed_killed["termination"].is_null());
-        assert!(resumed_killed["output"].is_null());
-        assert_eq!(resumed_killed["elapsed_ms"], 0);
+        assert!(!mutation_outcome::termination(first_killed).is_null());
+        assert!(mutation_outcome::termination(resumed_killed).is_null());
+        assert!(mutation_outcome::output(resumed_killed).is_null());
+        assert_eq!(mutation_outcome::elapsed_ms(resumed_killed), 0);
         assert_eq!(resumed_rows, first_rows);
     }
 }
@@ -4378,7 +4431,7 @@ async fn active_session_artifacts_allow_real_cli_in_root() {
                     let mutants = report["mutants"].as_array().unwrap();
                     let killed = mutants
                         .iter()
-                        .find(|mutant| mutant["status"] == "killed")
+                        .find(|mutant| mutation_outcome::status(mutant) == "killed")
                         .expect("an actual mutant must be killed");
                     assert_eq!(report["summary"]["complete"], false);
                     reports.push((
@@ -4397,8 +4450,8 @@ async fn active_session_artifacts_allow_real_cli_in_root() {
                     .iter()
                     .find(|mutant| &mutant["candidate"]["id"] == killed_id)
                     .unwrap();
-                assert_eq!(reused["status"], "killed");
-                assert!(reused["termination"].is_null());
+                assert_eq!(mutation_outcome::status(reused), "killed");
+                assert!(mutation_outcome::termination(reused).is_null());
             }
         }
     }
@@ -4452,7 +4505,7 @@ async fn active_session_artifacts_follow_root_parent_and_database_aliases() {
         );
         let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
         assert_eq!(report["baseline"]["termination"]["Exit"], 0);
-        assert_eq!(report["mutants"][0]["status"], "killed");
+        assert_eq!(mutation_outcome::status(&report["mutants"][0]), "killed");
     }
 }
 
@@ -4630,7 +4683,7 @@ async fn assert_active_session_aliased_lock_tree_is_excluded(jobs: &str, mode: &
     assert_eq!(report["baseline"]["termination"]["Exit"], 0);
     assert_eq!(report["summary"]["complete"], true);
     assert_eq!(report["mutants"].as_array().unwrap().len(), 1);
-    assert_eq!(report["mutants"][0]["status"], "killed");
+    assert_eq!(mutation_outcome::status(&report["mutants"][0]), "killed");
     assert_eq!(std::fs::read(root.join("calc.py")).unwrap(), source);
     assert_eq!(
         std::fs::read(root.join("fixture.db")).unwrap(),
@@ -4705,9 +4758,15 @@ async fn active_session_lock_tree_alias_supports_natural_resume() {
         assert_eq!(report["summary"]["complete"], false);
         let mutants = report["mutants"].as_array().unwrap();
         assert_eq!(mutants.len(), 2);
-        let killed = mutants.iter().find(|m| m["status"] == "killed").unwrap();
-        let timeout = mutants.iter().find(|m| m["status"] == "timeout").unwrap();
-        assert_eq!(timeout["termination"], "Timeout");
+        let killed = mutants
+            .iter()
+            .find(|m| mutation_outcome::status(m) == "killed")
+            .unwrap();
+        let timeout = mutants
+            .iter()
+            .find(|m| mutation_outcome::status(m) == "timeout")
+            .unwrap();
+        assert_eq!(mutation_outcome::termination(timeout), "Timeout");
         let ids: Vec<_> = mutants
             .iter()
             .map(|m| m["candidate"]["id"].clone())
@@ -4727,9 +4786,9 @@ async fn active_session_lock_tree_alias_supports_natural_resume() {
     };
     assert_eq!(resumed_run, first_run);
     assert_eq!(resumed_ids, first_ids);
-    assert!(!first_killed["termination"].is_null());
-    assert!(resumed_killed["termination"].is_null());
-    assert_eq!(resumed_killed["elapsed_ms"], 0);
+    assert!(!mutation_outcome::termination(first_killed).is_null());
+    assert!(mutation_outcome::termination(resumed_killed).is_null());
+    assert_eq!(mutation_outcome::elapsed_ms(resumed_killed), 0);
 }
 
 #[cfg(unix)]

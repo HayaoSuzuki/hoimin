@@ -1,5 +1,7 @@
 #[path = "support/collecting_writer.rs"]
 mod collecting_writer;
+#[path = "support/mutation_outcome.rs"]
+mod mutation_outcome;
 use collecting_writer::CollectingWriter;
 
 use hoimin_cli::cli::{ParsedCommand, parse_from};
@@ -489,7 +491,7 @@ async fn sample_authored_project_evaluation() {
         assert!(matches!(code, 0 | 1), "{err}");
         assert_eq!(reference["summary"]["complete"], true);
         let reference_score = reference["summary"]["counts"]["score"].as_f64().unwrap();
-        let population_results: Vec<_> = reference["mutants"].as_array().unwrap().iter().map(|m| serde_json::json!({"id":m["candidate"]["id"], "operator":m["candidate"]["operator"], "status":m["status"]})).collect();
+        let population_results: Vec<_> = reference["mutants"].as_array().unwrap().iter().map(|m| serde_json::json!({"id":m["candidate"]["id"], "operator":m["candidate"]["operator"], "status":mutation_outcome::status(m)})).collect();
         let mut trials = Vec::new();
         for count in [2, 4] {
             for seed in [0, 1, 42, u64::MAX] {
@@ -499,7 +501,7 @@ async fn sample_authored_project_evaluation() {
                 assert!(matches!(code, 0 | 1), "{err}");
                 assert_eq!(report["summary"]["complete"], true);
                 let score = report["summary"]["counts"]["score"].as_f64().unwrap();
-                let mutants: Vec<_> = report["mutants"].as_array().unwrap().iter().map(|m| serde_json::json!({"id":m["candidate"]["id"], "operator":m["candidate"]["operator"], "status":m["status"]})).collect();
+                let mutants: Vec<_> = report["mutants"].as_array().unwrap().iter().map(|m| serde_json::json!({"id":m["candidate"]["id"], "operator":m["candidate"]["operator"], "status":mutation_outcome::status(m)})).collect();
                 for mutant in &mutants {
                     assert!(population_results.contains(mutant));
                 }

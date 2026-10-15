@@ -5,6 +5,13 @@ description: docs/auditsとdocs/superpowers/reports内の全Markdownを追跡状
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-897-review
+  resource: ../../superpowers/reports/2026-10-15-issue-897-review.md
+  revision: 0a148fcf5ca511b6ccca489feda2ccbc2429008f
+  working_tree: modified
+  sha256: c4c11806e1e8b6e9ad722f65c1ce42da8b0277809b4c2b9b039a222058d3bd48
+
+
 - id: issue-898-process-review
   resource: ../../superpowers/reports/2026-10-15-issue-898-review.md
   revision: 51c9e26b9d0006cac150b3833cb797a59349bac1
@@ -858,6 +865,22 @@ sources:
   revision: 3c3a7d6
   working_tree: modified
   sha256: da0624a1c113ab60bc5622a0e4a5d45ebcaa0c86330f4954c9255b3acb353a85
+- id: issue-895-design
+  resource: ../../superpowers/reports/issue-895/design.md
+  revision: 62cee6bbd684d13dd69a67bd3a627901103f8624
+  working_tree: clean
+  sha256: 283d6d959f953906bb88271e7146d18ecc9a39a7ca12813f13552247a30f544d
+- id: issue-895-plan
+  resource: ../../superpowers/reports/issue-895/plan.md
+  revision: 62cee6bbd684d13dd69a67bd3a627901103f8624
+  working_tree: clean
+  sha256: 2447ba6b0a732455911e9cb9737854c9a4c973e86f8334b36674faa201473302
+- id: issue-895-review
+  resource: ../../superpowers/reports/issue-895/review.md
+  revision: 48d7f94968289be7a8469fd06f42d0702fc9ffba
+  working_tree: modified
+  sha256: e40737eaa4b50c6cfaa94d52f2859040c7f69c1813bb011f12f6493fbf1fb946
+
 ---
 
 # 収録一覧
@@ -1488,6 +1511,29 @@ sources:
 - [Second-order adoption assessment](../../superpowers/reports/issue-763-764/README.md) - Finite pairs, a first-order comparator and the decision to defer composite infrastructure.[^second-order-assessment]
 
 [^second-order-assessment]: [Measured results and limits](../../superpowers/reports/issue-763-764/README.md), projected cases, isolated confirmation and the retained regression assertion.
+
+## Issue 895 typed mutation outcomes
+
+| Record | Scope |
+| --- | --- |
+| [design.md](../../superpowers/reports/issue-895/design.md) | Owned outcome and compatibility contract [^issue-895-design] |
+| [plan.md](../../superpowers/reports/issue-895/plan.md) | TDD tasks and verification boundaries [^issue-895-plan] |
+| [review.md](../../superpowers/reports/issue-895/review.md) | Actual findings, corrections, and verification evidence [^issue-895-review] |
+
+[^issue-895-design]: [Issue 895 design record](../../superpowers/reports/issue-895/design.md).
+
+[^issue-895-plan]: [Issue 895 plan record](../../superpowers/reports/issue-895/plan.md).
+
+[^issue-895-review]: [Issue 895 review record](../../superpowers/reports/issue-895/review.md).
+
+
+## Issue #897 Worker ownership
+
+| Original heading | Source |
+| --- | --- |
+| Worker-owned state review and verification | [Original](../../superpowers/reports/2026-10-15-issue-897-review.md) [^issue-897-review] |
+
+[^issue-897-review]: [Original record](../../superpowers/reports/2026-10-15-issue-897-review.md). Implementation design and explicitly scoped execution evidence.
 
 ## Issue 898 process requests
 

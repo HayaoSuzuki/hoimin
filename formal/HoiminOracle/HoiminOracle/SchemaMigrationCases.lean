@@ -30,7 +30,7 @@ def stateCeiling : Nat := 256
 
 def auditInitials : List State := [
   initial .fresh false, initial .fresh true,
-  initial .v1 true, initial .v2 true, initial .v3 true,
+  initial .v1 true, initial .v2 true, initial .v3 true, initial .v4 true,
   initial .current true, initial .future true
 ]
 
@@ -55,7 +55,7 @@ def brokenBeginUsesObserved (state : State) (actor : Actor) : State :=
       match observed with
       | .fresh | .current =>
           setPhase { state with lock := some actor, txVersion := some observed } actor .locked
-      | .v1 | .v2 | .v3 | .future => setPhase state actor .unsupportedRejected
+      | .v1 | .v2 | .v3 | .v4 | .future => setPhase state actor .unsupportedRejected
   | _, _ => state
 
 def brokenBeginAcceptsUnsupported (state : State) (actor : Actor) : State :=
@@ -112,7 +112,7 @@ def staleReadSensitivity : Bool :=
     broken.leftPhase == .succeeded && broken.rightPhase == .initializationFailed
 
 def unsupportedPrecedenceSensitivity : Bool :=
-  ([Version.v1, .v2, .v3, .future]).all fun version =>
+  ([Version.v1, .v2, .v3, .v4, .future]).all fun version =>
     let before := initial version true
     let correct := run before unsupportedBrokenTrace
     let broken := runWith brokenStepUnsupported before unsupportedBrokenTrace
@@ -142,11 +142,12 @@ def cases : List OracleCase := [
   { schema := 1, id := "failed_fresh_initialization_rollback", mode := "strict",
     scenario := "rollback", initialVersion := .fresh,
     legacyRow := true, trace := rollbackTrace }
-] ++ ([Version.v1, .v2, .v3, .future]).map fun version =>
+] ++ ([Version.v1, .v2, .v3, .v4, .future]).map fun version =>
   { schema := 1, id := match version with
       | .v1 => "reject_schema_v1"
       | .v2 => "reject_schema_v2"
       | .v3 => "reject_schema_v3"
+      | .v4 => "reject_schema_v4"
       | _ => "reject_future_schema",
     mode := "strict", scenario := "unsupported", initialVersion := version,
     legacyRow := true, trace := unsupportedTrace }

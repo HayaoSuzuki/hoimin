@@ -4,9 +4,8 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::{
-    MutationCandidate, MutationStatus, OutputSpoolRef, PROCESS_OUTPUT_CLOSE_TIMEOUT_CODE,
-    ProcessOutputState, ProcessTermination, ResourceMode, RunConfig, SessionDiagnostic,
-    contract_ensure,
+    MutationCandidate, MutationOutcome, MutationStatus, OutputSpoolRef, ProcessOutputState,
+    ProcessTermination, ResourceMode, RunConfig, SessionDiagnostic, contract_ensure,
 };
 
 pub const REPORT_SCHEMA_VERSION: u32 = 6;
@@ -536,18 +535,14 @@ impl MutantStarted {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MutantFinished {
     pub schema_version: u32,
     pub sequence: u64,
     pub run_id: String,
     pub candidate: MutationCandidate,
-    pub status: MutationStatus,
-    pub termination: Option<ProcessTermination>,
-    #[serde(default, skip_serializing_if = "ProcessOutputState::is_complete")]
-    pub output_state: ProcessOutputState,
-    pub elapsed_ms: u64,
+    pub outcome: MutationOutcome,
     pub resource_mode: ResourceMode,
-    pub output: Option<OutputSpoolRef>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub diagnostics: Vec<SessionDiagnostic>,
 }
@@ -640,9 +635,17 @@ impl<'de> Deserialize<'de> for OutputEvent {
             Kind::MutantStarted => serde_json::from_str(raw.get())
                 .map(Self::MutantStarted)
                 .map_err(serde::de::Error::custom),
-            Kind::MutantFinished => serde_json::from_str(raw.get())
-                .map(Self::MutantFinished)
-                .map_err(serde::de::Error::custom),
+            Kind::MutantFinished => {
+                // Consume the event discriminator before validating the closed result payload.
+                #[derive(Deserialize)]
+                #[serde(tag = "kind", rename_all = "snake_case")]
+                enum FinishedEnvelope {
+                    MutantFinished(MutantFinished),
+                }
+                serde_json::from_str::<FinishedEnvelope>(raw.get())
+                    .map(|FinishedEnvelope::MutantFinished(value)| Self::MutantFinished(value))
+                    .map_err(serde::de::Error::custom)
+            }
             Kind::Diagnostic => serde_json::from_str(raw.get())
                 .map(Self::Diagnostic)
                 .map_err(serde::de::Error::custom),
@@ -728,101 +731,6 @@ pub enum ReportSequenceError {
         mutant_id: String,
         mutant_sequence: u64,
     },
-    #[error(
-        "mutant {mutant_id} sequence {mutant_sequence} status {status:?} disagrees with termination {termination:?}; expected {expected_status:?}"
-    )]
-    MutantStatusTerminationMismatch {
-        mutant_id: String,
-        mutant_sequence: u64,
-        status: MutationStatus,
-        termination: ProcessTermination,
-        expected_status: MutationStatus,
-    },
-    #[error(
-        "mutant {mutant_id} sequence {mutant_sequence} output state {output_state:?} disagrees with its diagnostics"
-    )]
-    MutantOutputDiagnosticMismatch {
-        mutant_id: String,
-        mutant_sequence: u64,
-        output_state: ProcessOutputState,
-    },
-    #[error(
-        "mutant {mutant_id} sequence {mutant_sequence} output state {output_state:?} lacks its required result fields"
-    )]
-    MutantOutputStateMismatch {
-        mutant_id: String,
-        mutant_sequence: u64,
-        output_state: ProcessOutputState,
-    },
-}
-
-impl MutantFinished {
-    /// Validates one result independently of report lifecycle events.
-    ///
-    /// Complete output with absent termination is accepted for legacy reports.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`ReportSequenceError`] for missing output-close result fields,
-    /// inconsistent output diagnostics, or a status that disagrees with the
-    /// termination and output state, checked in that order.
-    pub fn validate_result(&self) -> Result<(), ReportSequenceError> {
-        if !output_state_matches_result(self) {
-            return Err(ReportSequenceError::MutantOutputStateMismatch {
-                mutant_id: self.candidate.id.clone(),
-                mutant_sequence: self.candidate.sequence,
-                output_state: self.output_state,
-            });
-        }
-        if !output_diagnostics_match(self) {
-            return Err(ReportSequenceError::MutantOutputDiagnosticMismatch {
-                mutant_id: self.candidate.id.clone(),
-                mutant_sequence: self.candidate.sequence,
-                output_state: self.output_state,
-            });
-        }
-        if let Some(termination) = self.termination {
-            let expected_status = classify_mutant_result(termination, self.output_state);
-            if self.status != expected_status {
-                return Err(ReportSequenceError::MutantStatusTerminationMismatch {
-                    mutant_id: self.candidate.id.clone(),
-                    mutant_sequence: self.candidate.sequence,
-                    status: self.status,
-                    termination,
-                    expected_status,
-                });
-            }
-        }
-        Ok(())
-    }
-}
-
-fn output_state_matches_result(value: &MutantFinished) -> bool {
-    match value.output_state {
-        ProcessOutputState::Complete => true,
-        ProcessOutputState::CloseTimedOut => {
-            value.termination.is_some()
-                && value.status == MutationStatus::Error
-                && value.output.is_some()
-        }
-    }
-}
-
-fn output_diagnostics_match(value: &MutantFinished) -> bool {
-    let mut close_timeout = value
-        .diagnostics
-        .iter()
-        .filter(|diagnostic| diagnostic.code == PROCESS_OUTPUT_CLOSE_TIMEOUT_CODE);
-    match value.output_state {
-        ProcessOutputState::Complete => close_timeout.next().is_none(),
-        ProcessOutputState::CloseTimedOut => {
-            close_timeout.next().is_some_and(|diagnostic| {
-                diagnostic.mutant_id == value.candidate.id
-                    && diagnostic.level == "error"
-                    && !diagnostic.message.trim().is_empty()
-            }) && close_timeout.next().is_none()
-        }
-    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -889,7 +797,7 @@ impl ReportSequence {
                     _ => {
                         let key = (value.candidate.id.clone(), value.candidate.sequence);
                         if self.active_mutants.contains(&key) {
-                            value.validate_result().err()
+                            None
                         } else {
                             Some(ReportSequenceError::MutantNotStarted {
                                 mutant_id: value.candidate.id.clone(),

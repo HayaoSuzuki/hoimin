@@ -379,7 +379,7 @@ fn validate_structure(path: &Path, document: &RunReportDocument) -> Result<(), P
         .mutants
         .iter()
         .map(|event| match event {
-            OutputEvent::MutantFinished(mutant) => mutant.status,
+            OutputEvent::MutantFinished(mutant) => mutant.outcome.status(),
             _ => unreachable!("mutant event kinds were validated above"),
         })
         .collect::<Vec<_>>();
@@ -416,22 +416,7 @@ fn validate_structure(path: &Path, document: &RunReportDocument) -> Result<(), P
         }
         previous_sequence = Some(event.sequence());
     }
-    for event in &document.mutants {
-        let OutputEvent::MutantFinished(mutant) = event else {
-            unreachable!("mutant event kinds were validated above");
-        };
-        validate_mutant_result(path, mutant)?;
-    }
     Ok(())
-}
-
-fn validate_mutant_result(path: &Path, mutant: &MutantFinished) -> Result<(), ProgressError> {
-    mutant
-        .validate_result()
-        .map_err(|source| ProgressError::InvalidResult {
-            path: path.to_path_buf(),
-            source,
-        })
 }
 
 fn validate_summary_coherence(

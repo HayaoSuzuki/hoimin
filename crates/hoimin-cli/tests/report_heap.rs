@@ -2,9 +2,8 @@ use std::io;
 
 use hoimin_cli::report::ReportHandler;
 use hoimin_core::{
-    ByteSpan, EffectId, EmitOutput, MutantFinished, MutationCandidate, MutationStatus,
-    MutationSummary, OutputEvent, OutputFormat, ProcessTermination, ResourceMode, RunStarted,
-    RunSummary,
+    ByteSpan, EffectId, EmitOutput, MutantFinished, MutationCandidate, MutationSummary,
+    OutputEvent, OutputFormat, ProcessTermination, ResourceMode, RunStarted, RunSummary,
 };
 
 #[path = "support/heap_tracking.rs"]
@@ -96,12 +95,17 @@ fn mutant_finished(event_sequence: u64, mutant_sequence: u64) -> OutputEvent {
             symbol: None,
             file_hash: "hash".to_owned(),
         },
-        status: MutationStatus::Killed,
-        termination: Some(ProcessTermination::Exit(1)),
-        output_state: hoimin_core::ProcessOutputState::Complete,
-        elapsed_ms: 2,
+        outcome: hoimin_core::MutationOutcome::Executed {
+            termination: ProcessTermination::Exit(1),
+            output_state: hoimin_core::ProcessOutputState::Complete,
+            output: hoimin_core::OutputSpoolRef {
+                token: "fixture-output".into(),
+                retained: 0,
+                observed: 0,
+            },
+            elapsed: std::time::Duration::from_millis(2),
+        },
         resource_mode: ResourceMode::Hard,
-        output: None,
         diagnostics: Vec::new(),
     })
 }

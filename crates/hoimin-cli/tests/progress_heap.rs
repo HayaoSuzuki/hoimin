@@ -196,7 +196,8 @@ fn large_report(count: usize) -> Value {
             mutant["candidate"]["span"]["start"] = json!(index);
             mutant["candidate"]["original"] = json!(format!("original-{index}"));
             mutant["candidate"]["replacement"] = json!(format!("replacement-{index}"));
-            mutant["output"]["token"] = json!(format!("mutant-output-{index}"));
+            mutant["outcome"]["executed"]["output"]["token"] =
+                json!(format!("mutant-output-{index}"));
             mutant
         })
         .collect();

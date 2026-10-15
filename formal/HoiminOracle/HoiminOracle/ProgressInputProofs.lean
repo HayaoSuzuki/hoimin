@@ -37,8 +37,8 @@ theorem producer_is_coherent (counts : Counts) (flags : RunFlags) :
 theorem invalid_result_is_invalid (input : Input) (h : resultsValid input = false) :
     classify input = .invalid := by simp [classify, h]
 
-theorem legacy_absent_complete_accepts (status : Status) :
-    validResult status ⟨none, .complete⟩ = true := by rfl
+theorem missing_executed_termination_is_invalid (status : Status) :
+    validResult status ⟨none, .complete⟩ = false := by rfl
 
 theorem close_timeout_requires_error (status : Status) (termination : Option Termination)
     (h : validResult status ⟨termination, .closeTimedOut⟩ = true) : status = .error := by

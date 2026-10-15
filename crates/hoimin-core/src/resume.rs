@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     CommandArg, FingerprintInputFile, MutantTimeout, MutationCandidate, MutationProfile,
-    MutationStatus, OutputSpoolRef, ProcessTermination, ResourceMode, RunConfig, RunLimits,
-    TargetSlice,
+    MutationStatus, OutputSpoolRef, ProcessOutputState, ProcessTermination, ResourceMode,
+    RunConfig, RunLimits, TargetSlice,
 };
 
 pub const FINGERPRINT_SCHEMA_VERSION: u8 = 11;
@@ -143,20 +143,123 @@ pub struct StoredResult {
     pub status: MutationStatus,
 }
 
+/// A completed execution, a reusable conclusive result, or no classified completion.
+/// Diagnostics are independent evidence and never determine this outcome.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum MutationOutcome {
+    Executed {
+        termination: ProcessTermination,
+        output_state: ProcessOutputState,
+        output: OutputSpoolRef,
+        #[serde(deserialize_with = "deserialize_execution_elapsed")]
+        elapsed: Duration,
+    },
+    Reused {
+        status: ReusedMutationStatus,
+    },
+    /// No classified completed result is available; the process may have started.
+    NotRun,
+}
+
+// Keep the new elapsed wire equal to the public schema. Serde's standard Duration
+// decoder also accepts sequences and normalizes oversized nanoseconds.
+fn deserialize_execution_elapsed<'de, D>(deserializer: D) -> Result<Duration, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    struct ElapsedVisitor;
+
+    impl<'de> serde::de::Visitor<'de> for ElapsedVisitor {
+        type Value = Duration;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            formatter.write_str("an elapsed object with u64 secs and nanos below 1000000000")
+        }
+
+        fn visit_map<M>(self, map: M) -> Result<Duration, M::Error>
+        where
+            M: serde::de::MapAccess<'de>,
+        {
+            #[derive(Deserialize)]
+            #[serde(deny_unknown_fields)]
+            struct Elapsed {
+                secs: u64,
+                nanos: u32,
+            }
+
+            let elapsed = Elapsed::deserialize(serde::de::value::MapAccessDeserializer::new(map))?;
+            if elapsed.nanos >= 1_000_000_000 {
+                return Err(serde::de::Error::custom(
+                    "elapsed nanos must be below 1000000000",
+                ));
+            }
+            Ok(Duration::new(elapsed.secs, elapsed.nanos))
+        }
+    }
+
+    deserializer.deserialize_map(ElapsedVisitor)
+}
+
+/// Only conclusive outcomes qualify for reuse under the resume policy.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReusedMutationStatus {
+    Killed,
+    Survived,
+}
+
+impl MutationOutcome {
+    /// Derives the domain status from owned execution evidence or reuse provenance.
+    #[must_use]
+    pub fn status(&self) -> MutationStatus {
+        match self {
+            Self::Executed {
+                termination,
+                output_state,
+                ..
+            } => crate::classify_mutant_result(*termination, *output_state),
+            Self::Reused {
+                status: ReusedMutationStatus::Killed,
+            } => MutationStatus::Killed,
+            Self::Reused {
+                status: ReusedMutationStatus::Survived,
+            } => MutationStatus::Survived,
+            Self::NotRun => MutationStatus::NotRun,
+        }
+    }
+
+    /// Synthetic and reused results contribute no execution time to this run.
+    #[must_use]
+    pub const fn elapsed(&self) -> Duration {
+        match self {
+            Self::Executed { elapsed, .. } => *elapsed,
+            Self::Reused { .. } | Self::NotRun => Duration::ZERO,
+        }
+    }
+
+    /// Only a completed execution owns an output spool reference.
+    #[must_use]
+    pub const fn output(&self) -> Option<&OutputSpoolRef> {
+        match self {
+            Self::Executed { output, .. } => Some(output),
+            Self::Reused { .. } | Self::NotRun => None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MutantResult {
     pub run_id: String,
     pub candidate: MutationCandidate,
-    pub status: MutationStatus,
-    #[serde(default)]
-    pub termination: Option<ProcessTermination>,
-    pub elapsed: Duration,
+    pub outcome: MutationOutcome,
     pub resource_mode: ResourceMode,
-    pub output: Option<OutputSpoolRef>,
     pub diagnostics: Vec<SessionDiagnostic>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SessionDiagnostic {
     pub mutant_id: String,
     pub level: String,

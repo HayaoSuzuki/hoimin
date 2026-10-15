@@ -1,3 +1,5 @@
+#[path = "support/mutation_outcome.rs"]
+mod mutation_outcome;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -118,7 +120,7 @@ impl Project {
         assert_eq!(mutants.len(), 1);
         assert_eq!(mutants[0]["candidate"]["path"], "src/pkg/calc.py");
         assert_eq!(mutants[0]["candidate"]["line"], 2);
-        assert_eq!(mutants[0]["status"], "killed");
+        assert_eq!(mutation_outcome::status(&mutants[0]), "killed");
         let rows: Vec<Value> = fs::read_to_string(&self.log)
             .unwrap()
             .lines()

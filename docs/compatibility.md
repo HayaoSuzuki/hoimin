@@ -4,6 +4,23 @@ hoimin is currently a 0.x CLI. This policy describes how maintainers classify
 changes and tell users what to update. A patch release can fix incorrect
 behavior; it does not promise identical mutation candidates or scores.
 
+## Typed mutation outcomes in 0.8.0
+
+Report schema 6 replaces independently stored mutation status and optional evidence
+with `outcome`: executed results require termination, output state, output, and
+elapsed time; reused results permit only killed or survived; `not_run` means no
+classified completed result is available and does not imply the process never
+started. Status derives from the outcome. Diagnostics do not reconstruct state.
+See [Mutation result outcomes](usage.md#mutation-result-outcomes).
+
+Update report consumers to schema 6. Read schema-5 and older reports with their
+producing binary, or rerun with the intended version. Session schema 5 stores the
+typed outcome directly and rejects initialized schemas 1-4 and unsupported future
+versions. Preserve old databases and choose a different `--session PATH` for a new
+run. There are no compatibility adapters or automatic file conversions. Mutation outcomes do not change the current plan
+format or fingerprint schema 11. The 0.8.0 floor covers these incompatible saved formats because the 0.7.x line
+has already shipped.
+
 ## Review references and stores in 0.8.0
 
 Review JSON and SQLite review stores use version 2. Plan references contain only
@@ -35,7 +52,9 @@ Regenerate schema-6 and older plans with the intended environment. Update strict
 report consumers to schema 6; read schema-5 and older reports with their producing
 binary or rerun with this version. Existing files are not automatically converted,
 deleted, or replaced. Fingerprint schema 11 and its bytes are unchanged, so the
-representation change alone does not invalidate compatible sessions. If a run is
+environment representation change alone does not invalidate compatible sessions;
+the typed-outcome session schema change described above independently requires a
+new database. If a run is
 rejected for another compatibility reason, choose a different `--session PATH`.
 See [Explicit inherited environment fingerprints](development.md#explicit-inherited-environment-fingerprints).
 
@@ -65,9 +84,8 @@ Read older reports with their producing binary or rerun with this version.
 The minimum release version is 0.8.0: the 0.7 series is already published, so
 this incompatible report/configuration change starts a new minor series.
 Regenerate saved plans with the intended binary and inputs; update report
-readers to schema 6. Runtime session intent remains absent from plan schema 7,
-and session database schema 4 is unchanged by this representation. Existing
-session compatibility checks still apply;
+readers to schema 6. Runtime session intent remains absent from plan schema 7; typed outcomes
+require session database schema 5. Existing session compatibility checks still apply;
 choose a new session path if those checks reject an old session.
 
 ## Public interfaces
@@ -205,9 +223,10 @@ required. Revisit the policy before a 1.0 release or a new distribution interfac
 
 ## Session initialization change (Issue 882)
 
-The release floor is 0.6.0 because schema versions 1-3 are no longer automatically
-upgraded. New databases receive schema 4 directly; existing schema-4 databases
-reopen. All other initialized versions produce an unsupported-version error.
+Issue 882 originally raised the release floor to 0.6.0 by removing automatic
+upgrades from schemas 1-3. At that revision, new databases received schema 4 and
+existing schema-4 databases reopened. The typed-outcome schema-5 contract above
+supersedes that schema-4 policy: initialized versions 1-4 are now rejected.
 Keep old databases with their producing binary, and choose a different
 `--session PATH` for a new run. hoimin does not transform, remove or replace the
 old database. See [Sessions and resume](usage.md#sessions-and-resume).

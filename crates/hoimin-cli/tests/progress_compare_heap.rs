@@ -1,7 +1,9 @@
+#[path = "support/mutation_outcome.rs"]
+mod mutation_outcome;
 use std::num::NonZeroUsize;
 
 use hoimin_cli::progress::{self, InputReport, ProgressState, UsableReport};
-use hoimin_core::{MutantFinished, MutationStatus};
+use hoimin_core::MutationStatus;
 use serde_json::Value;
 
 #[path = "support/heap_tracking.rs"]
@@ -91,7 +93,11 @@ fn measure(scenario: Scenario, text_bytes: usize) -> usize {
 fn report(scenario: Scenario, text_bytes: usize, after: bool) -> InputReport {
     let document: Value =
         serde_json::from_str(include_str!("golden/reports/schema-v6-current.json")).unwrap();
-    let template: MutantFinished = serde_json::from_value(document["mutants"][0].clone()).unwrap();
+    let hoimin_core::OutputEvent::MutantFinished(template) =
+        serde_json::from_value(document["mutants"][0].clone()).unwrap()
+    else {
+        unreachable!()
+    };
     let payload = "x".repeat(text_bytes);
     let mutants = (0..16)
         .map(|index| {
@@ -112,11 +118,12 @@ fn report(scenario: Scenario, text_bytes: usize, after: bool) -> InputReport {
             mutant.candidate.path = format!("{payload}.py").into();
             mutant.candidate.operator.clone_from(&payload);
             mutant.candidate.symbol = Some(payload.clone());
-            mutant.status = if matches!(scenario, Scenario::Inconclusive) {
-                MutationStatus::Timeout
-            } else {
-                MutationStatus::Survived
-            };
+            mutant.outcome =
+                mutation_outcome::executed(if matches!(scenario, Scenario::Inconclusive) {
+                    MutationStatus::Timeout
+                } else {
+                    MutationStatus::Survived
+                });
             mutant
         })
         .collect();

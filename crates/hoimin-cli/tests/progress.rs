@@ -1,5 +1,7 @@
 #[path = "support/collecting_writer.rs"]
 mod collecting_writer;
+#[path = "support/mutation_outcome.rs"]
+mod mutation_outcome;
 use collecting_writer::CollectingWriter;
 
 use std::{
@@ -246,7 +248,7 @@ async fn real_run_reports_expose_exact_regression_through_progress() {
     let before_report: Value = serde_json::from_slice(&before_output.stdout).unwrap();
     let before_mutants = before_report["mutants"].as_array().unwrap();
     assert_eq!(before_mutants.len(), 1);
-    assert_eq!(before_mutants[0]["status"], "killed");
+    assert_eq!(mutation_outcome::status(&before_mutants[0]), "killed");
 
     let after_output = run_real_binary(
         project.path(),
@@ -264,7 +266,7 @@ async fn real_run_reports_expose_exact_regression_through_progress() {
     let after_report: Value = serde_json::from_slice(&after_output.stdout).unwrap();
     let after_mutants = after_report["mutants"].as_array().unwrap();
     assert_eq!(after_mutants.len(), 1);
-    assert_eq!(after_mutants[0]["status"], "survived");
+    assert_eq!(mutation_outcome::status(&after_mutants[0]), "survived");
     assert_eq!(
         before_mutants[0]["candidate"]["id"],
         after_mutants[0]["candidate"]["id"]
@@ -592,7 +594,7 @@ fn input_rejects_every_summary_mutant_consistency_mismatch() {
     let mut cases = Vec::new();
 
     let mut status = valid_report();
-    status["mutants"][0]["status"] = json!("survived");
+    status["mutants"][0]["outcome"]["executed"]["termination"] = json!({"Exit":0});
     cases.push(("status", status));
 
     let mut missing = valid_report();
@@ -633,8 +635,7 @@ fn input_rejects_every_summary_mutant_consistency_mismatch() {
 fn input_accepts_a_canonical_null_score_summary() {
     let fixture = tempfile::tempdir().unwrap();
     let mut document = valid_report();
-    document["mutants"][0]["status"] = json!("timeout");
-    document["mutants"][0]["termination"] = json!("Timeout");
+    document["mutants"][0]["outcome"]["executed"]["termination"] = json!("Timeout");
     document["summary"]["complete"] = json!(false);
     document["summary"]["exit_code"] = json!(4);
     document["summary"]["counts"] = json!({
@@ -663,8 +664,7 @@ fn input_accepts_a_canonical_null_score_summary() {
 fn input_rejects_a_non_null_score_without_decidable_mutants() {
     let fixture = tempfile::tempdir().unwrap();
     let mut document = valid_report();
-    document["mutants"][0]["status"] = json!("timeout");
-    document["mutants"][0]["termination"] = json!("Timeout");
+    document["mutants"][0]["outcome"]["executed"]["termination"] = json!("Timeout");
     document["summary"]["counts"] = json!({
         "killed": 0,
         "survived": 0,
@@ -1374,13 +1374,12 @@ async fn duplicate_input_detection_distinguishes_independent_and_resumed_reports
         mutant["run_id"] = json!("independent-run");
     }
     let mut resumed = original.clone();
-    resumed["mutants"][0]["elapsed_ms"] = json!(42);
+    resumed["mutants"][0]["outcome"]["executed"]["elapsed"] = json!({"secs":0,"nanos":42_000_000});
     let mut incomplete = original.clone();
     incomplete["summary"]["complete"] = json!(false);
     incomplete["summary"]["exit_code"] = json!(4);
     let mut changed_result = original.clone();
-    changed_result["mutants"][0]["status"] = json!("survived");
-    changed_result["mutants"][0]["termination"] = json!({"Exit": 0});
+    changed_result["mutants"][0]["outcome"]["executed"]["termination"] = json!({"Exit": 0});
     changed_result["summary"]["counts"]["killed"] = json!(0);
     changed_result["summary"]["counts"]["survived"] = json!(1);
     changed_result["summary"]["counts"]["score"] = json!(0.0);
@@ -1515,16 +1514,14 @@ async fn output_human_includes_latest_comparison_fields() {
 async fn output_labels_the_intersection_score_as_comparable() {
     let fixture = tempfile::tempdir().unwrap();
     let mut before = valid_report();
-    before["mutants"][0]["status"] = json!("survived");
-    before["mutants"][0]["termination"] = json!({ "Exit": 0 });
+    before["mutants"][0]["outcome"]["executed"]["termination"] = json!({ "Exit": 0 });
     let mut added = before["mutants"][0].clone();
     added["sequence"] = json!(4);
     added["candidate"]["id"] = json!("mutant-2");
     added["candidate"]["sequence"] = json!(2);
     added["candidate"]["span"]["start"] = json!(2);
     added["candidate"]["original"] = json!("2");
-    added["status"] = json!("killed");
-    added["termination"] = json!({ "Exit": 1 });
+    added["outcome"]["executed"]["termination"] = json!({ "Exit": 1 });
     before["summary"]["exit_code"] = json!(1);
     before["summary"]["counts"] = json!({
         "killed": 0,
@@ -1576,8 +1573,7 @@ async fn output_labels_the_intersection_score_as_comparable() {
 async fn output_human_omits_stale_comparison_fields_after_an_unusable_report() {
     let fixture = tempfile::tempdir().unwrap();
     let mut before = valid_report();
-    before["mutants"][0]["status"] = json!("survived");
-    before["mutants"][0]["termination"] = json!({ "Exit": 0 });
+    before["mutants"][0]["outcome"]["executed"]["termination"] = json!({ "Exit": 0 });
     before["summary"]["counts"]["killed"] = json!(0);
     before["summary"]["counts"]["survived"] = json!(1);
     before["summary"]["counts"]["score"] = json!(0.0);
@@ -2125,11 +2121,11 @@ fn compare_pair(before: &[MutantFinished], after: &[MutantFinished]) -> Comparis
 fn comparison_oracle(before: &[MutantFinished], after: &[MutantFinished]) -> Comparison {
     let before_by_id = before
         .iter()
-        .map(|mutant| (mutant.candidate.id.as_str(), mutant.status))
+        .map(|mutant| (mutant.candidate.id.as_str(), mutant.outcome.status()))
         .collect::<BTreeMap<_, _>>();
     let after_by_id = after
         .iter()
-        .map(|mutant| (mutant.candidate.id.as_str(), mutant.status))
+        .map(|mutant| (mutant.candidate.id.as_str(), mutant.outcome.status()))
         .collect::<BTreeMap<_, _>>();
     let unique_ids = before_by_id.len() == before.len() && after_by_id.len() == after.len();
     let matching_ids = unique_ids && before_by_id.keys().eq(after_by_id.keys());
@@ -2278,12 +2274,42 @@ fn mutant(key: &str, status: MutationStatus) -> MutantFinished {
             symbol: Some("symbol".to_owned()),
             file_hash: "hash".to_owned(),
         },
-        status,
-        termination: None,
-        output_state: hoimin_core::ProcessOutputState::Complete,
-        elapsed_ms: 1,
+        outcome: match status {
+            hoimin_core::MutationStatus::Killed => hoimin_core::MutationOutcome::Reused {
+                status: hoimin_core::ReusedMutationStatus::Killed,
+            },
+            hoimin_core::MutationStatus::Survived => hoimin_core::MutationOutcome::Reused {
+                status: hoimin_core::ReusedMutationStatus::Survived,
+            },
+            hoimin_core::MutationStatus::NotRun => hoimin_core::MutationOutcome::NotRun,
+            status => hoimin_core::MutationOutcome::Executed {
+                termination: match status {
+                    hoimin_core::MutationStatus::Timeout => {
+                        hoimin_core::ProcessTermination::Timeout
+                    }
+                    hoimin_core::MutationStatus::OutOfMemory => {
+                        hoimin_core::ProcessTermination::OutOfMemory
+                    }
+                    hoimin_core::MutationStatus::ProcessLimit => {
+                        hoimin_core::ProcessTermination::ProcessLimit
+                    }
+                    hoimin_core::MutationStatus::Error => hoimin_core::ProcessTermination::Exit(1),
+                    _ => unreachable!(),
+                },
+                output_state: if status == hoimin_core::MutationStatus::Error {
+                    hoimin_core::ProcessOutputState::CloseTimedOut
+                } else {
+                    hoimin_core::ProcessOutputState::Complete
+                },
+                output: hoimin_core::OutputSpoolRef {
+                    token: "fixture-output".into(),
+                    retained: 0,
+                    observed: 0,
+                },
+                elapsed: std::time::Duration::from_millis(1),
+            },
+        },
         resource_mode: ResourceMode::Hard,
-        output: None,
         diagnostics: Vec::new(),
     }
 }
@@ -2892,11 +2918,8 @@ fn valid_report() -> Value {
                 "symbol": null,
                 "file_hash": "hash"
             },
-            "status": "killed",
-            "termination": { "Exit": 1 },
-            "elapsed_ms": 1,
-            "resource_mode": "hard",
-            "output": { "token": "mutant-1", "retained": 0, "observed": 0 }
+            "outcome": { "executed": { "termination": {"Exit":1}, "output_state":"complete", "elapsed":{"secs":0,"nanos":1_000_000}, "output":{"token":"mutant-1","retained":0,"observed":0} } },
+            "resource_mode": "hard"
         }],
         "summary": {
             "kind": "run_finished",
@@ -2925,10 +2948,10 @@ fn result_report(close_timeout: bool) -> Value {
     let mut document = valid_report();
     if close_timeout {
         let mutant = &mut document["mutants"][0];
-        mutant["status"] = json!("error");
-        mutant["termination"] = json!({"Exit": 0});
-        mutant["output_state"] = json!("close_timed_out");
-        mutant["output"] = json!({"token": "partial", "retained": 0, "observed": 0});
+        mutant["outcome"]["executed"]["termination"] = json!({"Exit": 0});
+        mutant["outcome"]["executed"]["output_state"] = json!("close_timed_out");
+        mutant["outcome"]["executed"]["output"] =
+            json!({"token":"partial","retained":0,"observed":0});
         mutant["diagnostics"] = json!([{
             "mutant_id": mutant["candidate"]["id"], "level": "error",
             "code": hoimin_core::PROCESS_OUTPUT_CLOSE_TIMEOUT_CODE,
@@ -2942,80 +2965,58 @@ fn result_report(close_timeout: bool) -> Value {
     document
 }
 
-fn malformed_result_document(defect: &str) -> Value {
-    let mut document = result_report(true);
-    let mutant = &mut document["mutants"][0];
-    match defect {
-        "termination" | "output" => mutant[defect] = Value::Null,
-        "status" => mutant["status"] = json!("killed"),
-        "missing_diagnostic" => mutant["diagnostics"] = json!([]),
-        "duplicate" => {
-            let diagnostic = mutant["diagnostics"][0].clone();
-            mutant["diagnostics"]
-                .as_array_mut()
+macro_rules! missing_execution_field_test {
+    ($name:ident, $field:literal) => {
+        #[test]
+        fn $name() {
+            // Arrange
+            let fixture = tempfile::tempdir().unwrap();
+            let mut document = result_report(true);
+            document["mutants"][0]["outcome"]["executed"]
+                .as_object_mut()
                 .unwrap()
-                .push(diagnostic);
+                .remove($field);
+            let path = write_json(&fixture, "missing-field.json", &document);
+            // Act
+            let result = read_report(&path);
+            // Assert
+            assert!(matches!(result, Err(ProgressError::Parse { .. })));
         }
-        "wrong_id" => mutant["diagnostics"][0]["mutant_id"] = json!("other"),
-        "wrong_level" => mutant["diagnostics"][0]["level"] = json!("warning"),
-        "wrong_code" => mutant["diagnostics"][0]["code"] = json!("other"),
-        "blank_message" => mutant["diagnostics"][0]["message"] = json!(" \t\n"),
-        "complete_diagnostic" => mutant["output_state"] = json!("complete"),
-        _ => unreachable!(),
-    }
-    if defect == "status" {
-        document["summary"]["counts"] =
-            serde_json::to_value(hoimin_core::summarize(&[MutationStatus::Killed])).unwrap();
-        document["summary"]["complete"] = json!(true);
-        document["summary"]["exit_code"] = json!(0);
-    }
-    document
+    };
 }
+missing_execution_field_test!(input_requires_executed_termination, "termination");
+missing_execution_field_test!(input_requires_executed_output_state, "output_state");
+missing_execution_field_test!(input_requires_executed_output, "output");
+missing_execution_field_test!(input_requires_executed_elapsed, "elapsed");
 
 #[test]
-fn input_rejects_malformed_current_result_fields_and_diagnostics() {
+fn input_preserves_output_error_override() {
+    // Arrange
     let fixture = tempfile::tempdir().unwrap();
-    let schema = REPORT_SCHEMA_VERSION;
-    for (defect, reason) in [
-        ("termination", "lacks its required result fields"),
-        ("output", "lacks its required result fields"),
-        ("status", "lacks its required result fields"),
-        ("missing_diagnostic", "disagrees with its diagnostics"),
-        ("duplicate", "disagrees with its diagnostics"),
-        ("wrong_id", "disagrees with its diagnostics"),
-        ("wrong_level", "disagrees with its diagnostics"),
-        ("wrong_code", "disagrees with its diagnostics"),
-        ("blank_message", "disagrees with its diagnostics"),
-        ("complete_diagnostic", "disagrees with its diagnostics"),
-    ] {
-        let document = malformed_result_document(defect);
-        let path = write_json(&fixture, &format!("v{schema}-{defect}.json"), &document);
-        let error = read_report(&path).unwrap_err().to_string();
-        assert!(error.contains(path.to_str().unwrap()), "{error}");
-        assert!(
-            error.contains(document["mutants"][0]["candidate"]["id"].as_str().unwrap()),
-            "{error}"
-        );
-        assert!(error.contains(reason), "v{schema} {defect}: {error}");
-    }
-}
-
-#[test]
-fn input_preserves_output_error_override_and_current_null_termination() {
-    let fixture = tempfile::tempdir().unwrap();
-    let document = result_report(true);
-    let path = write_json(&fixture, "output-error.json", &document);
+    let path = write_json(&fixture, "output-error.json", &result_report(true));
+    // Act
+    let result = read_report(&path);
+    // Assert
     assert!(matches!(
-        read_report(&path),
+        result,
         Ok(InputReport::Unusable {
             reason: UnusableReason::Incomplete,
             ..
         })
     ));
-    let mut synthetic = result_report(false);
-    synthetic["mutants"][0]["termination"] = Value::Null;
-    let path = write_json(&fixture, "synthetic.json", &synthetic);
-    assert!(matches!(read_report(&path), Ok(InputReport::Usable(_))));
+}
+
+#[test]
+fn input_accepts_reused_conclusive_outcome() {
+    // Arrange
+    let fixture = tempfile::tempdir().unwrap();
+    let mut document = result_report(false);
+    document["mutants"][0]["outcome"] = json!({"reused":{"status":"killed"}});
+    let path = write_json(&fixture, "reused.json", &document);
+    // Act
+    let result = read_report(&path);
+    // Assert
+    assert!(matches!(result, Ok(InputReport::Usable(_))));
 }
 
 fn jsonl_events(document: &Value) -> Vec<Value> {
@@ -3103,7 +3104,7 @@ fn corrupt_lifecycle_events(defect: &str) -> Vec<Value> {
         "schema" => events[2]["schema_version"] = json!(2),
         "unknown_kind" => events[2]["kind"] = json!("future_event"),
         "counts" => events[4]["counts"]["killed"] = json!(2),
-        "result" => events[3]["termination"] = json!({"Exit": 0}),
+        "result" => events[3]["outcome"]["executed"]["termination"] = json!({"Exit": 0}),
         _ => unreachable!(),
     }
     // Keep sequence valid unless sequence order itself is under test.
@@ -3332,9 +3333,7 @@ async fn jsonl_real_failed_baseline_has_document_disposition() {
 fn jsonl_not_run_requires_start_and_preceding_baseline() {
     let fixture = tempfile::tempdir().unwrap();
     let mut document = valid_report();
-    document["mutants"][0]["status"] = json!("not_run");
-    document["mutants"][0]["termination"] = Value::Null;
-    document["mutants"][0]["output"] = Value::Null;
+    document["mutants"][0]["outcome"] = json!("not_run");
     document["summary"]["counts"] =
         serde_json::to_value(hoimin_core::summarize(&[MutationStatus::NotRun])).unwrap();
     document["summary"]["complete"] = json!(false);
@@ -3400,9 +3399,8 @@ fn detail_report(statuses: &[(&str, MutationStatus)]) -> Value {
                 event["candidate"]["sequence"] = json!(index + 1);
                 event["candidate"]["id"] = json!(id);
                 event["candidate"]["original"] = json!(id);
-                event["status"] = serde_json::to_value(status).unwrap();
-                event["termination"] =
-                    json!({"Exit": i32::from(*status != MutationStatus::Survived)});
+                event["outcome"] =
+                    serde_json::to_value(mutation_outcome::executed(*status)).unwrap();
                 event
             })
             .collect(),

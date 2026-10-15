@@ -499,7 +499,7 @@ Reports identify `hard` or `best_effort` resource mode. This describes enforceme
 
 Rust callers construct `WindowsBackend::new()` without run limits and supply caps through each `ProcessLimits` request; the formerly ignored constructor argument has been removed.
 
-The run header records the selected backend in `resource_control.mode` and the stable `resource_control.mechanism` identifier (`portable`, `linux_cgroup_v2`, or `windows_job_object`). Synthetic reused and not-run results report the current run’s selected mode; reused results retain null termination/output and zero elapsed time. Actual process results retain their observed mode.
+The run header records the selected backend in `resource_control.mode` and the stable `resource_control.mechanism` identifier (`portable`, `linux_cgroup_v2`, or `windows_job_object`). Synthetic reused and not-run results report the current run’s selected mode; reused outcomes carry only a conclusive killed/survived status, project zero elapsed time, and own no execution output. Actual process results retain their observed mode.
 
 Linux cgroup hard enforcement requires `--max-memory` to be at least one host
 page. Smaller values fail before a test-process cgroup is created or the test command starts;
@@ -1131,17 +1131,51 @@ The limit counts reused results as well as newly executed mutants: increasing
 the latest accepted limit, and a lower limit cannot resume that run. A baseline
 still runs on every invocation. Other verdict-affecting limits must remain compatible.
 
-SQLite sessions use schema 4. hoimin creates this schema directly for an
-uninitialized database and reopens existing schema-4 databases without rewriting
-saved rows. Schema versions 1-3 and unsupported future versions are rejected;
-hoimin does not migrate, delete or replace them. To start fresh, choose a different
-`--session PATH`. Keep an older database with its producing binary if you need to
-read or resume it. This removal of automatic upgrades raises the release floor
-to 0.6.0.
+SQLite sessions use schema 5, which stores one typed mutation outcome per result.
+hoimin creates this schema directly for an uninitialized database and reopens
+existing schema-5 databases without rewriting saved rows. Schema versions 1-4
+and unsupported future versions are rejected. Choose a different `--session PATH`
+to start fresh, and keep older databases with their producing binary if you need
+to read or resume them. Files are not automatically converted, deleted, or
+replaced. The 0.8.0 floor covers this incompatible change.
 
-An existing schema-4 run can still lack a recorded historical budget. Start a new
+An existing schema-5 run can still lack a recorded historical budget. Start a new
 run when that incomplete run reports `session.resume.incompatible`; completed
 results remain available in the database.
+
+### Mutation result outcomes
+
+Report schema 6 replaces each mutant's independent `status`, nullable
+`termination`/`output`, `output_state`, and `elapsed_ms` with one `outcome`:
+
+- `executed` carries termination, output state, output spool, and elapsed duration.
+- `{"reused": {"status": "killed"}}` or `{"reused": {"status": "survived"}}` identifies reuse from a compatible session. It contributes zero elapsed time and no output to this run.
+- `"not_run"` means no classified completed result is available. A process may have started before interruption. It contributes zero elapsed time and no output.
+
+An executed outcome has this form:
+
+```json
+{
+  "executed": {
+    "termination": {"Exit": 1},
+    "output_state": "complete",
+    "output": {"token": "spool", "retained": 3, "observed": 8},
+    "elapsed": {"secs": 0, "nanos": 5000000}
+  }
+}
+```
+
+Elapsed time requires a closed object with `secs` in the u64 range and `nanos`
+from 0 through 999,999,999. Array aliases and normalized oversized nanoseconds
+are rejected.
+
+For executed outcomes, `close_timed_out` means `error` regardless of termination.
+With `complete` output, exit 0 means `survived`, any other exit means `killed`,
+resource/time limits retain their named status, and cancellation means `not_run`.
+Diagnostics remain separate evidence and do not determine output state or status.
+Progress, review, summary counts, and human output derive these statuses. Baseline
+report fields retain their existing representation. Update strict report consumers
+to schema 6; old flat mutation result records are rejected without conversion.
 
 Plan schema version 7 stores an explicit validated environment snapshot and independent
 import roots (ranking rule version 4). Regenerate schema-6 and older plans before verification.

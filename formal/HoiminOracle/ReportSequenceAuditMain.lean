@@ -5,7 +5,6 @@ open HoiminOracle.ReportSequence
 
 namespace HoiminOracle.ReportSequence.Executable
 
-private def statusName := statusString
 private def terminationName := terminationString
 
 private def fieldsJson (fields : List (String × String)) : Lean.Json :=
@@ -17,6 +16,17 @@ private def expectedJson (expected : Expected) : Lean.Json :=
     ("error_code", expected.errorCode.map Lean.Json.str |>.getD .null),
     ("error_fields", fieldsJson expected.errorFields)
   ]
+
+private def outcomeJson : Outcome → Lean.Json
+  | .notRun => .str "not_run"
+  | .reused status => Lean.Json.mkObj [
+      ("reused", Lean.Json.mkObj [("status", .str (match status with
+          | .killed => "killed" | .survived => "survived"))])]
+  | .executed termination outputState => Lean.Json.mkObj [
+      ("executed", Lean.Json.mkObj [
+        ("termination", .str (terminationName termination)),
+        ("output_state", .str (match outputState with
+          | .complete => "complete" | .closeTimedOut => "close_timed_out"))])]
 
 private def eventJson (event : Event) : Lean.Json :=
   let common := [
@@ -32,17 +42,16 @@ private def eventJson (event : Event) : Lean.Json :=
         ("mutant_id", .str (mutantIdString id)),
         ("mutant_sequence", Lean.toJson mutantSequence)
       ])
-  | .mutantFinished id mutantSequence status termination =>
+  | .mutantFinished id mutantSequence outcome =>
       Lean.Json.mkObj (("kind", .str "mutant_finished") :: common ++ [
         ("mutant_id", .str (mutantIdString id)),
         ("mutant_sequence", Lean.toJson mutantSequence),
-        ("status", .str (statusName status)),
-        ("termination", termination.map (Lean.Json.str ∘ terminationName) |>.getD .null)
+        ("outcome", outcomeJson outcome)
       ])
 
 private def caseJson (item : Case) : Lean.Json :=
   Lean.Json.mkObj [
-    ("schema", Lean.toJson 1),
+    ("schema", Lean.toJson 2),
     ("id", .str item.id),
     ("mode", .str item.mode),
     ("premise", .str item.premise),
@@ -75,7 +84,7 @@ private def mutantEvents : List Event :=
       mutantSequences.flatMap fun mutantSequence => [
         { runId := .first, sequence, kind := .mutantStarted id mutantSequence },
         { runId := .first, sequence
-          kind := .mutantFinished id mutantSequence .survived (some .exitZero) }
+          kind := .mutantFinished id mutantSequence (.executed .exitZero .complete) }
       ]
 
 private def eventAlphabet : List Event := simpleEvents ++ mutantEvents

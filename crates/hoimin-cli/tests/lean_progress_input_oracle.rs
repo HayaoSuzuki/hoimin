@@ -1,3 +1,5 @@
+#[path = "support/mutation_outcome.rs"]
+mod mutation_outcome;
 use std::{collections::BTreeSet, process::Stdio, time::Duration};
 
 use serde::Deserialize;
@@ -109,31 +111,13 @@ fn report_json_from_lean_case(case: &LeanOracleCase) -> Value {
                 event["candidate"]["id"] = json!(format!("mutant-{index}"));
                 event["candidate"]["sequence"] = json!(index);
                 event["candidate"]["span"]["start"] = json!(index);
-                event["status"] = json!(status);
-                event["termination"] = match status.as_str() {
-                    "killed" => json!({"Exit": 1}),
-                    "survived" => json!({"Exit": 0}),
-                    "timeout" => json!("Timeout"),
-                    "out_of_memory" => json!("OutOfMemory"),
-                    "process_limit" => json!("ProcessLimit"),
-                    "error" | "not_run" => Value::Null,
-                    other => panic!("unknown status {other}"),
-                };
-                if matches!(status.as_str(), "error" | "not_run") {
-                    event["output"] = Value::Null;
-                }
+                let status: hoimin_core::MutationStatus =
+                    serde_json::from_value(json!(status)).unwrap();
+                event["outcome"] =
+                    serde_json::to_value(mutation_outcome::executed(status)).unwrap();
                 if let Some(fields) = &case.result_fields {
-                    event["termination"] = fields.termination.clone();
-                    event["output_state"] = json!(fields.output_state);
-                    event["output"] = template["output"].clone();
-                    if fields.output_state == "close_timed_out" {
-                        event["diagnostics"] = json!([{
-                            "code": hoimin_core::PROCESS_OUTPUT_CLOSE_TIMEOUT_CODE,
-                            "mutant_id": format!("mutant-{index}"),
-                            "level": "error",
-                            "message": "output stream did not close"
-                        }]);
-                    }
+                    event["outcome"]["executed"]["termination"] = fields.termination.clone();
+                    event["outcome"]["executed"]["output_state"] = json!(fields.output_state);
                 }
                 event
             })
@@ -181,7 +165,10 @@ async fn observe_cli_encoding(
         .map_err(|error| error.to_string())?;
     let stderr = String::from_utf8_lossy(&output.stderr);
     match output.status.code() {
-        Some(2) if stderr.contains("invalid structure in progress report") => {
+        Some(2)
+            if stderr.contains("invalid structure in progress report")
+                || stderr.contains("could not parse progress report") =>
+        {
             if !output.stdout.is_empty() || !stderr.contains(path.to_str().unwrap()) {
                 return Err(format!(
                     "invalid-input diagnostic/output contract failed: {stderr}"
@@ -335,14 +322,14 @@ async fn shared_reader_progress_formats_follow_lean() {
             println!(
                 "BOUNDARY_OBSERVATION {}",
                 json!({
-                    "fixture": gap.id, "encoding": "jsonl-v5", "boundary": "reader-progress",
+                    "fixture": gap.id, "encoding": "jsonl-v6", "boundary": "reader-progress",
                     "mode": "report", "evidence": "real-cli", "status": "unexecuted",
                     "reason": "document permits missing baseline with mutant projections; full JSONL lifecycle requires preceding baseline"
                 })
             );
         }
         selected_cases += 1;
-        for (encoding, jsonl) in [("json-v5", false), ("jsonl-v5", true)]
+        for (encoding, jsonl) in [("json-v6", false), ("jsonl-v6", true)]
             .into_iter()
             .filter(|(_, jsonl)| !jsonl || case.baseline != "missing" || case.statuses.is_empty())
         {
@@ -387,13 +374,7 @@ fn shared_reader_fixture_encodings_preserve_fields_and_projection_premises() {
             document["summary"]["counts"]
         );
         for (event, original) in mutants.iter().zip(document["mutants"].as_array().unwrap()) {
-            for field in [
-                "candidate",
-                "status",
-                "termination",
-                "output_state",
-                "diagnostics",
-            ] {
+            for field in ["candidate", "outcome", "diagnostics"] {
                 assert_eq!(event[field], original[field], "{} {field}", case.id);
             }
         }
