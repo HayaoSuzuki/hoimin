@@ -11,6 +11,12 @@ sources:
   working_tree: clean
   sha256: db6d7171357601e158950fa4eeae4dc41fdb79a7411a2e9e5224f9d620997ffb
 
+- id: issue-898-process-design
+  resource: ../../superpowers/specs/2026-10-15-issue-898-design.md
+  revision: 51c9e26b9d0006cac150b3833cb797a59349bac1
+  working_tree: clean
+  sha256: 1d6af0050e74da72c5e0fd51f897999a5516350b45ef60a2f4611aaafabdd0c0
+
 - id: issue-899-changed-selection-design
   resource: ../../superpowers/specs/2026-10-15-issue-899-design.md
   revision: 7b6cb19ba0181759f6b5726f985c5fd7700d313e
@@ -1714,6 +1720,14 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 | Worker-owned execution state | [Original](../../superpowers/specs/2026-10-15-issue-897-worker-state-design.md) [^issue-897-design] |
 
 [^issue-897-design]: [Original record](../../superpowers/specs/2026-10-15-issue-897-worker-state-design.md). Implementation design and explicitly scoped execution evidence.
+
+## Issue 898 process requests
+
+| Original heading | Source |
+| --- | --- |
+| Issue 898 typed process requests | [Design](../../superpowers/specs/2026-10-15-issue-898-design.md) [^issue-898-process-design] |
+
+[^issue-898-process-design]: [Design](../../superpowers/specs/2026-10-15-issue-898-design.md). Typed request ownership and internal wire boundaries; the original heading is preserved.
 
 ## Issue 899 changed selection
 

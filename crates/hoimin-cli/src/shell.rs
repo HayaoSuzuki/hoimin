@@ -2212,20 +2212,48 @@ async fn execute_effect_with_cancellation(
     result.unwrap_or_else(RunEvent::EffectFailed)
 }
 
-fn worker_process_request(
+/// Only workspace contexts can prepare worker commands; probes cannot enter here.
+trait WorkspaceProcessContext {
+    fn worker(&self) -> u32;
+    fn run_id(&self) -> &str;
+    fn mutant_id(&self) -> Option<&str>;
+}
+
+impl WorkspaceProcessContext for hoimin_core::BaselineContext {
+    fn worker(&self) -> u32 {
+        self.worker
+    }
+    fn run_id(&self) -> &str {
+        &self.run_id
+    }
+    fn mutant_id(&self) -> Option<&str> {
+        None
+    }
+}
+
+impl WorkspaceProcessContext for hoimin_core::MutantContext {
+    fn worker(&self) -> u32 {
+        self.worker
+    }
+    fn run_id(&self) -> &str {
+        &self.run_id
+    }
+    fn mutant_id(&self) -> Option<&str> {
+        Some(&self.mutant_id)
+    }
+}
+
+fn worker_process_request<C: WorkspaceProcessContext>(
     context: &ShellContext,
     id: EffectId,
-    mut request: RunProcess,
+    mut request: RunProcess<C>,
     cancellation: ProcessCancellation,
     start_gate: Option<ProcessStartGate>,
-) -> Result<ProcessRequest, EffectFailed> {
-    let worker = request.worker.ok_or_else(|| {
-        EffectFailed::other(
-            id,
-            "shell.worker.missing",
-            "process has no workspace worker",
-        )
-    })?;
+) -> Result<ProcessRequest, EffectFailed>
+where
+    ProcessRequest: From<RunProcess<C>>,
+{
+    let worker = request.context.worker();
     let inherited = std::env::vars_os().collect();
     let mut environment = context
         .workspace
@@ -2233,11 +2261,7 @@ fn worker_process_request(
         .expect("workspace ownership is available during process dispatch")
         .command_environment(worker, &inherited)
         .map_err(|error| EffectFailed::other(id, "shell.worker.environment", error.to_string()))?;
-    set_worker_metadata(
-        &mut environment,
-        request.run_id.as_deref(),
-        request.mutant_id.as_deref(),
-    );
+    set_worker_metadata(&mut environment, &request.context);
     request.cwd.clone_from(&environment.cwd);
     let request = ProcessRequest::from(request)
         .with_environment(environment)
@@ -2248,10 +2272,9 @@ fn worker_process_request(
     })
 }
 
-fn set_worker_metadata(
+fn set_worker_metadata<C: WorkspaceProcessContext>(
     environment: &mut crate::workspace::CommandEnvironment,
-    run_id: Option<&str>,
-    mutant_id: Option<&str>,
+    context: &C,
 ) {
     for name in ["HOIMIN_WORKER_ROOT", "HOIMIN_RUN_ID", "HOIMIN_MUTANT_ID"] {
         remove_environment_key(&mut environment.env, name);
@@ -2260,13 +2283,11 @@ fn set_worker_metadata(
         std::ffi::OsString::from("HOIMIN_WORKER_ROOT"),
         std::ffi::OsString::from(environment.cwd.as_str()),
     );
-    if let Some(run_id) = run_id {
-        environment.env.insert(
-            std::ffi::OsString::from("HOIMIN_RUN_ID"),
-            std::ffi::OsString::from(run_id),
-        );
-    }
-    if let Some(mutant_id) = mutant_id {
+    environment.env.insert(
+        std::ffi::OsString::from("HOIMIN_RUN_ID"),
+        std::ffi::OsString::from(context.run_id()),
+    );
+    if let Some(mutant_id) = context.mutant_id() {
         environment.env.insert(
             std::ffi::OsString::from("HOIMIN_MUTANT_ID"),
             std::ffi::OsString::from(mutant_id),
@@ -2869,7 +2890,7 @@ async fn run_loop_context(
                 match effect {
                     RunEffect::RunBaseline(request) => {
                         let id = request.id;
-                        let worker = request.worker;
+                        let worker = request.context.worker;
                         match worker_process_request(
                             &context,
                             id,
@@ -2878,9 +2899,6 @@ async fn run_loop_context(
                             Some(control.start_gate()),
                         ) {
                             Ok(request) => {
-                                let Some(worker) = worker else {
-                                    unreachable!("worker process request accepted without worker")
-                                };
                                 let Some(dispatch) = control.begin_dispatch() else {
                                     cancellation.cancel();
                                     stop_signalled = true;
@@ -2920,7 +2938,7 @@ async fn run_loop_context(
                     }
                     RunEffect::RunMutant(request) => {
                         let id = request.id;
-                        let worker = request.worker;
+                        let worker = request.context.worker;
                         match worker_process_request(
                             &context,
                             id,
@@ -2929,9 +2947,6 @@ async fn run_loop_context(
                             Some(control.start_gate()),
                         ) {
                             Ok(request) => {
-                                let Some(worker) = worker else {
-                                    unreachable!("worker process request accepted without worker")
-                                };
                                 let Some(dispatch) = accept_process_dispatch(
                                     &control,
                                     &mut metrics,
@@ -4562,13 +4577,11 @@ fn record_metrics(
 }
 
 fn cancel_queued_worker(
-    worker: Option<u32>,
+    worker: u32,
     collector: &mut Option<MetricsCollector>,
     warnings: &mut Vec<(&'static str, String)>,
 ) {
-    if let Some(worker) = worker {
-        record_metrics(collector, warnings, |metrics| metrics.cancel_queued(worker));
-    }
+    record_metrics(collector, warnings, |metrics| metrics.cancel_queued(worker));
 }
 
 fn cancel_queued_effect(
@@ -4577,7 +4590,7 @@ fn cancel_queued_effect(
     warnings: &mut Vec<(&'static str, String)>,
 ) {
     if let RunEffect::RunMutant(request) = effect {
-        cancel_queued_worker(request.worker, collector, warnings);
+        cancel_queued_worker(request.context.worker, collector, warnings);
     }
 }
 
@@ -4616,7 +4629,7 @@ fn record_ready_processes<'a>(
     warnings: &mut Vec<(&'static str, String)>,
 ) {
     for worker in effects.into_iter().filter_map(|effect| match effect {
-        RunEffect::RunMutant(request) => request.worker,
+        RunEffect::RunMutant(request) => Some(request.context.worker),
         _ => None,
     }) {
         record_metrics(collector, warnings, |metrics| metrics.queued(worker));
@@ -7424,9 +7437,11 @@ mod tests {
     fn process_effect(worker: u32) -> RunEffect {
         RunEffect::RunMutant(RunProcess {
             id: EffectId(1),
-            worker: Some(worker),
-            run_id: Some("run-1".into()),
-            mutant_id: Some("mutant-1".into()),
+            context: hoimin_core::MutantContext {
+                worker,
+                run_id: "run-1".into(),
+                mutant_id: "mutant-1".into(),
+            },
             argv: Vec::new(),
             cwd: Utf8PathBuf::from("."),
             limits: hoimin_core::ProcessLimits {
@@ -9477,7 +9492,7 @@ mod tests {
         metrics.as_mut().unwrap().queued(7).unwrap();
         let mut warnings = Vec::new();
 
-        cancel_queued_worker(Some(7), &mut metrics, &mut warnings);
+        cancel_queued_worker(7, &mut metrics, &mut warnings);
 
         assert_metrics_sidecar_finishes(metrics, &warnings);
     }
@@ -9666,9 +9681,11 @@ mod tests {
         ));
         let request = RunProcess {
             id: EffectId(9),
-            worker: Some(4),
-            run_id: Some("run-1".into()),
-            mutant_id: Some("mutant-1".into()),
+            context: hoimin_core::MutantContext {
+                worker: 4,
+                run_id: "run-1".into(),
+                mutant_id: "mutant-1".into(),
+            },
             argv: vec![missing_executable_arg()],
             cwd: Utf8PathBuf::from("."),
             limits: hoimin_core::ProcessLimits {
@@ -9722,7 +9739,13 @@ mod tests {
             ]),
         };
 
-        set_worker_metadata(&mut environment, Some("run-1"), None);
+        set_worker_metadata(
+            &mut environment,
+            &hoimin_core::BaselineContext {
+                worker: 0,
+                run_id: "run-1".into(),
+            },
+        );
 
         assert_eq!(
             environment.env.get(&OsString::from("HOIMIN_WORKER_ROOT")),
@@ -9744,6 +9767,34 @@ mod tests {
                 .count(),
             1
         );
+    }
+
+    proptest::proptest! {
+        #[test]
+        fn baseline_metadata_preserves_required_run_id(run_id in proptest::arbitrary::any::<String>()) {
+            // Arrange.
+            let mut environment = crate::workspace::CommandEnvironment {
+                cwd: "worker/root".into(), env: BTreeMap::new(),
+            };
+            let context = hoimin_core::BaselineContext { worker: 0, run_id: run_id.clone() };
+            // Act.
+            set_worker_metadata(&mut environment, &context);
+            // Assert.
+            proptest::prop_assert_eq!(environment.env.get(&OsString::from("HOIMIN_RUN_ID")), Some(&OsString::from(run_id)));
+        }
+
+        #[test]
+        fn mutant_metadata_preserves_required_mutant_id(mutant_id in proptest::arbitrary::any::<String>()) {
+            // Arrange.
+            let mut environment = crate::workspace::CommandEnvironment {
+                cwd: "worker/root".into(), env: BTreeMap::new(),
+            };
+            let context = hoimin_core::MutantContext { worker: 0, run_id: "run".into(), mutant_id: mutant_id.clone() };
+            // Act.
+            set_worker_metadata(&mut environment, &context);
+            // Assert.
+            proptest::prop_assert_eq!(environment.env.get(&OsString::from("HOIMIN_MUTANT_ID")), Some(&OsString::from(mutant_id)));
+        }
     }
 
     #[test]

@@ -12,6 +12,12 @@ sources:
   sha256: c4c11806e1e8b6e9ad722f65c1ce42da8b0277809b4c2b9b039a222058d3bd48
 
 
+- id: issue-898-process-review
+  resource: ../../superpowers/reports/2026-10-15-issue-898-review.md
+  revision: 51c9e26b9d0006cac150b3833cb797a59349bac1
+  working_tree: modified
+  sha256: 66d7bb084d35c74ed50e24d5be9853361853b515ed98a8ca929d23a4e3c91a40
+
 - id: issue-899-changed-selection-review
   resource: ../../superpowers/reports/2026-10-15-issue-899-review.md
   revision: ad65b8ce55b0dabc59712775e362d5d614b27559
@@ -871,9 +877,9 @@ sources:
   sha256: 2447ba6b0a732455911e9cb9737854c9a4c973e86f8334b36674faa201473302
 - id: issue-895-review
   resource: ../../superpowers/reports/issue-895/review.md
-  revision: 1efa21eb64b44a9599fd2d53e57ff07081936885
+  revision: 48d7f94968289be7a8469fd06f42d0702fc9ffba
   working_tree: modified
-  sha256: d0d64d96b10377ea1491e317b63cbe658f1ea89148475105fc301f51ca4b2656
+  sha256: e40737eaa4b50c6cfaa94d52f2859040c7f69c1813bb011f12f6493fbf1fb946
 
 ---
 
@@ -1528,6 +1534,14 @@ sources:
 | Worker-owned state review and verification | [Original](../../superpowers/reports/2026-10-15-issue-897-review.md) [^issue-897-review] |
 
 [^issue-897-review]: [Original record](../../superpowers/reports/2026-10-15-issue-897-review.md). Implementation design and explicitly scoped execution evidence.
+
+## Issue 898 process requests
+
+| Original heading | Source |
+| --- | --- |
+| Issue 898 review and verification | [Review and verification](../../superpowers/reports/2026-10-15-issue-898-review.md) [^issue-898-process-review] |
+
+[^issue-898-process-review]: [Review and verification](../../superpowers/reports/2026-10-15-issue-898-review.md). Windows execution evidence: one unconfirmed initial mypy failure, followed by passing focused and contracts checks; no green full-workspace claim.
 
 
 ## Issue 899 changed selection

@@ -138,9 +138,9 @@ sources:
   sha256: 283d6d959f953906bb88271e7146d18ecc9a39a7ca12813f13552247a30f544d
 - id: issue-895-review
   resource: ../../superpowers/reports/issue-895/review.md
-  revision: 1efa21eb64b44a9599fd2d53e57ff07081936885
+  revision: 48d7f94968289be7a8469fd06f42d0702fc9ffba
   working_tree: modified
-  sha256: d0d64d96b10377ea1491e317b63cbe658f1ea89148475105fc301f51ca4b2656
+  sha256: e40737eaa4b50c6cfaa94d52f2859040c7f69c1813bb011f12f6493fbf1fb946
 - id: issue-895-outcome
   resource: ../../../crates/hoimin-core/src/resume.rs
   revision: 31245fbf096967b36bc15523067080b506f88fe9

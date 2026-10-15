@@ -271,3 +271,44 @@ Merged main 81182823f72c9c433ecaa9984fef1cf89d61a270 (squashed PR 906) into publ
 Independent five-boundary review checked target semantics, strict format contracts, schema/goldens, test adapters and documentation/source preservation. No production semantic conflict was found; the stale documentation sentence above was corrected. These findings do not prove untested platform behavior or make future overlapping merges unnecessary.
 
 Fresh verification completed: core all-target contracts 33 successful result summaries, 437 passed, zero failed, two ignored. CLI contracts library plus 12 affected integrations produced 15 successful summaries, 1,348 passes, zero failures and 18 ignored, including nested subprocess summaries (not a unique-test count); the cfg-only changed_excluded_paths target executes zero tests on Windows. Complete Python: 1,021 passed, 29 skipped. All-workspace/all-target/all-feature Clippy with warnings denied, Ruff lint/format, ty, workspace formatting and documented site build passed. No new production behavior or test expectation repair was necessary. This is a scoped integration verification rather than another full workspace behavioral suite.
+
+
+## Final typed process-context integration (2026-10-15)
+
+Merged main 7dc5be596e5afd7caddf14c6efddcc9bef27e7b2 (squashed PR 908) into published head 48d7f94968289be7a8469fd06f42d0702fc9ffba. Conflicts were one mutant request constructor and the two reference catalogs. Current Plan7/Report6/session5 and the 0.8 floor remain intact. No compatibility adapter is introduced.
+
+### Design review passes
+
+1. Read the owned WorkerState transition: mutant_process obtains a candidate and installs Running(candidate.clone()) before dispatch.
+2. Read MutantContext's required worker/run/mutant identity fields against the previous optional request shape; no missing-ID repair is retained.
+3. Compared the producer and consumer: the context uses the already obtained candidate ID, preserving the identity of the candidate owned by Running.
+4. Read typed context lowering, worker metadata injection and completion matching; Probe cannot enter workspace dispatch and baseline has no mutant identity.
+5. Rechecked MutationOutcome persistence/report classification, explicit output state and diagnostics independence; context typing does not change result policy.
+
+### Integration plan review passes
+
+1. Imported the signed main commit via gh Git Data API with exact identity validation; preserved published ancestry with a merge.
+2. Resolved the constructor by composing required MutantContext with existing candidate ownership, avoiding an unnecessary second candidate lookup.
+3. Selected complete core contracts and CLI library plus process/E2E/report/session/result/progress/disk runtime adapters to validate the connected boundaries.
+4. Selected all-target/all-feature Clippy, schema/wheel/docs/release Python tests, static/format/docs and provenance checks separately.
+5. Isolated jobs1/threads2/debug0/incremental0 Cargo output, retained logs outside the target and cleaned only after exact-path/type/inactivity checks.
+
+### Implementation review passes
+
+1. Inspected baseline and mutant constructors after integration: concrete context types replace optional metadata while preserving argv, cwd, timeout and resource limits.
+2. Inspected effect_worker's two explicit generic-variant arms; required worker identity remains available for pending completion validation.
+3. Compared main's effect/process/shell/resource implementation and typed-context tests against the integrated branch; inherited code remains identical.
+4. Checked bounded catalog union: all parent sections, source IDs and footnotes survive; canonical and normalized historical source observations retain their original scope.
+5. Audited separately rooted fuzz sources for the removed RunProcess fields and reviewed existing malformed-context and metadata/property coverage rather than adding implementation-mirroring tests.
+
+### Verification review passes
+
+1. Inspected fresh complete core contract results, including machine, context, output and persistence lifecycle cases; kept ignored counts explicit.
+2. Inspected complete selected CLI target results, including real process metadata, cancellation, E2E, report/session persistence and lifecycle correspondence adapters.
+3. Read scoped Python schema/smoke/docs/release results separately from static checks; no repeated full Python or full Rust workspace behavioral run is claimed.
+4. Read all-target/all-feature Clippy completion with warnings denied, plus formatting, documented site build, unresolved path and whitespace checks.
+5. Updated only the edited review's three modified source observations, rechecked canonical historical sources and catalog preservation, and verified clean merge delivery.
+
+Independent read-only review performed five passes over ownership/state, typed lowering/completion identity, result/persistence formats, adversarial coverage and both-parent preservation. It found no actionable issue and declined no behavior as out of scope. The reviewer inspected tests; execution evidence is from the commands recorded below.
+
+Fresh verification: complete core all-target contracts produced 34 successful summaries, 445 passes, zero failures and two ignored. CLI contracts library plus eight process/E2E/report/session/lifecycle integrations produced 11 successful summaries, 1,092 passes, zero failures and 18 ignored, including nested subprocess summaries (not unique-test totals). Scoped Python schema/wheel/docs/release tests: 196 passed, 10 skipped. All-workspace/all-target/all-feature Clippy with warnings denied, Ruff lint/format, ty, workspace formatting, documented strict docs and diff checks passed. No repeated complete Rust workspace or complete Python suite is claimed for this final integration. Existing meaningful contract/adversarial/property tests cover the identity and lifecycle boundary; no implementation-mirroring test was added.

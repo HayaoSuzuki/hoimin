@@ -403,3 +403,19 @@ to historical design evidence. Use the [development guide](../development.md)
 for validation procedures and the [compatibility policy](../compatibility.md)
 for changes to CLI and saved artifacts. The C4 diagrams describe responsibilities
 and relationships; they do not prove termination, isolation or platform support.
+
+## Process request identity
+
+The core fixes required identity when it creates an effect:
+`RunBaseline(RunProcess<BaselineContext>)` requires worker and run ID;
+`RunMutant(RunProcess<MutantContext>)` also requires mutant ID. A standalone
+`RunProcess<ProbeContext>` carries no workspace identity. Purpose is not stored
+as another independently editable flag inside these requests.
+
+The shell builds the worker environment from that typed identity before the
+shared runner consumes the command. The runner lowers to one private context
+enum for tracing, completion worker tags and mutant output policy; it does not
+infer purpose from missing metadata. Cancellation gates, process ownership and
+metrics admission retain their existing ordering. See
+[typed process requests](../development.md#typed-process-execution-requests)
+for the environment convention.
