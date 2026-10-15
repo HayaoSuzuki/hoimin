@@ -48,7 +48,7 @@ fn ranking_accumulates_selector_and_operator_reasons() {
             path: Utf8PathBuf::from("src/calc.py"),
             range: LineRange { start: 5, end: 5 },
         }],
-        changed: true,
+        changed: Some(hoimin_core::ChangedSelection::default()),
         ..Selection::default()
     };
     let targets = vec![TargetSlice {
@@ -459,7 +459,7 @@ fn mixed_selector_ranking() -> (Selection, Vec<TargetSlice>, Vec<RankedPlanCandi
             selection("src/line.py", 9, 9),
             selection("src/other.py", 1, 1),
         ],
-        changed: true,
+        changed: Some(hoimin_core::ChangedSelection::default()),
         ..Selection::default()
     };
     let targets = vec![

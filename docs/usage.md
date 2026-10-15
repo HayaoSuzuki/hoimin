@@ -1143,13 +1143,15 @@ An existing schema-4 run can still lack a recorded historical budget. Start a ne
 run when that incomplete run reports `session.resume.incompatible`; completed
 results remain available in the database.
 
-Plan schema version 6 stores an explicit validated environment snapshot and independent
-import roots (ranking rule version 4). Regenerate schema-5 and older plans before verification.
-Report schema 6 retains the environment snapshot introduced in schema 5 in place
-of the independent `fingerprint_env` / `fingerprint_env_hash` fields. Update strict
-report consumers to schema 6; read schema-5 and older reports with their producing
-binary, or rerun with this version. The release floor is 0.8.0. Files are not
-automatically converted or deleted. Environment fingerprint bytes remain unchanged, so this representation change alone does not require a new
+Plan schema version 7 stores an explicit validated environment snapshot and independent
+import roots (ranking rule version 4). Regenerate schema-6 and older plans before verification.
+Report schema 6 records typed changed selection and session intent, and retains the
+environment snapshot introduced in schema 5 in place of the independent
+`fingerprint_env` / `fingerprint_env_hash` fields. Update strict report consumers
+to schema 6; read schema-5 and older reports with their producing binary, or rerun
+with this version. The release floor is 0.8.0. Files are not automatically converted
+or deleted. Environment fingerprint bytes remain unchanged, so this representation
+change alone does not require a new
 session; if an existing run is rejected, choose a different `--session PATH`.
 Fingerprint schema version 11
 includes ordered import roots and source roots and the ordered `--include` / `--exclude` copy

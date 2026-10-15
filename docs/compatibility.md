@@ -24,19 +24,35 @@ contract and the [review schema](json-schema/review-result.schema.json) for fiel
 
 ## Environment snapshots in 0.7.0
 
-Plan schema 6 and report schema 5 replace the independent environment-name and
-optional-hash fields with one `environment` snapshot. Untracked inputs use
+Plan schema 7 and report schema 6 retain the `environment` snapshot introduced
+in plan schema 6 and report schema 5, replacing the independent environment-name
+and optional-hash fields. Untracked inputs use
 `{"state":"untracked"}`; captured inputs include `state`, canonical nonempty
 `names`, and a lowercase 64-hex `digest`. Captured values remain absent from output.
 The 0.7.0 floor reflects this incompatible saved-format and report-reader change.
 
-Regenerate schema-5 and older plans with the intended environment. Update strict
-report consumers to schema 5; read schema-4 and older reports with their producing
+Regenerate schema-6 and older plans with the intended environment. Update strict
+report consumers to schema 6; read schema-5 and older reports with their producing
 binary or rerun with this version. Existing files are not automatically converted,
 deleted, or replaced. Fingerprint schema 11 and its bytes are unchanged, so the
 representation change alone does not invalidate compatible sessions. If a run is
 rejected for another compatibility reason, choose a different `--session PATH`.
 See [Explicit inherited environment fingerprints](development.md#explicit-inherited-environment-fingerprints).
+
+## Saved changed selection in 0.8.0
+
+The release floor is 0.8.0 because this saved-format and public report-reader
+redesign is incompatible with the published 0.7 series. The latest stable
+release checked for this change was v0.7.3.
+
+Plan schema 7 and report schema 6 encode normalized `changed` as null when disabled, or as an object
+containing `context` and optional `diff_base` when enabled. The former boolean
+`changed` and sibling `changed_context` / `diff_base` fields are rejected.
+Regenerate plans containing the former representation. Read historical reports
+with their producing binary, or rerun to obtain current output; regenerating a
+plan does not recover a past report. Files are not automatically converted or
+deleted. CLI flags, Git comparison semantics, and effective target fingerprints
+retain their meaning.
 
 ## Typed session intent in 0.8.0
 
@@ -49,8 +65,9 @@ Read older reports with their producing binary or rerun with this version.
 The minimum release version is 0.8.0: the 0.7 series is already published, so
 this incompatible report/configuration change starts a new minor series.
 Regenerate saved plans with the intended binary and inputs; update report
-readers to schema 6. Plan schema 6 and session database schema 4 are unchanged
-by this representation. Existing session compatibility checks still apply;
+readers to schema 6. Runtime session intent remains absent from plan schema 7,
+and session database schema 4 is unchanged by this representation. Existing
+session compatibility checks still apply;
 choose a new session path if those checks reject an old session.
 
 ## Public interfaces
@@ -72,8 +89,8 @@ not make a newer binary accept an older schema or weaken input validation.
 
 ## Session load outcomes in 0.7.0
 
-The 0.7.0 floor removes the fallback report reason `no_compatible_run`. Report
-schema 5 retains the six reasons produced by session selection; the removed
+The 0.7.0 floor removes the fallback report reason `no_compatible_run`.
+Report schema 6 retains the six reasons produced by session selection; the removed
 reason described only externally supplied legacy completion events. Read reports
 containing that reason with their producing binary, or rerun with this version.
 

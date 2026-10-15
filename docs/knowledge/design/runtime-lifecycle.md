@@ -109,7 +109,7 @@ sources:
   resource: ../../superpowers/reports/2026-10-15-issue-898-review.md
   revision: 51c9e26b9d0006cac150b3833cb797a59349bac1
   working_tree: modified
-  sha256: 90aa456a79e030b5bd6babcd6d4595c60bd4875d9b99d980e84831f8c738498d
+  sha256: 66d7bb084d35c74ed50e24d5be9853361853b515ed98a8ca929d23a4e3c91a40
 ---
 
 # 制限する資源とディスク監視の範囲

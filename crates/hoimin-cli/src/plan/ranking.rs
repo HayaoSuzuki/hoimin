@@ -99,7 +99,7 @@ impl<'a> RankingContext<'a> {
         Self {
             explicit_lines: LineSelectionIndex::new(&selection.root, &selection.lines),
             selected_symbols,
-            changed: selection.changed,
+            changed: selection.changed.is_some(),
         }
     }
 

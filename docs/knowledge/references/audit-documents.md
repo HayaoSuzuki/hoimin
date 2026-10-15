@@ -9,7 +9,13 @@ sources:
   resource: ../../superpowers/reports/2026-10-15-issue-898-review.md
   revision: 51c9e26b9d0006cac150b3833cb797a59349bac1
   working_tree: modified
-  sha256: 90aa456a79e030b5bd6babcd6d4595c60bd4875d9b99d980e84831f8c738498d
+  sha256: 66d7bb084d35c74ed50e24d5be9853361853b515ed98a8ca929d23a4e3c91a40
+
+- id: issue-899-changed-selection-review
+  resource: ../../superpowers/reports/2026-10-15-issue-899-review.md
+  revision: ad65b8ce55b0dabc59712775e362d5d614b27559
+  working_tree: modified
+  sha256: 50a53fa428a46289ede33f60ae1bcc342f8cfa3b2a03e37ebc5ad127ff5444bc
 
 - id: issue-896-review
   resource: ../../superpowers/reports/2026-10-15-issue-896-review.md
@@ -1491,6 +1497,14 @@ sources:
 
 [^issue-898-process-review]: [Review and verification](../../superpowers/reports/2026-10-15-issue-898-review.md). Windows execution evidence: one unconfirmed initial mypy failure, followed by passing focused and contracts checks; no green full-workspace claim.
 
+
+## Issue 899 changed selection
+
+| Original heading | Source |
+| --- | --- |
+| Issue 899 review and verification | [Review and verification](../../superpowers/reports/2026-10-15-issue-899-review.md) [^issue-899-changed-selection-review] |
+
+[^issue-899-changed-selection-review]: [Review and verification](../../superpowers/reports/2026-10-15-issue-899-review.md). Windows execution evidence, initial fixture failures with focused corrections, CRLF formal-check limits, and the separately checked release-floor follow-up.
 
 [^issue-896-review]: [Issue 896 review and verification](../../superpowers/reports/2026-10-15-issue-896-review.md).
 [^issue-900-design]: [Typed disk failure design](../../superpowers/reports/issue-900/design.md).

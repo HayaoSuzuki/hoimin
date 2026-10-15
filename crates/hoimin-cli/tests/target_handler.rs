@@ -307,7 +307,7 @@ async fn changed_root_source_selects_changed_python_lines() {
     let targets = TargetHandler::resolve(&Selection {
         root: repo.root(),
         sources: vec![Utf8PathBuf::from(".")],
-        changed: true,
+        changed: Some(hoimin_core::ChangedSelection::default()),
         ..Selection::default()
     })
     .await
@@ -359,7 +359,7 @@ async fn changed_selection_matches_git_index_case_to_discovered_path() {
     let targets = TargetHandler::resolve(&Selection {
         root: repo.root(),
         sources: vec![Utf8PathBuf::from("src")],
-        changed: true,
+        changed: Some(hoimin_core::ChangedSelection::default()),
         ..Selection::default()
     })
     .await
@@ -493,7 +493,7 @@ async fn changed_target_skips_an_excluded_untracked_python_self_link() {
         root: repo.root(),
         sources: vec![Utf8PathBuf::from("pkg")],
         excludes: vec!["pkg/excluded.py".into()],
-        changed: true,
+        changed: Some(hoimin_core::ChangedSelection::default()),
         ..Selection::default()
     })
     .await
@@ -527,7 +527,7 @@ async fn changed_target_skips_an_excluded_unreadable_regular_file() {
         root: repo.root(),
         sources: vec![Utf8PathBuf::from("pkg")],
         excludes: vec!["pkg/excluded.py".into()],
-        changed: true,
+        changed: Some(hoimin_core::ChangedSelection::default()),
         ..Selection::default()
     })
     .await
@@ -560,7 +560,7 @@ async fn changed_target_with_an_empty_explicit_scope_does_not_read_untracked_fil
         root: repo.root(),
         sources: vec![Utf8PathBuf::from("pkg")],
         excludes: vec!["pkg/excluded.py".into()],
-        changed: true,
+        changed: Some(hoimin_core::ChangedSelection::default()),
         ..Selection::default()
     })
     .await
@@ -586,7 +586,7 @@ async fn changed_target_with_only_an_excluded_unreadable_file_skips_current_file
         root: repo.root(),
         sources: vec![Utf8PathBuf::from("pkg")],
         excludes: vec!["pkg/excluded.py".into()],
-        changed: true,
+        changed: Some(hoimin_core::ChangedSelection::default()),
         ..Selection::default()
     })
     .await
@@ -663,8 +663,7 @@ async fn diff_base_starting_with_dash_is_rejected_before_diff() {
     let selection = Selection {
         root: repo.root(),
         sources: vec![Utf8PathBuf::from("pkg")],
-        changed: true,
-        diff_base: Some("--stat".into()),
+        changed: Some(hoimin_core::ChangedSelection::new(0, Some("--stat".into())).unwrap()),
         ..Selection::default()
     };
 
@@ -876,7 +875,7 @@ async fn rejects_non_repository() {
     let selection = Selection {
         root: Utf8PathBuf::from_path_buf(root.path().to_path_buf()).unwrap(),
         sources: vec![Utf8PathBuf::from("pkg")],
-        changed: true,
+        changed: Some(hoimin_core::ChangedSelection::default()),
         ..Selection::default()
     };
 
@@ -899,7 +898,7 @@ async fn rejects_bare_repository_as_git_repository_required() {
     let selection = Selection {
         root: Utf8PathBuf::from_path_buf(root.path().to_path_buf()).unwrap(),
         sources: vec![Utf8PathBuf::from("pkg")],
-        changed: true,
+        changed: Some(hoimin_core::ChangedSelection::default()),
         ..Selection::default()
     };
 
@@ -921,7 +920,7 @@ async fn combined_handler_preserves_effect_id_and_resolves_changed_targets() {
         selection: Selection {
             root: repo.root(),
             sources: vec![Utf8PathBuf::from("pkg")],
-            changed: true,
+            changed: Some(hoimin_core::ChangedSelection::default()),
             ..Selection::default()
         },
     })
@@ -1159,11 +1158,11 @@ async fn changed_context_expands_current_lines_and_intersects_explicit_ranges() 
         let mut value = serde_json::to_value(Selection {
             root: repo.root(),
             sources: vec!["src".into()],
-            changed: true,
+            changed: Some(hoimin_core::ChangedSelection::default()),
             ..Selection::default()
         })
         .unwrap();
-        value["changed_context"] = serde_json::json!(context);
+        value["changed"]["context"] = serde_json::json!(context);
         let mut selection: Selection = serde_json::from_value(value).unwrap();
         let targets = TargetHandler::resolve(&selection).await.unwrap();
         let expected_targets: Vec<_> = std::iter::once(hoimin_core::TargetSlice {
@@ -1212,7 +1211,7 @@ async fn changed_cr_rows_are_translated_before_explicit_python_line_intersection
         let targets = TargetHandler::resolve(&Selection {
             root: repo.root(),
             sources: vec!["src".into()],
-            changed: true,
+            changed: Some(hoimin_core::ChangedSelection::default()),
             lines: vec![LineSelection {
                 path: "src/calc.py".into(),
                 range: LineRange {
@@ -1253,8 +1252,7 @@ async fn changed_cr_deletion_context_preserves_surviving_byte_coverage() {
         let targets = TargetHandler::resolve(&Selection {
             root: repo.root(),
             sources: vec!["src".into()],
-            changed: true,
-            changed_context: context,
+            changed: Some(hoimin_core::ChangedSelection::new(context, None).unwrap()),
             ..Selection::default()
         })
         .await
