@@ -4,6 +4,33 @@ hoimin is currently a 0.x CLI. This policy describes how maintainers classify
 changes and tell users what to update. A patch release can fix incorrect
 behavior; it does not promise identical mutation candidates or scores.
 
+## Single saved fingerprint input list in 0.10.0
+
+Plan schema 8 stores fingerprint input records only in
+`normalized_config.fingerprint_inputs`. The former top-level `fingerprint_inputs`
+field is rejected. `sources` continues to record mutation targets separately.
+Verify compares current files with the nested list, and review protects those
+same files from review-store aliases. Missing lists, duplicate paths, invalid
+hashes and invalid paths remain rejected.
+
+Regenerate schema-7 and older plans with this version, the intended project,
+environment and original plan arguments, then use the newly generated candidate
+IDs for verify or review. Both commands reject old schemas with regeneration
+guidance before decoding their old fields. For example:
+
+```console
+hoimin plan --root . --source src --fingerprint-file pyproject.toml -- python -m pytest -q > plan-v8.json
+hoimin verify plan-v8.json --candidate '<ID_FROM_PLAN_V8>' --format json
+hoimin review list plan-v8.json --store reviews.sqlite3 --format json
+```
+
+Retain platform-specific options and resource limits from the original invocation
+(including `--allow-best-effort-memory` when required on macOS). Keep old files if
+needed; hoimin does not convert, overwrite or delete them automatically. Do not
+hand-edit schema numbers. Report, session, ranking and fingerprint formats and
+fingerprint bytes remain unchanged. The minimum release version is 0.10.0 because
+v0.9.4 was already published when this incompatible plan change was prepared.
+
 ## Required saved configuration arrays in 0.9.0
 
 Normalized saved configurations require explicit `import_roots` and
@@ -16,12 +43,14 @@ plans before running a baseline. Progress continues to treat `normalized_config`
 as an opaque object or null.
 
 Regenerate plans missing either array. Read reports missing `import_roots` with
-their producing binary, or rerun to obtain current output. Data from current
-writers already includes these arrays and needs no regeneration. Files are not
-converted or deleted automatically. Raw CLI defaults, optional fields, plan
-schema 7, report schema 6, session schema 5, fingerprint schema 11 and fingerprint
-bytes remain unchanged. The minimum release version is 0.9.0 because v0.8.12
-was already published when this accepted-input change was prepared.
+their producing binary, or rerun to obtain current output. The array requirement
+alone needs no regeneration for data whose writers already include these arrays.
+That change retained plan schema 7; the schema-8 change above independently
+requires regeneration of old plans. Files are not converted or deleted
+automatically. Raw CLI defaults, optional fields, report schema 6, session schema
+5, fingerprint schema 11 and fingerprint bytes were unchanged. The minimum
+release version for that change was 0.9.0 because v0.8.12 was already published
+when it was prepared.
 
 ## Typed mutation outcomes in 0.8.0
 

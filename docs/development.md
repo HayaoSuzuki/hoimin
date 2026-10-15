@@ -1364,7 +1364,7 @@ cargo test -p hoimin-cli --lib analyzer::rust::rust_tests::comprehension_excepti
 
 ## Extending plan ranking
 
-Plan manifests use schema version 7 and ranking rule version 4. The schema
+Plan manifests use schema version 8 and ranking rule version 4. The schema
 version describes the manifest's serialized shape; the ranking rule version
 describes the category and scoring semantics used to order its candidates.
 Change the ranking rule version whenever those semantics change, even when the
@@ -1530,10 +1530,12 @@ Saved run and plan configs require explicit `import_roots` and
 `fingerprint_files` arrays, including `[]` when no entries are configured. Missing
 or null arrays fail decoding in typed configuration/event readers and review;
 verify rejects affected plans before baseline execution. Progress retains its
-opaque `normalized_config` object/null contract. Current writer output needs no
-regeneration; see the [0.9.0 compatibility notice](compatibility.md#required-saved-configuration-arrays-in-090)
-for older inputs missing an array. Plan schema 7 still requires regeneration of
-earlier manifests before any baseline runs; fingerprint schema
+opaque `normalized_config` object/null contract. See the
+[0.9.0 compatibility notice](compatibility.md#required-saved-configuration-arrays-in-090)
+for older inputs missing an array. Plan schema 8 stores fingerprint input records
+only in `normalized_config.fingerprint_inputs`; the top-level duplicate is
+rejected. Regenerate schema-7 and older plans before verify or review; see the
+[0.10.0 compatibility notice](compatibility.md#single-saved-fingerprint-input-list-in-0100). Fingerprint schema
 11 frames the ordered import roots under field tag 9, the ordered include/exclude
 copy patterns under tags 10/11, and configured source roots under tag 12,
 preventing old-session reuse. Source file hashes retain their set semantics;
@@ -1735,7 +1737,7 @@ The captured constructor and deserializer reject empty, duplicate, unsorted, or
 noncanonical name sets and digests outside 64 lowercase hexadecimal characters.
 No `prepared` mode or separate optional hash exists. Reports and plans write an
 explicit `environment` object with a `state` tag; omission in the prior writer
-was also a valid current untracked encoding. Plan schema 7/report schema 6 require
+was also a valid current untracked encoding. Plan schema 8/report schema 6 require
 the explicit snapshot and reject the older representation rather than adapting it.
 Regenerate older plans; retain old reports with their producing binary.
 
@@ -2007,7 +2009,7 @@ shared selection validator still requires a source for changed selection and
 keeps file, line, and symbol selectors available for intersection. Ranking
 uses the presence of the changed value, including selected context lines.
 
-Plan schema 7 and report schema 6 encode disabled state as `"changed": null` and enabled state
+Plan schema 8 and report schema 6 encode disabled state as `"changed": null` and enabled state
 as `"changed": {"context": 2, "diff_base": "main"}`. The enabled object's
 `context` is required; `diff_base` can be null or omitted. Selection rejects
 unknown fields, including the obsolete sibling `changed_context` and

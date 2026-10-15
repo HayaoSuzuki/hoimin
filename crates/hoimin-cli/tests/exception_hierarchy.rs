@@ -65,7 +65,7 @@ async fn hierarchy_plan_verify_detects_dependency_changes_additions_and_deletion
             .await
             .unwrap();
         assert_eq!(plan.manifest.candidates.len(), 2);
-        assert_eq!(plan.manifest.fingerprint_inputs.len(), 2);
+        assert_eq!(plan.manifest.normalized_config.fingerprint_inputs.len(), 2);
         let ids = plan
             .manifest
             .candidates
@@ -98,7 +98,10 @@ async fn hierarchy_exclusion_and_import_roots_apply_to_index_and_fingerprint() {
         excluded.manifest.candidates,
         Vec::<RankedPlanCandidate>::new()
     );
-    assert_eq!(excluded.manifest.fingerprint_inputs.len(), 1);
+    assert_eq!(
+        excluded.manifest.normalized_config.fingerprint_inputs.len(),
+        1
+    );
     std::fs::create_dir(dir.path().join("lib")).unwrap();
     std::fs::rename(
         dir.path().join("errors.py"),
@@ -109,7 +112,10 @@ async fn hierarchy_exclusion_and_import_roots_apply_to_index_and_fingerprint() {
         .await
         .unwrap();
     assert_eq!(included.manifest.candidates.len(), 2);
-    assert_eq!(included.manifest.fingerprint_inputs.len(), 2);
+    assert_eq!(
+        included.manifest.normalized_config.fingerprint_inputs.len(),
+        2
+    );
 }
 
 fn python() -> PathBuf {

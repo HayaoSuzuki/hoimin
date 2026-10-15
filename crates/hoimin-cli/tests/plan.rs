@@ -134,7 +134,7 @@ async fn create_plan_emits_versioned_manifest_without_runtime_side_effects() {
     let stdout = String::from_utf8(stdout.snapshot()).unwrap();
     assert_eq!(stdout.matches('\n').count(), 1);
     let manifest: serde_json::Value = serde_json::from_str(&stdout).unwrap();
-    assert_eq!(manifest["schema_version"], 7);
+    assert_eq!(manifest["schema_version"], 8);
     assert_eq!(manifest["ranking_rule_version"], 4);
     assert_eq!(manifest["kind"], "plan");
     assert!(
@@ -161,7 +161,13 @@ async fn create_plan_emits_versioned_manifest_without_runtime_side_effects() {
         assert!(candidate["score"].is_u64());
         assert!(candidate["ranking_reasons"].is_array());
     }
-    assert_eq!(manifest["fingerprint_inputs"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        manifest["normalized_config"]["fingerprint_inputs"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
     assert_eq!(
         manifest["normalized_config"]["fingerprint_files"],
         serde_json::json!(["pyproject.toml"])
@@ -179,6 +185,25 @@ async fn create_plan_emits_versioned_manifest_without_runtime_side_effects() {
     assert!(!workspace_marker.exists());
     assert!(!session_path.exists());
     assert_eq!(stderr.snapshot(), Vec::<u8>::new());
+}
+
+#[tokio::test]
+async fn plan_serializes_fingerprint_inputs_only_in_normalized_config() {
+    // Arrange.
+    let project = Project::new();
+    let (_, manifest, _) =
+        write_plan_manifest(&project, &["--fingerprint-file", "config.toml"]).await;
+
+    // Act.
+    let value = serde_json::to_value(manifest).unwrap();
+
+    // Assert.
+    assert!(value.get("fingerprint_inputs").is_none());
+    let records = value["normalized_config"]["fingerprint_inputs"]
+        .as_array()
+        .unwrap();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0]["path"], "config.toml");
 }
 
 #[tokio::test]
@@ -309,7 +334,7 @@ async fn explicit_class_symbol_ranks_and_verifies_its_method_before_an_unrelated
             ("a.py", Some("other"), 2, 100),
         ]
     );
-    assert_eq!(manifest.schema_version, 7);
+    assert_eq!(manifest.schema_version, 8);
     assert_eq!(manifest.ranking_rule_version, 4);
     let planned = &manifest.candidates[0];
     let planned_id = planned.id.clone();
@@ -1144,10 +1169,12 @@ async fn verify_rejects_invalid_normalized_config_before_project_work() {
             .await
             .unwrap_err();
 
-        assert_eq!(
-            error.to_string(),
-            format!("plan.manifest.invalid: {expected_message}"),
-            "{name}"
+        let diagnostic = error.to_string();
+        let expected = format!("plan.manifest.invalid: {expected_message}");
+        // Typed JSON decoding may append the location of the invalid value.
+        assert!(
+            diagnostic == expected || diagnostic.starts_with(&format!("{expected} at line ")),
+            "{name}: {diagnostic}"
         );
         assert!(!baseline_marker.exists(), "{name}");
     }
@@ -1543,7 +1570,7 @@ async fn verify_rejects_a_ranking_version_three_plan_before_baseline_with_regene
     let (path, manifest, marker) = write_plan_manifest(&project, &[]).await;
     let requested = vec![manifest.candidates[0].id.clone()];
     let mut value = serde_json::to_value(manifest).unwrap();
-    assert_eq!(value["schema_version"], 7);
+    assert_eq!(value["schema_version"], 8);
     value["ranking_rule_version"] = serde_json::json!(3);
     write_json(&path, &value);
 
@@ -4208,7 +4235,7 @@ async fn verify_preview_public_cli_preserves_policy_range_and_execution_order_wi
         let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
         assert_eq!(value["kind"], "verify_preview");
         assert_eq!(value["schema_version"], 2);
-        assert_eq!(value["plan_schema_version"], 7);
+        assert_eq!(value["plan_schema_version"], 8);
         assert_eq!(value["ranking_rule_version"], 4);
         assert_eq!(value["offset"], offset.parse::<usize>().unwrap());
         assert_eq!(value["retained_candidates"], 6);

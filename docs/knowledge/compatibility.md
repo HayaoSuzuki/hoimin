@@ -17,16 +17,16 @@ sources:
   sha256: 50a53fa428a46289ede33f60ae1bcc342f8cfa3b2a03e37ebc5ad127ff5444bc
 - id: policy
   resource: ../compatibility.md
-  revision: 7c3a9105c432ec1e0ba2483ada42b10133d071a6
+  revision: 5237d1e53a2c8b34fca80f6eeb7d644a01d732e2
   working_tree: modified
-  sha256: b060c02db7f6e3adc035a61f2d954caa387674b64cbb273269587e170baf0c1c
+  sha256: b1d7318075ad936964d4d1bba3c53be93ca3bdb8672fe662973ceda6d6fe0c9a
 - id: issue-887-environment
   resource: ../superpowers/plans/2026-10-14-issue-887.md
 - id: release
   resource: ../releases.md
-  revision: 7c3a9105c432ec1e0ba2483ada42b10133d071a6
+  revision: 5237d1e53a2c8b34fca80f6eeb7d644a01d732e2
   working_tree: modified
-  sha256: ab819d8861ff623175247e55cee21968b34e4cb92ed76825dd408292de6bbe68
+  sha256: 9702fae5c3fe2d64dab60343a6a67dcda74e6e6c73e74dff10372596037194b7
 - id: template
   resource: ../../.github/pull_request_template.md
   revision: 79b6bde29b05e9904c8efff59e02d0c45377d7f7
@@ -98,7 +98,18 @@ The 0.9.0 minimum follows published v0.8.12. Typed saved configurations require
 explicit `import_roots` and `fingerprint_files` arrays; omission and null are
 rejected, while empty arrays remain valid. Verify rejects affected plans before
 baseline execution, and review rejects reports missing run import roots.
-Progress keeps its opaque configuration contract. Regenerate only plans missing
-the fields; read affected reports with their producing binary or rerun. Current
-writer-produced data needs no regeneration. Schema numbers and fingerprint bytes
-remain unchanged.[^policy][^release]
+Progress keeps its opaque configuration contract. That change required
+regeneration only for plans missing the fields; it retained schema numbers and
+fingerprint bytes. The schema-8 change below independently supersedes that plan
+regeneration guidance. Read affected reports with their producing binary or
+rerun.[^policy][^release]
+
+## Single saved fingerprint input list (Issue #936)
+
+Current plan schema 8 stores fingerprint input records only under
+`normalized_config.fingerprint_inputs`; the former top-level field is rejected.
+Verify and review both reject schema-7 and older plans with regeneration guidance.
+The floor is 0.10.0 because the 0.9 series has shipped. No conversion or automatic
+deletion takes place. Follow the [canonical regeneration notice](../compatibility.md#single-saved-fingerprint-input-list-in-0100)
+for commands and retained contracts; the [selection/plan contract](design/selection-plan-verify.md#single-saved-fingerprint-input-list-issue-936)
+records implementation and test evidence.[^policy][^release]

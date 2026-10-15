@@ -5,6 +5,26 @@ description: 候補発見と実行の分離、ランキング、部分集合、�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-936-plan
+  resource: ../../../crates/hoimin-cli/src/plan.rs
+  revision: 5237d1e53a2c8b34fca80f6eeb7d644a01d732e2
+  working_tree: modified
+  sha256: e3319cca686aaaac9089d48ef2c7f546f1fdff626dc20859c4781359036a5427
+- id: issue-936-review-input
+  resource: ../../../crates/hoimin-cli/src/review/input.rs
+  revision: 5237d1e53a2c8b34fca80f6eeb7d644a01d732e2
+  working_tree: modified
+  sha256: 97ec7d0c094f0702b576e1fe7bb741ec9f901e1c8608361dba401e7d6526cb6f
+- id: issue-936-tests
+  resource: ../../../crates/hoimin-cli/src/review/tests.rs
+  revision: 5237d1e53a2c8b34fca80f6eeb7d644a01d732e2
+  working_tree: modified
+  sha256: 08b1b50da26fd0938d8fc8f8089a67f702220f5075fca847a42a0e440a760904
+- id: issue-936-compatibility
+  resource: ../../compatibility.md
+  revision: 5237d1e53a2c8b34fca80f6eeb7d644a01d732e2
+  working_tree: modified
+  sha256: b1d7318075ad936964d4d1bba3c53be93ca3bdb8672fe662973ceda6d6fe0c9a
 - id: issue-923-config
   resource: ../../../crates/hoimin-core/src/config.rs
   revision: 7c3a9105c432ec1e0ba2483ada42b10133d071a6
@@ -513,7 +533,7 @@ nonempty canonical names and a valid aggregate digest. The transition rejects a
 snapshot for another name set. Verify recaptures the saved names and rejects a
 changed snapshot before the baseline. [^issue-887-environment]
 
-Current plan schema 7 and report schema 6 retain the explicit `environment` object
+Current plan schema 8 and report schema 6 retain the explicit `environment` object
 introduced in plan schema 6 and report schema 5.
 The earlier omitted-field encoding was also produced by the then-current writer;
 its removal is a versioned format change, not a legacy-only cleanup. Regenerate
@@ -590,7 +610,7 @@ formal proof.[^issue-886-duration]
 
 ## Typed changed selection (Issue #899)
 
-Plan schema 7 and report schema 6 store changed selection as null when disabled,
+Plan schema 8 and report schema 6 store changed selection as null when disabled,
 or as an object containing required bounded `context` and optional `diff_base`
 when enabled. Boolean changed values and the former sibling context/base fields
 are rejected. Regenerate older plans; preserve older reports with their producing
@@ -651,9 +671,39 @@ cross-platform execution claim. [^issue-915-review]
 `PlanConfig` requires explicit `import_roots` and `fingerprint_files` arrays.
 Missing and null values fail decoding before verify can start a baseline; `[]`
 remains a valid configured list. Raw CLI defaults, candidate selection and
-fingerprint calculation remain unchanged. Plan schema 7 is unchanged; regenerate
-plans missing either array, while current writer-produced plans need no update.
+fingerprint calculation remain unchanged. Issue #923 retained plan schema 7;
+Issue #936 below advances it to 8. Regenerate plans missing either array.
 The compatibility notice records the 0.9.0 release floor.[^issue-923-config][^issue-923-compatibility]
 
 [^issue-923-config]: [Normalized configuration types](../../../crates/hoimin-core/src/config.rs).
 [^issue-923-compatibility]: [Required saved arrays compatibility notice](../../compatibility.md#required-saved-configuration-arrays-in-090).
+
+# Single saved fingerprint input list (Issue #936)
+
+Plan schema 8 retains only `normalized_config.fingerprint_inputs`. Both verify's
+live-record comparison and review's protected-store identity checks use that
+list. Mutation targets remain in `sources`; source/environment validation,
+worker-copy filtering and the execution-time protected-input rechecks keep their
+existing roles. The nested list still rejects missing/null values, duplicate
+paths, malformed hashes and non-normalized paths.[^issue-936-plan][^issue-936-review-input]
+
+Verify and review share schema-first decoding so obsolete fields do not hide
+regeneration guidance. Schema-7 and older plans are rejected without conversion;
+current-schema plans containing the obsolete top-level field are also rejected.
+Typed decoding of the original JSON bytes rejects duplicate known fields rather
+than silently retaining one value.
+Regenerate using the intended version, environment and original plan arguments.
+The release floor is 0.10.0 because the 0.9 series has already shipped. Existing
+files are retained; report, session, ranking and fingerprint schemas and
+fingerprint bytes are unchanged.[^issue-936-compatibility]
+
+Parameterized reader tests cover old schemas and malformed nested lists. The
+review-store tests protect a fingerprint-only file by direct path and hardlink,
+assert the specific alias error and retain the input bytes. These are native
+local test observations; they do not establish execution on every supported
+platform.[^issue-936-tests]
+
+[^issue-936-plan]: [Plan writer, shared decoder and verification](../../../crates/hoimin-cli/src/plan.rs).
+[^issue-936-review-input]: [Review protected input identity checks](../../../crates/hoimin-cli/src/review/input.rs).
+[^issue-936-tests]: [Reader and store protection tests](../../../crates/hoimin-cli/src/review/tests.rs).
+[^issue-936-compatibility]: [Schema-8 regeneration notice](../../compatibility.md#single-saved-fingerprint-input-list-in-0100).

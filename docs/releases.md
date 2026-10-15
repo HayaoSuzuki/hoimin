@@ -63,7 +63,7 @@ checkout and the Linux wheel at glibc 2.17 with Python 3.14. See the
 artifacts and failure gates.
 
 The workspace version is the minimum version for the next release, currently
-`0.9.0`. CI chooses the higher of that minimum and the highest stable tag's
+`0.10.0`. CI chooses the higher of that minimum and the highest stable tag's
 next patch version. When raising the minimum, keep
 `Cargo.toml`, `pyproject.toml`, `Cargo.lock`, and `uv.lock` consistent when
 changing it. Also update the `hoimin-core` entry in `fuzz/Cargo.lock` so

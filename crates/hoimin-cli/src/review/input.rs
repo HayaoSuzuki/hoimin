@@ -246,6 +246,7 @@ fn validate_destination_entry(
     );
     protected.extend(
         plan.manifest
+            .normalized_config
             .fingerprint_inputs
             .iter()
             .map(|source| plan.project.join(&source.path).into_std_path_buf()),
