@@ -24,8 +24,9 @@ contract and the [review schema](json-schema/review-result.schema.json) for fiel
 
 ## Environment snapshots in 0.7.0
 
-Plan schema 7 and report schema 6 replace the independent environment-name and
-optional-hash fields with one `environment` snapshot. Untracked inputs use
+Plan schema 7 and report schema 6 retain the `environment` snapshot introduced
+in plan schema 6 and report schema 5, replacing the independent environment-name
+and optional-hash fields. Untracked inputs use
 `{"state":"untracked"}`; captured inputs include `state`, canonical nonempty
 `names`, and a lowercase 64-hex `digest`. Captured values remain absent from output.
 The 0.7.0 floor reflects this incompatible saved-format and report-reader change.
@@ -52,6 +53,22 @@ with their producing binary, or rerun to obtain current output; regenerating a
 plan does not recover a past report. Files are not automatically converted or
 deleted. CLI flags, Git comparison semantics, and effective target fingerprints
 retain their meaning.
+
+## Typed session intent in 0.8.0
+
+Report schema 6 replaces normalized `session`/`resume` pairs with one `session`
+object. Disabled sessions use `{"mode":"disabled"}`. Fresh and resumed sessions
+use `{"mode":"fresh","config":{"path":"..."}}` and `{"mode":"resume","config":{"path":"..."}}`.
+The raw CLI options remain `--session` and `--resume`. Normalized inputs reject
+old session pairs and the obsolete `resume` field; no conversion is attempted.
+Read older reports with their producing binary or rerun with this version.
+The minimum release version is 0.8.0: the 0.7 series is already published, so
+this incompatible report/configuration change starts a new minor series.
+Regenerate saved plans with the intended binary and inputs; update report
+readers to schema 6. Runtime session intent remains absent from plan schema 7,
+and session database schema 4 is unchanged by this representation. Existing
+session compatibility checks still apply;
+choose a new session path if those checks reject an old session.
 
 ## Public interfaces
 

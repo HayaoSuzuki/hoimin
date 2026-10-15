@@ -59,41 +59,26 @@ fn zero_disk_limits_name_the_public_flags() {
 type InvalidPlanCase = (&'static str, fn(&mut serde_json::Value), ConfigError);
 
 #[test]
-fn plan_config_round_trips_run_semantics_without_session_or_resume() {
+fn plan_config_round_trips_run_semantics_with_session_disabled() {
+    // Arrange
     let mut config = fixture_run_config();
-    config.session = Some(SessionConfig {
+    config.session = hoimin_core::SessionMode::Resume(SessionConfig {
         path: "state.sqlite".into(),
     });
-    config.resume = true;
-
     let value = serde_json::to_value(config.clone().into_plan_config()).unwrap();
-    assert_eq!(
-        value["fingerprint_files"],
-        serde_json::json!(["pyproject.toml"])
-    );
-    assert!(value.get("session").is_none());
-    assert!(value.get("resume").is_none());
-
-    let restored = serde_json::from_value::<PlanConfig>(value)
-        .unwrap()
-        .into_run_config(OutputConfig {
-            format: OutputFormat::Json,
-            metrics: None,
-        });
-
     let expected = RunConfig {
-        output: OutputConfig {
-            format: OutputFormat::Json,
-            metrics: None,
-        },
-        session: None,
-        resume: false,
+        output: OutputConfig::default(),
+        session: hoimin_core::SessionMode::Disabled,
         ..config
     };
+
+    // Act
+    let restored = serde_json::from_value::<PlanConfig>(value)
+        .unwrap()
+        .into_run_config(OutputConfig::default());
+
+    // Assert
     assert_eq!(restored, expected);
-    assert_eq!(restored.session, None);
-    assert!(!restored.resume);
-    assert_eq!(restored.fingerprint_files, ["pyproject.toml"]);
 }
 
 #[test]
@@ -349,12 +334,20 @@ fn normalized_limit_validation_rejects_process_count_above_u32() {
 }
 
 #[test]
-fn run_config_validation_keeps_runtime_only_resume_dependency() {
-    let mut config = fixture_run_config();
-    config.resume = true;
-    config.session = None;
+fn raw_config_rejects_resume_without_session() {
+    // Arrange
+    let raw = RawRunConfig {
+        files: vec!["example.py".into()],
+        test_argv: vec![CommandArg::Unix(b"python".to_vec())],
+        resume: true,
+        ..RawRunConfig::default()
+    };
 
-    assert_eq!(config.validate(), Err(ConfigError::ResumeRequiresSession));
+    // Act
+    let result = RunConfig::try_from(raw);
+
+    // Assert
+    assert_eq!(result, Err(ConfigError::ResumeRequiresSession));
 }
 
 fn fixture_run_config() -> RunConfig {

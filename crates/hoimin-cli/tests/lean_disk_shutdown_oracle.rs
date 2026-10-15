@@ -2,8 +2,8 @@ use std::collections::BTreeSet;
 
 use hoimin_cli::shell::ShellDiskLifecycle;
 use hoimin_core::disk::{
-    DiskCleanupOutcome, DiskComponentState, DiskLifecycleEvent, DiskLifecycleSnapshot, DiskRootId,
-    DiskSecondary, DiskStopReason,
+    DiskCleanupOutcome, DiskCleanupState, DiskComponentState, DiskLifecycleEvent,
+    DiskLifecycleSnapshot, DiskRootEntry, DiskRootId, DiskSecondary, DiskStopReason,
 };
 use serde::Deserialize;
 
@@ -204,41 +204,75 @@ fn assert_terminal_observation(
 }
 
 fn assert_root_observation(snapshot: &DiskLifecycleSnapshot, expected: &State, id: &str) {
-    assert_eq!(
-        root_names(&snapshot.owned_roots),
-        expected.owned_roots,
-        "{id} owned_roots"
-    );
-    assert_eq!(
-        root_names(&snapshot.delivery_roots),
-        expected.delivery_roots,
-        "{id} delivery_roots"
-    );
-    assert_eq!(
-        root_names(&snapshot.cleanup_requested),
-        expected.cleanup_requested,
-        "{id} cleanup_requested"
-    );
-    assert_eq!(
-        root_names(&snapshot.cleanup_clean),
-        expected.cleanup_clean,
-        "{id} cleanup_clean"
-    );
-    assert_eq!(
-        root_names(&snapshot.cleanup_failed),
-        expected.cleanup_failed,
-        "{id} cleanup_failed"
-    );
-    assert_eq!(
-        root_names(&snapshot.cleanup_deferred),
-        expected.cleanup_deferred,
-        "{id} cleanup_deferred"
-    );
-    assert_eq!(
-        root_names(&snapshot.cleanup_retained),
-        expected.cleanup_retained,
-        "{id} cleanup_retained"
-    );
+    // The Lean corpus uses abstract membership lists. Validate that abstraction
+    // before building expected typed entries, rather than reintroducing old
+    // production snapshot views. Diagnostic order is compared independently.
+    for members in [
+        &expected.cleanup_requested,
+        &expected.cleanup_clean,
+        &expected.cleanup_failed,
+        &expected.cleanup_deferred,
+        &expected.cleanup_retained,
+    ] {
+        let unique = members.iter().collect::<BTreeSet<_>>();
+        assert_eq!(unique.len(), members.len(), "{id} duplicate membership");
+        assert!(
+            members
+                .iter()
+                .all(|root| expected.owned_roots.contains(root)),
+            "{id} unowned membership"
+        );
+    }
+    let delivery = expected
+        .owned_roots
+        .iter()
+        .filter(|root| root.as_str() == "delivery")
+        .cloned()
+        .collect::<Vec<_>>();
+    assert_eq!(delivery, expected.delivery_roots, "{id} delivery identity");
+    let entries = expected
+        .owned_roots
+        .iter()
+        .map(|name| {
+            let outcomes = [
+                (
+                    expected.cleanup_clean.contains(name),
+                    DiskCleanupOutcome::Clean,
+                ),
+                (
+                    expected.cleanup_failed.contains(name),
+                    DiskCleanupOutcome::Failed("oracle fixture".into()),
+                ),
+                (
+                    expected.cleanup_deferred.contains(name),
+                    DiskCleanupOutcome::Deferred("oracle fixture".into()),
+                ),
+                (
+                    expected.cleanup_retained.contains(name),
+                    DiskCleanupOutcome::Retained,
+                ),
+            ];
+            let mut completed = outcomes
+                .into_iter()
+                .filter_map(|(present, outcome)| present.then_some(outcome))
+                .collect::<Vec<_>>();
+            assert!(completed.len() <= 1, "{id} contradictory outcomes");
+            let requested = expected.cleanup_requested.contains(name);
+            let cleanup = if let Some(outcome) = completed.pop() {
+                assert!(requested, "{id} unrequested outcome");
+                DiskCleanupState::Completed(outcome)
+            } else if requested {
+                DiskCleanupState::Requested
+            } else {
+                DiskCleanupState::NotRequested
+            };
+            DiskRootEntry {
+                root: parse_root(name, id),
+                cleanup,
+            }
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(snapshot.roots, entries, "{id} registered root states");
 }
 
 fn assert_component_observation(snapshot: &DiskLifecycleSnapshot, expected: &State, id: &str) {
@@ -384,16 +418,6 @@ fn parse_root(root: &str, id: &str) -> DiskRootId {
     }
 }
 
-fn root_names(roots: &[DiskRootId]) -> Vec<String> {
-    roots
-        .iter()
-        .map(|root| match root {
-            DiskRootId::Execution => "execution".to_owned(),
-            DiskRootId::Delivery => "delivery".to_owned(),
-        })
-        .collect()
-}
-
 fn component_name(component: DiskComponentState) -> &'static str {
     match component {
         DiskComponentState::Pending => "pending",
@@ -409,4 +433,80 @@ fn stop_name(reason: DiskStopReason) -> &'static str {
         DiskStopReason::MeasurementFailed => "measurement_failed",
         DiskStopReason::ProcessFailed => "process_failed",
     }
+}
+
+#[test]
+fn typed_root_projection_rejects_unowned_membership() {
+    // Arrange
+    let mut expected = parse_corpus()
+        .into_iter()
+        .find(is_rust_runtime)
+        .unwrap()
+        .initial;
+    expected.owned_roots = vec!["execution".into()];
+    expected.delivery_roots.clear();
+    expected.cleanup_clean = vec!["delivery".into()];
+    let snapshot = ShellDiskLifecycle::new([DiskRootId::Execution])
+        .unwrap()
+        .snapshot();
+
+    // Act
+    let result = std::panic::catch_unwind(|| {
+        assert_root_observation(&snapshot, &expected, "unowned fixture");
+    });
+
+    // Assert
+    assert!(result.is_err());
+}
+
+#[test]
+fn typed_root_projection_rejects_contradictory_outcomes() {
+    // Arrange
+    let mut expected = parse_corpus()
+        .into_iter()
+        .find(is_rust_runtime)
+        .unwrap()
+        .initial;
+    expected.owned_roots = vec!["execution".into()];
+    expected.delivery_roots.clear();
+    expected.cleanup_requested = vec!["execution".into()];
+    expected.cleanup_clean = vec!["execution".into()];
+    expected.cleanup_retained = vec!["execution".into()];
+    let mut snapshot = ShellDiskLifecycle::new([DiskRootId::Execution])
+        .unwrap()
+        .snapshot();
+    snapshot.roots[0].cleanup = DiskCleanupState::Completed(DiskCleanupOutcome::Retained);
+
+    // Act
+    let result = std::panic::catch_unwind(|| {
+        assert_root_observation(&snapshot, &expected, "contradictory fixture");
+    });
+
+    // Assert
+    assert!(result.is_err());
+}
+
+#[test]
+fn typed_root_projection_rejects_unrequested_outcome() {
+    // Arrange
+    let mut expected = parse_corpus()
+        .into_iter()
+        .find(is_rust_runtime)
+        .unwrap()
+        .initial;
+    expected.owned_roots = vec!["execution".into()];
+    expected.delivery_roots.clear();
+    expected.cleanup_clean = vec!["execution".into()];
+    let mut snapshot = ShellDiskLifecycle::new([DiskRootId::Execution])
+        .unwrap()
+        .snapshot();
+    snapshot.roots[0].cleanup = DiskCleanupState::Completed(DiskCleanupOutcome::Clean);
+
+    // Act
+    let result = std::panic::catch_unwind(|| {
+        assert_root_observation(&snapshot, &expected, "unrequested fixture");
+    });
+
+    // Assert
+    assert!(result.is_err());
 }

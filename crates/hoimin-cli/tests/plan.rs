@@ -1577,8 +1577,10 @@ async fn verify_deduplicates_requested_ids_and_rejects_max_mutants_overflow() {
         ResolvedVerifySelection::ExplicitCandidates(BTreeSet::from([first.clone()]))
     );
     assert_eq!(verified.config().output.format, CoreOutputFormat::Human);
-    assert_eq!(verified.config().session, None);
-    assert!(!verified.config().resume);
+    assert_eq!(
+        verified.config().session,
+        hoimin_core::SessionMode::Disabled
+    );
 
     let mut overflow = serde_json::to_value(manifest).unwrap();
     overflow["normalized_config"]["limits"]["max_mutants"] = serde_json::json!(1);
@@ -2175,8 +2177,7 @@ async fn verify_runs_only_requested_candidates() {
     );
     let mut expected_config = serde_json::to_value(&manifest.normalized_config).unwrap();
     expected_config["output"]["format"] = serde_json::json!("jsonl");
-    expected_config["session"] = serde_json::Value::Null;
-    expected_config["resume"] = serde_json::json!(false);
+    expected_config["session"] = serde_json::json!({ "mode": "disabled" });
     assert_eq!(started["normalized_config"], expected_config);
     let actual = events
         .iter()

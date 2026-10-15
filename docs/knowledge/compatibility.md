@@ -12,14 +12,14 @@ sources:
   sha256: fa68b3e4aa56ab0ee3dd19f818a0b932a033dce550dbc869f956c261578b501f
 - id: issue-899-changed-review
   resource: ../superpowers/reports/2026-10-15-issue-899-review.md
-  revision: 7b6cb19ba0181759f6b5726f985c5fd7700d313e
+  revision: ad65b8ce55b0dabc59712775e362d5d614b27559
   working_tree: modified
-  sha256: efb3dde4ed6b19551a6ddc0bf29a57a063176aa1e84fe8efb2b3ab7effb48605
+  sha256: 50a53fa428a46289ede33f60ae1bcc342f8cfa3b2a03e37ebc5ad127ff5444bc
 - id: policy
   resource: ../compatibility.md
-  revision: 7b6cb19ba0181759f6b5726f985c5fd7700d313e
+  revision: ad65b8ce55b0dabc59712775e362d5d614b27559
   working_tree: modified
-  sha256: 7cd3a1699ce65bdcdba7f5c1ceac0e6b60f01ea8333e07b9a2e6c87c41d2bde3
+  sha256: 3cdfef25d386691949613a82d4901a619c57efcac2d9b58f5178681d0bd9935b
 - id: issue-887-environment
   resource: ../superpowers/plans/2026-10-14-issue-887.md
 - id: release

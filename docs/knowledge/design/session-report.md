@@ -12,9 +12,25 @@ sources:
   sha256: fa68b3e4aa56ab0ee3dd19f818a0b932a033dce550dbc869f956c261578b501f
 - id: issue-899-changed-review
   resource: ../../superpowers/reports/2026-10-15-issue-899-review.md
-  revision: 7b6cb19ba0181759f6b5726f985c5fd7700d313e
+  revision: ad65b8ce55b0dabc59712775e362d5d614b27559
   working_tree: modified
-  sha256: efb3dde4ed6b19551a6ddc0bf29a57a063176aa1e84fe8efb2b3ab7effb48605
+  sha256: 50a53fa428a46289ede33f60ae1bcc342f8cfa3b2a03e37ebc5ad127ff5444bc
+
+- id: issue-896-config
+  resource: ../../../crates/hoimin-core/src/config.rs
+  revision: e7e3cae8c4e048ee77d2bf644b47da1792211cbe
+  working_tree: clean
+  sha256: b8d4ea9dad267336367c965fe24ae50634b3fa774e74cbd914e29bc74db6a4ac
+- id: issue-896-design
+  resource: ../../superpowers/specs/2026-10-15-issue-896-typed-session-design.md
+  revision: e7e3cae8c4e048ee77d2bf644b47da1792211cbe
+  working_tree: clean
+  sha256: 889039df4653837fba4f306bc7bf5ba3b24e1d2a54425d8682c6b92a66502644
+- id: issue-896-review
+  resource: ../../superpowers/reports/2026-10-15-issue-896-review.md
+  revision: e7e3cae8c4e048ee77d2bf644b47da1792211cbe
+  working_tree: modified
+  sha256: 01f6c1cb4bbd07a56eba9df40235dbb6df9abe179fa0f33b4716bdf22c6d7316
 - id: session-load-outcome
   resource: ../../../crates/hoimin-core/src/event.rs
   revision: 056cb558953ddf5eb8b229976ee894ae7c6bc87f
@@ -27,9 +43,9 @@ sources:
   sha256: 2d1710df34ea77b0733ca1fbb5b10bb9d74d93603959cc0e69a24f04decd91f3
 - id: tracing-readme
   resource: ../../usage.md
-  revision: 056cb558953ddf5eb8b229976ee894ae7c6bc87f
+  revision: e7e3cae8c4e048ee77d2bf644b47da1792211cbe
   working_tree: modified
-  sha256: 5accad1142fd4cab767e93140cc40d1fb945e025446ecee13e6440e87244a744
+  sha256: b399ad551c4e410c3cbae8f4a03def0422847e89b7f2d839d573a2129e17e10b
 - id: tracing-runtime
   resource: ../../../crates/hoimin-cli/src/telemetry.rs
   revision: 3912d73220917308ce6a966ad2b57ec9b566490c
@@ -84,8 +100,9 @@ sources:
   sha256: 92f348aaf4926712baf0edbe5944f155df64edda8aa69c07eb917e7061fe5525
 - id: schema
   resource: ../../json-schema/run-result.schema.json
-  revision: a7daea0b557cd435c1e55b540392fbdd116348e1
+  revision: e7e3cae8c4e048ee77d2bf644b47da1792211cbe
   working_tree: clean
+  sha256: e895341e994e3e1e39ae037899b1266b14e0df042fcf27fbce798953a2f26d91
 - id: issue-488
   resource: ../../superpowers/specs/2026-09-11-issue-488-windows-resource-scope-design.md
   working_tree: untracked
@@ -164,7 +181,7 @@ JSON Schemaは結果の構造を定める元資料として保持する。ただ
 
 # progressのレポート入力スキーマ
 
-progressは `REPORT_SCHEMA_VERSION`（5）に一致するJSON文書とJSONLストリームを読む。旧schema 2/3/4と未対応の将来版を拒否し、旧形式専用の型・変換・検証は持たない。reviewは現行スキーマのJSONを要求する。[^reader]
+progressは `REPORT_SCHEMA_VERSION`（6）に一致するJSON文書とJSONLストリームを読む。旧schema 2/3/4/5と未対応の将来版を拒否し、旧形式専用の型・変換・検証は持たない。reviewは現行スキーマのJSONを要求する。[^reader]
 
 スキーマ限定後も、候補ID・run ID・sequence・summary・単一結果の検証を維持する。JSONLの一行ずつの読取り、設定を不透明なJSONとして扱うprogressの方針も維持する。旧レポートは生成元バイナリで読むか、意図する版で実行し直す。planの再生成だけでは過去のreportは復元されない。手順と互換性通知は[利用方法](../../usage.md)と[互換性方針](../../compatibility.md)を参照する。[^reader]
 
@@ -225,11 +242,11 @@ macOSで、並列数1・2、root内外の別名、大小文字の別名、実際
 
 ## Environment metadata and report readers (Issue #887)
 
-Report schema 5 replaces separate names and optional hash with one validated
-`environment` snapshot. Progress and review consume the writer's schema; preserve
-schema-4 and older reports with their producing binary or rerun rather than
-rewriting their version fields. Captured plaintext never enters snapshot metadata.
-Plan schema 6 requires regeneration of older plans. Fingerprint schema 11 and its
+Report schema 6 retains the validated `environment` snapshot introduced in schema
+5 in place of separate names and an optional hash. Progress and review consume
+the writer's schema; preserve schema-5 and older reports with their producing
+binary or rerun rather than rewriting their version fields. Captured plaintext never enters snapshot metadata.
+Plan schema 7 requires regeneration of older plans. Fingerprint schema 11 and its
 exact bytes remain stable, so this format change alone does not require a new
 session or alter SQLite schema 4. [^issue-887-environment]
 
@@ -285,3 +302,28 @@ retain their meaning. [^issue-899-changed-selection][^issue-899-changed-review]
 [^issue-899-changed-selection]: [Typed changed selection design](../../superpowers/specs/2026-10-15-issue-899-design.md).
 
 [^issue-899-changed-review]: [Issue 899 review and verification](../../superpowers/reports/2026-10-15-issue-899-review.md). Current executed scopes, fixture corrections, limitations and release-floor checks.
+
+## Normalized session intent (Issue #896)
+
+Raw CLI input retains `--session` and `--resume`. Normalization converts them once
+into `SessionMode::Disabled`, `Fresh(SessionConfig)` or `Resume(SessionConfig)`.
+An enabled mode owns its path; a resumed mode without a session path cannot be
+constructed. Path normalization changes the configuration inside the enabled
+mode without replacing its intent.[^issue-896-config][^issue-896-design]
+
+Report schema 6 serializes disabled intent as `{"mode":"disabled"}` and enabled
+intent as `{"mode":"fresh","config":{"path":"..."}}` or the corresponding
+`resume` mode. Normalized readers reject the obsolete independent `resume` field
+and old session objects. Plan schema 7 still omits runtime session intent, and
+session database schema 4 is unchanged. `SessionLoadOutcome` and report
+`ResumeOutcome` describe the observed selection result, not the request mode.
+CLI options, session exclusions and metrics collision rules remain in their
+existing guides.[^issue-896-config][^issue-896-design]
+
+The branch review distinguishes static inspection, Windows checks and pending
+platform checks. Changing session normalization or path ownership requires
+rechecking all three modes, strict Schema decoding and collision rules.[^issue-896-review]
+
+[^issue-896-config]: [Normalized configuration](../../../crates/hoimin-core/src/config.rs).
+[^issue-896-design]: [Typed session design](../../superpowers/specs/2026-10-15-issue-896-typed-session-design.md).
+[^issue-896-review]: [Review and verification](../../superpowers/reports/2026-10-15-issue-896-review.md).

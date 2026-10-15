@@ -96,7 +96,7 @@ fn inspect(
     protected.extend_from_slice(protected_inputs);
     let mut lock_trees = Vec::new();
     let mut uncertainty = None;
-    if let Some(session) = &config.session {
+    if let Some(session) = config.session.config() {
         protected.push(session.path.as_std_path().to_owned());
         match session_artifacts(session.path.as_std_path(), &mut inspector) {
             Ok((files, trees)) => {

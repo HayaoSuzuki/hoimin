@@ -10,6 +10,12 @@ sources:
   revision: 7b6cb19ba0181759f6b5726f985c5fd7700d313e
   working_tree: clean
   sha256: fa68b3e4aa56ab0ee3dd19f818a0b932a033dce550dbc869f956c261578b501f
+
+- id: issue-896-typed-session-design
+  resource: ../../superpowers/specs/2026-10-15-issue-896-typed-session-design.md
+  revision: 31245fbf096967b36bc15523067080b506f88fe9
+  working_tree: untracked
+  sha256: a21cfb2344b5432b2f38b2e964a30d46d68a5c38c99758ef26c49e52dad25254
 - id: typed-results-and-contracts-design
   resource: ../../superpowers/specs/2026-10-12-typed-results-and-contracts-design.md
   revision: 8ff7c6b
@@ -1013,6 +1019,7 @@ sources:
 
 | 原文 | 先頭見出し | 作成時の状態 |
 | --- | --- | --- |
+| [2026-10-15-issue-896-typed-session-design.md](../../superpowers/specs/2026-10-15-issue-896-typed-session-design.md) | 正規化済みセッションモード [^issue-896-typed-session-design] | 未追跡（参照時点） |
 | [2026-10-12-issue-749-documentation-pages-design.md](../../superpowers/specs/2026-10-12-issue-749-documentation-pages-design.md) | Automatic documentation publication (#749) [^issue-749-documentation-pages-design] | 追跡済み（9eb8ed0） |
 | [2026-10-05-exception-scope-outcomes.md](../../superpowers/specs/2026-10-05-exception-scope-outcomes.md) | Exception hierarchy: scope identity and analysis outcomes [^issue-692-exception-scope-outcomes] | 追跡済み（fae3ce3） |
 | [2026-10-05-issue-692-exception-hierarchy.md](../../superpowers/specs/2026-10-05-issue-692-exception-hierarchy.md) | User-defined exception hierarchy mutations [^issue-692-issue-692-exception-hierarchy] | 追跡済み（fae3ce3） |
@@ -1700,3 +1707,5 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 | Issue 899: Typed changed selection | [Design](../../superpowers/specs/2026-10-15-issue-899-design.md) [^issue-899-changed-selection-design] |
 
 [^issue-899-changed-selection-design]: [Design](../../superpowers/specs/2026-10-15-issue-899-design.md). Typed changed selection, strict saved-shape rejection and the 0.8.0 public-schema floor.
+
+[^issue-896-typed-session-design]: [正規化済みセッションモード](../../superpowers/specs/2026-10-15-issue-896-typed-session-design.md).

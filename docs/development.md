@@ -1931,3 +1931,21 @@ unknown fields, including the obsolete sibling `changed_context` and
 there is no compatibility conversion. Report consumers that load typed
 configuration must use this shape or read old reports with their producing
 binary. Effective target ranges and fingerprint bytes keep their meaning.
+
+## Root cleanup state checks
+
+When changing per-root disk cleanup state, run the typed snapshot, safety and
+formal-correspondence checks:
+
+```console
+cargo test -p hoimin-core --test disk_root_cleanup
+cargo test -p hoimin-core --test disk_policy --test lean_disk_guard_oracle
+cargo test -p hoimin-cli --test lean_disk_shutdown_oracle
+```
+
+The snapshot exposes registration-ordered typed root entries. The runtime
+adapter validates the Lean corpus memberships before mapping them to expected
+entries; it retains event acceptance, rejection point and component/stop checks.
+Run the complete workspace suite and all-target/all-feature clippy before
+shipping changes. See the [root cleanup contract](knowledge/design/runtime-lifecycle.md#root-cleanup-state)
+for Deferred, Retained and Delivery completion rules.

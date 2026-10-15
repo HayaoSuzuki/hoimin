@@ -54,6 +54,9 @@
     "kind": "run_started",
     "normalized_config": {
       "allow_best_effort_memory": false,
+      "environment": {
+        "state": "untracked"
+      },
       "fingerprint_files": [],
       "fingerprint_includes": [],
       "fingerprint_inputs": [],
@@ -90,7 +93,6 @@
         "metrics": "metrics.json"
       },
       "profile": "full",
-      "resume": false,
       "root": ".",
       "selection": {
         "changed": {
@@ -108,7 +110,10 @@
         "symbols": []
       },
       "session": {
-        "path": "session.sqlite3"
+        "config": {
+          "path": "session.sqlite3"
+        },
+        "mode": "fresh"
       },
       "test_argv": [
         {
@@ -137,10 +142,7 @@
             116
           ]
         }
-      ],
-      "environment": {
-        "state": "untracked"
-      }
+      ]
     },
     "resource_control": {
       "mechanism": "golden-control",
