@@ -23,7 +23,7 @@ This record covers #837, stacked above #835. The shared design and plan are in
 ## Source migration
 
 Call `handler.handle_preflight(request)`, `handler.handle_create_worker(request)`,
-`handler.handle_apply_mutation(request, candidate)`, `handler.handle_reset_worker(request)`,
+`handler.handle_apply_mutation(request)`, `handler.handle_reset_worker(request)`,
 `handler.handle_cleanup(request)` or `handler.handle_verify_originals(request)`
 instead of the same-named free function with `handler` as its first argument.
 Return types, failure IDs, safety validation and operation order are unchanged.
@@ -50,3 +50,14 @@ No transfer-body mirror test was added. OS identity and cleanup contracts remain
 in existing handler and owned-workspace tests. The policy, original MVP plan and
 runtime lifecycle knowledge were consulted; their historical statements are not
 rewritten as current API documentation or fresh proof results.
+
+## Apply request migration (Issue #931)
+
+`WorkspaceHandler::handle_apply_mutation(request)` now takes only `ApplyMutation`.
+Put the candidate in `request.candidate`; the synchronous handler and owned task
+both apply that candidate. Remove the separate argument and clones needed only
+to pass it. Invalid request candidates are rejected while retaining the worker.
+The old two-argument signature has no compatibility wrapper. This internal Rust
+source change does not alter CLI options, report or saved formats. The
+[Issue #931 record](../superpowers/plans/2026-10-16-issue-931.md) documents the
+verification scope; the reviews above describe the earlier #837 change.

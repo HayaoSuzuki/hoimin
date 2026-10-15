@@ -236,10 +236,10 @@ impl StrictFixture {
         let request = ApplyMutation {
             id: self.id(),
             worker: 0,
-            candidate: candidate.clone(),
+            candidate,
         };
         self.handler
-            .handle_apply_mutation(request, &candidate)
+            .handle_apply_mutation(request)
             .map(|_| ())
             .map_err(|error| Self::failure_code(&error))
     }

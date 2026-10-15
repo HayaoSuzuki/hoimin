@@ -1062,14 +1062,11 @@ fn effect_handlers_preserve_original_ids_for_success_and_failure() {
     let candidate = mutation_candidate(handler.worker(0).unwrap());
     assert_eq!(
         handler
-            .handle_apply_mutation(
-                ApplyMutation {
-                    id: EffectId(3),
-                    worker: 0,
-                    candidate: candidate.clone(),
-                },
-                &candidate,
-            )
+            .handle_apply_mutation(ApplyMutation {
+                id: EffectId(3),
+                worker: 0,
+                candidate,
+            })
             .unwrap()
             .id,
         EffectId(3)

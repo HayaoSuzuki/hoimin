@@ -1129,13 +1129,10 @@ fn execute_direct_io_effect(context: &mut ShellContext, effect: RunEffect) -> Ru
                 BlockingEffectCompletion::Candidate(Box::new(replay_candidate(&request))),
             );
         }
-        RunEffect::ApplyMutation(request) => {
-            let candidate = request.candidate.clone();
-            context
-                .workspace_mut()
-                .handle_apply_mutation(request, &candidate)
-                .map(RunEvent::MutationApplied)
-        }
+        RunEffect::ApplyMutation(request) => context
+            .workspace_mut()
+            .handle_apply_mutation(request)
+            .map(RunEvent::MutationApplied),
         RunEffect::ResetWorker(request) => context
             .workspace_mut()
             .handle_reset_worker(request)

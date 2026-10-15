@@ -5,6 +5,11 @@ description: OS別の資源制限と、プロセス終了・一時ファイル�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-931-handler
+  resource: ../../../crates/hoimin-cli/src/workspace/mod.rs
+  revision: 0d3fbc1a1821074d6ba8a2a212116241adc85c4e
+  working_tree: modified
+  sha256: 236a52a1a1f58b14ae7f5518eeaf80a527491654f44be8ed0663c2ee2631ccd7
 - id: issue-912-machine
   resource: ../../../crates/hoimin-core/src/machine.rs
   revision: 64ac5038afa1396e7fe237d17dd82641dee25c56
@@ -320,8 +325,10 @@ The operation outcome carries either one active workspace or an error with
 optional pending ownership. Prepare transfers ownership to an owned task;
 execute returns surviving ownership in its completion; acceptance restores the
 handler registries. These boundaries preserve parallel execution and the
-existing duplicate-completion checks. Synchronous apply still uses its explicit
-candidate argument; owned apply uses the request candidate.[^issue-872-handler]
+existing duplicate-completion checks. At the Issue #872 revision, synchronous
+apply retained its explicit candidate argument while owned apply used the request
+candidate.[^issue-872-handler] The current single-candidate API is described
+[below](#apply-requests-have-one-candidate).
 
 The [implementation and verification record](../../superpowers/plans/2026-10-14-issue-872.md)
 records characterization-first tests and the Windows validation scope. This
@@ -434,3 +441,20 @@ claim a new Lean proof.[^issue-912-plan]
 
 [^issue-912-machine]: [Core run machine](../../../crates/hoimin-core/src/machine.rs), Issue #912 private ordered collection phase.
 [^issue-912-plan]: [Issue #912 design and implementation plan](../../superpowers/plans/2026-10-15-issue-912.md).
+
+## Apply requests have one candidate
+
+`WorkspaceHandler::handle_apply_mutation(request)` and owned apply tasks use
+`ApplyMutation.candidate` as their only candidate input. Synchronous callers
+remove the separate candidate argument and its redundant clone. Successful
+application mutates the worker copy; invalid candidates leave its bytes intact.
+Both outcomes retain the worker. The owned path still transfers ownership through
+prepare, execute and accept; cleanup and recovery policy are unchanged. This
+supersedes the synchronous candidate precedence retained by Issue #872, without
+changing CLI, report or saved formats.[^issue-931-handler]
+
+The [Issue #931 implementation record](../../superpowers/plans/2026-10-16-issue-931.md)
+separates new two-path filesystem tests from existing Lean-derived lifecycle
+comparisons. This change adds no formal model or proof.
+
+[^issue-931-handler]: [Single-candidate workspace apply entry point](../../../crates/hoimin-cli/src/workspace/mod.rs).
