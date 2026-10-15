@@ -408,3 +408,86 @@ async fn empty_scope_still_validates_diff_base_and_repository() {
         Err(hoimin_core::TargetError::GitRepositoryRequired)
     ));
 }
+
+#[tokio::test]
+async fn tracked_mixed_newlines_select_physical_rows_with_git_context() {
+    for (context, expected) in [
+        (0, LineRange { start: 2, end: 3 }),
+        (1, LineRange { start: 1, end: 4 }),
+    ] {
+        let repo = Repository::new().await;
+        repo.write("selected/app.py", b"a = 1\r\nb = 2\rc = 3\nd = 4\r");
+        repo.commit().await;
+        repo.write("selected/app.py", b"a = 1\r\nb = 9\rc = 3\nd = 4\r");
+        let selection = Selection {
+            changed: Some(hoimin_core::ChangedSelection::new(context, None).unwrap()),
+            ..repo.selection()
+        };
+
+        let changed = TargetHandler::resolve(&selection).await.unwrap();
+
+        assert_eq!(changed.len(), 1);
+        assert_eq!(changed[0].lines, [expected]);
+    }
+}
+
+#[tokio::test]
+async fn explicit_diff_base_translates_mixed_newlines_to_physical_rows() {
+    let repo = Repository::new().await;
+    repo.write("selected/app.py", b"a = 1\rb = 2\nc = 3\r\n");
+    repo.commit().await;
+    let base = String::from_utf8(repo.git(&["rev-parse", "HEAD"]).await)
+        .unwrap()
+        .trim()
+        .to_owned();
+    repo.write("selected/app.py", b"a = 1\rb = 9\nc = 3\r\n");
+    repo.commit().await;
+    let selection = Selection {
+        changed: Some(hoimin_core::ChangedSelection::new(0, Some(base)).unwrap()),
+        ..repo.selection()
+    };
+
+    let changed = TargetHandler::resolve(&selection).await.unwrap();
+
+    assert_eq!(changed.len(), 1);
+    assert_eq!(changed[0].lines, [LineRange { start: 1, end: 2 }]);
+}
+
+#[tokio::test]
+async fn unborn_index_ranges_already_count_python_physical_rows() {
+    for contents in [
+        b"a = 1\rb = 2\n".as_slice(),
+        b"a = 1\r\nb = 2\r",
+        b"a = 1\nb = 2",
+    ] {
+        let repo = Repository::new().await;
+        repo.write("selected/app.py", contents);
+        repo.git(&["add", "."]).await;
+        let selection = repo.selection();
+
+        let changed = TargetHandler::resolve(&selection).await.unwrap();
+
+        assert_eq!(changed.len(), 1);
+        assert_eq!(changed[0].lines, [LineRange { start: 1, end: 2 }]);
+    }
+}
+
+#[tokio::test]
+async fn untracked_ranges_already_count_python_physical_rows() {
+    for contents in [
+        b"a = 1\rb = 2\n".as_slice(),
+        b"a = 1\r\nb = 2\r",
+        b"a = 1\nb = 2",
+    ] {
+        let repo = Repository::new().await;
+        repo.git(&["commit", "--allow-empty", "-qm", "initial"])
+            .await;
+        repo.write("selected/app.py", contents);
+        let selection = repo.selection();
+
+        let changed = TargetHandler::resolve(&selection).await.unwrap();
+
+        assert_eq!(changed.len(), 1);
+        assert_eq!(changed[0].lines, [LineRange { start: 1, end: 2 }]);
+    }
+}

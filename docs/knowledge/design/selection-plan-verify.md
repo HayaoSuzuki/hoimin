@@ -5,6 +5,24 @@ description: 候補発見と実行の分離、ランキング、部分集合、�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-915-design
+  resource: ../../superpowers/plans/issue-915/design.md
+  working_tree: untracked
+  sha256: d1895363d3374a621fba3a6623b545127ad490aaafee46122fbaebd72c44ef9b
+- id: issue-915-git
+  resource: ../../../crates/hoimin-cli/src/target/git.rs
+  revision: 54093222abe08c79e8e36e4656ee04b9c6d8dda0
+  working_tree: modified
+  sha256: a1955fa38410aa474fd36e41dd8a041b949d84eefa19c6c9e604473d15d47ff0
+- id: issue-915-tracked
+  resource: ../../../crates/hoimin-cli/src/target/git/tracked.rs
+  revision: 54093222abe08c79e8e36e4656ee04b9c6d8dda0
+  working_tree: modified
+  sha256: 798eecf029794d88779e6e5f897d2a0ced356a44bd9dab4a8bf477a2ca7788d4
+- id: issue-915-review
+  resource: ../../superpowers/plans/issue-915/review.md
+  working_tree: untracked
+  sha256: a5d5101ec961409d0c5e51f636e0aee5d922cfef9e0f371b40fe7fd90b2078cc
 - id: issue-911-design
   resource: ../../superpowers/reports/issue-911/design.md
   working_tree: untracked
@@ -594,3 +612,26 @@ properties of sampling or dispatch. [^issue-911-review]
 [^issue-911-design]: [Typed verification selection design](../../superpowers/reports/issue-911/design.md).
 
 [^issue-911-review]: [Review and verification](../../superpowers/reports/issue-911/review.md).
+
+
+## Git and Python line units (Issue #915)
+
+Tracked Git patches count LF-delimited rows. Python physical rows count LF, CRLF,
+and bare CR; `a\rb\n` spans one Git row and two physical rows. The private
+`GitChangedRanges` value carries excluded/normalized tracked ranges until its
+consuming conversion reads the current bytes. The resolver then combines those
+physical ranges with unborn-indexed and untracked ranges, which already use
+physical rows. Public `LineRange`, target intersections, context, and persisted
+schemas retain their existing meanings. [^issue-915-design][^issue-915-git][^issue-915-tracked]
+
+The tracked collector retains the current full-diff path for unscoped requests
+and global rename pairing. Unit separation does not change binary/deletion
+exclusions, scoped path batching, Git context expansion, or merge-base selection.
+The implementation record distinguishes pre-refactor characterization, temporary
+sensitivity probes, and current verification; it adds no formal proof or
+cross-platform execution claim. [^issue-915-review]
+
+[^issue-915-design]: [Git line-unit design](../../superpowers/plans/issue-915/design.md).
+[^issue-915-git]: [Git resolution and consuming conversion](../../../crates/hoimin-cli/src/target/git.rs).
+[^issue-915-tracked]: [Tracked patch collection](../../../crates/hoimin-cli/src/target/git/tracked.rs).
+[^issue-915-review]: [Review and verification](../../superpowers/plans/issue-915/review.md).
