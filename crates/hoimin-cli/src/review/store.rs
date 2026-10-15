@@ -279,7 +279,7 @@ fn validate_key(key: &ReviewKey, project: &Utf8Path) -> Result<(), ReviewError> 
     if key.project != project
         || id.as_str() != key.candidate_id
         || !hoimin_core::normalized_relative_path(key.descriptor.path.as_str())
-        || key.descriptor.schema_version != 1
+        || key.descriptor.schema_version != hoimin_core::CANDIDATE_SCHEMA_VERSION
     {
         return Err(invalid("invalid stored candidate identity"));
     }

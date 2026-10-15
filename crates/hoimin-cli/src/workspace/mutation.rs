@@ -1,8 +1,8 @@
 use std::io::{Seek, SeekFrom, Write};
 
 use hoimin_core::{
-    CANDIDATE_SCHEMA_VERSION, CandidateDescriptor, CandidateValidationContext,
-    CandidateValidationError, MutationCandidate, validate_candidate_with_context,
+    CandidateDescriptor, CandidateValidationContext, CandidateValidationError, MutationCandidate,
+    validate_candidate_with_context,
 };
 
 use super::{WorkerWorkspace, WorkspaceError};
@@ -36,7 +36,7 @@ impl WorkerWorkspace {
             }
         })?;
         let stable_id =
-            validate_candidate_with_context(&validation, &candidate_descriptor(candidate))
+            validate_candidate_with_context(&validation, &CandidateDescriptor::from(candidate))
                 .map_err(|error| match error {
                     CandidateValidationError::FileHashMismatch => {
                         WorkspaceError::MutationHashMismatch {
@@ -117,21 +117,6 @@ impl WorkerWorkspace {
     }
 }
 
-fn candidate_descriptor(candidate: &MutationCandidate) -> CandidateDescriptor {
-    CandidateDescriptor {
-        schema_version: CANDIDATE_SCHEMA_VERSION,
-        path: candidate.path.clone(),
-        span: candidate.span,
-        original: candidate.original.clone(),
-        replacement: candidate.replacement.clone(),
-        operator: candidate.operator.clone(),
-        line: candidate.line,
-        column: candidate.column,
-        symbol: candidate.symbol.clone(),
-        file_hash: candidate.file_hash.clone(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::fs;
@@ -143,7 +128,8 @@ mod tests {
 
     use camino::{Utf8Path, Utf8PathBuf};
     use hoimin_core::{
-        BudgetLedger, ByteSpan, EffectId, MutationCandidate, RunBudgets, reserve_workspace_copy,
+        BudgetLedger, ByteSpan, CandidateDescriptor, EffectId, MutationCandidate, RunBudgets,
+        reserve_workspace_copy,
     };
 
     use super::super::manifest::{build_metrics, reset_build_metrics};
@@ -243,12 +229,10 @@ mod tests {
             symbol: None,
             file_hash: hash,
         };
-        candidate.id = hoimin_core::validate_candidate(
-            b"original\n",
-            &super::candidate_descriptor(&candidate),
-        )
-        .unwrap()
-        .to_string();
+        candidate.id =
+            hoimin_core::validate_candidate(b"original\n", &CandidateDescriptor::from(&candidate))
+                .unwrap()
+                .to_string();
         (project, worker, candidate)
     }
 

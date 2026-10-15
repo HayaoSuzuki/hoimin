@@ -968,10 +968,8 @@ fn source_batch_preserves_interleaved_states_and_first_error_order() {
     std::fs::write(dir.path().join("another.py"), b"1\n").unwrap();
     let mut other = candidate.clone();
     other.path = "another.py".into();
-    other.id = stable_mutant_id(&CandidateIdentity::from(
-        &crate::plan::candidate_descriptor(&other),
-    ))
-    .to_string();
+    other.id =
+        stable_mutant_id(&CandidateIdentity::from(&CandidateDescriptor::from(&other))).to_string();
     let mut stale = candidate.clone();
     stale.file_hash = "0".repeat(64);
     let mut missing = candidate.clone();
