@@ -31,6 +31,21 @@ hand-edit schema numbers. Report, session, ranking and fingerprint formats and
 fingerprint bytes remain unchanged. The minimum release version is 0.10.0 because
 v0.9.4 was already published when this incompatible plan change was prepared.
 
+## Duplicate report configuration fields
+
+Review rejects repeated known fields in a current-schema report's
+`run.normalized_config`, including nested fields, regardless of their order or
+whether their values agree. Custom report producers must emit each known
+configuration field once. Required arrays, null rejection and unknown-field
+rules continue to apply to typed run configuration.
+
+This corrects acceptance of invalid input. Current writers emit each field once,
+so their output needs no regeneration. Report schema 6, the 0.10.0 release floor,
+and other saved formats remain unchanged. Progress still accepts configuration
+as an opaque object or null in both JSON and JSONL, without applying review's
+configuration or project-root checks. No old-schema adapter or automatic file
+conversion is added. See the [implementation and verification record](maintenance/2026-10-16-issue-939.md).
+
 ## Required saved configuration arrays in 0.9.0
 
 Normalized saved configurations require explicit `import_roots` and
