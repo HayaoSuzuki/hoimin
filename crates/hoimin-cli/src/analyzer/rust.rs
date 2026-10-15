@@ -423,7 +423,7 @@ pub(crate) fn analyze_source_with_exceptions(
                 } else {
                     "in".to_owned()
                 },
-                "membership",
+                MutationOperator::Membership,
             )
         } else if text == "is"
             && next.is_some_and(|next| {
@@ -438,7 +438,7 @@ pub(crate) fn analyze_source_with_exceptions(
                 } else {
                     "is".to_owned()
                 },
-                "identity",
+                MutationOperator::Identity,
             )
         } else if text == "not"
             && previous.is_some_and(|previous| {
@@ -453,7 +453,7 @@ pub(crate) fn analyze_source_with_exceptions(
             (
                 expression_end,
                 source[expression_start..expression_end].to_owned(),
-                "remove_not",
+                MutationOperator::RemoveNot,
             )
         } else if previous.is_some_and(|previous| {
             &source[usize::from(previous.range().start())..usize::from(previous.range().end())]
@@ -468,8 +468,6 @@ pub(crate) fn analyze_source_with_exceptions(
             continue;
         };
         let symbol = facts.scope_at(start);
-        let operator = MutationOperator::from_name(operator)
-            .expect("token mutation operator must be configured");
         if let Some(candidate) = make_candidate(
             request,
             source,
@@ -658,51 +656,51 @@ fn invalid_syntax(path: &Utf8Path) -> AnalyzerOutput {
     }
 }
 
-fn replacement(text: &str, unary: bool) -> Option<(&'static str, &'static str)> {
+fn replacement(text: &str, unary: bool) -> Option<(&'static str, MutationOperator)> {
     let result = match text {
-        "==" => ("!=", "compare_eq_ne"),
-        "!=" => ("==", "compare_eq_ne"),
-        "<" => ("<=", "compare_order"),
-        "<=" => ("<", "compare_order"),
-        ">" => (">=", "compare_order"),
-        ">=" => (">", "compare_order"),
-        "in" => ("not in", "membership"),
-        "is" => ("is not", "identity"),
-        "and" => ("or", "boolean_and_or"),
-        "or" => ("and", "boolean_and_or"),
-        "+=" => ("-=", "augmented_add_sub"),
-        "-=" => ("+=", "augmented_add_sub"),
-        "*=" => ("/=", "augmented_mul_div"),
-        "/=" => ("*=", "augmented_mul_div"),
-        "//=" => ("%=", "augmented_floor_mod"),
-        "%=" => ("//=", "augmented_floor_mod"),
-        "**=" => ("*=", "augmented_power"),
-        "@=" => ("*=", "augmented_matmul"),
-        "&=" => ("|=", "augmented_bitwise_and_or"),
-        "|=" => ("&=", "augmented_bitwise_and_or"),
-        "^=" => ("&=", "augmented_bitwise_xor"),
-        "<<=" => (">>=", "augmented_bitwise_shift"),
-        ">>=" => ("<<=", "augmented_bitwise_shift"),
-        "*" => ("/", "binary_mul_div"),
-        "/" => ("*", "binary_mul_div"),
-        "//" => ("%", "binary_floor_mod"),
-        "%" => ("//", "binary_floor_mod"),
-        "**" => ("*", "binary_power"),
-        "@" => ("*", "binary_matmul"),
-        "&" => ("|", "bitwise_and_or"),
-        "|" => ("&", "bitwise_and_or"),
-        "^" => ("&", "bitwise_xor"),
-        "<<" => (">>", "bitwise_shift"),
-        ">>" => ("<<", "bitwise_shift"),
-        "~" => ("+", "bitwise_invert"),
-        "break" => ("continue", "break_continue"),
-        "continue" => ("break", "break_continue"),
-        "True" => ("False", "boolean_literal"),
-        "False" => ("True", "boolean_literal"),
-        "+" if unary => ("-", "unary_sign"),
-        "-" if unary => ("+", "unary_sign"),
-        "+" => ("-", "binary_add_sub"),
-        "-" => ("+", "binary_add_sub"),
+        "==" => ("!=", MutationOperator::CompareEqNe),
+        "!=" => ("==", MutationOperator::CompareEqNe),
+        "<" => ("<=", MutationOperator::CompareOrder),
+        "<=" => ("<", MutationOperator::CompareOrder),
+        ">" => (">=", MutationOperator::CompareOrder),
+        ">=" => (">", MutationOperator::CompareOrder),
+        "in" => ("not in", MutationOperator::Membership),
+        "is" => ("is not", MutationOperator::Identity),
+        "and" => ("or", MutationOperator::BooleanAndOr),
+        "or" => ("and", MutationOperator::BooleanAndOr),
+        "+=" => ("-=", MutationOperator::AugmentedAddSub),
+        "-=" => ("+=", MutationOperator::AugmentedAddSub),
+        "*=" => ("/=", MutationOperator::AugmentedMulDiv),
+        "/=" => ("*=", MutationOperator::AugmentedMulDiv),
+        "//=" => ("%=", MutationOperator::AugmentedFloorMod),
+        "%=" => ("//=", MutationOperator::AugmentedFloorMod),
+        "**=" => ("*=", MutationOperator::AugmentedPower),
+        "@=" => ("*=", MutationOperator::AugmentedMatmul),
+        "&=" => ("|=", MutationOperator::AugmentedBitwiseAndOr),
+        "|=" => ("&=", MutationOperator::AugmentedBitwiseAndOr),
+        "^=" => ("&=", MutationOperator::AugmentedBitwiseXor),
+        "<<=" => (">>=", MutationOperator::AugmentedBitwiseShift),
+        ">>=" => ("<<=", MutationOperator::AugmentedBitwiseShift),
+        "*" => ("/", MutationOperator::BinaryMulDiv),
+        "/" => ("*", MutationOperator::BinaryMulDiv),
+        "//" => ("%", MutationOperator::BinaryFloorMod),
+        "%" => ("//", MutationOperator::BinaryFloorMod),
+        "**" => ("*", MutationOperator::BinaryPower),
+        "@" => ("*", MutationOperator::BinaryMatmul),
+        "&" => ("|", MutationOperator::BitwiseAndOr),
+        "|" => ("&", MutationOperator::BitwiseAndOr),
+        "^" => ("&", MutationOperator::BitwiseXor),
+        "<<" => (">>", MutationOperator::BitwiseShift),
+        ">>" => ("<<", MutationOperator::BitwiseShift),
+        "~" => ("+", MutationOperator::BitwiseInvert),
+        "break" => ("continue", MutationOperator::BreakContinue),
+        "continue" => ("break", MutationOperator::BreakContinue),
+        "True" => ("False", MutationOperator::BooleanLiteral),
+        "False" => ("True", MutationOperator::BooleanLiteral),
+        "+" if unary => ("-", MutationOperator::UnarySign),
+        "-" if unary => ("+", MutationOperator::UnarySign),
+        "+" => ("-", MutationOperator::BinaryAddSub),
+        "-" => ("+", MutationOperator::BinaryAddSub),
         _ => return None,
     };
     Some(result)
