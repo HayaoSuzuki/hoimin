@@ -35,7 +35,7 @@ mod validation_tests;
 use ranking::{RANKING_RULE_VERSION, rank_candidates, validate_ranking, validate_ranking_against};
 pub use ranking::{RankedPlanCandidate, RankingReason, RankingReasonCode};
 
-pub const PLAN_SCHEMA_VERSION: u32 = 7;
+pub const PLAN_SCHEMA_VERSION: u32 = 8;
 
 pub(crate) struct ReadOnlyPlan {
     pub manifest: PlanManifest,
@@ -58,8 +58,7 @@ pub(crate) fn read_for_review(path: &Path) -> Result<ReadOnlyPlan, PlanError> {
                 }
             })
         })?;
-    let manifest: PlanManifest =
-        serde_json::from_slice(&bytes).map_err(|error| invalid(error.to_string()))?;
+    let manifest = decode_manifest(&bytes)?;
     validate_header(&manifest)?;
     let project = std::fs::canonicalize(&manifest.normalized_config.root)
         .map_err(|error| invalid(error.to_string()))?;
@@ -97,7 +96,6 @@ pub struct PlanManifest {
     pub ranking_rule_version: u32,
     pub normalized_config: PlanConfig,
     pub sources: Vec<FingerprintInputFile>,
-    pub fingerprint_inputs: Vec<FingerprintInputFile>,
     pub candidates: Vec<RankedPlanCandidate>,
     pub truncated: bool,
     pub diagnostics: Vec<PlanDiagnostic>,
@@ -358,9 +356,8 @@ async fn create_inner(
         schema_version: PLAN_SCHEMA_VERSION,
         kind: "plan".to_owned(),
         ranking_rule_version: RANKING_RULE_VERSION,
-        normalized_config: config.clone().into_plan_config(),
+        normalized_config: config.into_plan_config(),
         sources,
-        fingerprint_inputs: config.fingerprint_inputs,
         candidates,
         truncated,
         diagnostics,
@@ -446,14 +443,10 @@ fn read_manifest(path: &Path) -> Result<(Vec<PathBuf>, Vec<u8>), PlanError> {
     .map_err(|error| PlanError::ManifestInvalid(format!("{}: {error}", path.display())))
 }
 
-async fn prepare_verify_selection_inner(
-    manifest_path: &Path,
-    requested_selection: &VerifySelection,
-    format: OutputFormat,
-    #[cfg(test)] control: Option<DiscoveryControl>,
-) -> Result<VerifiedPlan, PlanError> {
-    let (manifest_inputs, bytes) = read_manifest(manifest_path)?;
-    let value: serde_json::Value = serde_json::from_slice(&bytes)
+// Check the version before decoding closed shapes so obsolete fields cannot hide
+// the regeneration guidance shared by verify and read-only review.
+fn decode_manifest(bytes: &[u8]) -> Result<PlanManifest, PlanError> {
+    let value: serde_json::Value = serde_json::from_slice(bytes)
         .map_err(|error| PlanError::ManifestInvalid(error.to_string()))?;
     let schema_version = value
         .get("schema_version")
@@ -464,8 +457,19 @@ async fn prepare_verify_selection_inner(
             "unsupported schema version {schema_version}; regenerate the plan with this hoimin version"
         )));
     }
-    let manifest: PlanManifest = serde_json::from_value(value)
-        .map_err(|error| PlanError::ManifestInvalid(error.to_string()))?;
+    drop(value);
+    // Decode the original bytes to retain serde's duplicate-field rejection.
+    serde_json::from_slice(bytes).map_err(|error| PlanError::ManifestInvalid(error.to_string()))
+}
+
+async fn prepare_verify_selection_inner(
+    manifest_path: &Path,
+    requested_selection: &VerifySelection,
+    format: OutputFormat,
+    #[cfg(test)] control: Option<DiscoveryControl>,
+) -> Result<VerifiedPlan, PlanError> {
+    let (manifest_inputs, bytes) = read_manifest(manifest_path)?;
+    let manifest = decode_manifest(&bytes)?;
     drop(bytes);
     validate_header(&manifest)?;
     validate_current_fingerprint_env(&manifest.normalized_config)?;
@@ -492,7 +496,7 @@ async fn prepare_verify_selection_inner(
     let current_inputs = fingerprint_inputs::resolve_config(&config)
         .map_err(|error| PlanError::FingerprintInputChanged(error.to_string()))?;
     ensure_exact_records(
-        &manifest.fingerprint_inputs,
+        &manifest.normalized_config.fingerprint_inputs,
         &current_inputs,
         RecordMismatch::FingerprintInput,
     )?;
@@ -710,18 +714,10 @@ fn validate_header(manifest: &PlanManifest) -> Result<(), PlanError> {
         .validate()
         .map_err(|error| PlanError::ManifestInvalid(error.to_string()))?;
     validate_records("sources", &manifest.sources)?;
-    validate_records("fingerprint_inputs", &manifest.fingerprint_inputs)?;
     validate_records(
         "normalized_config.fingerprint_inputs",
         &manifest.normalized_config.fingerprint_inputs,
     )?;
-    if record_map(&manifest.fingerprint_inputs)
-        != record_map(&manifest.normalized_config.fingerprint_inputs)
-    {
-        return Err(PlanError::ManifestInvalid(
-            "fingerprint inputs differ from normalized config".to_owned(),
-        ));
-    }
 
     validate_ranking(&manifest.candidates).map_err(PlanError::ManifestInvalid)?;
     validate_candidate_sequences(&manifest.candidates)?;
@@ -1273,7 +1269,6 @@ mod tests {
             ranking_rule_version: RANKING_RULE_VERSION,
             normalized_config,
             sources: Vec::new(),
-            fingerprint_inputs: Vec::new(),
             candidates: Vec::new(),
             truncated: true,
             diagnostics: Vec::new(),

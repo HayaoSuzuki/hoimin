@@ -249,6 +249,217 @@ async fn read_only_plan_does_not_execute() {
 }
 
 #[tokio::test]
+async fn plan_readers_reject_old_schemas_with_regeneration_guidance() {
+    for version in 1..=7 {
+        for review in [false, true] {
+            // Arrange: old fields must not obscure schema regeneration guidance.
+            let (_dir, path) = plan_fixture().await;
+            let mut value: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+            value["schema_version"] = version.into();
+            value["fingerprint_inputs"] = serde_json::json!([]);
+            value["normalized_config"]
+                .as_object_mut()
+                .unwrap()
+                .remove("fingerprint_inputs");
+            let bytes = serde_json::to_vec(&value).unwrap();
+            std::fs::write(&path, &bytes).unwrap();
+
+            // Act.
+            let result = if review {
+                super::input::load_plan(&path)
+                    .map(|_| ())
+                    .map_err(|error| error.to_string())
+            } else {
+                crate::plan::prepare_verify(&path, &[], crate::cli::OutputFormat::Json)
+                    .await
+                    .map(|_| ())
+                    .map_err(|error| error.to_string())
+            };
+
+            // Assert.
+            let error = result.unwrap_err();
+            assert!(
+                error.contains(&format!(
+                    "unsupported schema version {version}; regenerate the plan"
+                )),
+                "review={review}: {error}"
+            );
+            assert_eq!(std::fs::read(&path).unwrap(), bytes);
+        }
+    }
+}
+
+#[tokio::test]
+async fn plan_readers_reject_obsolete_top_level_fingerprint_inputs() {
+    for review in [false, true] {
+        // Arrange.
+        let (_dir, path) = plan_fixture().await;
+        let mut value: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        value["fingerprint_inputs"] = serde_json::json!([]);
+        std::fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
+
+        // Act.
+        let result = if review {
+            super::input::load_plan(&path)
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        } else {
+            crate::plan::prepare_verify(&path, &[], crate::cli::OutputFormat::Json)
+                .await
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        };
+
+        // Assert.
+        let error = result.unwrap_err();
+        assert!(
+            error.contains("unknown field `fingerprint_inputs`"),
+            "review={review}: {error}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn plan_readers_reject_duplicate_known_fields() {
+    for (field, original, duplicate) in [
+        (
+            "kind",
+            "\"kind\":\"plan\"",
+            "\"kind\":\"plan\",\"kind\":\"plan\"",
+        ),
+        (
+            "fingerprint_inputs",
+            "\"fingerprint_inputs\":[]",
+            "\"fingerprint_inputs\":[],\"fingerprint_inputs\":[]",
+        ),
+    ] {
+        for review in [true, false] {
+            // Arrange: retain duplicate keys in raw JSON, not a Value map.
+            let (_dir, path) = plan_fixture().await;
+            let saved = std::fs::read_to_string(&path).unwrap();
+            let duplicated = saved.replacen(original, duplicate, 1);
+            assert_ne!(duplicated, saved);
+            std::fs::write(&path, &duplicated).unwrap();
+
+            // Act.
+            let result = if review {
+                super::input::load_plan(&path)
+                    .map(|_| ())
+                    .map_err(|error| error.to_string())
+            } else {
+                crate::plan::prepare_verify(&path, &[], crate::cli::OutputFormat::Json)
+                    .await
+                    .map(|_| ())
+                    .map_err(|error| error.to_string())
+            };
+
+            // Assert.
+            let error = result.unwrap_err();
+            assert!(
+                error.contains(&format!("duplicate field `{field}`")),
+                "review={review}: {error}"
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn plan_readers_reject_malformed_nested_fingerprint_records() {
+    let record = serde_json::json!({"path": "config.toml", "hash": "a".repeat(64)});
+    for (name, replacement, fragment) in [
+        ("missing", None, "missing field `fingerprint_inputs`"),
+        ("null", Some(serde_json::Value::Null), "invalid type: null"),
+        (
+            "duplicate",
+            Some(serde_json::json!([record, record])),
+            "duplicate",
+        ),
+        (
+            "hash",
+            Some(serde_json::json!([{"path": "config.toml", "hash": "invalid"}])),
+            "hash",
+        ),
+        (
+            "path",
+            Some(serde_json::json!([{"path": "../outside", "hash": "a".repeat(64)}])),
+            "path",
+        ),
+    ] {
+        for review in [false, true] {
+            // Arrange.
+            let (_dir, path) = plan_fixture().await;
+            let mut value: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+            value["normalized_config"]
+                .as_object_mut()
+                .unwrap()
+                .remove("fingerprint_inputs");
+            if let Some(replacement) = &replacement {
+                value["normalized_config"]["fingerprint_inputs"] = replacement.clone();
+            }
+            std::fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
+
+            // Act.
+            let result = if review {
+                super::input::load_plan(&path)
+                    .map(|_| ())
+                    .map_err(|error| error.to_string())
+            } else {
+                crate::plan::prepare_verify(&path, &[], crate::cli::OutputFormat::Json)
+                    .await
+                    .map(|_| ())
+                    .map_err(|error| error.to_string())
+            };
+
+            // Assert.
+            let error = result.unwrap_err();
+            assert!(error.contains(fragment), "{name}, review={review}: {error}");
+        }
+    }
+}
+
+#[tokio::test]
+async fn store_destination_protects_fingerprint_only_inputs_without_modification() {
+    for hard_link in [false, true] {
+        // Arrange: the protected input is not a mutation source.
+        let (dir, path) = plan_fixture().await;
+        let input = dir.path().join("config.toml");
+        let original = b"setting = true\n";
+        std::fs::write(&input, original).unwrap();
+        let mut value: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        value["normalized_config"]["fingerprint_inputs"] = serde_json::json!([{
+            "path": "config.toml", "hash": blake3::hash(original).to_hex().to_string()
+        }]);
+        let saved = serde_json::to_vec(&value).unwrap();
+        std::fs::write(&path, &saved).unwrap();
+        let plan = super::input::load_plan(&path).unwrap();
+        let destination = if hard_link {
+            let alias = dir.path().join("reviews.sqlite3");
+            std::fs::hard_link(&input, &alias).unwrap();
+            alias
+        } else {
+            input.clone()
+        };
+
+        // Act.
+        let result = super::input::validate_store_destination(&destination, &plan, None);
+
+        // Assert.
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("store aliases a protected input")
+        );
+        assert_eq!(std::fs::read(&input).unwrap(), original);
+        assert_eq!(std::fs::read(&path).unwrap(), saved);
+    }
+}
+
+#[tokio::test]
 async fn plan_rejects_forged_candidate_id() {
     let (_dir, path) = plan_fixture().await;
     let mut value: serde_json::Value =
