@@ -128,21 +128,11 @@ fn validate_resume_budget(
     stored_limit: rusqlite::types::Value,
     requested: std::num::NonZeroUsize,
 ) -> Result<Vec<u8>, EffectFailed> {
-    let stored_limit = match stored_limit {
-        rusqlite::types::Value::Blob(bytes) => bytes,
-        rusqlite::types::Value::Null => {
-            return Err(EffectFailed::other(
-                id,
-                "session.resume.incompatible",
-                "incomplete session has no persisted mutant budget; start a new session",
-            ));
-        }
-        _ => {
-            return Err(EffectFailed {
-                id,
-                failure: corrupt("invalid persisted mutant budget type"),
-            });
-        }
+    let rusqlite::types::Value::Blob(stored_limit) = stored_limit else {
+        return Err(EffectFailed {
+            id,
+            failure: corrupt("invalid persisted mutant budget type"),
+        });
     };
     let stored_bytes: [u8; 8] = stored_limit
         .as_slice()

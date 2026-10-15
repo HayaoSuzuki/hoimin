@@ -5,6 +5,10 @@ description: 保存・復旧の権限、スキーマ移行、結果の生成側�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-916-budget
+  resource: ../../superpowers/plans/2026-10-15-issue-916.md
+  working_tree: untracked
+  sha256: 9fc14e91942ef296cbf2f92c1e40941ce36f4676f6bac27d534a3687484eb9ee
 - id: issue-899-changed-selection
   resource: ../../superpowers/specs/2026-10-15-issue-899-design.md
   revision: 7b6cb19ba0181759f6b5726f985c5fd7700d313e
@@ -378,3 +382,22 @@ rechecking all three modes, strict Schema decoding and collision rules.[^issue-8
 [^issue-896-config]: [Normalized configuration](../../../crates/hoimin-core/src/config.rs).
 [^issue-896-design]: [Typed session design](../../superpowers/specs/2026-10-15-issue-896-typed-session-design.md).
 [^issue-896-review]: [Review and verification](../../superpowers/reports/2026-10-15-issue-896-review.md).
+
+## Required persisted budgets (Issue #916)
+
+New schema-5 session databases require a positive eight-byte BLOB budget with
+NOT NULL enforced independently of CHECK constraints. Existing schema-5 databases
+with nullable DDL remain readable and writable without schema rewrites when
+their budget values satisfy that contract. NULL is corrupt stored data and
+returns `session.corrupt`, as do other invalid storage types; it no longer has a
+separate compatibility diagnosis. Selection, ownership rechecks and conditional
+updates retain their ordering. Schema version 5, release floor 0.8.0 and unsigned
+big-endian budget encoding remain unchanged.[^issue-916-budget]
+
+The original schema-5 golden retains the previous nullable DDL for compatibility
+and corrupt-reading tests. A separate required-budget golden checks complete
+schema and logical-row regeneration for newly created databases. Budget/resume
+oracle correspondence concerns current positive budgets and eligibility; old
+NULL migration conventions are historical, not supported reader states.
+
+[^issue-916-budget]: [Required session budget design and validation plan](../../superpowers/plans/2026-10-15-issue-916.md).

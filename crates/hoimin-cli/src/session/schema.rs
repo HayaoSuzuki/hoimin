@@ -62,10 +62,9 @@ fn initialize(transaction: &Transaction<'_>) -> Result<(), rusqlite::Error> {
              fingerprint BLOB NOT NULL REFERENCES fingerprints(digest),
              finished INTEGER NOT NULL DEFAULT 0 CHECK(finished IN (0, 1)),
              complete INTEGER NOT NULL DEFAULT 0 CHECK(complete IN (0, 1)),
-             max_mutants BLOB
-             CHECK(max_mutants IS NULL OR
-                   (typeof(max_mutants)='blob' AND length(max_mutants)=8
-                    AND max_mutants > zeroblob(8)))
+             max_mutants BLOB NOT NULL
+             CHECK(typeof(max_mutants)='blob' AND length(max_mutants)=8
+                   AND max_mutants > zeroblob(8))
          );
          CREATE INDEX runs_resume ON runs(fingerprint, complete, id DESC);
          CREATE TABLE candidates (

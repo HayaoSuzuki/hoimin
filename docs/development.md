@@ -1644,10 +1644,13 @@ existing UTF-8 Lean/source-index proofs do not establish codec correspondence.
 
 ## Resume budget compatibility
 
-Fingerprint schema 10 omits only `max_mutants` from verdict compatibility.
-SQLite schema 4 persists each run's accepted limit as a positive eight-byte
-big-endian unsigned value. Existing schema-4 rows with a NULL historical budget
-remain non-resumable. Opening a database does not rewrite candidate/results.
+Fingerprint schema 11 omits `max_mutants` from verdict compatibility; this
+budget rule was introduced in schema 10. SQLite schema 5 persists each run's
+accepted limit as a positive eight-byte big-endian unsigned value. Newly created
+DBs enforce NOT NULL as well as the BLOB type, length and positivity constraints.
+Existing valid schema-5 DBs reopen without rewriting their DDL or data. A NULL
+budget in an earlier nullable schema-5 DB fails as `session.corrupt`, like other
+invalid budget types or lengths; no compatibility fallback repairs it.
 Selection finds the newest
 compatible incomplete run whose accepted limit does not exceed the requested
 limit. After acquiring the existing run ownership lock, a conditional update
@@ -1664,17 +1667,17 @@ and equality with fresh execution.
 ## Session schema initialization
 
 `session/schema.rs` owns a single current DDL batch. A version-0 database is
-initialized directly as schema 4 inside an immediate transaction. After acquiring
+initialized directly as schema 5 inside an immediate transaction. After acquiring
 the write lock, the initializer rereads `user_version`; a concurrent opener that
-now sees 4 commits without creating tables again. A failed DDL batch rolls back
+now sees 5 commits without creating tables again. A failed DDL batch rolls back
 all tables, indexes and the version change. WAL, foreign keys, a five-second busy
 timeout and WAL contention retry remain enabled.
 
-Existing schema-4 databases reopen. Versions 1-3, negative versions and future
+Existing schema-5 databases reopen. Versions 1-4, negative versions and future
 versions produce `SchemaError::UnsupportedVersion` with new-session guidance;
 existing tables, data and `user_version` are preserved. Old golden databases test
 refusal and preservation, while the current golden tests reopen, stored results,
-diagnostics and budgets. Current results can still have NULL termination.
+diagnostics and budgets. Current results store typed outcome JSON.
 
 The `SchemaMigration` model and executable names retain their audit lineage.
 Their live model now creates current directly from fresh and rejects initialized
