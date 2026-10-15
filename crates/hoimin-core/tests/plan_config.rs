@@ -82,13 +82,40 @@ fn plan_config_round_trips_run_semantics_with_session_disabled() {
 }
 
 #[test]
-fn plan_config_defaults_missing_fingerprint_files() {
-    let mut value = serde_json::to_value(fixture_run_config().into_plan_config()).unwrap();
-    value.as_object_mut().unwrap().remove("fingerprint_files");
+fn plan_config_rejects_absent_required_arrays() {
+    for field in ["import_roots", "fingerprint_files"] {
+        for replacement in [None, Some(serde_json::Value::Null)] {
+            // Arrange
+            let mut value = plan_value();
+            value.as_object_mut().unwrap().remove(field);
+            if let Some(replacement) = replacement {
+                value[field] = replacement;
+            }
 
-    let plan: PlanConfig = serde_json::from_value(value).unwrap();
+            // Act
+            let result = serde_json::from_value::<PlanConfig>(value);
 
-    assert_eq!(plan.fingerprint_files, Vec::<String>::new());
+            // Assert
+            assert!(result.is_err(), "accepted absent {field}");
+        }
+    }
+}
+
+#[test]
+fn plan_config_preserves_explicit_required_arrays() {
+    for paths in [vec![], vec!["vendor", "src"]] {
+        // Arrange
+        let mut value = plan_value();
+        value["import_roots"] = serde_json::json!(paths);
+        value["fingerprint_files"] = serde_json::json!(paths);
+
+        // Act
+        let plan: PlanConfig = serde_json::from_value(value).unwrap();
+
+        // Assert
+        assert_eq!(plan.import_roots, paths);
+        assert_eq!(plan.fingerprint_files, paths);
+    }
 }
 
 #[test]
@@ -382,21 +409,81 @@ fn fixture_run_config() -> RunConfig {
 }
 
 #[test]
-fn import_roots_round_trip_and_missing_historical_run_field_defaults_empty() {
-    let mut config = fixture_run_config();
-    config.import_roots = vec!["vendor".into(), "src".into(), ".".into()];
-    let plan: PlanConfig =
-        serde_json::from_value(serde_json::to_value(config.clone().into_plan_config()).unwrap())
-            .unwrap();
-    plan.validate().unwrap();
-    assert_eq!(
-        plan.into_run_config(config.output.clone()).import_roots,
-        config.import_roots
-    );
-    let mut old = serde_json::to_value(config).unwrap();
-    old.as_object_mut().unwrap().remove("import_roots");
-    let old: RunConfig = serde_json::from_value(old).unwrap();
-    assert_eq!(old.import_roots, Vec::<camino::Utf8PathBuf>::new());
+fn run_config_rejects_absent_required_arrays() {
+    for field in ["import_roots", "fingerprint_files"] {
+        for replacement in [None, Some(serde_json::Value::Null)] {
+            // Arrange
+            let mut value = serde_json::to_value(fixture_run_config()).unwrap();
+            value.as_object_mut().unwrap().remove(field);
+            if let Some(replacement) = replacement {
+                value[field] = replacement;
+            }
+
+            // Act
+            let result = serde_json::from_value::<RunConfig>(value);
+
+            // Assert
+            assert!(result.is_err(), "accepted absent {field}");
+        }
+    }
+}
+
+#[test]
+fn run_config_preserves_explicit_required_arrays() {
+    for paths in [vec![], vec!["vendor", "src"]] {
+        // Arrange
+        let mut value = serde_json::to_value(fixture_run_config()).unwrap();
+        value["import_roots"] = serde_json::json!(paths);
+        value["fingerprint_files"] = serde_json::json!(paths);
+
+        // Act
+        let run: RunConfig = serde_json::from_value(value).unwrap();
+
+        // Assert
+        assert_eq!(run.import_roots, paths);
+        assert_eq!(run.fingerprint_files, paths);
+    }
+}
+
+proptest::proptest! {
+    #[test]
+    fn saved_configs_preserve_ordered_import_roots(
+        roots in proptest::collection::vec("[a-z]{1,8}", 0..8),
+    ) {
+        // Arrange: valid normalized roots, including meaningful order variations.
+        proptest::prop_assume!(roots.iter().collect::<std::collections::BTreeSet<_>>().len() == roots.len());
+        let mut config = fixture_run_config();
+        config.import_roots = roots.iter().map(Into::into).collect();
+
+        // Act
+        let run: RunConfig = serde_json::from_slice(&serde_json::to_vec(&config).unwrap()).unwrap();
+        let plan: PlanConfig = serde_json::from_slice(
+            &serde_json::to_vec(&config.into_plan_config()).unwrap(),
+        ).unwrap();
+        let restored = plan.into_run_config(OutputConfig::default());
+
+        // Assert: neither representation may erase or reorder import precedence.
+        proptest::prop_assert_eq!(run.import_roots, roots.clone());
+        proptest::prop_assert_eq!(restored.import_roots, roots);
+    }
+
+    #[test]
+    fn saved_plan_preserves_explicit_fingerprint_files(
+        files in proptest::collection::vec("[a-z]{1,8}\\.toml", 0..8),
+    ) {
+        // Arrange
+        let mut config = fixture_run_config();
+        config.fingerprint_files = files.clone();
+
+        // Act
+        let plan: PlanConfig = serde_json::from_slice(
+            &serde_json::to_vec(&config.into_plan_config()).unwrap(),
+        ).unwrap();
+        let restored = plan.into_run_config(OutputConfig::default());
+
+        // Assert: saved input retains the exact configured fingerprint file list.
+        proptest::prop_assert_eq!(restored.fingerprint_files, files);
+    }
 }
 
 #[test]
@@ -429,4 +516,17 @@ fn saved_selection_rejects_obsolete_sibling_fields() {
         // Assert: silently dropping the field could change the selected targets.
         assert!(result.is_err(), "accepted obsolete {field}");
     }
+}
+
+#[test]
+fn raw_config_keeps_the_default_for_omitted_import_roots() {
+    // Arrange
+    let mut value = serde_json::to_value(RawRunConfig::default()).unwrap();
+    value.as_object_mut().unwrap().remove("import_roots");
+
+    // Act
+    let raw: RawRunConfig = serde_json::from_value(value).unwrap();
+
+    // Assert
+    assert_eq!(raw.import_roots, Vec::<camino::Utf8PathBuf>::new());
 }

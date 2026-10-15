@@ -17,16 +17,16 @@ sources:
   sha256: 50a53fa428a46289ede33f60ae1bcc342f8cfa3b2a03e37ebc5ad127ff5444bc
 - id: policy
   resource: ../compatibility.md
-  revision: ad65b8ce55b0dabc59712775e362d5d614b27559
+  revision: 7c3a9105c432ec1e0ba2483ada42b10133d071a6
   working_tree: modified
-  sha256: 3cdfef25d386691949613a82d4901a619c57efcac2d9b58f5178681d0bd9935b
+  sha256: b060c02db7f6e3adc035a61f2d954caa387674b64cbb273269587e170baf0c1c
 - id: issue-887-environment
   resource: ../superpowers/plans/2026-10-14-issue-887.md
 - id: release
   resource: ../releases.md
-  revision: 056cb558953ddf5eb8b229976ee894ae7c6bc87f
+  revision: 7c3a9105c432ec1e0ba2483ada42b10133d071a6
   working_tree: modified
-  sha256: 44b3ea0e0256ed1653dd2e71d053bd8b9726d8fe4fa9711254bb36a82cfb8d14
+  sha256: ab819d8861ff623175247e55cee21968b34e4cb92ed76825dd408292de6bbe68
 - id: template
   resource: ../../.github/pull_request_template.md
   revision: 79b6bde29b05e9904c8efff59e02d0c45377d7f7
@@ -91,3 +91,14 @@ retain their meaning. [^issue-899-changed-selection][^issue-899-changed-review]
 [^issue-899-changed-selection]: [Typed changed selection design](../superpowers/specs/2026-10-15-issue-899-design.md).
 
 [^issue-899-changed-review]: [Issue 899 review and verification](../superpowers/reports/2026-10-15-issue-899-review.md). Current executed scopes, fixture corrections, limitations and release-floor checks.
+
+## Required saved arrays (Issue #923)
+
+The 0.9.0 minimum follows published v0.8.12. Typed saved configurations require
+explicit `import_roots` and `fingerprint_files` arrays; omission and null are
+rejected, while empty arrays remain valid. Verify rejects affected plans before
+baseline execution, and review rejects reports missing run import roots.
+Progress keeps its opaque configuration contract. Regenerate only plans missing
+the fields; read affected reports with their producing binary or rerun. Current
+writer-produced data needs no regeneration. Schema numbers and fingerprint bytes
+remain unchanged.[^policy][^release]

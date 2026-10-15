@@ -1526,8 +1526,14 @@ that corpus checks bounded selection behavior, not SQLite scheduling or a new pr
 `RawRunConfig.import_roots` normalizes to an ordered, duplicate-free list in
 `RunConfig` and `PlanConfig`, separate from `Selection.sources`. The normalized
 config validators reject escaped or non-normalized paths from persisted data.
-Historical run configs decode a missing list as empty. Plan schema 7 requires
-regeneration of earlier manifests before any baseline runs; fingerprint schema
+Saved run and plan configs require explicit `import_roots` and
+`fingerprint_files` arrays, including `[]` when no entries are configured. Missing
+or null arrays fail decoding in typed configuration/event readers and review;
+verify rejects affected plans before baseline execution. Progress retains its
+opaque `normalized_config` object/null contract. Current writer output needs no
+regeneration; see the [0.9.0 compatibility notice](compatibility.md#required-saved-configuration-arrays-in-090)
+for older inputs missing an array. Plan schema 7 still requires regeneration of
+earlier manifests before any baseline runs; fingerprint schema
 11 frames the ordered import roots under field tag 9, the ordered include/exclude
 copy patterns under tags 10/11, and configured source roots under tag 12,
 preventing old-session reuse. Source file hashes retain their set semantics;

@@ -1381,20 +1381,48 @@ async fn verify_exact_file_ignores_nested_names_but_rejects_root_change() {
 }
 
 #[tokio::test]
-async fn verify_accepts_legacy_manifest_without_fingerprint_files() {
-    let project = Project::new();
-    let (path, manifest, _marker) = write_plan_manifest(&project, &[]).await;
-    let requested = vec![manifest.candidates[0].id.clone()];
-    let mut value = serde_json::to_value(manifest).unwrap();
-    value["normalized_config"]
-        .as_object_mut()
-        .unwrap()
-        .remove("fingerprint_files");
-    write_json(&path, &value);
+async fn verify_rejects_absent_required_arrays_before_baseline() {
+    for field in ["import_roots", "fingerprint_files"] {
+        for replacement in [None, Some(serde_json::Value::Null)] {
+            // Arrange
+            let project = Project::new();
+            let (path, manifest, marker) = write_plan_manifest(&project, &[]).await;
+            let requested = manifest.candidates[0].id.clone();
+            let mut value = serde_json::to_value(manifest).unwrap();
+            value["normalized_config"]
+                .as_object_mut()
+                .unwrap()
+                .remove(field);
+            if let Some(replacement) = replacement {
+                value["normalized_config"][field] = replacement;
+            }
+            write_json(&path, &value);
+            let stdout = CollectingWriter::default();
+            let stderr = CollectingWriter::default();
 
-    let verified = prepare_verify(&path, &requested, OutputFormat::Json).await;
+            // Act
+            let code = hoimin_cli::run_with_writers(
+                [
+                    "hoimin",
+                    "verify",
+                    path.to_str().unwrap(),
+                    "--candidate",
+                    &requested,
+                    "--format",
+                    "jsonl",
+                ],
+                stdout.clone(),
+                stderr.clone(),
+            )
+            .await;
 
-    assert!(verified.is_ok(), "{verified:?}");
+            // Assert
+            assert_eq!(code, 2, "accepted absent {field}");
+            assert!(stdout.is_empty(), "invalid plan emitted execution events");
+            assert!(String::from_utf8_lossy(&stderr.snapshot()).contains("plan.manifest.invalid"));
+            assert!(!marker.exists(), "invalid plan launched the test command");
+        }
+    }
 }
 
 #[tokio::test]

@@ -274,3 +274,29 @@ fn saved_configs_reject_zero_durations_before_semantic_validation() {
         );
     }
 }
+
+#[test]
+fn run_started_rejects_absent_import_roots() {
+    for replacement in [None, Some(serde_json::Value::Null)] {
+        // Arrange
+        let mut started = RunStarted::minimal("run-1", 1, test_resource_control());
+        started.normalized_config = Some(config(CommandArg::Unix(b"python".to_vec()), None));
+        let mut value = serde_json::to_value(OutputEvent::RunStarted(started)).unwrap();
+        value["normalized_config"]
+            .as_object_mut()
+            .unwrap()
+            .remove("import_roots");
+        if let Some(replacement) = replacement {
+            value["normalized_config"]["import_roots"] = replacement;
+        }
+
+        // Act
+        let result = serde_json::from_value::<OutputEvent>(value);
+
+        // Assert
+        assert!(
+            result.is_err(),
+            "accepted absent import_roots in typed event"
+        );
+    }
+}

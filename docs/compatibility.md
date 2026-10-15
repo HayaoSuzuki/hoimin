@@ -4,6 +4,25 @@ hoimin is currently a 0.x CLI. This policy describes how maintainers classify
 changes and tell users what to update. A patch release can fix incorrect
 behavior; it does not promise identical mutation candidates or scores.
 
+## Required saved configuration arrays in 0.9.0
+
+Normalized saved configurations require explicit `import_roots` and
+`fingerprint_files` arrays. Run configuration no longer fills in missing
+`import_roots`, and plan configuration no longer fills in missing
+`fingerprint_files`. Missing and null arrays are rejected; empty arrays (`[]`)
+and nonempty arrays remain supported. Typed run-event readers and review's
+report reader enforce the run configuration contract. Verify rejects affected
+plans before running a baseline. Progress continues to treat `normalized_config`
+as an opaque object or null.
+
+Regenerate plans missing either array. Read reports missing `import_roots` with
+their producing binary, or rerun to obtain current output. Data from current
+writers already includes these arrays and needs no regeneration. Files are not
+converted or deleted automatically. Raw CLI defaults, optional fields, plan
+schema 7, report schema 6, session schema 5, fingerprint schema 11 and fingerprint
+bytes remain unchanged. The minimum release version is 0.9.0 because v0.8.12
+was already published when this accepted-input change was prepared.
+
 ## Typed mutation outcomes in 0.8.0
 
 Report schema 6 replaces independently stored mutation status and optional evidence
