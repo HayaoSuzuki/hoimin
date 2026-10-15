@@ -117,6 +117,11 @@ sources:
   working_tree: modified
   sha256: f0eb61d7bfd1bae452fe9993d8a058f902fc42c04d68a308dee995f14b52ca5f
 
+- id: issue-913-portable
+  resource: ../../../crates/hoimin-cli/src/resource/portable.rs
+  revision: 64ac5038afa1396e7fe237d17dd82641dee25c56
+  working_tree: modified
+  sha256: ab9cdbedfffa102c302e105a64eb9714ff1d254a4175af8381e64b59e99d2a38
 - id: issue-898-design
   resource: ../../superpowers/specs/2026-10-15-issue-898-design.md
   revision: 51c9e26b9d0006cac150b3833cb797a59349bac1
@@ -150,6 +155,25 @@ Hoiminは、実行にかかった経過時間（wall-clock時間）、子孫プ�
 WindowsのJob ObjectとLinuxのcgroup v2では、baselineまたはmutantの各rootプロセスと子孫に、それぞれメモリ・プロセス数の上限全量を適用する。Linuxのプロセス数制限はスレッドを含むtask数である。並列度をJとすると合計は各上限のJ倍に近づきうる。Hoiminのrun用の親には合計メモリ・プロセス数の上限を設定せず、ホスト側の祖先の制限は引き続き有効である。resource modeのhardは制限の強制方法を表し、run全体の合計制限を意味しない。[^readme]
 
 Unix向けの共通実装（portable経路）では、Hoiminが直接起動して管理するプロセス（root）が生存中にタイムアウトまたはキャンセルを受けると、そのプロセスグループを終了させ、rootの終了状態を回収する（reap）。rootが自然終了した後に残る子孫プロセスの後処理は保証範囲外である。これは利用方法に記載された契約の要約であり、今回すべてのOSで実測した結果ではない。[^readme]
+
+## Unix portable process-group authority (Issue 913)
+
+The private `ProcessGroup` state stores either no identifier, a signalable PGID,
+or a probe-only PGID. Recording root reap removes signal authority immediately.
+Reap notification is idempotent; termination and quiescence refresh also disarm
+before their fallible existence probe. An error or a present group retains the
+probe-only identifier. Only confirmed absence discards it. Drop uses the same
+termination path and cannot signal a retained probe-only PGID.[^issue-913-portable]
+
+A missing identifier alone is not absence evidence. `terminated` and
+`tree_quiescent` remain independent facts: a successful termination can still
+require later quiescence confirmation. This representation adds no cleanup
+promise for descendants after root reap, and changes no shared supervisor API,
+Windows Job Object, Linux cgroup, CLI, or saved format. The
+[verification record](../../superpowers/reports/2026-10-15-issue-913-review.md)
+distinguishes fake syscall tests from real OS integration coverage.
+
+[^issue-913-portable]: [Unix portable supervisor state and operations](../../../crates/hoimin-cli/src/resource/portable.rs).
 
 # 最終結果の確定と出力完了
 

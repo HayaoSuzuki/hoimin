@@ -12,6 +12,10 @@ sources:
   sha256: c4c11806e1e8b6e9ad722f65c1ce42da8b0277809b4c2b9b039a222058d3bd48
 
 
+- id: issue-913-review
+  resource: ../../superpowers/reports/2026-10-15-issue-913-review.md
+  working_tree: untracked
+  sha256: d726b9508fe067fcfeed30282e9f15feaec63a206539830dc3bbf20c38d125e3
 - id: issue-898-process-review
   resource: ../../superpowers/reports/2026-10-15-issue-898-review.md
   revision: 51c9e26b9d0006cac150b3833cb797a59349bac1
@@ -1534,6 +1538,14 @@ sources:
 | Worker-owned state review and verification | [Original](../../superpowers/reports/2026-10-15-issue-897-review.md) [^issue-897-review] |
 
 [^issue-897-review]: [Original record](../../superpowers/reports/2026-10-15-issue-897-review.md). Implementation design and explicitly scoped execution evidence.
+
+## Issue 913 Unix process-group authority
+
+| Original heading | Source |
+| --- | --- |
+| Issue 913 implementation and verification | [Source](../../superpowers/reports/2026-10-15-issue-913-review.md) [^issue-913-review] |
+
+[^issue-913-review]: [Issue 913 implementation and verification](../../superpowers/reports/2026-10-15-issue-913-review.md). Unix signal authority, characterization and platform limits.
 
 ## Issue 898 process requests
 

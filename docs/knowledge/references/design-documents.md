@@ -11,6 +11,10 @@ sources:
   working_tree: clean
   sha256: db6d7171357601e158950fa4eeae4dc41fdb79a7411a2e9e5224f9d620997ffb
 
+- id: issue-913-design
+  resource: ../../superpowers/specs/2026-10-15-issue-913-design.md
+  working_tree: untracked
+  sha256: d657528208632bd2c27f35b8365a8822e57aa213999cff4de0310b516295265f
 - id: issue-898-process-design
   resource: ../../superpowers/specs/2026-10-15-issue-898-design.md
   revision: 51c9e26b9d0006cac150b3833cb797a59349bac1
@@ -1720,6 +1724,14 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 | Worker-owned execution state | [Original](../../superpowers/specs/2026-10-15-issue-897-worker-state-design.md) [^issue-897-design] |
 
 [^issue-897-design]: [Original record](../../superpowers/specs/2026-10-15-issue-897-worker-state-design.md). Implementation design and explicitly scoped execution evidence.
+
+## Issue 913 Unix process-group authority
+
+| Original heading | Source |
+| --- | --- |
+| Issue 913: Unix process-group authority | [Source](../../superpowers/specs/2026-10-15-issue-913-design.md) [^issue-913-design] |
+
+[^issue-913-design]: [Issue 913: Unix process-group authority](../../superpowers/specs/2026-10-15-issue-913-design.md). Unix signal authority, characterization and platform limits.
 
 ## Issue 898 process requests
 
