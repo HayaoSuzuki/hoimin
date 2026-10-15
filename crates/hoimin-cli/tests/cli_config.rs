@@ -1585,10 +1585,30 @@ fn run_help_explains_windows_per_root_resource_scope() {
     }
 }
 
+proptest::proptest! {
+    #[test]
+    fn changed_context_normalizes_supported_values(
+        parser in 0..2_usize,
+        context in proptest::prop_oneof![proptest::strategy::Just(0_u32), proptest::strategy::Just(1_073_741_823_u32), 0..=1_073_741_823_u32],
+    ) {
+        // Arrange.
+        let (command, parse_config) = CONFIG_PARSERS[parser];
+        let context_arg = context.to_string();
+        let command_line = ["hoimin", command, "--source", "src", "--changed", "--changed-context", &context_arg, "--", "python"];
+
+        // Act.
+        let config = parse_config(&command_line).unwrap();
+
+        // Assert.
+        proptest::prop_assert_eq!(config.selection.changed.as_ref().unwrap().context(), context);
+    }
+}
+
 #[test]
-fn changed_context_parses_for_run_and_plan_and_checks_bounds() {
-    for (command, parse_config) in CONFIG_PARSERS {
-        for context in ["0", "1", "1073741823"] {
+fn changed_context_rejects_invalid_cli_values() {
+    for (command, _) in CONFIG_PARSERS {
+        for context in ["-1", "1073741824", "4294967296", "abc"] {
+            // Arrange.
             let command_line = [
                 "hoimin",
                 command,
@@ -1600,40 +1620,31 @@ fn changed_context_parses_for_run_and_plan_and_checks_bounds() {
                 "--",
                 "python",
             ];
-            let config = parse_config(&command_line).unwrap();
-            assert_eq!(
-                serde_json::to_value(config).unwrap()["selection"]["changed_context"],
-                context.parse::<u32>().unwrap()
-            );
+            // Act.
+            let result = parse_from(command_line);
+            // Assert.
+            assert!(result.is_err(), "{command}: {context}");
         }
-        for context in ["-1", "1073741824", "4294967296", "abc"] {
-            assert!(
-                parse_from([
-                    "hoimin",
-                    command,
-                    "--source",
-                    "src",
-                    "--changed",
-                    "--changed-context",
-                    context,
-                    "--",
-                    "python"
-                ])
-                .is_err()
-            );
-        }
-        assert!(
-            parse_from([
-                "hoimin",
-                command,
-                "--source",
-                "src",
-                "--changed-context",
-                "0",
-                "--",
-                "python"
-            ])
-            .is_err()
-        );
+    }
+}
+
+#[test]
+fn explicit_zero_changed_context_requires_changed_flag() {
+    for (command, _) in CONFIG_PARSERS {
+        // Arrange.
+        let command_line = [
+            "hoimin",
+            command,
+            "--source",
+            "src",
+            "--changed-context",
+            "0",
+            "--",
+            "python",
+        ];
+        // Act.
+        let result = parse_from(command_line);
+        // Assert.
+        assert!(result.is_err(), "{command}");
     }
 }

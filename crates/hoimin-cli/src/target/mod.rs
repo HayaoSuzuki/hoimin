@@ -37,15 +37,15 @@ impl TargetHandler {
         let explicit = resolve_explicit(selection, &discovered)?;
         tracing::debug!(targets = explicit.len(), "resolved explicit targets");
         validate_symbols(selection, &explicit)?;
-        if !selection.changed {
+        let Some(changed_selection) = &selection.changed else {
             return Ok(explicit);
-        }
+        };
 
         let changed = resolve_changed_scoped(
             &selection.root,
-            selection.diff_base.as_deref(),
+            changed_selection.diff_base(),
             Some(&explicit),
-            selection.changed_context,
+            changed_selection.context(),
         )
         .await?;
         if explicit.is_empty()

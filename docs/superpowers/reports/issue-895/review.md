@@ -230,3 +230,44 @@ Merged main 42e2b5b63bd92e3f926c4bec74b1c230e8fc9240 (squashed PRs 905 and 907) 
 Independent read-only review covered five distinct boundaries (production types, schema/goldens, test adapters, migration guidance, and catalog/provenance). It identified the same compatibility grammar defect, corrected before commit; any further findings and actual verification results follow below.
 
 Fresh validation: core all-target contracts produced 32 successful summaries, 431 passed, zero failed, two ignored. CLI contracts library plus 14 selected integration targets produced 17 successful summaries, 1,217 passed, zero failed and 18 ignored, including nested subprocess summaries (not a unique-test count). Complete Python: 1,010 passed, 29 skipped. All-workspace/all-target/all-feature Clippy with warnings denied, Ruff lint/format, ty, workspace formatting and documented site build passed. Independent review found no additional actionable finding after the compatibility grammar correction. No production or test expectation change was needed beyond composing the current-schema fixtures and retaining the correct reader/assertion. A repeated full workspace behavioral suite is not claimed.
+
+
+## ChangedSelection main integration (2026-10-15)
+
+Merged main 81182823f72c9c433ecaa9984fef1cf89d61a270 (squashed PR 906) into published head 1efa21eb64b44a9599fd2d53e57ff07081936885. Six conflicted paths comprised one test name and five shared documentation files. Production code and the four current golden files merged automatically. The recurrence follows sequential integration of separate PRs that edit the same public configuration/schema/fixture/documentation surfaces; textual conflict alone is not evidence of unstable execution semantics. This integration checks those semantics rather than inferring correctness from the automatic merge.
+
+### Design review passes
+
+1. Read the merged selection normalization: ChangedSelection owns context/base and rejects invalid or obsolete sibling shapes before consumers observe it.
+2. Compared SessionMode, WorkerState and MutationOutcome boundaries: changed target selection does not acquire session intent or execution evidence responsibilities.
+3. Checked Plan 7, report 6 and session database 5 as independent format boundaries; retained the current-only rejection policies without adding conversion paths.
+4. Read the target Git adapter after automatic merge to preserve context, base and selector intersections.
+5. Inspected shared report schema/goldens: ChangedSelection, SessionMode and MutationOutcome coexist, retaining report lifecycle/identity/summary rules.
+
+### Integration plan review passes
+
+1. Imported signed main with gh Git Data API and exact SHA checks, then merged published ancestry without rebasing or force updates.
+2. Limited manual resolution to the test name and shared documentation; automatic golden/production merges require explicit validation rather than manual rewrites.
+3. Selected complete core contracts and CLI library plus affected selection/plan/report/progress/session/E2E targets to exercise the shared boundaries.
+4. Selected all-target/all-feature workspace Clippy, full Python tests, static/format checks, documented docs build and provenance separately.
+5. Preserved evidence logs outside an isolated jobs1/debug0/incremental0 target; clean only after process exit and path/type/inactivity verification.
+
+### Implementation review passes
+
+1. Retained main's current-schema test name; the body and version constant assertion preserve the existing resume/report validation.
+2. Checked the four automatic v6 goldens for typed changed selection while preserving outcome/session evidence; schema-5 and older fixtures remain unchanged.
+3. Reconciled usage and compatibility to Plan 7 without dropping the mutation-outcome section or session database schema-5 requirement. The selection/plan knowledge page also retained an old current-format sentence from main; both remaining branches now distinguish current Plan7/Report6 from the Plan6/Report5 environment-format introduction using identical wording.
+4. Preserved both parent source ID/footnote sets and additive catalog sections, using bounded conflict-marker matching rather than broad document replacement.
+5. Independent review found a line-wrapped old Plan6 sentence. An initial exact-string replacement failed its assertion; direct file read detected the residual sentence, and the second replacement matched the actual wrapped text. Readback and docs checks confirmed the correction. A reviewer initially misreported it as corrected; the parent verified the actual bytes independently.
+
+### Verification review passes
+
+1. Read fresh complete core contract results and ignored counts, including changed selection, configuration and typed outcome/session boundaries.
+2. Read complete selected CLI target summaries, preserving any nested subprocess count scope; report/plan golden readers and E2E execute rather than merely compile.
+3. Read the full Python summary separately from Ruff/ty checks and preserve skipped cases explicitly.
+4. Read all-target/all-feature Clippy completion with warnings denied; check workspace formatting, docs publication, unresolved paths and whitespace separately.
+5. Refresh only the three edited review observations, validate owned hashes and canonical historical sources, and confirm both parent catalogs survive before committing.
+
+Independent five-boundary review checked target semantics, strict format contracts, schema/goldens, test adapters and documentation/source preservation. No production semantic conflict was found; the stale documentation sentence above was corrected. These findings do not prove untested platform behavior or make future overlapping merges unnecessary.
+
+Fresh verification completed: core all-target contracts 33 successful result summaries, 437 passed, zero failed, two ignored. CLI contracts library plus 12 affected integrations produced 15 successful summaries, 1,348 passes, zero failures and 18 ignored, including nested subprocess summaries (not a unique-test count); the cfg-only changed_excluded_paths target executes zero tests on Windows. Complete Python: 1,021 passed, 29 skipped. All-workspace/all-target/all-feature Clippy with warnings denied, Ruff lint/format, ty, workspace formatting and documented site build passed. No new production behavior or test expectation repair was necessary. This is a scoped integration verification rather than another full workspace behavioral suite.

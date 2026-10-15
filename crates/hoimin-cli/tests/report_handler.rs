@@ -444,7 +444,7 @@ fn render_json_report(events: &[OutputEvent]) -> Vec<u8> {
 fn assert_report_optionals(document: &serde_json::Value, current: bool) {
     for pointer in [
         "/run/normalized_config",
-        "/run/normalized_config/selection/diff_base",
+        "/run/normalized_config/selection/changed/diff_base",
         "/run/normalized_config/output/metrics",
         "/run/normalized_config/session",
         "/mutants/0/candidate/symbol",
@@ -478,7 +478,10 @@ fn assert_event_optionals(events: &[OutputEvent], current: bool) {
         panic!("golden sequence must begin with run_started");
     };
     let config = started.normalized_config.as_ref().unwrap();
-    assert_eq!(config.selection.diff_base.as_deref(), Some("golden-base"));
+    assert_eq!(
+        config.selection.changed.as_ref().unwrap().diff_base(),
+        Some("golden-base")
+    );
     assert_eq!(
         config
             .output
@@ -2272,7 +2275,7 @@ fn historical_schema_three_goldens_validate_the_archived_raw_contract() {
 }
 
 #[tokio::test]
-async fn public_resume_reports_validate_schema_six_in_json_and_jsonl() {
+async fn public_resume_reports_validate_current_schema_in_json_and_jsonl() {
     let repo = repo_root();
     let event_schema = read_schema(&repo.join("docs/json-schema/run-event.schema.json"));
     let result_schema = read_schema(&repo.join("docs/json-schema/run-result.schema.json"));

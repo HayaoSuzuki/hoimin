@@ -11,6 +11,12 @@ sources:
   working_tree: clean
   sha256: db6d7171357601e158950fa4eeae4dc41fdb79a7411a2e9e5224f9d620997ffb
 
+- id: issue-899-changed-selection-design
+  resource: ../../superpowers/specs/2026-10-15-issue-899-design.md
+  revision: 7b6cb19ba0181759f6b5726f985c5fd7700d313e
+  working_tree: clean
+  sha256: fa68b3e4aa56ab0ee3dd19f818a0b932a033dce550dbc869f956c261578b501f
+
 - id: issue-896-typed-session-design
   resource: ../../superpowers/specs/2026-10-15-issue-896-typed-session-design.md
   revision: 31245fbf096967b36bc15523067080b506f88fe9
@@ -1708,5 +1714,13 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 | Worker-owned execution state | [Original](../../superpowers/specs/2026-10-15-issue-897-worker-state-design.md) [^issue-897-design] |
 
 [^issue-897-design]: [Original record](../../superpowers/specs/2026-10-15-issue-897-worker-state-design.md). Implementation design and explicitly scoped execution evidence.
+
+## Issue 899 changed selection
+
+| Original heading | Source |
+| --- | --- |
+| Issue 899: Typed changed selection | [Design](../../superpowers/specs/2026-10-15-issue-899-design.md) [^issue-899-changed-selection-design] |
+
+[^issue-899-changed-selection-design]: [Design](../../superpowers/specs/2026-10-15-issue-899-design.md). Typed changed selection, strict saved-shape rejection and the 0.8.0 public-schema floor.
 
 [^issue-896-typed-session-design]: [正規化済みセッションモード](../../superpowers/specs/2026-10-15-issue-896-typed-session-design.md).

@@ -12,6 +12,12 @@ sources:
   sha256: c4c11806e1e8b6e9ad722f65c1ce42da8b0277809b4c2b9b039a222058d3bd48
 
 
+- id: issue-899-changed-selection-review
+  resource: ../../superpowers/reports/2026-10-15-issue-899-review.md
+  revision: ad65b8ce55b0dabc59712775e362d5d614b27559
+  working_tree: modified
+  sha256: 50a53fa428a46289ede33f60ae1bcc342f8cfa3b2a03e37ebc5ad127ff5444bc
+
 - id: issue-896-review
   resource: ../../superpowers/reports/2026-10-15-issue-896-review.md
   revision: e7e3cae8c4e048ee77d2bf644b47da1792211cbe
@@ -865,9 +871,9 @@ sources:
   sha256: 2447ba6b0a732455911e9cb9737854c9a4c973e86f8334b36674faa201473302
 - id: issue-895-review
   resource: ../../superpowers/reports/issue-895/review.md
-  revision: 353cd427615cb29024f2b413b7b9ef6dd8b4260d
+  revision: 1efa21eb64b44a9599fd2d53e57ff07081936885
   working_tree: modified
-  sha256: d2fc29793e5c70c22ad55acc7612282092952a57305fdc6a9df51b8e12e3c4de
+  sha256: d0d64d96b10377ea1491e317b63cbe658f1ea89148475105fc301f51ca4b2656
 
 ---
 
@@ -1523,6 +1529,14 @@ sources:
 
 [^issue-897-review]: [Original record](../../superpowers/reports/2026-10-15-issue-897-review.md). Implementation design and explicitly scoped execution evidence.
 
+
+## Issue 899 changed selection
+
+| Original heading | Source |
+| --- | --- |
+| Issue 899 review and verification | [Review and verification](../../superpowers/reports/2026-10-15-issue-899-review.md) [^issue-899-changed-selection-review] |
+
+[^issue-899-changed-selection-review]: [Review and verification](../../superpowers/reports/2026-10-15-issue-899-review.md). Windows execution evidence, initial fixture failures with focused corrections, CRLF formal-check limits, and the separately checked release-floor follow-up.
 
 [^issue-896-review]: [Issue 896 review and verification](../../superpowers/reports/2026-10-15-issue-896-review.md).
 [^issue-900-design]: [Typed disk failure design](../../superpowers/reports/issue-900/design.md).

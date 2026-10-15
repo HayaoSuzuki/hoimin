@@ -102,9 +102,10 @@
       "profile": "full",
       "root": ".",
       "selection": {
-        "changed": true,
-        "changed_context": 0,
-        "diff_base": "golden-base",
+        "changed": {
+          "context": 0,
+          "diff_base": "golden-base"
+        },
         "excludes": [],
         "files": [],
         "includes": [],

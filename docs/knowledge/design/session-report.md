@@ -5,6 +5,17 @@ description: 保存・復旧の権限、スキーマ移行、結果の生成側�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-899-changed-selection
+  resource: ../../superpowers/specs/2026-10-15-issue-899-design.md
+  revision: 7b6cb19ba0181759f6b5726f985c5fd7700d313e
+  working_tree: clean
+  sha256: fa68b3e4aa56ab0ee3dd19f818a0b932a033dce550dbc869f956c261578b501f
+- id: issue-899-changed-review
+  resource: ../../superpowers/reports/2026-10-15-issue-899-review.md
+  revision: ad65b8ce55b0dabc59712775e362d5d614b27559
+  working_tree: modified
+  sha256: 50a53fa428a46289ede33f60ae1bcc342f8cfa3b2a03e37ebc5ad127ff5444bc
+
 - id: issue-896-config
   resource: ../../../crates/hoimin-core/src/config.rs
   revision: e7e3cae8c4e048ee77d2bf644b47da1792211cbe
@@ -127,9 +138,9 @@ sources:
   sha256: 283d6d959f953906bb88271e7146d18ecc9a39a7ca12813f13552247a30f544d
 - id: issue-895-review
   resource: ../../superpowers/reports/issue-895/review.md
-  revision: 353cd427615cb29024f2b413b7b9ef6dd8b4260d
+  revision: 1efa21eb64b44a9599fd2d53e57ff07081936885
   working_tree: modified
-  sha256: d2fc29793e5c70c22ad55acc7612282092952a57305fdc6a9df51b8e12e3c4de
+  sha256: d0d64d96b10377ea1491e317b63cbe658f1ea89148475105fc301f51ca4b2656
 - id: issue-895-outcome
   resource: ../../../crates/hoimin-core/src/resume.rs
   revision: 31245fbf096967b36bc15523067080b506f88fe9
@@ -257,7 +268,7 @@ Report schema 6 retains the validated `environment` snapshot introduced in schem
 5 in place of separate names and an optional hash. Progress and review consume
 the writer's schema; preserve schema-5 and older reports with their producing
 binary or rerun rather than rewriting their version fields. Captured plaintext never enters snapshot metadata.
-Plan schema 6 requires regeneration of older plans. Fingerprint schema 11 and its
+Plan schema 7 requires regeneration of older plans. Fingerprint schema 11 and its
 exact bytes remain stable, so this format change alone does not require a new
 session; the current typed-outcome contract uses SQLite schema 5. [^issue-887-environment]
 
@@ -328,6 +339,21 @@ and both report/progress oracle projections when changing this boundary.
 [^issue-895-outcome]: [MutationOutcome and result domain](../../../crates/hoimin-core/src/resume.rs).
 [^issue-895-session-schema]: [Current session schema](../../../crates/hoimin-cli/src/session/schema.rs).
 
+
+## Typed changed selection (Issue #899)
+
+Plan schema 7 and report schema 6 store changed selection as null when disabled,
+or as an object containing required bounded `context` and optional `diff_base`
+when enabled. Boolean changed values and the former sibling context/base fields
+are rejected. Regenerate older plans; preserve older reports with their producing
+binary or rerun. No conversion updates existing files. The CLI's flags, explicit
+selector intersections, Git base semantics, and effective target fingerprints
+retain their meaning. [^issue-899-changed-selection][^issue-899-changed-review]
+
+[^issue-899-changed-selection]: [Typed changed selection design](../../superpowers/specs/2026-10-15-issue-899-design.md).
+
+[^issue-899-changed-review]: [Issue 899 review and verification](../../superpowers/reports/2026-10-15-issue-899-review.md). Current executed scopes, fixture corrections, limitations and release-floor checks.
+
 ## Normalized session intent (Issue #896)
 
 Raw CLI input retains `--session` and `--resume`. Normalization converts them once
@@ -339,7 +365,7 @@ mode without replacing its intent.[^issue-896-config][^issue-896-design]
 Report schema 6 serializes disabled intent as `{"mode":"disabled"}` and enabled
 intent as `{"mode":"fresh","config":{"path":"..."}}` or the corresponding
 `resume` mode. Normalized readers reject the obsolete independent `resume` field
-and old session objects. Plan schema 6 still omits runtime session intent, and
+and old session objects. Plan schema 7 still omits runtime session intent, and
 session database schema 5 stores typed mutation outcomes. `SessionLoadOutcome` and report
 `ResumeOutcome` describe the observed selection result, not the request mode.
 CLI options, session exclusions and metrics collision rules remain in their

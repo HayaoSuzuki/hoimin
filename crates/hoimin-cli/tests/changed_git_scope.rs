@@ -79,16 +79,16 @@ impl Repository {
         Selection {
             root: Utf8PathBuf::from_path_buf(self.root().to_owned()).unwrap(),
             sources: vec!["selected".into()],
-            changed: true,
+            changed: Some(hoimin_core::ChangedSelection::default()),
             ..Selection::default()
         }
     }
     async fn compare(&self, context: u32, base: Option<String>) -> Vec<TargetSlice> {
         let mut selection = self.selection();
-        selection.changed_context = context;
-        selection.diff_base.clone_from(&base);
+        selection.changed =
+            Some(hoimin_core::ChangedSelection::new(context, base.clone()).unwrap());
         let changed = TargetHandler::resolve(&selection).await.unwrap();
-        selection.changed = false;
+        selection.changed = None;
         let eligible = TargetHandler::resolve(&selection).await.unwrap();
         // The unscoped public API retains the historical whole-repository algorithm.
         if context == 0 {
@@ -344,10 +344,10 @@ async fn literal_pathspecs_preserve_supported_names_and_existing_colon_rejection
     let mut selection = repo.selection();
     selection.sources.clear();
     selection.files = names.iter().map(|name| (*name).into()).collect();
-    selection.changed = false;
+    selection.changed = None;
     let eligible = TargetHandler::resolve(&selection).await.unwrap();
     assert_eq!(eligible.len(), names.len());
-    selection.changed = true;
+    selection.changed = Some(hoimin_core::ChangedSelection::default());
     let actual = TargetHandler::resolve(&selection).await.unwrap();
     let historical = handle_git(ResolveGitChanges {
         id: EffectId(2),
@@ -393,7 +393,8 @@ async fn empty_scope_still_validates_diff_base_and_repository() {
     repo.git(&["commit", "--allow-empty", "-qm", "initial"])
         .await;
     let mut selection = repo.selection();
-    selection.diff_base = Some("no-such-revision".into());
+    selection.changed =
+        Some(hoimin_core::ChangedSelection::new(0, Some("no-such-revision".into())).unwrap());
     assert!(matches!(
         TargetHandler::resolve(&selection).await,
         Err(hoimin_core::TargetError::GitFailed(_))
@@ -401,7 +402,7 @@ async fn empty_scope_still_validates_diff_base_and_repository() {
     let outside = tempfile::tempdir().unwrap();
     std::fs::create_dir(outside.path().join("selected")).unwrap();
     selection.root = Utf8PathBuf::from_path_buf(outside.path().to_owned()).unwrap();
-    selection.diff_base = None;
+    selection.changed = Some(hoimin_core::ChangedSelection::default());
     assert!(matches!(
         TargetHandler::resolve(&selection).await,
         Err(hoimin_core::TargetError::GitRepositoryRequired)
