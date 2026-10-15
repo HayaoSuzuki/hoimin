@@ -6428,14 +6428,13 @@ fn type_annotations_resolve_unaliased_and_aliased_collections_abc_modules() {
 
 #[test]
 fn qualified_annotation_spelling_uses_the_matching_provider_member() {
+    let parsed =
+        parse_module("import collections.abc as abc\nimport typing as t\nimport collections.abc\n")
+            .unwrap();
     let mut imports = super::KnownImports::default();
-    imports
-        .modules
-        .insert("abc".into(), "collections.abc".into());
-    imports.modules.insert("t".into(), "typing".into());
-    imports
-        .modules
-        .insert("collections".into(), "collections".into());
+    for statement in &parsed.syntax().body {
+        imports.transfer_statement(statement);
+    }
     let targets = &["typing.AbstractSet", "collections.abc.Set"];
     for (source, expected) in [
         ("abc.Sequence", "abc.Set"),

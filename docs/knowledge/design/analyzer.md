@@ -5,6 +5,21 @@ description: 構文・名前解決・変更するバイト範囲・候補保持�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-935-bindings
+  resource: ../../../crates/hoimin-cli/src/analyzer/rust.rs
+  revision: 5237d1e53a2c8b34fca80f6eeb7d644a01d732e2
+  working_tree: modified
+  sha256: 07748a919716ded038afecfed1fe7288d78ae5c5ff119b129e778c0a5cee36c0
+- id: issue-935-tests
+  resource: ../../../crates/hoimin-cli/src/analyzer/known_imports_tests.rs
+  revision: 5237d1e53a2c8b34fca80f6eeb7d644a01d732e2
+  working_tree: untracked
+  sha256: 82141fe8dcedb0bcca268600e8351b3cbde6dd4a9048485fac00d5a3c7d05537
+- id: issue-935-evidence
+  resource: ../../superpowers/plans/2026-10-16-issue-935.md
+  revision: 5237d1e53a2c8b34fca80f6eeb7d644a01d732e2
+  working_tree: untracked
+  sha256: 1ef27c5122656ae5da633cdb3a16f3524cd1c18d874fa5f6c08b1b083dd01f08
 - id: issue-929-plan
   resource: ../../../crates/hoimin-cli/src/plan.rs
   revision: 0d3fbc1a1821074d6ba8a2a212116241adc85c4e
@@ -1053,3 +1068,37 @@ adds no operator, format migration, performance claim or formal guarantee.
 Recheck canonical names and ordering if the candidate boundary is later changed.
 
 [^issue-930-token-operators]: [Token dispatch, replacement and candidate construction](../../../crates/hoimin-cli/src/analyzer/rust.rs).
+
+
+# Known binding categories (Issue #935)
+
+`KnownImports` stores one private `KnownBinding` per local name. A binding is a
+direct import, a module import, or a type variable; direct and module variants
+also hold the resolved name. This represents their exclusivity in the type and
+removes synchronization across three collections during invalidation, copying,
+intersection and clearing. Flow exit categories and the name-resolution index
+remain separate.[^issue-935-bindings]
+
+Intersection retains a name only when both category and payload agree. A wildcard
+from `typing` or `collections.abc` retains module aliases only; other wildcard
+imports clear all known bindings. TypeVars do not count as known imports for
+stability checks and are excluded from supported scalar annotations even when
+named `str` or `int`.
+Replacement selection still prefers direct aliases, then module spellings, with
+a lexical minimum within each category. Class global/nonlocal projection and
+PEP 695 shadowing retain their existing rules.[^issue-935-bindings]
+
+The source-driven tests characterize category replacement, copying, wildcard
+retention, annotation classification and spelling priority. Parameter tables
+cover category/payload agreement; proptest checks intersection idempotence,
+commutativity and associativity. Existing Lean correspondence adapters keep the
+same sorted `direct:`, `module:` and `type-var:` facts. Clone instrumentation
+counts the single map's entries. The representation change makes no speed claim:
+spelling searches may also scan TypeVars. Changing classification, wildcard or
+spelling rules requires rechecking these tests and the existing oracle cases.
+Execution evidence and its limits are recorded in the implementation plan.
+[^issue-935-tests][^issue-935-evidence]
+
+[^issue-935-bindings]: [KnownImports implementation](../../../crates/hoimin-cli/src/analyzer/rust.rs).
+[^issue-935-tests]: [Known binding behavior and intersection properties](../../../crates/hoimin-cli/src/analyzer/known_imports_tests.rs).
+[^issue-935-evidence]: [Issue 935 design, reviews and verification](../../superpowers/plans/2026-10-16-issue-935.md).
