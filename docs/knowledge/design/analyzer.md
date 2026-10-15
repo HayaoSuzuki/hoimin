@@ -5,6 +5,21 @@ description: 構文・名前解決・変更するバイト範囲・候補保持�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-929-plan
+  resource: ../../../crates/hoimin-cli/src/plan.rs
+  revision: 0d3fbc1a1821074d6ba8a2a212116241adc85c4e
+  working_tree: modified
+  sha256: 834cd4424f45f5a139cb5fa0c5e50e49da26c1fb311a8cd4187298e58301132d
+- id: issue-929-run
+  resource: ../../../crates/hoimin-cli/src/analyzer/mod.rs
+  revision: 0d3fbc1a1821074d6ba8a2a212116241adc85c4e
+  working_tree: modified
+  sha256: 1c46f3462180954d6ba207aa51ad49b579e48eba24a214c0a292e3ad23ed64e0
+- id: issue-929-live-codes
+  resource: ../../../crates/hoimin-cli/src/analyzer/types.rs
+  revision: 0d3fbc1a1821074d6ba8a2a212116241adc85c4e
+  working_tree: modified
+  sha256: 77cd9052af7d310e7a34c6145768fde93db6617603163beaf800cba2bace8a64
 - id: issue-914-evidence
   resource: ../../superpowers/plans/2026-10-15-issue-914.md
   revision: 54093222abe08c79e8e36e4656ee04b9c6d8dda0
@@ -941,10 +956,30 @@ changes.[^issue-866-contract]
 
 [^issue-866-contract]: [Analyzer handler session contract](../../../crates/hoimin-cli/src/analyzer/mod.rs), compared with main `3b79cab`; [review and validation scope](../../superpowers/plans/2026-10-14-issue-866.md).
 
-# Diagnostic name ownership (Issue #865)
+# Diagnostic name ownership (Issues #865 and #929)
 
-`AnalyzerDiagnosticCode::canonical_name` owns the seven external names without a prefix. Plan copies that name and preserves separate path, line and column fields; an absent message becomes an empty string. Run adds `analyzer.` and keeps its own default explanations and location formatting. Centralizing names does not combine these output contracts or change saved-plan schemas, exit codes, defaults or the version floor. The implementation and verification record explains the fixed-value coverage and its limits.[^issue-865-names]
+`AnalyzerDiagnosticCode::canonical_name` owns the four current analyzer names
+without a prefix: `invalid_syntax`, `exception_hierarchy_skipped`,
+`enum_definition_skipped`, and `candidate_limit`. The enum represents diagnostics
+with current Rust analyzer producers. The unused `UnreconstructableSpan`,
+`UnparseableReplacement`, and `InvalidRequest` variants were removed in Issue 929
+without compatibility aliases.[^issue-929-live-codes]
 
+Plan copies the name and preserves separate path, line and column fields; an
+absent message becomes an empty string. Run adds `analyzer.` and retains its
+default explanations and location formatting. Saved diagnostic codes remain
+strings; removing in-memory variants does not reject old saved names or change
+schemas, exit codes, defaults or the version floor. Recheck this boundary when
+adding a diagnostic producer or changing saved diagnostic validation.
+[^issue-929-plan][^issue-929-run]
+
+The [Issue 929 review and verification record](../../superpowers/plans/2026-10-16-issue-929.md)
+describes removal and retained behavioral coverage. The Issue 865 record remains
+historical evidence for the original seven-name centralization.[^issue-865-names]
+
+[^issue-929-live-codes]: [Current analyzer diagnostic type](../../../crates/hoimin-cli/src/analyzer/types.rs).
+[^issue-929-plan]: [Plan diagnostic representation and conversion](../../../crates/hoimin-cli/src/plan.rs).
+[^issue-929-run]: [Run diagnostic conversion](../../../crates/hoimin-cli/src/analyzer/mod.rs).
 [^issue-865-names]: [Issue #865 design, implementation and validation](../../superpowers/plans/2026-10-14-issue-865.md).
 
 # Typed source-decoding classification

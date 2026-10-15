@@ -1129,18 +1129,9 @@ mod tests {
                 "enum_definition_skipped",
             ),
             (
-                AnalyzerDiagnosticCode::UnreconstructableSpan,
-                "unreconstructable_span",
-            ),
-            (
-                AnalyzerDiagnosticCode::UnparseableReplacement,
-                "unparseable_replacement",
-            ),
-            (
                 AnalyzerDiagnosticCode::CandidateLimitExceeded,
                 "candidate_limit",
             ),
-            (AnalyzerDiagnosticCode::InvalidRequest, "invalid_request"),
         ];
         for (code, expected_name) in cases {
             let diagnostic = AnalyzerDiagnostic {
@@ -1164,13 +1155,18 @@ mod tests {
                 }),
             );
         }
+    }
+
+    #[test]
+    fn analyzer_diagnostic_preserves_plan_custom_message_without_location() {
+        use crate::analyzer::{AnalyzerDiagnostic, AnalyzerDiagnosticCode};
 
         let diagnostic = AnalyzerDiagnostic {
-            code: AnalyzerDiagnosticCode::InvalidRequest,
+            code: AnalyzerDiagnosticCode::InvalidSyntax,
             path: None,
             line: None,
             column: None,
-            message: Some("operators must not be empty".to_owned()),
+            message: Some("custom explanation".to_owned()),
         };
 
         let mapped = super::plan_diagnostic(&diagnostic);
@@ -1178,11 +1174,11 @@ mod tests {
         assert_eq!(
             serde_json::to_value(mapped).unwrap(),
             serde_json::json!({
-                "code": "invalid_request",
+                "code": "invalid_syntax",
                 "path": null,
                 "line": null,
                 "column": null,
-                "message": "operators must not be empty",
+                "message": "custom explanation",
             }),
         );
     }

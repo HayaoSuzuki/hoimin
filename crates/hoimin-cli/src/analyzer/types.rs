@@ -3,15 +3,13 @@
 use camino::Utf8PathBuf;
 use hoimin_core::ByteSpan;
 
+/// Diagnostics emitted by the current analyzer; saved diagnostic codes remain strings.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AnalyzerDiagnosticCode {
     InvalidSyntax,
     UnsupportedExceptionHierarchy,
     UnsupportedEnumDefinition,
-    UnreconstructableSpan,
-    UnparseableReplacement,
     CandidateLimitExceeded,
-    InvalidRequest,
 }
 
 impl AnalyzerDiagnosticCode {
@@ -21,10 +19,7 @@ impl AnalyzerDiagnosticCode {
             Self::InvalidSyntax => "invalid_syntax",
             Self::UnsupportedExceptionHierarchy => "exception_hierarchy_skipped",
             Self::UnsupportedEnumDefinition => "enum_definition_skipped",
-            Self::UnreconstructableSpan => "unreconstructable_span",
-            Self::UnparseableReplacement => "unparseable_replacement",
             Self::CandidateLimitExceeded => "candidate_limit",
-            Self::InvalidRequest => "invalid_request",
         }
     }
 }
