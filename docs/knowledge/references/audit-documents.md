@@ -14,8 +14,9 @@ sources:
 
 - id: issue-913-review
   resource: ../../superpowers/reports/2026-10-15-issue-913-review.md
-  working_tree: untracked
-  sha256: d726b9508fe067fcfeed30282e9f15feaec63a206539830dc3bbf20c38d125e3
+  revision: 4c9657a2ceb305271ce3908a78b6ae20677fe116
+  working_tree: modified
+  sha256: 1ba192963d525ca231ff0c8f4bb349fb666a83fdde67c749c327ec9ba58c219e
 - id: issue-898-process-review
   resource: ../../superpowers/reports/2026-10-15-issue-898-review.md
   revision: 51c9e26b9d0006cac150b3833cb797a59349bac1
