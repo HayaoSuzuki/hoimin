@@ -109,12 +109,12 @@ sources:
   resource: ../../superpowers/reports/issue-895/design.md
   revision: 62cee6bbd684d13dd69a67bd3a627901103f8624
   working_tree: clean
-  sha256: ab8f5b66d8323ebf1da4259bb303636f3d8d3e5fd8b429e4f500c9b4e2a64711
+  sha256: 283d6d959f953906bb88271e7146d18ecc9a39a7ca12813f13552247a30f544d
 - id: issue-895-review
   resource: ../../superpowers/reports/issue-895/review.md
-  revision: 666505221155fda7fcc7941c339d459c46466b22
+  revision: f5bbee7d64c04798cef79e143a65dc15cdb88ce4
   working_tree: modified
-  sha256: c541cf84012a6aa2763f264bac8c13e8d7525b7a6f93e75bd7f6e5d14692bc5b
+  sha256: a9d30afabd63e186041fb329bc9a1df5e98dd42b3efa2aeba1093beecbc08be2
 - id: issue-895-outcome
   resource: ../../../crates/hoimin-core/src/resume.rs
   revision: 31245fbf096967b36bc15523067080b506f88fe9

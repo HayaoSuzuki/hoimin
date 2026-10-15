@@ -7,7 +7,9 @@ use std::collections::HashMap;
 
 use crate::artifacts::run_report::ReviewReport;
 use crate::cli::ReviewArgs;
-use model::{Applicability, ArtifactReference, ReviewDraft, ReviewState, SourceState};
+use model::{
+    Applicability, ArtifactReference, ReportReference, ReviewDraft, ReviewState, SourceState,
+};
 use render::{ReviewDocument, ReviewExecution, ReviewRow};
 
 #[cfg(test)]
@@ -139,7 +141,7 @@ pub fn run(args: &ReviewArgs, stdout: &mut dyn std::io::Write) -> Result<i32, Re
             Vec::new()
         };
         let document = ReviewDocument {
-            schema_version: 1,
+            schema_version: 2,
             command,
             project: plan.project.clone(),
             operators: render::counts(&candidates),
@@ -226,7 +228,7 @@ mod tests;
 fn record_store(
     args: &crate::cli::ReviewRecordArgs,
     plan: &crate::plan::ReadOnlyPlan,
-    report: Option<&(ReviewReport, ArtifactReference)>,
+    report: Option<&(ReviewReport, ReportReference)>,
     candidate: &hoimin_core::MutationCandidate,
 ) -> Result<(model::ReviewKey, ReviewState), ReviewError> {
     if report.is_some_and(|(report, _)| {
@@ -258,7 +260,6 @@ fn record_store(
         plan: ArtifactReference {
             path: plan.canonical_path.clone(),
             content_hash: plan.content_hash.clone(),
-            run_id: None,
         },
         report: report.map(|(_, reference)| reference.clone()),
     };

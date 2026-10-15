@@ -148,3 +148,44 @@ CI's fuzz build artifact exposed six compile errors in report_sequence.rs: the h
 Migrated generated valid lifecycles to owned MutationOutcome inputs: Executed with complete or close-timed-out output, Reused with either conclusive status, and NotRun. Summary status derives from the supplied outcome. The contradictory-domain mutation is replaced by serializing a current finish, inserting a forbidden raw status field, and asserting OutputEvent decoding rejects it. No domain-state repair or invalid typed value is introduced. Parent independent review found the remaining recovery sequence redundant for a decoder rejection; removed it, retaining only that one raw-boundary concern. Existing valid lifecycle checks already exercise the original finish.
 
 Verification review pass 9 audited every fuzz target for old result fields. Remaining baseline elapsed/termination/output fields belong to the unchanged BaselineFinished contract. All seven bins pass `cargo check --manifest-path fuzz/Cargo.toml --bins --locked` on Windows, including libfuzzer-sys compilation, and all seven pass locked Clippy with warnings denied. Fuzz-workspace formatting, shipping-workspace formatting, diff whitespace, scoped source hashes/reachability and documentation site pass after recording this follow-up. This is harness-only; no redundant shipping-workspace behavioral suite was run. These checks compile/lint the harnesses, not a claim of sanitizer-instrumented fuzz execution or corpus coverage; CI must perform its actual fuzz build/run after publication.
+
+
+## Main integration conflict resolution (2026-10-15)
+
+Integrated main 978a68ccc59f7cb4dec9081cdcb5f59a4bcc9334 into the published f5bbee7d64c04798cef79e143a65dc15cdb88ce4 head, retaining the user's squash of worker ownership PR 910. The three textual conflicts were additive documentation changes in compatibility, runtime lifecycle, and the audit catalogue. No production conflict required a manual resolution.
+
+### Design review passes
+
+1. Compared both parents and retained WorkerState's owned candidate/result variants from the published head.
+2. Read the automatic machine merge: typed DiskFailure projects through the shared conversion without changing worker retirement or result ownership.
+3. Checked Report 6, session database 5 and Plan 6 against the current-only migration notice; no legacy outcome adapter was added.
+4. Inspected review input/model/store integration and retained main's separate ReportReference and review schema/store version 2.
+5. Read both compatibility additions and runtime evidence sections together; both format contracts and their linked sources remain present.
+
+### Integration plan review passes
+
+1. Used a merge of the exact published head, preserving the signed squash and existing branch ancestry.
+2. Limited textual resolution to the three conflicted documentation files; accepted the already reviewed main code changes.
+3. Selected a fresh all-feature workspace test run to cover interactions among outcomes, worker ownership, review references and disk failure reasons.
+4. Selected all-target/all-feature Clippy, complete Python tests, formatting, lint/type checks and the documented site helper as separate checks.
+5. Used an isolated target with one Cargo job, no incremental/debug output and two test threads; deferred cleanup until its build processes exit.
+
+### Implementation review passes
+
+1. Inspected the machine diff and confirmed first disk-stop retention and the pre-existing pending retirement path are unchanged.
+2. Read the shared DiskStopReport conversion for both measured reasons and both message reasons, including secondary evidence transfer.
+3. Inspected review/mod.rs and confirmed schema 2 and ReportReference propagate without restoring the old optional run_id field.
+4. Checked compatibility, lifecycle and catalogue resolutions for retained sections, source IDs, rows and footnotes from both parents.
+5. Compared the staged diff against the merge parents, checked for unresolved paths and whitespace errors, and kept historical source observations unchanged.
+
+### Verification review passes
+
+1. Inspected the full Rust log for failing targets and counted result summaries, including nested subprocess summaries; totals are not unique test counts.
+2. Checked the separate all-feature/all-target Clippy exit status with warnings denied rather than treating successful compilation as lint evidence.
+3. Read the complete Python result: 1,009 passed, 29 skipped; one temporary-file cleanup warning arose in the hypothesmith corpus test.
+4. Rechecked Ruff lint/format, ty, workspace formatting and the documented documentation-site helper; these checks do not imply OS-specific packaged smoke execution.
+5. Refreshed the edited issue-895 review observations to this pre-merge head and actual content hash. Canonical Git-blob checking also exposed three pre-existing clean design/plan observation hash mismatches; corrected those hashes against their recorded revisions, preserving their historical scope. Issue 897's five historical observations already passed. Rechecked source targets, site output, diff whitespace and unresolved paths before committing.
+
+Independent read-only integration review found no actionable issue: worker ownership/counting remained intact, outcome/session/schema source was unchanged from the published head, main's disk/review models were retained, and both parents' documentation sources survived.
+
+Fresh verification completed: cargo test --workspace --all-features --no-fail-fast produced 156 successful result summaries, 2,897 passes, zero failures and 27 ignored (including nested subprocess summaries). All-workspace/all-target/all-feature Clippy passed with warnings denied. Complete Python: 1,009 passed, 29 skipped, one temporary-file cleanup warning. No production or test expectation edits were required by this integration.

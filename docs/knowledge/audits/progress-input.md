@@ -50,9 +50,9 @@ sources:
   sha256: 2409ac3bcad8a1110f4c78ac40a65c729afd2de381fe9d5577ada55f43f2db6a
 - id: issue-895-review
   resource: ../../superpowers/reports/issue-895/review.md
-  revision: 666505221155fda7fcc7941c339d459c46466b22
+  revision: f5bbee7d64c04798cef79e143a65dc15cdb88ce4
   working_tree: modified
-  sha256: c541cf84012a6aa2763f264bac8c13e8d7525b7a6f93e75bd7f6e5d14692bc5b
+  sha256: a9d30afabd63e186041fb329bc9a1df5e98dd42b3efa2aeba1093beecbc08be2
 
 ---
 

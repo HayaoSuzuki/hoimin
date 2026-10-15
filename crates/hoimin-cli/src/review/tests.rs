@@ -35,7 +35,6 @@ pub(super) fn draft() -> ReviewDraft {
         plan: ArtifactReference {
             path: "plan.json".into(),
             content_hash: "a".repeat(64),
-            run_id: None,
         },
         report: None,
     }
@@ -1025,4 +1024,283 @@ fn source_batch_rejects_canonical_root_escape() {
             .to_string()
             .contains("escapes project root")
     }));
+}
+
+#[test]
+fn persisted_plan_rejects_legacy_run_id() {
+    for run_id in [serde_json::Value::Null, "run-1".into()] {
+        // Arrange
+        let mut json = serde_json::to_value(draft()).unwrap();
+        json["plan"]["run_id"] = run_id;
+
+        // Act
+        let result = serde_json::from_value::<ReviewDraft>(json);
+
+        // Assert
+        assert!(result.is_err());
+    }
+}
+
+proptest::proptest! {
+    #[test]
+    fn report_reference_roundtrips_required_run_identity(
+        run_id in "[a-zA-Z0-9_-]{1,80}", hash in "[0-9a-f]{64}"
+    ) {
+        // Arrange
+        let mut json = serde_json::to_value(draft()).unwrap();
+        json["report"] = serde_json::json!({
+            "artifact": {"path": "report.json", "content_hash": hash},
+            "run_id": run_id,
+        });
+
+        // Act
+        let decoded = serde_json::from_value::<ReviewDraft>(json.clone());
+
+        // Assert
+        proptest::prop_assert!(decoded.is_ok());
+        let decoded = decoded.unwrap();
+        proptest::prop_assert_eq!(serde_json::to_value(decoded).unwrap(), json);
+    }
+}
+
+#[test]
+fn persisted_report_rejects_missing_or_null_run_identity() {
+    for run_id in [None, Some(serde_json::Value::Null)] {
+        // Arrange
+        let mut json = serde_json::to_value(draft()).unwrap();
+        let mut report = serde_json::json!({"artifact": json["plan"].clone()});
+        if let Some(run_id) = run_id {
+            report["run_id"] = run_id;
+        }
+        json["report"] = report;
+
+        // Act
+        let result = serde_json::from_value::<ReviewDraft>(json);
+
+        // Assert
+        assert!(result.is_err());
+    }
+}
+
+#[test]
+fn report_identifier_rejects_blank_text() {
+    for id in ["", " ", "\u{00a0}"] {
+        // Arrange
+        let mut value = draft();
+        value.report = Some(ReportReference {
+            artifact: value.plan.clone(),
+            run_id: id.into(),
+        });
+
+        // Act
+        let result = validate_draft(&value);
+
+        // Assert
+        assert!(result.is_err());
+    }
+}
+
+#[test]
+fn report_identifier_rejects_excessive_utf8_bytes() {
+    // Arrange
+    let mut value = draft();
+    value.report = Some(ReportReference {
+        artifact: value.plan.clone(),
+        run_id: "\u{03b1}".repeat(2049),
+    });
+
+    // Act
+    let result = validate_draft(&value);
+
+    // Assert
+    assert!(result.is_err());
+}
+
+proptest::proptest! {
+    #[test]
+    fn valid_report_reference_passes_content_validation(
+        run_id in "[a-zA-Z0-9_-]{1,80}", hash in "[0-9a-f]{64}"
+    ) {
+        // Arrange
+        let mut value = draft();
+        value.report = Some(ReportReference {
+            artifact: ArtifactReference {path: "report.json".into(), content_hash: hash},
+            run_id,
+        });
+
+        // Act
+        let result = validate_draft(&value);
+
+        // Assert
+        proptest::prop_assert!(result.is_ok());
+    }
+}
+
+#[tokio::test]
+async fn recording_report_preserves_reference_when_showing_history() {
+    // Arrange
+    let (dir, path, report_path) = report_fixture().await;
+    let plan = super::input::load_plan(&path).unwrap();
+    let id = &plan.manifest.candidates[0].id;
+    let store = dir.path().join("reviews.sqlite3");
+    let common = vec![
+        path.to_str().unwrap().to_owned(),
+        "--store".into(),
+        store.to_str().unwrap().to_owned(),
+        "--report".into(),
+        report_path.to_str().unwrap().to_owned(),
+        "--format".into(),
+        "json".into(),
+    ];
+    let mut record = vec!["hoimin".into(), "review".into(), "record".into()];
+    record.extend(common.clone());
+    record.extend([
+        "--candidate".into(),
+        id.clone(),
+        "--assessment".into(),
+        "actionable".into(),
+        "--reason".into(),
+        "missing check".into(),
+        "--expected-revision".into(),
+        "0".into(),
+    ]);
+    let (code, _, err) = run_review_cli(record).await;
+    assert_eq!(code, 0, "{err}");
+    let report_bytes = std::fs::read(&report_path).unwrap();
+    let report_input: serde_json::Value = serde_json::from_slice(&report_bytes).unwrap();
+    let expected = ReportReference {
+        artifact: ArtifactReference {
+            path: std::fs::canonicalize(&report_path).unwrap(),
+            content_hash: blake3::hash(&report_bytes).to_hex().to_string(),
+        },
+        run_id: report_input["run"]["run_id"].as_str().unwrap().into(),
+    };
+    let mut show = vec!["hoimin".into(), "review".into(), "show".into()];
+    show.extend(common);
+    show.extend(["--candidate".into(), id.clone()]);
+
+    // Act
+    let (code, out, err) = run_review_cli(show).await;
+    let shown: serde_json::Value = serde_json::from_str(&out).unwrap();
+
+    // Assert
+    assert_eq!(code, 0, "{err}");
+    let report: ReportReference =
+        serde_json::from_value(shown["candidates"][0]["history"][0]["draft"]["report"].clone())
+            .unwrap();
+    assert_eq!(report, expected);
+}
+
+async fn run_review_cli(args: Vec<String>) -> (i32, String, String) {
+    let out = crate::test_writer::CollectingWriter::default();
+    let err = crate::test_writer::CollectingWriter::default();
+    let code = crate::run_with_writers(args, out.clone(), err.clone()).await;
+    (
+        code,
+        String::from_utf8(out.snapshot()).unwrap(),
+        String::from_utf8(err.snapshot()).unwrap(),
+    )
+}
+
+proptest::proptest! {
+    #[test]
+    fn report_identifier_rejects_every_control_character(code in 0u8..=159) {
+        // Arrange
+        let control = char::from(code);
+        proptest::prop_assume!(control.is_control());
+        let mut value = draft();
+        value.report = Some(ReportReference {
+            artifact: value.plan.clone(),
+            run_id: format!("run{control}1"),
+        });
+
+        // Act
+        let result = validate_draft(&value);
+
+        // Assert
+        proptest::prop_assert!(result.is_err());
+    }
+}
+
+#[test]
+fn report_identifier_accepts_maximum_utf8_byte_length() {
+    // Arrange
+    let mut value = draft();
+    value.report = Some(ReportReference {
+        artifact: value.plan.clone(),
+        run_id: "\u{03b1}".repeat(2048),
+    });
+
+    // Act
+    let result = validate_draft(&value);
+
+    // Assert
+    assert!(result.is_ok());
+}
+
+#[test]
+fn reference_content_rejects_empty_path() {
+    for report_reference in [false, true] {
+        // Arrange
+        let mut value = draft();
+        let reference = ArtifactReference {
+            path: "".into(),
+            content_hash: "a".repeat(64),
+        };
+        if report_reference {
+            value.report = Some(ReportReference {
+                artifact: reference,
+                run_id: "run-1".into(),
+            });
+        } else {
+            value.plan = reference;
+        }
+
+        // Act
+        let result = validate_draft(&value);
+
+        // Assert
+        assert!(result.is_err());
+    }
+}
+
+#[test]
+fn reference_content_rejects_malformed_hash() {
+    for hash in ["A".repeat(64), "g".repeat(64), "a".repeat(63)] {
+        for report_reference in [false, true] {
+            // Arrange
+            let mut value = draft();
+            let reference = ArtifactReference {
+                path: "plan.json".into(),
+                content_hash: hash.clone(),
+            };
+            if report_reference {
+                value.report = Some(ReportReference {
+                    artifact: reference,
+                    run_id: "run-1".into(),
+                });
+            } else {
+                value.plan = reference;
+            }
+
+            // Act
+            let result = validate_draft(&value);
+
+            // Assert
+            assert!(result.is_err());
+        }
+    }
+}
+
+#[test]
+fn persisted_report_rejects_legacy_flat_artifact() {
+    // Arrange
+    let mut json = serde_json::to_value(draft()).unwrap();
+    json["report"] = serde_json::json!({"path": "report.json", "content_hash": "a".repeat(64), "run_id": "run-1"});
+
+    // Act
+    let result = serde_json::from_value::<ReviewDraft>(json);
+
+    // Assert
+    assert!(result.is_err());
 }

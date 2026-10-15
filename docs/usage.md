@@ -1506,6 +1506,12 @@ repair. Use a local filesystem; network filesystem concurrency is outside the
 initial contract. Store files and SQLite auxiliary paths must not alias plan,
 report, source, or fingerprint inputs.
 
-JSON uses the independent [review schema](json-schema/review-result.schema.json).
+Starting with hoimin 0.8.0, review JSON uses version 2 of the independent
+[review schema](json-schema/review-result.schema.json). Plan references contain
+`path` and `content_hash`; report references contain an `artifact` object with
+those fields and a required `run_id`. A review without a report keeps `report: null`.
+SQLite review stores use `user_version = 2`. Version 1 stores are rejected on
+read and write; there is no automatic conversion. Keep an old store separately
+and use another `--store` path to record reviews in version 2.
 See the [review contract](knowledge/design/survivor-review.md) for identity and
 formal verification boundaries.

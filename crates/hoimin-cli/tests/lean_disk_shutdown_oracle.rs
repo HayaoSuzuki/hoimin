@@ -173,7 +173,7 @@ fn assert_terminal_observation(
     let actual_stop = snapshot
         .stop
         .as_ref()
-        .map(|failure| stop_name(failure.reason).to_owned());
+        .map(|failure| stop_name(failure.reason.kind()).to_owned());
     let secondary_stops = snapshot
         .secondary
         .iter()

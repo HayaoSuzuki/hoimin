@@ -20,6 +20,11 @@ sources:
   revision: 0a148fcf5ca511b6ccca489feda2ccbc2429008f
   working_tree: modified
   sha256: c4c11806e1e8b6e9ad722f65c1ce42da8b0277809b4c2b9b039a222058d3bd48
+
+- id: issue-900-disk-failure
+  resource: disk-failure.md
+  working_tree: untracked
+  sha256: 30398836956f8fd8687b718ba2c81e835125665d45e0e9ca3a470198b0f1eb60
 - id: issue-867-shell
   resource: ../../../crates/hoimin-cli/src/shell.rs
   revision: 906ba668de94115ef5ca459af3b5f176d22b1b4e
@@ -291,3 +296,12 @@ Stop recovery consumes worker states. Persisting records the classified result o
 [^issue-897-machine]: [Worker state and transitions](../../../crates/hoimin-core/src/machine.rs).
 [^issue-897-design]: [Worker-owned execution state](../../superpowers/specs/2026-10-15-issue-897-worker-state-design.md).
 [^issue-897-review]: [Review and verification record](../../superpowers/reports/2026-10-15-issue-897-review.md).
+
+## Typed disk stop evidence
+
+The [disk failure contract](disk-failure.md) describes required reason payloads,
+first-stop retention, complete secondary evidence equality, and the intentional
+saved failure format change. Report projection keeps its existing byte-count and
+message fields. This representation change does not add an OS cleanup guarantee.[^issue-900-disk-failure]
+
+[^issue-900-disk-failure]: [Typed disk failure contract](disk-failure.md).

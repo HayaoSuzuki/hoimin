@@ -10,6 +10,19 @@ sources:
   revision: 0a148fcf5ca511b6ccca489feda2ccbc2429008f
   working_tree: modified
   sha256: c4c11806e1e8b6e9ad722f65c1ce42da8b0277809b4c2b9b039a222058d3bd48
+
+- id: issue-900-design
+  resource: ../../superpowers/reports/issue-900/design.md
+  working_tree: untracked
+  sha256: 7c10b5c8a7898a374e985e773d4c758478b02e7927d9fd2e7b3873684fe49d50
+- id: issue-900-plan
+  resource: ../../superpowers/reports/issue-900/plan.md
+  working_tree: untracked
+  sha256: f932d8acd44ac936c52d470ca85b590c8707cb0dd66801336013ea4195a19269
+- id: issue-900-review
+  resource: ../../superpowers/reports/issue-900/review.md
+  working_tree: untracked
+  sha256: 9664c6be4e1e048ad59b7a4380fa151e008687e6f4e71cea538b8f1104fb1c4d
 - id: issue-759-staged-report
   resource: ../../superpowers/reports/2026-10-11-issue-759-staged-verification.md
   working_tree: untracked
@@ -838,17 +851,17 @@ sources:
   resource: ../../superpowers/reports/issue-895/design.md
   revision: 62cee6bbd684d13dd69a67bd3a627901103f8624
   working_tree: clean
-  sha256: ab8f5b66d8323ebf1da4259bb303636f3d8d3e5fd8b429e4f500c9b4e2a64711
+  sha256: 283d6d959f953906bb88271e7146d18ecc9a39a7ca12813f13552247a30f544d
 - id: issue-895-plan
   resource: ../../superpowers/reports/issue-895/plan.md
   revision: 62cee6bbd684d13dd69a67bd3a627901103f8624
   working_tree: clean
-  sha256: 7d4bf73ab2a2ceb9676e247982ef0f9082bdac15bf3451075d5916cdfbb25b0e
+  sha256: 2447ba6b0a732455911e9cb9737854c9a4c973e86f8334b36674faa201473302
 - id: issue-895-review
   resource: ../../superpowers/reports/issue-895/review.md
-  revision: 666505221155fda7fcc7941c339d459c46466b22
+  revision: f5bbee7d64c04798cef79e143a65dc15cdb88ce4
   working_tree: modified
-  sha256: c541cf84012a6aa2763f264bac8c13e8d7525b7a6f93e75bd7f6e5d14692bc5b
+  sha256: a9d30afabd63e186041fb329bc9a1df5e98dd42b3efa2aeba1093beecbc08be2
 
 ---
 
@@ -860,6 +873,9 @@ sources:
 
 | 原文 | 先頭見出し | 作成時の状態 |
 | --- | --- | --- |
+| [design.md](../../superpowers/reports/issue-900/design.md) | Typed disk failure design [^issue-900-design] | untracked at reference time |
+| [plan.md](../../superpowers/reports/issue-900/plan.md) | Implementation plan [^issue-900-plan] | untracked at reference time |
+| [review.md](../../superpowers/reports/issue-900/review.md) | Issue #900 review record [^issue-900-review] | untracked at reference time |
 | [2026-10-05-exception-alias-lean-audit.md](../../superpowers/reports/2026-10-05-exception-alias-lean-audit.md) | 代入による別名の形式監査 [^issue-692-exception-alias-lean-audit] | 追跡済み（fae3ce3） |
 | [2026-10-05-exception-hierarchy-design-recheck.md](../../superpowers/reports/2026-10-05-exception-hierarchy-design-recheck.md) | 別名伝播修正後の原設計再レビュー [^issue-692-exception-hierarchy-design-recheck] | 追跡済み（fae3ce3） |
 | [2026-10-05-exception-hierarchy-design-review.md](../../superpowers/reports/2026-10-05-exception-hierarchy-design-review.md) | 例外階層ミューテーションの原設計レビュー [^issue-692-exception-hierarchy-design-review] | 追跡済み（fae3ce3） |
@@ -1499,3 +1515,9 @@ sources:
 | Worker-owned state review and verification | [Original](../../superpowers/reports/2026-10-15-issue-897-review.md) [^issue-897-review] |
 
 [^issue-897-review]: [Original record](../../superpowers/reports/2026-10-15-issue-897-review.md). Implementation design and explicitly scoped execution evidence.
+
+[^issue-900-design]: [Typed disk failure design](../../superpowers/reports/issue-900/design.md).
+
+[^issue-900-plan]: [Implementation plan](../../superpowers/reports/issue-900/plan.md).
+
+[^issue-900-review]: [Issue #900 review record](../../superpowers/reports/issue-900/review.md).
