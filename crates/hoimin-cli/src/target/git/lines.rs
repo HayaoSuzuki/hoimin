@@ -93,55 +93,66 @@ fn outside_source() -> TargetError {
 mod tests {
     use super::*;
 
-    #[test]
-    fn every_small_byte_source_matches_independent_line_start_indexes() {
-        for length in 0..=5 {
-            for mut word in 0..4usize.pow(length) {
-                let source = (0..length)
+    fn small_byte_sources() -> impl Iterator<Item = Vec<u8>> {
+        (0..=5).flat_map(|length| {
+            (0..4usize.pow(length)).map(move |mut word| {
+                (0..length)
                     .map(|_| {
                         let byte = [b'x', b'\r', b'\n', 0xe9][word % 4];
                         word /= 4;
                         byte
                     })
-                    .collect::<Vec<_>>();
-                let python = hoimin_core::python_line_starts(&source).unwrap();
-                let git = source
-                    .split_inclusive(|byte| *byte == b'\n')
-                    .scan(0usize, |offset, bytes| {
-                        let start = *offset;
-                        *offset += bytes.len();
-                        Some(start..*offset)
-                    })
-                    .collect::<Vec<_>>();
-                let expected_count = source.len().checked_sub(1).map_or(0, |last| {
-                    python.partition_point(|start| *start as usize <= last)
-                });
-                assert_eq!(
-                    physical_line_count(&source).unwrap() as usize,
-                    expected_count
-                );
-                for first in 0..git.len() {
-                    for last in first..git.len() {
-                        let expected = LineRange {
-                            start: u32::try_from(
-                                python.partition_point(|start| *start as usize <= git[first].start),
-                            )
-                            .unwrap(),
-                            end: u32::try_from(
-                                python.partition_point(|start| (*start as usize) < git[last].end),
-                            )
-                            .unwrap(),
-                        };
-                        let range = LineRange {
-                            start: u32::try_from(first + 1).unwrap(),
-                            end: u32::try_from(last + 1).unwrap(),
-                        };
-                        assert_eq!(
-                            translate(&source, &[range]).unwrap(),
-                            [expected],
-                            "{source:?}"
-                        );
-                    }
+                    .collect()
+            })
+        })
+    }
+
+    #[test]
+    fn every_small_byte_source_count_matches_independent_line_start_index() {
+        for source in small_byte_sources() {
+            let python = hoimin_core::python_line_starts(&source).unwrap();
+            let expected = source.len().checked_sub(1).map_or(0, |last| {
+                python.partition_point(|start| *start as usize <= last)
+            });
+
+            let actual = physical_line_count(&source).unwrap() as usize;
+
+            assert_eq!(actual, expected, "{source:?}");
+        }
+    }
+
+    #[test]
+    fn every_small_byte_source_translation_matches_independent_line_start_indexes() {
+        for source in small_byte_sources() {
+            let python = hoimin_core::python_line_starts(&source).unwrap();
+            let git = source
+                .split_inclusive(|byte| *byte == b'\n')
+                .scan(0usize, |offset, bytes| {
+                    let start = *offset;
+                    *offset += bytes.len();
+                    Some(start..*offset)
+                })
+                .collect::<Vec<_>>();
+            for first in 0..git.len() {
+                for last in first..git.len() {
+                    let expected = LineRange {
+                        start: u32::try_from(
+                            python.partition_point(|start| *start as usize <= git[first].start),
+                        )
+                        .unwrap(),
+                        end: u32::try_from(
+                            python.partition_point(|start| (*start as usize) < git[last].end),
+                        )
+                        .unwrap(),
+                    };
+                    let range = LineRange {
+                        start: u32::try_from(first + 1).unwrap(),
+                        end: u32::try_from(last + 1).unwrap(),
+                    };
+
+                    let actual = translate(&source, &[range]).unwrap();
+
+                    assert_eq!(actual, [expected], "{source:?}");
                 }
             }
         }
@@ -150,15 +161,15 @@ mod tests {
     #[test]
     fn disjoint_git_intervals_skip_bytes_without_losing_python_rows() {
         let source = b"a\rb\nc\r\nd\re\nf";
+        let ranges = [
+            LineRange { start: 1, end: 1 },
+            LineRange { start: 3, end: 4 },
+        ];
+
+        let actual = translate(source, &ranges).unwrap();
+
         assert_eq!(
-            translate(
-                source,
-                &[
-                    LineRange { start: 1, end: 1 },
-                    LineRange { start: 3, end: 4 }
-                ]
-            )
-            .unwrap(),
+            actual,
             [
                 LineRange { start: 1, end: 2 },
                 LineRange { start: 4, end: 6 }
@@ -167,7 +178,7 @@ mod tests {
     }
 
     #[test]
-    fn empty_eof_rows_invalid_ranges_and_output_overflow_are_rejected() {
+    fn invalid_or_out_of_bounds_git_ranges_are_rejected() {
         for (source, range) in [
             (b"".as_slice(), LineRange { start: 1, end: 1 }),
             (b"a\n", LineRange { start: 2, end: 2 }),
@@ -176,11 +187,33 @@ mod tests {
             (b"a", LineRange { start: 0, end: 1 }),
             (b"a", LineRange { start: 2, end: 1 }),
         ] {
-            assert!(translate(source, &[range]).is_err());
+            let actual = translate(source, &[range]);
+
+            assert!(actual.is_err(), "{source:?}: {range:?}");
         }
-        assert_eq!(translate(b"", &[]).unwrap(), Vec::new());
-        assert_eq!(row(u32::MAX as usize).unwrap(), u32::MAX);
-        #[cfg(target_pointer_width = "64")]
-        assert!(row(u32::MAX as usize + 1).is_err());
+    }
+
+    #[test]
+    fn empty_ranges_select_no_rows() {
+        for source in [b"".as_slice(), b"a\r\nb\rc\n"] {
+            let actual = translate(source, &[]).unwrap();
+
+            assert_eq!(actual, Vec::<LineRange>::new());
+        }
+    }
+
+    #[test]
+    fn maximum_representable_row_is_accepted() {
+        let actual = row(u32::MAX as usize).unwrap();
+
+        assert_eq!(actual, u32::MAX);
+    }
+
+    #[cfg(target_pointer_width = "64")]
+    #[test]
+    fn unrepresentable_row_is_rejected() {
+        let actual = row(u32::MAX as usize + 1);
+
+        assert!(actual.is_err());
     }
 }

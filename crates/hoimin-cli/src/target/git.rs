@@ -56,8 +56,6 @@ pub(crate) async fn resolve_changed_scoped(
 ) -> Result<BTreeMap<Utf8PathBuf, Vec<LineRange>>, TargetError> {
     ensure_git_worktree(root).await?;
     let scope = GitPathScope::new(eligible_targets);
-    let mut changed = BTreeMap::<Utf8PathBuf, Vec<LineRange>>::new();
-    let mut excluded = BTreeSet::new();
     // Git clips context to current-file bounds and includes both sides of deletion gaps.
     let unified = format!("--unified={context}");
     let mut diff_args = vec![
@@ -85,44 +83,47 @@ pub(crate) async fn resolve_changed_scoped(
         "-l0",
         "--relative",
     ];
-    let patch_ranges = if let Some(base) = diff_base {
+    let tracked_ranges = if let Some(base) = diff_base {
         let base = resolve_commit(root, base).await?;
         diff_args.push("--merge-base");
         diff_args.push(&base);
         numstat_args.push("--merge-base");
         numstat_args.push(&base);
-        (changed, excluded) = tracked::collect(
-            root,
-            &diff_args,
-            &numstat_args,
-            &scope,
-            eligible_targets.is_some(),
+        Some(
+            tracked::collect(
+                root,
+                &diff_args,
+                &numstat_args,
+                &scope,
+                eligible_targets.is_some(),
+            )
+            .await?,
         )
-        .await?;
-        true
     } else if head_exists(root).await? {
         diff_args.push("HEAD");
         numstat_args.push("HEAD");
-        (changed, excluded) = tracked::collect(
-            root,
-            &diff_args,
-            &numstat_args,
-            &scope,
-            eligible_targets.is_some(),
+        Some(
+            tracked::collect(
+                root,
+                &diff_args,
+                &numstat_args,
+                &scope,
+                eligible_targets.is_some(),
+            )
+            .await?,
         )
-        .await?;
-        true
     } else {
-        let indexed = run_git(root, &["ls-files", "-z"]).await?;
-        collect_current_worktree_paths(root, &indexed, &mut changed, eligible_targets).await?;
-        false
+        None
     };
-    changed.retain(|path, _| !excluded.contains(path));
-    // Unborn-indexed ranges already use Python physical rows, like untracked files.
-    if patch_ranges {
-        changed =
-            translate_current_ranges(root, normalize_changed(changed), eligible_targets).await?;
-    }
+    let mut changed = if let Some(tracked) = tracked_ranges {
+        tracked.into_physical(root, eligible_targets).await?
+    } else {
+        // Unborn-indexed ranges already use Python physical rows.
+        let mut physical = BTreeMap::new();
+        let indexed = run_git(root, &["ls-files", "-z"]).await?;
+        collect_current_worktree_paths(root, &indexed, &mut physical, eligible_targets).await?;
+        physical
+    };
 
     let untracked = run_git(root, &["ls-files", "--others", "--exclude-standard", "-z"]).await?;
     collect_current_worktree_paths(root, &untracked, &mut changed, eligible_targets).await?;
@@ -493,39 +494,47 @@ fn read_current_source(
     }
 }
 
-async fn translate_current_ranges(
-    root: &Utf8Path,
-    mut changed: BTreeMap<Utf8PathBuf, Vec<LineRange>>,
-    eligible_targets: Option<&[TargetSlice]>,
-) -> Result<BTreeMap<Utf8PathBuf, Vec<LineRange>>, TargetError> {
-    if let Some(targets) = eligible_targets {
-        let keys = targets
-            .iter()
-            .map(|target| logical_path_equality_key(&target.path).into_owned())
-            .collect::<BTreeSet<_>>();
-        changed.retain(|path, _| keys.contains(logical_path_equality_key(path).as_ref()));
-    }
-    if changed.is_empty() {
-        return Ok(changed);
-    }
-    let root = root.to_owned();
-    tokio::task::spawn_blocking(move || {
-        let reader = PortableFileReader::open(root)
-            .map_err(|error| TargetError::GitFailed(error.to_string()))?;
-        let mut physical = BTreeMap::new();
-        for (path, ranges) in changed {
-            let Some(contents) = read_current_source(&reader, &path)? else {
-                continue;
-            };
-            if contents.is_empty() || contents.contains(&0) {
-                continue;
-            }
-            physical.insert(path, lines::translate(&contents, &ranges)?);
+/// Normalized tracked patch intervals in Git LF rows, with excluded files removed.
+/// These cannot be combined with Python physical ranges until conversion consumes them.
+struct GitChangedRanges(BTreeMap<Utf8PathBuf, Vec<LineRange>>);
+
+impl GitChangedRanges {
+    /// Convert LF rows against current bytes before joining unborn or untracked ranges.
+    async fn into_physical(
+        self,
+        root: &Utf8Path,
+        eligible_targets: Option<&[TargetSlice]>,
+    ) -> Result<BTreeMap<Utf8PathBuf, Vec<LineRange>>, TargetError> {
+        let mut changed = self.0;
+        if let Some(targets) = eligible_targets {
+            let keys = targets
+                .iter()
+                .map(|target| logical_path_equality_key(&target.path).into_owned())
+                .collect::<BTreeSet<_>>();
+            changed.retain(|path, _| keys.contains(logical_path_equality_key(path).as_ref()));
         }
-        Ok(physical)
-    })
-    .await
-    .map_err(|error| TargetError::GitFailed(error.to_string()))?
+        if changed.is_empty() {
+            return Ok(changed);
+        }
+        let root = root.to_owned();
+        tokio::task::spawn_blocking(move || {
+            let reader = PortableFileReader::open(root)
+                .map_err(|error| TargetError::GitFailed(error.to_string()))?;
+            let mut physical = BTreeMap::new();
+            for (path, ranges) in changed {
+                let Some(contents) = read_current_source(&reader, &path)? else {
+                    continue;
+                };
+                if contents.is_empty() || contents.contains(&0) {
+                    continue;
+                }
+                physical.insert(path, lines::translate(&contents, &ranges)?);
+            }
+            Ok(physical)
+        })
+        .await
+        .map_err(|error| TargetError::GitFailed(error.to_string()))?
+    }
 }
 
 fn is_python(path: &Utf8Path) -> bool {

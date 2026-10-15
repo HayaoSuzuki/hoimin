@@ -1,14 +1,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use camino::{Utf8Path, Utf8PathBuf};
-use hoimin_core::{LineRange, TargetError};
+use camino::Utf8Path;
+use hoimin_core::{TargetError, normalize_changed};
 
-use super::{GitPathScope, parse_binary_numstat, parse_diff, run_git};
+use super::{GitChangedRanges, GitPathScope, parse_binary_numstat, parse_diff, run_git};
 
 const MAX_PATHS: usize = 128;
 const MAX_PATH_BYTES: usize = 8192;
-
-type Changed = BTreeMap<Utf8PathBuf, Vec<LineRange>>;
 
 #[derive(Debug, Eq, PartialEq)]
 enum DiffPlan {
@@ -22,7 +20,7 @@ pub(super) async fn collect(
     numstat_args: &[&str],
     scope: &GitPathScope,
     scoped: bool,
-) -> Result<(Changed, BTreeSet<Utf8PathBuf>), TargetError> {
+) -> Result<GitChangedRanges, TargetError> {
     let plan = if scoped {
         let mut args: Vec<_> = patch_args
             .iter()
@@ -60,7 +58,8 @@ pub(super) async fn collect(
             }
         }
     }
-    Ok((changed, excluded))
+    changed.retain(|path, _| !excluded.contains(path));
+    Ok(GitChangedRanges(normalize_changed(changed)))
 }
 
 fn scoped_args<'a>(args: &[&'a str], paths: &'a [String]) -> Vec<&'a str> {

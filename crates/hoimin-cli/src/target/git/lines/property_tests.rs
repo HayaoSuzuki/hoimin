@@ -62,23 +62,45 @@ proptest! {
         selected in proptest::collection::vec(any::<bool>(), 1..64),
     ) {
         let (ranges, expected) = selected_intervals(&source, &selected);
-        prop_assert_eq!(translate(source.as_bytes(), &ranges)?, expected);
-        let count: u32 = source.split_inclusive('\n').map(python_rows).sum();
-        prop_assert_eq!(physical_line_count(source.as_bytes())?, count);
+
+        let actual = translate(source.as_bytes(), &ranges)?;
+
+        prop_assert_eq!(actual, expected);
     }
 
     #[test]
-    fn boundary_property_git_rows_past_eof_are_rejected(
+    fn boundary_property_physical_count_matches_normalized_text(source in mixed_newlines()) {
+        let expected: u32 = source.split_inclusive('\n').map(python_rows).sum();
+
+        let actual = physical_line_count(source.as_bytes())?;
+
+        prop_assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn boundary_property_git_start_past_eof_is_rejected(
         source in mixed_newlines(),
         beyond in 1u32..32,
     ) {
         let rows = u32::try_from(source.split_inclusive('\n').count()).unwrap();
         let outside = rows + beyond;
-        prop_assert!(translate(source.as_bytes(), &[LineRange {
-            start: outside, end: outside,
-        }]).is_err(), "Git interval extends past EOF");
-        prop_assert!(translate(source.as_bytes(), &[LineRange {
-            start: 1, end: outside,
-        }]).is_err(), "Git interval extends past EOF");
+        let ranges = [LineRange { start: outside, end: outside }];
+
+        let actual = translate(source.as_bytes(), &ranges);
+
+        prop_assert!(actual.is_err(), "Git interval starts past EOF");
+    }
+
+    #[test]
+    fn boundary_property_git_end_past_eof_is_rejected(
+        source in mixed_newlines(),
+        beyond in 1u32..32,
+    ) {
+        let rows = u32::try_from(source.split_inclusive('\n').count()).unwrap();
+        let ranges = [LineRange { start: 1, end: rows + beyond }];
+
+        let actual = translate(source.as_bytes(), &ranges);
+
+        prop_assert!(actual.is_err(), "Git interval ends past EOF");
     }
 }
