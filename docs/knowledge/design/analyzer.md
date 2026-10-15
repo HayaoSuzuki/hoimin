@@ -446,6 +446,11 @@ sources:
   working_tree: untracked
   sha256: 98c8c6c858b6159203d518deaff36f5a186e4f1304bca81085549b401161db26
 
+- id: issue-930-token-operators
+  resource: ../../../crates/hoimin-cli/src/analyzer/rust.rs
+  revision: 0d3fbc1a1821074d6ba8a2a212116241adc85c4e
+  working_tree: modified
+  sha256: 44383a0b7c38f9a6590bc4704b4144f3eeb72146d8a3f7909cbc817663474e68
 ---
 
 # 構文と名前解決の契約
@@ -1031,3 +1036,20 @@ These are finite implementation observations on macOS; the Lean model was not
 rebuilt for this private representation change.[^issue-914-evidence]
 
 [^issue-914-evidence]: [Issue 914 design, reviews and verification](../../superpowers/plans/2026-10-15-issue-914.md).
+
+# Typed token mutation operators (Issue #930)
+
+Token replacement returns `MutationOperator` alongside replacement text. The
+compound `not in`, `is not` and unary `not` branches use the same enum, eliminating
+the internal canonical-name lookup and its `expect`. `make_candidate` still
+converts the enum with `as_str`; candidate operator fields and identity inputs
+remain strings. Prefix retention, deduplication and final ordering retain their
+existing string comparisons, independently of enum declaration order. Selection,
+limits and truncation follow the same paths.[^issue-930-token-operators]
+
+The [Issue #930 record](../../superpowers/plans/2026-10-16-issue-930.md) separates
+baseline and post-change checks from static comparison. This private type change
+adds no operator, format migration, performance claim or formal guarantee.
+Recheck canonical names and ordering if the candidate boundary is later changed.
+
+[^issue-930-token-operators]: [Token dispatch, replacement and candidate construction](../../../crates/hoimin-cli/src/analyzer/rust.rs).
