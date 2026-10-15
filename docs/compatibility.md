@@ -105,6 +105,19 @@ Rust additionally checks cross-field counts. The existing 0.8.0 release floor
 is unchanged. Internal Rust callers use validated `VerificationSelection`
 constructors and read-only accessors instead of public struct fields.
 
+## Required session budgets in 0.8.0
+
+New session databases require a non-NULL positive eight-byte BLOB mutant budget.
+An existing schema-5 database with valid budgets still opens and resumes without
+DDL conversion. A NULL budget in a current database created with earlier,
+nullable DDL now produces `session.corrupt` instead of the former budget-specific
+`session.resume.incompatible`. Invalid rows are rejected without repair; preserve
+the database for inspection and choose a different `--session PATH` for a fresh run.
+
+Normal stored bytes, session schema 5, CLI behavior and the 0.8.0 release floor
+remain unchanged. No migration is needed for valid current databases. Unsupported
+schemas 1–4 remain rejected; this change does not restore legacy migration paths.
+
 ## Public interfaces
 
 | Interface | Maintenance rule | User action when it changes |

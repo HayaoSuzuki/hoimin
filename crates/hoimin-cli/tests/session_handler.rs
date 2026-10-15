@@ -151,8 +151,8 @@ fn golden_session_corpus_rejects_extra_legacy_rows() {
 
 #[test]
 fn current_session_golden_matches_semantic_regeneration() {
-    let checked_path =
-        repo_root().join("crates/hoimin-cli/tests/golden/sessions/schema-v5.sqlite3");
+    let checked_path = repo_root()
+        .join("crates/hoimin-cli/tests/golden/sessions/schema-v5-required-budget.sqlite3");
     let temp = tempfile::tempdir().unwrap();
     let checked_copy = temp.path().join("checked.sqlite3");
     std::fs::copy(&checked_path, &checked_copy).unwrap();
@@ -2128,7 +2128,8 @@ fn resume_budget_is_monotone_and_selects_latest_eligible_incomplete_run() {
 }
 
 #[test]
-fn persisted_budget_preserves_unsigned_range_and_rejects_malformed_storage() {
+fn persisted_budget_preserves_unsigned_range() {
+    // Arrange
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("budget-range.sqlite");
     let mut handler = SessionHandler::open(&path).unwrap();
@@ -2140,24 +2141,167 @@ fn persisted_budget_preserves_unsigned_range_and_rejects_malformed_storage() {
         fingerprint: RunFingerprint::from_bytes([1; 32]),
         max_mutants: std::num::NonZeroUsize::new(usize::MAX).unwrap(),
     };
-    assert_eq!(resumed_run(handler.load(&request).unwrap()).run_id, "wide");
+    // Act
+    let resumed = handler.load(&request).unwrap();
     let connection = Connection::open(&path).unwrap();
     let budget: Vec<u8> = connection
         .query_row("SELECT max_mutants FROM runs", [], |row| row.get(0))
         .unwrap();
+    // Assert
+    assert_eq!(resumed_run(resumed).run_id, "wide");
     assert_eq!(budget, (usize::MAX as u64).to_be_bytes());
-    for malformed in ["zeroblob(8)", "zeroblob(7)", "1", "'100'"] {
-        assert!(
-            connection
-                .execute(&format!("UPDATE runs SET max_mutants={malformed}"), [])
-                .is_err()
+}
+
+#[test]
+fn new_session_rejects_null_budgets_even_when_checks_are_disabled() {
+    for ignore_checks in [false, true] {
+        for statement in [
+            "UPDATE runs SET max_mutants=NULL",
+            "INSERT INTO runs(run_id,fingerprint,max_mutants) SELECT 'invalid',fingerprint,NULL FROM runs",
+            "INSERT INTO runs(run_id,fingerprint) SELECT 'invalid',fingerprint FROM runs",
+        ] {
+            // Arrange
+            let directory = tempfile::tempdir().unwrap();
+            let path = directory.path().join("required-budget.sqlite");
+            let mut handler = SessionHandler::open(&path).unwrap();
+            handler.begin(begin_request(1, "budget")).unwrap();
+            let observer = Connection::open(&path).unwrap();
+            observer
+                .pragma_update(None, "ignore_check_constraints", ignore_checks)
+                .unwrap();
+            // Act
+            let result = observer.execute(statement, []);
+            // Assert
+            let rusqlite::Error::SqliteFailure(error, _) = result.unwrap_err() else {
+                panic!("expected SQLite constraint violation");
+            };
+            assert_eq!(
+                error.extended_code,
+                rusqlite::ffi::SQLITE_CONSTRAINT_NOTNULL,
+                "ignore_checks={ignore_checks}, statement={statement}"
+            );
+        }
+    }
+}
+
+#[test]
+fn new_session_rejects_malformed_non_null_budget_storage() {
+    for malformed in [
+        Value::Blob(vec![0; 8]),
+        Value::Blob(vec![255; 7]),
+        Value::Blob(vec![255; 9]),
+        Value::Integer(1),
+        Value::Text("100".into()),
+        Value::Real(1.5),
+    ] {
+        // Arrange
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("constrained-budget.sqlite");
+        let mut handler = SessionHandler::open(&path).unwrap();
+        handler.begin(begin_request(1, "budget")).unwrap();
+        let observer = Connection::open(&path).unwrap();
+        // Act
+        let result = observer.execute("UPDATE runs SET max_mutants=?1", [&malformed]);
+        // Assert
+        let rusqlite::Error::SqliteFailure(error, _) = result.unwrap_err() else {
+            panic!("expected SQLite constraint violation");
+        };
+        assert_eq!(
+            error.extended_code,
+            rusqlite::ffi::SQLITE_CONSTRAINT_CHECK,
+            "malformed={malformed:?}"
         );
     }
-    connection
+}
+
+fn copy_nullable_budget_golden() -> (tempfile::TempDir, PathBuf) {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("previous-current.sqlite");
+    std::fs::copy(
+        repo_root().join("crates/hoimin-cli/tests/golden/sessions/schema-v5.sqlite3"),
+        &path,
+    )
+    .unwrap();
+    (directory, path)
+}
+
+fn current_schema_with_null_budget() -> (tempfile::TempDir, SessionHandler, Connection) {
+    let (directory, path) = copy_nullable_budget_golden();
+    let observer = Connection::open(&path).unwrap();
+    observer
         .execute("UPDATE runs SET max_mutants=NULL", [])
         .unwrap();
-    let failure = handler.load(&request).unwrap_err();
-    assert_eq!(failure.failure.code(), "session.resume.incompatible");
+    let handler = SessionHandler::open(&path).unwrap();
+    (directory, handler, observer)
+}
+
+fn budget_load_request(budget: usize) -> LoadSession {
+    LoadSession {
+        id: EffectId(2),
+        fingerprint: RunFingerprint::from_bytes([1; 32]),
+        max_mutants: std::num::NonZeroUsize::new(budget).unwrap(),
+    }
+}
+
+#[test]
+fn nullable_current_schema_rejects_null_budget_as_corrupt() {
+    // Arrange
+    let (_directory, mut handler, _observer) = current_schema_with_null_budget();
+    // Act
+    let result = handler.load(&budget_load_request(100));
+    // Assert
+    assert_eq!(result.unwrap_err().failure.code(), "session.corrupt");
+}
+
+#[test]
+fn null_budget_rejection_preserves_stored_data() {
+    // Arrange
+    let (_directory, mut handler, observer) = current_schema_with_null_budget();
+    let before = logical_rows(&observer);
+    // Act
+    let _result = handler.load(&budget_load_request(100));
+    // Assert
+    assert_eq!(logical_rows(&observer), before);
+}
+
+proptest::proptest! {
+    #![proptest_config(proptest::test_runner::Config::with_cases(32))]
+    #[test]
+    fn positive_budget_persistence_survives_reopen(budget in 1usize..=usize::MAX) {
+        // Arrange
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("budget.sqlite");
+        let mut writer = SessionHandler::open(&path).unwrap();
+        let mut begin = begin_request(1, "budget");
+        begin.max_mutants = std::num::NonZeroUsize::new(budget).unwrap();
+        writer.begin(begin).unwrap();
+        drop(writer);
+        // Act
+        let mut reader = SessionHandler::open(&path).unwrap();
+        let resumed = reader.load(&budget_load_request(budget)).unwrap();
+        let observer = Connection::open(&path).unwrap();
+        let stored: Vec<u8> = observer.query_row("SELECT max_mutants FROM runs", [], |row| row.get(0)).unwrap();
+        // Assert
+        proptest::prop_assert_eq!(resumed_run(resumed).run_id, "budget");
+        proptest::prop_assert_eq!(stored, (budget as u64).to_be_bytes());
+    }
+
+    #[test]
+    fn previous_current_budget_resumes_without_schema_rewrite(budget in 100usize..=usize::MAX) {
+        // Arrange
+        let (_directory, path) = copy_nullable_budget_golden();
+        let observer = Connection::open(&path).unwrap();
+        let before = schema_sql(&observer);
+        // Act
+        let mut handler = SessionHandler::open(&path).unwrap();
+        let resumed = handler.load(&budget_load_request(budget)).unwrap();
+        let stored: Vec<u8> = observer.query_row("SELECT max_mutants FROM runs", [], |row| row.get(0)).unwrap();
+        // Assert
+        proptest::prop_assert_eq!(resumed_run(resumed).run_id, "golden-run");
+        proptest::prop_assert_eq!(stored, (budget as u64).to_be_bytes());
+        proptest::prop_assert_eq!(schema_sql(&observer), before);
+        proptest::prop_assert_eq!(user_version(&observer), 5);
+    }
 }
 
 #[test]
