@@ -5,6 +5,15 @@ description: OS別の資源制限と、プロセス終了・一時ファイル�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-941-record
+  resource: ../../maintenance/2026-10-16-issue-941.md
+  working_tree: untracked
+  sha256: 05effa8e77f25c45d2fb01e85f243757a0faa0e048ed7b093eff159135edaaf1
+- id: issue-941-machine
+  resource: ../../../crates/hoimin-core/src/machine.rs
+  revision: 465ff928c1f2ceb9f9b8f8084465475e45799ee8
+  working_tree: modified
+  sha256: ef048b3038f5df1440adc631202cd4ad22894b93b06a7078fb3ea2a68b9b0634
 - id: issue-931-handler
   resource: ../../../crates/hoimin-cli/src/workspace/mod.rs
   revision: 0d3fbc1a1821074d6ba8a2a212116241adc85c4e
@@ -458,3 +467,23 @@ separates new two-path filesystem tests from existing Lean-derived lifecycle
 comparisons. This change adds no formal model or proof.
 
 [^issue-931-handler]: [Single-candidate workspace apply entry point](../../../crates/hoimin-cli/src/workspace/mod.rs).
+
+
+## Shared explicit-stop routing
+
+Deadline, disk stop and cancellation record their distinct cause, then enter one
+private `begin_stop` route. It stops scheduling, captures whether mutation was in
+progress, retires pending effects, and selects mutant draining, deferred RunStarted,
+finalization or cleanup in that order. Deadline marks incomplete, cancellation marks
+interrupted, and disk stop records infrastructure failure/incomplete while retaining
+the first disk evidence. The existing terminal, cleanup and session-finish guard runs
+before cause recording. EffectFailed retains its separate delivery-failure behavior.
+This is an internal extraction without public format changes.[^issue-941-machine]
+
+The [Issue #941 verification record](../../maintenance/2026-10-16-issue-941.md)
+records cause/phase characterization, generated schedules and sensitivity checks.
+Existing formal correspondence is retained; no new theorem is claimed.[^issue-941-record]
+
+[^issue-941-machine]: [Common stop routing](../../../crates/hoimin-core/src/machine.rs).
+
+[^issue-941-record]: [Issue #941 verification](../../maintenance/2026-10-16-issue-941.md).

@@ -1103,6 +1103,25 @@ impl RunState {
         })])
     }
 
+    /// Stops dispatch and retires pending work before draining known candidates or
+    /// finalizing. Callers record the stop cause; terminal stops are filtered by transition.
+    fn begin_stop(&mut self) -> Result<Vec<RunEffect>, MachineError> {
+        self.flags.scheduling.stop_requested = true;
+        let was_mutating = self.phase == RunPhase::Mutants;
+        self.retire_pending();
+        if was_mutating {
+            self.begin_stopped_mutant_drain()
+        } else if !self.flags.report.report_started {
+            self.flags.report.stop_after_run_started = true;
+            self.start_run_effects()
+        } else if self.copy_grant.is_some() {
+            self.phase = RunPhase::Finalize;
+            self.finalize_effects()
+        } else {
+            self.cleanup_effects()
+        }
+    }
+
     fn begin_stopped_mutant_drain(&mut self) -> Result<Vec<RunEffect>, MachineError> {
         let mut stopped: Vec<_> = self.stopped_candidates.drain(..).collect();
         for worker in self.workers.values_mut() {
@@ -1881,58 +1900,19 @@ pub fn transition(
         }
         RunEvent::DeadlineReached => {
             state.flags.outcome.incomplete = true;
-            state.flags.scheduling.stop_requested = true;
-            let was_mutating = state.phase == RunPhase::Mutants;
-            state.retire_pending();
-            if was_mutating {
-                state.begin_stopped_mutant_drain()?
-            } else if !state.flags.report.report_started {
-                state.flags.report.stop_after_run_started = true;
-                state.start_run_effects()?
-            } else if state.copy_grant.is_some() {
-                state.phase = RunPhase::Finalize;
-                state.finalize_effects()?
-            } else {
-                state.cleanup_effects()?
-            }
+            state.begin_stop()?
         }
         RunEvent::DiskStopRequested(value) => {
             state.flags.outcome.infrastructure_error = true;
             state.flags.outcome.incomplete = true;
-            state.flags.scheduling.stop_requested = true;
             if state.disk_summary.stop.is_none() {
                 state.disk_summary.stop = Some(value.failure.into());
             }
-            let was_mutating = state.phase == RunPhase::Mutants;
-            state.retire_pending();
-            if was_mutating {
-                state.begin_stopped_mutant_drain()?
-            } else if !state.flags.report.report_started {
-                state.flags.report.stop_after_run_started = true;
-                state.start_run_effects()?
-            } else if state.copy_grant.is_some() {
-                state.phase = RunPhase::Finalize;
-                state.finalize_effects()?
-            } else {
-                state.cleanup_effects()?
-            }
+            state.begin_stop()?
         }
         RunEvent::CancellationRequested => {
             state.flags.report.interrupted = true;
-            state.flags.scheduling.stop_requested = true;
-            let was_mutating = state.phase == RunPhase::Mutants;
-            state.retire_pending();
-            if was_mutating {
-                state.begin_stopped_mutant_drain()?
-            } else if !state.flags.report.report_started {
-                state.flags.report.stop_after_run_started = true;
-                state.start_run_effects()?
-            } else if state.copy_grant.is_some() {
-                state.phase = RunPhase::Finalize;
-                state.finalize_effects()?
-            } else {
-                state.cleanup_effects()?
-            }
+            state.begin_stop()?
         }
         _ => return Err(MachineError::WrongPhase { phase: state.phase }),
     };
