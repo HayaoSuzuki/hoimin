@@ -160,9 +160,37 @@ struct CleanupFlags {
 #[derive(Clone, Debug)]
 struct OrderedCandidateState {
     ids: Vec<String>,
-    discovered: BTreeMap<String, MutationCandidate>,
-    ready: VecDeque<MutationCandidate>,
-    collection_complete: bool,
+    phase: OrderedCandidatePhase,
+}
+
+#[derive(Clone, Debug)]
+enum OrderedCandidatePhase {
+    Collecting {
+        discovered: BTreeMap<String, MutationCandidate>,
+    },
+    Ready {
+        remaining: VecDeque<MutationCandidate>,
+    },
+}
+
+impl OrderedCandidateState {
+    /// Transfers only owned candidates in request order, ending collection even
+    /// when stopped before EOF. Undiscovered requested IDs have no result to emit.
+    fn take_remaining(&mut self) -> VecDeque<MutationCandidate> {
+        match std::mem::replace(
+            &mut self.phase,
+            OrderedCandidatePhase::Ready {
+                remaining: VecDeque::new(),
+            },
+        ) {
+            OrderedCandidatePhase::Collecting { mut discovered } => self
+                .ids
+                .iter()
+                .filter_map(|id| discovered.remove(id))
+                .collect(),
+            OrderedCandidatePhase::Ready { remaining } => remaining,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -328,9 +356,9 @@ impl RunState {
         state.candidate_filter = Some(candidate_filter);
         state.ordered_candidates = Some(Box::new(OrderedCandidateState {
             ids: ordered_candidate_ids,
-            discovered: BTreeMap::new(),
-            ready: VecDeque::new(),
-            collection_complete: false,
+            phase: OrderedCandidatePhase::Collecting {
+                discovered: BTreeMap::new(),
+            },
         }));
         state
     }
@@ -816,11 +844,9 @@ impl RunState {
 
     fn schedule_read_or_finalize(&mut self) -> Result<Vec<RunEffect>, MachineError> {
         if self.ordered_candidates.is_some() {
-            if self
-                .ordered_candidates
-                .as_ref()
-                .is_some_and(|ordered| !ordered.collection_complete)
-            {
+            if self.ordered_candidates.as_ref().is_some_and(|ordered| {
+                matches!(ordered.phase, OrderedCandidatePhase::Collecting { .. })
+            }) {
                 if !self.candidate_read_pending()
                     && let Some(worker) = self.idle_worker()
                 {
@@ -831,10 +857,13 @@ impl RunState {
 
             let mut effects = Vec::new();
             while let Some(worker) = self.idle_worker() {
-                let Some(candidate) = self
-                    .ordered_candidates
-                    .as_mut()
-                    .and_then(|ordered| ordered.ready.pop_front())
+                let Some(candidate) =
+                    self.ordered_candidates
+                        .as_mut()
+                        .and_then(|ordered| match &mut ordered.phase {
+                            OrderedCandidatePhase::Ready { remaining } => remaining.pop_front(),
+                            OrderedCandidatePhase::Collecting { .. } => None,
+                        })
                 else {
                     break;
                 };
@@ -850,14 +879,15 @@ impl RunState {
                     effects.extend(self.candidate_effects(worker)?);
                 }
             }
-            if self
-                .ordered_candidates
-                .as_ref()
-                .is_some_and(|ordered| ordered.ready.is_empty())
-                && self
-                    .workers
-                    .values()
-                    .all(|worker| matches!(worker, WorkerState::Idle))
+            if self.ordered_candidates.as_ref().is_some_and(|ordered| {
+                matches!(
+                    &ordered.phase,
+                    OrderedCandidatePhase::Ready { remaining } if remaining.is_empty()
+                )
+            }) && self
+                .workers
+                .values()
+                .all(|worker| matches!(worker, WorkerState::Idle))
             {
                 self.flags.scheduling.candidate_exhausted = true;
                 self.phase = RunPhase::Finalize;
@@ -895,11 +925,14 @@ impl RunState {
                 .as_ref()
                 .is_some_and(|filter| filter.contains(&candidate.id))
             {
-                self.ordered_candidates
+                let ordered = self
+                    .ordered_candidates
                     .as_mut()
-                    .expect("ordered collection requires ordered state")
-                    .discovered
-                    .insert(candidate.id.clone(), candidate);
+                    .expect("ordered collection requires ordered state");
+                let OrderedCandidatePhase::Collecting { discovered } = &mut ordered.phase else {
+                    unreachable!("ordered collection requires the collecting phase");
+                };
+                discovered.insert(candidate.id.clone(), candidate);
             }
             return self.schedule_read_or_finalize();
         }
@@ -909,29 +942,20 @@ impl RunState {
             .ordered_candidates
             .as_mut()
             .expect("ordered collection requires ordered state");
-        ordered.ready = ordered
-            .ids
-            .iter()
-            .map(|candidate_id| {
-                ordered
-                    .discovered
-                    .remove(candidate_id)
-                    .expect("ordered candidate presence was validated")
-            })
-            .collect();
-        ordered.collection_complete = true;
+        ordered.phase = OrderedCandidatePhase::Ready {
+            remaining: ordered.take_remaining(),
+        };
         self.schedule_read_or_finalize()
     }
 
     fn ensure_selected_candidates_discovered(&self) -> Result<(), MachineError> {
         let missing = if let Some(ordered) = &self.ordered_candidates {
-            if ordered.collection_complete {
-                None
-            } else {
-                ordered
+            match &ordered.phase {
+                OrderedCandidatePhase::Collecting { discovered } => ordered
                     .ids
                     .iter()
-                    .find(|candidate_id| !ordered.discovered.contains_key(*candidate_id))
+                    .find(|candidate_id| !discovered.contains_key(*candidate_id)),
+                OrderedCandidatePhase::Ready { .. } => None,
             }
         } else {
             self.candidate_filter.as_ref().and_then(|candidate_filter| {
@@ -1105,20 +1129,12 @@ impl RunState {
             }
         }
         if let Some(ordered) = self.ordered_candidates.as_mut() {
-            let requested_ids = ordered.ids.clone();
-            for candidate_id in requested_ids {
-                let candidate = ordered
-                    .ready
-                    .iter()
-                    .position(|candidate| candidate.id == candidate_id)
-                    .and_then(|position| ordered.ready.remove(position))
-                    .or_else(|| ordered.discovered.remove(&candidate_id));
-                if let Some(candidate) = candidate {
-                    stopped.push(StoppedCandidate::NotStarted(candidate));
-                }
-            }
-            ordered.ready.clear();
-            ordered.discovered.clear();
+            stopped.extend(
+                ordered
+                    .take_remaining()
+                    .into_iter()
+                    .map(StoppedCandidate::NotStarted),
+            );
             self.flags.scheduling.candidate_exhausted = true;
         }
         stopped.sort_by_key(|candidate| {
@@ -1545,11 +1561,9 @@ pub fn transition(
             }
             let worker = value.worker;
             state.candidate_cursor = value.next_cursor;
-            if state
-                .ordered_candidates
-                .as_ref()
-                .is_some_and(|ordered| !ordered.collection_complete)
-            {
+            if state.ordered_candidates.as_ref().is_some_and(|ordered| {
+                matches!(ordered.phase, OrderedCandidatePhase::Collecting { .. })
+            }) {
                 state.collect_ordered_candidate(worker, value.candidate)?
             } else {
                 if value.candidate.is_none() {

@@ -4595,6 +4595,139 @@ proptest! {
     }
 }
 
+fn ordered_collection_with_pending_read(
+    candidate_count: usize,
+    discovered_count: usize,
+    jobs: usize,
+) -> (ScheduleHarness, RunEvent) {
+    let mut harness = ScheduleHarness::new(
+        candidate_count,
+        jobs,
+        ScheduleFilter::Ordered,
+        false,
+        vec![0],
+    );
+    harness.complete_until(|effect| matches!(effect, RunEffect::ReadCandidate(_)));
+    for _ in 0..discovered_count {
+        let index = harness
+            .pending
+            .iter()
+            .position(|effect| matches!(effect, RunEffect::ReadCandidate(_)))
+            .unwrap();
+        harness.complete(index);
+    }
+    let read = harness
+        .pending
+        .iter()
+        .find(|effect| matches!(effect, RunEffect::ReadCandidate(_)))
+        .unwrap()
+        .clone();
+    let RunEffect::ReadCandidate(read) = read else {
+        unreachable!()
+    };
+    let late_completion = RunEvent::CandidateLoaded(CandidateLoaded {
+        id: read.id,
+        worker: read.worker,
+        candidate: harness.candidates.get(discovered_count).cloned(),
+        next_cursor: candidate_cursor((discovered_count + 1) as u64, 1),
+    });
+    (harness, late_completion)
+}
+
+fn reported_candidate_ids(harness: &ScheduleHarness) -> Vec<String> {
+    harness
+        .output_events
+        .iter()
+        .filter_map(|(_, event)| match event {
+            OutputEvent::MutantFinished(result) => Some(result.candidate.id.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn ordered_collection_stop_reports_discovered_boundary_prefix() {
+    for (discovered, expected) in [(0, vec![]), (1, vec!["m1"]), (3, vec!["m3", "m2", "m1"])] {
+        let (harness, _) = ordered_collection_with_pending_read(3, discovered, 3);
+
+        let finished = harness.finish(&[ScheduleAction::Cancel]);
+
+        assert_eq!(reported_candidate_ids(&finished), expected);
+        assert_eq!(finished.state.summary().not_run, discovered as u64);
+        assert_eq!(finished.apply_mutation_count, 0);
+    }
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(128))]
+
+    #[test]
+    fn ordered_collection_stop_preserves_discovered_prefix_under_scheduling(
+        candidate_count in 1usize..9,
+        discovered_seed in 0usize..9,
+        jobs in 1usize..4,
+        stop_index in 0usize..2,
+        completions in prop::collection::vec(any::<usize>(), 0..20),
+    ) {
+        let discovered = discovered_seed % (candidate_count + 1);
+        let expected: Vec<_> = (1..=discovered).rev().map(|id| format!("m{id}")).collect();
+        let (mut harness, _) =
+            ordered_collection_with_pending_read(candidate_count, discovered, jobs);
+        let actions: Vec<_> = completions.into_iter().map(ScheduleAction::Complete).collect();
+        let stop = [RunEvent::CancellationRequested, RunEvent::DeadlineReached][stop_index].clone();
+
+        harness.stop(stop);
+        let finished = harness.finish(&actions);
+
+        prop_assert_eq!(reported_candidate_ids(&finished), expected);
+        prop_assert_eq!(finished.state.summary().not_run, discovered as u64);
+        prop_assert_eq!(finished.apply_mutation_count, 0);
+    }
+
+    #[test]
+    fn ordered_collection_stop_rejects_late_read_completion(
+        candidate_count in 1usize..9,
+        discovered_seed in 0usize..9,
+        jobs in 1usize..4,
+        stop_index in 0usize..2,
+    ) {
+        let discovered = discovered_seed % (candidate_count + 1);
+        let (mut harness, late_completion) =
+            ordered_collection_with_pending_read(candidate_count, discovered, jobs);
+        let RunEvent::CandidateLoaded(read) = &late_completion else {
+            unreachable!()
+        };
+        let read_id = read.id;
+        let stop = [RunEvent::CancellationRequested, RunEvent::DeadlineReached][stop_index].clone();
+
+        harness.stop(stop);
+        let result = transition(harness.state, late_completion);
+
+        prop_assert_eq!(result.unwrap_err(), MachineError::RetiredEffect(read_id));
+    }
+
+    #[test]
+    fn ordered_ready_queue_obeys_generated_mutant_budget(
+        candidate_count in 1usize..9,
+        max_mutants in 1usize..10,
+        jobs in 1usize..4,
+        completions in prop::collection::vec(any::<usize>(), 0..40),
+    ) {
+        let expected_runs = candidate_count.min(max_mutants);
+        let harness = ScheduleHarness::new_with_max_mutants(
+            candidate_count, jobs, ScheduleFilter::Ordered, false, vec![0], Some(max_mutants),
+        );
+        let actions: Vec<_> = completions.into_iter().map(ScheduleAction::Complete).collect();
+
+        let finished = harness.finish(&actions);
+
+        prop_assert_eq!(finished.apply_mutation_count, expected_runs);
+        prop_assert_eq!(finished.state.summary().killed, expected_runs as u64);
+        prop_assert_eq!(finished.state.summary().not_run, (candidate_count - expected_runs) as u64);
+        prop_assert_eq!(finished.ledger.len(), candidate_count);
+    }
+}
+
 #[test]
 fn ordered_scheduling_stops_real_mutants_at_max_mutants() {
     let harness = ScheduleHarness::new_with_max_mutants(

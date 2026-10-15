@@ -5,6 +5,15 @@ description: OS別の資源制限と、プロセス終了・一時ファイル�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-912-machine
+  resource: ../../../crates/hoimin-core/src/machine.rs
+  revision: 64ac5038afa1396e7fe237d17dd82641dee25c56
+  working_tree: modified
+  sha256: 8e5aee879b69eedc3c9477e6374772659f5e2150afd1eb4672b23f96295e7c5f
+- id: issue-912-plan
+  resource: ../../superpowers/plans/2026-10-15-issue-912.md
+  working_tree: untracked
+  sha256: b91c0167c0315940d6a71592de308b7b9d4fdd049057f54f51b01b581084355c
 - id: issue-897-machine
   resource: ../../../crates/hoimin-core/src/machine.rs
   revision: 175486b7cb30a665bdf39c1ac7897eb96d9966f7
@@ -378,3 +387,26 @@ for review findings, tests and the boundary of that correspondence.[^issue-901-o
 
 [^issue-901-core]: [Typed root cleanup lifecycle](../../../crates/hoimin-core/src/disk.rs).
 [^issue-901-oracle]: [Validated formal-to-typed root observation adapter](../../../crates/hoimin-cli/tests/lean_disk_shutdown_oracle.rs).
+
+## Ordered candidate collection and stop ownership
+
+Ordered selection retains its stable, deduplicated requested IDs across two
+private phases. `Collecting` owns discovered selected candidates; `Ready` owns
+only the remaining execution queue. End-of-spool validation rejects missing
+requested IDs before converting the map to request order. The enum prevents a
+ready queue and an unfinished discovered map from coexisting.[^issue-912-machine]
+
+A stop consumes the current phase and leaves an empty Ready state. During
+collection, only discovered selected candidates become NotRun; undiscovered IDs
+produce neither results nor missing-ID errors. Worker-owned candidates join this
+drain in requested order. Existing effect retirement rejects late reads, and
+existing scheduling still limits real mutations with `max_mutants`. This changes
+private ownership, without changing CLI, report or database formats.[^issue-912-machine]
+
+The [Issue #912 review record](../../superpowers/plans/2026-10-15-issue-912-review.md)
+records characterization, manual sensitivity checks and executed verification.
+The design reuses the existing machine scheduling oracle; it does not add or
+claim a new Lean proof.[^issue-912-plan]
+
+[^issue-912-machine]: [Core run machine](../../../crates/hoimin-core/src/machine.rs), Issue #912 private ordered collection phase.
+[^issue-912-plan]: [Issue #912 design and implementation plan](../../superpowers/plans/2026-10-15-issue-912.md).
