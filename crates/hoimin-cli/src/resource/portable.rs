@@ -160,18 +160,53 @@ impl PortableBackend {
     }
 }
 
+/// Authority over a Unix process group. After reap, a numeric PGID may be
+/// recycled, so retained identifiers permit existence probes only. `None` does
+/// not prove absence; that evidence belongs to `tree_quiescent`.
+#[cfg(unix)]
+#[derive(Debug)]
+enum ProcessGroup {
+    None,
+    Signalable(i32),
+    ProbeOnly(i32),
+}
+
+#[cfg(unix)]
+impl ProcessGroup {
+    fn record_root_reaped(&mut self) {
+        if let Self::Signalable(group) = *self {
+            *self = Self::ProbeOnly(group);
+        }
+    }
+
+    fn probe_after_root_reap<F>(&mut self, probe: F) -> Result<bool, ResourceError>
+    where
+        F: FnOnce(i32) -> Result<bool, ResourceError>,
+    {
+        // Disarm before the fallible probe: retries and Drop must never signal
+        // a numeric identifier after the root's ownership has ended.
+        self.record_root_reaped();
+        let Self::ProbeOnly(group) = *self else {
+            return Ok(false);
+        };
+        let absent = probe(group)?;
+        if absent {
+            *self = Self::None;
+        }
+        Ok(absent)
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct PortableSupervisor {
     #[cfg(unix)]
-    process_group: Option<i32>,
+    process_group: ProcessGroup,
     #[cfg(windows)]
     job: isize,
     #[cfg(all(windows, test))]
     attach_fault: AttachFault,
     terminated: bool,
     tree_quiescent: bool,
-    #[cfg(unix)]
-    reaped_process_group: Option<i32>,
     classification_failures: Arc<AtomicU8>,
     termination_failures: Arc<AtomicU8>,
 }
@@ -190,15 +225,13 @@ impl PortableSupervisor {
         let job = create_kill_on_close_job()?;
         Ok(Self {
             #[cfg(unix)]
-            process_group: None,
+            process_group: ProcessGroup::None,
             #[cfg(windows)]
             job,
             #[cfg(all(windows, test))]
             attach_fault,
             terminated: false,
             tree_quiescent: false,
-            #[cfg(unix)]
-            reaped_process_group: None,
             classification_failures,
             termination_failures,
         })
@@ -213,9 +246,7 @@ impl PortableSupervisor {
     )]
     pub(crate) fn record_root_reaped(&mut self) {
         #[cfg(unix)]
-        if let Some(group) = self.process_group.take() {
-            self.reaped_process_group = Some(group);
-        }
+        self.process_group.record_root_reaped();
     }
 
     #[allow(
@@ -245,7 +276,7 @@ impl PortableSupervisor {
         #[cfg(unix)]
         {
             let pid = child.id().ok_or(ResourceError::MissingProcessId)?;
-            self.process_group = Some(
+            self.process_group = ProcessGroup::Signalable(
                 i32::try_from(pid)
                     .map_err(|_| ResourceError::InvalidLimit("portable process group id"))?,
             );
@@ -286,13 +317,8 @@ impl PortableSupervisor {
         let reaped_root_quiescent = if live_root_owned {
             false
         } else {
-            // Once the root is reaped its numeric process-group ID may be recycled.  Forget it
-            // before any fallible cleanup so retries and Drop cannot signal a different group.
-            probe_reaped_process_group(
-                &mut self.process_group,
-                &mut self.reaped_process_group,
-                process_group_is_absent,
-            )?
+            self.process_group
+                .probe_after_root_reap(process_group_is_absent)?
         };
         #[cfg(not(unix))]
         let _ = live_root_owned;
@@ -309,15 +335,12 @@ impl PortableSupervisor {
             ));
         }
         #[cfg(unix)]
-        if live_root_owned && let Some(group) = self.process_group {
-            // SAFETY: the child created this process group; negative pid targets that group only.
-            let result = unsafe { libc::kill(-group, libc::SIGKILL) };
-            if result != 0 {
-                let error = io::Error::last_os_error();
-                if error.raw_os_error() != Some(libc::ESRCH) {
-                    return Err(ResourceError::io("terminate process group", error));
-                }
-            }
+        if live_root_owned
+            && let ProcessGroup::Signalable(group) = self.process_group
+            && let Err(error) = kill_process_group(group, libc::SIGKILL)
+            && error.raw_os_error() != Some(libc::ESRCH)
+        {
+            return Err(ResourceError::io("terminate process group", error));
         }
         #[cfg(windows)]
         terminate_job(self.job)?;
@@ -348,11 +371,9 @@ impl PortableSupervisor {
         }
         #[cfg(unix)]
         {
-            self.tree_quiescent = probe_reaped_process_group(
-                &mut self.process_group,
-                &mut self.reaped_process_group,
-                process_group_is_absent,
-            )?;
+            self.tree_quiescent = self
+                .process_group
+                .probe_after_root_reap(process_group_is_absent)?;
         }
         #[cfg(not(unix))]
         {
@@ -363,40 +384,34 @@ impl PortableSupervisor {
 }
 
 #[cfg(unix)]
-fn process_group_is_absent(group: i32) -> Result<bool, ResourceError> {
-    // SAFETY: signal zero performs existence/permission checking without delivering a signal.
-    let result = unsafe { libc::kill(-group, 0) };
-    if result == 0 {
-        return Ok(false);
+fn kill_process_group(group: i32, signal: i32) -> io::Result<()> {
+    #[cfg(test)]
+    if let Some(result) = unix_state_tests::intercept_kill(group, signal) {
+        return result;
     }
-    let error = io::Error::last_os_error();
+    // SAFETY: the caller owns signal authority for this group, or uses signal zero
+    // to check existence without delivering a signal. A negative PID targets the group.
+    if unsafe { libc::kill(-group, signal) } == 0 {
+        Ok(())
+    } else {
+        Err(io::Error::last_os_error())
+    }
+}
+
+#[cfg(all(test, unix))]
+#[path = "portable/unix_state_tests.rs"]
+mod unix_state_tests;
+
+#[cfg(unix)]
+fn process_group_is_absent(group: i32) -> Result<bool, ResourceError> {
+    let Err(error) = kill_process_group(group, 0) else {
+        return Ok(false);
+    };
     match error.raw_os_error() {
         Some(libc::ESRCH) => Ok(true),
         Some(libc::EPERM) => Ok(false),
         _ => Err(ResourceError::io("probe portable process group", error)),
     }
-}
-
-#[cfg(unix)]
-fn probe_reaped_process_group<F>(
-    process_group: &mut Option<i32>,
-    reaped_process_group: &mut Option<i32>,
-    probe: F,
-) -> Result<bool, ResourceError>
-where
-    F: FnOnce(i32) -> Result<bool, ResourceError>,
-{
-    if reaped_process_group.is_none() {
-        *reaped_process_group = process_group.take();
-    }
-    let Some(group) = *reaped_process_group else {
-        return Ok(false);
-    };
-    let absent = probe(group)?;
-    if absent {
-        *reaped_process_group = None;
-    }
-    Ok(absent)
 }
 
 impl Drop for PortableSupervisor {
@@ -418,7 +433,7 @@ mod unix_tests {
     use tokio::io::{AsyncRead, AsyncReadExt};
     use tokio::process::{Child, Command};
 
-    use super::{PortableBackend, probe_reaped_process_group};
+    use super::{PortableBackend, ProcessGroup};
     use crate::process::wait_after_termination;
     use crate::resource::ProcessSupervisor;
 
@@ -430,29 +445,21 @@ mod unix_tests {
         let mut supervisor =
             super::PortableSupervisor::new(std::sync::Arc::default(), std::sync::Arc::default())
                 .unwrap();
-        supervisor.process_group = Some(41);
+        supervisor.process_group = ProcessGroup::Signalable(41);
+
         supervisor.record_root_reaped();
-        let signaling_target = supervisor.process_group.take();
-        let probe_target = supervisor.reaped_process_group;
+        let group = std::mem::replace(&mut supervisor.process_group, ProcessGroup::None);
         drop(supervisor);
-        assert_eq!(
-            signaling_target, None,
-            "Drop must not signal a recycled group"
-        );
-        assert_eq!(
-            probe_target,
-            Some(41),
-            "non-signaling quiescence checks retain the group"
-        );
+
+        assert!(matches!(group, ProcessGroup::ProbeOnly(41)));
     }
 
     #[test]
     fn reaped_group_is_forgotten_before_probe_error_can_escape() {
-        let mut process_group = Some(41);
-        let mut reaped_process_group = None;
+        let mut group = ProcessGroup::Signalable(41);
 
-        let error =
-            probe_reaped_process_group(&mut process_group, &mut reaped_process_group, |_| {
+        let error = group
+            .probe_after_root_reap(|_| {
                 Err(super::ResourceError::io(
                     "injected process-group probe",
                     std::io::Error::other("injected probe failure"),
@@ -460,34 +467,28 @@ mod unix_tests {
             })
             .unwrap_err();
 
-        assert!(process_group.is_none());
-        assert_eq!(reaped_process_group, Some(41));
+        assert!(matches!(group, ProcessGroup::ProbeOnly(41)));
         assert!(error.to_string().contains("injected probe failure"));
     }
 
     #[test]
     fn reaped_group_is_retained_until_absence_is_proven() {
-        let mut process_group = Some(41);
-        let mut reaped_process_group = None;
+        let mut group = ProcessGroup::Signalable(41);
 
-        assert!(
-            !probe_reaped_process_group(&mut process_group, &mut reaped_process_group, |_| Ok(
-                false
-            ),)
-            .unwrap()
-        );
-        assert_eq!(process_group, None);
-        assert_eq!(reaped_process_group, Some(41));
+        let present = group.probe_after_root_reap(|_| Ok(false)).unwrap();
 
-        assert!(
-            probe_reaped_process_group(
-                &mut process_group,
-                &mut reaped_process_group,
-                |_| Ok(true),
-            )
-            .unwrap()
-        );
-        assert_eq!(reaped_process_group, None);
+        assert!(!present);
+        assert!(matches!(group, ProcessGroup::ProbeOnly(41)));
+    }
+
+    #[test]
+    fn proven_absence_discards_the_probe_identifier() {
+        let mut group = ProcessGroup::ProbeOnly(41);
+
+        let absent = group.probe_after_root_reap(|_| Ok(true)).unwrap();
+
+        assert!(absent);
+        assert!(matches!(group, ProcessGroup::None));
     }
 
     async fn read_pipe<R>(mut pipe: R) -> Vec<u8>
