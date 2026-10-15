@@ -66,7 +66,7 @@ pub(crate) fn read_for_review(path: &Path) -> Result<ReadOnlyPlan, PlanError> {
     let project = Utf8PathBuf::from_path_buf(project)
         .map_err(|_| invalid("project root is not UTF-8".into()))?;
     for candidate in &manifest.candidates {
-        let descriptor = candidate_descriptor(&candidate.candidate);
+        let descriptor = CandidateDescriptor::from(&candidate.candidate);
         let id = hoimin_core::stable_mutant_id(&hoimin_core::CandidateIdentity::from(&descriptor));
         if id.as_str() != candidate.id {
             return Err(invalid("candidate id does not match its descriptor".into()));
@@ -963,7 +963,7 @@ async fn validate_requested_candidates(
                 "candidate is not discoverable under the planned configuration: {candidate_id}"
             ))
         })?;
-        if candidate_descriptor(current) != candidate_descriptor(planned) {
+        if CandidateDescriptor::from(*current) != CandidateDescriptor::from(*planned) {
             return Err(PlanError::CandidateInvalid(format!(
                 "candidate descriptor differs for {candidate_id}"
             )));
@@ -1032,19 +1032,21 @@ async fn validate_requested_descriptors(
             let context = CandidateValidationContext::new(&source)
                 .map_err(|error| PlanError::CandidateInvalid(error.to_string()))?;
             for candidate in file_candidates {
-                let result =
-                    validate_candidate_with_context(&context, &candidate_descriptor(candidate))
-                        .map_err(|error| PlanError::CandidateInvalid(error.to_string()))
-                        .and_then(|stable_id| {
-                            if stable_id.as_str() == candidate.id {
-                                Ok(())
-                            } else {
-                                Err(PlanError::CandidateInvalid(format!(
-                                    "candidate stable id differs for {}",
-                                    candidate.id
-                                )))
-                            }
-                        });
+                let result = validate_candidate_with_context(
+                    &context,
+                    &CandidateDescriptor::from(candidate),
+                )
+                .map_err(|error| PlanError::CandidateInvalid(error.to_string()))
+                .and_then(|stable_id| {
+                    if stable_id.as_str() == candidate.id {
+                        Ok(())
+                    } else {
+                        Err(PlanError::CandidateInvalid(format!(
+                            "candidate stable id differs for {}",
+                            candidate.id
+                        )))
+                    }
+                });
                 results.insert(candidate.id.as_str(), result);
             }
             // The source and its borrowed index are released before reading another file.
@@ -1066,21 +1068,6 @@ fn requested_discovery_targets(
         .filter(|target| requested_paths.contains(&target.path))
         .cloned()
         .collect()
-}
-
-pub(crate) fn candidate_descriptor(candidate: &MutationCandidate) -> CandidateDescriptor {
-    CandidateDescriptor {
-        schema_version: hoimin_core::CANDIDATE_SCHEMA_VERSION,
-        path: candidate.path.clone(),
-        span: candidate.span,
-        original: candidate.original.clone(),
-        replacement: candidate.replacement.clone(),
-        operator: candidate.operator.clone(),
-        line: candidate.line,
-        column: candidate.column,
-        symbol: candidate.symbol.clone(),
-        file_hash: candidate.file_hash.clone(),
-    }
 }
 
 fn output_config(format: OutputFormat) -> OutputConfig {

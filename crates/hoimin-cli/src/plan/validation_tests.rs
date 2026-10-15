@@ -2,9 +2,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 
 use camino::Utf8PathBuf;
-use hoimin_core::{ByteSpan, MutationCandidate, TargetSlice, validate_candidate};
+use hoimin_core::{
+    ByteSpan, CandidateDescriptor, MutationCandidate, TargetSlice, validate_candidate,
+};
 
-use super::{PlanError, ValidationStats, candidate_descriptor, validate_requested_descriptors};
+use super::{PlanError, ValidationStats, validate_requested_descriptors};
 
 fn fingerprint_records(entries: &[(&str, &str)]) -> Vec<hoimin_core::FingerprintInputFile> {
     entries
@@ -119,9 +121,10 @@ fn candidates(path: &str, count: usize, bytes: usize) -> (Vec<u8>, Vec<MutationC
                 symbol: None,
                 file_hash: hash.clone(),
             };
-            candidate.id = validate_candidate(source.as_bytes(), &candidate_descriptor(&candidate))
-                .unwrap()
-                .to_string();
+            candidate.id =
+                validate_candidate(source.as_bytes(), &CandidateDescriptor::from(&candidate))
+                    .unwrap()
+                    .to_string();
             candidate
         })
         .collect();
@@ -231,7 +234,7 @@ async fn descriptor_validation_preserves_each_validation_and_stable_identity() {
         ),
     ] {
         assert_eq!(
-            validate_candidate(&source, &candidate_descriptor(&candidate))
+            validate_candidate(&source, &CandidateDescriptor::from(&candidate))
                 .unwrap_err()
                 .to_string(),
             message
@@ -370,7 +373,7 @@ async fn benchmark_requested_descriptor_preprocessing() {
                 for candidate in &all {
                     let id = validate_candidate(
                         std::hint::black_box(&sources[&candidate.path]),
-                        &candidate_descriptor(candidate),
+                        &CandidateDescriptor::from(candidate),
                     )
                     .unwrap();
                     assert_eq!(id.as_str(), candidate.id);

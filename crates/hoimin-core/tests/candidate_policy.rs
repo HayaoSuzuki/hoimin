@@ -1,9 +1,10 @@
 use camino::Utf8PathBuf;
 use hoimin_core::{
     ByteSpan, CANDIDATE_SCHEMA_VERSION, CandidateDescriptor, CandidateIdentity,
-    CandidateValidationContext, CandidateValidationError, PythonSourceIndex, python_source_column,
-    stable_mutant_id, validate_candidate, validate_candidate_with_context,
+    CandidateValidationContext, CandidateValidationError, MutationCandidate, PythonSourceIndex,
+    python_source_column, stable_mutant_id, validate_candidate, validate_candidate_with_context,
 };
+use proptest::prelude::*;
 
 fn descriptor(source: &[u8]) -> CandidateDescriptor {
     CandidateDescriptor {
@@ -20,6 +21,37 @@ fn descriptor(source: &[u8]) -> CandidateDescriptor {
         column: 6,
         symbol: Some("compare".into()),
         file_hash: blake3::hash(source).to_hex().to_string(),
+    }
+}
+
+proptest! {
+    #[test]
+    fn mutation_candidate_validation_ignores_assigned_id_and_sequence(
+        id in any::<String>(),
+        sequence in any::<u64>(),
+    ) {
+        // Arrange: bookkeeping can vary without changing the source mutation.
+        let source = b"x = 1\nvalue == 2\n";
+        let expected_id = validate_candidate(source, &descriptor(source)).unwrap();
+        let candidate = MutationCandidate {
+            id,
+            sequence,
+            path: "pkg/calc.py".into(),
+            span: ByteSpan { start: 12, length: 2 },
+            original: "==".into(),
+            replacement: "!=".into(),
+            operator: "compare_eq_ne".into(),
+            line: 2,
+            column: 6,
+            symbol: Some("compare".into()),
+            file_hash: blake3::hash(source).to_hex().to_string(),
+        };
+
+        // Act: recompute identity through the descriptor consumed by validation.
+        let actual_id = validate_candidate(source, &CandidateDescriptor::from(&candidate));
+
+        // Assert: assigned identity and discovery order do not affect validation.
+        prop_assert_eq!(actual_id, Ok(expected_id));
     }
 }
 

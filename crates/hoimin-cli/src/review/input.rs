@@ -3,7 +3,10 @@ use std::fs::File;
 use std::path::Path;
 
 use camino::Utf8Path;
-use hoimin_core::{CandidateValidationContext, MutationCandidate, validate_candidate_with_context};
+use hoimin_core::{
+    CandidateDescriptor, CandidateValidationContext, MutationCandidate,
+    validate_candidate_with_context,
+};
 
 use super::ReviewError;
 use super::model::{ArtifactReference, ReportReference, ReviewKey, SourceState};
@@ -47,7 +50,7 @@ pub(crate) fn load_report(
         ));
     }
     for mutant in &report.mutants {
-        let descriptor = crate::plan::candidate_descriptor(&mutant.candidate);
+        let descriptor = CandidateDescriptor::from(&mutant.candidate);
         let id = hoimin_core::stable_mutant_id(&hoimin_core::CandidateIdentity::from(&descriptor));
         if id.as_str() != mutant.candidate.id {
             return Err(ReviewError::Invalid(
@@ -57,7 +60,7 @@ pub(crate) fn load_report(
         #[cfg(test)]
         super::JOIN_WORK.with_borrow_mut(|work| work.plan_probes += 1);
         if let Some(planned) = planned.get(mutant.candidate.id.as_str())
-            && crate::plan::candidate_descriptor(planned) != descriptor
+            && CandidateDescriptor::from(*planned) != descriptor
         {
             return Err(ReviewError::Invalid(
                 "report candidate descriptor differs from plan".into(),
@@ -78,7 +81,7 @@ pub(crate) fn review_key(root: &Utf8Path, candidate: &MutationCandidate) -> Revi
     ReviewKey {
         project: root.to_owned(),
         candidate_id: candidate.id.clone(),
-        descriptor: crate::plan::candidate_descriptor(candidate),
+        descriptor: CandidateDescriptor::from(candidate),
     }
 }
 
@@ -188,7 +191,7 @@ fn validate_source_state(
     if context.file_hash() != candidate.file_hash {
         return Ok(SourceState::Stale);
     }
-    let descriptor = crate::plan::candidate_descriptor(candidate);
+    let descriptor = CandidateDescriptor::from(candidate);
     validate_candidate_with_context(context, &descriptor)
         .map_err(|error| ReviewError::Invalid(error.to_string()))?;
     if hoimin_core::stable_mutant_id(&hoimin_core::CandidateIdentity::from(&descriptor)).as_str()

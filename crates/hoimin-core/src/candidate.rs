@@ -7,7 +7,8 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::{
-    ByteSpan, DecodedPythonSource, PythonSourceEncoding, SourceEncodingError, decode_python_source,
+    ByteSpan, DecodedPythonSource, MutationCandidate, PythonSourceEncoding, SourceEncodingError,
+    decode_python_source,
 };
 
 pub const CANDIDATE_SCHEMA_VERSION: u32 = 1;
@@ -52,6 +53,24 @@ pub struct CandidateDescriptor {
     pub column: u32,
     pub symbol: Option<String>,
     pub file_hash: String,
+}
+
+/// Projects mutation metadata for validation, excluding assigned ID and discovery order.
+impl From<&MutationCandidate> for CandidateDescriptor {
+    fn from(candidate: &MutationCandidate) -> Self {
+        Self {
+            schema_version: CANDIDATE_SCHEMA_VERSION,
+            path: candidate.path.clone(),
+            span: candidate.span,
+            original: candidate.original.clone(),
+            replacement: candidate.replacement.clone(),
+            operator: candidate.operator.clone(),
+            line: candidate.line,
+            column: candidate.column,
+            symbol: candidate.symbol.clone(),
+            file_hash: candidate.file_hash.clone(),
+        }
+    }
 }
 
 impl From<&CandidateDescriptor> for CandidateIdentity {
