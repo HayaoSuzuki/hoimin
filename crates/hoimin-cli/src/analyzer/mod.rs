@@ -762,14 +762,9 @@ fn map_analyzer_diagnostic(diagnostic: AnalyzerDiagnostic) -> RunAnalysisDiagnos
             "unsupported exception hierarchy reference"
         }
         AnalyzerDiagnosticCode::InvalidSyntax => "source could not be parsed",
-        AnalyzerDiagnosticCode::UnreconstructableSpan => "source span could not be reconstructed",
-        AnalyzerDiagnosticCode::UnparseableReplacement => {
-            "generated replacement could not be parsed"
-        }
         AnalyzerDiagnosticCode::CandidateLimitExceeded => {
             "candidate limit reached before analysis completed"
         }
-        AnalyzerDiagnosticCode::InvalidRequest => "analyzer request was invalid",
     };
     let explanation = diagnostic
         .message
@@ -1259,28 +1254,6 @@ mod tests {
             ),
             (
                 AnalyzerDiagnostic {
-                    code: AnalyzerDiagnosticCode::UnreconstructableSpan,
-                    path: Some("src/calc.py".into()),
-                    line: Some(7),
-                    column: Some(12),
-                    message: None,
-                },
-                "analyzer.unreconstructable_span",
-                "src/calc.py:7:12: source span could not be reconstructed",
-            ),
-            (
-                AnalyzerDiagnostic {
-                    code: AnalyzerDiagnosticCode::UnparseableReplacement,
-                    path: Some("src/calc.py".into()),
-                    line: Some(9),
-                    column: Some(3),
-                    message: None,
-                },
-                "analyzer.unparseable_replacement",
-                "src/calc.py:9:3: generated replacement could not be parsed",
-            ),
-            (
-                AnalyzerDiagnostic {
                     code: AnalyzerDiagnosticCode::CandidateLimitExceeded,
                     path: Some("src/calc.py".into()),
                     line: None,
@@ -1290,33 +1263,40 @@ mod tests {
                 "analyzer.candidate_limit",
                 "src/calc.py: candidate limit reached before analysis completed",
             ),
-            (
-                AnalyzerDiagnostic {
-                    code: AnalyzerDiagnosticCode::InvalidRequest,
-                    path: None,
-                    line: None,
-                    column: None,
-                    message: None,
-                },
-                "analyzer.invalid_request",
-                "analyzer request was invalid",
-            ),
         ];
 
         for (diagnostic, expected_code, expected_message) in cases {
             let mapped = map_analyzer_diagnostic(diagnostic);
+
             assert_eq!(mapped.code, expected_code);
             assert_eq!(mapped.message, expected_message);
         }
+    }
 
-        let mapped = map_analyzer_diagnostic(AnalyzerDiagnostic {
-            code: AnalyzerDiagnosticCode::InvalidRequest,
-            path: None,
-            line: None,
-            column: None,
-            message: Some("operators must not be empty".to_owned()),
-        });
-        assert_eq!(mapped.message, "operators must not be empty");
+    #[test]
+    fn analyzer_diagnostic_preserves_custom_message_with_or_without_location() {
+        let cases = [
+            (None, None, None, "custom explanation"),
+            (
+                Some("src/calc.py".into()),
+                Some(7),
+                Some(12),
+                "src/calc.py:7:12: custom explanation",
+            ),
+        ];
+        for (path, line, column, expected_message) in cases {
+            let diagnostic = AnalyzerDiagnostic {
+                code: AnalyzerDiagnosticCode::InvalidSyntax,
+                path,
+                line,
+                column,
+                message: Some("custom explanation".to_owned()),
+            };
+
+            let mapped = map_analyzer_diagnostic(diagnostic);
+
+            assert_eq!(mapped.message, expected_message);
+        }
     }
 
     #[tokio::test]
