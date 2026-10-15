@@ -4,10 +4,8 @@ use std::path::{Path, PathBuf};
 use camino::{Utf8Path, Utf8PathBuf};
 use hoimin_core::{
     CandidateDescriptor, CandidateValidationContext, FingerprintInputFile, MutationCandidate,
-    OutputConfig, PlanConfig, RunConfig, TargetSlice, VerificationSelection,
-    VerificationSelectionMode, VerificationSelectionPolicy,
-    VerificationSelectionScope as ReportVerificationSelectionScope, normalized_relative_path,
-    validate_candidate_with_context,
+    OutputConfig, PlanConfig, RunConfig, TargetSlice, VerificationSelection, VerificationTopPolicy,
+    normalized_relative_path, validate_candidate_with_context,
 };
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -224,13 +222,6 @@ pub(crate) struct VerifiedExecution {
 pub enum ResolvedVerifySelection {
     ExplicitCandidates(BTreeSet<String>),
     RankedCandidates(Vec<String>),
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum VerifySelectionScope {
-    ExplicitCandidates,
-    RetainedCandidates,
-    SampledCandidates,
 }
 
 #[derive(Debug, Error)]
@@ -571,30 +562,24 @@ fn resolve_verify_selection(
     requested_selection: &VerifySelection,
 ) -> Result<(ResolvedVerifySelection, VerificationSelection), PlanError> {
     let max_mutants = manifest.normalized_config.limits.max_mutants.get();
-    let mut sampling = None;
-    let (selection, selection_scope, mode, policy, requested) = match requested_selection {
+    let (selection, metadata) = match requested_selection {
         VerifySelection::Sample { count, seed } => {
             let sample = resolve_sample(manifest, count.get(), *seed)?;
-            let ids = sample.selected_ids.clone();
-            sampling = Some(sample);
+            let ids = sample.selected_ids().to_vec();
             (
                 ResolvedVerifySelection::RankedCandidates(ids),
-                VerifySelectionScope::SampledCandidates,
-                VerificationSelectionMode::Sample,
-                VerificationSelectionPolicy::Splitmix64FisherYatesV1,
-                count.get(),
+                VerificationSelection::sample(count.get(), sample),
             )
         }
-        VerifySelection::CandidateIds(requested_ids) => (
-            ResolvedVerifySelection::ExplicitCandidates(normalize_requested_ids(
-                requested_ids,
-                max_mutants,
-            )?),
-            VerifySelectionScope::ExplicitCandidates,
-            VerificationSelectionMode::CandidateIds,
-            VerificationSelectionPolicy::ExplicitCandidates,
-            requested_ids.iter().collect::<BTreeSet<_>>().len(),
-        ),
+        VerifySelection::CandidateIds(requested_ids) => {
+            let ids = normalize_requested_ids(requested_ids, max_mutants)?;
+            let metadata = VerificationSelection::candidate_ids(
+                requested_ids.iter().collect::<BTreeSet<_>>().len(),
+                ids.len(),
+                manifest.truncated,
+            );
+            (ResolvedVerifySelection::ExplicitCandidates(ids), metadata)
+        }
         VerifySelection::Top { count, policy }
         | VerifySelection::TopRange { count, policy, .. } => {
             let offset = match requested_selection {
@@ -619,53 +604,31 @@ fn resolve_verify_selection(
                         .to_owned(),
                 ));
             }
-            let report_policy = match policy {
-                TopSelectionPolicy::Strict => VerificationSelectionPolicy::Strict,
-                TopSelectionPolicy::Diverse => VerificationSelectionPolicy::FileRoundRobinV1,
-                TopSelectionPolicy::LineDiverse => VerificationSelectionPolicy::LineRoundRobinV1,
+            let policy = match policy {
+                TopSelectionPolicy::Strict => VerificationTopPolicy::Strict,
+                TopSelectionPolicy::Diverse => VerificationTopPolicy::FileRoundRobinV1,
+                TopSelectionPolicy::LineDiverse => VerificationTopPolicy::LineRoundRobinV1,
             };
             if candidate_ids.len() > max_mutants {
                 return Err(PlanError::CandidateInvalid(format!(
                     "selected {} candidates exceeds max_mutants {max_mutants}",
-                    candidate_ids.len()
+                    candidate_ids.len(),
                 )));
             }
+            let metadata = VerificationSelection::top(
+                count.get(),
+                candidate_ids.len(),
+                policy,
+                manifest.truncated,
+            );
             (
                 ResolvedVerifySelection::RankedCandidates(candidate_ids),
-                VerifySelectionScope::RetainedCandidates,
-                VerificationSelectionMode::Top,
-                report_policy,
-                count.get(),
+                metadata,
             )
         }
     };
-    let selected = match &selection {
-        ResolvedVerifySelection::ExplicitCandidates(ids) => ids.len(),
-        ResolvedVerifySelection::RankedCandidates(ids) => ids.len(),
-    };
-    let scope = match selection_scope {
-        VerifySelectionScope::ExplicitCandidates => {
-            ReportVerificationSelectionScope::ExplicitCandidates
-        }
-        VerifySelectionScope::RetainedCandidates => {
-            ReportVerificationSelectionScope::RetainedCandidates
-        }
-        VerifySelectionScope::SampledCandidates => {
-            ReportVerificationSelectionScope::SampledCandidates
-        }
-    };
-    Ok((
-        selection,
-        VerificationSelection {
-            mode,
-            policy,
-            requested,
-            selected,
-            scope,
-            plan_truncated: manifest.truncated,
-            sampling,
-        },
-    ))
+    let metadata = metadata.map_err(|error| PlanError::CandidateInvalid(error.to_string()))?;
+    Ok((selection, metadata))
 }
 
 fn resolve_sample(
@@ -691,14 +654,15 @@ fn resolve_sample(
             "selected {actual} candidates exceeds max_mutants {max_mutants}"
         )));
     }
-    Ok(hoimin_core::VerificationSampling {
+    hoimin_core::VerificationSampling::new(
         population,
         seed,
-        selected_ids: sampling::sample_indices(population, actual, seed)
+        sampling::sample_indices(population, actual, seed)
             .into_iter()
             .map(|index| manifest.candidates[index].id.clone())
             .collect(),
-    })
+    )
+    .map_err(|error| PlanError::CandidateInvalid(error.to_string()))
 }
 
 async fn source_records(

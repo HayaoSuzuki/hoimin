@@ -1639,7 +1639,7 @@ async fn truncated_plan_accepts_a_retained_candidate_from_a_later_file() {
     .await
     .unwrap();
 
-    assert!(verified.verification_selection().plan_truncated);
+    assert!(verified.verification_selection().plan_truncated());
     assert!(!marker.exists());
 }
 
@@ -1786,10 +1786,10 @@ async fn verify_top_resolves_the_saved_rank_prefix_and_retained_scope() {
         ResolvedVerifySelection::RankedCandidates(expected)
     );
     assert_eq!(
-        verified.verification_selection().scope,
+        verified.verification_selection().scope(),
         VerifySelectionScope::RetainedCandidates
     );
-    assert!(!verified.verification_selection().plan_truncated);
+    assert!(!verified.verification_selection().plan_truncated());
     assert!(!marker.exists());
 }
 
@@ -1820,10 +1820,10 @@ async fn verify_top_above_a_truncated_plan_selects_every_retained_candidate() {
         ResolvedVerifySelection::RankedCandidates(expected)
     );
     assert_eq!(
-        verified.verification_selection().scope,
+        verified.verification_selection().scope(),
         VerifySelectionScope::RetainedCandidates
     );
-    assert!(verified.verification_selection().plan_truncated);
+    assert!(verified.verification_selection().plan_truncated());
     assert!(!marker.exists());
 }
 
@@ -1888,7 +1888,7 @@ async fn verify_top_diverse_round_robins_equal_score_candidates_without_mutating
         ResolvedVerifySelection::RankedCandidates(expected)
     );
     assert_eq!(
-        verified.verification_selection().policy,
+        verified.verification_selection().policy(),
         VerificationSelectionPolicy::FileRoundRobinV1
     );
     assert_eq!(std::fs::read(&path).unwrap(), before);
@@ -1940,7 +1940,7 @@ async fn verify_top_diverse_does_not_cross_score_tiers() {
         ResolvedVerifySelection::RankedCandidates(expected)
     );
     assert_eq!(
-        verified.verification_selection().policy,
+        verified.verification_selection().policy(),
         VerificationSelectionPolicy::FileRoundRobinV1
     );
     assert_eq!(std::fs::read(&path).unwrap(), before);
@@ -3130,9 +3130,9 @@ async fn fixed_batch_bounds_preserve_truncation_and_reject_invalid_ranges() {
     let suffix = prepare_verify_selection(&path, &selection(usize::MAX, 1), OutputFormat::Json)
         .await
         .unwrap();
-    assert!(suffix.verification_selection().plan_truncated);
-    assert_eq!(suffix.verification_selection().requested, usize::MAX);
-    assert_eq!(suffix.verification_selection().selected, 1);
+    assert!(suffix.verification_selection().plan_truncated());
+    assert_eq!(suffix.verification_selection().requested(), usize::MAX);
+    assert_eq!(suffix.verification_selection().selected(), 1);
     assert_eq!(suffix.config().limits, manifest.normalized_config.limits);
     for offset in [2, 3, usize::MAX] {
         let error = prepare_verify_selection(&path, &selection(1, offset), OutputFormat::Json)

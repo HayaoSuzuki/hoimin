@@ -372,52 +372,8 @@ pub struct ResourceControl {
     pub mechanism: String,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum VerificationSelectionMode {
-    CandidateIds,
-    Top,
-    Sample,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum VerificationSelectionPolicy {
-    ExplicitCandidates,
-    Strict,
-    FileRoundRobinV1,
-    LineRoundRobinV1,
-    Splitmix64FisherYatesV1,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum VerificationSelectionScope {
-    ExplicitCandidates,
-    RetainedCandidates,
-    SampledCandidates,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct VerificationSelection {
-    pub mode: VerificationSelectionMode,
-    pub policy: VerificationSelectionPolicy,
-    pub requested: usize,
-    pub selected: usize,
-    pub scope: VerificationSelectionScope,
-    pub plan_truncated: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sampling: Option<VerificationSampling>,
-}
-
-/// Sampling provenance, including IDs that may never reach execution.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct VerificationSampling {
-    pub population: usize,
-    pub seed: u64,
-    /// Ordered dispatch IDs; parallel completion order may differ.
-    pub selected_ids: Vec<String>,
-}
+mod selection;
+pub use selection::*;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

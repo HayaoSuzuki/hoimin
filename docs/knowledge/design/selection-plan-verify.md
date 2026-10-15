@@ -5,6 +5,14 @@ description: 候補発見と実行の分離、ランキング、部分集合、�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-911-design
+  resource: ../../superpowers/reports/issue-911/design.md
+  working_tree: untracked
+  sha256: 9cafb2a20f48f581aa311e1bd6b0b8bd0676d75e2552363d5f33a61cc8256644
+- id: issue-911-review
+  resource: ../../superpowers/reports/issue-911/review.md
+  working_tree: untracked
+  sha256: 7f51e40d998ae77447b6cf6c02d229901c332c49685e946ee5da210a72231088
 - id: issue-899-changed-selection
   resource: ../../superpowers/specs/2026-10-15-issue-899-design.md
   revision: 7b6cb19ba0181759f6b5726f985c5fd7700d313e
@@ -565,3 +573,24 @@ retain their meaning. [^issue-899-changed-selection][^issue-899-changed-review]
 [^issue-899-changed-selection]: [Typed changed selection design](../../superpowers/specs/2026-10-15-issue-899-design.md).
 
 [^issue-899-changed-review]: [Issue 899 review and verification](../../superpowers/reports/2026-10-15-issue-899-review.md). Current executed scopes, fixture corrections, limitations and release-floor checks.
+
+## Validated verification selection (Issue #911)
+
+`VerificationSelection` owns counts and a private mode enum. Explicit IDs and
+Top carry truncation; only Top carries a variable policy; only Sample carries
+validated sampling evidence. Mode, scope and fixed policies derive from that
+state. Constructors and Deserialize require a positive request, a selected count
+bounded by the request, and nonempty unique sample IDs bounded by population.
+A sample's count equals its ordered evidence length and its plan is complete.
+Non-sample reports may select zero candidates. [^issue-911-design]
+
+Current writer JSON and version numbers remain stable. Contradictory known fields
+are rejected, including null sampling on a non-sample mode; additive outer report
+metadata remains accepted. The sampling object remains closed as documented in
+the schema. Human output and preview use typed projections. The dated review
+records executed checks and limitations; it does not establish new formal
+properties of sampling or dispatch. [^issue-911-review]
+
+[^issue-911-design]: [Typed verification selection design](../../superpowers/reports/issue-911/design.md).
+
+[^issue-911-review]: [Review and verification](../../superpowers/reports/issue-911/review.md).

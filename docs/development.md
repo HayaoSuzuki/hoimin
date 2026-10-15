@@ -42,6 +42,16 @@ over increasing mutation scores or scaling CI. Memory and disk controls, cleanup
 and honest incomplete results are core requirements. Existing development CI and
 validation remain required; this direction does not relax them.
 
+## Verification selection metadata
+
+Construct `VerificationSelection` with `candidate_ids`, `top`, or `sample`.
+Use `VerificationTopPolicy` for Top and `VerificationSampling::new` for ordered
+sample evidence. Mode, scope and fixed policies derive from the selection kind;
+counts and evidence are immutable. Deserialize validates the same invariants.
+Keep algorithm and CLI validation with plan/verify, and use the read-only
+metadata accessors for reporting. See the [selection contract](knowledge/design/selection-plan-verify.md#validated-verification-selection-issue-911)
+and [verification record](superpowers/reports/issue-911/review.md).
+
 ## Internal ownership and performance changes
 
 The private Rust `artifacts` module owns bounded file reads, run-report

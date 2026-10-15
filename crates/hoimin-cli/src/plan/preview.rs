@@ -101,26 +101,25 @@ impl VerifyPreview {
 
     fn write_human(&self, writer: &mut impl Write) -> std::io::Result<()> {
         let selection = &self.verification_selection;
-        // Serialize enum names to keep the human and machine policy vocabulary identical.
-        let metadata = serde_json::to_value(selection)?;
         writeln!(
             writer,
             "verify preview: mode={} policy={} requested={} selected={} scope={} plan_truncated={} offset={} retained_candidates={}",
-            metadata["mode"].as_str().unwrap_or_default(),
-            metadata["policy"].as_str().unwrap_or_default(),
-            selection.requested,
-            selection.selected,
-            metadata["scope"].as_str().unwrap_or_default(),
-            selection.plan_truncated,
+            selection.mode().as_str(),
+            selection.policy().as_str(),
+            selection.requested(),
+            selection.selected(),
+            selection.scope().as_str(),
+            selection.plan_truncated(),
             self.offset
                 .map_or_else(|| "null".to_owned(), |offset| offset.to_string()),
             self.retained_candidates,
         )?;
-        if let Some(sampling) = &selection.sampling {
+        if let Some(sampling) = selection.sampling() {
             writeln!(
                 writer,
                 "sample: population={} seed={} (preview only; no outcomes)",
-                sampling.population, sampling.seed
+                sampling.population(),
+                sampling.seed()
             )?;
         }
         for candidate in &self.candidates {

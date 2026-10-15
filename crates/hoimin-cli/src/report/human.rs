@@ -2,7 +2,6 @@ use std::io::{self, Write};
 
 use hoimin_core::{
     OutputEvent, ProcessTermination, RunSummary, SessionDiagnostic, VerificationSelectionMode,
-    VerificationSelectionPolicy, VerificationSelectionScope,
 };
 
 pub(super) fn write_mutant_diagnostics(
@@ -115,33 +114,22 @@ fn write_selection(
     writer: &mut impl Write,
     selection: &hoimin_core::VerificationSelection,
 ) -> io::Result<()> {
-    let mode = match selection.mode {
-        VerificationSelectionMode::CandidateIds => "candidate_ids",
-        VerificationSelectionMode::Top => "top",
-        VerificationSelectionMode::Sample => "sample",
-    };
-    let scope = match selection.scope {
-        VerificationSelectionScope::ExplicitCandidates => "explicit_candidates",
-        VerificationSelectionScope::RetainedCandidates => "retained_candidates",
-        VerificationSelectionScope::SampledCandidates => "sampled_candidates",
-    };
-    let policy = match selection.policy {
-        VerificationSelectionPolicy::ExplicitCandidates => "explicit_candidates",
-        VerificationSelectionPolicy::Strict => "strict",
-        VerificationSelectionPolicy::FileRoundRobinV1 => "file_round_robin_v1",
-        VerificationSelectionPolicy::LineRoundRobinV1 => "line_round_robin_v1",
-        VerificationSelectionPolicy::Splitmix64FisherYatesV1 => "splitmix64_fisher_yates_v1",
-    };
+    let mode = selection.mode().as_str();
+    let scope = selection.scope().as_str();
+    let policy = selection.policy().as_str();
     writeln!(
         writer,
         "verification selection: mode={mode} policy={policy} requested={} selected={} scope={scope} plan_truncated={}",
-        selection.requested, selection.selected, selection.plan_truncated
+        selection.requested(),
+        selection.selected(),
+        selection.plan_truncated()
     )?;
-    if let Some(sampling) = &selection.sampling {
+    if let Some(sampling) = selection.sampling() {
         writeln!(
             writer,
             "sample: population={} seed={}",
-            sampling.population, sampling.seed
+            sampling.population(),
+            sampling.seed()
         )?;
     }
     Ok(())
@@ -153,7 +141,7 @@ fn write_summary(writer: &mut impl Write, summary: &RunSummary) -> io::Result<()
     if summary
         .verification_selection
         .as_ref()
-        .is_some_and(|s| s.mode == VerificationSelectionMode::Sample)
+        .is_some_and(|s| s.mode() == VerificationSelectionMode::Sample)
     {
         writeln!(
             writer,
