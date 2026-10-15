@@ -27,8 +27,8 @@ use std::sync::{Arc, Mutex};
 use camino::{Utf8Path, Utf8PathBuf};
 use hoimin_core::{
     ApplyMutation, Cleanup, CleanupFinished, CreateWorker, EffectFailed, EffectFailure, EffectId,
-    MutationApplied, MutationCandidate, OriginalsVerified, Preflight, PreflightCompleted,
-    ResetWorker, RunEvent, VerifyOriginals, WorkerCreated, WorkerReset,
+    MutationApplied, OriginalsVerified, Preflight, PreflightCompleted, ResetWorker, RunEvent,
+    VerifyOriginals, WorkerCreated, WorkerReset,
 };
 
 use copy::ValidatedPreflightError;
@@ -1260,6 +1260,8 @@ impl WorkspaceHandler {
         })
     }
 
+    /// Applies the request candidate to its worker, retaining the worker on success or failure.
+    ///
     /// # Errors
     /// Returns `EffectFailed` for missing workers, changed originals, invalid mutations, or I/O failures.
     #[allow(
@@ -1269,7 +1271,6 @@ impl WorkspaceHandler {
     pub fn handle_apply_mutation(
         &mut self,
         request: ApplyMutation,
-        candidate: &MutationCandidate,
     ) -> Result<MutationApplied, EffectFailed> {
         let id = request.id;
         self.workers
@@ -1277,7 +1278,7 @@ impl WorkspaceHandler {
             .ok_or(WorkspaceError::WorkerMissing {
                 worker: request.worker,
             })
-            .and_then(|workspace| workspace.apply_mutation(candidate))
+            .and_then(|workspace| workspace.apply_mutation(&request.candidate))
             .map(|()| MutationApplied {
                 id,
                 worker: request.worker,
@@ -1947,35 +1948,83 @@ mod task_tests {
         }
     }
 
+    fn apply_request(
+        handler: &mut WorkspaceHandler,
+        request: ApplyMutation,
+        owned: bool,
+    ) -> Result<hoimin_core::MutationApplied, hoimin_core::EffectFailed> {
+        if owned {
+            let task = handler.prepare_apply_task(request)?;
+            match handler.accept_task_completion(task.execute())? {
+                RunEvent::MutationApplied(applied) => Ok(applied),
+                RunEvent::EffectFailed(failed) => Err(failed),
+                event => panic!("unexpected apply completion: {event:?}"),
+            }
+        } else {
+            handler.handle_apply_mutation(request)
+        }
+    }
+
     #[test]
-    fn synchronous_apply_uses_explicit_candidate_while_task_uses_request_candidate() {
+    fn apply_uses_request_candidate_in_both_paths() {
         for owned in [false, true] {
-            let (_project, mut handler, _retry) = prepared_handler();
-            let explicit = candidate(&handler);
-            let mut request_candidate = explicit.clone();
-            request_candidate.original = "invalid!".into();
+            let (project, mut handler, _retry) = prepared_handler();
+            let worker_root = handler.worker(0).unwrap().root().to_owned();
             let request = ApplyMutation {
                 id: EffectId(31),
                 worker: 0,
-                candidate: request_candidate,
+                candidate: candidate(&handler),
             };
-            if owned {
-                let task = handler.prepare_apply_task(request).unwrap();
-                assert!(matches!(
-                    handler.accept_task_completion(task.execute()).unwrap(),
-                    RunEvent::EffectFailed(_)
-                ));
-                assert_eq!(
-                    handler.worker(0).unwrap().read("pkg/a.py").unwrap(),
-                    b"original\n"
-                );
-            } else {
-                handler.handle_apply_mutation(request, &explicit).unwrap();
-                assert_eq!(
-                    handler.worker(0).unwrap().read("pkg/a.py").unwrap(),
-                    b"mutated!\n"
-                );
-            }
+
+            let applied = apply_request(&mut handler, request, owned).unwrap();
+
+            assert_eq!(applied.id, EffectId(31));
+            assert_eq!(applied.worker, 0);
+            assert_eq!(
+                std::fs::read(worker_root.join("pkg/a.py")).unwrap(),
+                b"mutated!\n"
+            );
+            assert_eq!(
+                std::fs::read(project.path().join("pkg/a.py")).unwrap(),
+                b"original\n"
+            );
+            assert_eq!(handler.worker(0).unwrap().root(), worker_root);
+            assert_eq!(handler.worker_count(), 1);
+            assert_eq!(handler.pending_cleanup_count(), 0);
+            handler.close().unwrap();
+        }
+    }
+
+    #[test]
+    fn apply_rejects_invalid_request_candidate_and_retains_worker_in_both_paths() {
+        for owned in [false, true] {
+            let (project, mut handler, _retry) = prepared_handler();
+            let worker_root = handler.worker(0).unwrap().root().to_owned();
+            let mut invalid = candidate(&handler);
+            invalid.original = "invalid!".into();
+            let request = ApplyMutation {
+                id: EffectId(32),
+                worker: 0,
+                candidate: invalid,
+            };
+
+            let failed = apply_request(&mut handler, request, owned).unwrap_err();
+
+            assert_eq!(failed.id, EffectId(32));
+            assert!(matches!(
+                failed.failure,
+                hoimin_core::EffectFailure::InvalidMutation { code, path, .. }
+                    if code == "workspace.mutation.invalid" && path == "pkg/a.py"
+            ));
+            assert_eq!(
+                std::fs::read(worker_root.join("pkg/a.py")).unwrap(),
+                b"original\n"
+            );
+            assert_eq!(
+                std::fs::read(project.path().join("pkg/a.py")).unwrap(),
+                b"original\n"
+            );
+            assert_eq!(handler.worker(0).unwrap().root(), worker_root);
             assert_eq!(handler.worker_count(), 1);
             assert_eq!(handler.pending_cleanup_count(), 0);
             handler.close().unwrap();
