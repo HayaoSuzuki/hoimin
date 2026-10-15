@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 28b094b13eaf2805b5293177814d3d4c2dad5fac857f404da6bdadf7701602d8 # shrinks to candidates = [MutationCandidate { id: "候補-1-🧪", sequence: 1, path: "src/a-1.py", span: ByteSpan { start: 0, length: 0 }, original: "a", replacement: "替a", operator: "binary_add_sub", line: 1, column: 0, symbol: None, file_hash: "0000000000000000000000000000000000000000000000000000000000000001" }]

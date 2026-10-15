@@ -36,7 +36,6 @@ pub enum StoreError {
 pub struct CandidateStore {
     file: NamedTempFile,
     count: u64,
-    records_written: u64,
     max_candidates: u64,
 }
 
@@ -71,7 +70,6 @@ impl CandidateStore {
         Self {
             file,
             count: 0,
-            records_written: 0,
             max_candidates,
         }
     }
@@ -131,11 +129,10 @@ impl CandidateStore {
             .write_all(&record)
             .map_err(|error| io_error(&error))?;
         self.count = expected;
-        self.records_written = expected;
         contract_ensure!(
             "candidate_store.count.invariant",
             self.invariant(),
-            (&self.count, &self.records_written, &self.max_candidates),
+            (&self.count, &self.max_candidates),
         );
         Ok(())
     }
@@ -218,7 +215,7 @@ impl CandidateStore {
 
 impl ContractInvariant for CandidateStore {
     fn invariant(&self) -> bool {
-        self.count == self.records_written && self.count <= self.max_candidates
+        self.count <= self.max_candidates
     }
 }
 
@@ -456,6 +453,28 @@ mod tests {
         #![proptest_config(ProptestConfig::with_cases(128))]
 
         #[test]
+        fn accepted_count_matches_independently_counted_finished_records(
+            candidates in ordered_candidates()
+        ) {
+            // Arrange.
+            let expected = u64::try_from(candidates.len()).unwrap();
+            let mut store = CandidateStore::new(expected).unwrap();
+
+            // Act.
+            for candidate in &candidates {
+                store.push(candidate).unwrap();
+            }
+            let accepted = store.count();
+            let spool = FinishedSpool(store.finish().unwrap());
+            let serialized = std::fs::read_to_string(&spool.0.token).unwrap();
+
+            // Assert: independent input and file observations agree with the public count.
+            prop_assert_eq!(accepted, expected);
+            prop_assert_eq!(spool.0.records, expected);
+            prop_assert_eq!(u64::try_from(serialized.lines().count()).unwrap(), expected);
+        }
+
+        #[test]
         fn ordered_unicode_candidates_round_trip_from_every_record_offset(
             candidates in ordered_candidates()
         ) {
@@ -480,6 +499,35 @@ mod tests {
                     candidates[index..].to_vec()
                 );
             }
+        }
+    }
+
+    #[test]
+    fn rejected_push_preserves_accepted_count_and_file_contents() {
+        for (capacity, sequence) in [(1, 2), (2, 1), (2, 3)] {
+            // Arrange: a valid prefix followed by a full-store or invalid-sequence request.
+            let mut store = CandidateStore::new(capacity).unwrap();
+            let mut candidate = candidate_with_payload_len(512);
+            store.push(&candidate).unwrap();
+            candidate.sequence = sequence;
+            let before = std::fs::read(store.file.path()).unwrap();
+
+            // Act.
+            let result = store.push(&candidate);
+
+            // Assert: rejected input neither accepts a record nor changes the stored prefix.
+            if capacity == 1 {
+                assert!(matches!(
+                    result,
+                    Err(StoreError::LimitExceeded { limit: 1 })
+                ));
+            } else {
+                assert!(
+                    matches!(result, Err(StoreError::InvalidSequence { expected: 2, actual }) if actual == sequence)
+                );
+            }
+            assert_eq!(store.count(), 1);
+            assert_eq!(std::fs::read(store.file.path()).unwrap(), before);
         }
     }
 
@@ -559,7 +607,6 @@ mod tests {
             })
         ));
         assert_eq!(store.count(), 0);
-        assert_eq!(store.records_written, 0);
         assert_eq!(store.file.as_file().metadata().unwrap().len(), 0);
     }
 
@@ -578,7 +625,7 @@ mod tests {
     }
 
     #[test]
-    fn push_write_error_keeps_counts_and_tempfile_cleanup() {
+    fn push_write_error_keeps_count_and_tempfile_cleanup() {
         let temporary = NamedTempFile::new().unwrap();
         let path = temporary.path().to_owned();
         let (_file, temp_path) = temporary.into_parts();
@@ -591,7 +638,6 @@ mod tests {
             Err(StoreError::Io(_))
         ));
         assert_eq!(store.count(), 0);
-        assert_eq!(store.records_written, 0);
         assert_eq!(store.file.as_file().metadata().unwrap().len(), 0);
 
         drop(store);

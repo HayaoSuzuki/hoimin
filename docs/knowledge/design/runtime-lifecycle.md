@@ -5,6 +5,15 @@ description: OS別の資源制限と、プロセス終了・一時ファイル�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-943-record
+  resource: ../../maintenance/2026-10-16-issue-943.md
+  working_tree: untracked
+  sha256: 63b60bdb36c4f3e2811aa3a29abc98dfeeebfa2a08ff65b3b803dc5c42c53c4a
+- id: issue-943-source
+  resource: ../../../crates/hoimin-core/src/machine.rs
+  revision: 465ff928c1f2ceb9f9b8f8084465475e45799ee8
+  working_tree: modified
+  sha256: e72c48fac740584941dd73b038e0f7c2bcff02464accee269807a1d4fe5b1c07
 - id: issue-931-handler
   resource: ../../../crates/hoimin-cli/src/workspace/mod.rs
   revision: 0d3fbc1a1821074d6ba8a2a212116241adc85c4e
@@ -458,3 +467,19 @@ separates new two-path filesystem tests from existing Lean-derived lifecycle
 comparisons. This change adds no formal model or proof.
 
 [^issue-931-handler]: [Single-candidate workspace apply entry point](../../../crates/hoimin-cli/src/workspace/mod.rs).
+
+
+## Worker membership and scheduling state
+
+The worker map owns worker membership. Creation advances to materialization
+verification only after its length reaches jobs; effect identity and worker bounds
+remain independently checked. There is no parallel created-worker set. Mutant
+limits continue to use scheduled_mutants and incomplete outcomes; a write-only
+limit-reached flag is unnecessary. No public contract changes.[^issue-943-source]
+
+See the [Issue #943 implementation record](../../maintenance/2026-10-16-issue-943.md)
+for current verification and review evidence.[^issue-943-record]
+
+[^issue-943-source]: [Single-owner state](../../../crates/hoimin-core/src/machine.rs).
+
+[^issue-943-record]: [Issue #943 verification](../../maintenance/2026-10-16-issue-943.md).

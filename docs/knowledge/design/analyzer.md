@@ -5,6 +5,15 @@ description: 構文・名前解決・変更するバイト範囲・候補保持�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-943-record
+  resource: ../../maintenance/2026-10-16-issue-943.md
+  working_tree: untracked
+  sha256: 63b60bdb36c4f3e2811aa3a29abc98dfeeebfa2a08ff65b3b803dc5c42c53c4a
+- id: issue-943-source
+  resource: ../../../crates/hoimin-cli/src/analyzer/store.rs
+  revision: 465ff928c1f2ceb9f9b8f8084465475e45799ee8
+  working_tree: modified
+  sha256: dc5e5c31080e7e9294c658a391410615dbb32efe4f99f662e276cfe7160d1903
 - id: issue-935-bindings
   resource: ../../../crates/hoimin-cli/src/analyzer/rust.rs
   revision: 5237d1e53a2c8b34fca80f6eeb7d644a01d732e2
@@ -1102,3 +1111,20 @@ Execution evidence and its limits are recorded in the implementation plan.
 [^issue-935-bindings]: [KnownImports implementation](../../../crates/hoimin-cli/src/analyzer/rust.rs).
 [^issue-935-tests]: [Known binding behavior and intersection properties](../../../crates/hoimin-cli/src/analyzer/known_imports_tests.rs).
 [^issue-935-evidence]: [Issue 935 design, reviews and verification](../../superpowers/plans/2026-10-16-issue-935.md).
+
+
+## Accepted candidate count
+
+CandidateStore has one accepted-record count, updated only after a successful
+write_all. Its independent invariant is count <= max_candidates. Validation and
+I/O failure do not advance this count. A second field assigned the same value
+would not verify the file. Tests compare count and the finished reference to
+independent input lengths, physical JSONL records, and replay sequences; push does
+not reread the file. This change adds no atomic-write guarantee.[^issue-943-source]
+
+See the [Issue #943 implementation record](../../maintenance/2026-10-16-issue-943.md)
+for current verification and review evidence.[^issue-943-record]
+
+[^issue-943-source]: [Single-owner state](../../../crates/hoimin-cli/src/analyzer/store.rs).
+
+[^issue-943-record]: [Issue #943 verification](../../maintenance/2026-10-16-issue-943.md).

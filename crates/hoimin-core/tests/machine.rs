@@ -4522,6 +4522,46 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(128))]
 
     #[test]
+    fn worker_creation_barrier_waits_for_every_completion_order(
+        priorities in prop::collection::vec(any::<u8>(), 1..6),
+    ) {
+        // Arrange: each generated priority determines a real worker completion order.
+        let mut raw = fixture_raw_config();
+        raw.limits.jobs = priorities.len();
+        let config = RunConfig::try_from(raw).unwrap()
+            .with_environment(hoimin_core::EnvironmentSnapshot::Untracked).unwrap();
+        let (state, effects) = waiting_for_preflight_with(config);
+        let (mut state, effects) = complete_run_started(state, &effects);
+        let creates: Vec<_> = effects.iter().filter_map(|effect| match effect {
+            RunEffect::CreateWorker(value) => Some((value.id(), value.worker(), value.reservation_id())),
+            _ => None,
+        }).collect();
+        prop_assert_eq!(creates.len(), priorities.len());
+        let mut order: Vec<_> = (0..priorities.len()).collect();
+        order.sort_by_key(|index| priorities[*index]);
+
+        // Act and assert: no prefix may open the materialization verification barrier.
+        for (completed, index) in order.into_iter().enumerate() {
+            let (id, worker, reservation_id) = creates[index];
+            let (next, effects) = transition(state, RunEvent::WorkerCreated(WorkerCreated {
+                id, worker, reservation_id,
+            })).unwrap();
+            state = next;
+            if completed + 1 < creates.len() {
+                prop_assert!(effects.is_empty());
+                prop_assert_eq!(state.phase(), RunPhase::Copy);
+            } else {
+                prop_assert_eq!(state.phase(), RunPhase::MaterializationVerification);
+                prop_assert_eq!(effects.len(), 1);
+                let RunEffect::VerifyOriginals(verify) = &effects[0] else {
+                    panic!("expected verification after all workers: {effects:?}");
+                };
+                prop_assert_eq!(verify.checkpoint, IntegrityCheckpoint::PostMaterialization);
+            }
+        }
+    }
+
+    #[test]
     fn adversarial_schedule_preserves_terminal_report_invariants(
         candidate_count in 0usize..7,
         jobs in 1usize..4,
