@@ -5,6 +5,16 @@ description: 構文・名前解決・変更するバイト範囲・候補保持�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-914-evidence
+  resource: ../../superpowers/plans/2026-10-15-issue-914.md
+  revision: 54093222abe08c79e8e36e4656ee04b9c6d8dda0
+  working_tree: untracked
+  sha256: 8801090d34da44064e561eaab3f5ee44edf8768a2e1db1f2942174ae6e3e52d7
+- id: issue-914-class-context
+  resource: ../../../crates/hoimin-cli/src/analyzer/rust.rs
+  revision: 54093222abe08c79e8e36e4656ee04b9c6d8dda0
+  working_tree: modified
+  sha256: d128e5fe1af0de83481bfb435810b0fc0e5129757b517c9354d94a3045fec524
 - id: issue-871-acquisition
   resource: ../../../crates/hoimin-cli/src/analyzer/rust/depth.rs
   revision: 49a34a63ac4e995bfefb156f85ff3a934b594e6b
@@ -960,3 +970,29 @@ This classification change adds no new codec or formal guarantee.
 
 [^issue-873-decoder]: [Typed decoder and encoding errors](../../../crates/hoimin-core/src/source_encoding.rs).
 [^issue-873-candidates]: [Candidate validation](../../../crates/hoimin-core/src/candidate.rs).
+
+# Annotation class context (Issue #914)
+
+AnnotationCollector owns class-specific fallback imports, external declarations,
+and the enclosing scope kind in one private optional ClassContext. Entering a
+function or nested class saves the enclosing context by ownership transfer and
+restores it on return. Method bodies still resolve against the enclosing fallback,
+while class-local imports remain available to the class body. Global/nonlocal
+projection and type-parameter handling keep their existing semantics.[^issue-914-class-context]
+
+Loop convergence snapshots clone only fallback imports; the declaration sets and
+parent scope are not copied. This representation does not change candidates,
+ranking, schemas, or operator defaults. The context intentionally has no Clone
+implementation. The existing loop callback and visit-count checks remain the
+bounded cost evidence; this change establishes no general complexity bound or
+new formal guarantee.[^issue-914-class-context]
+
+[^issue-914-class-context]: [AnnotationCollector implementation](../../../crates/hoimin-cli/src/analyzer/rust.rs).
+
+The Issue 914 verification record reports pre-refactor characterization, three
+manual mutation sensitivity checks, the retained loop/finally checks, nine strict
+Lean-corpus comparisons, and local all-feature workspace/quality-gate results.
+These are finite implementation observations on macOS; the Lean model was not
+rebuilt for this private representation change.[^issue-914-evidence]
+
+[^issue-914-evidence]: [Issue 914 design, reviews and verification](../../superpowers/plans/2026-10-15-issue-914.md).

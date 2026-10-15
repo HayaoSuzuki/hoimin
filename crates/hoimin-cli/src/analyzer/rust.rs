@@ -5632,13 +5632,20 @@ const TYPE_OPERATORS: [MutationOperator; 7] = [
     MutationOperator::TypeSequenceIterable,
 ];
 
+// Class-only lookup state is saved and restored together. Method bodies
+// use the fallback rather than class locals; declarations project external writes
+// according to the enclosing scope. Loop snapshots need only the mutable fallback.
+struct ClassContext {
+    fallback: KnownImports,
+    external_bindings: ClassExternalBindings,
+    parent_scope: ScopeKind,
+}
+
 struct AnnotationCollector<'ast, 'callback> {
     annotations: Vec<AnnotationSite<'ast>>,
     annotation_callback: Option<&'callback mut AnnotationCallback<'ast, 'callback>>,
     imports: KnownImports,
-    class_body_fallback: Option<KnownImports>,
-    class_external_bindings: Option<ClassExternalBindings>,
-    class_parent_scope: Option<ScopeKind>,
+    class_context: Option<ClassContext>,
     scope_kind: ScopeKind,
     qualname: Vec<String>,
     record_annotations: bool,
@@ -5742,9 +5749,7 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
             annotations: Vec::new(),
             annotation_callback: None,
             imports: KnownImports::default(),
-            class_body_fallback: None,
-            class_external_bindings: None,
-            class_parent_scope: None,
+            class_context: None,
             scope_kind: ScopeKind::Module,
             qualname: Vec::new(),
             record_annotations: true,
@@ -6121,26 +6126,23 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
         self.visit_function_header(definition);
         self.imports.transfer_statement(statement);
         let inherited = self.imports.clone();
-        if let (Some(bindings), Some(fallback), Some(parent_scope)) = (
-            &self.class_external_bindings,
-            &mut self.class_body_fallback,
-            self.class_parent_scope,
-        ) {
-            bindings.copy_for_fallback(&self.imports, fallback, parent_scope);
+        if let Some(context) = &mut self.class_context {
+            context.external_bindings.copy_for_fallback(
+                &self.imports,
+                &mut context.fallback,
+                context.parent_scope,
+            );
         }
-        let inherited_fallback = self.class_body_fallback.clone();
-        let inherited_bindings = self.class_external_bindings.take();
-        let inherited_class_parent_scope = self.class_parent_scope.take();
-        self.imports = inherited_fallback
-            .clone()
-            .unwrap_or_else(|| inherited.clone());
+        let inherited_context = self.class_context.take();
+        self.imports = inherited_context
+            .as_ref()
+            .map_or_else(|| inherited.clone(), |context| context.fallback.clone());
         if let Some(type_params) = definition.type_params.as_deref() {
             self.imports.enter_type_params(type_params);
         }
         for local in FunctionLocalCollector::collect(definition) {
             self.imports.invalidate(&local);
         }
-        self.class_body_fallback = None;
         let inherited_scope = self.scope_kind;
         self.scope_kind = ScopeKind::Function;
         self.qualname.push(definition.name.as_str().to_owned());
@@ -6151,9 +6153,7 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
         self.qualname.pop();
         self.scope_kind = inherited_scope;
         self.imports = inherited;
-        self.class_body_fallback = inherited_fallback;
-        self.class_external_bindings = inherited_bindings;
-        self.class_parent_scope = inherited_class_parent_scope;
+        self.class_context = inherited_context;
         ControlFlowExits::fallthrough(std::mem::take(&mut self.imports))
     }
 
@@ -6164,38 +6164,38 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
     ) -> ControlFlowExits {
         self.visit_class_header(definition);
         let mut inherited = self.imports.clone();
-        let inherited_fallback = self.class_body_fallback.clone();
-        let inherited_bindings = self.class_external_bindings.take();
-        let inherited_class_parent_scope = self.class_parent_scope.take();
+        let inherited_context = self.class_context.take();
         let inherited_scope = self.scope_kind;
         let mut class_scope = inherited.clone();
-        let mut class_fallback = inherited_fallback
-            .clone()
-            .unwrap_or_else(|| inherited.clone());
+        let mut class_fallback = inherited_context
+            .as_ref()
+            .map_or_else(|| inherited.clone(), |context| context.fallback.clone());
         if let Some(type_params) = definition.type_params.as_deref() {
             class_scope.enter_type_params(type_params);
             class_fallback.enter_type_params(type_params);
         }
         class_fallback.invalidate(definition.name.as_str());
-        self.class_body_fallback = Some(class_fallback);
-        self.class_external_bindings = Some(ClassExternalBindings::collect(&definition.body));
-        self.class_parent_scope = Some(inherited_scope);
+        self.class_context = Some(ClassContext {
+            fallback: class_fallback,
+            external_bindings: ClassExternalBindings::collect(&definition.body),
+            parent_scope: inherited_scope,
+        });
         self.scope_kind = ScopeKind::Class;
         self.imports = class_scope;
         self.qualname.push(definition.name.as_str().to_owned());
         let body_exits = self.visit_suite_flow(&definition.body);
         self.qualname.pop();
         if let Some(body_imports) = &body_exits.fallthrough
-            && let Some(bindings) = &self.class_external_bindings
+            && let Some(context) = &self.class_context
         {
             match inherited_scope {
                 ScopeKind::Module => {
-                    for name in &bindings.globals {
+                    for name in &context.external_bindings.globals {
                         inherited.copy_name_from(body_imports, name);
                     }
                 }
                 ScopeKind::Function => {
-                    for name in &bindings.nonlocals {
+                    for name in &context.external_bindings.nonlocals {
                         inherited.copy_name_from(body_imports, name);
                     }
                 }
@@ -6203,9 +6203,7 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
             }
         }
         self.imports = inherited;
-        self.class_body_fallback = inherited_fallback;
-        self.class_external_bindings = inherited_bindings;
-        self.class_parent_scope = inherited_class_parent_scope;
+        self.class_context = inherited_context;
         self.scope_kind = inherited_scope;
         self.imports.transfer_statement(statement);
         ControlFlowExits::fallthrough(std::mem::take(&mut self.imports))
@@ -6319,9 +6317,13 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
             let (body_exits, fallback_unchanged) = {
                 // Only class scope owns a fallback. Keep its snapshot for this
                 // evaluation, then drop it before updating or returning the head.
-                let fallback_before = self.class_body_fallback.clone();
+                let fallback_before = self
+                    .class_context
+                    .as_ref()
+                    .map(|context| context.fallback.clone());
                 let exits = self.visit_suite_from(head.clone(), body);
-                (exits, fallback_before == self.class_body_fallback)
+                let fallback_after = self.class_context.as_ref().map(|context| &context.fallback);
+                (exits, fallback_before.as_ref() == fallback_after)
             };
             self.record_annotations = record_annotations;
 

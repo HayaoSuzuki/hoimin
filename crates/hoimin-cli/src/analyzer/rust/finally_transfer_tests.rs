@@ -159,9 +159,9 @@ fn observe(source: &str, old: bool) -> FlowObservation {
     collector.annotation_callback = Some(&mut callback);
     let exits = collector.visit_suite_flow(&parsed.syntax().body);
     let fallback = collector
-        .class_body_fallback
+        .class_context
         .as_ref()
-        .map(normalize_binding_flow_imports);
+        .map(|context| normalize_binding_flow_imports(&context.fallback));
     FlowObservation {
         annotations,
         explicit: normalize_binding_flow_exits(&exits),

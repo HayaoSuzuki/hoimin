@@ -6167,6 +6167,56 @@ fn typing_import_rebinding_nested_class_globals_preserve_function_fallback() {
 }
 
 #[test]
+fn class_context_restores_method_fallback_after_nested_definitions() {
+    for nested in ["class Inner: pass", "def first(self): pass"] {
+        for (import, binding, replacement) in [
+            ("from typing import Sequence", "Sequence", "Sequence[str]"),
+            ("import typing as t", "t", "t.Sequence[str]"),
+        ] {
+            // Class locals must not replace the method's enclosing import.
+            let source = format!(
+                "{import}\nclass Outer:\n    {binding} = object\n    {nested}\n    def method(self):\n        value: list[str]\n"
+            );
+
+            let output = analyze_types(&source);
+            let actual: Vec<_> = output
+                .candidates
+                .iter()
+                .filter(|candidate| candidate.operator == "type_list_sequence")
+                .map(|candidate| (candidate.symbol.as_deref(), candidate.replacement.as_str()))
+                .collect();
+
+            // Returning from either nested scope restores Outer's fallback.
+            assert_eq!(actual, [(Some("Outer.method"), replacement)], "{source}");
+        }
+    }
+}
+
+proptest! {
+    #[test]
+    fn class_context_preserves_enclosing_import_through_nested_classes(depth in 1usize..9) {
+        // Every intermediate class shadows the module import.
+        let mut source = String::from("from typing import Sequence\n");
+        for level in 0..depth {
+            let indent = "    ".repeat(level);
+            writeln!(source, "{indent}class C{level}:").unwrap();
+            writeln!(source, "{indent}    Sequence = object").unwrap();
+        }
+        let indent = "    ".repeat(depth);
+        writeln!(source, "{indent}def method(self):\n{indent}    value: list[str]").unwrap();
+
+        let output = analyze_types(&source);
+        let actual: Vec<_> = output.candidates.iter()
+            .filter(|candidate| candidate.operator == "type_list_sequence")
+            .map(|candidate| candidate.replacement.as_str())
+            .collect();
+
+        // Method lookup skips every class-local shadow.
+        prop_assert_eq!(actual, ["Sequence[str]"]);
+    }
+}
+
+#[test]
 fn typing_import_rebinding_try_handler_includes_unknown_wildcard_effect() {
     let source = concat!(
         "from typing import Sequence\n",
