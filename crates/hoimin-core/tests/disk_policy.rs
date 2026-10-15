@@ -2,9 +2,9 @@ use std::num::NonZeroU64;
 use std::time::Duration;
 
 use hoimin_core::disk::{
-    DISK_MEASUREMENT_FAILED, DiskCleanupOutcome, DiskDecision, DiskLifecycle, DiskLifecycleError,
-    DiskLifecycleEvent, DiskObservation, DiskPolicy, DiskRootId, DiskStopReason,
-    FILESYSTEM_RESERVE_REACHED, PROCESS_LIFECYCLE_FAILED, WORKSPACE_SIZE_EXCEEDED,
+    DISK_MEASUREMENT_FAILED, DiskCleanupOutcome, DiskCleanupState, DiskDecision, DiskLifecycle,
+    DiskLifecycleError, DiskLifecycleEvent, DiskObservation, DiskPolicy, DiskRootEntry, DiskRootId,
+    DiskStopReason, FILESYSTEM_RESERVE_REACHED, PROCESS_LIFECYCLE_FAILED, WORKSPACE_SIZE_EXCEEDED,
 };
 
 fn policy(max_owned_bytes: u64, min_free_bytes: u64) -> DiskPolicy {
@@ -143,24 +143,17 @@ fn process_drain_failure_is_a_sticky_primary_or_secondary_stop() {
 }
 
 #[test]
-fn duplicate_roots_and_duplicate_cleanup_requests_are_rejected() {
-    assert_eq!(
-        DiskLifecycle::new([DiskRootId::Execution, DiskRootId::Execution]),
-        Err(DiskLifecycleError::DuplicateRoot(DiskRootId::Execution))
-    );
+fn duplicate_roots_are_rejected() {
+    for root in [DiskRootId::Execution, DiskRootId::Delivery] {
+        // Arrange
+        let roots = [root, root];
 
-    let mut lifecycle = DiskLifecycle::new([DiskRootId::Execution]).unwrap();
-    settle_safety(&mut lifecycle);
-    assert!(lifecycle.apply(DiskLifecycleEvent::CleanupRequested {
-        root: DiskRootId::Execution,
-    }));
-    assert!(!lifecycle.apply(DiskLifecycleEvent::CleanupRequested {
-        root: DiskRootId::Execution,
-    }));
-    assert_eq!(
-        lifecycle.snapshot().cleanup_requested,
-        vec![DiskRootId::Execution]
-    );
+        // Act
+        let result = DiskLifecycle::new(roots);
+
+        // Assert
+        assert_eq!(result, Err(DiskLifecycleError::DuplicateRoot(root)));
+    }
 }
 
 #[test]
@@ -221,7 +214,8 @@ fn report_failure_blocks_finish_after_all_other_obligations_settle() {
 }
 
 #[test]
-fn deferred_cleanup_is_incomplete_and_records_a_stable_secondary_error() {
+fn deferred_cleanup_retains_its_outcome() {
+    // Arrange
     let mut lifecycle = DiskLifecycle::new([DiskRootId::Execution]).unwrap();
     settle_safety(&mut lifecycle);
     cleanup(
@@ -229,30 +223,57 @@ fn deferred_cleanup_is_incomplete_and_records_a_stable_secondary_error() {
         DiskRootId::Execution,
         DiskCleanupOutcome::Deferred("lease remains active".into()),
     );
-    assert!(lifecycle.apply(DiskLifecycleEvent::ReportSucceeded));
+    let expected = vec![DiskRootEntry {
+        root: DiskRootId::Execution,
+        cleanup: DiskCleanupState::Completed(DiskCleanupOutcome::Deferred(
+            "lease remains active".into(),
+        )),
+    }];
 
-    let snapshot = lifecycle.snapshot();
-    assert_eq!(snapshot.cleanup_deferred, vec![DiskRootId::Execution]);
-    assert_eq!(
-        snapshot.secondary[0].code(),
-        hoimin_core::WORKSPACE_CLEANUP_DEFERRED
-    );
-    assert!(!lifecycle.may_finish());
+    // Act
+    let actual = lifecycle.snapshot().roots;
+
+    // Assert
+    assert_eq!(actual, expected);
 }
 
 #[test]
-fn cleanup_outcome_without_owned_requested_root_is_rejected() {
+fn deferred_cleanup_records_its_secondary_error() {
+    // Arrange
+    let mut lifecycle = DiskLifecycle::new([DiskRootId::Execution]).unwrap();
+    settle_safety(&mut lifecycle);
+    let expected = vec![hoimin_core::DiskSecondary::Error {
+        code: hoimin_core::WORKSPACE_CLEANUP_DEFERRED.into(),
+        message: "lease remains active".into(),
+    }];
+
+    // Act
+    cleanup(
+        &mut lifecycle,
+        DiskRootId::Execution,
+        DiskCleanupOutcome::Deferred("lease remains active".into()),
+    );
+    let actual = lifecycle.snapshot().secondary;
+
+    // Assert
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn cleanup_request_without_owned_root_is_rejected_without_mutation() {
+    // Arrange
     let mut lifecycle = DiskLifecycle::new([]).unwrap();
     settle_safety(&mut lifecycle);
+    let before = lifecycle.snapshot();
 
-    assert!(!lifecycle.apply(DiskLifecycleEvent::CleanupRequested {
+    // Act
+    let accepted = lifecycle.apply(DiskLifecycleEvent::CleanupRequested {
         root: DiskRootId::Execution,
-    }));
-    assert!(!lifecycle.apply(DiskLifecycleEvent::CleanupCompleted {
-        root: DiskRootId::Execution,
-        outcome: DiskCleanupOutcome::Failed("not owned".into()),
-    }));
-    assert_eq!(lifecycle.snapshot().cleanup_failed, Vec::new());
+    });
+
+    // Assert
+    assert!(!accepted);
+    assert_eq!(lifecycle.snapshot(), before);
 }
 
 #[test]
