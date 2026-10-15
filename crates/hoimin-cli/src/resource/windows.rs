@@ -898,24 +898,24 @@ mod tests {
         arg(fixture_python_path())
     }
 
-    fn sleeping_fixture(id: u64) -> RunProcess {
+    fn sleeping_fixture(id: u64) -> RunProcess<hoimin_core::ProbeContext> {
         RunProcess {
             id: EffectId(id),
-            worker: None,
-            run_id: None,
-            mutant_id: None,
+            context: hoimin_core::ProbeContext,
             argv: vec![arg("ping.exe"), arg("-n"), arg("30"), arg("127.0.0.1")],
             cwd: Utf8PathBuf::from_path_buf(std::env::current_dir().unwrap()).unwrap(),
             limits: fixture_limits(),
         }
     }
 
-    fn abnormal_fixture(id: u64, ready: &Utf8Path, release: &Utf8Path) -> RunProcess {
+    fn abnormal_fixture(
+        id: u64,
+        ready: &Utf8Path,
+        release: &Utf8Path,
+    ) -> RunProcess<hoimin_core::ProbeContext> {
         RunProcess {
             id: EffectId(id),
-            worker: None,
-            run_id: None,
-            mutant_id: None,
+            context: hoimin_core::ProbeContext,
             argv: vec![
                 fixture_python(),
                 arg("-c"),
@@ -1379,9 +1379,7 @@ mod tests {
             );
             let request = RunProcess {
                 id: EffectId(200 + sequence as u64),
-                worker: None,
-                run_id: None,
-                mutant_id: None,
+                context: hoimin_core::ProbeContext,
                 argv: vec![
                     python(),
                     arg("-c"),
@@ -1484,9 +1482,7 @@ mod tests {
         );
         let request = RunProcess {
             id: EffectId(250),
-            worker: None,
-            run_id: None,
-            mutant_id: None,
+            context: hoimin_core::ProbeContext,
             argv: vec![python(), arg("-c"), arg("import time; time.sleep(30)")],
             cwd: Utf8PathBuf::from_path_buf(std::env::current_dir().unwrap()).unwrap(),
             limits: ProcessLimits {

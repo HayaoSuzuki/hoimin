@@ -663,9 +663,10 @@ impl RunState {
         let id = self.allocate_id()?;
         Ok(vec![RunEffect::RunBaseline(RunProcess {
             id,
-            worker: Some(0),
-            run_id: Some(self.run_id.clone()),
-            mutant_id: None,
+            context: crate::BaselineContext {
+                worker: 0,
+                run_id: self.run_id.clone(),
+            },
             argv: self.config.test_argv.clone(),
             cwd: self.config.root.clone(),
             limits: ProcessLimits {
@@ -1026,9 +1027,11 @@ impl RunState {
         };
         Ok(vec![RunEffect::RunMutant(RunProcess {
             id,
-            worker: Some(worker),
-            run_id: Some(self.run_id.clone()),
-            mutant_id: Some(self.candidate(worker)?.id),
+            context: crate::MutantContext {
+                worker,
+                run_id: self.run_id.clone(),
+                mutant_id: self.candidate(worker)?.id,
+            },
             argv: self.config.test_argv.clone(),
             cwd: self.config.root.clone(),
             limits: ProcessLimits {
@@ -2073,7 +2076,8 @@ fn expected_completion(effect: &RunEffect) -> CompletionKind {
 fn effect_worker(effect: &RunEffect) -> Option<u32> {
     match effect {
         RunEffect::CreateWorker(value) => Some(value.worker()),
-        RunEffect::RunBaseline(value) | RunEffect::RunMutant(value) => value.worker,
+        RunEffect::RunBaseline(value) => Some(value.context.worker),
+        RunEffect::RunMutant(value) => Some(value.context.worker),
         RunEffect::ReadCandidate(value) => Some(value.worker),
         RunEffect::ApplyMutation(value) => Some(value.worker),
         RunEffect::ResetWorker(value) => Some(value.worker),

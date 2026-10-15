@@ -83,12 +83,10 @@ fn limits(timeout: Duration, max_output_bytes: u64) -> ProcessLimits {
     }
 }
 
-fn run_python(id: u64, code: &str, limits: ProcessLimits) -> RunProcess {
+fn run_python(id: u64, code: &str, limits: ProcessLimits) -> RunProcess<hoimin_core::ProbeContext> {
     RunProcess {
         id: EffectId(id),
-        worker: None,
-        run_id: None,
-        mutant_id: None,
+        context: hoimin_core::ProbeContext,
         argv: vec![python_executable(), utf8_arg("-c"), utf8_arg(code)],
         cwd: Utf8PathBuf::from_path_buf(std::env::current_dir().unwrap()).unwrap(),
         limits,
@@ -379,9 +377,7 @@ mod cgroup_v2 {
             let raw = vec![b'n', b'o', b'n', b'-', 0xff, b'-', b'u', b't', b'f', b'8'];
             let request = RunProcess {
                 id: EffectId(201),
-                worker: None,
-                run_id: None,
-                mutant_id: None,
+                context: hoimin_core::ProbeContext,
                 argv: vec![
                     python_executable(),
                     utf8_arg("-c"),
@@ -415,9 +411,7 @@ mod cgroup_v2 {
             let guard = FixtureChildGuard::new(pid_file.clone());
             let timed_out = handler.handle(RunProcess {
             id: EffectId(202),
-        worker: None,
-        run_id: None,
-        mutant_id: None,
+        context: hoimin_core::ProbeContext,
         argv: vec![
                 python_executable(),
                 utf8_arg("-c"),
@@ -462,9 +456,7 @@ mod cgroup_v2 {
                 let result = handler
                     .handle(RunProcess {
                         id: EffectId(208),
-                        worker: None,
-                        run_id: None,
-                        mutant_id: None,
+                        context: hoimin_core::ProbeContext,
                         argv: vec![
                             python_executable(),
                             utf8_arg("-c"),
@@ -541,9 +533,7 @@ mod cgroup_v2 {
             tokio::time::timeout(Duration::from_secs(6), async {
                 let handle = handler.handle(RunProcess {
                     id: EffectId(209),
-                    worker: None,
-                    run_id: None,
-                    mutant_id: None,
+                    context: hoimin_core::ProbeContext,
                     argv: vec![
                         python_executable(),
                         utf8_arg("-c"),
@@ -955,9 +945,7 @@ mod portable {
         let deadline = tokio::time::Instant::now() + REAL_PROCESS_FIXTURE_BUDGET;
         let request = RunProcess {
             id: EffectId(207),
-            worker: None,
-            run_id: None,
-            mutant_id: None,
+            context: hoimin_core::ProbeContext,
             argv: vec![
                 python_executable(),
                 utf8_arg("-c"),
@@ -1040,9 +1028,11 @@ os.kill(os.getpid(), signal.SIGXCPU)
         let code = "import pathlib,subprocess,sys; child=subprocess.Popen([sys.executable,'-c','import time; time.sleep(30)'],start_new_session=True); pathlib.Path(sys.argv[1]).write_text(str(child.pid))";
         let request = RunProcess {
             id: EffectId(52),
-            worker: Some(0),
-            run_id: Some("run".to_owned()),
-            mutant_id: Some("mutant".to_owned()),
+            context: hoimin_core::MutantContext {
+                worker: 0,
+                run_id: "run".to_owned(),
+                mutant_id: "mutant".to_owned(),
+            },
             argv: vec![
                 python_executable(),
                 utf8_arg("-c"),
@@ -1070,9 +1060,7 @@ os.kill(os.getpid(), signal.SIGXCPU)
         let expected = "space & | $() ; literal";
         let request = RunProcess {
             id: EffectId(51),
-            worker: None,
-            run_id: None,
-            mutant_id: None,
+            context: hoimin_core::ProbeContext,
             argv: vec![
                 python_executable(),
                 utf8_arg("-c"),
@@ -1140,9 +1128,7 @@ os.kill(os.getpid(), signal.SIGXCPU)
         let handler = portable_handler(Utf8Path::from_path(output.path()).unwrap());
         let request = RunProcess {
             id: EffectId(7),
-            worker: None,
-            run_id: None,
-            mutant_id: None,
+            context: hoimin_core::ProbeContext,
             argv: vec![utf8_arg("definitely-missing-hoimin-executable")],
             cwd: Utf8PathBuf::from_path_buf(std::env::current_dir().unwrap()).unwrap(),
             limits: limits(Duration::from_secs(1), 64),
@@ -1190,9 +1176,7 @@ os.kill(os.getpid(), signal.SIGXCPU)
         let deadline = tokio::time::Instant::now() + REAL_PROCESS_FIXTURE_BUDGET;
         let request = RunProcess {
             id: EffectId(9),
-            worker: None,
-            run_id: None,
-            mutant_id: None,
+            context: hoimin_core::ProbeContext,
             argv: vec![
                 python_executable(),
                 utf8_arg("-c"),
@@ -1229,9 +1213,7 @@ os.kill(os.getpid(), signal.SIGXCPU)
         let deadline = tokio::time::Instant::now() + REAL_PROCESS_FIXTURE_BUDGET;
         let request = ProcessRequest::from(RunProcess {
             id: EffectId(10),
-        worker: None,
-        run_id: None,
-        mutant_id: None,
+        context: hoimin_core::ProbeContext,
         argv: vec![
                 python_executable(),
                 utf8_arg("-c"),
@@ -1269,9 +1251,7 @@ os.kill(os.getpid(), signal.SIGXCPU)
         let deadline = tokio::time::Instant::now() + REAL_PROCESS_FIXTURE_BUDGET;
         let request = ProcessRequest::from(RunProcess {
             id: EffectId(11),
-            worker: None,
-            run_id: None,
-            mutant_id: None,
+            context: hoimin_core::ProbeContext,
             argv: vec![
                 python_executable(),
                 utf8_arg("-c"),
@@ -1318,9 +1298,7 @@ os.kill(os.getpid(), signal.SIGXCPU)
         let deadline = tokio::time::Instant::now() + REAL_PROCESS_FIXTURE_BUDGET;
         let request = RunProcess {
             id: EffectId(12),
-            worker: None,
-            run_id: None,
-            mutant_id: None,
+            context: hoimin_core::ProbeContext,
             argv: vec![
                 python_executable(),
                 utf8_arg("-c"),
@@ -1365,9 +1343,7 @@ os.kill(os.getpid(), signal.SIGXCPU)
         let deadline = tokio::time::Instant::now() + REAL_PROCESS_FIXTURE_BUDGET;
         let request = RunProcess {
             id: EffectId(13),
-            worker: None,
-            run_id: None,
-            mutant_id: None,
+            context: hoimin_core::ProbeContext,
             argv: vec![
                 python_executable(),
                 utf8_arg("-c"),
@@ -1419,9 +1395,7 @@ os.kill(os.getpid(), signal.SIGXCPU)
         let deadline = tokio::time::Instant::now() + REAL_PROCESS_FIXTURE_BUDGET;
         let request = RunProcess {
             id: EffectId(14),
-            worker: None,
-            run_id: None,
-            mutant_id: None,
+            context: hoimin_core::ProbeContext,
             argv: vec![
                 python_executable(),
                 utf8_arg("-c"),
@@ -1539,7 +1513,11 @@ mod job_object {
         native_arg(executable.as_os_str())
     }
 
-    fn native_run_python(id: u64, code: &str, limits: ProcessLimits) -> RunProcess {
+    fn native_run_python(
+        id: u64,
+        code: &str,
+        limits: ProcessLimits,
+    ) -> RunProcess<hoimin_core::ProbeContext> {
         let mut request = super::run_python(id, code, limits);
         request.argv[0] = native_python();
         request
@@ -1707,9 +1685,7 @@ mod job_object {
         let deadline = tokio::time::Instant::now() + REAL_PROCESS_FIXTURE_BUDGET;
         let request = RunProcess {
             id: EffectId(109),
-            worker: None,
-            run_id: None,
-            mutant_id: None,
+            context: hoimin_core::ProbeContext,
             argv: vec![
                 native_python(),
                 utf8_arg("-c"),
@@ -1761,4 +1737,47 @@ fn portable_backend_description_is_stable_and_reaches_process_handler() {
     );
     assert_eq!(handler.resource_control(), policy);
     assert_eq!(handler.mode(), policy.mode);
+}
+
+#[tokio::test]
+async fn completion_worker_matches_typed_process_context() {
+    fn command<C>(context: C) -> RunProcess<C> {
+        let probe = run_python(80, "pass", limits(Duration::from_secs(5), 64));
+        RunProcess {
+            id: probe.id,
+            context,
+            argv: probe.argv,
+            cwd: probe.cwd,
+            limits: probe.limits,
+        }
+    }
+    for (request, expected_worker) in [
+        (
+            ProcessRequest::from(command(hoimin_core::ProbeContext)),
+            None,
+        ),
+        (
+            ProcessRequest::from(command(hoimin_core::BaselineContext {
+                worker: 3,
+                run_id: "run".into(),
+            })),
+            Some(3),
+        ),
+        (
+            ProcessRequest::from(command(hoimin_core::MutantContext {
+                worker: 7,
+                run_id: "run".into(),
+                mutant_id: "mutant".into(),
+            })),
+            Some(7),
+        ),
+    ] {
+        // Arrange.
+        let output = tempfile::tempdir().unwrap();
+        let handler = portable_handler(Utf8Path::from_path(output.path()).unwrap());
+        // Act.
+        let event = handler.run(request).await.unwrap();
+        // Assert.
+        assert_eq!(event.worker, expected_worker);
+    }
 }

@@ -477,7 +477,8 @@ nonempty canonical names and a valid aggregate digest. The transition rejects a
 snapshot for another name set. Verify recaptures the saved names and rejects a
 changed snapshot before the baseline. [^issue-887-environment]
 
-Plan schema 6 and report schema 5 require one explicit `environment` object.
+Current plan schema 7 and report schema 6 retain the explicit `environment` object
+introduced in plan schema 6 and report schema 5.
 The earlier omitted-field encoding was also produced by the then-current writer;
 its removal is a versioned format change, not a legacy-only cleanup. Regenerate
 older plans and retain older reports with their producing binary. Fingerprint

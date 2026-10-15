@@ -12,7 +12,7 @@ The contracts cover these boundaries:
 - [Python analysis and candidate scale](analyzer.md) - Syntax, name resolution, exception hierarchies, byte ranges and bounded retention.
 - [Target selection, plan and verify](selection-plan-verify.md) - Discovery versus execution, ranking, subsets, sampling, previews and saved-format changes.
 - [Disk failure payloads](disk-failure.md) - Required stop evidence, exact deduplication, report projection, and saved failure format.
-- [Resources, cleanup and final output](runtime-lifecycle.md) - OS-specific limits and process, workspace and report completion conditions.
+- [Resources, cleanup and final output](runtime-lifecycle.md) - OS-specific limits, typed process identity, and process, workspace and report completion conditions.
 - [Session ownership and report validation](session-report.md) - Persistence, recovery, migration and reader/writer responsibilities.
 - [JSON mutant record writing](json-report-spool.md) - Batched writes, acknowledgement, short writes and poisoned output state.
 - [Fingerprint input glob traversal](fingerprint-inputs.md) - Shared traversal, input-order errors and unselected files.

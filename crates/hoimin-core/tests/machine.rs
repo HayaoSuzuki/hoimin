@@ -1812,7 +1812,7 @@ fn four_jobs_fill_four_independent_worker_chains_in_every_completion_order() {
         let RunEffect::RunMutant(process) = process else {
             unreachable!()
         };
-        assert_eq!(process.worker, Some(worker));
+        assert_eq!(process.context.worker, worker);
         running_workers.insert(worker);
         running_ids.insert(worker, process.id);
         effects = produced;
@@ -4234,9 +4234,13 @@ impl ScheduleHarness {
                 worker: create.worker(),
                 reservation_id: create.reservation_id(),
             }),
-            RunEffect::RunBaseline(process) => RunEvent::BaselineFinished(
-                schedule_process_finished(process, ProcessTermination::Exit(0)),
-            ),
+            RunEffect::RunBaseline(process) => {
+                RunEvent::BaselineFinished(schedule_process_finished(
+                    process.id,
+                    process.context.worker,
+                    ProcessTermination::Exit(0),
+                ))
+            }
             RunEffect::ObserveRemainingBudget(observe) => {
                 RunEvent::RemainingBudgetObserved(RemainingBudgetObserved {
                     id: observe.id,
@@ -4272,7 +4276,7 @@ impl ScheduleHarness {
                 worker: apply.worker,
             }),
             RunEffect::RunMutant(process) => {
-                let mutant_id = process.mutant_id.as_ref().unwrap();
+                let mutant_id = &process.context.mutant_id;
                 let sequence = mutant_id
                     .strip_prefix('m')
                     .unwrap()
@@ -4292,7 +4296,11 @@ impl ScheduleHarness {
                     _ => (MutationStatus::NotRun, ProcessTermination::Cancelled),
                 };
                 self.ledger.insert(mutant_id.clone(), status);
-                RunEvent::MutantFinished(schedule_process_finished(process, termination))
+                RunEvent::MutantFinished(schedule_process_finished(
+                    process.id,
+                    process.context.worker,
+                    termination,
+                ))
             }
             RunEffect::ResetWorker(reset) => RunEvent::WorkerReset(WorkerReset {
                 id: reset.id,
@@ -4426,12 +4434,13 @@ impl ScheduleHarness {
 }
 
 fn schedule_process_finished(
-    process: &hoimin_core::RunProcess,
+    id: EffectId,
+    worker: u32,
     termination: ProcessTermination,
 ) -> ProcessFinished {
     ProcessFinished {
-        id: process.id,
-        worker: process.worker,
+        id,
+        worker: Some(worker),
         termination,
         output_state: ProcessOutputState::Complete,
         output: hoimin_core::OutputSpoolRef {

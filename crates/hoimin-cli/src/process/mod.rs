@@ -192,7 +192,7 @@ impl Default for ProcessCancellation {
 /// retained token with [`Self::with_cancellation`] to request cancellation later.
 #[derive(Clone, Debug)]
 pub struct ProcessRequest {
-    process: RunProcess,
+    process: RunProcess<ExecutionContext>,
     cancellation: ProcessCancellation,
     start_gate: Option<ProcessStartGate>,
     environment: Option<CommandEnvironment>,
@@ -218,16 +218,55 @@ impl ProcessRequest {
     }
 }
 
-impl From<RunProcess> for ProcessRequest {
-    fn from(process: RunProcess) -> Self {
-        Self {
-            process,
-            cancellation: ProcessCancellation::new(),
-            start_gate: None,
-            environment: None,
+/// Concrete context types are lowered to one runner representation.
+#[derive(Clone, Debug)]
+enum ExecutionContext {
+    Probe(hoimin_core::ProbeContext),
+    Baseline(hoimin_core::BaselineContext),
+    Mutant(hoimin_core::MutantContext),
+}
+
+impl ExecutionContext {
+    fn worker(&self) -> Option<u32> {
+        match self {
+            Self::Probe(_) => None,
+            Self::Baseline(value) => Some(value.worker),
+            Self::Mutant(value) => Some(value.worker),
+        }
+    }
+
+    fn mutant_id(&self) -> Option<&str> {
+        match self {
+            Self::Probe(_) | Self::Baseline(_) => None,
+            Self::Mutant(value) => Some(&value.mutant_id),
         }
     }
 }
+
+macro_rules! process_request_context {
+    ($context:ty, $variant:ident) => {
+        impl From<RunProcess<$context>> for ProcessRequest {
+            fn from(process: RunProcess<$context>) -> Self {
+                Self {
+                    process: RunProcess {
+                        id: process.id,
+                        context: ExecutionContext::$variant(process.context),
+                        argv: process.argv,
+                        cwd: process.cwd,
+                        limits: process.limits,
+                    },
+                    cancellation: ProcessCancellation::new(),
+                    start_gate: None,
+                    environment: None,
+                }
+            }
+        }
+    };
+}
+
+process_request_context!(hoimin_core::ProbeContext, Probe);
+process_request_context!(hoimin_core::BaselineContext, Baseline);
+process_request_context!(hoimin_core::MutantContext, Mutant);
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProcessError {
@@ -433,7 +472,10 @@ impl ProcessHandler {
     /// # Errors
     ///
     /// Returns an effect failure when process setup, execution, termination, or output collection fails.
-    pub async fn handle(&self, request: RunProcess) -> Result<ProcessFinished, EffectFailed> {
+    pub async fn handle<C>(&self, request: RunProcess<C>) -> Result<ProcessFinished, EffectFailed>
+    where
+        ProcessRequest: From<RunProcess<C>>,
+    {
         self.run(request.into()).await
     }
 
@@ -453,7 +495,7 @@ impl ProcessHandler {
     /// resource setup, lifecycle task failure, process I/O, termination or output
     /// collection errors. Cancellation after spawn can instead return a
     /// [`ProcessFinished`] with [`ProcessTermination::Cancelled`].
-    #[tracing::instrument(name = "test_process", level = "debug", skip_all, fields(effect_id = request.process.id.0, worker = request.process.worker, mutant_id = request.process.mutant_id.as_deref()))]
+    #[tracing::instrument(name = "test_process", level = "debug", skip_all, fields(effect_id = request.process.id.0, worker = request.process.context.worker(), mutant_id = request.process.context.mutant_id()))]
     pub async fn run(&self, request: ProcessRequest) -> Result<ProcessFinished, EffectFailed> {
         let id = request.process.id;
         let handler = self.clone();
@@ -703,7 +745,7 @@ impl ProcessHandler {
         let (termination, output, output_state) = combine_process_and_output(
             process_result,
             output_outcome.result,
-            process.mutant_id.as_deref(),
+            &process.context,
             output_ref,
         )?;
         contract_ensure!(
@@ -719,7 +761,7 @@ impl ProcessHandler {
         );
         Ok(ProcessFinished {
             id,
-            worker: process.worker,
+            worker: process.context.worker(),
             termination,
             output_state,
             output,
@@ -1074,14 +1116,14 @@ async fn await_tree_quiescence_after_root_reap(
 fn combine_process_and_output(
     process: Result<ProcessTermination, EffectFailed>,
     output: Result<OutputSpoolRef, EffectFailed>,
-    mutant_id: Option<&str>,
+    context: &ExecutionContext,
     fallback_output: OutputSpoolRef,
 ) -> Result<(ProcessTermination, OutputSpoolRef, ProcessOutputState), EffectFailed> {
     match process {
         Ok(termination) => match output {
             Ok(output) => Ok((termination, output, ProcessOutputState::Complete)),
             Err(error)
-                if mutant_id.is_some()
+                if matches!(context, ExecutionContext::Mutant(_))
                     && error.failure.code() == PROCESS_OUTPUT_CLOSE_TIMEOUT_CODE =>
             {
                 Ok((
@@ -1232,10 +1274,10 @@ mod tests {
     use tokio::process::Command;
 
     use super::{
-        CompletionGuard, POST_TERMINATION_GRACE, ProcessCancellation, ProcessHandler,
-        ProcessRequest, ProcessSelection, ProcessStartGate, abort_and_join, append_cleanup_failure,
-        attach_failure, await_output, combine_process_and_output, select_process_result,
-        wait_after_termination, wait_failure_after_cleanup,
+        CompletionGuard, ExecutionContext, POST_TERMINATION_GRACE, ProcessCancellation,
+        ProcessHandler, ProcessRequest, ProcessSelection, ProcessStartGate, abort_and_join,
+        append_cleanup_failure, attach_failure, await_output, combine_process_and_output,
+        select_process_result, wait_after_termination, wait_failure_after_cleanup,
     };
     use crate::resource::{PortableBackend, ResourceBackend, ResourceError};
 
@@ -1389,9 +1431,7 @@ mod tests {
         let executable = std::env::current_exe().unwrap();
         let request = ProcessRequest::from(RunProcess {
             id: EffectId(49),
-            worker: None,
-            run_id: None,
-            mutant_id: None,
+            context: hoimin_core::ProbeContext,
             argv: vec![
                 native_test_arg(executable.as_os_str()),
                 native_test_arg(OsStr::new("--list")),
@@ -1519,6 +1559,22 @@ mod tests {
         cases
     }
 
+    fn execution_context(purpose: &str) -> ExecutionContext {
+        match purpose {
+            "probe" => ExecutionContext::Probe(hoimin_core::ProbeContext),
+            "baseline" => ExecutionContext::Baseline(hoimin_core::BaselineContext {
+                worker: 0,
+                run_id: "run".into(),
+            }),
+            "mutant" => ExecutionContext::Mutant(hoimin_core::MutantContext {
+                worker: 0,
+                run_id: "run".into(),
+                mutant_id: "mutant".into(),
+            }),
+            other => panic!("unknown execution purpose {other}"),
+        }
+    }
+
     fn combine_process_output_case(
         case: &ProcessOutputCase,
     ) -> Result<(ProcessTermination, OutputSpoolRef, ProcessOutputState), EffectFailed> {
@@ -1553,8 +1609,8 @@ mod tests {
             "complete" => Ok(collected),
             _ => Err(output_failure),
         };
-        let mutant_id = (case.execution == "mutant").then_some("mutant");
-        combine_process_and_output(process, output, mutant_id, fallback)
+        let context = execution_context(&case.execution);
+        combine_process_and_output(process, output, &context, fallback)
     }
 
     #[test]
@@ -1646,9 +1702,7 @@ mod tests {
         let executable = std::env::current_exe().unwrap();
         let request = ProcessRequest::from(RunProcess {
             id: EffectId(48),
-            worker: None,
-            run_id: None,
-            mutant_id: None,
+            context: hoimin_core::ProbeContext,
             argv: vec![
                 native_test_arg(executable.as_os_str()),
                 native_test_arg(OsStr::new("--ignored")),
@@ -1789,7 +1843,7 @@ mod tests {
         let error = combine_process_and_output(
             Err(primary.clone()),
             Err(cleanup),
-            Some("mutant"),
+            &execution_context("mutant"),
             output_ref(),
         )
         .expect_err("primary process failure wins");
@@ -1904,7 +1958,7 @@ mod tests {
         let result = combine_process_and_output(
             Ok(ProcessTermination::Timeout),
             Err(cleanup),
-            Some("mutant"),
+            &execution_context("mutant"),
             fallback.clone(),
         )
         .expect("mutant close timeout is a classified result");
@@ -1926,7 +1980,7 @@ mod tests {
         let result = combine_process_and_output(
             Ok(ProcessTermination::Exit(0)),
             Ok(output.clone()),
-            Some("mutant"),
+            &execution_context("mutant"),
             output_ref(),
         )
         .expect("complete output is returned");
@@ -1948,11 +2002,28 @@ mod tests {
         let error = combine_process_and_output(
             Ok(ProcessTermination::Exit(0)),
             Err(cleanup.clone()),
-            None,
+            &execution_context("baseline"),
             output_ref(),
         )
         .expect_err("a real baseline worker keeps output cleanup failure fatal");
 
+        assert_eq!(error, cleanup);
+    }
+
+    #[test]
+    fn probe_output_close_timeout_remains_fatal() {
+        // Arrange.
+        let cleanup = EffectFailed::other(EffectId(42), "process.output.close.timeout", "cleanup");
+        let context = execution_context("probe");
+        // Act.
+        let error = combine_process_and_output(
+            Ok(ProcessTermination::Exit(0)),
+            Err(cleanup.clone()),
+            &context,
+            output_ref(),
+        )
+        .unwrap_err();
+        // Assert.
         assert_eq!(error, cleanup);
     }
 
@@ -1963,7 +2034,7 @@ mod tests {
         let error = combine_process_and_output(
             Ok(ProcessTermination::Exit(0)),
             Err(failure.clone()),
-            Some("mutant"),
+            &execution_context("mutant"),
             output_ref(),
         )
         .expect_err("ordinary output failures remain fatal");
@@ -1997,3 +2068,6 @@ mod tests {
         assert_eq!(timed_out, ProcessSelection::Timeout);
     }
 }
+
+#[cfg(test)]
+mod context_tests;
