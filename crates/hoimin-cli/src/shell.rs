@@ -774,8 +774,7 @@ enum ShellCompletion {
     Serial(RunEvent),
     Process {
         event: RunEvent,
-        worker: u32,
-        mutant: bool,
+        context: WorkerProcessContext,
     },
     Blocking(Result<Box<BlockingEffectCompletion>, EffectFailed>),
 }
@@ -784,7 +783,7 @@ enum ShellCompletion {
 #[derive(Clone, Copy)]
 enum CompletionSource {
     Serial,
-    Process { worker: u32, mutant: bool },
+    Process(WorkerProcessContext),
     Blocking,
 }
 
@@ -2132,7 +2131,7 @@ async fn execute_effect_with_cancellation(
             match worker_process_request(context, id, request, cancellation.clone(), None) {
                 Ok(request) => context
                     .process
-                    .run(request)
+                    .run(request.request)
                     .await
                     .map(RunEvent::BaselineFinished),
                 Err(error) => Err(error),
@@ -2152,7 +2151,7 @@ async fn execute_effect_with_cancellation(
             match worker_process_request(context, id, request, cancellation.clone(), None) {
                 Ok(request) => context
                     .process
-                    .run(request)
+                    .run(request.request)
                     .await
                     .map(RunEvent::MutantFinished),
                 Err(error) => Err(error),
@@ -2209,14 +2208,46 @@ async fn execute_effect_with_cancellation(
     result.unwrap_or_else(RunEvent::EffectFailed)
 }
 
+/// Request identity retained after the runner consumes the command. Failed and
+/// retired events cannot supply this information for worker metrics or draining.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum WorkerProcessContext {
+    Baseline(u32),
+    Mutant(u32),
+}
+
+/// Keeps completion identity derived from the typed request together with its
+/// runner representation. Only workspace contexts can construct this request.
+struct PreparedWorkerProcess {
+    request: ProcessRequest,
+    context: WorkerProcessContext,
+}
+
+impl<C: WorkspaceProcessContext> From<RunProcess<C>> for PreparedWorkerProcess
+where
+    ProcessRequest: From<RunProcess<C>>,
+{
+    fn from(request: RunProcess<C>) -> Self {
+        let context = request.context.completion_context();
+        Self {
+            request: request.into(),
+            context,
+        }
+    }
+}
+
 /// Only workspace contexts can prepare worker commands; probes cannot enter here.
 trait WorkspaceProcessContext {
+    fn completion_context(&self) -> WorkerProcessContext;
     fn worker(&self) -> u32;
     fn run_id(&self) -> &str;
     fn mutant_id(&self) -> Option<&str>;
 }
 
 impl WorkspaceProcessContext for hoimin_core::BaselineContext {
+    fn completion_context(&self) -> WorkerProcessContext {
+        WorkerProcessContext::Baseline(self.worker)
+    }
     fn worker(&self) -> u32 {
         self.worker
     }
@@ -2229,6 +2260,9 @@ impl WorkspaceProcessContext for hoimin_core::BaselineContext {
 }
 
 impl WorkspaceProcessContext for hoimin_core::MutantContext {
+    fn completion_context(&self) -> WorkerProcessContext {
+        WorkerProcessContext::Mutant(self.worker)
+    }
     fn worker(&self) -> u32 {
         self.worker
     }
@@ -2246,7 +2280,7 @@ fn worker_process_request<C: WorkspaceProcessContext>(
     mut request: RunProcess<C>,
     cancellation: ProcessCancellation,
     start_gate: Option<ProcessStartGate>,
-) -> Result<ProcessRequest, EffectFailed>
+) -> Result<PreparedWorkerProcess, EffectFailed>
 where
     ProcessRequest: From<RunProcess<C>>,
 {
@@ -2260,13 +2294,15 @@ where
         .map_err(|error| EffectFailed::other(id, "shell.worker.environment", error.to_string()))?;
     set_worker_metadata(&mut environment, &request.context);
     request.cwd.clone_from(&environment.cwd);
-    let request = ProcessRequest::from(request)
+    let mut prepared = PreparedWorkerProcess::from(request);
+    prepared.request = prepared
+        .request
         .with_environment(environment)
         .with_cancellation(cancellation);
-    Ok(match start_gate {
-        Some(start_gate) => request.with_start_gate(start_gate),
-        None => request,
-    })
+    if let Some(start_gate) = start_gate {
+        prepared.request = prepared.request.with_start_gate(start_gate);
+    }
+    Ok(prepared)
 }
 
 fn set_worker_metadata<C: WorkspaceProcessContext>(
@@ -2887,7 +2923,6 @@ async fn run_loop_context(
                 match effect {
                     RunEffect::RunBaseline(request) => {
                         let id = request.id;
-                        let worker = request.context.worker;
                         match worker_process_request(
                             &context,
                             id,
@@ -2913,8 +2948,6 @@ async fn run_loop_context(
                                 spawn_process(
                                     Arc::clone(&context.process),
                                     request,
-                                    worker,
-                                    true,
                                     completion_tx.clone(),
                                     &mut process_tasks,
                                     dispatch,
@@ -2966,8 +2999,6 @@ async fn run_loop_context(
                                 spawn_process(
                                     Arc::clone(&context.process),
                                     request,
-                                    worker,
-                                    false,
                                     completion_tx.clone(),
                                     &mut process_tasks,
                                     dispatch,
@@ -3703,7 +3734,10 @@ async fn run_loop_context(
                         message: error,
                     });
                 }
-                if let ShellCompletion::Process { worker, .. } = completion {
+                if let ShellCompletion::Process {
+                    context: WorkerProcessContext::Baseline(worker) | WorkerProcessContext::Mutant(worker),
+                    ..
+                } = completion {
                     record_metrics(&mut metrics, &mut metrics_warnings, |metrics| {
                         metrics.process_finished(worker, false)
                     });
@@ -3778,11 +3812,9 @@ async fn run_loop_context(
             });
             let (mut event, source) = match completion {
                 ShellCompletion::Serial(event) => (event, CompletionSource::Serial),
-                ShellCompletion::Process {
-                    event,
-                    worker,
-                    mutant,
-                } => (event, CompletionSource::Process { worker, mutant }),
+                ShellCompletion::Process { event, context } => {
+                    (event, CompletionSource::Process(context))
+                }
                 ShellCompletion::Blocking(result) => (
                     match result {
                         Ok(blocking) => accept_blocking_completion(&mut context, *blocking),
@@ -3926,7 +3958,7 @@ async fn run_loop_context(
             if !external_stop
                 && matches!(
                     source,
-                    CompletionSource::Process { .. } | CompletionSource::Blocking
+                    CompletionSource::Process(..) | CompletionSource::Blocking
                 )
             {
                 in_flight = in_flight.saturating_sub(1);
@@ -3989,10 +4021,7 @@ async fn run_loop_context(
                 control.observe_finalization_event("session_finished");
             }
             track_diagnostic_run_id(&mut diagnostic_run_id, &state);
-            if let CompletionSource::Process {
-                worker,
-                mutant: true,
-            } = source
+            if let CompletionSource::Process(WorkerProcessContext::Mutant(worker)) = source
             {
                 record_metrics(&mut metrics, &mut metrics_warnings, |metrics| {
                     metrics.process_finished(worker, accepted_mutant)
@@ -4063,7 +4092,7 @@ async fn run_loop_context(
                 .await;
                 finish_failed_event_drain(failed_primary, drain_result)?;
                 io_in_flight = 0;
-            } else if matches!(source, CompletionSource::Process { .. }) {
+            } else if matches!(source, CompletionSource::Process(..)) {
                 let process_failure = match process_tasks.join_next().await {
                     Some(Ok(())) => None,
                     Some(Err(error)) => Some(format!("process task failed: {error}")),
@@ -4725,26 +4754,23 @@ fn first_interrupt_event(signal: Result<(), String>) -> Result<RunEvent, String>
 
 fn spawn_process(
     process: Arc<ProcessHandler>,
-    request: ProcessRequest,
-    worker: u32,
-    baseline: bool,
+    prepared: PreparedWorkerProcess,
     sender: mpsc::Sender<ShellCompletion>,
     tasks: &mut JoinSet<()>,
     _dispatch: std::sync::MutexGuard<'_, ()>,
 ) {
     tasks.spawn(
         async move {
+            let PreparedWorkerProcess { request, context } = prepared;
             let event = match process.run(request).await {
-                Ok(value) if baseline => RunEvent::BaselineFinished(value),
-                Ok(value) => RunEvent::MutantFinished(value),
+                Ok(value) => match context {
+                    WorkerProcessContext::Baseline(_) => RunEvent::BaselineFinished(value),
+                    WorkerProcessContext::Mutant(_) => RunEvent::MutantFinished(value),
+                },
                 Err(error) => RunEvent::EffectFailed(error),
             };
             let _ = sender
-                .send(ShellCompletion::Process {
-                    event,
-                    worker,
-                    mutant: !baseline,
-                })
+                .send(ShellCompletion::Process { event, context })
                 .await;
         }
         .in_current_span(),
@@ -4894,15 +4920,17 @@ fn accept_drained_completion(
 ) {
     match completion {
         ShellCompletion::Process {
-            worker,
-            mutant: true,
+            context: WorkerProcessContext::Mutant(worker),
             ..
         } => record_metrics(metrics, metrics_warnings, |metrics| {
             metrics.process_finished(worker, false)
         }),
         ShellCompletion::Blocking(Ok(blocking)) => accept_blocking(*blocking),
         ShellCompletion::Serial(_)
-        | ShellCompletion::Process { mutant: false, .. }
+        | ShellCompletion::Process {
+            context: WorkerProcessContext::Baseline(_),
+            ..
+        }
         | ShellCompletion::Blocking(Err(_)) => {}
     }
     *in_flight = in_flight.saturating_sub(1);
@@ -8478,8 +8506,7 @@ mod tests {
         sender
             .send(ShellCompletion::Process {
                 event: RunEvent::CancellationRequested,
-                worker: 7,
-                mutant: true,
+                context: WorkerProcessContext::Mutant(7),
             })
             .await
             .unwrap();
@@ -9517,24 +9544,21 @@ mod tests {
                     "process.spawn",
                     "failed",
                 )),
-                worker: 0,
-                mutant: true,
+                context: WorkerProcessContext::Mutant(0),
             })
             .await
             .unwrap();
         sender
             .send(ShellCompletion::Process {
                 event: RunEvent::CancellationRequested,
-                worker: 1,
-                mutant: true,
+                context: WorkerProcessContext::Mutant(1),
             })
             .await
             .unwrap();
         sender
             .send(ShellCompletion::Process {
                 event: RunEvent::CancellationRequested,
-                worker: 7,
-                mutant: false,
+                context: WorkerProcessContext::Baseline(7),
             })
             .await
             .unwrap();
@@ -9660,58 +9684,162 @@ mod tests {
         assert_eq!(metrics.stages[0].name, "cleanup");
     }
 
-    #[tokio::test]
-    async fn spawned_mutant_reports_completion_and_mutant_accounting() {
+    fn dispatch_test_arg(value: &std::ffi::OsStr) -> CommandArg {
+        #[cfg(unix)]
+        {
+            use std::os::unix::ffi::OsStrExt;
+            CommandArg::Unix(value.as_bytes().to_vec())
+        }
+        #[cfg(windows)]
+        {
+            use std::os::windows::ffi::OsStrExt;
+            CommandArg::Windows(value.encode_wide().collect())
+        }
+    }
+
+    fn worker_dispatch_requests(
+        argv: Vec<CommandArg>,
+    ) -> [(PreparedWorkerProcess, WorkerProcessContext); 2] {
+        fn request<C: WorkspaceProcessContext>(
+            context: C,
+            argv: Vec<CommandArg>,
+        ) -> PreparedWorkerProcess
+        where
+            ProcessRequest: From<RunProcess<C>>,
+        {
+            RunProcess {
+                id: EffectId(9),
+                context,
+                argv,
+                cwd: Utf8PathBuf::from("."),
+                limits: hoimin_core::ProcessLimits {
+                    timeout: Duration::from_secs(5),
+                    max_output_bytes: 4096,
+                    max_memory_bytes: 512 * 1024 * 1024,
+                    max_processes: 16,
+                },
+            }
+            .into()
+        }
+        [
+            (
+                request(
+                    hoimin_core::BaselineContext {
+                        worker: 4,
+                        run_id: "run-1".into(),
+                    },
+                    argv.clone(),
+                ),
+                WorkerProcessContext::Baseline(4),
+            ),
+            (
+                request(
+                    hoimin_core::MutantContext {
+                        worker: 7,
+                        run_id: "run-1".into(),
+                        mutant_id: "mutant-1".into(),
+                    },
+                    argv,
+                ),
+                WorkerProcessContext::Mutant(7),
+            ),
+        ]
+    }
+
+    async fn dispatch_test_process(request: PreparedWorkerProcess) -> ShellCompletion {
         let output = tempfile::tempdir().unwrap();
         let output = Utf8PathBuf::from_path_buf(output.path().to_owned()).unwrap();
         let process = Arc::new(ProcessHandler::new(
             ResourceBackend::Portable(PortableBackend::for_tests()),
             output,
         ));
-        let request = RunProcess {
-            id: EffectId(9),
-            context: hoimin_core::MutantContext {
-                worker: 4,
-                run_id: "run-1".into(),
-                mutant_id: "mutant-1".into(),
-            },
-            argv: vec![missing_executable_arg()],
-            cwd: Utf8PathBuf::from("."),
-            limits: hoimin_core::ProcessLimits {
-                timeout: Duration::from_secs(1),
-                max_output_bytes: 1,
-                max_memory_bytes: 1,
-                max_processes: 1,
-            },
-        };
         let control = RunControl::new();
         let dispatch = control.begin_dispatch().unwrap();
         let (sender, mut receiver) = mpsc::channel(1);
         let mut tasks = JoinSet::new();
 
-        spawn_process(
-            process,
-            request.into(),
-            4,
-            false,
-            sender,
-            &mut tasks,
-            dispatch,
-        );
-
-        let completion = tokio::time::timeout(Duration::from_secs(2), receiver.recv())
+        spawn_process(process, request, sender, &mut tasks, dispatch);
+        let completion = tokio::time::timeout(Duration::from_secs(10), receiver.recv())
             .await
             .expect("spawned process must complete")
             .expect("completion channel must remain open");
-        assert!(matches!(
-            completion,
-            ShellCompletion::Process {
-                event: RunEvent::EffectFailed(_),
-                worker: 4,
-                mutant: true,
-            }
-        ));
         tasks.join_next().await.unwrap().unwrap();
+        completion
+    }
+
+    #[tokio::test]
+    async fn spawned_worker_success_uses_request_context() {
+        let argv = vec![
+            dispatch_test_arg(std::env::current_exe().unwrap().as_os_str()),
+            dispatch_test_arg(std::ffi::OsStr::new("--exact")),
+            dispatch_test_arg(std::ffi::OsStr::new("hoimin_nonexistent_dispatch_fixture")),
+        ];
+        for (request, expected) in worker_dispatch_requests(argv) {
+            let completion = dispatch_test_process(request).await;
+
+            let ShellCompletion::Process { event, context } = completion else {
+                panic!("worker dispatch must produce a process completion");
+            };
+            let event_context = match event {
+                RunEvent::BaselineFinished(value) => {
+                    WorkerProcessContext::Baseline(value.worker.unwrap())
+                }
+                RunEvent::MutantFinished(value) => {
+                    WorkerProcessContext::Mutant(value.worker.unwrap())
+                }
+                other => panic!("expected successful process completion, got {other:?}"),
+            };
+            assert_eq!((context, event_context), (expected, expected));
+        }
+    }
+
+    #[tokio::test]
+    async fn spawned_worker_failure_retains_request_context() {
+        for (request, expected) in worker_dispatch_requests(vec![missing_executable_arg()]) {
+            let completion = dispatch_test_process(request).await;
+
+            let ShellCompletion::Process {
+                event: RunEvent::EffectFailed(error),
+                context,
+            } = completion
+            else {
+                panic!("missing executable must produce a failed process completion");
+            };
+            assert_eq!(error.id, EffectId(9));
+            assert_eq!(context, expected);
+        }
+    }
+
+    fn running_dispatch_metrics(context: WorkerProcessContext) -> MetricsCollector {
+        let mut collector = MetricsCollector::new("run-1");
+        if let WorkerProcessContext::Mutant(worker) = context {
+            collector.queued(worker).unwrap();
+            collector.process_started(worker).unwrap();
+        }
+        collector
+    }
+
+    #[tokio::test]
+    async fn drained_worker_failure_closes_only_mutant_metrics() {
+        for (request, expected) in worker_dispatch_requests(vec![missing_executable_arg()]) {
+            let mut metrics = Some(running_dispatch_metrics(expected));
+            let mut warnings = Vec::new();
+            let mut in_flight = 1;
+            let completion = dispatch_test_process(request).await;
+
+            accept_drained_completion(
+                completion,
+                &mut in_flight,
+                &mut metrics,
+                &mut warnings,
+                &mut drop,
+            );
+
+            assert_eq!(warnings, Vec::new());
+            assert_eq!(in_flight, 0);
+            let result = metrics.unwrap().finish(0, 0).unwrap();
+            assert_eq!(result.workers, Vec::new());
+        }
     }
 
     #[test]
@@ -9758,7 +9886,66 @@ mod tests {
         );
     }
 
+    fn mixed_worker_completions(
+        cases: &[(bool, u8)],
+    ) -> (Vec<ShellCompletion>, Option<MetricsCollector>) {
+        let mut collector = MetricsCollector::new("run-1");
+        let mut completions = Vec::new();
+        for (worker, &(mutant, rank)) in cases.iter().enumerate() {
+            let worker = u32::try_from(worker).unwrap();
+            let context = if mutant {
+                collector.queued(worker).unwrap();
+                collector.process_started(worker).unwrap();
+                WorkerProcessContext::Mutant(worker)
+            } else {
+                WorkerProcessContext::Baseline(worker)
+            };
+            completions.push((
+                rank,
+                ShellCompletion::Process {
+                    event: RunEvent::EffectFailed(EffectFailed::other(
+                        EffectId(u64::from(worker)),
+                        "process.spawn",
+                        "failed",
+                    )),
+                    context,
+                },
+            ));
+        }
+        completions.sort_by_key(|(rank, _)| *rank);
+        (
+            completions
+                .into_iter()
+                .map(|(_, completion)| completion)
+                .collect(),
+            Some(collector),
+        )
+    }
+
     proptest::proptest! {
+        #[test]
+        fn draining_mixed_worker_completions_accounts_each_once(
+            cases in proptest::collection::vec((proptest::bool::ANY, proptest::arbitrary::any::<u8>()), 0..32),
+        ) {
+            let (completions, mut metrics) = mixed_worker_completions(&cases);
+            let mut in_flight = completions.len();
+            let mut warnings = Vec::new();
+            let mut remaining = Vec::new();
+            let expected_remaining: Vec<_> = (0..completions.len()).rev().collect();
+
+            for completion in completions {
+                accept_drained_completion(completion, &mut in_flight, &mut metrics, &mut warnings, &mut drop);
+                remaining.push(in_flight);
+            }
+            let result = metrics.unwrap().finish(0, 0);
+
+            proptest::prop_assert_eq!(remaining, expected_remaining);
+            proptest::prop_assert!(warnings.is_empty());
+            proptest::prop_assert!(result.is_ok(), "outstanding metric after drain: {result:?}");
+            proptest::prop_assert!(result.unwrap().workers.is_empty());
+        }
+
+
         #[test]
         fn baseline_metadata_preserves_required_run_id(run_id in proptest::arbitrary::any::<String>()) {
             // Arrange.
