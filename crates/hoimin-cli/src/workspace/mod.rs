@@ -782,6 +782,27 @@ fn path_key(path: &Path) -> OsString {
     lexical_normalize(path).into_os_string()
 }
 
+/// A registered worker owns either usable state or cleanup-only state, never both.
+#[derive(Debug)]
+enum WorkerSlot {
+    Active(WorkerWorkspace),
+    PendingCleanup(WorkerWorkspace),
+}
+
+impl WorkerSlot {
+    fn into_workspace(self) -> WorkerWorkspace {
+        match self {
+            Self::Active(workspace) | Self::PendingCleanup(workspace) => workspace,
+        }
+    }
+
+    fn workspace_mut(&mut self) -> &mut WorkerWorkspace {
+        match self {
+            Self::Active(workspace) | Self::PendingCleanup(workspace) => workspace,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct WorkspaceHandler {
     original_root: Utf8PathBuf,
@@ -790,8 +811,7 @@ pub struct WorkspaceHandler {
     requested_workers: u32,
     options: CopyOptions,
     plan: Option<Arc<WorkspacePlan>>,
-    workers: BTreeMap<u32, WorkerWorkspace>,
-    pending_cleanup: BTreeMap<u32, WorkerWorkspace>,
+    workers: BTreeMap<u32, WorkerSlot>,
     managed_root: Option<Arc<ManagedRunRoot>>,
     max_owned_bytes: Option<u64>,
     #[cfg(test)]
@@ -869,8 +889,14 @@ pub(crate) enum WorkspaceTask {
 pub(crate) struct WorkspaceTaskCompletion {
     id: EffectId,
     event: RunEvent,
-    active: Option<(u32, Box<WorkerWorkspace>)>,
-    pending: Option<(u32, Box<WorkerWorkspace>)>,
+    ownership: WorkspaceOwnership,
+}
+
+// Event success does not determine ownership: failed Apply still returns Active.
+enum WorkspaceOwnership {
+    Active(u32, Box<WorkerWorkspace>),
+    PendingCleanup(u32, Box<WorkerWorkspace>),
+    None,
 }
 
 impl WorkspaceTaskCompletion {
@@ -884,14 +910,14 @@ impl WorkspaceTaskCompletion {
             WorkerOperationOutcome::Active(workspace) => Self {
                 id,
                 event: success,
-                active: Some((worker, workspace)),
-                pending: None,
+                ownership: WorkspaceOwnership::Active(worker, workspace),
             },
             WorkerOperationOutcome::Failed { error, pending } => Self {
                 id,
                 event: RunEvent::EffectFailed(effect_failed(id, error)),
-                active: None,
-                pending: pending.map(|workspace| (worker, workspace)),
+                ownership: pending.map_or(WorkspaceOwnership::None, |workspace| {
+                    WorkspaceOwnership::PendingCleanup(worker, workspace)
+                }),
             },
         }
     }
@@ -950,8 +976,7 @@ impl WorkspaceTask {
                 WorkspaceTaskCompletion {
                     id,
                     event,
-                    active: Some((worker, workspace)),
-                    pending: None,
+                    ownership: WorkspaceOwnership::Active(worker, workspace),
                 }
             }
             Self::Reset { request, workspace } => {
@@ -976,8 +1001,7 @@ impl WorkspaceTask {
                 WorkspaceTaskCompletion {
                     id,
                     event,
-                    active: None,
-                    pending: None,
+                    ownership: WorkspaceOwnership::None,
                 }
             }
         }
@@ -1000,7 +1024,6 @@ impl WorkspaceHandler {
             options,
             plan: None,
             workers: BTreeMap::new(),
-            pending_cleanup: BTreeMap::new(),
             managed_root: None,
             max_owned_bytes: None,
             #[cfg(test)]
@@ -1119,7 +1142,7 @@ impl WorkspaceHandler {
     ) -> Result<WorkspaceTask, EffectFailed> {
         let id = request.id();
         let worker = request.worker();
-        if self.workers.contains_key(&worker) {
+        if self.worker(worker).is_some() {
             return Err(effect_failed(
                 id,
                 WorkspaceError::WorkerAlreadyExists { worker },
@@ -1130,7 +1153,10 @@ impl WorkspaceHandler {
             .clone()
             .ok_or(WorkspaceError::WorkerMissing { worker })
             .map_err(|error| effect_failed(id, error))?;
-        let pending = self.pending_cleanup.remove(&worker).map(Box::new);
+        let pending = self
+            .workers
+            .remove(&worker)
+            .map(|slot| Box::new(slot.into_workspace()));
         Ok(WorkspaceTask::Create {
             request,
             plan,
@@ -1146,8 +1172,7 @@ impl WorkspaceHandler {
         let id = request.id;
         let worker = request.worker;
         let workspace = self
-            .workers
-            .remove(&worker)
+            .take_active(worker)
             .ok_or(WorkspaceError::WorkerMissing { worker })
             .map_err(|error| effect_failed(id, error))?;
         Ok(WorkspaceTask::Apply {
@@ -1165,8 +1190,7 @@ impl WorkspaceHandler {
         let id = request.id;
         let worker = request.worker;
         let workspace = self
-            .workers
-            .remove(&worker)
+            .take_active(worker)
             .ok_or(WorkspaceError::WorkerMissing { worker })
             .map_err(|error| effect_failed(id, error))?;
         Ok(WorkspaceTask::Reset {
@@ -1192,30 +1216,25 @@ impl WorkspaceHandler {
         &mut self,
         completion: WorkspaceTaskCompletion,
     ) -> Result<RunEvent, EffectFailed> {
-        if let Some((worker, workspace)) = completion.active {
+        let returned = match completion.ownership {
+            WorkspaceOwnership::Active(worker, workspace) => {
+                Some((worker, WorkerSlot::Active(*workspace)))
+            }
+            WorkspaceOwnership::PendingCleanup(worker, workspace) => {
+                Some((worker, WorkerSlot::PendingCleanup(*workspace)))
+            }
+            WorkspaceOwnership::None => None,
+        };
+        if let Some((worker, slot)) = returned {
             match self.workers.entry(worker) {
                 std::collections::btree_map::Entry::Vacant(entry) => {
-                    entry.insert(*workspace);
+                    entry.insert(slot);
                 }
                 std::collections::btree_map::Entry::Occupied(_) => {
                     return Err(EffectFailed::other(
                         completion.id,
                         "shell.blocking_io",
-                        format!("blocking completion returned duplicate active worker {worker}"),
-                    ));
-                }
-            }
-        }
-        if let Some((worker, workspace)) = completion.pending {
-            match self.pending_cleanup.entry(worker) {
-                std::collections::btree_map::Entry::Vacant(entry) => {
-                    entry.insert(*workspace);
-                }
-                std::collections::btree_map::Entry::Occupied(_) => {
-                    return Err(EffectFailed::other(
-                        completion.id,
-                        "shell.blocking_io",
-                        format!("blocking completion returned duplicate pending worker {worker}"),
+                        format!("blocking completion returned duplicate worker {worker}"),
                     ));
                 }
             }
@@ -1239,7 +1258,7 @@ impl WorkspaceHandler {
         let id = request.id();
         let worker = request.worker();
         let reservation_id = request.reservation_id();
-        if self.workers.contains_key(&worker) {
+        if self.worker(worker).is_some() {
             return Err(effect_failed(
                 id,
                 WorkspaceError::WorkerAlreadyExists { worker },
@@ -1250,7 +1269,10 @@ impl WorkspaceHandler {
             .as_ref()
             .ok_or(WorkspaceError::WorkerMissing { worker })
             .map_err(|error| effect_failed(id, error))?;
-        let pending = self.pending_cleanup.remove(&worker).map(Box::new);
+        let pending = self
+            .workers
+            .remove(&worker)
+            .map(|slot| Box::new(slot.into_workspace()));
         let outcome = create_worker(plan, &request, &self.import_roots, pending);
         self.accept_operation(id, worker, outcome)?;
         Ok(WorkerCreated {
@@ -1273,8 +1295,7 @@ impl WorkspaceHandler {
         request: ApplyMutation,
     ) -> Result<MutationApplied, EffectFailed> {
         let id = request.id;
-        self.workers
-            .get_mut(&request.worker)
+        self.worker_mut(request.worker)
             .ok_or(WorkspaceError::WorkerMissing {
                 worker: request.worker,
             })
@@ -1302,8 +1323,7 @@ impl WorkspaceHandler {
         let id = request.id;
         let worker = request.worker;
         let workspace = self
-            .workers
-            .remove(&worker)
+            .take_active(worker)
             .ok_or(WorkspaceError::WorkerMissing { worker })
             .map_err(|error| effect_failed(id, error))?;
         self.accept_operation(id, worker, reset_worker(Box::new(workspace)))?;
@@ -1320,12 +1340,13 @@ impl WorkspaceHandler {
     ) -> Result<(), EffectFailed> {
         match outcome {
             WorkerOperationOutcome::Active(workspace) => {
-                self.workers.insert(worker, *workspace);
+                self.workers.insert(worker, WorkerSlot::Active(*workspace));
                 Ok(())
             }
             WorkerOperationOutcome::Failed { error, pending } => {
                 if let Some(workspace) = pending {
-                    self.pending_cleanup.insert(worker, *workspace);
+                    self.workers
+                        .insert(worker, WorkerSlot::PendingCleanup(*workspace));
                 }
                 Err(effect_failed(id, error))
             }
@@ -1358,24 +1379,8 @@ impl WorkspaceHandler {
                 }
             }
         }
-        let mut first_error = None;
-        for workspace in self
-            .workers
-            .values_mut()
-            .chain(self.pending_cleanup.values_mut())
-        {
-            if let Err(error) = workspace.try_cleanup()
-                && first_error.is_none()
-            {
-                first_error = Some(error);
-            }
-        }
-        if let Some(error) = first_error {
-            return Err(effect_failed(request.id, error));
-        }
-        self.workers.clear();
-        self.pending_cleanup.clear();
-        self.plan = None;
+        self.close()
+            .map_err(|error| effect_failed(request.id, error))?;
         Ok(CleanupFinished {
             id: request.id,
             released_reservations: request.reservations,
@@ -1406,56 +1411,73 @@ impl WorkspaceHandler {
 
     #[must_use]
     pub fn worker(&self, worker: u32) -> Option<&WorkerWorkspace> {
-        self.workers.get(&worker)
+        match self.workers.get(&worker) {
+            Some(WorkerSlot::Active(workspace)) => Some(workspace),
+            _ => None,
+        }
     }
 
     pub fn worker_mut(&mut self, worker: u32) -> Option<&mut WorkerWorkspace> {
-        self.workers.get_mut(&worker)
+        match self.workers.get_mut(&worker) {
+            Some(WorkerSlot::Active(workspace)) => Some(workspace),
+            _ => None,
+        }
     }
 
     #[must_use]
     pub fn worker_count(&self) -> usize {
-        self.workers.len()
+        self.workers
+            .values()
+            .filter(|slot| matches!(slot, WorkerSlot::Active(_)))
+            .count()
     }
 
     #[must_use]
     pub fn pending_cleanup_count(&self) -> usize {
-        self.pending_cleanup.len()
+        self.workers
+            .values()
+            .filter(|slot| matches!(slot, WorkerSlot::PendingCleanup(_)))
+            .count()
     }
 
     /// # Errors
     /// Returns the first worker cleanup failure.
     pub fn close(&mut self) -> Result<(), WorkspaceError> {
         let mut first_error = None;
-        for workspace in self.workers.values_mut() {
-            if let Err(error) = workspace.try_cleanup()
-                && first_error.is_none()
+        // Preserve the original diagnostic priority: active workers, then pending, by worker ID.
+        for active in [true, false] {
+            for slot in self
+                .workers
+                .values_mut()
+                .filter(|slot| matches!(slot, WorkerSlot::Active(_)) == active)
             {
-                first_error = Some(error);
-            }
-        }
-        for workspace in self.pending_cleanup.values_mut() {
-            if let Err(error) = workspace.try_cleanup()
-                && first_error.is_none()
-            {
-                first_error = Some(error);
+                if let Err(error) = slot.workspace_mut().try_cleanup()
+                    && first_error.is_none()
+                {
+                    first_error = Some(error);
+                }
             }
         }
         if let Some(error) = first_error {
             return Err(error);
         }
         self.workers.clear();
-        self.pending_cleanup.clear();
         self.plan = None;
         Ok(())
     }
 
     pub(crate) fn retain_workers_for_janitor(&mut self) {
-        for workspace in self.workers.values_mut() {
-            workspace.retain_for_janitor();
+        for slot in self.workers.values_mut() {
+            slot.workspace_mut().retain_for_janitor();
         }
-        for workspace in self.pending_cleanup.values_mut() {
-            workspace.retain_for_janitor();
+    }
+
+    // Admission must not remove a pending slot: its cleanup and copy charge are still owned here.
+    fn take_active(&mut self, worker: u32) -> Option<WorkerWorkspace> {
+        if self.worker(worker).is_some() {
+            self.workers.remove(&worker).map(WorkerSlot::into_workspace)
+        } else {
+            None
         }
     }
 
@@ -1483,8 +1505,7 @@ impl WorkspaceHandler {
         inherited: &BTreeMap<OsString, OsString>,
     ) -> Result<CommandEnvironment, WorkspaceError> {
         let workspace = self
-            .workers
-            .get(&worker)
+            .worker(worker)
             .ok_or(WorkspaceError::WorkerMissing { worker })?;
         build_command_environment_with_import_roots(
             &self.original_root,
@@ -1583,8 +1604,16 @@ mod task_tests {
         EffectId, MutationCandidate, Preflight, ResetWorker, RunBudgets, RunEvent,
         reserve_workspace_copy, stable_mutant_id,
     };
+    use proptest::prelude::*;
 
-    use super::{CopyOptions, WorkspaceHandler};
+    use super::{CopyOptions, WorkerSlot, WorkspaceHandler, WorkspaceOwnership};
+
+    fn pending_workspace(handler: &WorkspaceHandler, worker: u32) -> &super::WorkerWorkspace {
+        match handler.workers.get(&worker) {
+            Some(WorkerSlot::PendingCleanup(workspace)) => workspace,
+            _ => panic!("expected pending worker {worker}"),
+        }
+    }
 
     #[cfg(windows)]
     #[test]
@@ -1637,7 +1666,7 @@ mod task_tests {
         assert_eq!(failed.failure.code(), "workspace.import_root.unavailable");
         assert_eq!(handler.worker_count(), 0);
         assert_eq!(handler.pending_cleanup_count(), 1);
-        let copied_root = handler.pending_cleanup.get(&0).unwrap().root().to_owned();
+        let copied_root = pending_workspace(&handler, 0).root().to_owned();
         assert!(copied_root.is_dir());
         handler.close().unwrap();
         assert_eq!(handler.pending_cleanup_count(), 0);
@@ -1674,7 +1703,7 @@ mod task_tests {
         assert_eq!(failed.failure.code(), "workspace.import_root.unavailable");
         assert_eq!(handler.worker_count(), 0);
         assert_eq!(handler.pending_cleanup_count(), 1);
-        let copied_root = handler.pending_cleanup.get(&0).unwrap().root().to_owned();
+        let copied_root = pending_workspace(&handler, 0).root().to_owned();
         assert!(copied_root.is_dir());
         handler.close().unwrap();
         assert_eq!(handler.pending_cleanup_count(), 0);
@@ -1787,16 +1816,13 @@ mod task_tests {
         assert_eq!(handler.pending_cleanup_count(), 0);
     }
 
-    #[test]
-    fn reset_task_preserves_depth_error_and_pending_copy_accounting() {
-        let (_project, mut handler, retry) = prepared_handler();
-        let root = handler.worker(0).unwrap().root().to_owned();
+    fn create_overdeep_tree(root: &Utf8Path) -> camino::Utf8PathBuf {
         let mut directory = cap_primitives::fs::open_ambient_dir(
             root.as_std_path(),
             cap_primitives::ambient_authority(),
         )
         .unwrap();
-        let mut deepest = root.clone();
+        let mut deepest = root.to_owned();
         for index in 0..=super::MAX_WORKER_TREE_DEPTH {
             let name = format!("d{index}");
             let path = std::path::Path::new(&name);
@@ -1810,6 +1836,80 @@ mod task_tests {
             deepest.push(name);
         }
         drop(directory);
+        deepest
+    }
+
+    #[test]
+    fn cleanup_retains_failed_slots_and_prioritizes_active_errors() {
+        for effect in [false, true] {
+            let project = tempfile::tempdir().unwrap();
+            std::fs::write(project.path().join("a.py"), b"original\n").unwrap();
+            let mut handler = WorkspaceHandler::new(
+                Utf8Path::from_path(project.path()).unwrap().to_owned(),
+                Vec::new(),
+                2,
+                CopyOptions::default(),
+            );
+            let completed = handler
+                .handle_preflight(Preflight { id: EffectId(70) })
+                .unwrap();
+            let mut ledger = BudgetLedger::new(RunBudgets {
+                memory: 1,
+                copy: completed.aggregate_logical_bytes,
+                processes: 1,
+            });
+            let grant = reserve_workspace_copy(&mut ledger, &completed).unwrap();
+            for worker in [0, 1] {
+                handler
+                    .handle_create_worker(
+                        grant
+                            .create_worker(EffectId(71 + u64::from(worker)), worker)
+                            .unwrap(),
+                    )
+                    .unwrap();
+            }
+            let active_root = handler.worker(1).unwrap().root().to_owned();
+            let pending = handler.take_active(0).unwrap();
+            let pending_root = pending.root().to_owned();
+            handler
+                .workers
+                .insert(0, WorkerSlot::PendingCleanup(pending));
+            let pending_deepest = create_overdeep_tree(&pending_root);
+            let active_deepest = create_overdeep_tree(&active_root);
+
+            let message = if effect {
+                handler
+                    .handle_cleanup(grant.cleanup(EffectId(73)))
+                    .unwrap_err()
+                    .failure
+                    .message()
+            } else {
+                handler.close().unwrap_err().to_string()
+            };
+
+            assert!(message.contains(active_root.as_str()), "{message}");
+            assert!(!message.contains(pending_root.as_str()), "{message}");
+            assert_eq!(handler.worker_count(), 1);
+            assert_eq!(handler.pending_cleanup_count(), 1);
+            assert_eq!(handler.materialized_worker_slots(), 2);
+            assert_eq!(handler.observed_copy_bytes(), 18);
+            std::fs::remove_dir(pending_deepest).unwrap();
+            std::fs::remove_dir(active_deepest).unwrap();
+            handler.handle_cleanup(grant.cleanup(EffectId(74))).unwrap();
+            assert_eq!(handler.worker_count(), 0);
+            assert_eq!(handler.pending_cleanup_count(), 0);
+            assert_eq!(handler.materialized_worker_slots(), 0);
+            assert_eq!(handler.observed_copy_bytes(), 0);
+            assert!(!active_root.exists());
+            assert!(!pending_root.exists());
+        }
+    }
+
+    #[test]
+    fn reset_task_preserves_depth_error_and_pending_copy_accounting() {
+        let (_project, mut handler, retry) = prepared_handler();
+        let root = handler.worker(0).unwrap().root().to_owned();
+        let deepest = create_overdeep_tree(&root);
         let task = handler
             .prepare_reset_task(ResetWorker {
                 id: EffectId(51),
@@ -1837,6 +1937,93 @@ mod task_tests {
         assert_eq!(handler.pending_cleanup_count(), 0);
         assert_eq!(handler.worker_count(), 1);
         handler.close().unwrap();
+    }
+
+    #[test]
+    fn failed_reset_releases_ownership_after_successful_discard_in_both_paths() {
+        for owned in [false, true] {
+            let (_project, mut handler, retry) = prepared_handler();
+            let workspace = handler.worker(0).unwrap();
+            let old_root = workspace.root().to_owned();
+            let snapshot_file = workspace.snapshot.root.join("pkg/a.py");
+            std::fs::remove_file(&snapshot_file).unwrap();
+            let request = ResetWorker {
+                id: EffectId(60),
+                worker: 0,
+            };
+
+            let failed = if owned {
+                let completion = handler.prepare_reset_task(request).unwrap().execute();
+                let RunEvent::EffectFailed(failed) =
+                    handler.accept_task_completion(completion).unwrap()
+                else {
+                    panic!("missing snapshot must fail reset");
+                };
+                failed
+            } else {
+                handler.handle_reset_worker(request).unwrap_err()
+            };
+
+            assert_eq!(failed.failure.code(), "workspace.restore");
+            assert_eq!(handler.worker_count(), 0);
+            assert_eq!(handler.pending_cleanup_count(), 0);
+            assert_eq!(handler.materialized_worker_slots(), 0);
+            assert_eq!(handler.observed_copy_bytes(), 0);
+            assert!(!old_root.exists());
+            std::fs::write(snapshot_file, b"original\n").unwrap();
+            handler.handle_create_worker(retry).unwrap();
+            assert_eq!(handler.worker_count(), 1);
+            handler.close().unwrap();
+        }
+    }
+
+    #[test]
+    fn janitor_transfer_retains_active_and_pending_managed_directories() {
+        for pending in [false, true] {
+            let project = tempfile::tempdir().unwrap();
+            std::fs::write(project.path().join("a.py"), b"original\n").unwrap();
+            let managed_parent = tempfile::tempdir().unwrap();
+            let coordinator = super::ManagedRootCoordinator::open(
+                Utf8Path::from_path(managed_parent.path()).unwrap(),
+            )
+            .unwrap();
+            let managed_root = std::sync::Arc::new(
+                super::ManagedRunRoot::create(&coordinator, super::OwnerKind::PublicExecution)
+                    .unwrap(),
+            );
+            let mut handler = WorkspaceHandler::new(
+                Utf8Path::from_path(project.path()).unwrap().to_owned(),
+                Vec::new(),
+                1,
+                CopyOptions::default(),
+            )
+            .with_managed_root(managed_root);
+            if pending {
+                handler = handler.with_import_roots(vec!["missing".into()]);
+            }
+            let completed = handler
+                .handle_preflight(Preflight { id: EffectId(61) })
+                .unwrap();
+            let mut ledger = BudgetLedger::new(RunBudgets {
+                memory: 1,
+                copy: completed.aggregate_logical_bytes,
+                processes: 1,
+            });
+            let grant = reserve_workspace_copy(&mut ledger, &completed).unwrap();
+            let created =
+                handler.handle_create_worker(grant.create_worker(EffectId(62), 0).unwrap());
+            assert_eq!(created.is_err(), pending);
+            let root = if pending {
+                pending_workspace(&handler, 0).root().to_owned()
+            } else {
+                handler.worker(0).unwrap().root().to_owned()
+            };
+
+            handler.retain_workers_for_janitor();
+            drop(handler);
+
+            assert_eq!(std::fs::read(root.join("a.py")).unwrap(), b"original\n");
+        }
     }
 
     #[cfg(windows)]
@@ -1905,9 +2092,11 @@ mod task_tests {
             });
             let foreign_grant = reserve_workspace_copy(&mut foreign_ledger, &completed).unwrap();
             let foreign_request = foreign_grant.create_worker(EffectId(998), 0).unwrap();
-            let pending = handler.workers.remove(&0).unwrap();
+            let pending = handler.take_active(0).unwrap();
             let old_root = pending.root().to_owned();
-            handler.pending_cleanup.insert(0, pending);
+            handler
+                .workers
+                .insert(0, WorkerSlot::PendingCleanup(pending));
             let failed = if owned {
                 let task = handler.prepare_create_task(foreign_request).unwrap();
                 assert_eq!(handler.pending_cleanup_count(), 0);
@@ -2031,40 +2220,150 @@ mod task_tests {
         }
     }
 
+    // Rejecting a completion must preserve the first owner regardless of either classification.
     #[test]
     fn duplicate_workspace_task_completion_preserves_the_registered_worker() {
-        let (_project, mut handler, _retry) = prepared_handler();
-        let candidate = candidate(&handler);
-        let task = handler
-            .prepare_apply_task(ApplyMutation {
-                id: EffectId(3),
-                worker: 0,
-                candidate,
-            })
-            .unwrap();
-        let completion = task.execute();
-        let (_other_project, mut other, _other_retry) = prepared_handler();
-        let registered = other.workers.remove(&0).unwrap();
-        let registered_root = registered.root().to_owned();
-        handler.workers.insert(0, registered);
+        for (registered_pending, returned_pending) in
+            [(false, false), (true, true), (true, false), (false, true)]
+        {
+            let (_project, mut handler, _retry) = prepared_handler();
+            let candidate = candidate(&handler);
+            let task = handler
+                .prepare_apply_task(ApplyMutation {
+                    id: EffectId(3),
+                    worker: 0,
+                    candidate,
+                })
+                .unwrap();
+            let mut completion = task.execute();
+            if returned_pending {
+                let WorkspaceOwnership::Active(worker, workspace) = completion.ownership else {
+                    panic!("apply must return active ownership");
+                };
+                completion.ownership = WorkspaceOwnership::PendingCleanup(worker, workspace);
+            }
+            let (_other_project, mut other, _other_retry) = prepared_handler();
+            let registered = other.take_active(0).unwrap();
+            let registered_root = registered.root().to_owned();
+            if registered_pending {
+                handler
+                    .workers
+                    .insert(0, WorkerSlot::PendingCleanup(registered));
+            } else {
+                handler.workers.insert(0, WorkerSlot::Active(registered));
+            }
 
-        let error = handler.accept_task_completion(completion).unwrap_err();
+            let result = handler.accept_task_completion(completion);
 
-        assert!(
-            error
-                .failure
-                .message()
-                .contains("duplicate active worker 0")
-        );
-        assert_eq!(handler.worker(0).unwrap().root(), registered_root);
+            assert!(
+                result.is_err(),
+                "duplicate must fail: registered_pending={registered_pending}, returned_pending={returned_pending}"
+            );
+            assert_eq!(result.unwrap_err().failure.code(), "shell.blocking_io");
+            assert_eq!(handler.worker_count(), usize::from(!registered_pending));
+            assert_eq!(
+                handler.pending_cleanup_count(),
+                usize::from(registered_pending)
+            );
+            let registered = if registered_pending {
+                pending_workspace(&handler, 0)
+            } else {
+                handler.worker(0).unwrap()
+            };
+            assert_eq!(registered.root(), registered_root);
+            assert_eq!(
+                std::fs::read(registered_root.join("pkg/a.py")).unwrap(),
+                b"original\n"
+            );
+            handler.close().unwrap();
+            assert!(!registered_root.exists());
+        }
+    }
+
+    // A pending worker must never be consumed by active-only operations, even across retries.
+    proptest::proptest! {
+        #![proptest_config(proptest::test_runner::Config::with_cases(32))]
+        #[test]
+        fn pending_ownership_survives_rejected_active_operations(
+            operations in proptest::collection::vec(0_u8..7, 1..16),
+        ) {
+            let (_project, mut handler, _retry) = prepared_handler();
+            let candidate = candidate(&handler);
+            let pending = handler.take_active(0).unwrap();
+            let root = pending.root().to_owned();
+            handler.workers.insert(0, WorkerSlot::PendingCleanup(pending));
+
+            for operation in operations {
+                match operation {
+                    0 => { prop_assert!(handler.worker(0).is_none()); }
+                    1 => { prop_assert!(handler.worker_mut(0).is_none()); }
+                    2 => { prop_assert!(handler.command_environment(0, &std::collections::BTreeMap::new()).is_err()); }
+                    3 => {
+                        let result = handler.prepare_apply_task(ApplyMutation {
+                            id: EffectId(40), worker: 0, candidate: candidate.clone(),
+                        });
+                        prop_assert!(result.is_err());
+                    }
+                    4 => {
+                        let result = handler.prepare_reset_task(ResetWorker { id: EffectId(41), worker: 0 });
+                        prop_assert!(result.is_err());
+                    }
+                    5 => {
+                        let result = handler.handle_reset_worker(ResetWorker { id: EffectId(42), worker: 0 });
+                        prop_assert!(result.is_err());
+                    }
+                    _ => {
+                        let result = handler.handle_apply_mutation(ApplyMutation {
+                            id: EffectId(43), worker: 0, candidate: candidate.clone(),
+                        });
+                        prop_assert!(result.is_err());
+                    }
+                }
+                prop_assert_eq!(handler.worker_count(), 0);
+                prop_assert_eq!(handler.pending_cleanup_count(), 1);
+                prop_assert_eq!(handler.materialized_worker_slots(), 1);
+                prop_assert_eq!(handler.observed_copy_bytes(), 9);
+                prop_assert_eq!(std::fs::read(root.join("pkg/a.py")).unwrap(), b"original\n");
+            }
+            handler.close().unwrap();
+            prop_assert!(!root.exists());
+        }
+    }
+
+    #[test]
+    fn verify_completions_do_not_transfer_worker_ownership() {
+        for changed in [false, true] {
+            let (project, mut handler, _retry) = prepared_handler();
+            let root = handler.worker(0).unwrap().root().to_owned();
+            if changed {
+                std::fs::write(project.path().join("pkg/a.py"), b"changed!\n").unwrap();
+            }
+            let task = handler
+                .prepare_verify_task(hoimin_core::VerifyOriginals {
+                    id: EffectId(50),
+                    checkpoint: hoimin_core::IntegrityCheckpoint::PostMaterialization,
+                })
+                .unwrap();
+
+            let event = handler.accept_task_completion(task.execute()).unwrap();
+
+            assert_eq!(matches!(event, RunEvent::EffectFailed(_)), changed);
+            assert_eq!(handler.worker(0).unwrap().root(), root);
+            assert_eq!(handler.worker_count(), 1);
+            assert_eq!(handler.pending_cleanup_count(), 0);
+            assert_eq!(handler.materialized_worker_slots(), 1);
+            handler.close().unwrap();
+        }
     }
 
     #[test]
     fn create_task_drops_a_cleaned_pending_worker_before_replacement() {
         let (_project, mut handler, retry) = prepared_handler();
-        let pending = handler.workers.remove(&0).unwrap();
+        let pending = handler.take_active(0).unwrap();
         let old_root = pending.root().to_owned();
-        handler.pending_cleanup.insert(0, pending);
+        handler
+            .workers
+            .insert(0, WorkerSlot::PendingCleanup(pending));
         let task = handler.prepare_create_task(retry).unwrap();
 
         let event = handler.accept_task_completion(task.execute()).unwrap();
@@ -2104,7 +2403,7 @@ mod task_tests {
         handler
             .handle_create_worker(grant.create_worker(EffectId(2), 0).unwrap())
             .unwrap();
-        let mut worker = handler.workers.remove(&0).unwrap();
+        let mut worker = handler.take_active(0).unwrap();
         let super::OwnedWorkspaceDirectory::Managed(child) = &mut worker.temp else {
             panic!("managed root must create a managed worker");
         };

@@ -8,7 +8,10 @@ use hoimin_core::{
 };
 use serde::Deserialize;
 
-use super::{CopyOptions, WorkspaceHandler, WorkspaceTask, WorkspaceTaskCompletion};
+use super::{
+    CopyOptions, WorkerSlot, WorkspaceHandler, WorkspaceOwnership, WorkspaceTask,
+    WorkspaceTaskCompletion,
+};
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -220,12 +223,10 @@ impl Fixture {
             .remove(&task_id)
             .ok_or_else(|| format!("missing prepared task {task_id}"))?;
         let completion = task.execute();
-        let actual_location = if completion.active.is_some() {
-            "active"
-        } else if completion.pending.is_some() {
-            "pending"
-        } else {
-            "absent"
+        let actual_location = match &completion.ownership {
+            WorkspaceOwnership::Active(..) => "active",
+            WorkspaceOwnership::PendingCleanup(..) => "pending",
+            WorkspaceOwnership::None => "absent",
         };
         if actual_location != expected_location {
             return Err(format!(
@@ -275,15 +276,21 @@ impl Fixture {
         self.handler
             .workers
             .values()
-            .map(|workspace| self.slot_for_root(workspace.root()))
+            .filter_map(|slot| match slot {
+                WorkerSlot::Active(workspace) => Some(self.slot_for_root(workspace.root())),
+                WorkerSlot::PendingCleanup(_) => None,
+            })
             .collect()
     }
 
     fn pending(&self) -> Result<Vec<Slot>, String> {
         self.handler
-            .pending_cleanup
+            .workers
             .values()
-            .map(|workspace| self.slot_for_root(workspace.root()))
+            .filter_map(|slot| match slot {
+                WorkerSlot::PendingCleanup(workspace) => Some(self.slot_for_root(workspace.root())),
+                WorkerSlot::Active(_) => None,
+            })
             .collect()
     }
 
@@ -297,18 +304,14 @@ impl Fixture {
             }
             WorkspaceTask::Verify { .. } => None,
         });
-        let completion_roots = self.completions.values().filter_map(|completion| {
-            completion
-                .active
-                .as_ref()
-                .map(|(_, workspace)| workspace.root())
-                .or_else(|| {
-                    completion
-                        .pending
-                        .as_ref()
-                        .map(|(_, workspace)| workspace.root())
-                })
-        });
+        let completion_roots = self
+            .completions
+            .values()
+            .filter_map(|completion| match &completion.ownership {
+                WorkspaceOwnership::Active(_, workspace)
+                | WorkspaceOwnership::PendingCleanup(_, workspace) => Some(workspace.root()),
+                WorkspaceOwnership::None => None,
+            });
         task_roots
             .chain(completion_roots)
             .map(|root| self.slot_for_root(root))
