@@ -4,6 +4,16 @@ title: Disk failure representation
 description: Required disk stop payloads, secondary evidence, and saved failure format.
 status: draft
 sources:
+- id: issue-956-shell
+  resource: ../../../crates/hoimin-cli/src/shell.rs
+  revision: 578b3657e744c1f6d13b57bcb010bd21bde873c2
+  working_tree: modified
+  sha256: 5fcdd3d6b6704103af83478744e858cebb30bc57c8938cf24d4223ae05c7fe3d
+- id: issue-956-owned
+  resource: ../../../crates/hoimin-cli/src/workspace/owned.rs
+  revision: 578b3657e744c1f6d13b57bcb010bd21bde873c2
+  working_tree: modified
+  sha256: 037cb0b8ed3294240e4d36859c70882674d2f0622c00dcaf8167d22604dbfded
 - id: disk-monitor
   resource: ../../../crates/hoimin-cli/src/workspace/disk.rs
   revision: 31245fbf096967b36bc15523067080b506f88fe9
@@ -40,6 +50,20 @@ This reference explains the disk stop representation for maintainers changing po
 
 `DiskStopReport::from` projects the typed payload to report fields. Observation reasons populate both byte counts; error reasons populate the message. The report format retains its existing fields and existing projection-based matching.[^disk-report][^disk-shell]
 
+## Internal cleanup and public reports
+
+Managed-root cleanup owns Clean, Failed or Deferred in `CleanupDisposition`.
+Contention retry evidence is restricted to Deferred. The shell derives
+`DiskCleanupOutcome` from that disposition, independently of diagnostic text,
+for normal/outer execution and delivery cleanup.[^issue-956-shell]
+
+Report assembly projects actual results to `DiskCleanupStatus`. Retained and
+CleanupAfterDelivery remain report-only meanings. If execution has no cleanup
+record, startup-reclaim enrichment copies counts, bounded details and root
+information into `CleanupEvidence` without changing the report status or
+inventing an actual cleanup outcome. This preserves the report schema and the
+meaning of cleanup after delivery.[^issue-956-shell][^issue-956-owned]
+
 ## Saved failure format
 
 The failure JSON uses a payload-bearing `reason` object. For example:
@@ -60,3 +84,6 @@ Use the [disk failure checks](../../development.md#disk-failure-contracts) to ch
 
 [^disk-monitor]: [Monitor first-stop and complete-evidence matching](../../../crates/hoimin-cli/src/workspace/disk.rs).
 [^disk-shell]: [Shell report evidence merging](../../../crates/hoimin-cli/src/shell.rs).
+
+[^issue-956-shell]: [Cleanup report projection](../../../crates/hoimin-cli/src/shell.rs).
+[^issue-956-owned]: [Cleanup disposition and evidence](../../../crates/hoimin-cli/src/workspace/owned.rs).

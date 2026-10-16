@@ -43,8 +43,8 @@ pub(crate) use disk::{
 pub use manifest::{ManifestEntry, WorkspaceManifest};
 use operation::{WorkerOperationOutcome, create_worker, reset_worker};
 pub(crate) use owned::{
-    CleanupRecord, ManagedChild, ManagedRootCoordinator, ManagedRunRoot, OwnerKind, ReclaimReport,
-    truncate_diagnostic_detail,
+    CleanupDisposition, CleanupEvidence, CleanupRecord, ManagedChild, ManagedRootCoordinator,
+    ManagedRunRoot, OwnerKind, ReclaimReport, truncate_diagnostic_detail,
 };
 pub(crate) use reader::{PortableFileReadError, PortableFileReader, hash_portable_file};
 use root::WorkerRoot;
@@ -2432,13 +2432,13 @@ mod task_tests {
         drop_thread.join().unwrap();
         let cleanup = managed_root.cleanup(std::time::Duration::from_secs(5));
         assert_eq!(
-            cleanup.status,
+            cleanup.disposition.report_status(),
             hoimin_core::DiskCleanupStatus::Clean,
             "test cleanup did not recover: {cleanup:?}"
         );
 
         assert_eq!(
-            during_drop.status,
+            during_drop.disposition.report_status(),
             hoimin_core::DiskCleanupStatus::Clean,
             "worker root outlived its managed-child lifetime: {during_drop:?}"
         );

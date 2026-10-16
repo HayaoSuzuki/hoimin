@@ -86,10 +86,10 @@ use crate::resource::ResourceBackend;
 use crate::session::{SessionArtifacts, SessionDispatcher};
 use crate::target::TargetHandler;
 use crate::workspace::{
-    CleanupRecord, CopyOptions, DiskMonitor, FilesystemKey, ManagedChild, ManagedRootCoordinator,
-    ManagedRunRoot, OwnerKind, ReclaimReport, WorkspaceHandler, WorkspaceManifest, WorkspaceTask,
-    WorkspaceTaskCompletion, available_for_managed_roots, measure_managed_roots,
-    truncate_diagnostic_detail,
+    CleanupDisposition, CleanupEvidence, CleanupRecord, CopyOptions, DiskMonitor, FilesystemKey,
+    ManagedChild, ManagedRootCoordinator, ManagedRunRoot, OwnerKind, ReclaimReport,
+    WorkspaceHandler, WorkspaceManifest, WorkspaceTask, WorkspaceTaskCompletion,
+    available_for_managed_roots, measure_managed_roots, truncate_diagnostic_detail,
 };
 #[cfg(test)]
 use crate::workspace::{
@@ -1598,26 +1598,19 @@ enum CleanupProgress {
     Cleaned,
 }
 
+/// Classification belongs to the workspace record; error is presentation only.
 #[derive(Debug)]
-enum ManagedCleanupOutcome {
-    Clean(CleanupRecord),
-    Failed {
-        record: CleanupRecord,
-        error: String,
-    },
-    Deferred {
-        record: CleanupRecord,
-        error: String,
-    },
+struct ManagedCleanupOutcome {
+    record: CleanupRecord,
+    error: String,
 }
 
 impl ManagedCleanupOutcome {
-    /// Preserve cleanup classification even when its display diagnostic changes.
     fn disk_outcome(&self) -> DiskCleanupOutcome {
-        match self {
-            Self::Clean(_) => DiskCleanupOutcome::Clean,
-            Self::Failed { error, .. } => DiskCleanupOutcome::Failed(error.clone()),
-            Self::Deferred { error, .. } => DiskCleanupOutcome::Deferred(error.clone()),
+        match self.record.disposition {
+            CleanupDisposition::Clean => DiskCleanupOutcome::Clean,
+            CleanupDisposition::Failed => DiskCleanupOutcome::Failed(self.error.clone()),
+            CleanupDisposition::Deferred(_) => DiskCleanupOutcome::Deferred(self.error.clone()),
         }
     }
 }
@@ -1640,24 +1633,21 @@ fn recordless_cleanup_outcome(
         detail.clone()
     };
     let mut record = CleanupRecord {
-        retry_reason: None,
-        status: if deferred {
-            hoimin_core::DiskCleanupStatus::Deferred
+        disposition: if deferred {
+            CleanupDisposition::Deferred(None)
         } else {
-            hoimin_core::DiskCleanupStatus::Failed
+            CleanupDisposition::Failed
         },
-        examined_entries: 0,
-        removed_entries: 0,
-        details: Vec::new(),
-        omitted_detail_count: 0,
-        remaining_root: stable_remaining_root,
+        evidence: CleanupEvidence {
+            examined_entries: 0,
+            removed_entries: 0,
+            details: Vec::new(),
+            omitted_detail_count: 0,
+            remaining_root: stable_remaining_root,
+        },
     };
-    record.push_detail(detail);
-    if deferred {
-        ManagedCleanupOutcome::Deferred { record, error }
-    } else {
-        ManagedCleanupOutcome::Failed { record, error }
-    }
+    record.evidence.push_detail(detail);
+    ManagedCleanupOutcome { record, error }
 }
 
 fn cleanup_thread_failure_outcome(
@@ -1690,20 +1680,17 @@ fn attach_cleanup_ready_error(
     };
     let detail = format!("cleanup-ready: {marker_error}");
     let bounded_detail = truncate_diagnostic_detail(detail.clone()).0;
-    match &mut outcome {
-        ManagedCleanupOutcome::Clean(record) => record.push_detail(detail),
-        ManagedCleanupOutcome::Failed { record, error }
-        | ManagedCleanupOutcome::Deferred { record, error } => {
-            record.push_detail(detail);
-            error.push_str("; ");
-            error.push_str(&bounded_detail);
-        }
+    outcome.record.evidence.push_detail(detail);
+    if outcome.record.disposition != CleanupDisposition::Clean {
+        outcome.error.push_str("; ");
+        outcome.error.push_str(&bounded_detail);
     }
     outcome
 }
 
 fn delivery_cleanup_secondary_errors(record: &CleanupRecord) -> Vec<String> {
     record
+        .evidence
         .details
         .iter()
         .filter(|detail| detail.starts_with("cleanup-ready: "))
@@ -1739,7 +1726,7 @@ async fn cleanup_managed_root(
         if remaining.is_zero() {
             let record = root.abandon_for_janitor("managed-root cleanup budget expired".to_owned());
             return attach_cleanup_ready_error(
-                ManagedCleanupOutcome::Deferred {
+                ManagedCleanupOutcome {
                     record,
                     error: "workspace.cleanup.deferred: managed-root cleanup budget expired"
                         .to_owned(),
@@ -1767,30 +1754,18 @@ async fn cleanup_managed_root(
         }
         let detail = format!(
             "{}; omitted={}; remaining={:?}",
-            cleanup.details.join("; "),
-            cleanup.omitted_detail_count,
-            cleanup.remaining_root,
+            cleanup.evidence.details.join("; "),
+            cleanup.evidence.omitted_detail_count,
+            cleanup.evidence.remaining_root,
         );
-        let outcome = match cleanup.status {
-            hoimin_core::DiskCleanupStatus::Clean => ManagedCleanupOutcome::Clean(cleanup),
-            hoimin_core::DiskCleanupStatus::Failed => ManagedCleanupOutcome::Failed {
-                record: cleanup,
-                error: format!("workspace.cleanup.failed: {detail}"),
-            },
-            hoimin_core::DiskCleanupStatus::Deferred => ManagedCleanupOutcome::Deferred {
-                record: cleanup,
-                error: format!("workspace.cleanup.deferred: {detail}"),
-            },
-            hoimin_core::DiskCleanupStatus::Retained => ManagedCleanupOutcome::Deferred {
-                record: cleanup,
-                error: format!("workspace.cleanup.deferred: retained: {detail}"),
-            },
-            hoimin_core::DiskCleanupStatus::CleanupAfterDelivery => ManagedCleanupOutcome::Failed {
-                record: cleanup,
-                error: format!(
-                    "workspace.cleanup.failed: invalid execution cleanup status: {detail}"
-                ),
-            },
+        let error = match cleanup.disposition {
+            CleanupDisposition::Clean => String::new(),
+            CleanupDisposition::Failed => format!("workspace.cleanup.failed: {detail}"),
+            CleanupDisposition::Deferred(_) => format!("workspace.cleanup.deferred: {detail}"),
+        };
+        let outcome = ManagedCleanupOutcome {
+            record: cleanup,
+            error,
         };
         return attach_cleanup_ready_error(outcome, marker_error.as_deref());
     }
@@ -1857,22 +1832,25 @@ fn apply_execution_cleanup_evidence(
     cleanup: Option<&CleanupRecord>,
     startup_reclaim: &ReclaimReport,
 ) {
-    let mut cleanup = cleanup.cloned().unwrap_or_else(|| CleanupRecord {
-        retry_reason: None,
-        status: report.status,
-        examined_entries: report.examined_entries,
-        removed_entries: report.removed_entries,
-        details: report.details.clone(),
-        omitted_detail_count: report.omitted_detail_count,
-        remaining_root: report.remaining_root.as_ref().map(Utf8PathBuf::from),
-    });
-    startup_reclaim.append_to_cleanup(&mut cleanup);
-    report.status = cleanup.status;
-    report.examined_entries = cleanup.examined_entries;
-    report.removed_entries = cleanup.removed_entries;
-    report.details = cleanup.details;
-    report.omitted_detail_count = cleanup.omitted_detail_count;
-    report.remaining_root = cleanup.remaining_root.as_ref().map(ToString::to_string);
+    let mut evidence = match cleanup {
+        Some(cleanup) => {
+            report.status = cleanup.disposition.report_status();
+            cleanup.evidence.clone()
+        }
+        None => CleanupEvidence {
+            examined_entries: report.examined_entries,
+            removed_entries: report.removed_entries,
+            details: report.details.clone(),
+            omitted_detail_count: report.omitted_detail_count,
+            remaining_root: report.remaining_root.as_ref().map(Utf8PathBuf::from),
+        },
+    };
+    startup_reclaim.append_to_cleanup(&mut evidence);
+    report.examined_entries = evidence.examined_entries;
+    report.removed_entries = evidence.removed_entries;
+    report.details = evidence.details;
+    report.omitted_detail_count = evidence.omitted_detail_count;
+    report.remaining_root = evidence.remaining_root.as_ref().map(ToString::to_string);
 }
 
 fn merge_monitor_stop(report: &mut hoimin_core::DiskStopReport, latest: hoimin_core::DiskFailure) {
@@ -2869,15 +2847,16 @@ async fn run_loop_context(
                     ]) {
                         let id = effect.id();
                         execution_cleanup_record = Some(CleanupRecord {
-                            retry_reason: None,
-                            status: hoimin_core::DiskCleanupStatus::Deferred,
-                            examined_entries: 0,
-                            removed_entries: 0,
-                            details: vec![CLEANUP_QUIESCENCE_UNPROVEN.to_owned()],
-                            omitted_detail_count: 0,
-                            remaining_root: Some(
-                                context.spool_dir.execution_root.path().to_owned(),
-                            ),
+                            disposition: CleanupDisposition::Deferred(None),
+                            evidence: CleanupEvidence {
+                                examined_entries: 0,
+                                removed_entries: 0,
+                                details: vec![CLEANUP_QUIESCENCE_UNPROVEN.to_owned()],
+                                omitted_detail_count: 0,
+                                remaining_root: Some(
+                                    context.spool_dir.execution_root.path().to_owned(),
+                                ),
+                            },
                         });
                         serial_completion = Some(ShellCompletion::Serial(RunEvent::EffectFailed(
                             EffectFailed::other(
@@ -3239,8 +3218,9 @@ async fn run_loop_context(
                             )
                             .await;
                             let disk_cleanup_outcome = cleanup_result.disk_outcome();
-                            match cleanup_result {
-                            ManagedCleanupOutcome::Clean(cleanup) => {
+                            let ManagedCleanupOutcome { record: cleanup, error } = cleanup_result;
+                            match cleanup.disposition {
+                            CleanupDisposition::Clean => {
                                 delivery_errors
                                     .extend(delivery_cleanup_secondary_errors(&cleanup));
                                 if !disk_lifecycle.apply(DiskLifecycleEvent::CleanupCompleted {
@@ -3259,8 +3239,8 @@ async fn run_loop_context(
                                         .observe_finalization_event("delivery_workspace_absent");
                                 }
                             }
-                            ManagedCleanupOutcome::Failed { error, .. }
-                            | ManagedCleanupOutcome::Deferred { error, .. } => {
+                            CleanupDisposition::Failed
+                            | CleanupDisposition::Deferred(_) => {
                                 let outcome = disk_cleanup_outcome;
                                 if !disk_lifecycle.apply(DiskLifecycleEvent::CleanupCompleted {
                                     root: DiskRootId::Delivery,
@@ -3880,8 +3860,9 @@ async fn run_loop_context(
                 )
                 .await;
                 let disk_cleanup_outcome = cleanup_result.disk_outcome();
-                match cleanup_result {
-                    ManagedCleanupOutcome::Clean(cleanup) => {
+                let ManagedCleanupOutcome { record: cleanup, error } = cleanup_result;
+                match cleanup.disposition {
+                    CleanupDisposition::Clean => {
                         if !disk_lifecycle.apply(DiskLifecycleEvent::CleanupCompleted {
                             root: DiskRootId::Execution,
                             outcome: DiskCleanupOutcome::Clean,
@@ -3895,8 +3876,8 @@ async fn run_loop_context(
                         control.observe_finalization_event("workspace_absent");
                         execution_cleanup_record = Some(cleanup);
                     }
-                    ManagedCleanupOutcome::Failed { record, error } => {
-                        execution_cleanup_record = Some(record);
+                    CleanupDisposition::Failed => {
+                        execution_cleanup_record = Some(cleanup);
                         if !disk_lifecycle.apply(DiskLifecycleEvent::CleanupCompleted {
                             root: DiskRootId::Execution,
                             outcome: disk_cleanup_outcome,
@@ -3911,8 +3892,8 @@ async fn run_loop_context(
                             error,
                         ));
                     }
-                    ManagedCleanupOutcome::Deferred { record, error } => {
-                        execution_cleanup_record = Some(record);
+                    CleanupDisposition::Deferred(_) => {
+                        execution_cleanup_record = Some(cleanup);
                         if !disk_lifecycle.apply(DiskLifecycleEvent::CleanupCompleted {
                             root: DiskRootId::Execution,
                             outcome: disk_cleanup_outcome,
@@ -4315,8 +4296,12 @@ async fn run_loop_context(
                         cleanup_managed_root(Arc::clone(&context.spool_dir.execution_root), budget)
                             .await;
                     let disk_cleanup_outcome = cleanup_result.disk_outcome();
-                    match cleanup_result {
-                        ManagedCleanupOutcome::Clean(_) => {
+                    let ManagedCleanupOutcome {
+                        record: cleanup,
+                        error,
+                    } = cleanup_result;
+                    match cleanup.disposition {
+                        CleanupDisposition::Clean => {
                             if !disk_lifecycle.apply(DiskLifecycleEvent::CleanupCompleted {
                                 root: DiskRootId::Execution,
                                 outcome: DiskCleanupOutcome::Clean,
@@ -4329,8 +4314,7 @@ async fn run_loop_context(
                             }
                             execution_cleanup = CleanupProgress::Cleaned;
                         }
-                        ManagedCleanupOutcome::Failed { error, .. }
-                        | ManagedCleanupOutcome::Deferred { error, .. } => {
+                        CleanupDisposition::Failed | CleanupDisposition::Deferred(_) => {
                             let outcome = disk_cleanup_outcome;
                             if !disk_lifecycle.apply(DiskLifecycleEvent::CleanupCompleted {
                                 root: DiskRootId::Execution,
@@ -4407,8 +4391,12 @@ async fn run_loop_context(
                         cleanup_managed_root(Arc::clone(&context.spool_dir.delivery_root), budget)
                             .await;
                     let disk_cleanup_outcome = cleanup_result.disk_outcome();
-                    match cleanup_result {
-                        ManagedCleanupOutcome::Clean(cleanup) => {
+                    let ManagedCleanupOutcome {
+                        record: cleanup,
+                        error,
+                    } = cleanup_result;
+                    match cleanup.disposition {
+                        CleanupDisposition::Clean => {
                             if !disk_lifecycle.apply(DiskLifecycleEvent::CleanupCompleted {
                                 root: DiskRootId::Delivery,
                                 outcome: DiskCleanupOutcome::Clean,
@@ -4426,8 +4414,7 @@ async fn run_loop_context(
                             #[cfg(test)]
                             control.observe_finalization_event("delivery_root_absent");
                         }
-                        ManagedCleanupOutcome::Failed { error, .. }
-                        | ManagedCleanupOutcome::Deferred { error, .. } => {
+                        CleanupDisposition::Failed | CleanupDisposition::Deferred(_) => {
                             let outcome = disk_cleanup_outcome;
                             if !disk_lifecycle.apply(DiskLifecycleEvent::CleanupCompleted {
                                 root: DiskRootId::Delivery,
@@ -6397,68 +6384,236 @@ mod tests {
     }
 
     #[test]
+    fn cleanup_disposition_projects_without_diagnostic_classification() {
+        for (disposition, expected) in [
+            (
+                CleanupDisposition::Clean,
+                hoimin_core::DiskCleanupStatus::Clean,
+            ),
+            (
+                CleanupDisposition::Failed,
+                hoimin_core::DiskCleanupStatus::Failed,
+            ),
+            (
+                CleanupDisposition::Deferred(None),
+                hoimin_core::DiskCleanupStatus::Deferred,
+            ),
+        ] {
+            let cleanup = CleanupRecord {
+                disposition,
+                evidence: CleanupEvidence::default(),
+            };
+            let mut report = hoimin_core::DiskCleanupReport {
+                root_id: "execution".to_owned(),
+                owner: "hoimin".to_owned(),
+                status: hoimin_core::DiskCleanupStatus::Retained,
+                examined_entries: 0,
+                removed_entries: 0,
+                details: Vec::new(),
+                omitted_detail_count: 0,
+                remaining_root: None,
+            };
+
+            apply_execution_cleanup_evidence(
+                &mut report,
+                Some(&cleanup),
+                &ReclaimReport::default(),
+            );
+
+            assert_eq!(report.status, expected);
+        }
+    }
+
+    #[test]
     fn managed_cleanup_disk_classification_ignores_diagnostic_wording() {
-        let record = CleanupRecord {
-            retry_reason: None,
-            status: hoimin_core::DiskCleanupStatus::Failed,
-            examined_entries: 0,
-            removed_entries: 0,
-            details: Vec::new(),
-            omitted_detail_count: 0,
-            remaining_root: None,
-        };
-        let failed = ManagedCleanupOutcome::Failed {
-            record: record.clone(),
-            error: "workspace.cleanup.deferred: misleading diagnostic".to_owned(),
-        };
-        let deferred = ManagedCleanupOutcome::Deferred {
-            record,
-            error: "workspace.cleanup.failed: misleading diagnostic".to_owned(),
-        };
-        assert!(
-            matches!(failed.disk_outcome(), DiskCleanupOutcome::Failed(error)
-            if error == "workspace.cleanup.deferred: misleading diagnostic")
-        );
-        assert!(
-            matches!(deferred.disk_outcome(), DiskCleanupOutcome::Deferred(error)
-            if error == "workspace.cleanup.failed: misleading diagnostic")
-        );
+        for (disposition, error, expected) in [
+            (
+                CleanupDisposition::Failed,
+                "workspace.cleanup.deferred: misleading diagnostic",
+                DiskCleanupOutcome::Failed(
+                    "workspace.cleanup.deferred: misleading diagnostic".to_owned(),
+                ),
+            ),
+            (
+                CleanupDisposition::Deferred(None),
+                "workspace.cleanup.failed: misleading diagnostic",
+                DiskCleanupOutcome::Deferred(
+                    "workspace.cleanup.failed: misleading diagnostic".to_owned(),
+                ),
+            ),
+        ] {
+            let outcome = ManagedCleanupOutcome {
+                record: CleanupRecord {
+                    disposition,
+                    evidence: CleanupEvidence::default(),
+                },
+                error: error.to_owned(),
+            };
+
+            let actual = outcome.disk_outcome();
+
+            assert_eq!(actual, expected);
+        }
+    }
+
+    #[test]
+    fn report_only_cleanup_states_preserve_evidence_without_an_execution_result() {
+        for status in [
+            hoimin_core::DiskCleanupStatus::Retained,
+            hoimin_core::DiskCleanupStatus::CleanupAfterDelivery,
+        ] {
+            let mut report = hoimin_core::DiskCleanupReport {
+                root_id: "execution".to_owned(),
+                owner: "hoimin".to_owned(),
+                status,
+                examined_entries: 8,
+                removed_entries: 3,
+                details: vec!["delivery pending".to_owned()],
+                omitted_detail_count: 2,
+                remaining_root: Some("known-root".to_owned()),
+            };
+            let reclaim = ReclaimReport {
+                preserved_roots: 1,
+                ..ReclaimReport::default()
+            };
+
+            apply_execution_cleanup_evidence(&mut report, None, &reclaim);
+
+            assert_eq!(report.status, status);
+            assert_eq!((report.examined_entries, report.removed_entries), (8, 3));
+            assert_eq!(report.remaining_root.as_deref(), Some("known-root"));
+            assert_eq!(
+                report.details,
+                [
+                    "delivery pending",
+                    "startup janitor preserved 1 managed roots"
+                ]
+            );
+            assert_eq!(report.omitted_detail_count, 2);
+        }
+    }
+
+    #[test]
+    fn cleanup_ready_failure_retains_each_original_classification() {
+        for (disposition, expected, expected_error) in [
+            (
+                CleanupDisposition::Clean,
+                DiskCleanupOutcome::Clean,
+                "original",
+            ),
+            (
+                CleanupDisposition::Failed,
+                DiskCleanupOutcome::Failed("original; cleanup-ready: marker failed".to_owned()),
+                "original; cleanup-ready: marker failed",
+            ),
+            (
+                CleanupDisposition::Deferred(None),
+                DiskCleanupOutcome::Deferred("original; cleanup-ready: marker failed".to_owned()),
+                "original; cleanup-ready: marker failed",
+            ),
+        ] {
+            let outcome = ManagedCleanupOutcome {
+                record: CleanupRecord {
+                    disposition,
+                    evidence: CleanupEvidence::default(),
+                },
+                error: "original".to_owned(),
+            };
+
+            let outcome = attach_cleanup_ready_error(outcome, Some("marker failed"));
+
+            assert_eq!(outcome.disk_outcome(), expected);
+            assert_eq!(outcome.error, expected_error);
+            assert_eq!(
+                outcome.record.evidence.details,
+                ["cleanup-ready: marker failed"]
+            );
+        }
+    }
+
+    proptest::proptest! {
+        #[test]
+        fn cleanup_projection_preserves_generated_evidence_and_ignores_detail(
+            detail in ".{0,4096}",
+            error in ".{0,128}",
+            remaining_root in proptest::option::of("[a-z]{1,32}"),
+            examined in 0_u64..10000,
+            removed in 0_u64..10000,
+            omitted in proptest::arbitrary::any::<u64>(),
+        ) {
+            for (disposition, status, disk) in [
+                (CleanupDisposition::Clean, hoimin_core::DiskCleanupStatus::Clean, DiskCleanupOutcome::Clean),
+                (CleanupDisposition::Failed, hoimin_core::DiskCleanupStatus::Failed, DiskCleanupOutcome::Failed(error.clone())),
+                (CleanupDisposition::Deferred(None), hoimin_core::DiskCleanupStatus::Deferred, DiskCleanupOutcome::Deferred(error.clone())),
+            ] {
+                let mut evidence = CleanupEvidence {
+                    examined_entries: examined, removed_entries: removed,
+                    omitted_detail_count: omitted,
+                    remaining_root: remaining_root.clone().map(Utf8PathBuf::from),
+                    ..CleanupEvidence::default()
+                };
+                evidence.push_detail(detail.clone());
+                let outcome = ManagedCleanupOutcome { record: CleanupRecord { disposition, evidence: evidence.clone() }, error: error.clone() };
+                let mut report = hoimin_core::DiskCleanupReport {
+                    root_id: "execution".to_owned(), owner: "hoimin".to_owned(),
+                    status: hoimin_core::DiskCleanupStatus::Retained,
+                    examined_entries: 0, removed_entries: 0, details: Vec::new(),
+                    omitted_detail_count: 0, remaining_root: None,
+                };
+
+                let actual = outcome.disk_outcome();
+                apply_execution_cleanup_evidence(&mut report, Some(&outcome.record), &ReclaimReport::default());
+
+                proptest::prop_assert_eq!(actual, disk);
+                proptest::prop_assert_eq!(report.status, status);
+                proptest::prop_assert_eq!(report.remaining_root.as_ref(), remaining_root.as_ref());
+                proptest::prop_assert_eq!(report.examined_entries, examined);
+                proptest::prop_assert_eq!(report.removed_entries, removed);
+                proptest::prop_assert_eq!(report.details, evidence.details);
+                proptest::prop_assert_eq!(report.omitted_detail_count, evidence.omitted_detail_count);
+            }
+        }
     }
 
     #[test]
     fn recordless_thread_failure_preserves_kind_and_root_evidence() {
         let stable = Utf8PathBuf::from("stable-active-root");
-        for (failure, remaining_root, want_deferred) in [
+        for (failure, remaining_root, expected) in [
             (
                 CleanupThreadFailure::Spawn("diagnostic changed".to_owned()),
                 Some(stable.clone()),
-                false,
+                CleanupDisposition::Failed,
             ),
             (
                 CleanupThreadFailure::Spawn("diagnostic changed".to_owned()),
                 None,
-                true,
+                CleanupDisposition::Deferred(None),
             ),
-            (CleanupThreadFailure::Stopped, Some(stable.clone()), false),
-            (CleanupThreadFailure::Stopped, None, true),
-            (CleanupThreadFailure::TimedOut, Some(stable.clone()), true),
-            (CleanupThreadFailure::TimedOut, None, true),
+            (
+                CleanupThreadFailure::Stopped,
+                Some(stable.clone()),
+                CleanupDisposition::Failed,
+            ),
+            (
+                CleanupThreadFailure::Stopped,
+                None,
+                CleanupDisposition::Deferred(None),
+            ),
+            (
+                CleanupThreadFailure::TimedOut,
+                Some(stable.clone()),
+                CleanupDisposition::Deferred(None),
+            ),
+            (
+                CleanupThreadFailure::TimedOut,
+                None,
+                CleanupDisposition::Deferred(None),
+            ),
         ] {
             let outcome = recordless_cleanup_outcome(&failure, remaining_root.clone());
 
-            match outcome {
-                ManagedCleanupOutcome::Deferred { record, .. } => {
-                    assert!(want_deferred, "{failure:?}");
-                    assert_eq!(record.status, hoimin_core::DiskCleanupStatus::Deferred);
-                    assert_eq!(record.remaining_root, remaining_root);
-                }
-                ManagedCleanupOutcome::Failed { record, .. } => {
-                    assert!(!want_deferred, "{failure:?}");
-                    assert_eq!(record.status, hoimin_core::DiskCleanupStatus::Failed);
-                    assert_eq!(record.remaining_root, remaining_root);
-                }
-                ManagedCleanupOutcome::Clean(_) => panic!("thread failure cannot be clean"),
-            }
+            assert_eq!(outcome.record.disposition, expected);
+            assert_eq!(outcome.record.evidence.remaining_root, remaining_root);
         }
     }
 
@@ -6466,14 +6621,19 @@ mod tests {
     fn recordless_failed_cleanup_without_a_verified_path_is_deferred() {
         let outcome = recordless_cleanup_outcome(&CleanupThreadFailure::Stopped, None);
 
-        let ManagedCleanupOutcome::Deferred { record, error } = outcome else {
-            panic!("unverified cleanup failure must be deferred");
-        };
-        assert_eq!(record.status, hoimin_core::DiskCleanupStatus::Deferred);
-        assert!(record.remaining_root.is_none());
+        let ManagedCleanupOutcome { record, error } = outcome;
+        assert!(matches!(
+            record.disposition,
+            CleanupDisposition::Deferred(_)
+        ));
+        assert_eq!(
+            record.disposition.report_status(),
+            hoimin_core::DiskCleanupStatus::Deferred
+        );
+        assert!(record.evidence.remaining_root.is_none());
         assert!(error.starts_with("workspace.cleanup.deferred:"), "{error}");
         assert_eq!(
-            record.details,
+            record.evidence.details,
             vec!["workspace.cleanup.failed: cleanup thread stopped without a result"]
         );
     }
@@ -6487,10 +6647,13 @@ mod tests {
 
         let record = cleanup_with_panic_recovery(&root, || panic!("injected cleanup panic"));
 
-        assert_eq!(record.status, hoimin_core::DiskCleanupStatus::Failed);
-        assert_eq!(record.remaining_root.as_deref(), Some(root.path()));
-        assert_eq!(record.details.len(), 1);
-        assert!(record.details[0].contains("cleanup worker panicked"));
+        assert_eq!(
+            record.disposition.report_status(),
+            hoimin_core::DiskCleanupStatus::Failed
+        );
+        assert_eq!(record.evidence.remaining_root.as_deref(), Some(root.path()));
+        assert_eq!(record.evidence.details.len(), 1);
+        assert!(record.evidence.details[0].contains("cleanup worker panicked"));
     }
 
     #[tokio::test]
@@ -6535,11 +6698,13 @@ mod tests {
             &CleanupThreadFailure::Spawn("injected thread exhaustion".to_owned()),
         );
 
-        let ManagedCleanupOutcome::Failed { record, error } = outcome else {
-            panic!("a cleanup operation that never started must keep its stable root")
-        };
-        assert_eq!(record.status, hoimin_core::DiskCleanupStatus::Failed);
-        assert_eq!(record.remaining_root.as_deref(), Some(root.path()));
+        let ManagedCleanupOutcome { record, error } = outcome;
+        assert!(matches!(record.disposition, CleanupDisposition::Failed));
+        assert_eq!(
+            record.disposition.report_status(),
+            hoimin_core::DiskCleanupStatus::Failed
+        );
+        assert_eq!(record.evidence.remaining_root.as_deref(), Some(root.path()));
         assert!(error.starts_with("workspace.cleanup.failed:"), "{error}");
     }
 
@@ -7282,13 +7447,14 @@ mod tests {
     #[test]
     fn startup_janitor_diagnostics_reach_the_execution_cleanup_report() {
         let cleanup = CleanupRecord {
-            retry_reason: None,
-            status: hoimin_core::DiskCleanupStatus::Clean,
-            examined_entries: 4,
-            removed_entries: 3,
-            details: vec!["execution cleanup detail".to_owned()],
-            omitted_detail_count: 0,
-            remaining_root: None,
+            disposition: CleanupDisposition::Clean,
+            evidence: CleanupEvidence {
+                examined_entries: 4,
+                removed_entries: 3,
+                details: vec!["execution cleanup detail".to_owned()],
+                omitted_detail_count: 0,
+                remaining_root: None,
+            },
         };
         let reclaim = ReclaimReport {
             reclaimed_roots: 1,
@@ -7971,7 +8137,7 @@ mod tests {
         );
         let outcome = cleanup_managed_root(execution_root, &cleanup_budget).await;
         assert!(
-            matches!(&outcome, ManagedCleanupOutcome::Clean(_)),
+            matches!(outcome.record.disposition, CleanupDisposition::Clean),
             "{outcome:#?}"
         );
         let cleanup_budget = ShutdownBudget::for_total_timeout_with_grace(
@@ -7980,7 +8146,7 @@ mod tests {
         );
         let outcome = cleanup_managed_root(delivery_root, &cleanup_budget).await;
         assert!(
-            matches!(&outcome, ManagedCleanupOutcome::Clean(_)),
+            matches!(outcome.record.disposition, CleanupDisposition::Clean),
             "{outcome:#?}"
         );
     }
@@ -8004,7 +8170,7 @@ mod tests {
         );
         let outcome = cleanup_managed_root(execution_root, &cleanup_budget).await;
         assert!(
-            matches!(&outcome, ManagedCleanupOutcome::Clean(_)),
+            matches!(outcome.record.disposition, CleanupDisposition::Clean),
             "{outcome:#?}"
         );
         let cleanup_budget = ShutdownBudget::for_total_timeout_with_grace(
@@ -8013,7 +8179,7 @@ mod tests {
         );
         let outcome = cleanup_managed_root(delivery_root, &cleanup_budget).await;
         assert!(
-            matches!(&outcome, ManagedCleanupOutcome::Clean(_)),
+            matches!(outcome.record.disposition, CleanupDisposition::Clean),
             "{outcome:#?}"
         );
     }
@@ -8033,11 +8199,16 @@ mod tests {
 
         let outcome = cleanup_managed_root(Arc::clone(&root), &budget).await;
 
-        let ManagedCleanupOutcome::Deferred { record, error } = outcome else {
-            panic!("live managed child did not produce a recorded deferred cleanup")
-        };
-        assert_eq!(record.status, hoimin_core::DiskCleanupStatus::Deferred);
-        assert_eq!(record.remaining_root.as_deref(), Some(root.path()));
+        let ManagedCleanupOutcome { record, error } = outcome;
+        assert!(matches!(
+            record.disposition,
+            CleanupDisposition::Deferred(_)
+        ));
+        assert_eq!(
+            record.disposition.report_status(),
+            hoimin_core::DiskCleanupStatus::Deferred
+        );
+        assert_eq!(record.evidence.remaining_root.as_deref(), Some(root.path()));
         assert!(error.starts_with("workspace.cleanup.deferred:"), "{error}");
         drop(child);
         let _ = root.cleanup(Duration::from_secs(1));
@@ -8060,11 +8231,14 @@ mod tests {
 
         let outcome = cleanup_managed_root(Arc::clone(&root), &budget).await;
 
-        let ManagedCleanupOutcome::Deferred { record, .. } = outcome else {
-            panic!("live managed child did not produce a recorded deferred cleanup")
-        };
+        let record = outcome.record;
+        assert!(matches!(
+            record.disposition,
+            CleanupDisposition::Deferred(_)
+        ));
         assert!(
             record
+                .evidence
                 .details
                 .iter()
                 .any(|detail| detail.starts_with("cleanup-ready: ")),
@@ -8088,18 +8262,21 @@ mod tests {
         let record = root.abandon_for_janitor("managed-root cleanup budget expired".to_owned());
 
         let outcome = attach_cleanup_ready_error(
-            ManagedCleanupOutcome::Deferred {
+            ManagedCleanupOutcome {
                 record,
                 error: "workspace.cleanup.deferred: managed-root cleanup budget expired".to_owned(),
             },
             Some(&marker_error),
         );
 
-        let ManagedCleanupOutcome::Deferred { record, error } = outcome else {
-            panic!("expired cleanup did not preserve its deferred record")
-        };
+        let ManagedCleanupOutcome { record, error } = outcome;
+        assert!(matches!(
+            record.disposition,
+            CleanupDisposition::Deferred(_)
+        ));
         assert!(
             record
+                .evidence
                 .details
                 .iter()
                 .any(|detail| detail.starts_with("cleanup-ready: ")),
@@ -8113,13 +8290,14 @@ mod tests {
     #[test]
     fn clean_delivery_cleanup_surfaces_cleanup_ready_secondary() {
         let record = CleanupRecord {
-            retry_reason: None,
-            status: hoimin_core::DiskCleanupStatus::Clean,
-            examined_entries: 1,
-            removed_entries: 1,
-            details: vec!["cleanup-ready: injected marker failure".to_owned()],
-            omitted_detail_count: 0,
-            remaining_root: None,
+            disposition: CleanupDisposition::Clean,
+            evidence: CleanupEvidence {
+                examined_entries: 1,
+                removed_entries: 1,
+                details: vec!["cleanup-ready: injected marker failure".to_owned()],
+                omitted_detail_count: 0,
+                remaining_root: None,
+            },
         };
 
         assert_eq!(
