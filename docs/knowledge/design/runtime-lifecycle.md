@@ -5,6 +5,15 @@ description: OS別の資源制限と、プロセス終了・一時ファイル�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-951-record
+  resource: ../../maintenance/2026-10-16-issue-951.md
+  working_tree: untracked
+  sha256: c8172cc46bb7becd150b0f998c3306791c1a615b0e7969a1d6486e1e1f57cfd6
+- id: issue-951-shell
+  resource: ../../../crates/hoimin-cli/src/shell.rs
+  revision: ddb8ed9504beb04c06bfe11821ebcafffa332714
+  working_tree: modified
+  sha256: 107d7d1b381395b74eaea54b966219c19dc03223ff22b2e9074aac7f5a17d20a
 - id: issue-940-machine
   resource: ../../../crates/hoimin-core/src/machine.rs
   revision: 465ff928c1f2ceb9f9b8f8084465475e45799ee8
@@ -589,3 +598,31 @@ when changing output ownership, retirement or summary timing.
 
 [^issue-940-machine]: [Synthetic state and ACK transitions](../../../crates/hoimin-core/src/machine.rs).
 [^issue-940-review]: [Issue 940 review and verification](../../maintenance/2026-10-16-issue-940.md).
+
+## Request-derived worker dispatch (Issue #951)
+
+Shell worker preparation keeps the runner request together with a private
+Baseline/Mutant context derived from its typed request. `spawn_process` accepts
+this prepared request without separate worker or purpose arguments. Probe has
+no workspace-context implementation and cannot enter this preparation boundary.
+The shared process runner keeps its existing representation.[^issue-951-shell]
+
+Completions retain their worker context after the runner consumes the request.
+`EffectFailed` and retired events do not supply enough payload information to
+recover it. Successful event selection, ordinary completion metrics and shutdown
+drain use the retained context. Baseline consumes a completion but contributes
+no executed-mutant count; discarded mutant completions close running metrics
+without increasing that count. The pre-existing post-drain disk-stop path still
+closes the observed worker metric for either role. Admission, cancellation,
+JoinSet/in-flight accounting and independent process/output-drain evidence keep
+their existing ordering.[^issue-951-shell]
+
+The [implementation and verification record](../../maintenance/2026-10-16-issue-951.md)
+records the API compile check, parameterized role cases, generated drain sequences
+and actual validation scope.[^issue-951-record] This internal type refactor introduces no public
+format or state-transition change and no new Lean model or proof. Recheck this
+boundary when adding a worker process role or changing completion acceptance.
+
+[^issue-951-shell]: [Prepared worker requests and retained completion identity](../../../crates/hoimin-cli/src/shell.rs).
+
+[^issue-951-record]: [Issue 951 design, implementation and verification reviews](../../maintenance/2026-10-16-issue-951.md).
