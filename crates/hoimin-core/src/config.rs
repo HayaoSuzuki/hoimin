@@ -52,7 +52,7 @@ impl Default for RawRunLimits {
 // This local declaration owns operator identity, not default or family membership.
 macro_rules! mutation_operators {
     ($( $(#[$attribute:meta])* $variant:ident => $name:literal, )+) => {
-        #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
         pub enum MutationOperator {
             $(
                 $(#[$attribute])*

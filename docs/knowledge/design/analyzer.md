@@ -473,9 +473,29 @@ sources:
 
 - id: issue-930-token-operators
   resource: ../../../crates/hoimin-cli/src/analyzer/rust.rs
-  revision: 0d3fbc1a1821074d6ba8a2a212116241adc85c4e
+  revision: ddb8ed9504beb04c06bfe11821ebcafffa332714
   working_tree: modified
-  sha256: 44383a0b7c38f9a6590bc4704b4144f3eeb72146d8a3f7909cbc817663474e68
+  sha256: fc838b85cc69ce2e0d5500a089b1f0d034ec82794b94a0a576bd7b3f30180318
+- id: issue-950-candidate
+  resource: ../../../crates/hoimin-cli/src/analyzer/types.rs
+  revision: ddb8ed9504beb04c06bfe11821ebcafffa332714
+  working_tree: modified
+  sha256: fe08e9d35c48024b4eb68ccad307116a2e529e3db4ca52f491ace49e5b2dc37f
+- id: issue-950-retention
+  resource: ../../../crates/hoimin-cli/src/analyzer/rust.rs
+  revision: ddb8ed9504beb04c06bfe11821ebcafffa332714
+  working_tree: modified
+  sha256: fc838b85cc69ce2e0d5500a089b1f0d034ec82794b94a0a576bd7b3f30180318
+- id: issue-950-descriptor
+  resource: ../../../crates/hoimin-cli/src/analyzer/mod.rs
+  revision: ddb8ed9504beb04c06bfe11821ebcafffa332714
+  working_tree: modified
+  sha256: 8246e175ff7ed75800d7d2cd4cf7db1d99dc397e9bfcd73282b75fdd801f4f10
+- id: issue-950-tests
+  resource: ../../../crates/hoimin-cli/src/analyzer/rust_tests.rs
+  revision: ddb8ed9504beb04c06bfe11821ebcafffa332714
+  working_tree: modified
+  sha256: 99a2645a9d488283ad238c16fd3493a28da173c966b80ad3c5f78e6555777878
 ---
 
 # 構文と名前解決の契約
@@ -1066,16 +1086,15 @@ rebuilt for this private representation change.[^issue-914-evidence]
 
 Token replacement returns `MutationOperator` alongside replacement text. The
 compound `not in`, `is not` and unary `not` branches use the same enum, eliminating
-the internal canonical-name lookup and its `expect`. `make_candidate` still
-converts the enum with `as_str`; candidate operator fields and identity inputs
-remain strings. Prefix retention, deduplication and final ordering retain their
-existing string comparisons, independently of enum declaration order. Selection,
-limits and truncation follow the same paths.[^issue-930-token-operators]
+the internal canonical-name lookup and its `expect`. Issue #930 retained string
+candidate fields; Issue #950 extends the enum through candidate retention and
+deduplication, as described below. Selection, limits and truncation follow the
+same paths.[^issue-930-token-operators][^issue-950-retention]
 
 The [Issue #930 record](../../superpowers/plans/2026-10-16-issue-930.md) separates
 baseline and post-change checks from static comparison. This private type change
 adds no operator, format migration, performance claim or formal guarantee.
-Recheck canonical names and ordering if the candidate boundary is later changed.
+The candidate-boundary change in Issue #950 retains canonical-name ordering.
 
 [^issue-930-token-operators]: [Token dispatch, replacement and candidate construction](../../../crates/hoimin-cli/src/analyzer/rust.rs).
 
@@ -1129,3 +1148,32 @@ for current verification and review evidence.[^issue-943-record]
 [^issue-943-source]: [Single-owner state](../../../crates/hoimin-cli/src/analyzer/store.rs).
 
 [^issue-943-record]: [Issue #943 verification](../../maintenance/2026-10-16-issue-943.md).
+
+# Typed internal candidate operators (Issue #950)
+
+`AnalyzerCandidate.operator` and both internal dedup identities retain
+`MutationOperator`. Construction already has a known enum, so this removes an
+internal string conversion and identity clones without adding a parser or wrapper.
+`CandidateDescriptor` creation converts to an owned canonical name; saved
+candidates, their IDs and schema versions retain the same representation.
+[^issue-950-candidate][^issue-950-retention][^issue-950-descriptor]
+
+Candidate ranking explicitly compares `as_str()` in both the producer heap and
+final stable sort. Enum-derived ordering remains unsuitable here because it
+follows declaration order. The heap still uses emission order for equal rank;
+dedup still identifies start, replacement and operator, and the collector keeps
+its k+1 overflow probe. Focused annotation exemption uses the existing
+`TYPE_OPERATORS` set.[^issue-950-retention]
+
+Tests assert literal lexical names at coincident spans, including limited output,
+and generate duplicate emission orders and prefix limits. Existing Lean prefix
+correspondence remains a finite model comparison; no new proof or performance
+claim follows from this representation change. Recheck both comparators,
+descriptor conversion and family membership when changing operator identity.
+The [implementation record](../../maintenance/2026-10-16-issue-950.md) records
+executed checks and their limitations.[^issue-950-tests]
+
+[^issue-950-candidate]: [In-memory candidate type](../../../crates/hoimin-cli/src/analyzer/types.rs).
+[^issue-950-retention]: [Candidate ranking, dedup and profile classification](../../../crates/hoimin-cli/src/analyzer/rust.rs).
+[^issue-950-descriptor]: [Saved descriptor boundary](../../../crates/hoimin-cli/src/analyzer/mod.rs).
+[^issue-950-tests]: [Lexical order and prefix regressions](../../../crates/hoimin-cli/src/analyzer/rust_tests.rs).

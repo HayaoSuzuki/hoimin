@@ -204,7 +204,7 @@ fn descriptor(source: &str, c: &AnalyzerCandidate) -> CandidateDescriptor {
         span: c.span,
         original: c.original.clone(),
         replacement: c.replacement.clone(),
-        operator: c.operator.clone(),
+        operator: c.operator.as_str().to_owned(),
         line: c.line,
         column: c.column,
         symbol: c.symbol.clone(),
@@ -319,7 +319,7 @@ async fn planned_candidates(
                 span: c.span,
                 original: c.original.clone(),
                 replacement: c.replacement.clone(),
-                operator: c.operator.clone(),
+                operator: c.operator.as_str().to_owned(),
                 line: c.line,
                 column: c.column,
                 symbol: c.symbol.clone(),
@@ -488,7 +488,7 @@ async fn corpus_correspondence(
                 let mut ids = BTreeMap::new();
                 let mut mutants = Vec::new();
                 for c in &output.candidates {
-                    assert_eq!(c.operator, case.operator);
+                    assert_eq!(c.operator.as_str(), case.operator);
                     let start = usize::try_from(c.span.start).unwrap();
                     let end = start + usize::try_from(c.span.length).unwrap();
                     assert_eq!((c.line, c.column), location(&source, start));
@@ -776,7 +776,7 @@ async fn valid_python_adapter_rejects_missing_excess_and_corrupt_observations() 
         },
         original: site.original.clone(),
         replacement: site.replacement.clone(),
-        operator: case.operator.clone(),
+        operator: hoimin_core::MutationOperator::from_name(&case.operator).unwrap(),
         line: 2,
         column: 11,
         symbol: Some("subject".into()),

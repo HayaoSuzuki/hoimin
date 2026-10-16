@@ -782,9 +782,8 @@ fn promoted_defaults_keep_profile_filtering_before_bounded_prefix_selection() {
             includes_first_line
         );
         assert_eq!(
-            full.candidates
-                .iter()
-                .any(|candidate| candidate.line == 1 && candidate.operator == "statement_delete"),
+            full.candidates.iter().any(|candidate| candidate.line == 1
+                && candidate.operator.as_str() == "statement_delete"),
             includes_first_line
         );
         request.max_candidates = 3;
