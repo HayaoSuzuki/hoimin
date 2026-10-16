@@ -3046,7 +3046,7 @@ async fn run_loop_context(
                                 .stats();
                             summary.disk.peak_owned_bytes = disk_stats.peak_owned_bytes;
                             summary.disk.minimum_available_bytes =
-                                disk_stats.minimum_available_bytes;
+                                disk_stats.minimum_available_bytes();
                             summary.disk.sample_count = disk_stats.sample_count;
                             summary.disk.maximum_measurement_ms =
                                 u64::try_from(disk_stats.maximum_measurement.as_millis())
