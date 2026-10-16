@@ -548,6 +548,93 @@ fn retired_late_completion_is_distinct_from_a_true_duplicate() {
     assert_eq!(retired.code(), "machine.effect.retired");
 }
 
+fn stop_cases() -> [(RunEvent, i32); 3] {
+    [
+        (RunEvent::DeadlineReached, 4),
+        (RunEvent::CancellationRequested, 130),
+        (disk_stop(1024), 2),
+    ]
+}
+
+fn disk_stop(available_bytes: u64) -> RunEvent {
+    RunEvent::DiskStopRequested(DiskStopRequested {
+        failure: DiskFailure {
+            reason: hoimin_core::DiskFailureReason::FilesystemReserveReached(DiskObservation {
+                owned_bytes: 4096,
+                available_bytes,
+                measured_in: Duration::from_millis(7),
+            }),
+            secondary: Vec::new(),
+        },
+    })
+}
+
+#[test]
+fn stop_causes_preserve_exit_policy_at_each_work_boundary() {
+    type PendingBoundary = fn(&RunEffect) -> bool;
+    let boundaries: [(&str, PendingBoundary); 6] = [
+        ("before preflight", |effect| {
+            matches!(effect, RunEffect::ResolveTargets(_))
+        }),
+        ("creating workers", |effect| {
+            matches!(effect, RunEffect::CreateWorker(_))
+        }),
+        ("baseline", |effect| {
+            matches!(effect, RunEffect::RunBaseline(_))
+        }),
+        ("running mutant", |effect| {
+            matches!(effect, RunEffect::RunMutant(_))
+        }),
+        ("persisting result", |effect| {
+            matches!(effect, RunEffect::PersistResult(_))
+        }),
+        ("delivering result", |effect| {
+            matches!(effect,
+            RunEffect::EmitOutput(output) if matches!(output.event, OutputEvent::MutantFinished(_)))
+        }),
+    ];
+    for (boundary, pending) in boundaries {
+        for (stop, expected_exit) in stop_cases() {
+            // Arrange: use real transitions to reach each acknowledgement boundary.
+            let mut harness = ScheduleHarness::new(3, 2, ScheduleFilter::All, true, vec![0]);
+            harness.complete_until(pending);
+            let applied_before_stop = harness.apply_mutation_count;
+
+            // Act: drain all remaining completions after the stop.
+            harness.stop(stop);
+            let finished = harness.finish(&[]);
+
+            // Assert: cause-specific policy survives the common shutdown routing.
+            assert_eq!(finished.state.exit_code(), expected_exit, "{boundary}");
+            assert_eq!(
+                finished.apply_mutation_count, applied_before_stop,
+                "{boundary}"
+            );
+        }
+    }
+}
+
+#[test]
+fn repeated_disk_stop_preserves_the_first_observation() {
+    // Arrange.
+    let (state, _) = waiting_for_baseline();
+    let (state, _) = transition(state, disk_stop(1024)).unwrap();
+    let first = state.disk_summary().stop.clone();
+    assert_eq!(
+        first
+            .as_ref()
+            .expect("first disk stop recorded")
+            .available_bytes,
+        Some(1024)
+    );
+
+    // Act.
+    let (stopped, _) = transition(state, disk_stop(512)).unwrap();
+
+    // Assert: the second stop does not replace the original evidence.
+    assert_eq!(stopped.disk_summary().stop, first);
+}
+
 #[test]
 fn deadline_and_cancellation_stop_scheduling_new_mutants() {
     for (event, exit_code) in [
@@ -666,7 +753,7 @@ fn lean_oracle_regression_cleanup_is_emitted_once() {
 
 #[test]
 fn stop_signals_do_not_retire_normal_cleanup_or_change_success() {
-    for stop in [RunEvent::DeadlineReached, RunEvent::CancellationRequested] {
+    for (stop, _) in stop_cases() {
         let (state, cleanup) = waiting_for_successful_cleanup();
         assert_eq!(state.phase(), RunPhase::Cleaning);
         assert_eq!(state.exit_code(), 0);
@@ -704,7 +791,7 @@ fn stop_signals_do_not_retire_normal_cleanup_or_change_success() {
 
 #[test]
 fn stop_signals_do_not_reopen_a_pending_final_report() {
-    for stop in [RunEvent::DeadlineReached, RunEvent::CancellationRequested] {
+    for (stop, _) in stop_cases() {
         let (state, effects) = waiting_for_final_report();
         let finished_id = effect_id(find_effect(&effects, |effect| {
             matches!(
@@ -735,7 +822,7 @@ fn stop_signals_do_not_reopen_a_pending_final_report() {
 
 #[test]
 fn stop_signals_do_not_reopen_a_finished_run() {
-    for stop in [RunEvent::DeadlineReached, RunEvent::CancellationRequested] {
+    for (stop, _) in stop_cases() {
         let (state, effects) = waiting_for_final_report();
         let finished_id = effect_id(find_effect(&effects, |effect| {
             matches!(
@@ -4069,6 +4156,7 @@ fn completion_ledger_stays_bounded_across_ten_thousand_mutants() {
 
 #[derive(Clone, Copy, Debug)]
 enum ScheduleAction {
+    DiskStop,
     Complete(usize),
     Cancel,
     Deadline,
@@ -4268,6 +4356,7 @@ impl ScheduleHarness {
             ScheduleAction::Complete(index) => self.complete(index),
             ScheduleAction::Cancel => self.stop(RunEvent::CancellationRequested),
             ScheduleAction::Deadline => self.stop(RunEvent::DeadlineReached),
+            ScheduleAction::DiskStop => self.stop(disk_stop(1024)),
             ScheduleAction::Fail(index) => self.fail(index),
         }
     }
@@ -4649,6 +4738,7 @@ fn schedule_action_strategy() -> impl Strategy<Value = ScheduleAction> {
         8 => any::<usize>().prop_map(ScheduleAction::Complete),
         1 => Just(ScheduleAction::Cancel),
         1 => Just(ScheduleAction::Deadline),
+        1 => Just(ScheduleAction::DiskStop),
         1 => any::<usize>().prop_map(ScheduleAction::Fail),
     ]
 }
@@ -4834,7 +4924,7 @@ proptest! {
         candidate_count in 1usize..9,
         discovered_seed in 0usize..9,
         jobs in 1usize..4,
-        stop_index in 0usize..2,
+        stop_index in 0usize..3,
         completions in prop::collection::vec(any::<usize>(), 0..20),
     ) {
         let discovered = discovered_seed % (candidate_count + 1);
@@ -4842,7 +4932,7 @@ proptest! {
         let (mut harness, _) =
             ordered_collection_with_pending_read(candidate_count, discovered, jobs);
         let actions: Vec<_> = completions.into_iter().map(ScheduleAction::Complete).collect();
-        let stop = [RunEvent::CancellationRequested, RunEvent::DeadlineReached][stop_index].clone();
+        let stop = stop_cases()[stop_index].0.clone();
 
         harness.stop(stop);
         let finished = harness.finish(&actions);
@@ -4857,7 +4947,7 @@ proptest! {
         candidate_count in 1usize..9,
         discovered_seed in 0usize..9,
         jobs in 1usize..4,
-        stop_index in 0usize..2,
+        stop_index in 0usize..3,
     ) {
         let discovered = discovered_seed % (candidate_count + 1);
         let (mut harness, late_completion) =
@@ -4866,7 +4956,7 @@ proptest! {
             unreachable!()
         };
         let read_id = read.id;
-        let stop = [RunEvent::CancellationRequested, RunEvent::DeadlineReached][stop_index].clone();
+        let stop = stop_cases()[stop_index].0.clone();
 
         harness.stop(stop);
         let result = transition(harness.state, late_completion);

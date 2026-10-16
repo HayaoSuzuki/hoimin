@@ -19,6 +19,16 @@ sources:
   revision: 0d3fbc1a1821074d6ba8a2a212116241adc85c4e
   working_tree: modified
   sha256: 236a52a1a1f58b14ae7f5518eeaf80a527491654f44be8ed0663c2ee2631ccd7
+- id: issue-941-record
+  resource: ../../maintenance/2026-10-16-issue-941.md
+  revision: 559352dfc0fd0d07600019b9bb2439e0004ade9f
+  working_tree: modified
+  sha256: bafdc09b906896cc166af07c66bd0466ee6b3f3ff73fd68e4642e49260561c77
+- id: issue-941-machine
+  resource: ../../../crates/hoimin-core/src/machine.rs
+  revision: 65c842584e36e607e94080fdea669daff70c9e6c
+  working_tree: modified
+  sha256: d1566b05516dfe1831324a07261b21e7d7ada82e17f6973b73b3c51687dbbe4b
 - id: issue-912-machine
   resource: ../../../crates/hoimin-core/src/machine.rs
   revision: 64ac5038afa1396e7fe237d17dd82641dee25c56
@@ -197,6 +207,25 @@ Windows Job Object, Linux cgroup, CLI, or saved format. The
 distinguishes fake syscall tests from real OS integration coverage.
 
 [^issue-913-portable]: [Unix portable supervisor state and operations](../../../crates/hoimin-cli/src/resource/portable.rs).
+
+## Shared explicit-stop routing
+
+Deadline, disk stop and cancellation record their distinct cause, then enter one
+private `begin_stop` route. It stops scheduling, captures whether mutation was in
+progress, retires pending effects, and selects mutant draining, deferred RunStarted,
+finalization or cleanup in that order. Deadline marks incomplete, cancellation marks
+interrupted, and disk stop records infrastructure failure/incomplete while retaining
+the first disk evidence. The existing terminal, cleanup and session-finish guard runs
+before cause recording. EffectFailed retains its separate delivery-failure behavior.
+This is an internal extraction without public format changes.[^issue-941-machine]
+
+The [Issue #941 verification record](../../maintenance/2026-10-16-issue-941.md)
+records cause/phase characterization, generated schedules and sensitivity checks.
+Existing formal correspondence is retained; no new theorem is claimed.[^issue-941-record]
+
+[^issue-941-machine]: [Common stop routing](../../../crates/hoimin-core/src/machine.rs).
+
+[^issue-941-record]: [Issue #941 verification](../../maintenance/2026-10-16-issue-941.md).
 
 # 最終結果の確定と出力完了
 
