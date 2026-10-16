@@ -5,6 +5,15 @@ description: OS別の資源制限と、プロセス終了・一時ファイル�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-940-machine
+  resource: ../../../crates/hoimin-core/src/machine.rs
+  revision: 465ff928c1f2ceb9f9b8f8084465475e45799ee8
+  working_tree: modified
+  sha256: b046ca868e98200efbc78742f25134114fca61e26943863557516bf06d0aa096
+- id: issue-940-review
+  resource: ../../maintenance/2026-10-16-issue-940.md
+  working_tree: untracked
+  sha256: 5757dba4774fa7dd8c558c8490efbde5e24b62cc864078f49168b3141c9d4d96
 - id: issue-931-handler
   resource: ../../../crates/hoimin-cli/src/workspace/mod.rs
   revision: 0d3fbc1a1821074d6ba8a2a212116241adc85c4e
@@ -458,3 +467,22 @@ separates new two-path filesystem tests from existing Lean-derived lifecycle
 comparisons. This change adds no formal model or proof.
 
 [^issue-931-handler]: [Single-candidate workspace apply entry point](../../../crates/hoimin-cli/src/workspace/mod.rs).
+
+## Synthetic outcome ownership (Issue 940)
+
+The machine retains a private `SyntheticOutcome::Reused(ReusedMutationStatus) |
+NotRun` in the worker state until finished-output acknowledgement. Stop recovery
+moves that value through the stopped-candidate queue. Output actions contain only
+the worker ID, so normal ACK and drain read the same outcome. The machine records
+its status after the finished ACK and rejects retired or duplicate effect IDs
+before dispatch. It projects the outcome into the existing public report type.
+[^issue-940-machine]
+
+The characterization tables cover both reusable statuses, NotRun, stopped start
+and finish outputs, retry and late/duplicate ACKs. Existing adversarial schedules
+and Lean oracle correspondence retain their recorded scope. Recheck these paths
+when changing output ownership, retirement or summary timing.
+[^issue-940-review]
+
+[^issue-940-machine]: [Synthetic state and ACK transitions](../../../crates/hoimin-core/src/machine.rs).
+[^issue-940-review]: [Issue 940 review and verification](../../maintenance/2026-10-16-issue-940.md).
