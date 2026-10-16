@@ -1,7 +1,7 @@
 //! In-memory results shared by the Rust analyzer and its callers.
 
 use camino::Utf8PathBuf;
-use hoimin_core::ByteSpan;
+use hoimin_core::{ByteSpan, MutationOperator};
 
 /// Diagnostics emitted by the current analyzer; saved diagnostic codes remain strings.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -30,7 +30,8 @@ pub struct AnalyzerCandidate {
     pub span: ByteSpan,
     pub original: String,
     pub replacement: String,
-    pub operator: String,
+    /// Known identity; saved descriptors convert this to its canonical name.
+    pub operator: MutationOperator,
     pub line: u32,
     pub column: u32,
     pub symbol: Option<String>,

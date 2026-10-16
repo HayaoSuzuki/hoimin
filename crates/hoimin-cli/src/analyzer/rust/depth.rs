@@ -221,7 +221,10 @@ mod tests {
                 let result = analyze_source_cancellable(&request, &accepted, || false).unwrap();
                 assert_eq!(result.candidates.len(), 1);
                 assert!(result.truncated);
-                assert_eq!(result.candidates[0].operator, "integer_literal_neighbor");
+                assert_eq!(
+                    result.candidates[0].operator.as_str(),
+                    "integer_literal_neighbor"
+                );
                 let rejected = format!("value = {}\n", expression(127));
                 assert!(matches!(
                     analyze_source_cancellable(&request, &rejected, || false),
@@ -340,7 +343,7 @@ match value:
                     result
                         .candidates
                         .iter()
-                        .any(|candidate| candidate.operator == "type_list_sequence")
+                        .any(|candidate| candidate.operator.as_str() == "type_list_sequence")
                 );
                 let rejected = format!("value: {}int{}\n", "list[".repeat(126), "]".repeat(126));
                 assert!(matches!(

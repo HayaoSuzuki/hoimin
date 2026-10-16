@@ -200,20 +200,26 @@ pub(crate) struct ProducerPrefix {
     pub(crate) overflowed: bool,
 }
 
-type CandidateIdentity = (u64, String, String);
+type CandidateIdentity = (u64, String, MutationOperator);
 
 struct RetainedCandidate {
     candidate: AnalyzerCandidate,
     emission_sequence: u64,
 }
 
+// Candidate ranking uses canonical names; enum Ord serves selection ordering.
 impl Ord for RetainedCandidate {
     fn cmp(&self, other: &Self) -> Ordering {
         self.candidate
             .span
             .start
             .cmp(&other.candidate.span.start)
-            .then_with(|| self.candidate.operator.cmp(&other.candidate.operator))
+            .then_with(|| {
+                self.candidate
+                    .operator
+                    .as_str()
+                    .cmp(other.candidate.operator.as_str())
+            })
             .then_with(|| self.emission_sequence.cmp(&other.emission_sequence))
     }
 }
@@ -295,7 +301,7 @@ fn candidate_identity(candidate: &AnalyzerCandidate) -> CandidateIdentity {
     (
         candidate.span.start,
         candidate.replacement.clone(),
-        candidate.operator.clone(),
+        candidate.operator,
     )
 }
 
@@ -521,14 +527,14 @@ pub(crate) fn analyze_source_with_exceptions(
         seen.insert((
             candidate.span.start,
             candidate.replacement.clone(),
-            candidate.operator.clone(),
+            candidate.operator,
         ))
     });
     candidates.sort_by(|left, right| {
         left.span
             .start
             .cmp(&right.span.start)
-            .then_with(|| left.operator.cmp(&right.operator))
+            .then_with(|| left.operator.as_str().cmp(right.operator.as_str()))
     });
     let truncated = producer_overflowed || candidates.len() > request.max_candidates;
     candidates.truncate(request.max_candidates);
@@ -587,7 +593,7 @@ fn retained_by_profile(
     profile: MutationProfile,
     facts: &AstFacts<'_>,
 ) -> bool {
-    if profile != MutationProfile::Focused || candidate.operator.starts_with("type_") {
+    if profile != MutationProfile::Focused || TYPE_OPERATORS.contains(&candidate.operator) {
         return true;
     }
     let Some(end) = candidate.span.start.checked_add(candidate.span.length) else {
@@ -626,7 +632,7 @@ fn make_candidate(
         span: ByteSpan { start, length },
         original,
         replacement,
-        operator: operator.as_str().to_owned(),
+        operator,
         line,
         column,
         symbol,
@@ -8238,7 +8244,8 @@ mod performance_cost_tests {
                 Family::Binding => unreachable!(),
             }
             assert_eq!(
-                candidate.operator, case.operator,
+                candidate.operator.as_str(),
+                case.operator,
                 "{} selected operator",
                 case.id
             );

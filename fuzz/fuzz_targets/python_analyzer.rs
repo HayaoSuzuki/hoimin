@@ -70,7 +70,7 @@ fuzz_target!(|source: &str| {
             span: candidate.span,
             original: candidate.original.clone(),
             replacement: candidate.replacement.clone(),
-            operator: candidate.operator.clone(),
+            operator: candidate.operator.as_str().to_owned(),
             line: candidate.line,
             column: candidate.column,
             symbol: candidate.symbol.clone(),

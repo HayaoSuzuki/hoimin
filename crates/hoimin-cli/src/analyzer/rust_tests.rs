@@ -205,7 +205,7 @@ fn unselected_collection_literals_build_no_large_candidate_strings() {
 
     assert_eq!(candidate_work_stats(), (0, 1));
     assert_eq!(output.candidates.len(), 1);
-    assert_eq!(output.candidates[0].operator, "binary_add_sub");
+    assert_eq!(output.candidates[0].operator.as_str(), "binary_add_sub");
     assert_eq!(output.candidates[0].original, "+");
     assert!(!output.truncated);
 }
@@ -217,7 +217,7 @@ fn selected_collection_literal_still_builds_its_candidate() {
 
     assert_eq!(candidate_work_stats().0, 1);
     assert!(output.candidates.iter().any(|candidate| {
-        candidate.operator == "collection_list_tuple"
+        candidate.operator.as_str() == "collection_list_tuple"
             && candidate.original == "[item]"
             && candidate.replacement == "(item,)"
     }));
@@ -387,7 +387,7 @@ fn operator_function_pairs_cover_qualified_imported_and_higher_order_references(
                 let output = analyze(&source);
                 assert_eq!(output.candidates.len(), 1, "{source}");
                 let candidate = &output.candidates[0];
-                assert_eq!(candidate.operator, "operator_function");
+                assert_eq!(candidate.operator.as_str(), "operator_function");
                 assert_eq!(candidate.original, original);
                 assert_eq!(candidate.replacement, replacement);
                 assert_eq!(
@@ -405,7 +405,7 @@ fn operator_function_pairs_cover_qualified_imported_and_higher_order_references(
                 let output = analyze(&source);
                 assert_eq!(output.candidates.len(), 1, "{source}");
                 let candidate = &output.candidates[0];
-                assert_eq!(candidate.operator, "operator_function");
+                assert_eq!(candidate.operator.as_str(), "operator_function");
                 assert_eq!(candidate.original, "plus");
                 assert_eq!(
                     candidate.replacement,
@@ -451,7 +451,7 @@ fn operator_function_lambdas_replace_only_callable_references() {
             let output = analyze(&source);
             assert_eq!(output.candidates.len(), 1, "{source}");
             let candidate = &output.candidates[0];
-            assert_eq!(candidate.operator, "operator_function");
+            assert_eq!(candidate.operator.as_str(), "operator_function");
             assert_eq!(candidate.original, reference);
             assert_eq!(candidate.replacement, replacement);
             assert_eq!(
@@ -532,7 +532,7 @@ fn operator_function_uncertain_bindings_and_namespaces_are_excluded() {
             analyze(&source)
                 .candidates
                 .iter()
-                .all(|c| c.operator != "operator_function"),
+                .all(|c| c.operator.as_str() != "operator_function"),
             "{source}"
         );
     }
@@ -550,7 +550,7 @@ fn operator_function_uncertain_bindings_and_namespaces_are_excluded() {
             analyze(source)
                 .candidates
                 .iter()
-                .all(|c| c.operator != "operator_function"),
+                .all(|c| c.operator.as_str() != "operator_function"),
             "{source}"
         );
     }
@@ -590,7 +590,7 @@ fn operator_function_source_order_selection_profiles_and_annotations() {
             analyze(source)
                 .candidates
                 .iter()
-                .all(|c| c.operator != "operator_function"),
+                .all(|c| c.operator.as_str() != "operator_function"),
             "{source}"
         );
     }
@@ -599,7 +599,7 @@ fn operator_function_source_order_selection_profiles_and_annotations() {
     assert_eq!(
         full.candidates
             .iter()
-            .filter(|c| c.operator == "operator_function")
+            .filter(|c| c.operator.as_str() == "operator_function")
             .count(),
         3
     );
@@ -636,7 +636,7 @@ fn operator_function_source_order_selection_profiles_and_annotations() {
         analyze(arid)
             .candidates
             .iter()
-            .filter(|c| c.operator == "operator_function")
+            .filter(|c| c.operator.as_str() == "operator_function")
             .count(),
         3
     );
@@ -660,7 +660,7 @@ fn operator_function_source_order_selection_profiles_and_annotations() {
         output
             .candidates
             .iter()
-            .all(|c| c.operator != "operator_function")
+            .all(|c| c.operator.as_str() != "operator_function")
     );
 }
 
@@ -678,7 +678,7 @@ fn operator_function_independent_bindings_and_import_builtin_guards() {
             analyze(source)
                 .candidates
                 .iter()
-                .filter(|c| c.operator == "operator_function")
+                .filter(|c| c.operator.as_str() == "operator_function")
                 .count(),
             1,
             "{source}"
@@ -719,7 +719,7 @@ fn operator_function_class_mangling_does_not_trust_unrelated_callables() {
             output
                 .candidates
                 .iter()
-                .all(|c| c.operator != "operator_function"),
+                .all(|c| c.operator.as_str() != "operator_function"),
             "{source}"
         );
     }
@@ -737,7 +737,7 @@ fn operator_function_implicit_class_bindings_do_not_resolve_to_module_imports() 
             output
                 .candidates
                 .iter()
-                .all(|c| c.operator != "operator_function"),
+                .all(|c| c.operator.as_str() != "operator_function"),
             "{source}"
         );
     }
@@ -773,7 +773,7 @@ fn operator_function_implicit_class_bindings_do_not_resolve_to_module_imports() 
                 analyze(&source)
                     .candidates
                     .iter()
-                    .all(|c| c.operator != "operator_function"),
+                    .all(|c| c.operator.as_str() != "operator_function"),
                 "{source}"
             );
         }
@@ -799,7 +799,7 @@ fn operator_function_class_guard_preserves_independent_import_references() {
             let output = analyze_legacy(&source);
             assert_eq!(output.candidates.len(), 2, "{source}");
             for candidate in &output.candidates {
-                assert_eq!(candidate.operator, "operator_function");
+                assert_eq!(candidate.operator.as_str(), "operator_function");
                 apply_candidate_and_reparse(&source, candidate);
             }
         }
@@ -816,7 +816,7 @@ fn operator_function_class_guard_preserves_independent_import_references() {
         vec![("plus", "__import__('operator').sub"), ("add", "sub")]
     );
     for candidate in &output.candidates {
-        assert_eq!(candidate.operator, "operator_function");
+        assert_eq!(candidate.operator.as_str(), "operator_function");
         apply_candidate_and_reparse(source, candidate);
     }
 }
@@ -835,7 +835,7 @@ fn operator_function_class_namespace_lookups_are_excluded() {
         let candidates = output
             .candidates
             .iter()
-            .filter(|candidate| candidate.operator == "operator_function")
+            .filter(|candidate| candidate.operator.as_str() == "operator_function")
             .collect::<Vec<_>>();
         assert_eq!(candidates.len(), 2, "{source}");
         assert_eq!(
@@ -858,7 +858,7 @@ fn operator_function_class_comprehensions_use_implicit_function_scope() {
     let candidates = analyze(source)
         .candidates
         .into_iter()
-        .filter(|candidate| candidate.operator == "operator_function")
+        .filter(|candidate| candidate.operator.as_str() == "operator_function")
         .map(|candidate| (candidate.line, candidate.original, candidate.replacement))
         .collect::<Vec<_>>();
     assert_eq!(
@@ -876,7 +876,7 @@ fn operator_function_class_comprehensions_cover_all_forms_and_nested_scopes() {
     let candidates = analyze(source)
         .candidates
         .into_iter()
-        .filter(|candidate| candidate.operator == "operator_function")
+        .filter(|candidate| candidate.operator.as_str() == "operator_function")
         .map(|candidate| (candidate.line, candidate.original, candidate.replacement))
         .collect::<Vec<_>>();
     assert_eq!(
@@ -905,7 +905,7 @@ fn operator_function_class_comprehensions_preserve_identity_guards_and_first_ite
     let candidates = analyze(source)
         .candidates
         .into_iter()
-        .filter(|candidate| candidate.operator == "operator_function")
+        .filter(|candidate| candidate.operator.as_str() == "operator_function")
         .map(|candidate| (candidate.line, candidate.original, candidate.replacement))
         .collect::<Vec<_>>();
     assert_eq!(
@@ -926,7 +926,7 @@ fn operator_function_class_comprehensions_preserve_identity_guards_and_first_ite
             analyze(excluded)
                 .candidates
                 .iter()
-                .all(|candidate| candidate.operator != "operator_function"),
+                .all(|candidate| candidate.operator.as_str() != "operator_function"),
             "{excluded}"
         );
     }
@@ -955,7 +955,7 @@ fn operator_function_qualified_dynamic_namespace_access_is_uncertain() {
             analyze(&source)
                 .candidates
                 .iter()
-                .all(|c| c.operator != "operator_function"),
+                .all(|c| c.operator.as_str() != "operator_function"),
             "{source}"
         );
     }
@@ -973,7 +973,7 @@ fn operator_function_lambda_replacements_exclude_pattern_values() {
             output
                 .candidates
                 .iter()
-                .all(|c| c.operator != "operator_function")
+                .all(|c| c.operator.as_str() != "operator_function")
         );
     }
     for source in [
@@ -984,7 +984,7 @@ fn operator_function_lambda_replacements_exclude_pattern_values() {
             analyze(source)
                 .candidates
                 .iter()
-                .all(|c| c.operator != "operator_function"),
+                .all(|c| c.operator.as_str() != "operator_function"),
             "{source}"
         );
     }
@@ -1011,7 +1011,7 @@ fn apply_candidate_and_reparse(source: &str, candidate: &AnalyzerCandidate) -> S
     assert!(
         parse_module(&mutated).is_ok(),
         "candidate {} produced invalid Python: {mutated}",
-        candidate.operator
+        candidate.operator.as_str()
     );
     mutated
 }
@@ -1021,7 +1021,7 @@ fn assert_type_list_sequence_sites(source: &str, expected: &[(u64, u64, u32, Opt
     let actual: Vec<_> = output
         .candidates
         .iter()
-        .filter(|candidate| candidate.operator == "type_list_sequence")
+        .filter(|candidate| candidate.operator.as_str() == "type_list_sequence")
         .map(|candidate| {
             (
                 candidate.span.start,
@@ -1038,13 +1038,17 @@ fn assert_type_list_sequence_sites(source: &str, expected: &[(u64, u64, u32, Opt
     }
 }
 
-fn prefix_candidate(start: u64, replacement: &str, operator: &str) -> AnalyzerCandidate {
+fn prefix_candidate(
+    start: u64,
+    replacement: &str,
+    operator: MutationOperator,
+) -> AnalyzerCandidate {
     AnalyzerCandidate {
         path: Utf8Path::new("pkg/sample.py").to_path_buf(),
         span: ByteSpan { start, length: 1 },
         original: "original".to_owned(),
         replacement: replacement.to_owned(),
-        operator: operator.to_owned(),
+        operator,
         line: 1,
         column: 0,
         symbol: None,
@@ -1059,16 +1063,84 @@ fn candidate_starts(candidates: &[AnalyzerCandidate]) -> Vec<u64> {
 }
 
 #[test]
+fn candidate_operator_remains_typed_until_persistence() {
+    let source = "result = left == right\n";
+
+    let output = analyze(source);
+
+    assert_eq!(output.candidates[0].operator, MutationOperator::CompareEqNe);
+}
+
+// These names are hand-ordered, independently of both production comparators.
+// The enum declares CompareEqNe before BooleanLiteral before StatementDelete.
+proptest! {
+    #[test]
+    fn candidate_prefix_uses_lexical_names_with_duplicates(
+        order in prop::collection::vec(0usize..3, 0..30),
+        limit in 0usize..5,
+    ) {
+        let names = ["boolean_literal", "compare_eq_ne", "statement_delete"];
+        let operators = [MutationOperator::BooleanLiteral, MutationOperator::CompareEqNe, MutationOperator::StatementDelete];
+        let mut prefix = CandidatePrefix::new(limit);
+        let emissions = order.into_iter().chain([2, 1, 0]);
+
+        for index in emissions {
+            prefix.push(prefix_candidate(1, "same", operators[index]));
+        }
+        let result = prefix.finish();
+
+        let actual: Vec<_> = result.candidates.iter().map(|c| c.operator.as_str()).collect();
+        prop_assert_eq!(actual, names[..3.min(limit + 1)].to_vec());
+        prop_assert_eq!(result.overflowed, 3 > limit + 1);
+    }
+}
+
+#[test]
+fn same_position_candidates_use_lexical_names_at_every_limit() {
+    let source = "from typing import Sequence\nvalue: list[int]\n";
+    let expected = ["type_list_sequence", "type_nullable_add"];
+    let mut operators = MutationOperatorSelection::default();
+    for name in MutationOperatorSelection::valid_names() {
+        for operator in MutationOperatorSelection::parse_selector(name).unwrap() {
+            operators.exclude(operator);
+        }
+    }
+    operators.include(MutationOperator::TypeListSequence);
+    operators.include(MutationOperator::TypeNullableAdd);
+
+    for limit in [0, 1, 2, 3, usize::MAX] {
+        let request = AnalyzeRequest {
+            path: Utf8Path::new("subject.py"),
+            lines: &[],
+            symbols: &[],
+            operators: &operators,
+            profile: MutationProfile::Full,
+            max_candidates: limit,
+        };
+
+        let output = analyze_source(&request, source);
+
+        let actual: Vec<_> = output
+            .candidates
+            .iter()
+            .map(|c| c.operator.as_str())
+            .collect();
+        assert_eq!(actual, expected[..2.min(limit)], "limit {limit}");
+        assert_eq!(output.truncated, limit < 2);
+    }
+}
+
+#[test]
 fn candidate_prefix_retains_the_earliest_k_plus_one_unique_candidates() {
     let mut prefix = CandidatePrefix::new(2);
     assert_eq!(prefix.capacity, 3);
 
     for candidate in [
-        prefix_candidate(9, "nine", "operator"),
-        prefix_candidate(1, "one", "operator"),
-        prefix_candidate(5, "five", "operator"),
-        prefix_candidate(3, "three", "operator"),
-        prefix_candidate(1, "one", "operator"),
+        prefix_candidate(9, "nine", MutationOperator::CompareEqNe),
+        prefix_candidate(1, "one", MutationOperator::CompareEqNe),
+        prefix_candidate(5, "five", MutationOperator::CompareEqNe),
+        prefix_candidate(3, "three", MutationOperator::CompareEqNe),
+        prefix_candidate(1, "one", MutationOperator::CompareEqNe),
     ] {
         prefix.push(candidate);
     }
@@ -1084,9 +1156,9 @@ fn candidate_prefix_retains_the_earliest_k_plus_one_unique_candidates() {
 fn candidate_prefix_keeps_emission_order_for_equal_sort_keys() {
     let mut prefix = CandidatePrefix::new(2);
     for candidate in [
-        prefix_candidate(1, "first", "operator"),
-        prefix_candidate(1, "second", "operator"),
-        prefix_candidate(1, "third", "operator"),
+        prefix_candidate(1, "first", MutationOperator::CompareEqNe),
+        prefix_candidate(1, "second", MutationOperator::CompareEqNe),
+        prefix_candidate(1, "third", MutationOperator::CompareEqNe),
     ] {
         prefix.push(candidate);
     }
@@ -1107,9 +1179,9 @@ fn candidate_prefix_keeps_emission_order_for_equal_sort_keys() {
 fn candidate_prefix_with_zero_limit_retains_one_earliest_candidate() {
     let mut prefix = CandidatePrefix::new(0);
     assert_eq!(prefix.capacity, 1);
-    prefix.push(prefix_candidate(3, "three", "operator"));
-    prefix.push(prefix_candidate(3, "three", "operator"));
-    prefix.push(prefix_candidate(1, "one", "operator"));
+    prefix.push(prefix_candidate(3, "three", MutationOperator::CompareEqNe));
+    prefix.push(prefix_candidate(3, "three", MutationOperator::CompareEqNe));
+    prefix.push(prefix_candidate(1, "one", MutationOperator::CompareEqNe));
 
     let result = prefix.finish();
     assert_eq!(candidate_starts(&result.candidates), vec![1]);
@@ -1126,7 +1198,13 @@ fn candidate_prefix_saturates_capacity_at_usize_maximum() {
 
 #[test]
 fn candidate_prefix_matches_the_lean_out_of_order_duplicate_case() {
-    let item = bounded_discovery_case("out_of_order_duplicate");
+    let mut item = bounded_discovery_case("out_of_order_duplicate");
+    // The abstract Lean fixture uses one arbitrary operator identity. Project it
+    // onto one supported enum; equality and all rank/descriptor fields are retained.
+    for input in &mut item.token {
+        assert_eq!(input.operator, "operator");
+        input.operator = "compare_eq_ne".to_owned();
+    }
     assert_eq!(
         (item.schema, item.mode.as_str(), item.scenario.as_str()),
         (1, "internal-fixture", "candidate_prefix")
@@ -1139,7 +1217,7 @@ fn candidate_prefix_matches_the_lean_out_of_order_duplicate_case() {
         prefix.push(prefix_candidate(
             input.order_key,
             &input.identity.to_string(),
-            "operator",
+            MutationOperator::CompareEqNe,
         ));
     }
     let result = prefix.finish();
@@ -1173,7 +1251,7 @@ fn assert_analyzer_candidate_matches_lean(
     assert_eq!(actual.span.length, expected.span_length);
     assert_eq!(actual.original, expected.original);
     assert_eq!(actual.replacement, expected.replacement);
-    assert_eq!(actual.operator, expected.operator);
+    assert_eq!(actual.operator.as_str(), expected.operator);
     assert_eq!(actual.line, expected.line);
     assert_eq!(actual.column, expected.column);
 }
@@ -1305,7 +1383,7 @@ fn exception_handler_type_tuples_do_not_emit_collection_candidates() {
     let collection_candidates: Vec<_> = output
         .candidates
         .iter()
-        .filter(|candidate| candidate.operator == "collection_list_tuple")
+        .filter(|candidate| candidate.operator.as_str() == "collection_list_tuple")
         .collect();
 
     assert!(collection_candidates.iter().all(|candidate| {
@@ -1409,7 +1487,7 @@ fn exception_handler_type_builtin_calls_are_excluded_for_ordinary_and_starred_ha
         let collection_candidates: Vec<_> = output
             .candidates
             .iter()
-            .filter(|candidate| candidate.operator == "collection_list_tuple")
+            .filter(|candidate| candidate.operator.as_str() == "collection_list_tuple")
             .collect();
         let actual: Vec<_> = collection_candidates
             .iter()
@@ -1457,7 +1535,7 @@ fn exception_type_pair_candidates_are_curated_and_syntax_directed() {
     let actual: Vec<_> = output
         .candidates
         .iter()
-        .filter(|candidate| candidate.operator == "exception_type_pair")
+        .filter(|candidate| candidate.operator.as_str() == "exception_type_pair")
         .map(|candidate| {
             (
                 candidate.original.as_str(),
@@ -1586,7 +1664,7 @@ fn exception_type_pair_candidates_are_curated_and_syntax_directed() {
     for candidate in output
         .candidates
         .iter()
-        .filter(|candidate| candidate.operator == "exception_type_pair")
+        .filter(|candidate| candidate.operator.as_str() == "exception_type_pair")
     {
         apply_candidate_and_reparse(source, candidate);
     }
@@ -1601,7 +1679,7 @@ fn exception_type_pair_candidates_are_curated_and_syntax_directed() {
         analyze(unsupported)
             .candidates
             .iter()
-            .all(|candidate| candidate.operator != "exception_type_pair")
+            .all(|candidate| candidate.operator.as_str() != "exception_type_pair")
     );
 
     let starred = "try:\n    work()\nexcept* ValueError:\n    pass\n";
@@ -1610,7 +1688,7 @@ fn exception_type_pair_candidates_are_curated_and_syntax_directed() {
         analyze(starred)
             .candidates
             .iter()
-            .filter(|candidate| candidate.operator == "exception_type_pair")
+            .filter(|candidate| candidate.operator.as_str() == "exception_type_pair")
             .map(|candidate| (candidate.original.as_str(), candidate.replacement.as_str(),))
             .collect::<Vec<_>>(),
         [("ValueError", "TypeError")]
@@ -1643,7 +1721,7 @@ fn except_star_simple_exception_type_emits_safe_pair_candidate() {
     let candidates = analyze(source)
         .candidates
         .into_iter()
-        .filter(|candidate| candidate.operator == "exception_type_pair")
+        .filter(|candidate| candidate.operator.as_str() == "exception_type_pair")
         .collect::<Vec<_>>();
 
     assert_eq!(candidates.len(), 1);
@@ -1692,7 +1770,7 @@ fn except_star_exception_type_pairs_are_simple_scope_aware_and_nested() {
     let scoped = analyze(scope_source)
         .candidates
         .into_iter()
-        .filter(|candidate| candidate.operator == "exception_type_pair")
+        .filter(|candidate| candidate.operator.as_str() == "exception_type_pair")
         .map(|candidate| {
             (
                 candidate.original,
@@ -1740,7 +1818,7 @@ fn except_star_exception_type_pairs_are_simple_scope_aware_and_nested() {
     let nested = nested_output
         .candidates
         .iter()
-        .filter(|candidate| candidate.operator == "exception_type_pair")
+        .filter(|candidate| candidate.operator.as_str() == "exception_type_pair")
         .map(|candidate| {
             (
                 candidate.original.as_str(),
@@ -1761,7 +1839,7 @@ fn except_star_exception_type_pairs_are_simple_scope_aware_and_nested() {
     for candidate in nested_output
         .candidates
         .iter()
-        .filter(|candidate| candidate.operator == "exception_type_pair")
+        .filter(|candidate| candidate.operator.as_str() == "exception_type_pair")
     {
         apply_candidate_and_reparse(nested_source, candidate);
     }
@@ -1775,7 +1853,7 @@ fn except_star_exception_type_pairs_keep_shared_selection_and_profile_behavior()
         output
             .candidates
             .iter()
-            .filter(|candidate| candidate.operator == "exception_type_pair")
+            .filter(|candidate| candidate.operator.as_str() == "exception_type_pair")
             .map(|candidate| {
                 (
                     candidate.original.clone(),
@@ -1908,10 +1986,13 @@ fn except_star_handlers_do_not_emit_explicit_risky_exception_candidates() {
     let exception_candidates = output
         .candidates
         .iter()
-        .filter(|candidate| candidate.operator.starts_with("exception_"))
+        .filter(|candidate| candidate.operator.as_str().starts_with("exception_"))
         .collect::<Vec<_>>();
     assert_eq!(exception_candidates.len(), 1);
-    assert_eq!(exception_candidates[0].operator, "exception_type_pair");
+    assert_eq!(
+        exception_candidates[0].operator.as_str(),
+        "exception_type_pair"
+    );
     assert_eq!(exception_candidates[0].original, "ValueError");
     assert_eq!(exception_candidates[0].replacement, "TypeError");
     apply_candidate_and_reparse(source, exception_candidates[0]);
@@ -1930,7 +2011,7 @@ fn raise_exception_type_pair_candidates_preserve_the_primary_expression() {
     let actual = output
         .candidates
         .iter()
-        .filter(|candidate| candidate.operator == "exception_type_pair")
+        .filter(|candidate| candidate.operator.as_str() == "exception_type_pair")
         .map(|candidate| {
             (
                 candidate.original.as_str(),
@@ -1991,7 +2072,7 @@ fn raise_exception_type_pair_candidates_preserve_the_primary_expression() {
     for candidate in output
         .candidates
         .iter()
-        .filter(|candidate| candidate.operator == "exception_type_pair")
+        .filter(|candidate| candidate.operator.as_str() == "exception_type_pair")
     {
         let mutated = apply_candidate_and_reparse(source, candidate);
         assert!(mutated.contains("(message, code=code)"));
@@ -2024,7 +2105,7 @@ fn raise_exception_type_pair_supports_every_curated_source_in_both_shapes() {
             let candidates = output
                 .candidates
                 .iter()
-                .filter(|candidate| candidate.operator == "exception_type_pair")
+                .filter(|candidate| candidate.operator.as_str() == "exception_type_pair")
                 .collect::<Vec<_>>();
             assert_eq!(
                 candidates
@@ -2061,7 +2142,7 @@ fn raise_exception_type_pairs_skip_unsupported_and_non_primary_forms() {
         analyze(source)
             .candidates
             .iter()
-            .all(|candidate| candidate.operator != "exception_type_pair")
+            .all(|candidate| candidate.operator.as_str() != "exception_type_pair")
     );
 }
 
@@ -2071,7 +2152,7 @@ fn raise_exception_type_pairs_observe_extended_resolution_boundaries() {
         analyze(source)
             .candidates
             .into_iter()
-            .filter(|candidate| candidate.operator == "exception_type_pair")
+            .filter(|candidate| candidate.operator.as_str() == "exception_type_pair")
             .map(|candidate| candidate.line)
             .collect::<Vec<_>>()
     };
@@ -2128,7 +2209,7 @@ fn raise_exception_type_pairs_preserve_normal_primary_and_cause_candidates() {
     let exception_pairs = output
         .candidates
         .iter()
-        .filter(|candidate| candidate.operator == "exception_type_pair")
+        .filter(|candidate| candidate.operator.as_str() == "exception_type_pair")
         .map(|candidate| (candidate.original.as_str(), candidate.replacement.as_str()))
         .collect::<Vec<_>>();
     assert_eq!(exception_pairs, [("ValueError", "TypeError")]);
@@ -2136,7 +2217,7 @@ fn raise_exception_type_pairs_preserve_normal_primary_and_cause_candidates() {
     let ordinary_pairs = output
         .candidates
         .iter()
-        .filter(|candidate| candidate.operator == "collection_any_all")
+        .filter(|candidate| candidate.operator.as_str() == "collection_any_all")
         .map(|candidate| (candidate.original.as_str(), candidate.replacement.as_str()))
         .collect::<Vec<_>>();
     assert_eq!(ordinary_pairs, [("any", "all"), ("all", "any")]);
@@ -2172,7 +2253,7 @@ fn raise_exception_type_pairs_use_scope_aware_source_and_destination_resolution(
     let actual = analyze(source)
         .candidates
         .into_iter()
-        .filter(|candidate| candidate.operator == "exception_type_pair")
+        .filter(|candidate| candidate.operator.as_str() == "exception_type_pair")
         .map(|candidate| (candidate.line, candidate.symbol))
         .collect::<Vec<_>>();
 
@@ -2195,7 +2276,7 @@ fn raise_exception_type_pairs_keep_shared_selection_and_profile_behavior() {
         output
             .candidates
             .iter()
-            .filter(|candidate| candidate.operator == "exception_type_pair")
+            .filter(|candidate| candidate.operator.as_str() == "exception_type_pair")
             .map(|candidate| {
                 (
                     candidate.original.clone(),
@@ -2247,7 +2328,7 @@ fn raise_exception_type_pairs_keep_shared_selection_and_profile_behavior() {
         excluded
             .candidates
             .iter()
-            .all(|candidate| candidate.operator != "exception_type_pair")
+            .all(|candidate| candidate.operator.as_str() != "exception_type_pair")
     );
 }
 
@@ -2310,7 +2391,7 @@ fn exception_risky_candidates_require_explicit_selection_and_reparse() {
     let risky_candidates: Vec<_> = output
         .candidates
         .iter()
-        .filter(|candidate| candidate.operator.starts_with("exception_"))
+        .filter(|candidate| candidate.operator.as_str().starts_with("exception_"))
         .map(|candidate| {
             (
                 candidate.original.as_str(),
@@ -2407,47 +2488,47 @@ fn exception_risky_candidates_require_explicit_selection_and_reparse() {
         ]
     );
     assert!(output.candidates.iter().any(|candidate| {
-        candidate.operator == "exception_bare_to_exception"
+        candidate.operator.as_str() == "exception_bare_to_exception"
             && candidate.original == "except"
             && candidate.replacement == "except Exception"
     }));
     assert!(output.candidates.iter().any(|candidate| {
-        candidate.operator == "exception_exception_to_bare"
+        candidate.operator.as_str() == "exception_exception_to_bare"
             && candidate.original == "Exception"
             && candidate.replacement.is_empty()
     }));
     assert!(output.candidates.iter().any(|candidate| {
-        candidate.operator == "exception_base_boundary"
+        candidate.operator.as_str() == "exception_base_boundary"
             && candidate.original == "Exception"
             && candidate.replacement == "BaseException"
     }));
     assert!(output.candidates.iter().any(|candidate| {
-        candidate.operator == "exception_base_boundary"
+        candidate.operator.as_str() == "exception_base_boundary"
             && candidate.original == "BaseException"
             && candidate.replacement == "Exception"
     }));
     assert!(output.candidates.iter().any(|candidate| {
-        candidate.operator == "exception_tuple_add_pair"
+        candidate.operator.as_str() == "exception_tuple_add_pair"
             && candidate.original == "(ValueError,)"
             && candidate.replacement == "(ValueError, TypeError)"
     }));
     assert!(output.candidates.iter().any(|candidate| {
-        candidate.operator == "exception_tuple_remove_member"
+        candidate.operator.as_str() == "exception_tuple_remove_member"
             && candidate.original == "(ValueError, TypeError,)"
     }));
     assert!(output.candidates.iter().any(|candidate| {
-        candidate.operator == "exception_tuple_remove_member"
+        candidate.operator.as_str() == "exception_tuple_remove_member"
             && candidate.original.contains("# keep this comment")
     }));
     for candidate in output
         .candidates
         .iter()
-        .filter(|candidate| candidate.operator.starts_with("exception_"))
+        .filter(|candidate| candidate.operator.as_str().starts_with("exception_"))
     {
         apply_candidate_and_reparse(source, candidate);
     }
     for candidate in output.candidates.iter().filter(|candidate| {
-        candidate.operator.starts_with("exception_")
+        candidate.operator.as_str().starts_with("exception_")
             && candidate.original.contains("# keep this comment")
     }) {
         let mutated = apply_candidate_and_reparse(source, candidate);
@@ -2478,7 +2559,7 @@ fn exception_risky_candidates_require_explicit_selection_and_reparse() {
         )
         .candidates
         .iter()
-        .all(|candidate| !candidate.operator.starts_with("exception_"))
+        .all(|candidate| !candidate.operator.as_str().starts_with("exception_"))
     );
 
     let shadowed = concat!(
@@ -2509,7 +2590,7 @@ fn exception_risky_candidates_require_explicit_selection_and_reparse() {
         shadowed_output
             .candidates
             .iter()
-            .all(|candidate| !candidate.operator.starts_with("exception_")),
+            .all(|candidate| !candidate.operator.as_str().starts_with("exception_")),
         "unexpected shadowed exception candidates: {:#?}",
         shadowed_output.candidates
     );
@@ -2539,7 +2620,7 @@ fn exception_risky_candidates_require_explicit_selection_and_reparse() {
         positioned_output
             .candidates
             .iter()
-            .filter(|candidate| candidate.operator == "exception_exception_to_bare")
+            .filter(|candidate| candidate.operator.as_str() == "exception_exception_to_bare")
             .count(),
         1
     );
@@ -2560,7 +2641,7 @@ fn exception_risky_candidates_require_explicit_selection_and_reparse() {
         for candidate in output
             .candidates
             .iter()
-            .filter(|candidate| candidate.operator == "exception_tuple_remove_member")
+            .filter(|candidate| candidate.operator.as_str() == "exception_tuple_remove_member")
         {
             let mutated = apply_candidate_and_reparse(&source, candidate);
             assert!(
@@ -2579,7 +2660,7 @@ fn annotations_do_not_emit_default_bitwise_mutations() {
         output
             .candidates
             .iter()
-            .filter(|candidate| candidate.operator == "bitwise_and_or")
+            .filter(|candidate| candidate.operator.as_str() == "bitwise_and_or")
             .map(|candidate| candidate.original.as_str())
             .collect::<Vec<_>>(),
         vec!["&"]
@@ -2635,7 +2716,7 @@ fn type_alias_and_match_capture_bindings_shadow_collection_builtins() {
             output
                 .candidates
                 .iter()
-                .all(|candidate| candidate.operator != "collection_list_tuple"),
+                .all(|candidate| candidate.operator.as_str() != "collection_list_tuple"),
             "unexpected list candidate for {source:?}: {:#?}",
             output.candidates
         );
@@ -2668,8 +2749,8 @@ fn structural_candidates_reject_bare_generators_and_preserve_commented_literals(
         output.candidates
     );
     for candidate in output.candidates.iter().filter(|candidate| {
-        candidate.operator.starts_with("collection_")
-            || candidate.operator.starts_with("structure_")
+        candidate.operator.as_str().starts_with("collection_")
+            || candidate.operator.as_str().starts_with("structure_")
     }) {
         apply_candidate_and_reparse(source, candidate);
     }
@@ -2684,7 +2765,7 @@ fn annotations_and_star_imports_suppress_collection_candidates() {
         annotation_output
             .candidates
             .iter()
-            .all(|candidate| candidate.operator != "collection_list_tuple")
+            .all(|candidate| candidate.operator.as_str() != "collection_list_tuple")
     );
 
     let star_import_output =
@@ -2693,7 +2774,7 @@ fn annotations_and_star_imports_suppress_collection_candidates() {
         star_import_output
             .candidates
             .iter()
-            .all(|candidate| candidate.operator != "collection_list_tuple")
+            .all(|candidate| candidate.operator.as_str() != "collection_list_tuple")
     );
 }
 
@@ -2780,7 +2861,7 @@ fn visible_source_or_destination_binding_suppresses_builtin_pairs() {
     let observed = output
         .candidates
         .iter()
-        .filter(|candidate| candidate.operator == "collection_list_tuple")
+        .filter(|candidate| candidate.operator.as_str() == "collection_list_tuple")
         .map(|candidate| (candidate.line, candidate.symbol.as_deref()))
         .collect::<Vec<_>>();
 
@@ -2800,7 +2881,7 @@ fn shadowed_destination_suppresses_an_otherwise_builtin_source() {
         output
             .candidates
             .iter()
-            .all(|candidate| candidate.operator != "collection_list_tuple"),
+            .all(|candidate| candidate.operator.as_str() != "collection_list_tuple"),
         "shadowed replacement destination must suppress the candidate: {:#?}",
         output.candidates
     );
@@ -2817,7 +2898,7 @@ fn loop_back_edge_bindings_suppress_builtin_pair_candidates() {
         source_binding
             .candidates
             .iter()
-            .all(|candidate| candidate.operator != "structure_sorted_reversed"),
+            .all(|candidate| candidate.operator.as_str() != "structure_sorted_reversed"),
         "a source binding on the back edge must suppress the pair: {:#?}",
         source_binding.candidates
     );
@@ -2831,7 +2912,7 @@ fn loop_back_edge_bindings_suppress_builtin_pair_candidates() {
         destination_binding
             .candidates
             .iter()
-            .all(|candidate| candidate.operator != "structure_sorted_reversed"),
+            .all(|candidate| candidate.operator.as_str() != "structure_sorted_reversed"),
         "a destination binding on the back edge must suppress the pair: {:#?}",
         destination_binding.candidates
     );
@@ -2844,7 +2925,7 @@ fn loop_back_edge_bindings_suppress_builtin_pair_candidates() {
         target_load
             .candidates
             .iter()
-            .all(|candidate| candidate.operator != "structure_sorted_reversed"),
+            .all(|candidate| candidate.operator.as_str() != "structure_sorted_reversed"),
         "a repeated target load must observe body bindings on the back edge: {:#?}",
         target_load.candidates
     );
@@ -2857,7 +2938,7 @@ fn loop_back_edge_bindings_suppress_builtin_pair_candidates() {
         one_time_iterable
             .candidates
             .iter()
-            .filter(|candidate| candidate.operator == "structure_sorted_reversed")
+            .filter(|candidate| candidate.operator.as_str() == "structure_sorted_reversed")
             .map(|candidate| candidate.line)
             .collect::<Vec<_>>(),
         [1],
@@ -2875,7 +2956,7 @@ fn loop_back_edge_bindings_suppress_builtin_pair_candidates() {
         class_nested_function
             .candidates
             .iter()
-            .filter(|candidate| candidate.operator == "structure_sorted_reversed")
+            .filter(|candidate| candidate.operator.as_str() == "structure_sorted_reversed")
             .map(|candidate| (candidate.line, candidate.symbol.as_deref()))
             .collect::<Vec<_>>(),
         [(4, Some("Namespace.helper"))],
@@ -2939,7 +3020,7 @@ fn module_class_closure_and_directive_resolution_is_scope_aware() {
     let class_observed = class_output
         .candidates
         .iter()
-        .filter(|candidate| candidate.operator == "collection_list_tuple")
+        .filter(|candidate| candidate.operator.as_str() == "collection_list_tuple")
         .map(|candidate| (candidate.line, candidate.symbol.as_deref()))
         .collect::<Vec<_>>();
     assert_eq!(class_observed, [(2, Some("Box")), (6, Some("Box.method"))]);
@@ -2968,7 +3049,7 @@ fn comprehension_exception_target_and_wildcard_boundaries_are_conservative() {
     let observed = output
         .candidates
         .iter()
-        .filter(|candidate| candidate.operator == "collection_list_tuple")
+        .filter(|candidate| candidate.operator.as_str() == "collection_list_tuple")
         .map(|candidate| {
             (
                 candidate.original.as_str(),
@@ -2993,7 +3074,7 @@ fn comprehension_exception_target_and_wildcard_boundaries_are_conservative() {
         wildcard
             .candidates
             .iter()
-            .all(|candidate| candidate.operator != "collection_list_tuple")
+            .all(|candidate| candidate.operator.as_str() != "collection_list_tuple")
     );
 }
 
@@ -3011,7 +3092,7 @@ fn class_exception_targets_do_not_leak_into_methods() {
     let observed = output
         .candidates
         .iter()
-        .filter(|candidate| candidate.operator == "collection_list_tuple")
+        .filter(|candidate| candidate.operator.as_str() == "collection_list_tuple")
         .map(|candidate| {
             (
                 candidate.original.as_str(),
@@ -3035,7 +3116,7 @@ fn class_exception_targets_do_not_leak_into_methods() {
         immediate_class
             .candidates
             .iter()
-            .all(|candidate| candidate.operator != "collection_list_tuple")
+            .all(|candidate| candidate.operator.as_str() != "collection_list_tuple")
     );
 }
 
@@ -3050,7 +3131,7 @@ fn imports_are_source_ordered_and_lambda_parameters_are_scope_local() {
     let import_observed = import_output
         .candidates
         .iter()
-        .filter(|candidate| candidate.operator == "collection_list_tuple")
+        .filter(|candidate| candidate.operator.as_str() == "collection_list_tuple")
         .map(|candidate| {
             (
                 candidate.original.as_str(),
@@ -3068,7 +3149,7 @@ fn imports_are_source_ordered_and_lambda_parameters_are_scope_local() {
     let lambda_observed = lambda_output
         .candidates
         .iter()
-        .filter(|candidate| candidate.operator == "collection_list_tuple")
+        .filter(|candidate| candidate.operator.as_str() == "collection_list_tuple")
         .map(|candidate| {
             (
                 candidate.original.as_str(),
@@ -3091,7 +3172,7 @@ fn dynamic_binding_operations_fail_closed_after_their_possible_effect() {
     let observed = output
         .candidates
         .iter()
-        .filter(|candidate| candidate.operator == "collection_list_tuple")
+        .filter(|candidate| candidate.operator.as_str() == "collection_list_tuple")
         .map(|candidate| (candidate.original.as_str(), candidate.line))
         .collect::<Vec<_>>();
 
@@ -3105,7 +3186,7 @@ fn dynamic_binding_operations_fail_closed_after_their_possible_effect() {
         dynamic_namespace
             .candidates
             .iter()
-            .all(|candidate| candidate.operator != "collection_list_tuple")
+            .all(|candidate| candidate.operator.as_str() != "collection_list_tuple")
     );
 }
 
@@ -3143,7 +3224,7 @@ fn collection_calls_and_literals_emit_exact_parseable_candidates() {
     let collection_candidates: Vec<_> = output
         .candidates
         .iter()
-        .filter(|candidate| candidate.operator.starts_with("collection_"))
+        .filter(|candidate| candidate.operator.as_str().starts_with("collection_"))
         .collect();
     let actual: Vec<_> = collection_candidates
         .iter()
@@ -3226,7 +3307,7 @@ fn split_rsplit_candidates_require_explicit_maxsplit() {
     let actual: Vec<_> = output
         .candidates
         .iter()
-        .filter(|candidate| candidate.operator == "collection_string_split_rsplit")
+        .filter(|candidate| candidate.operator.as_str() == "collection_string_split_rsplit")
         .map(|candidate| {
             (
                 candidate.original.as_str(),
@@ -3265,7 +3346,7 @@ fn tuple_to_list_preserves_parenthesized_boundary_elements_in_unparenthesized_tu
         let candidates: Vec<_> = output
             .candidates
             .iter()
-            .filter(|candidate| candidate.operator == "collection_list_tuple")
+            .filter(|candidate| candidate.operator.as_str() == "collection_list_tuple")
             .collect();
 
         assert_eq!(
@@ -3309,7 +3390,7 @@ fn collection_excludes_unsupported_call_and_literal_shapes() {
         output
             .candidates
             .iter()
-            .all(|candidate| !candidate.operator.starts_with("collection_")),
+            .all(|candidate| !candidate.operator.as_str().starts_with("collection_")),
         "unexpected collection candidates: {:#?}",
         output.candidates
     );
@@ -3331,7 +3412,7 @@ fn structure_calls_emit_exact_parseable_candidates() {
     let candidates: Vec<_> = output
         .candidates
         .iter()
-        .filter(|candidate| candidate.operator.starts_with("structure_"))
+        .filter(|candidate| candidate.operator.as_str().starts_with("structure_"))
         .collect();
     let actual: Vec<_> = candidates
         .iter()
@@ -3397,7 +3478,7 @@ fn structure_replacements_preserve_nested_sources_and_reparse() {
     let candidates: Vec<_> = output
         .candidates
         .iter()
-        .filter(|candidate| candidate.operator.starts_with("structure_"))
+        .filter(|candidate| candidate.operator.as_str().starts_with("structure_"))
         .collect();
     let actual: Vec<_> = candidates
         .iter()
@@ -3674,7 +3755,7 @@ fn structure_candidates_skip_type_annotation_expressions() {
     let candidates: Vec<_> = output
         .candidates
         .iter()
-        .filter(|candidate| candidate.operator.starts_with("structure_"))
+        .filter(|candidate| candidate.operator.as_str().starts_with("structure_"))
         .collect();
     assert_eq!(
         candidates
@@ -3728,7 +3809,7 @@ fn structure_excludes_unsupported_shapes_and_receivers() {
         output
             .candidates
             .iter()
-            .all(|candidate| !candidate.operator.starts_with("structure_")),
+            .all(|candidate| !candidate.operator.as_str().starts_with("structure_")),
         "unexpected structural candidates: {:#?}",
         output.candidates
     );
@@ -3819,7 +3900,7 @@ fn assert_bounded_candidate_token_lookups(
         output
             .candidates
             .iter()
-            .filter(|candidate| candidate.operator == operator)
+            .filter(|candidate| candidate.operator.as_str() == operator)
             .count(),
         expected_candidates,
         "unexpected {operator} candidate count"
@@ -3842,7 +3923,7 @@ fn bitwise_and_or() {
     let actual: Vec<_> = output
         .candidates
         .iter()
-        .filter(|candidate| candidate.operator == "bitwise_and_or")
+        .filter(|candidate| candidate.operator.as_str() == "bitwise_and_or")
         .map(|candidate| {
             (
                 candidate.original.as_str(),
@@ -3865,7 +3946,7 @@ fn bitwise_shift() {
     let actual: Vec<_> = output
         .candidates
         .iter()
-        .filter(|candidate| candidate.operator == "bitwise_shift")
+        .filter(|candidate| candidate.operator.as_str() == "bitwise_shift")
         .map(|candidate| {
             (
                 candidate.original.as_str(),
@@ -3899,7 +3980,7 @@ fn structure_index_neighbor_mutates_decimal_load_indices_only() {
     let candidates: Vec<_> = output
         .candidates
         .iter()
-        .filter(|candidate| candidate.operator == "structure_index_neighbor")
+        .filter(|candidate| candidate.operator.as_str() == "structure_index_neighbor")
         .collect();
     let actual: Vec<_> = candidates
         .iter()
@@ -3940,7 +4021,7 @@ fn structure_slice_neighbor_mutates_decimal_bounds_without_zero_steps() {
     let candidates: Vec<_> = output
         .candidates
         .iter()
-        .filter(|candidate| candidate.operator == "structure_slice_neighbor")
+        .filter(|candidate| candidate.operator.as_str() == "structure_slice_neighbor")
         .collect();
     let actual: Vec<_> = candidates
         .iter()
@@ -4004,7 +4085,7 @@ fn candidate_replacements_reparse_as_python() {
     let candidate = output
         .candidates
         .iter()
-        .find(|candidate| candidate.operator == "compare_eq_ne")
+        .find(|candidate| candidate.operator.as_str() == "compare_eq_ne")
         .expect("comparison candidate");
 
     assert_eq!(
@@ -4131,7 +4212,7 @@ fn native_python_operator_syntax_uses_exact_ast_roles_and_reparses() {
 
         assert_eq!(output.candidates.len(), 1, "operator: {operator}");
         let candidate = &output.candidates[0];
-        assert_eq!(candidate.operator, operator);
+        assert_eq!(candidate.operator.as_str(), operator);
         assert_eq!(candidate.original, original);
         assert_eq!(candidate.replacement, replacement);
         let start = usize::try_from(candidate.span.start).unwrap();
@@ -4177,12 +4258,12 @@ fn native_python_operator_syntax_obeys_line_symbol_and_candidate_limits() {
         source,
     );
     assert_eq!(selected.candidates.len(), 1);
-    assert_eq!(selected.candidates[0].operator, "binary_power");
+    assert_eq!(selected.candidates[0].operator.as_str(), "binary_power");
     assert_eq!(selected.candidates[0].symbol.as_deref(), Some("selected"));
 
     let bounded = analyze_with(Utf8Path::new("pkg/sample.py"), &[], &[], 1, source);
     assert_eq!(bounded.candidates.len(), 1);
-    assert_eq!(bounded.candidates[0].operator, "binary_power");
+    assert_eq!(bounded.candidates[0].operator.as_str(), "binary_power");
     assert!(bounded.truncated);
 }
 
@@ -4378,7 +4459,7 @@ fn pattern_literal_signs_are_not_candidates_and_expression_context_is_restored()
     let booleans: Vec<_> = output
         .candidates
         .iter()
-        .filter(|candidate| candidate.operator == "boolean_literal")
+        .filter(|candidate| candidate.operator.as_str() == "boolean_literal")
         .map(|candidate| (candidate.original.as_str(), candidate.line))
         .collect();
     assert_eq!(booleans, vec![("True", 21), ("False", 23)]);
@@ -4466,7 +4547,7 @@ fn composite_comparisons_preserve_multiline_trivia_and_reparse() {
         let candidate = analyze(source)
             .candidates
             .into_iter()
-            .find(|candidate| candidate.operator == operator)
+            .find(|candidate| candidate.operator.as_str() == operator)
             .expect("composite comparison candidate");
 
         assert_eq!(candidate.span, span);
@@ -4549,7 +4630,7 @@ fn benchmark_long_single_line_candidate_columns() {
         let elapsed = started.elapsed();
         assert_eq!(output.candidates.len(), 1);
         assert!(output.truncated);
-        assert_eq!(output.candidates[0].operator, "boolean_literal");
+        assert_eq!(output.candidates[0].operator.as_str(), "boolean_literal");
         println!(
             "shape={shape} source_bytes={} discovered={} retained={} elapsed_ms={}",
             source.len(),
@@ -4868,7 +4949,7 @@ fn bounded_collection_filters_focused_arid_candidates_before_prefix_capacity() {
 
     assert_eq!(focused.candidates.len(), 1);
     assert_eq!(focused.candidates[0].line, 101);
-    assert_eq!(focused.candidates[0].operator, "binary_add_sub");
+    assert_eq!(focused.candidates[0].operator.as_str(), "binary_add_sub");
     assert!(!focused.truncated);
     assert_eq!(focused.diagnostics, Vec::new());
     assert_eq!(focused.retention.producer_peaks[0], 1);
@@ -4953,13 +5034,13 @@ fn focused_profile_retains_type_annotation_candidates() {
         focused
             .candidates
             .iter()
-            .any(|candidate| candidate.operator.starts_with("type_"))
+            .any(|candidate| candidate.operator.as_str().starts_with("type_"))
     );
     assert!(
         focused
             .candidates
             .iter()
-            .all(|candidate| candidate.operator != "boolean_literal")
+            .all(|candidate| candidate.operator.as_str() != "boolean_literal")
     );
 }
 
@@ -4972,7 +5053,7 @@ fn focused_filter_runs_before_candidate_limit() {
     );
     assert_eq!(focused.candidates.len(), 1);
     assert_eq!(focused.candidates[0].line, 2);
-    assert_eq!(focused.candidates[0].operator, "binary_add_sub");
+    assert_eq!(focused.candidates[0].operator.as_str(), "binary_add_sub");
 }
 
 #[test]
@@ -5135,15 +5216,15 @@ fn interpolated_string_pairs_skip_literals_and_retain_expressions() {
                 (
                     candidate.original,
                     candidate.replacement,
-                    candidate.operator,
+                    candidate.operator.as_str(),
                 )
             })
             .collect::<Vec<_>>();
         assert_eq!(
             observed,
             [
-                ("+".to_owned(), "-".to_owned(), "binary_add_sub".to_owned()),
-                ("is not".to_owned(), "is".to_owned(), "identity".to_owned()),
+                ("+".to_owned(), "-".to_owned(), "binary_add_sub"),
+                ("is not".to_owned(), "is".to_owned(), "identity"),
             ],
             "{flavor} interpolation expressions were not analyzed exactly"
         );
@@ -5189,7 +5270,7 @@ fn pep_695_type_positions_emit_type_candidates() {
     let observed = output
         .candidates
         .iter()
-        .filter(|candidate| candidate.operator == "type_list_sequence")
+        .filter(|candidate| candidate.operator.as_str() == "type_list_sequence")
         .map(|candidate| {
             (
                 candidate.original.as_str(),
@@ -5232,7 +5313,7 @@ fn pep_695_type_parameters_shadow_imported_replacement_spellings() {
     let observed = output
         .candidates
         .iter()
-        .filter(|candidate| candidate.operator == "type_list_sequence")
+        .filter(|candidate| candidate.operator.as_str() == "type_list_sequence")
         .map(|candidate| {
             (
                 candidate.original.as_str(),
@@ -5253,7 +5334,7 @@ fn type_annotations_emit_supported_candidates_in_source_order() {
     let candidates: Vec<_> = output
         .candidates
         .iter()
-        .filter(|candidate| candidate.operator.starts_with("type_"))
+        .filter(|candidate| candidate.operator.as_str().starts_with("type_"))
         .map(|candidate| {
             (
                 candidate.original.as_str(),
@@ -5345,7 +5426,7 @@ fn nullable_removal_preserves_multiline_annotation_syntax() {
         let candidates = output
             .candidates
             .iter()
-            .filter(|candidate| candidate.operator == "type_nullable_remove")
+            .filter(|candidate| candidate.operator.as_str() == "type_nullable_remove")
             .collect::<Vec<_>>();
         assert_eq!(candidates.len(), 1, "{name}");
         assert_eq!(candidates[0].replacement, expected, "{name}");
@@ -5386,7 +5467,7 @@ fn typing_import_rebinding_linear() {
         let actual: Vec<_> = output
             .candidates
             .iter()
-            .filter(|candidate| candidate.operator == "type_list_sequence")
+            .filter(|candidate| candidate.operator.as_str() == "type_list_sequence")
             .map(|candidate| {
                 (
                     candidate.span.start,
@@ -5428,7 +5509,7 @@ fn typing_module_alias_rebinding_linear() {
         let actual: Vec<_> = output
             .candidates
             .iter()
-            .filter(|candidate| candidate.operator == "type_list_sequence")
+            .filter(|candidate| candidate.operator.as_str() == "type_list_sequence")
             .map(|candidate| {
                 (
                     candidate.span.start,
@@ -5534,7 +5615,7 @@ fn typing_import_rebinding_scope() {
     let actual: Vec<_> = output
         .candidates
         .iter()
-        .filter(|candidate| candidate.operator == "type_list_sequence")
+        .filter(|candidate| candidate.operator.as_str() == "type_list_sequence")
         .map(|candidate| {
             (
                 candidate.span.start,
@@ -5640,7 +5721,7 @@ fn typing_import_rebinding_scope() {
     let alias_actual: Vec<_> = alias_output
         .candidates
         .iter()
-        .filter(|candidate| candidate.operator == "type_list_sequence")
+        .filter(|candidate| candidate.operator.as_str() == "type_list_sequence")
         .map(|candidate| {
             (
                 candidate.span.start,
@@ -5804,7 +5885,7 @@ fn typing_import_rebinding_control_flow() {
         let actual: Vec<_> = output
             .candidates
             .iter()
-            .filter(|candidate| candidate.operator == "type_list_sequence")
+            .filter(|candidate| candidate.operator.as_str() == "type_list_sequence")
             .map(|candidate| {
                 (
                     candidate.span.start,
@@ -6182,7 +6263,7 @@ fn class_context_restores_method_fallback_after_nested_definitions() {
             let actual: Vec<_> = output
                 .candidates
                 .iter()
-                .filter(|candidate| candidate.operator == "type_list_sequence")
+                .filter(|candidate| candidate.operator.as_str() == "type_list_sequence")
                 .map(|candidate| (candidate.symbol.as_deref(), candidate.replacement.as_str()))
                 .collect();
 
@@ -6207,7 +6288,7 @@ proptest! {
 
         let output = analyze_types(&source);
         let actual: Vec<_> = output.candidates.iter()
-            .filter(|candidate| candidate.operator == "type_list_sequence")
+            .filter(|candidate| candidate.operator.as_str() == "type_list_sequence")
             .map(|candidate| candidate.replacement.as_str())
             .collect();
 
@@ -6345,7 +6426,7 @@ fn type_annotations_ignore_quoted_and_unrecognized_forms() {
         output
             .candidates
             .iter()
-            .all(|candidate| !candidate.operator.starts_with("type_"))
+            .all(|candidate| !candidate.operator.as_str().starts_with("type_"))
     );
 }
 
@@ -6357,7 +6438,7 @@ fn type_annotations_reject_disallowed_nested_types_and_object_nullable_addition(
         output
             .candidates
             .iter()
-            .all(|candidate| !candidate.operator.starts_with("type_"))
+            .all(|candidate| !candidate.operator.as_str().starts_with("type_"))
     );
 }
 
@@ -6369,7 +6450,8 @@ fn type_annotations_resolve_unaliased_and_aliased_collections_abc_modules() {
         .candidates
         .iter()
         .filter(|candidate| {
-            candidate.operator.starts_with("type_") && candidate.operator != "type_list_sequence"
+            candidate.operator.as_str().starts_with("type_")
+                && candidate.operator.as_str() != "type_list_sequence"
         })
         .map(|candidate| {
             (
@@ -6499,7 +6581,7 @@ fn type_annotations_require_resolvable_abstract_destinations() {
         missing
             .candidates
             .iter()
-            .all(|candidate| candidate.operator != "type_list_sequence")
+            .all(|candidate| candidate.operator.as_str() != "type_list_sequence")
     );
     let direct = analyze_types("from typing import Sequence as Seq\nvalue: list[str]\n");
     assert!(direct.candidates.iter().any(|candidate| (
@@ -6549,7 +6631,7 @@ fn type_annotations_respect_line_and_symbol_filters() {
         line_output
             .candidates
             .iter()
-            .filter(|candidate| candidate.operator.starts_with("type_"))
+            .filter(|candidate| candidate.operator.as_str().starts_with("type_"))
             .map(|candidate| candidate.original.as_str())
             .collect::<Vec<_>>(),
         vec!["list[str]", "list[str]"]
@@ -6569,7 +6651,7 @@ fn type_annotations_respect_line_and_symbol_filters() {
         symbol_output
             .candidates
             .iter()
-            .filter(|candidate| candidate.operator.starts_with("type_"))
+            .filter(|candidate| candidate.operator.as_str().starts_with("type_"))
             .map(|candidate| candidate.original.as_str())
             .collect::<Vec<_>>(),
         vec![
@@ -6607,31 +6689,31 @@ fn grammar_tokens_do_not_emit_expression_operator_mutations() {
         output
             .candidates
             .iter()
-            .any(|candidate| candidate.line == 9 && candidate.operator == "membership")
+            .any(|candidate| candidate.line == 9 && candidate.operator.as_str() == "membership")
     );
     assert!(
-        output
-            .candidates
-            .iter()
-            .any(|candidate| candidate.line == 10 && candidate.operator == "binary_mul_div")
+        output.candidates.iter().any(
+            |candidate| candidate.line == 10 && candidate.operator.as_str() == "binary_mul_div"
+        )
     );
     assert!(
-        output
-            .candidates
-            .iter()
-            .any(|candidate| candidate.line == 11 && candidate.operator == "bitwise_and_or")
+        output.candidates.iter().any(
+            |candidate| candidate.line == 11 && candidate.operator.as_str() == "bitwise_and_or"
+        )
     );
     assert!(
         !output
             .candidates
             .iter()
-            .any(|candidate| candidate.line == 12 && candidate.operator == "membership")
+            .any(|candidate| candidate.line == 12 && candidate.operator.as_str() == "membership")
     );
     assert_eq!(
         output
             .candidates
             .iter()
-            .filter(|candidate| { candidate.line == 13 && candidate.operator == "binary_mul_div" })
+            .filter(|candidate| {
+                candidate.line == 13 && candidate.operator.as_str() == "binary_mul_div"
+            })
             .count(),
         1
     );
@@ -6780,7 +6862,7 @@ fn removes_not_across_its_complete_ast_operand_range() {
     let candidate = output
         .candidates
         .iter()
-        .find(|candidate| candidate.operator == "remove_not")
+        .find(|candidate| candidate.operator.as_str() == "remove_not")
         .expect("not candidate");
     assert_eq!(candidate.original, "not (left == right and ready)");
     assert_eq!(candidate.replacement, "(left == right and ready)");
@@ -7722,7 +7804,7 @@ fn parenthesized_exception_removals_use_complete_expression_spans() {
         let candidates: Vec<_> = output
             .candidates
             .iter()
-            .filter(|candidate| candidate.operator == operator.as_str())
+            .filter(|candidate| candidate.operator.as_str() == operator.as_str())
             .collect();
         // pins: issue #451 — AST name ranges omit syntactically significant parentheses.
         assert_eq!(
@@ -7754,7 +7836,7 @@ fn python_physical_lines_select_candidates_after_all_newline_forms() {
             let candidates: Vec<_> = output
                 .candidates
                 .iter()
-                .filter(|c| c.operator == "binary_add_sub")
+                .filter(|c| c.operator.as_str() == "binary_add_sub")
                 .collect();
             // pins: issue #455 — line selection previously silently omitted lone-CR candidates.
             assert_eq!(candidates.len(), 1, "{source:?}");
@@ -8353,7 +8435,7 @@ fn evaluation_order_preserves_only_pre_binding_builtin_lookups() {
         let candidates = output
             .candidates
             .iter()
-            .filter(|candidate| candidate.operator == "collection_any_all")
+            .filter(|candidate| candidate.operator.as_str() == "collection_any_all")
             .collect::<Vec<_>>();
         assert_eq!(candidates.len(), expected, "{label}: {candidates:#?}");
     }
@@ -8370,7 +8452,8 @@ fn evaluation_order_applies_to_other_builtin_pairs_and_class_suites() {
             positive
                 .candidates
                 .iter()
-                .filter(|candidate| candidate.operator == operator && candidate.original == source)
+                .filter(|candidate| candidate.operator.as_str() == operator
+                    && candidate.original == source)
                 .count(),
             1
         );
@@ -8386,7 +8469,7 @@ fn evaluation_order_applies_to_other_builtin_pairs_and_class_suites() {
                         output
                             .candidates
                             .iter()
-                            .all(|candidate| candidate.operator != operator
+                            .all(|candidate| candidate.operator.as_str() != operator
                                 || !matches!(candidate.original.as_str(), "list" | "sorted")),
                         "{source}: {:#?}",
                         output.candidates
@@ -8409,7 +8492,7 @@ fn evaluation_order_retains_lookups_before_later_deletions() {
         let candidates = output
             .candidates
             .iter()
-            .filter(|candidate| candidate.operator == "collection_any_all")
+            .filter(|candidate| candidate.operator.as_str() == "collection_any_all")
             .collect::<Vec<_>>();
         assert_eq!(candidates.len(), 1, "{body}: {candidates:#?}");
     }
@@ -8469,7 +8552,7 @@ fn nullable_builtin_provenance_rejects_shadowing_and_retains_builtins() {
             let candidates = output
                 .candidates
                 .iter()
-                .filter(|candidate| candidate.operator == "type_nullable_add")
+                .filter(|candidate| candidate.operator.as_str() == "type_nullable_add")
                 .collect::<Vec<_>>();
             assert_eq!(candidates.len(), expected, "{source}: {candidates:#?}");
         }
@@ -8529,7 +8612,7 @@ fn nullable_builtin_provenance_checks_nested_arguments_and_preserves_import_alia
         let candidates = output
             .candidates
             .iter()
-            .filter(|candidate| candidate.operator == "type_nullable_add")
+            .filter(|candidate| candidate.operator.as_str() == "type_nullable_add")
             .collect::<Vec<_>>();
         assert_eq!(candidates.len(), expected, "{source}: {candidates:#?}");
     }
@@ -8544,7 +8627,7 @@ fn nullable_builtin_provenance_does_not_change_removal_or_collection_guards() {
         output
             .candidates
             .iter()
-            .filter(|candidate| candidate.operator == "type_nullable_remove")
+            .filter(|candidate| candidate.operator.as_str() == "type_nullable_remove")
             .count(),
         2
     );
@@ -8552,7 +8635,7 @@ fn nullable_builtin_provenance_does_not_change_removal_or_collection_guards() {
         output
             .candidates
             .iter()
-            .filter(|candidate| candidate.operator == "type_list_sequence")
+            .filter(|candidate| candidate.operator.as_str() == "type_list_sequence")
             .count(),
         1
     );
@@ -8560,7 +8643,7 @@ fn nullable_builtin_provenance_does_not_change_removal_or_collection_guards() {
         output
             .candidates
             .iter()
-            .all(|candidate| candidate.operator != "type_nullable_add")
+            .all(|candidate| candidate.operator.as_str() != "type_nullable_add")
     );
 }
 
@@ -8573,7 +8656,7 @@ fn nullable_builtin_provenance_checks_starred_and_list_arguments() {
             let candidates = output
                 .candidates
                 .iter()
-                .filter(|candidate| candidate.operator == "type_nullable_add")
+                .filter(|candidate| candidate.operator.as_str() == "type_nullable_add")
                 .collect::<Vec<_>>();
             assert_eq!(candidates.len(), expected, "{source}: {candidates:#?}");
         }
@@ -8690,7 +8773,7 @@ fn declaration_only_preserves_collection_sources_and_destinations() {
                 let candidates: Vec<_> = output
                     .candidates
                     .iter()
-                    .filter(|candidate| candidate.operator == operator)
+                    .filter(|candidate| candidate.operator.as_str() == operator)
                     .collect();
                 assert_eq!(candidates.len(), 1, "{source}");
                 assert_eq!(candidates[0].original, source_name, "{source}");
@@ -8724,7 +8807,7 @@ fn declaration_only_retains_builtin_shadows_and_target_effects() {
             output
                 .candidates
                 .iter()
-                .all(|candidate| candidate.operator != "collection_any_all"),
+                .all(|candidate| candidate.operator.as_str() != "collection_any_all"),
             "{source}"
         );
     }
@@ -8746,7 +8829,7 @@ fn declaration_only_preserves_operator_aliases_in_module_and_class_scopes() {
         let candidates: Vec<_> = output
             .candidates
             .iter()
-            .filter(|candidate| candidate.operator == "operator_function")
+            .filter(|candidate| candidate.operator.as_str() == "operator_function")
             .collect();
         assert_eq!(candidates.len(), 1, "{source}");
         assert!(candidates[0].replacement.ends_with("sub"), "{source}");
@@ -8776,7 +8859,7 @@ fn declaration_only_retains_operator_alias_guards_and_target_effects() {
             output
                 .candidates
                 .iter()
-                .all(|candidate| candidate.operator != "operator_function"),
+                .all(|candidate| candidate.operator.as_str() != "operator_function"),
             "{source}"
         );
     }
@@ -8805,7 +8888,7 @@ fn prepared_namespace_blocks_direct_builtin_pairs_and_exceptions() {
                 analyze(&source)
                     .candidates
                     .iter()
-                    .all(|c| c.operator != operator),
+                    .all(|c| c.operator.as_str() != operator),
                 "{source}"
             );
         }
@@ -8816,7 +8899,7 @@ fn prepared_namespace_blocks_direct_builtin_pairs_and_exceptions() {
             analyze(&source)
                 .candidates
                 .iter()
-                .all(|c| c.operator != "exception_type_pair"),
+                .all(|c| c.operator.as_str() != "exception_type_pair"),
             "{source}"
         );
     }
@@ -8883,7 +8966,7 @@ fn prepared_namespace_preserves_lookup_bypasses_and_plain_classes() {
         let candidates: Vec<_> = output
             .candidates
             .iter()
-            .filter(|c| c.operator == "collection_any_all")
+            .filter(|c| c.operator.as_str() == "collection_any_all")
             .collect();
         assert_eq!(candidates.len(), expected, "{source}");
         for candidate in candidates {
@@ -8919,7 +9002,7 @@ fn prepared_namespace_blocks_class_visible_builtin_annotations() {
             output
                 .candidates
                 .iter()
-                .filter(|c| c.operator == "type_nullable_add")
+                .filter(|c| c.operator.as_str() == "type_nullable_add")
                 .count(),
             expected,
             "{source}"
@@ -8976,7 +9059,7 @@ fn prepared_annotation_import_stability_respects_scope_and_directives() {
         let candidates: Vec<_> = output
             .candidates
             .iter()
-            .filter(|c| c.operator == "type_sequence_iterable")
+            .filter(|c| c.operator.as_str() == "type_sequence_iterable")
             .collect();
         assert_eq!(candidates.len(), expected, "{source}");
         for candidate in candidates {
@@ -8997,7 +9080,7 @@ fn prepared_annotation_import_qualified_alias_is_checked() {
             output
                 .candidates
                 .iter()
-                .filter(|c| c.operator == "type_sequence_iterable")
+                .filter(|c| c.operator.as_str() == "type_sequence_iterable")
                 .count(),
             expected,
             "{source}"
@@ -9022,7 +9105,7 @@ fn private_annotation_import_endpoints_and_spelling_boundaries() {
                     output
                         .candidates
                         .iter()
-                        .filter(|c| c.operator == "type_sequence_iterable")
+                        .filter(|c| c.operator.as_str() == "type_sequence_iterable")
                         .count(),
                     expected,
                     "{source}"
@@ -9050,7 +9133,7 @@ fn private_annotation_import_tracks_reverse_writes_and_directives() {
             !output
                 .candidates
                 .iter()
-                .any(|candidate| candidate.operator == "type_sequence_iterable"),
+                .any(|candidate| candidate.operator.as_str() == "type_sequence_iterable"),
             "unsafe candidates: {source}"
         );
     }
@@ -9085,7 +9168,7 @@ fn private_annotation_import_keeps_context_and_unrelated_scopes_separate() {
             output
                 .candidates
                 .iter()
-                .filter(|c| c.operator == "type_sequence_iterable")
+                .filter(|c| c.operator.as_str() == "type_sequence_iterable")
                 .count(),
             expected,
             "{source}"
@@ -9101,7 +9184,7 @@ fn private_annotation_import_parameter_bindings_shadow_canonical_roots() {
         output
             .candidates
             .iter()
-            .all(|c| c.operator != "type_sequence_iterable"),
+            .all(|c| c.operator.as_str() != "type_sequence_iterable"),
         "{source}"
     );
 }
@@ -9148,7 +9231,7 @@ fn private_annotation_import_gate_preserves_header_context() {
             output
                 .candidates
                 .iter()
-                .filter(|c| c.operator == "type_sequence_iterable")
+                .filter(|c| c.operator.as_str() == "type_sequence_iterable")
                 .count(),
             expected,
             "{source}"
