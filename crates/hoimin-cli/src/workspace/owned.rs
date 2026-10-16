@@ -7,8 +7,8 @@ mod tests {
     #[cfg(windows)]
     use super::{CLEANUP_READY_FILE, RETAIN_FILE};
     use super::{
-        COORDINATOR_FILE, MANAGED_DIR, MAX_MANAGED_CHILDREN, ManagedRootCoordinator,
-        ManagedRunRoot, OwnerKind, ensure_direct_child_capacity,
+        COORDINATOR_FILE, CleanupDisposition, CleanupEvidence, MANAGED_DIR, MAX_MANAGED_CHILDREN,
+        ManagedRootCoordinator, ManagedRunRoot, OwnerKind, ensure_direct_child_capacity,
     };
 
     fn create_test_owned_directory_entry(
@@ -59,6 +59,25 @@ mod tests {
             super::WorkspaceError::OwnedWorkspaceLimit { planned, limit }
                 if planned == 100_001 && limit == 100_000
         ));
+    }
+
+    proptest::proptest! {
+        #[test]
+        fn only_deferred_contention_is_retryable_independently_of_diagnostics(detail in ".{0,4096}") {
+            for (disposition, expected) in [
+                (super::CleanupDisposition::Clean, false),
+                (super::CleanupDisposition::Failed, false),
+                (super::CleanupDisposition::Deferred(None), false),
+                (super::CleanupDisposition::Deferred(Some(super::CleanupRetryReason::CoordinatorContention)), true),
+            ] {
+                let mut record = super::CleanupRecord { disposition, evidence: super::CleanupEvidence::default() };
+                record.evidence.push_detail(detail.clone());
+
+                let retryable = record.retryable_contention();
+
+                proptest::prop_assert_eq!(retryable, expected);
+            }
+        }
     }
 
     #[test]
@@ -200,25 +219,26 @@ mod tests {
             truncated_detail_count: 1,
         };
         let mut cleanup = super::CleanupRecord {
-            retry_reason: None,
-            status: hoimin_core::DiskCleanupStatus::Clean,
-            examined_entries: 4,
-            removed_entries: 4,
-            details: Vec::new(),
-            omitted_detail_count: 0,
-            remaining_root: None,
+            disposition: CleanupDisposition::Clean,
+            evidence: CleanupEvidence {
+                examined_entries: 4,
+                removed_entries: 4,
+                details: Vec::new(),
+                omitted_detail_count: 0,
+                remaining_root: None,
+            },
         };
 
-        reclaim.append_to_cleanup(&mut cleanup);
+        reclaim.append_to_cleanup(&mut cleanup.evidence);
 
         assert_eq!(
-            cleanup.details,
+            cleanup.evidence.details,
             [
                 "startup janitor preserved 3 managed roots",
                 "enumerate managed roots failed: EBADF",
             ]
         );
-        assert_eq!(cleanup.omitted_detail_count, 3);
+        assert_eq!(cleanup.evidence.omitted_detail_count, 3);
     }
 
     #[test]
@@ -788,7 +808,7 @@ mod tests {
         }
         let cleanup = root.cleanup(std::time::Duration::from_secs(5));
         assert_eq!(
-            cleanup.status,
+            cleanup.disposition.report_status(),
             hoimin_core::DiskCleanupStatus::Clean,
             "{cleanup:?}"
         );
@@ -1388,7 +1408,7 @@ mod tests {
         let record = first.cleanup(std::time::Duration::from_secs(1));
 
         assert_eq!(
-            record.status,
+            record.disposition.report_status(),
             hoimin_core::DiskCleanupStatus::Clean,
             "{record:?}"
         );
@@ -1409,7 +1429,7 @@ mod tests {
         let record = root.cleanup(std::time::Duration::from_secs(5));
 
         assert_eq!(
-            record.status,
+            record.disposition.report_status(),
             hoimin_core::DiskCleanupStatus::Clean,
             "{record:?}"
         );
@@ -1469,7 +1489,7 @@ mod tests {
         assert!(root.lease.lock().unwrap().is_none());
         let resumed = root.cleanup(budget);
         assert_eq!(
-            resumed.status,
+            resumed.disposition.report_status(),
             hoimin_core::DiskCleanupStatus::Clean,
             "{resumed:?}"
         );
@@ -1696,11 +1716,11 @@ mod tests {
         let record = root.cleanup(std::time::Duration::from_secs(5));
 
         assert_eq!(
-            record.status,
+            record.disposition.report_status(),
             hoimin_core::DiskCleanupStatus::Clean,
             "{record:?}"
         );
-        assert!(record.remaining_root.is_none(), "{record:?}");
+        assert!(record.evidence.remaining_root.is_none(), "{record:?}");
         assert!(!root.path().exists());
     }
 
@@ -1713,7 +1733,7 @@ mod tests {
         let root = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
         let first = root.cleanup(std::time::Duration::from_secs(5));
         assert_eq!(
-            first.status,
+            first.disposition.report_status(),
             hoimin_core::DiskCleanupStatus::Clean,
             "{first:?}"
         );
@@ -1721,11 +1741,11 @@ mod tests {
         let second = root.cleanup(std::time::Duration::ZERO);
 
         assert_eq!(
-            second.status,
+            second.disposition.report_status(),
             hoimin_core::DiskCleanupStatus::Clean,
             "{second:?}"
         );
-        assert!(second.remaining_root.is_none(), "{second:?}");
+        assert!(second.evidence.remaining_root.is_none(), "{second:?}");
     }
 
     #[test]
@@ -1738,13 +1758,19 @@ mod tests {
 
         let deferred = root.cleanup(std::time::Duration::from_secs(1));
 
-        assert_eq!(deferred.status, hoimin_core::DiskCleanupStatus::Deferred);
+        assert_eq!(
+            deferred.disposition.report_status(),
+            hoimin_core::DiskCleanupStatus::Deferred
+        );
         assert!(root.path().exists());
         assert!(root.create_child("worker-").is_err());
         drop(child);
 
         let completed = root.cleanup(std::time::Duration::from_secs(5));
-        assert_eq!(completed.status, hoimin_core::DiskCleanupStatus::Clean);
+        assert_eq!(
+            completed.disposition.report_status(),
+            hoimin_core::DiskCleanupStatus::Clean
+        );
         assert!(!root.path().exists());
     }
 
@@ -1773,19 +1799,22 @@ mod tests {
         drop_thread.join().unwrap();
 
         assert_eq!(
-            while_closing.status,
+            while_closing.disposition.report_status(),
             hoimin_core::DiskCleanupStatus::Deferred,
             "child handle closure was published too early: {while_closing:?}"
         );
         assert!(
             while_closing
+                .evidence
                 .details
                 .iter()
                 .any(|detail| detail.contains("live child handle")),
             "missing live-child evidence: {while_closing:?}"
         );
         assert_eq!(
-            root.cleanup(std::time::Duration::from_secs(5)).status,
+            root.cleanup(std::time::Duration::from_secs(5))
+                .disposition
+                .report_status(),
             hoimin_core::DiskCleanupStatus::Clean
         );
     }
@@ -1802,13 +1831,18 @@ mod tests {
         let cleanup = root.cleanup(std::time::Duration::from_secs(60));
         let reclaim = ManagedRunRoot::reclaim_abandoned(&coordinator, std::time::SystemTime::now());
 
-        assert_eq!(cleanup.status, hoimin_core::DiskCleanupStatus::Deferred);
+        assert_eq!(
+            cleanup.disposition.report_status(),
+            hoimin_core::DiskCleanupStatus::Deferred
+        );
         assert_eq!(reclaim.reclaimed_roots, 0);
         assert_ne!(reclaim.details, Vec::<String>::new());
         assert!(started.elapsed() < std::time::Duration::from_secs(1));
         drop(held);
         assert_eq!(
-            root.cleanup(std::time::Duration::from_secs(5)).status,
+            root.cleanup(std::time::Duration::from_secs(5))
+                .disposition
+                .report_status(),
             hoimin_core::DiskCleanupStatus::Clean
         );
     }
@@ -1821,18 +1855,21 @@ mod tests {
         let root = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
         let held = super::CoordinatorLockGuard::acquire(&coordinator).unwrap();
         let mut cleanup = root.cleanup(std::time::Duration::from_secs(5));
-        cleanup.details = vec!["translated diagnostic without lock wording".to_owned()];
+        cleanup.evidence.details = vec!["translated diagnostic without lock wording".to_owned()];
         assert!(cleanup.retryable_contention());
         drop(held);
         let live_root = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
         let child = live_root.create_child("live-").unwrap();
         let mut cleanup = live_root.cleanup(std::time::Duration::from_secs(5));
-        cleanup.details =
+        cleanup.evidence.details =
             vec!["coordinator process lock is busy; coordinator lock failed".to_owned()];
         assert!(!cleanup.retryable_contention());
         drop(child);
         assert_eq!(
-            live_root.cleanup(std::time::Duration::from_secs(5)).status,
+            live_root
+                .cleanup(std::time::Duration::from_secs(5))
+                .disposition
+                .report_status(),
             hoimin_core::DiskCleanupStatus::Clean
         );
     }
@@ -1848,14 +1885,19 @@ mod tests {
         fs2::FileExt::try_lock_exclusive(&competing).unwrap();
 
         let mut cleanup = root.cleanup(std::time::Duration::from_secs(5));
-        cleanup.details.clear();
+        cleanup.evidence.details.clear();
 
-        assert_eq!(cleanup.status, hoimin_core::DiskCleanupStatus::Deferred);
+        assert_eq!(
+            cleanup.disposition.report_status(),
+            hoimin_core::DiskCleanupStatus::Deferred
+        );
         assert!(cleanup.retryable_contention());
         assert!(root.path().exists());
         drop(competing);
         assert_eq!(
-            root.cleanup(std::time::Duration::from_secs(5)).status,
+            root.cleanup(std::time::Duration::from_secs(5))
+                .disposition
+                .report_status(),
             hoimin_core::DiskCleanupStatus::Clean
         );
     }
@@ -1884,11 +1926,11 @@ mod tests {
         let record = root.cleanup(std::time::Duration::from_secs(10));
 
         assert_eq!(
-            record.status,
+            record.disposition.report_status(),
             hoimin_core::DiskCleanupStatus::Clean,
             "{record:?}"
         );
-        assert!(record.examined_entries >= 130);
+        assert!(record.evidence.examined_entries >= 130);
         assert!(!published.exists());
     }
 
@@ -1978,7 +2020,7 @@ mod tests {
         assert!(root.dir.symlink_metadata(super::LEASE_FILE).is_ok());
         let resumed = root.cleanup(std::time::Duration::from_secs(5));
         assert_eq!(
-            resumed.status,
+            resumed.disposition.report_status(),
             hoimin_core::DiskCleanupStatus::Clean,
             "{resumed:?}"
         );
@@ -2002,14 +2044,17 @@ mod tests {
 
         let record = root.interrupted_cleanup_record(true, "x".repeat(8 * 1024));
 
-        assert_eq!(record.status, hoimin_core::DiskCleanupStatus::Failed);
         assert_eq!(
-            record.remaining_root,
+            record.disposition.report_status(),
+            hoimin_core::DiskCleanupStatus::Failed
+        );
+        assert_eq!(
+            record.evidence.remaining_root,
             Some(root.path().parent().unwrap().join(&deleting))
         );
-        assert_eq!(record.details.len(), 1);
-        assert!(record.details[0].len() <= super::MAX_DIAGNOSTIC_DETAIL_BYTES);
-        assert_eq!(record.omitted_detail_count, 1);
+        assert_eq!(record.evidence.details.len(), 1);
+        assert!(record.evidence.details[0].len() <= super::MAX_DIAGNOSTIC_DETAIL_BYTES);
+        assert_eq!(record.evidence.omitted_detail_count, 1);
     }
 
     #[cfg(unix)]
@@ -2027,10 +2072,14 @@ mod tests {
 
         let record = root.interrupted_cleanup_record(true, "cleanup stopped".to_owned());
 
-        assert_eq!(record.status, hoimin_core::DiskCleanupStatus::Deferred);
-        assert!(record.remaining_root.is_none());
+        assert_eq!(
+            record.disposition.report_status(),
+            hoimin_core::DiskCleanupStatus::Deferred
+        );
+        assert!(record.evidence.remaining_root.is_none());
         assert!(
             record
+                .evidence
                 .details
                 .iter()
                 .any(|detail| { detail.contains("cleanup root namespace entry was not found") })
@@ -2307,7 +2356,7 @@ mod tests {
 
         let cleanup = root.cleanup(std::time::Duration::from_secs(5));
         assert_eq!(
-            cleanup.status,
+            cleanup.disposition.report_status(),
             hoimin_core::DiskCleanupStatus::Clean,
             "{cleanup:?}"
         );
@@ -4076,10 +4125,44 @@ pub(crate) enum CleanupRetryReason {
     CoordinatorContention,
 }
 
+/// Actual cleanup outcomes exclude report retention and delivery scheduling states.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum CleanupDisposition {
+    Clean,
+    Failed,
+    Deferred(Option<CleanupRetryReason>),
+}
+
+impl CleanupDisposition {
+    pub(crate) fn report_status(self) -> DiskCleanupStatus {
+        match self {
+            Self::Clean => DiskCleanupStatus::Clean,
+            Self::Failed => DiskCleanupStatus::Failed,
+            Self::Deferred(_) => DiskCleanupStatus::Deferred,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CleanupRecord {
-    pub(crate) retry_reason: Option<CleanupRetryReason>,
-    pub(crate) status: DiskCleanupStatus,
+    pub(crate) disposition: CleanupDisposition,
+    pub(crate) evidence: CleanupEvidence,
+}
+
+impl CleanupRecord {
+    /// Deadline, live-child and integrity deferrals remain janitor work.
+    pub(crate) fn retryable_contention(&self) -> bool {
+        matches!(
+            self.disposition,
+            CleanupDisposition::Deferred(Some(CleanupRetryReason::CoordinatorContention))
+        )
+    }
+}
+
+/// Evidence is independent of classification: an interrupted wait may not certify a path.
+/// Display-only reports can retain this evidence without inventing a cleanup result.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct CleanupEvidence {
     pub(crate) examined_entries: u64,
     pub(crate) removed_entries: u64,
     pub(crate) details: Vec<String>,
@@ -4087,14 +4170,7 @@ pub(crate) struct CleanupRecord {
     pub(crate) remaining_root: Option<Utf8PathBuf>,
 }
 
-impl CleanupRecord {
-    /// Only coordinator admission contention may be retried by the owning shell.
-    /// Deadline, live-child and integrity deferrals remain the janitor's responsibility.
-    pub(crate) fn retryable_contention(&self) -> bool {
-        self.status == DiskCleanupStatus::Deferred
-            && self.retry_reason == Some(CleanupRetryReason::CoordinatorContention)
-    }
-
+impl CleanupEvidence {
     pub(crate) fn push_detail(&mut self, detail: String) {
         if self.details.len() >= MAX_DIAGNOSTIC_DETAILS {
             self.omitted_detail_count = self.omitted_detail_count.saturating_add(1);
@@ -4118,7 +4194,7 @@ pub(crate) struct ReclaimReport {
 }
 
 impl ReclaimReport {
-    pub(crate) fn append_to_cleanup(&self, cleanup: &mut CleanupRecord) {
+    pub(crate) fn append_to_cleanup(&self, cleanup: &mut CleanupEvidence) {
         if self.preserved_roots != 0 {
             cleanup.push_detail(format!(
                 "startup janitor preserved {} managed roots",
@@ -5160,31 +5236,34 @@ impl ManagedRunRoot {
     pub(crate) fn cleanup(&self, budget: Duration) -> CleanupRecord {
         let started = std::time::Instant::now();
         let mut record = CleanupRecord {
-            retry_reason: None,
-            status: DiskCleanupStatus::Failed,
-            examined_entries: 0,
-            removed_entries: 0,
-            details: Vec::new(),
-            omitted_detail_count: 0,
-            remaining_root: Some(self.path.clone()),
+            disposition: CleanupDisposition::Failed,
+            evidence: CleanupEvidence {
+                examined_entries: 0,
+                removed_entries: 0,
+                details: Vec::new(),
+                omitted_detail_count: 0,
+                remaining_root: Some(self.path.clone()),
+            },
         };
         if NamespaceLifecycle::load(&self.namespace) == NamespaceLifecycle::Complete {
-            record.status = DiskCleanupStatus::Clean;
-            record.remaining_root = None;
+            record.disposition = CleanupDisposition::Clean;
+            record.evidence.remaining_root = None;
             return record;
         }
         if budget.is_zero() {
-            record.status = DiskCleanupStatus::Deferred;
+            record.disposition = CleanupDisposition::Deferred(None);
             return record;
         }
         let Ok(mut lifecycle) = self.lifecycle.lock() else {
-            record.push_detail("managed root lifecycle is poisoned".to_owned());
+            record
+                .evidence
+                .push_detail("managed root lifecycle is poisoned".to_owned());
             return record;
         };
         lifecycle.cleanup_started = true;
         if lifecycle.live_children != 0 {
-            record.status = DiskCleanupStatus::Deferred;
-            record.push_detail(format!(
+            record.disposition = CleanupDisposition::Deferred(None);
+            record.evidence.push_detail(format!(
                 "managed root still has {} live child handle(s)",
                 lifecycle.live_children
             ));
@@ -5195,7 +5274,9 @@ impl ManagedRunRoot {
         let expected_root_identity = match directory_identity(&self.dir) {
             Ok(identity) => identity,
             Err(error) => {
-                record.push_detail(format!("managed root identity inspection failed: {error}"));
+                record
+                    .evidence
+                    .push_detail(format!("managed root identity inspection failed: {error}"));
                 return record;
             }
         };
@@ -5203,22 +5284,30 @@ impl ManagedRunRoot {
             let local_guard = match self.coordinator_local_lock.try_lock() {
                 Ok(guard) => guard,
                 Err(std::sync::TryLockError::WouldBlock) => {
-                    record.status = DiskCleanupStatus::Deferred;
-                    record.retry_reason = Some(CleanupRetryReason::CoordinatorContention);
-                    record.push_detail("coordinator process lock is busy".to_owned());
+                    record.disposition = CleanupDisposition::Deferred(Some(
+                        CleanupRetryReason::CoordinatorContention,
+                    ));
+                    record
+                        .evidence
+                        .push_detail("coordinator process lock is busy".to_owned());
                     return record;
                 }
                 Err(std::sync::TryLockError::Poisoned(_)) => {
-                    record.push_detail("coordinator process lock is poisoned".to_owned());
+                    record
+                        .evidence
+                        .push_detail("coordinator process lock is poisoned".to_owned());
                     return record;
                 }
             };
             if let Err(error) = FileExt::try_lock_exclusive(&self.coordinator_file) {
                 if lock_error_is_busy(&error) {
-                    record.status = DiskCleanupStatus::Deferred;
-                    record.retry_reason = Some(CleanupRetryReason::CoordinatorContention);
+                    record.disposition = CleanupDisposition::Deferred(Some(
+                        CleanupRetryReason::CoordinatorContention,
+                    ));
                 }
-                record.push_detail(format!("coordinator lock failed: {error}"));
+                record
+                    .evidence
+                    .push_detail(format!("coordinator lock failed: {error}"));
                 return record;
             }
             let claim_deadline_expired = std::cell::Cell::new(false);
@@ -5245,75 +5334,77 @@ impl ManagedRunRoot {
             let unlock = FileExt::unlock(&self.coordinator_file);
             if let Err(error) = unlock {
                 if NamespaceLifecycle::load(&self.namespace) == NamespaceLifecycle::Deleting {
-                    record.remaining_root = Some(
+                    record.evidence.remaining_root = Some(
                         self.path
                             .parent()
                             .expect("managed run has parent")
                             .join(&deleting_name),
                     );
                 }
-                record.push_detail(format!("coordinator unlock failed: {error}"));
+                record
+                    .evidence
+                    .push_detail(format!("coordinator unlock failed: {error}"));
                 return record;
             }
             drop(local_guard);
             match claim {
                 Ok(ClaimResult::Absent) => {
                     NamespaceLifecycle::Complete.store(&self.namespace);
-                    record.status = DiskCleanupStatus::Clean;
-                    record.remaining_root = None;
+                    record.disposition = CleanupDisposition::Clean;
+                    record.evidence.remaining_root = None;
                     return record;
                 }
                 Ok(ClaimResult::Claimed) => {}
                 Err(error) => {
                     if claim_deadline_expired.get() {
-                        record.status = DiskCleanupStatus::Deferred;
+                        record.disposition = CleanupDisposition::Deferred(None);
                     }
                     if NamespaceLifecycle::load(&self.namespace) == NamespaceLifecycle::Deleting {
-                        record.remaining_root = Some(
+                        record.evidence.remaining_root = Some(
                             self.path
                                 .parent()
                                 .expect("managed run has parent")
                                 .join(&deleting_name),
                         );
                     }
-                    record.push_detail(error.to_string());
+                    record.evidence.push_detail(error.to_string());
                     return record;
                 }
             }
         }
-        record.remaining_root = Some(
+        record.evidence.remaining_root = Some(
             self.path
                 .parent()
                 .expect("managed run has parent")
                 .join(&deleting_name),
         );
         if started.elapsed() >= budget {
-            record.status = DiskCleanupStatus::Deferred;
+            record.disposition = CleanupDisposition::Deferred(None);
             return record;
         }
         #[cfg(windows)]
         match self.deleting_root_capability_was_consumed(&deleting_name) {
             Ok(true) => {
                 NamespaceLifecycle::Complete.store(&self.namespace);
-                record.status = DiskCleanupStatus::Clean;
-                record.remaining_root = None;
+                record.disposition = CleanupDisposition::Clean;
+                record.evidence.remaining_root = None;
                 return record;
             }
             Ok(false) => {}
             Err(error) => {
-                record.push_detail(error.to_string());
+                record.evidence.push_detail(error.to_string());
                 return record;
             }
         }
         #[cfg(windows)]
         if let Err(error) = self.restore_missing_deleting_lease(&deleting_name) {
-            record.push_detail(error.to_string());
+            record.evidence.push_detail(error.to_string());
             return record;
         }
         let mut capabilities = match self.take_owner_cleanup_capabilities() {
             Ok(capabilities) => capabilities,
             Err(error) => {
-                record.push_detail(error.to_string());
+                record.evidence.push_detail(error.to_string());
                 return record;
             }
         };
@@ -5329,34 +5420,34 @@ impl ManagedRunRoot {
                 if slice.complete && entry_is_absent(&self.coordinator_dir, &deleting_name) =>
             {
                 NamespaceLifecycle::Complete.store(&self.namespace);
-                record.status = DiskCleanupStatus::Clean;
-                record.examined_entries = slice.examined;
-                record.removed_entries = slice.removed;
-                record.remaining_root = None;
+                record.disposition = CleanupDisposition::Clean;
+                record.evidence.examined_entries = slice.examined;
+                record.evidence.removed_entries = slice.removed;
+                record.evidence.remaining_root = None;
             }
             Ok(slice) => {
-                record.status = DiskCleanupStatus::Deferred;
-                record.examined_entries = slice.examined;
-                record.removed_entries = slice.removed;
+                record.disposition = CleanupDisposition::Deferred(None);
+                record.evidence.examined_entries = slice.examined;
+                record.evidence.removed_entries = slice.removed;
                 self.restore_owner_cleanup_capabilities(capabilities);
             }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 if entry_is_absent(&self.coordinator_dir, &deleting_name) {
                     NamespaceLifecycle::Complete.store(&self.namespace);
-                    record.status = DiskCleanupStatus::Clean;
-                    record.remaining_root = None;
+                    record.disposition = CleanupDisposition::Clean;
+                    record.evidence.remaining_root = None;
                 } else {
-                    record.push_detail(error.to_string());
+                    record.evidence.push_detail(error.to_string());
                     self.restore_owner_cleanup_capabilities(capabilities);
                 }
             }
             Err(error) if error.kind() == std::io::ErrorKind::TimedOut => {
-                record.status = DiskCleanupStatus::Deferred;
-                record.push_detail(error.to_string());
+                record.disposition = CleanupDisposition::Deferred(None);
+                record.evidence.push_detail(error.to_string());
                 self.restore_owner_cleanup_capabilities(capabilities);
             }
             Err(error) => {
-                record.push_detail(error.to_string());
+                record.evidence.push_detail(error.to_string());
                 self.restore_owner_cleanup_capabilities(capabilities);
             }
         }
@@ -5409,23 +5500,28 @@ impl ManagedRunRoot {
             Err(error) => (None, Some(error)),
         };
         let mut record = CleanupRecord {
-            retry_reason: None,
-            status: if failed && remaining_root.is_some() {
-                DiskCleanupStatus::Failed
+            disposition: if failed && remaining_root.is_some() {
+                CleanupDisposition::Failed
             } else {
-                DiskCleanupStatus::Deferred
+                CleanupDisposition::Deferred(None)
             },
-            examined_entries: 0,
-            removed_entries: 0,
-            details: Vec::new(),
-            omitted_detail_count: 0,
-            remaining_root,
+            evidence: CleanupEvidence {
+                examined_entries: 0,
+                removed_entries: 0,
+                details: Vec::new(),
+                omitted_detail_count: 0,
+                remaining_root,
+            },
         };
-        record.push_detail(reason);
+        record.evidence.push_detail(reason);
         if let Some(detail) = integrity_detail {
-            record.push_detail(format!("cleanup integrity unverifiable: {detail}"));
-        } else if record.remaining_root.is_none() {
-            record.push_detail("cleanup root namespace entry was not found".to_owned());
+            record
+                .evidence
+                .push_detail(format!("cleanup integrity unverifiable: {detail}"));
+        } else if record.evidence.remaining_root.is_none() {
+            record
+                .evidence
+                .push_detail("cleanup root namespace entry was not found".to_owned());
         }
         record
     }
@@ -5436,15 +5532,16 @@ impl ManagedRunRoot {
     )]
     pub(crate) fn abandon_for_janitor(&self, reason: String) -> CleanupRecord {
         let mut record = CleanupRecord {
-            retry_reason: None,
-            status: DiskCleanupStatus::Deferred,
-            examined_entries: 0,
-            removed_entries: 0,
-            details: Vec::new(),
-            omitted_detail_count: 0,
-            remaining_root: Some(self.path.clone()),
+            disposition: CleanupDisposition::Deferred(None),
+            evidence: CleanupEvidence {
+                examined_entries: 0,
+                removed_entries: 0,
+                details: Vec::new(),
+                omitted_detail_count: 0,
+                remaining_root: Some(self.path.clone()),
+            },
         };
-        record.push_detail(reason);
+        record.evidence.push_detail(reason);
         record
     }
 

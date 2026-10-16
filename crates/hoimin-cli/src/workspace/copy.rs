@@ -1363,7 +1363,9 @@ mod tests {
         worker.try_cleanup().unwrap();
         drop((worker, plan));
         assert_eq!(
-            root.cleanup(Duration::from_secs(1)).status,
+            root.cleanup(Duration::from_secs(1))
+                .disposition
+                .report_status(),
             hoimin_core::DiskCleanupStatus::Clean
         );
     }

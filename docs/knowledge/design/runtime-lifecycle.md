@@ -101,6 +101,20 @@ sources:
   resource: disk-failure.md
   working_tree: untracked
   sha256: 30398836956f8fd8687b718ba2c81e835125665d45e0e9ca3a470198b0f1eb60
+- id: issue-956-owned
+  resource: ../../../crates/hoimin-cli/src/workspace/owned.rs
+  revision: 578b3657e744c1f6d13b57bcb010bd21bde873c2
+  working_tree: modified
+  sha256: 037cb0b8ed3294240e4d36859c70882674d2f0622c00dcaf8167d22604dbfded
+- id: issue-956-shell
+  resource: ../../../crates/hoimin-cli/src/shell.rs
+  revision: 578b3657e744c1f6d13b57bcb010bd21bde873c2
+  working_tree: modified
+  sha256: 5fcdd3d6b6704103af83478744e858cebb30bc57c8938cf24d4223ae05c7fe3d
+- id: issue-956-record
+  resource: ../../maintenance/2026-10-16-issue-956.md
+  working_tree: untracked
+  sha256: a1a9444b446efad468b579ec06a29dad9db05aa1f6c12d52e1babe3621de5b6c
 - id: issue-867-shell
   resource: ../../../crates/hoimin-cli/src/shell.rs
   revision: 906ba668de94115ef5ca459af3b5f176d22b1b4e
@@ -361,8 +375,8 @@ their coordination role.
 
 # Cleanup classification and retry evidence (Issue #867)
 
-The shell keeps Failed and Deferred cleanup variants through ordinary execution,
-delivery and outer finalization. Recordless thread failures carry their typed
+The shell preserves Failed and Deferred cleanup classifications through ordinary
+execution, delivery and outer finalization. Recordless thread failures carry their typed
 kind; an unverified remaining root still forces deferral. Marker work cannot
 rename the root, so its failure may retain the known active path. Production
 diagnostic codes and text, bounded details and primary/secondary errors retain
@@ -379,6 +393,32 @@ The [implementation and verification record](../../superpowers/plans/2026-10-14-
 separates behavioral regression failures, executed Windows checks and static
 review. The existing Lean-model adapters do not prove every Rust/OS execution;
 the Unix shutdown correspondence case is outside this Windows run.
+
+## Single internal cleanup result (Issue #956)
+
+`CleanupRecord` owns one `CleanupDisposition`: Clean, Failed, or Deferred with
+optional coordinator-contention evidence. Only Deferred can carry retry evidence.
+The shell outcome pairs this record with presentation text; it derives disk
+classification from the record in normal and outer execution/delivery cleanup.
+There is no second status to synchronize.[^issue-956-owned][^issue-956-shell]
+
+`CleanupEvidence` keeps counts, bounded diagnostics and remaining-root evidence
+independent from the disposition. A timeout or interrupted wait cannot certify a
+renamed root. Marker errors retain the original disposition and remain secondary
+for otherwise clean delivery. Retained and CleanupAfterDelivery belong only to
+public reports; when no execution record exists, report enrichment reconstructs
+evidence without constructing an internal cleanup result.[^issue-956-shell]
+
+The [maintenance record](../../maintenance/2026-10-16-issue-956.md) distinguishes
+compile-red for the internal API from preserved-behavior tests. Retry deadlines,
+the 10 ms contention interval, janitor policy and Lean transitions are unchanged.
+Recheck these boundaries when adding outcomes, retry reasons or report-only
+statuses. Native validation is macOS-only; platform-specific source review is
+not Windows/Linux execution evidence.[^issue-956-record]
+
+[^issue-956-owned]: [Internal cleanup disposition and evidence](../../../crates/hoimin-cli/src/workspace/owned.rs).
+[^issue-956-shell]: [Cleanup classification consumers and report projection](../../../crates/hoimin-cli/src/shell.rs).
+[^issue-956-record]: [Issue 956 implementation and verification](../../maintenance/2026-10-16-issue-956.md).
 
 [^issue-867-shell]: [Typed shell cleanup boundaries](../../../crates/hoimin-cli/src/shell.rs).
 [^issue-867-owned]: [Owned workspace cleanup evidence](../../../crates/hoimin-cli/src/workspace/owned.rs).
