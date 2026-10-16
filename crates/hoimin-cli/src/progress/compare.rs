@@ -373,7 +373,7 @@ mod detail_tests {
 
     fn report(entries: &[(&str, &str, MutationStatus)]) -> UsableReport {
         let value: serde_json::Value = serde_json::from_str(include_str!(
-            "../../tests/golden/reports/schema-v6-current.json"
+            "../../tests/golden/reports/schema-v7-current.json"
         ))
         .unwrap();
         let hoimin_core::OutputEvent::MutantFinished(template) =

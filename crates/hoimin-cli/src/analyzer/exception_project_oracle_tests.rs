@@ -91,7 +91,7 @@ fn lean_exception_hierarchy_snapshot_correspondence() {
                 pairs
             })
             .unwrap_or_default();
-        let recheck = crate::fingerprint_inputs::recheck_config(&config, &config.root);
+        let recheck = crate::fingerprint_inputs::recheck_config(&config, &config.selection.root);
         let fingerprint_matches = recheck.is_ok();
         let expected_recheck = [
             Err(

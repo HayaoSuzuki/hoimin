@@ -73,7 +73,7 @@ fn reused_outcome_has_no_execution_output() {
 fn finished_event_decodes_current_typed_wire() {
     // Arrange
     let document: serde_json::Value = serde_json::from_str(include_str!(
-        "../../hoimin-cli/tests/golden/reports/schema-v6-current.json"
+        "../../hoimin-cli/tests/golden/reports/schema-v7-current.json"
     ))
     .unwrap();
     // Act
@@ -128,7 +128,7 @@ proptest! {
     fn diagnostic_codes_do_not_change_outcome_status(codes in proptest::collection::vec(prop_oneof![Just(hoimin_core::PROCESS_OUTPUT_CLOSE_TIMEOUT_CODE.to_owned()), any::<String>()], 0..8)) {
         // Arrange
         let mut document: serde_json::Value = serde_json::from_str(include_str!(
-            "../../hoimin-cli/tests/golden/reports/schema-v6-current.json"
+            "../../hoimin-cli/tests/golden/reports/schema-v7-current.json"
         )).unwrap();
         let event = &mut document["mutants"][0];
         event["diagnostics"] = serde_json::to_value(codes.into_iter().map(|code| hoimin_core::SessionDiagnostic {
@@ -219,7 +219,7 @@ proptest! {
 fn finished_event_rejects_nested_unknown_diagnostic_field() {
     // Arrange
     let mut document: serde_json::Value = serde_json::from_str(include_str!(
-        "../../hoimin-cli/tests/golden/reports/schema-v6-current.json"
+        "../../hoimin-cli/tests/golden/reports/schema-v7-current.json"
     ))
     .unwrap();
     document["mutants"][0]["diagnostics"] = serde_json::json!([{
@@ -237,7 +237,7 @@ macro_rules! duplicate_elapsed_field_test {
         fn $name() {
             // Arrange
             let mut document: serde_json::Value = serde_json::from_str(include_str!(
-                "../../hoimin-cli/tests/golden/reports/schema-v6-current.json"
+                "../../hoimin-cli/tests/golden/reports/schema-v7-current.json"
             )).unwrap();
             let event = &mut document["mutants"][0];
             event["outcome"]["executed"]["elapsed"] = serde_json::json!({"secs":0,"nanos":0});

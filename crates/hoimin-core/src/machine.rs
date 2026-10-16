@@ -711,7 +711,7 @@ impl RunState {
                 run_id: self.run_id.clone(),
             },
             argv: self.config.test_argv.clone(),
-            cwd: self.config.root.clone(),
+            cwd: self.config.selection.root.clone(),
             limits: ProcessLimits {
                 timeout: self.config.limits.baseline_timeout.get(),
                 max_output_bytes: self.config.limits.max_output.get(),
@@ -1043,7 +1043,7 @@ impl RunState {
                 mutant_id: candidate.id,
             },
             argv: self.config.test_argv.clone(),
-            cwd: self.config.root.clone(),
+            cwd: self.config.selection.root.clone(),
             limits: ProcessLimits {
                 timeout,
                 max_output_bytes: self.config.limits.max_output.get(),

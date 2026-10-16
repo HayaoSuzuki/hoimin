@@ -13,7 +13,7 @@ EVENT_SCHEMA = json.loads(
 )
 VALIDATOR = Draft202012Validator(EVENT_SCHEMA)
 EVENT = json.loads(
-    (ROOT / "crates/hoimin-cli/tests/golden/events/schema-v6-current.jsonl")
+    (ROOT / "crates/hoimin-cli/tests/golden/events/schema-v7-current.jsonl")
     .read_text(encoding="utf-8")
     .splitlines()[0]
 )
@@ -26,7 +26,7 @@ EVENT = json.loads(
 def test_current_event_accepts_typed_changed_selection(changed: object) -> None:
     # Arrange.
     event = copy.deepcopy(EVENT)
-    event["schema_version"] = 6
+    event["schema_version"] = 7
     selection = event["normalized_config"]["selection"]
     selection["changed"] = changed
 

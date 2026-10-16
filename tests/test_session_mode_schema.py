@@ -25,7 +25,7 @@ JSON_VALUES = st.recursive(
 @given(value=JSON_VALUES)
 def test_normalized_config_rejects_obsolete_resume_field(value: object) -> None:
     # Arrange
-    source = ROOT / "crates/hoimin-cli/tests/golden/events/schema-v6-current.jsonl"
+    source = ROOT / "crates/hoimin-cli/tests/golden/events/schema-v7-current.jsonl"
     event = json.loads(source.read_text(encoding="utf-8").splitlines()[0])
     event["normalized_config"]["resume"] = value
 
@@ -33,4 +33,15 @@ def test_normalized_config_rejects_obsolete_resume_field(value: object) -> None:
     errors = list(VALIDATOR.iter_errors(event))
 
     # Assert
+    assert errors
+
+
+@given(value=JSON_VALUES)
+def test_normalized_config_rejects_removed_outer_root(value: object) -> None:
+    source = ROOT / "crates/hoimin-cli/tests/golden/events/schema-v7-current.jsonl"
+    event = json.loads(source.read_text(encoding="utf-8").splitlines()[0])
+    event["normalized_config"]["root"] = value
+
+    errors = list(VALIDATOR.iter_errors(event))
+
     assert errors

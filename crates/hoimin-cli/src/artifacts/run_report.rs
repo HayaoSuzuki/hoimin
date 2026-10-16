@@ -55,6 +55,9 @@ pub(crate) struct ReviewReport {
 /// Returns an error for invalid JSON, unsupported schema, invalid configuration
 /// or structure, an unusable run, or failure to resolve the project root.
 pub(crate) fn read_review_json(path: &Path, bytes: &[u8]) -> Result<ReviewReport, ProgressError> {
+    if let Some(header) = dispatch::probe(bytes) {
+        check_schema(path, header.schema_version)?;
+    }
     let document: RunReportDocument<hoimin_core::RunConfig> = serde_json::from_slice(bytes)
         .map_err(|source| ProgressError::Parse {
             path: path.to_path_buf(),
@@ -62,12 +65,10 @@ pub(crate) fn read_review_json(path: &Path, bytes: &[u8]) -> Result<ReviewReport
         })?;
     check_schema(path, document.schema_version)?;
     let run_id = document.run.run_id().to_owned();
-    let project =
-        std::fs::canonicalize(&document.run.value().normalized_config.root).map_err(|source| {
-            ProgressError::Read {
-                path: path.to_path_buf(),
-                source,
-            }
+    let project = std::fs::canonicalize(&document.run.value().normalized_config.selection.root)
+        .map_err(|source| ProgressError::Read {
+            path: path.to_path_buf(),
+            source,
         })?;
     let project = camino::Utf8PathBuf::from_path_buf(project)
         .map_err(|_| invalid_structure(path, "review project root is not UTF-8"))?;
@@ -106,7 +107,7 @@ pub enum ProgressError {
         source: serde_json::Error,
     },
     #[error(
-        "unsupported schema version {found} in progress report {path}; expected {REPORT_SCHEMA_VERSION}"
+        "unsupported schema version {found} in progress report {path}; expected {REPORT_SCHEMA_VERSION}; read old reports with their producing binary or rerun with this version"
     )]
     UnsupportedSchema { path: PathBuf, found: u32 },
     #[error("invalid structure in progress report {path}: {message}")]
@@ -504,9 +505,24 @@ impl<R: Read> Read for FingerprintReader<R> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn review_rejects_old_root_shape_with_schema_migration_guidance() {
+        let bytes = include_bytes!("../../tests/golden/reports/schema-v6-current.json");
+
+        let error = read_review_json(Path::new("old.json"), bytes)
+            .err()
+            .unwrap();
+
+        assert!(matches!(
+            error,
+            ProgressError::UnsupportedSchema { found: 6, .. }
+        ));
+        assert!(error.to_string().contains("rerun with this version"));
+    }
+
     fn current_report_json() -> String {
         let document: serde_json::Value = serde_json::from_str(include_str!(
-            "../../tests/golden/reports/schema-v6-current.json"
+            "../../tests/golden/reports/schema-v7-current.json"
         ))
         .unwrap();
         serde_json::to_string(&document).unwrap()

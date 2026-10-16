@@ -20,7 +20,35 @@ sources:
     revision: 67b82d65bfa6f4c13b7476531161c1852be50381
     working_tree: clean
     sha256: 95ff6b857b2a13f8c22087d66e8437ad8c5cd0e3ce5cb88e58686298cc09f9b2
+  - id: issue-949-implementation
+    resource: ../../../crates/hoimin-cli/src/fingerprint_inputs.rs
+    revision: ddb8ed9504beb04c06bfe11821ebcafffa332714
+    working_tree: modified
+    sha256: b6f881bd7b007f9422303f944e7ed54d60490e5e84c5aa5a42e09af5c03718a7
+  - id: issue-949-record
+    resource: ../../maintenance/2026-10-16-issue-949.md
+    working_tree: untracked
+    sha256: 17f235dfeb0443811bbe48b946a696e02f7a441cf4efb87dd0c4dac79c007282
 ---
+
+# Worker root ownership (Issue #949)
+
+Fingerprint input resolution reads `config.selection.root`, the only stored
+project root in normalized configuration. Worker rechecks clone the prepared
+configuration and replace this one root before resolving exact files, glob
+matches and exception-project inputs. Changed original files cannot substitute
+for worker contents; changed worker inputs still reject verification. The
+prepared configuration remains intact.[^issue-949-implementation]
+
+This removes a synchronization obligation without changing logical input paths,
+content hashes, path canonicalization or fingerprint encoding. Fingerprint
+schema 11 and session schema 5 remain unchanged; only embedding plan/report
+formats advance. Existing oracle comparisons exercise retained semantics, and
+no new state-machine proof is claimed.[^issue-949-record]
+
+[^issue-949-implementation]: [Input resolution and worker rechecks](../../../crates/hoimin-cli/src/fingerprint_inputs.rs).
+[^issue-949-record]: [Issue #949 design, self-reviews and verification](../../maintenance/2026-10-16-issue-949.md).
+
 
 # glob解決の契約
 

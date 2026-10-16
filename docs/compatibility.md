@@ -4,6 +4,36 @@ hoimin is currently a 0.x CLI. This policy describes how maintainers classify
 changes and tell users what to update. A patch release can fix incorrect
 behavior; it does not promise identical mutation candidates or scores.
 
+## Single normalized project root in 0.11.0
+
+Plan schema 9 and report schema 7 store the project root only at
+`normalized_config.selection.root` (under `run` in JSON reports). The former
+`normalized_config.root` field is rejected by plan and typed report readers even
+when it agrees with the selection root. Custom producers must remove that field;
+there is no fallback, alias or automatic conversion. Rust callers use
+`config.selection.root`; standalone `Selection` retains the same root field.
+
+Regenerate schema-8 and older plans using the intended project, environment,
+original arguments and resource limits. Use the newly generated candidate IDs:
+
+```console
+hoimin plan --root . --source src --fingerprint-file pyproject.toml -- python -m pytest -q > plan-v9.json
+hoimin verify plan-v9.json --candidate '<ID_FROM_PLAN_V9>' --format json
+hoimin review list plan-v9.json --store reviews.sqlite3 --format json
+```
+
+Update JSON/JSONL report consumers to schema 7. Progress and review reject older
+reports; read them with their producing binary or rerun with this version. Plan
+regeneration cannot reconstruct old run results. Keep original files if needed
+and do not hand-edit schema numbers. Progress continues treating normalized
+configuration as opaque; review retains strict typed configuration validation.
+
+Selection, path spelling, fingerprint schema 11 and fingerprint bytes are
+unchanged. Session schema 5, ranking and candidate identities are unchanged.
+The incompatible saved configuration shape raises the minimum release version
+to 0.11.0. The notices below describe earlier changes; this notice supersedes
+their current plan/report version and release-floor statements.
+
 ## Single saved fingerprint input list in 0.10.0
 
 Plan schema 8 stores fingerprint input records only in
@@ -186,7 +216,7 @@ schemas 1–4 remain rejected; this change does not restore legacy migration pat
 | Interface | Maintenance rule | User action when it changes |
 | --- | --- | --- |
 | CLI arguments, defaults and exit codes | Preserve documented usage within a minor series, except documented bug fixes. Removing or changing a supported contract needs a minor-version floor increase. | Update invocation and CI conditions using the release notice. |
-| JSON and JSONL reports | Treat documented schemas as public. Progress accepts only report schema 6, matching the writer; review accepts current-schema JSON. Adding a field may still affect strict readers. | Read old reports with their producing binary, or rerun with the intended version. Plan regeneration alone cannot reconstruct past reports. Files are not automatically converted. |
+| JSON and JSONL reports | Treat documented schemas as public. Progress accepts only report schema 7, matching the writer; review accepts current-schema JSON. Adding a field may still affect strict readers. | Read old reports with their producing binary, or rerun with the intended version. Plan regeneration alone cannot reconstruct past reports. Files are not automatically converted. |
 | Saved plan, ranking and candidate IDs | These are checked execution inputs, not timeless interchange formats. Changes to schema, ranking, identity, source or fingerprints can invalidate a plan. | Regenerate the plan with the intended version and inputs. Do not hand-edit versions or IDs to bypass validation. |
 | Session database and resume | Resume is allowed only under the implementation's schema and fingerprint checks. Migration support must be stated explicitly. | Keep the old database and binary if needed; start a new session when compatibility is not supported. |
 | Default operators, profiles and selection | Changes can alter candidate count, runtime and the population behind a score. Default expansion is an observable compatibility change. | Review the operator set and budget; use matching candidates and validation settings for comparisons. |

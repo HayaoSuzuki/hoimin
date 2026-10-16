@@ -22,7 +22,7 @@
       "const": "verify_preview"
     },
     "plan_schema_version": {
-      "const": 8
+      "const": 9
     },
     "ranking_rule_version": {
       "const": 4

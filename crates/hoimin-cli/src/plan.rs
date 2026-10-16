@@ -35,7 +35,7 @@ mod validation_tests;
 use ranking::{RANKING_RULE_VERSION, rank_candidates, validate_ranking, validate_ranking_against};
 pub use ranking::{RankedPlanCandidate, RankingReason, RankingReasonCode};
 
-pub const PLAN_SCHEMA_VERSION: u32 = 8;
+pub const PLAN_SCHEMA_VERSION: u32 = 9;
 
 pub(crate) struct ReadOnlyPlan {
     pub manifest: PlanManifest,
@@ -60,7 +60,7 @@ pub(crate) fn read_for_review(path: &Path) -> Result<ReadOnlyPlan, PlanError> {
         })?;
     let manifest = decode_manifest(&bytes)?;
     validate_header(&manifest)?;
-    let project = std::fs::canonicalize(&manifest.normalized_config.root)
+    let project = std::fs::canonicalize(&manifest.normalized_config.selection.root)
         .map_err(|error| invalid(error.to_string()))?;
     let project = Utf8PathBuf::from_path_buf(project)
         .map_err(|_| invalid("project root is not UTF-8".into()))?;
@@ -322,7 +322,7 @@ async fn create_inner(
         .await
         .map_err(|error| PlanError::TargetResolution(error.to_string()))?;
     crate::live_progress::stage("reading sources");
-    let sources = source_records(&config.root, &targets).await?;
+    let sources = source_records(&config.selection.root, &targets).await?;
     let discovery = discover_plan_targets(
         &config,
         &targets,
@@ -489,7 +489,7 @@ async fn prepare_verify_selection_inner(
     let targets = TargetHandler::resolve(&config.selection)
         .await
         .map_err(|error| PlanError::SourceChanged(error.to_string()))?;
-    let current_sources = source_records(&config.root, &targets)
+    let current_sources = source_records(&config.selection.root, &targets)
         .await
         .map_err(|error| PlanError::SourceChanged(error.to_string()))?;
     ensure_exact_records(&manifest.sources, &current_sources, RecordMismatch::Source)?;
@@ -512,8 +512,9 @@ async fn prepare_verify_selection_inner(
         excludes: config.selection.excludes.clone(),
         literal_exclusions: Vec::new(),
     };
-    let copy_manifest = crate::workspace::build_validation_manifest(&config.root, &copy_options)
-        .map_err(|error| PlanError::Workspace(error.to_string()))?;
+    let copy_manifest =
+        crate::workspace::build_validation_manifest(&config.selection.root, &copy_options)
+            .map_err(|error| PlanError::Workspace(error.to_string()))?;
     let fingerprint_copy_inputs = config
         .fingerprint_inputs
         .iter()
@@ -1015,7 +1016,7 @@ async fn validate_requested_descriptors(
         }
         requested_paths.insert(candidate.path.clone());
         if let Some(file_candidates) = by_path.remove(candidate.path.as_path()) {
-            let source = tokio::fs::read(config.root.join(&candidate.path))
+            let source = tokio::fs::read(config.selection.root.join(&candidate.path))
                 .await
                 .map_err(|error| {
                     PlanError::CandidateInvalid(format!("{}: {error}", candidate.path))
@@ -1276,17 +1277,15 @@ mod tests {
     }
 
     #[test]
-    fn header_preserves_root_mismatch_diagnostic_and_version_precedence() {
+    fn header_preserves_version_precedence_over_invalid_selection() {
         let mut manifest = manifest();
-        manifest.normalized_config.selection.root = "other-project".into();
-        assert!(matches!(
-            validate_header(&manifest),
-            Err(PlanError::ManifestInvalid(message))
-                if message == "selection root differs from normalized config root"
-        ));
+        manifest.normalized_config.selection.files.clear();
         manifest.schema_version = PLAN_SCHEMA_VERSION + 1;
+
+        let result = validate_header(&manifest);
+
         assert!(matches!(
-            validate_header(&manifest),
+            result,
             Err(PlanError::ManifestInvalid(message))
                 if message.starts_with("unsupported schema version")
         ));

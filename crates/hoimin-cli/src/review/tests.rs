@@ -250,13 +250,14 @@ async fn read_only_plan_does_not_execute() {
 
 #[tokio::test]
 async fn plan_readers_reject_old_schemas_with_regeneration_guidance() {
-    for version in 1..=7 {
+    for version in 1..=8 {
         for review in [false, true] {
             // Arrange: old fields must not obscure schema regeneration guidance.
             let (_dir, path) = plan_fixture().await;
             let mut value: serde_json::Value =
                 serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
             value["schema_version"] = version.into();
+            value["normalized_config"]["root"] = serde_json::json!("old-project");
             value["fingerprint_inputs"] = serde_json::json!([]);
             value["normalized_config"]
                 .as_object_mut()
@@ -559,7 +560,7 @@ async fn report_fixture() -> (tempfile::TempDir, std::path::PathBuf, std::path::
     let (dir, path) = plan_fixture().await;
     let plan = super::input::load_plan(&path).unwrap();
     let mut report: serde_json::Value = serde_json::from_str(include_str!(
-        "../../tests/golden/reports/schema-v6-current.json"
+        "../../tests/golden/reports/schema-v7-current.json"
     ))
     .unwrap();
     let config = plan
@@ -692,7 +693,7 @@ async fn review_rejects_report_with_changed_identity_or_execution() {
         ("baseline", "/baseline/termination/Exit", 1.into()),
         (
             "root",
-            "/run/normalized_config/root",
+            "/run/normalized_config/selection/root",
             std::env::temp_dir().to_str().unwrap().into(),
         ),
         ("summary", "/summary/counts/killed", 9.into()),
@@ -846,7 +847,7 @@ fn write_matching_report(
     candidates: &[&hoimin_core::MutationCandidate],
 ) {
     let mut report: serde_json::Value = serde_json::from_str(include_str!(
-        "../../tests/golden/reports/schema-v6-current.json"
+        "../../tests/golden/reports/schema-v7-current.json"
     ))
     .unwrap();
     report["run"]["normalized_config"] = serde_json::to_value(

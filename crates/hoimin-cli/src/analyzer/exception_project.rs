@@ -25,13 +25,14 @@ impl ExceptionProject {
             .then(|| {
                 let mut roots = vec![Utf8PathBuf::new()];
                 for root in config.import_roots.iter().chain(&config.selection.sources) {
-                    if let Ok(path) = hoimin_core::normalize_logical_path(&config.root, root)
+                    if let Ok(path) =
+                        hoimin_core::normalize_logical_path(&config.selection.root, root)
                         && !roots.contains(&path)
                     {
                         roots.push(path);
                     }
                 }
-                let mut result = Self::new(&config.root);
+                let mut result = Self::new(&config.selection.root);
                 result
                     .selection
                     .includes
@@ -196,7 +197,7 @@ mod tests {
         // Restoring A makes a later workspace recheck pass, but cannot make an
         // index built from B correspond to the prepared input fingerprint.
         std::fs::write(&path, original).unwrap();
-        crate::fingerprint_inputs::recheck_config(&config, &config.root).unwrap();
+        crate::fingerprint_inputs::recheck_config(&config, &config.selection.root).unwrap();
         assert!(
             result.is_err(),
             "index accepted bytes outside its prepared fingerprint"
@@ -240,7 +241,7 @@ mod tests {
         std::fs::remove_file(&path).unwrap();
         let result = project.load(&|| false);
         std::fs::write(&path, original).unwrap();
-        crate::fingerprint_inputs::recheck_config(&config, &config.root).unwrap();
+        crate::fingerprint_inputs::recheck_config(&config, &config.selection.root).unwrap();
         let replacements = result
             .map(|index| {
                 let parsed = ruff_python_parser::parse_module(service).unwrap();

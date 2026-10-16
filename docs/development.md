@@ -1364,7 +1364,7 @@ cargo test -p hoimin-cli --lib analyzer::rust::rust_tests::comprehension_excepti
 
 ## Extending plan ranking
 
-Plan manifests use schema version 8 and ranking rule version 4. The schema
+Plan manifests use schema version 9 and ranking rule version 4. The schema
 version describes the manifest's serialized shape; the ranking rule version
 describes the category and scoring semantics used to order its candidates.
 Change the ranking rule version whenever those semantics change, even when the
@@ -1521,6 +1521,22 @@ adapts the enum into its existing two observation columns; its 64 strict cases
 and 17 model-only race cases retain their input and expected outcomes. Running
 that corpus checks bounded selection behavior, not SQLite scheduling or a new proof.
 
+## Normalized project root
+
+`RunConfig` and `PlanConfig` store the project root only in `selection.root`.
+Raw CLI normalization moves `RawRunConfig.root` into `Selection`; run/plan
+conversion retains it without canonicalization. Workspace, analyzer, process
+working-directory and fingerprint consumers use that same field. Worker
+fingerprint rechecks replace the root on a cloned config, leaving the prepared
+configuration intact. Keep all other selection and configuration validation.
+
+Plan schema 9 and report schema 7 reject the former outer root in typed readers.
+See the [0.11.0 migration notice](compatibility.md#single-normalized-project-root-in-0110)
+and [implementation evidence](maintenance/2026-10-16-issue-949.md). Progress's
+opaque configuration contract is unchanged; strict review reads the one root
+from the decoded selection. Existing Lean oracle comparisons cover retained
+semantics; this ownership change introduces no new state machine.
+
 ## Worker import roots
 
 `RawRunConfig.import_roots` normalizes to an ordered, duplicate-free list in
@@ -1532,10 +1548,10 @@ or null arrays fail decoding in typed configuration/event readers and review;
 verify rejects affected plans before baseline execution. Progress retains its
 opaque `normalized_config` object/null contract. See the
 [0.9.0 compatibility notice](compatibility.md#required-saved-configuration-arrays-in-090)
-for older inputs missing an array. Plan schema 8 stores fingerprint input records
+for older inputs missing an array. Plan schema 9 stores fingerprint input records
 only in `normalized_config.fingerprint_inputs`; the top-level duplicate is
-rejected. Regenerate schema-7 and older plans before verify or review; see the
-[0.10.0 compatibility notice](compatibility.md#single-saved-fingerprint-input-list-in-0100). Fingerprint schema
+rejected. Regenerate schema-8 and older plans before verify or review; see the
+[0.11.0 compatibility notice](compatibility.md#single-normalized-project-root-in-0110). Fingerprint schema
 11 frames the ordered import roots under field tag 9, the ordered include/exclude
 copy patterns under tags 10/11, and configured source roots under tag 12,
 preventing old-session reuse. Source file hashes retain their set semantics;
@@ -1737,7 +1753,7 @@ The captured constructor and deserializer reject empty, duplicate, unsorted, or
 noncanonical name sets and digests outside 64 lowercase hexadecimal characters.
 No `prepared` mode or separate optional hash exists. Reports and plans write an
 explicit `environment` object with a `state` tag; omission in the prior writer
-was also a valid current untracked encoding. Plan schema 8/report schema 6 require
+was also a valid current untracked encoding. Plan schema 9/report schema 7 require
 the explicit snapshot and reject the older representation rather than adapting it.
 Regenerate older plans; retain old reports with their producing binary.
 
@@ -1938,7 +1954,7 @@ status, elapsed time, and optional output through the outcome's domain methods.
 Keep diagnostics independent, and never reconstruct output state from a code.
 `ProcessFinished` JSON requires explicit `output_state`; no legacy default applies.
 
-Report schema 6 and session schema 5 replace the flat result format. Update strict
+Report schema 7 and session schema 5 replace the flat result format. Update strict
 consumers and start a different session path for older databases; no conversion
 adapter is provided. Preserve historical golden files when adding current ones.
 Read the [outcome design](superpowers/reports/issue-895/design.md),
@@ -2009,7 +2025,7 @@ shared selection validator still requires a source for changed selection and
 keeps file, line, and symbol selectors available for intersection. Ranking
 uses the presence of the changed value, including selected context lines.
 
-Plan schema 8 and report schema 6 encode disabled state as `"changed": null` and enabled state
+Plan schema 9 and report schema 7 encode disabled state as `"changed": null` and enabled state
 as `"changed": {"context": 2, "diff_base": "main"}`. The enabled object's
 `context` is required; `diff_base` can be null or omitted. Selection rejects
 unknown fields, including the obsolete sibling `changed_context` and

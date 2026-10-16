@@ -851,7 +851,7 @@ detected as a copy. Copy confirmation is best-effort if files change or become
 unreadable after validation; reports should remain unchanged during comparison.
 
 Inputs may mix JSON documents and JSONL event streams saved from
-`hoimin run --format jsonl`, both using report schema 6. Older and unsupported
+`hoimin run --format jsonl`, both using report schema 7. Older and unsupported
 future schemas are rejected with exit code 2. Detection uses content, not
 filename. For example:
 
@@ -1118,7 +1118,12 @@ outlive the wait; it retains its writer and delivery resources until it returns.
 
 ## Sessions and resume
 
-Run JSON/JSONL emit schema 6; consumers validating the closed schema must update. `progress` accepts only schema-6 JSON/JSONL and rejects historical, unsupported future and mixed-version reports. When `--resume` is requested, JSON and JSONL include `run_started.resume` (the `run.resume` field in a JSON report): `{"status":"resumed"}` or `{"status":"fresh","reason":"CODE"}`. Human output also explains whether the saved run is continuing or a new run is starting. Runs without `--resume` omit this field.
+The project root is stored only in `normalized_config.selection.root` (under
+`run` for JSON reports). Saved plans use schema 9. Regenerate schema-8 and older
+plans; read old reports with their producing binary or rerun with this version.
+See the [0.11.0 compatibility notice](compatibility.md#single-normalized-project-root-in-0110).
+
+Run JSON/JSONL emit schema 7; consumers validating the closed schema must update. `progress` accepts only schema-7 JSON/JSONL and rejects historical, unsupported future and mixed-version reports. When `--resume` is requested, JSON and JSONL include `run_started.resume` (the `run.resume` field in a JSON report): `{"status":"resumed"}` or `{"status":"fresh","reason":"CODE"}`. Human output also explains whether the saved run is continuing or a new run is starting. Runs without `--resume` omit this field.
 
 A compatible incomplete run always wins, even if newer runs are incompatible. If an eligible row appears only during the later history inspection, `candidate_changed` takes precedence. Otherwise reasons use this precedence: `budget_decreased` (matching incomplete runs require a higher `--max-mutants`), `matching_run_complete`, `fingerprint_mismatch` (other incomplete history), `no_incomplete_run` (only nonmatching complete history), then `no_prior_run`. `candidate_changed` means session history changed during resume selection. These codes describe observed history, not which configuration field or file changed. Existing old-schema, corrupt-data, database-read, and ownership errors remain errors.
 
@@ -1145,7 +1150,7 @@ results remain available in the database.
 
 ### Mutation result outcomes
 
-Report schema 6 replaces each mutant's independent `status`, nullable
+Report schema 7 replaces each mutant's independent `status`, nullable
 `termination`/`output`, `output_state`, and `elapsed_ms` with one `outcome`:
 
 - `executed` carries termination, output state, output spool, and elapsed duration.
@@ -1175,19 +1180,19 @@ resource/time limits retain their named status, and cancellation means `not_run`
 Diagnostics remain separate evidence and do not determine output state or status.
 Progress, review, summary counts, and human output derive these statuses. Baseline
 report fields retain their existing representation. Update strict report consumers
-to schema 6; old flat mutation result records are rejected without conversion.
+to schema 7; old flat mutation result records are rejected without conversion.
 
-Plan schema version 8 stores fingerprint input records only in
+Plan schema version 9 stores fingerprint input records only in
 `normalized_config.fingerprint_inputs`, alongside the validated environment snapshot
 and independent import roots (ranking rule version 4). `sources` separately records
-mutation targets. Regenerate schema-7 and older plans before verify or review using
+mutation targets. Regenerate schema-8 and older plans before verify or review using
 the original plan arguments and intended environment; neither command converts old
 files. The former top-level `fingerprint_inputs` field is rejected.
-Report schema 6 records typed changed selection and session intent, and retains the
+Report schema 7 records typed changed selection and session intent, and retains the
 environment snapshot introduced in schema 5 in place of the independent
 `fingerprint_env` / `fingerprint_env_hash` fields. Update strict report consumers
-to schema 6; read schema-5 and older reports with their producing binary, or rerun
-with this version. The release floor is 0.10.0. Files are not automatically converted
+to schema 7; read schema-6 and older reports with their producing binary, or rerun
+with this version. The release floor is 0.11.0. Files are not automatically converted
 or deleted. Environment fingerprint bytes remain unchanged, so this representation
 change alone does not require a new
 session; if an existing run is rejected, choose a different `--session PATH`.
@@ -1499,7 +1504,7 @@ current candidates. `list --stale` includes stored candidates absent from the
 plan separately. List and show do not create a missing store.
 
 Plan-only output has execution state `not_loaded`. Add `--report run.json` for
-actual results from a complete schema-v6 JSON report with a passing baseline and
+actual results from a complete schema-v7 JSON report with a passing baseline and
 matching project/candidates. A plan candidate absent from the report is
 `not_in_report`; recording it with that report is rejected. JSONL and older
 reports are not supported by review. Plan-only recording remains allowed.

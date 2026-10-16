@@ -29,7 +29,7 @@ fn jsonl_peak_does_not_grow_with_diagnostic_history() {
 
 fn write_events(path: &std::path::Path, count: u64) {
     let mut document: Value =
-        serde_json::from_str(include_str!("golden/reports/schema-v6-current.json")).unwrap();
+        serde_json::from_str(include_str!("golden/reports/schema-v7-current.json")).unwrap();
     document["mutants"] = json!([]);
     document["summary"]["counts"] = serde_json::to_value(hoimin_core::summarize(&[])).unwrap();
     document["summary"]["exit_code"] = json!(0);
