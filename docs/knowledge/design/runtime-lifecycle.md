@@ -5,6 +5,15 @@ description: OS別の資源制限と、プロセス終了・一時ファイル�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-960-output
+  resource: ../../../crates/hoimin-cli/src/process/output.rs
+  revision: 30d158c7ead3252c5c0aa398e8ab1819ffa9d75b
+  working_tree: modified
+  sha256: 27c0141b77480c1c6172f0020722e0ba549fa7f940805f86f63bf59907821644
+- id: issue-960-record
+  resource: ../../maintenance/2026-10-16-issue-960.md
+  working_tree: untracked
+  sha256: 6fe4f0f93f4702599f3db2b6ea22b9dc6fe9df7e7440c88077ee0243c132bb62
 - id: issue-955-machine
   resource: ../../../crates/hoimin-core/src/machine.rs
   revision: 578b3657e744c1f6d13b57bcb010bd21bde873c2
@@ -704,3 +713,26 @@ stop guards and failure routing when adding an output continuation.
 
 [^issue-955-machine]: [Pending completion ownership](../../../crates/hoimin-core/src/machine.rs).
 [^issue-955-record]: [Issue 955 implementation and verification](../../maintenance/2026-10-16-issue-955.md).
+
+## Output collector sink ownership (Issue #960)
+
+During reception, the collector owns one `io::Result<S>`: a usable sink or the
+first creation/write error. Only `Ok` permits a ring write. A failed write
+replaces that result with `Err`, dropping the sink before the next receive and
+preventing subsequent writes or finalization. The collector still counts each
+chunk with saturating arithmetic and drains until channel EOF. It propagates a
+saved error only after EOF; otherwise it extracts the sink and finalizes once,
+returning any finalize error.[^issue-960-output]
+
+This changes the private representation of existing behavior. Ring retention,
+marker thresholds and zero-capacity handling use the same implementation.
+The [implementation record](../../maintenance/2026-10-16-issue-960.md) separates
+baseline characterization, deliberate test-sensitivity faults and current checks.
+Its lifetime test observes destruction before sender closure and call counts;
+its finalize test checks error propagation after successful writes. Existing
+ordered-stream corpus comparisons retain their original scope, with no new
+Lean model or proof. Recheck ownership and EOF completion when changing sink
+failure handling.[^issue-960-record]
+
+[^issue-960-output]: [Output collection and fault tests](../../../crates/hoimin-cli/src/process/output.rs).
+[^issue-960-record]: [Issue 960 implementation and verification](../../maintenance/2026-10-16-issue-960.md).
