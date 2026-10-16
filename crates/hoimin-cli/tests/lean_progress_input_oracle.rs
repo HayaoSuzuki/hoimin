@@ -92,7 +92,7 @@ fn parse_lean_oracle_cases() -> Vec<LeanOracleCase> {
 
 fn report_json_from_lean_case(case: &LeanOracleCase) -> Value {
     let mut doc: Value =
-        serde_json::from_str(include_str!("golden/reports/schema-v6-current.json")).unwrap();
+        serde_json::from_str(include_str!("golden/reports/schema-v7-current.json")).unwrap();
     doc["run"]["normalized_config"] = Value::Null;
     match case.baseline.as_str() {
         "passed" => doc["baseline"]["termination"] = json!({"Exit": 0}),

@@ -294,7 +294,36 @@ sources:
 - id: issue-887-environment
   resource: ../../superpowers/plans/2026-10-14-issue-887.md
 
+- id: issue-949-config
+  resource: ../../../crates/hoimin-core/src/config.rs
+  revision: ddb8ed9504beb04c06bfe11821ebcafffa332714
+  working_tree: modified
+  sha256: 9518c2b6370e7b91a835ce1a8d64aaf21c6530d7658cdceab142499250b5f642
+- id: issue-949-record
+  resource: ../../maintenance/2026-10-16-issue-949.md
+  revision: 35c21145ccdfb6a044f9ae1dad2a5e4ff90deece
+  working_tree: modified
+  sha256: bca74014f517c33728e844b9e876a77b24ef3025c7e42fc75afb89d5849580f1
 ---
+
+# Single normalized root (Issue #949)
+
+`Selection.root` is the only stored project root in normalized run and plan
+configuration. Raw conversion moves the root into selection; preparation and
+run/plan conversion retain it. Target discovery, source reads, workspace copying,
+process working directories and review project matching use that same value.
+No filesystem normalization occurs during config conversion.[^issue-949-config]
+
+Plan schema 9 and report schema 7 remove the outer root without an adapter.
+Missing-selector and changed/symbol source checks remain in the shared selection
+validator. The root mismatch error and its synchronization duty disappear.
+The [migration notice](../../compatibility.md#single-normalized-project-root-in-0110)
+explains regeneration and reader updates. The #843 section below records the
+superseded two-field validation design.[^issue-949-config][^issue-949-record]
+
+[^issue-949-config]: [Normalized configuration](../../../crates/hoimin-core/src/config.rs).
+[^issue-949-record]: [Issue #949 design, self-reviews and verification](../../maintenance/2026-10-16-issue-949.md).
+
 
 # 候補発見と実行の分離
 
@@ -533,7 +562,7 @@ nonempty canonical names and a valid aggregate digest. The transition rejects a
 snapshot for another name set. Verify recaptures the saved names and rejects a
 changed snapshot before the baseline. [^issue-887-environment]
 
-Current plan schema 8 and report schema 6 retain the explicit `environment` object
+Before Issue #949, plan schema 8 and report schema 6 retained the explicit `environment` object
 introduced in plan schema 6 and report schema 5.
 The earlier omitted-field encoding was also produced by the then-current writer;
 its removal is a versioned format change, not a legacy-only cleanup. Regenerate
@@ -559,9 +588,9 @@ stage metadata、自動集約、resumeを製品機能として実装したとは
 
 [^issue-759-staged-report]: [#759 段階的検証の実現性調査](../../superpowers/reports/2026-10-11-issue-759-staged-verification.md)。条件、運用手順、セルフレビュー各5回。
 
-# Configuration root consistency (Issue #843)
+# Historical configuration root consistency (Issue #843)
 
-`RunConfig::validate()` and `PlanConfig::validate()` reject a configuration
+At Issue #843, `RunConfig::validate()` and `PlanConfig::validate()` rejected a configuration
 whose `root` differs from `selection.root`. The shared selection validator
 owns this rule. Equality compares path components without filesystem access
 or canonicalization; callers must validate after public-field mutation or

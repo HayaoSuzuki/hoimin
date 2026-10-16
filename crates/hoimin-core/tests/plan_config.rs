@@ -147,46 +147,60 @@ fn valid_normalized_plan_and_run_configs_pass_validation() {
 }
 
 #[test]
-fn normalized_configs_reject_mismatched_selection_root_after_mutation() {
-    let mut run = fixture_run_config();
-    run.selection.root = "other-project".into();
-    let mut plan = fixture_run_config().into_plan_config();
-    plan.root = "other-project".into();
+fn normalized_configs_reject_the_removed_outer_root() {
+    for root in ["project", "other-project", "project/./"] {
+        let mut run_value = serde_json::to_value(fixture_run_config()).unwrap();
+        run_value["root"] = serde_json::json!(root);
+        let mut plan = plan_value();
+        plan["root"] = serde_json::json!(root);
 
-    for result in [run.validate(), plan.validate()] {
-        assert_eq!(
-            result.unwrap_err().to_string(),
-            "selection root differs from normalized config root"
+        let run_result = serde_json::from_value::<RunConfig>(run_value);
+        let plan_result = serde_json::from_value::<PlanConfig>(plan);
+
+        assert!(
+            run_result
+                .unwrap_err()
+                .to_string()
+                .contains("unknown field `root`")
+        );
+        assert!(
+            plan_result
+                .unwrap_err()
+                .to_string()
+                .contains("unknown field `root`")
         );
     }
 }
 
 #[test]
-fn normalized_configs_reject_mismatched_selection_root_after_deserialization() {
-    let mut run_value = serde_json::to_value(fixture_run_config()).unwrap();
-    run_value["root"] = serde_json::json!("other-project");
-    let run: RunConfig = serde_json::from_value(run_value).unwrap();
-    let mut value = plan_value();
-    value["selection"]["root"] = serde_json::json!("other-project");
-    let plan: PlanConfig = serde_json::from_value(value).unwrap();
-
-    for result in [run.validate(), plan.validate()] {
-        assert_eq!(
-            result.unwrap_err().to_string(),
-            "selection root differs from normalized config root"
-        );
-    }
-}
-
-#[test]
-fn normalized_configs_accept_component_equal_roots_without_filesystem_access() {
+fn normalized_configs_accept_selection_root_without_filesystem_access() {
     let mut run = fixture_run_config();
-    run.root = "nonexistent-project/src".into();
     run.selection.root = "nonexistent-project/./src/".into();
     let plan = run.clone().into_plan_config();
 
-    assert_eq!(run.validate(), Ok(()));
-    assert_eq!(plan.validate(), Ok(()));
+    let results = [run.validate(), plan.validate()];
+
+    assert_eq!(results, [Ok(()), Ok(())]);
+}
+
+proptest::proptest! {
+    #[test]
+    fn saved_configs_preserve_the_single_project_root(root in "[a-z]{1,12}(/\\./[a-z]{1,12})?/?") {
+        let mut config = fixture_run_config();
+        config.selection.root = root.clone().into();
+        let mut value = serde_json::to_value(config).unwrap();
+        value.as_object_mut().unwrap().remove("root");
+
+        let run: RunConfig = serde_json::from_value(value).unwrap();
+        let plan_value = serde_json::to_value(run.into_plan_config()).unwrap();
+        let plan: PlanConfig = serde_json::from_value(plan_value.clone()).unwrap();
+        let restored = plan.into_run_config(OutputConfig::default());
+        let run_value = serde_json::to_value(&restored).unwrap();
+
+        proptest::prop_assert!(plan_value.get("root").is_none());
+        proptest::prop_assert!(run_value.get("root").is_none());
+        proptest::prop_assert_eq!(restored.selection.root.as_str(), root);
+    }
 }
 
 #[test]

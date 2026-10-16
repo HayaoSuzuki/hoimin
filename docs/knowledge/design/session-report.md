@@ -190,7 +190,37 @@ sources:
   working_tree: modified
   sha256: fc255db429a29687c107b9d9eb1acaaa87b97ac0bd1aad84de000cb5891ae38f
 
+- id: issue-949-reader
+  resource: ../../../crates/hoimin-cli/src/artifacts/run_report.rs
+  revision: ddb8ed9504beb04c06bfe11821ebcafffa332714
+  working_tree: modified
+  sha256: 585817301a29f83d660b42c293025105adcdc1defd568e1b48a9027f8da6f17a
+- id: issue-949-record
+  resource: ../../maintenance/2026-10-16-issue-949.md
+  revision: 35c21145ccdfb6a044f9ae1dad2a5e4ff90deece
+  working_tree: modified
+  sha256: bca74014f517c33728e844b9e876a77b24ef3025c7e42fc75afb89d5849580f1
 ---
+
+# Single project root in saved reports (Issue #949)
+
+Report schema 7 stores the project root only in
+`run.normalized_config.selection.root` for JSON and
+`normalized_config.selection.root` for `run_started` JSONL. Typed configuration
+readers reject the former outer root even when its value agrees. Review resolves
+its project identity from the one selection root. Progress retains its opaque
+configuration contract and still checks report versions and event structure.
+Older report versions require their producing binary or a rerun; changing a
+schema number cannot convert old reports.[^issue-949-reader][^issue-949-record]
+
+This format change raises the release floor to 0.11.0. Session schema 5,
+fingerprint schema 11 and fingerprint bytes remain unchanged. Earlier sections
+retain the versions current for those historical changes; schema 7 supersedes
+schema 6 for current report producers and readers.[^issue-949-record]
+
+[^issue-949-reader]: [Shared report readers](../../../crates/hoimin-cli/src/artifacts/run_report.rs).
+[^issue-949-record]: [Issue #949 design, self-reviews and verification](../../maintenance/2026-10-16-issue-949.md).
+
 
 # Session load result
 

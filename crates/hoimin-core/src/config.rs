@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 use std::num::{NonZeroU64, NonZeroUsize};
 use std::time::Duration;
 
-use camino::{Utf8Component, Utf8Path, Utf8PathBuf};
+use camino::{Utf8Component, Utf8PathBuf};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -548,10 +548,10 @@ pub struct RunLimits {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 /// Normalized invocation with a canonical capture request before preparation.
 /// The default environment state is a validated snapshot consumed by execution.
+/// The project root is owned solely by `selection`.
 /// Saved array fields are required; an explicit empty array means no configured entries.
 #[serde(deny_unknown_fields)]
 pub struct RunConfig<E = crate::EnvironmentSnapshot> {
-    pub root: Utf8PathBuf,
     pub selection: Selection,
     pub import_roots: Vec<Utf8PathBuf>,
     pub fingerprint_includes: Vec<String>,
@@ -571,7 +571,6 @@ pub struct RunConfig<E = crate::EnvironmentSnapshot> {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PlanConfig {
-    pub root: Utf8PathBuf,
     pub selection: Selection,
     pub import_roots: Vec<Utf8PathBuf>,
     pub limits: RunLimits,
@@ -590,14 +589,13 @@ pub struct PlanConfig {
 impl<E> RunConfig<E> {
     /// Validates common normalized run fields.
     /// Environment constructors and deserialization own their state invariants.
-    /// Selection and execution must share the same project root (by path equality).
     ///
     /// # Errors
     ///
     /// Returns [`ConfigError`] when selection, mutation operators, the test command,
     /// or limits are invalid.
     pub fn validate(&self) -> Result<(), ConfigError> {
-        validate_selection(&self.root, &self.selection)?;
+        validate_selection(&self.selection)?;
         validate_import_roots(&self.import_roots)?;
         validate_operators(&self.operators)?;
         validate_test_argv(&self.test_argv)?;
@@ -609,7 +607,6 @@ impl RunConfig {
     #[must_use]
     pub fn into_plan_config(self) -> PlanConfig {
         PlanConfig {
-            root: self.root,
             selection: self.selection,
             import_roots: self.import_roots,
             limits: self.limits,
@@ -647,7 +644,6 @@ impl RunConfig<crate::EnvironmentRequest> {
             return Err(ConfigError::FingerprintEnvSnapshotMismatch);
         }
         Ok(RunConfig {
-            root: self.root,
             selection: self.selection,
             import_roots: self.import_roots,
             fingerprint_includes: self.fingerprint_includes,
@@ -667,14 +663,13 @@ impl RunConfig<crate::EnvironmentRequest> {
 
 impl PlanConfig {
     /// Validates normalized persisted plan semantics.
-    /// Selection and execution must share the same project root (by path equality).
     ///
     /// # Errors
     ///
     /// Returns [`ConfigError`] when selection, mutation operators, the test command, or limits are
     /// invalid.
     pub fn validate(&self) -> Result<(), ConfigError> {
-        validate_selection(&self.root, &self.selection)?;
+        validate_selection(&self.selection)?;
         validate_import_roots(&self.import_roots)?;
         validate_operators(&self.operators)?;
         validate_test_argv(&self.test_argv)?;
@@ -684,7 +679,6 @@ impl PlanConfig {
     #[must_use]
     pub fn into_run_config(self, output: OutputConfig) -> RunConfig {
         RunConfig {
-            root: self.root,
             selection: self.selection,
             import_roots: self.import_roots,
             fingerprint_includes: self.fingerprint_includes,
@@ -714,8 +708,6 @@ pub struct FingerprintInputFile {
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum ConfigError {
-    #[error("selection root differs from normalized config root")]
-    SelectionRootMismatch,
     #[error("fingerprint.env.invalid_name: --fingerprint-env requires [A-Za-z_][A-Za-z0-9_]*")]
     InvalidFingerprintEnvName,
     #[error("fingerprint.env.non_normalized: names must be canonical, sorted, and unique")]
@@ -885,10 +877,7 @@ fn validate_import_roots(roots: &[Utf8PathBuf]) -> Result<(), ConfigError> {
     }
 }
 
-fn validate_selection(root: &Utf8Path, selection: &Selection) -> Result<(), ConfigError> {
-    if selection.root != root {
-        return Err(ConfigError::SelectionRootMismatch);
-    }
+fn validate_selection(selection: &Selection) -> Result<(), ConfigError> {
     let has_selector = !selection.sources.is_empty()
         || !selection.files.is_empty()
         || !selection.lines.is_empty()
@@ -989,7 +978,7 @@ impl TryFrom<RawRunConfig> for RunConfig<crate::EnvironmentRequest> {
 
     fn try_from(raw: RawRunConfig) -> Result<Self, Self::Error> {
         let selection = Selection {
-            root: raw.root.clone(),
+            root: raw.root,
             sources: raw.sources,
             files: raw.files,
             lines: raw.lines,
@@ -998,7 +987,7 @@ impl TryFrom<RawRunConfig> for RunConfig<crate::EnvironmentRequest> {
             includes: raw.includes,
             excludes: raw.excludes,
         };
-        validate_selection(&raw.root, &selection)?;
+        validate_selection(&selection)?;
         let session = match (raw.session, raw.resume) {
             (None, false) => SessionMode::Disabled,
             (Some(config), false) => SessionMode::Fresh(config),
@@ -1025,7 +1014,6 @@ impl TryFrom<RawRunConfig> for RunConfig<crate::EnvironmentRequest> {
         let limits = RunLimits::try_from(&raw.limits)?;
         validate_limits(&limits)?;
         Ok(Self {
-            root: raw.root,
             selection,
             import_roots: normalize_import_roots(&raw.import_roots)?,
             fingerprint_includes: raw.fingerprint_includes,

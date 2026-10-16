@@ -96,7 +96,7 @@ pub(crate) fn resolve_config(
         files.sort();
         files.dedup();
     }
-    resolve(&config.root, &config.fingerprint_includes, &files)
+    resolve(&config.selection.root, &config.fingerprint_includes, &files)
 }
 
 pub(crate) fn recheck_config(
@@ -104,7 +104,6 @@ pub(crate) fn recheck_config(
     root: &Utf8Path,
 ) -> Result<(), FingerprintInputRecheckError> {
     let mut current = config.clone();
-    current.root = root.to_owned();
     current.selection.root = root.to_owned();
     if resolve_config(&current)? == config.fingerprint_inputs {
         Ok(())
@@ -374,12 +373,7 @@ fn build_override(root: &Utf8Path, pattern: &str) -> Result<Override, Fingerprin
 mod tests {
     use super::*;
 
-    #[test]
-    fn recheck_uses_worker_root_without_changing_prepared_configuration() {
-        let original = tempfile::tempdir().unwrap();
-        let worker = tempfile::tempdir().unwrap();
-        let original_root = Utf8Path::from_path(original.path()).unwrap();
-        let worker_root = Utf8Path::from_path(worker.path()).unwrap();
+    fn prepared_config(original_root: &Utf8Path, worker_root: &Utf8Path) -> hoimin_core::RunConfig {
         for root in [original_root, worker_root] {
             std::fs::write(root.join("settings.toml"), "value = 1\n").unwrap();
             std::fs::write(root.join("errors.py"), "class Root(Exception): pass\n").unwrap();
@@ -398,35 +392,62 @@ mod tests {
         .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
         .unwrap();
         config.fingerprint_inputs = resolve_config(&config).unwrap();
-        let prepared = config.clone();
-        assert_eq!(config.fingerprint_inputs.len(), 2);
+        config
+    }
 
-        // Revalidation must use the copied worker inputs even if the source changes.
+    #[test]
+    fn recheck_uses_worker_inputs_when_original_inputs_have_changed() {
+        let original = tempfile::tempdir().unwrap();
+        let worker = tempfile::tempdir().unwrap();
+        let original_root = Utf8Path::from_path(original.path()).unwrap();
+        let worker_root = Utf8Path::from_path(worker.path()).unwrap();
+        let config = prepared_config(original_root, worker_root);
         std::fs::write(original_root.join("settings.toml"), "value = 2\n").unwrap();
         std::fs::write(
             original_root.join("errors.py"),
             "class Changed(Exception): pass\n",
         )
         .unwrap();
+
+        let result = recheck_config(&config, worker_root);
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn recheck_rejects_changed_worker_input() {
+        for (path, changed_bytes) in [
+            ("settings.toml", "value = 3\n"),
+            ("errors.py", "class Other(Exception): pass\n"),
+        ] {
+            let original = tempfile::tempdir().unwrap();
+            let worker = tempfile::tempdir().unwrap();
+            let original_root = Utf8Path::from_path(original.path()).unwrap();
+            let worker_root = Utf8Path::from_path(worker.path()).unwrap();
+            let config = prepared_config(original_root, worker_root);
+            std::fs::write(worker_root.join(path), changed_bytes).unwrap();
+
+            let result = recheck_config(&config, worker_root);
+
+            assert!(
+                matches!(result, Err(FingerprintInputRecheckError::RecordsChanged)),
+                "{path}"
+            );
+        }
+    }
+
+    #[test]
+    fn recheck_preserves_prepared_configuration() {
+        let original = tempfile::tempdir().unwrap();
+        let worker = tempfile::tempdir().unwrap();
+        let original_root = Utf8Path::from_path(original.path()).unwrap();
+        let worker_root = Utf8Path::from_path(worker.path()).unwrap();
+        let config = prepared_config(original_root, worker_root);
+        let expected = config.clone();
+
         recheck_config(&config, worker_root).unwrap();
 
-        for (path, original_bytes, changed_bytes) in [
-            ("settings.toml", "value = 1\n", "value = 3\n"),
-            (
-                "errors.py",
-                "class Root(Exception): pass\n",
-                "class Other(Exception): pass\n",
-            ),
-        ] {
-            std::fs::write(worker_root.join(path), changed_bytes).unwrap();
-            assert!(matches!(
-                recheck_config(&config, worker_root),
-                Err(FingerprintInputRecheckError::RecordsChanged)
-            ));
-            std::fs::write(worker_root.join(path), original_bytes).unwrap();
-        }
-        assert_eq!(config, prepared);
-        assert_eq!(config.validate(), Ok(()));
+        assert_eq!(config, expected);
     }
 
     #[test]

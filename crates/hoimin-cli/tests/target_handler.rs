@@ -97,6 +97,33 @@ fn discovers_python_files_and_reports_regular_files() {
     );
 }
 
+proptest::proptest! {
+    #[test]
+    fn run_plan_round_trip_discovers_files_relative_to_selection_root(
+        directory in "[a-z]{1,8}",
+        filename in "[a-z]{1,8}",
+    ) {
+        let project = tempfile::tempdir().unwrap();
+        let path = format!("{directory}/{filename}.py");
+        fs::create_dir(project.path().join(&directory)).unwrap();
+        fs::write(project.path().join(&path), "value = 1\n").unwrap();
+        let root = Utf8PathBuf::from_path_buf(project.path().join(".")).unwrap();
+        let config = hoimin_core::RunConfig::try_from(hoimin_core::RawRunConfig {
+            root,
+            files: vec![path.clone().into()],
+            test_argv: vec![hoimin_core::CommandArg::Unix(b"python".to_vec())],
+            ..hoimin_core::RawRunConfig::default()
+        }).unwrap().with_environment(hoimin_core::EnvironmentSnapshot::Untracked).unwrap();
+        let saved = serde_json::to_value(config.into_plan_config()).unwrap();
+        let plan: hoimin_core::PlanConfig = serde_json::from_value(saved).unwrap();
+        let selection = plan.into_run_config(hoimin_core::OutputConfig::default()).selection;
+
+        let files = hoimin_cli::target::fs::discover_explicit(&selection).unwrap();
+
+        proptest::prop_assert_eq!(files.into_iter().map(|file| file.path).collect::<Vec<_>>(), vec![Utf8PathBuf::from(path)]);
+    }
+}
+
 #[cfg(unix)]
 #[test]
 fn explicit_discovery_rejects_a_literal_backslash_path() {

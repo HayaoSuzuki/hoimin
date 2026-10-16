@@ -84,7 +84,7 @@
     },
     "schemaVersion": {
       "type": "integer",
-      "const": 6
+      "const": 7
     },
     "resumeOutcome": {
       "oneOf": [
@@ -571,13 +571,15 @@
             "object",
             "null"
           ],
-          "description": "Normalized invocation config includes an explicit validated environment snapshot; captured environment values are not included. Session intent uses mode disabled, fresh, or resume; enabled modes include config.path. Legacy session/resume pairs are rejected by normalized configuration readers.",
+          "description": "The project root is stored only in selection.root; the outer root field is rejected. Normalized invocation config includes an explicit validated environment snapshot; captured environment values are not included. Session intent uses mode disabled, fresh, or resume; enabled modes include config.path. Legacy session/resume pairs are rejected by normalized configuration readers.",
           "additionalProperties": true,
           "required": [
             "environment",
+            "selection",
             "session"
           ],
           "properties": {
+            "root": false,
             "resume": false,
             "session": { "$ref": "#/$defs/sessionMode" },
             "environment": {
@@ -585,7 +587,9 @@
             },
             "selection": {
               "type": "object",
+              "required": ["root"],
               "properties": {
+                "root": { "type": "string" },
                 "changed": {
                   "oneOf": [
                     {

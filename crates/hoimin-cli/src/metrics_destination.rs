@@ -85,13 +85,13 @@ fn inspect(
     let destination = inspector.entry(output)?;
     let mut protected = targets
         .iter()
-        .map(|target| config.root.join(&target.path).into_std_path_buf())
+        .map(|target| config.selection.root.join(&target.path).into_std_path_buf())
         .collect::<Vec<_>>();
     protected.extend(
         config
             .fingerprint_inputs
             .iter()
-            .map(|input| config.root.join(&input.path).into_std_path_buf()),
+            .map(|input| config.selection.root.join(&input.path).into_std_path_buf()),
     );
     protected.extend_from_slice(protected_inputs);
     let mut lock_trees = Vec::new();

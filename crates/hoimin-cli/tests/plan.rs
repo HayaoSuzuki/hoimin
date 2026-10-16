@@ -134,7 +134,7 @@ async fn create_plan_emits_versioned_manifest_without_runtime_side_effects() {
     let stdout = String::from_utf8(stdout.snapshot()).unwrap();
     assert_eq!(stdout.matches('\n').count(), 1);
     let manifest: serde_json::Value = serde_json::from_str(&stdout).unwrap();
-    assert_eq!(manifest["schema_version"], 8);
+    assert_eq!(manifest["schema_version"], 9);
     assert_eq!(manifest["ranking_rule_version"], 4);
     assert_eq!(manifest["kind"], "plan");
     assert!(
@@ -334,7 +334,7 @@ async fn explicit_class_symbol_ranks_and_verifies_its_method_before_an_unrelated
             ("a.py", Some("other"), 2, 100),
         ]
     );
-    assert_eq!(manifest.schema_version, 8);
+    assert_eq!(manifest.schema_version, 9);
     assert_eq!(manifest.ranking_rule_version, 4);
     let planned = &manifest.candidates[0];
     let planned_id = planned.id.clone();
@@ -1241,7 +1241,7 @@ async fn verify_rejects_previous_plan_schema_before_project_work() {
     let (path, manifest, baseline_marker) = write_plan_manifest(&project, &[]).await;
     let requested = vec![manifest.candidates[0].id.clone()];
     let mut value = serde_json::to_value(manifest).unwrap();
-    value["schema_version"] = serde_json::json!(6);
+    value["schema_version"] = serde_json::json!(8);
     write_json(&path, &value);
     std::fs::remove_file(project.path.join("src/calc.py")).unwrap();
 
@@ -1253,7 +1253,7 @@ async fn verify_rejects_previous_plan_schema_before_project_work() {
     // Assert.
     assert_eq!(
         error.to_string(),
-        "plan.manifest.invalid: unsupported schema version 6; regenerate the plan with this hoimin version"
+        "plan.manifest.invalid: unsupported schema version 8; regenerate the plan with this hoimin version"
     );
     assert!(!baseline_marker.exists());
 }
@@ -1453,29 +1453,19 @@ async fn verify_rejects_absent_required_arrays_before_baseline() {
 }
 
 #[tokio::test]
-async fn verify_rejects_incoherent_selection_root_before_baseline() {
+async fn verify_rejects_removed_outer_root_before_baseline() {
     let project = Project::new();
     let (path, manifest, marker) = write_plan_manifest(&project, &[]).await;
     let requested = vec![manifest.candidates[0].id.clone()];
-    let other_workspace = project.path.join("other-workspace");
-    std::fs::create_dir_all(other_workspace.join("src")).unwrap();
-    std::fs::copy(
-        project.path.join("src/calc.py"),
-        other_workspace.join("src/calc.py"),
-    )
-    .unwrap();
     let mut value = serde_json::to_value(manifest).unwrap();
-    value["normalized_config"]["selection"]["root"] = serde_json::json!(other_workspace);
+    value["normalized_config"]["root"] = serde_json::json!(project.path);
     write_json(&path, &value);
 
     let error = prepare_verify(&path, &requested, OutputFormat::Json)
         .await
         .unwrap_err();
 
-    assert_eq!(
-        error.to_string(),
-        "plan.manifest.invalid: selection root differs from normalized config root"
-    );
+    assert!(error.to_string().contains("unknown field `root`"));
     assert!(!marker.exists());
 }
 
@@ -1570,7 +1560,7 @@ async fn verify_rejects_a_ranking_version_three_plan_before_baseline_with_regene
     let (path, manifest, marker) = write_plan_manifest(&project, &[]).await;
     let requested = vec![manifest.candidates[0].id.clone()];
     let mut value = serde_json::to_value(manifest).unwrap();
-    assert_eq!(value["schema_version"], 8);
+    assert_eq!(value["schema_version"], 9);
     value["ranking_rule_version"] = serde_json::json!(3);
     write_json(&path, &value);
 
@@ -2619,7 +2609,7 @@ async fn discover_for_plan_args(args: Vec<OsString>) -> Vec<MutationCandidate> {
     let config = shell::prepare_run_config(plan.into_run_config().unwrap()).unwrap();
     let targets = TargetHandler::resolve(&config.selection).await.unwrap();
     discover_targets(
-        &config.root,
+        &config.selection.root,
         &targets,
         &config.operators,
         config.profile,
@@ -4235,7 +4225,7 @@ async fn verify_preview_public_cli_preserves_policy_range_and_execution_order_wi
         let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
         assert_eq!(value["kind"], "verify_preview");
         assert_eq!(value["schema_version"], 2);
-        assert_eq!(value["plan_schema_version"], 8);
+        assert_eq!(value["plan_schema_version"], 9);
         assert_eq!(value["ranking_rule_version"], 4);
         assert_eq!(value["offset"], offset.parse::<usize>().unwrap());
         assert_eq!(value["retained_candidates"], 6);

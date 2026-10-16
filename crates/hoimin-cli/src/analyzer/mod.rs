@@ -237,7 +237,7 @@ pub(crate) async fn discover_config_targets(
 ) -> Result<Discovery, EffectFailed> {
     discover_targets_inner(
         ExceptionProject::from_config(config),
-        &config.root,
+        &config.selection.root,
         targets,
         &config.operators,
         config.profile,

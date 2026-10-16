@@ -993,7 +993,8 @@ fn prepare_session_artifacts(
     if let Some(session) = config.session.config_mut() {
         let artifacts =
             SessionArtifacts::resolve(&session.path).map_err(|error| error.to_string())?;
-        let root = std::fs::canonicalize(&config.root).map_err(|error| error.to_string())?;
+        let root =
+            std::fs::canonicalize(&config.selection.root).map_err(|error| error.to_string())?;
         let trees = artifacts.lock_trees().map_err(|error| error.to_string())?;
         for (path, tree) in artifacts
             .files()
@@ -1376,7 +1377,7 @@ fn prepare_shell_setup_sync_in(
     let requested_workers = u32::try_from(config.limits.jobs.get())
         .map_err(|_| "--jobs exceeds the supported worker count".to_owned())?;
     let workspace = WorkspaceHandler::new(
-        config.root.clone(),
+        config.selection.root.clone(),
         config.selection.sources.clone(),
         requested_workers,
         CopyOptions {
@@ -1393,7 +1394,7 @@ fn prepare_shell_setup_sync_in(
     boundary(ShellSetupBoundary::BackendCreated);
     let process = Arc::new(ProcessHandler::new(backend, spool_path.join("process")));
     boundary(ShellSetupBoundary::ProcessCreated);
-    let analyzer = AnalyzerHandler::new(config.root.clone())
+    let analyzer = AnalyzerHandler::new(config.selection.root.clone())
         .with_managed_candidate_spool_owner(Arc::clone(&execution_spool))
         .with_exception_project(&config);
     boundary(ShellSetupBoundary::AnalyzerCreated);
@@ -8650,9 +8651,11 @@ mod tests {
             lines: Vec::new(),
             symbols: Vec::new(),
         }];
-        let manifest =
-            crate::workspace::build_validation_manifest(&config.root, &CopyOptions::default())
-                .unwrap();
+        let manifest = crate::workspace::build_validation_manifest(
+            &config.selection.root,
+            &CopyOptions::default(),
+        )
+        .unwrap();
         std::fs::write(project.path().join("target.py"), b"changed\n").unwrap();
 
         let actual = prepare_manifest_fingerprint(
@@ -8699,9 +8702,11 @@ mod tests {
             lines: Vec::new(),
             symbols: Vec::new(),
         }];
-        let manifest =
-            crate::workspace::build_validation_manifest(&config.root, &CopyOptions::default())
-                .unwrap();
+        let manifest = crate::workspace::build_validation_manifest(
+            &config.selection.root,
+            &CopyOptions::default(),
+        )
+        .unwrap();
         std::fs::remove_file(project.path().join("target.py")).unwrap();
 
         let actual = prepare_manifest_fingerprint(
@@ -8749,7 +8754,7 @@ mod tests {
             symbols: Vec::new(),
         }];
         let manifest = crate::workspace::build_validation_manifest(
-            &config.root,
+            &config.selection.root,
             &CopyOptions {
                 includes: Vec::new(),
                 excludes: vec!["target.py".to_owned()],

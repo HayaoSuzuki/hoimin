@@ -8,7 +8,7 @@ use crate::{
     ProcessTermination, ResourceMode, RunConfig, SessionDiagnostic, contract_ensure,
 };
 
-pub const REPORT_SCHEMA_VERSION: u32 = 6;
+pub const REPORT_SCHEMA_VERSION: u32 = 7;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct DiskRunSummary {
