@@ -7,8 +7,9 @@ catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
 - id: issue-943-record
   resource: ../../maintenance/2026-10-16-issue-943.md
-  working_tree: untracked
-  sha256: 63b60bdb36c4f3e2811aa3a29abc98dfeeebfa2a08ff65b3b803dc5c42c53c4a
+  revision: ee5f5c653244537aa1bbd02bbb073403146a55ca
+  working_tree: modified
+  sha256: 7924c54043995f9c8137cd3aeb9b79200c1881df7bf9cf08b1fd39a1c2bc0d6e
 - id: issue-943-source
   resource: ../../../crates/hoimin-cli/src/analyzer/store.rs
   revision: 465ff928c1f2ceb9f9b8f8084465475e45799ee8
