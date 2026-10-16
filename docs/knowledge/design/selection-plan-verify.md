@@ -5,6 +5,36 @@ description: 候補発見と実行の分離、ランキング、部分集合、�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-959-config-tests
+  resource: ../../../crates/hoimin-cli/tests/cli_config.rs
+  revision: 30d158c7ead3252c5c0aa398e8ab1819ffa9d75b
+  working_tree: modified
+  sha256: 4909fdcdbe7abdb60014a1e77739db718143b6694cd3a100d9dd4440b3f9491a
+- id: issue-959-cli
+  resource: ../../../crates/hoimin-cli/src/cli.rs
+  revision: 30d158c7ead3252c5c0aa398e8ab1819ffa9d75b
+  working_tree: modified
+  sha256: 4e2fb37221f97b90dc0f1b4369859cf17f07c0b93d0525fafffc0ec1d296a43d
+- id: issue-959-plan
+  resource: ../../../crates/hoimin-cli/src/plan.rs
+  revision: 30d158c7ead3252c5c0aa398e8ab1819ffa9d75b
+  working_tree: modified
+  sha256: ecee9e236c23c92c24820d2744501c6583c6201fe544caf295be932a0fd10942
+- id: issue-959-preview
+  resource: ../../../crates/hoimin-cli/src/plan/preview.rs
+  revision: 30d158c7ead3252c5c0aa398e8ab1819ffa9d75b
+  working_tree: modified
+  sha256: a4abe92ead1ac8ee04c620d93b36e967a461c1cf836947c5f31ee697ba41d322
+- id: issue-959-tests
+  resource: ../../../crates/hoimin-cli/tests/plan.rs
+  revision: 30d158c7ead3252c5c0aa398e8ab1819ffa9d75b
+  working_tree: modified
+  sha256: b485e12eaefc55bca6f1db689d76a5112e6a7ec03afd9e991e4a3c9519af2ce2
+- id: issue-959-record
+  resource: ../../maintenance/2026-10-16-issue-959.md
+  revision: 30d158c7ead3252c5c0aa398e8ab1819ffa9d75b
+  working_tree: untracked
+  sha256: cd7db87afcbf271a519bcb4c5407da7bdbc7958a78a434437a88776aae5da44c
 - id: issue-936-plan
   resource: ../../../crates/hoimin-cli/src/plan.rs
   revision: 5237d1e53a2c8b34fca80f6eeb7d644a01d732e2
@@ -736,3 +766,30 @@ platform.[^issue-936-tests]
 [^issue-936-review-input]: [Review protected input identity checks](../../../crates/hoimin-cli/src/review/input.rs).
 [^issue-936-tests]: [Reader and store protection tests](../../../crates/hoimin-cli/src/review/tests.rs).
 [^issue-936-compatibility]: [Schema-8 regeneration notice](../../compatibility.md#single-saved-fingerprint-input-list-in-0100).
+
+# One normalized ranked request (Issue #959)
+
+`VerifySelection::Top { count, policy, offset }` is the sole ranked-request
+variant. The parser supplies zero for an omitted offset; raw CLI input retains
+`Option<usize>` and clap constraints so an explicitly supplied zero still
+requires top. Rust prefix callers specify `offset: 0`; the former `TopRange`
+variant and compatibility construction are removed. Plan resolution and preview
+read the normalized offset directly.[^issue-959-cli][^issue-959-plan][^issue-959-preview]
+
+This representation change retains full-policy ordering before paging, suffix
+clipping, max-mutants rejection on actual selected length and diagnostic
+precedence. On an empty plan, zero reports the empty-top error, while a positive
+offset reports an invalid range first. Saved schemas and selection metadata
+retain their formats. Tests compare omitted/zero requests and previews across
+policies; the maintenance record distinguishes the new normalization test from
+unchanged-behavior characterization and records executed checks and limits.
+Existing paging and line-diverse Lean corpus comparisons are reused; no new
+model or proof is claimed.[^issue-959-config-tests][^issue-959-tests][^issue-959-record]
+
+[^issue-959-cli]: [Normalized CLI request](../../../crates/hoimin-cli/src/cli.rs).
+[^issue-959-plan]: [Selection resolution](../../../crates/hoimin-cli/src/plan.rs).
+[^issue-959-preview]: [Preview projection](../../../crates/hoimin-cli/src/plan/preview.rs).
+[^issue-959-tests]: [Plan and preview tests](../../../crates/hoimin-cli/tests/plan.rs).
+[^issue-959-record]: [Issue 959 implementation and verification](../../maintenance/2026-10-16-issue-959.md).
+
+[^issue-959-config-tests]: [CLI normalization tests](../../../crates/hoimin-cli/tests/cli_config.rs).

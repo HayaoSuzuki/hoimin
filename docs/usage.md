@@ -895,7 +895,9 @@ score.
 
 For split verification, choose stable candidate batches and keep a separate oldest-to-newest
 report history for each batch. `--offset K --top N` skips K entries in the complete
-selected-policy ordering, then selects up to N candidates:
+selected-policy ordering, then selects up to N candidates.
+
+Omitting `--offset` is equivalent to `--offset 0`, including in preview output:
 
 ```console
 hoimin plan --root . --source src --max-mutants 100 -- python -m pytest -q > plan.json

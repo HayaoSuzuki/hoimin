@@ -77,8 +77,7 @@ impl VerifyPreview {
             verification_selection,
             offset: match requested {
                 VerifySelection::CandidateIds(_) | VerifySelection::Sample { .. } => None,
-                VerifySelection::Top { .. } => Some(0),
-                VerifySelection::TopRange { offset, .. } => Some(*offset),
+                VerifySelection::Top { offset, .. } => Some(*offset),
             },
             retained_candidates: manifest.candidates.len(),
             candidates,

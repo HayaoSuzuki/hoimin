@@ -419,6 +419,41 @@ fn verify_requires_an_explicit_selection() {
 }
 
 #[test]
+fn verify_top_normalizes_omitted_and_zero_offsets_to_the_same_request() {
+    for policy_args in [
+        vec![],
+        vec!["--selection-policy", "strict"],
+        vec!["--selection-policy", "diverse"],
+        vec!["--selection-policy", "line-diverse"],
+    ] {
+        let mut omitted = vec!["hoimin", "verify", "plan.json", "--top", "30"];
+        omitted.extend(policy_args);
+        let mut explicit = omitted.clone();
+        explicit.extend(["--offset", "0"]);
+
+        let ParsedCommand::Verify(omitted) = parse_from(omitted).unwrap() else {
+            panic!("expected verify");
+        };
+        let ParsedCommand::Verify(explicit) = parse_from(explicit).unwrap() else {
+            panic!("expected verify");
+        };
+
+        assert_eq!(omitted.selection, explicit.selection);
+    }
+}
+
+#[test]
+fn verify_offset_requires_top_even_when_zero() {
+    for offset in ["0", "1"] {
+        let args = ["hoimin", "verify", "plan.json", "--offset", offset];
+
+        let result = parse_from(args);
+
+        assert!(result.is_err(), "offset={offset}");
+    }
+}
+
+#[test]
 fn verify_top_defaults_to_strict_selection() {
     let ParsedCommand::Verify(args) =
         parse_from(["hoimin", "verify", "plan.json", "--top", "30"]).unwrap()
@@ -430,6 +465,7 @@ fn verify_top_defaults_to_strict_selection() {
         VerifySelection::Top {
             count: NonZeroUsize::new(30).unwrap(),
             policy: TopSelectionPolicy::Strict,
+            offset: 0,
         }
     );
 }
@@ -453,6 +489,7 @@ fn verify_top_accepts_diverse_and_explicit_strict_selection() {
         VerifySelection::Top {
             count: NonZeroUsize::new(30).unwrap(),
             policy: TopSelectionPolicy::Diverse,
+            offset: 0,
         }
     );
 
@@ -473,6 +510,7 @@ fn verify_top_accepts_diverse_and_explicit_strict_selection() {
         VerifySelection::Top {
             count: NonZeroUsize::new(30).unwrap(),
             policy: TopSelectionPolicy::Strict,
+            offset: 0,
         }
     );
 }
