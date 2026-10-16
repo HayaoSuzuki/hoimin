@@ -78,43 +78,26 @@ async fn collect_output_with_sink<S: OutputSink>(
     token: String,
     max_retained: u64,
     mut receiver: mpsc::Receiver<Vec<u8>>,
-    spool: io::Result<S>,
+    mut spool: io::Result<S>,
 ) -> io::Result<OutputSpoolRef> {
-    let (mut spool, mut first_error) = match spool {
-        Ok(spool) => (Some(spool), None),
-        Err(error) => (None, Some(error)),
-    };
     let mut observed = 0_u64;
     let mut ring_position = 0_u64;
     while let Some(chunk) = receiver.recv().await {
         let chunk_len = u64::try_from(chunk.len()).unwrap_or(u64::MAX);
         observed = add_observed(observed, chunk_len);
-        if let Some(file) = spool.as_mut() {
+        if let Ok(file) = &mut spool {
             match file.write_ring(max_retained, ring_position, &chunk).await {
                 Ok(position) => ring_position = position,
-                Err(error) => {
-                    if first_error.is_none() {
-                        first_error = Some(error);
-                    }
-                    spool = None;
-                }
+                Err(error) => spool = Err(error),
             }
         }
     }
+    // Propagate sink errors only after draining the pipes through EOF.
+    let mut spool = spool?;
+    spool
+        .finalize(max_retained, ring_position, observed > max_retained)
+        .await?;
     let retained = observed.min(max_retained);
-    if let Some(file) = spool.as_mut() {
-        let finalized = file
-            .finalize(max_retained, ring_position, observed > max_retained)
-            .await;
-        if let Err(error) = finalized
-            && first_error.is_none()
-        {
-            first_error = Some(error);
-        }
-    }
-    if let Some(error) = first_error {
-        return Err(error);
-    }
     Ok(OutputSpoolRef {
         token,
         retained,
@@ -245,6 +228,8 @@ fn add_observed(observed: u64, chunk_len: u64) -> u64 {
 mod tests {
     use std::collections::BTreeMap;
     use std::fs;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::Duration;
 
     use serde::Deserialize;
@@ -278,6 +263,47 @@ mod tests {
             _truncated: bool,
         ) -> impl Future<Output = std::io::Result<()>> {
             std::future::poll_fn(|_| panic!("a failed sink must not be finalized"))
+        }
+    }
+
+    struct ObservedFaultSink {
+        write_calls: Arc<AtomicUsize>,
+        finalize_calls: Arc<AtomicUsize>,
+        fail_write_at: Option<usize>,
+        dropped: Option<tokio::sync::oneshot::Sender<()>>,
+    }
+
+    impl OutputSink for ObservedFaultSink {
+        fn write_ring(
+            &mut self,
+            _capacity: u64,
+            _position: u64,
+            _chunk: &[u8],
+        ) -> impl Future<Output = std::io::Result<u64>> {
+            let call = self.write_calls.fetch_add(1, Ordering::SeqCst) + 1;
+            std::future::ready(if self.fail_write_at == Some(call) {
+                Err(std::io::Error::other("first-write-error"))
+            } else {
+                Ok(0)
+            })
+        }
+
+        fn finalize(
+            &mut self,
+            _capacity: u64,
+            _position: u64,
+            _truncated: bool,
+        ) -> impl Future<Output = std::io::Result<()>> {
+            self.finalize_calls.fetch_add(1, Ordering::SeqCst);
+            std::future::ready(Err(std::io::Error::other("finalize-error")))
+        }
+    }
+
+    impl Drop for ObservedFaultSink {
+        fn drop(&mut self) {
+            if let Some(sender) = self.dropped.take() {
+                let _ = sender.send(());
+            }
         }
     }
 
@@ -581,6 +607,82 @@ mod tests {
             .expect("collector task")
             .expect_err("first write fails");
         assert_eq!(error.to_string(), "lean-error-11");
+    }
+
+    #[tokio::test]
+    async fn collector_drops_the_failed_sink_before_eof() {
+        for fail_write_at in [1, 2] {
+            // Arrange: fail immediately or after a successful write.
+            let write_calls = Arc::new(AtomicUsize::new(0));
+            let finalize_calls = Arc::new(AtomicUsize::new(0));
+            let (drop_sender, drop_receiver) = tokio::sync::oneshot::channel();
+            let sink = ObservedFaultSink {
+                write_calls: write_calls.clone(),
+                finalize_calls: finalize_calls.clone(),
+                fail_write_at: Some(fail_write_at),
+                dropped: Some(drop_sender),
+            };
+            let (sender, receiver) = pipe_channel();
+            let collector = tokio::spawn(collect_output_with_sink(
+                "token".into(),
+                8,
+                receiver,
+                Ok(sink),
+            ));
+
+            // Act: keep the channel open while the failing write is consumed.
+            for _ in 0..fail_write_at {
+                sender.send(vec![1]).await.unwrap();
+            }
+            let dropped = tokio::time::timeout(Duration::from_secs(1), drop_receiver).await;
+
+            let waiting_for_eof = !collector.is_finished();
+            for _ in 0..32 {
+                tokio::time::timeout(Duration::from_secs(1), sender.send(vec![2]))
+                    .await
+                    .expect("collector continues draining")
+                    .unwrap();
+            }
+            drop(sender);
+            let error = tokio::time::timeout(Duration::from_secs(1), collector)
+                .await
+                .expect("collector reaches EOF")
+                .unwrap()
+                .unwrap_err();
+            // Assert: disposal precedes EOF, and draining never touches the sink again.
+            dropped.expect("failed sink drops before EOF").unwrap();
+            assert!(waiting_for_eof, "collector still waits for EOF");
+            assert_eq!(write_calls.load(Ordering::SeqCst), fail_write_at);
+            assert_eq!(finalize_calls.load(Ordering::SeqCst), 0);
+            assert_eq!(error.to_string(), "first-write-error");
+        }
+    }
+
+    #[tokio::test]
+    async fn collector_returns_the_finalize_error_after_successful_writes() {
+        // Arrange: writes succeed, but finalization fails.
+        let write_calls = Arc::new(AtomicUsize::new(0));
+        let finalize_calls = Arc::new(AtomicUsize::new(0));
+        let sink = ObservedFaultSink {
+            write_calls: write_calls.clone(),
+            finalize_calls: finalize_calls.clone(),
+            fail_write_at: None,
+            dropped: None,
+        };
+        let (sender, receiver) = pipe_channel();
+        sender.send(vec![1]).await.unwrap();
+        sender.send(vec![2]).await.unwrap();
+        drop(sender);
+
+        // Act.
+        let error = collect_output_with_sink("token".into(), 8, receiver, Ok(sink))
+            .await
+            .unwrap_err();
+
+        // Assert.
+        assert_eq!(write_calls.load(Ordering::SeqCst), 2);
+        assert_eq!(finalize_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(error.to_string(), "finalize-error");
     }
 
     #[tokio::test]
