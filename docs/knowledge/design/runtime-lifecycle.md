@@ -53,6 +53,16 @@ sources:
   resource: ../../superpowers/plans/2026-10-15-issue-912.md
   working_tree: untracked
   sha256: b91c0167c0315940d6a71592de308b7b9d4fdd049057f54f51b01b581084355c
+- id: issue-943-record
+  resource: ../../maintenance/2026-10-16-issue-943.md
+  revision: ee5f5c653244537aa1bbd02bbb073403146a55ca
+  working_tree: modified
+  sha256: 7924c54043995f9c8137cd3aeb9b79200c1881df7bf9cf08b1fd39a1c2bc0d6e
+- id: issue-943-source
+  resource: ../../../crates/hoimin-core/src/machine.rs
+  revision: 65c842584e36e607e94080fdea669daff70c9e6c
+  working_tree: modified
+  sha256: f518c366fb82193f7062c7c20882fcc69a6b513cfcc796f991d8e49f0ae2161d
 - id: issue-897-machine
   resource: ../../../crates/hoimin-core/src/machine.rs
   revision: 175486b7cb30a665bdf39c1ac7897eb96d9966f7
@@ -455,6 +465,21 @@ Windows での検証では、最初の全体実行で mypy の1件が `not_run` 
 [^issue-898-design]: [Issue 898 typed process requests](../../superpowers/specs/2026-10-15-issue-898-design.md)。用途ごとの必須値と共有 runner の責務。
 
 [^issue-898-review]: [Issue 898 review and verification](../../superpowers/reports/2026-10-15-issue-898-review.md)。実行結果、5回の検証レビュー、未確定の mypy 失敗。
+
+## Worker membership and scheduling state
+
+The worker map owns worker membership. Creation advances to materialization
+verification only after its length reaches jobs; effect identity and worker bounds
+remain independently checked. There is no parallel created-worker set. Mutant
+limits continue to use scheduled_mutants and incomplete outcomes; a write-only
+limit-reached flag is unnecessary. No public contract changes.[^issue-943-source]
+
+See the [Issue #943 implementation record](../../maintenance/2026-10-16-issue-943.md)
+for current verification and review evidence.[^issue-943-record]
+
+[^issue-943-source]: [Single-owner state](../../../crates/hoimin-core/src/machine.rs).
+
+[^issue-943-record]: [Issue #943 verification](../../maintenance/2026-10-16-issue-943.md).
 
 ## Worker execution ownership
 

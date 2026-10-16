@@ -142,7 +142,6 @@ struct RunFlags {
 #[derive(Clone, Debug)]
 struct SchedulingFlags {
     candidate_exhausted: bool,
-    mutant_limit_reached: bool,
     stop_requested: bool,
 }
 
@@ -227,7 +226,6 @@ pub struct RunState {
     candidate_cursor: CandidateCursor,
     workers: BTreeMap<u32, WorkerState>,
     output_actions: BTreeMap<EffectId, OutputAction>,
-    created_workers: BTreeSet<u32>,
     scheduled_mutants: u64,
     run_finished_output_id: Option<EffectId>,
     baseline_elapsed: std::time::Duration,
@@ -283,7 +281,6 @@ impl RunState {
             candidate_cursor: CandidateCursor::START,
             workers: BTreeMap::new(),
             output_actions: BTreeMap::new(),
-            created_workers: BTreeSet::new(),
             scheduled_mutants: 0,
             run_finished_output_id: None,
             baseline_elapsed: std::time::Duration::ZERO,
@@ -299,7 +296,6 @@ impl RunState {
             flags: RunFlags {
                 scheduling: SchedulingFlags {
                     candidate_exhausted: false,
-                    mutant_limit_reached: false,
                     stop_requested: false,
                 },
                 outcome: OutcomeFlags {
@@ -829,10 +825,6 @@ impl RunState {
             .workers
             .keys()
             .all(|worker| usize::try_from(*worker).is_ok_and(|worker| worker < jobs));
-        let created_ids_are_bounded = self
-            .created_workers
-            .iter()
-            .all(|worker| usize::try_from(*worker).is_ok_and(|worker| worker < jobs));
         let pending_workers_are_bounded = self.pending.values().all(|pending| {
             pending
                 .worker
@@ -850,10 +842,7 @@ impl RunState {
             .count();
 
         self.workers.len() <= jobs
-            && self.created_workers.len() <= jobs
-            && self.workers.keys().eq(self.created_workers.iter())
             && worker_ids_are_bounded
-            && created_ids_are_bounded
             && pending_workers_are_bounded
             && candidate_reads <= 1
             && running_processes <= jobs
@@ -889,7 +878,6 @@ impl RunState {
                     effects
                         .extend(self.synthetic_started_output(worker, SyntheticOutcome::NotRun)?);
                 } else if self.scheduled_mutants >= self.config.limits.max_mutants.get() as u64 {
-                    self.flags.scheduling.mutant_limit_reached = true;
                     self.flags.outcome.incomplete = true;
                     effects
                         .extend(self.synthetic_started_output(worker, SyntheticOutcome::NotRun)?);
@@ -1480,9 +1468,8 @@ pub fn transition(
             if completed_worker != Some(value.worker) {
                 return Err(MachineError::UnknownWorker(value.worker));
             }
-            state.created_workers.insert(value.worker);
             state.workers.entry(value.worker).or_default();
-            if state.created_workers.len() == state.config.limits.jobs.get() {
+            if state.workers.len() == state.config.limits.jobs.get() {
                 state.phase = RunPhase::MaterializationVerification;
                 state.materialization_verification_effects()?
             } else {
@@ -1626,7 +1613,6 @@ pub fn transition(
                         );
                         *state.worker_mut(worker)? = WorkerState::Ready(candidate);
                         if state.scheduled_mutants >= state.config.limits.max_mutants.get() as u64 {
-                            state.flags.scheduling.mutant_limit_reached = true;
                             state.flags.outcome.incomplete = true;
                             state.synthetic_started_output(worker, SyntheticOutcome::NotRun)?
                         } else {
@@ -1955,7 +1941,6 @@ pub fn transition(
             &state.phase,
             &state.copy_grant,
             &state.workers,
-            &state.created_workers,
             &state.pending,
         )
     );
