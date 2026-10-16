@@ -5,6 +5,15 @@ description: OS別の資源制限と、プロセス終了・一時ファイル�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-955-machine
+  resource: ../../../crates/hoimin-core/src/machine.rs
+  revision: 578b3657e744c1f6d13b57bcb010bd21bde873c2
+  working_tree: modified
+  sha256: 509d0eb1f971cb48f2c0cf0f1afbc2db57a69b5065d5b9e614c81d4dd05eaba6
+- id: issue-955-record
+  resource: ../../maintenance/2026-10-16-issue-955.md
+  working_tree: untracked
+  sha256: ae90f99eb0bd14fa90e1201f0eb151e807f9e0a50526a9ee4c04bb475e0d037d
 - id: issue-951-record
   resource: ../../maintenance/2026-10-16-issue-951.md
   working_tree: untracked
@@ -626,3 +635,32 @@ boundary when adding a worker process role or changing completion acceptance.
 [^issue-951-shell]: [Prepared worker requests and retained completion identity](../../../crates/hoimin-cli/src/shell.rs).
 
 [^issue-951-record]: [Issue 951 design, implementation and verification reviews](../../maintenance/2026-10-16-issue-951.md).
+
+## Pending-owned output continuations (Issue #955)
+
+Each pending output owns one private `OutputContinuation`: baseline with no
+continuation, run start/end, diagnostic, analysis diagnostic, budget warning, or
+normal/synthetic worker start/end. The registration boundary accepts output and
+continuation together; ordinary effect registration checks that returned outputs
+already have this record. No separate action map or singleton output ID remains.
+Accepted ACK and failure consume the same pending record, while retirement drops
+it together with the effect. Wrong-kind, unknown, duplicate and retired completion
+checks retain their precedence.[^issue-955-machine]
+
+The run-finished stop guard derives its condition from pending output ownership.
+Failure handling captures that condition before completion acceptance, preserving
+terminal handling when another outstanding effect fails. Report-started history
+and stop-after-start control remain separate flags. Baseline output ACK produces
+no new work: analysis or finalization was already requested alongside the output.
+Worker output continuations retain only worker identity; synthetic outcomes remain
+owned by the worker until finished-output ACK.[^issue-955-machine]
+
+The [implementation record](../../maintenance/2026-10-16-issue-955.md) distinguishes
+new-API compile-red from preserved-behavior tests and records the validation
+scope. Existing Lean corpus comparisons exercise the same transition rules; this
+ownership change introduces no model or new proof. Recheck registration timing,
+stop guards and failure routing when adding an output continuation.
+[^issue-955-record]
+
+[^issue-955-machine]: [Pending completion ownership](../../../crates/hoimin-core/src/machine.rs).
+[^issue-955-record]: [Issue 955 implementation and verification](../../maintenance/2026-10-16-issue-955.md).

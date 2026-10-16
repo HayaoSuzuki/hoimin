@@ -57,9 +57,32 @@ pub enum CompletionKind {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct PendingEffect {
-    kind: CompletionKind,
+    completion: PendingCompletion,
     worker: Option<u32>,
     cleanup_reservations: Option<Vec<ReservationId>>,
+}
+
+/// Output waits own their continuation; ordinary effects retain their completion kind.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PendingCompletion {
+    Effect(CompletionKind),
+    Output(OutputContinuation),
+}
+
+impl PendingEffect {
+    fn kind(&self) -> CompletionKind {
+        match self.completion {
+            PendingCompletion::Effect(kind) => kind,
+            PendingCompletion::Output(_) => CompletionKind::OutputEmitted,
+        }
+    }
+
+    fn output_continuation(&self) -> Option<OutputContinuation> {
+        match self.completion {
+            PendingCompletion::Output(continuation) => Some(continuation),
+            PendingCompletion::Effect(_) => None,
+        }
+    }
 }
 
 /// Synthetic results remain owned by the worker (or stopped drain) until output ACK.
@@ -113,7 +136,11 @@ impl WorkerState {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum OutputAction {
+enum OutputContinuation {
+    Baseline,
+    RunStarted,
+    RunFinished,
+    Diagnostic,
     ContinueAfterBudgetWarning,
     ContinueAfterAnalysisDiagnostic,
     StartMutant(u32),
@@ -225,9 +252,7 @@ pub struct RunState {
     candidate_spool: Option<CandidateSpoolRef>,
     candidate_cursor: CandidateCursor,
     workers: BTreeMap<u32, WorkerState>,
-    output_actions: BTreeMap<EffectId, OutputAction>,
     scheduled_mutants: u64,
-    run_finished_output_id: Option<EffectId>,
     baseline_elapsed: std::time::Duration,
     summary: MutationSummary,
     disk_summary: crate::DiskRunSummary,
@@ -235,8 +260,6 @@ pub struct RunState {
     fingerprint: Option<RunFingerprint>,
     session_run_id: Option<String>,
     resume_outcome: Option<crate::ResumeOutcome>,
-    diagnostic_output_id: Option<EffectId>,
-    run_started_output_id: Option<EffectId>,
     pending_failure: Option<EffectFailed>,
     flags: RunFlags,
     stopped_candidates: VecDeque<StoppedCandidate>,
@@ -280,9 +303,7 @@ impl RunState {
             candidate_spool: None,
             candidate_cursor: CandidateCursor::START,
             workers: BTreeMap::new(),
-            output_actions: BTreeMap::new(),
             scheduled_mutants: 0,
-            run_finished_output_id: None,
             baseline_elapsed: std::time::Duration::ZERO,
             summary: MutationSummary::default(),
             disk_summary,
@@ -290,8 +311,6 @@ impl RunState {
             fingerprint: None,
             session_run_id: None,
             resume_outcome: None,
-            diagnostic_output_id: None,
-            run_started_output_id: None,
             pending_failure: None,
             flags: RunFlags {
                 scheduling: SchedulingFlags {
@@ -494,10 +513,10 @@ impl RunState {
             None if id.0 >= self.next_effect_id => return Err(MachineError::UnknownEffect(id)),
             None => return Err(MachineError::EffectNotPending(id)),
         };
-        if !matches!(event, RunEvent::EffectFailed(_)) && expected.kind != received {
+        if !matches!(event, RunEvent::EffectFailed(_)) && expected.kind() != received {
             return Err(MachineError::WrongCompletion {
                 id,
-                expected: expected.kind,
+                expected: expected.kind(),
                 received,
             });
         }
@@ -526,9 +545,38 @@ impl RunState {
         Ok(Some(expected))
     }
 
+    /// Registers an output and its ACK/failure continuation together. IDs come from
+    /// `allocate_id`; retirement and accepted completion remove this sole owner.
+    fn register_output(
+        &mut self,
+        output: EmitOutput,
+        continuation: OutputContinuation,
+    ) -> RunEffect {
+        let previous = self.pending.insert(
+            output.id,
+            PendingEffect {
+                completion: PendingCompletion::Output(continuation),
+                worker: None,
+                cleanup_reservations: None,
+            },
+        );
+        assert!(previous.is_none(), "output ID must be freshly allocated");
+        RunEffect::EmitOutput(output)
+    }
+
     fn register(&mut self, effects: &[RunEffect]) -> Result<(), MachineError> {
         for effect in effects {
             let id = effect.id();
+            if matches!(effect, RunEffect::EmitOutput(_)) {
+                assert!(
+                    self.pending
+                        .get(&id)
+                        .and_then(PendingEffect::output_continuation)
+                        .is_some(),
+                    "outputs must be constructed through register_output"
+                );
+                continue;
+            }
             if self.pending.contains_key(&id)
                 || id.0 <= self.completed_floor
                 || self.completed_gaps.contains(&id)
@@ -538,7 +586,7 @@ impl RunState {
             self.pending.insert(
                 id,
                 PendingEffect {
-                    kind: expected_completion(effect),
+                    completion: PendingCompletion::Effect(expected_completion(effect)),
                     worker: effect_worker(effect),
                     cleanup_reservations: match effect {
                         RunEffect::Cleanup(cleanup) => Some(cleanup.reservations.clone()),
@@ -560,7 +608,6 @@ impl RunState {
         self.pending.clear();
         self.completed_floor = self.next_effect_id.saturating_sub(1);
         self.completed_gaps.clear();
-        self.output_actions.clear();
         self.analysis_diagnostics.clear();
         self.pending_analysis = None;
     }
@@ -568,8 +615,7 @@ impl RunState {
     fn diagnostic_effect(&mut self, failed: &EffectFailed) -> Result<Vec<RunEffect>, MachineError> {
         self.phase = RunPhase::Finalize;
         let id = self.allocate_id()?;
-        self.diagnostic_output_id = Some(id);
-        Ok(vec![RunEffect::EmitOutput(EmitOutput {
+        let output = EmitOutput {
             id,
             event: OutputEvent::Diagnostic(Diagnostic::new(
                 self.run_id.clone(),
@@ -578,7 +624,10 @@ impl RunState {
                 failed.failure.code(),
                 failed.failure.message(),
             )),
-        })])
+        };
+        Ok(vec![
+            self.register_output(output, OutputContinuation::Diagnostic),
+        ])
     }
 
     fn analyze_next(&mut self) -> Result<Vec<RunEffect>, MachineError> {
@@ -599,9 +648,7 @@ impl RunState {
     fn analysis_diagnostic_effects(&mut self) -> Result<Vec<RunEffect>, MachineError> {
         if let Some(diagnostic) = self.analysis_diagnostics.pop_front() {
             let id = self.allocate_id()?;
-            self.output_actions
-                .insert(id, OutputAction::ContinueAfterAnalysisDiagnostic);
-            Ok(vec![RunEffect::EmitOutput(EmitOutput {
+            let output = EmitOutput {
                 id,
                 event: OutputEvent::Diagnostic(Diagnostic::new(
                     self.run_id.clone(),
@@ -610,7 +657,11 @@ impl RunState {
                     diagnostic.code,
                     diagnostic.message,
                 )),
-            })])
+            };
+            Ok(vec![self.register_output(
+                output,
+                OutputContinuation::ContinueAfterAnalysisDiagnostic,
+            )])
         } else {
             let analysis = self
                 .pending_analysis
@@ -734,7 +785,6 @@ impl RunState {
 
     fn start_run_effects(&mut self) -> Result<Vec<RunEffect>, MachineError> {
         let id = self.allocate_id()?;
-        self.run_started_output_id = Some(id);
         let sequence = self.output_sequence();
         let mut run_started =
             RunStarted::minimal(self.run_id.clone(), sequence, self.resource_control.clone());
@@ -743,10 +793,13 @@ impl RunState {
         run_started
             .verification_selection
             .clone_from(&self.verification_selection);
-        Ok(vec![RunEffect::EmitOutput(EmitOutput {
+        let output = EmitOutput {
             id,
             event: OutputEvent::RunStarted(run_started),
-        })])
+        };
+        Ok(vec![
+            self.register_output(output, OutputContinuation::RunStarted),
+        ])
     }
 
     fn apply_worker_effects(&mut self, worker: u32) -> Result<Vec<RunEffect>, MachineError> {
@@ -815,7 +868,7 @@ impl RunState {
     fn candidate_read_pending(&self) -> bool {
         self.pending
             .values()
-            .any(|pending| pending.kind == CompletionKind::CandidateLoaded)
+            .any(|pending| pending.kind() == CompletionKind::CandidateLoaded)
     }
 
     #[cfg(feature = "contracts")]
@@ -833,12 +886,12 @@ impl RunState {
         let candidate_reads = self
             .pending
             .values()
-            .filter(|pending| pending.kind == CompletionKind::CandidateLoaded)
+            .filter(|pending| pending.kind() == CompletionKind::CandidateLoaded)
             .count();
         let running_processes = self
             .pending
             .values()
-            .filter(|pending| pending.kind == CompletionKind::MutantFinished)
+            .filter(|pending| pending.kind() == CompletionKind::MutantFinished)
             .count();
 
         self.workers.len() <= jobs
@@ -989,9 +1042,7 @@ impl RunState {
         let candidate = self.candidate(worker)?;
         *self.worker_mut(worker)? = WorkerState::Starting(candidate.clone());
         let id = self.allocate_id()?;
-        self.output_actions
-            .insert(id, OutputAction::StartMutant(worker));
-        Ok(vec![RunEffect::EmitOutput(EmitOutput {
+        let output = EmitOutput {
             id,
             event: OutputEvent::MutantStarted(MutantStarted::new(
                 self.run_id.clone(),
@@ -999,7 +1050,11 @@ impl RunState {
                 candidate.id,
                 candidate.sequence,
             )),
-        })])
+        };
+        Ok(vec![self.register_output(
+            output,
+            OutputContinuation::StartMutant(worker),
+        )])
     }
 
     fn synthetic_started_output(
@@ -1010,9 +1065,7 @@ impl RunState {
         let candidate = self.candidate(worker)?;
         *self.worker_mut(worker)? = WorkerState::SyntheticStarting(candidate.clone(), outcome);
         let id = self.allocate_id()?;
-        self.output_actions
-            .insert(id, OutputAction::StartSynthetic(worker));
-        Ok(vec![RunEffect::EmitOutput(EmitOutput {
+        let output = EmitOutput {
             id,
             event: OutputEvent::MutantStarted(MutantStarted::new(
                 self.run_id.clone(),
@@ -1020,7 +1073,11 @@ impl RunState {
                 candidate.id,
                 candidate.sequence,
             )),
-        })])
+        };
+        Ok(vec![self.register_output(
+            output,
+            OutputContinuation::StartSynthetic(worker),
+        )])
     }
 
     fn max_processes(&self) -> Result<u32, MachineError> {
@@ -1060,9 +1117,7 @@ impl RunState {
     ) -> Result<Vec<RunEffect>, MachineError> {
         *self.worker_mut(worker)? = WorkerState::Finishing(result.clone());
         let id = self.allocate_id()?;
-        self.output_actions
-            .insert(id, OutputAction::FinishMutant(worker));
-        Ok(vec![RunEffect::EmitOutput(EmitOutput {
+        let output = EmitOutput {
             id,
             event: OutputEvent::MutantFinished(MutantOutput {
                 schema_version: crate::REPORT_SCHEMA_VERSION,
@@ -1073,7 +1128,11 @@ impl RunState {
                 resource_mode: result.resource_mode,
                 diagnostics: result.diagnostics,
             }),
-        })])
+        };
+        Ok(vec![self.register_output(
+            output,
+            OutputContinuation::FinishMutant(worker),
+        )])
     }
 
     fn synthetic_finished_output(
@@ -1084,9 +1143,7 @@ impl RunState {
         let candidate = self.candidate(worker)?;
         *self.worker_mut(worker)? = WorkerState::SyntheticFinishing(candidate.clone(), outcome);
         let id = self.allocate_id()?;
-        self.output_actions
-            .insert(id, OutputAction::FinishSynthetic(worker));
-        Ok(vec![RunEffect::EmitOutput(EmitOutput {
+        let output = EmitOutput {
             id,
             event: OutputEvent::MutantFinished(MutantOutput {
                 schema_version: crate::REPORT_SCHEMA_VERSION,
@@ -1097,7 +1154,11 @@ impl RunState {
                 resource_mode: self.resource_control.mode,
                 diagnostics: Vec::new(),
             }),
-        })])
+        };
+        Ok(vec![self.register_output(
+            output,
+            OutputContinuation::FinishSynthetic(worker),
+        )])
     }
 
     /// Stops dispatch and retires pending work before draining known candidates or
@@ -1226,8 +1287,7 @@ impl RunState {
             return Ok(Vec::new());
         }
         let id = self.allocate_id()?;
-        self.run_finished_output_id = Some(id);
-        Ok(vec![RunEffect::EmitOutput(EmitOutput {
+        let output = EmitOutput {
             id,
             event: OutputEvent::RunFinished(RunSummary {
                 schema_version: crate::REPORT_SCHEMA_VERSION,
@@ -1239,7 +1299,10 @@ impl RunState {
                 disk: self.disk_summary.clone(),
                 verification_selection: self.verification_selection.clone(),
             }),
-        })])
+        };
+        Ok(vec![
+            self.register_output(output, OutputContinuation::RunFinished),
+        ])
     }
 
     fn post_cleanup_effects(&mut self) -> Result<Vec<RunEffect>, MachineError> {
@@ -1367,8 +1430,12 @@ pub fn transition(
             | RunEvent::CancellationRequested
             | RunEvent::DiskStopRequested(_)
     );
+    let final_report_pending = state
+        .pending
+        .values()
+        .any(|pending| pending.output_continuation() == Some(OutputContinuation::RunFinished));
     if is_stop
-        && (state.run_finished_output_id.is_some()
+        && (final_report_pending
             || state.flags.cleanup.session_finish_attempted
             || state.phase == RunPhase::Finished
             || state.phase == RunPhase::Cleaning)
@@ -1378,7 +1445,10 @@ pub fn transition(
     #[cfg(feature = "contracts")]
     let was_fatal = state.flags.outcome.infrastructure_error;
     let completed = state.accept_completion(&event)?;
-    let completed_kind = completed.as_ref().map(|pending| pending.kind);
+    let completed_kind = completed.as_ref().map(PendingEffect::kind);
+    let completed_output = completed
+        .as_ref()
+        .and_then(PendingEffect::output_continuation);
     let completed_worker = completed.and_then(|pending| pending.worker);
     if let RunEvent::EffectFailed(failed) = &event
         && let Some(stop) = &mut state.disk_summary.stop
@@ -1447,23 +1517,6 @@ pub fn transition(
                 }
             }
         }
-        RunEvent::OutputEmitted(value) if state.run_started_output_id == Some(value.id) => {
-            state.run_started_output_id = None;
-            state.flags.report.report_started = true;
-            if let Some(failed) = state.pending_failure.take() {
-                state.diagnostic_effect(&failed)?
-            } else if state.flags.report.stop_after_run_started {
-                state.flags.report.stop_after_run_started = false;
-                state.phase = RunPhase::Finalize;
-                if state.copy_grant.is_some() {
-                    state.finalize_effects()?
-                } else {
-                    state.cleanup_effects()?
-                }
-            } else {
-                state.create_worker_effects()?
-            }
-        }
         RunEvent::WorkerCreated(value) if state.phase == RunPhase::Copy => {
             if completed_worker != Some(value.worker) {
                 return Err(MachineError::UnknownWorker(value.worker));
@@ -1494,10 +1547,11 @@ pub fn transition(
             state.baseline_elapsed = value.elapsed;
             let output = baseline_output(&mut state, &value);
             let output_id = state.allocate_id()?;
-            let mut effects = vec![RunEffect::EmitOutput(EmitOutput {
+            let output = EmitOutput {
                 id: output_id,
                 event: output,
-            })];
+            };
+            let mut effects = vec![state.register_output(output, OutputContinuation::Baseline)];
             if success && state.is_ordered_verification() {
                 state.phase = RunPhase::BudgetCheck;
                 let id = state.allocate_id()?;
@@ -1529,10 +1583,7 @@ pub fn transition(
             );
             if projection.is_shortfall() {
                 let id = state.allocate_id()?;
-                state
-                    .output_actions
-                    .insert(id, OutputAction::ContinueAfterBudgetWarning);
-                vec![RunEffect::EmitOutput(EmitOutput {
+                let output = EmitOutput {
                     id,
                     event: OutputEvent::Diagnostic(Diagnostic::new(
                         state.run_id.clone(),
@@ -1555,7 +1606,8 @@ pub fn transition(
                             projection.projected_capacity.as_secs(),
                         ),
                     )),
-                })]
+                };
+                vec![state.register_output(output, OutputContinuation::ContinueAfterBudgetWarning)]
             } else {
                 state.phase = RunPhase::Analyze;
                 state.analyze_next()?
@@ -1737,21 +1789,42 @@ pub fn transition(
             state.summary.record(result.outcome.status());
             state.finished_output(worker, result)?
         }
-        RunEvent::OutputEmitted(value) if state.output_actions.contains_key(&value.id) => {
-            match state
-                .output_actions
-                .remove(&value.id)
-                .ok_or(MachineError::WrongPhase { phase: state.phase })?
-            {
-                OutputAction::ContinueAfterBudgetWarning => {
+        RunEvent::OutputEmitted(_) => {
+            match completed_output.ok_or(MachineError::WrongPhase { phase: state.phase })? {
+                OutputContinuation::Baseline => Vec::new(),
+                OutputContinuation::RunStarted => {
+                    state.flags.report.report_started = true;
+                    if let Some(failed) = state.pending_failure.take() {
+                        state.diagnostic_effect(&failed)?
+                    } else if state.flags.report.stop_after_run_started {
+                        state.flags.report.stop_after_run_started = false;
+                        state.phase = RunPhase::Finalize;
+                        if state.copy_grant.is_some() {
+                            state.finalize_effects()?
+                        } else {
+                            state.cleanup_effects()?
+                        }
+                    } else {
+                        state.create_worker_effects()?
+                    }
+                }
+                OutputContinuation::RunFinished => state.post_report_effects()?,
+                OutputContinuation::Diagnostic => {
+                    if state.flags.cleanup.cleanup_done {
+                        state.post_cleanup_effects()?
+                    } else {
+                        state.cleanup_effects()?
+                    }
+                }
+                OutputContinuation::ContinueAfterBudgetWarning => {
                     state.phase = RunPhase::Analyze;
                     state.analyze_next()?
                 }
-                OutputAction::ContinueAfterAnalysisDiagnostic => {
+                OutputContinuation::ContinueAfterAnalysisDiagnostic => {
                     state.analysis_diagnostic_effects()?
                 }
-                OutputAction::StartMutant(worker) => state.mutant_process(worker)?,
-                OutputAction::StartSynthetic(worker) => {
+                OutputContinuation::StartMutant(worker) => state.mutant_process(worker)?,
+                OutputContinuation::StartSynthetic(worker) => {
                     let WorkerState::SyntheticStarting(_, outcome) = state.worker_mut(worker)?
                     else {
                         return Err(MachineError::WrongPhase { phase: state.phase });
@@ -1759,7 +1832,7 @@ pub fn transition(
                     let outcome = *outcome;
                     state.synthetic_finished_output(worker, outcome)?
                 }
-                OutputAction::FinishMutant(worker) => {
+                OutputContinuation::FinishMutant(worker) => {
                     if state.flags.scheduling.stop_requested {
                         *state.worker_mut(worker)? = WorkerState::default();
                         state.next_stopped_candidate_effects()?
@@ -1769,7 +1842,7 @@ pub fn transition(
                         vec![RunEffect::ResetWorker(ResetWorker { id, worker })]
                     }
                 }
-                OutputAction::FinishSynthetic(worker) => {
+                OutputContinuation::FinishSynthetic(worker) => {
                     let WorkerState::SyntheticFinishing(_, outcome) = state.worker_mut(worker)?
                     else {
                         return Err(MachineError::WrongPhase { phase: state.phase });
@@ -1799,18 +1872,6 @@ pub fn transition(
             state.phase = RunPhase::Finished;
             Vec::new()
         }
-        RunEvent::OutputEmitted(value) if state.run_finished_output_id == Some(value.id) => {
-            state.run_finished_output_id = None;
-            state.post_report_effects()?
-        }
-        RunEvent::OutputEmitted(value) if state.diagnostic_output_id == Some(value.id) => {
-            state.diagnostic_output_id = None;
-            if state.flags.cleanup.cleanup_done {
-                state.post_cleanup_effects()?
-            } else {
-                state.cleanup_effects()?
-            }
-        }
         RunEvent::CleanupFinished(value) if state.phase == RunPhase::Cleaning => {
             release_workspace_copy(&mut state.budgets, &value)
                 .map_err(|error| MachineError::Budget(error.to_string()))?;
@@ -1828,7 +1889,6 @@ pub fn transition(
             });
             state.post_cleanup_effects()?
         }
-        RunEvent::OutputEmitted(_) => Vec::new(),
         RunEvent::EffectFailed(failed) if state.phase == RunPhase::Cleaning => {
             let cleanup_status = if failed.failure.code() == crate::WORKSPACE_CLEANUP_DEFERRED {
                 crate::DiskCleanupStatus::Deferred
@@ -1852,14 +1912,15 @@ pub fn transition(
             });
             state.diagnostic_effect(&failed)?
         }
-        RunEvent::EffectFailed(failed) if state.diagnostic_output_id == Some(failed.id) => {
+        RunEvent::EffectFailed(failed)
+            if completed_output == Some(OutputContinuation::Diagnostic) =>
+        {
             state.flags.outcome.infrastructure_error = true;
             state.flags.scheduling.stop_requested = true;
             if is_report_failure(&failed.failure) {
                 state.flags.report.delivery = ReportDelivery::Failed;
             }
             state.retire_pending();
-            state.diagnostic_output_id = None;
             if state.flags.cleanup.cleanup_done {
                 state.post_cleanup_effects()?
             } else {
@@ -1885,15 +1946,13 @@ pub fn transition(
                 state.pending_failure = Some(failed);
                 state.begin_stopped_mutant_drain()?
             } else if !state.flags.report.report_started {
-                if state.run_started_output_id == Some(failed.id) {
-                    state.run_started_output_id = None;
+                if completed_output == Some(OutputContinuation::RunStarted) {
                     state.cleanup_effects()?
                 } else {
                     state.pending_failure = Some(failed);
                     state.start_run_effects()?
                 }
-            } else if state.run_finished_output_id.is_some() {
-                state.run_finished_output_id = None;
+            } else if final_report_pending {
                 state.phase = RunPhase::Finished;
                 Vec::new()
             } else {
@@ -1951,7 +2010,7 @@ pub fn transition(
                 .pending
                 .values()
                 .filter(|pending| matches!(
-                    pending.kind,
+                    pending.kind(),
                     CompletionKind::BaselineFinished | CompletionKind::MutantFinished
                 ))
                 .count()
@@ -2090,6 +2149,47 @@ mod tests {
         CommandArg, ExitPolicy, MutationStatus, OutputConfig, OutputEvent, RawRunConfig,
         RawRunLimits, ReservationId, RunConfig, RunEffect, exit_code_for, summarize,
     };
+
+    #[test]
+    fn output_registration_makes_ack_dispatch_available_immediately() {
+        let mut state = RunState::new(
+            "registration",
+            audit_config(),
+            crate::ResourceControl {
+                mode: crate::ResourceMode::Hard,
+                mechanism: "test".into(),
+            },
+        );
+        let id = state.allocate_id().unwrap();
+        let output = crate::EmitOutput {
+            id,
+            event: OutputEvent::Diagnostic(crate::Diagnostic::new(
+                "registration",
+                1,
+                "warning",
+                "test",
+                "test",
+            )),
+        };
+
+        let effect = state.register_output(output, super::OutputContinuation::Diagnostic);
+        let (state, effects) = super::transition(
+            state,
+            crate::RunEvent::OutputEmitted(crate::OutputEmitted { id }),
+        )
+        .unwrap();
+
+        let duplicate = super::transition(
+            state,
+            crate::RunEvent::OutputEmitted(crate::OutputEmitted { id }),
+        );
+
+        assert_eq!(effect.id(), id);
+        assert!(matches!(effects.as_slice(), [RunEffect::Cleanup(_)]));
+        assert!(
+            matches!(duplicate, Err(super::MachineError::DuplicateEffect(duplicate)) if duplicate == id)
+        );
+    }
 
     #[test]
     fn cleanup_acknowledgement_requires_exact_set_without_duplicates() {
