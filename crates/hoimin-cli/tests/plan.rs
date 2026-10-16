@@ -1313,6 +1313,7 @@ async fn verified_metrics_override_preserves_checked_execution_and_preview() {
         &VerifySelection::Top {
             count: std::num::NonZeroUsize::new(2).unwrap(),
             policy: TopSelectionPolicy::Strict,
+            offset: 0,
         },
         OutputFormat::Json,
     )
@@ -1820,6 +1821,7 @@ async fn verify_top_resolves_the_saved_rank_prefix_and_retained_scope() {
         &VerifySelection::Top {
             count: std::num::NonZeroUsize::new(1).unwrap(),
             policy: TopSelectionPolicy::Strict,
+            offset: 0,
         },
         OutputFormat::Json,
     )
@@ -1854,6 +1856,7 @@ async fn verify_top_above_a_truncated_plan_selects_every_retained_candidate() {
         &VerifySelection::Top {
             count: std::num::NonZeroUsize::new(30).unwrap(),
             policy: TopSelectionPolicy::Strict,
+            offset: 0,
         },
         OutputFormat::Json,
     )
@@ -1922,6 +1925,7 @@ async fn verify_top_diverse_round_robins_equal_score_candidates_without_mutating
         &VerifySelection::Top {
             count: std::num::NonZeroUsize::new(5).unwrap(),
             policy: TopSelectionPolicy::Diverse,
+            offset: 0,
         },
         OutputFormat::Json,
     )
@@ -1974,6 +1978,7 @@ async fn verify_top_diverse_does_not_cross_score_tiers() {
         &VerifySelection::Top {
             count: std::num::NonZeroUsize::new(3).unwrap(),
             policy: TopSelectionPolicy::Diverse,
+            offset: 0,
         },
         OutputFormat::Json,
     )
@@ -2236,6 +2241,45 @@ async fn verify_runs_only_requested_candidates() {
         actual.into_iter().collect::<BTreeSet<_>>(),
         requested.into_iter().collect()
     );
+}
+
+#[tokio::test]
+async fn verify_top_empty_plan_preserves_offset_error_precedence() {
+    let project = Project::new_with_source("# No mutation candidates.\n");
+    let (path, _, _) = write_plan_manifest(&project, &[]).await;
+    for policy in [
+        TopSelectionPolicy::Strict,
+        TopSelectionPolicy::Diverse,
+        TopSelectionPolicy::LineDiverse,
+    ] {
+        for (offset, expected) in [
+            (
+                0,
+                "--top requires at least one candidate; the plan has no retained candidates",
+            ),
+            (1, "--offset 1 is outside the 0 retained candidates"),
+            (
+                usize::MAX,
+                if usize::BITS == 64 {
+                    "--offset 18446744073709551615 is outside the 0 retained candidates"
+                } else {
+                    "--offset 4294967295 is outside the 0 retained candidates"
+                },
+            ),
+        ] {
+            let selection = VerifySelection::Top {
+                count: std::num::NonZeroUsize::new(1).unwrap(),
+                policy,
+                offset,
+            };
+
+            let error = prepare_verify_selection(&path, &selection, OutputFormat::Json)
+                .await
+                .unwrap_err();
+
+            assert!(error.to_string().contains(expected), "{policy:?}: {error}");
+        }
+    }
 }
 
 #[tokio::test]
@@ -3167,7 +3211,7 @@ async fn fixed_batch_bounds_preserve_truncation_and_reject_invalid_ranges() {
     )
     .await;
     assert!(manifest.truncated);
-    let selection = |count, offset| VerifySelection::TopRange {
+    let selection = |count, offset| VerifySelection::Top {
         count: std::num::NonZeroUsize::new(count).unwrap(),
         policy: TopSelectionPolicy::Strict,
         offset,
@@ -4174,6 +4218,54 @@ fn preview_policy_cases() -> [PreviewPolicyCase; 7] {
         ("strict", "strict", "4", "99", vec![4, 5]),
         ("diverse", "file_round_robin_v1", "4", "99", vec![3, 5]),
     ]
+}
+
+#[tokio::test]
+async fn verify_preview_omitted_and_zero_offsets_select_the_same_policy_prefix() {
+    let project = Project::new_with_sources(&[
+        ("a.py", "a = 1 == 2; b = 3 == 4\n"),
+        ("b.py", "a = 1 == 2\n"),
+    ]);
+    let (path, manifest, _) =
+        write_plan_manifest(&project, &["--operators", "compare_eq_ne"]).await;
+    for (policy, positions) in [
+        ("strict", [0, 1]),
+        ("diverse", [0, 2]),
+        ("line-diverse", [0, 2]),
+    ] {
+        let mut args = vec![
+            "hoimin",
+            "verify",
+            path.to_str().unwrap(),
+            "--top",
+            "2",
+            "--selection-policy",
+            policy,
+        ];
+        let ParsedCommand::Verify(omitted) = parse_from(args.clone()).unwrap() else {
+            panic!("expected verify");
+        };
+        args.extend(["--offset", "0"]);
+        let ParsedCommand::Verify(explicit) = parse_from(args).unwrap() else {
+            panic!("expected verify");
+        };
+
+        let omitted = prepare_verify_selection(&path, &omitted.selection, OutputFormat::Json)
+            .await
+            .unwrap();
+        let explicit = prepare_verify_selection(&path, &explicit.selection, OutputFormat::Json)
+            .await
+            .unwrap();
+
+        assert_eq!(omitted.preview(), explicit.preview(), "{policy}");
+        let preview = serde_json::to_value(omitted.preview()).unwrap();
+        assert_eq!(preview["offset"], 0, "{policy}");
+        assert_eq!(
+            preview_ids(&preview),
+            positions.map(|position| manifest.candidates[position].id.as_str()),
+            "{policy}",
+        );
+    }
 }
 
 #[tokio::test]

@@ -52,6 +52,13 @@ Keep algorithm and CLI validation with plan/verify, and use the read-only
 metadata accessors for reporting. See the [selection contract](knowledge/design/selection-plan-verify.md#validated-verification-selection-issue-911)
 and [verification record](superpowers/reports/issue-911/review.md).
 
+Ranked Rust requests use `VerifySelection::Top { count, policy, offset }`.
+Use `offset: 0` for a prefix; the former `TopRange` variant has been removed.
+CLI normalization supplies zero when `--offset` is omitted. Keep the raw
+`Option<usize>` so an explicitly supplied offset, including zero, still requires
+`--top`. Selection and preview consume the normalized offset directly.
+See the [Issue #959 record](maintenance/2026-10-16-issue-959.md).
+
 ## Internal ownership and performance changes
 
 The private Rust `artifacts` module owns bounded file reads, run-report

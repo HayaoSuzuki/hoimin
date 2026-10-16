@@ -187,6 +187,7 @@ fn public_prepare_releases_manifest_bytes_before_source_read_and_preserves_previ
         let requested = VerifySelection::Top {
             count: NonZeroUsize::new(count).unwrap(),
             policy: TopSelectionPolicy::Strict,
+            offset: 0,
         };
         let gate = hold_blocking_reader(&runtime);
         let mut prepare = Box::pin(prepare_verify_selection(

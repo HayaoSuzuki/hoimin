@@ -491,10 +491,6 @@ pub enum VerifySelection {
     Top {
         count: NonZeroUsize,
         policy: TopSelectionPolicy,
-    },
-    TopRange {
-        count: NonZeroUsize,
-        policy: TopSelectionPolicy,
         offset: usize,
     },
 }
@@ -623,14 +619,10 @@ impl TryFrom<Command> for ParsedCommand {
                 let mut seen = std::collections::BTreeSet::new();
                 raw.candidate_ids.retain(|id| seen.insert(id.clone()));
                 let selection = match raw.top {
-                    Some(count) if raw.offset.is_some() => VerifySelection::TopRange {
-                        count,
-                        policy: raw.selection_policy.unwrap_or(TopSelectionPolicy::Strict),
-                        offset: raw.offset.unwrap_or_default(),
-                    },
                     Some(count) => VerifySelection::Top {
                         count,
                         policy: raw.selection_policy.unwrap_or(TopSelectionPolicy::Strict),
+                        offset: raw.offset.unwrap_or_default(),
                     },
                     None => match raw.sample {
                         Some(count) => VerifySelection::Sample {
