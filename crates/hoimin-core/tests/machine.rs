@@ -17,6 +17,130 @@ use hoimin_core::{
 use proptest::prelude::*;
 
 #[test]
+fn baseline_output_ack_does_not_restart_followup_work() {
+    for (termination, expected_phase) in [
+        (ProcessTermination::Exit(0), RunPhase::Analyze),
+        (ProcessTermination::Exit(1), RunPhase::Finalize),
+    ] {
+        let (state, effects) = waiting_for_baseline();
+        let baseline_id = effect_id(find_effect(&effects, |effect| {
+            matches!(effect, RunEffect::RunBaseline(_))
+        }));
+        let (state, effects) = transition(
+            state,
+            RunEvent::BaselineFinished(process_finished(baseline_id, termination)),
+        )
+        .unwrap();
+        let id = effect_id(find_effect(&effects, |effect| {
+            matches!(effect, RunEffect::EmitOutput(_))
+        }));
+
+        let (state, effects) =
+            transition(state, RunEvent::OutputEmitted(OutputEmitted { id })).unwrap();
+
+        assert_eq!(effects, Vec::new());
+        assert_eq!(state.phase(), expected_phase);
+    }
+}
+
+#[test]
+fn stop_while_run_start_is_pending_waits_for_replacement_ack() {
+    for (stop, _) in stop_cases() {
+        let (state, effects) = waiting_for_preflight_with(fixture_config());
+        let old_id = effects[0].id();
+
+        let (state, effects) = transition(state, stop).unwrap();
+        let replacement_id = effects[0].id();
+        let late = transition(
+            state.clone(),
+            RunEvent::OutputEmitted(OutputEmitted { id: old_id }),
+        );
+        let (state, following) = transition(
+            state,
+            RunEvent::OutputEmitted(OutputEmitted { id: replacement_id }),
+        )
+        .unwrap();
+
+        assert!(
+            matches!(&effects[..], [RunEffect::EmitOutput(output)] if matches!(output.event, OutputEvent::RunStarted(_)))
+        );
+        assert!(matches!(late, Err(MachineError::RetiredEffect(id)) if id == old_id));
+        assert_eq!(state.phase(), RunPhase::Finalize);
+        assert!(matches!(&following[..], [RunEffect::VerifyOriginals(_)]));
+    }
+}
+
+#[test]
+fn failed_diagnostic_continues_to_cleanup_without_another_diagnostic() {
+    for failure in [
+        EffectFailure::Other {
+            code: "diagnostic.failed".into(),
+            message: "fixture".into(),
+        },
+        EffectFailure::ReportIo {
+            operation: "write".into(),
+            message: "fixture".into(),
+        },
+    ] {
+        let (state, effects) = waiting_for_analysis();
+        let analysis_id = effect_id(find_effect(&effects, |effect| {
+            matches!(effect, RunEffect::AnalyzeFile(_))
+        }));
+        let (state, effects) = transition(
+            state,
+            RunEvent::EffectFailed(EffectFailed::other(
+                analysis_id,
+                "analyzer.failed",
+                "fixture",
+            )),
+        )
+        .unwrap();
+        let id = effects[0].id();
+
+        let (state, effects) =
+            transition(state, RunEvent::EffectFailed(EffectFailed { id, failure })).unwrap();
+
+        assert_eq!(state.phase(), RunPhase::Cleaning);
+        assert!(matches!(&effects[..], [RunEffect::Cleanup(_)]));
+    }
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(128))]
+
+    #[test]
+    fn final_output_completes_once_across_generated_stops_and_failure(
+        stops_before in prop::collection::vec(0usize..3, 0..32),
+        stops_after in prop::collection::vec(0usize..3, 0..32),
+        failure in any::<bool>(),
+    ) {
+        let (mut state, effects) = waiting_for_final_report();
+        let id = effects[0].id();
+        let completion = [RunEvent::OutputEmitted(OutputEmitted { id }),
+            RunEvent::EffectFailed(EffectFailed { id, failure: EffectFailure::ReportIo { operation: "write".into(), message: "fixture".into() } })][usize::from(failure)].clone();
+
+        let mut produced = Vec::new();
+        for index in stops_before {
+            let (next, effects) = transition(state, stop_cases()[index].0.clone()).unwrap();
+            state = next;
+            produced.extend(effects);
+        }
+        let (mut state, effects) = transition(state, completion.clone()).unwrap();
+        produced.extend(effects);
+        for index in stops_after {
+            let (next, effects) = transition(state, stop_cases()[index].0.clone()).unwrap();
+            state = next;
+            produced.extend(effects);
+        }
+        let duplicate = transition(state.clone(), completion);
+
+        prop_assert!(produced.is_empty());
+        prop_assert_eq!(state.phase(), RunPhase::Finished);
+        prop_assert!(matches!(duplicate, Err(MachineError::DuplicateEffect(duplicate_id)) if duplicate_id == id));
+    }
+}
+
+#[test]
 fn all_workers_are_verified_once_before_baseline() {
     let mut raw = fixture_raw_config();
     raw.limits.jobs = 2;
