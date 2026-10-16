@@ -5,6 +5,15 @@ description: 保存・復旧の権限、スキーマ移行、結果の生成側�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-940-policy
+  resource: ../../../crates/hoimin-core/src/resume.rs
+  revision: 465ff928c1f2ceb9f9b8f8084465475e45799ee8
+  working_tree: modified
+  sha256: 53f4c43a3777542ca8e70ef8c7547bbd677298159fbda01e177919bdb886623a
+- id: issue-940-review
+  resource: ../../maintenance/2026-10-16-issue-940.md
+  working_tree: untracked
+  sha256: 5757dba4774fa7dd8c558c8490efbde5e24b62cc864078f49168b3141c9d4d96
 - id: issue-939-reader
   resource: ../../../crates/hoimin-cli/src/artifacts/run_report.rs
   revision: 465ff928c1f2ceb9f9b8f8084465475e45799ee8
@@ -17,8 +26,9 @@ sources:
   sha256: 789f97d7475c4fbabdc81bb7aa735674429711e8bc00253872658f2d149527c3
 - id: issue-939-verification
   resource: ../../maintenance/2026-10-16-issue-939.md
-  working_tree: untracked
-  sha256: e717a9e8db2c2583e0faab9abcd11add4d376857a2b04a69fc33633a8ec033f7
+  revision: 0b29290f26055f49b4754efe68928ace0366b613
+  working_tree: modified
+  sha256: fc49c4d781f1778b5ac857c2e965d00f8a038f84e5850338ae5279b1aed294f9
 - id: issue-923-config
   resource: ../../../crates/hoimin-core/src/config.rs
   revision: 7c3a9105c432ec1e0ba2483ada42b10133d071a6
@@ -438,6 +448,24 @@ needs no regeneration.[^issue-923-config][^issue-923-compatibility]
 
 [^issue-923-config]: [Normalized configuration types](../../../crates/hoimin-core/src/config.rs).
 [^issue-923-compatibility]: [Required saved arrays compatibility notice](../../compatibility.md#required-saved-configuration-arrays-in-090).
+
+## Typed reuse decision (Issue 940)
+
+`resume_policy` returns `ResumeDecision::Reuse(ReusedMutationStatus)` for Killed
+and Survived. Its callers receive the reusable status from the decision, without
+reading the broad stored status again. StoredResult still permits Timeout,
+OutOfMemory, ProcessLimit, Error and NotRun; those results require rerunning.
+[^issue-940-policy]
+
+The public Rust enum now carries a payload. Its derived Serde reuse value changes
+from `"Reuse"` to an object such as `{"Reuse":"killed"}`. Callers must bind the
+payload or match `Reuse(_)`; there is no compatibility adapter. Report schema 6,
+session schema 5 and their result formats remain unchanged. Review records the
+repository consumers and checks; changing reuse eligibility requires checking
+both policy and persisted-result round trips.[^issue-940-review]
+
+[^issue-940-policy]: [Resume decision and policy](../../../crates/hoimin-core/src/resume.rs).
+[^issue-940-review]: [Issue 940 review and verification](../../maintenance/2026-10-16-issue-940.md).
 
 ## Duplicate report configuration fields (Issue #939)
 
