@@ -14,6 +14,21 @@ sources:
   resource: ../../maintenance/2026-10-16-issue-940.md
   working_tree: untracked
   sha256: 5757dba4774fa7dd8c558c8490efbde5e24b62cc864078f49168b3141c9d4d96
+- id: issue-939-reader
+  resource: ../../../crates/hoimin-cli/src/artifacts/run_report.rs
+  revision: 465ff928c1f2ceb9f9b8f8084465475e45799ee8
+  working_tree: modified
+  sha256: 1fe4df8f53caeb995059243a9139a0b0eeded7f24c421d0eb5624bdbaa78b911
+- id: issue-939-compatibility
+  resource: ../../compatibility.md
+  revision: 465ff928c1f2ceb9f9b8f8084465475e45799ee8
+  working_tree: modified
+  sha256: 789f97d7475c4fbabdc81bb7aa735674429711e8bc00253872658f2d149527c3
+- id: issue-939-verification
+  resource: ../../maintenance/2026-10-16-issue-939.md
+  revision: 0b29290f26055f49b4754efe68928ace0366b613
+  working_tree: modified
+  sha256: fc49c4d781f1778b5ac857c2e965d00f8a038f84e5850338ae5279b1aed294f9
 - id: issue-923-config
   resource: ../../../crates/hoimin-core/src/config.rs
   revision: 7c3a9105c432ec1e0ba2483ada42b10133d071a6
@@ -451,3 +466,27 @@ both policy and persisted-result round trips.[^issue-940-review]
 
 [^issue-940-policy]: [Resume decision and policy](../../../crates/hoimin-core/src/resume.rs).
 [^issue-940-review]: [Issue 940 review and verification](../../maintenance/2026-10-16-issue-940.md).
+
+## Duplicate report configuration fields (Issue #939)
+
+Review decodes `run.normalized_config` into `RunConfig` as part of the original
+JSON document decode. It rejects duplicate known configuration fields before a
+map can discard them, including nested fields and equivalent escaped key names.
+Required-field, null, unknown-field and typed-value checks remain in the existing
+configuration decoders. The private report document selects its configuration
+type per consumer; schema and event structure validation stay shared.[^issue-939-reader]
+
+Progress selects an opaque JSON value and checks only that configuration is an
+object or null. Both JSON and JSONL retain usable/unusable classification without
+review's typed configuration or filesystem checks. Report schema 6 and valid
+writer output remain unchanged; duplicate rejection corrects invalid-input
+acceptance and requires no regeneration or version-floor increase.[^issue-939-reader][^issue-939-compatibility]
+
+The verification record distinguishes raw-JSON RED/GREEN regressions, preserved
+progress behavior, existing Lean corpus correspondence and broader test results.
+Recheck these contracts when changing the report header representation,
+configuration decoding or the JSON/JSONL read boundary.[^issue-939-verification]
+
+[^issue-939-reader]: [Shared report reader](../../../crates/hoimin-cli/src/artifacts/run_report.rs).
+[^issue-939-compatibility]: [Duplicate report configuration compatibility notice](../../compatibility.md#duplicate-report-configuration-fields).
+[^issue-939-verification]: [Issue 939 implementation and verification](../../maintenance/2026-10-16-issue-939.md).

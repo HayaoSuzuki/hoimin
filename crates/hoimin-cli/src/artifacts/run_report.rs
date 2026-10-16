@@ -55,24 +55,20 @@ pub(crate) struct ReviewReport {
 /// Returns an error for invalid JSON, unsupported schema, invalid configuration
 /// or structure, an unusable run, or failure to resolve the project root.
 pub(crate) fn read_review_json(path: &Path, bytes: &[u8]) -> Result<ReviewReport, ProgressError> {
-    let document: RunReportDocument =
-        serde_json::from_slice(bytes).map_err(|source| ProgressError::Parse {
+    let document: RunReportDocument<hoimin_core::RunConfig> = serde_json::from_slice(bytes)
+        .map_err(|source| ProgressError::Parse {
             path: path.to_path_buf(),
             source,
         })?;
     check_schema(path, document.schema_version)?;
     let run_id = document.run.run_id().to_owned();
-    let config: hoimin_core::RunConfig = serde_json::from_value(
-        document.run.value().normalized_config.clone(),
-    )
-    .map_err(|source| ProgressError::Parse {
-        path: path.to_path_buf(),
-        source,
-    })?;
-    let project = std::fs::canonicalize(config.root).map_err(|source| ProgressError::Read {
-        path: path.to_path_buf(),
-        source,
-    })?;
+    let project =
+        std::fs::canonicalize(&document.run.value().normalized_config.root).map_err(|source| {
+            ProgressError::Read {
+                path: path.to_path_buf(),
+                source,
+            }
+        })?;
     let project = camino::Utf8PathBuf::from_path_buf(project)
         .map_err(|_| invalid_structure(path, "review project root is not UTF-8"))?;
     match validate_document(path, document)? {
@@ -138,17 +134,17 @@ pub enum ProgressError {
 
 #[derive(Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-enum ProgressRunEvent {
-    RunStarted(ProgressRunStarted),
+enum ReportRunEvent<C> {
+    RunStarted(ReportRunStarted<C>),
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct ProgressRunStarted {
+struct ReportRunStarted<C> {
     schema_version: u32,
     sequence: u64,
     run_id: String,
-    normalized_config: serde_json::Value,
+    normalized_config: C,
     #[serde(rename = "versions")]
     _versions: ReportVersions,
     resource_control: ResourceControl,
@@ -164,8 +160,8 @@ fn present_resume<'de, D: serde::Deserializer<'de>>(
     hoimin_core::ResumeOutcome::deserialize(deserializer).map(Some)
 }
 
-impl ProgressRunEvent {
-    fn value(&self) -> &ProgressRunStarted {
+impl<C> ReportRunEvent<C> {
+    fn value(&self) -> &ReportRunStarted<C> {
         match self {
             Self::RunStarted(value) => value,
         }
@@ -184,11 +180,13 @@ impl ProgressRunEvent {
     }
 }
 
+// Decode configuration with the consumer's type before any Value map can discard
+// duplicate fields. Event structure validation is shared independently of that type.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct RunReportDocument {
+struct RunReportDocument<C> {
     schema_version: u32,
-    run: ProgressRunEvent,
+    run: ReportRunEvent<C>,
     baseline: Option<OutputEvent>,
     mutants: Vec<OutputEvent>,
     summary: OutputEvent,
@@ -234,34 +232,43 @@ fn read_buffered_report(
     let header = dispatch::probe(&bytes);
     if let Some(header) = header {
         check_schema(path, header.schema_version)?;
-        if header.format == dispatch::Format::Jsonl {
-            return validate_document(path, jsonl::read_document(path, reader, bytes)?);
-        }
     }
-    reader
-        .read_to_end(&mut bytes)
-        .map_err(|source| ProgressError::Read {
-            path: path.to_path_buf(),
-            source,
-        })?;
-    // Pretty documents may not expose both discriminators on the first line.
-    let header = header.or_else(|| dispatch::probe(&bytes));
-    if let Some(header) = header {
-        check_schema(path, header.schema_version)?;
-    }
-    let document = serde_json::from_slice::<RunReportDocument>(&bytes).map_err(|source| {
-        ProgressError::Parse {
-            path: path.to_path_buf(),
-            source,
+    let document = if header.is_some_and(|header| header.format == dispatch::Format::Jsonl) {
+        jsonl::read_document(path, reader, bytes)?
+    } else {
+        reader
+            .read_to_end(&mut bytes)
+            .map_err(|source| ProgressError::Read {
+                path: path.to_path_buf(),
+                source,
+            })?;
+        // Pretty documents may not expose both discriminators on the first line.
+        let header = header.or_else(|| dispatch::probe(&bytes));
+        if let Some(header) = header {
+            check_schema(path, header.schema_version)?;
         }
-    })?;
+        serde_json::from_slice::<RunReportDocument<serde_json::Value>>(&bytes).map_err(
+            |source| ProgressError::Parse {
+                path: path.to_path_buf(),
+                source,
+            },
+        )?
+    };
+    // Progress accepts opaque configurations in both formats, but not other JSON shapes.
+    let config = &document.run.value().normalized_config;
+    if !config.is_null() && !config.is_object() {
+        return Err(invalid_structure(
+            path,
+            "normalized_config must be null or an object",
+        ));
+    }
 
     validate_document(path, document)
 }
 
-fn validate_document(
+fn validate_document<C>(
     path: &Path,
-    document: RunReportDocument,
+    document: RunReportDocument<C>,
 ) -> Result<InputReport, ProgressError> {
     validate_schema_versions(path, &document)?;
     validate_structure(path, &document)?;
@@ -311,9 +318,9 @@ fn check_schema(path: &Path, found: u32) -> Result<(), ProgressError> {
     }
 }
 
-fn validate_schema_versions(
+fn validate_schema_versions<C>(
     path: &Path,
-    document: &RunReportDocument,
+    document: &RunReportDocument<C>,
 ) -> Result<(), ProgressError> {
     let versions = std::iter::once(document.schema_version)
         .chain(std::iter::once(document.run.schema_version()))
@@ -326,14 +333,10 @@ fn validate_schema_versions(
     Ok(())
 }
 
-fn validate_structure(path: &Path, document: &RunReportDocument) -> Result<(), ProgressError> {
-    let started = document.run.value();
-    if !started.normalized_config.is_null() && !started.normalized_config.is_object() {
-        return Err(invalid_structure(
-            path,
-            "normalized_config must be null or an object",
-        ));
-    }
+fn validate_structure<C>(
+    path: &Path,
+    document: &RunReportDocument<C>,
+) -> Result<(), ProgressError> {
     if !matches!(
         document.baseline,
         None | Some(OutputEvent::BaselineFinished(_))
@@ -500,6 +503,130 @@ impl<R: Read> Read for FingerprintReader<R> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn current_report_json() -> String {
+        let document: serde_json::Value = serde_json::from_str(include_str!(
+            "../../tests/golden/reports/schema-v6-current.json"
+        ))
+        .unwrap();
+        serde_json::to_string(&document).unwrap()
+    }
+
+    #[test]
+    fn review_preserves_required_and_known_config_fields() {
+        for (original, replacement) in [
+            (r#""import_roots":[],"#, ""),
+            (r#""import_roots":[]"#, r#""import_roots":null"#),
+            (r#""fingerprint_files":[],"#, ""),
+            (r#""fingerprint_files":[]"#, r#""fingerprint_files":null"#),
+            (
+                r#""import_roots":[]"#,
+                r#""import_roots":[],"future_config":true"#,
+            ),
+            (r#""jobs":1"#, r#""jobs":0"#),
+        ] {
+            // Arrange
+            let original_json = current_report_json();
+            assert_eq!(original_json.matches(original).count(), 1);
+            let raw = original_json.replacen(original, replacement, 1);
+
+            // Act
+            let result = read_review_json(Path::new("report.json"), raw.as_bytes());
+
+            // Assert
+            assert!(
+                matches!(result, Err(ProgressError::Parse { .. })),
+                "accepted {replacement}"
+            );
+        }
+    }
+
+    #[test]
+    fn review_rejects_raw_duplicate_config_fields() {
+        for (original, duplicate) in [
+            (
+                r#""import_roots":[]"#,
+                r#""import_roots":[],"import_roots":[]"#,
+            ),
+            (
+                r#""import_roots":[]"#,
+                r#""import_roots":[],"import_roots":["src"]"#,
+            ),
+            (
+                r#""import_roots":[]"#,
+                r#""import_roots":["src"],"import_roots":[]"#,
+            ),
+            (
+                r#""import_roots":[]"#,
+                r#""import_roots":null,"import_roots":[]"#,
+            ),
+            (
+                r#""import_roots":[]"#,
+                r#""import_roots":[],"import_roots":null"#,
+            ),
+            (
+                r#""fingerprint_files":[]"#,
+                r#""fingerprint_files":[],"fingerprint_files":[]"#,
+            ),
+            (
+                r#""allow_best_effort_memory":false"#,
+                r#""allow_best_effort_memory":true,"allow_best_effort_memory":false"#,
+            ),
+            (r#""jobs":1"#, r#""jobs":1,"jobs":1"#),
+            (r#""jobs":1"#, r#""jobs":1,"jobs":2"#),
+            (r#""jobs":1"#, r#""jobs":2,"jobs":1"#),
+            (r#""secs":30}"#, r#""secs":30,"secs":31}"#),
+            (
+                r#""metrics":"metrics.json""#,
+                r#""metrics":null,"metrics":null"#,
+            ),
+            (
+                r#""path":"session.sqlite3""#,
+                r#""path":"other.sqlite3","path":"session.sqlite3""#,
+            ),
+            (r#""mode":"resume""#, r#""mode":"resume","mode":"resume""#),
+        ] {
+            // Arrange: insert duplicates after serialization so no Value map can erase them.
+            let original_json = current_report_json();
+            assert_eq!(original_json.matches(original).count(), 1);
+            let raw = original_json.replacen(original, duplicate, 1);
+
+            // Act
+            let result = read_review_json(Path::new("report.json"), raw.as_bytes());
+
+            // Assert
+            assert!(
+                matches!(result, Err(ProgressError::Parse { .. })),
+                "accepted {duplicate}"
+            );
+        }
+    }
+
+    proptest::proptest! {
+        #[test]
+        fn review_rejects_duplicate_nested_jobs_with_equivalent_key_spellings(
+            first in 1_u16..=256,
+            second in 1_u16..=256,
+            escaped_first in proptest::bool::ANY,
+            whitespace in "[ \\t\\r\\n]{0,8}",
+        ) {
+            // Arrange: both values are valid in isolation; escaped names denote the same key.
+            let (first_key, second_key) = if escaped_first {
+                (r#""\u006aobs""#, r#""jobs""#)
+            } else {
+                (r#""jobs""#, r#""\u006aobs""#)
+            };
+            let duplicate = format!("{first_key}:{first},{whitespace}{second_key}:{second}");
+            let raw = current_report_json().replacen(r#""jobs":1"#, &duplicate, 1);
+
+            // Act
+            let result = read_review_json(Path::new("report.json"), raw.as_bytes());
+
+            // Assert
+            let error = result.map(|_| ()).expect_err("duplicate jobs must be rejected");
+            proptest::prop_assert!(error.to_string().contains("duplicate field `jobs`"));
+        }
+    }
 
     #[test]
     fn fingerprint_hashes_only_bytes_returned_by_reads() {

@@ -5,6 +5,11 @@ description: Public interfaces, version floors and migration notices.
 status: draft
 catalog_revision: 79b6bde29b05e9904c8efff59e02d0c45377d7f7
 sources:
+- id: issue-939-compatibility
+  resource: ../compatibility.md
+  revision: 465ff928c1f2ceb9f9b8f8084465475e45799ee8
+  working_tree: modified
+  sha256: 789f97d7475c4fbabdc81bb7aa735674429711e8bc00253872658f2d149527c3
 - id: issue-899-changed-selection
   resource: ../superpowers/specs/2026-10-15-issue-899-design.md
   revision: 7b6cb19ba0181759f6b5726f985c5fd7700d313e
@@ -113,3 +118,16 @@ The floor is 0.10.0 because the 0.9 series has shipped. No conversion or automat
 deletion takes place. Follow the [canonical regeneration notice](../compatibility.md#single-saved-fingerprint-input-list-in-0100)
 for commands and retained contracts; the [selection/plan contract](design/selection-plan-verify.md#single-saved-fingerprint-input-list-issue-936)
 records implementation and test evidence.[^policy][^release]
+
+## Duplicate report configuration fields (Issue #939)
+
+Review rejects duplicate known configuration fields, including nested fields,
+from raw current-schema report JSON. Current writers emit unique fields, so
+valid output needs no regeneration. This invalid-input validation fix retains
+report schema 6 and the 0.10.0 release floor. Progress keeps its opaque object/null
+configuration contract in JSON and JSONL. Follow the
+[compatibility notice](../compatibility.md#duplicate-report-configuration-fields)
+for scope and the [session/report contract](design/session-report.md#duplicate-report-configuration-fields-issue-939)
+for implementation evidence.[^issue-939-compatibility]
+
+[^issue-939-compatibility]: [Duplicate report configuration notice](../compatibility.md#duplicate-report-configuration-fields).

@@ -525,11 +525,21 @@ fn input_rejects_non_object_non_null_normalized_configs() {
         ("number", json!(2)),
         ("boolean", json!(true)),
     ] {
+        // Arrange
         let mut document = valid_report();
         document["run"]["normalized_config"] = value;
-        let report = write_json(&fixture, &format!("{name}.json"), &document);
+        let reports = [
+            write_json(&fixture, &format!("{name}.json"), &document),
+            write_jsonl(&fixture, &jsonl_events(&document)),
+        ];
 
-        assert!(read_report(&report).is_err());
+        for report in reports {
+            // Act
+            let result = read_report(&report);
+
+            // Assert
+            assert!(result.is_err(), "accepted {name} in {}", report.display());
+        }
     }
 }
 
@@ -541,9 +551,20 @@ fn input_rejects_a_missing_normalized_config() {
         .as_object_mut()
         .unwrap()
         .remove("normalized_config");
-    let report = write_json(&fixture, "missing-config.json", &document);
+    let reports = [
+        write_json(&fixture, "missing-config.json", &document),
+        write_jsonl(&fixture, &jsonl_events(&document)),
+    ];
 
-    assert!(read_report(&report).is_err());
+    for report in reports {
+        let result = read_report(&report);
+
+        assert!(
+            result.is_err(),
+            "accepted missing config in {}",
+            report.display()
+        );
+    }
 }
 
 #[test]
@@ -3203,6 +3224,49 @@ fn jsonl_preserves_opaque_config_layout_and_unusable_reasons() {
         let expected = read_report(&json_path).unwrap();
         assert_eq!(report_unusable_reason(&actual), reason);
         assert_eq!(report_unusable_reason(&expected), reason);
+    }
+}
+
+#[test]
+fn raw_opaque_config_preserves_json_and_jsonl_classification() {
+    let fixture = tempfile::tempdir().unwrap();
+    for reason in [
+        None,
+        Some(UnusableReason::MissingBaseline),
+        Some(UnusableReason::BaselineFailed),
+        Some(UnusableReason::Incomplete),
+    ] {
+        for config in [
+            "null",
+            r#"{"future_config":[1,2]}"#,
+            r#"{"root":"/not/a/real/hoimin/project","import_roots":null,"import_roots":[]}"#,
+        ] {
+            // Arrange: preserve raw duplicate keys after both formats are serialized.
+            let mut document = opaque_config_document(reason);
+            document["run"]["normalized_config"] = Value::Null;
+            let reports = [
+                write_json(&fixture, "opaque.json", &document),
+                write_jsonl(&fixture, &jsonl_events(&document)),
+            ];
+            for report in reports {
+                let original = std::fs::read_to_string(&report).unwrap();
+                let field = r#""normalized_config":null"#;
+                assert_eq!(original.matches(field).count(), 1);
+                let raw = original.replacen(field, &format!(r#""normalized_config":{config}"#), 1);
+                std::fs::write(&report, raw).unwrap();
+
+                // Act
+                let result = read_report(&report).unwrap();
+
+                // Assert
+                assert_eq!(
+                    report_unusable_reason(&result),
+                    reason,
+                    "{config} in {}",
+                    report.display()
+                );
+            }
+        }
     }
 }
 
