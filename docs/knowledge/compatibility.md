@@ -37,7 +37,29 @@ sources:
   revision: 79b6bde29b05e9904c8efff59e02d0c45377d7f7
   working_tree: modified
   sha256: 264d87e967cd21cb15361897010c805cbd9bc99d808989288052c0c13f0c3d95
+- id: issue-949-compatibility
+  resource: ../compatibility.md
+  revision: 35c21145ccdfb6a044f9ae1dad2a5e4ff90deece
+  working_tree: clean
+  sha256: 203448fab2450fd7c419a354e1a2904a935e88cfd334f74b91d6f25b14220aea
 ---
+
+# Current saved formats and release floor (Issue #949)
+
+Plan schema 9 and report schema 7 store the project root only in
+`normalized_config.selection.root`; the outer root field is rejected by typed
+readers. Regenerate schema-8 and older plans. Read older reports with their
+producing binary or rerun with the intended version. The minimum release version
+is 0.11.0; fingerprint schema 11 and session schema 5 remain unchanged.
+Progress retains its opaque configuration contract, while review validates typed
+configuration.[^issue-949-compatibility]
+
+This notice supersedes the current schema and version-floor statements in the
+historical Issue #936 and #939 sections below. Their format and validation
+changes remain in effect. Follow the [0.11.0 migration notice](../compatibility.md#single-normalized-project-root-in-0110)
+for commands and retained contracts.[^issue-949-compatibility]
+
+[^issue-949-compatibility]: [Single normalized root compatibility notice](../compatibility.md#single-normalized-project-root-in-0110).
 
 # Compatibility scope
 
@@ -111,7 +133,7 @@ rerun.[^policy][^release]
 
 ## Single saved fingerprint input list (Issue #936)
 
-Current plan schema 8 stores fingerprint input records only under
+At Issue #936, plan schema 8 stored fingerprint input records only under
 `normalized_config.fingerprint_inputs`; the former top-level field is rejected.
 Verify and review both reject schema-7 and older plans with regeneration guidance.
 The floor is 0.10.0 because the 0.9 series has shipped. No conversion or automatic

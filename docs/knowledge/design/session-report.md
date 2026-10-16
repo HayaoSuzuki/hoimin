@@ -197,8 +197,9 @@ sources:
   sha256: 585817301a29f83d660b42c293025105adcdc1defd568e1b48a9027f8da6f17a
 - id: issue-949-record
   resource: ../../maintenance/2026-10-16-issue-949.md
-  working_tree: untracked
-  sha256: 17f235dfeb0443811bbe48b946a696e02f7a441cf4efb87dd0c4dac79c007282
+  revision: 35c21145ccdfb6a044f9ae1dad2a5e4ff90deece
+  working_tree: modified
+  sha256: bca74014f517c33728e844b9e876a77b24ef3025c7e42fc75afb89d5849580f1
 ---
 
 # Single project root in saved reports (Issue #949)

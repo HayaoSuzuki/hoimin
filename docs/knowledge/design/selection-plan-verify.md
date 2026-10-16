@@ -301,8 +301,9 @@ sources:
   sha256: 9518c2b6370e7b91a835ce1a8d64aaf21c6530d7658cdceab142499250b5f642
 - id: issue-949-record
   resource: ../../maintenance/2026-10-16-issue-949.md
-  working_tree: untracked
-  sha256: 17f235dfeb0443811bbe48b946a696e02f7a441cf4efb87dd0c4dac79c007282
+  revision: 35c21145ccdfb6a044f9ae1dad2a5e4ff90deece
+  working_tree: modified
+  sha256: bca74014f517c33728e844b9e876a77b24ef3025c7e42fc75afb89d5849580f1
 ---
 
 # Single normalized root (Issue #949)
