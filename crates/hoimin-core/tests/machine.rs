@@ -3200,6 +3200,188 @@ fn resumed_determinate_result_is_reused_without_mutant_execution() {
     )));
 }
 
+// These cases catch premature accounting, lost reuse status during drain, and replayed ACKs.
+#[test]
+fn synthetic_summary_is_committed_once_by_finished_ack() {
+    for (status, expected) in [
+        (MutationStatus::Killed, (1, 0, 0)),
+        (MutationStatus::Survived, (0, 1, 0)),
+        (MutationStatus::NotRun, (0, 0, 1)),
+    ] {
+        let (state, effects) = waiting_for_synthetic_started(status);
+        assert_eq!(state.summary(), &MutationSummary::default());
+
+        let (state, effects) = complete_mutant_started(state, &effects);
+        let finished = synthetic_finished(&effects);
+        assert_eq!(finished.outcome.status(), status);
+        assert_eq!(finished.outcome.elapsed(), Duration::ZERO);
+        assert!(finished.outcome.output().is_none());
+        assert_eq!(state.summary(), &MutationSummary::default());
+        let id = effects[0].id();
+        let (state, _) = transition(state, RunEvent::OutputEmitted(OutputEmitted { id })).unwrap();
+
+        assert_eq!(
+            (
+                state.summary().killed,
+                state.summary().survived,
+                state.summary().not_run
+            ),
+            expected
+        );
+        assert_eq!(
+            transition(state, RunEvent::OutputEmitted(OutputEmitted { id })).unwrap_err(),
+            MachineError::DuplicateEffect(id)
+        );
+    }
+}
+
+#[test]
+fn stopped_reuse_keeps_its_outcome_until_replacement_finished_ack() {
+    for status in [MutationStatus::Killed, MutationStatus::Survived] {
+        for finish_pending in [false, true] {
+            let (mut state, mut effects) = waiting_for_synthetic_started(status);
+            if finish_pending {
+                (state, effects) = complete_mutant_started(state, &effects);
+            }
+            let retired_id = effects[0].id();
+
+            let (state, effects) = transition(state, RunEvent::CancellationRequested).unwrap();
+            assert_eq!(state.summary(), &MutationSummary::default());
+            assert_eq!(
+                transition(
+                    state.clone(),
+                    RunEvent::OutputEmitted(OutputEmitted { id: retired_id })
+                )
+                .unwrap_err(),
+                MachineError::RetiredEffect(retired_id)
+            );
+            let (state, effects) = if finish_pending {
+                (state, effects)
+            } else {
+                complete_mutant_started(state, &effects)
+            };
+            assert_eq!(synthetic_finished(&effects).outcome.status(), status);
+            let (state, _) = transition(
+                state,
+                RunEvent::OutputEmitted(OutputEmitted {
+                    id: effects[0].id(),
+                }),
+            )
+            .unwrap();
+
+            assert_eq!(
+                state.summary().killed,
+                u64::from(status == MutationStatus::Killed)
+            );
+            assert_eq!(
+                state.summary().survived,
+                u64::from(status == MutationStatus::Survived)
+            );
+            assert_eq!(state.summary().not_run, 0);
+        }
+    }
+}
+
+#[test]
+fn synthetic_output_retry_keeps_outcome_uncommitted_until_finished_ack() {
+    for status in [
+        MutationStatus::Killed,
+        MutationStatus::Survived,
+        MutationStatus::NotRun,
+    ] {
+        for finish_pending in [false, true] {
+            let (mut state, mut effects) = waiting_for_synthetic_started(status);
+            if finish_pending {
+                (state, effects) = complete_mutant_started(state, &effects);
+            }
+            let failed_id = effects[0].id();
+
+            let (state, effects) = transition(
+                state,
+                RunEvent::EffectFailed(EffectFailed::other(
+                    failed_id,
+                    "synthetic.retry",
+                    "fixture",
+                )),
+            )
+            .unwrap();
+            assert_eq!(state.summary(), &MutationSummary::default());
+            let (state, effects) = if finish_pending {
+                (state, effects)
+            } else {
+                complete_mutant_started(state, &effects)
+            };
+            assert_eq!(synthetic_finished(&effects).outcome.status(), status);
+            let (state, _) = transition(
+                state,
+                RunEvent::OutputEmitted(OutputEmitted {
+                    id: effects[0].id(),
+                }),
+            )
+            .unwrap();
+
+            assert_eq!(
+                state.summary().killed,
+                u64::from(status == MutationStatus::Killed)
+            );
+            assert_eq!(
+                state.summary().survived,
+                u64::from(status == MutationStatus::Survived)
+            );
+            assert_eq!(
+                state.summary().not_run,
+                u64::from(status == MutationStatus::NotRun)
+            );
+        }
+    }
+}
+
+fn synthetic_finished(effects: &[RunEffect]) -> &hoimin_core::MutantFinished {
+    let RunEffect::EmitOutput(output) = &effects[0] else {
+        panic!("expected synthetic output")
+    };
+    let OutputEvent::MutantFinished(finished) = &output.event else {
+        panic!("expected finished output")
+    };
+    finished
+}
+
+fn waiting_for_synthetic_started(status: MutationStatus) -> (RunState, Vec<RunEffect>) {
+    let (state, effects) = waiting_for_session_candidate(true);
+    let read_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::ReadCandidate(_))
+    }));
+    let candidate = fixture_candidate(1);
+    let (state, effects) = transition(
+        state,
+        RunEvent::CandidateLoaded(CandidateLoaded {
+            id: read_id,
+            worker: 0,
+            candidate: Some(candidate.clone()),
+            next_cursor: candidate_cursor(1, 1),
+        }),
+    )
+    .unwrap();
+    if status == MutationStatus::NotRun {
+        return transition(state, RunEvent::CancellationRequested).unwrap();
+    }
+    let lookup_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::LookupStoredResult(_))
+    }));
+    transition(
+        state,
+        RunEvent::StoredResultLoaded(StoredResultLoaded {
+            id: lookup_id,
+            worker: 0,
+            result: Some(StoredResult {
+                mutant_id: candidate.id,
+                status,
+            }),
+        }),
+    )
+    .unwrap()
+}
+
 #[test]
 fn reused_result_is_counted_only_after_finished_output_succeeds() {
     let (state, effects) = waiting_for_session_candidate(true);

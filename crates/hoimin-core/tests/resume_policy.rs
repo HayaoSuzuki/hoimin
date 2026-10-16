@@ -6,7 +6,8 @@ use std::time::Duration;
 use hoimin_core::{
     CommandArg, FingerprintInput, FingerprintInputFile, LineRange, MutantTimeout, MutationProfile,
     MutationStatus, OutputConfig, OutputFormat, RawRunConfig, RawRunLimits, ResourceMode,
-    ResumeDecision, RunConfig, SourceHash, StoredResult, TargetSlice, fingerprint, resume_policy,
+    ResumeDecision, ReusedMutationStatus, RunConfig, SourceHash, StoredResult, TargetSlice,
+    fingerprint, resume_policy,
 };
 use proptest::prelude::*;
 
@@ -94,10 +95,13 @@ fn copy_policy_changes_resume_compatibility() {
 
 #[test]
 fn resume_decides_one_stored_result_without_collecting_the_run() {
-    for status in [MutationStatus::Killed, MutationStatus::Survived] {
+    for (status, reused) in [
+        (MutationStatus::Killed, ReusedMutationStatus::Killed),
+        (MutationStatus::Survived, ReusedMutationStatus::Survived),
+    ] {
         assert_eq!(
             resume_policy(Some(&stored("m", status))),
-            ResumeDecision::Reuse
+            ResumeDecision::Reuse(reused)
         );
     }
     for status in [

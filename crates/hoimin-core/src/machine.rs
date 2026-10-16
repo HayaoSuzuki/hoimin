@@ -8,7 +8,7 @@ use crate::{
     CandidateSpoolRef, Cleanup, Diagnostic, EffectFailed, EffectFailure, EffectId, EmitOutput,
     ExitPolicy, FinishSession, IntegrityCheckpoint, LoadSession, LookupStoredResult,
     MutantFinished as MutantOutput, MutantResult, MutantStarted, MutantTimeout, MutationCandidate,
-    MutationOutcome, MutationStatus, MutationSummary, ObserveRemainingBudget, OutputEvent,
+    MutationOutcome, MutationSummary, ObserveRemainingBudget, OutputEvent,
     PROCESS_OUTPUT_CLOSE_TIMEOUT_CODE, PersistResult, Preflight, ProcessFinished, ProcessLimits,
     ProcessOutputState, ProcessTermination, ReadCandidate, ReservationId, ResetWorker,
     ResolveTargets, ResumeDecision, ReusedMutationStatus, RunBudgets, RunConfig, RunEffect,
@@ -62,6 +62,22 @@ struct PendingEffect {
     cleanup_reservations: Option<Vec<ReservationId>>,
 }
 
+/// Synthetic results remain owned by the worker (or stopped drain) until output ACK.
+#[derive(Clone, Copy, Debug)]
+enum SyntheticOutcome {
+    Reused(ReusedMutationStatus),
+    NotRun,
+}
+
+impl SyntheticOutcome {
+    fn report_outcome(self) -> MutationOutcome {
+        match self {
+            Self::Reused(status) => MutationOutcome::Reused { status },
+            Self::NotRun => MutationOutcome::NotRun,
+        }
+    }
+}
+
 /// Each phase owns its required data. Acknowledged results are released before reset.
 #[derive(Clone, Debug, Default)]
 enum WorkerState {
@@ -76,8 +92,8 @@ enum WorkerState {
     Persisting(MutantResult),
     Finishing(MutantResult),
     Resetting,
-    SyntheticStarting(MutationCandidate, MutationStatus),
-    SyntheticFinishing(MutationCandidate, MutationStatus),
+    SyntheticStarting(MutationCandidate, SyntheticOutcome),
+    SyntheticFinishing(MutationCandidate, SyntheticOutcome),
 }
 
 impl WorkerState {
@@ -101,18 +117,18 @@ enum OutputAction {
     ContinueAfterBudgetWarning,
     ContinueAfterAnalysisDiagnostic,
     StartMutant(u32),
-    StartSynthetic(u32, MutationStatus),
+    StartSynthetic(u32),
     FinishMutant(u32),
-    FinishSynthetic(u32, MutationStatus),
+    FinishSynthetic(u32),
 }
 
 #[derive(Clone, Debug)]
 enum StoppedCandidate {
     NotStarted(MutationCandidate),
-    SyntheticNotStarted(MutationCandidate, MutationStatus),
+    SyntheticNotStarted(MutationCandidate, SyntheticOutcome),
     StartedNotRun(MutationCandidate),
     Finished(MutantResult),
-    SyntheticFinished(MutationCandidate, MutationStatus),
+    SyntheticFinished(MutationCandidate, SyntheticOutcome),
 }
 
 #[derive(Clone, Debug)]
@@ -870,11 +886,13 @@ impl RunState {
                 };
                 *self.worker_mut(worker)? = WorkerState::Ready(candidate);
                 if self.flags.scheduling.stop_requested {
-                    effects.extend(self.synthetic_started_output(worker, MutationStatus::NotRun)?);
+                    effects
+                        .extend(self.synthetic_started_output(worker, SyntheticOutcome::NotRun)?);
                 } else if self.scheduled_mutants >= self.config.limits.max_mutants.get() as u64 {
                     self.flags.scheduling.mutant_limit_reached = true;
                     self.flags.outcome.incomplete = true;
-                    effects.extend(self.synthetic_started_output(worker, MutationStatus::NotRun)?);
+                    effects
+                        .extend(self.synthetic_started_output(worker, SyntheticOutcome::NotRun)?);
                 } else {
                     self.scheduled_mutants += 1;
                     effects.extend(self.candidate_effects(worker)?);
@@ -999,13 +1017,13 @@ impl RunState {
     fn synthetic_started_output(
         &mut self,
         worker: u32,
-        status: MutationStatus,
+        outcome: SyntheticOutcome,
     ) -> Result<Vec<RunEffect>, MachineError> {
         let candidate = self.candidate(worker)?;
-        *self.worker_mut(worker)? = WorkerState::SyntheticStarting(candidate.clone(), status);
+        *self.worker_mut(worker)? = WorkerState::SyntheticStarting(candidate.clone(), outcome);
         let id = self.allocate_id()?;
         self.output_actions
-            .insert(id, OutputAction::StartSynthetic(worker, status));
+            .insert(id, OutputAction::StartSynthetic(worker));
         Ok(vec![RunEffect::EmitOutput(EmitOutput {
             id,
             event: OutputEvent::MutantStarted(MutantStarted::new(
@@ -1073,13 +1091,13 @@ impl RunState {
     fn synthetic_finished_output(
         &mut self,
         worker: u32,
-        status: MutationStatus,
+        outcome: SyntheticOutcome,
     ) -> Result<Vec<RunEffect>, MachineError> {
         let candidate = self.candidate(worker)?;
-        *self.worker_mut(worker)? = WorkerState::SyntheticFinishing(candidate.clone(), status);
+        *self.worker_mut(worker)? = WorkerState::SyntheticFinishing(candidate.clone(), outcome);
         let id = self.allocate_id()?;
         self.output_actions
-            .insert(id, OutputAction::FinishSynthetic(worker, status));
+            .insert(id, OutputAction::FinishSynthetic(worker));
         Ok(vec![RunEffect::EmitOutput(EmitOutput {
             id,
             event: OutputEvent::MutantFinished(MutantOutput {
@@ -1087,16 +1105,7 @@ impl RunState {
                 sequence: self.output_sequence(),
                 run_id: self.run_id.clone(),
                 candidate,
-                outcome: match status {
-                    MutationStatus::Killed => MutationOutcome::Reused {
-                        status: ReusedMutationStatus::Killed,
-                    },
-                    MutationStatus::Survived => MutationOutcome::Reused {
-                        status: ReusedMutationStatus::Survived,
-                    },
-                    MutationStatus::NotRun => MutationOutcome::NotRun,
-                    _ => return Err(MachineError::WrongPhase { phase: self.phase }),
-                },
+                outcome: outcome.report_outcome(),
                 resource_mode: self.resource_control.mode,
                 diagnostics: Vec::new(),
             }),
@@ -1130,8 +1139,8 @@ impl RunState {
                 | WorkerState::Lookup(candidate)
                 | WorkerState::Applying(candidate)
                 | WorkerState::Starting(candidate) => Some(StoppedCandidate::NotStarted(candidate)),
-                WorkerState::SyntheticStarting(candidate, status) => {
-                    Some(StoppedCandidate::SyntheticNotStarted(candidate, status))
+                WorkerState::SyntheticStarting(candidate, outcome) => {
+                    Some(StoppedCandidate::SyntheticNotStarted(candidate, outcome))
                 }
                 WorkerState::Running(candidate) => Some(StoppedCandidate::StartedNotRun(candidate)),
                 WorkerState::Persisting(result) => {
@@ -1139,8 +1148,8 @@ impl RunState {
                     Some(StoppedCandidate::Finished(result))
                 }
                 WorkerState::Finishing(result) => Some(StoppedCandidate::Finished(result)),
-                WorkerState::SyntheticFinishing(candidate, status) => {
-                    Some(StoppedCandidate::SyntheticFinished(candidate, status))
+                WorkerState::SyntheticFinishing(candidate, outcome) => {
+                    Some(StoppedCandidate::SyntheticFinished(candidate, outcome))
                 }
                 WorkerState::Idle | WorkerState::Reading | WorkerState::Resetting => None,
             };
@@ -1185,20 +1194,20 @@ impl RunState {
             match candidate {
                 StoppedCandidate::NotStarted(candidate) => {
                     *self.worker_mut(worker)? = WorkerState::Ready(candidate);
-                    self.synthetic_started_output(worker, MutationStatus::NotRun)
+                    self.synthetic_started_output(worker, SyntheticOutcome::NotRun)
                 }
-                StoppedCandidate::SyntheticNotStarted(candidate, status) => {
+                StoppedCandidate::SyntheticNotStarted(candidate, outcome) => {
                     *self.worker_mut(worker)? = WorkerState::Ready(candidate);
-                    self.synthetic_started_output(worker, status)
+                    self.synthetic_started_output(worker, outcome)
                 }
                 StoppedCandidate::StartedNotRun(candidate) => {
                     *self.worker_mut(worker)? = WorkerState::Ready(candidate);
-                    self.synthetic_finished_output(worker, MutationStatus::NotRun)
+                    self.synthetic_finished_output(worker, SyntheticOutcome::NotRun)
                 }
                 StoppedCandidate::Finished(result) => self.finished_output(worker, result),
-                StoppedCandidate::SyntheticFinished(candidate, status) => {
+                StoppedCandidate::SyntheticFinished(candidate, outcome) => {
                     *self.worker_mut(worker)? = WorkerState::Ready(candidate);
-                    self.synthetic_finished_output(worker, status)
+                    self.synthetic_finished_output(worker, outcome)
                 }
             }
         } else if !self.flags.scheduling.candidate_exhausted {
@@ -1601,7 +1610,7 @@ pub fn transition(
                 } else if state.flags.scheduling.stop_requested {
                     if let Some(candidate) = value.candidate {
                         *state.worker_mut(worker)? = WorkerState::Ready(candidate);
-                        state.synthetic_started_output(worker, MutationStatus::NotRun)?
+                        state.synthetic_started_output(worker, SyntheticOutcome::NotRun)?
                     } else {
                         let worker_state = state.worker_mut(worker)?;
                         *worker_state = WorkerState::default();
@@ -1619,7 +1628,7 @@ pub fn transition(
                         if state.scheduled_mutants >= state.config.limits.max_mutants.get() as u64 {
                             state.flags.scheduling.mutant_limit_reached = true;
                             state.flags.outcome.incomplete = true;
-                            state.synthetic_started_output(worker, MutationStatus::NotRun)?
+                            state.synthetic_started_output(worker, SyntheticOutcome::NotRun)?
                         } else {
                             state.scheduled_mutants += 1;
                             state.candidate_effects(worker)?
@@ -1652,11 +1661,8 @@ pub fn transition(
             }
             match crate::resume_policy(value.result.as_ref()) {
                 ResumeDecision::Rerun => state.apply_worker_effects(worker)?,
-                ResumeDecision::Reuse => {
-                    let result = value
-                        .result
-                        .ok_or(MachineError::WrongPhase { phase: state.phase })?;
-                    state.synthetic_started_output(worker, result.status)?
+                ResumeDecision::Reuse(status) => {
+                    state.synthetic_started_output(worker, SyntheticOutcome::Reused(status))?
                 }
             }
         }
@@ -1759,8 +1765,13 @@ pub fn transition(
                     state.analysis_diagnostic_effects()?
                 }
                 OutputAction::StartMutant(worker) => state.mutant_process(worker)?,
-                OutputAction::StartSynthetic(worker, status) => {
-                    state.synthetic_finished_output(worker, status)?
+                OutputAction::StartSynthetic(worker) => {
+                    let WorkerState::SyntheticStarting(_, outcome) = state.worker_mut(worker)?
+                    else {
+                        return Err(MachineError::WrongPhase { phase: state.phase });
+                    };
+                    let outcome = *outcome;
+                    state.synthetic_finished_output(worker, outcome)?
                 }
                 OutputAction::FinishMutant(worker) => {
                     if state.flags.scheduling.stop_requested {
@@ -1772,7 +1783,12 @@ pub fn transition(
                         vec![RunEffect::ResetWorker(ResetWorker { id, worker })]
                     }
                 }
-                OutputAction::FinishSynthetic(worker, status) => {
+                OutputAction::FinishSynthetic(worker) => {
+                    let WorkerState::SyntheticFinishing(_, outcome) = state.worker_mut(worker)?
+                    else {
+                        return Err(MachineError::WrongPhase { phase: state.phase });
+                    };
+                    let status = outcome.report_outcome().status();
                     state.summary.record(status);
                     *state.worker_mut(worker)? = WorkerState::Idle;
                     if state.flags.scheduling.stop_requested {

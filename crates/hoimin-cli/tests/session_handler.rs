@@ -11,8 +11,8 @@ use hoimin_core::{
     BeginSession, ByteSpan, EffectFailed, EffectFailure, EffectId, FinishSession, LoadSession,
     LookupStoredResult, MutantResult, MutationCandidate, MutationStatus, OutputSpoolRef,
     PersistResult, ProcessTermination, ResourceMode, ResultPersisted, ResumeDecision,
-    RunFingerprint, SessionFinished, SessionLoadOutcome, SessionLoaded, SessionResumeRef,
-    SessionStarted, StoredResult, StoredResultLoaded, resume_policy,
+    ReusedMutationStatus, RunFingerprint, SessionFinished, SessionLoadOutcome, SessionLoaded,
+    SessionResumeRef, SessionStarted, StoredResult, StoredResultLoaded, resume_policy,
 };
 use rusqlite::types::Value;
 use rusqlite::{Connection, OpenFlags};
@@ -918,7 +918,10 @@ fn timeout_can_be_replaced_then_resumed_and_completed_end_to_end() {
         ))
         .unwrap();
     let stored = handler.lookup(&lookup_request(7, "run-1", "m1")).unwrap();
-    assert_eq!(resume_policy(stored.result.as_ref()), ResumeDecision::Reuse);
+    assert_eq!(
+        resume_policy(stored.result.as_ref()),
+        ResumeDecision::Reuse(ReusedMutationStatus::Killed)
+    );
     handler.finish(finish_request(8, "run-1")).unwrap();
     assert!(matches!(
         handler
@@ -1630,8 +1633,16 @@ fn session_preserves_every_canonical_status_and_its_reuse_decision() {
     handler.begin(begin_request(1, "run-1")).unwrap();
     let observer = Connection::open(&path).unwrap();
     for (status, name, decision) in [
-        (MutationStatus::Killed, "killed", ResumeDecision::Reuse),
-        (MutationStatus::Survived, "survived", ResumeDecision::Reuse),
+        (
+            MutationStatus::Killed,
+            "killed",
+            ResumeDecision::Reuse(ReusedMutationStatus::Killed),
+        ),
+        (
+            MutationStatus::Survived,
+            "survived",
+            ResumeDecision::Reuse(ReusedMutationStatus::Survived),
+        ),
         (MutationStatus::Timeout, "timeout", ResumeDecision::Rerun),
         (
             MutationStatus::OutOfMemory,
@@ -2427,7 +2438,7 @@ fn lean_resume_budget_cases_match_persistent_selection_and_reuse() {
                 .unwrap()
         });
         assert_eq!(
-            resume_policy(stored.as_ref()) == ResumeDecision::Reuse,
+            matches!(resume_policy(stored.as_ref()), ResumeDecision::Reuse(_)),
             case.reuse
         );
         let db = Connection::open(&path).unwrap();

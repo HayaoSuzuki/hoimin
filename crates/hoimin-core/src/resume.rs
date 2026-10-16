@@ -274,14 +274,16 @@ pub struct SessionResumeRef {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum ResumeDecision {
-    Reuse,
+    Reuse(ReusedMutationStatus),
     Rerun,
 }
 
+/// Selects only conclusive stored results and carries their reusable status.
 #[must_use]
 pub fn resume_policy(result: Option<&StoredResult>) -> ResumeDecision {
     match result.map(|result| result.status) {
-        Some(MutationStatus::Killed | MutationStatus::Survived) => ResumeDecision::Reuse,
+        Some(MutationStatus::Killed) => ResumeDecision::Reuse(ReusedMutationStatus::Killed),
+        Some(MutationStatus::Survived) => ResumeDecision::Reuse(ReusedMutationStatus::Survived),
         Some(
             MutationStatus::Timeout
             | MutationStatus::OutOfMemory
