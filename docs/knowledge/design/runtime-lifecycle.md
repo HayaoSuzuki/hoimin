@@ -5,6 +5,20 @@ description: OS別の資源制限と、プロセス終了・一時ファイル�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-963-disk
+  resource: ../../../crates/hoimin-cli/src/workspace/disk.rs
+  revision: a72ca276efbb6c98499878f5c1cdeaadd39c23b8
+  working_tree: modified
+  sha256: bbfc990f0c15213501fb56e45b695b7cfced3148e4b6bb963ccc3abd6970a954
+- id: issue-963-shell
+  resource: ../../../crates/hoimin-cli/src/shell.rs
+  revision: a72ca276efbb6c98499878f5c1cdeaadd39c23b8
+  working_tree: modified
+  sha256: 9e2ed121f889b39aa2df1abe7d9237a505e3965e8f84c523ea97d71694a26748
+- id: issue-963-record
+  resource: ../../maintenance/2026-10-17-issue-963.md
+  working_tree: untracked
+  sha256: 0fe4614d4a7e94a9e735fcd54997f95f35b046d19bf2c413aca6190fc908b200
 - id: issue-960-output
   resource: ../../../crates/hoimin-cli/src/process/output.rs
   revision: 30d158c7ead3252c5c0aa398e8ab1819ffa9d75b
@@ -736,3 +750,32 @@ failure handling.[^issue-960-record]
 
 [^issue-960-output]: [Output collection and fault tests](../../../crates/hoimin-cli/src/process/output.rs).
 [^issue-960-record]: [Issue 960 implementation and verification](../../maintenance/2026-10-16-issue-960.md).
+
+
+## Disk statistics from retained history (Issue #963)
+
+Monitor statistics retain each successfully sampled filesystem's first capacity
+and minimum capacity. The global minimum derives from those retained minima on
+the same snapshot. No accepted samples yield `None`; a measured zero yields
+`Some(0)`. Missing filesystems keep their history, including when they later
+reappear. The monitor no longer stores unused latest values or an independently
+updated global minimum.[^issue-963-disk]
+
+Heartbeat errors, measurement errors and empty capacity maps leave successful
+statistics unchanged. Valid nonempty readings contribute before stop evaluation,
+including readings that trigger a stop and readings after a sticky stop. Policy
+still uses the current reading. End-of-run capacity remains a separate filesystem
+query; it is not the last periodic sample or the historical minimum.
+[^issue-963-disk][^issue-963-shell]
+
+The [implementation record](../../maintenance/2026-10-17-issue-963.md) separates
+baseline characterization, deliberate mutation sensitivity and current checks.
+A bounded property test compares historical minima with independently flattened
+raw inputs. Existing disk shutdown corpus checks retain their lifecycle scope;
+this change adds no Lean model or proof. Recheck the equivalence if history is
+pruned, acceptance rules change or aggregation moves across snapshot boundaries.
+[^issue-963-record]
+
+[^issue-963-disk]: [Disk measurement acceptance and retained statistics](../../../crates/hoimin-cli/src/workspace/disk.rs).
+[^issue-963-shell]: [Final disk report and independent end-capacity query](../../../crates/hoimin-cli/src/shell.rs).
+[^issue-963-record]: [Issue 963 design, implementation and verification reviews](../../maintenance/2026-10-17-issue-963.md).

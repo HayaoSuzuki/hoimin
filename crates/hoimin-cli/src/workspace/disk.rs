@@ -312,18 +312,22 @@ fn initial_meter_from_capabilities(
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct DiskMonitorStats {
     pub(crate) peak_owned_bytes: u64,
-    pub(crate) minimum_available_bytes: Option<u64>,
     pub(crate) sample_count: u64,
     pub(crate) maximum_measurement: Duration,
     pub(crate) filesystems: BTreeMap<FilesystemKey, FilesystemStats>,
-    pub(crate) latest_owned_bytes: Option<u64>,
+}
+
+impl DiskMonitorStats {
+    /// Includes every successfully sampled filesystem, even if later samples omit it.
+    pub(crate) fn minimum_available_bytes(&self) -> Option<u64> {
+        self.filesystems.values().map(|stats| stats.minimum).min()
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct FilesystemStats {
     pub(crate) start: u64,
     pub(crate) minimum: u64,
-    pub(crate) latest: u64,
 }
 
 enum MonitorCommand {
@@ -569,25 +573,17 @@ fn sample_meter_with_refresh_at(
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         snapshot.sample_count = snapshot.sample_count.saturating_add(1);
         snapshot.peak_owned_bytes = snapshot.peak_owned_bytes.max(reading.owned_bytes);
-        snapshot.minimum_available_bytes = Some(
-            snapshot
-                .minimum_available_bytes
-                .map_or(available_bytes, |prior| prior.min(available_bytes)),
-        );
         snapshot.maximum_measurement = snapshot.maximum_measurement.max(reading.elapsed);
-        snapshot.latest_owned_bytes = Some(reading.owned_bytes);
         for (key, available) in &reading.available_by_filesystem {
             snapshot
                 .filesystems
                 .entry(*key)
                 .and_modify(|filesystem| {
                     filesystem.minimum = filesystem.minimum.min(*available);
-                    filesystem.latest = *available;
                 })
                 .or_insert(FilesystemStats {
                     start: *available,
                     minimum: *available,
-                    latest: *available,
                 });
         }
     }
@@ -1147,6 +1143,9 @@ fn should_count_unix_stat(metadata: &rustix::fs::Stat, state: &mut WalkState) ->
 }
 
 #[cfg(test)]
+mod stats_tests;
+
+#[cfg(test)]
 mod tests {
     use std::collections::{BTreeMap, VecDeque};
 
@@ -1506,13 +1505,13 @@ mod tests {
         assert_eq!(fifth.secondary.len(), 3);
         let stats = monitor.stats();
         assert_eq!(stats.sample_count, 3);
-        assert_eq!(stats.latest_owned_bytes, Some(900));
+        assert_eq!(stats.peak_owned_bytes, 900);
+        assert_eq!(stats.minimum_available_bytes(), Some(400));
         assert_eq!(
             stats.filesystems.get(&FilesystemKey(7)),
             Some(&super::FilesystemStats {
                 start: 1_000,
                 minimum: 400,
-                latest: 800,
             })
         );
         assert!(
