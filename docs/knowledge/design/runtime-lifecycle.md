@@ -5,6 +5,19 @@ description: OS別の資源制限と、プロセス終了・一時ファイル�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-967-windows
+  resource: ../../../crates/hoimin-cli/src/resource/windows.rs
+  revision: 229ce38535142958ab75aa1b0462d8be37dbf77e
+  working_tree: modified
+  sha256: 55bb71bae538f6df516d024d3f576246c216471314276486abf93da263c853f3
+- id: issue-967-notifications
+  resource: ../../../crates/hoimin-cli/src/resource/windows/tests/notification_tests.rs
+  working_tree: untracked
+  sha256: 3c7eeebfdaa6d8c342d970a1d399cfec444de95191f82e7d92772145eebb2267
+- id: issue-967-record
+  resource: ../../maintenance/2026-10-17-issue-967.md
+  working_tree: untracked
+  sha256: db2f1e7a498d17a236fa625b4d7d2822625af5407e50738d9b8891127f691c98
 - id: issue-963-disk
   resource: ../../../crates/hoimin-cli/src/workspace/disk.rs
   revision: a72ca276efbb6c98499878f5c1cdeaadd39c23b8
@@ -779,3 +792,34 @@ pruned, acceptance rules change or aggregation moves across snapshot boundaries.
 [^issue-963-disk]: [Disk measurement acceptance and retained statistics](../../../crates/hoimin-cli/src/workspace/disk.rs).
 [^issue-963-shell]: [Final disk report and independent end-capacity query](../../../crates/hoimin-cli/src/shell.rs).
 [^issue-963-record]: [Issue 963 design, implementation and verification reviews](../../maintenance/2026-10-17-issue-963.md).
+
+## Windows root notification interest (Issue #967)
+
+An active root's `record_exit` flag says whether a supervisor still needs its
+exit evidence. Successful attachment sets it; assigned roots whose attachment
+fails and detached roots clear it. Clearing interest retains the root ID, PID
+and owned process handle until a corresponding exit packet or a confirmed empty
+run job releases that generation. Only interested roots enter `exited_roots`.
+Run-wide memory/process-limit packets are ignored because they cannot identify
+the offending tree. Each nested job's completion port classifies its own limits,
+with memory taking precedence when both limit packets are observed.
+[^issue-967-windows]
+
+Exit waiting owns a cloned process handle outside the registry mutex and drains
+notifications again after waiting. Queued exit evidence takes precedence over
+the signaled-handle fallback. The fallback clears interest while retaining the
+generation; wait errors and timeouts retain the registration for retry. The
+[implementation record](../../maintenance/2026-10-17-issue-967.md) separates native
+Windows checks, bounded event-sequence tests and existing Lean oracle scope.
+Those models do not establish Win32 notification delivery or PID-generation
+correctness. Recheck these invariants when changing attachment, detachment or
+completion-port handling.[^issue-967-windows][^issue-967-record]
+
+Finite notification cases and a bounded event-sequence property test check
+interest and PID-generation order against independent expectations. The
+Windows regression procedure runs these alongside the native lifecycle
+fixtures.[^issue-967-notifications]
+
+[^issue-967-windows]: [Windows job ownership, exit waiting and notification handling](../../../crates/hoimin-cli/src/resource/windows.rs).
+[^issue-967-record]: [Issue 967 design, review and verification](../../maintenance/2026-10-17-issue-967.md).
+[^issue-967-notifications]: [Finite notification cases and bounded generation-order test](../../../crates/hoimin-cli/src/resource/windows/tests/notification_tests.rs).
