@@ -2058,3 +2058,20 @@ entries; it retains event acceptance, rejection point and component/stop checks.
 Run the complete workspace suite and all-target/all-feature clippy before
 shipping changes. See the [root cleanup contract](knowledge/design/runtime-lifecycle.md#root-cleanup-state)
 for Deferred, Retained and Delivery completion rules.
+
+## Windows exit-notification checks
+
+Run the Windows backend tests on Windows, including both the native lifecycle
+fixtures and the separate notification case/property tests:
+
+```console
+cargo test --locked -p hoimin-cli --all-features --lib resource::windows::tests -- --test-threads=2
+cargo test --locked -p hoimin-cli --all-features --test process_handler job_object -- --test-threads=2
+cargo test --locked -p hoimin-cli --all-features --test windows_resource_scope -- --test-threads=2
+```
+
+The `windows-resource-scope` job in `Manual non-Linux CI` uses the same backend
+filter. Notification tests live under the existing `tests` namespace, so that
+filter includes both modules. See the [notification-interest contract](knowledge/design/runtime-lifecycle.md#windows-root-notification-interest-issue-967)
+and [Issue 967 verification record](maintenance/2026-10-17-issue-967.md) for
+generation retention, completion evidence and formal-model limits.
