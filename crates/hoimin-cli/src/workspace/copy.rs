@@ -267,7 +267,8 @@ impl<E> From<WorkspaceError> for ValidatedPreflightError<E> {
 
 #[derive(Debug, Default)]
 pub struct PlanState {
-    pub(crate) reservation: Option<(ReservationId, u64)>,
+    // The plan owns the immutable allowance; binding survives failed materialization.
+    pub(crate) reservation: Option<ReservationId>,
     pub(crate) workers: BTreeSet<u32>,
 }
 
@@ -298,16 +299,10 @@ impl PlanState {
             });
         }
         match self.reservation {
-            Some((reservation, _allowance)) if reservation != request.reservation_id() => {
+            Some(reservation) if reservation != request.reservation_id() => {
                 Err(WorkspaceError::ReservationMismatch {
                     expected: reservation,
                     received: request.reservation_id(),
-                })
-            }
-            Some((_reservation, allowance)) if allowance != request.granted_allowance() => {
-                Err(WorkspaceError::AllowanceMismatch {
-                    expected: allowance,
-                    received: request.granted_allowance(),
                 })
             }
             _ => Ok(()),
@@ -324,7 +319,7 @@ impl PlanState {
         self.validate_grant(request, preflight_id, requested_workers, aggregate_bytes)?;
         let newly_bound = self.reservation.is_none();
         if newly_bound {
-            self.reservation = Some((request.reservation_id(), request.granted_allowance()));
+            self.reservation = Some(request.reservation_id());
         }
         if !self.workers.insert(request.worker()) {
             return Err(WorkspaceError::WorkerAlreadyExists {
@@ -537,10 +532,7 @@ impl WorkspacePlan {
 
     #[must_use]
     pub fn reservation_id(&self) -> Option<ReservationId> {
-        self.state
-            .lock()
-            .ok()
-            .and_then(|state| state.reservation.map(|(id, _)| id))
+        self.state.lock().ok().and_then(|state| state.reservation)
     }
 
     /// Confirms that the source workspace still matches this plan's manifest.
@@ -956,6 +948,9 @@ fn create_pending_disk_snapshot(
         },
     ))
 }
+
+#[cfg(test)]
+mod grant_tests;
 
 #[cfg(test)]
 mod tests {
@@ -1989,10 +1984,7 @@ mod tests {
             })
         );
         let state = state.lock().unwrap();
-        assert_eq!(
-            state.reservation,
-            Some((winner.0, completed.aggregate_logical_bytes))
-        );
+        assert_eq!(state.reservation, Some(winner.0));
         assert_eq!(state.workers, BTreeSet::from([winner.1]));
         drop(state);
     }

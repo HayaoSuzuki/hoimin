@@ -5,6 +5,19 @@ description: 元ソースへの変異適用を避け、状態遷移と入出力�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-966-copy
+  resource: ../../../crates/hoimin-cli/src/workspace/copy.rs
+  revision: 229ce38535142958ab75aa1b0462d8be37dbf77e
+  working_tree: modified
+  sha256: d9cdd033e8b3b770c59ea3f1014ca216d4e4a004118af74676e3ec344532eed8
+- id: issue-966-tests
+  resource: ../../../crates/hoimin-cli/src/workspace/copy/grant_tests.rs
+  working_tree: untracked
+  sha256: c707105b21724059d5a16381d83142f0cb205c4d54c4e3ccecff300f44575c0a
+- id: issue-966-record
+  resource: ../../maintenance/2026-10-17-issue-966.md
+  working_tree: untracked
+  sha256: cb53d6166cfe5bff6452f9367780465b1e95f8ffeb99f529d752cefdc856f57e
 - id: c4-runtime-views
   resource: ../../architecture/c4-model.md
   working_tree: untracked
@@ -110,6 +123,32 @@ the external test command from the in-process analyzer. This is source-based
 architecture documentation, not new runtime, platform or model-proof evidence.[^c4-runtime-views]
 
 [^c4-runtime-views]: [hoimin through the C4 model](../../architecture/c4-model.md).
+
+# Workspace allowance ownership
+
+`WorkspacePlan.aggregate_bytes` owns the immutable planned allowance.
+`PlanState.reservation` stores only an optional reservation ID: the first valid
+grant binds the plan, including when the allowance is zero. Grant validation
+checks preflight identity, worker range, planned allowance and bound reservation
+in that order, then claims the worker slot. The reservation no longer stores a
+second allowance or repeats its comparison.[^issue-966-copy]
+
+The state mutex still protects initial binding, worker admission and first grant
+publication. `CopyAllowance.granted` publishes that grant to copies, while
+`charged` tracks their dynamic usage. Failed materialization releases the worker
+slot and partial charges but retains the reservation; another reservation is
+rejected and the same one may retry. These responsibilities have distinct owners
+and require no compatibility state.[^issue-966-copy]
+
+The finite grant tests cover zero allowance and rejection precedence. A bounded
+property test keeps each plan's allowance fixed and compares requests against
+an independent accepted-input history. The [implementation record](../../maintenance/2026-10-17-issue-966.md)
+records current execution evidence and its platform and Lean-oracle limits;
+it does not claim a new formal proof of concurrent filesystem behavior.[^issue-966-tests][^issue-966-record]
+
+[^issue-966-copy]: [Workspace plan and copy accounting](../../../crates/hoimin-cli/src/workspace/copy.rs).
+[^issue-966-tests]: [Grant admission tests](../../../crates/hoimin-cli/src/workspace/copy/grant_tests.rs).
+[^issue-966-record]: [Issue #966 implementation and verification](../../maintenance/2026-10-17-issue-966.md).
 
 # 作業コピーへの変異適用
 
