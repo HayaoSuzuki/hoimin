@@ -6,17 +6,25 @@
 #[path = "../../crates/hoimin-cli/src/analyzer/types.rs"]
 mod types;
 use types::{AnalyzerCandidate, AnalyzerDiagnostic, AnalyzerDiagnosticCode};
+#[path = "../../crates/hoimin-cli/src/analyzer/visitor.rs"]
+pub(crate) mod visitor;
+
+// Match the shipping analyzer's namespace for its shared visitor imports.
+mod analyzer {
+    pub(crate) use crate::visitor;
+}
+
 #[allow(dead_code)]
 #[path = "../../crates/hoimin-cli/src/analyzer/rust.rs"]
-mod analyzer;
+mod rust;
 
-use analyzer::{AnalysisError, AnalyzeRequest, analyze_source_cancellable};
 use camino::Utf8Path;
 use hoimin_core::{
     CandidateDescriptor, CandidateValidationContext, MutationOperatorSelection, MutationProfile,
     validate_candidate_with_context,
 };
 use libfuzzer_sys::fuzz_target;
+use rust::{AnalysisError, AnalyzeRequest, analyze_source_cancellable};
 
 fuzz_target!(|source: &str| {
     if source.len() > 4096 {
@@ -31,14 +39,14 @@ fuzz_target!(|source: &str| {
     {
         return;
     }
-    let mut operators = MutationOperatorSelection::all_legacy();
+    let mut operators = MutationOperatorSelection::default();
     for name in MutationOperatorSelection::valid_names() {
         for operator in MutationOperatorSelection::parse_selector(name).unwrap() {
             operators.include(operator);
         }
     }
     let request = AnalyzeRequest {
-        payload: analyzer::payload::PayloadBudget::default(),
+        payload: rust::payload::PayloadBudget::default(),
         path: Utf8Path::new("input.py"),
         lines: &[],
         symbols: &[],

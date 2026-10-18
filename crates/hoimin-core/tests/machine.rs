@@ -17,9 +17,37 @@ use hoimin_core::{
 use proptest::prelude::*;
 
 #[test]
+fn baseline_success_requires_owned_restoration_before_dispatch() {
+    // Arrange.
+    let (state, effects) = waiting_for_baseline();
+    let baseline_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::RunBaseline(_))
+    }));
+    // Act.
+    let (_, effects) = transition(
+        state,
+        RunEvent::BaselineFinished(process_finished(baseline_id, ProcessTermination::Exit(0))),
+    )
+    .unwrap();
+    // Assert.
+    assert!(
+        effects
+            .iter()
+            .any(|effect| matches!(effect, RunEffect::ResetWorker(reset) if reset.worker == 0))
+    );
+    assert!(!effects.iter().any(|effect| matches!(
+        effect,
+        RunEffect::AnalyzeFile(_)
+            | RunEffect::ObserveRemainingBudget(_)
+            | RunEffect::ApplyMutation(_)
+            | RunEffect::RunMutant(_)
+    )));
+}
+
+#[test]
 fn baseline_output_ack_does_not_restart_followup_work() {
     for (termination, expected_phase) in [
-        (ProcessTermination::Exit(0), RunPhase::Analyze),
+        (ProcessTermination::Exit(0), RunPhase::BaselineRestoration),
         (ProcessTermination::Exit(1), RunPhase::Finalize),
     ] {
         let (state, effects) = waiting_for_baseline();
@@ -191,7 +219,7 @@ fn materialization_verification_rejects_a_mismatched_checkpoint() {
 }
 
 #[test]
-fn baseline_success_requests_analysis_without_performing_io() {
+fn baseline_success_requests_restoration_without_performing_io() {
     let (state, effects) = start_state();
     let resolve_id = effect_id(find_effect(&effects, |effect| {
         matches!(effect, RunEffect::ResolveTargets(_))
@@ -246,16 +274,16 @@ fn baseline_success_requests_analysis_without_performing_io() {
         RunEvent::BaselineFinished(process_finished(baseline_id, ProcessTermination::Exit(0))),
     )
     .unwrap();
-    assert_eq!(next.phase(), RunPhase::Analyze);
+    assert_eq!(next.phase(), RunPhase::BaselineRestoration);
     assert!(
         effects
             .iter()
-            .any(|effect| matches!(effect, RunEffect::AnalyzeFile(_)))
+            .any(|effect| matches!(effect, RunEffect::ResetWorker(_)))
     );
 }
 
 #[test]
-fn top_verification_observes_budget_after_successful_baseline() {
+fn top_verification_observes_budget_after_baseline_restoration() {
     let initial_state = RunState::new("run-1", fixture_config(), test_resource_control())
         .with_verification_selection(
             VerificationSelection::top(30, 30, hoimin_core::VerificationTopPolicy::Strict, false)
@@ -268,7 +296,14 @@ fn top_verification_observes_budget_after_successful_baseline() {
     let mut baseline = process_finished(baseline_id, ProcessTermination::Exit(0));
     baseline.elapsed = Duration::from_secs(17);
 
-    let (_, effects) = transition(state, RunEvent::BaselineFinished(baseline)).unwrap();
+    let (state, effects) = transition(state, RunEvent::BaselineFinished(baseline)).unwrap();
+    assert_eq!(state.phase(), RunPhase::BaselineRestoration);
+    assert!(
+        !effects
+            .iter()
+            .any(|effect| matches!(effect, RunEffect::ObserveRemainingBudget(_)))
+    );
+    let (_, effects) = complete_baseline_restoration(state, &effects);
 
     assert_eq!(
         effects
@@ -293,11 +328,12 @@ fn explicit_verification_skips_budget_observation() {
         matches!(effect, RunEffect::RunBaseline(_))
     }));
 
-    let (_, effects) = transition(
+    let (state, effects) = transition(
         state,
         RunEvent::BaselineFinished(process_finished(baseline_id, ProcessTermination::Exit(0))),
     )
     .unwrap();
+    let (_, effects) = complete_baseline_restoration(state, &effects);
 
     assert!(
         effects
@@ -318,11 +354,12 @@ fn ordinary_run_skips_budget_observation() {
         matches!(effect, RunEffect::RunBaseline(_))
     }));
 
-    let (_, effects) = transition(
+    let (state, effects) = transition(
         state,
         RunEvent::BaselineFinished(process_finished(baseline_id, ProcessTermination::Exit(0))),
     )
     .unwrap();
+    let (_, effects) = complete_baseline_restoration(state, &effects);
 
     assert!(
         effects
@@ -492,7 +529,7 @@ fn baseline_failure_runs_no_mutants_and_selects_exit_three() {
     assert!(
         !effects
             .iter()
-            .any(|effect| matches!(effect, RunEffect::RunMutant(_)))
+            .any(|effect| matches!(effect, RunEffect::RunMutant(_) | RunEffect::ResetWorker(_)))
     );
 }
 
@@ -696,7 +733,7 @@ fn disk_stop(available_bytes: u64) -> RunEvent {
 #[test]
 fn stop_causes_preserve_exit_policy_at_each_work_boundary() {
     type PendingBoundary = fn(&RunEffect) -> bool;
-    let boundaries: [(&str, PendingBoundary); 6] = [
+    let boundaries: [(&str, PendingBoundary); 7] = [
         ("before preflight", |effect| {
             matches!(effect, RunEffect::ResolveTargets(_))
         }),
@@ -705,6 +742,9 @@ fn stop_causes_preserve_exit_policy_at_each_work_boundary() {
         }),
         ("baseline", |effect| {
             matches!(effect, RunEffect::RunBaseline(_))
+        }),
+        ("baseline restoration", |effect| {
+            matches!(effect, RunEffect::ResetWorker(_))
         }),
         ("running mutant", |effect| {
             matches!(effect, RunEffect::RunMutant(_))
@@ -3975,6 +4015,7 @@ fn multiple_target_files_are_analyzed_in_order_before_candidate_replay() {
         RunEvent::BaselineFinished(process_finished(baseline_id, ProcessTermination::Exit(0))),
     )
     .unwrap();
+    let (state, effects) = complete_baseline_restoration(state, &effects);
     let RunEffect::AnalyzeFile(first) = find_effect(&effects, |effect| {
         matches!(effect, RunEffect::AnalyzeFile(_))
     }) else {
@@ -4091,6 +4132,7 @@ fn filtered_analysis_advances_across_nonfinal_targets_before_receiving_a_spool()
         RunEvent::BaselineFinished(process_finished(baseline_id, ProcessTermination::Exit(0))),
     )
     .unwrap();
+    let (state, effects) = complete_baseline_restoration(state, &effects);
     let RunEffect::AnalyzeFile(first) = find_effect(&effects, |effect| {
         matches!(effect, RunEffect::AnalyzeFile(_))
     }) else {
@@ -5476,7 +5518,8 @@ fn waiting_for_top_budget_observation() -> (RunState, Vec<RunEffect>) {
     }));
     let mut baseline = process_finished(baseline_id, ProcessTermination::Exit(0));
     baseline.elapsed = Duration::from_secs(17);
-    transition(state, RunEvent::BaselineFinished(baseline)).unwrap()
+    let (state, effects) = transition(state, RunEvent::BaselineFinished(baseline)).unwrap();
+    complete_baseline_restoration(state, &effects)
 }
 
 fn waiting_for_analysis() -> (RunState, Vec<RunEffect>) {
@@ -5502,7 +5545,7 @@ fn waiting_for_analysis_with(config: RunConfig) -> (RunState, Vec<RunEffect>) {
     )
     .unwrap();
     assert_eq!(emitted, Vec::new());
-    (state, effects)
+    complete_baseline_restoration(state, &effects)
 }
 
 fn waiting_for_baseline_with(config: RunConfig) -> (RunState, Vec<RunEffect>) {
@@ -5895,7 +5938,7 @@ fn waiting_for_selected_analysis(
     )
     .unwrap();
     assert_eq!(emitted, Vec::new());
-    (state, effects)
+    complete_baseline_restoration(state, &effects)
 }
 
 fn waiting_for_session_candidate(resume: bool) -> (RunState, Vec<RunEffect>) {
@@ -6276,4 +6319,232 @@ fn sample_cancellation_and_deadline_keep_provenance_and_incomplete_results() {
                 .all(|status| *status == MutationStatus::NotRun)
         );
     }
+}
+
+fn complete_baseline_restoration(
+    state: RunState,
+    effects: &[RunEffect],
+) -> (RunState, Vec<RunEffect>) {
+    let RunEffect::ResetWorker(reset) = find_effect(effects, |effect| {
+        matches!(effect, RunEffect::ResetWorker(_))
+    }) else {
+        unreachable!()
+    };
+    transition(
+        state,
+        RunEvent::WorkerReset(WorkerReset {
+            id: reset.id,
+            worker: reset.worker,
+        }),
+    )
+    .unwrap()
+}
+
+fn waiting_for_baseline_restoration_with_jobs(jobs: usize) -> (RunState, Vec<RunEffect>) {
+    let mut raw = fixture_raw_config();
+    raw.limits.jobs = jobs;
+    let config = RunConfig::try_from(raw)
+        .unwrap()
+        .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
+        .unwrap();
+    let (state, effects) = waiting_for_baseline_with(config);
+    let id = find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::RunBaseline(_))
+    })
+    .id();
+    transition(
+        state,
+        RunEvent::BaselineFinished(process_finished(id, ProcessTermination::Exit(0))),
+    )
+    .unwrap()
+}
+
+#[test]
+fn baseline_restoration_stops_retire_reset_without_dispatch() {
+    for jobs in [1, 3] {
+        for (stop, exit) in stop_cases() {
+            // Arrange.
+            let (state, pending) = waiting_for_baseline_restoration_with_jobs(jobs);
+            let reset_id = find_effect(&pending, |effect| {
+                matches!(effect, RunEffect::ResetWorker(_))
+            })
+            .id();
+            // Act.
+            let (state, effects) = transition(state, stop).unwrap();
+            let late = transition(
+                state.clone(),
+                RunEvent::WorkerReset(WorkerReset {
+                    id: reset_id,
+                    worker: 0,
+                }),
+            );
+            // Assert.
+            assert_eq!(state.exit_code(), exit);
+            assert!(matches!(
+                effects.as_slice(),
+                [RunEffect::VerifyOriginals(_)]
+            ));
+            assert!(matches!(late, Err(MachineError::RetiredEffect(id)) if id == reset_id));
+        }
+    }
+}
+
+#[test]
+fn baseline_restoration_ack_releases_analysis_before_output_ack_once() {
+    // Arrange.
+    let (state, pending) = waiting_for_baseline_restoration_with_jobs(1);
+    let output_id = find_effect(&pending, |effect| {
+        matches!(effect, RunEffect::EmitOutput(_))
+    })
+    .id();
+    let reset_id = find_effect(&pending, |effect| {
+        matches!(effect, RunEffect::ResetWorker(_))
+    })
+    .id();
+    // Act.
+    let (state, effects) = complete_baseline_restoration(state, &pending);
+    let duplicate = transition(
+        state.clone(),
+        RunEvent::WorkerReset(WorkerReset {
+            id: reset_id,
+            worker: 0,
+        }),
+    );
+    let (state, output_effects) = transition(
+        state,
+        RunEvent::OutputEmitted(OutputEmitted { id: output_id }),
+    )
+    .unwrap();
+    // Assert.
+    assert_eq!(state.phase(), RunPhase::Analyze);
+    assert!(matches!(effects.as_slice(), [RunEffect::AnalyzeFile(_)]));
+    assert_eq!(output_effects, Vec::new());
+    assert!(matches!(duplicate, Err(MachineError::DuplicateEffect(id)) if id == reset_id));
+}
+
+#[test]
+fn baseline_restoration_wrong_worker_cannot_release_barrier() {
+    // Arrange.
+    let (state, pending) = waiting_for_baseline_restoration_with_jobs(3);
+    let id = find_effect(&pending, |effect| {
+        matches!(effect, RunEffect::ResetWorker(_))
+    })
+    .id();
+    // Act.
+    let result = transition(state, RunEvent::WorkerReset(WorkerReset { id, worker: 1 }));
+    // Assert.
+    assert!(matches!(result, Err(MachineError::UnknownWorker(1))));
+}
+
+#[test]
+fn baseline_restoration_wrong_completion_cannot_release_barrier() {
+    // Arrange.
+    let (state, pending) = waiting_for_baseline_restoration_with_jobs(1);
+    let id = find_effect(&pending, |effect| {
+        matches!(effect, RunEffect::ResetWorker(_))
+    })
+    .id();
+    // Act.
+    let result = transition(state, RunEvent::OutputEmitted(OutputEmitted { id }));
+    // Assert.
+    assert_eq!(
+        result.unwrap_err().code(),
+        "machine.effect.wrong_completion"
+    );
+}
+
+#[test]
+fn baseline_restoration_failure_retires_sibling_completion() {
+    for fail_reset in [true, false] {
+        // Arrange.
+        let (state, pending) = waiting_for_baseline_restoration_with_jobs(1);
+        let reset_id = find_effect(&pending, |effect| {
+            matches!(effect, RunEffect::ResetWorker(_))
+        })
+        .id();
+        let output_id = find_effect(&pending, |effect| {
+            matches!(effect, RunEffect::EmitOutput(_))
+        })
+        .id();
+        let failed_id = if fail_reset { reset_id } else { output_id };
+        // Act.
+        let (state, effects) = transition(
+            state,
+            RunEvent::EffectFailed(EffectFailed::other(failed_id, "fixture.failed", "fixture")),
+        )
+        .unwrap();
+        let sibling = if fail_reset {
+            RunEvent::OutputEmitted(OutputEmitted { id: output_id })
+        } else {
+            RunEvent::WorkerReset(WorkerReset {
+                id: reset_id,
+                worker: 0,
+            })
+        };
+        let late = transition(state.clone(), sibling);
+        // Assert.
+        assert_eq!(state.exit_code(), 2);
+        assert!(matches!(effects.as_slice(), [RunEffect::EmitOutput(_)]));
+        assert!(matches!(late, Err(MachineError::RetiredEffect(_))));
+    }
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(64))]
+    #[test]
+    fn baseline_restoration_generated_ack_stop_order_never_dispatches_after_stop(
+        jobs in 1usize..5,
+        output_first in any::<bool>(),
+        stop_indices in prop::collection::vec(0usize..3, 1..8),
+    ) {
+        // Arrange.
+        let (mut state, pending) = waiting_for_baseline_restoration_with_jobs(jobs);
+        let reset_id = find_effect(&pending, |effect| matches!(effect, RunEffect::ResetWorker(_))).id();
+        let output_id = find_effect(&pending, |effect| matches!(effect, RunEffect::EmitOutput(_))).id();
+        // Act.
+        if output_first {
+            let (next, effects) = transition(state, RunEvent::OutputEmitted(OutputEmitted { id: output_id })).unwrap();
+            prop_assert!(effects.is_empty());
+            state = next;
+        }
+        let mut emitted = Vec::new();
+        for index in stop_indices {
+            let (next, effects) = transition(state, stop_cases()[index].0.clone()).unwrap();
+            state = next;
+            emitted.extend(effects);
+        }
+        let late = transition(state, RunEvent::WorkerReset(WorkerReset { id: reset_id, worker: 0 }));
+        // Assert.
+        prop_assert!(matches!(late, Err(MachineError::RetiredEffect(id)) if id == reset_id));
+        prop_assert!(!emitted.iter().any(|effect| matches!(effect, RunEffect::AnalyzeFile(_) | RunEffect::ObserveRemainingBudget(_) | RunEffect::ApplyMutation(_) | RunEffect::RunMutant(_))));
+    }
+}
+
+#[test]
+fn baseline_restoration_precedes_empty_analysis_finalization() {
+    // Arrange.
+    let (state, pending) = waiting_for_baseline_restoration_with_jobs(2);
+    assert_eq!(state.phase(), RunPhase::BaselineRestoration);
+    // Act.
+    let (state, analysis) = complete_baseline_restoration(state, &pending);
+    let id = find_effect(&analysis, |effect| {
+        matches!(effect, RunEffect::AnalyzeFile(_))
+    })
+    .id();
+    let (state, effects) = transition(
+        state,
+        RunEvent::AnalysisFinished(AnalysisFinished {
+            id,
+            spool: None,
+            truncated: false,
+            diagnostics: Vec::new(),
+        }),
+    )
+    .unwrap();
+    // Assert.
+    assert_eq!(state.phase(), RunPhase::Finalize);
+    assert!(matches!(
+        effects.as_slice(),
+        [RunEffect::VerifyOriginals(_)]
+    ));
 }

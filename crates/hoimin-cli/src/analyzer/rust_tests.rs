@@ -21,6 +21,42 @@ const BINDING_FLOW_CORPUS: &str =
     include_str!("../../../../formal/HoiminOracle/corpus/binding-flow-joins.jsonl");
 
 #[test]
+fn elif_named_binding_preserves_local_builtin_shadowing() {
+    let source = "def selected(flag, values, replacement):\n    if flag:\n        pass\n    elif not (list := replacement):\n        pass\n    return list(values)\n";
+
+    let snapshot = name_resolution_test_snapshot(source, "list(values)", "list").unwrap();
+
+    assert_eq!(snapshot.resolution, "shadowed");
+    assert_eq!(snapshot.start, source.find("list(values)").unwrap());
+}
+
+#[test]
+fn elif_not_forms_analyze_without_unselected_candidates() {
+    for clauses in 0..=4 {
+        for first_not in ["", "not "] {
+            for elif_not in ["", "not "] {
+                for nested in [false, true] {
+                    let mut source = format!("if {first_not}first:\n    pass\n");
+                    for clause in 0..clauses {
+                        writeln!(source, "elif {elif_not}condition{clause}:\n    pass").unwrap();
+                    }
+                    if nested {
+                        source.push_str("else:\n    if inner:\n        pass\n    elif not other:\n        pass\n");
+                    }
+
+                    let output =
+                        analyze_with_only_operator(&source, MutationOperator::BooleanLiteral);
+
+                    assert!(output.candidates.is_empty(), "{source}");
+                    assert!(output.diagnostics.is_empty(), "{source}");
+                    assert!(!output.truncated, "{source}");
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn string_segments_respect_candidate_caps_and_target_selection() {
     let source =
         "def first(x):\n return f'prefix:{x}:suffix'\ndef second(x):\n return 'prefix' 'suffix'\n";
@@ -785,6 +821,7 @@ fn operator_function_implicit_class_bindings_do_not_resolve_to_module_imports() 
 
 #[test]
 fn operator_function_class_guard_preserves_independent_import_references() {
+    let selected_operators: &[&str] = &["operator_function"];
     for alias in ["__op", "__class__", "__safe__"] {
         for (import, reference) in [
             (
@@ -799,7 +836,7 @@ fn operator_function_class_guard_preserves_independent_import_references() {
             let source = format!(
                 "{import}\nbefore = {reference}(2, 3)\nclass C: pass\ndef run(): return {reference}(2, 3)\n"
             );
-            let output = analyze_legacy(&source);
+            let output = analyze_selected(selected_operators, &source);
             assert_eq!(output.candidates.len(), 2, "{source}");
             for candidate in &output.candidates {
                 assert_eq!(candidate.operator.as_str(), "operator_function");
@@ -808,7 +845,7 @@ fn operator_function_class_guard_preserves_independent_import_references() {
         }
     }
     let source = "import operator as op\nfrom operator import add as plus\nclass C:\n    initial = op.__add__(2, 3)\n    def run(self):\n        def nested(): return plus(2, 3)\n        return op.add(2, 3)\n";
-    let output = analyze_legacy(source);
+    let output = analyze_selected(selected_operators, source);
     assert_eq!(output.candidates.len(), 2);
     assert_eq!(
         output
@@ -1344,8 +1381,10 @@ fn real_three_producer_prefix_matches_the_lean_merge_projection() {
 
 #[test]
 fn eligibility_and_zero_limit_rows_match_real_analyzer_outputs() {
+    let selected_operators: &[&str] = &["boolean_literal", "binary_add_sub", "compare_eq_ne"];
     let eligibility = bounded_discovery_case("eligibility_before_capacity");
-    let focused = analyze_legacy_with_profile(
+    let focused = analyze_selected_with_profile(
+        selected_operators,
         MutationProfile::Focused,
         usize::try_from(eligibility.limit).unwrap(),
         "print(True)\nresult = 1 + 2\n",
@@ -1364,7 +1403,8 @@ fn eligibility_and_zero_limit_rows_match_real_analyzer_outputs() {
     assert_eq!(focused.truncated, eligibility.expected_truncated);
 
     let zero = bounded_discovery_case("zero_limit");
-    let output = analyze_legacy_with_profile(
+    let output = analyze_selected_with_profile(
+        selected_operators,
         MutationProfile::Full,
         usize::try_from(zero.limit).unwrap(),
         "value = left == right\n",
@@ -1869,6 +1909,7 @@ fn except_star_exception_type_pairs_are_simple_scope_aware_and_nested() {
 
 #[test]
 fn except_star_exception_type_pairs_keep_shared_selection_and_profile_behavior() {
+    let selected_operators: &[&str] = &["exception_type_pair"];
     let source =
         "def selected():\n    try:\n        work()\n    except* ValueError:\n        pass\n";
     let summarize = |output: &super::AnalyzerOutput| {
@@ -1886,8 +1927,10 @@ fn except_star_exception_type_pairs_keep_shared_selection_and_profile_behavior()
             })
             .collect::<Vec<_>>()
     };
-    let full = analyze_legacy_with_profile(MutationProfile::Full, 10_000, source);
-    let focused = analyze_legacy_with_profile(MutationProfile::Focused, 10_000, source);
+    let full =
+        analyze_selected_with_profile(selected_operators, MutationProfile::Full, 10_000, source);
+    let focused =
+        analyze_selected_with_profile(selected_operators, MutationProfile::Focused, 10_000, source);
     assert_eq!(summarize(&full), summarize(&focused));
     assert_eq!(
         summarize(&full),
@@ -1899,7 +1942,8 @@ fn except_star_exception_type_pairs_keep_shared_selection_and_profile_behavior()
         )]
     );
 
-    let selected = analyze_legacy_with(
+    let selected = analyze_selected_with(
+        selected_operators,
         Utf8Path::new("pkg/sample.py"),
         &[LineRange { start: 4, end: 4 }],
         &["pkg.sample:selected".to_owned()],
@@ -1908,7 +1952,8 @@ fn except_star_exception_type_pairs_keep_shared_selection_and_profile_behavior()
     );
     assert_eq!(summarize(&selected), summarize(&full));
 
-    let bounded = analyze_legacy_with_profile(
+    let bounded = analyze_selected_with_profile(
+        selected_operators,
         MutationProfile::Full,
         1,
         "try:\n    work()\nexcept* KeyError:\n    pass\n",
@@ -1916,18 +1961,8 @@ fn except_star_exception_type_pairs_keep_shared_selection_and_profile_behavior()
     assert_eq!(summarize(&bounded).len(), 1);
     assert!(bounded.truncated);
 
-    let only_exception_pair: MutationOperatorSelection =
-        serde_json::from_value(serde_json::json!(["exception_type_pair"])).unwrap();
-    let only_pair_output = analyze_source(
-        &AnalyzeRequest {
-            payload: super::payload::PayloadBudget::default(),
-            path: Utf8Path::new("pkg/sample.py"),
-            lines: &[],
-            symbols: &[],
-            operators: &only_exception_pair,
-            profile: MutationProfile::Full,
-            max_candidates: 10_000,
-        },
+    let only_pair_output = analyze_selected(
+        selected_operators,
         "try:\n    work(left == right)\nexcept* ValueError:\n    pass\n",
     );
     assert_eq!(summarize(&only_pair_output).len(), 1);
@@ -1957,7 +1992,8 @@ fn except_star_exception_type_pairs_keep_shared_selection_and_profile_behavior()
         "        pass\n",
     );
     assert_eq!(
-        summarize(&analyze_legacy_with_profile(
+        summarize(&analyze_selected_with_profile(
+            selected_operators,
             MutationProfile::Full,
             10_000,
             arid_source,
@@ -1966,7 +2002,8 @@ fn except_star_exception_type_pairs_keep_shared_selection_and_profile_behavior()
         1
     );
     assert_eq!(
-        summarize(&analyze_legacy_with_profile(
+        summarize(&analyze_selected_with_profile(
+            selected_operators,
             MutationProfile::Focused,
             10_000,
             arid_source,
@@ -4398,6 +4435,8 @@ fn token_operator_candidates_cover_supported_ast_roles_and_reparse() {
 
 #[test]
 fn match_boolean_patterns_mutate_without_admitting_other_pattern_tokens() {
+    let selected_operators: &[&str] =
+        &["boolean_literal", "collection_list_tuple", "bitwise_and_or"];
     let source = concat!(
         "def classify(value):\n",
         "    match value:\n",
@@ -4413,7 +4452,7 @@ fn match_boolean_patterns_mutate_without_admitting_other_pattern_tokens() {
         "    match other:\n",
         "        case captured:\n            pass\n",
     );
-    let output = analyze_legacy(source);
+    let output = analyze_selected(selected_operators, source);
     let candidates: Vec<_> = output
         .candidates
         .iter()
@@ -4987,8 +5026,10 @@ fn bounded_collection_preserves_the_exact_full_output_prefix_and_retention_bound
 
 #[test]
 fn bounded_collection_filters_focused_arid_candidates_before_prefix_capacity() {
+    let selected_operators: &[&str] = &["boolean_literal", "binary_add_sub"];
     let source = format!("{}result = 1 + 2\n", "print(True)\n".repeat(100));
-    let focused = analyze_legacy_with_profile(MutationProfile::Focused, 1, &source);
+    let focused =
+        analyze_selected_with_profile(selected_operators, MutationProfile::Focused, 1, &source);
 
     assert_eq!(focused.candidates.len(), 1);
     assert_eq!(focused.candidates[0].line, 101);
@@ -5020,8 +5061,10 @@ fn bounded_collection_with_zero_limit_keeps_only_an_overflow_probe() {
 
 #[test]
 fn focused_profile_suppresses_main_print_assert_and_defaults() {
+    let selected_operators: &[&str] = &["compare_eq_ne", "binary_add_sub", "boolean_literal"];
     let source = "if __name__ == \"__main__\":\n    print(1 + 2)\n    assert 3 == 3\nelse:\n    fallback = 4 + 5\n\ndef f(flag=True, *, enabled=False):\n    return flag + enabled\n";
-    let focused = analyze_legacy_with_profile(MutationProfile::Focused, 10_000, source);
+    let focused =
+        analyze_selected_with_profile(selected_operators, MutationProfile::Focused, 10_000, source);
     let descriptors: Vec<_> = focused
         .candidates
         .iter()
@@ -5056,8 +5099,10 @@ fn focused_profile_accepts_only_exact_main_guard_shapes() {
 
 #[test]
 fn focused_profile_suppresses_only_bare_print_and_assert() {
+    let selected_operators: &[&str] = &["binary_add_sub"];
     let source = "print(1 + 2)\nlogger.print(3 + 4)\nassert 5 + 6\nregular = 7 + 8\n";
-    let focused = analyze_legacy_with_profile(MutationProfile::Focused, 10_000, source);
+    let focused =
+        analyze_selected_with_profile(selected_operators, MutationProfile::Focused, 10_000, source);
     let descriptors: Vec<_> = focused
         .candidates
         .iter()
@@ -5089,7 +5134,9 @@ fn focused_profile_retains_type_annotation_candidates() {
 
 #[test]
 fn focused_filter_runs_before_candidate_limit() {
-    let focused = analyze_legacy_with_profile(
+    let selected_operators: &[&str] = &["boolean_literal", "binary_add_sub"];
+    let focused = analyze_selected_with_profile(
+        selected_operators,
         MutationProfile::Focused,
         1,
         "def choose(enabled=True):\n    return 1 + 2\n",
@@ -5209,14 +5256,21 @@ fn assert_only_trailing_expression_changes(literal_line: &str) {
 
 #[test]
 fn ordinary_string_literals_ignore_every_mutable_operator_token() {
+    let selected_operators: &[&str] = TOKEN_OPERATOR_NAMES;
     assert_eq!(
-        analyze_legacy("label = 'ordinary operator-free text'\n").candidates,
+        analyze_selected(
+            selected_operators,
+            "label = 'ordinary operator-free text'\n"
+        )
+        .candidates,
         Vec::new()
     );
     for token in MUTABLE_OPERATOR_TOKENS {
         let source = format!("label = {token:?}\n");
         assert!(
-            analyze_legacy(&source).candidates.is_empty(),
+            analyze_selected(selected_operators, &source)
+                .candidates
+                .is_empty(),
             "ordinary string content {token:?} produced a candidate"
         );
         assert_only_trailing_expression_changes(&source);
@@ -5225,10 +5279,13 @@ fn ordinary_string_literals_ignore_every_mutable_operator_token() {
 
 #[test]
 fn nested_quote_pairs_preserve_every_surrounding_string_byte() {
+    let selected_operators: &[&str] = TOKEN_OPERATOR_NAMES;
     for (name, benign, adversarial) in NESTED_QUOTE_PAIRS {
         for source in [benign, adversarial] {
             assert!(
-                analyze_legacy(source).candidates.is_empty(),
+                analyze_selected(selected_operators, source)
+                    .candidates
+                    .is_empty(),
                 "nested quote fixture {name} produced a literal-content candidate"
             );
             assert_only_trailing_expression_changes(source);
@@ -5238,6 +5295,7 @@ fn nested_quote_pairs_preserve_every_surrounding_string_byte() {
 
 #[test]
 fn interpolated_string_pairs_skip_literals_and_retain_expressions() {
+    let selected_operators: &[&str] = TOKEN_OPERATOR_NAMES;
     for (flavor, literal, expression) in [
         (
             "f-string",
@@ -5251,10 +5309,12 @@ fn interpolated_string_pairs_skip_literals_and_retain_expressions() {
         ),
     ] {
         assert!(
-            analyze_legacy(literal).candidates.is_empty(),
+            analyze_selected(selected_operators, literal)
+                .candidates
+                .is_empty(),
             "{flavor} literal content produced a candidate"
         );
-        let observed = analyze_legacy(expression)
+        let observed = analyze_selected(selected_operators, expression)
             .candidates
             .into_iter()
             .map(super::payload::Charged::into_untracked)
@@ -6786,8 +6846,21 @@ proptest! {
 
 #[test]
 fn emits_the_mvp_operator_replacements_in_source_order() {
+    let selected_operators: &[&str] = &[
+        "compare_eq_ne",
+        "boolean_and_or",
+        "membership",
+        "identity",
+        "augmented_add_sub",
+        "binary_mul_div",
+        "binary_floor_mod",
+        "collection_list_tuple",
+        "remove_not",
+        "unary_sign",
+        "boolean_literal",
+    ];
     let source = "def f(a, b, xs, flag):\n    value = a == b and a not in xs and a is not b\n    value += a * b // 2 % 2\n    return not flag, +a, -b, True, False\n";
-    let output = analyze_legacy(source);
+    let output = analyze_selected(selected_operators, source);
     let pairs: Vec<_> = output
         .candidates
         .iter()
@@ -6827,9 +6900,15 @@ fn emits_the_mvp_operator_replacements_in_source_order() {
 
 #[test]
 fn emits_complete_candidate_records_in_source_order() {
+    let selected_operators: &[&str] = &[
+        "compare_eq_ne",
+        "remove_not",
+        "boolean_and_or",
+        "binary_add_sub",
+    ];
     let source =
         "top = left == right\ndef decide(flag, value):\n    return not flag or value + 1\n";
-    let output = analyze_legacy(source);
+    let output = analyze_selected(selected_operators, source);
     let candidates: Vec<_> = output
         .candidates
         .iter()
@@ -6964,8 +7043,18 @@ fn assigns_ast_scopes_to_decorators_async_definitions_and_not_following_code() {
 
 #[test]
 fn emits_each_remaining_mvp_operator() {
+    let selected_operators: &[&str] = &[
+        "compare_eq_ne",
+        "compare_order",
+        "membership",
+        "identity",
+        "boolean_and_or",
+        "binary_add_sub",
+        "binary_mul_div",
+        "break_continue",
+    ];
     let source = "def f(a, b, xs):\n    a != b\n    a < b\n    a <= b\n    a > b\n    a >= b\n    a in xs\n    a is b\n    a or b\n    a + b\n    a - b\n    a / b\n    while a:\n        break\n        continue\n";
-    let output = analyze_legacy(source);
+    let output = analyze_selected(selected_operators, source);
     let pairs: Vec<_> = output
         .candidates
         .iter()
@@ -9607,26 +9696,36 @@ fn exception_hierarchy_audit_mangled_spelling_without_local_binding_remains_elig
     );
 }
 
-// Historical exact-record and Lean fixture tests pin the original operator set.
-// Other helpers deliberately keep Default to exercise current default guards.
-fn analyze_legacy(source: &str) -> super::AnalyzerOutput {
-    analyze_legacy_with(Utf8Path::new("pkg/sample.py"), &[], &[], 10_000, source)
+// Exact-record and oracle scenarios state their operator selection at each call site.
+// Keeping this fixture independent of Default prevents unrelated new defaults
+// from changing the behavior under test.
+fn analyze_selected(selected: &[&str], source: &str) -> super::AnalyzerOutput {
+    analyze_selected_with(
+        selected,
+        Utf8Path::new("pkg/sample.py"),
+        &[],
+        &[],
+        10_000,
+        source,
+    )
 }
 
-fn analyze_legacy_with(
+fn analyze_selected_with(
+    selected: &[&str],
     path: &Utf8Path,
     lines: &[LineRange],
     symbols: &[String],
     max_candidates: usize,
     source: &str,
 ) -> super::AnalyzerOutput {
+    let operators = serde_json::from_value(serde_json::json!(selected)).unwrap();
     analyze_source(
         &AnalyzeRequest {
             payload: super::payload::PayloadBudget::default(),
             path,
             lines,
             symbols,
-            operators: &MutationOperatorSelection::all_legacy(),
+            operators: &operators,
             profile: MutationProfile::Full,
             max_candidates,
         },
@@ -9634,18 +9733,20 @@ fn analyze_legacy_with(
     )
 }
 
-fn analyze_legacy_with_profile(
+fn analyze_selected_with_profile(
+    selected: &[&str],
     profile: MutationProfile,
     max_candidates: usize,
     source: &str,
 ) -> super::AnalyzerOutput {
+    let operators = serde_json::from_value(serde_json::json!(selected)).unwrap();
     analyze_source(
         &AnalyzeRequest {
             payload: super::payload::PayloadBudget::default(),
             path: Utf8Path::new("pkg/sample.py"),
             lines: &[],
             symbols: &[],
-            operators: &MutationOperatorSelection::all_legacy(),
+            operators: &operators,
             profile,
             max_candidates,
         },

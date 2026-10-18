@@ -111,6 +111,12 @@ sources:
   resource: ../../superpowers/specs/2026-09-11-issue-484-metrics-destinations-design.md
   working_tree: untracked
   sha256: b146daf296d69374ad01ac86d5a5becd30b721b1983d5a54507cd0f1750ef3e7
+- id: issue-984-c4
+  resource: ../../architecture/c4-model.md
+  revision: e808dda124f8fdc7fd08ed2a49cb352bca90155e
+  working_tree: modified
+  sha256: 8cda66e46748a04d9971f26b5633e80a59e8ae252bbd94340b8d342800431717
+
 ---
 
 # Current C4 views
@@ -123,6 +129,17 @@ the external test command from the in-process analyzer. This is source-based
 architecture documentation, not new runtime, platform or model-proof evidence.[^c4-runtime-views]
 
 [^c4-runtime-views]: [hoimin through the C4 model](../../architecture/c4-model.md).
+
+The successful-run sequence now includes worker restoration between a successful
+baseline and discovery. The accepted reset completion permits the next phase;
+baseline report acknowledgement is independent. Ordered verification continues
+with its budget check after the same boundary. Explicit candidate-ID verification
+skips this budget observation. The diagram remains an
+abbreviation; the [runtime contract](runtime-lifecycle.md#baseline-restoration-gates-dispatch-issue-984)
+records failure and stop ownership.[^issue-984-c4]
+
+[^issue-984-c4]: [Execution sequence with baseline restoration](../../architecture/c4-model.md).
+
 
 # Workspace allowance ownership
 

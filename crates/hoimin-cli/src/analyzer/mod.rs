@@ -53,6 +53,7 @@ use exception_project::ExceptionProject;
 mod rust;
 mod store;
 mod types;
+mod visitor;
 
 #[cfg(test)]
 mod payload_probes;

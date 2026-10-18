@@ -103,3 +103,30 @@ These bounds apply to the single-entry fixture, not arbitrary multiple exits
 or changing environments. Release observations and review results are in the
 [review](../superpowers/reviews/2026-09-25-issue-557.md), with the
 [design](../superpowers/specs/2026-09-25-issue-557-finally-traversal.md).
+
+## Multiple exits through nested finally (Issue #987)
+
+The follow-up fixture nests `try: if c: return / finally` inside a function, with
+an annotation or `pass` at the deepest point. Equal environments arrive under
+multiple completion categories. Its regression checks count actual transfer
+work and retained exit states; elapsed time is measured separately rather than
+used as a pass/fail threshold.
+
+Local transfer reuse and exact same-category normalization bound transfer-only
+statement visits linearly and recording-enabled visits quadratically for this
+homogeneous input family. They preserve completion categories and annotation
+recording. The optimization excludes enclosing class contexts and observable
+test hooks; semantic controls also exercise real cache hits. Distinct import
+states and other Python shapes do not inherit this work bound. The number of
+cache slots is bounded by live nesting depth, but their retained bytes and whole
+process RSS are not bounded by that count.
+
+See the [implementation and measurements](../maintenance/2026-10-19-issue-987-finally-work.md)
+for the exact operation/state-count cases, fresh before/after release samples,
+cancellation checks and comparison scope. The existing single-entry #557 and
+loop #546 gates remain separate regression controls.
+
+The depth20 fixtures passed Python AST parsing and Rust operation/state gates.
+A separate attempt at deep CPython bytecode compilation failed with `MemoryError`;
+it was not repeated. Successful bytecode compilation is evidenced only for the
+depth12/13 release comparison fixtures.

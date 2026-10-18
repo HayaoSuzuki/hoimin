@@ -9,7 +9,8 @@ use crate::{
     RunConfig, RunLimits, TargetSlice,
 };
 
-pub const FINGERPRINT_SCHEMA_VERSION: u8 = 12;
+// Includes execution semantics: schema 13 requires baseline workspace restoration.
+pub const FINGERPRINT_SCHEMA_VERSION: u8 = 13;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SourceHash {

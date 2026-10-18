@@ -318,7 +318,7 @@ fn exception_hierarchy_is_explicit_only() {
     let operators = MutationOperatorSelection::parse_selector("exception_hierarchy").unwrap();
     assert_eq!(operators.len(), 1);
     assert_eq!(operators[0].as_str(), "exception_hierarchy");
-    assert!(!MutationOperatorSelection::all_legacy().contains(operators[0]));
+    assert!(!MutationOperatorSelection::default().contains(operators[0]));
     for family in ["exception_ops", "exception_risky"] {
         assert!(
             !MutationOperatorSelection::parse_selector(family)
@@ -328,7 +328,51 @@ fn exception_hierarchy_is_explicit_only() {
     }
 }
 
-const PROMOTED: [&str; 11] = [
+// Fixed current policy, independent of catalog and production default builders.
+const CURRENT_DEFAULT_NAMES: [&str; 54] = [
+    "compare_eq_ne",
+    "compare_order",
+    "membership",
+    "identity",
+    "boolean_and_or",
+    "binary_add_sub",
+    "augmented_add_sub",
+    "binary_mul_div",
+    "augmented_mul_div",
+    "binary_floor_mod",
+    "augmented_floor_mod",
+    "unary_sign",
+    "remove_not",
+    "boolean_literal",
+    "break_continue",
+    "collection_any_all",
+    "collection_list_tuple",
+    "collection_set_frozenset",
+    "collection_append_insert",
+    "collection_min_max",
+    "collection_set_add_discard",
+    "collection_set_remove_discard",
+    "collection_string_starts_ends",
+    "collection_string_split_rsplit",
+    "bitwise_and_or",
+    "bitwise_shift",
+    "binary_power",
+    "binary_matmul",
+    "augmented_power",
+    "augmented_matmul",
+    "bitwise_xor",
+    "bitwise_invert",
+    "augmented_bitwise_and_or",
+    "augmented_bitwise_xor",
+    "augmented_bitwise_shift",
+    "operator_function",
+    "structure_append_extend",
+    "structure_mapping_get_subscript",
+    "structure_sort_reverse",
+    "structure_sorted_reversed",
+    "structure_index_neighbor",
+    "structure_slice_neighbor",
+    "exception_type_pair",
     "statement_delete",
     "integer_literal_neighbor",
     "augmented_to_assignment",
@@ -343,69 +387,60 @@ const PROMOTED: [&str; 11] = [
 ];
 
 #[test]
-fn default_selection_promotes_exactly_eleven_operators() {
-    let default = MutationOperatorSelection::default();
-    let legacy = MutationOperatorSelection::all_legacy();
-    assert_eq!(legacy.names().len(), 43);
-    assert_eq!(default.names().len(), 54);
-    for name in legacy.names() {
-        assert!(default.contains(MutationOperator::from_name(&name).unwrap()));
-    }
-    let mut additions: Vec<_> = default
-        .names()
-        .into_iter()
-        .filter(|name| !legacy.contains(MutationOperator::from_name(name).unwrap()))
-        .collect();
-    additions.sort();
-    let mut expected = PROMOTED.map(str::to_owned).to_vec();
-    expected.sort();
-    assert_eq!(additions, expected);
+fn current_default_selection_has_exact_names_in_saved_order() {
+    let selection = MutationOperatorSelection::default();
+
+    assert_eq!(selection.names(), CURRENT_DEFAULT_NAMES);
+    assert_eq!(
+        serde_json::to_value(selection).unwrap(),
+        serde_json::json!(CURRENT_DEFAULT_NAMES.as_slice())
+    );
 }
 
 #[test]
-fn omitted_raw_operators_use_defaults_and_all_promotions_are_excludable() {
+fn omitted_raw_operators_use_exact_current_defaults() {
     let mut raw = raw_config();
     raw.operators.clear();
-    let default = RunConfig::try_from(raw.clone())
-        .unwrap()
-        .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
-        .unwrap();
-    assert_eq!(default.operators.names().len(), 54);
-    assert_eq!(default.operators, MutationOperatorSelection::default());
-    raw.exclude_operators = PROMOTED.map(str::to_owned).to_vec();
-    assert_eq!(
-        RunConfig::try_from(raw)
-            .unwrap()
-            .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
-            .unwrap()
-            .operators,
-        MutationOperatorSelection::all_legacy()
-    );
+
+    let config = RunConfig::try_from(raw).unwrap();
+
+    assert_eq!(config.operators.names(), CURRENT_DEFAULT_NAMES);
 }
 
 #[test]
-fn explicit_selection_does_not_expand_to_defaults() {
+fn default_exclusions_remove_only_selected_current_operators() {
+    let mut raw = raw_config();
+    raw.operators.clear();
+    raw.exclude_operators = vec!["statement_delete".into(), "method_call_remove".into()];
+
+    let config = RunConfig::try_from(raw).unwrap();
+
+    let expected: Vec<_> = CURRENT_DEFAULT_NAMES
+        .into_iter()
+        .filter(|name| !matches!(*name, "statement_delete" | "method_call_remove"))
+        .collect();
+    assert_eq!(config.operators.names(), expected);
+}
+
+#[test]
+fn explicit_selection_exclusion_does_not_expand_to_defaults() {
+    let mut raw = raw_config();
+    raw.operators = vec!["string_literal_empty".into(), "compare_eq_ne".into()];
+    raw.exclude_operators = vec!["string_literal_empty".into()];
+
+    let config = RunConfig::try_from(raw).unwrap();
+
+    assert_eq!(config.operators.names(), vec!["compare_eq_ne"]);
+}
+
+#[test]
+fn stored_explicit_selection_roundtrips_without_default_expansion() {
     let mut raw = raw_config();
     raw.operators = vec![
-        "string_literal_empty".to_owned(),
-        "compare_eq_ne".to_owned(),
+        "method_call_remove".into(),
+        "binary_add_sub".into(),
+        "type_list_sequence".into(),
     ];
-    raw.exclude_operators = vec!["string_literal_empty".to_owned()];
-    assert_eq!(
-        RunConfig::try_from(raw)
-            .unwrap()
-            .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
-            .unwrap()
-            .operators
-            .names(),
-        vec!["compare_eq_ne"]
-    );
-}
-
-#[test]
-fn stored_legacy_plan_selection_is_not_expanded_on_reload() {
-    let mut raw = raw_config();
-    raw.operators = MutationOperatorSelection::all_legacy().names();
     let plan = RunConfig::try_from(raw)
         .unwrap()
         .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
@@ -414,8 +449,13 @@ fn stored_legacy_plan_selection_is_not_expanded_on_reload() {
             hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap(),
         );
     let json = serde_json::to_vec(&plan).unwrap();
+
     let restored: PlanConfig = serde_json::from_slice(&json).unwrap();
+
     restored.validate().unwrap();
-    assert_eq!(restored.operators, MutationOperatorSelection::all_legacy());
+    assert_eq!(
+        restored.operators.names(),
+        ["binary_add_sub", "type_list_sequence", "method_call_remove"]
+    );
     assert_eq!(serde_json::to_vec(&restored).unwrap(), json);
 }

@@ -5,8 +5,12 @@ mod types;
 
 pub use types::{AnalyzerCandidate, AnalyzerDiagnostic, AnalyzerDiagnosticCode};
 
+#[path = "../src/analyzer/visitor.rs"]
+pub(crate) mod visitor;
+
 mod analyzer {
     pub use crate::types::AnalyzerDiagnosticCode;
+    pub(crate) use crate::visitor;
 }
 
 #[path = "../src/analyzer/rust.rs"]
@@ -182,7 +186,7 @@ fn depth_cleanup_child_fixture() {
 /// `cargo fuzz run python_analyzer` found the f-string case.
 #[test]
 fn foreign_middle_token_in_a_format_spec_is_invalid_syntax() {
-    let mut operators = MutationOperatorSelection::all_legacy();
+    let mut operators = MutationOperatorSelection::default();
     for name in MutationOperatorSelection::valid_names() {
         for operator in MutationOperatorSelection::parse_selector(name)
             .expect("a public valid operator name parses")

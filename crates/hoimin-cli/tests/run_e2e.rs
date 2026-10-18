@@ -4880,3 +4880,142 @@ async fn stalled_baseline_log_consumer_respects_total_timeout_and_grace() {
         Some(2)
     );
 }
+
+#[tokio::test]
+async fn baseline_restoration_removes_generated_state_before_each_mutant() {
+    for jobs in [1, 2] {
+        // Arrange.
+        let project = tempfile::tempdir().unwrap();
+        std::fs::create_dir(project.path().join("src")).unwrap();
+        std::fs::write(
+            project.path().join("src/calc.py"),
+            "one = True\ntwo = False\n",
+        )
+        .unwrap();
+        // Act.
+        let run = run_project_options(project.path(), jobs,
+            "from pathlib import Path; p=Path('generated-state.txt'); clean=not p.exists(); p.write_text('dirty'); raise SystemExit(0 if clean else 1)",
+            &["--operators", "boolean_literal"]).await;
+        // Assert.
+        assert_eq!(
+            run.statuses,
+            ["survived", "survived"],
+            "jobs={jobs}: {}",
+            run.stderr
+        );
+        assert_eq!(run.document["summary"]["complete"], true);
+        assert!(!project.path().join("generated-state.txt").exists());
+    }
+}
+
+#[tokio::test]
+async fn baseline_restoration_restores_existing_state_before_each_mutant() {
+    for jobs in [1, 2] {
+        // Arrange.
+        let project = tempfile::tempdir().unwrap();
+        std::fs::create_dir(project.path().join("src")).unwrap();
+        std::fs::write(
+            project.path().join("src/calc.py"),
+            "one = True\ntwo = False\n",
+        )
+        .unwrap();
+        std::fs::write(project.path().join("state.txt"), "clean").unwrap();
+        // Act.
+        let run = run_project_options(project.path(), jobs,
+            "from pathlib import Path; p=Path('state.txt'); clean=p.read_text()=='clean'; p.write_text('dirty'); raise SystemExit(0 if clean else 1)",
+            &["--operators", "boolean_literal"]).await;
+        // Assert.
+        assert_eq!(
+            run.statuses,
+            ["survived", "survived"],
+            "jobs={jobs}: {}",
+            run.stderr
+        );
+        assert_eq!(run.document["summary"]["complete"], true);
+        assert_eq!(
+            std::fs::read_to_string(project.path().join("state.txt")).unwrap(),
+            "clean"
+        );
+    }
+}
+
+#[tokio::test]
+async fn baseline_restoration_restores_selected_source_before_mutation() {
+    for jobs in [1, 2] {
+        // Arrange.
+        let project = tempfile::tempdir().unwrap();
+        std::fs::create_dir(project.path().join("src")).unwrap();
+        let source = "one = True\ntwo = False\n";
+        std::fs::write(project.path().join("src/calc.py"), source).unwrap();
+        // Act.
+        let run = run_project_options(
+            project.path(),
+            jobs,
+            "from pathlib import Path; Path('src/calc.py').write_text('changed by test')",
+            &["--operators", "boolean_literal"],
+        )
+        .await;
+        // Assert.
+        assert_eq!(
+            run.statuses,
+            ["survived", "survived"],
+            "jobs={jobs}: {}",
+            run.stderr
+        );
+        assert_eq!(run.document["summary"]["complete"], true);
+        assert_eq!(
+            std::fs::read_to_string(project.path().join("src/calc.py")).unwrap(),
+            source
+        );
+    }
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn baseline_restoration_preserves_shared_inode_mutation_rejection() {
+    use std::os::unix::fs::PermissionsExt;
+    // Arrange: baseline links the worker target to an external same-content sentinel.
+    let project = tempfile::tempdir().unwrap();
+    let external = tempfile::tempdir().unwrap();
+    std::fs::create_dir(project.path().join("src")).unwrap();
+    let source = "one = True\ntwo = False\n";
+    std::fs::write(project.path().join("src/calc.py"), source).unwrap();
+    let sentinel = external.path().join("sentinel.py");
+    let launches = external.path().join("launches.txt");
+    std::fs::write(&sentinel, source).unwrap();
+    let mode = std::fs::metadata(project.path().join("src/calc.py"))
+        .unwrap()
+        .permissions()
+        .mode();
+    std::fs::set_permissions(&sentinel, std::fs::Permissions::from_mode(mode)).unwrap();
+    let command = format!(
+        "from pathlib import Path; import os; p=Path('src/calc.py'); log=Path({}); log.open('a').write('launch\\n'); p.unlink(); os.link({},p)",
+        serde_json::to_string(launches.to_str().unwrap()).unwrap(),
+        serde_json::to_string(sentinel.to_str().unwrap()).unwrap()
+    );
+    // Act.
+    let run = run_project_options(
+        project.path(),
+        1,
+        &command,
+        &["--operators", "boolean_literal"],
+    )
+    .await;
+    // Assert.
+    assert_eq!(run.exit_code, 2, "{}", run.stderr);
+    assert!(
+        run.stderr.contains("workspace.mutation.shared"),
+        "{}",
+        run.stderr
+    );
+    assert_eq!(std::fs::read_to_string(&launches).unwrap(), "launch\n");
+    assert_eq!(std::fs::read_to_string(&sentinel).unwrap(), source);
+    assert_eq!(
+        std::fs::metadata(&sentinel).unwrap().permissions().mode(),
+        mode
+    );
+    assert_eq!(
+        std::fs::read_to_string(project.path().join("src/calc.py")).unwrap(),
+        source
+    );
+}

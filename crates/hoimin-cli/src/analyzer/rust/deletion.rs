@@ -1,8 +1,6 @@
 //! Conservative eligibility for removing evaluated expressions.
-use ruff_python_ast::{
-    Expr,
-    visitor::{self, Visitor},
-};
+use crate::analyzer::visitor::{self, Visitor};
+use ruff_python_ast::Expr;
 
 pub(super) fn can_remove<F: Fn() -> bool>(expression: &Expr, cancelled: &F) -> bool {
     check(expression, cancelled, false)

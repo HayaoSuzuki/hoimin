@@ -59,6 +59,22 @@ CLI normalization supplies zero when `--offset` is omitted. Keep the raw
 `--top`. Selection and preview consume the normalized offset directly.
 See the [Issue #959 record](maintenance/2026-10-16-issue-959.md).
 
+## Baseline restoration boundary
+
+A successful baseline enters `RunPhase::BaselineRestoration` and requests the
+existing owned `ResetWorker(0)` operation. Only its accepted `WorkerReset`
+completion permits analysis or the budget check for ordered verification.
+Explicit candidate-ID verification skips this budget observation. Baseline output
+acknowledgement is independent. Keep failure and stop retirement at this
+boundary so a late reset cannot dispatch a mutant; preserve original verification
+and cleanup ownership when extending the state machine.
+
+The restoration phase contributes to the baseline stage in metrics, while
+the recorded baseline duration still measures the process. Fingerprint schema 13
+prevents old conclusive session results from bypassing the corrected initial
+workspace state. See the [runtime contract](knowledge/design/runtime-lifecycle.md#baseline-restoration-gates-dispatch-issue-984)
+and [migration notice](compatibility.md#baseline-restoration-and-result-reuse-in-0130).
+
 ## Internal ownership and performance changes
 
 The private Rust `artifacts` module owns bounded file reads, run-report
@@ -1321,6 +1337,23 @@ environment per flow instead of one snapshot per expression. Class globals/nonlo
 conservatively invalidated without leaking class-local environments. Import
 failures and arbitrary dynamic hooks remain outside this analysis.
 
+Finally transfer reuses one local result only when no enclosing class context or
+observable test hook is active. The local lifetime fixes the body and scope;
+exact imports identify reusable input. Keep the residual imports alongside the
+exit result and restore them on a hit. Recording annotations remains a separate
+walk, and same-category normalization must preserve distinct environments and
+completion categories. Keep last-occurrence order: the final contributor to an
+exit category determines residual imports seen by later unreachable annotations. Do not move this cache to file or collector lifetime
+without revisiting its full context and side-effect contract.
+
+Cancellation checks at suite, statement, finally-entry and loop-transfer
+boundaries must propagate through the production collector result, including
+annotation-free and transfer-only work. Preserve context-restoration epilogues
+and pre-existing payload errors; partial traversal is not successful analysis.
+See the [finally-work contract](knowledge/design/analyzer.md#multi-exit-finally-work-issue-987)
+and [measurements](maintenance/2026-10-19-issue-987-finally-work.md) for the bounded
+input family and unverified general cases.
+
 Synchronous and asynchronous `with` statements also collect body exceptions, even
 without an enclosing `finally`. Any manager, including a dynamic or custom
 manager, may suppress an exception; the normal successor therefore intersects
@@ -1624,7 +1657,7 @@ for older inputs missing an array. Plan schema 10 stores fingerprint input recor
 only in `normalized_config.fingerprint_inputs`; the top-level duplicate is
 rejected. Regenerate schema-9 and older plans before verify or review; see the
 [0.12.0 compatibility notice](compatibility.md#discovery-timeout-ownership-in-0120). Fingerprint schema
-12 frames the ordered import roots under field tag 9, the ordered include/exclude
+13 frames the ordered import roots under field tag 9, the ordered include/exclude
 copy patterns under tags 10/11, and configured source roots under tag 12,
 preventing old-session reuse. Source file hashes retain their set semantics;
 source-root order separately captures worker Python import precedence. Patterns retain
@@ -1740,7 +1773,7 @@ existing UTF-8 Lean/source-index proofs do not establish codec correspondence.
 
 ## Resume budget compatibility
 
-Fingerprint schema 12 omits `max_mutants` from verdict compatibility; this
+Fingerprint schema 13 omits `max_mutants` from verdict compatibility; this
 budget rule was introduced in schema 10. SQLite schema 5 persists each run's
 accepted limit as a positive eight-byte big-endian unsigned value. Newly created
 DBs enforce NOT NULL as well as the BLOB type, length and positivity constraints.
@@ -1829,11 +1862,12 @@ was also a valid current untracked encoding. Plan schema 10/report schema 8 requ
 the explicit snapshot and reject the older representation rather than adapting it.
 Regenerate older plans; retain old reports with their producing binary.
 
-Fingerprint schema 12 retains the original field-13 environment name/digest
-framing, but removing discovery timeout changes the complete execution fingerprint.
-Schema-11 digest goldens verify that the old fingerprints differ; separate exact
-untracked and captured vectors freeze schema-12 bytes. SQLite schema 5 and budget
-selection are unchanged. Verify captures the same saved
+Fingerprint schema 13 retains the original field-13 environment name/digest
+framing. Schema 12 removed discovery timeout; schema 13 changes only the leading
+version byte to prevent reuse of results produced before baseline restoration.
+Historical schema-11 and schema-12 digest goldens verify incompatibility; separate
+exact untracked and captured vectors freeze current schema-13 bytes. SQLite
+schema 5 and budget selection are unchanged. Verify captures the same saved
 name set and compares the complete snapshot before project work or the baseline.
 Captured plaintext is not added to persistence or output; digests do not guarantee
 secrecy for low-entropy values.

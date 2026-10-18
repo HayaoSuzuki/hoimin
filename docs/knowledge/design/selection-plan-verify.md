@@ -354,6 +354,38 @@ sources:
   resource: ../../maintenance/2026-10-18-issues-971-979/task-6-report.md
   working_tree: untracked
   sha256: 3cb4dde52478f7d80d8bf88f46dcedc2c504b9ed1449a9e29ffd58780026449c
+- id: issue-985-admission
+  resource: ../../maintenance/2026-10-18-issue-985.md
+  revision: c293cf62325f2e39e07760770adeba4a592bea9d
+  working_tree: clean
+  sha256: d9584be78df3b4d8810d1c52e6188d09cabfbc6156769d7c85b7cf8049a5f305
+- id: issue-989-defaults
+  resource: ../../../crates/hoimin-core/src/config.rs
+  revision: ac554aa9fe4d3907ed4a42f6c89486e6f599c897
+  working_tree: clean
+  sha256: 2642c2a372ddf6c4f2993aeed1f871bccd6ab2262a317f376a1b9eb7ed1d9782
+- id: issue-989-evidence
+  resource: ../../maintenance/2026-10-19-issue-989-default-selection.md
+  revision: ac554aa9fe4d3907ed4a42f6c89486e6f599c897
+  working_tree: clean
+  sha256: f1d1bbc8c45525a6b489a98beab41b313ae24d4bbfd4c8c6362abdfd5f72116f
+
+- id: issue-988-decoder
+  resource: ../../../crates/hoimin-cli/src/plan/schema.rs
+  revision: c4078e0dadc58bdbc7953b6d5a23cd76160d6ecf
+  working_tree: clean
+  sha256: 4ec0b7caf5caafe1227f072c0ee4dc0672813af355095c967508433b70dc740c
+- id: issue-988-evidence
+  resource: ../../maintenance/2026-10-19-issue-988-schema-probe.md
+  revision: c4078e0dadc58bdbc7953b6d5a23cd76160d6ecf
+  working_tree: clean
+  sha256: 5f8ec28392a16d65c6588bc4a6722d1a41b643b23e0e695e74eb3fcd521c1c1a
+
+- id: issue-984-compatibility
+  resource: ../../compatibility.md
+  revision: c4078e0dadc58bdbc7953b6d5a23cd76160d6ecf
+  working_tree: modified
+  sha256: 881f774b6a135f3d50f3acca3e379a0c8f0742349fd84964d526caa4073c421a
 
 ---
 
@@ -834,9 +866,12 @@ targets; expiration prevents manifest publication or baseline execution.
 Cancellation can return before a blocking worker exits; the worker retains its
 resources until it stops. Synchronous reads and parsing are not forcibly
 interruptible. Runtime total/baseline/mutant deadlines remain separate.
-Plan 10/report 8/fingerprint 12 and floor 0.12.0 replace older versions;
-SQLite session 5, ranking 4 and candidate schema 1/ID v1 stay unchanged.
-See the [migration notice](../../compatibility.md#discovery-timeout-ownership-in-0120).[^issue-979-compatibility][^issue-979-evidence]
+Issue #979 introduced plan 10/report 8/fingerprint 12 and floor 0.12.0.
+Issue #984 keeps these plan/report shapes and raises fingerprint to 13 and the
+floor to 0.13.0 to exclude pre-restoration results from resume. SQLite session 5,
+ranking 4 and candidate schema 1/ID v1 stay unchanged; current plans need no
+regeneration for that execution fix. See the [discovery migration notice](../../compatibility.md#discovery-timeout-ownership-in-0120)
+and [baseline restoration notice](../../compatibility.md#baseline-restoration-and-result-reuse-in-0130).[^issue-979-compatibility][^issue-979-evidence][^issue-984-compatibility]
 
 Validation of independently invalid plan options can report discovery validation
 before another invalid limit. Mandatory selector/argv diagnostics, individual
@@ -847,3 +882,66 @@ The recorded Task6 ruling explains that scope.[^issue-979-evidence]
 [^issue-971-evidence]: [CLI composition and native argv checks](../../maintenance/2026-10-18-issues-971-979/task-5-report.md).
 [^issue-979-compatibility]: [Current discovery ownership and migration](../../compatibility.md).
 [^issue-979-evidence]: [Timeout ownership, controlled deadline checks and version evidence](../../maintenance/2026-10-18-issues-971-979/task-6-report.md).
+
+# Regular-file plan inputs (Issue #985)
+
+Verify admits its input through the shared regular-file opener, then reads the
+validated descriptor. On Unix, nonblocking open plus descriptor metadata rejects
+writerless FIFOs and symlinks to them before content parsing. Symlinks to regular
+files remain accepted, and verify protects both the requested manifest spelling
+and its canonical target. The change adds no review-style 64 MiB limit and does
+not establish a deadline for all filesystem I/O.[^issue-985-admission]
+
+Public CLI regressions cover direct and symlink FIFOs with an external deadline
+and child reaping, missing paths, directories, regular-file parsing and large
+inputs. The implementation record separates macOS execution from unexecuted
+platform behavior.[^issue-985-admission]
+
+[^issue-985-admission]: [Regular-file admission and verification record](../../maintenance/2026-10-18-issue-985.md).
+
+# Current default operator selection (Issue #989)
+
+One explicit selection defines the current 54 runtime defaults. Default
+membership is independent of the complete operator catalog and selector-family
+membership. The historical `all_legacy` helper is removed; omitted CLI selection
+uses current defaults, while explicit selections remain exact after exclusions
+and retain their saved membership during verification.[^issue-989-defaults][^issue-989-evidence]
+
+Tests compare default names and serialized order with an independent fixed
+literal list. Separate core and CLI cases check explicit subsets; analyzer
+fixtures select the operators relevant to their own scenario. This removes a
+historical policy from test setup without expanding defaults or saved subsets.
+The record distinguishes behavior characterization from fixture compilation and
+Clippy corrections.[^issue-989-evidence]
+
+[^issue-989-defaults]: [Current operator-selection owner](../../../crates/hoimin-core/src/config.rs).
+[^issue-989-evidence]: [Default-selection refactor and verification](../../maintenance/2026-10-19-issue-989-default-selection.md).
+
+
+# Schema routing without a full JSON tree (Issue #988)
+
+Review and verify share a schema probe that stores only the top-level version.
+The normal schema-first encoding stops the probe before candidate bodies;
+schema-last input skips preceding values without building a generic JSON tree.
+Current plans are strictly decoded from the original bytes, so duplicate known
+fields, unknown fields and trailing content remain rejected. The probe never
+accepts a plan.[^issue-988-decoder]
+
+Unsupported versions receive a structural JSON and end-of-input check before
+regeneration guidance. That check skips scalar UTF-8, surrogate and numeric-range
+semantics; those invalid scalars can therefore receive the version error instead
+of a scalar error. Such inputs are still rejected. Mixed-invalid input and field
+order can change which error is reported; there is no old-schema decoder or
+conversion.[^issue-988-decoder][^issue-988-evidence]
+
+Counted-reader properties check prefix scanning independently of full typed
+validation. Allocation tests compare the actual decoder with direct typed
+decoding for first/last schema positions and small/large candidate payloads.
+Temporarily restoring the old JSON-tree allocation fails the same resource gate.
+These checks measure scan work and requested live allocation, not process RSS,
+allocator overhead or an I/O deadline.[^issue-988-evidence]
+
+[^issue-988-decoder]: [Schema-routing owner](../../../crates/hoimin-cli/src/plan/schema.rs).
+[^issue-988-evidence]: [Schema routing and allocation verification](../../maintenance/2026-10-19-issue-988-schema-probe.md).
+
+[^issue-984-compatibility]: [Baseline restoration and current execution fingerprint](../../compatibility.md#baseline-restoration-and-result-reuse-in-0130).

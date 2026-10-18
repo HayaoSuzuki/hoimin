@@ -1,9 +1,7 @@
 //! String-role and explicit type-alias exclusions for selected runtime operators.
 use super::{AnalysisCancelled, ContainmentIndex};
-use ruff_python_ast::{
-    Expr, ModModule, Stmt,
-    visitor::{self, Visitor},
-};
+use crate::analyzer::visitor::{self, Visitor};
+use ruff_python_ast::{Expr, ModModule, Stmt};
 use ruff_text_size::{Ranged, TextRange};
 use std::collections::HashSet;
 

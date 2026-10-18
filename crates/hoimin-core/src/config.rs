@@ -162,8 +162,8 @@ mutation_operators! {
 }
 
 // Family membership is an explicit selection policy, separate from the full
-// catalog, historical selection and current defaults. Both CLI advertising and
-// expansion use these names and preserve each family's existing member order.
+// catalog and current defaults. Both CLI advertising and expansion use these
+// names and preserve each family's existing member order.
 const SELECTOR_FAMILIES: &[(&str, &[MutationOperator])] = &[
     (
         "type_nullable",
@@ -254,10 +254,51 @@ impl MutationOperatorSelection {
         names
     }
 
+    /// Expands a selector name into its constituent mutation operators.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ConfigError::UnknownMutationOperator`] for an unrecognized selector.
+    pub fn parse_selector(selector: &str) -> Result<Vec<MutationOperator>, ConfigError> {
+        if let Some((_, operators)) = SELECTOR_FAMILIES.iter().find(|(name, _)| *name == selector) {
+            return Ok(operators.to_vec());
+        }
+        MutationOperator::from_name(selector).map_or_else(
+            || {
+                Err(ConfigError::UnknownMutationOperator {
+                    value: selector.to_owned(),
+                })
+            },
+            |operator| Ok(vec![operator]),
+        )
+    }
+
+    pub fn include(&mut self, operator: MutationOperator) {
+        self.0.insert(operator);
+    }
+    pub fn exclude(&mut self, operator: MutationOperator) {
+        self.0.remove(&operator);
+    }
     #[must_use]
-    /// The historical 43 runtime operators, without later default additions.
-    /// Use [`Self::default()`] for the current default runtime selection.
-    pub fn all_legacy() -> Self {
+    pub fn contains(&self, operator: MutationOperator) -> bool {
+        self.0.contains(&operator)
+    }
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+    #[must_use]
+    pub fn names(&self) -> Vec<String> {
+        self.0
+            .iter()
+            .map(|operator| operator.as_str().to_owned())
+            .collect()
+    }
+}
+
+impl Default for MutationOperatorSelection {
+    fn default() -> Self {
+        // Default membership is a policy independent of the catalog and selector families.
         Self(
             [
                 MutationOperator::CompareEqNe,
@@ -303,72 +344,21 @@ impl MutationOperatorSelection {
                 MutationOperator::StructureIndexNeighbor,
                 MutationOperator::StructureSliceNeighbor,
                 MutationOperator::ExceptionTypePair,
+                MutationOperator::StatementDelete,
+                MutationOperator::IntegerLiteralNeighbor,
+                MutationOperator::AugmentedToAssignment,
+                MutationOperator::ReturnTupleSwap,
+                MutationOperator::StringLiteralEmpty,
+                MutationOperator::WhileConditionFalse,
+                MutationOperator::ConversionCallRemove,
+                MutationOperator::MethodCallRemove,
+                MutationOperator::FunctionBodyReturnConstant,
+                MutationOperator::StringSegmentEmpty,
+                MutationOperator::StdlibConversionCallRemove,
             ]
             .into_iter()
             .collect(),
         )
-    }
-    /// Expands a selector name into its constituent mutation operators.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`ConfigError::UnknownMutationOperator`] for an unrecognized selector.
-    pub fn parse_selector(selector: &str) -> Result<Vec<MutationOperator>, ConfigError> {
-        if let Some((_, operators)) = SELECTOR_FAMILIES.iter().find(|(name, _)| *name == selector) {
-            return Ok(operators.to_vec());
-        }
-        MutationOperator::from_name(selector).map_or_else(
-            || {
-                Err(ConfigError::UnknownMutationOperator {
-                    value: selector.to_owned(),
-                })
-            },
-            |operator| Ok(vec![operator]),
-        )
-    }
-
-    pub fn include(&mut self, operator: MutationOperator) {
-        self.0.insert(operator);
-    }
-    pub fn exclude(&mut self, operator: MutationOperator) {
-        self.0.remove(&operator);
-    }
-    #[must_use]
-    pub fn contains(&self, operator: MutationOperator) -> bool {
-        self.0.contains(&operator)
-    }
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-    #[must_use]
-    pub fn names(&self) -> Vec<String> {
-        self.0
-            .iter()
-            .map(|operator| operator.as_str().to_owned())
-            .collect()
-    }
-}
-
-impl Default for MutationOperatorSelection {
-    fn default() -> Self {
-        let mut selection = Self::all_legacy();
-        for operator in [
-            MutationOperator::StatementDelete,
-            MutationOperator::IntegerLiteralNeighbor,
-            MutationOperator::AugmentedToAssignment,
-            MutationOperator::ReturnTupleSwap,
-            MutationOperator::StringLiteralEmpty,
-            MutationOperator::WhileConditionFalse,
-            MutationOperator::ConversionCallRemove,
-            MutationOperator::MethodCallRemove,
-            MutationOperator::FunctionBodyReturnConstant,
-            MutationOperator::StringSegmentEmpty,
-            MutationOperator::StdlibConversionCallRemove,
-        ] {
-            selection.include(operator);
-        }
-        selection
     }
 }
 

@@ -1,6 +1,7 @@
 namespace HoiminOracle
 
 inductive Phase
+  | restoring
   | running
   | cleaning
   | finalPending
@@ -8,6 +9,7 @@ inductive Phase
   deriving Repr, DecidableEq
 
 inductive EffectKind
+  | restoration
   | ordinary
   | cleanup
   | finalOutput
@@ -100,6 +102,18 @@ def acceptCompletion (state : State) (id : Nat) (kind : EffectKind) : Verdict :=
       completed := id :: state.completed
   }
   match kind with
+  | .restoration =>
+      match accepted.stopCause with
+      | some _ => { state := accepted, emitted := [], rejection := none }
+      | none =>
+          { state := {
+              accepted with
+                phase := .running
+                pending := [(accepted.nextId, .ordinary)]
+                nextId := accepted.nextId + 1
+            }
+            emitted := [.ordinary]
+            rejection := none }
   | .ordinary =>
       match accepted.stopCause with
       | some _ =>
@@ -146,7 +160,7 @@ def stop (state : State) (cause : StopCause) : Verdict :=
   match state.phase with
   | .cleaning | .finalPending | .finished =>
       { state := state, emitted := [], rejection := none }
-  | .running =>
+  | .restoring | .running =>
       match state.stopCause with
       | some _ => { state := state, emitted := [], rejection := none }
       | none =>

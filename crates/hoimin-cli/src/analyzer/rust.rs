@@ -4,6 +4,7 @@ use std::cmp::Ordering;
 use std::collections::{BTreeSet, BinaryHeap, HashMap, HashSet};
 use std::ops::Range;
 
+use crate::analyzer::visitor::{self, Visitor};
 use camino::Utf8Path;
 use hoimin_core::{
     ByteSpan, LineRange, MutationOperator, MutationOperatorSelection, MutationProfile,
@@ -11,10 +12,9 @@ use hoimin_core::{
 };
 use ruff_python_ast::identifier;
 use ruff_python_ast::token::TokenKind;
-use ruff_python_ast::visitor::Visitor;
 use ruff_python_ast::{
     CmpOp, Expr, ExprBinOp, ExprCall, ExprContext, ExprList, ExprSlice, ExprSubscript, ExprTuple,
-    ModModule, Number, Operator, Pattern, Singleton, Stmt, TypeParam, TypeParams, UnaryOp, visitor,
+    ModModule, Number, Operator, Pattern, Singleton, Stmt, TypeParam, TypeParams, UnaryOp,
 };
 #[cfg(test)]
 use ruff_python_parser::{parse_module, parse_unchecked_source};
@@ -53,6 +53,9 @@ mod callable_imports;
 mod depth;
 #[path = "rust/fact_index.rs"]
 mod fact_index;
+#[path = "rust/finally_work.rs"]
+mod finally_work;
+use finally_work::FinallyTransfer;
 #[path = "rust/mapping_keys.rs"]
 mod mapping_keys;
 #[path = "rust/operator_functions.rs"]
@@ -5596,6 +5599,10 @@ impl<'imports> NamedBindingInvalidator<'imports> {
 }
 
 impl<'ast> Visitor<'ast> for NamedBindingInvalidator<'_> {
+    fn visit_stmt(&mut self, statement: &'ast Stmt) {
+        visitor::walk_stmt(self, statement);
+    }
+
     fn visit_expr(&mut self, expression: &'ast Expr) {
         match expression {
             Expr::Lambda(lambda) => {
@@ -5881,7 +5888,7 @@ fn pattern_binding_flow(imports: &KnownImports, pattern: &Pattern) -> PatternBin
     }
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct ControlFlowExits {
     fallthrough: Option<KnownImports>,
     breaks: Vec<KnownImports>,
@@ -5976,6 +5983,8 @@ struct AnnotationCollector<'ast, 'callback> {
     qualname: Vec<String>,
     record_annotations: bool,
     track_implicit_exceptions: bool,
+    cancelled: Option<&'callback dyn Fn() -> bool>,
+    cancellation_observed: bool,
     #[cfg(test)]
     marker_projection: Option<BindingFlowMarkerProjection>,
     #[cfg(test)]
@@ -6063,11 +6072,26 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
 
     fn visit_each(
         module: &'ast ModModule,
+        cancelled: &'callback dyn Fn() -> bool,
         callback: &'callback mut AnnotationCallback<'ast, 'callback>,
-    ) {
+    ) -> Result<(), AnalysisError> {
         let mut collector = Self::empty();
+        collector.cancelled = Some(cancelled);
         collector.annotation_callback = Some(callback);
         collector.visit_suite(&module.body);
+        if collector.is_cancelled() {
+            Err(AnalysisError::Cancelled)
+        } else {
+            Ok(())
+        }
+    }
+
+    // Internal empty exits after cancellation are never a successful analysis:
+    // visit_each checks this latch after all lexical restoration epilogues run.
+    fn is_cancelled(&mut self) -> bool {
+        self.cancellation_observed =
+            self.cancellation_observed || self.cancelled.is_some_and(|cancelled| cancelled());
+        self.cancellation_observed
     }
 
     fn empty() -> Self {
@@ -6080,6 +6104,8 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
             qualname: Vec::new(),
             record_annotations: true,
             track_implicit_exceptions: false,
+            cancelled: None,
+            cancellation_observed: false,
             #[cfg(test)]
             marker_projection: None,
             #[cfg(test)]
@@ -6356,7 +6382,7 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
     }
 
     fn record(&mut self, annotation: &'ast Expr) {
-        if !self.record_annotations {
+        if !self.record_annotations || self.is_cancelled() {
             return;
         }
         #[cfg(test)]
@@ -6398,10 +6424,16 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
     }
 
     fn visit_suite_flow(&mut self, statements: &'ast [Stmt]) -> ControlFlowExits {
+        if self.is_cancelled() {
+            return ControlFlowExits::default();
+        }
         let mut exits = ControlFlowExits::default();
         // A single successor owns the state; only forks and suite restoration need copies.
         let mut fallthrough = Some(std::mem::take(&mut self.imports));
         for statement in statements {
+            if self.is_cancelled() {
+                return ControlFlowExits::default();
+            }
             let Some(imports) = fallthrough.take() else {
                 let inherited = self.imports.clone();
                 #[cfg(test)]
@@ -6420,6 +6452,9 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
                 .then(|| ImplicitExceptionEntry::for_statement(&self.imports, statement))
                 .flatten();
             let mut statement_exits = self.visit_statement_flow(statement);
+            if self.is_cancelled() {
+                return ControlFlowExits::default();
+            }
             statement_exits.merge_implicit(implicit_entry);
             fallthrough = statement_exits.fallthrough.take();
             exits.merge_abrupt(statement_exits);
@@ -6544,6 +6579,9 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
         );
         Self::merge_branch(&mut branches, &mut exits, body);
         for clause in &statement.elif_else_clauses {
+            if self.is_cancelled() {
+                break;
+            }
             let Some(mut clause_imports) = remaining.take() else {
                 break;
             };
@@ -6573,6 +6611,9 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
         orelse: &'ast [Stmt],
     ) -> ControlFlowExits {
         let transfer = self.loop_head_fixed_point(body_imports, iteration_target, body);
+        if self.is_cancelled() {
+            return ControlFlowExits::default();
+        }
         let body_exits = if self.can_reuse_loop_transfer(transfer.fallback_unchanged) {
             drop(transfer.head);
             transfer.exits
@@ -6581,6 +6622,9 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
             drop(transfer.exits);
             self.visit_suite_from(transfer.head, body)
         };
+        if self.is_cancelled() {
+            return ControlFlowExits::default();
+        }
         let mut repeated_exceptions = Vec::new();
         if self.track_implicit_exceptions {
             repeated_exceptions.extend(body_exits.fallthrough.iter().cloned());
@@ -6636,6 +6680,13 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
     ) -> LoopHeadTransfer {
         let mut head = initial.clone();
         loop {
+            if self.is_cancelled() {
+                return LoopHeadTransfer {
+                    head,
+                    exits: ControlFlowExits::default(),
+                    fallback_unchanged: false,
+                };
+            }
             let record_annotations = self.record_annotations;
             self.record_annotations = false;
             let (body_exits, fallback_unchanged) = {
@@ -6650,6 +6701,14 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
                 (exits, fallback_before.as_ref() == fallback_after)
             };
             self.record_annotations = record_annotations;
+
+            if self.is_cancelled() {
+                return LoopHeadTransfer {
+                    head,
+                    exits: ControlFlowExits::default(),
+                    fallback_unchanged: false,
+                };
+            }
 
             #[cfg(test)]
             let include_continues =
@@ -6758,6 +6817,9 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
         let enclosing_tracking = std::mem::replace(&mut self.track_implicit_exceptions, true);
         let mut exits = self.visit_suite_flow(&statement.body);
         self.track_implicit_exceptions = enclosing_tracking;
+        if self.is_cancelled() {
+            return ControlFlowExits::default();
+        }
         suppressed_entries.extend(exits.raises.iter().cloned());
         suppressed_entries.extend(exits.implicit_raises.iter().cloned());
 
@@ -6835,10 +6897,19 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
         self.track_implicit_exceptions |= !statement.finalbody.is_empty();
         let incoming = self.imports.clone();
         let body_exits = self.visit_suite_from(incoming.clone(), &statement.body);
+        if self.is_cancelled() {
+            self.track_implicit_exceptions = track_implicit_exceptions;
+            return ControlFlowExits::default();
+        }
         let normal_exits = body_exits
             .fallthrough
             .clone()
             .map(|imports| self.visit_suite_from(imports, &statement.orelse));
+
+        if self.is_cancelled() {
+            self.track_implicit_exceptions = track_implicit_exceptions;
+            return ControlFlowExits::default();
+        }
 
         let handler_imports = Self::try_handler_imports(incoming, &statement.body);
         let mut joined = ControlFlowExits::default();
@@ -6854,6 +6925,9 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
         #[cfg(not(test))]
         Self::merge_try_body_terminates(&mut joined, body_exits.terminates, body_exits.raises);
         for (handler_index, except_handler) in statement.handlers.iter().enumerate() {
+            if self.is_cancelled() {
+                break;
+            }
             let ruff_python_ast::ExceptHandler::ExceptHandler(handler) = except_handler;
             let mut imports = handler_imports.clone();
             #[cfg(test)]
@@ -6906,11 +6980,18 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
 
     fn apply_finally(
         &mut self,
-        exits: ControlFlowExits,
+        mut exits: ControlFlowExits,
         finalbody: &'ast [Stmt],
     ) -> ControlFlowExits {
+        if self.is_cancelled() {
+            return ControlFlowExits::default();
+        }
         if finalbody.is_empty() {
             return exits;
+        }
+        let share = self.can_share_finally_transfer();
+        if share {
+            exits.deduplicate_abrupt();
         }
 
         // Transfer-only callers still route every exit below, but have no
@@ -6936,11 +7017,11 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
 
         let mut result = ControlFlowExits::default();
         let mut fallthrough = Vec::new();
+        let mut transfer = FinallyTransfer::new(finalbody, share);
         if let Some(imports) = exits.fallthrough {
-            self.route_finally_entry(
-                imports,
+            Self::route_finally_entry(
+                transfer.evaluate(self, imports),
                 ExitCategory::Fallthrough,
-                finalbody,
                 &mut fallthrough,
                 &mut result,
             );
@@ -6952,42 +7033,40 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
             (ExitCategory::Raise, exits.raises),
         ] {
             for imports in entries {
-                self.route_finally_entry(
-                    imports,
+                if self.is_cancelled() {
+                    return ControlFlowExits::default();
+                }
+                Self::route_finally_entry(
+                    transfer.evaluate(self, imports),
                     category,
-                    finalbody,
                     &mut fallthrough,
                     &mut result,
                 );
             }
         }
         if let Some(imports) = exits.implicit_raises {
-            let record_annotations = self.record_annotations;
-            self.record_annotations = false;
-            let mut final_exits = self.visit_suite_from(imports, finalbody);
-            self.record_annotations = record_annotations;
+            let mut final_exits = transfer.evaluate(self, imports);
             // A falling finally resumes the pending exception. An abrupt finally
             // replaces it through the same merge used for explicit exits.
             result.merge_implicit(final_exits.fallthrough.take());
             result.merge_abrupt(final_exits);
         }
         result.fallthrough = KnownImports::intersection(fallthrough);
+        if self.is_cancelled() {
+            return ControlFlowExits::default();
+        }
+        if share {
+            result.deduplicate_abrupt();
+        }
         result
     }
 
     fn route_finally_entry(
-        &mut self,
-        imports: KnownImports,
+        final_exits: ControlFlowExits,
         category: ExitCategory,
-        finalbody: &'ast [Stmt],
         fallthrough: &mut Vec<KnownImports>,
         result: &mut ControlFlowExits,
     ) {
-        let record_annotations = self.record_annotations;
-        self.record_annotations = false;
-        let final_exits = self.visit_suite_from(imports, finalbody);
-        self.record_annotations = record_annotations;
-
         if let Some(imports) = final_exits.fallthrough {
             match category {
                 ExitCategory::Fallthrough => fallthrough.push(imports),
@@ -7010,8 +7089,9 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
         let mut fallthrough = Vec::new();
         let mut exits = ControlFlowExits::default();
         for case in &statement.cases {
-            let Some(pre_pattern) = remaining.take() else {
-                break;
+            let pre_pattern = match remaining.take() {
+                Some(imports) if !self.is_cancelled() => imports,
+                _ => break,
             };
             #[cfg(test)]
             {
@@ -7107,6 +7187,9 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
     }
 
     fn visit_statement_flow(&mut self, statement: &'ast Stmt) -> ControlFlowExits {
+        if self.is_cancelled() {
+            return ControlFlowExits::default();
+        }
         #[cfg(test)]
         {
             LOOP_STATEMENT_VISITS.set(LOOP_STATEMENT_VISITS.get().checked_add(1).unwrap());
@@ -7128,7 +7211,7 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
         ) {
             self.capture_marker_entry(statement.range());
         }
-        match statement {
+        let exits = match statement {
             Stmt::FunctionDef(definition) => self.visit_function_definition(statement, definition),
             Stmt::ClassDef(definition) => self.visit_class_definition(statement, definition),
             Stmt::TypeAlias(alias) => self.visit_type_alias(statement, alias),
@@ -7187,6 +7270,11 @@ impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
                 self.imports.transfer_statement(statement);
                 ControlFlowExits::fallthrough(std::mem::take(&mut self.imports))
             }
+        };
+        if self.is_cancelled() {
+            ControlFlowExits::default()
+        } else {
+            exits
         }
     }
 }
@@ -7727,40 +7815,45 @@ fn type_annotation_candidates(
     {
         return candidates.finish();
     }
-    AnnotationCollector::visit_each(module, &mut |annotation, symbol, imports| {
-        if candidates.failure.is_some() {
-            return;
-        }
-        if cancelled() {
-            candidates.failure = Some(AnalysisError::Cancelled);
-            return;
-        }
-        let checked = AnnotationImports {
-            known: imports,
-            resolution: &facts.name_resolution,
-            offset: usize::from(annotation.range().start()),
-        };
-        for (replacement, operator) in annotation_replacements(annotation, source, facts, &checked)
-        {
-            let range = annotation.range();
-            let start = usize::from(range.start());
-            let end = usize::from(range.end());
-            if let Some(candidate) = make_candidate(
-                request,
-                source,
-                line_index,
-                start..end,
-                replacement,
-                operator,
-                symbol.clone(),
-            ) && retained_by_profile(&candidate, request.profile, facts)
-                && candidates.push(candidate).is_err()
-            {
+    let traversal =
+        AnnotationCollector::visit_each(module, cancelled, &mut |annotation, symbol, imports| {
+            if candidates.failure.is_some() {
                 return;
             }
-        }
-    });
-    candidates.finish()
+            if cancelled() {
+                candidates.failure = Some(AnalysisError::Cancelled);
+                return;
+            }
+            let checked = AnnotationImports {
+                known: imports,
+                resolution: &facts.name_resolution,
+                offset: usize::from(annotation.range().start()),
+            };
+            for (replacement, operator) in
+                annotation_replacements(annotation, source, facts, &checked)
+            {
+                let range = annotation.range();
+                let start = usize::from(range.start());
+                let end = usize::from(range.end());
+                if let Some(candidate) = make_candidate(
+                    request,
+                    source,
+                    line_index,
+                    start..end,
+                    replacement,
+                    operator,
+                    symbol.clone(),
+                ) && retained_by_profile(&candidate, request.profile, facts)
+                    && candidates.push(candidate).is_err()
+                {
+                    return;
+                }
+            }
+        });
+    // An already observed payload failure retains priority over cancellation.
+    let output = candidates.finish()?;
+    traversal?;
+    Ok(output)
 }
 
 fn annotation_replacements(
@@ -8181,7 +8274,10 @@ mod performance_cost_tests {
                 IMPORT_CLONE_CALLS.set(0);
                 IMPORT_CLONE_ENTRIES.set(0);
                 let mut records = 0;
-                AnnotationCollector::visit_each(parsed.syntax(), &mut |_, _, _| records += 1);
+                AnnotationCollector::visit_each(parsed.syntax(), &|| false, &mut |_, _, _| {
+                    records += 1;
+                })
+                .unwrap();
                 assert_eq!(records, annotations);
                 assert!(
                     IMPORT_CLONE_CALLS.get() <= 1,

@@ -25,6 +25,7 @@ pub enum RunPhase {
     Copy,
     MaterializationVerification,
     Baseline,
+    BaselineRestoration,
     BudgetCheck,
     Analyze,
     Mutants,
@@ -1540,15 +1541,11 @@ pub fn transition(
                 event: output,
             };
             let mut effects = vec![state.register_output(output, OutputContinuation::Baseline)];
-            if success && state.is_ordered_verification() {
-                state.phase = RunPhase::BudgetCheck;
+            if success {
+                state.phase = RunPhase::BaselineRestoration;
+                *state.worker_mut(0)? = WorkerState::Resetting;
                 let id = state.allocate_id()?;
-                effects.push(RunEffect::ObserveRemainingBudget(ObserveRemainingBudget {
-                    id,
-                }));
-            } else if success {
-                state.phase = RunPhase::Analyze;
-                effects.extend(state.analyze_next()?);
+                effects.push(RunEffect::ResetWorker(ResetWorker { id, worker: 0 }));
             } else {
                 state.flags.outcome.baseline_failed = true;
                 state.phase = RunPhase::Finalize;
@@ -1846,6 +1843,22 @@ pub fn transition(
                 }
             }
         }
+        RunEvent::WorkerReset(value) if state.phase == RunPhase::BaselineRestoration => {
+            if completed_worker != Some(value.worker) {
+                return Err(MachineError::UnknownWorker(value.worker));
+            }
+            *state.worker_mut(value.worker)? = WorkerState::Idle;
+            if state.is_ordered_verification() {
+                state.phase = RunPhase::BudgetCheck;
+                let id = state.allocate_id()?;
+                vec![RunEffect::ObserveRemainingBudget(ObserveRemainingBudget {
+                    id,
+                })]
+            } else {
+                state.phase = RunPhase::Analyze;
+                state.analyze_next()?
+            }
+        }
         RunEvent::WorkerReset(value) if state.phase == RunPhase::Mutants => {
             if completed_worker != Some(value.worker) {
                 return Err(MachineError::UnknownWorker(value.worker));
@@ -1979,6 +1992,7 @@ pub fn transition(
             state.phase,
             RunPhase::MaterializationVerification
                 | RunPhase::Baseline
+                | RunPhase::BaselineRestoration
                 | RunPhase::BudgetCheck
                 | RunPhase::Analyze
                 | RunPhase::Mutants

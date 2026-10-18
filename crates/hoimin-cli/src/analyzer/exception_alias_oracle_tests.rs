@@ -1,5 +1,5 @@
 use super::{Escapes, oracle_corpus as corpus};
-use ruff_python_ast::visitor::Visitor;
+use crate::analyzer::visitor::Visitor;
 
 #[test]
 fn lean_exception_hierarchy_alias_extraction_correspondence() {

@@ -48,9 +48,15 @@ sources:
   working_tree: clean
   sha256: 3db98744cba6c95b2828d98298038c52242135a2607f2855c58d100205243fb4
 
+- id: issue-984-compatibility
+  resource: ../compatibility.md
+  revision: c4078e0dadc58bdbc7953b6d5a23cd76160d6ecf
+  working_tree: modified
+  sha256: 881f774b6a135f3d50f3acca3e379a0c8f0742349fd84964d526caa4073c421a
+
 ---
 
-# Current saved formats and release floor (Issue #979)
+# Current saved formats and release floor (Issues #979 and #984)
 
 Plan schema 10 requires `normalized_config.discovery.analyzer_timeout`.
 Report/event schema 8 and runtime configuration omit discovery settings;
@@ -58,20 +64,29 @@ Report/event schema 8 and runtime configuration omit discovery settings;
 The cooperative deadline spans the whole discovery phase. It does not forcibly
 interrupt synchronous I/O or parsing.[^issue-979-compatibility]
 
-The minimum release version is 0.12.0. Fingerprint schema 12 removes the discovery
-timeout from execution compatibility and is incompatible with schema 11.
-SQLite session schema 5, ranking rule 4, candidate schema 1 and mutant-ID v1 stay
-unchanged. Regenerate older plans, update report readers and use the producing
-binary for historical reports. Incomplete incompatible session history can
-require a new session path; no conversion or deletion occurs. The sole saved
-root remains `normalized_config.selection.root`.[^issue-979-compatibility]
+The minimum release version is 0.13.0. Fingerprint schema 13 prevents reuse of
+results produced before mandatory baseline restoration. It retains schema 12's
+field framing and omission of discovery timeout, changing the leading version
+byte. A new baseline alone cannot repair a stored conclusive result that resume
+would skip. Old incomplete history can return `session.resume.incompatible`
+when no compatible current run exists; use a new session path or deliberately
+start without resume. Old databases and results are retained.[^issue-984-compatibility]
 
-Follow the [0.12.0 migration notice](../compatibility.md#discovery-timeout-ownership-in-0120).
-The Issue #949 change introduced the single root at plan 9/report 7/floor 0.11.0;
-the notices below retain their historical versions, not the current format.
+Plan schema 10, report/event schema 8, SQLite session schema 5, ranking rule 4,
+candidate schema 1 and mutant-ID v1 remain unchanged by Issue #984. Current valid
+plans need no regeneration for baseline restoration. The sole saved root remains
+`normalized_config.selection.root`. Schema-9 and older plans and historical
+reports still follow the prior migration requirements.[^issue-979-compatibility][^issue-984-compatibility]
 
-[^issue-979-compatibility]: [Discovery ownership and current compatibility](../compatibility.md#discovery-timeout-ownership-in-0120).
+Follow the [0.13.0 migration notice](../compatibility.md#baseline-restoration-and-result-reuse-in-0130).
+Issue #979 introduced plan 10/report 8/fingerprint 12/floor 0.12.0; Issue #949
+introduced the single root at plan 9/report 7/floor 0.11.0. The notices below
+retain those historical versions.
+
+[^issue-979-compatibility]: [Discovery ownership and prior compatibility](../compatibility.md#discovery-timeout-ownership-in-0120).
+[^issue-984-compatibility]: [Baseline restoration and current compatibility](../compatibility.md#baseline-restoration-and-result-reuse-in-0130).
 [^issue-949-compatibility]: [Historical single-root notice](../compatibility.md#single-normalized-project-root-in-0110).
+
 
 # Compatibility scope
 

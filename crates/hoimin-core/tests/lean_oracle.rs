@@ -6,7 +6,8 @@ use hoimin_core::{
     AnalysisFinished, CandidateSpoolRef, CleanupFinished, CommandArg, EffectId, OriginalsVerified,
     OutputConfig, OutputEmitted, OutputEvent, OutputSpoolRef, PreflightCompleted, ProcessFinished,
     ProcessTermination, RawRunConfig, RawRunLimits, ResourceMode, RunConfig, RunEffect, RunEvent,
-    RunPhase, RunState, StartRequested, TargetSlice, TargetsResolved, WorkerCreated, transition,
+    RunPhase, RunState, StartRequested, TargetSlice, TargetsResolved, WorkerCreated, WorkerReset,
+    transition,
 };
 use serde::Deserialize;
 
@@ -110,6 +111,18 @@ impl Driver {
         };
         match scenario {
             "pending_resolve" => {}
+            "post_baseline_restoration" => {
+                driver.advance_to_baseline()?;
+                driver.advance_to_restoration()?;
+                driver.ordinary_id = driver
+                    .outstanding
+                    .iter()
+                    .find_map(|effect| match effect {
+                        RunEffect::ResetWorker(reset) => Some(reset.id),
+                        _ => None,
+                    })
+                    .ok_or_else(|| "missing restoration effect".to_owned())?;
+            }
             "normal_cleaning_with_copy" => driver.advance_to_normal_cleanup()?,
             "final_pending_without_copy" => {
                 driver.apply("cancel")?;
@@ -243,6 +256,25 @@ impl Driver {
     }
 
     fn advance_to_empty_analysis(&mut self) -> Result<(), String> {
+        self.advance_to_restoration()?;
+        let reset = self
+            .outstanding
+            .iter()
+            .find_map(|effect| match effect {
+                RunEffect::ResetWorker(reset) => Some(reset.clone()),
+                _ => None,
+            })
+            .ok_or_else(|| "missing restoration effect".to_owned())?;
+        self.apply_setup_completion(
+            RunEvent::WorkerReset(WorkerReset {
+                id: reset.id,
+                worker: reset.worker,
+            }),
+            reset.id,
+        )
+    }
+
+    fn advance_to_restoration(&mut self) -> Result<(), String> {
         let baseline_id = self
             .outstanding
             .iter()
@@ -317,6 +349,8 @@ impl Driver {
             )
         }) {
             "final_pending".to_owned()
+        } else if state.phase() == RunPhase::BaselineRestoration {
+            "restoring".to_owned()
         } else if state.phase() == RunPhase::Cleaning {
             "cleaning".to_owned()
         } else {
@@ -326,6 +360,13 @@ impl Driver {
 
     fn completion_event(&self, name: &str) -> Result<(RunEvent, EffectId), String> {
         match name {
+            "complete_restoration" => Ok((
+                RunEvent::WorkerReset(WorkerReset {
+                    id: self.ordinary_id,
+                    worker: 0,
+                }),
+                self.ordinary_id,
+            )),
             "complete_unknown" => {
                 let id = EffectId(u64::MAX);
                 Ok((
@@ -421,6 +462,23 @@ impl Driver {
                         .retain(|effect| effect.id() != run_started_id);
                     self.outstanding.append(&mut after_started);
                 }
+                // The model abstracts the integrity checkpoint preceding cleanup.
+                // Complete it explicitly: stopping after baseline still verifies originals.
+                if completion_id.is_none() && pre_phase == "restoring" {
+                    let (id, checkpoint) = pending_verification(&self.outstanding)?;
+                    let (next, mut after_integrity) = transition(
+                        state,
+                        RunEvent::OriginalsVerified(OriginalsVerified { id, checkpoint }),
+                    )
+                    .map_err(|error| format!("cannot verify originals before cleanup: {error}"))?;
+                    state = next;
+                    visible = after_integrity
+                        .iter()
+                        .filter_map(normalize_effect)
+                        .collect();
+                    self.outstanding.retain(|effect| effect.id() != id);
+                    self.outstanding.append(&mut after_integrity);
+                }
                 let observation = Observation {
                     verdict: "accepted".to_owned(),
                     error_code: None,
@@ -469,6 +527,7 @@ impl Driver {
 
 fn normalize_effect(effect: &RunEffect) -> Option<String> {
     match effect {
+        RunEffect::ResetWorker(_) => Some("restoration".to_owned()),
         RunEffect::Cleanup(_) => Some("cleanup".to_owned()),
         RunEffect::EmitOutput(value) if matches!(&value.event, OutputEvent::RunFinished(_)) => {
             Some("final_output".to_owned())
@@ -636,6 +695,7 @@ fn known_event(value: &str) -> bool {
     matches!(
         value,
         "complete_unknown"
+            | "complete_restoration"
             | "complete_wrong_cleanup"
             | "complete_ordinary"
             | "complete_ordinary_again"
@@ -656,6 +716,7 @@ fn validate_case(case: &OracleCase) -> Result<(), String> {
     if !matches!(
         case.scenario.as_str(),
         "pending_resolve"
+            | "post_baseline_restoration"
             | "normal_cleaning_with_copy"
             | "final_pending_without_copy"
             | "finished_without_copy"
@@ -688,12 +749,15 @@ fn validate_case(case: &OracleCase) -> Result<(), String> {
         }
         if !matches!(
             expected.phase.as_str(),
-            "running" | "cleaning" | "final_pending" | "finished"
+            "restoring" | "running" | "cleaning" | "final_pending" | "finished"
         ) {
             return Err(format!("unknown phase {}", expected.phase));
         }
         for effect in &expected.emitted {
-            if !matches!(effect.as_str(), "ordinary" | "cleanup" | "final_output") {
+            if !matches!(
+                effect.as_str(),
+                "restoration" | "ordinary" | "cleanup" | "final_output"
+            ) {
                 return Err(format!("unknown emitted effect {effect}"));
             }
         }
@@ -741,7 +805,7 @@ fn load_corpus() -> Result<Vec<OracleCase>, String> {
 fn corpus_is_well_formed() {
     let cases = load_corpus().expect("the committed Lean corpus must parse");
 
-    assert_eq!(cases.len(), 16);
+    assert_eq!(cases.len(), 22);
     assert!(cases.iter().all(|case| !case.expected.is_empty()));
     assert!(cases.iter().all(|case| case.mode == "strict"));
 }
@@ -774,7 +838,7 @@ fn corpus_rejects_duplicate_case_ids() {
     let error = parse_corpus(&invalid).unwrap_err();
 
     assert!(
-        error.contains("duplicate case id unknown_completion_is_rejected"),
+        error.contains("duplicate case id restoration_success"),
         "{error}"
     );
 }

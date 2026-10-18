@@ -33,6 +33,98 @@ use hoimin_core::{
 const TEST_MIN_FREE_SPACE: &str = "1B";
 
 #[tokio::test]
+async fn plan_accepts_elif_not_without_selected_candidates() {
+    let project = Project::new();
+    std::fs::write(
+        project.path.join("src/calc.py"),
+        "if a:\n    pass\nelif not b:\n    pass\n",
+    )
+    .unwrap();
+    let marker = project.path.join("baseline-ran");
+    let args = plan_args(
+        &project,
+        ["--file", "src/calc.py", "--operators", "boolean_literal"],
+        &marker,
+    );
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
+
+    let exit = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
+
+    assert_eq!(exit, 0, "{}", String::from_utf8_lossy(&stderr.snapshot()));
+    let manifest: PlanManifest = serde_json::from_slice(&stdout.snapshot()).unwrap();
+    assert_eq!(manifest.candidates, []);
+    assert!(!marker.exists());
+}
+
+#[tokio::test]
+async fn elif_plan_preserves_boolean_descriptors_ids_and_source_order() {
+    let source =
+        "if a:\n    first = True\nelif not b:\n    second = False\nelse:\n    last = True\n";
+    let project = Project::new_with_source(source);
+    let file_hash = blake3::hash(source.as_bytes()).to_hex().to_string();
+    let expected: Vec<_> = [
+        ("True", "False", 2_u32, 12_u32),
+        ("False", "True", 4, 13),
+        ("True", "False", 6, 11),
+    ]
+    .into_iter()
+    .map(|(original, replacement, line, column)| {
+        let start: usize = source
+            .split_inclusive('\n')
+            .take(usize::try_from(line - 1).unwrap())
+            .map(str::len)
+            .sum::<usize>()
+            + usize::try_from(column).unwrap();
+        hoimin_core::CandidateDescriptor {
+            schema_version: hoimin_core::CANDIDATE_SCHEMA_VERSION,
+            path: "src/calc.py".into(),
+            span: hoimin_core::ByteSpan {
+                start: u64::try_from(start).unwrap(),
+                length: u64::try_from(original.len()).unwrap(),
+            },
+            original: original.to_owned(),
+            replacement: replacement.to_owned(),
+            operator: "boolean_literal".to_owned(),
+            line,
+            column,
+            symbol: None,
+            file_hash: file_hash.clone(),
+        }
+    })
+    .collect();
+
+    let (_, manifest, marker) = write_plan_manifest(
+        &project,
+        &["--file", "src/calc.py", "--operators", "boolean_literal"],
+    )
+    .await;
+
+    let actual: Vec<_> = manifest
+        .candidates
+        .iter()
+        .map(|ranked| hoimin_core::CandidateDescriptor::from(&ranked.candidate))
+        .collect();
+
+    assert_eq!(actual, expected);
+    for (ranked, descriptor) in manifest.candidates.iter().zip(&expected) {
+        assert_eq!(
+            ranked.id,
+            hoimin_core::stable_mutant_id(&hoimin_core::CandidateIdentity::from(descriptor))
+                .as_str()
+        );
+        let mut mutated = source.to_owned();
+        let start = usize::try_from(descriptor.span.start).unwrap();
+        mutated.replace_range(
+            start..start + usize::try_from(descriptor.span.length).unwrap(),
+            &descriptor.replacement,
+        );
+        assert!(ruff_python_parser::parse_module(&mutated).is_ok());
+    }
+    assert!(!marker.exists());
+}
+
+#[tokio::test]
 async fn source_scoped_plan_preserves_candidates_as_unrelated_files_grow() {
     let mut candidates = Vec::new();
     for count in [0, 1_000, 5_000] {
@@ -1257,6 +1349,58 @@ async fn verify_rejects_previous_plan_schema_before_project_work() {
         "plan.manifest.invalid: unsupported schema version 9; regenerate the plan with this hoimin version"
     );
     assert!(!baseline_marker.exists());
+}
+
+macro_rules! verify_reordered_schema {
+    ($($name:ident: $key:expr,)*) => {
+        $(#[tokio::test]
+        async fn $name() {
+            let project = Project::new();
+            let (path, manifest, marker) = write_plan_manifest(&project, &[]).await;
+            let id = manifest.candidates[0].id.clone();
+            let serialized = serde_json::to_string(&manifest).unwrap();
+            let body = serialized.strip_prefix("{\"schema_version\":10,").unwrap();
+            let bytes = format!("{{{},{}}}", body.strip_suffix('}').unwrap(), $key);
+            std::fs::write(&path, bytes).unwrap();
+
+            let verified = prepare_verify(&path, std::slice::from_ref(&id), OutputFormat::Json)
+                .await.unwrap();
+
+            assert_eq!(verified.selection(),
+                &ResolvedVerifySelection::ExplicitCandidates(BTreeSet::from([id])));
+            assert!(!marker.exists());
+        })*
+    };
+}
+
+verify_reordered_schema! {
+    verify_accepts_schema_last: r#""schema_version":10"#,
+    verify_accepts_escaped_schema_last: r#""sch\u0065ma_version":10"#,
+}
+
+macro_rules! verify_invalid_schema_document {
+    ($($name:ident: $input:expr => $fragment:expr,)*) => {
+        $(#[tokio::test]
+        async fn $name() {
+            let project = Project::new();
+            let path = project.path.join("invalid-plan.json");
+            std::fs::write(&path, $input).unwrap();
+
+            let error = prepare_verify(&path, &["unused".into()], OutputFormat::Json)
+                .await.unwrap_err();
+
+            let diagnostic = error.to_string();
+            assert!(diagnostic.starts_with("plan.manifest.invalid:"), "{diagnostic}");
+            assert!(diagnostic.contains($fragment), "{diagnostic}");
+        })*
+    };
+}
+
+verify_invalid_schema_document! {
+    verify_rejects_duplicate_schema_original_bytes: br#"{"schema_version":10,"sch\u0065ma_version":9}"# => "duplicate field `schema_version`",
+    verify_rejects_malformed_body_after_schema: br#"{"schema_version":10,"candidates":[}"# => "expected value",
+    verify_rejects_obsolete_trailing_content: br#"{"schema_version":9} null"# => "trailing characters",
+    verify_guides_obsolete_schema_last_before_old_shape: br#"{"obsolete_root":{},"schema_version":9}"# => "unsupported schema version 9; regenerate",
 }
 
 #[tokio::test]
@@ -5403,4 +5547,114 @@ async fn discovery_timeout_changes_saved_plan_without_changing_execution_identit
         serde_json::to_vec(&manifests[1]).unwrap()
     );
     assert!(!marker.exists());
+}
+
+#[tokio::test]
+async fn baseline_restoration_matches_full_run_and_single_candidate_verification() {
+    for jobs in ["1", "2"] {
+        // Arrange.
+        let project = tempfile::tempdir().unwrap();
+        let source = "one = True\ntwo = False\n";
+        std::fs::write(project.path().join("target.py"), source).unwrap();
+        let (args, manifest, plan_path) = baseline_contamination_plan(project.path(), jobs).await;
+        let selected = &manifest.candidates[1].candidate.id;
+        // Act.
+        let run_out = CollectingWriter::default();
+        let run_err = CollectingWriter::default();
+        assert_eq!(
+            hoimin_cli::run_with_writers(args, run_out.clone(), run_err.clone()).await,
+            1,
+            "{}",
+            String::from_utf8_lossy(&run_err.snapshot())
+        );
+        let full: serde_json::Value = serde_json::from_slice(&run_out.snapshot()).unwrap();
+        for selection in [["--candidate", selected.as_str()], ["--top", "1"]] {
+            let verify_out = CollectingWriter::default();
+            let verify_err = CollectingWriter::default();
+            let args = [
+                OsString::from("hoimin"),
+                "verify".into(),
+                plan_path.clone().into(),
+                selection[0].into(),
+                selection[1].into(),
+            ];
+            assert_eq!(
+                hoimin_cli::run_with_writers(args, verify_out.clone(), verify_err.clone()).await,
+                1,
+                "{}",
+                String::from_utf8_lossy(&verify_err.snapshot())
+            );
+            let single: serde_json::Value = serde_json::from_slice(&verify_out.snapshot()).unwrap();
+            // Assert.
+            let mutant = &single["mutants"][0];
+            assert!(mutant["candidate"]["id"].is_string());
+            if selection[0] == "--candidate" {
+                assert_eq!(mutant["candidate"]["id"], selected.as_str());
+            }
+            let matching = full["mutants"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|row| row["candidate"]["id"] == mutant["candidate"]["id"])
+                .unwrap();
+            assert_eq!(mutation_outcome::status(mutant), "survived");
+            assert_eq!(
+                mutation_outcome::status(mutant),
+                mutation_outcome::status(matching)
+            );
+            assert_eq!(single["summary"]["complete"], true);
+        }
+        assert_eq!(
+            std::fs::read_to_string(project.path().join("target.py")).unwrap(),
+            source
+        );
+        assert!(!project.path().join("generated-state.txt").exists());
+    }
+}
+
+async fn baseline_contamination_plan(
+    root: &Path,
+    jobs: &str,
+) -> (Vec<OsString>, PlanManifest, PathBuf) {
+    let command = "from pathlib import Path; p=Path('generated-state.txt'); clean=not p.exists(); p.write_text('dirty'); raise SystemExit(0 if clean else 1)";
+    let mut args: Vec<OsString> = ["hoimin", "plan", "--root"]
+        .into_iter()
+        .map(Into::into)
+        .collect();
+    args.push(root.into());
+    args.extend(
+        [
+            "--file",
+            "target.py",
+            "--operators",
+            "boolean_literal",
+            "--jobs",
+            jobs,
+            "--allow-best-effort-memory",
+            "--min-free-space",
+            "1B",
+            "--",
+        ]
+        .into_iter()
+        .map(OsString::from),
+    );
+    args.extend([python_executable().into(), "-c".into(), command.into()]);
+    let plan_out = CollectingWriter::default();
+    let plan_err = CollectingWriter::default();
+    assert_eq!(
+        hoimin_cli::run_with_writers(args.clone(), plan_out.clone(), plan_err.clone()).await,
+        0,
+        "{}",
+        String::from_utf8_lossy(&plan_err.snapshot())
+    );
+    let manifest: PlanManifest = serde_json::from_slice(&plan_out.snapshot()).unwrap();
+    let plan_path = root.join("plan.json");
+    std::fs::write(&plan_path, plan_out.snapshot()).unwrap();
+    args[1] = "run".into();
+    let separator = args.iter().position(|arg| arg == "--").unwrap();
+    args.splice(
+        separator..separator,
+        [OsString::from("--format"), "json".into()],
+    );
+    (args, manifest, plan_path)
 }

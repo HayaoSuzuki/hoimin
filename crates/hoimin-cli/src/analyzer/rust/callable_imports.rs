@@ -5,7 +5,7 @@
 //! invalidate that evidence. This does not prove absence of external monkey
 //! patching or import-path shadowing. Clients own the allowed callable names.
 use super::{AnalysisCancelled, ContainmentIndex};
-use ruff_python_ast::visitor::{self, Visitor};
+use crate::analyzer::visitor::{self, Visitor};
 use ruff_python_ast::{Comprehension, Expr, ExprContext, ModModule, Pattern, Stmt, TypeParam};
 use ruff_text_size::{Ranged, TextRange};
 use std::collections::{HashMap, HashSet};

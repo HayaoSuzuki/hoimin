@@ -12,6 +12,7 @@ pub(crate) fn observe(state: &RunState) {
         RunPhase::Preflight => "checking workspace",
         RunPhase::Copy | RunPhase::MaterializationVerification => "preparing workers",
         RunPhase::Baseline => "running baseline",
+        RunPhase::BaselineRestoration => "restoring baseline workspace",
         RunPhase::BudgetCheck => "checking execution budget",
         RunPhase::Analyze => "analyzing sources",
         RunPhase::Mutants => "testing mutants",

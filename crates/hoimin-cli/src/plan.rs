@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use camino::{Utf8Path, Utf8PathBuf};
@@ -28,6 +29,9 @@ mod ranking_tests;
 #[cfg(test)]
 mod review_tests;
 mod sampling;
+mod schema;
+#[cfg(test)]
+mod schema_tests;
 mod selection;
 #[cfg(test)]
 mod selection_tests;
@@ -36,6 +40,7 @@ mod validation_tests;
 
 use ranking::{RANKING_RULE_VERSION, rank_candidates, validate_ranking, validate_ranking_against};
 pub use ranking::{RankedPlanCandidate, RankingReason, RankingReasonCode};
+use schema::decode_manifest;
 
 pub const PLAN_SCHEMA_VERSION: u32 = 10;
 
@@ -460,28 +465,17 @@ fn read_manifest(path: &Path) -> Result<(Vec<PathBuf>, Vec<u8>), PlanError> {
     // the file read through it. Keep invocation paths out of the saved config.
     (|| -> std::io::Result<_> {
         let inputs = vec![std::path::absolute(path)?, std::fs::canonicalize(path)?];
-        Ok((inputs, std::fs::read(path)?))
+        let mut file = crate::artifacts::open_regular_file(path)?.ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "input is not a regular file",
+            )
+        })?;
+        let mut bytes = Vec::new();
+        file.read_to_end(&mut bytes)?;
+        Ok((inputs, bytes))
     })()
     .map_err(|error| PlanError::ManifestInvalid(format!("{}: {error}", path.display())))
-}
-
-// Check the version before decoding closed shapes so obsolete fields cannot hide
-// the regeneration guidance shared by verify and read-only review.
-fn decode_manifest(bytes: &[u8]) -> Result<PlanManifest, PlanError> {
-    let value: serde_json::Value = serde_json::from_slice(bytes)
-        .map_err(|error| PlanError::ManifestInvalid(error.to_string()))?;
-    let schema_version = value
-        .get("schema_version")
-        .and_then(serde_json::Value::as_u64)
-        .ok_or_else(|| PlanError::ManifestInvalid("missing schema version".to_owned()))?;
-    if schema_version != u64::from(PLAN_SCHEMA_VERSION) {
-        return Err(PlanError::ManifestInvalid(format!(
-            "unsupported schema version {schema_version}; regenerate the plan with this hoimin version"
-        )));
-    }
-    drop(value);
-    // Decode the original bytes to retain serde's duplicate-field rejection.
-    serde_json::from_slice(bytes).map_err(|error| PlanError::ManifestInvalid(error.to_string()))
 }
 
 async fn prepare_verify_selection_inner(
