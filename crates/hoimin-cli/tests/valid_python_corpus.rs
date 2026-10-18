@@ -473,6 +473,7 @@ async fn corpus_correspondence(
                 expected.truncate(cap);
                 let output = rust::analyze_source(
                     &rust::AnalyzeRequest {
+                        payload: rust::payload::PayloadBudget::default(),
                         path: Utf8Path::new("subject.py"),
                         lines: &lines,
                         symbols: &symbols,
@@ -482,12 +483,17 @@ async fn corpus_correspondence(
                     },
                     &source,
                 );
-                check_eligibility(&case, &output.candidates, &expected);
+                let candidates = output
+                    .candidates
+                    .into_iter()
+                    .map(rust::payload::Charged::into_untracked)
+                    .collect::<Vec<_>>();
+                check_eligibility(&case, &candidates, &expected);
                 assert_eq!(output.truncated, truncated);
 
                 let mut ids = BTreeMap::new();
                 let mut mutants = Vec::new();
-                for c in &output.candidates {
+                for c in &candidates {
                     assert_eq!(c.operator.as_str(), case.operator);
                     let start = usize::try_from(c.span.start).unwrap();
                     let end = start + usize::try_from(c.span.length).unwrap();
@@ -520,7 +526,7 @@ async fn corpus_correspondence(
                 let plan_ids =
                     planned_candidates(&case, &source, selection, cap, &lines, &symbols, truncated)
                         .await;
-                assert_eq!(plan_ids.len(), output.candidates.len());
+                assert_eq!(plan_ids.len(), candidates.len());
                 assert_eq!(ids, plan_ids, "raw analyzer / plan mismatch");
                 let axes = [
                     ("producer", case.producer.as_str()),
@@ -535,9 +541,8 @@ async fn corpus_correspondence(
                         seen_pairs.insert(format!("{a}={av}|{b}={bv}"));
                     }
                 }
-                validated_candidates += output.candidates.len();
-                runtime_candidates +=
-                    usize::from(!case.harness.is_empty()) * output.candidates.len();
+                validated_candidates += candidates.len();
+                runtime_candidates += usize::from(!case.harness.is_empty()) * candidates.len();
                 checks += 1;
             }
         }
@@ -617,6 +622,7 @@ fn full_lf_candidates(case: &Case) -> Vec<AnalyzerCandidate> {
     operators.include(MutationOperatorSelection::parse_selector(&case.operator).unwrap()[0]);
     rust::analyze_source(
         &rust::AnalyzeRequest {
+            payload: rust::payload::PayloadBudget::default(),
             path: Utf8Path::new("subject.py"),
             lines: &[],
             symbols: &[],
@@ -627,6 +633,9 @@ fn full_lf_candidates(case: &Case) -> Vec<AnalyzerCandidate> {
         &case.source,
     )
     .candidates
+    .into_iter()
+    .map(rust::payload::Charged::into_untracked)
+    .collect()
 }
 
 #[test]

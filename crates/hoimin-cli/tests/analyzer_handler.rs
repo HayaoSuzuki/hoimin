@@ -7,7 +7,9 @@ use hoimin_core::{
     AnalyzeFile, ByteSpan, CandidateCursor, EffectId, MutationCandidate, MutationOperatorSelection,
     MutationProfile, TargetSlice,
 };
-use std::fs;
+use std::{fs, num::NonZeroUsize};
+
+use proptest::prelude::*;
 
 fn candidate(sequence: u64) -> MutationCandidate {
     MutationCandidate {
@@ -28,7 +30,7 @@ fn candidate(sequence: u64) -> MutationCandidate {
     }
 }
 
-fn analysis_request(id: u64, path: &str, final_target: bool, max_candidates: u64) -> AnalyzeFile {
+fn analysis_request(id: u64, path: &str, final_target: bool) -> AnalyzeFile {
     AnalyzeFile {
         id: EffectId(id),
         target: TargetSlice {
@@ -37,12 +39,16 @@ fn analysis_request(id: u64, path: &str, final_target: bool, max_candidates: u64
             symbols: Vec::new(),
         },
         final_target,
-        max_candidates,
     }
 }
 
-fn handler(root: Utf8PathBuf) -> AnalyzerHandler {
-    AnalyzerHandler::new(root)
+fn handler(root: Utf8PathBuf, max_candidates: usize) -> AnalyzerHandler {
+    AnalyzerHandler::new(
+        root,
+        MutationOperatorSelection::default(),
+        MutationProfile::Full,
+        NonZeroUsize::new(max_candidates).unwrap(),
+    )
 }
 
 #[cfg(unix)]
@@ -120,21 +126,17 @@ async fn replay_runtime_candidates(
     operators: MutationOperatorSelection,
     profile: MutationProfile,
 ) -> Vec<MutationCandidate> {
-    let mut handler = handler(root);
+    let mut handler =
+        AnalyzerHandler::new(root, operators, profile, NonZeroUsize::new(100).unwrap());
     let target_count = targets.len();
     let mut spool = None;
     for (index, target) in targets.into_iter().enumerate() {
         let finished = handler
-            .handle(
-                AnalyzeFile {
-                    id: EffectId(u64::try_from(index).unwrap() + 100),
-                    target,
-                    final_target: index + 1 == target_count,
-                    max_candidates: 100,
-                },
-                &operators,
-                profile,
-            )
+            .handle(AnalyzeFile {
+                id: EffectId(u64::try_from(index).unwrap() + 100),
+                target,
+                final_target: index + 1 == target_count,
+            })
             .await
             .unwrap();
         if finished.spool.is_some() {
@@ -176,7 +178,7 @@ async fn analyzer_rejects_replaced_source_parent() {
     )
     .unwrap();
     let root = Utf8PathBuf::from_path_buf(project.path().to_owned()).unwrap();
-    let mut analyzer = handler(root);
+    let mut analyzer = handler(root, 10);
     let original_parent = project.path().join("original-src");
     fs::rename(&source_parent, &original_parent).unwrap();
 
@@ -191,11 +193,7 @@ async fn analyzer_rejects_replaced_source_parent() {
     create_dir_link(outside.path(), &source_parent).unwrap();
 
     let result = analyzer
-        .handle(
-            analysis_request(82, "src/calc.py", true, 10),
-            &MutationOperatorSelection::default(),
-            MutationProfile::Full,
-        )
+        .handle(analysis_request(82, "src/calc.py", true))
         .await;
 
     assert!(matches!(
@@ -521,22 +519,17 @@ async fn concrete_handler_does_not_spawn_python_for_analysis() {
     )
     .unwrap();
     let root = Utf8PathBuf::from_path_buf(directory.path().to_owned()).unwrap();
-    let mut handler = AnalyzerHandler::new(root);
+    let mut handler = handler(root, 10);
     let finished = handler
-        .handle(
-            AnalyzeFile {
-                id: EffectId(77),
-                target: TargetSlice {
-                    path: "src/calc.py".into(),
-                    lines: Vec::new(),
-                    symbols: Vec::new(),
-                },
-                final_target: true,
-                max_candidates: 10,
+        .handle(AnalyzeFile {
+            id: EffectId(77),
+            target: TargetSlice {
+                path: "src/calc.py".into(),
+                lines: Vec::new(),
+                symbols: Vec::new(),
             },
-            &MutationOperatorSelection::default(),
-            MutationProfile::Full,
-        )
+            final_target: true,
+        })
         .await
         .unwrap();
     let spool = finished.spool.unwrap();
@@ -555,12 +548,8 @@ async fn concrete_handler_reports_invalid_syntax_with_the_source_path() {
     fs::create_dir(directory.path().join("src")).unwrap();
     fs::write(directory.path().join("src/broken.py"), "def broken(:\n").unwrap();
     let root = Utf8PathBuf::from_path_buf(directory.path().to_owned()).unwrap();
-    let finished = handler(root)
-        .handle(
-            analysis_request(78, "src/broken.py", true, 10),
-            &MutationOperatorSelection::default(),
-            MutationProfile::Full,
-        )
+    let finished = handler(root, 10)
+        .handle(analysis_request(78, "src/broken.py", true))
         .await
         .unwrap();
 
@@ -584,12 +573,8 @@ async fn concrete_handler_reports_invalid_syntax_with_the_source_path() {
 async fn concrete_handler_reports_source_read_failure() {
     let directory = tempfile::tempdir().unwrap();
     let root = Utf8PathBuf::from_path_buf(directory.path().to_owned()).unwrap();
-    let result = handler(root)
-        .handle(
-            analysis_request(78, "src/missing.py", true, 10),
-            &MutationOperatorSelection::default(),
-            MutationProfile::Full,
-        )
+    let result = handler(root, 10)
+        .handle(analysis_request(78, "src/missing.py", true))
         .await;
 
     assert!(matches!(
@@ -605,12 +590,8 @@ async fn concrete_handler_rejects_colon_named_source_before_analysis() {
     let root = Utf8PathBuf::from_path_buf(directory.path().to_owned()).unwrap();
     let path = "target:sample.py";
     std::fs::write(root.join(path), "enabled = True\n").unwrap();
-    let result = handler(root)
-        .handle(
-            analysis_request(78, path, true, 10),
-            &MutationOperatorSelection::default(),
-            MutationProfile::Full,
-        )
+    let result = handler(root, 10)
+        .handle(analysis_request(78, path, true))
         .await;
 
     assert!(matches!(
@@ -629,12 +610,8 @@ async fn concrete_handler_truncates_at_candidate_limit() {
     )
     .unwrap();
     let root = Utf8PathBuf::from_path_buf(directory.path().to_owned()).unwrap();
-    let finished = handler(root)
-        .handle(
-            analysis_request(79, "src/calc.py", true, 1),
-            &MutationOperatorSelection::default(),
-            MutationProfile::Full,
-        )
+    let finished = handler(root, 1)
+        .handle(analysis_request(79, "src/calc.py", true))
         .await
         .unwrap();
     assert_eq!(finished.diagnostics.len(), 1);
@@ -665,12 +642,8 @@ async fn concrete_handler_finishes_spool_when_a_non_final_target_is_truncated() 
     )
     .unwrap();
     let root = Utf8PathBuf::from_path_buf(directory.path().to_owned()).unwrap();
-    let finished = handler(root)
-        .handle(
-            analysis_request(80, "src/calc.py", false, 1),
-            &MutationOperatorSelection::default(),
-            MutationProfile::Full,
-        )
+    let finished = handler(root, 1)
+        .handle(analysis_request(80, "src/calc.py", false))
         .await
         .unwrap();
     let spool = finished.spool.unwrap();
@@ -694,22 +667,14 @@ async fn concrete_handler_spools_multiple_requests_on_final_target() {
     )
     .unwrap();
     let root = Utf8PathBuf::from_path_buf(directory.path().to_owned()).unwrap();
-    let mut handler = handler(root);
+    let mut handler = handler(root, 10);
 
     let first = handler
-        .handle(
-            analysis_request(80, "src/first.py", false, 10),
-            &MutationOperatorSelection::default(),
-            MutationProfile::Full,
-        )
+        .handle(analysis_request(80, "src/first.py", false))
         .await
         .unwrap();
     let second = handler
-        .handle(
-            analysis_request(81, "src/second.py", true, 10),
-            &MutationOperatorSelection::default(),
-            MutationProfile::Full,
-        )
+        .handle(analysis_request(81, "src/second.py", true))
         .await
         .unwrap();
     let spool = second.spool.unwrap();
@@ -735,4 +700,259 @@ async fn concrete_handler_spools_multiple_requests_on_final_target() {
         CandidateStore::replay_one(&spool, end_cursor).unwrap(),
         None
     );
+}
+
+#[tokio::test]
+async fn concrete_handler_finalizes_accumulated_candidates_on_an_empty_final_target() {
+    // Arrange.
+    let (_directory, root, _, _) = two_target_fixture();
+    fs::write(root.join("src/empty.py"), "").unwrap();
+    let mut handler = AnalyzerHandler::new(
+        root,
+        serde_json::from_value(serde_json::json!(["binary_add_sub"])).unwrap(),
+        MutationProfile::Full,
+        NonZeroUsize::new(10).unwrap(),
+    );
+    handler
+        .handle(analysis_request(90, "src/first.py", false))
+        .await
+        .unwrap();
+
+    // Act.
+    let finished = handler
+        .handle(analysis_request(91, "src/empty.py", true))
+        .await
+        .unwrap();
+    let spool = finished.spool.unwrap();
+
+    // Assert.
+    assert_eq!(spool.records, 1);
+    assert!(!finished.truncated);
+    let (candidate, _) = CandidateStore::replay_one(&spool, CandidateCursor::START)
+        .unwrap()
+        .unwrap();
+    assert_eq!(candidate.path, "src/first.py");
+}
+
+async fn assert_fresh_session(source: &str, expected_truncated: bool) {
+    // Arrange: only comparison candidates are selected and each session has a one-record cap.
+    let directory = tempfile::tempdir().unwrap();
+    fs::write(directory.path().join("calc.py"), source).unwrap();
+    let root = Utf8PathBuf::from_path_buf(directory.path().to_owned()).unwrap();
+    let operators = serde_json::from_value(serde_json::json!(["compare_eq_ne"])).unwrap();
+    let mut handler = AnalyzerHandler::new(
+        root,
+        operators,
+        MutationProfile::Full,
+        NonZeroUsize::new(1).unwrap(),
+    );
+    let first = handler
+        .handle(analysis_request(92, "calc.py", true))
+        .await
+        .unwrap()
+        .spool
+        .unwrap();
+
+    // Act.
+    let second = handler
+        .handle(analysis_request(93, "calc.py", true))
+        .await
+        .unwrap();
+    let second_spool = second.spool.unwrap();
+    let (candidate, cursor) = CandidateStore::replay_one(&second_spool, CandidateCursor::START)
+        .unwrap()
+        .unwrap();
+
+    // Assert: the old spool is separate and the new session starts at sequence one.
+    assert_ne!(first.token, second_spool.token);
+    assert_eq!(first.records, 1);
+    assert_eq!(second_spool.records, 1);
+    assert_eq!(second.truncated, expected_truncated);
+    assert_eq!(candidate.sequence, 1);
+    assert_eq!(candidate.operator, "compare_eq_ne");
+    assert_eq!(
+        CandidateStore::replay_one(&second_spool, cursor).unwrap(),
+        None
+    );
+}
+
+#[tokio::test]
+async fn concrete_handler_restarts_after_a_complete_final_target() {
+    assert_fresh_session("a = 1 + 2\nfirst = left == right\n", false).await;
+}
+
+#[tokio::test]
+async fn concrete_handler_restarts_after_truncation() {
+    assert_fresh_session(
+        "a = 1 + 2\nfirst = left == right\nsecond = top == bottom\n",
+        true,
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn concrete_handler_retains_accumulated_candidates_after_source_read_failure() {
+    // Arrange.
+    let (_directory, root, _, _) = two_target_fixture();
+    let mut handler = AnalyzerHandler::new(
+        root,
+        serde_json::from_value(serde_json::json!(["binary_add_sub"])).unwrap(),
+        MutationProfile::Full,
+        NonZeroUsize::new(10).unwrap(),
+    );
+    handler
+        .handle(analysis_request(94, "src/first.py", false))
+        .await
+        .unwrap();
+
+    // Act: a read failure occurs before store ownership moves to blocking work.
+    let error = handler
+        .handle(analysis_request(95, "src/missing.py", false))
+        .await
+        .unwrap_err();
+    let spool = handler
+        .handle(analysis_request(96, "src/second.py", true))
+        .await
+        .unwrap()
+        .spool
+        .unwrap();
+
+    // Assert.
+    assert_eq!(error.failure.code(), "analyzer.source.read");
+    assert_eq!(spool.records, 2);
+    let (first, cursor) = CandidateStore::replay_one(&spool, CandidateCursor::START)
+        .unwrap()
+        .unwrap();
+    let (second, _) = CandidateStore::replay_one(&spool, cursor).unwrap().unwrap();
+    assert_eq!((first.sequence, first.path.as_str()), (1, "src/first.py"));
+    assert_eq!(
+        (second.sequence, second.path.as_str()),
+        (2, "src/second.py")
+    );
+}
+
+#[tokio::test]
+async fn concrete_handler_defers_project_access_until_the_first_request() {
+    // Arrange: the project does not yet exist at construction.
+    let directory = tempfile::tempdir().unwrap();
+    let root = Utf8PathBuf::from_path_buf(directory.path().join("later")).unwrap();
+    let mut handler = handler(root.clone(), 10);
+    fs::create_dir(&root).unwrap();
+    fs::write(root.join("calc.py"), "result = left == right\n").unwrap();
+
+    // Act.
+    let finished = handler
+        .handle(analysis_request(97, "calc.py", true))
+        .await
+        .unwrap();
+
+    // Assert.
+    assert_eq!(finished.spool.unwrap().records, 1);
+}
+
+async fn candidates_for_settings(
+    operators: &[&str],
+    profile: MutationProfile,
+) -> Vec<MutationCandidate> {
+    let directory = tempfile::tempdir().unwrap();
+    fs::write(
+        directory.path().join("calc.py"),
+        "if __name__ == '__main__':\n    run()\n",
+    )
+    .unwrap();
+    let root = Utf8PathBuf::from_path_buf(directory.path().to_owned()).unwrap();
+    let mut handler = AnalyzerHandler::new(
+        root,
+        serde_json::from_value(serde_json::json!(operators)).unwrap(),
+        profile,
+        NonZeroUsize::new(10).unwrap(),
+    );
+    let spool = handler
+        .handle(analysis_request(98, "calc.py", true))
+        .await
+        .unwrap()
+        .spool
+        .unwrap();
+    let mut candidates = Vec::new();
+    let mut cursor = CandidateCursor::START;
+    while let Some((candidate, next)) = CandidateStore::replay_one(&spool, cursor).unwrap() {
+        candidates.push(candidate);
+        cursor = next;
+    }
+    candidates
+}
+
+#[tokio::test]
+async fn a_new_handler_uses_its_selected_operators() {
+    // Arrange/act: two handlers own different selections for identical source text.
+    let selected = candidates_for_settings(&["condition_constant"], MutationProfile::Full).await;
+    let unselected = candidates_for_settings(&["binary_add_sub"], MutationProfile::Full).await;
+
+    // Assert.
+    assert_eq!(selected.len(), 2);
+    assert!(
+        selected
+            .iter()
+            .all(|candidate| candidate.operator == "condition_constant")
+    );
+    assert_eq!(unselected, Vec::<MutationCandidate>::new());
+}
+
+#[tokio::test]
+async fn a_new_handler_uses_its_selected_profile() {
+    // Arrange/act: focused analysis omits the module entry-point guard.
+    let full = candidates_for_settings(&["condition_constant"], MutationProfile::Full).await;
+    let focused = candidates_for_settings(&["condition_constant"], MutationProfile::Focused).await;
+
+    // Assert.
+    assert_eq!(full.len(), 2);
+    assert_eq!(focused, Vec::<MutationCandidate>::new());
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(24))]
+
+    #[test]
+    fn fixed_limit_bounds_cross_file_sessions(
+        first_count in 0_usize..5,
+        second_count in 0_usize..5,
+        limit in 1_usize..7,
+    ) {
+        // Arrange: each equality contributes exactly one selected candidate.
+        let directory = tempfile::tempdir().unwrap();
+        let root = Utf8PathBuf::from_path_buf(directory.path().to_owned()).unwrap();
+        for (path, count) in [("first.py", first_count), ("second.py", second_count)] {
+            fs::write(root.join(path), "value = left == right\n".repeat(count)).unwrap();
+        }
+        let operators = serde_json::from_value(serde_json::json!(["compare_eq_ne"])).unwrap();
+        let mut handler = AnalyzerHandler::new(
+            root,
+            operators,
+            MutationProfile::Full,
+            NonZeroUsize::new(limit).unwrap(),
+        );
+        let runtime = tokio::runtime::Builder::new_current_thread().build().unwrap();
+
+        // Act.
+        let finished = runtime.block_on(async {
+            let first = handler.handle(analysis_request(100, "first.py", false)).await.unwrap();
+            if first.spool.is_some() {
+                first
+            } else {
+                handler.handle(analysis_request(101, "second.py", true)).await.unwrap()
+            }
+        });
+        let spool = finished.spool.unwrap();
+        let mut sequences = Vec::new();
+        let mut cursor = CandidateCursor::START;
+        while let Some((candidate, next)) = CandidateStore::replay_one(&spool, cursor).unwrap() {
+            sequences.push(candidate.sequence);
+            cursor = next;
+        }
+
+        // Assert: one constructor limit applies to the complete ordered target set.
+        prop_assert_eq!(usize::try_from(spool.records).unwrap(), (first_count + second_count).min(limit));
+        prop_assert_eq!(finished.truncated, first_count + second_count > limit);
+        prop_assert_eq!(sequences, (1..=spool.records).collect::<Vec<_>>());
+    }
 }

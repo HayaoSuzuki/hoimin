@@ -76,6 +76,18 @@ pub(super) fn reopen_mutation_file(
     }
 }
 
+pub(super) fn file_link_count(file: &File) -> io::Result<u32> {
+    // SAFETY: information is writable and file owns a live handle.
+    let information = unsafe {
+        let mut information: BY_HANDLE_FILE_INFORMATION = zeroed();
+        if GetFileInformationByHandle(file.as_raw_handle() as HANDLE, &raw mut information) == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        information
+    };
+    Ok(information.nNumberOfLinks)
+}
+
 pub(super) fn write_with<T>(
     parent: &File,
     name: &OsString,
@@ -102,7 +114,12 @@ pub(super) fn remove_file(
     logical_path: &Utf8Path,
 ) -> Result<(), WorkspaceError> {
     let file = open_final(parent, name, logical_path, WindowsFinalOperation::Remove)?;
-    make_file_writable(&file, logical_path)?;
+    let links = file_link_count(&file)
+        .map_err(|error| WorkspaceError::io("inspect worker file links", logical_path, error))?;
+    // Permissions belong to every hard link; unlink shared files without changing them.
+    if links <= 1 {
+        make_file_writable(&file, logical_path)?;
+    }
     mark_delete_by_handle(&file)
         .map_err(|error| WorkspaceError::io("remove worker file", logical_path, error))
 }
@@ -175,7 +192,7 @@ pub(crate) fn remove_open_entry_io_with_guard(
     before_next_operation()?;
     let mut permissions = file.metadata()?.permissions();
     before_next_operation()?;
-    if permissions.readonly() {
+    if permissions.readonly() && file_link_count(file)? <= 1 {
         #[allow(
             clippy::permissions_set_readonly_false,
             reason = "Windows Permissions toggles only the FILE_ATTRIBUTE_READONLY bit"
@@ -928,6 +945,39 @@ fn mark_delete_by_handle(file: &File) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn removing_shared_readonly_entry_preserves_external_attributes() {
+        // Arrange: managed cleanup uses the guarded retained-handle removal path.
+        let worker = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let sentinel = outside.path().join("sentinel");
+        std::fs::write(&sentinel, b"external").unwrap();
+        let initial_permissions = std::fs::metadata(&sentinel).unwrap().permissions();
+        let mut permissions = initial_permissions.clone();
+        permissions.set_readonly(true);
+        std::fs::set_permissions(&sentinel, permissions).unwrap();
+        std::fs::hard_link(&sentinel, worker.path().join("target")).unwrap();
+        let parent =
+            cap_std::fs::Dir::open_ambient_dir(worker.path(), cap_std::ambient_authority())
+                .unwrap();
+
+        // Act: failure is allowed when this filesystem cannot unlink readonly without chmod.
+        let result = remove_entry_io(&parent, OsStr::new("target"));
+
+        // Assert.
+        assert!(
+            std::fs::metadata(&sentinel)
+                .unwrap()
+                .permissions()
+                .readonly()
+        );
+        assert_eq!(std::fs::read(&sentinel).unwrap(), b"external");
+        if result.is_ok() {
+            assert!(parent.symlink_metadata("target").is_err());
+        }
+        std::fs::set_permissions(&sentinel, initial_permissions).unwrap();
+    }
 
     #[test]
     fn final_name_encoding_preserves_a_lone_surrogate() {

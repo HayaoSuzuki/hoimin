@@ -1,0 +1,12 @@
+{
+  "wheel": "hoimin-0.12.0-py3-none-macosx_11_0_arm64.whl",
+  "sha256": "f22bd67a4bfa30835a5251a6b713adbc25bd181771101d1def79556663b84821",
+  "version": "0.12.0",
+  "system": "macOS-15.7.7-arm64-arm-64bit-Mach-O",
+  "machine": "arm64",
+  "python": "3.14.7",
+  "libc": [
+    "",
+    ""
+  ]
+}

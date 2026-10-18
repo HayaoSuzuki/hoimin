@@ -496,6 +496,28 @@ sources:
   revision: ddb8ed9504beb04c06bfe11821ebcafffa332714
   working_tree: modified
   sha256: 99a2645a9d488283ad238c16fd3493a28da173c966b80ad3c5f78e6555777878
+- id: issue-972-handler
+  resource: ../../../crates/hoimin-cli/src/analyzer/mod.rs
+  revision: 4ebed4457519920e9a28f8f653d8ce96985acdad
+  working_tree: clean
+  sha256: d2d5919545daa6add13dbfa43b4eafae255dd6edaa261ce0a63d51765fa9c2b5
+
+- id: issue-977-evidence
+  resource: ../../maintenance/2026-10-18-issues-971-979/task-8-report.md
+  working_tree: untracked
+  sha256: b3ae02cb2e123c0089cb127d4189c2d03c2dd4bfba21c6b1789fee9995858dc2
+
+- id: issue-978-payload
+  resource: ../../../crates/hoimin-cli/src/analyzer/payload.rs
+  revision: 4ebed4457519920e9a28f8f653d8ce96985acdad
+  working_tree: clean
+  sha256: 2286b8eb233abacf91ce0d89bda9cd628ae05149def6ed341f470b0b6f09f0e8
+
+- id: issue-978-evidence
+  resource: ../../maintenance/2026-10-18-issues-971-979/task-9-report.md
+  working_tree: untracked
+  sha256: d9fd8051886a76403ff07084d186e237c9bf8a43848e735238152c5164b146a9
+
 ---
 
 # 構文と名前解決の契約
@@ -959,9 +981,15 @@ CPython 3.14による実行で構文・値・補間の回数と順序・conversi
 
 # 解析器の初期化（Issue #849）
 
-`AnalyzerHandler::new(root) -> Self` はルートパスを保持するだけで、プロジェクトへの I/O や候補ストアの作成を行わない。ソース読取と候補ストア作成は解析時に行い、それぞれの操作でエラーを返す。キャンセルの確認位置と初期化の順序は維持する。[^issue-849-initialization]
+Issue #849 introduced the infallible root-only `AnalyzerHandler::new(root)`
+constructor and deferred source/store I/O until analysis. Issue #972 later replaced
+that signature with fixed root, operators, profile and positive candidate limit.
+The constructor still performs no project I/O or store allocation.[^issue-849-initialization][^issue-972-handler]
 
-未使用の backend・メモリ上限・プロセス数上限を受け取っていた `with_backend` は削除した。実際のプロセス資源制御は引き続き `ProcessHandler` が担う。内部 Rust API の利用者は `new(root)?` などを `new(root)` に変更する。CLI と保存形式の移行は不要である。[^issue-849-initialization]
+The historical Issue #849 migration removed unused backend, memory and process
+arguments and changed `new(root)?` to `new(root)`. ProcessHandler retained actual
+process resource control. That internal change required no CLI or saved-format
+migration; it is not the current constructor signature.[^issue-849-initialization]
 
 [^issue-849-initialization]: [初期化 API の変更と互換性・検証記録](../../maintenance/2026-10-13-analyzer-initialization.md)。
 
@@ -980,13 +1008,15 @@ CPython 3.14による実行で構文・値・補間の回数と順序・conversi
 # Handler accumulation and interruption
 
 For Rust callers, an analyzer session accumulates serial requests into one spool.
-Keep root, operators, profile, and the positive candidate limit consistent. The
-first request fixes the store cap; later analysis budgets subtract the accumulated
-count from each request's limit. Candidates receive contiguous, one-based
+`AnalyzerHandler::new(root, operators, profile, max_candidates)` owns immutable
+settings, with a `NonZeroUsize` limit. File requests contain only ID, target and
+final-target intent. Store capacity and remaining analysis budgets derive from
+that single limit; callers cannot change settings per request. Candidates receive contiguous, one-based
 sequences across targets. Successful `spool: None` retains accumulation;
 `final_target` or truncation returns the complete spool and ends that session.
-A later request starts a new store and sequence. See the
-[module/interface contract](../../../crates/hoimin-cli/src/analyzer/mod.rs).[^issue-866-contract]
+A later request starts a new store and sequence with the same settings; changing
+settings requires another handler. See the
+[module/interface contract](../../../crates/hoimin-cli/src/analyzer/mod.rs).[^issue-972-handler]
 
 Cancellation observed before store transfer, or a source-read error, preserves
 an initialized store. After transfer to blocking analysis, cancellation or error
@@ -1177,3 +1207,56 @@ executed checks and their limitations.[^issue-950-tests]
 [^issue-950-retention]: [Candidate ranking, dedup and profile classification](../../../crates/hoimin-cli/src/analyzer/rust.rs).
 [^issue-950-descriptor]: [Saved descriptor boundary](../../../crates/hoimin-cli/src/analyzer/mod.rs).
 [^issue-950-tests]: [Lexical order and prefix regressions](../../../crates/hoimin-cli/src/analyzer/rust_tests.rs).
+
+# Selection before replacement construction (Issue #977)
+
+Container and condition whole-expression generators check existing start-line and
+scope selection before constructing replacements. Excluding a parent does not
+stop traversal into its children or bypass name resolution, syntax and depth
+checks. Work-counter tests distinguish completed replacement construction from
+candidate admission and RSS; selected values, IDs, order, deduplication,
+truncation and cancellation retain their contracts.[^issue-977-evidence]
+
+# Retained candidate payload (Issue #978)
+
+One `PayloadBudget` owner bounds 16,777,216 logical bytes across simultaneously retained
+producer outputs, converted candidates and all files of a plan discovery.
+A runtime handler owns a shared budget for its live work; detached workers keep
+their charges until data drops, even if the handler starts another request.
+Leases move with data and release on eviction, deduplication or drop. Plan
+handoff removes accounting only after generation/conversion finish and that
+owner will never admit more data.[^issue-978-payload][^issue-978-evidence]
+
+Count UTF-8 lengths of owned original/replacement/path/symbol strings, converted
+operator/hash/ID strings, separately owned identity/dedup strings, and explicit
+validation/encoded-record scratch reservations. Scalable enum/hierarchy and
+container fragment lists borrow existing strings rather than retaining copied
+batches. Validation bounds live beside core allocations; store encoding reserves
+its calculated record size. Checked overflow or budget exhaustion raises
+`analyzer.payload_limit`, wrapped as `plan.discovery` for plan, and stops further
+replacement builders. It produces no successful partial manifest or usable
+partial spool.[^issue-978-evidence]
+
+Fixed structures, spare capacities/allocator overhead, source/parser/AST/facts,
+diagnostics, prior disk-spool bytes, one in-flight generated candidate and the
+existing annotation batch of at most three source-dependent replacements are
+excluded. These last two exclusions can scale with source size. This is a
+retained-population guarantee, not an analyzer RSS bound. The existing 2 MiB
+record limit still applies; payload failure can now precede global count selection
+or record validation, including for candidates that selection might later discard.
+No compatibility adapter or configurable budget was added.[^issue-978-evidence]
+
+Recorded release observations compare 27 normal runs with identical source and
+candidate hashes, counts, truncation and final-string bytes. Generated/full median
+wall time changed from 0.045955 to 0.047601 seconds (about 3.6% higher). Instrumented
+charged peaks are separate from final output size and RSS. The evidence records
+all peaks, input hashes, binary revisions and build settings; these limited
+observations establish no universal speed or memory guarantee. The subsequent
+subscript early-stop fix affects an error path outside those measured normal and
+container-only matrices, so their after revision remains `e4e3a1d4`, not the final
+source revision.[^issue-978-evidence]
+
+[^issue-972-handler]: [Fixed handler settings and lifetime implementation](../../../crates/hoimin-cli/src/analyzer/mod.rs).
+[^issue-977-evidence]: [Selection construction counters and verification](../../maintenance/2026-10-18-issues-971-979/task-8-report.md).
+[^issue-978-payload]: [Shared logical payload owner](../../../crates/hoimin-cli/src/analyzer/payload.rs).
+[^issue-978-evidence]: [Accounting, charged peaks, release comparison and early-stop fix](../../maintenance/2026-10-18-issues-971-979/task-9-report.md).

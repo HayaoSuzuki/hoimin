@@ -45,7 +45,7 @@ Copy options:
 Mutation options:
   --operators --exclude-operators --profile
 Safety options:
-  --jobs --max-mutants --max-candidates --analyzer-timeout
+  --jobs --max-mutants --max-candidates
   --baseline-timeout --mutant-timeout --total-timeout --max-memory
   --max-output --max-copy-size --max-workspace-size --min-free-space
   --max-processes --allow-best-effort-memory
@@ -654,11 +654,6 @@ Options:
 
           [default: 10000]
 
-      --analyzer-timeout <DURATION>
-          Per-analyzer-process timeout
-
-          [default: 30s]
-
       --baseline-timeout <DURATION>
           Baseline test timeout
 
@@ -842,11 +837,6 @@ Argument constraints:
   arity: 1
   repeatable: false
   default: 10000
---analyzer-timeout
-  required: false
-  arity: 1
-  repeatable: false
-  default: 30s
 --baseline-timeout
   required: false
   arity: 1
@@ -939,6 +929,11 @@ Arguments:
           Test executable and arguments, passed directly without a shell
 
 Options:
+      --analyzer-timeout <DURATION>
+          Cooperative deadline for discovery across all selected targets, inherited by verify
+
+          [default: 30s]
+
       --root <DIR>
           Project root used to resolve relative paths
 
@@ -1011,11 +1006,6 @@ Options:
           Maximum candidates to discover before mutation starts
 
           [default: 10000]
-
-      --analyzer-timeout <DURATION>
-          Per-analyzer-process timeout
-
-          [default: 30s]
 
       --baseline-timeout <DURATION>
           Baseline test timeout
@@ -1095,6 +1085,11 @@ Mutation operator IDs and selector families:
 Argument constraints:
 
 ```text
+--analyzer-timeout
+  required: false
+  arity: 1
+  repeatable: false
+  default: 30s
 --root
   required: false
   arity: 1
@@ -1185,11 +1180,6 @@ Argument constraints:
   arity: 1
   repeatable: false
   default: 10000
---analyzer-timeout
-  required: false
-  arity: 1
-  repeatable: false
-  default: 30s
 --baseline-timeout
   required: false
   arity: 1

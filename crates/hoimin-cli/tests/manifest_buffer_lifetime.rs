@@ -9,7 +9,7 @@ use std::future::Future;
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::mpsc;
+use std::sync::{Mutex, mpsc};
 use std::task::{Context, Poll, Waker};
 use std::time::Duration;
 
@@ -20,6 +20,8 @@ struct ManifestAllocator;
 
 #[global_allocator]
 static ALLOCATOR: ManifestAllocator = ManifestAllocator;
+
+static OBSERVATION: Mutex<()> = Mutex::new(());
 
 static TRACKING: AtomicBool = AtomicBool::new(false);
 static MANIFEST_BYTES: AtomicUsize = AtomicUsize::new(0);
@@ -110,7 +112,7 @@ fn write_public_manifest(
 ) -> (PathBuf, PlanManifest, usize) {
     let root = directory.join("project");
     std::fs::create_dir(&root).unwrap();
-    let payload = "x".repeat(256 * 1024);
+    let payload = "x".repeat(128 * 1024);
     let mut source = String::new();
     for index in 0..24 {
         writeln!(source, "record_{index} = ['{payload}']").unwrap();
@@ -158,14 +160,15 @@ fn write_public_manifest(
     let manifest: PlanManifest = serde_json::from_slice(&bytes.snapshot()).unwrap();
     assert_eq!(manifest.candidates.len(), 24);
     let manifest_size = bytes.len();
-    assert!(manifest_size > 12 * 1024 * 1024);
+    assert!(manifest_size > 6 * 1024 * 1024);
     let path = directory.join("plan.json");
     std::fs::write(&path, bytes.snapshot()).unwrap();
     (path, manifest, manifest_size)
 }
 
-#[test]
-fn public_prepare_releases_manifest_bytes_before_source_read_and_preserves_preview() {
+fn assert_manifest_lifetime_and_preview(count: usize) {
+    // Arrange: serialize the allocator observation shared by these named cases.
+    let _observation = OBSERVATION.lock().unwrap();
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .max_blocking_threads(1)
@@ -183,80 +186,90 @@ fn public_prepare_releases_manifest_bytes_before_source_read_and_preserves_previ
     let (path, manifest, manifest_size) =
         write_public_manifest(&runtime, directory.path(), &marker);
 
-    for count in [1, 5] {
-        let requested = VerifySelection::Top {
-            count: NonZeroUsize::new(count).unwrap(),
-            policy: TopSelectionPolicy::Strict,
-            offset: 0,
-        };
-        let gate = hold_blocking_reader(&runtime);
-        let mut prepare = Box::pin(prepare_verify_selection(
-            &path,
-            &requested,
-            OutputFormat::Json,
-        ));
-        let entered = runtime.enter();
-        MANIFEST_BYTES.store(manifest_size, Ordering::SeqCst);
-        ALLOCATIONS.store(0, Ordering::SeqCst);
-        RELEASES.store(0, Ordering::SeqCst);
-        BUFFER.store(0, Ordering::SeqCst);
-        TRACKING.store(true, Ordering::SeqCst);
-        let poll = prepare
-            .as_mut()
-            .poll(&mut Context::from_waker(Waker::noop()));
-        TRACKING.store(false, Ordering::SeqCst);
-        drop(entered);
-        assert!(
-            matches!(poll, Poll::Pending),
-            "source read must remain queued"
-        );
-        assert_eq!(
-            ALLOCATIONS.load(Ordering::SeqCst),
-            1,
-            "unique input allocation"
-        );
-        assert_eq!(
-            RELEASES.load(Ordering::SeqCst),
-            1,
-            "raw JSON must be freed before source reading"
-        );
-        assert_eq!(BUFFER.load(Ordering::SeqCst), 0);
-        drop(gate);
-        let verified = runtime.block_on(prepare).unwrap();
-        let mut api_bytes = Vec::new();
-        verified
-            .preview()
-            .write(OutputFormat::Json, &mut api_bytes)
-            .unwrap();
-        let api: serde_json::Value = serde_json::from_slice(&api_bytes).unwrap();
-        let rows = api["candidates"].as_array().unwrap();
-        assert_eq!(rows.len(), count);
-        for (row, candidate) in rows.iter().zip(&manifest.candidates) {
-            assert_eq!(row["id"], candidate.id);
-            assert_eq!(row["rank"], candidate.rank);
-            assert_eq!(row["original"], candidate.original);
-            assert_eq!(row["replacement"], candidate.replacement);
-        }
-        let output = process_runtime.block_on(async {
-            tokio::time::timeout(
-                Duration::from_secs(30),
-                tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
-                    .arg("verify")
-                    .arg(&path)
-                    .args(["--top", &count.to_string(), "--dry-run"])
-                    .env("TMPDIR", directory.path())
-                    .kill_on_drop(true)
-                    .output(),
-            )
-            .await
-            .expect("public dry-run deadline")
-            .unwrap()
-        });
-        assert!(output.status.success(), "{output:?}");
-        assert_eq!(
-            serde_json::from_slice::<serde_json::Value>(&output.stdout).unwrap(),
-            api
-        );
-        assert!(!marker.exists());
+    let requested = VerifySelection::Top {
+        count: NonZeroUsize::new(count).unwrap(),
+        policy: TopSelectionPolicy::Strict,
+        offset: 0,
+    };
+    let gate = hold_blocking_reader(&runtime);
+    let mut prepare = Box::pin(prepare_verify_selection(
+        &path,
+        &requested,
+        OutputFormat::Json,
+    ));
+    let entered = runtime.enter();
+    MANIFEST_BYTES.store(manifest_size, Ordering::SeqCst);
+    ALLOCATIONS.store(0, Ordering::SeqCst);
+    RELEASES.store(0, Ordering::SeqCst);
+    BUFFER.store(0, Ordering::SeqCst);
+    TRACKING.store(true, Ordering::SeqCst);
+    // Act: poll preparation while the source-read worker remains queued.
+    let poll = prepare
+        .as_mut()
+        .poll(&mut Context::from_waker(Waker::noop()));
+    TRACKING.store(false, Ordering::SeqCst);
+    drop(entered);
+    // Assert: the input buffer is gone before source I/O, and previews agree.
+    assert!(
+        matches!(poll, Poll::Pending),
+        "source read must remain queued"
+    );
+    assert_eq!(
+        ALLOCATIONS.load(Ordering::SeqCst),
+        1,
+        "unique input allocation"
+    );
+    assert_eq!(
+        RELEASES.load(Ordering::SeqCst),
+        1,
+        "raw JSON must be freed before source reading"
+    );
+    assert_eq!(BUFFER.load(Ordering::SeqCst), 0);
+    drop(gate);
+    let verified = runtime.block_on(prepare).unwrap();
+    let mut api_bytes = Vec::new();
+    verified
+        .preview()
+        .write(OutputFormat::Json, &mut api_bytes)
+        .unwrap();
+    let api: serde_json::Value = serde_json::from_slice(&api_bytes).unwrap();
+    let rows = api["candidates"].as_array().unwrap();
+    assert_eq!(rows.len(), count);
+    for (row, candidate) in rows.iter().zip(&manifest.candidates) {
+        assert_eq!(row["id"], candidate.id);
+        assert_eq!(row["rank"], candidate.rank);
+        assert_eq!(row["original"], candidate.original);
+        assert_eq!(row["replacement"], candidate.replacement);
     }
+    let output = process_runtime.block_on(async {
+        tokio::time::timeout(
+            Duration::from_secs(30),
+            tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
+                .arg("verify")
+                .arg(&path)
+                .args(["--top", &count.to_string(), "--dry-run"])
+                .env("TMPDIR", directory.path())
+                .kill_on_drop(true)
+                .output(),
+        )
+        .await
+        .expect("public dry-run deadline")
+        .unwrap()
+    });
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&output.stdout).unwrap(),
+        api
+    );
+    assert!(!marker.exists());
+}
+
+#[test]
+fn public_prepare_releases_manifest_bytes_before_source_read_for_top_one() {
+    assert_manifest_lifetime_and_preview(1);
+}
+
+#[test]
+fn public_prepare_releases_manifest_bytes_before_source_read_for_top_five() {
+    assert_manifest_lifetime_and_preview(5);
 }

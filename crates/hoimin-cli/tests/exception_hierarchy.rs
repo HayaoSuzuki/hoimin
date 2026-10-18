@@ -61,9 +61,12 @@ async fn hierarchy_plan_verify_detects_dependency_changes_additions_and_deletion
     ];
     for (change, change_dependency) in cases {
         let dir = fixture();
-        let plan = hoimin_cli::plan::create(config(dir.path(), &[]))
-            .await
-            .unwrap();
+        let plan = hoimin_cli::plan::create(
+            config(dir.path(), &[]),
+            hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap(),
+        )
+        .await
+        .unwrap();
         assert_eq!(plan.manifest.candidates.len(), 2);
         assert_eq!(plan.manifest.normalized_config.fingerprint_inputs.len(), 2);
         let ids = plan
@@ -91,9 +94,12 @@ async fn hierarchy_plan_verify_detects_dependency_changes_additions_and_deletion
 #[tokio::test]
 async fn hierarchy_exclusion_and_import_roots_apply_to_index_and_fingerprint() {
     let dir = fixture();
-    let excluded = hoimin_cli::plan::create(config(dir.path(), &["--exclude", "errors.py"]))
-        .await
-        .unwrap();
+    let excluded = hoimin_cli::plan::create(
+        config(dir.path(), &["--exclude", "errors.py"]),
+        hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap(),
+    )
+    .await
+    .unwrap();
     assert_eq!(
         excluded.manifest.candidates,
         Vec::<RankedPlanCandidate>::new()
@@ -108,9 +114,12 @@ async fn hierarchy_exclusion_and_import_roots_apply_to_index_and_fingerprint() {
         dir.path().join("lib/errors.py"),
     )
     .unwrap();
-    let included = hoimin_cli::plan::create(config(dir.path(), &["--import-root", "lib"]))
-        .await
-        .unwrap();
+    let included = hoimin_cli::plan::create(
+        config(dir.path(), &["--import-root", "lib"]),
+        hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap(),
+    )
+    .await
+    .unwrap();
     assert_eq!(included.manifest.candidates.len(), 2);
     assert_eq!(
         included.manifest.normalized_config.fingerprint_inputs.len(),
@@ -131,9 +140,12 @@ fn python() -> PathBuf {
 #[tokio::test]
 async fn hierarchy_run_uses_same_candidates_and_mutants_change_python_behavior() {
     let dir = fixture();
-    let plan = hoimin_cli::plan::create(config(dir.path(), &[]))
-        .await
-        .unwrap();
+    let plan = hoimin_cli::plan::create(
+        config(dir.path(), &[]),
+        hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap(),
+    )
+    .await
+    .unwrap();
     let test = "import service\nfrom errors import Child\ntry:\n service.f()\nexcept Exception as e:\n assert type(e) is Child\nelse:\n raise AssertionError('no exception')\n";
     let report = run_mutants(dir.path(), test).await;
     assert_eq!(report["summary"]["counts"]["killed"], 2, "{report}");
@@ -205,9 +217,12 @@ async fn hierarchy_rejects_duplicate_module_identities_and_shadowed_namespace_po
         std::fs::create_dir_all(dir.path().join("lib/pkg")).unwrap();
         std::fs::create_dir_all(dir.path().join("pkg")).unwrap();
         write_sources(dir.path(), &sources);
-        let plan = hoimin_cli::plan::create(config(dir.path(), &["--import-root", "lib"]))
-            .await
-            .unwrap();
+        let plan = hoimin_cli::plan::create(
+            config(dir.path(), &["--import-root", "lib"]),
+            hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap(),
+        )
+        .await
+        .unwrap();
         assert!(plan.manifest.candidates.is_empty(), "{name}");
     }
 }
@@ -255,9 +270,12 @@ async fn hierarchy_audit_submodule_must_be_loaded_before_use() {
             ),
         ],
     );
-    let plan = hoimin_cli::plan::create(config(dir.path(), &[]))
-        .await
-        .unwrap();
+    let plan = hoimin_cli::plan::create(
+        config(dir.path(), &[]),
+        hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap(),
+    )
+    .await
+    .unwrap();
     assert!(
         plan.manifest.candidates.is_empty(),
         "{:?}",
@@ -291,9 +309,12 @@ async fn hierarchy_audit_relative_imports_cannot_mix_namespace_identities() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let plan = hoimin_cli::plan::create(config(dir.path(), &["--import-root", "lib"]))
-        .await
-        .unwrap();
+    let plan = hoimin_cli::plan::create(
+        config(dir.path(), &["--import-root", "lib"]),
+        hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap(),
+    )
+    .await
+    .unwrap();
     assert!(
         plan.manifest.candidates.is_empty(),
         "{:?}",
@@ -316,7 +337,11 @@ async fn hierarchy_audit_index_bounds_visible_alias_expansion() {
         dir.path(),
         &[("errors.py", &errors), ("service.py", &service)],
     );
-    let result = hoimin_cli::plan::create(config(dir.path(), &[])).await;
+    let result = hoimin_cli::plan::create(
+        config(dir.path(), &[]),
+        hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap(),
+    )
+    .await;
     assert!(
         result.is_err(),
         "alias expansion must hit the bounded index limit"
@@ -342,9 +367,12 @@ async fn hierarchy_audit_relative_imports_use_the_imported_module_name() {
             ),
         ],
     );
-    let plan = hoimin_cli::plan::create(config(dir.path(), &["--import-root", "lib"]))
-        .await
-        .unwrap();
+    let plan = hoimin_cli::plan::create(
+        config(dir.path(), &["--import-root", "lib"]),
+        hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap(),
+    )
+    .await
+    .unwrap();
     assert_eq!(plan.manifest.candidates.len(), 1);
     assert_eq!(plan.manifest.candidates[0].candidate.replacement, "Root");
 }
@@ -383,9 +411,12 @@ async fn hierarchy_audit_interpreter_modules_cannot_resolve_to_project_files() {
             "{}",
             String::from_utf8_lossy(&output.stderr)
         );
-        let plan = hoimin_cli::plan::create(config(dir.path(), &[]))
-            .await
-            .unwrap();
+        let plan = hoimin_cli::plan::create(
+            config(dir.path(), &[]),
+            hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap(),
+        )
+        .await
+        .unwrap();
         assert!(
             plan.manifest.candidates.is_empty(),
             "{name}: {:?}",
@@ -411,9 +442,12 @@ async fn hierarchy_audit_early_submodules_and_nested_stdlib_names_remain_eligibl
             ),
         ],
     );
-    let plan = hoimin_cli::plan::create(config(dir.path(), &[]))
-        .await
-        .unwrap();
+    let plan = hoimin_cli::plan::create(
+        config(dir.path(), &[]),
+        hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap(),
+    )
+    .await
+    .unwrap();
     assert_eq!(plan.manifest.candidates.len(), 1);
     assert_eq!(
         plan.manifest.candidates[0].candidate.replacement,
@@ -483,9 +517,12 @@ async fn hierarchy_review_submodule_loading_overwrites_package_class_attributes(
             "{name}: {}",
             String::from_utf8_lossy(&output.stderr)
         );
-        let plan = hoimin_cli::plan::create(config(dir.path(), &[]))
-            .await
-            .unwrap();
+        let plan = hoimin_cli::plan::create(
+            config(dir.path(), &[]),
+            hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap(),
+        )
+        .await
+        .unwrap();
         assert_eq!(
             plan.manifest.candidates.len(),
             expected_candidates,
@@ -511,9 +548,12 @@ async fn hierarchy_review_deferred_self_import_is_not_an_initialization_cycle() 
             ),
         ],
     );
-    let plan = hoimin_cli::plan::create(config(dir.path(), &[]))
-        .await
-        .unwrap();
+    let plan = hoimin_cli::plan::create(
+        config(dir.path(), &[]),
+        hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap(),
+    )
+    .await
+    .unwrap();
     assert_eq!(plan.manifest.candidates.len(), 1);
     assert_eq!(plan.manifest.candidates[0].candidate.replacement, "Root");
 }
@@ -527,15 +567,21 @@ async fn hierarchy_review_bounds_deferred_import_dependencies() {
         writeln!(source, "    import dependency{i} as unused").unwrap();
     }
     std::fs::write(dir.path().join("service.py"), &source).unwrap();
-    let plan = hoimin_cli::plan::create(config(dir.path(), &[]))
-        .await
-        .unwrap();
+    let plan = hoimin_cli::plan::create(
+        config(dir.path(), &[]),
+        hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap(),
+    )
+    .await
+    .unwrap();
     assert_eq!(plan.manifest.candidates, Vec::<RankedPlanCandidate>::new());
     source.push_str("    import one_more_dependency as unused\n");
     std::fs::write(dir.path().join("service.py"), source).unwrap();
-    let error = hoimin_cli::plan::create(config(dir.path(), &[]))
-        .await
-        .unwrap_err();
+    let error = hoimin_cli::plan::create(
+        config(dir.path(), &[]),
+        hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap(),
+    )
+    .await
+    .unwrap_err();
     assert!(error.to_string().contains("summary limit"), "{error}");
 }
 
@@ -590,9 +636,12 @@ async fn hierarchy_review_imported_attribute_writes_invalidate_other_aliases() {
             "{name}: {}",
             String::from_utf8_lossy(&output.stderr)
         );
-        let plan = hoimin_cli::plan::create(config(dir.path(), &[]))
-            .await
-            .unwrap();
+        let plan = hoimin_cli::plan::create(
+            config(dir.path(), &[]),
+            hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap(),
+        )
+        .await
+        .unwrap();
         assert_eq!(
             plan.manifest.candidates.len(),
             expected_candidates,
@@ -684,9 +733,12 @@ async fn hierarchy_review_attribute_write_forms_match_python() {
             "{name}: {}",
             String::from_utf8_lossy(&output.stderr)
         );
-        let plan = hoimin_cli::plan::create(config(dir.path(), &[]))
-            .await
-            .unwrap();
+        let plan = hoimin_cli::plan::create(
+            config(dir.path(), &[]),
+            hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap(),
+        )
+        .await
+        .unwrap();
         let eligible = matches!(name, "unchanged" | "unrelated");
         assert_eq!(
             plan.manifest.candidates.len(),
@@ -706,15 +758,21 @@ async fn hierarchy_review_bounds_import_alias_correlations() {
         writeln!(source, "    import errors as alias{i}").unwrap();
     }
     std::fs::write(dir.path().join("service.py"), &source).unwrap();
-    let plan = hoimin_cli::plan::create(config(dir.path(), &[]))
-        .await
-        .unwrap();
+    let plan = hoimin_cli::plan::create(
+        config(dir.path(), &[]),
+        hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap(),
+    )
+    .await
+    .unwrap();
     assert_eq!(plan.manifest.candidates, Vec::<RankedPlanCandidate>::new());
     source.push_str("    import errors as one_more_alias\n");
     std::fs::write(dir.path().join("service.py"), source).unwrap();
-    let error = hoimin_cli::plan::create(config(dir.path(), &[]))
-        .await
-        .unwrap_err();
+    let error = hoimin_cli::plan::create(
+        config(dir.path(), &[]),
+        hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap(),
+    )
+    .await
+    .unwrap_err();
     assert!(error.to_string().contains("summary limit"), "{error}");
 }
 
@@ -747,9 +805,12 @@ async fn hierarchy_assignment_alias_cannot_leave_rebound_destination_eligible() 
         assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), expected);
     }
     std::fs::write(dir.path().join("service.py"), service).unwrap();
-    let plan = hoimin_cli::plan::create(config(dir.path(), &[]))
-        .await
-        .unwrap();
+    let plan = hoimin_cli::plan::create(
+        config(dir.path(), &[]),
+        hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap(),
+    )
+    .await
+    .unwrap();
     assert!(
         plan.manifest.candidates.is_empty(),
         "{:?}",
@@ -765,9 +826,12 @@ async fn hierarchy_assignment_alias_invalidates_local_class_constructor() {
             "class Root(Exception): pass\nclass Child(Root): pass\nother = Root\n{write}def f():\n    raise Child()\n"
         );
         std::fs::write(dir.path().join("service.py"), source).unwrap();
-        let plan = hoimin_cli::plan::create(config(dir.path(), &[]))
-            .await
-            .unwrap();
+        let plan = hoimin_cli::plan::create(
+            config(dir.path(), &[]),
+            hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap(),
+        )
+        .await
+        .unwrap();
         assert_eq!(plan.manifest.candidates.len(), expected, "{write}");
     }
 }
@@ -783,15 +847,21 @@ async fn hierarchy_assignment_edges_have_an_independent_limit() {
     // Repeating an edge does not consume another retained entry.
     source.push_str("    alias0 = e\n");
     std::fs::write(dir.path().join("service.py"), &source).unwrap();
-    let plan = hoimin_cli::plan::create(config(dir.path(), &[]))
-        .await
-        .unwrap();
+    let plan = hoimin_cli::plan::create(
+        config(dir.path(), &[]),
+        hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap(),
+    )
+    .await
+    .unwrap();
     assert_eq!(plan.manifest.candidates, Vec::<RankedPlanCandidate>::new());
     source.push_str("    one_more = e\n");
     std::fs::write(dir.path().join("service.py"), source).unwrap();
-    let error = hoimin_cli::plan::create(config(dir.path(), &[]))
-        .await
-        .unwrap_err();
+    let error = hoimin_cli::plan::create(
+        config(dir.path(), &[]),
+        hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap(),
+    )
+    .await
+    .unwrap_err();
     assert!(error.to_string().contains("summary limit"), "{error}");
 }
 
@@ -807,7 +877,7 @@ async fn hierarchy_outcomes_distinguish_skipped_analysis_from_policy_exclusions(
         ("bare", format!("{definitions}def target():\n    raise\n"), None),
     ] {
         std::fs::write(dir.path().join("service.py"), source).unwrap();
-        let plan = hoimin_cli::plan::create(config(dir.path(), &[])).await.unwrap();
+        let plan = hoimin_cli::plan::create(config(dir.path(), &[]), hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap()).await.unwrap();
         assert!(plan.manifest.candidates.is_empty(), "{name}");
         assert_eq!(plan.manifest.diagnostics.len(), usize::from(reason.is_some()), "{name}: {:?}", plan.manifest.diagnostics);
         for (diagnostic, reason) in plan.manifest.diagnostics.iter().zip(reason) {
@@ -827,9 +897,12 @@ async fn hierarchy_skipped_reasons_are_aggregated_with_first_location() {
             .to_owned()
             + &"    raise Child()\n".repeat(200);
     std::fs::write(dir.path().join("service.py"), source).unwrap();
-    let plan = hoimin_cli::plan::create(config(dir.path(), &[]))
-        .await
-        .unwrap();
+    let plan = hoimin_cli::plan::create(
+        config(dir.path(), &[]),
+        hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap(),
+    )
+    .await
+    .unwrap();
     assert_eq!(plan.manifest.diagnostics.len(), 1);
     let diagnostic = &plan.manifest.diagnostics[0];
     assert!(

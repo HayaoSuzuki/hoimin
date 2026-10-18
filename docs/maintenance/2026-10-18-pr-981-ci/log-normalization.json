@@ -1,0 +1,26 @@
+[
+  {
+    "file": "ci-failure-lean-target-reads.log",
+    "normalization": "Remove only terminal blank lines; preserve all other bytes.",
+    "original_sha256": "3551a61519c43850e8643e00621a9a392f89dd850b0fa70b87a3f3c3729b32f7",
+    "original_bytes": 313,
+    "archived_sha256": "bdec172a2974aaed6086033da8e8ab60676eaa17cc32896e3f5129e3dc078e9e",
+    "archived_bytes": 312
+  },
+  {
+    "file": "lean-target-reads-complete.log",
+    "normalization": "Remove only terminal blank lines; preserve all other bytes.",
+    "original_sha256": "472db908d175adc017a6d859fdc998a4ec1ab204967fe73631cdab814d0bec90",
+    "original_bytes": 525,
+    "archived_sha256": "7f47242e233f9099dc7a29c7306909dc742271609d32f92b5803ebda6bae8ed6",
+    "archived_bytes": 524
+  },
+  {
+    "file": "lean-target-reads-truncated.log",
+    "normalization": "Remove only terminal blank lines; preserve all other bytes.",
+    "original_sha256": "cda4e58f925d6d195256b4837d378905b701f8f50c8284bf881d147fd5922cc9",
+    "original_bytes": 388,
+    "archived_sha256": "8f3377cf482c82acd755ed41cba060845d56efb85b4d0e38a37bbe2339aa741f",
+    "archived_bytes": 387
+  }
+]

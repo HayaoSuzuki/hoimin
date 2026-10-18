@@ -200,11 +200,23 @@ sources:
   revision: 35c21145ccdfb6a044f9ae1dad2a5e4ff90deece
   working_tree: modified
   sha256: bca74014f517c33728e844b9e876a77b24ef3025c7e42fc75afb89d5849580f1
+- id: issue-979-compatibility
+  resource: ../../compatibility.md
+  revision: 4ebed4457519920e9a28f8f653d8ce96985acdad
+  working_tree: clean
+  sha256: 3db98744cba6c95b2828d98298038c52242135a2607f2855c58d100205243fb4
+
+- id: issue-973-evidence
+  resource: ../../maintenance/2026-10-18-issues-971-979/task-4-report.md
+  working_tree: untracked
+  sha256: 7734e75cb40e9041460b3c816ebf2b8f5b56d72f4a63e8db5ee8f7d0cf74236f
+
 ---
 
 # Single project root in saved reports (Issue #949)
 
-Report schema 7 stores the project root only in
+Issue #949 introduced the single root in report schema 7. Current schema 8
+stores it only in
 `run.normalized_config.selection.root` for JSON and
 `normalized_config.selection.root` for `run_started` JSONL. Typed configuration
 readers reject the former outer root even when its value agrees. Review resolves
@@ -213,10 +225,13 @@ configuration contract and still checks report versions and event structure.
 Older report versions require their producing binary or a rerun; changing a
 schema number cannot convert old reports.[^issue-949-reader][^issue-949-record]
 
-This format change raises the release floor to 0.11.0. Session schema 5,
-fingerprint schema 11 and fingerprint bytes remain unchanged. Earlier sections
-retain the versions current for those historical changes; schema 7 supersedes
-schema 6 for current report producers and readers.[^issue-949-record]
+That change raised the floor to 0.11.0 and retained fingerprint 11 and session 5.
+Issue #979 now requires floor 0.12.0, report/event schema 8 and fingerprint 12;
+runtime configuration and execution fingerprints omit discovery timeout.
+Session schema 5 remains. Different ample plan timeouts produce the same current
+execution fingerprint when discovery results agree; schema-11 fingerprint bytes
+are incompatible. The environment field-13 framing alone remains unchanged.
+Earlier sections retain their historical versions.[^issue-949-record][^issue-979-compatibility]
 
 [^issue-949-reader]: [Shared report readers](../../../crates/hoimin-cli/src/artifacts/run_report.rs).
 [^issue-949-record]: [Issue #949 design, self-reviews and verification](../../maintenance/2026-10-16-issue-949.md).
@@ -520,3 +535,14 @@ configuration decoding or the JSON/JSONL read boundary.[^issue-939-verification]
 [^issue-939-reader]: [Shared report reader](../../../crates/hoimin-cli/src/artifacts/run_report.rs).
 [^issue-939-compatibility]: [Duplicate report configuration compatibility notice](../../compatibility.md#duplicate-report-configuration-fields).
 [^issue-939-verification]: [Issue 939 implementation and verification](../../maintenance/2026-10-16-issue-939.md).
+
+# Preflight fingerprint ownership (Issue #973)
+
+`RunState::with_fingerprint` was removed because preflight overwrote its value.
+Fresh BeginSession, resumed LoadSession and a fresh fallback after LoadSession
+all use the preflight fingerprint. Enabled sessions without it still fail with
+`MissingFingerprint`; disabled sessions need none, and stopping before preflight
+does not begin a session. No compatibility constructor remains.[^issue-973-evidence]
+
+[^issue-979-compatibility]: [Current format and fingerprint migration](../../compatibility.md).
+[^issue-973-evidence]: [Fingerprint-flow characterization and constructor removal](../../maintenance/2026-10-18-issues-971-979/task-4-report.md).

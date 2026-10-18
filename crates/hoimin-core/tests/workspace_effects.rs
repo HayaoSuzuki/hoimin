@@ -97,3 +97,20 @@ fn remaining_budget_observation_round_trips_with_effect_identity() {
         event
     );
 }
+
+#[test]
+fn analysis_effect_rejects_obsolete_per_request_candidate_limit() {
+    // Arrange: an otherwise valid file request carries the removed session setting.
+    let json = serde_json::json!({
+        "id": 62,
+        "target": {"path": "src/calc.py", "lines": [], "symbols": []},
+        "final_target": true,
+        "max_candidates": 10,
+    });
+
+    // Act.
+    let decoded = serde_json::from_value::<hoimin_core::AnalyzeFile>(json);
+
+    // Assert: accepting it would permit callers to believe per-file overrides apply.
+    assert!(decoded.is_err());
+}

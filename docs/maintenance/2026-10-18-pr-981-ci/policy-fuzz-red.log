@@ -1,0 +1,14 @@
+error[rejected]: failed to satisfy license requirements
+  ┌─ path+file:///Users/hayao/RustroverProjects/hoimin/.worktrees/issue-971-979-cli-analyzer-resource-safety/crates/hoimin-core#0.12.0-synthesized.toml:4:12
+  │
+4 │ license = "Elastic-2.0"
+  │            ━━━━━━━━━━━
+  │            │
+  │            rejected: license is not explicitly allowed
+  │
+  ├ Elastic-2.0 - Elastic License 2.0:
+  ├   - No additional metadata available for license
+  ├ hoimin-core v0.12.0
+    └── hoimin-fuzz v0.0.0
+
+licenses FAILED, sources ok

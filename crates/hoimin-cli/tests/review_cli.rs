@@ -251,3 +251,267 @@ async fn review_record_plan_reference_has_no_run_identity() {
             .is_none()
     );
 }
+
+#[cfg(unix)]
+fn replace_with_fifo(path: &std::path::Path) {
+    if path.exists() {
+        std::fs::remove_file(path).unwrap();
+    }
+    let c_path = std::ffi::CString::new(path.as_os_str().as_encoded_bytes()).unwrap();
+    // SAFETY: c_path is a valid NUL-terminated fixture path; mkfifo retains no pointer.
+    assert_eq!(unsafe { libc::mkfifo(c_path.as_ptr(), 0o600) }, 0);
+}
+
+#[cfg(unix)]
+struct ReviewChild(Option<std::process::Child>);
+
+#[cfg(unix)]
+impl Drop for ReviewChild {
+    fn drop(&mut self) {
+        if let Some(child) = self.0.as_mut() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+    }
+}
+
+#[cfg(unix)]
+fn run_without_fifo_wait(args: &[String], fifo: &std::path::Path) -> (i32, Vec<u8>, Vec<u8>) {
+    use std::io::{Read, Seek};
+    use std::os::unix::fs::OpenOptionsExt;
+    use std::process::Command;
+    use std::time::{Duration, Instant};
+
+    // File-backed capture cannot block a successful JSON response on pipe capacity.
+    let mut stdout = tempfile::tempfile().unwrap();
+    let mut stderr = tempfile::tempfile().unwrap();
+    let mut child = ReviewChild(Some(
+        Command::new(env!("CARGO_BIN_EXE_hoimin"))
+            .args(&args[1..])
+            .stdout(stdout.try_clone().unwrap())
+            .stderr(stderr.try_clone().unwrap())
+            .spawn()
+            .unwrap(),
+    ));
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let timed_out = loop {
+        if child.0.as_mut().unwrap().try_wait().unwrap().is_some() {
+            break false;
+        }
+        if Instant::now() >= deadline {
+            break true;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    };
+    // Release a broken blocking opener, then terminate and reap the process
+    // before asserting the deadline. Drop also reaps on an unexpected panic.
+    let _rescue = timed_out.then(|| {
+        std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .custom_flags(libc::O_NONBLOCK)
+            .open(fifo)
+            .unwrap()
+    });
+    if timed_out {
+        let _ = child.0.as_mut().unwrap().kill();
+    }
+    let status = child.0.as_mut().unwrap().wait().unwrap();
+    child.0 = None;
+    let mut out = Vec::new();
+    let mut err = Vec::new();
+    stdout.rewind().unwrap();
+    stderr.rewind().unwrap();
+    stdout.read_to_end(&mut out).unwrap();
+    stderr.read_to_end(&mut err).unwrap();
+    assert!(
+        !timed_out,
+        "review waited for a FIFO writer: {}; stdout={}; stderr={}",
+        fifo.display(),
+        String::from_utf8_lossy(&out),
+        String::from_utf8_lossy(&err),
+    );
+    (status.code().unwrap(), out, err)
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn review_fifo_plan_is_rejected_without_waiting_for_a_writer() {
+    // Arrange
+    let (dir, args) = fixture().await;
+    let path = std::path::Path::new(&args[3]);
+    replace_with_fifo(path);
+
+    // Act
+    let (code, out, err) = run_without_fifo_wait(&args, path);
+
+    // Assert
+    assert_eq!(code, 2);
+    assert_eq!(out, [] as [u8; 0]);
+    assert!(String::from_utf8_lossy(&err).contains("not a file"));
+    assert!(!dir.path().join("reviews.sqlite3").exists());
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn review_fifo_report_is_rejected_without_waiting_for_a_writer() {
+    // Arrange
+    let (dir, mut args) = fixture().await;
+    let path = dir.path().join("report.json");
+    replace_with_fifo(&path);
+    args.extend(["--report".into(), path.to_str().unwrap().into()]);
+
+    // Act
+    let (code, out, err) = run_without_fifo_wait(&args, &path);
+
+    // Assert
+    assert_eq!(code, 2);
+    assert_eq!(out, [] as [u8; 0]);
+    assert!(String::from_utf8_lossy(&err).contains("not a file"));
+    assert!(!dir.path().join("reviews.sqlite3").exists());
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn review_fifo_source_without_store_is_unavailable_without_waiting() {
+    // Arrange
+    let (dir, args) = fixture().await;
+    let path = dir.path().join("sample.py");
+    replace_with_fifo(&path);
+
+    // Act
+    let (code, out, err) = run_without_fifo_wait(&args, &path);
+
+    // Assert
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&err));
+    let list: Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(list["candidates"][0]["applicability"], "source_unavailable");
+    assert!(!dir.path().join("reviews.sqlite3").exists());
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn review_fifo_source_with_store_is_unavailable_without_waiting() {
+    // Arrange
+    let (dir, args) = fixture().await;
+    assert_eq!(run(record_args(&args)).await.0, 0);
+    let path = dir.path().join("sample.py");
+    replace_with_fifo(&path);
+
+    // Act
+    let (code, out, err) = run_without_fifo_wait(&args, &path);
+
+    // Assert
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&err));
+    let list: Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(list["candidates"][0]["applicability"], "source_unavailable");
+    assert!(list["candidates"][0]["review"].is_null());
+    assert_eq!(
+        list["candidates"][0]["history"].as_array().unwrap().len(),
+        1
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn review_fifo_fingerprint_with_store_does_not_wait_for_a_writer() {
+    // Arrange
+    let (dir, args) = fixture().await;
+    assert_eq!(run(record_args(&args)).await.0, 0);
+    let path = dir.path().join("config.toml");
+    replace_with_fifo(&path);
+    let mut plan: Value = serde_json::from_slice(&std::fs::read(&args[3]).unwrap()).unwrap();
+    plan["normalized_config"]["fingerprint_inputs"] = serde_json::json!([{
+        "path": "config.toml", "hash": "a".repeat(64)
+    }]);
+    std::fs::write(&args[3], serde_json::to_vec(&plan).unwrap()).unwrap();
+
+    // Act
+    let (code, out, err) = run_without_fifo_wait(&args, &path);
+
+    // Assert
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&err));
+    let list: Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(list["candidates"][0]["applicability"], "current");
+    assert_eq!(list["candidates"][0]["review"]["revision"], 1);
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn review_accepts_a_symlink_to_a_regular_plan() {
+    // Arrange
+    let (dir, mut args) = fixture().await;
+    let alias = dir.path().join("plan-link.json");
+    std::os::unix::fs::symlink(&args[3], &alias).unwrap();
+    args[3] = alias.to_str().unwrap().into();
+
+    // Act
+    let (code, out, err) = run(args).await;
+
+    // Assert
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&err));
+    let list: Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(list["candidates"][0]["applicability"], "current");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn review_regular_source_symlink_with_store_remains_current() {
+    // Arrange
+    let (dir, args) = fixture().await;
+    assert_eq!(run(record_args(&args)).await.0, 0);
+    let source = dir.path().join("sample.py");
+    let target = dir.path().join("source-target.py");
+    std::fs::rename(&source, &target).unwrap();
+    std::os::unix::fs::symlink(&target, &source).unwrap();
+
+    // Act
+    let (code, out, err) = run(args).await;
+
+    // Assert
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&err));
+    let list: Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(list["candidates"][0]["applicability"], "current");
+    assert_eq!(list["candidates"][0]["review"]["revision"], 1);
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn review_store_symlink_is_rejected() {
+    // Arrange
+    let (dir, args) = fixture().await;
+    assert_eq!(run(record_args(&args)).await.0, 0);
+    let store = dir.path().join("reviews.sqlite3");
+    let target = dir.path().join("store-target.sqlite3");
+    std::fs::rename(&store, &target).unwrap();
+    std::os::unix::fs::symlink(&target, &store).unwrap();
+
+    // Act
+    let (code, out, err) = run(args).await;
+
+    // Assert
+    assert_eq!(code, 2);
+    assert_eq!(out, [] as [u8; 0]);
+    assert!(String::from_utf8_lossy(&err).contains("store must be a regular file, not a symlink"));
+}
+
+#[tokio::test]
+async fn review_missing_source_with_store_is_unavailable() {
+    // Arrange
+    let (dir, args) = fixture().await;
+    assert_eq!(run(record_args(&args)).await.0, 0);
+    std::fs::remove_file(dir.path().join("sample.py")).unwrap();
+
+    // Act
+    let (code, out, err) = run(args).await;
+
+    // Assert
+    assert_eq!(code, 0, "{}", String::from_utf8_lossy(&err));
+    let list: Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(list["candidates"][0]["applicability"], "source_unavailable");
+    assert!(list["candidates"][0]["review"].is_null());
+    assert_eq!(
+        list["candidates"][0]["history"].as_array().unwrap().len(),
+        1
+    );
+}

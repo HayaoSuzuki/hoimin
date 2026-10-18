@@ -6,6 +6,7 @@ use ruff_python_ast::{
 };
 use ruff_text_size::{Ranged, TextRange};
 use std::collections::{HashMap, HashSet};
+use std::fmt::Write as _;
 
 #[derive(Default)]
 pub(super) struct FunctionIndex {
@@ -198,7 +199,7 @@ pub(super) fn emit(
     source: &str,
     limit: usize,
     cancelled: &impl Fn() -> bool,
-    mut candidate: impl FnMut(String),
+    mut candidate: impl FnMut(String) -> bool,
 ) {
     let Some(callee) = source_text(source, call.func.range()) else {
         return;
@@ -211,7 +212,7 @@ pub(super) fn emit(
         let Some(text) = source_text(source, argument.range()) else {
             return;
         };
-        positional.push(format!("({text}),"));
+        positional.push(text);
     }
     let mut keywords = Vec::new();
     for keyword in &call.arguments.keywords {
@@ -228,7 +229,7 @@ pub(super) fn emit(
         let Some(value) = source_text(source, keyword.value.range()) else {
             return;
         };
-        keywords.push(format!("{name}=({value}),"));
+        keywords.push((name, value));
     }
     let mut emitted = 0usize;
     for &removed in optional {
@@ -247,17 +248,19 @@ pub(super) fn emit(
             if cancelled() {
                 return;
             }
-            replacement.push_str(argument);
+            write!(replacement, "({argument}),").unwrap();
         }
         for (index, keyword) in keywords.iter().enumerate() {
             if cancelled() {
                 return;
             }
             if index != removed {
-                replacement.push_str(keyword);
+                write!(replacement, "{}=({}),", keyword.0, keyword.1).unwrap();
             }
         }
         replacement.push_str("))");
-        candidate(replacement);
+        if !candidate(replacement) {
+            return;
+        }
     }
 }

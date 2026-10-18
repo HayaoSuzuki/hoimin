@@ -4,6 +4,7 @@ use collecting_writer::CollectingWriter;
 
 use std::collections::BTreeSet;
 use std::ffi::OsString;
+use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -250,63 +251,72 @@ fn assert_public_candidate(actual: &serde_json::Value, expected: &CandidateInput
     assert_eq!(actual["column"], expected.column);
 }
 
-#[tokio::test]
-async fn ordered_target_spools_match_the_lean_terminal_cases() {
+async fn assert_ordered_target_spool(case_id: &str) {
+    // Arrange: consume the checked-in Lean terminal projection with a positive handler limit.
     let cases = parse_corpus(CORPUS).expect("valid Lean corpus");
-    for case_id in ["complete_two_targets", "truncated_non_final_target"] {
-        let item = cases
-            .iter()
-            .find(|item| item.id == case_id)
-            .expect("owned target case");
-        let fixture = TargetFixture::new(case_id).expect("target fixture");
-        let root = camino::Utf8PathBuf::from_path_buf(fixture.root.clone()).unwrap();
-        let mut handler = AnalyzerHandler::new(root);
-        let mut spool = None;
-        let mut requests = 0_u64;
-        for (index, path) in fixture.paths.iter().enumerate() {
-            if spool.is_some() {
-                break;
-            }
-            requests += 1;
-            let finished = handler
-                .handle(
-                    AnalyzeFile {
-                        id: EffectId(index as u64 + 1),
-                        target: TargetSlice {
-                            path: path.as_str().into(),
-                            lines: Vec::new(),
-                            symbols: Vec::new(),
-                        },
-                        final_target: index + 1 == fixture.paths.len(),
-                        max_candidates: item.limit,
-                    },
-                    &MutationOperatorSelection::default(),
-                    MutationProfile::Full,
-                )
-                .await
-                .expect("bounded target analysis");
-            assert_eq!(
-                finished.truncated,
-                item.expected_truncated
-                    && index + 1 == usize::try_from(requests).expect("fixture request count")
-            );
-            spool = finished.spool;
+    let item = cases
+        .iter()
+        .find(|item| item.id == case_id)
+        .expect("owned target case");
+    let fixture = TargetFixture::new(case_id).expect("target fixture");
+    let root = camino::Utf8PathBuf::from_path_buf(fixture.root.clone()).unwrap();
+    let limit = usize::try_from(item.limit).expect("target limit fits usize");
+    let mut handler = AnalyzerHandler::new(
+        root,
+        MutationOperatorSelection::default(),
+        MutationProfile::Full,
+        NonZeroUsize::new(limit).expect("ordered target cases require a positive limit"),
+    );
+    let mut spool = None;
+    let mut requests = 0_u64;
+    for (index, path) in fixture.paths.iter().enumerate() {
+        if spool.is_some() {
+            break;
         }
-        let spool = spool.expect("Lean terminal case finishes the spool");
-        let mut cursor = CandidateCursor::START;
-        let mut sequences = Vec::new();
-        while let Some((candidate, next)) = CandidateStore::replay_one(&spool, cursor).unwrap() {
-            sequences.push(candidate.sequence);
-            cursor = next;
-        }
-        assert_eq!(requests, item.expected_targets_read);
-        assert_eq!(sequences, item.expected_sequences);
+        requests += 1;
+        let finished = handler
+            .handle(AnalyzeFile {
+                id: EffectId(index as u64 + 1),
+                target: TargetSlice {
+                    path: path.as_str().into(),
+                    lines: Vec::new(),
+                    symbols: Vec::new(),
+                },
+                final_target: index + 1 == fixture.paths.len(),
+            })
+            .await
+            .expect("bounded target analysis");
         assert_eq!(
-            usize::try_from(spool.records).expect("fixture spool count"),
-            item.expected_identities.len()
+            finished.truncated,
+            item.expected_truncated
+                && index + 1 == usize::try_from(requests).expect("fixture request count")
         );
-        assert!(item.expected_spool_finished);
+        spool = finished.spool;
     }
+    let spool = spool.expect("Lean terminal case finishes the spool");
+    let mut cursor = CandidateCursor::START;
+    let mut sequences = Vec::new();
+    while let Some((candidate, next)) = CandidateStore::replay_one(&spool, cursor).unwrap() {
+        sequences.push(candidate.sequence);
+        cursor = next;
+    }
+    assert_eq!(requests, item.expected_targets_read);
+    assert_eq!(sequences, item.expected_sequences);
+    assert_eq!(
+        usize::try_from(spool.records).expect("fixture spool count"),
+        item.expected_identities.len()
+    );
+    assert!(item.expected_spool_finished);
+}
+
+#[tokio::test]
+async fn complete_two_target_spool_matches_the_lean_terminal_case() {
+    assert_ordered_target_spool("complete_two_targets").await;
+}
+
+#[tokio::test]
+async fn truncated_non_final_target_spool_matches_the_lean_terminal_case() {
+    assert_ordered_target_spool("truncated_non_final_target").await;
 }
 
 struct Fixture {

@@ -343,17 +343,6 @@ impl RunState {
         }
     }
 
-    pub fn with_fingerprint(
-        run_id: impl Into<String>,
-        config: RunConfig,
-        fingerprint: RunFingerprint,
-        resource_control: crate::ResourceControl,
-    ) -> Self {
-        let mut state = Self::new(run_id, config, resource_control);
-        state.fingerprint = Some(fingerprint);
-        state
-    }
-
     /// Creates a state that executes only candidates whose IDs are explicitly selected.
     #[must_use]
     pub fn with_candidate_filter(
@@ -641,7 +630,6 @@ impl RunState {
             id,
             target,
             final_target,
-            max_candidates: self.config.limits.max_candidates.get() as u64,
         })])
     }
 

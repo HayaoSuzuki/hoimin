@@ -27,7 +27,7 @@ are no git-source exceptions. Local paths are reviewed in repository diffs;
 the source check does not prove their origin or safety.
 
 The repository's Elastic-2.0 license is allowed only for `hoimin-core` and
-`hoimin-cli` in the 0.11 series and the private `hoimin-fuzz` 0.0.0 harness. The
+`hoimin-cli` in the 0.12 series and the private `hoimin-fuzz` 0.0.0 harness. The
 harness declares the license that already governs repository code. This does
 not allow unrelated ELv2 dependencies. `libfuzzer-sys` 0.4.13 has a scoped NCSA
 allowance for its bundled libFuzzer. Update these bounded exceptions explicitly

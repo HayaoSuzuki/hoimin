@@ -25,6 +25,8 @@ pub use preview::VerifyPreview;
 mod ranking;
 #[cfg(test)]
 mod ranking_tests;
+#[cfg(test)]
+mod review_tests;
 mod sampling;
 mod selection;
 #[cfg(test)]
@@ -35,7 +37,7 @@ mod validation_tests;
 use ranking::{RANKING_RULE_VERSION, rank_candidates, validate_ranking, validate_ranking_against};
 pub use ranking::{RankedPlanCandidate, RankingReason, RankingReasonCode};
 
-pub const PLAN_SCHEMA_VERSION: u32 = 9;
+pub const PLAN_SCHEMA_VERSION: u32 = 10;
 
 pub(crate) struct ReadOnlyPlan {
     pub manifest: PlanManifest,
@@ -60,6 +62,18 @@ pub(crate) fn read_for_review(path: &Path) -> Result<ReadOnlyPlan, PlanError> {
         })?;
     let manifest = decode_manifest(&bytes)?;
     validate_header(&manifest)?;
+    // Header validation rejects duplicate paths before this borrowed index is built.
+    #[cfg(test)]
+    review_tests::SOURCE_WORK.with_borrow_mut(|work| work.index_builds += 1);
+    let sources: BTreeMap<&Utf8Path, &str> = manifest
+        .sources
+        .iter()
+        .map(|source| {
+            #[cfg(test)]
+            review_tests::SOURCE_WORK.with_borrow_mut(|work| work.source_visits += 1);
+            (source.path.as_path(), source.hash.as_str())
+        })
+        .collect();
     let project = std::fs::canonicalize(&manifest.normalized_config.selection.root)
         .map_err(|error| invalid(error.to_string()))?;
     let project = Utf8PathBuf::from_path_buf(project)
@@ -70,11 +84,9 @@ pub(crate) fn read_for_review(path: &Path) -> Result<ReadOnlyPlan, PlanError> {
         if id.as_str() != candidate.id {
             return Err(invalid("candidate id does not match its descriptor".into()));
         }
-        if !manifest
-            .sources
-            .iter()
-            .any(|source| source.path == candidate.path && source.hash == candidate.file_hash)
-        {
+        #[cfg(test)]
+        review_tests::SOURCE_WORK.with_borrow_mut(|work| work.membership_queries += 1);
+        if sources.get(candidate.path.as_path()).copied() != Some(candidate.file_hash.as_str()) {
             return Err(invalid(
                 "candidate source record is missing or inconsistent".into(),
             ));
@@ -271,12 +283,14 @@ fn map_discovery_error(error: &hoimin_core::EffectFailed, caller: DiscoveryCalle
 
 async fn discover_plan_targets(
     config: &RunConfig,
+    discovery: &hoimin_core::DiscoveryConfig,
     targets: &[TargetSlice],
     #[cfg(test)] control: Option<DiscoveryControl>,
 ) -> Result<Discovery, hoimin_core::EffectFailed> {
     crate::live_progress::stage("analyzing sources");
     crate::analyzer::discover_config_targets(
         config,
+        discovery,
         targets,
         #[cfg(test)]
         control,
@@ -293,9 +307,11 @@ async fn discover_plan_targets(
 #[tracing::instrument(name = "plan", level = "debug", skip_all)]
 pub async fn create(
     config: RunConfig<hoimin_core::EnvironmentRequest>,
+    discovery_config: hoimin_core::DiscoveryConfig,
 ) -> Result<PlanOutput, PlanError> {
     create_inner(
         config,
+        discovery_config,
         #[cfg(test)]
         None,
     )
@@ -305,15 +321,20 @@ pub async fn create(
 #[cfg(test)]
 async fn create_with_discovery_control(
     config: RunConfig<hoimin_core::EnvironmentRequest>,
+    discovery_config: hoimin_core::DiscoveryConfig,
     control: Option<DiscoveryControl>,
 ) -> Result<PlanOutput, PlanError> {
-    create_inner(config, control).await
+    create_inner(config, discovery_config, control).await
 }
 
 async fn create_inner(
     config: RunConfig<hoimin_core::EnvironmentRequest>,
+    discovery_config: hoimin_core::DiscoveryConfig,
     #[cfg(test)] control: Option<DiscoveryControl>,
 ) -> Result<PlanOutput, PlanError> {
+    discovery_config
+        .validate()
+        .map_err(|error| PlanError::ManifestInvalid(error.to_string()))?;
     crate::live_progress::stage("preparing plan");
     resource::validate_plan_resource_policy(config.allow_best_effort_memory)?;
     let config = shell::prepare_run_config(config)
@@ -325,6 +346,7 @@ async fn create_inner(
     let sources = source_records(&config.selection.root, &targets).await?;
     let discovery = discover_plan_targets(
         &config,
+        &discovery_config,
         &targets,
         #[cfg(test)]
         control,
@@ -356,7 +378,7 @@ async fn create_inner(
         schema_version: PLAN_SCHEMA_VERSION,
         kind: "plan".to_owned(),
         ranking_rule_version: RANKING_RULE_VERSION,
-        normalized_config: config.into_plan_config(),
+        normalized_config: config.into_plan_config(discovery_config),
         sources,
         candidates,
         truncated,
@@ -939,6 +961,7 @@ async fn validate_requested_candidates(
     let discovery_targets = requested_discovery_targets(targets, &requested_paths);
     let discovery = discover_plan_targets(
         config,
+        &manifest.normalized_config.discovery,
         &discovery_targets,
         #[cfg(test)]
         control,
@@ -1201,10 +1224,7 @@ mod tests {
             }
         }
 
-        pub(super) fn config(
-            &self,
-            analyzer_timeout: &str,
-        ) -> RunConfig<hoimin_core::EnvironmentRequest> {
+        pub(super) fn config(&self) -> RunConfig<hoimin_core::EnvironmentRequest> {
             let command = format!(
                 "from pathlib import Path; Path({:?}).write_text('ran')",
                 self.marker.to_string_lossy()
@@ -1216,8 +1236,6 @@ mod tests {
                 self.root.as_os_str().to_owned(),
                 OsString::from("--file"),
                 OsString::from("src/calc.py"),
-                OsString::from("--analyzer-timeout"),
-                OsString::from(analyzer_timeout),
                 OsString::from("--allow-best-effort-memory"),
                 OsString::from("--"),
                 OsString::from("python"),
@@ -1227,7 +1245,7 @@ mod tests {
             .unwrap() else {
                 panic!("plan arguments parsed as another command")
             };
-            args.into_run_config().unwrap()
+            args.into_configs().unwrap().0
         }
     }
 
@@ -1262,7 +1280,9 @@ mod tests {
         .expect("test config is valid")
         .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
         .unwrap()
-        .into_plan_config();
+        .into_plan_config(
+            hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap(),
+        );
         PlanManifest {
             schema_version: PLAN_SCHEMA_VERSION,
             kind: "plan".to_owned(),
@@ -1311,11 +1331,16 @@ mod tests {
             let project = Project::new();
             let source = "x = 1 + 2\n".repeat(count);
             std::fs::write(project.root.join("src/calc.py"), &source).unwrap();
-            let config = project.config("30s");
+            let config = project.config();
             let targets = crate::target::TargetHandler::resolve(&config.selection)
                 .await
                 .unwrap();
-            let output = super::create(config.clone()).await.unwrap();
+            let output = super::create(
+                config.clone(),
+                hoimin_core::DiscoveryConfig::new(Duration::from_secs(30)).unwrap(),
+            )
+            .await
+            .unwrap();
             // Each line has one binary and four integer-neighbor candidates.
             assert_eq!(output.manifest.candidates.len(), 5 * count);
             let ids = output
@@ -1356,7 +1381,12 @@ mod tests {
         std::fs::write(project.root.join("src/calc.py"), &source).unwrap();
 
         let started = std::time::Instant::now();
-        let output = super::create(project.config("30s")).await.unwrap();
+        let output = super::create(
+            project.config(),
+            hoimin_core::DiscoveryConfig::new(Duration::from_secs(30)).unwrap(),
+        )
+        .await
+        .unwrap();
         let manifest_json = serde_json::to_vec(&output.manifest).unwrap();
         let elapsed = started.elapsed();
 
@@ -1436,12 +1466,32 @@ mod tests {
         assert_eq!(actual, vec![first_requested, second_requested]);
     }
 
+    #[tokio::test]
+    async fn create_rejects_oversized_saved_discovery_before_project_work() {
+        // Arrange: deserialization checks positivity; semantic validation owns the ceiling.
+        let project = Project::new();
+        let mut config = project.config();
+        config.selection.root = project.root.join("missing");
+        let discovery = serde_json::from_value(serde_json::json!({
+            "analyzer_timeout": {"secs": hoimin_core::MAX_TIMEOUT.as_secs(), "nanos": 1}
+        }))
+        .unwrap();
+        // Act.
+        let error = super::create(config, discovery).await.unwrap_err();
+        // Assert.
+        assert_eq!(
+            error.to_string(),
+            "plan.manifest.invalid: invalid zero or overflowing limit: --analyzer-timeout"
+        );
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn create_timeout_uses_the_common_plan_discovery_identity_without_output() {
         let project = Project::new();
         let (control, entered, release) = paused_control();
         let operation = tokio::spawn(create_with_discovery_control(
-            project.config("20ms"),
+            project.config(),
+            hoimin_core::DiscoveryConfig::new(Duration::from_millis(20)).unwrap(),
             Some(control),
         ));
         wait_for_discovery_entry(entered).await;
@@ -1465,9 +1515,14 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn verify_timeout_uses_the_common_identity_before_the_test_command() {
         let project = Project::new();
-        let mut output = super::create(project.config("1s")).await.unwrap();
-        output.manifest.normalized_config.limits.analyzer_timeout =
-            project.config("20ms").limits.analyzer_timeout;
+        let mut output = super::create(
+            project.config(),
+            hoimin_core::DiscoveryConfig::new(Duration::from_secs(1)).unwrap(),
+        )
+        .await
+        .unwrap();
+        output.manifest.normalized_config.discovery =
+            hoimin_core::DiscoveryConfig::new(Duration::from_millis(20)).unwrap();
         let manifest_path = project.root.join("plan.json");
         std::fs::write(
             &manifest_path,
@@ -1502,7 +1557,8 @@ mod tests {
         let project = Project::new();
         let timeout = Duration::from_millis(250);
         let output = create_with_discovery_control(
-            project.config("250ms"),
+            project.config(),
+            hoimin_core::DiscoveryConfig::new(timeout).unwrap(),
             Some(DiscoveryControl::new(
                 Arc::new(tempfile::tempdir().unwrap()),
                 || {},
@@ -1514,7 +1570,7 @@ mod tests {
             output
                 .manifest
                 .normalized_config
-                .limits
+                .discovery
                 .analyzer_timeout
                 .get(),
             timeout
@@ -1537,7 +1593,9 @@ mod tests {
         .await
         .unwrap();
 
-        assert_eq!(verified.config.limits.analyzer_timeout.get(), timeout);
+        let execution = serde_json::to_value(&verified.config).unwrap();
+        assert!(execution.get("discovery").is_none());
+        assert!(execution["limits"].get("analyzer_timeout").is_none());
         assert!(!project.marker.exists());
     }
 

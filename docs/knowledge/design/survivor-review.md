@@ -53,6 +53,28 @@ sources:
   resource: ../../superpowers/plans/2026-10-14-issue-874.md
   working_tree: untracked
   sha256: 9d6b521515606b342e212481e191bb71ad6d8d9af0446326ab028bd54566d970
+- id: issue-975-opener
+  resource: ../../../crates/hoimin-cli/src/artifacts/mod.rs
+  revision: 4ebed4457519920e9a28f8f653d8ce96985acdad
+  working_tree: clean
+  sha256: 035e4667bb363fb27ca359befe48cf8ad0541beb5477807542f6588a44de7935
+
+- id: issue-975-evidence
+  resource: ../../maintenance/2026-10-18-issues-971-979/task-2-report.md
+  working_tree: untracked
+  sha256: 8369e0ecec4d7964e47856822f5b354d39c94a21ea947f629ee241b4ef1994e1
+
+- id: issue-976-reader
+  resource: ../../../crates/hoimin-cli/src/plan.rs
+  revision: 4ebed4457519920e9a28f8f653d8ce96985acdad
+  working_tree: clean
+  sha256: a4b058fa7710143ed50bcc30ea6b10f28c311d863a8826cdea3b2c7f42fff36d
+
+- id: issue-976-evidence
+  resource: ../../maintenance/2026-10-18-issues-971-979/task-3-report.md
+  working_tree: untracked
+  sha256: 307a571dbcb32919333ea375f082598bfe16708d19465b47b0daafeaed294748
+
 ---
 
 # survivorの評価と実行結果の分離
@@ -167,3 +189,27 @@ for design decisions, review passes and executed checks.[^issue-902-record]
 [^issue-902-store]: [Versioned review store validation](../../../crates/hoimin-cli/src/review/store.rs).
 
 [^issue-902-record]: [Issue 902 design and verification record](../../superpowers/plans/2026-10-15-issue-902.md).
+
+## Regular inputs and source membership (Issues #975 and #976)
+
+Artifact reads and existing-store protected-input comparison share a descriptor
+opener. Unix `O_NONBLOCK` prevents waiting for a FIFO writer; descriptor metadata
+then rejects nonregular inputs. The 64 MiB initial/read-growth limits remain.
+Review treats nonregular candidate sources as unavailable. Input symlinks to
+regular files remain valid, while the store keeps its separate symlink rejection.
+Callers retain missing-input and alias diagnostics. This establishes no general
+filesystem I/O deadline.[^issue-975-opener][^issue-975-evidence]
+
+Read-only plan validation builds one borrowed `BTreeMap` of source path to hash
+after header validation rejects duplicate paths. Candidate ID validation precedes
+each source lookup. Candidate output order follows the original vector; source
+permutations do not change acceptance. Construction costs O(S log S), followed
+by O(C log S) lookups, without cloning source or candidate payload. The regression
+records one build, 257 source visits and 256 queries instead of 65,792 visits.
+The archived aligned default-feature CLI timings are observations, not test
+thresholds or a general performance guarantee.[^issue-976-reader][^issue-976-evidence]
+
+[^issue-975-opener]: [Regular-file opening and bounded reads](../../../crates/hoimin-cli/src/artifacts/mod.rs).
+[^issue-975-evidence]: [FIFO child deadlines/reaping and preserved policies](../../maintenance/2026-10-18-issues-971-979/task-2-report.md).
+[^issue-976-reader]: [Read-only plan reader](../../../crates/hoimin-cli/src/plan.rs).
+[^issue-976-evidence]: [Source-work counters and aligned CLI comparison](../../maintenance/2026-10-18-issues-971-979/task-3-report.md).

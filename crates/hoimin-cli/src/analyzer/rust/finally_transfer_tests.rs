@@ -34,6 +34,7 @@ fn analyze(source: &str, selected: bool) -> (Vec<AnalyzerCandidate>, usize, usiz
     LOOP_ANNOTATION_VISITS.set(0);
     let output = analyze_source(
         &AnalyzeRequest {
+            payload: super::payload::PayloadBudget::default(),
             path: Utf8Path::new("nested.py"),
             lines: &[],
             symbols: &[],
@@ -46,7 +47,11 @@ fn analyze(source: &str, selected: bool) -> (Vec<AnalyzerCandidate>, usize, usiz
     assert!(output.diagnostics.is_empty(), "{:?}", output.diagnostics);
     assert!(!output.truncated);
     (
-        output.candidates,
+        output
+            .candidates
+            .into_iter()
+            .map(super::payload::Charged::into_untracked)
+            .collect(),
         LOOP_STATEMENT_VISITS.get(),
         LOOP_ANNOTATION_VISITS.get(),
     )

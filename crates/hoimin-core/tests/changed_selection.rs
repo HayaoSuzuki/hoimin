@@ -73,7 +73,7 @@ proptest! {
             test_argv: vec![CommandArg::Unix(b"python".to_vec())],
             ..RawRunConfig::default()
         };
-        let plan = RunConfig::try_from(raw).unwrap().with_environment(hoimin_core::EnvironmentSnapshot::Untracked).unwrap().into_plan_config();
+        let plan = RunConfig::try_from(raw).unwrap().with_environment(hoimin_core::EnvironmentSnapshot::Untracked).unwrap().into_plan_config(hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap());
         // Act.
         let restored: PlanConfig = serde_json::from_value(serde_json::to_value(plan).unwrap()).unwrap();
         let run = restored.into_run_config(OutputConfig { format: OutputFormat::Json, metrics: None });

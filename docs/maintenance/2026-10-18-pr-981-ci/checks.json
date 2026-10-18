@@ -1,0 +1,58 @@
+{
+  "base_revision": "111244cf1f75b215e04580e38fbba797995f77cc",
+  "checks": [
+    {
+      "name": "registry-tests",
+      "command": ".venv/bin/python -m pytest -q tests/test_performance_shapes.py",
+      "chunk_id": "b5e70b",
+      "wall_time_seconds": 1.222746375,
+      "exit_code": 0,
+      "original_token_count": 0,
+      "output": ""
+    },
+    {
+      "name": "registry-schema",
+      "command": ".venv/bin/python tools/performance_shapes.py check",
+      "chunk_id": "54b1c5",
+      "wall_time_seconds": 0.000007041,
+      "exit_code": 0,
+      "original_token_count": 0,
+      "output": ""
+    },
+    {
+      "name": "docs-site",
+      "command": ".venv/bin/python -m tools.docs_site --output /tmp/hoimin-pr981-ci/site",
+      "chunk_id": "7bcb97",
+      "wall_time_seconds": 0.038272416,
+      "exit_code": 1,
+      "original_token_count": 0,
+      "output": ""
+    },
+    {
+      "name": "okf",
+      "command": ".venv/bin/python docs/maintenance/2026-10-18-issues-971-979/probes/check-okf.py",
+      "chunk_id": "8f31fb",
+      "wall_time_seconds": 0.321261042,
+      "exit_code": 0,
+      "original_token_count": 0,
+      "output": ""
+    },
+    {
+      "name": "docs-site-correct-output",
+      "command": ".venv/bin/python -m tools.docs_site --output site",
+      "chunk_id": "79c5b5",
+      "wall_time_seconds": 0.480589208,
+      "exit_code": 0,
+      "original_token_count": 0,
+      "output": ""
+    }
+  ],
+  "performance_gate": {
+    "command": "CARGO_BUILD_JOBS=2 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 CARGO_NET_OFFLINE=true .venv/bin/python tools/performance_shapes.py gate --output /tmp/hoimin-pr981-ci/gates-green",
+    "completion_tool": "write_stdin",
+    "completion_chunk_id": "227b4c",
+    "observed_exit_code": 0,
+    "exit_provenance": "Recorded from the completed tool response; detailed per-gate result and logs also inspected.",
+    "result": "35 active gates, each executed one passing test"
+  }
+}

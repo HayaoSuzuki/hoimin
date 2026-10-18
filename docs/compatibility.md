@@ -4,6 +4,35 @@ hoimin is currently a 0.x CLI. This policy describes how maintainers classify
 changes and tell users what to update. A patch release can fix incorrect
 behavior; it does not promise identical mutation candidates or scores.
 
+## Discovery timeout ownership in 0.12.0
+
+`--analyzer-timeout` is now a `plan` option. Remove it from direct `run`
+commands. Plans require `normalized_config.discovery.analyzer_timeout`;
+`verify` uses that saved deadline with no override. Runtime limits, recorded
+run configuration and execution fingerprints no longer contain this setting.
+The deadline remains cooperative across the complete discovery phase and
+cannot forcibly interrupt synchronous source reads or parsing.
+
+Plan schema is 10, report/event schema is 8 and fingerprint schema is 12.
+Regenerate schema-9 and older plans with the intended original options and
+update report consumers to schema 8. Read old reports with their producing
+binary or rerun with this version. Keep old artifacts as needed; do not
+hand-edit schema numbers. Typed current-schema readers reject the obsolete
+runtime timeout field and missing discovery settings.
+
+Two successful discoveries of the same inputs with different ample timeouts
+produce the same ordered candidates and candidate IDs. Their saved plan bytes
+differ, while their schema-12 execution fingerprints agree. Schema-11
+fingerprint bytes are deliberately incompatible. An older incomplete
+fingerprint history can return `session.resume.incompatible`; use a new
+`--session PATH` in that case. Completed history retains the existing fresh-run
+behavior. SQLite session schema remains 5; no database migration or deletion
+is performed. Candidate schema 1, mutant-ID v1 and ranking rule 4 are unchanged.
+
+The package compatibility floor is 0.12.0, after published v0.11.10. This notice
+supersedes the current version and release-floor statements in older notices
+below.
+
 ## Single normalized project root in 0.11.0
 
 Plan schema 9 and report schema 7 store the project root only at
@@ -216,7 +245,7 @@ schemas 1–4 remain rejected; this change does not restore legacy migration pat
 | Interface | Maintenance rule | User action when it changes |
 | --- | --- | --- |
 | CLI arguments, defaults and exit codes | Preserve documented usage within a minor series, except documented bug fixes. Removing or changing a supported contract needs a minor-version floor increase. | Update invocation and CI conditions using the release notice. |
-| JSON and JSONL reports | Treat documented schemas as public. Progress accepts only report schema 7, matching the writer; review accepts current-schema JSON. Adding a field may still affect strict readers. | Read old reports with their producing binary, or rerun with the intended version. Plan regeneration alone cannot reconstruct past reports. Files are not automatically converted. |
+| JSON and JSONL reports | Treat documented schemas as public. Progress accepts only report schema 8, matching the writer; review accepts current-schema JSON. Adding a field may still affect strict readers. | Read old reports with their producing binary, or rerun with the intended version. Plan regeneration alone cannot reconstruct past reports. Files are not automatically converted. |
 | Saved plan, ranking and candidate IDs | These are checked execution inputs, not timeless interchange formats. Changes to schema, ranking, identity, source or fingerprints can invalidate a plan. | Regenerate the plan with the intended version and inputs. Do not hand-edit versions or IDs to bypass validation. |
 | Session database and resume | Resume is allowed only under the implementation's schema and fingerprint checks. Migration support must be stated explicitly. | Keep the old database and binary if needed; start a new session when compatibility is not supported. |
 | Default operators, profiles and selection | Changes can alter candidate count, runtime and the population behind a score. Default expansion is an observable compatibility change. | Review the operator set and budget; use matching candidates and validation settings for comparisons. |

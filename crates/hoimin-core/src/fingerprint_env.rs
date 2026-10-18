@@ -256,7 +256,9 @@ mod tests {
                 EnvironmentSnapshot::captured(vec!["FLAG".into()], "a".repeat(64)).unwrap(),
             )
             .unwrap();
-        let plan = config.clone().into_plan_config();
+        let plan = config.clone().into_plan_config(
+            crate::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap(),
+        );
         assert_eq!(plan.environment, config.environment);
         assert_eq!(
             plan.into_run_config(config.output.clone()).environment,

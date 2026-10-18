@@ -1,0 +1,12 @@
+Traceback (most recent call last):
+  File "<frozen runpy>", line 203, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-971-979-cli-analyzer-resource-safety/tools/docs_site.py", line 290, in <module>
+    main()
+    ~~~~^^
+  File "/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-971-979-cli-analyzer-resource-safety/tools/docs_site.py", line 286, in main
+    build_site(Path(__file__).resolve().parents[1], args.output)
+    ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-971-979-cli-analyzer-resource-safety/tools/docs_site.py", line 250, in build_site
+    raise ValueError(msg)
+ValueError: Documentation output must be the repository's site directory

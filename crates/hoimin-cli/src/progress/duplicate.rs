@@ -1,9 +1,9 @@
 use std::collections::HashMap;
-use std::fs::File;
 use std::io::{self, BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
 use super::input::InputDisposition;
+use crate::artifacts::open_regular_file;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum DuplicateReason {
@@ -85,20 +85,6 @@ fn identical_regular_files(left: &Path, right: &Path) -> io::Result<bool> {
         left.consume(count);
         right.consume(count);
     }
-}
-
-fn open_regular_file(path: &Path) -> io::Result<Option<File>> {
-    let mut options = std::fs::OpenOptions::new();
-    options.read(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        // A previously regular path can become a FIFO between reads. Open
-        // without waiting, then inspect the descriptor we actually obtained.
-        options.custom_flags(libc::O_NONBLOCK);
-    }
-    let file = options.open(path)?;
-    Ok(file.metadata()?.is_file().then_some(file))
 }
 
 #[cfg(test)]

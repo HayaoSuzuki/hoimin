@@ -66,7 +66,27 @@ decoding, and SQLite companion names. Callers retain their path resolution,
 validation order, and destination-protection policies. Keep plan validation,
 review assessment, progress comparison and verify execution policies with their
 respective commands. Shared decoding does not make
-their acceptance rules interchangeable.
+their acceptance rules interchangeable. Its regular-file opener uses Unix
+`O_NONBLOCK` before checking the obtained descriptor, so FIFO inputs do not wait
+for a writer. Input symlinks to regular files remain valid; review-store symlink
+rejection stays with the caller. This does not bound general filesystem I/O.
+Read-only plan validation builds one borrowed source-path/hash index after header
+validation and checks candidate identity before source membership.
+
+The analyzer owns an internal 16 MiB retained-payload budget shared across
+producers, conversion and files. Keep reservations beside the allocations they
+cover; move leases with their data and release them only when that data drops.
+Detached workers retain charges, including when the handler receives another
+request. The [analyzer contract](knowledge/design/analyzer.md#retained-candidate-payload-issue-978)
+records counted bytes, exclusions and measurement scope. `--max-memory` remains
+a descendant-process limit.
+
+Construct `RunState` without a supplied fingerprint. Preflight supplies the
+live fingerprint used by fresh and resumed sessions; missing fingerprints still
+fail when sessions are enabled. The removed `with_fingerprint` constructor had
+its value overwritten before use. Common raw run/plan CLI arguments now stay in
+one composed structure and normalize through the shared boundary; retain native
+test argv until the platform-specific encoding boundary.
 
 `tools/release_policy.py` owns the supported platform identities, Rust targets,
 wheel tags and version syntax without importing tooling dependencies. Keep the
@@ -106,13 +126,17 @@ but do not print it again. Short progress, review, help and completion output
 still uses the locally owned synchronous writers. See the
 [owned writer plan and evidence](superpowers/plans/2026-10-14-issue-889.md).
 
-Construct analyzers with `AnalyzerHandler::new(root) -> Self`. Source access and
-candidate-store errors occur during analysis. See the [initialization API record](maintenance/2026-10-13-analyzer-initialization.md)
-for the removed constructor, internal Rust migration and verification. The
-[handler session contract](../crates/hoimin-cli/src/analyzer/mod.rs) explains
-accumulation across targets, finalization, interruption state, and spool cleanup.
-Keep session settings and limits consistent; an interrupted wait does not prove
-blocking analysis has stopped. See the [issue #866 evidence record](superpowers/plans/2026-10-14-issue-866.md)
+Construct analyzers with `AnalyzerHandler::new(root, operators, profile,
+max_candidates) -> Self`, using a positive `NonZeroUsize` limit. The handler owns
+these settings for its lifetime; file requests carry only their ID, target and
+final-target marker. Finalization starts the next session with an empty store
+and the same settings. Use a new handler to change settings. Construction performs
+no project I/O or store allocation; source access and candidate-store errors occur
+during analysis. The [initialization API record](maintenance/2026-10-13-analyzer-initialization.md)
+records the earlier root-only migration; [Issues #971–#979](maintenance/2026-10-18-issues-971-979.md)
+record its successor. The [handler session contract](../crates/hoimin-cli/src/analyzer/mod.rs)
+explains accumulation, transfer and spool cleanup. An interrupted wait does not
+prove blocking analysis has stopped. See the [issue #866 evidence record](superpowers/plans/2026-10-14-issue-866.md)
 for the implementation and existing tests behind that contract. The
 [shell coordination contract](../crates/hoimin-cli/src/shell.rs) governs acceptance,
 drain, and managed-root cleanup outside the handler.
@@ -201,7 +225,7 @@ scope; it supplements this procedure rather than owning another update checklist
 
 Select the process backend before constructing `RunState`. Pass its
 `ProcessHandler::resource_control()` description as the final argument to
-`RunState::new`, `with_fingerprint`, `with_candidate_filter`, or
+`RunState::new`, `with_candidate_filter`, or
 `with_ordered_candidate_filter`. `RunStarted::minimal` also requires an explicit
 `ResourceControl` as its final argument. Rust callers using the older constructor
 signatures must supply this argument; there is no inferred or default backend.
@@ -966,7 +990,14 @@ semantics; abstract lifecycle oracles alone cannot do so.
 
 ## Analyzer timeout invariants
 
-Plan creation and verification rediscovery apply the normalized
+`DiscoveryConfig` owns the positive, bounded plan-only timeout. Plans require
+`normalized_config.discovery.analyzer_timeout`, and verify reads it before
+converting to execution-only configuration. `RawRunLimits`, `RunLimits` and
+execution fingerprints omit it; both limit types reject unknown saved fields.
+The raw-plan timeout oracle composes discovery validation with shared run
+normalization.
+
+Plan creation and verification rediscovery apply the saved
 `--analyzer-timeout` as one absolute deadline for the complete discovery phase;
 the deadline is not restarted for each target. Both plan entry points report
 the same `plan.discovery: analyzer.timeout` diagnostic and exit 2. Plan
@@ -1124,11 +1155,45 @@ filtering, deduplication, source ordering, or candidate-limit behavior.
 
 For one source file, the token scanner, AST pass, and type-annotation pass
 each retain no more than `max_candidates + 1` candidate records and
-deduplication identities before their bounded merge. This is deliberately a
-candidate-retention bound, not a general Hoimin memory bound: source text,
-parser tokens, AST facts, and small per-node replacement lists remain
-proportional to source size. `--max-memory` controls descendants rather than
-the Hoimin CLI, so it does not bound these analyzer structures.
+deduplication identities before their bounded merge. An additional internal
+16 MiB (16,777,216-byte) budget covers retained candidate payload. One plan
+owner spans all producers, merge, files and already converted candidates. A run
+handler shares its owner with live blocking work, including workers that remain
+after cancellation or a dropped future. Reusing the handler does not reset
+charges held by those workers. Completed disk-spool records consume no payload
+budget.
+
+The budget counts logical UTF-8 lengths of owned original, replacement, path
+and symbol strings, converted operator/file-hash/ID strings, and separately
+owned deduplication strings. Non-Clone leases move with candidates; eviction,
+deduplication and dropping candidates release their charges. Validation reserves
+a conservative scratch bound beside the core code that owns the Latin-1 encoding,
+identity, normalized-path and ID copies. Spool writes reserve their exact encoded
+record length before allocating the buffer. Enum and hierarchy destinations,
+container fragments and optional-keyword fragments borrow existing strings.
+
+Exceeding the budget or overflowing byte arithmetic fails with
+`analyzer.payload_limit` (inside the existing plan-discovery error wrapper for
+plan). It never produces a shortened successful result. This resource failure
+can precede global merge, count selection or record validation. The independent
+2 MiB record limit still applies to selected candidates; the analyzer does not
+validate every generated record before eviction.
+
+The guarantee covers retained populations. It excludes source buffers, parser
+state, AST/facts, diagnostics, fixed structures, collection capacity, allocator
+overhead and disk. One in-flight generated candidate and the annotation batch
+of at most three replacements also remain outside the budget; their bytes depend
+on source size. Thus the budget does not bound analyzer RSS or all construction
+scratch. `--max-memory` controls descendants rather than the Hoimin CLI.
+
+`analyzer::payload_tests` checks deterministic charged peaks, release/transfer,
+producer/file overlap and early construction stops. The ignored
+`analyzer::payload_probes` cases measure the production plan-accounting path on
+SHA-256-verified audit fixtures under `/tmp/hoimin-design-audit-5d3aee95/analysis-inputs`.
+Invoke them with `cargo test --release -p hoimin-cli --lib analyzer::payload_probes
+-- --ignored --nocapture --test-threads=2`; missing or changed fixtures fail.
+These charged peaks include conservative reservations and differ from final
+candidate-string totals and process RSS.
 
 `depth::parse_checked` owns AST acquisition for symbol definitions, mutation
 analysis, and exception module summaries. It retains the unchecked parser result
@@ -1371,7 +1436,7 @@ cargo test -p hoimin-cli --lib analyzer::rust::rust_tests::comprehension_excepti
 
 ## Extending plan ranking
 
-Plan manifests use schema version 9 and ranking rule version 4. The schema
+Plan manifests use schema version 10 and ranking rule version 4. The schema
 version describes the manifest's serialized shape; the ranking rule version
 describes the category and scoring semantics used to order its candidates.
 Change the ranking rule version whenever those semantics change, even when the
@@ -1537,8 +1602,8 @@ working-directory and fingerprint consumers use that same field. Worker
 fingerprint rechecks replace the root on a cloned config, leaving the prepared
 configuration intact. Keep all other selection and configuration validation.
 
-Plan schema 9 and report schema 7 reject the former outer root in typed readers.
-See the [0.11.0 migration notice](compatibility.md#single-normalized-project-root-in-0110)
+Plan schema 10 and report schema 8 reject the former outer root in typed readers.
+See the [0.12.0 migration notice](compatibility.md#discovery-timeout-ownership-in-0120)
 and [implementation evidence](maintenance/2026-10-16-issue-949.md). Progress's
 opaque configuration contract is unchanged; strict review reads the one root
 from the decoded selection. Existing Lean oracle comparisons cover retained
@@ -1555,11 +1620,11 @@ or null arrays fail decoding in typed configuration/event readers and review;
 verify rejects affected plans before baseline execution. Progress retains its
 opaque `normalized_config` object/null contract. See the
 [0.9.0 compatibility notice](compatibility.md#required-saved-configuration-arrays-in-090)
-for older inputs missing an array. Plan schema 9 stores fingerprint input records
+for older inputs missing an array. Plan schema 10 stores fingerprint input records
 only in `normalized_config.fingerprint_inputs`; the top-level duplicate is
-rejected. Regenerate schema-8 and older plans before verify or review; see the
-[0.11.0 compatibility notice](compatibility.md#single-normalized-project-root-in-0110). Fingerprint schema
-11 frames the ordered import roots under field tag 9, the ordered include/exclude
+rejected. Regenerate schema-9 and older plans before verify or review; see the
+[0.12.0 compatibility notice](compatibility.md#discovery-timeout-ownership-in-0120). Fingerprint schema
+12 frames the ordered import roots under field tag 9, the ordered include/exclude
 copy patterns under tags 10/11, and configured source roots under tag 12,
 preventing old-session reuse. Source file hashes retain their set semantics;
 source-root order separately captures worker Python import precedence. Patterns retain
@@ -1675,7 +1740,7 @@ existing UTF-8 Lean/source-index proofs do not establish codec correspondence.
 
 ## Resume budget compatibility
 
-Fingerprint schema 11 omits `max_mutants` from verdict compatibility; this
+Fingerprint schema 12 omits `max_mutants` from verdict compatibility; this
 budget rule was introduced in schema 10. SQLite schema 5 persists each run's
 accepted limit as a positive eight-byte big-endian unsigned value. Newly created
 DBs enforce NOT NULL as well as the BLOB type, length and positivity constraints.
@@ -1760,13 +1825,15 @@ The captured constructor and deserializer reject empty, duplicate, unsorted, or
 noncanonical name sets and digests outside 64 lowercase hexadecimal characters.
 No `prepared` mode or separate optional hash exists. Reports and plans write an
 explicit `environment` object with a `state` tag; omission in the prior writer
-was also a valid current untracked encoding. Plan schema 9/report schema 7 require
+was also a valid current untracked encoding. Plan schema 10/report schema 8 require
 the explicit snapshot and reject the older representation rather than adapting it.
 Regenerate older plans; retain old reports with their producing binary.
 
-Fingerprint schema 11 retains the original field-13 name/digest framing. Exact
-untracked and captured pre-refactor digest goldens verify byte compatibility.
-SQLite schema 4 and budget selection are unchanged. Verify captures the same saved
+Fingerprint schema 12 retains the original field-13 environment name/digest
+framing, but removing discovery timeout changes the complete execution fingerprint.
+Schema-11 digest goldens verify that the old fingerprints differ; separate exact
+untracked and captured vectors freeze schema-12 bytes. SQLite schema 5 and budget
+selection are unchanged. Verify captures the same saved
 name set and compares the complete snapshot before project work or the baseline.
 Captured plaintext is not added to persistence or output; digests do not guarantee
 secrecy for low-entropy values.
@@ -1961,7 +2028,7 @@ status, elapsed time, and optional output through the outcome's domain methods.
 Keep diagnostics independent, and never reconstruct output state from a code.
 `ProcessFinished` JSON requires explicit `output_state`; no legacy default applies.
 
-Report schema 7 and session schema 5 replace the flat result format. Update strict
+Report schema 8 and session schema 5 replace the flat result format. Update strict
 consumers and start a different session path for older databases; no conversion
 adapter is provided. Preserve historical golden files when adding current ones.
 Read the [outcome design](superpowers/reports/issue-895/design.md),
@@ -2032,7 +2099,7 @@ shared selection validator still requires a source for changed selection and
 keeps file, line, and symbol selectors available for intersection. Ranking
 uses the presence of the changed value, including selected context lines.
 
-Plan schema 9 and report schema 7 encode disabled state as `"changed": null` and enabled state
+Plan schema 10 and report schema 8 encode disabled state as `"changed": null` and enabled state
 as `"changed": {"context": 2, "diff_base": "main"}`. The enabled object's
 `context` is required; `diff_base` can be null or omitted. Selection rejects
 unknown fields, including the obsolete sibling `changed_context` and

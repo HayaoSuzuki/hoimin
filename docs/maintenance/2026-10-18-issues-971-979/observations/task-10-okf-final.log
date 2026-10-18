@@ -1,0 +1,457 @@
+{
+  "pages": 49,
+  "sources": 961,
+  "local_links": 1685,
+  "reachable": 49,
+  "new_source_hashes_and_clean_revision_blobs": 17,
+  "errors": [
+    [
+      "docs/knowledge/references/audit-documents.md",
+      "source-footnote missing",
+      [
+        "annotation-followup-correspondence",
+        "annotation-followup-deferred",
+        "annotation-followup-report",
+        "annotation-followup-set",
+        "evaluation-order-bug",
+        "evaluation-order-correspondence",
+        "evaluation-order-perf",
+        "evaluation-order-report",
+        "with-finally-bug",
+        "with-finally-correspondence",
+        "with-finally-performance",
+        "with-finally-report"
+      ]
+    ],
+    [
+      "design-documents.md",
+      "catalog missing",
+      "docs/superpowers/specs/2026-09-25-issue-623-stream-fingerprint-design.md"
+    ],
+    [
+      "design-documents.md",
+      "catalog missing",
+      "docs/superpowers/specs/2026-09-25-issue-627-source-discovery-design.md"
+    ],
+    [
+      "design-documents.md",
+      "catalog missing",
+      "docs/superpowers/specs/2026-09-25-issue-608-borrowed-ranking-design.md"
+    ],
+    [
+      "design-documents.md",
+      "catalog missing",
+      "docs/superpowers/specs/2026-09-25-issue-630-progress-regression-exit-design.md"
+    ],
+    [
+      "design-documents.md",
+      "catalog missing",
+      "docs/superpowers/specs/2026-09-25-issue-632-changed-context-design.md"
+    ],
+    [
+      "design-documents.md",
+      "catalog missing",
+      "docs/superpowers/specs/2026-10-12-philosophy-followup-design.md"
+    ],
+    [
+      "design-documents.md",
+      "catalog missing",
+      "docs/superpowers/specs/2026-09-25-issue-618-manifest-buffer-design.md"
+    ],
+    [
+      "design-documents.md",
+      "catalog missing",
+      "docs/superpowers/specs/2026-09-25-issue-619-missing-source-design.md"
+    ],
+    [
+      "design-documents.md",
+      "catalog missing",
+      "docs/superpowers/specs/2026-09-25-issue-624-resume-budget-design.md"
+    ],
+    [
+      "design-documents.md",
+      "catalog missing",
+      "docs/superpowers/specs/2026-09-25-issue-621-excluded-git-paths-design.md"
+    ],
+    [
+      "design-documents.md",
+      "catalog missing",
+      "docs/superpowers/specs/2026-09-25-issue-614-resume-diagnostics-design.md"
+    ],
+    [
+      "design-documents.md",
+      "catalog missing",
+      "docs/superpowers/specs/2026-09-25-issue-625-progress-dispatch-design.md"
+    ],
+    [
+      "design-documents.md",
+      "catalog missing",
+      "docs/superpowers/specs/2026-09-25-issue-622-source-order-design.md"
+    ],
+    [
+      "design-documents.md",
+      "catalog missing",
+      "docs/superpowers/specs/2026-09-25-issue-615-latin1-positions-design.md"
+    ],
+    [
+      "design-documents.md",
+      "catalog missing",
+      "docs/superpowers/specs/2026-09-25-issue-620-scoped-git-diff-design.md"
+    ],
+    [
+      "design-documents.md",
+      "catalog missing",
+      "docs/superpowers/specs/2026-09-25-issue-612-python-changed-lines-design.md"
+    ],
+    [
+      "design-documents.md",
+      "catalog missing",
+      "docs/superpowers/specs/2026-09-25-issue-616-empty-directories-design.md"
+    ],
+    [
+      "design-documents.md",
+      "catalog missing",
+      "docs/superpowers/specs/2026-09-25-issue-604-preview-details-design.md"
+    ],
+    [
+      "design-documents.md",
+      "catalog missing",
+      "docs/superpowers/specs/2026-09-25-issue-629-stream-workspace-design.md"
+    ],
+    [
+      "design-documents.md",
+      "catalog missing",
+      "docs/superpowers/specs/2026-09-25-issue-628-fingerprint-env-design.md"
+    ],
+    [
+      "design-documents.md",
+      "catalog missing",
+      "docs/superpowers/specs/2026-09-25-issue-605-prepared-annotation-imports-design.md"
+    ],
+    [
+      "design-documents.md",
+      "catalog missing",
+      "docs/superpowers/specs/2026-09-25-issue-611-private-annotation-imports-design.md"
+    ],
+    [
+      "design-documents.md",
+      "catalog missing",
+      "docs/superpowers/specs/2026-09-25-issue-606-manifest-metrics-design.md"
+    ],
+    [
+      "design-documents.md",
+      "catalog missing",
+      "docs/superpowers/specs/2026-09-25-issue-607-stale-plan-details-design.md"
+    ],
+    [
+      "design-documents.md",
+      "catalog missing",
+      "docs/superpowers/specs/2026-09-25-issue-631-offset-allocation-design.md"
+    ],
+    [
+      "design-documents.md",
+      "catalog missing",
+      "docs/superpowers/specs/2026-09-25-issue-609-progress-keys-design.md"
+    ],
+    [
+      "design-documents.md",
+      "catalog missing",
+      "docs/superpowers/specs/2026-09-25-issue-613-buffer-diagnostics-design.md"
+    ],
+    [
+      "design-documents.md",
+      "catalog missing",
+      "docs/superpowers/specs/2026-09-25-issue-610-duplicate-progress-inputs-design.md"
+    ],
+    [
+      "design-documents.md",
+      "catalog missing",
+      "docs/superpowers/specs/2026-09-25-issue-617-glob-exclusion-design.md"
+    ],
+    [
+      "design-documents.md",
+      "catalog missing",
+      "docs/superpowers/specs/2026-09-25-issue-626-progress-details-design.md"
+    ],
+    [
+      "audit-documents.md",
+      "catalog missing",
+      "docs/superpowers/reports/2026-09-25-issue-623-stream-fingerprint.md"
+    ],
+    [
+      "audit-documents.md",
+      "catalog missing",
+      "docs/superpowers/reports/2026-09-25-issue-615-latin1-positions.md"
+    ],
+    [
+      "audit-documents.md",
+      "catalog missing",
+      "docs/superpowers/reports/2026-09-25-issue-614-resume-diagnostics.md"
+    ],
+    [
+      "audit-documents.md",
+      "catalog missing",
+      "docs/superpowers/reports/2026-09-25-issue-624-resume-budget.md"
+    ],
+    [
+      "audit-documents.md",
+      "catalog missing",
+      "docs/superpowers/reports/2026-09-25-issue-619-missing-source.md"
+    ],
+    [
+      "audit-documents.md",
+      "catalog missing",
+      "docs/superpowers/reports/2026-09-25-issue-622-source-order.md"
+    ],
+    [
+      "audit-documents.md",
+      "catalog missing",
+      "docs/superpowers/reports/2026-09-25-issue-621-excluded-git-paths.md"
+    ],
+    [
+      "audit-documents.md",
+      "catalog missing",
+      "docs/superpowers/reports/2026-09-25-issue-612-python-changed-lines.md"
+    ],
+    [
+      "audit-documents.md",
+      "catalog missing",
+      "docs/superpowers/reports/2026-09-25-issue-631-offset-allocation.md"
+    ],
+    [
+      "audit-documents.md",
+      "catalog missing",
+      "docs/superpowers/reports/2026-09-25-issue-614-lean-oracle.md"
+    ],
+    [
+      "audit-documents.md",
+      "catalog missing",
+      "docs/superpowers/reports/2026-09-25-issue-611-private-annotation-imports.md"
+    ],
+    [
+      "audit-documents.md",
+      "catalog missing",
+      "docs/superpowers/reports/2026-09-25-issue-616-empty-directories.md"
+    ],
+    [
+      "audit-documents.md",
+      "catalog missing",
+      "docs/superpowers/reports/2026-09-25-issue-617-glob-exclusion.md"
+    ],
+    [
+      "audit-documents.md",
+      "catalog missing",
+      "docs/superpowers/reports/2026-09-25-issue-632-implementation-review.md"
+    ],
+    [
+      "audit-documents.md",
+      "catalog missing",
+      "docs/superpowers/reports/2026-09-25-issue-632-lean-context.md"
+    ],
+    [
+      "audit-documents.md",
+      "catalog missing",
+      "docs/superpowers/reports/2026-09-25-issue-620-scoped-git-diff.md"
+    ],
+    [
+      "audit-documents.md",
+      "catalog missing",
+      "docs/superpowers/reports/2026-09-25-issue-605-prepared-annotation-imports.md"
+    ],
+    [
+      "audit-documents.md",
+      "catalog missing",
+      "docs/superpowers/reports/issue-697/plan.md"
+    ],
+    [
+      "audit-documents.md",
+      "catalog missing",
+      "docs/superpowers/reports/issue-697/design.md"
+    ],
+    [
+      "audit-documents.md",
+      "catalog missing",
+      "docs/superpowers/reports/issue-699/plan.md"
+    ],
+    [
+      "audit-documents.md",
+      "catalog missing",
+      "docs/superpowers/reports/issue-699/design.md"
+    ],
+    [
+      "audit-documents.md",
+      "catalog missing",
+      "docs/superpowers/reports/issue-698/plan.md"
+    ],
+    [
+      "audit-documents.md",
+      "catalog missing",
+      "docs/superpowers/reports/issue-698/design.md"
+    ],
+    [
+      "audit-documents.md",
+      "catalog missing",
+      "docs/superpowers/reports/issue-696/plan.md"
+    ],
+    [
+      "audit-documents.md",
+      "catalog missing",
+      "docs/superpowers/reports/issue-696/design.md"
+    ],
+    [
+      "audit-documents.md",
+      "catalog missing",
+      "docs/superpowers/reports/recent-analyzer-defaults/plan.md"
+    ],
+    [
+      "audit-documents.md",
+      "catalog missing",
+      "docs/superpowers/reports/recent-analyzer-defaults/design.md"
+    ],
+    [
+      "audit-documents.md",
+      "catalog missing",
+      "docs/superpowers/reports/recent-analyzer-defaults/review.md"
+    ],
+    [
+      "audit-documents.md",
+      "catalog missing",
+      "docs/superpowers/reports/recent-analyzer-defaults/formal-audit.md"
+    ],
+    [
+      "audit-documents.md",
+      "catalog missing",
+      "docs/superpowers/reports/issue-705/plan.md"
+    ],
+    [
+      "audit-documents.md",
+      "catalog missing",
+      "docs/superpowers/reports/issue-705/design.md"
+    ],
+    [
+      "audit-documents.md",
+      "catalog missing",
+      "docs/superpowers/reports/issue-702/plan.md"
+    ],
+    [
+      "audit-documents.md",
+      "catalog missing",
+      "docs/superpowers/reports/issue-702/design.md"
+    ],
+    [
+      "audit-documents.md",
+      "catalog missing",
+      "docs/superpowers/reports/method-call-remove/assessment.md"
+    ],
+    [
+      "audit-documents.md",
+      "catalog missing",
+      "docs/superpowers/reports/method-call-remove/plan.md"
+    ],
+    [
+      "audit-documents.md",
+      "catalog missing",
+      "docs/superpowers/reports/method-call-remove/design.md"
+    ],
+    [
+      "audit-documents.md",
+      "catalog missing",
+      "docs/superpowers/reports/method-call-remove/review.md"
+    ],
+    [
+      "audit-documents.md",
+      "catalog missing",
+      "docs/superpowers/reports/issue-703/plan.md"
+    ],
+    [
+      "audit-documents.md",
+      "catalog missing",
+      "docs/superpowers/reports/issue-703/design.md"
+    ],
+    [
+      "audit-documents.md",
+      "catalog missing",
+      "docs/superpowers/reports/issue-704/plan.md"
+    ],
+    [
+      "audit-documents.md",
+      "catalog missing",
+      "docs/superpowers/reports/issue-704/design.md"
+    ],
+    [
+      "audit-documents.md",
+      "catalog missing",
+      "docs/superpowers/reports/function-body-return-constant/assessment.md"
+    ],
+    [
+      "audit-documents.md",
+      "catalog missing",
+      "docs/superpowers/reports/function-body-return-constant/plan.md"
+    ],
+    [
+      "audit-documents.md",
+      "catalog missing",
+      "docs/superpowers/reports/function-body-return-constant/design.md"
+    ],
+    [
+      "audit-documents.md",
+      "catalog missing",
+      "docs/superpowers/reports/function-body-return-constant/review.md"
+    ],
+    [
+      "audit-documents.md",
+      "catalog missing",
+      "docs/superpowers/reports/issue-708/plan.md"
+    ],
+    [
+      "audit-documents.md",
+      "catalog missing",
+      "docs/superpowers/reports/issue-708/design.md"
+    ],
+    [
+      "audit-documents.md",
+      "catalog missing",
+      "docs/superpowers/reports/issue-701/plan.md"
+    ],
+    [
+      "audit-documents.md",
+      "catalog missing",
+      "docs/superpowers/reports/issue-701/design.md"
+    ],
+    [
+      "audit-documents.md",
+      "catalog missing",
+      "docs/superpowers/reports/issue-706/plan.md"
+    ],
+    [
+      "audit-documents.md",
+      "catalog missing",
+      "docs/superpowers/reports/issue-706/design.md"
+    ],
+    [
+      "audit-documents.md",
+      "catalog missing",
+      "docs/superpowers/reports/issue-707/plan.md"
+    ],
+    [
+      "audit-documents.md",
+      "catalog missing",
+      "docs/superpowers/reports/issue-707/design.md"
+    ],
+    [
+      "audit-documents.md",
+      "catalog missing",
+      "docs/superpowers/reports/issue-700/plan.md"
+    ],
+    [
+      "audit-documents.md",
+      "catalog missing",
+      "docs/superpowers/reports/issue-700/design.md"
+    ]
+  ]
+}
+Traceback (most recent call last):
+  File "/tmp/hoimin-design-audit-5d3aee95/task-10-okf-final.py", line 50, in <module>
+    assert errors == baseline['errors'], 'new or changed reference/catalog finding'
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: new or changed reference/catalog finding

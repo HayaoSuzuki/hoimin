@@ -114,7 +114,7 @@ proptest::proptest! {
             test_argv: vec![hoimin_core::CommandArg::Unix(b"python".to_vec())],
             ..hoimin_core::RawRunConfig::default()
         }).unwrap().with_environment(hoimin_core::EnvironmentSnapshot::Untracked).unwrap();
-        let saved = serde_json::to_value(config.into_plan_config()).unwrap();
+        let saved = serde_json::to_value(config.into_plan_config(hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap())).unwrap();
         let plan: hoimin_core::PlanConfig = serde_json::from_value(saved).unwrap();
         let selection = plan.into_run_config(hoimin_core::OutputConfig::default()).selection;
 

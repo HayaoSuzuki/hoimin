@@ -280,7 +280,7 @@ impl EnumIndex {
         expression: &Expr,
         limit: usize,
         cancelled: &impl Fn() -> bool,
-    ) -> Option<(TextRange, Vec<String>)> {
+    ) -> Option<(TextRange, Vec<&str>)> {
         let Expr::Attribute(attribute) = expression else {
             return None;
         };
@@ -303,7 +303,7 @@ impl EnumIndex {
                 return None;
             }
             if id != source {
-                result.push(name.clone());
+                result.push(name.as_str());
                 if result.len() >= limit.saturating_add(1) {
                     break;
                 }

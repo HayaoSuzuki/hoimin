@@ -50,7 +50,7 @@ fn detail_allocations_do_not_scale_with_candidate_body_size() {
             .zip([("killed", 12, 0, 1.0, 1), ("survived", 0, 12, 0.0, 0)])
         {
             let mut doc: Value =
-                serde_json::from_str(include_str!("golden/reports/schema-v7-current.json"))
+                serde_json::from_str(include_str!("golden/reports/schema-v8-current.json"))
                     .unwrap();
             let template = doc["mutants"][0].clone();
             doc["mutants"] = Value::Array(

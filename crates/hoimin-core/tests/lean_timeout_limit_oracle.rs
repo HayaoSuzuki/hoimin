@@ -47,7 +47,7 @@ fn parse_corpus() -> Result<Vec<OracleCase>, String> {
         }
         let item: OracleCase = serde_json::from_str(line)
             .map_err(|error| format!("line {} is invalid JSON: {error}", index + 1))?;
-        if item.schema != 1 || item.mode != "strict" || item.id.is_empty() {
+        if item.schema != 1 || item.mode != "plan" || item.id.is_empty() {
             return Err(format!("{} has an invalid identity or mode", item.id));
         }
         if !ids.insert(item.id.clone()) {
@@ -90,8 +90,6 @@ fn base_raw() -> RawRunConfig {
 
 fn raw_for(item: &OracleCase) -> RawRunConfig {
     let mut raw = base_raw();
-    raw.limits.analyzer_timeout =
-        parse_duration(&item.id, "analyzer_ns", &item.analyzer_ns).unwrap();
     raw.limits.baseline_timeout =
         parse_duration(&item.id, "baseline_ns", &item.baseline_ns).unwrap();
     raw.limits.total_timeout = parse_duration(&item.id, "total_ns", &item.total_ns).unwrap();
@@ -115,11 +113,14 @@ fn normalized_plan_for(item: &OracleCase) -> Result<PlanConfig, serde_json::Erro
             .unwrap()
             .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
             .unwrap()
-            .into_plan_config(),
+            .into_plan_config(
+                hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap(),
+            ),
     )
     .unwrap();
     let raw = raw_for(item);
-    value["limits"]["analyzer_timeout"] = duration_json(raw.limits.analyzer_timeout);
+    value["discovery"]["analyzer_timeout"] =
+        duration_json(parse_duration(&item.id, "analyzer_ns", &item.analyzer_ns).unwrap());
     value["limits"]["baseline_timeout"] = duration_json(raw.limits.baseline_timeout);
     value["limits"]["total_timeout"] = duration_json(raw.limits.total_timeout);
     value["limits"]["mutant_timeout"] = match raw.limits.mutant_timeout {
@@ -148,21 +149,21 @@ fn expected_result(item: &OracleCase) -> Result<(), ConfigError> {
 fn lean_timeout_limit_corpus_is_closed_and_valid() {
     let cases = parse_corpus().expect("Lean corpus must satisfy the adapter schema");
     assert_eq!(cases.len(), 15);
-    assert_eq!(
-        cases.iter().filter(|item| item.mode == "strict").count(),
-        15
-    );
+    assert_eq!(cases.iter().filter(|item| item.mode == "plan").count(), 15);
 }
 
 #[test]
-fn public_raw_and_normalized_validation_match_every_strict_lean_case() {
+fn raw_plan_and_saved_plan_validation_match_every_strict_lean_case() {
     for item in parse_corpus().expect("valid Lean corpus") {
         let raw = raw_for(&item);
-        let raw_result = RunConfig::try_from(raw.clone()).map(|_| ());
+        // Raw plan validation composes discovery validation with shared run normalization.
+        let analyzer = parse_duration(&item.id, "analyzer_ns", &item.analyzer_ns).unwrap();
+        let raw_result = hoimin_core::DiscoveryConfig::new(analyzer)
+            .and_then(|_| RunConfig::try_from(raw.clone()).map(|_| ()));
         assert_eq!(raw_result, expected_result(&item), "raw case={}", item.id);
 
         let has_zero = [
-            raw.limits.analyzer_timeout,
+            analyzer,
             raw.limits.baseline_timeout,
             raw.limits.total_timeout,
         ]

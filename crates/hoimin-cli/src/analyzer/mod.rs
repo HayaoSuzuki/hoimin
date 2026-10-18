@@ -3,13 +3,10 @@
 //!
 //! # Handler session contract
 //!
-//! For callers of [`AnalyzerHandler`], a session is the serial sequence of requests
-//! contributing to one candidate spool. Keep the root, operators, profile, and
-//! positive `AnalyzeFile::max_candidates` limit consistent throughout a session.
-//! The handler does not validate configuration consistency between requests.
-//! The first request creates the store with that limit; each request subtracts
-//! the accumulated count from its own limit to set the analysis budget. Changing
-//! the limit mid-session does not resize the store.
+//! A session is the serial sequence of requests contributing to one candidate
+//! spool. The handler owns its root, operators, profile, and positive candidate
+//! limit, fixed at construction. Every file uses the remaining capacity of that
+//! same limit. Different settings require a new handler.
 //!
 //! Accepted candidates have contiguous, one-based sequences across requests.
 //! A successful non-final, non-truncated request returns `spool: None`: candidates
@@ -17,8 +14,8 @@
 //! `final_target` or truncation finalizes the entire accumulated spool (including
 //! an empty spool), then removes the store from the handler. Truncation can end a
 //! session before the final target. A subsequent request starts a fresh store and
-//! sequence; it does not append to a returned spool. Diagnostics belong to each
-//! request's result rather than to the accumulated spool.
+//! sequence with the same fixed settings; it does not append to a returned spool.
+//! Diagnostics belong to each request's result rather than to the accumulated spool.
 //!
 //! # Interruption and ownership
 //!
@@ -57,9 +54,16 @@ mod rust;
 mod store;
 mod types;
 
+#[cfg(test)]
+mod payload_probes;
+#[cfg(test)]
+mod payload_tests;
+
 pub(crate) use rust::definition_names;
+use rust::payload::{Charged, PayloadBudget};
 
 use std::fmt::Write as _;
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -102,7 +106,11 @@ impl CandidateSpoolOwner {
 /// See the [module contract](self) for session limits, interruption state, and
 /// spool cleanup responsibilities. Use one handler for one active session.
 pub struct AnalyzerHandler {
+    payload: PayloadBudget,
     root_path: Utf8PathBuf,
+    operators: MutationOperatorSelection,
+    profile: MutationProfile,
+    max_candidates: NonZeroUsize,
     exception_project: Option<ExceptionProject>,
     root: Option<PortableFileReader>,
     store: Option<CandidateStore>,
@@ -119,6 +127,7 @@ pub struct Discovery {
 }
 
 struct DiscoveryWork {
+    payload: PayloadBudget,
     exception_project: Option<ExceptionProject>,
     root: Utf8PathBuf,
     targets: Vec<TargetSlice>,
@@ -133,16 +142,13 @@ struct DiscoveryWork {
 #[cfg(test)]
 pub(crate) struct DiscoveryControl {
     _owner: Arc<TempDir>,
-    before_analysis: Box<dyn FnOnce() + Send>,
+    before_analysis: Box<dyn FnMut() + Send>,
     deadline_arm: Option<tokio::sync::oneshot::Sender<tokio::time::Instant>>,
 }
 
 #[cfg(test)]
 impl DiscoveryControl {
-    pub(crate) fn new(
-        owner: Arc<TempDir>,
-        before_analysis: impl FnOnce() + Send + 'static,
-    ) -> Self {
+    pub(crate) fn new(owner: Arc<TempDir>, before_analysis: impl FnMut() + Send + 'static) -> Self {
         Self {
             _owner: owner,
             before_analysis: Box::new(before_analysis),
@@ -232,6 +238,7 @@ pub(crate) async fn discover_targets_with_control(
 
 pub(crate) async fn discover_config_targets(
     config: &hoimin_core::RunConfig,
+    discovery: &hoimin_core::DiscoveryConfig,
     targets: &[TargetSlice],
     #[cfg(test)] control: Option<DiscoveryControl>,
 ) -> Result<Discovery, EffectFailed> {
@@ -242,7 +249,7 @@ pub(crate) async fn discover_config_targets(
         &config.operators,
         config.profile,
         config.limits.max_candidates.get(),
-        config.limits.analyzer_timeout.get(),
+        discovery.analyzer_timeout.get(),
         #[cfg(test)]
         control,
     )
@@ -400,6 +407,7 @@ fn discovery_work(
     #[cfg(test)] control: Option<DiscoveryControl>,
 ) -> DiscoveryWork {
     DiscoveryWork {
+        payload: PayloadBudget::default(),
         exception_project: operators
             .contains(hoimin_core::MutationOperator::ExceptionHierarchy)
             .then(|| ExceptionProject::new(root)),
@@ -416,6 +424,7 @@ fn discovery_work(
 
 fn discover_targets_blocking(work: DiscoveryWork) -> Result<Discovery, EffectFailed> {
     let DiscoveryWork {
+        payload,
         exception_project,
         root,
         targets,
@@ -435,6 +444,7 @@ fn discover_targets_blocking(work: DiscoveryWork) -> Result<Discovery, EffectFai
         .map(|p| p.load(&|| cancellation.is_cancelled()))
         .transpose()
         .map_err(|e| EffectFailed::other(EffectId(0), "analyzer.exception_hierarchy", e))?;
+    let mut candidates = Vec::new();
     let mut discovery = Discovery {
         candidates: Vec::new(),
         diagnostics: Vec::new(),
@@ -452,7 +462,7 @@ fn discover_targets_blocking(work: DiscoveryWork) -> Result<Discovery, EffectFai
             .expect("source was decoded")
             .text();
         #[cfg(test)]
-        if let Some(mut control) = control.take() {
+        if let Some(control) = control.as_mut() {
             if let Some(deadline_arm) = control.deadline_arm.take() {
                 let _ = deadline_arm.send(tokio::time::Instant::now());
             }
@@ -460,12 +470,13 @@ fn discover_targets_blocking(work: DiscoveryWork) -> Result<Discovery, EffectFai
         }
         let output = rust::analyze_source_with_exceptions(
             &rust::AnalyzeRequest {
+                payload: payload.clone(),
                 path: &target.path,
                 lines: &target.lines,
                 symbols: &target.symbols,
                 operators: &operators,
                 profile,
-                max_candidates: max_candidates.saturating_sub(discovery.candidates.len()),
+                max_candidates: max_candidates.saturating_sub(candidates.len()),
             },
             module,
             &|| cancellation.is_cancelled(),
@@ -474,7 +485,7 @@ fn discover_targets_blocking(work: DiscoveryWork) -> Result<Discovery, EffectFai
         .map_err(|error| analysis_failure(EffectId(0), &target.path, error))?;
         for candidate in output.candidates {
             ensure_discovery_active(&cancellation)?;
-            let sequence = u64::try_from(discovery.candidates.len())
+            let sequence = u64::try_from(candidates.len())
                 .ok()
                 .and_then(|count| count.checked_add(1))
                 .ok_or_else(|| {
@@ -484,10 +495,10 @@ fn discover_targets_blocking(work: DiscoveryWork) -> Result<Discovery, EffectFai
                         "candidate sequence overflow",
                     )
                 })?;
-            let candidate = mutation_candidate(&validation, candidate, sequence)?;
+            let candidate = mutation_candidate(EffectId(0), &validation, candidate, sequence)?;
             CandidateStore::record_size(&candidate)
                 .map_err(|error| candidate_store_error(EffectId(0), &candidate, &error))?;
-            discovery.candidates.push(candidate);
+            candidates.push(candidate);
         }
         discovery.diagnostics.extend(output.diagnostics);
         if output.truncated {
@@ -495,6 +506,11 @@ fn discover_targets_blocking(work: DiscoveryWork) -> Result<Discovery, EffectFai
             break;
         }
     }
+    // All producers and conversion are finished. This owner is never reused.
+    discovery.candidates = candidates
+        .into_iter()
+        .map(Charged::into_untracked)
+        .collect();
     Ok(discovery)
 }
 
@@ -511,15 +527,24 @@ fn discovery_cancelled() -> EffectFailed {
 }
 
 impl AnalyzerHandler {
-    /// Creates a handler without accessing the project or allocating a candidate store.
+    /// Fixes the settings for every session without project I/O or store allocation.
     ///
     /// Source access and candidate-store creation are deferred until analysis; failures
     /// are reported by the operation that performs them.
     #[must_use]
-    pub fn new(root: Utf8PathBuf) -> Self {
+    pub fn new(
+        root: Utf8PathBuf,
+        operators: MutationOperatorSelection,
+        profile: MutationProfile,
+        max_candidates: NonZeroUsize,
+    ) -> Self {
         Self {
+            payload: PayloadBudget::default(),
             exception_project: None,
             root_path: root,
+            operators,
+            profile,
+            max_candidates,
             root: None,
             store: None,
             candidate_spool_owner: None,
@@ -551,8 +576,7 @@ impl AnalyzerHandler {
 
     /// Analyzes one target and either retains candidates or finalizes the session spool.
     ///
-    /// Keep `operators`, `profile`, and `request.max_candidates` consistent with
-    /// earlier requests. `spool: None` on success means accumulation continues;
+    /// Uses the constructor settings. `spool: None` means accumulation continues;
     /// `request.final_target` or truncation returns the full spool and ends it.
     /// See the [module contract](self) before retrying after an interruption or
     /// dropping this future: blocking work and spool cleanup have separate lifetimes.
@@ -561,13 +585,8 @@ impl AnalyzerHandler {
     ///
     /// Returns an error when analysis is cancelled, the source cannot be read or decoded, a
     /// generated candidate is invalid, or the candidate store fails.
-    pub async fn handle(
-        &mut self,
-        request: AnalyzeFile,
-        operators: &MutationOperatorSelection,
-        profile: MutationProfile,
-    ) -> Result<AnalysisFinished, EffectFailed> {
-        self.handle_with_cancellation(request, operators, profile, ProcessCancellation::new())
+    pub async fn handle(&mut self, request: AnalyzeFile) -> Result<AnalysisFinished, EffectFailed> {
+        self.handle_with_cancellation(request, ProcessCancellation::new())
             .await
     }
 
@@ -575,20 +594,22 @@ impl AnalyzerHandler {
     pub(crate) async fn handle_with_cancellation(
         &mut self,
         request: AnalyzeFile,
-        operators: &MutationOperatorSelection,
-        profile: MutationProfile,
         cancellation: ProcessCancellation,
     ) -> Result<AnalysisFinished, EffectFailed> {
         let id = request.id;
+        let candidate_limit = self.max_candidates.get() as u64;
         if self.store.is_none() {
             let store = self.candidate_spool_owner.as_ref().map_or_else(
-                || CandidateStore::new(request.max_candidates),
-                |owner| CandidateStore::new_in(request.max_candidates, owner.path()),
+                || CandidateStore::new(candidate_limit),
+                |owner| CandidateStore::new_in(candidate_limit, owner.path()),
             );
-            self.store =
-                Some(store.map_err(|error| {
-                    EffectFailed::other(id, "analyzer.store", error.to_string())
-                })?);
+            self.store = Some(
+                store
+                    .map(|store| store.with_payload(self.payload.clone()))
+                    .map_err(|error| {
+                        EffectFailed::other(id, "analyzer.store", error.to_string())
+                    })?,
+            );
         }
         let source = tokio::select! {
             biased;
@@ -599,15 +620,19 @@ impl AnalyzerHandler {
                 .map_err(|error| EffectFailed::other(id, "analyzer.source.read", error.to_string()))?,
         };
         if self.exception_project.is_none()
-            && operators.contains(hoimin_core::MutationOperator::ExceptionHierarchy)
+            && self
+                .operators
+                .contains(hoimin_core::MutationOperator::ExceptionHierarchy)
         {
             self.exception_project = Some(ExceptionProject::new(&self.root_path));
         }
         let exception_project = self.exception_project.clone();
         let store = self.store.take().expect("store initialized");
-        let remaining = request.max_candidates.saturating_sub(store.count());
+        let remaining = candidate_limit.saturating_sub(store.count());
         let max_candidates = usize::try_from(remaining).unwrap_or(usize::MAX);
-        let operators = operators.clone();
+        let operators = self.operators.clone();
+        let profile = self.profile;
+        let payload = self.payload.clone();
         let task_cancellation = cancellation.clone();
         #[cfg(test)]
         let analysis_hook = self.analysis_hook.clone();
@@ -622,6 +647,7 @@ impl AnalyzerHandler {
                 hook();
             }
             analyze_and_store(BlockingAnalysis {
+                payload,
                 exception_project,
                 request,
                 operators,
@@ -664,6 +690,7 @@ impl AnalyzerHandler {
 }
 
 struct BlockingAnalysis {
+    payload: PayloadBudget,
     exception_project: Option<ExceptionProject>,
     request: AnalyzeFile,
     operators: MutationOperatorSelection,
@@ -678,6 +705,7 @@ fn analyze_and_store(
     work: BlockingAnalysis,
 ) -> Result<(AnalysisFinished, Option<CandidateStore>), EffectFailed> {
     let BlockingAnalysis {
+        payload,
         exception_project,
         request,
         operators,
@@ -700,6 +728,7 @@ fn analyze_and_store(
         .map_err(|e| EffectFailed::other(id, "analyzer.exception_hierarchy", e))?;
     let output = rust::analyze_source_with_exceptions(
         &rust::AnalyzeRequest {
+            payload: payload.clone(),
             path: &request.target.path,
             lines: &request.target.lines,
             symbols: &request.target.symbols,
@@ -719,7 +748,7 @@ fn analyze_and_store(
         let sequence = store.count().checked_add(1).ok_or_else(|| {
             EffectFailed::other(id, "analyzer.candidate", "candidate sequence overflow")
         })?;
-        let candidate = mutation_candidate(&validation, candidate, sequence)?;
+        let candidate = mutation_candidate(id, &validation, candidate, sequence)?;
         store
             .push(&candidate)
             .map_err(|error| candidate_store_error(id, &candidate, &error))?;
@@ -807,6 +836,9 @@ fn analysis_failure(
 ) -> EffectFailed {
     match error {
         rust::AnalysisError::Cancelled => cancelled(id),
+        rust::AnalysisError::PayloadLimit { .. } => {
+            EffectFailed::other(id, "analyzer.payload_limit", format!("{path}: {error}"))
+        }
         rust::AnalysisError::HierarchyLimit | rust::AnalysisError::HierarchySourceChanged => {
             EffectFailed::other(id, "analyzer.exception_hierarchy", error.to_string())
         }
@@ -825,6 +857,13 @@ fn candidate_store_error(
     candidate: &MutationCandidate,
     error: &StoreError,
 ) -> EffectFailed {
+    if let StoreError::PayloadLimit { limit } = error {
+        return analysis_failure(
+            id,
+            &candidate.path,
+            rust::AnalysisError::PayloadLimit { limit: *limit },
+        );
+    }
     EffectFailed::other(
         id,
         "analyzer.store",
@@ -852,13 +891,25 @@ fn source_validation<'source>(
 }
 
 fn mutation_candidate(
+    effect_id: EffectId,
     validation: &CandidateValidationContext<'_>,
-    candidate: AnalyzerCandidate,
+    charged: Charged<AnalyzerCandidate>,
     sequence: u64,
-) -> Result<MutationCandidate, EffectFailed> {
+) -> Result<Charged<MutationCandidate>, EffectFailed> {
+    let Charged {
+        mut lease,
+        value: candidate,
+    } = charged;
+    lease
+        .grow([
+            candidate.operator.as_str().len(),
+            validation.file_hash().len(),
+            hoimin_core::MUTANT_ID_BYTES,
+        ])
+        .map_err(|error| analysis_failure(effect_id, &candidate.path, error))?;
     let decoded = validation.decoded_source().map_err(|error| {
         EffectFailed::other(
-            EffectId(0),
+            effect_id,
             "analyzer.source.encoding",
             format!("{}: {error}", candidate.path),
         )
@@ -876,7 +927,7 @@ fn mutation_candidate(
     })()
     .ok_or_else(|| {
         EffectFailed::other(
-            EffectId(0),
+            effect_id,
             "analyzer.candidate",
             "decoded candidate span is not an original source boundary",
         )
@@ -893,21 +944,29 @@ fn mutation_candidate(
         symbol: candidate.symbol,
         file_hash: validation.file_hash().to_owned(),
     };
-    let id = validate_candidate_with_context(validation, &descriptor).map_err(|error| {
-        EffectFailed::other(EffectId(0), "analyzer.candidate", error.to_string())
-    })?;
-    Ok(MutationCandidate {
-        id: id.to_string(),
-        sequence,
-        path: descriptor.path,
-        span: descriptor.span,
-        original: descriptor.original,
-        replacement: descriptor.replacement,
-        operator: descriptor.operator,
-        line: descriptor.line,
-        column: descriptor.column,
-        symbol: descriptor.symbol,
-        file_hash: descriptor.file_hash,
+    let scratch_bytes = hoimin_core::candidate_validation_scratch_bytes(&descriptor)
+        .ok_or_else(|| analysis_failure(effect_id, &descriptor.path, lease.budget().exceeded()))?;
+    let _scratch = lease
+        .budget()
+        .reserve([scratch_bytes])
+        .map_err(|error| analysis_failure(effect_id, &descriptor.path, error))?;
+    let id = validate_candidate_with_context(validation, &descriptor)
+        .map_err(|error| EffectFailed::other(effect_id, "analyzer.candidate", error.to_string()))?;
+    Ok(Charged {
+        lease,
+        value: MutationCandidate {
+            id: id.to_string(),
+            sequence,
+            path: descriptor.path,
+            span: descriptor.span,
+            original: descriptor.original,
+            replacement: descriptor.replacement,
+            operator: descriptor.operator,
+            line: descriptor.line,
+            column: descriptor.column,
+            symbol: descriptor.symbol,
+            file_hash: descriptor.file_hash,
+        },
     })
 }
 
@@ -930,7 +989,6 @@ mod tests {
                 symbols: Vec::new(),
             },
             final_target: true,
-            max_candidates: 10,
         }
     }
 
@@ -955,7 +1013,15 @@ mod tests {
         let source = b"x = 1\nvalue == 2\n";
         let context = CandidateValidationContext::new(source).unwrap();
 
-        let converted = mutation_candidate(&context, analyzer_candidate(), 7).unwrap();
+        let converted = mutation_candidate(
+            EffectId(0),
+            &context,
+            PayloadBudget::default()
+                .retain(analyzer_candidate())
+                .unwrap(),
+            7,
+        )
+        .unwrap();
         let identity = CandidateIdentity {
             schema_version: CANDIDATE_SCHEMA_VERSION,
             file_hash: blake3::hash(source).to_hex().to_string(),
@@ -984,7 +1050,13 @@ mod tests {
 
         let mut stale_original = analyzer_candidate();
         stale_original.original = ">=".into();
-        let error = mutation_candidate(&context, stale_original, 1).unwrap_err();
+        let error = mutation_candidate(
+            EffectId(0),
+            &context,
+            PayloadBudget::default().retain(stale_original).unwrap(),
+            1,
+        )
+        .unwrap_err();
         assert_eq!(error.failure.code(), "analyzer.candidate");
         assert_eq!(
             error.failure.message(),
@@ -993,7 +1065,13 @@ mod tests {
 
         let mut stale_location = analyzer_candidate();
         stale_location.column = 5;
-        let error = mutation_candidate(&context, stale_location, 1).unwrap_err();
+        let error = mutation_candidate(
+            EffectId(0),
+            &context,
+            PayloadBudget::default().retain(stale_location).unwrap(),
+            1,
+        )
+        .unwrap_err();
         assert_eq!(error.failure.code(), "analyzer.candidate");
         assert_eq!(
             error.failure.message(),
@@ -1124,6 +1202,52 @@ mod tests {
                 Err(error) => return Err(error),
             }
         }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn discovery_deadline_is_shared_across_targets() {
+        // Arrange: handshakes keep virtual time fixed while the worker reaches each target.
+        let directory = tempfile::tempdir().unwrap();
+        let root = Utf8PathBuf::from_path_buf(directory.path().to_owned()).unwrap();
+        let targets = ["first.py", "second.py"].map(|name| {
+            std::fs::write(root.join(name), "result = left + right\n").unwrap();
+            TargetSlice {
+                path: name.into(),
+                lines: Vec::new(),
+                symbols: Vec::new(),
+            }
+        });
+        let (entered_tx, entered_rx) = mpsc::sync_channel(1);
+        let (release_tx, release_rx) = mpsc::sync_channel(1);
+        let control = DiscoveryControl::new(Arc::new(tempfile::tempdir().unwrap()), move || {
+            entered_tx.send(()).unwrap();
+            release_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        });
+        let operation = tokio::spawn(async move {
+            discover_targets_with_control(
+                &root,
+                &targets,
+                &MutationOperatorSelection::default(),
+                MutationProfile::Full,
+                100,
+                Duration::from_secs(1),
+                Some(control),
+            )
+            .await
+        });
+        wait_for_discovery_entry(&entered_rx).await.unwrap();
+        tokio::time::advance(Duration::from_millis(750)).await;
+        release_tx.send(()).unwrap();
+        // Yield without advancing time until target two reaches its handshake.
+        wait_for_discovery_entry(&entered_rx).await.unwrap();
+        // Act: expire the original deadline while the second target remains paused.
+        // A reset at target two would still have 750 ms left on this frozen clock.
+        tokio::time::advance(Duration::from_millis(250)).await;
+        let result = operation.await;
+        release_tx.send(()).unwrap();
+        // Assert.
+        let error = result.unwrap().unwrap_err();
+        assert_eq!(error.failure.code(), "analyzer.timeout");
     }
 
     #[test]
@@ -1309,28 +1433,32 @@ mod tests {
         )
         .unwrap();
         let root = Utf8PathBuf::from_path_buf(directory.path().to_owned()).unwrap();
-        let mut handler = AnalyzerHandler::new(root);
-        let operators = MutationOperatorSelection::default();
+        let mut handler = AnalyzerHandler::new(
+            root,
+            MutationOperatorSelection::default(),
+            MutationProfile::Full,
+            NonZeroUsize::new(10).unwrap(),
+        );
+        let mut first = request(81);
+        first.final_target = false;
+        handler.handle(first).await.unwrap();
         let cancellation = ProcessCancellation::new();
         cancellation.cancel();
 
         let cancelled = handler
-            .handle_with_cancellation(request(82), &operators, MutationProfile::Full, cancellation)
+            .handle_with_cancellation(request(82), cancellation)
             .await;
 
         assert!(matches!(
             cancelled,
             Err(error) if error.id == EffectId(82) && error.failure.code() == "analyzer.cancelled"
         ));
-        assert_eq!(handler.store.as_ref().unwrap().count(), 0);
+        assert_eq!(handler.store.as_ref().unwrap().count(), 1);
 
-        let finished = handler
-            .handle(request(83), &operators, MutationProfile::Full)
-            .await
-            .unwrap();
+        let finished = handler.handle(request(83)).await.unwrap();
         let spool = finished.spool.unwrap();
 
-        assert_eq!(spool.records, 1);
+        assert_eq!(spool.records, 2);
         assert!(handler.store.is_none());
     }
 
@@ -1344,13 +1472,15 @@ mod tests {
         let root = Utf8PathBuf::from_path_buf(directory.path().to_owned()).unwrap();
         let owner = Arc::new(tempfile::tempdir().unwrap());
         let spool_path = owner.path().to_owned();
-        let mut handler = AnalyzerHandler::new(root).with_candidate_spool_owner(owner.clone());
-        let operators = MutationOperatorSelection::default();
+        let mut handler = AnalyzerHandler::new(
+            root,
+            MutationOperatorSelection::default(),
+            MutationProfile::Full,
+            NonZeroUsize::new(10).unwrap(),
+        )
+        .with_candidate_spool_owner(owner.clone());
         for id in 100..103 {
-            let error = handler
-                .handle(request(id), &operators, MutationProfile::Full)
-                .await
-                .unwrap_err();
+            let error = handler.handle(request(id)).await.unwrap_err();
             assert_eq!(error.id, EffectId(id));
             assert_eq!(error.failure.code(), "analyzer.depth");
             assert!(handler.store.is_none());
@@ -1358,10 +1488,7 @@ mod tests {
             assert_eq!(std::fs::read_to_string(&source_path).unwrap(), source);
         }
         std::fs::write(&source_path, "value = 1 + 2\n").unwrap();
-        let output = handler
-            .handle(request(103), &operators, MutationProfile::Full)
-            .await
-            .unwrap();
+        let output = handler.handle(request(103)).await.unwrap();
         assert!(output.spool.unwrap().records > 0);
         drop(handler);
         drop(owner);
@@ -1385,23 +1512,22 @@ mod tests {
         let hook_entered = entered.clone();
         let spool_owner = Arc::new(tempfile::tempdir().unwrap());
         let spool_path = spool_owner.path().to_owned();
-        let mut handler =
-            AnalyzerHandler::new(root).with_candidate_spool_owner(spool_owner.clone());
+        let mut handler = AnalyzerHandler::new(
+            root,
+            MutationOperatorSelection::default(),
+            MutationProfile::Full,
+            NonZeroUsize::new(10).unwrap(),
+        )
+        .with_candidate_spool_owner(spool_owner.clone());
         handler.analysis_hook = Some(Arc::new(move || {
             hook_entered.wait();
             std::thread::sleep(Duration::from_millis(500));
         }));
-        let operators = MutationOperatorSelection::default();
         let cancellation = ProcessCancellation::new();
         let task_cancellation = cancellation.clone();
         let task = tokio::spawn(async move {
             handler
-                .handle_with_cancellation(
-                    request(84),
-                    &operators,
-                    MutationProfile::Full,
-                    task_cancellation,
-                )
+                .handle_with_cancellation(request(84), task_cancellation)
                 .await
         });
         entered.wait();

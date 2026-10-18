@@ -25,7 +25,7 @@ JSON_VALUES = st.recursive(
 @given(value=JSON_VALUES)
 def test_normalized_config_rejects_obsolete_resume_field(value: object) -> None:
     # Arrange
-    source = ROOT / "crates/hoimin-cli/tests/golden/events/schema-v7-current.jsonl"
+    source = ROOT / "crates/hoimin-cli/tests/golden/events/schema-v8-current.jsonl"
     event = json.loads(source.read_text(encoding="utf-8").splitlines()[0])
     event["normalized_config"]["resume"] = value
 
@@ -38,10 +38,38 @@ def test_normalized_config_rejects_obsolete_resume_field(value: object) -> None:
 
 @given(value=JSON_VALUES)
 def test_normalized_config_rejects_removed_outer_root(value: object) -> None:
-    source = ROOT / "crates/hoimin-cli/tests/golden/events/schema-v7-current.jsonl"
+    source = ROOT / "crates/hoimin-cli/tests/golden/events/schema-v8-current.jsonl"
     event = json.loads(source.read_text(encoding="utf-8").splitlines()[0])
     event["normalized_config"]["root"] = value
 
     errors = list(VALIDATOR.iter_errors(event))
 
+    assert errors
+
+
+@given(value=JSON_VALUES)
+def test_runtime_config_rejects_plan_only_discovery(value: object) -> None:
+    # Arrange
+    source = ROOT / "crates/hoimin-cli/tests/golden/events/schema-v8-current.jsonl"
+    event = json.loads(source.read_text(encoding="utf-8").splitlines()[0])
+    event["normalized_config"]["discovery"] = value
+
+    # Act
+    errors = list(VALIDATOR.iter_errors(event))
+
+    # Assert
+    assert errors
+
+
+@given(value=JSON_VALUES)
+def test_runtime_limits_reject_obsolete_analyzer_timeout(value: object) -> None:
+    # Arrange
+    source = ROOT / "crates/hoimin-cli/tests/golden/events/schema-v8-current.jsonl"
+    event = json.loads(source.read_text(encoding="utf-8").splitlines()[0])
+    event["normalized_config"]["limits"]["analyzer_timeout"] = value
+
+    # Act
+    errors = list(VALIDATOR.iter_errors(event))
+
+    # Assert
     assert errors

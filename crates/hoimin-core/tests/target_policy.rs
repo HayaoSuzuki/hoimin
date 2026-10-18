@@ -170,10 +170,7 @@ fn automatic_mutant_timeout_uses_baseline_duration() {
 #[test]
 fn raw_timeout_limits_accept_the_ceiling_and_reject_one_nanosecond_more() {
     type SetTimeout = fn(&mut RawRunConfig, Duration);
-    let cases: [(&str, SetTimeout); 4] = [
-        ("analyzer_timeout", |raw, duration| {
-            raw.limits.analyzer_timeout = duration;
-        }),
+    let cases: [(&str, SetTimeout); 3] = [
         ("baseline_timeout", |raw, duration| {
             raw.limits.baseline_timeout = duration;
         }),

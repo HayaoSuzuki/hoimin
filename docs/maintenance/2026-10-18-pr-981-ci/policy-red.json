@@ -1,0 +1,42 @@
+[
+  {
+    "command": [
+      "/tmp/hoimin-pr981-ci/cargo-deny-dist/cargo-deny",
+      "--manifest-path",
+      "Cargo.toml",
+      "--workspace",
+      "--all-features",
+      "--locked",
+      "--config",
+      "deny.toml",
+      "check",
+      "--deny",
+      "warnings",
+      "licenses",
+      "sources"
+    ],
+    "exit": 4,
+    "elapsed_seconds": 0.7394336250144988,
+    "log": "/tmp/hoimin-pr981-ci/policy-main-red.log"
+  },
+  {
+    "command": [
+      "/tmp/hoimin-pr981-ci/cargo-deny-dist/cargo-deny",
+      "--manifest-path",
+      "fuzz/Cargo.toml",
+      "--workspace",
+      "--all-features",
+      "--locked",
+      "--config",
+      "deny.toml",
+      "check",
+      "--deny",
+      "warnings",
+      "licenses",
+      "sources"
+    ],
+    "exit": 4,
+    "elapsed_seconds": 0.3327115420252085,
+    "log": "/tmp/hoimin-pr981-ci/policy-fuzz-red.log"
+  }
+]

@@ -16,7 +16,7 @@ use hoimin_core::{
     name = "hoimin",
     version,
     about = "Bounded mutation testing for focused Python changes",
-    after_help = "Run contract:\n  hoimin run [TARGETS] [SAFETY/OUTPUT/SESSION OPTIONS] -- <TEST_ARGV>...\n\nTarget selectors:\n  --root --source --file --line --symbol --changed --changed-context --diff-base\nCopy options:\n  --include --exclude\nMutation options:\n  --operators --exclude-operators --profile\nSafety options:\n  --jobs --max-mutants --max-candidates --analyzer-timeout\n  --baseline-timeout --mutant-timeout --total-timeout --max-memory\n  --max-output --max-copy-size --max-workspace-size --min-free-space\n  --max-processes --allow-best-effort-memory\nOutput/session options:\n  --format <json|jsonl|human> --metrics <PATH> --session --resume"
+    after_help = "Run contract:\n  hoimin run [TARGETS] [SAFETY/OUTPUT/SESSION OPTIONS] -- <TEST_ARGV>...\n\nTarget selectors:\n  --root --source --file --line --symbol --changed --changed-context --diff-base\nCopy options:\n  --include --exclude\nMutation options:\n  --operators --exclude-operators --profile\nSafety options:\n  --jobs --max-mutants --max-candidates\n  --baseline-timeout --mutant-timeout --total-timeout --max-memory\n  --max-output --max-copy-size --max-workspace-size --min-free-space\n  --max-processes --allow-best-effort-memory\nOutput/session options:\n  --format <json|jsonl|human> --metrics <PATH> --session --resume"
 )]
 struct RootCli {
     #[command(subcommand)]
@@ -30,7 +30,7 @@ struct RootCli {
 )]
 enum Command {
     /// Run mutation tests for an explicitly selected target.
-    Run(RawRunArgs),
+    Run(RunArgs),
     /// Discover mutation candidates without executing tests.
     Plan(RawPlanArgs),
     /// Execute one or more candidates using settings from a previously generated plan.
@@ -228,10 +228,6 @@ struct RawMutationArgs {
     #[arg(long, default_value_t = 10_000)]
     max_candidates: usize,
 
-    /// Per-analyzer-process timeout.
-    #[arg(long, default_value = "30s", value_name = "DURATION")]
-    analyzer_timeout: String,
-
     /// Baseline test timeout.
     #[arg(long, default_value = "60s", value_name = "DURATION")]
     baseline_timeout: String,
@@ -274,33 +270,37 @@ struct RawMutationArgs {
 }
 
 #[derive(Debug, Args)]
-struct RawRunArgs {
+pub struct RunArgs {
     #[command(flatten)]
     mutation: RawMutationArgs,
 
     /// Machine-readable output format.
     #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
-    format: OutputFormat,
+    pub format: OutputFormat,
 
     /// Write performance metrics to PATH.
     #[arg(long, value_name = "PATH")]
-    metrics: Option<PathBuf>,
+    pub metrics: Option<PathBuf>,
 
     /// `SQLite` session path; no database is created unless specified.
     #[arg(long, value_name = "PATH")]
-    session: Option<PathBuf>,
+    pub session: Option<PathBuf>,
 
     /// Resume the newest compatible incomplete run in the session database.
     #[arg(long)]
-    resume: bool,
+    pub resume: bool,
 
     /// Test executable and arguments, passed directly without a shell.
     #[arg(last = true, num_args = 1.., value_name = "TEST_ARGV")]
-    test_argv: Vec<OsString>,
+    pub test_argv: Vec<OsString>,
 }
 
 #[derive(Debug, Args)]
 struct RawPlanArgs {
+    /// Cooperative deadline for discovery across all selected targets, inherited by verify.
+    #[arg(long, default_value = "30s", value_name = "DURATION")]
+    analyzer_timeout: String,
+
     #[command(flatten)]
     mutation: RawMutationArgs,
 
@@ -407,46 +407,6 @@ struct RawProgressArgs {
 }
 
 #[derive(Debug)]
-pub struct RunArgs {
-    pub root: PathBuf,
-    pub source: Vec<PathBuf>,
-    pub import_root: Vec<PathBuf>,
-    pub file: Vec<PathBuf>,
-    pub line: Vec<String>,
-    pub symbol: Vec<String>,
-    pub changed: bool,
-    pub changed_context: u32,
-    pub diff_base: Option<String>,
-    pub include: Vec<String>,
-    pub fingerprint_includes: Vec<String>,
-    pub fingerprint_files: Vec<String>,
-    pub fingerprint_env: Vec<String>,
-    pub exclude: Vec<String>,
-    pub operators: Vec<String>,
-    profile: ProfileArg,
-    pub exclude_operators: Vec<String>,
-    pub jobs: usize,
-    pub max_mutants: usize,
-    pub max_candidates: usize,
-    pub analyzer_timeout: String,
-    pub baseline_timeout: String,
-    pub mutant_timeout: String,
-    pub total_timeout: String,
-    pub max_memory: String,
-    pub max_output: String,
-    pub max_copy_size: String,
-    pub max_workspace_size: String,
-    pub min_free_space: String,
-    pub max_processes: usize,
-    pub allow_best_effort_memory: bool,
-    pub format: OutputFormat,
-    pub metrics: Option<PathBuf>,
-    pub session: Option<PathBuf>,
-    pub resume: bool,
-    pub test_argv: Vec<OsString>,
-}
-
-#[derive(Debug)]
 pub struct ProgressArgs {
     pub fail_on_regression: bool,
     pub details: bool,
@@ -458,19 +418,32 @@ pub struct ProgressArgs {
 
 #[derive(Debug)]
 pub struct PlanArgs {
+    analyzer_timeout: String,
     run_args: RunArgs,
 }
 
 impl PlanArgs {
-    /// Converts planning arguments into the normalized configuration used to create a manifest.
+    /// Normalizes the execution template and the separately owned discovery settings.
     ///
     /// Planning always uses JSON output and does not retain a session or resume state.
     ///
     /// # Errors
     ///
-    /// Returns an error when the shared mutation arguments are invalid.
-    pub fn into_run_config(self) -> Result<RunConfig<hoimin_core::EnvironmentRequest>, CliError> {
-        run_config_from_args(self.run_args)
+    /// Returns an error when the shared mutation arguments or discovery timeout are invalid.
+    pub fn into_configs(
+        self,
+    ) -> Result<
+        (
+            RunConfig<hoimin_core::EnvironmentRequest>,
+            hoimin_core::DiscoveryConfig,
+        ),
+        CliError,
+    > {
+        let discovery = hoimin_core::DiscoveryConfig::new(parse_duration(
+            &self.analyzer_timeout,
+            "--analyzer-timeout",
+        )?)?;
+        Ok((run_config_from_args(self.run_args)?, discovery))
     }
 }
 
@@ -597,24 +570,24 @@ impl TryFrom<Command> for ParsedCommand {
 
     fn try_from(command: Command) -> Result<Self, Self::Error> {
         match command {
-            Command::Run(raw) => Ok(Self::Run(run_args_from_mutation(
-                raw.mutation,
-                raw.test_argv,
-                raw.format,
-                raw.metrics,
-                raw.session,
-                raw.resume,
-            )?)),
-            Command::Plan(raw) => Ok(Self::Plan(PlanArgs {
-                run_args: run_args_from_mutation(
-                    raw.mutation,
-                    raw.test_argv,
-                    OutputFormat::Json,
-                    None,
-                    None,
-                    false,
-                )?,
-            })),
+            Command::Run(args) => {
+                validate_mutation_inputs(&args.mutation, &args.test_argv)?;
+                Ok(Self::Run(args))
+            }
+            Command::Plan(raw) => {
+                validate_mutation_inputs(&raw.mutation, &raw.test_argv)?;
+                Ok(Self::Plan(PlanArgs {
+                    analyzer_timeout: raw.analyzer_timeout,
+                    run_args: RunArgs {
+                        mutation: raw.mutation,
+                        test_argv: raw.test_argv,
+                        format: OutputFormat::Json,
+                        metrics: None,
+                        session: None,
+                        resume: false,
+                    },
+                }))
+            }
             Command::Verify(mut raw) => {
                 let mut seen = std::collections::BTreeSet::new();
                 raw.candidate_ids.retain(|id| seen.insert(id.clone()));
@@ -677,14 +650,7 @@ fn operator_help() -> String {
     format!("Mutation operator IDs and selector families:\n  {rows}")
 }
 
-fn run_args_from_mutation(
-    raw: RawMutationArgs,
-    test_argv: Vec<OsString>,
-    format: OutputFormat,
-    metrics: Option<PathBuf>,
-    session: Option<PathBuf>,
-    resume: bool,
-) -> Result<RunArgs, CliError> {
+fn validate_mutation_inputs(raw: &RawMutationArgs, test_argv: &[OsString]) -> Result<(), CliError> {
     let has_selector = !raw.source.is_empty()
         || !raw.file.is_empty()
         || !raw.line.is_empty()
@@ -697,44 +663,7 @@ fn run_args_from_mutation(
         return Err(CliError::MissingTestArgv);
     }
 
-    Ok(RunArgs {
-        root: raw.root,
-        source: raw.source,
-        import_root: raw.import_root,
-        file: raw.file,
-        line: raw.line,
-        symbol: raw.symbol,
-        changed: raw.changed,
-        changed_context: raw.changed_context,
-        diff_base: raw.diff_base,
-        include: raw.include,
-        fingerprint_includes: raw.fingerprint_include,
-        fingerprint_files: raw.fingerprint_file,
-        fingerprint_env: raw.fingerprint_env,
-        exclude: raw.exclude,
-        operators: raw.operators,
-        profile: raw.profile,
-        exclude_operators: raw.exclude_operators,
-        jobs: raw.jobs,
-        max_mutants: raw.max_mutants,
-        max_candidates: raw.max_candidates,
-        analyzer_timeout: raw.analyzer_timeout,
-        baseline_timeout: raw.baseline_timeout,
-        mutant_timeout: raw.mutant_timeout,
-        total_timeout: raw.total_timeout,
-        max_memory: raw.max_memory,
-        max_output: raw.max_output,
-        max_copy_size: raw.max_copy_size,
-        max_workspace_size: raw.max_workspace_size,
-        min_free_space: raw.min_free_space,
-        max_processes: raw.max_processes,
-        allow_best_effort_memory: raw.allow_best_effort_memory,
-        format,
-        metrics,
-        session,
-        resume,
-        test_argv,
-    })
+    Ok(())
 }
 
 /// Parses command-line arguments into a command and its executable arguments.
@@ -777,6 +706,14 @@ pub(crate) fn run_config_from_args(
 }
 
 fn raw_config(args: RunArgs) -> Result<RawRunConfig, CliError> {
+    let RunArgs {
+        mutation: args,
+        format,
+        metrics,
+        session,
+        resume,
+        test_argv,
+    } = args;
     let root = utf8_path(args.root, "--root")?;
     let sources = args
         .source
@@ -798,16 +735,14 @@ fn raw_config(args: RunArgs) -> Result<RawRunConfig, CliError> {
         .iter()
         .map(|value| parse_symbol_selection(value))
         .collect::<Result<Vec<_>, _>>()?;
-    let session = args
-        .session
+    let session = session
         .map(|path| utf8_path(path, "--session").map(|path| SessionConfig { path }))
         .transpose()?;
-    let metrics = args.metrics.map(metrics_path).transpose()?;
+    let metrics = metrics.map(metrics_path).transpose()?;
     let limits = RawRunLimits {
         jobs: args.jobs,
         max_mutants: args.max_mutants,
         max_candidates: args.max_candidates,
-        analyzer_timeout: parse_duration(&args.analyzer_timeout, "--analyzer-timeout")?,
         baseline_timeout: parse_duration(&args.baseline_timeout, "--baseline-timeout")?,
         mutant_timeout: if args.mutant_timeout == "auto" {
             None
@@ -838,17 +773,17 @@ fn raw_config(args: RunArgs) -> Result<RawRunConfig, CliError> {
         diff_base: args.diff_base,
         includes: args.include,
         excludes: args.exclude,
-        fingerprint_includes: args.fingerprint_includes,
-        fingerprint_files: args.fingerprint_files,
+        fingerprint_includes: args.fingerprint_include,
+        fingerprint_files: args.fingerprint_file,
         fingerprint_env: args.fingerprint_env,
         operators: args.operators,
         exclude_operators: args.exclude_operators,
         allow_best_effort_memory: args.allow_best_effort_memory,
         profile: args.profile.into(),
         limits,
-        test_argv: args.test_argv.iter().map(command_arg).collect(),
+        test_argv: test_argv.iter().map(command_arg).collect(),
         output: OutputConfig {
-            format: match args.format {
+            format: match format {
                 OutputFormat::Json => hoimin_core::OutputFormat::Json,
                 OutputFormat::Jsonl => hoimin_core::OutputFormat::Jsonl,
                 OutputFormat::Human => hoimin_core::OutputFormat::Human,
@@ -856,7 +791,7 @@ fn raw_config(args: RunArgs) -> Result<RawRunConfig, CliError> {
             metrics,
         },
         session,
-        resume: args.resume,
+        resume,
     })
 }
 

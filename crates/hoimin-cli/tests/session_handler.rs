@@ -150,7 +150,7 @@ fn golden_session_corpus_rejects_extra_legacy_rows() {
 }
 
 #[test]
-fn current_session_golden_matches_semantic_regeneration() {
+fn schema_five_storage_matches_regeneration_across_fingerprint_versions() {
     let checked_path = repo_root()
         .join("crates/hoimin-cli/tests/golden/sessions/schema-v5-required-budget.sqlite3");
     let temp = tempfile::tempdir().unwrap();
@@ -169,15 +169,14 @@ fn current_session_golden_matches_semantic_regeneration() {
     assert_eq!(schema_sql(&checked), schema_sql(&regenerated));
     let checked_rows = logical_rows(&checked);
     let regenerated_rows = logical_rows(&regenerated);
-    assert_eq!(
-        checked_rows[0].1[1],
-        Value::Integer(i64::from(hoimin_core::FINGERPRINT_SCHEMA_VERSION))
-    );
+    assert_eq!(checked_rows[0].1[1], Value::Integer(11));
     assert_eq!(
         regenerated_rows[0].1[1],
         Value::Integer(i64::from(hoimin_core::FINGERPRINT_SCHEMA_VERSION))
     );
-    assert_eq!(checked_rows, regenerated_rows);
+    assert_eq!(checked_rows[0].0, regenerated_rows[0].0);
+    assert_eq!(checked_rows[0].1[0], regenerated_rows[0].1[0]);
+    assert_eq!(checked_rows[1..], regenerated_rows[1..]);
 }
 
 fn assert_golden_session_rows(connection: &Connection, original_version: i64) {
@@ -353,7 +352,8 @@ fn expected_logical_rows(original_version: i64) -> Vec<(String, Vec<Value>)> {
             vec![
                 Value::Text(fingerprint.clone()),
                 Value::Integer(if original_version >= 4 {
-                    i64::from(hoimin_core::FINGERPRINT_SCHEMA_VERSION)
+                    // Historical fixture bytes retain their producing fingerprint schema.
+                    11
                 } else {
                     4
                 }),
@@ -1040,7 +1040,10 @@ fn explicit_resume_rejects_the_previous_fingerprint_schema() {
     handler.begin(begin_request(1, "legacy")).unwrap();
     let connection = Connection::open(&path).unwrap();
     connection
-        .execute("UPDATE fingerprints SET schema_version=6", [])
+        .execute(
+            "UPDATE fingerprints SET schema_version=?1",
+            [hoimin_core::FINGERPRINT_SCHEMA_VERSION - 1],
+        )
         .unwrap();
     drop(connection);
 
@@ -1055,6 +1058,17 @@ fn explicit_resume_rejects_the_previous_fingerprint_schema() {
     assert_eq!(failed.id, EffectId(2));
     assert_eq!(failed.failure.code(), "session.resume.incompatible");
     assert!(failed.failure.message().contains("start a new session"));
+    let connection = Connection::open(&path).unwrap();
+    assert_eq!(user_version(&connection), 5);
+    let (version, runs): (u8, i64) = connection
+        .query_row(
+            "SELECT schema_version, (SELECT count(*) FROM runs) FROM fingerprints",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(version, hoimin_core::FINGERPRINT_SCHEMA_VERSION - 1);
+    assert_eq!(runs, 1);
 }
 
 #[test]

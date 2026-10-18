@@ -401,7 +401,6 @@ fn model_limits(limits: &hoimin_core::RunLimits) -> Vec<u8> {
     let mut out = ModelEncoder::default();
     out.number(2, limits.max_mutants.get() as u64);
     out.number(3, limits.max_candidates.get() as u64);
-    out.duration(4, limits.analyzer_timeout.get());
     out.duration(5, limits.baseline_timeout.get());
     match limits.mutant_timeout {
         MutantTimeout::Auto => out.field(6, &[0]),
@@ -527,7 +526,6 @@ fn every_verdict_or_safety_limit_changes_the_fingerprint() {
             "max_candidates",
             mutate_max_candidates as fn(&mut RawRunLimits),
         ),
-        ("analyzer_timeout", mutate_analyzer_timeout),
         ("baseline_timeout", mutate_baseline_timeout),
         ("mutant_timeout", mutate_mutant_timeout),
         ("total_timeout", mutate_total_timeout),
@@ -683,7 +681,6 @@ fn arbitrary_limits() -> impl Strategy<Value = hoimin_core::RunLimits> {
         1_usize..=8,
         1_usize..=128,
         1_usize..=256,
-        1_u64..=30,
         1_u64..=60,
         prop::option::of(1_u64..=30),
         1_u64..=300,
@@ -697,7 +694,6 @@ fn arbitrary_limits() -> impl Strategy<Value = hoimin_core::RunLimits> {
                 jobs,
                 max_mutants,
                 max_candidates,
-                analyzer,
                 baseline,
                 mutant,
                 total,
@@ -710,7 +706,6 @@ fn arbitrary_limits() -> impl Strategy<Value = hoimin_core::RunLimits> {
                     jobs,
                     max_mutants,
                     max_candidates,
-                    analyzer_timeout: Duration::from_secs(analyzer),
                     baseline_timeout: Duration::from_secs(baseline),
                     mutant_timeout: mutant.map(Duration::from_secs),
                     total_timeout: Duration::from_secs(total),
@@ -904,9 +899,6 @@ fn mutate_max_mutants(v: &mut RawRunLimits) {
 fn mutate_max_candidates(v: &mut RawRunLimits) {
     v.max_candidates += 1;
 }
-fn mutate_analyzer_timeout(v: &mut RawRunLimits) {
-    v.analyzer_timeout += Duration::from_secs(1);
-}
 fn mutate_baseline_timeout(v: &mut RawRunLimits) {
     v.baseline_timeout += Duration::from_secs(1);
 }
@@ -937,7 +929,7 @@ fn mutate_min_free_space(v: &mut RawRunLimits) {
 
 #[test]
 fn import_root_changes_and_precedence_change_fingerprint() {
-    assert_eq!(hoimin_core::FINGERPRINT_SCHEMA_VERSION, 11);
+    assert_eq!(hoimin_core::FINGERPRINT_SCHEMA_VERSION, 12);
     let original = fixture_input();
     let mut configured = original.clone();
     configured.import_roots = vec!["src".into(), "vendor".into()];
@@ -1012,21 +1004,21 @@ fn mutant_budget_is_checked_separately_from_fingerprint_compatibility() {
 }
 
 #[test]
-fn environment_snapshot_preserves_version_11_fingerprint_goldens() {
+fn discovery_split_invalidates_version_11_fingerprint_goldens() {
     let mut input = fixture_input();
     let untracked = fingerprint(&input);
     input.environment =
         hoimin_core::EnvironmentSnapshot::captured(vec!["FLAG".into()], "a".repeat(64)).unwrap();
     let captured = fingerprint(&input);
     // Recorded before the typed snapshot refactor at base 056cb558953ddf5eb8b229976ee894ae7c6bc87f.
-    assert_eq!(
+    assert_ne!(
         untracked.as_bytes(),
         &[
             202, 13, 118, 201, 147, 202, 106, 130, 134, 245, 79, 240, 16, 68, 242, 37, 82, 94, 169,
             99, 223, 48, 154, 238, 88, 89, 78, 210, 228, 58, 112, 107
         ]
     );
-    assert_eq!(
+    assert_ne!(
         captured.as_bytes(),
         &[
             215, 228, 119, 128, 79, 83, 188, 49, 200, 158, 113, 124, 118, 79, 101, 161, 242, 190,
@@ -1049,4 +1041,34 @@ fn captured_snapshot_names_and_digest_both_change_compatibility() {
     input.environment =
         hoimin_core::EnvironmentSnapshot::captured(vec!["OTHER".into()], "a".repeat(64)).unwrap();
     assert_ne!(captured, fingerprint(&input));
+}
+
+#[test]
+fn schema_12_execution_fingerprint_has_stable_untracked_bytes() {
+    // Arrange.
+    let input = fixture_input();
+    let expected = [
+        84, 66, 95, 225, 171, 2, 182, 209, 253, 154, 140, 151, 197, 165, 2, 54, 247, 234, 24, 14,
+        3, 199, 197, 88, 6, 54, 215, 75, 92, 69, 10, 27,
+    ];
+    // Act.
+    let actual = fingerprint(&input);
+    // Assert.
+    assert_eq!(*actual.as_bytes(), expected);
+}
+
+#[test]
+fn schema_12_execution_fingerprint_has_stable_captured_bytes() {
+    // Arrange.
+    let mut input = fixture_input();
+    input.environment =
+        hoimin_core::EnvironmentSnapshot::captured(vec!["FLAG".into()], "a".repeat(64)).unwrap();
+    let expected = [
+        174, 60, 124, 72, 87, 11, 81, 69, 117, 208, 160, 134, 123, 204, 27, 140, 254, 234, 220,
+        106, 82, 227, 167, 166, 77, 101, 96, 33, 163, 56, 166, 138,
+    ];
+    // Act.
+    let actual = fingerprint(&input);
+    // Assert.
+    assert_eq!(*actual.as_bytes(), expected);
 }

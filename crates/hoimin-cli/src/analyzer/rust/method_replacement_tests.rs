@@ -14,6 +14,7 @@ fn only(operator: MutationOperator) -> MutationOperatorSelection {
 fn analyze(source: &str, operator: MutationOperator, limit: usize) -> AnalyzerOutput {
     analyze_source(
         &AnalyzeRequest {
+            payload: super::payload::PayloadBudget::default(),
             path: Utf8Path::new("subject.py"),
             lines: &[],
             symbols: &[],
@@ -226,6 +227,30 @@ fn unselected_parent_keeps_selected_method_in_receiver_and_argument() {
         assert_eq!(output.candidates[0].replacement, "obj.reverse()");
         assert_eq!(work(), ([0, 0, 0, 0, 0, 1, 0], 1), "{source}");
     }
+}
+
+#[test]
+fn subscript_payload_failure_stops_before_mapping_builder() {
+    let budget = payload::PayloadBudget::new(1);
+    let mut operators = only(MutationOperator::StructureIndexNeighbor);
+    operators.include(MutationOperator::StructureMappingGetSubscript);
+    let request = AnalyzeRequest {
+        payload: budget.clone(),
+        path: Utf8Path::new("subject.py"),
+        lines: &[],
+        symbols: &[],
+        operators: &operators,
+        profile: MutationProfile::Full,
+        max_candidates: 100,
+    };
+    reset();
+
+    let result = analyze_source_cancellable(&request, "x = items[1]\n", || false);
+
+    assert_eq!(result.err(), Some(AnalysisError::PayloadLimit { limit: 1 }));
+    assert_eq!(budget.snapshot().used, 0);
+    assert_eq!(budget.snapshot().generated, 1);
+    assert_eq!(work(), ([0; 7], 0));
 }
 
 #[test]

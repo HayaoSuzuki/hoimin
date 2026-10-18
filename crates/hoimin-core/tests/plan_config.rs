@@ -5,7 +5,10 @@ use hoimin_core::{
 };
 
 fn plan_value() -> serde_json::Value {
-    serde_json::to_value(fixture_run_config().into_plan_config()).unwrap()
+    serde_json::to_value(fixture_run_config().into_plan_config(
+        hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap(),
+    ))
+    .unwrap()
 }
 
 #[test]
@@ -65,7 +68,10 @@ fn plan_config_round_trips_run_semantics_with_session_disabled() {
     config.session = hoimin_core::SessionMode::Resume(SessionConfig {
         path: "state.sqlite".into(),
     });
-    let value = serde_json::to_value(config.clone().into_plan_config()).unwrap();
+    let value = serde_json::to_value(config.clone().into_plan_config(
+        hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap(),
+    ))
+    .unwrap();
     let expected = RunConfig {
         output: OutputConfig::default(),
         session: hoimin_core::SessionMode::Disabled,
@@ -124,7 +130,10 @@ fn plan_config_serializes_the_mapping_operator_with_its_canonical_name() {
     config.operators.exclude(MutationOperator::CompareEqNe);
     config.operators.include(MutationOperator::TypeMapping);
 
-    let value = serde_json::to_value(config.into_plan_config()).unwrap();
+    let value = serde_json::to_value(config.into_plan_config(
+        hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap(),
+    ))
+    .unwrap();
 
     assert_eq!(value["operators"], serde_json::json!(["type_dict_mapping"]));
 }
@@ -140,7 +149,9 @@ fn plan_config_rejects_the_historical_mapping_operator_name() {
 #[test]
 fn valid_normalized_plan_and_run_configs_pass_validation() {
     let run = fixture_run_config();
-    let plan = run.clone().into_plan_config();
+    let plan = run.clone().into_plan_config(
+        hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap(),
+    );
 
     assert_eq!(plan.validate(), Ok(()));
     assert_eq!(run.validate(), Ok(()));
@@ -176,7 +187,9 @@ fn normalized_configs_reject_the_removed_outer_root() {
 fn normalized_configs_accept_selection_root_without_filesystem_access() {
     let mut run = fixture_run_config();
     run.selection.root = "nonexistent-project/./src/".into();
-    let plan = run.clone().into_plan_config();
+    let plan = run.clone().into_plan_config(
+        hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap(),
+    );
 
     let results = [run.validate(), plan.validate()];
 
@@ -192,7 +205,7 @@ proptest::proptest! {
         value.as_object_mut().unwrap().remove("root");
 
         let run: RunConfig = serde_json::from_value(value).unwrap();
-        let plan_value = serde_json::to_value(run.into_plan_config()).unwrap();
+        let plan_value = serde_json::to_value(run.into_plan_config(hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap())).unwrap();
         let plan: PlanConfig = serde_json::from_value(plan_value.clone()).unwrap();
         let restored = plan.into_run_config(OutputConfig::default());
         let run_value = serde_json::to_value(&restored).unwrap();
@@ -305,7 +318,6 @@ fn normalized_timeout_limits_enforce_the_inclusive_ceiling() {
         "nanos": oversized.subsec_nanos()
     });
     for (name, maximum, oversized) in [
-        ("analyzer_timeout", maximum.clone(), oversized.clone()),
         ("baseline_timeout", maximum.clone(), oversized.clone()),
         (
             "mutant_timeout",
@@ -472,7 +484,7 @@ proptest::proptest! {
         // Act
         let run: RunConfig = serde_json::from_slice(&serde_json::to_vec(&config).unwrap()).unwrap();
         let plan: PlanConfig = serde_json::from_slice(
-            &serde_json::to_vec(&config.into_plan_config()).unwrap(),
+            &serde_json::to_vec(&config.into_plan_config(hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap())).unwrap(),
         ).unwrap();
         let restored = plan.into_run_config(OutputConfig::default());
 
@@ -491,7 +503,7 @@ proptest::proptest! {
 
         // Act
         let plan: PlanConfig = serde_json::from_slice(
-            &serde_json::to_vec(&config.into_plan_config()).unwrap(),
+            &serde_json::to_vec(&config.into_plan_config(hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap())).unwrap(),
         ).unwrap();
         let restored = plan.into_run_config(OutputConfig::default());
 
@@ -513,7 +525,15 @@ fn normalized_run_and_plan_import_roots_cannot_bypass_validation() {
         let mut config = fixture_run_config();
         config.import_roots = roots.iter().map(|root| (*root).into()).collect();
         assert!(config.validate().is_err(), "{roots:?}");
-        assert!(config.into_plan_config().validate().is_err(), "{roots:?}");
+        assert!(
+            config
+                .into_plan_config(
+                    hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap()
+                )
+                .validate()
+                .is_err(),
+            "{roots:?}"
+        );
     }
 }
 
@@ -543,4 +563,90 @@ fn raw_config_keeps_the_default_for_omitted_import_roots() {
 
     // Assert
     assert_eq!(raw.import_roots, Vec::<camino::Utf8PathBuf>::new());
+}
+
+#[test]
+fn discovery_timeout_requires_a_positive_bounded_duration() {
+    // Arrange: finite boundary cases, including the inclusive upper bound.
+    for (name, duration, accepted) in [
+        ("zero", std::time::Duration::ZERO, false),
+        ("minimum", std::time::Duration::from_nanos(1), true),
+        ("maximum", MAX_TIMEOUT, true),
+        (
+            "overflow",
+            MAX_TIMEOUT + std::time::Duration::from_nanos(1),
+            false,
+        ),
+    ] {
+        // Act.
+        let result = hoimin_core::DiscoveryConfig::new(duration);
+        // Assert.
+        assert_eq!(result.is_ok(), accepted, "{name}");
+        if let Err(error) = result {
+            assert_eq!(error, ConfigError::InvalidLimit("analyzer_timeout"));
+        }
+    }
+}
+
+#[test]
+fn saved_plan_requires_complete_discovery_settings() {
+    // Arrange.
+    for (name, discovery) in [
+        ("null", serde_json::Value::Null),
+        ("missing_timeout", serde_json::json!({})),
+        (
+            "zero",
+            serde_json::json!({"analyzer_timeout": {"secs": 0, "nanos": 0}}),
+        ),
+        (
+            "unknown_field",
+            serde_json::json!({"analyzer_timeout": {"secs": 30, "nanos": 0}, "unknown": true}),
+        ),
+    ] {
+        let mut value = plan_value();
+        value["discovery"] = discovery;
+        // Act.
+        let result = serde_json::from_value::<PlanConfig>(value);
+        // Assert.
+        assert!(result.is_err(), "{name}");
+    }
+}
+
+#[test]
+fn saved_plan_rejects_missing_discovery() {
+    // Arrange.
+    let mut value = plan_value();
+    value.as_object_mut().unwrap().remove("discovery");
+    // Act.
+    let error = serde_json::from_value::<PlanConfig>(value).unwrap_err();
+    // Assert.
+    assert!(error.to_string().contains("discovery"));
+}
+
+#[test]
+fn saved_plan_rejects_oversized_discovery_timeout_during_validation() {
+    // Arrange.
+    let mut value = plan_value();
+    value["discovery"]["analyzer_timeout"] =
+        serde_json::json!({"secs": MAX_TIMEOUT.as_secs(), "nanos": 1});
+    let plan: PlanConfig = serde_json::from_value(value).unwrap();
+    // Act.
+    let result = plan.validate();
+    // Assert.
+    assert_eq!(result, Err(ConfigError::InvalidLimit("analyzer_timeout")));
+}
+
+#[test]
+fn saved_plan_rejects_obsolete_runtime_analyzer_timeout() {
+    // Arrange.
+    let mut value = plan_value();
+    value["limits"]["analyzer_timeout"] = serde_json::json!({"secs": 30, "nanos": 0});
+    // Act.
+    let error = serde_json::from_value::<PlanConfig>(value).unwrap_err();
+    // Assert.
+    assert!(
+        error
+            .to_string()
+            .contains("unknown field `analyzer_timeout`")
+    );
 }

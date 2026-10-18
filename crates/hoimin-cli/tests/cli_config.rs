@@ -20,9 +20,26 @@ const CONFIG_PARSERS: [(&str, ConfigParser); 2] = [
         let ParsedCommand::Plan(plan) = parse_from(args.iter().copied())? else {
             panic!("expected plan");
         };
-        plan.into_run_config()
+        plan.into_configs().map(|(config, _)| config)
     }),
 ];
+
+#[cfg(any(unix, windows))]
+fn native_mutation_config(
+    command: &str,
+    options: Vec<std::ffi::OsString>,
+) -> Result<hoimin_core::RunConfig<hoimin_core::EnvironmentRequest>, hoimin_cli::cli::CliError> {
+    let mut args = vec![std::ffi::OsString::from("hoimin"), command.into()];
+    args.extend(options);
+    if command == "run" {
+        parse_config_from(args)
+    } else {
+        let ParsedCommand::Plan(plan) = parse_from(args)? else {
+            panic!("expected plan");
+        };
+        plan.into_configs().map(|(config, _)| config)
+    }
+}
 
 const RUNTIME_DEFAULT_OPERATOR_IDS: [&str; 54] = [
     "compare_eq_ne",
@@ -296,7 +313,7 @@ fn run_resolves_metrics_path_from_invocation_directory() {
 }
 
 #[test]
-fn metrics_is_rejected_for_plan_and_resolved_for_verify() {
+fn plan_rejects_metrics() {
     assert!(
         parse_from([
             "hoimin",
@@ -310,6 +327,10 @@ fn metrics_is_rejected_for_plan_and_resolved_for_verify() {
         ])
         .is_err()
     );
+}
+
+#[test]
+fn verify_resolves_metrics_path_from_invocation_directory() {
     let ParsedCommand::Verify(args) = parse_from([
         "hoimin",
         "verify",
@@ -347,7 +368,7 @@ fn progress_requires_two_reports_and_positive_patience() {
 }
 
 #[test]
-fn plan_accepts_run_selection_but_rejects_report_and_session_options() {
+fn plan_normalizes_selection_with_json_output_and_disabled_session() {
     let ParsedCommand::Plan(args) = parse_from([
         "hoimin",
         "plan",
@@ -365,27 +386,33 @@ fn plan_accepts_run_selection_but_rejects_report_and_session_options() {
     .unwrap() else {
         panic!("expected plan");
     };
-    let config = args.into_run_config().unwrap();
+    let config = args.into_configs().unwrap().0;
     assert_eq!(config.output.format, hoimin_core::OutputFormat::Json);
     assert_eq!(config.session, hoimin_core::SessionMode::Disabled);
     assert_eq!(config.fingerprint_includes, ["pyproject.toml"]);
     assert_eq!(config.fingerprint_files, ["pyproject.toml"]);
     assert_eq!(config.test_argv.len(), 3);
-    for option in ["--format", "--session", "--resume"] {
+    assert_eq!(config.output.metrics, None);
+}
+
+#[test]
+fn plan_rejects_run_output_and_session_options() {
+    for (case, option) in [
+        ("format", &["--format", "json"][..]),
+        ("session", &["--session", "session.sqlite"][..]),
+        ("resume", &["--resume"][..]),
+    ] {
+        let mut args = vec!["hoimin", "plan", "--file", "src/calc.py"];
+        args.extend_from_slice(option);
+        args.extend(["--", "python"]);
+
+        let error = parse_from(args).unwrap_err();
+
         assert!(
-            parse_from([
-                "hoimin",
-                "plan",
-                "--file",
-                "src/calc.py",
-                option,
-                "x",
-                "--",
-                "python",
-            ])
-            .is_err(),
-            "{option}"
+            matches!(error, hoimin_cli::cli::CliError::Clap(_)),
+            "{case}"
         );
+        assert!(error.to_string().contains(option[0]), "{case}: {error}");
     }
 }
 
@@ -650,19 +677,25 @@ fn run_requires_test_argv() {
 }
 
 #[test]
-fn line_and_symbol_are_independent_target_selectors() {
-    let line =
+fn line_is_an_independent_target_selector() {
+    let config =
         parse_config_from(["hoimin", "run", "--line", "pkg/a.py:4-7", "--", "python"]).unwrap();
-    assert_eq!(line.selection.lines.len(), 1);
 
-    let ParsedCommand::Run(symbol_only) =
-        parse_from(["hoimin", "run", "--symbol", "pkg.a:run", "--", "python"]).unwrap()
-    else {
-        panic!("expected run");
-    };
-    assert_eq!(symbol_only.symbol, ["pkg.a:run"]);
+    assert_eq!(config.selection.lines.len(), 1);
+}
 
-    let symbol = parse_config_from([
+#[test]
+fn symbol_satisfies_required_selector_before_config_validation() {
+    let args = ["hoimin", "run", "--symbol", "pkg.a:run", "--", "python"];
+
+    let command = parse_from(args).unwrap();
+
+    assert!(matches!(command, ParsedCommand::Run(_)));
+}
+
+#[test]
+fn source_and_symbol_selectors_can_be_combined() {
+    let config = parse_config_from([
         "hoimin",
         "run",
         "--source",
@@ -673,7 +706,9 @@ fn line_and_symbol_are_independent_target_selectors() {
         "python",
     ])
     .unwrap();
-    assert_eq!(symbol.selection.symbols.len(), 1);
+
+    assert_eq!(config.selection.sources, ["pkg"]);
+    assert_eq!(config.selection.symbols.len(), 1);
 }
 
 #[test]
@@ -701,7 +736,7 @@ fn run_and_plan_apply_mandatory_disk_safety_defaults() {
     else {
         panic!("expected plan");
     };
-    let plan = plan.into_run_config().unwrap();
+    let plan = plan.into_configs().unwrap().0;
 
     for limits in [&run.limits, &plan.limits] {
         assert_eq!(limits.max_workspace_size.get(), 8 * 1024 * 1024 * 1024);
@@ -739,7 +774,7 @@ fn run_and_plan_parse_explicit_disk_safety_limits() {
     .unwrap() else {
         panic!("expected plan");
     };
-    let plan = plan.into_run_config().unwrap();
+    let plan = plan.into_configs().unwrap().0;
 
     for limits in [&run.limits, &plan.limits] {
         assert_eq!(limits.max_workspace_size.get(), 768 * 1024 * 1024);
@@ -853,7 +888,7 @@ fn invalid_duration_value_shows_duration_example() {
 
 #[test]
 fn documented_defaults_are_applied() {
-    let ParsedCommand::Run(cli) = parse_from([
+    let config = parse_config_from([
         "hoimin",
         "run",
         "--file",
@@ -862,23 +897,26 @@ fn documented_defaults_are_applied() {
         "python",
         "tests.py",
     ])
-    .unwrap() else {
-        panic!("expected run");
-    };
+    .unwrap();
 
-    assert_eq!(cli.jobs, 1);
-    assert_eq!(cli.max_mutants, 100);
-    assert_eq!(cli.max_candidates, 10_000);
-    assert_eq!(cli.analyzer_timeout, "30s");
-    assert_eq!(cli.baseline_timeout, "60s");
-    assert_eq!(cli.mutant_timeout, "auto");
-    assert_eq!(cli.total_timeout, "5m");
-    assert_eq!(cli.max_memory, "1GiB");
-    assert_eq!(cli.max_output, "1MiB");
-    assert_eq!(cli.max_copy_size, "1GiB");
-    assert_eq!(cli.max_workspace_size, "8GiB");
-    assert_eq!(cli.min_free_space, "10GiB");
-    assert_eq!(cli.max_processes, 64);
+    assert_eq!(config.limits.jobs.get(), 1);
+    assert_eq!(config.limits.max_mutants.get(), 100);
+    assert_eq!(config.limits.max_candidates.get(), 10_000);
+    assert_eq!(config.limits.baseline_timeout.get().as_secs(), 60);
+    assert_eq!(
+        config.limits.mutant_timeout,
+        hoimin_core::MutantTimeout::Auto
+    );
+    assert_eq!(config.limits.total_timeout.get().as_secs(), 300);
+    assert_eq!(config.limits.max_memory.get(), 1024 * 1024 * 1024);
+    assert_eq!(config.limits.max_output.get(), 1024 * 1024);
+    assert_eq!(config.limits.max_copy_size.get(), 1024 * 1024 * 1024);
+    assert_eq!(
+        config.limits.max_workspace_size.get(),
+        8 * 1024 * 1024 * 1024
+    );
+    assert_eq!(config.limits.min_free_space.get(), 10 * 1024 * 1024 * 1024);
+    assert_eq!(config.limits.max_processes.get(), 64);
 }
 
 #[test]
@@ -1220,64 +1258,108 @@ fn parse_run_config_rejects_obsolete_python_option() {
 fn test_argv_preserves_non_utf8_bytes() {
     use std::os::unix::ffi::OsStringExt;
 
-    let invalid = std::ffi::OsString::from_vec(vec![0xff, b'x']);
-    let config = parse_config_from([
-        std::ffi::OsString::from("hoimin"),
-        std::ffi::OsString::from("run"),
-        std::ffi::OsString::from("--file"),
-        std::ffi::OsString::from("a.py"),
-        std::ffi::OsString::from("--"),
-        invalid.clone(),
-    ])
-    .unwrap();
-    assert_eq!(
-        config.test_argv,
-        [hoimin_core::CommandArg::Unix(invalid.into_vec())]
-    );
+    for command in ["run", "plan"] {
+        let options = vec![
+            "--file".into(),
+            "a.py".into(),
+            "--".into(),
+            std::ffi::OsString::from_vec(vec![0xff, b'x']),
+        ];
+
+        let config = native_mutation_config(command, options).unwrap();
+
+        assert_eq!(
+            config.test_argv,
+            [hoimin_core::CommandArg::Unix(vec![0xff, b'x'])],
+            "{command}"
+        );
+    }
 }
 
 #[cfg(windows)]
 #[test]
 fn test_argv_preserves_non_utf8_wide_units() {
-    use std::os::windows::ffi::{OsStrExt, OsStringExt};
-
-    let invalid = std::ffi::OsString::from_wide(&[0xd800, u16::from(b'x')]);
-    let expected: Vec<u16> = invalid.encode_wide().collect();
-    let config = hoimin_cli::cli::parse_config_from([
-        std::ffi::OsString::from("hoimin"),
-        std::ffi::OsString::from("run"),
-        std::ffi::OsString::from("--file"),
-        std::ffi::OsString::from("a.py"),
-        std::ffi::OsString::from("--"),
-        invalid,
-    ])
-    .unwrap();
-    assert_eq!(
-        config.test_argv,
-        [hoimin_core::CommandArg::Windows(expected)]
-    );
-}
-
-#[cfg(windows)]
-#[test]
-fn selector_rejects_non_utf8_wide_units() {
     use std::os::windows::ffi::OsStringExt;
 
-    let invalid = std::ffi::OsString::from_wide(&[0xd800]);
-    let error = hoimin_cli::cli::parse_config_from([
-        std::ffi::OsString::from("hoimin"),
-        std::ffi::OsString::from("run"),
-        std::ffi::OsString::from("--file"),
-        invalid,
-        std::ffi::OsString::from("--"),
-        std::ffi::OsString::from("python"),
-    ])
-    .unwrap_err();
-    assert!(matches!(
-        error,
-        hoimin_cli::cli::CliError::NonUtf8Value("--file")
-    ));
+    for command in ["run", "plan"] {
+        let options = vec![
+            "--file".into(),
+            "a.py".into(),
+            "--".into(),
+            std::ffi::OsString::from_wide(&[0xd800, 0x0078]),
+        ];
+
+        let config = native_mutation_config(command, options).unwrap();
+
+        assert_eq!(
+            config.test_argv,
+            [hoimin_core::CommandArg::Windows(vec![0xd800, 0x0078])],
+            "{command}"
+        );
+    }
 }
+
+#[cfg(any(unix, windows))]
+#[test]
+fn mutation_paths_reject_non_utf8_values() {
+    #[cfg(unix)]
+    let invalid = {
+        use std::os::unix::ffi::OsStringExt;
+        std::ffi::OsString::from_vec(vec![0xff])
+    };
+    #[cfg(windows)]
+    let invalid = {
+        use std::os::windows::ffi::OsStringExt;
+        std::ffi::OsString::from_wide(&[0xd800])
+    };
+    for command in ["run", "plan"] {
+        for option in ["--root", "--source", "--import-root", "--file"] {
+            let options = vec![
+                "--file".into(),
+                "a.py".into(),
+                option.into(),
+                invalid.clone(),
+                "--".into(),
+                "python".into(),
+            ];
+
+            let error = native_mutation_config(command, options).unwrap_err();
+
+            assert!(
+                matches!(error, hoimin_cli::cli::CliError::NonUtf8Value(name) if name == option),
+                "{command} {option}: {error}"
+            );
+        }
+    }
+}
+
+#[cfg(any(unix, windows))]
+#[test]
+fn mutation_text_selectors_reject_non_utf8_values() {
+    #[cfg(unix)]
+    let invalid = {
+        use std::os::unix::ffi::OsStringExt;
+        std::ffi::OsString::from_vec(vec![0xff])
+    };
+    #[cfg(windows)]
+    let invalid = {
+        use std::os::windows::ffi::OsStringExt;
+        std::ffi::OsString::from_wide(&[0xd800])
+    };
+    for command in ["run", "plan"] {
+        for option in ["--line", "--symbol"] {
+            let options = vec![option.into(), invalid.clone(), "--".into(), "python".into()];
+
+            let error = native_mutation_config(command, options).unwrap_err();
+
+            assert!(
+                matches!(error, hoimin_cli::cli::CliError::Clap(ref clap) if clap.kind() == clap::error::ErrorKind::InvalidUtf8),
+                "{command} {option}: {error}"
+            );
+        }
+    }
+}
+
 #[test]
 fn operator_flags_expand_groups_and_preserve_runtime_default() {
     let default = parse_config_from(["hoimin", "run", "--file", "x.py", "--", "check"]).unwrap();
@@ -1684,5 +1766,284 @@ fn explicit_zero_changed_context_requires_changed_flag() {
         let result = parse_from(command_line);
         // Assert.
         assert!(result.is_err(), "{command}");
+    }
+}
+
+#[test]
+fn run_and_plan_normalize_all_shared_options_equally() {
+    let shared = [
+        "--root",
+        ".",
+        "--source",
+        "pkg",
+        "--import-root",
+        "vendor",
+        "--file",
+        "pkg/a.py",
+        "--line",
+        "pkg/a.py:4-7",
+        "--symbol",
+        "pkg.a:run",
+        "--changed",
+        "--changed-context",
+        "2",
+        "--diff-base",
+        "main",
+        "--include",
+        "fixtures/**",
+        "--exclude",
+        "build/**",
+        "--fingerprint-include",
+        "fixtures/**/*.json",
+        "--fingerprint-file",
+        "pyproject.toml",
+        "--fingerprint-env",
+        "HOIMIN_TEST",
+        "--operators",
+        "compare_eq_ne,compare_order",
+        "--exclude-operators",
+        "compare_order",
+        "--profile",
+        "focused",
+        "--jobs",
+        "2",
+        "--max-mutants",
+        "12",
+        "--max-candidates",
+        "200",
+        "--baseline-timeout",
+        "21s",
+        "--mutant-timeout",
+        "7s",
+        "--total-timeout",
+        "2m",
+        "--max-memory",
+        "2GiB",
+        "--max-output",
+        "2MiB",
+        "--max-copy-size",
+        "3GiB",
+        "--max-workspace-size",
+        "4GiB",
+        "--min-free-space",
+        "5GiB",
+        "--max-processes",
+        "8",
+        "--allow-best-effort-memory",
+        "--",
+        "python",
+        "-m",
+        "pytest",
+        "-q",
+    ];
+    let mut run_args = vec!["hoimin", "run"];
+    run_args.extend(shared);
+    let mut plan_args = vec!["hoimin", "plan"];
+    plan_args.extend(shared);
+
+    let run = parse_config_from(run_args).unwrap();
+    let ParsedCommand::Plan(plan) = parse_from(plan_args).unwrap() else {
+        panic!("expected plan");
+    };
+    let plan = plan.into_configs().unwrap().0;
+
+    assert_eq!(run, plan);
+    assert_eq!(run.limits.max_output.get(), 2 * 1024 * 1024);
+    assert_eq!(run.operators.names(), ["compare_eq_ne"]);
+    assert_eq!(run.profile, MutationProfile::Focused);
+}
+
+#[test]
+fn missing_selector_precedes_missing_test_argv() {
+    for command in ["run", "plan"] {
+        let args = ["hoimin", command];
+
+        let error = parse_from(args).unwrap_err();
+
+        assert!(
+            matches!(error, hoimin_cli::cli::CliError::MissingTargetSelector),
+            "{command}: {error}"
+        );
+    }
+}
+
+#[test]
+fn selected_mutation_command_requires_test_argv() {
+    for command in ["run", "plan"] {
+        let args = ["hoimin", command, "--file", "pkg/a.py"];
+
+        let error = parse_from(args).unwrap_err();
+
+        assert!(
+            matches!(error, hoimin_cli::cli::CliError::MissingTestArgv),
+            "{command}: {error}"
+        );
+    }
+}
+
+#[test]
+fn common_duration_diagnostics_name_the_invalid_option() {
+    for (command, parse_config) in CONFIG_PARSERS {
+        for option in ["--baseline-timeout", "--mutant-timeout", "--total-timeout"] {
+            let args = [
+                "hoimin", command, "--file", "pkg/a.py", option, "nonsense", "--", "python",
+            ];
+
+            let error = parse_config(&args).unwrap_err();
+
+            assert_eq!(
+                error.to_string(),
+                format!("invalid {option}: nonsense; expected a duration such as 90s or 5m"),
+                "{command}"
+            );
+        }
+    }
+}
+
+#[test]
+fn common_byte_diagnostics_name_the_invalid_option() {
+    for (command, parse_config) in CONFIG_PARSERS {
+        for option in [
+            "--max-memory",
+            "--max-output",
+            "--max-copy-size",
+            "--max-workspace-size",
+            "--min-free-space",
+        ] {
+            let args = [
+                "hoimin", command, "--file", "pkg/a.py", option, "2gb", "--", "python",
+            ];
+
+            let error = parse_config(&args).unwrap_err();
+
+            assert_eq!(
+                error.to_string(),
+                format!(
+                    "invalid {option}: 2gb; expected bytes with one of: B, KB, MB, GB, KiB, MiB, GiB"
+                ),
+                "{command}"
+            );
+        }
+    }
+}
+
+#[test]
+fn run_resume_requires_a_session() {
+    let args = [
+        "hoimin", "run", "--file", "pkg/a.py", "--resume", "--", "python",
+    ];
+
+    let error = parse_config_from(args).unwrap_err();
+
+    assert_eq!(
+        error.config_error(),
+        Some(&hoimin_core::ConfigError::ResumeRequiresSession)
+    );
+}
+
+fn assert_run_rejects_plan_only_analyzer_timeout(options: &[&str]) {
+    // Arrange.
+    let mut argv = vec!["hoimin", "run", "--file", "src/calc.py"];
+    argv.extend_from_slice(options);
+    argv.extend(["--", "python"]);
+    // Act.
+    let result = parse_from(argv);
+    // Assert.
+    assert!(
+        result.is_err(),
+        "run accepted discovery-only option {options:?}"
+    );
+}
+
+#[test]
+fn run_rejects_plan_only_analyzer_timeout_separate_tokens() {
+    assert_run_rejects_plan_only_analyzer_timeout(&["--analyzer-timeout", "19s"]);
+}
+
+#[test]
+fn run_rejects_plan_only_analyzer_timeout_equals_spelling() {
+    assert_run_rejects_plan_only_analyzer_timeout(&["--analyzer-timeout=19s"]);
+}
+
+#[test]
+fn plan_normalizes_its_discovery_timeout_separately_from_execution() {
+    // Arrange.
+    let ParsedCommand::Plan(plan) = parse_from([
+        "hoimin",
+        "plan",
+        "--file",
+        "calc.py",
+        "--analyzer-timeout",
+        "19s",
+        "--",
+        "python",
+    ])
+    .unwrap() else {
+        panic!("expected plan")
+    };
+    // Act.
+    let (execution, discovery) = plan.into_configs().unwrap();
+    let execution = serde_json::to_value(execution).unwrap();
+    // Assert.
+    assert_eq!(
+        discovery.analyzer_timeout.get(),
+        std::time::Duration::from_secs(19)
+    );
+    assert!(execution.get("discovery").is_none());
+    assert!(execution["limits"].get("analyzer_timeout").is_none());
+}
+
+fn assert_plan_rejects_discovery_timeout_with_flag_attribution(value: &str) {
+    // Arrange.
+    let ParsedCommand::Plan(plan) = parse_from([
+        "hoimin",
+        "plan",
+        "--file",
+        "calc.py",
+        "--analyzer-timeout",
+        value,
+        "--",
+        "python",
+    ])
+    .unwrap() else {
+        panic!("expected plan")
+    };
+    // Act.
+    let error = plan.into_configs().unwrap_err();
+    // Assert.
+    assert!(
+        error.to_string().contains("--analyzer-timeout"),
+        "{value}: {error}"
+    );
+}
+
+#[test]
+fn plan_rejects_malformed_discovery_timeout_with_flag_attribution() {
+    assert_plan_rejects_discovery_timeout_with_flag_attribution("nonsense");
+}
+
+#[test]
+fn plan_rejects_zero_discovery_timeout_with_flag_attribution() {
+    assert_plan_rejects_discovery_timeout_with_flag_attribution("0s");
+}
+
+#[test]
+fn plan_rejects_oversized_discovery_timeout_with_flag_attribution() {
+    assert_plan_rejects_discovery_timeout_with_flag_attribution("10000000000s");
+}
+
+#[test]
+fn help_limits_discovery_timeout_to_plan() {
+    // Arrange: root describes run, while verify inherits the saved plan.
+    for (argv, advertised) in [
+        (vec!["hoimin", "--help"], false),
+        (vec!["hoimin", "run", "--help"], false),
+        (vec!["hoimin", "plan", "--help"], true),
+        (vec!["hoimin", "verify", "--help"], false),
+    ] {
+        // Act.
+        let help = parse_from(argv.clone()).unwrap_err().to_string();
+        // Assert.
+        assert_eq!(help.contains("--analyzer-timeout"), advertised, "{argv:?}");
     }
 }

@@ -1,0 +1,190 @@
+{
+  "schema_version": 1,
+  "environment": {
+    "platform": "macOS-15.7.7-arm64-arm-64bit-Mach-O",
+    "machine": "arm64",
+    "cpu": "arm",
+    "python": "3.14.7 (main, Aug  7 2026, 02:15:30) [Clang 22.1.3 ]",
+    "rust": "rustc 1.99.0 (b940084d7 2026-09-28)"
+  },
+  "runs": [],
+  "registry_sha256": "5202677e1fd0ec86be5be529b170045260096dccac9b2a0a4fa00e4029439ee5",
+  "gates": [
+    {
+      "id": "token-lookups",
+      "status": "passed",
+      "tests": 1
+    },
+    {
+      "id": "candidate-prefix",
+      "status": "passed",
+      "tests": 1
+    },
+    {
+      "id": "zero-limit-probe",
+      "status": "passed",
+      "tests": 1
+    },
+    {
+      "id": "lean-target-reads-complete",
+      "status": "passed",
+      "tests": 1
+    },
+    {
+      "id": "lean-target-reads-truncated",
+      "status": "passed",
+      "tests": 1
+    },
+    {
+      "id": "report-peak",
+      "status": "passed",
+      "tests": 1
+    },
+    {
+      "id": "progress-peak",
+      "status": "passed",
+      "tests": 1
+    },
+    {
+      "id": "workspace-retained",
+      "status": "passed",
+      "tests": 1
+    },
+    {
+      "id": "target-walk-1",
+      "status": "passed",
+      "tests": 1
+    },
+    {
+      "id": "target-walk-2",
+      "status": "passed",
+      "tests": 1
+    },
+    {
+      "id": "context-builds",
+      "status": "passed",
+      "tests": 1
+    },
+    {
+      "id": "fingerprint-walk",
+      "status": "passed",
+      "tests": 1
+    },
+    {
+      "id": "replacement-copies",
+      "status": "passed",
+      "tests": 1
+    },
+    {
+      "id": "spool-writes",
+      "status": "passed",
+      "tests": 1
+    },
+    {
+      "id": "column-queries",
+      "status": "passed",
+      "tests": 1
+    },
+    {
+      "id": "selector-lookups",
+      "status": "passed",
+      "tests": 1
+    },
+    {
+      "id": "range-normalization-1",
+      "status": "passed",
+      "tests": 1
+    },
+    {
+      "id": "range-normalization-2",
+      "status": "passed",
+      "tests": 1
+    },
+    {
+      "id": "range-normalization-3",
+      "status": "passed",
+      "tests": 1
+    },
+    {
+      "id": "annotation-copies",
+      "status": "passed",
+      "tests": 1
+    },
+    {
+      "id": "binding-history-1",
+      "status": "passed",
+      "tests": 1
+    },
+    {
+      "id": "binding-history-2",
+      "status": "passed",
+      "tests": 1
+    },
+    {
+      "id": "lean-cost-real_operation_counters_match_lean_cost_corpus",
+      "status": "passed",
+      "tests": 1
+    },
+    {
+      "id": "lean-cost-real_broken_cost_variants_are_detected_without_semantic_changes",
+      "status": "passed",
+      "tests": 1
+    },
+    {
+      "id": "lean-cost-actual_import_clone_counts_entries_at_the_clone_boundary",
+      "status": "passed",
+      "tests": 1
+    },
+    {
+      "id": "lean-cost-replacement_counter_observes_direct_builder_calls",
+      "status": "passed",
+      "tests": 1
+    },
+    {
+      "id": "workspace-preflight-peak",
+      "status": "passed",
+      "tests": 1
+    },
+    {
+      "id": "annotation-statement-transfer-copies",
+      "status": "passed",
+      "tests": 1
+    },
+    {
+      "id": "annotation-statement-transfer-candidates",
+      "status": "passed",
+      "tests": 1
+    },
+    {
+      "id": "control-flow-reanalysis-nested_loops_bound_actual_statement_and_annotation_visits",
+      "status": "passed",
+      "tests": 1
+    },
+    {
+      "id": "control-flow-reanalysis-nested_loop_old_replay_exceeds_bound_with_identical_candidates",
+      "status": "passed",
+      "tests": 1
+    },
+    {
+      "id": "control-flow-reanalysis-nested_class_loops_bound_actual_statement_and_annotation_visits",
+      "status": "passed",
+      "tests": 1
+    },
+    {
+      "id": "audit-promoted-546",
+      "status": "passed",
+      "tests": 1
+    },
+    {
+      "id": "audit-promoted-547",
+      "status": "passed",
+      "tests": 1
+    },
+    {
+      "id": "nested-finally-reanalysis",
+      "status": "passed",
+      "tests": 1
+    }
+  ],
+  "status": "passed"
+}

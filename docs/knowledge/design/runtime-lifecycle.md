@@ -258,6 +258,22 @@ sources:
   revision: 51c9e26b9d0006cac150b3833cb797a59349bac1
   working_tree: modified
   sha256: 66d7bb084d35c74ed50e24d5be9853361853b515ed98a8ca929d23a4e3c91a40
+- id: issue-974-boundary
+  resource: ../../../crates/hoimin-cli/src/workspace/root.rs
+  revision: 4ebed4457519920e9a28f8f653d8ce96985acdad
+  working_tree: clean
+  sha256: b784fdfa14c405f37a73c504f5fa26b0455d3eeccc38e12b7c00446db070bbc0
+
+- id: issue-974-evidence
+  resource: ../../maintenance/2026-10-18-issues-971-979/task-1-report.md
+  working_tree: untracked
+  sha256: 5c44f14a04237b8a8172fbf665e8c868c3cda065ad6257bca504f46f86a214da
+
+- id: issue-972-lifetime
+  resource: ../../maintenance/2026-10-18-issues-971-979/task-7-report.md
+  working_tree: untracked
+  sha256: 94720f53dfcc7c8db649b2dc5a456e09c2b2f357e6962b300b4d183b3343489b
+
 ---
 
 # 制限する資源とディスク監視の範囲
@@ -823,3 +839,30 @@ fixtures.[^issue-967-notifications]
 [^issue-967-windows]: [Windows job ownership, exit waiting and notification handling](../../../crates/hoimin-cli/src/resource/windows.rs).
 [^issue-967-record]: [Issue 967 design, review and verification](../../maintenance/2026-10-17-issue-967.md).
 [^issue-967-notifications]: [Finite notification cases and bounded generation-order test](../../../crates/hoimin-cli/src/resource/windows/tests/notification_tests.rs).
+
+# Shared-inode mutation protection (Issue #974)
+
+`MutationFile::into_writable` checks descriptor link count before chmod and again
+before returning a writable handle. More than one link fails with
+`workspace.mutation.shared`; matching contents and permissions do not authorize
+a write. The boundary covers first mutation after baseline and mutation after
+reset. It retains parent/handle identity checks and symlink/reparse rejection.
+Cleanup avoids changing external shared-file permissions, accepting an existing
+cleanup error when safe readonly unlink is unsupported.[^issue-974-boundary][^issue-974-evidence]
+
+Native macOS regressions cover original and external sentinel contents and
+permissions, readonly cleanup, independent writes and mismatches. Unix and
+Windows implementations and native regression cases exist; local Windows/Linux
+execution is not claimed. Hoimin's protection of its own writes is not a sandbox
+for the test command.[^issue-974-evidence]
+
+The shell constructs the analyzer with immutable session settings and retains
+managed spool ownership through detached work. Cancellation or return from a
+waiting future does not establish worker exit or permit recursive cleanup.
+Payload leases also survive until worker-held data drops; the
+[analyzer contract](analyzer.md#retained-candidate-payload-issue-978) defines that
+separate accounting lifetime.[^issue-972-lifetime]
+
+[^issue-974-boundary]: [Descriptor mutation and cleanup checks](../../../crates/hoimin-cli/src/workspace/root.rs).
+[^issue-974-evidence]: [Shared-inode protection and native limitations](../../maintenance/2026-10-18-issues-971-979/task-1-report.md).
+[^issue-972-lifetime]: [Fixed settings, interruption and managed-owner verification](../../maintenance/2026-10-18-issues-971-979/task-7-report.md).

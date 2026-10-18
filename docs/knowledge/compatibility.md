@@ -42,24 +42,36 @@ sources:
   revision: 35c21145ccdfb6a044f9ae1dad2a5e4ff90deece
   working_tree: clean
   sha256: 203448fab2450fd7c419a354e1a2904a935e88cfd334f74b91d6f25b14220aea
+- id: issue-979-compatibility
+  resource: ../compatibility.md
+  revision: 4ebed4457519920e9a28f8f653d8ce96985acdad
+  working_tree: clean
+  sha256: 3db98744cba6c95b2828d98298038c52242135a2607f2855c58d100205243fb4
+
 ---
 
-# Current saved formats and release floor (Issue #949)
+# Current saved formats and release floor (Issue #979)
 
-Plan schema 9 and report schema 7 store the project root only in
-`normalized_config.selection.root`; the outer root field is rejected by typed
-readers. Regenerate schema-8 and older plans. Read older reports with their
-producing binary or rerun with the intended version. The minimum release version
-is 0.11.0; fingerprint schema 11 and session schema 5 remain unchanged.
-Progress retains its opaque configuration contract, while review validates typed
-configuration.[^issue-949-compatibility]
+Plan schema 10 requires `normalized_config.discovery.analyzer_timeout`.
+Report/event schema 8 and runtime configuration omit discovery settings;
+`run` rejects `--analyzer-timeout`, and `verify` inherits the saved plan value.
+The cooperative deadline spans the whole discovery phase. It does not forcibly
+interrupt synchronous I/O or parsing.[^issue-979-compatibility]
 
-This notice supersedes the current schema and version-floor statements in the
-historical Issue #936 and #939 sections below. Their format and validation
-changes remain in effect. Follow the [0.11.0 migration notice](../compatibility.md#single-normalized-project-root-in-0110)
-for commands and retained contracts.[^issue-949-compatibility]
+The minimum release version is 0.12.0. Fingerprint schema 12 removes the discovery
+timeout from execution compatibility and is incompatible with schema 11.
+SQLite session schema 5, ranking rule 4, candidate schema 1 and mutant-ID v1 stay
+unchanged. Regenerate older plans, update report readers and use the producing
+binary for historical reports. Incomplete incompatible session history can
+require a new session path; no conversion or deletion occurs. The sole saved
+root remains `normalized_config.selection.root`.[^issue-979-compatibility]
 
-[^issue-949-compatibility]: [Single normalized root compatibility notice](../compatibility.md#single-normalized-project-root-in-0110).
+Follow the [0.12.0 migration notice](../compatibility.md#discovery-timeout-ownership-in-0120).
+The Issue #949 change introduced the single root at plan 9/report 7/floor 0.11.0;
+the notices below retain their historical versions, not the current format.
+
+[^issue-979-compatibility]: [Discovery ownership and current compatibility](../compatibility.md#discovery-timeout-ownership-in-0120).
+[^issue-949-compatibility]: [Historical single-root notice](../compatibility.md#single-normalized-project-root-in-0110).
 
 # Compatibility scope
 

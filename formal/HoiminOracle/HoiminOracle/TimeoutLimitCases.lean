@@ -17,13 +17,13 @@ structure OracleCase where
   schema : Nat
   id : String
   mode : String
-  input : Input
+  input : PlanInput
   expected : Expected
   deriving Repr, DecidableEq, BEq
 
 def input
     (analyzer baseline total : Nat)
-    (mutant : MutantTimeout := .auto) : Input := {
+    (mutant : MutantTimeout := .auto) : PlanInput := {
   analyzer
   baseline
   mutant
@@ -33,16 +33,16 @@ def input
   oneSecond
 }
 
-def expected (item : Input) : Expected := {
-  accepted := accepts item
+def expected (item : PlanInput) : Expected := {
+  accepted := acceptsPlan item
   invalidField := invalidField item
   effectiveMutantTimeout := effectiveMutantTimeout item
 }
 
-def case (id : String) (item : Input) : OracleCase := {
+def case (id : String) (item : PlanInput) : OracleCase := {
   schema := 1
   id
-  mode := "strict"
+  mode := "plan"
   input := item
   expected := expected item
 }
@@ -67,13 +67,13 @@ def cases : List OracleCase := [
 
 def caseSafe (item : OracleCase) : Bool :=
   item.schema == 1 &&
-    item.mode == "strict" &&
+    item.mode == "plan" &&
     item.input.maximum == maximum &&
     item.input.minimumAuto == minimumAuto &&
     item.input.oneSecond == oneSecond &&
     expected item.input == item.expected
 
-def brokenInputOnlyAutoAccepts (item : Input) : Bool :=
+def brokenInputOnlyAutoAccepts (item : PlanInput) : Bool :=
   durationValid item.maximum item.analyzer &&
     durationValid item.maximum item.baseline &&
     durationValid item.maximum item.total
@@ -86,7 +86,7 @@ def inclusiveSensitivity : Bool :=
 
 def derivedAutoSensitivity : Bool :=
   let item := input (30 * oneSecond) (maximumAutoBaseline + 1) (300 * oneSecond)
-  brokenInputOnlyAutoAccepts item && !accepts item &&
+  brokenInputOnlyAutoAccepts item && !acceptsPlan item &&
     invalidField item == some "baseline_timeout"
 
 def attributionSensitivity : Bool :=

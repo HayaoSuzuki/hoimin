@@ -40,6 +40,7 @@ fn string_segments_respect_candidate_caps_and_target_selection() {
     let lines = [LineRange { start: 4, end: 4 }];
     let symbols = ["second".to_owned()];
     let request = AnalyzeRequest {
+        payload: super::payload::PayloadBudget::default(),
         path: Utf8Path::new("subject.py"),
         lines: &lines,
         symbols: &symbols,
@@ -180,6 +181,7 @@ fn analyze_with_only_operator(
     operators.include(selected_operator);
     analyze_source(
         &AnalyzeRequest {
+            payload: super::payload::PayloadBudget::default(),
             path: Utf8Path::new("pkg/annotations.py"),
             lines: &[],
             symbols: &[],
@@ -647,6 +649,7 @@ fn operator_function_source_order_selection_profiles_and_annotations() {
     operators.exclude(MutationOperator::from_name("operator_function").unwrap());
     let output = analyze_source(
         &AnalyzeRequest {
+            payload: super::payload::PayloadBudget::default(),
             path: Utf8Path::new("pkg/sample.py"),
             lines: &[],
             symbols: &[],
@@ -858,6 +861,7 @@ fn operator_function_class_comprehensions_use_implicit_function_scope() {
     let candidates = analyze(source)
         .candidates
         .into_iter()
+        .map(super::payload::Charged::into_untracked)
         .filter(|candidate| candidate.operator.as_str() == "operator_function")
         .map(|candidate| (candidate.line, candidate.original, candidate.replacement))
         .collect::<Vec<_>>();
@@ -876,6 +880,7 @@ fn operator_function_class_comprehensions_cover_all_forms_and_nested_scopes() {
     let candidates = analyze(source)
         .candidates
         .into_iter()
+        .map(super::payload::Charged::into_untracked)
         .filter(|candidate| candidate.operator.as_str() == "operator_function")
         .map(|candidate| (candidate.line, candidate.original, candidate.replacement))
         .collect::<Vec<_>>();
@@ -905,6 +910,7 @@ fn operator_function_class_comprehensions_preserve_identity_guards_and_first_ite
     let candidates = analyze(source)
         .candidates
         .into_iter()
+        .map(super::payload::Charged::into_untracked)
         .filter(|candidate| candidate.operator.as_str() == "operator_function")
         .map(|candidate| (candidate.line, candidate.original, candidate.replacement))
         .collect::<Vec<_>>();
@@ -1055,7 +1061,7 @@ fn prefix_candidate(
     }
 }
 
-fn candidate_starts(candidates: &[AnalyzerCandidate]) -> Vec<u64> {
+fn candidate_starts(candidates: &[super::payload::Charged<AnalyzerCandidate>]) -> Vec<u64> {
     candidates
         .iter()
         .map(|candidate| candidate.span.start)
@@ -1081,13 +1087,13 @@ proptest! {
     ) {
         let names = ["boolean_literal", "compare_eq_ne", "statement_delete"];
         let operators = [MutationOperator::BooleanLiteral, MutationOperator::CompareEqNe, MutationOperator::StatementDelete];
-        let mut prefix = CandidatePrefix::new(limit);
+        let mut prefix = CandidatePrefix::new(limit, super::payload::PayloadBudget::default());
         let emissions = order.into_iter().chain([2, 1, 0]);
 
         for index in emissions {
-            prefix.push(prefix_candidate(1, "same", operators[index]));
+            prefix.push(prefix_candidate(1, "same", operators[index])).unwrap();
         }
-        let result = prefix.finish();
+        let result = prefix.finish().unwrap();
 
         let actual: Vec<_> = result.candidates.iter().map(|c| c.operator.as_str()).collect();
         prop_assert_eq!(actual, names[..3.min(limit + 1)].to_vec());
@@ -1110,6 +1116,7 @@ fn same_position_candidates_use_lexical_names_at_every_limit() {
 
     for limit in [0, 1, 2, 3, usize::MAX] {
         let request = AnalyzeRequest {
+            payload: super::payload::PayloadBudget::default(),
             path: Utf8Path::new("subject.py"),
             lines: &[],
             symbols: &[],
@@ -1132,7 +1139,7 @@ fn same_position_candidates_use_lexical_names_at_every_limit() {
 
 #[test]
 fn candidate_prefix_retains_the_earliest_k_plus_one_unique_candidates() {
-    let mut prefix = CandidatePrefix::new(2);
+    let mut prefix = CandidatePrefix::new(2, super::payload::PayloadBudget::default());
     assert_eq!(prefix.capacity, 3);
 
     for candidate in [
@@ -1142,11 +1149,11 @@ fn candidate_prefix_retains_the_earliest_k_plus_one_unique_candidates() {
         prefix_candidate(3, "three", MutationOperator::CompareEqNe),
         prefix_candidate(1, "one", MutationOperator::CompareEqNe),
     ] {
-        prefix.push(candidate);
+        prefix.push(candidate).unwrap();
     }
 
     assert_eq!(prefix.identities.len(), 3);
-    let result = prefix.finish();
+    let result = prefix.finish().unwrap();
     assert_eq!(candidate_starts(&result.candidates), vec![1, 3, 5]);
     assert!(result.overflowed);
     assert_eq!(result.candidates.len(), 3);
@@ -1154,16 +1161,16 @@ fn candidate_prefix_retains_the_earliest_k_plus_one_unique_candidates() {
 
 #[test]
 fn candidate_prefix_keeps_emission_order_for_equal_sort_keys() {
-    let mut prefix = CandidatePrefix::new(2);
+    let mut prefix = CandidatePrefix::new(2, super::payload::PayloadBudget::default());
     for candidate in [
         prefix_candidate(1, "first", MutationOperator::CompareEqNe),
         prefix_candidate(1, "second", MutationOperator::CompareEqNe),
         prefix_candidate(1, "third", MutationOperator::CompareEqNe),
     ] {
-        prefix.push(candidate);
+        prefix.push(candidate).unwrap();
     }
 
-    let result = prefix.finish();
+    let result = prefix.finish().unwrap();
     assert_eq!(
         result
             .candidates
@@ -1177,13 +1184,19 @@ fn candidate_prefix_keeps_emission_order_for_equal_sort_keys() {
 
 #[test]
 fn candidate_prefix_with_zero_limit_retains_one_earliest_candidate() {
-    let mut prefix = CandidatePrefix::new(0);
+    let mut prefix = CandidatePrefix::new(0, super::payload::PayloadBudget::default());
     assert_eq!(prefix.capacity, 1);
-    prefix.push(prefix_candidate(3, "three", MutationOperator::CompareEqNe));
-    prefix.push(prefix_candidate(3, "three", MutationOperator::CompareEqNe));
-    prefix.push(prefix_candidate(1, "one", MutationOperator::CompareEqNe));
+    prefix
+        .push(prefix_candidate(3, "three", MutationOperator::CompareEqNe))
+        .unwrap();
+    prefix
+        .push(prefix_candidate(3, "three", MutationOperator::CompareEqNe))
+        .unwrap();
+    prefix
+        .push(prefix_candidate(1, "one", MutationOperator::CompareEqNe))
+        .unwrap();
 
-    let result = prefix.finish();
+    let result = prefix.finish().unwrap();
     assert_eq!(candidate_starts(&result.candidates), vec![1]);
     assert!(result.overflowed);
     assert_eq!(result.candidates.len(), 1);
@@ -1191,7 +1204,7 @@ fn candidate_prefix_with_zero_limit_retains_one_earliest_candidate() {
 
 #[test]
 fn candidate_prefix_saturates_capacity_at_usize_maximum() {
-    let prefix = CandidatePrefix::new(usize::MAX);
+    let prefix = CandidatePrefix::new(usize::MAX, super::payload::PayloadBudget::default());
 
     assert_eq!(prefix.capacity, usize::MAX);
 }
@@ -1209,18 +1222,23 @@ fn candidate_prefix_matches_the_lean_out_of_order_duplicate_case() {
         (item.schema, item.mode.as_str(), item.scenario.as_str()),
         (1, "internal-fixture", "candidate_prefix")
     );
-    let mut prefix = CandidatePrefix::new(usize::try_from(item.limit).unwrap());
+    let mut prefix = CandidatePrefix::new(
+        usize::try_from(item.limit).unwrap(),
+        super::payload::PayloadBudget::default(),
+    );
     for input in &item.token {
         assert!(input.eligible);
         assert!(matches!(input.producer.as_str(), "token" | "ast"));
         let _ = input.emission_index;
-        prefix.push(prefix_candidate(
-            input.order_key,
-            &input.identity.to_string(),
-            MutationOperator::CompareEqNe,
-        ));
+        prefix
+            .push(prefix_candidate(
+                input.order_key,
+                &input.identity.to_string(),
+                MutationOperator::CompareEqNe,
+            ))
+            .unwrap();
     }
-    let result = prefix.finish();
+    let result = prefix.finish().unwrap();
     let actual = result
         .candidates
         .iter()
@@ -1268,6 +1286,7 @@ fn real_three_producer_prefix_matches_the_lean_merge_projection() {
     let source =
         "from typing import Sequence\na = left == right\nb = list(items)\nc: list[int] = value\n";
     let request = |max_candidates| AnalyzeRequest {
+        payload: super::payload::PayloadBudget::default(),
         path: Utf8Path::new("pkg/three.py"),
         lines: &[],
         symbols: &[],
@@ -1293,6 +1312,7 @@ fn real_three_producer_prefix_matches_the_lean_merge_projection() {
 
     let bounded = analyze_source(
         &AnalyzeRequest {
+            payload: super::payload::PayloadBudget::default(),
             max_candidates: usize::try_from(item.limit).unwrap(),
             ..request(0)
         },
@@ -1721,6 +1741,7 @@ fn except_star_simple_exception_type_emits_safe_pair_candidate() {
     let candidates = analyze(source)
         .candidates
         .into_iter()
+        .map(super::payload::Charged::into_untracked)
         .filter(|candidate| candidate.operator.as_str() == "exception_type_pair")
         .collect::<Vec<_>>();
 
@@ -1770,6 +1791,7 @@ fn except_star_exception_type_pairs_are_simple_scope_aware_and_nested() {
     let scoped = analyze(scope_source)
         .candidates
         .into_iter()
+        .map(super::payload::Charged::into_untracked)
         .filter(|candidate| candidate.operator.as_str() == "exception_type_pair")
         .map(|candidate| {
             (
@@ -1898,6 +1920,7 @@ fn except_star_exception_type_pairs_keep_shared_selection_and_profile_behavior()
         serde_json::from_value(serde_json::json!(["exception_type_pair"])).unwrap();
     let only_pair_output = analyze_source(
         &AnalyzeRequest {
+            payload: super::payload::PayloadBudget::default(),
             path: Utf8Path::new("pkg/sample.py"),
             lines: &[],
             symbols: &[],
@@ -1914,6 +1937,7 @@ fn except_star_exception_type_pairs_keep_shared_selection_and_profile_behavior()
     excluded_operators.exclude(MutationOperator::ExceptionTypePair);
     let excluded = analyze_source(
         &AnalyzeRequest {
+            payload: super::payload::PayloadBudget::default(),
             path: Utf8Path::new("pkg/sample.py"),
             lines: &[],
             symbols: &[],
@@ -1974,6 +1998,7 @@ fn except_star_handlers_do_not_emit_explicit_risky_exception_candidates() {
 
     let output = analyze_source(
         &AnalyzeRequest {
+            payload: super::payload::PayloadBudget::default(),
             path: Utf8Path::new("pkg/sample.py"),
             lines: &[],
             symbols: &[],
@@ -2152,6 +2177,7 @@ fn raise_exception_type_pairs_observe_extended_resolution_boundaries() {
         analyze(source)
             .candidates
             .into_iter()
+            .map(super::payload::Charged::into_untracked)
             .filter(|candidate| candidate.operator.as_str() == "exception_type_pair")
             .map(|candidate| candidate.line)
             .collect::<Vec<_>>()
@@ -2253,6 +2279,7 @@ fn raise_exception_type_pairs_use_scope_aware_source_and_destination_resolution(
     let actual = analyze(source)
         .candidates
         .into_iter()
+        .map(super::payload::Charged::into_untracked)
         .filter(|candidate| candidate.operator.as_str() == "exception_type_pair")
         .map(|candidate| (candidate.line, candidate.symbol))
         .collect::<Vec<_>>();
@@ -2315,6 +2342,7 @@ fn raise_exception_type_pairs_keep_shared_selection_and_profile_behavior() {
     operators.exclude(MutationOperator::ExceptionTypePair);
     let excluded = analyze_source(
         &AnalyzeRequest {
+            payload: super::payload::PayloadBudget::default(),
             path: Utf8Path::new("pkg/sample.py"),
             lines: &[],
             symbols: &[],
@@ -2379,6 +2407,7 @@ fn exception_risky_candidates_require_explicit_selection_and_reparse() {
     }
     let output = analyze_source(
         &AnalyzeRequest {
+            payload: super::payload::PayloadBudget::default(),
             path: Utf8Path::new("pkg/sample.py"),
             lines: &[],
             symbols: &[],
@@ -2548,6 +2577,7 @@ fn exception_risky_candidates_require_explicit_selection_and_reparse() {
     assert!(
         analyze_source(
             &AnalyzeRequest {
+                payload: super::payload::PayloadBudget::default(),
                 path: Utf8Path::new("pkg/sample.py"),
                 lines: &[],
                 symbols: &[],
@@ -2577,6 +2607,7 @@ fn exception_risky_candidates_require_explicit_selection_and_reparse() {
     );
     let shadowed_output = analyze_source(
         &AnalyzeRequest {
+            payload: super::payload::PayloadBudget::default(),
             path: Utf8Path::new("pkg/sample.py"),
             lines: &[],
             symbols: &[],
@@ -2607,6 +2638,7 @@ fn exception_risky_candidates_require_explicit_selection_and_reparse() {
     );
     let positioned_output = analyze_source(
         &AnalyzeRequest {
+            payload: super::payload::PayloadBudget::default(),
             path: Utf8Path::new("pkg/sample.py"),
             lines: &[],
             symbols: &[],
@@ -2629,6 +2661,7 @@ fn exception_risky_candidates_require_explicit_selection_and_reparse() {
         let source = format!("try:\n    work()\nexcept ({termination}, ValueError):\n    pass\n");
         let output = analyze_source(
             &AnalyzeRequest {
+                payload: super::payload::PayloadBudget::default(),
                 path: Utf8Path::new("pkg/sample.py"),
                 lines: &[],
                 symbols: &[],
@@ -3878,6 +3911,7 @@ fn analyze_with_extra_operators(
     }
     analyze_source(
         &AnalyzeRequest {
+            payload: super::payload::PayloadBudget::default(),
             path: Utf8Path::new("pkg/generated.py"),
             lines: &[],
             symbols: &[],
@@ -4200,6 +4234,7 @@ fn native_python_operator_syntax_uses_exact_ast_roles_and_reparses() {
             serde_json::from_value(serde_json::json!([operator])).unwrap();
         let output = analyze_source(
             &AnalyzeRequest {
+                payload: super::payload::PayloadBudget::default(),
                 path: Utf8Path::new("pkg/sample.py"),
                 lines: &[],
                 symbols: &[],
@@ -4485,6 +4520,7 @@ fn augmented_and_pattern_candidates_share_line_symbol_and_focused_selection() {
     let operators = MutationOperatorSelection::default();
     let output = analyze_source(
         &AnalyzeRequest {
+            payload: super::payload::PayloadBudget::default(),
             path: Utf8Path::new("pkg/sample.py"),
             lines: &lines,
             symbols: &symbols,
@@ -4547,6 +4583,7 @@ fn composite_comparisons_preserve_multiline_trivia_and_reparse() {
         let candidate = analyze(source)
             .candidates
             .into_iter()
+            .map(super::payload::Charged::into_untracked)
             .find(|candidate| candidate.operator.as_str() == operator)
             .expect("composite comparison candidate");
 
@@ -4618,6 +4655,7 @@ fn benchmark_long_single_line_candidate_columns() {
         let started = std::time::Instant::now();
         let output = analyze_source(
             &AnalyzeRequest {
+                payload: super::payload::PayloadBudget::default(),
                 path: Utf8Path::new("pkg/long.py"),
                 lines: &[],
                 symbols: &[],
@@ -4797,6 +4835,7 @@ fn large_source_analysis_observes_cancellation_during_token_traversal() {
     let probes = AtomicUsize::new(0);
     let result = analyze_source_cancellable(
         &AnalyzeRequest {
+            payload: super::payload::PayloadBudget::default(),
             path: Utf8Path::new("pkg/large.py"),
             lines: &[],
             symbols: &[],
@@ -4823,6 +4862,7 @@ fn analyze_with_profile(
     let operators = MutationOperatorSelection::default();
     analyze_source(
         &AnalyzeRequest {
+            payload: super::payload::PayloadBudget::default(),
             path: Utf8Path::new("pkg/sample.py"),
             lines: &[],
             symbols: &[],
@@ -4849,6 +4889,7 @@ fn analyze_types_with_profile(profile: MutationProfile, source: &str) -> super::
     }
     analyze_source(
         &AnalyzeRequest {
+            payload: super::payload::PayloadBudget::default(),
             path: Utf8Path::new("pkg/sample.py"),
             lines: &[],
             symbols: &[],
@@ -4869,6 +4910,7 @@ fn analyze_with(
     let operators = MutationOperatorSelection::default();
     analyze_source(
         &AnalyzeRequest {
+            payload: super::payload::PayloadBudget::default(),
             path,
             lines,
             symbols,
@@ -4898,6 +4940,7 @@ fn analyze_with_all_candidate_producers(
     }
     analyze_source(
         &AnalyzeRequest {
+            payload: super::payload::PayloadBudget::default(),
             path: Utf8Path::new("pkg/high.py"),
             lines: &[],
             symbols: &[],
@@ -5064,6 +5107,7 @@ fn focused_profile_applies_after_line_and_symbol_selection() {
     let operators = MutationOperatorSelection::default();
     let focused = analyze_source(
         &AnalyzeRequest {
+            payload: super::payload::PayloadBudget::default(),
             path: Utf8Path::new("pkg/sample.py"),
             lines: &lines,
             symbols: &symbols,
@@ -5104,6 +5148,7 @@ fn omits_candidates_for_unselected_operators() {
     operators.exclude(MutationOperator::BinaryAddSub);
     let output = analyze_source(
         &AnalyzeRequest {
+            payload: super::payload::PayloadBudget::default(),
             path: Utf8Path::new("pkg/sample.py"),
             lines: &[],
             symbols: &[],
@@ -5212,6 +5257,7 @@ fn interpolated_string_pairs_skip_literals_and_retain_expressions() {
         let observed = analyze_legacy(expression)
             .candidates
             .into_iter()
+            .map(super::payload::Charged::into_untracked)
             .map(|candidate| {
                 (
                     candidate.original,
@@ -6618,6 +6664,7 @@ fn type_annotations_respect_line_and_symbol_filters() {
     }
     let line_output = analyze_source(
         &AnalyzeRequest {
+            payload: super::payload::PayloadBudget::default(),
             path: Utf8Path::new("pkg/sample.py"),
             lines: &[LineRange { start: 4, end: 4 }],
             symbols: &[],
@@ -6638,6 +6685,7 @@ fn type_annotations_respect_line_and_symbol_filters() {
     );
     let symbol_output = analyze_source(
         &AnalyzeRequest {
+            payload: super::payload::PayloadBudget::default(),
             path: Utf8Path::new("pkg/sample.py"),
             lines: &[],
             symbols: &["pkg.sample:convert".to_owned()],
@@ -6730,7 +6778,7 @@ proptest! {
             let end = start.checked_add(length).expect("candidate span does not overflow");
             prop_assert!(previous_start <= start);
             prop_assert!(end <= source.len());
-            prop_assert_eq!(&source[start..end], candidate.original);
+            prop_assert_eq!(&source[start..end], &candidate.original);
             previous_start = start;
         }
     }
@@ -6970,6 +7018,7 @@ fn reports_columns_without_counting_a_leading_file_bom() {
     let candidate = analyze(source)
         .candidates
         .into_iter()
+        .map(super::payload::Charged::into_untracked)
         .find(|candidate| candidate.original == "+")
         .expect("binary addition candidate");
 
@@ -7792,6 +7841,7 @@ fn parenthesized_exception_removals_use_complete_expression_spans() {
         operators.include(operator);
         let output = analyze_source(
             &AnalyzeRequest {
+                payload: super::payload::PayloadBudget::default(),
                 path: Utf8Path::new("case.py"),
                 lines: &[],
                 symbols: &[],
@@ -9243,6 +9293,7 @@ fn hierarchy_candidates(source: &str) -> Vec<(String, String)> {
     let operators = serde_json::from_value(serde_json::json!(["exception_hierarchy"])).unwrap();
     let output = analyze_source(
         &AnalyzeRequest {
+            payload: super::payload::PayloadBudget::default(),
             path: Utf8Path::new("sample.py"),
             lines: &[],
             symbols: &[],
@@ -9258,6 +9309,7 @@ fn hierarchy_candidates(source: &str) -> Vec<(String, String)> {
     output
         .candidates
         .into_iter()
+        .map(super::payload::Charged::into_untracked)
         .map(|c| (c.original, c.replacement))
         .collect()
 }
@@ -9378,6 +9430,7 @@ fn exception_hierarchy_cross_module_and_relative_imports() {
         let operators = serde_json::from_value(serde_json::json!(["exception_hierarchy"])).unwrap();
         let output = super::analyze_source_with_exceptions(
             &AnalyzeRequest {
+                payload: super::payload::PayloadBudget::default(),
                 path,
                 lines: &[],
                 symbols: &[],
@@ -9434,6 +9487,7 @@ fn exception_hierarchy_respects_candidate_prefix_selection_and_cancellation() {
     let source = "class Root(Exception): pass\nclass A(Root): pass\nclass B(Root): pass\nclass C(Root): pass\ndef f():\n    raise A()\ndef g():\n    raise B()\n";
     let operators = serde_json::from_value(serde_json::json!(["exception_hierarchy"])).unwrap();
     let mut request = AnalyzeRequest {
+        payload: super::payload::PayloadBudget::default(),
         path: Utf8Path::new("sample.py"),
         lines: &[],
         symbols: &[],
@@ -9496,7 +9550,10 @@ fn exception_hierarchy_rejects_import_cycles_and_unloaded_submodules() {
                 parsed.syntax(),
                 100,
                 &|| false,
-                |_, name| output.push(name),
+                |_, name| {
+                    output.push(name);
+                    Ok(())
+                },
             )
             .unwrap();
         assert!(output.is_empty(), "{sources:?}");
@@ -9565,6 +9622,7 @@ fn analyze_legacy_with(
 ) -> super::AnalyzerOutput {
     analyze_source(
         &AnalyzeRequest {
+            payload: super::payload::PayloadBudget::default(),
             path,
             lines,
             symbols,
@@ -9583,6 +9641,7 @@ fn analyze_legacy_with_profile(
 ) -> super::AnalyzerOutput {
     analyze_source(
         &AnalyzeRequest {
+            payload: super::payload::PayloadBudget::default(),
             path: Utf8Path::new("pkg/sample.py"),
             lines: &[],
             symbols: &[],

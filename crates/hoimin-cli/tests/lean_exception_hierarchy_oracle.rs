@@ -15,9 +15,12 @@ async fn lean_exception_hierarchy_public_plan_correspondence() {
     for case in cases {
         let dir = tempfile::tempdir().unwrap();
         corpus::write_sources(&case, dir.path());
-        let plan = hoimin_cli::plan::create(corpus::config(&case, dir.path(), parse_config))
-            .await
-            .unwrap();
+        let plan = hoimin_cli::plan::create(
+            corpus::config(&case, dir.path(), parse_config),
+            hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap(),
+        )
+        .await
+        .unwrap();
         let actual = Observation {
             pairs: plan
                 .manifest
@@ -60,8 +63,11 @@ async fn lean_exception_hierarchy_public_plan_resource_errors() {
         let dir = tempfile::tempdir().unwrap();
         corpus::write_sources(&case, dir.path());
 
-        let result =
-            hoimin_cli::plan::create(corpus::config(&case, dir.path(), parse_config)).await;
+        let result = hoimin_cli::plan::create(
+            corpus::config(&case, dir.path(), parse_config),
+            hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap(),
+        )
+        .await;
 
         let error = result
             .map(|_| ())

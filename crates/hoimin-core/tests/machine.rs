@@ -974,41 +974,60 @@ fn stop_signals_do_not_reopen_a_finished_run() {
 
 #[test]
 fn deadline_before_preflight_still_emits_a_complete_report_before_cleanup() {
-    let (state, _) = start_state();
-    let (state, effects) = transition(state, RunEvent::DeadlineReached).unwrap();
-    let started_id = effect_id(find_effect(
-        &effects,
-        |effect| matches!(effect, RunEffect::EmitOutput(value) if matches!(&value.event, OutputEvent::RunStarted(_))),
-    ));
-    let (state, effects) = transition(
-        state,
-        RunEvent::OutputEmitted(OutputEmitted { id: started_id }),
-    )
-    .unwrap();
-    let cleanup = find_effect(&effects, |effect| matches!(effect, RunEffect::Cleanup(_)));
-    let RunEffect::Cleanup(cleanup) = cleanup else {
-        unreachable!()
-    };
-    let (state, effects) = transition(
-        state,
-        RunEvent::CleanupFinished(CleanupFinished {
-            id: cleanup.id,
-            released_reservations: cleanup.reservations.clone(),
-        }),
-    )
-    .unwrap();
+    for (case, config) in [
+        ("disabled", fixture_config()),
+        ("fresh", fixture_session_config(false)),
+        ("resume", fixture_session_config(true)),
+    ] {
+        // Arrange: stop before preflight can supply fingerprint evidence.
+        let (state, mut all_effects) = transition(
+            RunState::new("run-1", config, test_resource_control()),
+            RunEvent::StartRequested(StartRequested),
+        )
+        .unwrap();
+        // Act: request the deadline stop and acknowledge the reporting and cleanup effects.
+        let (state, effects) = transition(state, RunEvent::DeadlineReached).unwrap();
+        all_effects.extend(effects.clone());
+        let started_id = effect_id(find_effect(
+            &effects,
+            |effect| matches!(effect, RunEffect::EmitOutput(value) if matches!(&value.event, OutputEvent::RunStarted(_))),
+        ));
+        let (state, effects) = transition(
+            state,
+            RunEvent::OutputEmitted(OutputEmitted { id: started_id }),
+        )
+        .unwrap();
+        all_effects.extend(effects.clone());
+        let cleanup = find_effect(&effects, |effect| matches!(effect, RunEffect::Cleanup(_)));
+        let RunEffect::Cleanup(cleanup) = cleanup else {
+            unreachable!()
+        };
+        let (state, effects) = transition(
+            state,
+            RunEvent::CleanupFinished(CleanupFinished {
+                id: cleanup.id,
+                released_reservations: cleanup.reservations.clone(),
+            }),
+        )
+        .unwrap();
 
-    assert_eq!(state.exit_code(), 4);
-    assert!(effects.iter().any(|effect| matches!(
-        effect,
-        RunEffect::EmitOutput(value)
-            if matches!(&value.event, OutputEvent::RunFinished(_))
-    )));
-    assert!(
-        !effects
-            .iter()
-            .any(|effect| matches!(effect, RunEffect::CreateWorker(_)))
-    );
+        all_effects.extend(effects.clone());
+
+        // Assert: the complete stop report never begins or loads a session.
+        assert_eq!(state.exit_code(), 4, "{case}");
+        assert!(effects.iter().any(|effect| matches!(
+            effect,
+            RunEffect::EmitOutput(value)
+                if matches!(&value.event, OutputEvent::RunFinished(_))
+        )));
+        assert!(
+            !all_effects.iter().any(|effect| matches!(
+                effect,
+                RunEffect::CreateWorker(_) | RunEffect::BeginSession(_) | RunEffect::LoadSession(_)
+            )),
+            "{case}"
+        );
+    }
 }
 
 #[test]
@@ -2461,6 +2480,107 @@ fn resumed_session_id_becomes_the_report_run_id_before_worker_creation() {
     );
 
     assert_eq!(state.run_id(), "session-run");
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(64))]
+
+    #[test]
+    fn fresh_session_uses_preflight_fingerprint(bytes in any::<[u8; 32]>()) {
+        // Arrange: supply arbitrary fingerprint evidence only in preflight completion.
+        let (state, mut preflight) = pending_preflight_with(fixture_session_config(false));
+        let expected = RunFingerprint::from_bytes(bytes);
+        preflight.fingerprint = Some(expected);
+
+        // Act: finish preflight for a fresh session.
+        let (_, effects) = transition(state, RunEvent::PreflightCompleted(preflight)).unwrap();
+
+        // Assert: the persisted run request carries the supplied evidence exactly.
+        prop_assert!(matches!(&effects[..], [RunEffect::BeginSession(begin)]
+            if begin.fingerprint == expected));
+    }
+
+    #[test]
+    fn resume_fresh_fallback_preserves_preflight_fingerprint(bytes in any::<[u8; 32]>()) {
+        use hoimin_core::ResumeFreshReason;
+        let reasons = [
+            ("no prior run", ResumeFreshReason::NoPriorRun),
+            ("matching run complete", ResumeFreshReason::MatchingRunComplete),
+            ("budget decreased", ResumeFreshReason::BudgetDecreased),
+            ("fingerprint mismatch", ResumeFreshReason::FingerprintMismatch),
+            ("no incomplete run", ResumeFreshReason::NoIncompleteRun),
+            ("candidate changed", ResumeFreshReason::CandidateChanged),
+        ];
+        for (case, reason) in reasons {
+            // Arrange: preflight evidence must survive both session requests.
+            let (state, mut preflight) = pending_preflight_with(fixture_session_config(true));
+            let expected = RunFingerprint::from_bytes(bytes);
+            preflight.fingerprint = Some(expected);
+
+            // Act: load the saved session, then fall back to a fresh run.
+            let (state, load_effects) =
+                transition(state, RunEvent::PreflightCompleted(preflight)).unwrap();
+            let load_id = effect_id(find_effect(&load_effects, |effect| {
+                matches!(effect, RunEffect::LoadSession(_))
+            }));
+            let (_, begin_effects) = transition(state, RunEvent::SessionLoaded(SessionLoaded {
+                id: load_id,
+                outcome: SessionLoadOutcome::Fresh(reason),
+            })).unwrap();
+
+            // Assert: both requests carry the same original preflight evidence.
+            prop_assert!(matches!(&load_effects[..], [RunEffect::LoadSession(load)]
+                if load.fingerprint == expected), "load: {case}");
+            prop_assert!(matches!(&begin_effects[..], [RunEffect::BeginSession(begin)]
+                if begin.fingerprint == expected), "begin: {case}");
+        }
+    }
+}
+
+#[test]
+fn enabled_session_requires_preflight_fingerprint() {
+    for (case, resume) in [("fresh", false), ("resume", true)] {
+        // Arrange: enabled sessions receive no preflight fingerprint.
+        let (state, mut preflight) = pending_preflight_with(fixture_session_config(resume));
+        preflight.fingerprint = None;
+
+        // Act: finish preflight without required session evidence.
+        let result = transition(state, RunEvent::PreflightCompleted(preflight));
+
+        // Assert: neither mode silently starts or loads an unidentified run.
+        assert!(
+            matches!(result, Err(MachineError::MissingFingerprint)),
+            "{case}"
+        );
+    }
+}
+
+#[test]
+fn disabled_session_progresses_without_preflight_fingerprint() {
+    // Arrange: disabled sessions do not need preflight fingerprint evidence.
+    let (state, mut preflight) = pending_preflight_with(fixture_config());
+    preflight.fingerprint = None;
+
+    // Act: finish preflight and acknowledge normal run output with the session disabled.
+    let (state, effects) = transition(state, RunEvent::PreflightCompleted(preflight)).unwrap();
+    let started_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::EmitOutput(output)
+            if matches!(output.event, OutputEvent::RunStarted(_)))
+    }));
+    let (state, effects) = transition(
+        state,
+        RunEvent::OutputEmitted(OutputEmitted { id: started_id }),
+    )
+    .unwrap();
+
+    // Assert: worker materialization proceeds without accessing a session.
+    assert_eq!(state.phase(), RunPhase::Copy);
+    assert_ne!(effects, Vec::new());
+    assert!(
+        effects
+            .iter()
+            .all(|effect| matches!(effect, RunEffect::CreateWorker(_)))
+    );
 }
 
 #[test]
@@ -5391,18 +5511,14 @@ fn waiting_for_baseline_with(config: RunConfig) -> (RunState, Vec<RunEffect>) {
 }
 
 fn waiting_for_preflight_with(config: RunConfig) -> (RunState, Vec<RunEffect>) {
+    let (state, preflight) = pending_preflight_with(config);
+    transition(state, RunEvent::PreflightCompleted(preflight)).unwrap()
+}
+
+fn pending_preflight_with(config: RunConfig) -> (RunState, PreflightCompleted) {
     let session_enabled = config.session.config().is_some();
     let jobs = u32::try_from(config.limits.jobs.get()).unwrap();
-    let initial_state = if session_enabled {
-        RunState::with_fingerprint(
-            "run-1",
-            config,
-            RunFingerprint::from_bytes([7; 32]),
-            test_resource_control(),
-        )
-    } else {
-        RunState::new("run-1", config, test_resource_control())
-    };
+    let initial_state = RunState::new("run-1", config, test_resource_control());
     let (state, effects) =
         transition(initial_state, RunEvent::StartRequested(StartRequested)).unwrap();
     let resolve_id = effect_id(find_effect(&effects, |effect| {
@@ -5423,18 +5539,16 @@ fn waiting_for_preflight_with(config: RunConfig) -> (RunState, Vec<RunEffect>) {
     let preflight_id = effect_id(find_effect(&effects, |effect| {
         matches!(effect, RunEffect::Preflight(_))
     }));
-    let (state, effects) = transition(
+    (
         state,
-        RunEvent::PreflightCompleted(PreflightCompleted {
+        PreflightCompleted {
             id: preflight_id,
             per_worker_logical_bytes: 10,
             requested_workers: jobs,
             aggregate_logical_bytes: 10 * u64::from(jobs),
             fingerprint: session_enabled.then_some(RunFingerprint::from_bytes([7; 32])),
-        }),
+        },
     )
-    .unwrap();
-    (state, effects)
 }
 
 fn waiting_for_materialization_verification_with(config: RunConfig) -> (RunState, Vec<RunEffect>) {
@@ -5862,6 +5976,18 @@ fn waiting_for_reset(termination: ProcessTermination) -> (RunState, Vec<RunEffec
 
 fn fixture_config() -> RunConfig {
     RunConfig::try_from(fixture_raw_config())
+        .unwrap()
+        .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
+        .unwrap()
+}
+
+fn fixture_session_config(resume: bool) -> RunConfig {
+    let mut raw = fixture_raw_config();
+    raw.session = Some(hoimin_core::SessionConfig {
+        path: "session.sqlite3".into(),
+    });
+    raw.resume = resume;
+    RunConfig::try_from(raw)
         .unwrap()
         .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
         .unwrap()

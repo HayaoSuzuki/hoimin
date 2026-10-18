@@ -92,7 +92,7 @@ fn measure(scenario: Scenario, text_bytes: usize) -> usize {
 
 fn report(scenario: Scenario, text_bytes: usize, after: bool) -> InputReport {
     let document: Value =
-        serde_json::from_str(include_str!("golden/reports/schema-v7-current.json")).unwrap();
+        serde_json::from_str(include_str!("golden/reports/schema-v8-current.json")).unwrap();
     let hoimin_core::OutputEvent::MutantFinished(template) =
         serde_json::from_value(document["mutants"][0].clone()).unwrap()
     else {

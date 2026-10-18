@@ -5,6 +5,11 @@ description: 候補発見と実行の分離、ランキング、部分集合、�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: task-10-current-preview
+  resource: ../../../crates/hoimin-cli/src/plan/preview.rs
+  revision: c74410f56c8389ef246567318ddcade724dbe3f7
+  working_tree: clean
+  sha256: a4abe92ead1ac8ee04c620d93b36e967a461c1cf836947c5f31ee697ba41d322
 - id: issue-959-config-tests
   resource: ../../../crates/hoimin-cli/tests/cli_config.rs
   revision: 30d158c7ead3252c5c0aa398e8ab1819ffa9d75b
@@ -334,6 +339,22 @@ sources:
   revision: 35c21145ccdfb6a044f9ae1dad2a5e4ff90deece
   working_tree: modified
   sha256: bca74014f517c33728e844b9e876a77b24ef3025c7e42fc75afb89d5849580f1
+- id: issue-971-evidence
+  resource: ../../maintenance/2026-10-18-issues-971-979/task-5-report.md
+  working_tree: untracked
+  sha256: 37f183a85687a1f2bdbf03067a57288c492458b37259268ae5b5171bb31c7d3f
+
+- id: issue-979-compatibility
+  resource: ../../compatibility.md
+  revision: 4ebed4457519920e9a28f8f653d8ce96985acdad
+  working_tree: clean
+  sha256: 3db98744cba6c95b2828d98298038c52242135a2607f2855c58d100205243fb4
+
+- id: issue-979-evidence
+  resource: ../../maintenance/2026-10-18-issues-971-979/task-6-report.md
+  working_tree: untracked
+  sha256: 3cb4dde52478f7d80d8bf88f46dcedc2c504b9ed1449a9e29ffd58780026449c
+
 ---
 
 # Single normalized root (Issue #949)
@@ -344,7 +365,8 @@ run/plan conversion retain it. Target discovery, source reads, workspace copying
 process working directories and review project matching use that same value.
 No filesystem normalization occurs during config conversion.[^issue-949-config]
 
-Plan schema 9 and report schema 7 remove the outer root without an adapter.
+Issue #949 removed the outer root at plan schema 9/report schema 7 without an adapter.
+Current versions are plan 10/report 8, as described below.
 Missing-selector and changed/symbol source checks remain in the shared selection
 validator. The root mismatch error and its synchronization duty disappear.
 The [migration notice](../../compatibility.md#single-normalized-project-root-in-0110)
@@ -500,9 +522,13 @@ JSON/JSONLのmutant記録に実際の候補IDを残す。バッチの再実行�
 
 `verify PLAN --dry-run` は通常のverifyと同じplan・ソース・fingerprint・候補の検証を行い、選択結果を出力して終了する。baselineと変異テスト、workerコピー、session作成、実行metricsは発生しない。`--metrics` との併用は拒否する。候補ID・top指定の有効なpreviewはtruncated planでも終了コード0となる。sample指定はtruncated planを拒否し、入力不正は2となる。[^issue-695-design]実行時の資源確保までは確認しない。[^issue-599]
 
-JSONとJSONLは、独立したschema 1の `verify_preview` オブジェクトを1件出力する。`candidates` 配列は選択順で、各行にID、保存rank、バッチ内の `selection_order`、path、lineを含む。rank・選択順・行番号は1始まりである。top指定の `offset` は0始まり、明示ID指定ではnullとなる。既存の選択metadataに加え、保持数を `retained_candidates` に記録する。[^issue-599-preview][^issue-599-schema]
+JSONとJSONLは、独立したschema 2の `verify_preview` オブジェクトを1件出力する。`candidates` 配列は選択順で、各行にID、保存rank、バッチ内の `selection_order`、path、lineを含む。rank・選択順・行番号は1始まりである。top指定の `offset` は0始まり、明示ID指定ではnullとなる。既存の選択metadataに加え、保持数を `retained_candidates` に記録する。[^task-10-current-preview]
+
+Issue #599の導入時はschema 1だった。以下の当時の設計・実装・schemaの出典は、その履歴として保持する。[^issue-599][^issue-599-preview][^issue-599-schema]
 
 strict/diverseの順序は既存の選択結果を使い、明示IDは候補の再発見順を使う。引数の順序や編集可能な保存sequenceには依存しない。選択順は実行予定の順序であり、並列workerの完了順や資源不足時の実行完了を保証しない。truncated planのpreviewは保持済み候補だけを対象とする。変異結果がないためprogress履歴には使わない。[^issue-599][^issue-599-preview]
+
+[^task-10-current-preview]: [現在のpreview.rs](../../../crates/hoimin-cli/src/plan/preview.rs)。
 
 [^issue-599]: [Issue 599: Verify selection preview](../../superpowers/specs/2026-09-25-issue-599-verify-preview-design.md)。
 [^issue-599-preview]: [preview.rs](../../../crates/hoimin-cli/src/plan/preview.rs)。
@@ -793,3 +819,31 @@ model or proof is claimed.[^issue-959-config-tests][^issue-959-tests][^issue-959
 [^issue-959-record]: [Issue 959 implementation and verification](../../maintenance/2026-10-16-issue-959.md).
 
 [^issue-959-config-tests]: [CLI normalization tests](../../../crates/hoimin-cli/tests/cli_config.rs).
+
+# Discovery configuration ownership (Issue #979)
+
+The composed raw CLI arguments share run/plan normalization without copying all
+fields through another public structure. Native test argv remains platform data;
+selector and path inputs still require UTF-8. Plan has no runtime session/resume
+or metrics settings.[^issue-971-evidence]
+
+`DiscoveryConfig` belongs only to `PlanConfig`, which requires the saved positive
+`discovery.analyzer_timeout`. Direct run rejects the option and contains no
+placeholder field. Verify uses the saved timeout for one deadline across all
+targets; expiration prevents manifest publication or baseline execution.
+Cancellation can return before a blocking worker exits; the worker retains its
+resources until it stops. Synchronous reads and parsing are not forcibly
+interruptible. Runtime total/baseline/mutant deadlines remain separate.
+Plan 10/report 8/fingerprint 12 and floor 0.12.0 replace older versions;
+SQLite session 5, ranking 4 and candidate schema 1/ID v1 stay unchanged.
+See the [migration notice](../../compatibility.md#discovery-timeout-ownership-in-0120).[^issue-979-compatibility][^issue-979-evidence]
+
+Validation of independently invalid plan options can report discovery validation
+before another invalid limit. Mandatory selector/argv diagnostics, individual
+invalid-value diagnostics and discovery validation before project I/O remain
+covered; mixed-invalid option priority is not a compatibility promise.
+The recorded Task6 ruling explains that scope.[^issue-979-evidence]
+
+[^issue-971-evidence]: [CLI composition and native argv checks](../../maintenance/2026-10-18-issues-971-979/task-5-report.md).
+[^issue-979-compatibility]: [Current discovery ownership and migration](../../compatibility.md).
+[^issue-979-evidence]: [Timeout ownership, controlled deadline checks and version evidence](../../maintenance/2026-10-18-issues-971-979/task-6-report.md).

@@ -469,7 +469,7 @@ The defaults are:
 | `--jobs` | `1` | concurrent workers; maximum 256 and never greater than `--max-processes` |
 | `--max-mutants` | `100` | mutants executed |
 | `--max-candidates` | `10000` | candidates discovered before execution |
-| `--analyzer-timeout` | `30s` | complete plan/verify discovery phase |
+| `--analyzer-timeout` | `30s` | plan only; saved for verify discovery |
 | `--baseline-timeout` | `60s` | baseline process |
 | `--mutant-timeout` | `auto` | each mutant; `max(5s, 2 × baseline elapsed + 1s)` |
 | `--total-timeout` | `5m` | complete run |
@@ -517,11 +517,23 @@ Without one, the disk guard provides cooperative enforcement.
 
 During discovery of one source file, each token, AST, and type-annotation
 producer retains at most `max_candidates + 1` candidate records and their
-deduplication identities before the bounded merge. This limits retained
-candidates, not all analyzer memory: source text, parser tokens, AST facts,
-and small per-node replacement lists still scale with source size. Therefore
-`--max-candidates` is not a general Hoimin memory limit. `--max-memory`
-continues to govern descendant processes, not the Hoimin CLI itself.
+deduplication identities before the bounded merge. In addition, one internal
+16 MiB (16,777,216-byte) budget bounds retained candidate strings across producers,
+conversion and all files of a plan discovery. Runtime analysis shares the same
+kind of budget through its handler, including outstanding detached work.
+The budget counts UTF-8 logical string lengths and explicit validation/encoding
+scratch reservations. Exceeding it fails analysis with `analyzer.payload_limit`
+(`plan.discovery` at the plan command), without a successful partial result.
+This error may occur before count selection or the existing 2 MiB record check;
+it is distinct from requested candidate-count truncation.
+
+Source/parser/AST/facts, diagnostics, allocator overhead and capacities, prior
+disk records, one candidate under construction and the fixed annotation batch
+of at most three source-dependent replacements are outside this budget.
+`--max-candidates` and this payload budget therefore do not bound process RSS.
+`--max-memory` continues to govern descendant processes. See the
+[accounting contract and measurements](knowledge/design/analyzer.md#retained-candidate-payload-issue-978)
+for ownership, release rules and observed normal-input overhead.
 
 Analysis supports AST depth up to 128, counting the module as depth 1 and
 including auxiliary syntax nodes. A deeper tree fails with its source path and
@@ -533,7 +545,10 @@ recovery. Rejected and discarded partial trees are destroyed iteratively, so
 deep unary, power, lambda, and conditional expressions can reach this diagnostic.
 Parser stack segments and AST storage still consume memory proportional to input.
 
-For `plan` creation and `verify` rediscovery, `--analyzer-timeout` is one
+`plan --analyzer-timeout` saves a positive timeout (at most 100 years) in
+`normalized_config.discovery.analyzer_timeout`; `verify` inherits it without
+an override. Direct `run` rejects this option and records no discovery setting.
+For plan creation and verify rediscovery, the saved timeout is one
 deadline for the complete discovery phase, not a new deadline per target. A
 discovery timeout returns promptly while an already-running blocking analyzer
 cooperatively stops and releases the resources it owns. It cannot interrupt a
@@ -582,6 +597,13 @@ whole tree. Exact directory permissions are not copied, and directories do not
 add to logical file-byte budgets. Hoimin does not follow or copy symlinks; each
 skipped symlink produces a diagnostic. Original integrity checks include selected
 directory presence as well as file contents.
+
+Before changing a mutation target's permissions or contents, hoimin checks its
+opened file's link count. A shared inode fails with `workspace.mutation.shared`,
+even if its contents and permissions match the source. Cleanup also preserves
+external referent permissions; an unsupported safe unlink can leave a cleanup
+error. This protects hoimin's own writes and does not prevent a test program
+from writing elsewhere.
 
 These controls reduce accidental resource exhaustion. hoimin executes user-selected Python and test programs and is **not a security boundary** for untrusted code.
 
@@ -851,7 +873,7 @@ detected as a copy. Copy confirmation is best-effort if files change or become
 unreadable after validation; reports should remain unchanged during comparison.
 
 Inputs may mix JSON documents and JSONL event streams saved from
-`hoimin run --format jsonl`, both using report schema 7. Older and unsupported
+`hoimin run --format jsonl`, both using report schema 8. Older and unsupported
 future schemas are rejected with exit code 2. Detection uses content, not
 filename. For example:
 
@@ -1121,11 +1143,11 @@ outlive the wait; it retains its writer and delivery resources until it returns.
 ## Sessions and resume
 
 The project root is stored only in `normalized_config.selection.root` (under
-`run` for JSON reports). Saved plans use schema 9. Regenerate schema-8 and older
+`run` for JSON reports). Saved plans use schema 10. Regenerate schema-9 and older
 plans; read old reports with their producing binary or rerun with this version.
-See the [0.11.0 compatibility notice](compatibility.md#single-normalized-project-root-in-0110).
+See the [0.12.0 compatibility notice](compatibility.md#discovery-timeout-ownership-in-0120).
 
-Run JSON/JSONL emit schema 7; consumers validating the closed schema must update. `progress` accepts only schema-7 JSON/JSONL and rejects historical, unsupported future and mixed-version reports. When `--resume` is requested, JSON and JSONL include `run_started.resume` (the `run.resume` field in a JSON report): `{"status":"resumed"}` or `{"status":"fresh","reason":"CODE"}`. Human output also explains whether the saved run is continuing or a new run is starting. Runs without `--resume` omit this field.
+Run JSON/JSONL emit schema 8; consumers validating the closed schema must update. `progress` accepts only schema-8 JSON/JSONL and rejects historical, unsupported future and mixed-version reports. When `--resume` is requested, JSON and JSONL include `run_started.resume` (the `run.resume` field in a JSON report): `{"status":"resumed"}` or `{"status":"fresh","reason":"CODE"}`. Human output also explains whether the saved run is continuing or a new run is starting. Runs without `--resume` omit this field.
 
 A compatible incomplete run always wins, even if newer runs are incompatible. If an eligible row appears only during the later history inspection, `candidate_changed` takes precedence. Otherwise reasons use this precedence: `budget_decreased` (matching incomplete runs require a higher `--max-mutants`), `matching_run_complete`, `fingerprint_mismatch` (other incomplete history), `no_incomplete_run` (only nonmatching complete history), then `no_prior_run`. `candidate_changed` means session history changed during resume selection. These codes describe observed history, not which configuration field or file changed. Existing old-schema, corrupt-data, database-read, and ownership errors remain errors.
 
@@ -1152,8 +1174,9 @@ results remain available in the database.
 
 ### Mutation result outcomes
 
-Report schema 7 replaces each mutant's independent `status`, nullable
-`termination`/`output`, `output_state`, and `elapsed_ms` with one `outcome`:
+Report schema 8 represents each mutant result as one `outcome`, replacing
+independent `status`, nullable `termination`/`output`, `output_state`, and
+`elapsed_ms` fields from older formats:
 
 - `executed` carries termination, output state, output spool, and elapsed duration.
 - `{"reused": {"status": "killed"}}` or `{"reused": {"status": "survived"}}` identifies reuse from a compatible session. It contributes zero elapsed time and no output to this run.
@@ -1182,23 +1205,23 @@ resource/time limits retain their named status, and cancellation means `not_run`
 Diagnostics remain separate evidence and do not determine output state or status.
 Progress, review, summary counts, and human output derive these statuses. Baseline
 report fields retain their existing representation. Update strict report consumers
-to schema 7; old flat mutation result records are rejected without conversion.
+to schema 8; old flat mutation result records are rejected without conversion.
 
-Plan schema version 9 stores fingerprint input records only in
+Plan schema version 10 stores fingerprint input records only in
 `normalized_config.fingerprint_inputs`, alongside the validated environment snapshot
 and independent import roots (ranking rule version 4). `sources` separately records
-mutation targets. Regenerate schema-8 and older plans before verify or review using
+mutation targets. Regenerate schema-9 and older plans before verify or review using
 the original plan arguments and intended environment; neither command converts old
 files. The former top-level `fingerprint_inputs` field is rejected.
-Report schema 7 records typed changed selection and session intent, and retains the
+Report schema 8 records typed changed selection and session intent, and retains the
 environment snapshot introduced in schema 5 in place of the independent
 `fingerprint_env` / `fingerprint_env_hash` fields. Update strict report consumers
-to schema 7; read schema-6 and older reports with their producing binary, or rerun
-with this version. The release floor is 0.11.0. Files are not automatically converted
-or deleted. Environment fingerprint bytes remain unchanged, so this representation
-change alone does not require a new
-session; if an existing run is rejected, choose a different `--session PATH`.
-Fingerprint schema version 11
+to schema 8; read schema-7 and older reports with their producing binary, or rerun
+with this version. The release floor is 0.12.0. Files are not automatically converted
+or deleted. Fingerprint schema 12 removes discovery timeout from execution compatibility.
+An older incomplete fingerprint history can return `session.resume.incompatible`;
+choose a new `--session PATH`. Completed history retains fresh-run behavior.
+Fingerprint schema version 12
 includes ordered import roots and source roots and the ordered `--include` / `--exclude` copy
 patterns, including empty lists for default invocations. Changing source-root order or either copy
 pattern list starts a new run even when explicit fingerprint-file bytes match.
@@ -1506,7 +1529,7 @@ current candidates. `list --stale` includes stored candidates absent from the
 plan separately. List and show do not create a missing store.
 
 Plan-only output has execution state `not_loaded`. Add `--report run.json` for
-actual results from a complete schema-v7 JSON report with a passing baseline and
+actual results from a complete schema-v8 JSON report with a passing baseline and
 matching project/candidates. A plan candidate absent from the report is
 `not_in_report`; recording it with that report is rejected. JSONL and older
 reports are not supported by review. Plan-only recording remains allowed.

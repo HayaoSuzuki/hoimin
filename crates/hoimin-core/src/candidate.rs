@@ -12,6 +12,8 @@ use crate::{
 };
 
 pub const CANDIDATE_SCHEMA_VERSION: u32 = 1;
+/// UTF-8 bytes of the stable `m1_` prefix plus the hexadecimal BLAKE3 digest.
+pub const MUTANT_ID_BYTES: usize = 3 + blake3::OUT_LEN * 2;
 const MUTANT_ID_DOMAIN: &[u8] = b"hoimin.mutant-id.v1\0";
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
@@ -436,6 +438,32 @@ pub fn validate_candidate(
     candidate: &CandidateDescriptor,
 ) -> Result<MutantId, CandidateValidationError> {
     validate_candidate_with_context(&CandidateValidationContext::new(source)?, candidate)
+}
+
+/// Conservative logical bytes of temporary owned strings/buffers during validation.
+///
+/// Includes both Latin-1 encoding buffers (UTF-8 lengths bound their byte lengths),
+/// the identity's replacement/path/operator/hash copies, lowercase hash, both path
+/// normalization strings and the returned 67-byte ID while a caller copies it.
+/// Source decoding/indexes, diagnostics and allocation capacity are excluded.
+/// Keep this bound beside the allocations in validation and `stable_mutant_id`.
+/// `None` means arithmetic overflow; callers must fail before validation.
+#[must_use]
+pub fn candidate_validation_scratch_bytes(candidate: &CandidateDescriptor) -> Option<usize> {
+    [
+        candidate.original.len(),
+        candidate.replacement.len(),
+        candidate.replacement.len(),
+        candidate.path.as_str().len(),
+        candidate.operator.len(),
+        candidate.file_hash.len(),
+        candidate.file_hash.len(),
+        candidate.path.as_str().len(),
+        candidate.path.as_str().len(),
+        MUTANT_ID_BYTES,
+    ]
+    .into_iter()
+    .try_fold(0usize, usize::checked_add)
 }
 
 /// Validates a candidate using source facts shared by a batch from the same file.

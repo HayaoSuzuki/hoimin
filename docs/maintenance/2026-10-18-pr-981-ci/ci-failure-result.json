@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "environment": {
+    "platform": "Linux-6.17.0-1022-azure-x86_64-with-glibc2.39",
+    "machine": "x86_64",
+    "cpu": "x86_64",
+    "python": "3.14.8 (main, Oct  1 2026, 02:38:33) [GCC 13.3.0]",
+    "rust": "rustc 1.99.0 (b940084d7 2026-09-28)"
+  },
+  "runs": [],
+  "registry_sha256": "331dd0ad2f5dff89bca1a14a7b7cc8ad61341c7e96b44b677f9b6e76e175ff07",
+  "status": "infrastructure-error",
+  "error": "gate did not execute a passing test"
+}

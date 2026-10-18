@@ -281,6 +281,141 @@ mod tests {
         assert_eq!(worker.read("swap/target.py").unwrap(), b"original\n",);
     }
 
+    #[derive(Clone, Copy)]
+    enum SharedReferent {
+        Original,
+        Sentinel,
+    }
+
+    fn assert_shared_mutation_rejected(
+        referent: SharedReferent,
+        reset: bool,
+        readonly: bool,
+        extra_links: u8,
+    ) {
+        // Arrange: a baseline command can replace the worker copy without changing its bytes.
+        let (project, mut worker, candidate) = worker_and_candidate();
+        let outside = tempfile::tempdir().unwrap();
+        let source = match referent {
+            SharedReferent::Original => Utf8Path::from_path(project.path())
+                .unwrap()
+                .join("swap/target.py"),
+            SharedReferent::Sentinel => {
+                let source = Utf8Path::from_path(outside.path())
+                    .unwrap()
+                    .join("sentinel.py");
+                fs::write(&source, b"original\n").unwrap();
+                source
+            }
+        };
+        let initial_permissions = fs::metadata(&source).unwrap().permissions();
+        if readonly {
+            make_read_only(&source);
+        }
+        let permissions = permission_fingerprint(&source);
+        let target = worker.root().join(&candidate.path);
+        fs::remove_file(&target).unwrap();
+        fs::hard_link(&source, &target).unwrap();
+        for index in 0..extra_links {
+            fs::hard_link(&source, outside.path().join(format!("alias-{index}"))).unwrap();
+        }
+        if reset {
+            worker.reset().unwrap();
+        }
+
+        // Act.
+        let result = worker.apply_mutation(&candidate);
+
+        // Assert: rejection must precede both permission changes and mutation writes.
+        assert_eq!(permission_fingerprint(&source), permissions);
+        assert_eq!(fs::read(&source).unwrap(), b"original\n");
+        let error = result.expect_err("shared mutation target was accepted");
+        assert!(matches!(
+            &error,
+            super::WorkspaceError::MutationTargetShared { path } if path == &candidate.path
+        ));
+        assert_eq!(error.code(), "workspace.mutation.shared");
+        assert_eq!(fs::read(&target).unwrap(), b"original\n");
+
+        // Cleanup may fail on filesystems that cannot unlink readonly shared files safely.
+        let cleanup = worker.try_cleanup();
+        #[cfg(unix)]
+        cleanup.unwrap();
+        #[cfg(windows)]
+        let _ = cleanup;
+        drop(worker);
+        assert_eq!(permission_fingerprint(&source), permissions);
+        assert_eq!(fs::read(&source).unwrap(), b"original\n");
+        // Restore test-owned setup after checking the invariant, for Windows TempDir cleanup.
+        fs::set_permissions(&source, initial_permissions).unwrap();
+    }
+
+    #[test]
+    fn shared_mutation_rejects_original_after_baseline() {
+        assert_shared_mutation_rejected(SharedReferent::Original, false, false, 0);
+    }
+
+    #[test]
+    fn shared_mutation_rejects_original_after_reset() {
+        assert_shared_mutation_rejected(SharedReferent::Original, true, false, 0);
+    }
+
+    #[test]
+    fn shared_mutation_rejects_external_sentinel_after_baseline() {
+        assert_shared_mutation_rejected(SharedReferent::Sentinel, false, false, 0);
+    }
+
+    #[test]
+    fn shared_mutation_rejects_external_sentinel_after_reset() {
+        assert_shared_mutation_rejected(SharedReferent::Sentinel, true, false, 0);
+    }
+
+    #[test]
+    fn shared_mutation_preserves_readonly_external_sentinel() {
+        assert_shared_mutation_rejected(SharedReferent::Sentinel, false, true, 0);
+    }
+
+    #[test]
+    fn removing_shared_readonly_target_preserves_external_permissions() {
+        // Arrange.
+        let (_project, mut worker, candidate) = worker_and_candidate();
+        let outside = tempfile::tempdir().unwrap();
+        let source = Utf8Path::from_path(outside.path())
+            .unwrap()
+            .join("sentinel.py");
+        fs::write(&source, b"original\n").unwrap();
+        let initial_permissions = fs::metadata(&source).unwrap().permissions();
+        make_read_only(&source);
+        let permissions = permission_fingerprint(&source);
+        let target = worker.root().join(&candidate.path);
+        fs::remove_file(&target).unwrap();
+        fs::hard_link(&source, &target).unwrap();
+
+        // Act.
+        let result = worker.remove(&candidate.path);
+
+        // Assert: unlinking a worker entry must not chmod its external referent.
+        assert_eq!(permission_fingerprint(&source), permissions);
+        assert_eq!(fs::read(&source).unwrap(), b"original\n");
+        #[cfg(unix)]
+        result.unwrap();
+        #[cfg(windows)]
+        let _ = result;
+        drop(worker);
+        assert_eq!(permission_fingerprint(&source), permissions);
+        assert_eq!(fs::read(&source).unwrap(), b"original\n");
+        fs::set_permissions(&source, initial_permissions).unwrap();
+    }
+
+    proptest::proptest! {
+        #![proptest_config(proptest::test_runner::Config::with_cases(16))]
+
+        #[test]
+        fn shared_mutation_rejects_additional_aliases(extra_links in 1_u8..=8) {
+            assert_shared_mutation_rejected(SharedReferent::Sentinel, false, false, extra_links);
+        }
+    }
+
     #[test]
     fn mutation_rejects_location_mismatch_without_changing_worker_bytes() {
         let (_project, mut worker, mut candidate) = worker_and_candidate();
