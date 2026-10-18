@@ -14,6 +14,7 @@ fn only(operator: MutationOperator) -> MutationOperatorSelection {
 fn analyze(source: &str, operator: MutationOperator, limit: usize) -> AnalyzerOutput {
     analyze_source(
         &AnalyzeRequest {
+            payload: super::payload::PayloadBudget::default(),
             path: Utf8Path::new("subject.py"),
             lines: &[],
             symbols: &[],

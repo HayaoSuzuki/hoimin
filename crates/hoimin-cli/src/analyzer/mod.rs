@@ -54,7 +54,13 @@ mod rust;
 mod store;
 mod types;
 
+#[cfg(test)]
+mod payload_probes;
+#[cfg(test)]
+mod payload_tests;
+
 pub(crate) use rust::definition_names;
+use rust::payload::{Charged, PayloadBudget};
 
 use std::fmt::Write as _;
 use std::num::NonZeroUsize;
@@ -100,6 +106,7 @@ impl CandidateSpoolOwner {
 /// See the [module contract](self) for session limits, interruption state, and
 /// spool cleanup responsibilities. Use one handler for one active session.
 pub struct AnalyzerHandler {
+    payload: PayloadBudget,
     root_path: Utf8PathBuf,
     operators: MutationOperatorSelection,
     profile: MutationProfile,
@@ -120,6 +127,7 @@ pub struct Discovery {
 }
 
 struct DiscoveryWork {
+    payload: PayloadBudget,
     exception_project: Option<ExceptionProject>,
     root: Utf8PathBuf,
     targets: Vec<TargetSlice>,
@@ -399,6 +407,7 @@ fn discovery_work(
     #[cfg(test)] control: Option<DiscoveryControl>,
 ) -> DiscoveryWork {
     DiscoveryWork {
+        payload: PayloadBudget::default(),
         exception_project: operators
             .contains(hoimin_core::MutationOperator::ExceptionHierarchy)
             .then(|| ExceptionProject::new(root)),
@@ -415,6 +424,7 @@ fn discovery_work(
 
 fn discover_targets_blocking(work: DiscoveryWork) -> Result<Discovery, EffectFailed> {
     let DiscoveryWork {
+        payload,
         exception_project,
         root,
         targets,
@@ -434,6 +444,7 @@ fn discover_targets_blocking(work: DiscoveryWork) -> Result<Discovery, EffectFai
         .map(|p| p.load(&|| cancellation.is_cancelled()))
         .transpose()
         .map_err(|e| EffectFailed::other(EffectId(0), "analyzer.exception_hierarchy", e))?;
+    let mut candidates = Vec::new();
     let mut discovery = Discovery {
         candidates: Vec::new(),
         diagnostics: Vec::new(),
@@ -459,12 +470,13 @@ fn discover_targets_blocking(work: DiscoveryWork) -> Result<Discovery, EffectFai
         }
         let output = rust::analyze_source_with_exceptions(
             &rust::AnalyzeRequest {
+                payload: payload.clone(),
                 path: &target.path,
                 lines: &target.lines,
                 symbols: &target.symbols,
                 operators: &operators,
                 profile,
-                max_candidates: max_candidates.saturating_sub(discovery.candidates.len()),
+                max_candidates: max_candidates.saturating_sub(candidates.len()),
             },
             module,
             &|| cancellation.is_cancelled(),
@@ -473,7 +485,7 @@ fn discover_targets_blocking(work: DiscoveryWork) -> Result<Discovery, EffectFai
         .map_err(|error| analysis_failure(EffectId(0), &target.path, error))?;
         for candidate in output.candidates {
             ensure_discovery_active(&cancellation)?;
-            let sequence = u64::try_from(discovery.candidates.len())
+            let sequence = u64::try_from(candidates.len())
                 .ok()
                 .and_then(|count| count.checked_add(1))
                 .ok_or_else(|| {
@@ -483,10 +495,10 @@ fn discover_targets_blocking(work: DiscoveryWork) -> Result<Discovery, EffectFai
                         "candidate sequence overflow",
                     )
                 })?;
-            let candidate = mutation_candidate(&validation, candidate, sequence)?;
+            let candidate = mutation_candidate(EffectId(0), &validation, candidate, sequence)?;
             CandidateStore::record_size(&candidate)
                 .map_err(|error| candidate_store_error(EffectId(0), &candidate, &error))?;
-            discovery.candidates.push(candidate);
+            candidates.push(candidate);
         }
         discovery.diagnostics.extend(output.diagnostics);
         if output.truncated {
@@ -494,6 +506,11 @@ fn discover_targets_blocking(work: DiscoveryWork) -> Result<Discovery, EffectFai
             break;
         }
     }
+    // All producers and conversion are finished. This owner is never reused.
+    discovery.candidates = candidates
+        .into_iter()
+        .map(Charged::into_untracked)
+        .collect();
     Ok(discovery)
 }
 
@@ -522,6 +539,7 @@ impl AnalyzerHandler {
         max_candidates: NonZeroUsize,
     ) -> Self {
         Self {
+            payload: PayloadBudget::default(),
             exception_project: None,
             root_path: root,
             operators,
@@ -585,10 +603,13 @@ impl AnalyzerHandler {
                 || CandidateStore::new(candidate_limit),
                 |owner| CandidateStore::new_in(candidate_limit, owner.path()),
             );
-            self.store =
-                Some(store.map_err(|error| {
-                    EffectFailed::other(id, "analyzer.store", error.to_string())
-                })?);
+            self.store = Some(
+                store
+                    .map(|store| store.with_payload(self.payload.clone()))
+                    .map_err(|error| {
+                        EffectFailed::other(id, "analyzer.store", error.to_string())
+                    })?,
+            );
         }
         let source = tokio::select! {
             biased;
@@ -611,6 +632,7 @@ impl AnalyzerHandler {
         let max_candidates = usize::try_from(remaining).unwrap_or(usize::MAX);
         let operators = self.operators.clone();
         let profile = self.profile;
+        let payload = self.payload.clone();
         let task_cancellation = cancellation.clone();
         #[cfg(test)]
         let analysis_hook = self.analysis_hook.clone();
@@ -625,6 +647,7 @@ impl AnalyzerHandler {
                 hook();
             }
             analyze_and_store(BlockingAnalysis {
+                payload,
                 exception_project,
                 request,
                 operators,
@@ -667,6 +690,7 @@ impl AnalyzerHandler {
 }
 
 struct BlockingAnalysis {
+    payload: PayloadBudget,
     exception_project: Option<ExceptionProject>,
     request: AnalyzeFile,
     operators: MutationOperatorSelection,
@@ -681,6 +705,7 @@ fn analyze_and_store(
     work: BlockingAnalysis,
 ) -> Result<(AnalysisFinished, Option<CandidateStore>), EffectFailed> {
     let BlockingAnalysis {
+        payload,
         exception_project,
         request,
         operators,
@@ -703,6 +728,7 @@ fn analyze_and_store(
         .map_err(|e| EffectFailed::other(id, "analyzer.exception_hierarchy", e))?;
     let output = rust::analyze_source_with_exceptions(
         &rust::AnalyzeRequest {
+            payload: payload.clone(),
             path: &request.target.path,
             lines: &request.target.lines,
             symbols: &request.target.symbols,
@@ -722,7 +748,7 @@ fn analyze_and_store(
         let sequence = store.count().checked_add(1).ok_or_else(|| {
             EffectFailed::other(id, "analyzer.candidate", "candidate sequence overflow")
         })?;
-        let candidate = mutation_candidate(&validation, candidate, sequence)?;
+        let candidate = mutation_candidate(id, &validation, candidate, sequence)?;
         store
             .push(&candidate)
             .map_err(|error| candidate_store_error(id, &candidate, &error))?;
@@ -810,6 +836,9 @@ fn analysis_failure(
 ) -> EffectFailed {
     match error {
         rust::AnalysisError::Cancelled => cancelled(id),
+        rust::AnalysisError::PayloadLimit { .. } => {
+            EffectFailed::other(id, "analyzer.payload_limit", format!("{path}: {error}"))
+        }
         rust::AnalysisError::HierarchyLimit | rust::AnalysisError::HierarchySourceChanged => {
             EffectFailed::other(id, "analyzer.exception_hierarchy", error.to_string())
         }
@@ -828,6 +857,13 @@ fn candidate_store_error(
     candidate: &MutationCandidate,
     error: &StoreError,
 ) -> EffectFailed {
+    if let StoreError::PayloadLimit { limit } = error {
+        return analysis_failure(
+            id,
+            &candidate.path,
+            rust::AnalysisError::PayloadLimit { limit: *limit },
+        );
+    }
     EffectFailed::other(
         id,
         "analyzer.store",
@@ -855,13 +891,25 @@ fn source_validation<'source>(
 }
 
 fn mutation_candidate(
+    effect_id: EffectId,
     validation: &CandidateValidationContext<'_>,
-    candidate: AnalyzerCandidate,
+    charged: Charged<AnalyzerCandidate>,
     sequence: u64,
-) -> Result<MutationCandidate, EffectFailed> {
+) -> Result<Charged<MutationCandidate>, EffectFailed> {
+    let Charged {
+        mut lease,
+        value: candidate,
+    } = charged;
+    lease
+        .grow([
+            candidate.operator.as_str().len(),
+            validation.file_hash().len(),
+            hoimin_core::MUTANT_ID_BYTES,
+        ])
+        .map_err(|error| analysis_failure(effect_id, &candidate.path, error))?;
     let decoded = validation.decoded_source().map_err(|error| {
         EffectFailed::other(
-            EffectId(0),
+            effect_id,
             "analyzer.source.encoding",
             format!("{}: {error}", candidate.path),
         )
@@ -879,7 +927,7 @@ fn mutation_candidate(
     })()
     .ok_or_else(|| {
         EffectFailed::other(
-            EffectId(0),
+            effect_id,
             "analyzer.candidate",
             "decoded candidate span is not an original source boundary",
         )
@@ -896,21 +944,29 @@ fn mutation_candidate(
         symbol: candidate.symbol,
         file_hash: validation.file_hash().to_owned(),
     };
-    let id = validate_candidate_with_context(validation, &descriptor).map_err(|error| {
-        EffectFailed::other(EffectId(0), "analyzer.candidate", error.to_string())
-    })?;
-    Ok(MutationCandidate {
-        id: id.to_string(),
-        sequence,
-        path: descriptor.path,
-        span: descriptor.span,
-        original: descriptor.original,
-        replacement: descriptor.replacement,
-        operator: descriptor.operator,
-        line: descriptor.line,
-        column: descriptor.column,
-        symbol: descriptor.symbol,
-        file_hash: descriptor.file_hash,
+    let scratch_bytes = hoimin_core::candidate_validation_scratch_bytes(&descriptor)
+        .ok_or_else(|| analysis_failure(effect_id, &descriptor.path, lease.budget().exceeded()))?;
+    let _scratch = lease
+        .budget()
+        .reserve([scratch_bytes])
+        .map_err(|error| analysis_failure(effect_id, &descriptor.path, error))?;
+    let id = validate_candidate_with_context(validation, &descriptor)
+        .map_err(|error| EffectFailed::other(effect_id, "analyzer.candidate", error.to_string()))?;
+    Ok(Charged {
+        lease,
+        value: MutationCandidate {
+            id: id.to_string(),
+            sequence,
+            path: descriptor.path,
+            span: descriptor.span,
+            original: descriptor.original,
+            replacement: descriptor.replacement,
+            operator: descriptor.operator,
+            line: descriptor.line,
+            column: descriptor.column,
+            symbol: descriptor.symbol,
+            file_hash: descriptor.file_hash,
+        },
     })
 }
 
@@ -957,7 +1013,15 @@ mod tests {
         let source = b"x = 1\nvalue == 2\n";
         let context = CandidateValidationContext::new(source).unwrap();
 
-        let converted = mutation_candidate(&context, analyzer_candidate(), 7).unwrap();
+        let converted = mutation_candidate(
+            EffectId(0),
+            &context,
+            PayloadBudget::default()
+                .retain(analyzer_candidate())
+                .unwrap(),
+            7,
+        )
+        .unwrap();
         let identity = CandidateIdentity {
             schema_version: CANDIDATE_SCHEMA_VERSION,
             file_hash: blake3::hash(source).to_hex().to_string(),
@@ -986,7 +1050,13 @@ mod tests {
 
         let mut stale_original = analyzer_candidate();
         stale_original.original = ">=".into();
-        let error = mutation_candidate(&context, stale_original, 1).unwrap_err();
+        let error = mutation_candidate(
+            EffectId(0),
+            &context,
+            PayloadBudget::default().retain(stale_original).unwrap(),
+            1,
+        )
+        .unwrap_err();
         assert_eq!(error.failure.code(), "analyzer.candidate");
         assert_eq!(
             error.failure.message(),
@@ -995,7 +1065,13 @@ mod tests {
 
         let mut stale_location = analyzer_candidate();
         stale_location.column = 5;
-        let error = mutation_candidate(&context, stale_location, 1).unwrap_err();
+        let error = mutation_candidate(
+            EffectId(0),
+            &context,
+            PayloadBudget::default().retain(stale_location).unwrap(),
+            1,
+        )
+        .unwrap_err();
         assert_eq!(error.failure.code(), "analyzer.candidate");
         assert_eq!(
             error.failure.message(),

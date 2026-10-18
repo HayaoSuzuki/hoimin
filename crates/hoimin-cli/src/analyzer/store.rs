@@ -12,6 +12,8 @@ pub const MAX_SPOOL_RECORD_BYTES: u64 = 2 * 1024 * 1024;
 
 #[derive(Debug, Error)]
 pub enum StoreError {
+    #[error("candidate payload exceeds internal limit {limit} bytes")]
+    PayloadLimit { limit: usize },
     #[error("candidate limit {limit} exceeded")]
     LimitExceeded { limit: u64 },
     #[error("candidate sequence mismatch: expected {expected}, got {actual}")]
@@ -34,6 +36,7 @@ pub enum StoreError {
 }
 
 pub struct CandidateStore {
+    payload: super::rust::payload::PayloadBudget,
     file: NamedTempFile,
     count: u64,
     max_candidates: u64,
@@ -68,10 +71,16 @@ impl CandidateStore {
 
     fn with_file(max_candidates: u64, file: NamedTempFile) -> Self {
         Self {
+            payload: super::rust::payload::PayloadBudget::default(),
             file,
             count: 0,
             max_candidates,
         }
+    }
+
+    pub(crate) fn with_payload(mut self, payload: super::rust::payload::PayloadBudget) -> Self {
+        self.payload = payload;
+        self
     }
 
     #[must_use]
@@ -120,6 +129,12 @@ impl CandidateStore {
             });
         }
         let record_size = Self::record_size(candidate)?;
+        let _encoded = self.payload.reserve([record_size]).map_err(|error| {
+            let super::rust::AnalysisError::PayloadLimit { limit } = error else {
+                unreachable!()
+            };
+            StoreError::PayloadLimit { limit }
+        })?;
         let mut record = Vec::with_capacity(record_size);
         serde_json::to_writer(&mut record, candidate)
             .map_err(|error| StoreError::CorruptRecord(error.to_string()))?;

@@ -85,7 +85,10 @@ fn lean_exception_hierarchy_snapshot_correspondence() {
                         parsed.syntax(),
                         case.max_candidates,
                         &|| false,
-                        |range, replacement| pairs.push((service[range].to_owned(), replacement)),
+                        |range, replacement| {
+                            pairs.push((service[range].to_owned(), replacement));
+                            Ok(())
+                        },
                     )
                     .unwrap();
                 pairs

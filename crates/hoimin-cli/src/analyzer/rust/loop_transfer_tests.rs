@@ -38,6 +38,7 @@ fn analyze_visits(source: &str, selected: bool) -> (usize, usize) {
     LOOP_ANNOTATION_VISITS.set(0);
     let output = analyze_source(
         &AnalyzeRequest {
+            payload: super::payload::PayloadBudget::default(),
             path: Utf8Path::new("nested.py"),
             lines: &[],
             symbols: &[],

@@ -14,6 +14,14 @@ thread_local! {
     };
 }
 
+pub(super) fn reset_work() {
+    REPLACEMENT_WORK.set(ReplacementWork::default());
+}
+pub(super) fn work() -> (usize, usize) {
+    let work = REPLACEMENT_WORK.get();
+    (work.builds, work.bytes)
+}
+
 pub(super) fn record_replacement(operator: MutationOperator, replacement: &str) {
     assert!(matches!(
         operator,
@@ -43,6 +51,7 @@ fn request<'a>(
     max_candidates: usize,
 ) -> AnalyzeRequest<'a> {
     AnalyzeRequest {
+        payload: super::payload::PayloadBudget::default(),
         path: Utf8Path::new("pkg/subject.py"),
         lines,
         symbols,
@@ -244,8 +253,8 @@ fn check_selected_identity(
     };
     for (candidate, expected) in output.candidates.into_iter().zip(expected) {
         assert_eq!(
-            hoimin_core::stable_mutant_id(&identity(candidate)),
-            hoimin_core::stable_mutant_id(&identity(expected)),
+            hoimin_core::stable_mutant_id(&identity(candidate.into_untracked())),
+            hoimin_core::stable_mutant_id(&identity(expected.into_untracked())),
         );
     }
 }

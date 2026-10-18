@@ -2,13 +2,14 @@
 use super::{deletion, source_text};
 use ruff_python_ast::{Expr, ExprContext};
 use ruff_text_size::Ranged;
+use std::fmt::Write as _;
 
 pub(super) fn emit(
     expression: &Expr,
     source: &str,
     max_candidates: usize,
     cancelled: &impl Fn() -> bool,
-    mut candidate: impl FnMut(String),
+    mut candidate: impl FnMut(String) -> bool,
 ) {
     let (open, close, entries): (_, _, Vec<_>) = match expression {
         Expr::List(list) if list.ctx == ExprContext::Load => (
@@ -47,15 +48,16 @@ pub(super) fn emit(
         let Some(value) = source_text(source, value.range()) else {
             return;
         };
-        let fragment = if let Some(key) = key {
-            let Some(key) = source_text(source, key.range()) else {
-                return;
-            };
-            format!("({key}): ({value})")
-        } else {
-            format!("({value})")
+        let key = match key {
+            Some(key) => {
+                let Some(key) = source_text(source, key.range()) else {
+                    return;
+                };
+                Some(key)
+            }
+            None => None,
         };
-        fragments.push(fragment);
+        fragments.push((key, value));
     }
     let mut emitted = 0usize;
     for removed in 0..fragments.len() {
@@ -76,7 +78,10 @@ pub(super) fn emit(
                 return;
             }
             if index != removed {
-                replacement.push_str(fragment);
+                if let Some(key) = fragment.0 {
+                    write!(replacement, "({key}): ").unwrap();
+                }
+                write!(replacement, "({})", fragment.1).unwrap();
                 replacement.push(',');
             }
         }
@@ -86,6 +91,8 @@ pub(super) fn emit(
             super::MutationOperator::ContainerElementDelete,
             &replacement,
         );
-        candidate(replacement);
+        if !candidate(replacement) {
+            return;
+        }
     }
 }

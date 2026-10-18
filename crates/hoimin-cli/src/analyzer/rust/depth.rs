@@ -104,6 +104,7 @@ mod tests {
             .spawn(|| {
                 let operators = MutationOperatorSelection::default();
                 let request = AnalyzeRequest {
+                    payload: super::super::payload::PayloadBudget::default(),
                     path: Utf8Path::new("calc.py"),
                     lines: &[],
                     symbols: &[],
@@ -209,6 +210,7 @@ mod tests {
             .spawn(|| {
                 let operators = MutationOperatorSelection::default();
                 let request = AnalyzeRequest {
+                    payload: super::super::payload::PayloadBudget::default(),
                     path: Utf8Path::new("calc.py"),
                     lines: &[],
                     symbols: &[],
@@ -302,6 +304,7 @@ match value:
         dispose(parsed.into_syntax());
         let operators = MutationOperatorSelection::default();
         let request = AnalyzeRequest {
+            payload: super::super::payload::PayloadBudget::default(),
             path: Utf8Path::new("calc.py"),
             lines: &[],
             symbols: &[],
@@ -325,6 +328,7 @@ match value:
                 let mut operators = MutationOperatorSelection::default();
                 operators.include(hoimin_core::MutationOperator::TypeListSequence);
                 let request = AnalyzeRequest {
+                    payload: super::super::payload::PayloadBudget::default(),
                     path: Utf8Path::new("types.py"),
                     lines: &[],
                     symbols: &[],
@@ -420,6 +424,7 @@ match value:
         let source = format!("value = {}\n", expression(25_000));
         let operators = MutationOperatorSelection::default();
         let request = AnalyzeRequest {
+            payload: super::super::payload::PayloadBudget::default(),
             path: Utf8Path::new("calc.py"),
             lines: &[],
             symbols: &[],

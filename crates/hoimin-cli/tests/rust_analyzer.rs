@@ -32,6 +32,7 @@ fn typing_import_rebinding_inventory_is_site_aware() {
 
     let output = rust::analyze_source(
         &rust::AnalyzeRequest {
+            payload: rust::payload::PayloadBudget::default(),
             path: Utf8Path::new("pkg/typing_rebinding.py"),
             lines: &[],
             symbols: &[],
@@ -110,6 +111,7 @@ fn depth_cleanup_child_fixture() {
             .spawn(|| {
                 let operators = hoimin_core::MutationOperatorSelection::default();
                 let request = rust::AnalyzeRequest {
+                    payload: rust::payload::PayloadBudget::default(),
                     path: camino::Utf8Path::new("calc.py"),
                     lines: &[],
                     symbols: &[],
@@ -201,6 +203,7 @@ fn foreign_middle_token_in_a_format_spec_is_invalid_syntax() {
         for profile in [MutationProfile::Full, MutationProfile::Focused] {
             let output = rust::analyze_source(
                 &rust::AnalyzeRequest {
+                    payload: rust::payload::PayloadBudget::default(),
                     path: Utf8Path::new("pkg/format_spec.py"),
                     lines: &[],
                     symbols: &[],
@@ -236,6 +239,7 @@ fn statement_deletion_obeys_selection_prefix_and_cancellation() {
     }
     operators.include(MutationOperator::from_name("statement_delete").unwrap());
     let mut request = rust::AnalyzeRequest {
+        payload: rust::payload::PayloadBudget::default(),
         path: Utf8Path::new("subject.py"),
         lines: &[],
         symbols: &[],
@@ -272,6 +276,7 @@ fn integer_neighbors_are_default_and_keep_a_bounded_prefix() {
     operators.include(operator);
     let source = "def f():\n    return -3\n";
     let request = rust::AnalyzeRequest {
+        payload: rust::payload::PayloadBudget::default(),
         path: Utf8Path::new("subject.py"),
         lines: &[],
         symbols: &[],
@@ -301,6 +306,7 @@ fn condition_constants_respect_focused_guards_and_limits() {
     operators.include(operator);
     let source = "if __name__ == '__main__':\n    run()\n";
     let mut request = rust::AnalyzeRequest {
+        payload: rust::payload::PayloadBudget::default(),
         path: Utf8Path::new("subject.py"),
         lines: &[],
         symbols: &[],
@@ -332,6 +338,7 @@ fn body_erasure_anchors_first_erased_line_and_owning_function() {
     operators.include(operator);
     let source = "def outer():\n    'doc'\n    def inner():\n        return 1\n    call()\n";
     let mut request = rust::AnalyzeRequest {
+        payload: rust::payload::PayloadBudget::default(),
         path: Utf8Path::new("subject.py"),
         lines: &[hoimin_core::LineRange { start: 5, end: 5 }],
         symbols: &[],
@@ -370,6 +377,7 @@ fn enum_replacement_is_opt_in_bounded_selected_and_cancellable() {
     operators.include(operator);
     let source = "from enum import Enum\nclass Status(Enum):\n    A=1; B=2; C=3\ndef choose():\n    return Status.A\nx=Status.B\n";
     let mut request = rust::AnalyzeRequest {
+        payload: rust::payload::PayloadBudget::default(),
         path: Utf8Path::new("subject.py"),
         lines: &[],
         symbols: &[],
@@ -406,6 +414,7 @@ fn augmented_assignment_is_default_selected_bounded_and_cancellable() {
     operators.include(operator);
     let source = "def first(x):\n    x += 1\ndef second(x):\n    x *= 2\n";
     let mut request = rust::AnalyzeRequest {
+        payload: rust::payload::PayloadBudget::default(),
         path: Utf8Path::new("subject.py"),
         lines: &[],
         symbols: &[],
@@ -444,6 +453,7 @@ fn return_tuple_swap_is_default_selected_bounded_and_cancellable() {
     operators.include(operator);
     let source = "def first(): return 1, 2\ndef second(): return 3, 4\n";
     let mut request = rust::AnalyzeRequest {
+        payload: rust::payload::PayloadBudget::default(),
         path: Utf8Path::new("subject.py"),
         lines: &[],
         symbols: &[],
@@ -483,6 +493,7 @@ fn string_empty_is_default_selected_bounded_and_cancellable() {
     operators.include(operator);
     let source = "'doc'\ndef first(): return 'first'\ndef second(): return 'second'\n";
     let mut request = rust::AnalyzeRequest {
+        payload: rust::payload::PayloadBudget::default(),
         path: Utf8Path::new("subject.py"),
         lines: &[],
         symbols: &[],
@@ -522,6 +533,7 @@ fn while_false_is_default_selected_bounded_and_cancellable() {
     operators.include(operator);
     let source = "def first():\n    while first_ready: break\ndef second():\n    while second_ready: break\n";
     let mut request = rust::AnalyzeRequest {
+        payload: rust::payload::PayloadBudget::default(),
         path: Utf8Path::new("subject.py"),
         lines: &[],
         symbols: &[],
@@ -561,6 +573,7 @@ fn clause_delete_is_opt_in_selected_bounded_and_cancellable() {
     operators.include(operator);
     let source = "def first():\n    if first_ready and allowed: pass\ndef second():\n    if second_ready or allowed: pass\n";
     let mut request = rust::AnalyzeRequest {
+        payload: rust::payload::PayloadBudget::default(),
         path: Utf8Path::new("subject.py"),
         lines: &[],
         symbols: &[],
@@ -598,6 +611,7 @@ fn repeated_clauses_are_deduplicated_before_bounded_generation() {
     operators.include(MutationOperator::from_name("condition_clause_delete").unwrap());
     let source = format!("if {}: pass\n", vec!["a"; 4096].join(" and "));
     let request = rust::AnalyzeRequest {
+        payload: rust::payload::PayloadBudget::default(),
         path: Utf8Path::new("subject.py"),
         lines: &[],
         symbols: &[],
@@ -627,6 +641,7 @@ fn container_delete_is_opt_in_selected_bounded_and_cancellable() {
     operators.include(operator);
     let source = "def first():\n    return [1]\ndef second():\n    return [2]\n";
     let mut request = rust::AnalyzeRequest {
+        payload: rust::payload::PayloadBudget::default(),
         path: Utf8Path::new("subject.py"),
         lines: &[],
         symbols: &[],
@@ -664,6 +679,7 @@ fn repeated_container_elements_are_deduplicated_before_bounded_generation() {
     operators.include(MutationOperator::from_name("container_element_delete").unwrap());
     let source = format!("value = [{}]\n", vec!["a"; 4096].join(","));
     let request = rust::AnalyzeRequest {
+        payload: rust::payload::PayloadBudget::default(),
         path: Utf8Path::new("subject.py"),
         lines: &[],
         symbols: &[],
@@ -693,6 +709,7 @@ fn conversion_remove_is_default_selected_bounded_and_cancellable() {
     operators.include(operator);
     let source = "def first():\n    return int(1)\ndef second():\n    return int(2)\n";
     let mut request = rust::AnalyzeRequest {
+        payload: rust::payload::PayloadBudget::default(),
         path: Utf8Path::new("subject.py"),
         lines: &[],
         symbols: &[],
@@ -732,6 +749,7 @@ fn optional_keyword_is_opt_in_selected_bounded_and_cancellable() {
     operators.include(operator);
     let source = "def target(*, flag=True): return flag\ndef first(): return target(flag=False)\ndef second(): return target(flag=0)\n";
     let mut request = rust::AnalyzeRequest {
+        payload: rust::payload::PayloadBudget::default(),
         path: Utf8Path::new("subject.py"),
         lines: &[],
         symbols: &[],
@@ -767,6 +785,7 @@ fn promoted_defaults_keep_profile_filtering_before_bounded_prefix_selection() {
         (MutationProfile::Focused, false),
     ] {
         let mut request = rust::AnalyzeRequest {
+            payload: rust::payload::PayloadBudget::default(),
             path: Utf8Path::new("subject.py"),
             lines: &[],
             symbols: &[],
@@ -807,6 +826,7 @@ fn method_remove_is_opt_out_selected_bounded_and_cancellable() {
     operators.include(operator);
     let source = "def first():\n    return first_value.clean()\ndef second():\n    return second_value.clean()\n";
     let mut request = rust::AnalyzeRequest {
+        payload: rust::payload::PayloadBudget::default(),
         path: Utf8Path::new("subject.py"),
         lines: &[],
         symbols: &[],
@@ -846,6 +866,7 @@ fn return_constant_preserves_scope_selection_profile_prefix_and_cancellation() {
     operators.include(operator);
     let source = "def outer() -> int:\n    'doc'\n    def inner(): return 1\n    return 2\n";
     let mut request = rust::AnalyzeRequest {
+        payload: rust::payload::PayloadBudget::default(),
         path: Utf8Path::new("subject.py"),
         lines: &[],
         symbols: &[],

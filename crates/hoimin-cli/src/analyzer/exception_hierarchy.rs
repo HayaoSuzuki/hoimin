@@ -41,8 +41,8 @@ enum IneligibleReason {
     ConstructorPolicy,
 }
 
-enum SiteOutcome {
-    Candidates(Vec<String>),
+enum SiteOutcome<'a> {
+    Candidates(Vec<&'a str>),
     Ineligible(IneligibleReason),
     Skipped(SkipReason),
 }
@@ -1298,7 +1298,7 @@ impl ExceptionIndex {
         raised: bool,
         excluded: &BTreeSet<String>,
         budget: (usize, &dyn Fn() -> bool),
-    ) -> SiteOutcome {
+    ) -> SiteOutcome<'_> {
         if excluded.contains(name.split('.').next().unwrap()) {
             return SiteOutcome::Skipped(SkipReason::UnresolvedBinding);
         }
@@ -1350,7 +1350,7 @@ impl ExceptionIndex {
                     *end <= before && !excluded.contains(n.split('.').next().unwrap())
                 })
             {
-                result.insert(name.clone());
+                result.insert(name.as_str());
                 if result.len() > budget.0.saturating_add(1) {
                     result.pop_last();
                 }
@@ -1375,8 +1375,8 @@ impl ExceptionIndex {
         module: &ModModule,
         limit: usize,
         cancelled: &impl Fn() -> bool,
-        mut emit: impl FnMut(TextRange, String),
-    ) -> Result<HierarchyReport, AnalysisCancelled> {
+        mut emit: impl FnMut(TextRange, String) -> Result<(), AnalysisError>,
+    ) -> Result<HierarchyReport, AnalysisError> {
         let mut collector = Collector {
             index: self,
             limit,
@@ -1388,11 +1388,14 @@ impl ExceptionIndex {
             cancelled,
             stopped: false,
             report: HierarchyReport::default(),
+            failure: None,
             emit: &mut emit,
         };
         collector.visit_body(&module.body);
-        if collector.stopped || cancelled() {
-            Err(AnalysisCancelled)
+        if let Some(error) = collector.failure {
+            Err(error)
+        } else if collector.stopped || cancelled() {
+            Err(AnalysisError::Cancelled)
         } else {
             Ok(collector.report)
         }
@@ -1410,9 +1413,12 @@ struct Collector<'i, 'p, F, C> {
     cancelled: &'p C,
     stopped: bool,
     report: HierarchyReport,
+    failure: Option<AnalysisError>,
     emit: F,
 }
-impl<F: FnMut(TextRange, String), C: Fn() -> bool> Collector<'_, '_, F, C> {
+impl<F: FnMut(TextRange, String) -> Result<(), AnalysisError>, C: Fn() -> bool>
+    Collector<'_, '_, F, C>
+{
     fn occurrence(&mut self, expression: &Expr, raised: bool) {
         if self.stopped {
             return;
@@ -1455,11 +1461,17 @@ impl<F: FnMut(TextRange, String), C: Fn() -> bool> Collector<'_, '_, F, C> {
                 return;
             }
             self.report.emitted = self.report.emitted.saturating_add(1);
-            (self.emit)(expression.range(), replacement);
+            if let Err(error) = (self.emit)(expression.range(), replacement.to_owned()) {
+                self.failure = Some(error);
+                self.stopped = true;
+                return;
+            }
         }
     }
 }
-impl<'a, F: FnMut(TextRange, String), C: Fn() -> bool> Visitor<'a> for Collector<'_, '_, F, C> {
+impl<'a, F: FnMut(TextRange, String) -> Result<(), AnalysisError>, C: Fn() -> bool> Visitor<'a>
+    for Collector<'_, '_, F, C>
+{
     fn visit_stmt(&mut self, stmt: &'a Stmt) {
         if self.stopped || (self.cancelled)() {
             self.stopped = true;

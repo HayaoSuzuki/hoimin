@@ -1131,11 +1131,45 @@ filtering, deduplication, source ordering, or candidate-limit behavior.
 
 For one source file, the token scanner, AST pass, and type-annotation pass
 each retain no more than `max_candidates + 1` candidate records and
-deduplication identities before their bounded merge. This is deliberately a
-candidate-retention bound, not a general Hoimin memory bound: source text,
-parser tokens, AST facts, and small per-node replacement lists remain
-proportional to source size. `--max-memory` controls descendants rather than
-the Hoimin CLI, so it does not bound these analyzer structures.
+deduplication identities before their bounded merge. An additional internal
+16 MiB (16,777,216-byte) budget covers retained candidate payload. One plan
+owner spans all producers, merge, files and already converted candidates. A run
+handler shares its owner with live blocking work, including workers that remain
+after cancellation or a dropped future. Reusing the handler does not reset
+charges held by those workers. Completed disk-spool records consume no payload
+budget.
+
+The budget counts logical UTF-8 lengths of owned original, replacement, path
+and symbol strings, converted operator/file-hash/ID strings, and separately
+owned deduplication strings. Non-Clone leases move with candidates; eviction,
+deduplication and dropping candidates release their charges. Validation reserves
+a conservative scratch bound beside the core code that owns the Latin-1 encoding,
+identity, normalized-path and ID copies. Spool writes reserve their exact encoded
+record length before allocating the buffer. Enum and hierarchy destinations,
+container fragments and optional-keyword fragments borrow existing strings.
+
+Exceeding the budget or overflowing byte arithmetic fails with
+`analyzer.payload_limit` (inside the existing plan-discovery error wrapper for
+plan). It never produces a shortened successful result. This resource failure
+can precede global merge, count selection or record validation. The independent
+2 MiB record limit still applies to selected candidates; the analyzer does not
+validate every generated record before eviction.
+
+The guarantee covers retained populations. It excludes source buffers, parser
+state, AST/facts, diagnostics, fixed structures, collection capacity, allocator
+overhead and disk. One in-flight generated candidate and the annotation batch
+of at most three replacements also remain outside the budget; their bytes depend
+on source size. Thus the budget does not bound analyzer RSS or all construction
+scratch. `--max-memory` controls descendants rather than the Hoimin CLI.
+
+`analyzer::payload_tests` checks deterministic charged peaks, release/transfer,
+producer/file overlap and early construction stops. The ignored
+`analyzer::payload_probes` cases measure the production plan-accounting path on
+SHA-256-verified audit fixtures under `/tmp/hoimin-design-audit-5d3aee95/analysis-inputs`.
+Invoke them with `cargo test --release -p hoimin-cli --lib analyzer::payload_probes
+-- --ignored --nocapture --test-threads=2`; missing or changed fixtures fail.
+These charged peaks include conservative reservations and differ from final
+candidate-string totals and process RSS.
 
 `depth::parse_checked` owns AST acquisition for symbol definitions, mutation
 analysis, and exception module summaries. It retains the unchecked parser result

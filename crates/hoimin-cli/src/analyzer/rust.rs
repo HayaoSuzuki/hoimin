@@ -22,6 +22,10 @@ use ruff_text_size::{Ranged, TextRange};
 
 use super::{AnalyzerCandidate, AnalyzerDiagnostic, AnalyzerDiagnosticCode};
 
+#[path = "payload.rs"]
+pub(crate) mod payload;
+use payload::{Charged, PayloadBudget, PayloadLease};
+
 #[path = "exception_hierarchy.rs"]
 pub(crate) mod exception_hierarchy;
 
@@ -112,6 +116,16 @@ fn annotation_retention_stats() -> (usize, usize) {
     )
 }
 
+#[cfg(test)]
+pub(super) fn reset_payload_builder_work() {
+    whole_expression_selection_tests::reset_work();
+}
+
+#[cfg(test)]
+pub(super) fn payload_builder_work() -> (usize, usize) {
+    whole_expression_selection_tests::work()
+}
+
 /// Collect syntactic definitions independently of mutation eligibility.
 pub(crate) fn definition_names(source: &str) -> Result<BTreeSet<String>, String> {
     #[derive(Default)]
@@ -153,6 +167,7 @@ pub(crate) fn definition_names(source: &str) -> Result<BTreeSet<String>, String>
 }
 
 pub(crate) struct AnalyzeRequest<'a> {
+    pub payload: PayloadBudget,
     pub path: &'a Utf8Path,
     pub lines: &'a [LineRange],
     pub symbols: &'a [String],
@@ -162,7 +177,7 @@ pub(crate) struct AnalyzeRequest<'a> {
 }
 
 pub(crate) struct AnalyzerOutput {
-    pub candidates: Vec<AnalyzerCandidate>,
+    pub candidates: Vec<Charged<AnalyzerCandidate>>,
     pub diagnostics: Vec<AnalyzerDiagnostic>,
     pub truncated: bool,
     #[cfg(test)]
@@ -196,14 +211,12 @@ pub(crate) struct CandidateTokenLookupStats {
 }
 
 pub(crate) struct ProducerPrefix {
-    pub(crate) candidates: Vec<AnalyzerCandidate>,
+    pub(crate) candidates: Vec<Charged<AnalyzerCandidate>>,
     pub(crate) overflowed: bool,
 }
 
-type CandidateIdentity = (u64, String, MutationOperator);
-
 struct RetainedCandidate {
-    candidate: AnalyzerCandidate,
+    candidate: Charged<AnalyzerCandidate>,
     emission_sequence: u64,
 }
 
@@ -240,52 +253,91 @@ impl Eq for RetainedCandidate {}
 
 pub(crate) struct CandidatePrefix {
     entries: BinaryHeap<RetainedCandidate>,
-    identities: HashSet<CandidateIdentity>,
+    // Exact borrowed string lookup avoids allocating for duplicates/nonwinners.
+    identities: HashMap<(u64, MutationOperator), HashMap<String, PayloadLease>>,
+    payload: PayloadBudget,
     capacity: usize,
     overflowed: bool,
     next_emission_sequence: u64,
+    failure: Option<AnalysisError>,
 }
 
 impl CandidatePrefix {
-    pub(crate) fn new(max_candidates: usize) -> Self {
+    pub(crate) fn new(max_candidates: usize, payload: PayloadBudget) -> Self {
         Self {
             entries: BinaryHeap::new(),
-            identities: HashSet::new(),
+            identities: HashMap::new(),
+            payload,
             capacity: max_candidates.saturating_add(1),
             overflowed: false,
             next_emission_sequence: 0,
+            failure: None,
         }
     }
 
-    pub(crate) fn push(&mut self, candidate: AnalyzerCandidate) {
-        let identity = candidate_identity(&candidate);
-        if self.identities.contains(&identity) {
-            return;
+    pub(crate) fn push(&mut self, candidate: AnalyzerCandidate) -> Result<(), AnalysisError> {
+        if let Some(error) = self.failure {
+            return Err(error);
         }
-        let entry = RetainedCandidate {
+        let result = self.admit(candidate);
+        if let Err(error) = result {
+            self.failure = Some(error);
+        }
+        result
+    }
+
+    fn admit(&mut self, candidate: AnalyzerCandidate) -> Result<(), AnalysisError> {
+        let key = (candidate.span.start, candidate.operator);
+        if self
+            .identities
+            .get(&key)
+            .is_some_and(|set| set.contains_key(candidate.replacement.as_str()))
+        {
+            return Ok(());
+        }
+        let sequence = self.next_emission_sequence;
+        self.next_emission_sequence = sequence.saturating_add(1);
+        if self.entries.len() == self.capacity {
+            self.overflowed = true;
+            let latest = self.entries.peek().expect("full prefix has an entry");
+            let rank = (candidate.span.start, candidate.operator.as_str(), sequence);
+            let worst = (
+                latest.candidate.span.start,
+                latest.candidate.operator.as_str(),
+                latest.emission_sequence,
+            );
+            if rank >= worst {
+                return Ok(());
+            }
+            let evicted = self.entries.pop().unwrap();
+            let key = (evicted.candidate.span.start, evicted.candidate.operator);
+            let set = self.identities.get_mut(&key).unwrap();
+            set.remove(evicted.candidate.replacement.as_str());
+            if set.is_empty() {
+                self.identities.remove(&key);
+            }
+            drop(evicted);
+        }
+        let candidate = self.payload.retain(candidate)?;
+        let identity_lease = self.payload.reserve([candidate.replacement.len()])?;
+        self.identities
+            .entry(key)
+            .or_default()
+            .insert(candidate.replacement.clone(), identity_lease);
+        self.entries.push(RetainedCandidate {
             candidate,
-            emission_sequence: self.next_emission_sequence,
-        };
-        self.next_emission_sequence = self.next_emission_sequence.saturating_add(1);
-
-        if self.entries.len() < self.capacity {
-            self.identities.insert(identity);
-            self.entries.push(entry);
-            return;
-        }
-
-        self.overflowed = true;
-        if self.entries.peek().is_some_and(|latest| entry < *latest) {
-            let evicted = self.entries.pop().expect("a peeked heap entry exists");
-            self.identities
-                .remove(&candidate_identity(&evicted.candidate));
-            self.identities.insert(identity);
-            self.entries.push(entry);
-        }
+            emission_sequence: sequence,
+        });
+        #[cfg(test)]
+        self.payload.admitted();
+        Ok(())
     }
 
-    pub(crate) fn finish(self) -> ProducerPrefix {
-        ProducerPrefix {
+    pub(crate) fn finish(self) -> Result<ProducerPrefix, AnalysisError> {
+        if let Some(error) = self.failure {
+            return Err(error);
+        }
+        Ok(ProducerPrefix {
             candidates: self
                 .entries
                 .into_sorted_vec()
@@ -293,16 +345,8 @@ impl CandidatePrefix {
                 .map(|entry| entry.candidate)
                 .collect(),
             overflowed: self.overflowed,
-        }
+        })
     }
-}
-
-fn candidate_identity(candidate: &AnalyzerCandidate) -> CandidateIdentity {
-    (
-        candidate.span.start,
-        candidate.replacement.clone(),
-        candidate.operator,
-    )
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -310,6 +354,8 @@ pub(crate) struct AnalysisCancelled;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 pub(crate) enum AnalysisError {
+    #[error("candidate payload exceeds internal limit {limit} bytes")]
+    PayloadLimit { limit: usize },
     #[error("analysis cancelled")]
     Cancelled,
     #[error("analysis depth exceeds supported limit {limit}")]
@@ -327,8 +373,9 @@ impl From<AnalysisCancelled> for AnalysisError {
 }
 
 pub(crate) fn analyze_source(request: &AnalyzeRequest<'_>, source: &str) -> AnalyzerOutput {
-    analyze_source_cancellable(request, source, || false)
-        .expect("the analyzer probe requires a source within the supported analysis depth")
+    analyze_source_cancellable(request, source, || false).expect(
+        "the analyzer probe requires a source within the supported depth and payload limits",
+    )
 }
 
 pub(crate) fn analyze_source_cancellable(
@@ -383,7 +430,8 @@ pub(crate) fn analyze_source_with_exceptions(
         return Err(AnalysisError::Cancelled);
     }
     let line_index = LineIndex::new(source);
-    let mut token_candidates = CandidatePrefix::new(request.max_candidates);
+    let mut token_candidates =
+        CandidatePrefix::new(request.max_candidates, request.payload.clone());
     let tokens: Vec<_> = parsed.tokens().iter().collect();
     for (index, token) in tokens.iter().enumerate() {
         if cancelled() {
@@ -484,13 +532,13 @@ pub(crate) fn analyze_source_with_exceptions(
             symbol,
         ) && retained_by_profile(&candidate, request.profile, &facts)
         {
-            token_candidates.push(candidate);
+            token_candidates.push(candidate)?;
         }
     }
     if cancelled() {
         return Err(AnalysisError::Cancelled);
     }
-    let token_candidates = token_candidates.finish();
+    let token_candidates = token_candidates.finish()?;
     let (ast_candidates, hierarchy_report, enum_diagnostics) = ast_candidates(
         parsed.syntax(),
         source,
@@ -503,8 +551,14 @@ pub(crate) fn analyze_source_with_exceptions(
     if cancelled() {
         return Err(AnalysisError::Cancelled);
     }
-    let type_annotation_candidates =
-        type_annotation_candidates(parsed.syntax(), source, &line_index, &facts, request);
+    let type_annotation_candidates = type_annotation_candidates(
+        parsed.syntax(),
+        source,
+        &line_index,
+        &facts,
+        request,
+        cancelled,
+    )?;
     if cancelled() {
         return Err(AnalysisError::Cancelled);
     }
@@ -522,14 +576,22 @@ pub(crate) fn analyze_source_with_exceptions(
     candidates.extend(type_annotation_candidates.candidates);
     #[cfg(test)]
     let merged_peak = candidates.len();
-    let mut seen = BTreeSet::new();
-    candidates.retain(|candidate| {
-        seen.insert((
-            candidate.span.start,
-            candidate.replacement.clone(),
-            candidate.operator,
-        ))
-    });
+    // Borrow identities while deciding the keep mask; no second string population.
+    let keep = {
+        let mut seen = BTreeSet::new();
+        candidates
+            .iter()
+            .map(|candidate| {
+                seen.insert((
+                    candidate.span.start,
+                    candidate.replacement.as_str(),
+                    candidate.operator,
+                ))
+            })
+            .collect::<Vec<_>>()
+    };
+    let mut keep = keep.into_iter();
+    candidates.retain(|_| keep.next().unwrap());
     candidates.sort_by(|left, right| {
         left.span
             .start
@@ -626,6 +688,8 @@ fn make_candidate(
     }
     #[cfg(test)]
     CANDIDATE_ORIGINAL_COPIES.set(CANDIDATE_ORIGINAL_COPIES.get().saturating_add(1));
+    #[cfg(test)]
+    request.payload.generated();
     let original = source.get(range)?.to_owned();
     Some(AnalyzerCandidate {
         path: request.path.to_owned(),
@@ -2803,7 +2867,7 @@ enum RuntimeRole {
 
 struct AstCandidateCollector<'a, F> {
     string_exclusions: string_literals::Exclusions,
-    enum_index: enum_members::EnumIndex,
+    enum_index: &'a enum_members::EnumIndex,
     optional_functions: optional_keywords::FunctionIndex,
     operator_imports: OperatorImports,
     conversion_imports: stdlib_conversions::ConversionImports,
@@ -2831,8 +2895,16 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         request: &'a AnalyzeRequest<'a>,
         cancelled: &'a F,
         exceptions: Option<&exception_hierarchy::ExceptionIndex>,
-    ) -> Result<AstCollection, AnalysisCancelled> {
-        let mut collector = Self {
+    ) -> Result<AstCollection, AnalysisError> {
+        let enum_index = if request
+            .operators
+            .contains(MutationOperator::EnumMemberReplace)
+        {
+            enum_members::EnumIndex::build(module, source, cancelled)?
+        } else {
+            enum_members::EnumIndex::default()
+        };
+        let mut collector = AstCandidateCollector {
             optional_functions: if request
                 .operators
                 .contains(MutationOperator::OptionalKeywordDelete)
@@ -2857,14 +2929,7 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             } else {
                 string_literals::Exclusions::default()
             },
-            enum_index: if request
-                .operators
-                .contains(MutationOperator::EnumMemberReplace)
-            {
-                enum_members::EnumIndex::build(module, source, cancelled)?
-            } else {
-                enum_members::EnumIndex::default()
-            },
+            enum_index: &enum_index,
             return_scope: ReturnScope::Excluded,
             integer_suppressed: false,
             runtime_role: RuntimeRole::Value,
@@ -2893,12 +2958,15 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             cancelled_observed: false,
             exception_handler_finality: Vec::new(),
             exception_type_depth: 0,
-            candidates: CandidatePrefix::new(request.max_candidates),
+            candidates: CandidatePrefix::new(request.max_candidates, request.payload.clone()),
         };
         for statement in &module.body {
             collector.visit_stmt(statement);
+            if let Some(error) = collector.candidates.failure {
+                return Err(error);
+            }
             if collector.cancelled_observed {
-                return Err(AnalysisCancelled);
+                return Err(AnalysisError::Cancelled);
             }
         }
         let mut report = exception_hierarchy::HierarchyReport::default();
@@ -2914,13 +2982,14 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                         replacement,
                         MutationOperator::ExceptionHierarchy,
                     );
+                    collector.candidates.failure.map_or(Ok(()), Err)
                 },
             )?;
         }
         Ok((
-            collector.candidates.finish(),
+            collector.candidates.finish()?,
             report,
-            collector.enum_index.diagnostics,
+            enum_index.diagnostics,
         ))
     }
 
@@ -2928,10 +2997,13 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         if !self.cancelled_observed && (self.cancelled)() {
             self.cancelled_observed = true;
         }
-        self.cancelled_observed
+        self.cancelled_observed || self.candidates.failure.is_some()
     }
 
     fn visit_exception_type(&mut self, expression: &'a Expr) {
+        if self.candidates.failure.is_some() {
+            return;
+        }
         self.exception_type_depth += 1;
         self.visit_expr(expression);
         self.exception_type_depth -= 1;
@@ -2942,6 +3014,9 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
     }
 
     fn collect_string_segment(&mut self, expression: &Expr) {
+        if self.candidates.failure.is_some() {
+            return;
+        }
         if self
             .request
             .operators
@@ -2967,6 +3042,9 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         operator: MutationOperator,
         scope: TextRange,
     ) {
+        if self.check_cancelled() {
+            return;
+        }
         let range = byte_range(range);
         let symbol = self.facts.scope_at(usize::from(scope.start()));
         if let Some(candidate) = make_candidate(
@@ -2979,7 +3057,7 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             symbol,
         ) && retained_by_profile(&candidate, self.request.profile, self.facts)
         {
-            self.candidates.push(candidate);
+            let _ = self.candidates.push(candidate);
         }
     }
 
@@ -2988,7 +3066,8 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
     fn collect_integer_literal(&mut self, expression: &Expr) -> bool {
         let signed = matches!(expression, Expr::UnaryOp(unary)
             if unary.op == UnaryOp::USub && matches!(unary.operand.as_ref(), Expr::NumberLiteral(_)));
-        if self.integer_suppressed
+        if self.candidates.failure.is_some()
+            || self.integer_suppressed
             || self.in_pattern
             || !self
                 .request
@@ -3006,6 +3085,9 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                         format!("({neighbor})"),
                         MutationOperator::IntegerLiteralNeighbor,
                     );
+                    if self.candidates.failure.is_some() {
+                        return signed;
+                    }
                 }
             }
         }
@@ -3024,6 +3106,9 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
     }
 
     fn collect_condition_clause_delete(&mut self, condition: &Expr) {
+        if self.candidates.failure.is_some() {
+            return;
+        }
         let Expr::BoolOp(boolean) = condition else {
             return;
         };
@@ -3085,10 +3170,16 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                 replacement,
                 MutationOperator::ConditionClauseDelete,
             );
+            if self.candidates.failure.is_some() {
+                return;
+            }
         }
     }
 
     fn collect_condition_constant(&mut self, condition: &Expr) {
+        if self.candidates.failure.is_some() {
+            return;
+        }
         if !matches!(condition, Expr::BooleanLiteral(_))
             && deletion::can_remove(condition, self.cancelled)
             && !self.check_cancelled()
@@ -3099,11 +3190,17 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                     replacement.to_owned(),
                     MutationOperator::ConditionConstant,
                 );
+                if self.candidates.failure.is_some() {
+                    return;
+                }
             }
         }
     }
 
     fn collect_call(&mut self, call: &ExprCall) {
+        if self.candidates.failure.is_some() {
+            return;
+        }
         if self
             .request
             .operators
@@ -3127,21 +3224,37 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                         replacement,
                         MutationOperator::OptionalKeywordDelete,
                     );
+                    !self.check_cancelled()
                 },
             );
         }
         self.collect_stdlib_conversion_call_remove(call);
+        if self.candidates.failure.is_some() {
+            return;
+        }
         if let Expr::Name(name) = call.func.as_ref() {
             self.collect_conversion_call_remove(call, name);
+            if self.candidates.failure.is_some() {
+                return;
+            }
             self.collect_builtin_call(call, name.id.as_str(), name.range());
+            if self.candidates.failure.is_some() {
+                return;
+            }
         }
         if let Expr::Attribute(attribute) = call.func.as_ref() {
             self.collect_method_call_remove(call, &attribute.value);
+            if self.candidates.failure.is_some() {
+                return;
+            }
             self.collect_method_call(call, attribute.attr.as_str(), attribute.attr.range());
         }
     }
 
     fn collect_method_call_remove(&mut self, call: &ExprCall, receiver: &Expr) {
+        if self.candidates.failure.is_some() {
+            return;
+        }
         if self
             .request
             .operators
@@ -3165,6 +3278,9 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
     }
 
     fn collect_stdlib_conversion_call_remove(&mut self, call: &ExprCall) {
+        if self.candidates.failure.is_some() {
+            return;
+        }
         if !self
             .request
             .operators
@@ -3197,6 +3313,9 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         call: &ExprCall,
         name: &ruff_python_ast::ExprName,
     ) {
+        if self.candidates.failure.is_some() {
+            return;
+        }
         if !self
             .request
             .operators
@@ -3237,6 +3356,9 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
     }
 
     fn collect_builtin_call(&mut self, call: &ExprCall, name: &str, range: TextRange) {
+        if self.candidates.failure.is_some() {
+            return;
+        }
         let (replacement, operator) = match name {
             "any" | "all" if has_exact_positional_arguments(call, 1) => (
                 if name == "any" { "all" } else { "any" },
@@ -3280,8 +3402,14 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
     }
 
     fn collect_method_call(&mut self, call: &ExprCall, name: &str, range: TextRange) {
+        if self.candidates.failure.is_some() {
+            return;
+        }
         if !self.facts.contains_annotation_span(call.range()) {
             self.collect_structural_method_call(call, name);
+            if self.candidates.failure.is_some() {
+                return;
+            }
         }
         let same_contract = has_supported_same_contract_arguments(call);
         let exact_one = has_exact_positional_arguments(call, 1);
@@ -3332,6 +3460,9 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                     "add".to_owned(),
                     MutationOperator::CollectionSetAddDiscard,
                 );
+                if self.candidates.failure.is_some() {
+                    return;
+                }
                 self.add_candidate(
                     range,
                     "remove".to_owned(),
@@ -3363,6 +3494,9 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
     }
 
     fn collect_structural_method_call(&mut self, call: &ExprCall, name: &str) {
+        if self.candidates.failure.is_some() {
+            return;
+        }
         let exact_one = has_exact_positional_arguments(call, 1);
         match name {
             "append"
@@ -3441,6 +3575,9 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
     }
 
     fn collect_subscript(&mut self, subscript: &ExprSubscript) {
+        if self.candidates.failure.is_some() {
+            return;
+        }
         if self.facts.contains_annotation_span(subscript.range())
             || subscript.ctx != ExprContext::Load
         {
@@ -3471,16 +3608,25 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
     }
 
     fn collect_index_neighbors(&mut self, expression: &Expr) {
+        if self.candidates.failure.is_some() {
+            return;
+        }
         for replacement in decimal_literal_neighbors(self.source, expression, false) {
             self.add_candidate(
                 expression.range(),
                 replacement,
                 MutationOperator::StructureIndexNeighbor,
             );
+            if self.candidates.failure.is_some() {
+                return;
+            }
         }
     }
 
     fn collect_slice_neighbors(&mut self, slice: &ExprSlice) {
+        if self.candidates.failure.is_some() {
+            return;
+        }
         for (bound, step) in [
             (slice.lower.as_deref(), false),
             (slice.upper.as_deref(), false),
@@ -3495,6 +3641,9 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                     replacement,
                     MutationOperator::StructureSliceNeighbor,
                 );
+                if self.candidates.failure.is_some() {
+                    return;
+                }
             }
         }
     }
@@ -3514,6 +3663,9 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
     }
 
     fn collect_list_literal(&mut self, list: &ExprList) {
+        if self.candidates.failure.is_some() {
+            return;
+        }
         #[cfg(test)]
         if BROKEN_EAGER_REPLACEMENT.get()
             && !self
@@ -3543,6 +3695,9 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
     }
 
     fn collect_tuple_literal(&mut self, tuple: &ExprTuple) {
+        if self.candidates.failure.is_some() {
+            return;
+        }
         #[cfg(test)]
         if BROKEN_EAGER_REPLACEMENT.get()
             && !self
@@ -3575,6 +3730,9 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
     }
 
     fn collect_raised_exception(&mut self, statement: &ruff_python_ast::StmtRaise) {
+        if self.candidates.failure.is_some() {
+            return;
+        }
         let Some(primary) = statement.exc.as_deref() else {
             return;
         };
@@ -3596,13 +3754,22 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                     (*replacement).to_owned(),
                     MutationOperator::ExceptionTypePair,
                 );
+                if self.candidates.failure.is_some() {
+                    return;
+                }
             }
         }
     }
 
     fn collect_exception_handler(&mut self, except_handler: &ruff_python_ast::ExceptHandler) {
+        if self.candidates.failure.is_some() {
+            return;
+        }
         let ruff_python_ast::ExceptHandler::ExceptHandler(handler) = except_handler;
         self.collect_risky_exception_handler(except_handler, handler);
+        if self.candidates.failure.is_some() {
+            return;
+        }
         self.collect_exception_type_pair(handler);
     }
 
@@ -3610,6 +3777,9 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         &mut self,
         handler: &ruff_python_ast::ExceptHandlerExceptHandler,
     ) {
+        if self.candidates.failure.is_some() {
+            return;
+        }
         let Some(Expr::Name(name)) = handler.type_.as_deref() else {
             return;
         };
@@ -3626,6 +3796,9 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                     (*replacement).to_owned(),
                     MutationOperator::ExceptionTypePair,
                 );
+                if self.candidates.failure.is_some() {
+                    return;
+                }
             }
         }
     }
@@ -3635,6 +3808,9 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         except_handler: &ruff_python_ast::ExceptHandler,
         handler: &ruff_python_ast::ExceptHandlerExceptHandler,
     ) {
+        if self.candidates.failure.is_some() {
+            return;
+        }
         if handler.type_.is_none() {
             let except_range = identifier::except(except_handler, self.source);
             if self
@@ -3648,6 +3824,9 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                     "except Exception".to_owned(),
                     MutationOperator::ExceptionBareToException,
                 );
+                if self.candidates.failure.is_some() {
+                    return;
+                }
             }
             return;
         }
@@ -3683,6 +3862,9 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                         String::new(),
                         MutationOperator::ExceptionExceptionToBare,
                     );
+                    if self.candidates.failure.is_some() {
+                        return;
+                    }
                 }
                 if let Some(replacement) = base_exception_boundary_replacement(name.id.as_str())
                     && self
@@ -3706,6 +3888,9 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
     }
 
     fn collect_function_body_return_constant(&mut self, statement: &Stmt) {
+        if self.candidates.failure.is_some() {
+            return;
+        }
         if self
             .request
             .operators
@@ -3730,11 +3915,21 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                     MutationOperator::FunctionBodyReturnConstant,
                     definition.range(),
                 );
+                if self.candidates.failure.is_some() {
+                    return;
+                }
             }
         }
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "statement operator gates stop between builders on the first admission failure"
+    )]
     fn collect_statement_mutations(&mut self, statement: &Stmt) {
+        if self.candidates.failure.is_some() {
+            return;
+        }
         if self
             .request
             .operators
@@ -3742,12 +3937,18 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             && let Stmt::If(statement_if) = statement
         {
             self.collect_condition_clause_delete(&statement_if.test);
+            if self.candidates.failure.is_some() {
+                return;
+            }
             for clause in &statement_if.elif_else_clauses {
                 if self.check_cancelled() {
                     return;
                 }
                 if let Some(test) = &clause.test {
                     self.collect_condition_clause_delete(test);
+                    if self.candidates.failure.is_some() {
+                        return;
+                    }
                 }
             }
         }
@@ -3765,11 +3966,20 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                 "(False)".to_owned(),
                 MutationOperator::WhileConditionFalse,
             );
+            if self.candidates.failure.is_some() {
+                return;
+            }
         }
         if let Stmt::AugAssign(assign) = statement {
             self.collect_augmented_to_assignment(assign);
+            if self.candidates.failure.is_some() {
+                return;
+            }
         }
         self.collect_function_body_return_constant(statement);
+        if self.candidates.failure.is_some() {
+            return;
+        }
         if self
             .request
             .operators
@@ -3784,6 +3994,9 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                 MutationOperator::FunctionBodyErase,
                 definition.range(),
             );
+            if self.candidates.failure.is_some() {
+                return;
+            }
         }
         if self
             .request
@@ -3792,12 +4005,18 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             && let Stmt::If(statement_if) = statement
         {
             self.collect_condition_constant(&statement_if.test);
+            if self.candidates.failure.is_some() {
+                return;
+            }
             for clause in &statement_if.elif_else_clauses {
                 if self.check_cancelled() {
                     return;
                 }
                 if let Some(test) = &clause.test {
                     self.collect_condition_constant(test);
+                    if self.candidates.failure.is_some() {
+                        return;
+                    }
                 }
             }
         }
@@ -3815,6 +4034,9 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                 "pass".to_owned(),
                 MutationOperator::StatementDelete,
             );
+            if self.candidates.failure.is_some() {
+                return;
+            }
         }
         if let Stmt::Raise(statement_raise) = statement {
             self.collect_raised_exception(statement_raise);
@@ -3822,6 +4044,9 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
     }
 
     fn collect_augmented_to_assignment(&mut self, assign: &ruff_python_ast::StmtAugAssign) {
+        if self.candidates.failure.is_some() {
+            return;
+        }
         if !self
             .request
             .operators
@@ -3842,12 +4067,18 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                     "=".to_owned(),
                     MutationOperator::AugmentedToAssignment,
                 );
+                if self.candidates.failure.is_some() {
+                    return;
+                }
                 return;
             }
         }
     }
 
     fn collect_tuple_exception_handler(&mut self, tuple: &ExprTuple) {
+        if self.candidates.failure.is_some() {
+            return;
+        }
         let Some(names) = supported_exception_tuple_names(tuple, self.facts) else {
             return;
         };
@@ -3872,6 +4103,9 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                             tuple_replacement,
                             MutationOperator::ExceptionTupleAddPair,
                         );
+                        if self.candidates.failure.is_some() {
+                            return;
+                        }
                     }
                 }
             }
@@ -3894,6 +4128,9 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                         tuple_replacement,
                         MutationOperator::ExceptionTupleRemoveMember,
                     );
+                    if self.candidates.failure.is_some() {
+                        return;
+                    }
                 }
             }
         }
@@ -3902,8 +4139,14 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
 
 impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
     fn visit_stmt(&mut self, statement: &'ast Stmt) {
+        if self.candidates.failure.is_some() {
+            return;
+        }
         if !self.check_cancelled() {
             self.collect_statement_mutations(statement);
+            if self.candidates.failure.is_some() {
+                return;
+            }
             if self.check_cancelled() {
                 return;
             }
@@ -3933,6 +4176,9 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
                     replacement,
                     MutationOperator::ReturnTupleSwap,
                 );
+                if self.candidates.failure.is_some() {
+                    return;
+                }
             }
             let Stmt::Try(try_statement) = statement else {
                 visitor::walk_stmt(self, statement);
@@ -3946,6 +4192,9 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
                         return;
                     }
                     self.collect_exception_type_pair(handler);
+                    if self.candidates.failure.is_some() {
+                        return;
+                    }
                     if let Some(type_) = &handler.type_ {
                         self.visit_exception_type(type_);
                     }
@@ -3970,7 +4219,14 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
         }
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "expression operator gates stop between builders on the first admission failure"
+    )]
     fn visit_expr(&mut self, expression: &'ast Expr) {
+        if self.candidates.failure.is_some() {
+            return;
+        }
         if !self.check_cancelled() && !self.facts.contains_annotation_span(expression.range()) {
             let suppressed = self.integer_suppressed;
             let target_context = self.runtime_role;
@@ -4005,11 +4261,21 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
                             replacement,
                             MutationOperator::ContainerElementDelete,
                         );
+                        !self.check_cancelled()
                     },
                 );
             }
+            if self.candidates.failure.is_some() {
+                return;
+            }
             let signed_literal = self.collect_integer_literal(expression);
+            if self.candidates.failure.is_some() {
+                return;
+            }
             self.collect_string_segment(expression);
+            if self.candidates.failure.is_some() {
+                return;
+            }
             if self
                 .request
                 .operators
@@ -4025,26 +4291,37 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
                     "\"\"".to_owned(),
                     MutationOperator::StringLiteralEmpty,
                 );
+                if self.candidates.failure.is_some() {
+                    return;
+                }
             }
 
+            let enum_index = self.enum_index;
             if !self.in_pattern
-                && let Some((range, destinations)) = self.enum_index.destinations(
-                    expression,
-                    self.request.max_candidates,
-                    self.cancelled,
-                )
+                && let Some((range, destinations)) =
+                    enum_index.destinations(expression, self.request.max_candidates, self.cancelled)
             {
                 for replacement in destinations {
                     if self.check_cancelled() {
                         return;
                     }
-                    self.add_candidate(range, replacement, MutationOperator::EnumMemberReplace);
+                    self.add_candidate(
+                        range,
+                        replacement.to_owned(),
+                        MutationOperator::EnumMemberReplace,
+                    );
+                    if self.candidates.failure.is_some() {
+                        return;
+                    }
                 }
             }
             if !self.in_pattern
                 && let Some((range, replacement)) = self.operator_imports.replacement(expression)
             {
                 self.add_candidate(range, replacement, MutationOperator::OperatorFunction);
+                if self.candidates.failure.is_some() {
+                    return;
+                }
             }
             match expression {
                 Expr::Call(call) => self.collect_call(call),
@@ -4067,8 +4344,14 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
     }
 
     fn visit_except_handler(&mut self, except_handler: &'ast ruff_python_ast::ExceptHandler) {
+        if self.candidates.failure.is_some() {
+            return;
+        }
         if !self.check_cancelled() {
             self.collect_exception_handler(except_handler);
+            if self.candidates.failure.is_some() {
+                return;
+            }
         }
         if !self.check_cancelled() {
             let ruff_python_ast::ExceptHandler::ExceptHandler(handler) = except_handler;
@@ -4080,6 +4363,9 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
     }
 
     fn visit_pattern(&mut self, pattern: &'ast Pattern) {
+        if self.candidates.failure.is_some() {
+            return;
+        }
         if self.check_cancelled() {
             return;
         }
@@ -4097,7 +4383,7 @@ fn ast_candidates<'a, F: Fn() -> bool>(
     request: &'a AnalyzeRequest<'a>,
     cancelled: &'a F,
     exceptions: Option<&exception_hierarchy::ExceptionIndex>,
-) -> Result<AstCollection, AnalysisCancelled> {
+) -> Result<AstCollection, AnalysisError> {
     AstCandidateCollector::collect(
         module, source, line_index, facts, request, cancelled, exceptions,
     )
@@ -4152,21 +4438,26 @@ fn is_zero_literal(expression: &Expr) -> bool {
     matches!(expression, Expr::NumberLiteral(number) if matches!(&number.value, Number::Int(value) if value.as_usize() == Some(0)))
 }
 
-fn decimal_literal_neighbors(source: &str, expression: &Expr, excludes_zero: bool) -> Vec<String> {
-    let Some((value, negative_spelling)) = decimal_literal_value(source, expression) else {
-        return Vec::new();
-    };
-    let maximum = i128::from(u64::MAX);
-    // Preserve unsigned zero's historical single neighbor. A unary-minus
-    // spelling, including -0, may have negative neighbors.
-    let minimum = if negative_spelling { -maximum } else { 0 };
-    // Values come from u64 magnitudes, so adding/subtracting one fits i128.
-    [value + 1, value - 1]
+fn decimal_literal_neighbors(
+    source: &str,
+    expression: &Expr,
+    excludes_zero: bool,
+) -> impl Iterator<Item = String> + use<> {
+    // Keep only numeric values until the consumer requests its next replacement.
+    decimal_literal_value(source, expression)
         .into_iter()
-        .filter(|neighbor| (minimum..=maximum).contains(neighbor))
-        .filter(|neighbor| !excludes_zero || *neighbor != 0)
-        .map(|neighbor| neighbor.to_string())
-        .collect()
+        .flat_map(move |(value, negative_spelling)| {
+            let maximum = i128::from(u64::MAX);
+            // Preserve unsigned zero's historical single neighbor. A unary-minus
+            // spelling, including -0, may have negative neighbors.
+            let minimum = if negative_spelling { -maximum } else { 0 };
+            // Values come from u64 magnitudes, so adding/subtracting one fits i128.
+            [value + 1, value - 1]
+                .into_iter()
+                .filter(move |neighbor| (minimum..=maximum).contains(neighbor))
+                .filter(move |neighbor| !excludes_zero || *neighbor != 0)
+                .map(|neighbor| neighbor.to_string())
+        })
 }
 
 fn decimal_literal_value(source: &str, expression: &Expr) -> Option<(i128, bool)> {
@@ -7424,8 +7715,9 @@ fn type_annotation_candidates(
     line_index: &LineIndex,
     facts: &AstFacts<'_>,
     request: &AnalyzeRequest<'_>,
-) -> ProducerPrefix {
-    let mut candidates = CandidatePrefix::new(request.max_candidates);
+    cancelled: &impl Fn() -> bool,
+) -> Result<ProducerPrefix, AnalysisError> {
+    let mut candidates = CandidatePrefix::new(request.max_candidates, request.payload.clone());
     if !TYPE_OPERATORS
         .iter()
         .any(|operator| request.operators.contains(*operator))
@@ -7433,6 +7725,13 @@ fn type_annotation_candidates(
         return candidates.finish();
     }
     AnnotationCollector::visit_each(module, &mut |annotation, symbol, imports| {
+        if candidates.failure.is_some() {
+            return;
+        }
+        if cancelled() {
+            candidates.failure = Some(AnalysisError::Cancelled);
+            return;
+        }
         let checked = AnnotationImports {
             known: imports,
             resolution: &facts.name_resolution,
@@ -7452,8 +7751,9 @@ fn type_annotation_candidates(
                 operator,
                 symbol.clone(),
             ) && retained_by_profile(&candidate, request.profile, facts)
+                && candidates.push(candidate).is_err()
             {
-                candidates.push(candidate);
+                return;
             }
         }
     });
@@ -7843,6 +8143,7 @@ mod performance_cost_tests {
                 ANNOTATION_IMPORT_LOOKUPS.set(0);
                 let output = analyze_source(
                     &AnalyzeRequest {
+                        payload: payload::PayloadBudget::default(),
                         path: Utf8Path::new("subject.py"),
                         lines: &[],
                         symbols: &[],
@@ -8200,6 +8501,7 @@ mod performance_cost_tests {
         }
         let output = analyze_source(
             &AnalyzeRequest {
+                payload: payload::PayloadBudget::default(),
                 path: Utf8Path::new("cost.py"),
                 lines: &[],
                 symbols: &[],
@@ -8227,11 +8529,15 @@ mod performance_cost_tests {
             clone_entries: RECORD_CLONE_ENTRIES.get(),
             builds: COLLECTION_REPLACEMENT_BUILDS.get(),
             bytes: COLLECTION_REPLACEMENT_BYTES.get(),
-            semantics: output.candidates,
+            semantics: output
+                .candidates
+                .into_iter()
+                .map(Charged::into_untracked)
+                .collect(),
         }
     }
 
-    fn validate_candidates(case: &Case, candidates: &[AnalyzerCandidate]) {
+    fn validate_candidates(case: &Case, candidates: &[Charged<AnalyzerCandidate>]) {
         let size = fixture_size(case);
         for candidate in candidates {
             match case.family {

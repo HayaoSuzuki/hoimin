@@ -252,7 +252,10 @@ mod tests {
                         parsed.syntax(),
                         100,
                         &|| false,
-                        |_, replacement| replacements.push(replacement),
+                        |_, replacement| {
+                            replacements.push(replacement);
+                            Ok(())
+                        },
                     )
                     .unwrap();
                 replacements

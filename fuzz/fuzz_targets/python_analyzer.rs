@@ -38,6 +38,7 @@ fuzz_target!(|source: &str| {
         }
     }
     let request = AnalyzeRequest {
+        payload: analyzer::payload::PayloadBudget::default(),
         path: Utf8Path::new("input.py"),
         lines: &[],
         symbols: &[],
@@ -85,12 +86,12 @@ fuzz_target!(|source: &str| {
     };
     let prefix = analyze_source_cancellable(&smaller, source, || false).unwrap();
     assert_eq!(
-        prefix.candidates,
+        prefix.candidates.iter().map(|candidate| &candidate.value).collect::<Vec<_>>(),
         output
             .candidates
             .iter()
             .take(1)
-            .cloned()
+            .map(|candidate| &candidate.value)
             .collect::<Vec<_>>()
     );
     if output.candidates.len() > 1 {
