@@ -1,0 +1,217 @@
+{
+  "before": {
+    "binary": "/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-971-979-cli-analyzer-resource-safety/target/release/hoimin",
+    "sha256": "d8368ee062510c937ee74848ed4f379ef1b6e5f593351c7b2b986a99eda64b57",
+    "revision": "8d58c121a8121e2eec87f1b54d48cd9cb0140a63",
+    "profile": "release; default features; incremental=0",
+    "scope": "public plan CLI; wall/RSS observations, final candidate payload is not charged peak"
+  },
+  "after": {
+    "binary": "/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-971-979-cli-analyzer-resource-safety/target/release/hoimin",
+    "sha256": "bf6caf83c55f3fb4c52733552f95e7e3c8d8241b33f0af3cc33fe3367e3b3b74",
+    "revision": "e4e3a1d44ed390d95d4e605079c5ce4f6975926a",
+    "profile": "release; default features; incremental=0",
+    "scope": "public plan CLI; wall/RSS observations, final candidate payload is not charged peak"
+  },
+  "normal_exact_matches": 27,
+  "normal_medians": [
+    {
+      "case": [
+        "proofreadtools",
+        "default",
+        "full"
+      ],
+      "before": {
+        "seconds": 0.009749666089192033,
+        "cpu_seconds": 0.007525,
+        "peak_rss_macos_bytes": 8503296
+      },
+      "after": {
+        "seconds": 0.007232582895085216,
+        "cpu_seconds": 0.005112,
+        "peak_rss_macos_bytes": 8388608
+      }
+    },
+    {
+      "case": [
+        "proofreadtools",
+        "boolean_literal",
+        "full"
+      ],
+      "before": {
+        "seconds": 0.006789207924157381,
+        "cpu_seconds": 0.005181,
+        "peak_rss_macos_bytes": 7979008
+      },
+      "after": {
+        "seconds": 0.006444290978834033,
+        "cpu_seconds": 0.004744,
+        "peak_rss_macos_bytes": 7815168
+      }
+    },
+    {
+      "case": [
+        "proofreadtools",
+        "default",
+        "focused"
+      ],
+      "before": {
+        "seconds": 0.006154624978080392,
+        "cpu_seconds": 0.004586,
+        "peak_rss_macos_bytes": 8372224
+      },
+      "after": {
+        "seconds": 0.006044333102181554,
+        "cpu_seconds": 0.004385999999999999,
+        "peak_rss_macos_bytes": 8470528
+      }
+    },
+    {
+      "case": [
+        "django",
+        "default",
+        "full"
+      ],
+      "before": {
+        "seconds": 0.01564854197204113,
+        "cpu_seconds": 0.013215,
+        "peak_rss_macos_bytes": 11845632
+      },
+      "after": {
+        "seconds": 0.014997625024989247,
+        "cpu_seconds": 0.012924999999999999,
+        "peak_rss_macos_bytes": 12042240
+      }
+    },
+    {
+      "case": [
+        "django",
+        "boolean_literal",
+        "full"
+      ],
+      "before": {
+        "seconds": 0.008434792049229145,
+        "cpu_seconds": 0.006468,
+        "peak_rss_macos_bytes": 9928704
+      },
+      "after": {
+        "seconds": 0.007997874869033694,
+        "cpu_seconds": 0.006493,
+        "peak_rss_macos_bytes": 9895936
+      }
+    },
+    {
+      "case": [
+        "django",
+        "default",
+        "focused"
+      ],
+      "before": {
+        "seconds": 0.015161207877099514,
+        "cpu_seconds": 0.012919,
+        "peak_rss_macos_bytes": 11862016
+      },
+      "after": {
+        "seconds": 0.014818917028605938,
+        "cpu_seconds": 0.013125999999999999,
+        "peak_rss_macos_bytes": 11960320
+      }
+    },
+    {
+      "case": [
+        "generated",
+        "default",
+        "full"
+      ],
+      "before": {
+        "seconds": 0.04595487494952977,
+        "cpu_seconds": 0.043625,
+        "peak_rss_macos_bytes": 23887872
+      },
+      "after": {
+        "seconds": 0.047600625082850456,
+        "cpu_seconds": 0.045045999999999996,
+        "peak_rss_macos_bytes": 21315584
+      }
+    },
+    {
+      "case": [
+        "generated",
+        "boolean_literal",
+        "full"
+      ],
+      "before": {
+        "seconds": 0.008983167121186852,
+        "cpu_seconds": 0.007068999999999999,
+        "peak_rss_macos_bytes": 11681792
+      },
+      "after": {
+        "seconds": 0.009009124943986535,
+        "cpu_seconds": 0.006958,
+        "peak_rss_macos_bytes": 11501568
+      }
+    },
+    {
+      "case": [
+        "generated",
+        "default",
+        "focused"
+      ],
+      "before": {
+        "seconds": 0.04818320902995765,
+        "cpu_seconds": 0.044383,
+        "peak_rss_macos_bytes": 23724032
+      },
+      "after": {
+        "seconds": 0.047801083186641335,
+        "cpu_seconds": 0.044934999999999996,
+        "peak_rss_macos_bytes": 24150016
+      }
+    }
+  ],
+  "large_same_inputs": 9,
+  "large_medians": [
+    {
+      "elements": 8,
+      "before": {
+        "seconds": 0.018706500064581633,
+        "cpu_seconds": 0.016727,
+        "peak_rss_macos_bytes": 38436864
+      },
+      "after": {
+        "seconds": 0.013361499877646565,
+        "cpu_seconds": 0.011630999999999999,
+        "peak_rss_macos_bytes": 29065216
+      },
+      "after_stderr": "plan.discovery: source.py: candidate payload exceeds internal limit 16777216 bytes\n"
+    },
+    {
+      "elements": 16,
+      "before": {
+        "seconds": 0.0283867078833282,
+        "cpu_seconds": 0.025947,
+        "peak_rss_macos_bytes": 72974336
+      },
+      "after": {
+        "seconds": 0.013774957973510027,
+        "cpu_seconds": 0.012166,
+        "peak_rss_macos_bytes": 26492928
+      },
+      "after_stderr": "plan.discovery: source.py: candidate payload exceeds internal limit 16777216 bytes\n"
+    },
+    {
+      "elements": 32,
+      "before": {
+        "seconds": 0.050612291088327765,
+        "cpu_seconds": 0.048074,
+        "peak_rss_macos_bytes": 125370368
+      },
+      "after": {
+        "seconds": 0.012931165983900428,
+        "cpu_seconds": 0.01116,
+        "peak_rss_macos_bytes": 26902528
+      },
+      "after_stderr": "plan.discovery: source.py: candidate payload exceeds internal limit 16777216 bytes\n"
+    }
+  ]
+}

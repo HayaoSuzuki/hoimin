@@ -334,6 +334,22 @@ sources:
   revision: 35c21145ccdfb6a044f9ae1dad2a5e4ff90deece
   working_tree: modified
   sha256: bca74014f517c33728e844b9e876a77b24ef3025c7e42fc75afb89d5849580f1
+- id: issue-971-evidence
+  resource: ../../maintenance/2026-10-18-issues-971-979/task-5-report.md
+  working_tree: untracked
+  sha256: 37f183a85687a1f2bdbf03067a57288c492458b37259268ae5b5171bb31c7d3f
+
+- id: issue-979-compatibility
+  resource: ../../compatibility.md
+  revision: 4ebed4457519920e9a28f8f653d8ce96985acdad
+  working_tree: clean
+  sha256: 3db98744cba6c95b2828d98298038c52242135a2607f2855c58d100205243fb4
+
+- id: issue-979-evidence
+  resource: ../../maintenance/2026-10-18-issues-971-979/task-6-report.md
+  working_tree: untracked
+  sha256: 3cb4dde52478f7d80d8bf88f46dcedc2c504b9ed1449a9e29ffd58780026449c
+
 ---
 
 # Single normalized root (Issue #949)
@@ -344,7 +360,8 @@ run/plan conversion retain it. Target discovery, source reads, workspace copying
 process working directories and review project matching use that same value.
 No filesystem normalization occurs during config conversion.[^issue-949-config]
 
-Plan schema 9 and report schema 7 remove the outer root without an adapter.
+Issue #949 removed the outer root at plan schema 9/report schema 7 without an adapter.
+Current versions are plan 10/report 8, as described below.
 Missing-selector and changed/symbol source checks remain in the shared selection
 validator. The root mismatch error and its synchronization duty disappear.
 The [migration notice](../../compatibility.md#single-normalized-project-root-in-0110)
@@ -793,3 +810,31 @@ model or proof is claimed.[^issue-959-config-tests][^issue-959-tests][^issue-959
 [^issue-959-record]: [Issue 959 implementation and verification](../../maintenance/2026-10-16-issue-959.md).
 
 [^issue-959-config-tests]: [CLI normalization tests](../../../crates/hoimin-cli/tests/cli_config.rs).
+
+# Discovery configuration ownership (Issue #979)
+
+The composed raw CLI arguments share run/plan normalization without copying all
+fields through another public structure. Native test argv remains platform data;
+selector and path inputs still require UTF-8. Plan has no runtime session/resume
+or metrics settings.[^issue-971-evidence]
+
+`DiscoveryConfig` belongs only to `PlanConfig`, which requires the saved positive
+`discovery.analyzer_timeout`. Direct run rejects the option and contains no
+placeholder field. Verify uses the saved timeout for one deadline across all
+targets; expiration prevents manifest publication or baseline execution.
+Cancellation can return before a blocking worker exits; the worker retains its
+resources until it stops. Synchronous reads and parsing are not forcibly
+interruptible. Runtime total/baseline/mutant deadlines remain separate.
+Plan 10/report 8/fingerprint 12 and floor 0.12.0 replace older versions;
+SQLite session 5, ranking 4 and candidate schema 1/ID v1 stay unchanged.
+See the [migration notice](../../compatibility.md#discovery-timeout-ownership-in-0120).[^issue-979-compatibility][^issue-979-evidence]
+
+Validation of independently invalid plan options can report discovery validation
+before another invalid limit. Mandatory selector/argv diagnostics, individual
+invalid-value diagnostics and discovery validation before project I/O remain
+covered; mixed-invalid option priority is not a compatibility promise.
+The recorded Task6 ruling explains that scope.[^issue-979-evidence]
+
+[^issue-971-evidence]: [CLI composition and native argv checks](../../maintenance/2026-10-18-issues-971-979/task-5-report.md).
+[^issue-979-compatibility]: [Current discovery ownership and migration](../../compatibility.md).
+[^issue-979-evidence]: [Timeout ownership, controlled deadline checks and version evidence](../../maintenance/2026-10-18-issues-971-979/task-6-report.md).

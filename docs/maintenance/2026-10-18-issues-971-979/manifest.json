@@ -1,0 +1,42 @@
+[
+  {
+    "name": "task-1-report.md",
+    "sha256": "5c44f14a04237b8a8172fbf665e8c868c3cda065ad6257bca504f46f86a214da"
+  },
+  {
+    "name": "task-1-review.md",
+    "sha256": "d3a9efc3ad9276348b21ed99a29153fe9c2c9c702ff351ce71d6a04ea61f503a"
+  },
+  {
+    "name": "task-2-report.md",
+    "sha256": "8369e0ecec4d7964e47856822f5b354d39c94a21ea947f629ee241b4ef1994e1"
+  },
+  {
+    "name": "task-2-review.md",
+    "sha256": "966709f157c172a8148959ca7e3974a1e0ce5bfb7389eacec71e96fb980dcd2b"
+  },
+  {
+    "name": "task-3-report.md",
+    "sha256": "307a571dbcb32919333ea375f082598bfe16708d19465b47b0daafeaed294748"
+  },
+  {
+    "name": "task-3-review.md",
+    "sha256": "c78e04f7b3cfbdfb0d6ee1b8305788417f0ae7ca32d8315417142a3aaee5d005"
+  },
+  {
+    "name": "task-4-report.md",
+    "sha256": "7734e75cb40e9041460b3c816ebf2b8f5b56d72f4a63e8db5ee8f7d0cf74236f"
+  },
+  {
+    "name": "task-4-review.md",
+    "sha256": "8a01f89b6fbd0b1f8b69e7d1cfc28d33904f1577cb84ec803f0f42e1428652fc"
+  },
+  {
+    "name": "task-5-report.md",
+    "sha256": "37f183a85687a1f2bdbf03067a57288c492458b37259268ae5b5171bb31c7d3f"
+  },
+  {
+    "name": "task-5-review.md",
+    "sha256": "6072f146b7621c3fb2583e4a772190f95310824ddea481ea26575c5582142060"
+  }
+]

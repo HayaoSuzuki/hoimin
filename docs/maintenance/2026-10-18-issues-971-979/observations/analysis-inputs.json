@@ -1,0 +1,23 @@
+[
+  {
+    "name": "proofreadtools",
+    "repository": "HayaoSuzuki/proofreadtools",
+    "revision": "409ed955c0695ec04976842ba9fd22c64c03c33a",
+    "path": "src/proofreadtools/checks/_variant_candidates.py",
+    "bytes": 2281,
+    "sha256": "baaca907fb57acb1aee3a9e32f37958e59daeec7a39cc4a37a07096f06550f75"
+  },
+  {
+    "name": "django",
+    "repository": "django/django",
+    "revision": "dab0a5c47f159eb58472110dcbc10bd4a9b01adb",
+    "path": "django/db/models/base.py",
+    "bytes": 100029,
+    "sha256": "924cb2668bbe7b7f55bfe204528984bd484398f0e0911d1fbfa9967438f809ea"
+  },
+  {
+    "name": "generated",
+    "bytes": 57559,
+    "sha256": "6e0ed0bde15d87b67a13fbbe24e81f91c5c0a143abf0a2d567c172f351750495"
+  }
+]

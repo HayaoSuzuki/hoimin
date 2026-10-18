@@ -1,0 +1,3437 @@
+{
+  "source_revision": "4ebed4457519920e9a28f8f653d8ce96985acdad",
+  "working_tree_changes": "Task10 docs/evidence, two integration fixtures and fuzz whitespace only",
+  "host": "macOS 15.7.7 arm64, rustc/cargo 1.99.0, Python 3.14.7",
+  "cargo_environment": {
+    "CARGO_BUILD_JOBS": "2",
+    "CARGO_PROFILE_DEV_DEBUG": "0",
+    "CARGO_PROFILE_TEST_DEBUG": "0",
+    "CARGO_INCREMENTAL": "0",
+    "CARGO_NET_OFFLINE": "true"
+  },
+  "log_root": "/tmp/hoimin-design-audit-5d3aee95",
+  "cargo_gates": [
+    {
+      "name": "root-fmt",
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "exit": 0,
+      "seconds": 1.2928922176361084,
+      "log": "/tmp/hoimin-design-audit-5d3aee95/task-10-root-fmt.log"
+    },
+    {
+      "name": "vendor-fmt",
+      "command": [
+        "cargo",
+        "fmt",
+        "--manifest-path",
+        "vendor/ruff_python_parser/Cargo.toml",
+        "--",
+        "--check"
+      ],
+      "exit": 0,
+      "seconds": 0.10982513427734375,
+      "log": "/tmp/hoimin-design-audit-5d3aee95/task-10-vendor-fmt.log"
+    },
+    {
+      "name": "workspace-clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--offline",
+        "--locked",
+        "--workspace",
+        "--all-targets",
+        "--all-features",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit": 0,
+      "seconds": 0.34731411933898926,
+      "log": "/tmp/hoimin-design-audit-5d3aee95/task-10-workspace-clippy.log"
+    },
+    {
+      "name": "vendor-clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--offline",
+        "--locked",
+        "-p",
+        "littrs-ruff-python-parser",
+        "--lib",
+        "--no-deps",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit": 0,
+      "seconds": 0.09828805923461914,
+      "log": "/tmp/hoimin-design-audit-5d3aee95/task-10-vendor-clippy.log"
+    },
+    {
+      "name": "workspace-tests",
+      "command": [
+        "cargo",
+        "test",
+        "--offline",
+        "--locked",
+        "--workspace",
+        "--",
+        "--test-threads=2"
+      ],
+      "exit": 101,
+      "seconds": 170.2724211215973,
+      "log": "/tmp/hoimin-design-audit-5d3aee95/task-10-workspace-tests.log"
+    },
+    {
+      "name": "workspace-tests-final",
+      "command": [
+        "cargo",
+        "test",
+        "--offline",
+        "--locked",
+        "--workspace",
+        "--",
+        "--test-threads=2"
+      ],
+      "exit": 101,
+      "seconds": 138.59747886657715,
+      "log": "/tmp/hoimin-design-audit-5d3aee95/task-10-workspace-tests-final.log"
+    },
+    {
+      "name": "workspace-tests-complete",
+      "command": [
+        "cargo",
+        "test",
+        "--offline",
+        "--locked",
+        "--workspace",
+        "--no-fail-fast",
+        "--",
+        "--test-threads=2"
+      ],
+      "exit": 0,
+      "seconds": 234.5536801815033,
+      "log": "/tmp/hoimin-design-audit-5d3aee95/task-10-workspace-tests-complete.log"
+    },
+    {
+      "name": "core-contracts",
+      "command": [
+        "cargo",
+        "test",
+        "--offline",
+        "--locked",
+        "-p",
+        "hoimin-core",
+        "--features",
+        "contracts",
+        "--",
+        "--test-threads=2"
+      ],
+      "exit": 0,
+      "seconds": 16.953897953033447,
+      "log": "/tmp/hoimin-design-audit-5d3aee95/task-10-core-contracts.log"
+    },
+    {
+      "name": "cli-contracts",
+      "command": [
+        "cargo",
+        "test",
+        "--offline",
+        "--locked",
+        "-p",
+        "hoimin-cli",
+        "--features",
+        "contracts",
+        "--",
+        "--test-threads=2"
+      ],
+      "exit": 0,
+      "seconds": 329.28225779533386,
+      "log": "/tmp/hoimin-design-audit-5d3aee95/task-10-cli-contracts.log"
+    },
+    {
+      "name": "cli-freshness",
+      "command": [
+        "cargo",
+        "run",
+        "--offline",
+        "--locked",
+        "-p",
+        "hoimin-cli",
+        "--example",
+        "generate_cli_reference",
+        "--",
+        "--check"
+      ],
+      "exit": 0,
+      "seconds": 0.4959890842437744,
+      "log": "/tmp/hoimin-design-audit-5d3aee95/task-10-cli-freshness.log"
+    },
+    {
+      "name": "fuzz-fmt",
+      "command": [
+        "cargo",
+        "fmt",
+        "--manifest-path",
+        "fuzz/Cargo.toml",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "exit": 1,
+      "seconds": 1.3671250343322754,
+      "log": "/tmp/hoimin-design-audit-5d3aee95/task-10-fuzz-fmt.log"
+    },
+    {
+      "name": "fuzz-fmt-final",
+      "command": [
+        "cargo",
+        "fmt",
+        "--manifest-path",
+        "fuzz/Cargo.toml",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "exit": 0,
+      "seconds": 1.5391621589660645,
+      "log": "/tmp/hoimin-design-audit-5d3aee95/task-10-fuzz-fmt-final.log"
+    },
+    {
+      "name": "fuzz-clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--offline",
+        "--locked",
+        "--manifest-path",
+        "fuzz/Cargo.toml",
+        "--all-targets",
+        "--target-dir",
+        "/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-971-979-cli-analyzer-resource-safety/target",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit": 0,
+      "seconds": 0.9362831115722656,
+      "log": "/tmp/hoimin-design-audit-5d3aee95/task-10-fuzz-clippy.log"
+    },
+    {
+      "name": "wheel-build",
+      "command": [
+        ".venv/bin/maturin",
+        "build",
+        "--release",
+        "--offline",
+        "--locked"
+      ],
+      "exit": 0,
+      "seconds": 60.62877893447876,
+      "log": "/tmp/hoimin-design-audit-5d3aee95/task-10-wheel-build.log"
+    }
+  ],
+  "other_checks": [
+    {
+      "command": ".venv/bin/ruff format --check .",
+      "exit": 0,
+      "result": "55 files already formatted",
+      "log": "task-10-ruff-format.log"
+    },
+    {
+      "command": ".venv/bin/ruff check --no-fix .",
+      "exit": 0,
+      "log": "task-10-ruff-check.log"
+    },
+    {
+      "command": ".venv/bin/ty check",
+      "exit": 1,
+      "result": "missing optional hypothesmith dependency; 2 diagnostics",
+      "log": "task-10-ty.log"
+    },
+    {
+      "command": "UV_CACHE_DIR=/tmp/hoimin-design-audit-5d3aee95/task-10-uv-cache uv pip install --target /tmp/hoimin-design-audit-5d3aee95/task-10-python-extras --python .venv/bin/python hypothesmith==0.3.3 hypothesis==6.169.1 lark==1.3.1",
+      "attempts": [
+        {
+          "exit": 2,
+          "log": "task-10-python-extras.log",
+          "result": "sandbox DNS failure"
+        },
+        {
+          "exit": 0,
+          "log": "task-10-python-extras-network.log",
+          "sandbox": "require_escalated"
+        }
+      ]
+    },
+    {
+      "command": ".venv/bin/ty check --extra-search-path /tmp/hoimin-design-audit-5d3aee95/task-10-python-extras",
+      "exit": 0,
+      "log": "task-10-ty-extras.log"
+    },
+    {
+      "command": ".venv/bin/pytest",
+      "exit": 1,
+      "passed": 1054,
+      "failed": 6,
+      "skipped": 11,
+      "log": "task-10-pytest.log"
+    },
+    {
+      "command": "UV_CACHE_DIR=/tmp/hoimin-design-audit-5d3aee95/task-10-uv-cache PYTHONPATH=/tmp/hoimin-design-audit-5d3aee95/task-10-python-extras .venv/bin/pytest tests/test_release.py::test_skipped_reservation_prevents_preparation tests/test_release.py::test_release_preparation_uses_reserved_tag tests/test_lean_resource_guard.py::test_terminates_process_group_at_rss_limit tests/test_lean_resource_guard.py::test_propagates_normal_child_exit tests/test_lean_resource_guard.py::test_terminates_process_group_at_timeout tests/test_lean_resource_guard.py::test_rejects_root_exit_that_leaves_a_descendant tests/test_hypothesmith_corpus.py -ra",
+      "exit": 1,
+      "passed": 24,
+      "failed": 1,
+      "skipped": 0,
+      "sandbox": "require_escalated",
+      "result": "all six original failures and all three optional cases pass; overlay invalidated -S negative-case setup",
+      "log": "task-10-pytest-environment.log"
+    },
+    {
+      "command": ".venv/bin/pytest tests/test_hypothesmith_corpus.py::test_cli_without_optional_dependencies -ra",
+      "exit": 0,
+      "passed": 2,
+      "log": "task-10-pytest-no-extras.log"
+    },
+    {
+      "command": ".venv/bin/python docs/maintenance/2026-10-18-issues-971-979/probes/check-okf.py",
+      "exit": 0,
+      "result": "49 pages, 961 sources, 1685 local targets, 17 new source hashes; exact 86 baseline findings retained",
+      "log": "task-10-okf-maintained.log"
+    },
+    {
+      "command": ".venv/bin/python -m tools.docs_site --output site",
+      "exit": 0,
+      "log": "task-10-docs-site-maintained.log"
+    },
+    {
+      "command": "UV_CACHE_DIR=/tmp/hoimin-design-audit-5d3aee95/task-10-uv-cache PIP_CACHE_DIR=/tmp/hoimin-design-audit-5d3aee95/task-10-pip-cache HOIMIN_WHEEL=/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-971-979-cli-analyzer-resource-safety/target/wheels/hoimin-0.12.0-py3-none-macosx_11_0_arm64.whl HOIMIN_SMOKE_REPORT=/tmp/hoimin-design-audit-5d3aee95/task-10-wheel-smoke.json .venv/bin/python tests/wheel_smoke.py",
+      "exit": 0,
+      "sandbox": "require_escalated",
+      "log": "task-10-wheel-smoke.log"
+    }
+  ],
+  "python_distinct_coverage": {
+    "passed": 1063,
+    "skipped": 8,
+    "skip_reason": "actionlint/shellcheck/zizmor absent; workflow dependency group tests",
+    "not_one_clean_full_invocation": true
+  },
+  "test_counts": {
+    "workspace-tests": {
+      "total_passed": 1455,
+      "total_failed": 1,
+      "total_ignored": 28,
+      "executables_or_doctest_groups": 72,
+      "suites": [
+        {
+          "suite": "Running unittests src/lib.rs (target/debug/deps/hoimin_cli-9eaa31514c924a6d)",
+          "passed": 1016,
+          "failed": 0,
+          "ignored": 28
+        },
+        {
+          "suite": "Running unittests src/main.rs (target/debug/deps/hoimin-440ea82e7331234a)",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/abstract_set_provider.rs (target/debug/deps/abstract_set_provider-87dd2cdb6a0c4263)",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/analysis_depth.rs (target/debug/deps/analysis_depth-187ee1230fc93113)",
+          "passed": 10,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/analyzer_handler.rs (target/debug/deps/analyzer_handler-4ef7f33ee823a37b)",
+          "passed": 30,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/augmented_to_assignment.rs (target/debug/deps/augmented_to_assignment-03ced7cfa4e577cf)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/baseline_output.rs (target/debug/deps/baseline_output-fa286908a3600134)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/boundary_selection.rs (target/debug/deps/boundary_selection-2c0207ede8d2822c)",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/builtin_evaluation_order.rs (target/debug/deps/builtin_evaluation_order-a710a5476e4c8257)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/changed_excluded_paths.rs (target/debug/deps/changed_excluded_paths-1971491c8a9c0c57)",
+          "passed": 5,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/changed_git_scope.rs (target/debug/deps/changed_git_scope-68686e12a00f2ab9)",
+          "passed": 11,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/cli_config.rs (target/debug/deps/cli_config-0fa04062c5dc4052)",
+          "passed": 82,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/collection_annotation_builtins.rs (target/debug/deps/collection_annotation_builtins-5b689247b0f241ec)",
+          "passed": 5,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/comprehension_named_bindings.rs (target/debug/deps/comprehension_named_bindings-a5f117c2c30fcde0)",
+          "passed": 15,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/condition_clause_delete.rs (target/debug/deps/condition_clause_delete-6a0f051faab7b7b9)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/condition_constant.rs (target/debug/deps/condition_constant-321dba43d9a5d65d)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/container_element_delete.rs (target/debug/deps/container_element_delete-8cdbf8f09f23039a)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/conversion_call_remove.rs (target/debug/deps/conversion_call_remove-c607d3449c953b11)",
+          "passed": 5,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/declaration_only_annotations.rs (target/debug/deps/declaration_only_annotations-064401d37daa699d)",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/default_operator_selection.rs (target/debug/deps/default_operator_selection-01670f0d1b0a379e)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/deferred_annotation_imports.rs (target/debug/deps/deferred_annotation_imports-18a972c29e548d14)",
+          "passed": 13,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/diagnostic_heap.rs (target/debug/deps/diagnostic_heap-07ee93d8126d5ad4)",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/disk_shutdown.rs (target/debug/deps/disk_shutdown-97e30f3333dc3f9e)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/disk_workspace.rs (target/debug/deps/disk_workspace-f94fab927eeeb5e7)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/enum_member_replace.rs (target/debug/deps/enum_member_replace-e049799aba1f7323)",
+          "passed": 5,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/exception_hierarchy.rs (target/debug/deps/exception_hierarchy-1bbdbf362529e6c9)",
+          "passed": 22,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/exception_hierarchy_scopes.rs (target/debug/deps/exception_hierarchy_scopes-7423bfac54bc9f6a)",
+          "passed": 5,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/fingerprint_env.rs (target/debug/deps/fingerprint_env-c29fdb8c8fae9148)",
+          "passed": 6,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/fingerprint_env_plan.rs (target/debug/deps/fingerprint_env_plan-e40467b18d5abb4d)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/fingerprint_input_heap.rs (target/debug/deps/fingerprint_input_heap-774cac0b2b8c5317)",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/fingerprint_inputs.rs (target/debug/deps/fingerprint_inputs-5bf4a75754474a34)",
+          "passed": 30,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/function_body_erase.rs (target/debug/deps/function_body_erase-441aded84d64f260)",
+          "passed": 6,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/function_body_return_constant.rs (target/debug/deps/function_body_return_constant-c5e6e85b0a8e7a87)",
+          "passed": 9,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/import_roots.rs (target/debug/deps/import_roots-4b1b6f3558533c50)",
+          "passed": 6,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/integer_literal_neighbor.rs (target/debug/deps/integer_literal_neighbor-e83064cf521561b6)",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_annotation_scope_oracle.rs (target/debug/deps/lean_annotation_scope_oracle-38e4b846d2aee650)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_binding_flow_oracle.rs (target/debug/deps/lean_binding_flow_oracle-95d189c879c6cb76)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_bounded_candidate_discovery_oracle.rs (target/debug/deps/lean_bounded_candidate_discovery_oracle-c5605b73c54bf6be)",
+          "passed": 5,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_candidate_ranking_oracle.rs (target/debug/deps/lean_candidate_ranking_oracle-0eb12cc7fe31855d)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_candidate_span_oracle.rs (target/debug/deps/lean_candidate_span_oracle-9a66845b92fcc165)",
+          "passed": 9,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_changed_context_oracle.rs (target/debug/deps/lean_changed_context_oracle-c794378a35d78845)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_changed_lines_oracle.rs (target/debug/deps/lean_changed_lines_oracle-eab2ae71480a3ddd)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_changed_target_oracle.rs (target/debug/deps/lean_changed_target_oracle-ee77cdc41bb8eeac)",
+          "passed": 7,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_compound_pattern_guard_oracle.rs (target/debug/deps/lean_compound_pattern_guard_oracle-accdec1cde91b6d0)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_disk_shutdown_oracle.rs (target/debug/deps/lean_disk_shutdown_oracle-fb3aa56de28d51b0)",
+          "passed": 5,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_environment_fingerprint_oracle.rs (target/debug/deps/lean_environment_fingerprint_oracle-88ca8134be7ad6b6)",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_except_star_flow_oracle.rs (target/debug/deps/lean_except_star_flow_oracle-3cf6329e3326efba)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_exception_hierarchy_oracle.rs (target/debug/deps/lean_exception_hierarchy_oracle-b46de7b6b34bd0ac)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_exception_match_binding_oracle.rs (target/debug/deps/lean_exception_match_binding_oracle-4cb3729089200a4e)",
+          "passed": 8,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_glob_selection_oracle.rs (target/debug/deps/lean_glob_selection_oracle-46ad8097c9383942)",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_implicit_finally_oracle.rs (target/debug/deps/lean_implicit_finally_oracle-47d1920636a99dee)",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_line_diverse_oracle.rs (target/debug/deps/lean_line_diverse_oracle-2ab1d420f4c4e474)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_multiple_handler_join_oracle.rs (target/debug/deps/lean_multiple_handler_join_oracle-fca0fa647489448e)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_nested_match_exit_oracle.rs (target/debug/deps/lean_nested_match_exit_oracle-c98f610b4f27e6ae)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_nested_try_flow_oracle.rs (target/debug/deps/lean_nested_try_flow_oracle-3cd14aa91bf417d9)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_nullable_gate_oracle.rs (target/debug/deps/lean_nullable_gate_oracle-bcf68f8cb7f738ad)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_paging_oracle.rs (target/debug/deps/lean_paging_oracle-a38514b9dfc2a1c4)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_prepared_annotation_import_oracle.rs (target/debug/deps/lean_prepared_annotation_import_oracle-7c7919fba7d5f364)",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_prepared_namespace_oracle.rs (target/debug/deps/lean_prepared_namespace_oracle-df96750ed4f16992)",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_private_annotation_import_oracle.rs (target/debug/deps/lean_private_annotation_import_oracle-a2243c4ea1b2a526)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_progress_decision_oracle.rs (target/debug/deps/lean_progress_decision_oracle-fd539cffa4c3f9df)",
+          "passed": 5,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_progress_input_oracle.rs (target/debug/deps/lean_progress_input_oracle-5e708f97c984f2f7)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_result_lifecycle_oracle.rs (target/debug/deps/lean_result_lifecycle_oracle-b7bf87bfa8f7974d)",
+          "passed": 6,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_resume_diagnostic_oracle.rs (target/debug/deps/lean_resume_diagnostic_oracle-53c216dbe28d2d62)",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_schema_migration_oracle.rs (target/debug/deps/lean_schema_migration_oracle-25a3f0474851c908)",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_session_oracle.rs (target/debug/deps/lean_session_oracle-2f1fbcf96f6e4b31)",
+          "passed": 5,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_shutdown_oracle.rs (target/debug/deps/lean_shutdown_oracle-3b7fd0be381e10c4)",
+          "passed": 6,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_source_order_oracle.rs (target/debug/deps/lean_source_order_oracle-4c96a25904a02447)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_survivor_review_oracle.rs (target/debug/deps/lean_survivor_review_oracle-61099798f74944ef)",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_workspace_oracle.rs (target/debug/deps/lean_workspace_oracle-e1d08ee1b51d5c71)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/line_diverse.rs (target/debug/deps/line_diverse-af466ad8653b6fad)",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/manifest_buffer_lifetime.rs (target/debug/deps/manifest_buffer_lifetime-eb5e39d02e109bb2)",
+          "passed": 0,
+          "failed": 1,
+          "ignored": 0
+        }
+      ],
+      "ignored_names": [
+        "test analyzer::payload_probes::django_boolean ... ignored, explicit release probe; requires SHA-256 verified /tmp audit fixtures",
+        "test analyzer::payload_probes::django_focused ... ignored, explicit release probe; requires SHA-256 verified /tmp audit fixtures",
+        "test analyzer::payload_probes::django_full ... ignored, explicit release probe; requires SHA-256 verified /tmp audit fixtures",
+        "test analyzer::payload_probes::generated_boolean ... ignored, explicit release probe; requires SHA-256 verified /tmp audit fixtures",
+        "test analyzer::payload_probes::generated_focused ... ignored, explicit release probe; requires SHA-256 verified /tmp audit fixtures",
+        "test analyzer::payload_probes::generated_full ... ignored, explicit release probe; requires SHA-256 verified /tmp audit fixtures",
+        "test analyzer::payload_probes::normal_three_file_plan ... ignored, explicit release probe; requires SHA-256 verified /tmp audit fixtures",
+        "test analyzer::payload_probes::proofreadtools_boolean ... ignored, explicit release probe; requires SHA-256 verified /tmp audit fixtures",
+        "test analyzer::payload_probes::proofreadtools_focused ... ignored, explicit release probe; requires SHA-256 verified /tmp audit fixtures",
+        "test analyzer::payload_probes::proofreadtools_full ... ignored, explicit release probe; requires SHA-256 verified /tmp audit fixtures",
+        "test analyzer::rust::rust_tests::benchmark_adversarial_ast_fact_indexes ... ignored, benchmark harness; run explicitly in release mode",
+        "test analyzer::rust::rust_tests::benchmark_candidate_line_positions ... ignored, benchmark harness; run explicitly in release mode",
+        "test analyzer::rust::rust_tests::benchmark_long_single_line_candidate_columns ... ignored, benchmark harness; run explicitly in release mode",
+        "test plan::sampling::sample_fixed_seed_frequency_inspection ... ignored, descriptive fixed-seed bias inspection, not a statistical CI gate",
+        "test plan::tests::benchmark_candidate_conversion_and_manifest ... ignored, benchmark harness; run explicitly in release mode",
+        "test plan::validation_tests::benchmark_requested_descriptor_preprocessing ... ignored, release validation benchmark; run explicitly with --release --ignored --nocapture",
+        "test process::tests::root_child_fixture_waits ... ignored, subprocess fixture for bounded reap tests",
+        "test resource::portable::unix_tests::rlimit_cpu_probe_fixture ... ignored, subprocess fixture for RLIMIT_CPU inheritance",
+        "test shell::tests::benchmark_blocking_io_dispatch ... ignored, manual blocking-I/O scheduler performance evidence",
+        "test shell::tests::rollback_contention_isolated_child ... ignored, subprocess fixture for rollback contention",
+        "test target::fs::tests::measure_exact_file_discovery_scaling ... ignored, release performance evidence",
+        "test workspace::copy::tests::benchmark_worker_materialization_io ... ignored, manual before/after performance evidence",
+        "test workspace::disk::tests::directory_handle_bound_child ... ignored, subprocess fixture for directory handle bound",
+        "test workspace::mutation::tests::benchmark_original_manifest_work_per_mutant_cycle ... ignored, manual before/after performance evidence",
+        "test workspace::owned::tests::fresh_process_bootstrap_barrier_child ... ignored, subprocess fixture for concurrent coordinator bootstrap",
+        "test workspace::owned::tests::fresh_process_bootstrap_child ... ignored, subprocess fixture for coordinator bootstrap",
+        "test workspace::owned::tests::managed_child_lease_isolated_child ... ignored, subprocess fixture for managed child lease",
+        "test workspace::reset::tests::benchmark_workspace_reset_io ... ignored, manual before/after performance evidence"
+      ]
+    },
+    "workspace-tests-final": {
+      "total_passed": 1766,
+      "total_failed": 1,
+      "total_ignored": 29,
+      "executables_or_doctest_groups": 90,
+      "suites": [
+        {
+          "suite": "Running unittests src/lib.rs (target/debug/deps/hoimin_cli-9eaa31514c924a6d)",
+          "passed": 1016,
+          "failed": 0,
+          "ignored": 28
+        },
+        {
+          "suite": "Running unittests src/main.rs (target/debug/deps/hoimin-440ea82e7331234a)",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/abstract_set_provider.rs (target/debug/deps/abstract_set_provider-87dd2cdb6a0c4263)",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/analysis_depth.rs (target/debug/deps/analysis_depth-187ee1230fc93113)",
+          "passed": 10,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/analyzer_handler.rs (target/debug/deps/analyzer_handler-4ef7f33ee823a37b)",
+          "passed": 30,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/augmented_to_assignment.rs (target/debug/deps/augmented_to_assignment-03ced7cfa4e577cf)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/baseline_output.rs (target/debug/deps/baseline_output-fa286908a3600134)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/boundary_selection.rs (target/debug/deps/boundary_selection-2c0207ede8d2822c)",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/builtin_evaluation_order.rs (target/debug/deps/builtin_evaluation_order-a710a5476e4c8257)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/changed_excluded_paths.rs (target/debug/deps/changed_excluded_paths-1971491c8a9c0c57)",
+          "passed": 5,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/changed_git_scope.rs (target/debug/deps/changed_git_scope-68686e12a00f2ab9)",
+          "passed": 11,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/cli_config.rs (target/debug/deps/cli_config-0fa04062c5dc4052)",
+          "passed": 82,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/collection_annotation_builtins.rs (target/debug/deps/collection_annotation_builtins-5b689247b0f241ec)",
+          "passed": 5,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/comprehension_named_bindings.rs (target/debug/deps/comprehension_named_bindings-a5f117c2c30fcde0)",
+          "passed": 15,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/condition_clause_delete.rs (target/debug/deps/condition_clause_delete-6a0f051faab7b7b9)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/condition_constant.rs (target/debug/deps/condition_constant-321dba43d9a5d65d)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/container_element_delete.rs (target/debug/deps/container_element_delete-8cdbf8f09f23039a)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/conversion_call_remove.rs (target/debug/deps/conversion_call_remove-c607d3449c953b11)",
+          "passed": 5,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/declaration_only_annotations.rs (target/debug/deps/declaration_only_annotations-064401d37daa699d)",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/default_operator_selection.rs (target/debug/deps/default_operator_selection-01670f0d1b0a379e)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/deferred_annotation_imports.rs (target/debug/deps/deferred_annotation_imports-18a972c29e548d14)",
+          "passed": 13,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/diagnostic_heap.rs (target/debug/deps/diagnostic_heap-07ee93d8126d5ad4)",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/disk_shutdown.rs (target/debug/deps/disk_shutdown-97e30f3333dc3f9e)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/disk_workspace.rs (target/debug/deps/disk_workspace-f94fab927eeeb5e7)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/enum_member_replace.rs (target/debug/deps/enum_member_replace-e049799aba1f7323)",
+          "passed": 5,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/exception_hierarchy.rs (target/debug/deps/exception_hierarchy-1bbdbf362529e6c9)",
+          "passed": 22,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/exception_hierarchy_scopes.rs (target/debug/deps/exception_hierarchy_scopes-7423bfac54bc9f6a)",
+          "passed": 5,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/fingerprint_env.rs (target/debug/deps/fingerprint_env-c29fdb8c8fae9148)",
+          "passed": 6,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/fingerprint_env_plan.rs (target/debug/deps/fingerprint_env_plan-e40467b18d5abb4d)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/fingerprint_input_heap.rs (target/debug/deps/fingerprint_input_heap-774cac0b2b8c5317)",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/fingerprint_inputs.rs (target/debug/deps/fingerprint_inputs-5bf4a75754474a34)",
+          "passed": 30,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/function_body_erase.rs (target/debug/deps/function_body_erase-441aded84d64f260)",
+          "passed": 6,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/function_body_return_constant.rs (target/debug/deps/function_body_return_constant-c5e6e85b0a8e7a87)",
+          "passed": 9,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/import_roots.rs (target/debug/deps/import_roots-4b1b6f3558533c50)",
+          "passed": 6,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/integer_literal_neighbor.rs (target/debug/deps/integer_literal_neighbor-e83064cf521561b6)",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_annotation_scope_oracle.rs (target/debug/deps/lean_annotation_scope_oracle-38e4b846d2aee650)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_binding_flow_oracle.rs (target/debug/deps/lean_binding_flow_oracle-95d189c879c6cb76)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_bounded_candidate_discovery_oracle.rs (target/debug/deps/lean_bounded_candidate_discovery_oracle-c5605b73c54bf6be)",
+          "passed": 5,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_candidate_ranking_oracle.rs (target/debug/deps/lean_candidate_ranking_oracle-0eb12cc7fe31855d)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_candidate_span_oracle.rs (target/debug/deps/lean_candidate_span_oracle-9a66845b92fcc165)",
+          "passed": 9,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_changed_context_oracle.rs (target/debug/deps/lean_changed_context_oracle-c794378a35d78845)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_changed_lines_oracle.rs (target/debug/deps/lean_changed_lines_oracle-eab2ae71480a3ddd)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_changed_target_oracle.rs (target/debug/deps/lean_changed_target_oracle-ee77cdc41bb8eeac)",
+          "passed": 7,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_compound_pattern_guard_oracle.rs (target/debug/deps/lean_compound_pattern_guard_oracle-accdec1cde91b6d0)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_disk_shutdown_oracle.rs (target/debug/deps/lean_disk_shutdown_oracle-fb3aa56de28d51b0)",
+          "passed": 5,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_environment_fingerprint_oracle.rs (target/debug/deps/lean_environment_fingerprint_oracle-88ca8134be7ad6b6)",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_except_star_flow_oracle.rs (target/debug/deps/lean_except_star_flow_oracle-3cf6329e3326efba)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_exception_hierarchy_oracle.rs (target/debug/deps/lean_exception_hierarchy_oracle-b46de7b6b34bd0ac)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_exception_match_binding_oracle.rs (target/debug/deps/lean_exception_match_binding_oracle-4cb3729089200a4e)",
+          "passed": 8,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_glob_selection_oracle.rs (target/debug/deps/lean_glob_selection_oracle-46ad8097c9383942)",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_implicit_finally_oracle.rs (target/debug/deps/lean_implicit_finally_oracle-47d1920636a99dee)",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_line_diverse_oracle.rs (target/debug/deps/lean_line_diverse_oracle-2ab1d420f4c4e474)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_multiple_handler_join_oracle.rs (target/debug/deps/lean_multiple_handler_join_oracle-fca0fa647489448e)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_nested_match_exit_oracle.rs (target/debug/deps/lean_nested_match_exit_oracle-c98f610b4f27e6ae)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_nested_try_flow_oracle.rs (target/debug/deps/lean_nested_try_flow_oracle-3cd14aa91bf417d9)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_nullable_gate_oracle.rs (target/debug/deps/lean_nullable_gate_oracle-bcf68f8cb7f738ad)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_paging_oracle.rs (target/debug/deps/lean_paging_oracle-a38514b9dfc2a1c4)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_prepared_annotation_import_oracle.rs (target/debug/deps/lean_prepared_annotation_import_oracle-7c7919fba7d5f364)",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_prepared_namespace_oracle.rs (target/debug/deps/lean_prepared_namespace_oracle-df96750ed4f16992)",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_private_annotation_import_oracle.rs (target/debug/deps/lean_private_annotation_import_oracle-a2243c4ea1b2a526)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_progress_decision_oracle.rs (target/debug/deps/lean_progress_decision_oracle-fd539cffa4c3f9df)",
+          "passed": 5,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_progress_input_oracle.rs (target/debug/deps/lean_progress_input_oracle-5e708f97c984f2f7)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_result_lifecycle_oracle.rs (target/debug/deps/lean_result_lifecycle_oracle-b7bf87bfa8f7974d)",
+          "passed": 6,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_resume_diagnostic_oracle.rs (target/debug/deps/lean_resume_diagnostic_oracle-53c216dbe28d2d62)",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_schema_migration_oracle.rs (target/debug/deps/lean_schema_migration_oracle-25a3f0474851c908)",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_session_oracle.rs (target/debug/deps/lean_session_oracle-2f1fbcf96f6e4b31)",
+          "passed": 5,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_shutdown_oracle.rs (target/debug/deps/lean_shutdown_oracle-3b7fd0be381e10c4)",
+          "passed": 6,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_source_order_oracle.rs (target/debug/deps/lean_source_order_oracle-4c96a25904a02447)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_survivor_review_oracle.rs (target/debug/deps/lean_survivor_review_oracle-61099798f74944ef)",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_workspace_oracle.rs (target/debug/deps/lean_workspace_oracle-e1d08ee1b51d5c71)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/line_diverse.rs (target/debug/deps/line_diverse-af466ad8653b6fad)",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/manifest_buffer_lifetime.rs (target/debug/deps/manifest_buffer_lifetime-eb5e39d02e109bb2)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/mapping_pattern_keys.rs (target/debug/deps/mapping_pattern_keys-5468ae79e621074e)",
+          "passed": 5,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/method_call_remove.rs (target/debug/deps/method_call_remove-1f2cd1dafaab410a)",
+          "passed": 7,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/method_replacement_selection.rs (target/debug/deps/method_replacement_selection-899492d8b55e63e0)",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/metrics_destinations.rs (target/debug/deps/metrics_destinations-fddf31fe30a47875)",
+          "passed": 26,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/missing_source.rs (target/debug/deps/missing_source-b871b7bcc12474f0)",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/negative_neighbors.rs (target/debug/deps/negative_neighbors-84d7b7716d68eb3c)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/nullable_builtin_provenance.rs (target/debug/deps/nullable_builtin_provenance-b81c42b2b0ec39ff)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/operator_function_contracts.rs (target/debug/deps/operator_function_contracts-c818eb7398d2893e)",
+          "passed": 18,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/optional_keyword_delete.rs (target/debug/deps/optional_keyword_delete-1102bc0c4195ff88)",
+          "passed": 6,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/owned_entry.rs (target/debug/deps/owned_entry-4b343335fd031d71)",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/plan.rs (target/debug/deps/plan-9281c785c342b7dd)",
+          "passed": 105,
+          "failed": 0,
+          "ignored": 1
+        },
+        {
+          "suite": "Running tests/process_handler.rs (target/debug/deps/process_handler-7d08665c716495ff)",
+          "passed": 28,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/progress.rs (target/debug/deps/progress-b56fd50c0f84916c)",
+          "passed": 99,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/progress_compare_heap.rs (target/debug/deps/progress_compare_heap-8edbc9a7f331d359)",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/progress_details_heap.rs (target/debug/deps/progress_details_heap-89c22f7af11b3e34)",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/progress_heap.rs (target/debug/deps/progress_heap-212f37bfb5906d5d)",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/progress_jsonl_heap.rs (target/debug/deps/progress_jsonl_heap-1569d2616b54c07b)",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/ranking_heap.rs (target/debug/deps/ranking_heap-09f07e55349dbd20)",
+          "passed": 0,
+          "failed": 1,
+          "ignored": 0
+        }
+      ],
+      "ignored_names": [
+        "test analyzer::payload_probes::django_boolean ... ignored, explicit release probe; requires SHA-256 verified /tmp audit fixtures",
+        "test analyzer::payload_probes::django_focused ... ignored, explicit release probe; requires SHA-256 verified /tmp audit fixtures",
+        "test analyzer::payload_probes::django_full ... ignored, explicit release probe; requires SHA-256 verified /tmp audit fixtures",
+        "test analyzer::payload_probes::generated_boolean ... ignored, explicit release probe; requires SHA-256 verified /tmp audit fixtures",
+        "test analyzer::payload_probes::generated_focused ... ignored, explicit release probe; requires SHA-256 verified /tmp audit fixtures",
+        "test analyzer::payload_probes::generated_full ... ignored, explicit release probe; requires SHA-256 verified /tmp audit fixtures",
+        "test analyzer::payload_probes::normal_three_file_plan ... ignored, explicit release probe; requires SHA-256 verified /tmp audit fixtures",
+        "test analyzer::payload_probes::proofreadtools_boolean ... ignored, explicit release probe; requires SHA-256 verified /tmp audit fixtures",
+        "test analyzer::payload_probes::proofreadtools_focused ... ignored, explicit release probe; requires SHA-256 verified /tmp audit fixtures",
+        "test analyzer::payload_probes::proofreadtools_full ... ignored, explicit release probe; requires SHA-256 verified /tmp audit fixtures",
+        "test analyzer::rust::rust_tests::benchmark_adversarial_ast_fact_indexes ... ignored, benchmark harness; run explicitly in release mode",
+        "test analyzer::rust::rust_tests::benchmark_candidate_line_positions ... ignored, benchmark harness; run explicitly in release mode",
+        "test analyzer::rust::rust_tests::benchmark_long_single_line_candidate_columns ... ignored, benchmark harness; run explicitly in release mode",
+        "test plan::sampling::sample_fixed_seed_frequency_inspection ... ignored, descriptive fixed-seed bias inspection, not a statistical CI gate",
+        "test plan::tests::benchmark_candidate_conversion_and_manifest ... ignored, benchmark harness; run explicitly in release mode",
+        "test plan::validation_tests::benchmark_requested_descriptor_preprocessing ... ignored, release validation benchmark; run explicitly with --release --ignored --nocapture",
+        "test process::tests::root_child_fixture_waits ... ignored, subprocess fixture for bounded reap tests",
+        "test resource::portable::unix_tests::rlimit_cpu_probe_fixture ... ignored, subprocess fixture for RLIMIT_CPU inheritance",
+        "test shell::tests::benchmark_blocking_io_dispatch ... ignored, manual blocking-I/O scheduler performance evidence",
+        "test shell::tests::rollback_contention_isolated_child ... ignored, subprocess fixture for rollback contention",
+        "test target::fs::tests::measure_exact_file_discovery_scaling ... ignored, release performance evidence",
+        "test workspace::copy::tests::benchmark_worker_materialization_io ... ignored, manual before/after performance evidence",
+        "test workspace::disk::tests::directory_handle_bound_child ... ignored, subprocess fixture for directory handle bound",
+        "test workspace::mutation::tests::benchmark_original_manifest_work_per_mutant_cycle ... ignored, manual before/after performance evidence",
+        "test workspace::owned::tests::fresh_process_bootstrap_barrier_child ... ignored, subprocess fixture for concurrent coordinator bootstrap",
+        "test workspace::owned::tests::fresh_process_bootstrap_child ... ignored, subprocess fixture for coordinator bootstrap",
+        "test workspace::owned::tests::managed_child_lease_isolated_child ... ignored, subprocess fixture for managed child lease",
+        "test workspace::reset::tests::benchmark_workspace_reset_io ... ignored, manual before/after performance evidence",
+        "test changed_plan_fifo_child ... ignored, subprocess fixture for the changed-plan FIFO regression"
+      ]
+    },
+    "workspace-tests-complete": {
+      "total_passed": 3304,
+      "total_failed": 0,
+      "total_ignored": 39,
+      "executables_or_doctest_groups": 159,
+      "suites": [
+        {
+          "suite": "Running unittests src/lib.rs (target/debug/deps/hoimin_cli-9eaa31514c924a6d)",
+          "passed": 1016,
+          "failed": 0,
+          "ignored": 28
+        },
+        {
+          "suite": "Running unittests src/main.rs (target/debug/deps/hoimin-440ea82e7331234a)",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/abstract_set_provider.rs (target/debug/deps/abstract_set_provider-87dd2cdb6a0c4263)",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/analysis_depth.rs (target/debug/deps/analysis_depth-187ee1230fc93113)",
+          "passed": 10,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/analyzer_handler.rs (target/debug/deps/analyzer_handler-4ef7f33ee823a37b)",
+          "passed": 30,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/augmented_to_assignment.rs (target/debug/deps/augmented_to_assignment-03ced7cfa4e577cf)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/baseline_output.rs (target/debug/deps/baseline_output-fa286908a3600134)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/boundary_selection.rs (target/debug/deps/boundary_selection-2c0207ede8d2822c)",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/builtin_evaluation_order.rs (target/debug/deps/builtin_evaluation_order-a710a5476e4c8257)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/changed_excluded_paths.rs (target/debug/deps/changed_excluded_paths-1971491c8a9c0c57)",
+          "passed": 5,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/changed_git_scope.rs (target/debug/deps/changed_git_scope-68686e12a00f2ab9)",
+          "passed": 11,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/cli_config.rs (target/debug/deps/cli_config-0fa04062c5dc4052)",
+          "passed": 82,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/collection_annotation_builtins.rs (target/debug/deps/collection_annotation_builtins-5b689247b0f241ec)",
+          "passed": 5,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/comprehension_named_bindings.rs (target/debug/deps/comprehension_named_bindings-a5f117c2c30fcde0)",
+          "passed": 15,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/condition_clause_delete.rs (target/debug/deps/condition_clause_delete-6a0f051faab7b7b9)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/condition_constant.rs (target/debug/deps/condition_constant-321dba43d9a5d65d)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/container_element_delete.rs (target/debug/deps/container_element_delete-8cdbf8f09f23039a)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/conversion_call_remove.rs (target/debug/deps/conversion_call_remove-c607d3449c953b11)",
+          "passed": 5,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/declaration_only_annotations.rs (target/debug/deps/declaration_only_annotations-064401d37daa699d)",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/default_operator_selection.rs (target/debug/deps/default_operator_selection-01670f0d1b0a379e)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/deferred_annotation_imports.rs (target/debug/deps/deferred_annotation_imports-18a972c29e548d14)",
+          "passed": 13,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/diagnostic_heap.rs (target/debug/deps/diagnostic_heap-07ee93d8126d5ad4)",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/disk_shutdown.rs (target/debug/deps/disk_shutdown-97e30f3333dc3f9e)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/disk_workspace.rs (target/debug/deps/disk_workspace-f94fab927eeeb5e7)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/enum_member_replace.rs (target/debug/deps/enum_member_replace-e049799aba1f7323)",
+          "passed": 5,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/exception_hierarchy.rs (target/debug/deps/exception_hierarchy-1bbdbf362529e6c9)",
+          "passed": 22,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/exception_hierarchy_scopes.rs (target/debug/deps/exception_hierarchy_scopes-7423bfac54bc9f6a)",
+          "passed": 5,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/fingerprint_env.rs (target/debug/deps/fingerprint_env-c29fdb8c8fae9148)",
+          "passed": 6,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/fingerprint_env_plan.rs (target/debug/deps/fingerprint_env_plan-e40467b18d5abb4d)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/fingerprint_input_heap.rs (target/debug/deps/fingerprint_input_heap-774cac0b2b8c5317)",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/fingerprint_inputs.rs (target/debug/deps/fingerprint_inputs-5bf4a75754474a34)",
+          "passed": 30,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/function_body_erase.rs (target/debug/deps/function_body_erase-441aded84d64f260)",
+          "passed": 6,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/function_body_return_constant.rs (target/debug/deps/function_body_return_constant-c5e6e85b0a8e7a87)",
+          "passed": 9,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/import_roots.rs (target/debug/deps/import_roots-4b1b6f3558533c50)",
+          "passed": 6,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/integer_literal_neighbor.rs (target/debug/deps/integer_literal_neighbor-e83064cf521561b6)",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_annotation_scope_oracle.rs (target/debug/deps/lean_annotation_scope_oracle-38e4b846d2aee650)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_binding_flow_oracle.rs (target/debug/deps/lean_binding_flow_oracle-95d189c879c6cb76)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_bounded_candidate_discovery_oracle.rs (target/debug/deps/lean_bounded_candidate_discovery_oracle-c5605b73c54bf6be)",
+          "passed": 5,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_candidate_ranking_oracle.rs (target/debug/deps/lean_candidate_ranking_oracle-0eb12cc7fe31855d)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_candidate_span_oracle.rs (target/debug/deps/lean_candidate_span_oracle-9a66845b92fcc165)",
+          "passed": 9,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_changed_context_oracle.rs (target/debug/deps/lean_changed_context_oracle-c794378a35d78845)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_changed_lines_oracle.rs (target/debug/deps/lean_changed_lines_oracle-eab2ae71480a3ddd)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_changed_target_oracle.rs (target/debug/deps/lean_changed_target_oracle-ee77cdc41bb8eeac)",
+          "passed": 7,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_compound_pattern_guard_oracle.rs (target/debug/deps/lean_compound_pattern_guard_oracle-accdec1cde91b6d0)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_disk_shutdown_oracle.rs (target/debug/deps/lean_disk_shutdown_oracle-fb3aa56de28d51b0)",
+          "passed": 5,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_environment_fingerprint_oracle.rs (target/debug/deps/lean_environment_fingerprint_oracle-88ca8134be7ad6b6)",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_except_star_flow_oracle.rs (target/debug/deps/lean_except_star_flow_oracle-3cf6329e3326efba)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_exception_hierarchy_oracle.rs (target/debug/deps/lean_exception_hierarchy_oracle-b46de7b6b34bd0ac)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_exception_match_binding_oracle.rs (target/debug/deps/lean_exception_match_binding_oracle-4cb3729089200a4e)",
+          "passed": 8,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_glob_selection_oracle.rs (target/debug/deps/lean_glob_selection_oracle-46ad8097c9383942)",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_implicit_finally_oracle.rs (target/debug/deps/lean_implicit_finally_oracle-47d1920636a99dee)",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_line_diverse_oracle.rs (target/debug/deps/lean_line_diverse_oracle-2ab1d420f4c4e474)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_multiple_handler_join_oracle.rs (target/debug/deps/lean_multiple_handler_join_oracle-fca0fa647489448e)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_nested_match_exit_oracle.rs (target/debug/deps/lean_nested_match_exit_oracle-c98f610b4f27e6ae)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_nested_try_flow_oracle.rs (target/debug/deps/lean_nested_try_flow_oracle-3cd14aa91bf417d9)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_nullable_gate_oracle.rs (target/debug/deps/lean_nullable_gate_oracle-bcf68f8cb7f738ad)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_paging_oracle.rs (target/debug/deps/lean_paging_oracle-a38514b9dfc2a1c4)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_prepared_annotation_import_oracle.rs (target/debug/deps/lean_prepared_annotation_import_oracle-7c7919fba7d5f364)",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_prepared_namespace_oracle.rs (target/debug/deps/lean_prepared_namespace_oracle-df96750ed4f16992)",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_private_annotation_import_oracle.rs (target/debug/deps/lean_private_annotation_import_oracle-a2243c4ea1b2a526)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_progress_decision_oracle.rs (target/debug/deps/lean_progress_decision_oracle-fd539cffa4c3f9df)",
+          "passed": 5,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_progress_input_oracle.rs (target/debug/deps/lean_progress_input_oracle-5e708f97c984f2f7)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_result_lifecycle_oracle.rs (target/debug/deps/lean_result_lifecycle_oracle-b7bf87bfa8f7974d)",
+          "passed": 6,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_resume_diagnostic_oracle.rs (target/debug/deps/lean_resume_diagnostic_oracle-53c216dbe28d2d62)",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_schema_migration_oracle.rs (target/debug/deps/lean_schema_migration_oracle-25a3f0474851c908)",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_session_oracle.rs (target/debug/deps/lean_session_oracle-2f1fbcf96f6e4b31)",
+          "passed": 5,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_shutdown_oracle.rs (target/debug/deps/lean_shutdown_oracle-3b7fd0be381e10c4)",
+          "passed": 6,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_source_order_oracle.rs (target/debug/deps/lean_source_order_oracle-4c96a25904a02447)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_survivor_review_oracle.rs (target/debug/deps/lean_survivor_review_oracle-61099798f74944ef)",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_workspace_oracle.rs (target/debug/deps/lean_workspace_oracle-e1d08ee1b51d5c71)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/line_diverse.rs (target/debug/deps/line_diverse-af466ad8653b6fad)",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/manifest_buffer_lifetime.rs (target/debug/deps/manifest_buffer_lifetime-eb5e39d02e109bb2)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/mapping_pattern_keys.rs (target/debug/deps/mapping_pattern_keys-5468ae79e621074e)",
+          "passed": 5,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/method_call_remove.rs (target/debug/deps/method_call_remove-1f2cd1dafaab410a)",
+          "passed": 7,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/method_replacement_selection.rs (target/debug/deps/method_replacement_selection-899492d8b55e63e0)",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/metrics_destinations.rs (target/debug/deps/metrics_destinations-fddf31fe30a47875)",
+          "passed": 26,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/missing_source.rs (target/debug/deps/missing_source-b871b7bcc12474f0)",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/negative_neighbors.rs (target/debug/deps/negative_neighbors-84d7b7716d68eb3c)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/nullable_builtin_provenance.rs (target/debug/deps/nullable_builtin_provenance-b81c42b2b0ec39ff)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/operator_function_contracts.rs (target/debug/deps/operator_function_contracts-c818eb7398d2893e)",
+          "passed": 18,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/optional_keyword_delete.rs (target/debug/deps/optional_keyword_delete-1102bc0c4195ff88)",
+          "passed": 6,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/owned_entry.rs (target/debug/deps/owned_entry-4b343335fd031d71)",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/plan.rs (target/debug/deps/plan-9281c785c342b7dd)",
+          "passed": 105,
+          "failed": 0,
+          "ignored": 1
+        },
+        {
+          "suite": "Running tests/process_handler.rs (target/debug/deps/process_handler-7d08665c716495ff)",
+          "passed": 28,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/progress.rs (target/debug/deps/progress-b56fd50c0f84916c)",
+          "passed": 99,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/progress_compare_heap.rs (target/debug/deps/progress_compare_heap-8edbc9a7f331d359)",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/progress_details_heap.rs (target/debug/deps/progress_details_heap-89c22f7af11b3e34)",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/progress_heap.rs (target/debug/deps/progress_heap-212f37bfb5906d5d)",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/progress_jsonl_heap.rs (target/debug/deps/progress_jsonl_heap-1569d2616b54c07b)",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/ranking_heap.rs (target/debug/deps/ranking_heap-09f07e55349dbd20)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/report_handler.rs (target/debug/deps/report_handler-9012cbb1fb67da68)",
+          "passed": 36,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/report_heap.rs (target/debug/deps/report_heap-03de34efd03661c0)",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/resume_budget.rs (target/debug/deps/resume_budget-91a69191946e6937)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/resume_diagnostics.rs (target/debug/deps/resume_diagnostics-727dfc5d469dfb5b)",
+          "passed": 5,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/return_tuple_swap.rs (target/debug/deps/return_tuple_swap-ded60d4a1b837d84)",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/review_cli.rs (target/debug/deps/review_cli-948392704d3c9564)",
+          "passed": 17,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/run_e2e.rs (target/debug/deps/run_e2e-0d5dea980b84c76d)",
+          "passed": 72,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/rust_analyzer.rs (target/debug/deps/rust_analyzer-900fbb57bea053b6)",
+          "passed": 335,
+          "failed": 0,
+          "ignored": 3
+        },
+        {
+          "suite": "Running tests/sampling.rs (target/debug/deps/sampling-2e0acdea5a4dd39f)",
+          "passed": 8,
+          "failed": 0,
+          "ignored": 1
+        },
+        {
+          "suite": "Running tests/selection_heap.rs (target/debug/deps/selection_heap-20d2d4fff31f06cf)",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/session_handler.rs (target/debug/deps/session_handler-d43ffee7d7a880d2)",
+          "passed": 47,
+          "failed": 0,
+          "ignored": 1
+        },
+        {
+          "suite": "Running tests/source_discovery.rs (target/debug/deps/source_discovery-68f7f1fad9ad7373)",
+          "passed": 5,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/source_encoding.rs (target/debug/deps/source_encoding-777bad7d9e232c9b)",
+          "passed": 6,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/source_encoding_heap.rs (target/debug/deps/source_encoding_heap-39905a714c2d5904)",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/statement_delete.rs (target/debug/deps/statement_delete-faed9b3ba3315440)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/stdlib_conversion_call_remove.rs (target/debug/deps/stdlib_conversion_call_remove-461d79179d39fd8a)",
+          "passed": 13,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/string_literal_empty.rs (target/debug/deps/string_literal_empty-7e1d4ae6a28cb07b)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/string_segment_empty.rs (target/debug/deps/string_segment_empty-ea9baba0e2bc493f)",
+          "passed": 9,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/target_handler.rs (target/debug/deps/target_handler-37bbef6ce44f14fc)",
+          "passed": 52,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/telemetry.rs (target/debug/deps/telemetry-9e640e56e164db5d)",
+          "passed": 7,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/type_parameter_bindings.rs (target/debug/deps/type_parameter_bindings-723812fd49b2a973)",
+          "passed": 8,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/valid_python_corpus.rs (target/debug/deps/valid_python_corpus-3659d53a9255d368)",
+          "passed": 320,
+          "failed": 0,
+          "ignored": 3
+        },
+        {
+          "suite": "Running tests/while_condition_false.rs (target/debug/deps/while_condition_false-ae34fd215d153a39)",
+          "passed": 5,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/windows_resource_scope.rs (target/debug/deps/windows_resource_scope-064d5a489caba9d5)",
+          "passed": 0,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/with_suppression.rs (target/debug/deps/with_suppression-d8e9eda40437e342)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/workspace_empty_directories.rs (target/debug/deps/workspace_empty_directories-6011f5ea1a636ed5)",
+          "passed": 6,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/workspace_handler.rs (target/debug/deps/workspace_handler-218edb10ff1f62c3)",
+          "passed": 36,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/workspace_heap.rs (target/debug/deps/workspace_heap-6640bfa7d8d2c907)",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/workspace_preflight_heap.rs (target/debug/deps/workspace_preflight_heap-00cc0683431cb328)",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/workspace_recovery.rs (target/debug/deps/workspace_recovery-51ed23ef355cbc16)",
+          "passed": 24,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/workspace_stream.rs (target/debug/deps/workspace_stream-eae5ecc367869348)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/workspace_stream_heap.rs (target/debug/deps/workspace_stream_heap-7af863714c8e8cd4)",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running unittests src/lib.rs (target/debug/deps/hoimin_core-ccd6a957db713a66)",
+          "passed": 34,
+          "failed": 0,
+          "ignored": 2
+        },
+        {
+          "suite": "Running tests/budget.rs (target/debug/deps/budget-d01db76787d3ecb5)",
+          "passed": 11,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/budget_projection.rs (target/debug/deps/budget_projection-4b12893b921f5dad)",
+          "passed": 8,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/candidate_policy.rs (target/debug/deps/candidate_policy-e4d21fc537b04ba0)",
+          "passed": 19,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/changed_selection.rs (target/debug/deps/changed_selection-aa2ee1ad6a9bdc9f)",
+          "passed": 7,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/config_json.rs (target/debug/deps/config_json-4adb66fa94002b10)",
+          "passed": 13,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/contracts.rs (target/debug/deps/contracts-be9eecf6f07eb465)",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/disk_policy.rs (target/debug/deps/disk_policy-b10a5931ae379d4c)",
+          "passed": 24,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/disk_root_cleanup.rs (target/debug/deps/disk_root_cleanup-737eceafc43023d2)",
+          "passed": 16,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_budget_oracle.rs (target/debug/deps/lean_budget_oracle-47ec7163175cd03b)",
+          "passed": 6,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_disk_guard_oracle.rs (target/debug/deps/lean_disk_guard_oracle-4dd5153135357079)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_mutation_score_exit_policy_oracle.rs (target/debug/deps/lean_mutation_score_exit_policy_oracle-e75e1a4cea90a097)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_oracle.rs (target/debug/deps/lean_oracle-e42cc23f08453caf)",
+          "passed": 6,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_process_output_oracle.rs (target/debug/deps/lean_process_output_oracle-6ad03bc3dea7ff6b)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_report_sequence_oracle.rs (target/debug/deps/lean_report_sequence_oracle-9963a3f71c2c61f0)",
+          "passed": 6,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_timeout_limit_oracle.rs (target/debug/deps/lean_timeout_limit_oracle-9d3422aab8d02d8d)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_top_budget_projection_oracle.rs (target/debug/deps/lean_top_budget_projection_oracle-67935d3d56df8d46)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/line_selection_index.rs (target/debug/deps/line_selection_index-2aa5e86621c80467)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/machine.rs (target/debug/deps/machine-db954a29256a9332)",
+          "passed": 95,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/mutation_outcome.rs (target/debug/deps/mutation_outcome-98e4254292d96881)",
+          "passed": 17,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/mutation_status_names.rs (target/debug/deps/mutation_status_names-ecfeab49b96dcba5)",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/operator_names.rs (target/debug/deps/operator_names-3c19b39c0d593c9f)",
+          "passed": 6,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/operator_selection.rs (target/debug/deps/operator_selection-5c4571d5145b3065)",
+          "passed": 16,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/plan_config.rs (target/debug/deps/plan_config-2e34a0b597531c40)",
+          "passed": 30,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/process_context.rs (target/debug/deps/process_context-cc7ea31bd59f2fea)",
+          "passed": 8,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/report_policy.rs (target/debug/deps/report_policy-fa758c713f9fe169)",
+          "passed": 32,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/report_resume.rs (target/debug/deps/report_resume-e57303eaa126bee0)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/resume_policy.rs (target/debug/deps/resume_policy-8c8aea63b1e4318b)",
+          "passed": 27,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/session_mode.rs (target/debug/deps/session_mode-83eafcdf81891b69)",
+          "passed": 6,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/source_encoding.rs (target/debug/deps/source_encoding-be954721b3ed9332)",
+          "passed": 8,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/source_encoding_properties.rs (target/debug/deps/source_encoding_properties-8a2e0d910248c0df)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/target_policy.rs (target/debug/deps/target_policy-eb7c55b765dea542)",
+          "passed": 31,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/telemetry.rs (target/debug/deps/telemetry-e62491a48fa80d8f)",
+          "passed": 14,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/verification_selection.rs (target/debug/deps/verification_selection-4a206408328e6fbc)",
+          "passed": 19,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/workspace_effects.rs (target/debug/deps/workspace_effects-bc6b5ea52d9d78c6)",
+          "passed": 5,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Doc-tests hoimin_cli",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Doc-tests hoimin_core",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        }
+      ],
+      "ignored_names": [
+        "test analyzer::payload_probes::django_boolean ... ignored, explicit release probe; requires SHA-256 verified /tmp audit fixtures",
+        "test analyzer::payload_probes::django_focused ... ignored, explicit release probe; requires SHA-256 verified /tmp audit fixtures",
+        "test analyzer::payload_probes::django_full ... ignored, explicit release probe; requires SHA-256 verified /tmp audit fixtures",
+        "test analyzer::payload_probes::generated_boolean ... ignored, explicit release probe; requires SHA-256 verified /tmp audit fixtures",
+        "test analyzer::payload_probes::generated_focused ... ignored, explicit release probe; requires SHA-256 verified /tmp audit fixtures",
+        "test analyzer::payload_probes::generated_full ... ignored, explicit release probe; requires SHA-256 verified /tmp audit fixtures",
+        "test analyzer::payload_probes::normal_three_file_plan ... ignored, explicit release probe; requires SHA-256 verified /tmp audit fixtures",
+        "test analyzer::payload_probes::proofreadtools_boolean ... ignored, explicit release probe; requires SHA-256 verified /tmp audit fixtures",
+        "test analyzer::payload_probes::proofreadtools_focused ... ignored, explicit release probe; requires SHA-256 verified /tmp audit fixtures",
+        "test analyzer::payload_probes::proofreadtools_full ... ignored, explicit release probe; requires SHA-256 verified /tmp audit fixtures",
+        "test analyzer::rust::rust_tests::benchmark_adversarial_ast_fact_indexes ... ignored, benchmark harness; run explicitly in release mode",
+        "test analyzer::rust::rust_tests::benchmark_candidate_line_positions ... ignored, benchmark harness; run explicitly in release mode",
+        "test analyzer::rust::rust_tests::benchmark_long_single_line_candidate_columns ... ignored, benchmark harness; run explicitly in release mode",
+        "test plan::sampling::sample_fixed_seed_frequency_inspection ... ignored, descriptive fixed-seed bias inspection, not a statistical CI gate",
+        "test plan::tests::benchmark_candidate_conversion_and_manifest ... ignored, benchmark harness; run explicitly in release mode",
+        "test plan::validation_tests::benchmark_requested_descriptor_preprocessing ... ignored, release validation benchmark; run explicitly with --release --ignored --nocapture",
+        "test process::tests::root_child_fixture_waits ... ignored, subprocess fixture for bounded reap tests",
+        "test resource::portable::unix_tests::rlimit_cpu_probe_fixture ... ignored, subprocess fixture for RLIMIT_CPU inheritance",
+        "test shell::tests::benchmark_blocking_io_dispatch ... ignored, manual blocking-I/O scheduler performance evidence",
+        "test shell::tests::rollback_contention_isolated_child ... ignored, subprocess fixture for rollback contention",
+        "test target::fs::tests::measure_exact_file_discovery_scaling ... ignored, release performance evidence",
+        "test workspace::copy::tests::benchmark_worker_materialization_io ... ignored, manual before/after performance evidence",
+        "test workspace::disk::tests::directory_handle_bound_child ... ignored, subprocess fixture for directory handle bound",
+        "test workspace::mutation::tests::benchmark_original_manifest_work_per_mutant_cycle ... ignored, manual before/after performance evidence",
+        "test workspace::owned::tests::fresh_process_bootstrap_barrier_child ... ignored, subprocess fixture for concurrent coordinator bootstrap",
+        "test workspace::owned::tests::fresh_process_bootstrap_child ... ignored, subprocess fixture for coordinator bootstrap",
+        "test workspace::owned::tests::managed_child_lease_isolated_child ... ignored, subprocess fixture for managed child lease",
+        "test workspace::reset::tests::benchmark_workspace_reset_io ... ignored, manual before/after performance evidence",
+        "test changed_plan_fifo_child ... ignored, subprocess fixture for the changed-plan FIFO regression",
+        "test rust::rust_tests::benchmark_adversarial_ast_fact_indexes ... ignored, benchmark harness; run explicitly in release mode",
+        "test rust::rust_tests::benchmark_candidate_line_positions ... ignored, benchmark harness; run explicitly in release mode",
+        "test rust::rust_tests::benchmark_long_single_line_candidate_columns ... ignored, benchmark harness; run explicitly in release mode",
+        "test sample_authored_project_evaluation ... ignored, writes reproducible authored-project measurements; run explicitly with --ignored",
+        "test ownership_child_fixture_holds_run ... ignored, subprocess fixture for session ownership crash test",
+        "test rust::rust_tests::benchmark_adversarial_ast_fact_indexes ... ignored, benchmark harness; run explicitly in release mode",
+        "test rust::rust_tests::benchmark_candidate_line_positions ... ignored, benchmark harness; run explicitly in release mode",
+        "test rust::rust_tests::benchmark_long_single_line_candidate_columns ... ignored, benchmark harness; run explicitly in release mode",
+        "test target::tests::measure_explicit_file_lookup_scaling ... ignored, release performance evidence",
+        "test target::tests::measure_explicit_range_scaling ... ignored, release performance evidence"
+      ]
+    },
+    "core-contracts": {
+      "total_passed": 492,
+      "total_failed": 0,
+      "total_ignored": 2,
+      "executables_or_doctest_groups": 36,
+      "suites": [
+        {
+          "suite": "Running unittests src/lib.rs (target/debug/deps/hoimin_core-9578fa8bf82e4c8a)",
+          "passed": 37,
+          "failed": 0,
+          "ignored": 2
+        },
+        {
+          "suite": "Running tests/budget.rs (target/debug/deps/budget-fca832c2ae3fe6b6)",
+          "passed": 11,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/budget_projection.rs (target/debug/deps/budget_projection-4add5349f3ae9dfe)",
+          "passed": 8,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/candidate_policy.rs (target/debug/deps/candidate_policy-b6eb1b22318ad78b)",
+          "passed": 19,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/changed_selection.rs (target/debug/deps/changed_selection-87d82b407e029eb5)",
+          "passed": 7,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/config_json.rs (target/debug/deps/config_json-083d4fa14e8be43d)",
+          "passed": 13,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/contracts.rs (target/debug/deps/contracts-93d8fd6176ba8e28)",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/disk_policy.rs (target/debug/deps/disk_policy-8b9f13473d82d450)",
+          "passed": 24,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/disk_root_cleanup.rs (target/debug/deps/disk_root_cleanup-35ef6205e499cb64)",
+          "passed": 16,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_budget_oracle.rs (target/debug/deps/lean_budget_oracle-8a6c1ebb7492447c)",
+          "passed": 6,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_disk_guard_oracle.rs (target/debug/deps/lean_disk_guard_oracle-11fc374b7ffb076d)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_mutation_score_exit_policy_oracle.rs (target/debug/deps/lean_mutation_score_exit_policy_oracle-2257fe1320f445f3)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_oracle.rs (target/debug/deps/lean_oracle-cf12484611d3997e)",
+          "passed": 6,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_process_output_oracle.rs (target/debug/deps/lean_process_output_oracle-cba8f45ad32f4380)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_report_sequence_oracle.rs (target/debug/deps/lean_report_sequence_oracle-f318bf51d8b46cff)",
+          "passed": 5,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_timeout_limit_oracle.rs (target/debug/deps/lean_timeout_limit_oracle-8643e0cd504afd63)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_top_budget_projection_oracle.rs (target/debug/deps/lean_top_budget_projection_oracle-3190c21125b7f6ac)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/line_selection_index.rs (target/debug/deps/line_selection_index-787c27ad2e8022eb)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/machine.rs (target/debug/deps/machine-ed992214aaf060af)",
+          "passed": 95,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/mutation_outcome.rs (target/debug/deps/mutation_outcome-d7d91fa68cd73eb8)",
+          "passed": 17,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/mutation_status_names.rs (target/debug/deps/mutation_status_names-4f70e7bdb661466a)",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/operator_names.rs (target/debug/deps/operator_names-9dbb7f192c24ecba)",
+          "passed": 6,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/operator_selection.rs (target/debug/deps/operator_selection-38b48ae4714bcf29)",
+          "passed": 16,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/plan_config.rs (target/debug/deps/plan_config-06a12e1eccf7c376)",
+          "passed": 30,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/process_context.rs (target/debug/deps/process_context-90f77d348de968fb)",
+          "passed": 8,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/report_policy.rs (target/debug/deps/report_policy-f267749f21bb474f)",
+          "passed": 25,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/report_resume.rs (target/debug/deps/report_resume-ae77191ac93e95b5)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/resume_policy.rs (target/debug/deps/resume_policy-3b22ab73bca99ebe)",
+          "passed": 27,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/session_mode.rs (target/debug/deps/session_mode-cfd8316947add9b5)",
+          "passed": 6,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/source_encoding.rs (target/debug/deps/source_encoding-a5bbcdf3dfd283a0)",
+          "passed": 8,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/source_encoding_properties.rs (target/debug/deps/source_encoding_properties-a29c00e32838fe11)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/target_policy.rs (target/debug/deps/target_policy-4b82993e39cb4bf2)",
+          "passed": 31,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/telemetry.rs (target/debug/deps/telemetry-e69aeff04a17dd25)",
+          "passed": 14,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/verification_selection.rs (target/debug/deps/verification_selection-f3cd9ea2e20499e7)",
+          "passed": 19,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/workspace_effects.rs (target/debug/deps/workspace_effects-7c748aef6ff56d2c)",
+          "passed": 5,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Doc-tests hoimin_core",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        }
+      ],
+      "ignored_names": [
+        "test target::tests::measure_explicit_file_lookup_scaling ... ignored, release performance evidence",
+        "test target::tests::measure_explicit_range_scaling ... ignored, release performance evidence"
+      ]
+    },
+    "cli-contracts": {
+      "total_passed": 2807,
+      "total_failed": 0,
+      "total_ignored": 37,
+      "executables_or_doctest_groups": 123,
+      "suites": [
+        {
+          "suite": "Running unittests src/lib.rs (target/debug/deps/hoimin_cli-ba4ab7597ab0445b)",
+          "passed": 1016,
+          "failed": 0,
+          "ignored": 28
+        },
+        {
+          "suite": "Running unittests src/main.rs (target/debug/deps/hoimin-545221361b3c517d)",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/abstract_set_provider.rs (target/debug/deps/abstract_set_provider-7fcfb293f18518ab)",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/analysis_depth.rs (target/debug/deps/analysis_depth-2b84ad487c3f6b10)",
+          "passed": 10,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/analyzer_handler.rs (target/debug/deps/analyzer_handler-8a1926edc14cfbc1)",
+          "passed": 30,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/augmented_to_assignment.rs (target/debug/deps/augmented_to_assignment-05a7cb2b2e274423)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/baseline_output.rs (target/debug/deps/baseline_output-9ad8fd2354e18ca2)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/boundary_selection.rs (target/debug/deps/boundary_selection-48b4d801a3d108e7)",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/builtin_evaluation_order.rs (target/debug/deps/builtin_evaluation_order-f5760d9ab54bf620)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/changed_excluded_paths.rs (target/debug/deps/changed_excluded_paths-ce375fe77c55eaef)",
+          "passed": 5,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/changed_git_scope.rs (target/debug/deps/changed_git_scope-471e3cb63effcabe)",
+          "passed": 11,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/cli_config.rs (target/debug/deps/cli_config-bd661f1cc631dbcd)",
+          "passed": 82,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/collection_annotation_builtins.rs (target/debug/deps/collection_annotation_builtins-55b8a925b5c16350)",
+          "passed": 5,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/comprehension_named_bindings.rs (target/debug/deps/comprehension_named_bindings-e73aaaa64978f911)",
+          "passed": 15,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/condition_clause_delete.rs (target/debug/deps/condition_clause_delete-f86133cb6da9542e)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/condition_constant.rs (target/debug/deps/condition_constant-c92748c6464802e8)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/container_element_delete.rs (target/debug/deps/container_element_delete-d43ddb4d22334873)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/conversion_call_remove.rs (target/debug/deps/conversion_call_remove-56adcd506c027319)",
+          "passed": 5,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/declaration_only_annotations.rs (target/debug/deps/declaration_only_annotations-841f64f283a5d0bf)",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/default_operator_selection.rs (target/debug/deps/default_operator_selection-5fcd735d3d8c02d2)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/deferred_annotation_imports.rs (target/debug/deps/deferred_annotation_imports-a20af149f9944798)",
+          "passed": 13,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/diagnostic_heap.rs (target/debug/deps/diagnostic_heap-98febad2ee851501)",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/disk_shutdown.rs (target/debug/deps/disk_shutdown-89a3d6a9703d8e89)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/disk_workspace.rs (target/debug/deps/disk_workspace-873ff925007c2449)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/enum_member_replace.rs (target/debug/deps/enum_member_replace-54d04baee4ec30c0)",
+          "passed": 5,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/exception_hierarchy.rs (target/debug/deps/exception_hierarchy-2ea1adcf1d2562e9)",
+          "passed": 22,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/exception_hierarchy_scopes.rs (target/debug/deps/exception_hierarchy_scopes-bdf7cf4e1cc2e915)",
+          "passed": 5,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/fingerprint_env.rs (target/debug/deps/fingerprint_env-031cfafa4d0680de)",
+          "passed": 6,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/fingerprint_env_plan.rs (target/debug/deps/fingerprint_env_plan-eba8a422b5a745c4)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/fingerprint_input_heap.rs (target/debug/deps/fingerprint_input_heap-d8b694e664c6883b)",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/fingerprint_inputs.rs (target/debug/deps/fingerprint_inputs-483b1b65f54fbeb9)",
+          "passed": 30,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/function_body_erase.rs (target/debug/deps/function_body_erase-0fa58a01a1fbba66)",
+          "passed": 6,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/function_body_return_constant.rs (target/debug/deps/function_body_return_constant-3385e2faafd88a84)",
+          "passed": 9,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/import_roots.rs (target/debug/deps/import_roots-7994f2a143f7cb97)",
+          "passed": 6,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/integer_literal_neighbor.rs (target/debug/deps/integer_literal_neighbor-e7494be0e44f4c90)",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_annotation_scope_oracle.rs (target/debug/deps/lean_annotation_scope_oracle-3d67d7df959e6fd9)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_binding_flow_oracle.rs (target/debug/deps/lean_binding_flow_oracle-b2ec316e4821981a)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_bounded_candidate_discovery_oracle.rs (target/debug/deps/lean_bounded_candidate_discovery_oracle-de65d1615729ef7a)",
+          "passed": 5,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_candidate_ranking_oracle.rs (target/debug/deps/lean_candidate_ranking_oracle-a66a2c18cbe76c3e)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_candidate_span_oracle.rs (target/debug/deps/lean_candidate_span_oracle-e6fe0c5ee1e741c9)",
+          "passed": 9,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_changed_context_oracle.rs (target/debug/deps/lean_changed_context_oracle-506269f89f2c1e98)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_changed_lines_oracle.rs (target/debug/deps/lean_changed_lines_oracle-ac206cf4f947c637)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_changed_target_oracle.rs (target/debug/deps/lean_changed_target_oracle-ff883f8e57011912)",
+          "passed": 7,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_compound_pattern_guard_oracle.rs (target/debug/deps/lean_compound_pattern_guard_oracle-d9bcaf82eb18baab)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_disk_shutdown_oracle.rs (target/debug/deps/lean_disk_shutdown_oracle-733fa999e2c1e120)",
+          "passed": 5,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_environment_fingerprint_oracle.rs (target/debug/deps/lean_environment_fingerprint_oracle-ff558fd0dad27abf)",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_except_star_flow_oracle.rs (target/debug/deps/lean_except_star_flow_oracle-9fb6e795491e7413)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_exception_hierarchy_oracle.rs (target/debug/deps/lean_exception_hierarchy_oracle-a2b8b87267d17b80)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_exception_match_binding_oracle.rs (target/debug/deps/lean_exception_match_binding_oracle-8c3947ba4c338860)",
+          "passed": 8,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_glob_selection_oracle.rs (target/debug/deps/lean_glob_selection_oracle-746dd941331000b6)",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_implicit_finally_oracle.rs (target/debug/deps/lean_implicit_finally_oracle-49831571cead8c47)",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_line_diverse_oracle.rs (target/debug/deps/lean_line_diverse_oracle-4668a8542c465c99)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_multiple_handler_join_oracle.rs (target/debug/deps/lean_multiple_handler_join_oracle-e2b44bd10355060b)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_nested_match_exit_oracle.rs (target/debug/deps/lean_nested_match_exit_oracle-d6e1e689b394ace3)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_nested_try_flow_oracle.rs (target/debug/deps/lean_nested_try_flow_oracle-77314a962c028f79)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_nullable_gate_oracle.rs (target/debug/deps/lean_nullable_gate_oracle-04c0a543c7db6697)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_paging_oracle.rs (target/debug/deps/lean_paging_oracle-c48efd04415d0d2d)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_prepared_annotation_import_oracle.rs (target/debug/deps/lean_prepared_annotation_import_oracle-b934a48a9453a52d)",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_prepared_namespace_oracle.rs (target/debug/deps/lean_prepared_namespace_oracle-bfc2ff719ebc12ed)",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_private_annotation_import_oracle.rs (target/debug/deps/lean_private_annotation_import_oracle-53a42bd4f7c7e6f7)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_progress_decision_oracle.rs (target/debug/deps/lean_progress_decision_oracle-2cdce9c9a31ff075)",
+          "passed": 5,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_progress_input_oracle.rs (target/debug/deps/lean_progress_input_oracle-886f5cc579a3a7e0)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_result_lifecycle_oracle.rs (target/debug/deps/lean_result_lifecycle_oracle-58a396d4fa56445a)",
+          "passed": 6,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_resume_diagnostic_oracle.rs (target/debug/deps/lean_resume_diagnostic_oracle-0512cb97868e7d05)",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_schema_migration_oracle.rs (target/debug/deps/lean_schema_migration_oracle-71facb31d2e64f52)",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_session_oracle.rs (target/debug/deps/lean_session_oracle-c22592e82b953e24)",
+          "passed": 5,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_shutdown_oracle.rs (target/debug/deps/lean_shutdown_oracle-7c2cf366bffbb427)",
+          "passed": 6,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_source_order_oracle.rs (target/debug/deps/lean_source_order_oracle-8578e24c637cb112)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_survivor_review_oracle.rs (target/debug/deps/lean_survivor_review_oracle-d1d43dbe494dcc94)",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/lean_workspace_oracle.rs (target/debug/deps/lean_workspace_oracle-73d1f51ac0a2f039)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/line_diverse.rs (target/debug/deps/line_diverse-82aada8b3733abd8)",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/manifest_buffer_lifetime.rs (target/debug/deps/manifest_buffer_lifetime-80125edae967ff4e)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/mapping_pattern_keys.rs (target/debug/deps/mapping_pattern_keys-267195dca320afd6)",
+          "passed": 5,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/method_call_remove.rs (target/debug/deps/method_call_remove-5115036fe838de46)",
+          "passed": 7,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/method_replacement_selection.rs (target/debug/deps/method_replacement_selection-3c054f898684a9e1)",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/metrics_destinations.rs (target/debug/deps/metrics_destinations-7e3c2b3fe576b66e)",
+          "passed": 26,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/missing_source.rs (target/debug/deps/missing_source-10edb34352adfd1c)",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/negative_neighbors.rs (target/debug/deps/negative_neighbors-e4f9015ff76750a0)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/nullable_builtin_provenance.rs (target/debug/deps/nullable_builtin_provenance-9c2a89a0763b9cf1)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/operator_function_contracts.rs (target/debug/deps/operator_function_contracts-0071db93bbc8bdf2)",
+          "passed": 18,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/optional_keyword_delete.rs (target/debug/deps/optional_keyword_delete-af1cb58e279430d8)",
+          "passed": 6,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/owned_entry.rs (target/debug/deps/owned_entry-6fb94d049189e8e8)",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/plan.rs (target/debug/deps/plan-256b4fed4ef6b749)",
+          "passed": 105,
+          "failed": 0,
+          "ignored": 1
+        },
+        {
+          "suite": "Running tests/process_handler.rs (target/debug/deps/process_handler-a53a829fe73326d0)",
+          "passed": 28,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/progress.rs (target/debug/deps/progress-bfe190af5682cf04)",
+          "passed": 99,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/progress_compare_heap.rs (target/debug/deps/progress_compare_heap-43db0201e5c0f00c)",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/progress_details_heap.rs (target/debug/deps/progress_details_heap-f9189464c59e60ad)",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/progress_heap.rs (target/debug/deps/progress_heap-9f3fdef8a97d3c7a)",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/progress_jsonl_heap.rs (target/debug/deps/progress_jsonl_heap-a66bf47f0329821f)",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/ranking_heap.rs (target/debug/deps/ranking_heap-21c4b9c07272ee95)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/report_handler.rs (target/debug/deps/report_handler-5934b798dfbf6e7b)",
+          "passed": 36,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/report_heap.rs (target/debug/deps/report_heap-9255b2b35842df92)",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/resume_budget.rs (target/debug/deps/resume_budget-c7475f1b19f08679)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/resume_diagnostics.rs (target/debug/deps/resume_diagnostics-2872b23f84fa8712)",
+          "passed": 5,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/return_tuple_swap.rs (target/debug/deps/return_tuple_swap-cbd2ac2f8c2fb467)",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/review_cli.rs (target/debug/deps/review_cli-7fcc048591ee8e14)",
+          "passed": 17,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/run_e2e.rs (target/debug/deps/run_e2e-20deecd1b346c17c)",
+          "passed": 72,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/rust_analyzer.rs (target/debug/deps/rust_analyzer-4d084c63c84cb2b5)",
+          "passed": 335,
+          "failed": 0,
+          "ignored": 3
+        },
+        {
+          "suite": "Running tests/sampling.rs (target/debug/deps/sampling-837f2388efa34d9a)",
+          "passed": 8,
+          "failed": 0,
+          "ignored": 1
+        },
+        {
+          "suite": "Running tests/selection_heap.rs (target/debug/deps/selection_heap-b45030ea3c07acf9)",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/session_handler.rs (target/debug/deps/session_handler-bab3b11c8fd2ec08)",
+          "passed": 47,
+          "failed": 0,
+          "ignored": 1
+        },
+        {
+          "suite": "Running tests/source_discovery.rs (target/debug/deps/source_discovery-e8191b793f382f3e)",
+          "passed": 5,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/source_encoding.rs (target/debug/deps/source_encoding-b83d3e86b8641fe5)",
+          "passed": 6,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/source_encoding_heap.rs (target/debug/deps/source_encoding_heap-7c34e01b569f2fb8)",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/statement_delete.rs (target/debug/deps/statement_delete-4e65a2c58451e01c)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/stdlib_conversion_call_remove.rs (target/debug/deps/stdlib_conversion_call_remove-4567363d3789d1fe)",
+          "passed": 13,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/string_literal_empty.rs (target/debug/deps/string_literal_empty-dc4d1b2458ee18f5)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/string_segment_empty.rs (target/debug/deps/string_segment_empty-1b869d3bfcd51c66)",
+          "passed": 9,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/target_handler.rs (target/debug/deps/target_handler-8d3c9e0976b0f364)",
+          "passed": 52,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/telemetry.rs (target/debug/deps/telemetry-f4627305eb67c49a)",
+          "passed": 7,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/type_parameter_bindings.rs (target/debug/deps/type_parameter_bindings-4ee37e06d493e7a8)",
+          "passed": 8,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/valid_python_corpus.rs (target/debug/deps/valid_python_corpus-dfbc800b4e17fe6c)",
+          "passed": 320,
+          "failed": 0,
+          "ignored": 3
+        },
+        {
+          "suite": "Running tests/while_condition_false.rs (target/debug/deps/while_condition_false-149cff38b15b881e)",
+          "passed": 5,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/windows_resource_scope.rs (target/debug/deps/windows_resource_scope-a9880d92e0b48b02)",
+          "passed": 0,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/with_suppression.rs (target/debug/deps/with_suppression-f3b83aa52084477f)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/workspace_empty_directories.rs (target/debug/deps/workspace_empty_directories-1769914ff9b5495e)",
+          "passed": 6,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/workspace_handler.rs (target/debug/deps/workspace_handler-83e241cd142514ec)",
+          "passed": 36,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/workspace_heap.rs (target/debug/deps/workspace_heap-49364cd36545a1c3)",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/workspace_preflight_heap.rs (target/debug/deps/workspace_preflight_heap-5acef6c49a603367)",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/workspace_recovery.rs (target/debug/deps/workspace_recovery-260d775c2d742f6a)",
+          "passed": 24,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/workspace_stream.rs (target/debug/deps/workspace_stream-012c96fc6a1e8a71)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Running tests/workspace_stream_heap.rs (target/debug/deps/workspace_stream_heap-fbffcf0754ff53fd)",
+          "passed": 1,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "suite": "Doc-tests hoimin_cli",
+          "passed": 3,
+          "failed": 0,
+          "ignored": 0
+        }
+      ],
+      "ignored_names": [
+        "test analyzer::payload_probes::django_boolean ... ignored, explicit release probe; requires SHA-256 verified /tmp audit fixtures",
+        "test analyzer::payload_probes::django_focused ... ignored, explicit release probe; requires SHA-256 verified /tmp audit fixtures",
+        "test analyzer::payload_probes::django_full ... ignored, explicit release probe; requires SHA-256 verified /tmp audit fixtures",
+        "test analyzer::payload_probes::generated_boolean ... ignored, explicit release probe; requires SHA-256 verified /tmp audit fixtures",
+        "test analyzer::payload_probes::generated_focused ... ignored, explicit release probe; requires SHA-256 verified /tmp audit fixtures",
+        "test analyzer::payload_probes::generated_full ... ignored, explicit release probe; requires SHA-256 verified /tmp audit fixtures",
+        "test analyzer::payload_probes::normal_three_file_plan ... ignored, explicit release probe; requires SHA-256 verified /tmp audit fixtures",
+        "test analyzer::payload_probes::proofreadtools_boolean ... ignored, explicit release probe; requires SHA-256 verified /tmp audit fixtures",
+        "test analyzer::payload_probes::proofreadtools_focused ... ignored, explicit release probe; requires SHA-256 verified /tmp audit fixtures",
+        "test analyzer::payload_probes::proofreadtools_full ... ignored, explicit release probe; requires SHA-256 verified /tmp audit fixtures",
+        "test analyzer::rust::rust_tests::benchmark_adversarial_ast_fact_indexes ... ignored, benchmark harness; run explicitly in release mode",
+        "test analyzer::rust::rust_tests::benchmark_candidate_line_positions ... ignored, benchmark harness; run explicitly in release mode",
+        "test analyzer::rust::rust_tests::benchmark_long_single_line_candidate_columns ... ignored, benchmark harness; run explicitly in release mode",
+        "test plan::sampling::sample_fixed_seed_frequency_inspection ... ignored, descriptive fixed-seed bias inspection, not a statistical CI gate",
+        "test plan::tests::benchmark_candidate_conversion_and_manifest ... ignored, benchmark harness; run explicitly in release mode",
+        "test plan::validation_tests::benchmark_requested_descriptor_preprocessing ... ignored, release validation benchmark; run explicitly with --release --ignored --nocapture",
+        "test process::tests::root_child_fixture_waits ... ignored, subprocess fixture for bounded reap tests",
+        "test resource::portable::unix_tests::rlimit_cpu_probe_fixture ... ignored, subprocess fixture for RLIMIT_CPU inheritance",
+        "test shell::tests::benchmark_blocking_io_dispatch ... ignored, manual blocking-I/O scheduler performance evidence",
+        "test shell::tests::rollback_contention_isolated_child ... ignored, subprocess fixture for rollback contention",
+        "test target::fs::tests::measure_exact_file_discovery_scaling ... ignored, release performance evidence",
+        "test workspace::copy::tests::benchmark_worker_materialization_io ... ignored, manual before/after performance evidence",
+        "test workspace::disk::tests::directory_handle_bound_child ... ignored, subprocess fixture for directory handle bound",
+        "test workspace::mutation::tests::benchmark_original_manifest_work_per_mutant_cycle ... ignored, manual before/after performance evidence",
+        "test workspace::owned::tests::fresh_process_bootstrap_barrier_child ... ignored, subprocess fixture for concurrent coordinator bootstrap",
+        "test workspace::owned::tests::fresh_process_bootstrap_child ... ignored, subprocess fixture for coordinator bootstrap",
+        "test workspace::owned::tests::managed_child_lease_isolated_child ... ignored, subprocess fixture for managed child lease",
+        "test workspace::reset::tests::benchmark_workspace_reset_io ... ignored, manual before/after performance evidence",
+        "test changed_plan_fifo_child ... ignored, subprocess fixture for the changed-plan FIFO regression",
+        "test rust::rust_tests::benchmark_adversarial_ast_fact_indexes ... ignored, benchmark harness; run explicitly in release mode",
+        "test rust::rust_tests::benchmark_candidate_line_positions ... ignored, benchmark harness; run explicitly in release mode",
+        "test rust::rust_tests::benchmark_long_single_line_candidate_columns ... ignored, benchmark harness; run explicitly in release mode",
+        "test sample_authored_project_evaluation ... ignored, writes reproducible authored-project measurements; run explicitly with --ignored",
+        "test ownership_child_fixture_holds_run ... ignored, subprocess fixture for session ownership crash test",
+        "test rust::rust_tests::benchmark_adversarial_ast_fact_indexes ... ignored, benchmark harness; run explicitly in release mode",
+        "test rust::rust_tests::benchmark_candidate_line_positions ... ignored, benchmark harness; run explicitly in release mode",
+        "test rust::rust_tests::benchmark_long_single_line_candidate_columns ... ignored, benchmark harness; run explicitly in release mode"
+      ]
+    },
+    "manifest-green": {
+      "total_passed": 2,
+      "total_failed": 0,
+      "total_ignored": 0,
+      "executables_or_doctest_groups": 1,
+      "suites": [
+        {
+          "suite": "Running tests/manifest_buffer_lifetime.rs (target/debug/deps/manifest_buffer_lifetime-eb5e39d02e109bb2)",
+          "passed": 2,
+          "failed": 0,
+          "ignored": 0
+        }
+      ],
+      "ignored_names": []
+    },
+    "ranking-green": {
+      "total_passed": 4,
+      "total_failed": 0,
+      "total_ignored": 0,
+      "executables_or_doctest_groups": 1,
+      "suites": [
+        {
+          "suite": "Running tests/ranking_heap.rs (target/debug/deps/ranking_heap-09f07e55349dbd20)",
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        }
+      ],
+      "ignored_names": []
+    }
+  },
+  "wheel": {
+    "wheel": "hoimin-0.12.0-py3-none-macosx_11_0_arm64.whl",
+    "sha256": "f22bd67a4bfa30835a5251a6b713adbc25bd181771101d1def79556663b84821",
+    "version": "0.12.0",
+    "system": "macOS-15.7.7-arm64-arm-64bit-Mach-O",
+    "machine": "arm64",
+    "python": "3.14.7",
+    "libc": [
+      "",
+      ""
+    ]
+  }
+}

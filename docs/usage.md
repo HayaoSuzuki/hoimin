@@ -517,11 +517,23 @@ Without one, the disk guard provides cooperative enforcement.
 
 During discovery of one source file, each token, AST, and type-annotation
 producer retains at most `max_candidates + 1` candidate records and their
-deduplication identities before the bounded merge. This limits retained
-candidates, not all analyzer memory: source text, parser tokens, AST facts,
-and small per-node replacement lists still scale with source size. Therefore
-`--max-candidates` is not a general Hoimin memory limit. `--max-memory`
-continues to govern descendant processes, not the Hoimin CLI itself.
+deduplication identities before the bounded merge. In addition, one internal
+16 MiB (16,777,216-byte) budget bounds retained candidate strings across producers,
+conversion and all files of a plan discovery. Runtime analysis shares the same
+kind of budget through its handler, including outstanding detached work.
+The budget counts UTF-8 logical string lengths and explicit validation/encoding
+scratch reservations. Exceeding it fails analysis with `analyzer.payload_limit`
+(`plan.discovery` at the plan command), without a successful partial result.
+This error may occur before count selection or the existing 2 MiB record check;
+it is distinct from requested candidate-count truncation.
+
+Source/parser/AST/facts, diagnostics, allocator overhead and capacities, prior
+disk records, one candidate under construction and the fixed annotation batch
+of at most three source-dependent replacements are outside this budget.
+`--max-candidates` and this payload budget therefore do not bound process RSS.
+`--max-memory` continues to govern descendant processes. See the
+[accounting contract and measurements](knowledge/design/analyzer.md#retained-candidate-payload-issue-978)
+for ownership, release rules and observed normal-input overhead.
 
 Analysis supports AST depth up to 128, counting the module as depth 1 and
 including auxiliary syntax nodes. A deeper tree fails with its source path and
@@ -585,6 +597,13 @@ whole tree. Exact directory permissions are not copied, and directories do not
 add to logical file-byte budgets. Hoimin does not follow or copy symlinks; each
 skipped symlink produces a diagnostic. Original integrity checks include selected
 directory presence as well as file contents.
+
+Before changing a mutation target's permissions or contents, hoimin checks its
+opened file's link count. A shared inode fails with `workspace.mutation.shared`,
+even if its contents and permissions match the source. Cleanup also preserves
+external referent permissions; an unsupported safe unlink can leave a cleanup
+error. This protects hoimin's own writes and does not prevent a test program
+from writing elsewhere.
 
 These controls reduce accidental resource exhaustion. hoimin executes user-selected Python and test programs and is **not a security boundary** for untrusted code.
 

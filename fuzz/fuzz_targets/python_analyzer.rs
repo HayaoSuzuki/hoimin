@@ -86,7 +86,11 @@ fuzz_target!(|source: &str| {
     };
     let prefix = analyze_source_cancellable(&smaller, source, || false).unwrap();
     assert_eq!(
-        prefix.candidates.iter().map(|candidate| &candidate.value).collect::<Vec<_>>(),
+        prefix
+            .candidates
+            .iter()
+            .map(|candidate| &candidate.value)
+            .collect::<Vec<_>>(),
         output
             .candidates
             .iter()

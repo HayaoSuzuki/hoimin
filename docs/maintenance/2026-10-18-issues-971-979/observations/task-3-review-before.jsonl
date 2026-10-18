@@ -1,0 +1,6 @@
+{"binary": "/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-971-979-cli-analyzer-resource-safety/target/debug/hoimin", "sha256": "75274321743f745b2f2f4e0d8929b8a75b66b24cc293395d3f676573eab3fe59"}
+{"plan_command": ["/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-971-979-cli-analyzer-resource-safety/target/debug/hoimin", "plan", "--root", "/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/hoimin-review-scan-g2bqysnd", "--source", "src", "--operators", "binary_add_sub", "--max-candidates", "2001", "--allow-best-effort-memory", "--", "/Library/Frameworks/Python.framework/Versions/3.12/bin/python3", "-m", "pytest"]}
+{"candidates": 2000, "sources": 1001, "matching_source": "first", "bytes": 895459, "seconds": 0.1343, "exit": 0, "stderr": ""}
+{"candidates": 2000, "sources": 1001, "matching_source": "last", "bytes": 895459, "seconds": 0.3162, "exit": 0, "stderr": ""}
+{"candidates": 2000, "sources": 10001, "matching_source": "first", "bytes": 1795459, "seconds": 0.2381, "exit": 0, "stderr": ""}
+{"candidates": 2000, "sources": 10001, "matching_source": "last", "bytes": 1795459, "seconds": 2.0671, "exit": 0, "stderr": ""}

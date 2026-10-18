@@ -66,7 +66,27 @@ decoding, and SQLite companion names. Callers retain their path resolution,
 validation order, and destination-protection policies. Keep plan validation,
 review assessment, progress comparison and verify execution policies with their
 respective commands. Shared decoding does not make
-their acceptance rules interchangeable.
+their acceptance rules interchangeable. Its regular-file opener uses Unix
+`O_NONBLOCK` before checking the obtained descriptor, so FIFO inputs do not wait
+for a writer. Input symlinks to regular files remain valid; review-store symlink
+rejection stays with the caller. This does not bound general filesystem I/O.
+Read-only plan validation builds one borrowed source-path/hash index after header
+validation and checks candidate identity before source membership.
+
+The analyzer owns an internal 16 MiB retained-payload budget shared across
+producers, conversion and files. Keep reservations beside the allocations they
+cover; move leases with their data and release them only when that data drops.
+Detached workers retain charges, including when the handler receives another
+request. The [analyzer contract](knowledge/design/analyzer.md#retained-candidate-payload-issue-978)
+records counted bytes, exclusions and measurement scope. `--max-memory` remains
+a descendant-process limit.
+
+Construct `RunState` without a supplied fingerprint. Preflight supplies the
+live fingerprint used by fresh and resumed sessions; missing fingerprints still
+fail when sessions are enabled. The removed `with_fingerprint` constructor had
+its value overwritten before use. Common raw run/plan CLI arguments now stay in
+one composed structure and normalize through the shared boundary; retain native
+test argv until the platform-specific encoding boundary.
 
 `tools/release_policy.py` owns the supported platform identities, Rust targets,
 wheel tags and version syntax without importing tooling dependencies. Keep the
@@ -106,13 +126,17 @@ but do not print it again. Short progress, review, help and completion output
 still uses the locally owned synchronous writers. See the
 [owned writer plan and evidence](superpowers/plans/2026-10-14-issue-889.md).
 
-Construct analyzers with `AnalyzerHandler::new(root) -> Self`. Source access and
-candidate-store errors occur during analysis. See the [initialization API record](maintenance/2026-10-13-analyzer-initialization.md)
-for the removed constructor, internal Rust migration and verification. The
-[handler session contract](../crates/hoimin-cli/src/analyzer/mod.rs) explains
-accumulation across targets, finalization, interruption state, and spool cleanup.
-Keep session settings and limits consistent; an interrupted wait does not prove
-blocking analysis has stopped. See the [issue #866 evidence record](superpowers/plans/2026-10-14-issue-866.md)
+Construct analyzers with `AnalyzerHandler::new(root, operators, profile,
+max_candidates) -> Self`, using a positive `NonZeroUsize` limit. The handler owns
+these settings for its lifetime; file requests carry only their ID, target and
+final-target marker. Finalization starts the next session with an empty store
+and the same settings. Use a new handler to change settings. Construction performs
+no project I/O or store allocation; source access and candidate-store errors occur
+during analysis. The [initialization API record](maintenance/2026-10-13-analyzer-initialization.md)
+records the earlier root-only migration; [Issues #971–#979](maintenance/2026-10-18-issues-971-979.md)
+record its successor. The [handler session contract](../crates/hoimin-cli/src/analyzer/mod.rs)
+explains accumulation, transfer and spool cleanup. An interrupted wait does not
+prove blocking analysis has stopped. See the [issue #866 evidence record](superpowers/plans/2026-10-14-issue-866.md)
 for the implementation and existing tests behind that contract. The
 [shell coordination contract](../crates/hoimin-cli/src/shell.rs) governs acceptance,
 drain, and managed-root cleanup outside the handler.
