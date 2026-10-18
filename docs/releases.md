@@ -69,8 +69,9 @@ next patch version. When raising the minimum, keep `Cargo.toml`,
 `hoimin-core` and `hoimin-python` entries in `fuzz/Cargo.lock` so the separate
 fuzz workspace remains consistent. Update the three shipping repository-package
 license exception ranges in `deny.toml` when crossing a minor-version boundary.
-CI embeds the reserved version into those five files in its build checkout,
-without committing version changes back to `main`.
+CI embeds the reserved version into root `Cargo.toml`, `pyproject.toml`, root
+`Cargo.lock` and `uv.lock` in its build checkout, without committing version
+changes back to `main`.
 
 Source distributions include an explicit list of vendored parser build and
 provenance files from `pyproject.toml`. Keep that list synchronized when adding
