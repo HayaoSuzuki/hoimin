@@ -1351,6 +1351,58 @@ async fn verify_rejects_previous_plan_schema_before_project_work() {
     assert!(!baseline_marker.exists());
 }
 
+macro_rules! verify_reordered_schema {
+    ($($name:ident: $key:expr,)*) => {
+        $(#[tokio::test]
+        async fn $name() {
+            let project = Project::new();
+            let (path, manifest, marker) = write_plan_manifest(&project, &[]).await;
+            let id = manifest.candidates[0].id.clone();
+            let serialized = serde_json::to_string(&manifest).unwrap();
+            let body = serialized.strip_prefix("{\"schema_version\":10,").unwrap();
+            let bytes = format!("{{{},{}}}", body.strip_suffix('}').unwrap(), $key);
+            std::fs::write(&path, bytes).unwrap();
+
+            let verified = prepare_verify(&path, std::slice::from_ref(&id), OutputFormat::Json)
+                .await.unwrap();
+
+            assert_eq!(verified.selection(),
+                &ResolvedVerifySelection::ExplicitCandidates(BTreeSet::from([id])));
+            assert!(!marker.exists());
+        })*
+    };
+}
+
+verify_reordered_schema! {
+    verify_accepts_schema_last: r#""schema_version":10"#,
+    verify_accepts_escaped_schema_last: r#""sch\u0065ma_version":10"#,
+}
+
+macro_rules! verify_invalid_schema_document {
+    ($($name:ident: $input:expr => $fragment:expr,)*) => {
+        $(#[tokio::test]
+        async fn $name() {
+            let project = Project::new();
+            let path = project.path.join("invalid-plan.json");
+            std::fs::write(&path, $input).unwrap();
+
+            let error = prepare_verify(&path, &["unused".into()], OutputFormat::Json)
+                .await.unwrap_err();
+
+            let diagnostic = error.to_string();
+            assert!(diagnostic.starts_with("plan.manifest.invalid:"), "{diagnostic}");
+            assert!(diagnostic.contains($fragment), "{diagnostic}");
+        })*
+    };
+}
+
+verify_invalid_schema_document! {
+    verify_rejects_duplicate_schema_original_bytes: br#"{"schema_version":10,"sch\u0065ma_version":9}"# => "duplicate field `schema_version`",
+    verify_rejects_malformed_body_after_schema: br#"{"schema_version":10,"candidates":[}"# => "expected value",
+    verify_rejects_obsolete_trailing_content: br#"{"schema_version":9} null"# => "trailing characters",
+    verify_guides_obsolete_schema_last_before_old_shape: br#"{"obsolete_root":{},"schema_version":9}"# => "unsupported schema version 9; regenerate",
+}
+
 #[tokio::test]
 async fn verify_prioritizes_invalid_normalized_config_over_requested_id_limits() {
     let project = Project::new();
