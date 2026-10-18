@@ -100,11 +100,13 @@ impl AnnotationCollector<'_, '_> {
 
 impl ControlFlowExits {
     pub(super) fn deduplicate_abrupt(&mut self) {
-        // Preserve first-seen order and complete typed binding equality. With k
-        // distinct environments this costs O(k²) comparisons; n input entries
-        // cost O(n*k). Compact in place without repeatedly shifting duplicates.
-        // No states are capped
-        // or joined across categories. Fallthrough/implicit must-agree rules stay.
+        // Keep LAST occurrences in their original order: a later transfer's
+        // residual imports can be observed by unreachable annotation scans.
+        // Deleting an earlier identical transfer preserves the last contributor
+        // to every output category; keeping first occurrences does not (A/B/A).
+        // Compare complete typed bindings, compacting in place in O(n*k) equality
+        // comparisons for n entries and k distinct states (quadratic if distinct).
+        // No state caps or cross-category joins; fallthrough/implicit rules stay.
         for states in [
             &mut self.breaks,
             &mut self.continues,
@@ -113,6 +115,7 @@ impl ControlFlowExits {
         ] {
             #[cfg(test)]
             MAX_VECTOR.set(MAX_VECTOR.get().max(states.len()));
+            states.reverse();
             let mut unique = 0;
             for index in 0..states.len() {
                 if !states[..unique].contains(&states[index]) {
@@ -121,6 +124,7 @@ impl ControlFlowExits {
                 }
             }
             states.truncate(unique);
+            states.reverse();
         }
     }
 }

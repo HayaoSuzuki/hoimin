@@ -599,14 +599,14 @@ fn distinct_typed_imports_are_not_deduplicated_or_reused() {
             // Act.
             let actual = collector.apply_finally(entries, &parsed.syntax().body);
 
-            // Assert: stable exact normalization preserves both distinct return states.
+            // Assert: last-occurrence normalization preserves both distinct return states.
             assert_eq!(actual.fallthrough, Some(a.clone()));
             assert_eq!(actual.breaks, vec![b.clone()]);
             assert_eq!(actual.continues, vec![a.clone()]);
-            assert_eq!(actual.terminates, vec![a, b]);
+            assert_eq!(actual.terminates, vec![b, a]);
             assert_eq!(
                 (finally_work::MISSES.get(), finally_work::HITS.get()),
-                (4, 1)
+                (5, 0)
             );
         }
     }
@@ -916,4 +916,207 @@ fn class_finally_bypass_still_cancels_without_annotations() {
     assert_eq!(result.err(), Some(AnalysisError::Cancelled));
     assert_eq!(LOOP_STATEMENT_VISITS.get(), 20);
     assert_eq!(finally_work::HITS.get(), 0);
+}
+
+const RESIDUAL_ORDER_SOURCE: &str = "def f():\n    from typing import Sequence\n    try:\n        return\n    except ():\n        Sequence = 0\n        return\n    except ():\n        return\n    finally:\n        pass\n    after: Sequence[int]\n";
+
+#[test]
+fn residual_order_preserves_unreachable_callback_provenance() {
+    // Arrange: valid Python; literal handler types create no implicit exit.
+    let expected = (
+        "direct:Sequence=typing.Sequence".to_owned(),
+        Some("f".to_owned()),
+    );
+
+    // Act.
+    let actual = observe(RESIDUAL_ORDER_SOURCE, false);
+    let _guard = SharingGuard::disabled();
+    let reference = observe(RESIDUAL_ORDER_SOURCE, false);
+
+    // Assert: compare callback order/ranges/symbols/imports and independent provenance.
+    assert_eq!(reference.annotations.len(), 1);
+    assert!(reference.annotations[0].2.contains(&expected.0));
+    assert_eq!(reference.annotations[0].1, expected.1);
+    assert_eq!(actual, reference);
+}
+
+#[test]
+fn residual_order_preserves_complete_candidate_descriptors() {
+    // Arrange.
+    let start = RESIDUAL_ORDER_SOURCE.find("Sequence[int]").unwrap();
+
+    // Act.
+    let actual = analyze(RESIDUAL_ORDER_SOURCE, true).0;
+    let _guard = SharingGuard::disabled();
+    let reference = analyze(RESIDUAL_ORDER_SOURCE, true).0;
+
+    // Assert: independent expected mutation plus complete descriptor/order equality.
+    assert_eq!(reference.len(), 1);
+    assert_eq!(reference[0].original, "Sequence[int]");
+    assert_eq!(reference[0].replacement, "list[int]");
+    assert_eq!(reference[0].symbol.as_deref(), Some("f"));
+    assert_eq!(reference[0].span.start, u64::try_from(start).unwrap());
+    assert_eq!(actual, reference);
+}
+
+#[test]
+fn residual_order_aba_retains_last_transfer_imports() {
+    // Arrange: there is no later raise or implicit entry to overwrite this residual.
+    let a = KnownImports {
+        bindings: HashMap::from([(
+            "Sequence".into(),
+            KnownBinding::Direct("typing.Sequence".into()),
+        )]),
+    };
+    let b = KnownImports::default();
+    let parsed = parse_module("pass").unwrap();
+    let mut collector = AnnotationCollector::empty();
+    collector.record_annotations = false;
+    let entries = ControlFlowExits {
+        terminates: vec![a.clone(), b.clone(), a.clone()],
+        ..ControlFlowExits::default()
+    };
+
+    // Act.
+    let exits = collector.apply_finally(entries, &parsed.syntax().body);
+
+    // Assert: exact environment set and last transfer residual are separate obligations.
+    assert_eq!(exits.terminates.len(), 2);
+    assert!(exits.terminates.contains(&a) && exits.terminates.contains(&b));
+    assert_eq!(collector.imports, a);
+}
+
+fn three_state_words(maximum_len: u32) -> impl Iterator<Item = Vec<usize>> {
+    (0..=maximum_len).flat_map(|length| {
+        (0..3usize.pow(length)).map(move |mut encoded| {
+            (0..length)
+                .map(|_| {
+                    let digit = encoded % 3;
+                    encoded /= 3;
+                    digit
+                })
+                .collect()
+        })
+    })
+}
+
+#[test]
+fn residual_order_normalization_preserves_each_last_category_contributor() {
+    let states = [
+        KnownBinding::Direct("typing.Sequence".into()),
+        KnownBinding::Module("typing".into()),
+        KnownBinding::TypeVar,
+    ]
+    .map(|binding| KnownImports {
+        bindings: HashMap::from([("T".into(), binding)]),
+    });
+    for word in three_state_words(5) {
+        // Arrange: independent index-based oracle keeps entries with no equal successor.
+        let original = word
+            .iter()
+            .map(|&index| states[index].clone())
+            .collect::<Vec<_>>();
+        let expected = original
+            .iter()
+            .enumerate()
+            .filter(|(index, state)| !original[index + 1..].contains(state))
+            .map(|(_, state)| state.clone())
+            .collect::<Vec<_>>();
+        let mut exits = ControlFlowExits {
+            breaks: original.clone(),
+            continues: original.clone(),
+            terminates: original.clone(),
+            raises: original,
+            ..ControlFlowExits::default()
+        };
+
+        // Act.
+        exits.deduplicate_abrupt();
+
+        // Assert: exact last-occurrence order and every possible subset's last contributor.
+        for actual in [
+            &exits.breaks,
+            &exits.continues,
+            &exits.terminates,
+            &exits.raises,
+        ] {
+            assert_eq!(actual, &expected, "word={word:?}");
+            for contributors in 0..8 {
+                let contributes = |state: &KnownImports| {
+                    states.iter().enumerate().any(|(index, candidate)| {
+                        contributors & (1 << index) != 0 && candidate == state
+                    })
+                };
+                let before = word
+                    .iter()
+                    .rev()
+                    .map(|&index| &states[index])
+                    .find(|state| contributes(state));
+                let after = actual.iter().rev().find(|state| contributes(state));
+                assert_eq!(after, before, "word={word:?}, contributors={contributors}");
+            }
+        }
+    }
+}
+
+fn residual_order_source(word: &[usize], nested: bool) -> String {
+    let mut inner = String::from("try:\n    return\n");
+    for &state in word {
+        let assignment = ["pass", "Sequence = 0", "Mapping = 0"][state];
+        writeln!(inner, "except ():\n    {assignment}\n    return").unwrap();
+    }
+    inner.push_str("finally:\n    pass\n");
+    if nested {
+        let mut outer = String::from("try:\n");
+        for line in inner.lines() {
+            writeln!(outer, "    {line}").unwrap();
+        }
+        outer.push_str("finally:\n    pass\n");
+        inner = outer;
+    }
+    let mut source = String::from("def f():\n    from typing import Sequence, Mapping\n");
+    for line in inner.lines() {
+        writeln!(source, "    {line}").unwrap();
+    }
+    source.push_str("    after: Sequence[int]\n    other: Mapping[str, int]\n");
+    source
+}
+
+#[test]
+fn residual_order_generated_handlers_preserve_callbacks_and_full_candidates() {
+    for word in three_state_words(4) {
+        for nested in [false, true] {
+            // Arrange: literal handler types/bindings leave no implicit entry to hide the tail.
+            let source = residual_order_source(&word, nested);
+            let last = word.last().copied().unwrap_or(0);
+
+            // Act.
+            let actual = observe(&source, false);
+            let candidates = analyze(&source, true).0;
+            let _guard = SharingGuard::disabled();
+            let reference = observe(&source, false);
+            let reference_candidates = analyze(&source, true).0;
+
+            // Assert: independent expected facts as well as disabled-reference equality.
+            assert_eq!(actual, reference, "word={word:?}, nested={nested}");
+            assert_eq!(
+                candidates, reference_candidates,
+                "word={word:?}, nested={nested}"
+            );
+            assert_eq!(candidates.len(), usize::from(last != 1));
+            assert_eq!(actual.annotations.len(), 2);
+            assert_eq!(
+                actual.annotations[0]
+                    .2
+                    .contains(&"direct:Sequence=typing.Sequence".to_owned()),
+                last != 1
+            );
+            assert_eq!(
+                actual.annotations[1]
+                    .2
+                    .contains(&"direct:Mapping=typing.Mapping".to_owned()),
+                last != 2
+            );
+        }
+    }
 }
