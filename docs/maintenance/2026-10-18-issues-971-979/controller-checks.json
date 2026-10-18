@@ -1,0 +1,31 @@
+{
+  "reviewed_head": "28fdbf32dbd1b090a43058f61088f560aa79f76a",
+  "scope": "Final documentation/evidence archive; no product/test delta since integrated gates.",
+  "exit_provenance": "Unmodified exec_command result.exit_code, obtained by controller; numeric values are not inferred from log text.",
+  "checks": [
+    {
+      "name": "okf",
+      "command": ".venv/bin/python docs/maintenance/2026-10-18-issues-971-979/probes/check-okf.py",
+      "log": "docs/maintenance/2026-10-18-issues-971-979/observations/controller-okf.log",
+      "tool_result": {
+        "chunk_id": "043082",
+        "wall_time_seconds": 0.274485084,
+        "exit_code": 0,
+        "original_token_count": 0,
+        "output": ""
+      }
+    },
+    {
+      "name": "strict-site",
+      "command": ".venv/bin/python -m tools.docs_site --output site",
+      "log": "docs/maintenance/2026-10-18-issues-971-979/observations/controller-site.log",
+      "tool_result": {
+        "chunk_id": "b255e9",
+        "wall_time_seconds": 0.512679292,
+        "exit_code": 0,
+        "original_token_count": 0,
+        "output": ""
+      }
+    }
+  ]
+}

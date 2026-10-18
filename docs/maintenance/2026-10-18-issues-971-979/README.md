@@ -1,10 +1,13 @@
 # Evidence archive
 
-The Task1–9 reports and reviews are byte-preserving copies of the authoritative
+The Task1–10 reports and reviews are byte-preserving copies of the authoritative
 ignored SDD originals. Their original task status, initial failures and controller
 measurement corrections remain intact. `execution-ledger.md` captures all rulings
-and historical progress at Task10 start. The controller will append Task10 and
-subsequent review evidence after those records exist.
+and historical progress through final review. Later ledger entries supersede
+earlier pending states and the incorrect initial checker-success claim.
+`final-review.md` records independent whole-branch approval; `completion.md`
+records controller adjudication and completion checks. The Task1–9 source reports
+remain byte-identical to their cited snapshots.
 
 `probes/` contains bounded reproduction drivers; `observations/` contains raw
 observations and the pinned input inventory. No upstream source files, binaries
