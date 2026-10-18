@@ -5548,3 +5548,113 @@ async fn discovery_timeout_changes_saved_plan_without_changing_execution_identit
     );
     assert!(!marker.exists());
 }
+
+#[tokio::test]
+async fn baseline_restoration_matches_full_run_and_single_candidate_verification() {
+    for jobs in ["1", "2"] {
+        // Arrange.
+        let project = tempfile::tempdir().unwrap();
+        let source = "one = True\ntwo = False\n";
+        std::fs::write(project.path().join("target.py"), source).unwrap();
+        let (args, manifest, plan_path) = baseline_contamination_plan(project.path(), jobs).await;
+        let selected = &manifest.candidates[1].candidate.id;
+        // Act.
+        let run_out = CollectingWriter::default();
+        let run_err = CollectingWriter::default();
+        assert_eq!(
+            hoimin_cli::run_with_writers(args, run_out.clone(), run_err.clone()).await,
+            1,
+            "{}",
+            String::from_utf8_lossy(&run_err.snapshot())
+        );
+        let full: serde_json::Value = serde_json::from_slice(&run_out.snapshot()).unwrap();
+        for selection in [["--candidate", selected.as_str()], ["--top", "1"]] {
+            let verify_out = CollectingWriter::default();
+            let verify_err = CollectingWriter::default();
+            let args = [
+                OsString::from("hoimin"),
+                "verify".into(),
+                plan_path.clone().into(),
+                selection[0].into(),
+                selection[1].into(),
+            ];
+            assert_eq!(
+                hoimin_cli::run_with_writers(args, verify_out.clone(), verify_err.clone()).await,
+                1,
+                "{}",
+                String::from_utf8_lossy(&verify_err.snapshot())
+            );
+            let single: serde_json::Value = serde_json::from_slice(&verify_out.snapshot()).unwrap();
+            // Assert.
+            let mutant = &single["mutants"][0];
+            assert!(mutant["candidate"]["id"].is_string());
+            if selection[0] == "--candidate" {
+                assert_eq!(mutant["candidate"]["id"], selected.as_str());
+            }
+            let matching = full["mutants"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|row| row["candidate"]["id"] == mutant["candidate"]["id"])
+                .unwrap();
+            assert_eq!(mutation_outcome::status(mutant), "survived");
+            assert_eq!(
+                mutation_outcome::status(mutant),
+                mutation_outcome::status(matching)
+            );
+            assert_eq!(single["summary"]["complete"], true);
+        }
+        assert_eq!(
+            std::fs::read_to_string(project.path().join("target.py")).unwrap(),
+            source
+        );
+        assert!(!project.path().join("generated-state.txt").exists());
+    }
+}
+
+async fn baseline_contamination_plan(
+    root: &Path,
+    jobs: &str,
+) -> (Vec<OsString>, PlanManifest, PathBuf) {
+    let command = "from pathlib import Path; p=Path('generated-state.txt'); clean=not p.exists(); p.write_text('dirty'); raise SystemExit(0 if clean else 1)";
+    let mut args: Vec<OsString> = ["hoimin", "plan", "--root"]
+        .into_iter()
+        .map(Into::into)
+        .collect();
+    args.push(root.into());
+    args.extend(
+        [
+            "--file",
+            "target.py",
+            "--operators",
+            "boolean_literal",
+            "--jobs",
+            jobs,
+            "--allow-best-effort-memory",
+            "--min-free-space",
+            "1B",
+            "--",
+        ]
+        .into_iter()
+        .map(OsString::from),
+    );
+    args.extend([python_executable().into(), "-c".into(), command.into()]);
+    let plan_out = CollectingWriter::default();
+    let plan_err = CollectingWriter::default();
+    assert_eq!(
+        hoimin_cli::run_with_writers(args.clone(), plan_out.clone(), plan_err.clone()).await,
+        0,
+        "{}",
+        String::from_utf8_lossy(&plan_err.snapshot())
+    );
+    let manifest: PlanManifest = serde_json::from_slice(&plan_out.snapshot()).unwrap();
+    let plan_path = root.join("plan.json");
+    std::fs::write(&plan_path, plan_out.snapshot()).unwrap();
+    args[1] = "run".into();
+    let separator = args.iter().position(|arg| arg == "--").unwrap();
+    args.splice(
+        separator..separator,
+        [OsString::from("--format"), "json".into()],
+    );
+    (args, manifest, plan_path)
+}

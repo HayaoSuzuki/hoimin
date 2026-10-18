@@ -929,7 +929,7 @@ fn mutate_min_free_space(v: &mut RawRunLimits) {
 
 #[test]
 fn import_root_changes_and_precedence_change_fingerprint() {
-    assert_eq!(hoimin_core::FINGERPRINT_SCHEMA_VERSION, 12);
+    assert_eq!(hoimin_core::FINGERPRINT_SCHEMA_VERSION, 13);
     let original = fixture_input();
     let mut configured = original.clone();
     configured.import_roots = vec!["src".into(), "vendor".into()];
@@ -1044,7 +1044,7 @@ fn captured_snapshot_names_and_digest_both_change_compatibility() {
 }
 
 #[test]
-fn schema_12_execution_fingerprint_has_stable_untracked_bytes() {
+fn baseline_restoration_invalidates_schema_12_untracked_bytes() {
     // Arrange.
     let input = fixture_input();
     let expected = [
@@ -1054,11 +1054,11 @@ fn schema_12_execution_fingerprint_has_stable_untracked_bytes() {
     // Act.
     let actual = fingerprint(&input);
     // Assert.
-    assert_eq!(*actual.as_bytes(), expected);
+    assert_ne!(*actual.as_bytes(), expected);
 }
 
 #[test]
-fn schema_12_execution_fingerprint_has_stable_captured_bytes() {
+fn baseline_restoration_invalidates_schema_12_captured_bytes() {
     // Arrange.
     let mut input = fixture_input();
     input.environment =
@@ -1066,6 +1066,36 @@ fn schema_12_execution_fingerprint_has_stable_captured_bytes() {
     let expected = [
         174, 60, 124, 72, 87, 11, 81, 69, 117, 208, 160, 134, 123, 204, 27, 140, 254, 234, 220,
         106, 82, 227, 167, 166, 77, 101, 96, 33, 163, 56, 166, 138,
+    ];
+    // Act.
+    let actual = fingerprint(&input);
+    // Assert.
+    assert_ne!(*actual.as_bytes(), expected);
+}
+
+#[test]
+fn schema_13_execution_fingerprint_has_stable_untracked_bytes() {
+    // Arrange.
+    let input = fixture_input();
+    let expected = [
+        225, 75, 192, 204, 255, 118, 232, 184, 102, 42, 246, 147, 138, 43, 208, 220, 82, 217, 162,
+        90, 186, 141, 92, 18, 229, 114, 117, 8, 178, 169, 4, 98,
+    ];
+    // Act.
+    let actual = fingerprint(&input);
+    // Assert.
+    assert_eq!(*actual.as_bytes(), expected);
+}
+
+#[test]
+fn schema_13_execution_fingerprint_has_stable_captured_bytes() {
+    // Arrange.
+    let mut input = fixture_input();
+    input.environment =
+        hoimin_core::EnvironmentSnapshot::captured(vec!["FLAG".into()], "a".repeat(64)).unwrap();
+    let expected = [
+        110, 8, 47, 12, 101, 252, 108, 35, 5, 131, 33, 230, 48, 255, 75, 184, 220, 5, 0, 151, 135,
+        207, 228, 14, 42, 126, 148, 199, 144, 126, 165, 211,
     ];
     // Act.
     let actual = fingerprint(&input);

@@ -8,11 +8,13 @@ use std::time::Instant;
 
 use hoimin_cli::session::SessionHandler;
 use hoimin_core::{
-    BeginSession, ByteSpan, EffectFailed, EffectFailure, EffectId, FinishSession, LoadSession,
-    LookupStoredResult, MutantResult, MutationCandidate, MutationStatus, OutputSpoolRef,
-    PersistResult, ProcessTermination, ResourceMode, ResultPersisted, ResumeDecision,
+    BeginSession, ByteSpan, CommandArg, EffectFailed, EffectFailure, EffectId, FingerprintInput,
+    FingerprintInputFile, FinishSession, LineRange, LoadSession, LookupStoredResult, MutantResult,
+    MutationCandidate, MutationProfile, MutationStatus, OutputSpoolRef, PersistResult,
+    ProcessTermination, RawRunLimits, ResourceMode, ResultPersisted, ResumeDecision,
     ReusedMutationStatus, RunFingerprint, SessionFinished, SessionLoadOutcome, SessionLoaded,
-    SessionResumeRef, SessionStarted, StoredResult, StoredResultLoaded, resume_policy,
+    SessionResumeRef, SessionStarted, SourceHash, StoredResult, StoredResultLoaded, TargetSlice,
+    resume_policy,
 };
 use rusqlite::types::Value;
 use rusqlite::{Connection, OpenFlags};
@@ -2490,4 +2492,230 @@ proptest::proptest! {
         // Assert
         proptest::prop_assert_eq!(stored, request.result.outcome);
     }
+}
+
+// This input and its schema12 bytes were frozen before the restoration epoch change.
+fn restoration_fingerprint_input() -> FingerprintInput {
+    FingerprintInput {
+        import_roots: Vec::new(),
+        source_roots: Vec::new(),
+        includes: Vec::new(),
+        excludes: Vec::new(),
+        sources: vec![
+            SourceHash {
+                path: "src/a.py".into(),
+                hash: [1; 32],
+            },
+            SourceHash {
+                path: "src/b.py".into(),
+                hash: [2; 32],
+            },
+        ],
+        targets: vec![
+            TargetSlice {
+                path: "src/a.py".into(),
+                lines: vec![LineRange { start: 1, end: 3 }],
+                symbols: vec!["alpha".to_owned()],
+            },
+            TargetSlice {
+                path: "src/b.py".into(),
+                lines: Vec::new(),
+                symbols: Vec::new(),
+            },
+        ],
+        operators: vec!["boolean".to_owned(), "binary".to_owned()],
+        profile: MutationProfile::Full,
+        test_argv: vec![CommandArg::Unix(vec![0xff, 0, b'x'])],
+        limits: (&restoration_raw_limits()).try_into().unwrap(),
+        resource_mode: ResourceMode::Hard,
+        environment: hoimin_core::EnvironmentSnapshot::Untracked,
+        fingerprint_inputs: vec![
+            FingerprintInputFile {
+                path: "pyproject.toml".into(),
+                hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned(),
+            },
+            FingerprintInputFile {
+                path: "fixtures/case.json".into(),
+                hash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_owned(),
+            },
+        ],
+    }
+}
+
+fn restoration_raw_limits() -> RawRunLimits {
+    RawRunLimits {
+        mutant_timeout: Some(Duration::from_secs(7)),
+        ..RawRunLimits::default()
+    }
+}
+
+fn frozen_schema_12_fingerprint() -> RunFingerprint {
+    RunFingerprint::from_bytes([
+        84, 66, 95, 225, 171, 2, 182, 209, 253, 154, 140, 151, 197, 165, 2, 54, 247, 234, 24, 14,
+        3, 199, 197, 88, 6, 54, 215, 75, 92, 69, 10, 27,
+    ])
+}
+
+#[test]
+fn baseline_restoration_rejects_and_preserves_schema_12_conclusive_history() {
+    // Arrange: genuine pre-change identity, conclusive result, incomplete finished run.
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("sessions.sqlite3");
+    let mut handler = SessionHandler::open(&path).unwrap();
+    let mut begin = begin_request(1, "contaminated");
+    begin.fingerprint = frozen_schema_12_fingerprint();
+    handler.begin(begin).unwrap();
+    let mut result = persist_request(2, "contaminated", "false-killed");
+    result.result.outcome = hoimin_core::MutationOutcome::Executed {
+        termination: ProcessTermination::Exit(1),
+        output_state: hoimin_core::ProcessOutputState::Complete,
+        output: OutputSpoolRef {
+            token: "old-process-output".into(),
+            retained: 0,
+            observed: 0,
+        },
+        elapsed: Duration::from_millis(5),
+    };
+    handler.persist(&result).unwrap();
+    handler
+        .finish(FinishSession {
+            complete: false,
+            ..finish_request(3, "contaminated")
+        })
+        .unwrap();
+    let connection = Connection::open(&path).unwrap();
+    connection
+        .execute("UPDATE fingerprints SET schema_version=12", [])
+        .unwrap();
+    let before = logical_rows(&connection);
+    // Act.
+    let failed = handler
+        .load(&LoadSession {
+            id: EffectId(4),
+            fingerprint: hoimin_core::fingerprint(&restoration_fingerprint_input()),
+            max_mutants: std::num::NonZeroUsize::new(100).unwrap(),
+        })
+        .unwrap_err();
+    // Assert.
+    assert_eq!(failed.failure.code(), "session.resume.incompatible");
+    assert_eq!(user_version(&connection), 5);
+    assert_eq!(logical_rows(&connection), before);
+}
+
+#[test]
+fn baseline_restoration_current_conclusive_history_remains_reusable() {
+    // Arrange.
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("sessions.sqlite3");
+    let mut handler = SessionHandler::open(&path).unwrap();
+    let fingerprint = hoimin_core::fingerprint(&restoration_fingerprint_input());
+    let mut begin = begin_request(1, "current");
+    begin.fingerprint = fingerprint;
+    handler.begin(begin).unwrap();
+    handler
+        .persist(&persist_request(2, "current", "killed"))
+        .unwrap();
+    handler
+        .finish(FinishSession {
+            complete: false,
+            ..finish_request(3, "current")
+        })
+        .unwrap();
+    // Act.
+    let loaded = handler
+        .load(&LoadSession {
+            id: EffectId(4),
+            fingerprint,
+            max_mutants: std::num::NonZeroUsize::new(100).unwrap(),
+        })
+        .unwrap();
+    let stored = handler
+        .lookup(&LookupStoredResult {
+            id: EffectId(5),
+            worker: 0,
+            run_id: "current".into(),
+            mutant_id: "killed".into(),
+        })
+        .unwrap();
+    // Assert.
+    assert_eq!(resumed_run(loaded).run_id, "current");
+    assert_eq!(stored.result.unwrap().status, MutationStatus::Killed);
+}
+
+#[test]
+fn baseline_restoration_completed_schema_12_history_starts_fresh() {
+    // Arrange.
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("sessions.sqlite3");
+    let mut handler = SessionHandler::open(&path).unwrap();
+    let mut begin = begin_request(1, "completed-old");
+    begin.fingerprint = frozen_schema_12_fingerprint();
+    handler.begin(begin).unwrap();
+    handler
+        .persist(&persist_request(2, "completed-old", "killed"))
+        .unwrap();
+    handler.finish(finish_request(3, "completed-old")).unwrap();
+    let connection = Connection::open(&path).unwrap();
+    connection
+        .execute("UPDATE fingerprints SET schema_version=12", [])
+        .unwrap();
+    let before = logical_rows(&connection);
+    // Act.
+    let loaded = handler
+        .load(&LoadSession {
+            id: EffectId(4),
+            fingerprint: hoimin_core::fingerprint(&restoration_fingerprint_input()),
+            max_mutants: std::num::NonZeroUsize::new(100).unwrap(),
+        })
+        .unwrap();
+    // Assert.
+    assert!(matches!(loaded.outcome, SessionLoadOutcome::Fresh(_)));
+    assert_eq!(logical_rows(&connection), before);
+}
+
+#[test]
+fn baseline_restoration_compatible_current_run_wins_over_newer_old_history() {
+    // Arrange.
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("sessions.sqlite3");
+    let mut handler = SessionHandler::open(&path).unwrap();
+    let fingerprint = hoimin_core::fingerprint(&restoration_fingerprint_input());
+    let mut begin = begin_request(1, "current");
+    begin.fingerprint = fingerprint;
+    handler.begin(begin).unwrap();
+    handler
+        .persist(&persist_request(2, "current", "killed"))
+        .unwrap();
+    handler
+        .finish(FinishSession {
+            complete: false,
+            ..finish_request(3, "current")
+        })
+        .unwrap();
+    let mut begin = begin_request(4, "newer-old");
+    begin.fingerprint = frozen_schema_12_fingerprint();
+    handler.begin(begin).unwrap();
+    handler
+        .finish(FinishSession {
+            complete: false,
+            ..finish_request(5, "newer-old")
+        })
+        .unwrap();
+    let connection = Connection::open(&path).unwrap();
+    connection
+        .execute(
+            "UPDATE fingerprints SET schema_version=12 WHERE digest=?1",
+            [frozen_schema_12_fingerprint().as_bytes().as_slice()],
+        )
+        .unwrap();
+    // Act.
+    let loaded = handler
+        .load(&LoadSession {
+            id: EffectId(6),
+            fingerprint,
+            max_mutants: std::num::NonZeroUsize::new(100).unwrap(),
+        })
+        .unwrap();
+    // Assert.
+    assert_eq!(resumed_run(loaded).run_id, "current");
 }

@@ -112,11 +112,21 @@ def acceptedResultWitnessDetected : Bool :=
   decide ((step accepted (.stop .cancelled)).state.acceptedResults ≠
     (brokenStopDropsResults accepted).state.acceptedResults)
 
+def restorationPending : State :=
+  { State.withPending 1 .restoration with phase := .restoring }
+
+def brokenSkipRestoration (state : State) : Verdict :=
+  { state := { state with phase := .running }, emitted := [.ordinary], rejection := none }
+
+def skipRestorationWitnessDetected : Bool :=
+  decide ((step restorationPending (.complete 1 .ordinary)).emitted ≠
+    (brokenSkipRestoration restorationPending).emitted)
+
 def brokenWitnessesDetected : Bool :=
   duplicateWitnessDetected && lateStopWitnessDetected && stopSchedulingWitnessDetected &&
     repeatedCleanupWitnessDetected && normalCleaningStopWitnessDetected &&
     cleanupOrderingWitnessDetected &&
-    acceptedResultWitnessDetected
+    acceptedResultWitnessDetected && skipRestorationWitnessDetected
 
 example : brokenWitnessesDetected = true := by decide
 
@@ -150,12 +160,14 @@ private structure CaseSpec where
   schedule : List NamedEvent
 
 def phaseName : Phase → String
+  | .restoring => "restoring"
   | .running => "running"
   | .cleaning => "cleaning"
   | .finalPending => "final_pending"
   | .finished => "finished"
 
 def effectName : EffectKind → String
+  | .restoration => "restoration"
   | .ordinary => "ordinary"
   | .cleanup => "cleanup"
   | .finalOutput => "final_output"
@@ -205,6 +217,36 @@ private def named (name : String) (event : Event) : NamedEvent := { name, event 
 private def strict : String := "strict"
 
 private def specs : List CaseSpec := [
+  { id := "restoration_success"
+    mode := strict
+    scenario := "post_baseline_restoration"
+    initial := restorationPending
+    schedule := [named "complete_restoration" (.complete 1 .restoration)] },
+  { id := "restoration_duplicate"
+    mode := strict
+    scenario := "post_baseline_restoration"
+    initial := restorationPending
+    schedule := [named "complete_restoration" (.complete 1 .restoration), named "complete_restoration" (.complete 1 .restoration)] },
+  { id := "restoration_wrong_kind"
+    mode := strict
+    scenario := "post_baseline_restoration"
+    initial := restorationPending
+    schedule := [named "complete_wrong_cleanup" (.complete 1 .cleanup)] },
+  { id := "restoration_cancel"
+    mode := strict
+    scenario := "post_baseline_restoration"
+    initial := restorationPending
+    schedule := [named "cancel" (.stop .cancelled), named "complete_restoration" (.complete 1 .restoration)] },
+  { id := "restoration_deadline"
+    mode := strict
+    scenario := "post_baseline_restoration"
+    initial := restorationPending
+    schedule := [named "deadline" (.stop .deadline), named "complete_restoration" (.complete 1 .restoration)] },
+  { id := "restoration_stop_cleanup"
+    mode := strict
+    scenario := "post_baseline_restoration"
+    initial := restorationPending
+    schedule := [named "cancel" (.stop .cancelled), named "complete_cleanup" (.complete 2 .cleanup)] },
   { id := "unknown_completion_is_rejected"
     mode := strict
     scenario := "pending_resolve"

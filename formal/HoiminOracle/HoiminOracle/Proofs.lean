@@ -19,7 +19,7 @@ theorem rejected_preserves_state (state : State) (event : Event)
           | some expected =>
               by_cases correct : expected = kind
               · cases kind with
-                | ordinary =>
+                | ordinary | restoration =>
                     cases stopCause : state.stopCause <;>
                       simp [step, complete, retired, duplicate, pending, correct,
                         acceptCompletion, stopCause] at rejected
@@ -44,7 +44,7 @@ theorem accepted_completion_not_pending (state : State) (id : Nat) (kind : Effec
       | some expected =>
           by_cases correct : expected = kind
           · cases kind with
-            | ordinary =>
+            | ordinary | restoration =>
                 cases stopCause : state.stopCause <;>
                   simp [step, complete, retired, duplicate, pending, correct,
                     acceptCompletion, removePending, fresh, stopCause]
@@ -91,7 +91,7 @@ theorem no_ordinary_emission_after_stop (state : State) (event : Event)
           | some expected =>
               by_cases correct : expected = kind
               · cases kind with
-                | ordinary =>
+                | ordinary | restoration =>
                     cases stopCause : state.stopCause
                     · simp [stopCause] at stopped
                     · simp [step, complete, retired, duplicate, pending, correct,
@@ -145,7 +145,7 @@ theorem final_output_follows_cleanup_completion (state : State) (event : Event)
           | some expected =>
               by_cases correct : expected = kind
               · cases kind with
-                | ordinary =>
+                | ordinary | restoration =>
                     cases stopCause : state.stopCause <;>
                       simp [step, complete, retired, duplicate, pending, correct,
                         acceptCompletion, stopCause] at emitted
@@ -178,5 +178,18 @@ theorem accepted_result_survives_stop_interleaving :
     let accepted := step state (.complete 1 .ordinary)
     let stopped := step accepted.state (.stop .cancelled)
     accepted.state.acceptedResults = 1 ∧ stopped.state.acceptedResults = 1 := by decide
+
+-- Pending restoration permits ordinary dispatch only after its matching ACK.
+theorem restoration_requires_matching_completion (event : Event)
+    (dispatch : .ordinary ∈ (step { State.withPending 1 .restoration with phase := .restoring } event).emitted) :
+    event = .complete 1 .restoration := by
+  cases event with
+  | stop cause => simp [step, stop, State.withPending, State.initial] at dispatch
+  | complete id kind =>
+      by_cases identity : id = 1
+      · subst id
+        cases kind <;> simp_all [step, complete, pendingKind?, acceptCompletion,
+          State.withPending, State.initial, reject]
+      · simp [step, complete, pendingKind?, State.withPending, State.initial, Ne.symm identity, reject] at dispatch
 
 end HoiminOracle

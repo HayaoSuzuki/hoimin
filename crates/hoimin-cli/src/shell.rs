@@ -4707,7 +4707,7 @@ fn observe_accepted_transition(
 fn phase_stage(phase: RunPhase) -> Option<&'static str> {
     match phase {
         RunPhase::Copy | RunPhase::MaterializationVerification => Some("copy"),
-        RunPhase::Baseline => Some("baseline"),
+        RunPhase::Baseline | RunPhase::BaselineRestoration => Some("baseline"),
         RunPhase::Analyze => Some("analysis"),
         RunPhase::Mutants => Some("mutants"),
         RunPhase::Cleaning => Some("cleanup"),
@@ -9807,41 +9807,83 @@ mod tests {
             .expect("post-materialization verification remains part of the copy stage");
     }
 
+    macro_rules! direct_early_cleanup_stage_case {
+        ($name:ident, $phase:expr, $stage:literal) => {
+            #[test]
+            fn $name() {
+                // Arrange.
+                let mut collector = MetricsCollector::new("run-1");
+                collector.begin_stage($stage).unwrap();
+                let mut metrics = Some(collector);
+                let mut warnings = Vec::new();
+                // Act.
+                observe_accepted_transition(
+                    &mut metrics,
+                    &mut warnings,
+                    $phase,
+                    RunPhase::Cleaning,
+                    false,
+                    false,
+                    false,
+                );
+                observe_accepted_transition(
+                    &mut metrics,
+                    &mut warnings,
+                    RunPhase::Cleaning,
+                    RunPhase::Finished,
+                    false,
+                    false,
+                    true,
+                );
+                // Assert.
+                assert_eq!(warnings, Vec::new());
+                let metrics = metrics.unwrap().finish(0, 0).unwrap();
+                assert!(metrics.stages.iter().any(|metric| metric.name == $stage));
+                assert!(metrics.stages.iter().any(|metric| metric.name == "cleanup"));
+            }
+        };
+    }
+
+    direct_early_cleanup_stage_case!(
+        direct_early_cleanup_finishes_baseline,
+        RunPhase::Baseline,
+        "baseline"
+    );
+    direct_early_cleanup_stage_case!(
+        direct_early_cleanup_finishes_baseline_restoration,
+        RunPhase::BaselineRestoration,
+        "baseline"
+    );
+    direct_early_cleanup_stage_case!(
+        direct_early_cleanup_finishes_analysis,
+        RunPhase::Analyze,
+        "analysis"
+    );
+
     #[test]
-    fn direct_early_cleanup_finishes_the_departed_active_stage() {
-        for (phase, stage) in [
-            (RunPhase::Baseline, "baseline"),
-            (RunPhase::Analyze, "analysis"),
-        ] {
-            let mut collector = MetricsCollector::new("run-1");
-            collector.begin_stage(stage).unwrap();
-            let mut metrics = Some(collector);
-            let mut warnings = Vec::new();
-
-            observe_accepted_transition(
-                &mut metrics,
-                &mut warnings,
-                phase,
-                RunPhase::Cleaning,
-                false,
-                false,
-                false,
-            );
-            observe_accepted_transition(
-                &mut metrics,
-                &mut warnings,
-                RunPhase::Cleaning,
-                RunPhase::Finished,
-                false,
-                false,
-                true,
-            );
-
-            assert_eq!(warnings, Vec::new());
-            let metrics = metrics.unwrap().finish(0, 0).unwrap();
-            assert!(metrics.stages.iter().any(|metric| metric.name == stage));
-            assert!(metrics.stages.iter().any(|metric| metric.name == "cleanup"));
-        }
+    fn baseline_restoration_keeps_baseline_metrics_stage_open() {
+        // Arrange.
+        let mut collector = MetricsCollector::new("run-1");
+        collector.begin_stage("baseline").unwrap();
+        let mut metrics = Some(collector);
+        let mut warnings = Vec::new();
+        // Act.
+        observe_accepted_transition(
+            &mut metrics,
+            &mut warnings,
+            RunPhase::Baseline,
+            RunPhase::BaselineRestoration,
+            false,
+            false,
+            false,
+        );
+        // Assert.
+        assert_eq!(warnings, Vec::new());
+        metrics
+            .as_mut()
+            .unwrap()
+            .finish_stage("baseline")
+            .expect("restoration remains in the baseline stage");
     }
 
     #[test]
