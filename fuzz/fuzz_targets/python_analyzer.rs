@@ -1,30 +1,12 @@
 #![no_main]
 
-// These are the actual shipping modules, not copies. Keep their parser patch
-// and dependency versions aligned with the root and CLI manifests.
-#[allow(dead_code)]
-#[path = "../../crates/hoimin-cli/src/analyzer/types.rs"]
-mod types;
-use types::{AnalyzerCandidate, AnalyzerDiagnostic, AnalyzerDiagnosticCode};
-#[path = "../../crates/hoimin-cli/src/analyzer/visitor.rs"]
-pub(crate) mod visitor;
-
-// Match the shipping analyzer's namespace for its shared visitor imports.
-mod analyzer {
-    pub(crate) use crate::visitor;
-}
-
-#[allow(dead_code)]
-#[path = "../../crates/hoimin-cli/src/analyzer/rust.rs"]
-mod rust;
-
 use camino::Utf8Path;
 use hoimin_core::{
     CandidateDescriptor, CandidateValidationContext, MutationOperatorSelection, MutationProfile,
     validate_candidate_with_context,
 };
 use libfuzzer_sys::fuzz_target;
-use rust::{AnalysisError, AnalyzeRequest, analyze_source_cancellable};
+use hoimin_python::{AnalysisError, AnalyzeRequest, analyze_source_cancellable};
 
 fuzz_target!(|source: &str| {
     if source.len() > 4096 {
@@ -46,7 +28,7 @@ fuzz_target!(|source: &str| {
         }
     }
     let request = AnalyzeRequest {
-        payload: rust::payload::PayloadBudget::default(),
+        payload: hoimin_python::payload::PayloadBudget::default(),
         path: Utf8Path::new("input.py"),
         lines: &[],
         symbols: &[],

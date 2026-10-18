@@ -4,7 +4,7 @@ use std::cmp::Ordering;
 use std::collections::{BTreeSet, BinaryHeap, HashMap, HashSet};
 use std::ops::Range;
 
-use crate::analyzer::visitor::{self, Visitor};
+use crate::visitor::{self, Visitor};
 use camino::Utf8Path;
 use hoimin_core::{
     ByteSpan, LineRange, MutationOperator, MutationOperatorSelection, MutationProfile,
@@ -23,7 +23,7 @@ use ruff_text_size::{Ranged, TextRange};
 use super::{AnalyzerCandidate, AnalyzerDiagnostic, AnalyzerDiagnosticCode};
 
 #[path = "payload.rs"]
-pub(crate) mod payload;
+pub mod payload;
 use payload::{Charged, PayloadBudget, PayloadLease};
 
 #[path = "exception_hierarchy.rs"]
@@ -130,7 +130,10 @@ pub(super) fn payload_builder_work() -> (usize, usize) {
 }
 
 /// Collect syntactic definitions independently of mutation eligibility.
-pub(crate) fn definition_names(source: &str) -> Result<BTreeSet<String>, String> {
+///
+/// # Errors
+/// Returns a diagnostic for invalid syntax or unsupported AST depth.
+pub fn definition_names(source: &str) -> Result<BTreeSet<String>, String> {
     #[derive(Default)]
     struct Definitions {
         scope: Vec<String>,
@@ -169,7 +172,7 @@ pub(crate) fn definition_names(source: &str) -> Result<BTreeSet<String>, String>
     Ok(definitions.names)
 }
 
-pub(crate) struct AnalyzeRequest<'a> {
+pub struct AnalyzeRequest<'a> {
     pub payload: PayloadBudget,
     pub path: &'a Utf8Path,
     pub lines: &'a [LineRange],
@@ -179,16 +182,16 @@ pub(crate) struct AnalyzeRequest<'a> {
     pub max_candidates: usize,
 }
 
-pub(crate) struct AnalyzerOutput {
+pub struct AnalyzerOutput {
     pub candidates: Vec<Charged<AnalyzerCandidate>>,
     pub diagnostics: Vec<AnalyzerDiagnostic>,
     pub truncated: bool,
     #[cfg(test)]
-    pub retention: CandidateRetentionStats,
+    pub(crate) retention: CandidateRetentionStats,
     #[cfg(test)]
-    pub fact_lookups: FactLookupStats,
+    pub(crate) fact_lookups: FactLookupStats,
     #[cfg(test)]
-    pub candidate_token_lookups: CandidateTokenLookupStats,
+    pub(crate) candidate_token_lookups: CandidateTokenLookupStats,
 }
 
 #[cfg(test)]
@@ -331,7 +334,7 @@ impl CandidatePrefix {
             candidate,
             emission_sequence: sequence,
         });
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         self.payload.admitted();
         Ok(())
     }
@@ -356,7 +359,7 @@ impl CandidatePrefix {
 pub(crate) struct AnalysisCancelled;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
-pub(crate) enum AnalysisError {
+pub enum AnalysisError {
     #[error("candidate payload exceeds internal limit {limit} bytes")]
     PayloadLimit { limit: usize },
     #[error("analysis cancelled")]
@@ -375,13 +378,18 @@ impl From<AnalysisCancelled> for AnalysisError {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn analyze_source(request: &AnalyzeRequest<'_>, source: &str) -> AnalyzerOutput {
     analyze_source_cancellable(request, source, || false).expect(
         "the analyzer probe requires a source within the supported depth and payload limits",
     )
 }
 
-pub(crate) fn analyze_source_cancellable(
+/// Analyzes decoded source with cooperative cancellation and charged results.
+///
+/// # Errors
+/// Returns an error on cancellation, excessive depth, hierarchy bounds or payload exhaustion.
+pub fn analyze_source_cancellable(
     request: &AnalyzeRequest<'_>,
     source: &str,
     cancelled: impl Fn() -> bool,
@@ -389,11 +397,19 @@ pub(crate) fn analyze_source_cancellable(
     analyze_source_with_exceptions(request, source, &cancelled, None)
 }
 
+/// Analyzes source using an optional prebuilt project exception index.
+///
+/// # Errors
+/// Returns an error on cancellation, excessive depth, hierarchy bounds, changed
+/// indexed source or shared payload exhaustion. Invalid syntax is a diagnostic.
+///
+/// # Panics
+/// Panics if an internal token invariant is violated or payload accounting is poisoned.
 #[expect(
     clippy::too_many_lines,
     reason = "token and type-annotation candidates share local byte-span and source-order control flow"
 )]
-pub(crate) fn analyze_source_with_exceptions(
+pub fn analyze_source_with_exceptions(
     request: &AnalyzeRequest<'_>,
     source: &str,
     cancelled: &impl Fn() -> bool,
@@ -691,7 +707,7 @@ fn make_candidate(
     }
     #[cfg(test)]
     CANDIDATE_ORIGINAL_COPIES.set(CANDIDATE_ORIGINAL_COPIES.get().saturating_add(1));
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     request.payload.generated();
     let original = source.get(range)?.to_owned();
     Some(AnalyzerCandidate {
@@ -5945,6 +5961,13 @@ impl ControlFlowExits {
     }
 }
 
+#[cfg_attr(
+    not(test),
+    allow(
+        dead_code,
+        reason = "retained annotation observations are consumed by private semantic tests"
+    )
+)]
 struct AnnotationSite<'ast> {
     annotation: &'ast Expr,
     symbol: Option<String>,
@@ -6064,6 +6087,7 @@ pub(super) enum BindingFlowTestMutation {
 }
 
 impl<'ast, 'callback> AnnotationCollector<'ast, 'callback> {
+    #[cfg(test)]
     fn collect(module: &'ast ModModule) -> Vec<AnnotationSite<'ast>> {
         let mut collector = Self::empty();
         collector.visit_suite(&module.body);

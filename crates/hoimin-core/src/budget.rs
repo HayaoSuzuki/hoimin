@@ -37,6 +37,22 @@ pub struct LimitReached {
     pub available: u64,
 }
 
+fn check_budget_amount(
+    kind: BudgetKind,
+    requested: u64,
+    available: u64,
+) -> Result<(), LimitReached> {
+    if requested > available {
+        Err(LimitReached {
+            kind,
+            requested,
+            available,
+        })
+    } else {
+        Ok(())
+    }
+}
+
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum ReserveError {
     #[error(transparent)]
@@ -112,13 +128,8 @@ impl BudgetLedger {
     ) -> Result<ReservationId, ReserveError> {
         let reserved = self.reserved(kind);
         let available = self.limit(kind).saturating_sub(reserved);
-        if amount > available {
-            return Err(LimitReached {
-                kind,
-                requested: amount,
-                available,
-            }
-            .into());
+        if let Err(error) = check_budget_amount(kind, amount, available) {
+            return Err(error.into());
         }
         let id = match self.allocate_reservation_id() {
             Ok(id) => id,
@@ -444,6 +455,24 @@ impl WorkspaceCopyGrant {
     }
 }
 
+/// Checks immutable copy admission without creating a reservation.
+/// Equality is admitted; only worker copies are included.
+///
+/// # Errors
+/// Returns [`WorkspaceBudgetError::AggregateOverflow`] if multiplication overflows,
+/// or [`WorkspaceBudgetError::Reserve`] when the aggregate exceeds `available`.
+pub fn check_workspace_copy(
+    per_worker: u64,
+    workers: u32,
+    available: u64,
+) -> Result<u64, WorkspaceBudgetError> {
+    let aggregate = per_worker
+        .checked_mul(u64::from(workers))
+        .ok_or(WorkspaceBudgetError::AggregateOverflow)?;
+    check_budget_amount(BudgetKind::Copy, aggregate, available).map_err(ReserveError::from)?;
+    Ok(aggregate)
+}
+
 /// # Errors
 ///
 /// Returns [`WorkspaceBudgetError::AggregateOverflow`] or
@@ -455,10 +484,11 @@ pub fn reserve_workspace_copy(
     ledger: &mut BudgetLedger,
     preflight: &PreflightCompleted,
 ) -> Result<WorkspaceCopyGrant, WorkspaceBudgetError> {
-    let expected = preflight
-        .per_worker_logical_bytes
-        .checked_mul(u64::from(preflight.requested_workers))
-        .ok_or(WorkspaceBudgetError::AggregateOverflow)?;
+    let expected = check_workspace_copy(
+        preflight.per_worker_logical_bytes,
+        preflight.requested_workers,
+        u64::MAX,
+    )?;
     if expected != preflight.aggregate_logical_bytes {
         return Err(WorkspaceBudgetError::AggregateMismatch {
             per_worker: preflight.per_worker_logical_bytes,

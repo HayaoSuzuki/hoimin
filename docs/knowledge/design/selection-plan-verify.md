@@ -5,6 +5,16 @@ description: 候補発見と実行の分離、ランキング、部分集合、�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-998-selection
+  resource: ../../../crates/hoimin-core/src/machine/selection.rs
+  revision: 50b9c089ca73aeca2205636a2a9e1823cd244d39
+  working_tree: clean
+  sha256: 0f8d6ecf192787fc8b759801c380b02c4db5fc0d46261b9b58998af08fa67f85
+- id: issue-997-stop
+  resource: ../../../crates/hoimin-core/src/machine.rs
+  revision: 50b9c089ca73aeca2205636a2a9e1823cd244d39
+  working_tree: clean
+  sha256: 8516c95c43ed3442929466044a72b4d1941d697760353617e7c68a8b46c1650f
 - id: task-10-current-preview
   resource: ../../../crates/hoimin-cli/src/plan/preview.rs
   revision: c74410f56c8389ef246567318ddcade724dbe3f7
@@ -388,6 +398,26 @@ sources:
   sha256: 881f774b6a135f3d50f3acca3e379a0c8f0742349fd84964d526caa4073c421a
 
 ---
+
+# Checked execution selection (Issues #997 and #998)
+
+`RunSelection::{all, explicit, ordered}` constructs execution membership and
+immutable verification provenance together. Explicit accepts CandidateIds;
+ordered accepts Top or Sample and checks the unique selected count. Sample
+requires the exact saved ID order before deduplication. Empty Explicit and Top
+selections remain valid when selected is zero. `RunState::with_selection`
+consumes this owner; provenance cannot be attached later. Membership, ordered
+Collecting/Ready state and explicit matched history have one owner.[^issue-998-selection]
+
+Ordered stopping borrows the requested IDs to build one temporary rank map per
+merge. Stable sorting preserves requested order with candidate-sequence fallback
+for IDs without a rank. The map is derived state rather than persistent selection
+authority. Operation-count tests establish bounded rank preparation and lookup
+work, not a wall-time performance guarantee.[^issue-997-stop]
+
+Historical analyzer source entries retain their recorded paths and revisions.
+For current analyzer ownership and retrieval of moved historical files, see
+[the analyzer contract](analyzer.md#shared-pure-python-analysis-issues-995-and-996).
 
 # Single normalized root (Issue #949)
 
@@ -945,3 +975,6 @@ allocator overhead or an I/O deadline.[^issue-988-evidence]
 [^issue-988-evidence]: [Schema routing and allocation verification](../../maintenance/2026-10-19-issue-988-schema-probe.md).
 
 [^issue-984-compatibility]: [Baseline restoration and current execution fingerprint](../../compatibility.md#baseline-restoration-and-result-reuse-in-0130).
+
+[^issue-998-selection]: [crates/hoimin-core/src/machine/selection.rs](../../../crates/hoimin-core/src/machine/selection.rs).
+[^issue-997-stop]: [crates/hoimin-core/src/machine.rs](../../../crates/hoimin-core/src/machine.rs).

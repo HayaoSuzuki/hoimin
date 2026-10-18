@@ -131,8 +131,9 @@ proptest! {
             "../../hoimin-cli/tests/golden/reports/schema-v8-current.json"
         )).unwrap();
         let event = &mut document["mutants"][0];
+        let candidate_id = event["candidate"]["id"].as_str().unwrap().to_owned();
         event["diagnostics"] = serde_json::to_value(codes.into_iter().map(|code| hoimin_core::SessionDiagnostic {
-            mutant_id: "golden-mutant".into(), level: "error".into(), code, message: "evidence".into(),
+            mutant_id: candidate_id.clone(), level: "error".into(), code, message: "evidence".into(),
         }).collect::<Vec<_>>()).unwrap();
         // Act
         let decoded: hoimin_core::OutputEvent = serde_json::from_value(event.clone()).unwrap();
@@ -223,7 +224,7 @@ fn finished_event_rejects_nested_unknown_diagnostic_field() {
     ))
     .unwrap();
     document["mutants"][0]["diagnostics"] = serde_json::json!([{
-        "mutant_id":"golden-mutant","level":"error","code":"evidence","message":"detail","unknown":true
+        "mutant_id":document["mutants"][0]["candidate"]["id"],"level":"error","code":"evidence","message":"detail","unknown":true
     }]);
     // Act
     let result = serde_json::from_value::<hoimin_core::OutputEvent>(document["mutants"][0].clone());

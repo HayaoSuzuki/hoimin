@@ -14,7 +14,8 @@ pub enum AnalyzerDiagnosticCode {
 
 impl AnalyzerDiagnosticCode {
     /// Returns the stable external name without a caller-specific prefix.
-    pub(crate) const fn canonical_name(self) -> &'static str {
+    #[must_use]
+    pub const fn canonical_name(self) -> &'static str {
         match self {
             Self::InvalidSyntax => "invalid_syntax",
             Self::UnsupportedExceptionHierarchy => "exception_hierarchy_skipped",

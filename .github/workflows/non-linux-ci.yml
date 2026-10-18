@@ -63,6 +63,13 @@ jobs:
         run: rustup toolchain install
       - run: uv sync --frozen
       - run: cargo test --workspace
+      - name: Show native Windows disk-name acceptance
+        if: runner.os == 'Windows'
+        env:
+          CARGO_BUILD_JOBS: '2'
+          CARGO_INCREMENTAL: '0'
+          RUST_TEST_THREADS: '2'
+        run: cargo test --locked -p hoimin-cli --lib workspace::disk::native_name_tests -- --nocapture
       - run: cargo test --locked -p hoimin-cli --example generate_cli_reference
       - name: Check generated CLI reference
         run: cargo run --locked -p hoimin-cli --example generate_cli_reference -- --check

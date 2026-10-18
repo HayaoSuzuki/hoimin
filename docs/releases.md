@@ -62,15 +62,26 @@ checkout and the Linux wheel at glibc 2.17 with Python 3.14. See the
 [artifact smoke checks](artifact-smoke.md) for runtime/ABI distinctions, evidence
 artifacts and failure gates.
 
-The workspace version is the minimum version for the next release, currently
-`0.10.0`. CI chooses the higher of that minimum and the highest stable tag's
-next patch version. When raising the minimum, keep
-`Cargo.toml`, `pyproject.toml`, `Cargo.lock`, and `uv.lock` consistent when
-changing it. Also update the `hoimin-core` entry in `fuzz/Cargo.lock` so
-the separate fuzz workspace remains consistent. Update the two repository-package
+The workspace version in `Cargo.toml` is the minimum version for the next
+release. CI chooses the higher of that minimum and the highest stable tag's
+next patch version. When raising the minimum, keep `Cargo.toml`,
+`pyproject.toml`, `Cargo.lock` and `uv.lock` consistent. Also update the
+`hoimin-core` and `hoimin-python` entries in `fuzz/Cargo.lock` so the separate
+fuzz workspace remains consistent. Update the three shipping repository-package
 license exception ranges in `deny.toml` when crossing a minor-version boundary.
-CI embeds the reserved version
-into those four files in its build checkout, without committing version changes back to `main`.
+CI embeds the reserved version into root `Cargo.toml`, `pyproject.toml`, root
+`Cargo.lock` and `uv.lock` in its build checkout, without committing version
+changes back to `main`.
+
+Source distributions include an explicit list of vendored parser build and
+provenance files from `pyproject.toml`. Keep that list synchronized when adding
+or moving vendored Rust modules; build/cache directories and scratch outputs
+must stay outside the archive. `tests/test_sdist.py` builds a real archive and
+checks the internal Python API and copied parser files byte-for-byte, including
+exclusion of untracked outputs. Its `hoimin-python/Cargo.toml` check compares
+text after CRLF-to-LF normalization because Maturin normalizes that workspace
+manifest in the archive. It uses the declared Maturin development dependency and
+Cargo metadata without compiling Rust.
 
 Before reserving a new tag, CI checks that the commit descends from the
 highest stable tag's commit, fetching complete history when needed. A delayed

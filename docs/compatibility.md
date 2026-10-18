@@ -4,6 +4,31 @@ hoimin is currently a 0.x CLI. This policy describes how maintainers classify
 changes and tell users what to update. A patch release can fix incorrect
 behavior; it does not promise identical mutation candidates or scores.
 
+## Current report identities and internal Rust callers
+
+Current JSON and JSONL report readers reject a candidate whose saved ID disagrees
+with its identity fields, including path, source hash, operator, span and
+replacement. Progress and review return exit 2 for this malformed input. Display
+line, column and symbol are not identity fields. Valid schema-8 writer output and
+mutant-ID v1 bytes are unchanged; no report conversion, schema change or new
+fingerprint version is required. This corrects invalid-input acceptance under the
+existing patch policy; the package compatibility floor remains 0.13.0.
+
+Internal Rust callers now construct checked `RunSelection` values through
+`all`, `explicit`, or `ordered` and pass them to `RunState::with_selection`.
+The former filter constructors and later verification-metadata setter have been
+removed. Migrate callers directly; execution IDs and verification provenance
+are validated together at construction.
+
+## Early copy-budget admission
+
+Known `--max-copy-size` exhaustion is rejected before snapshot content writes
+and may be reported before later source-content errors. Copy equality remains
+accepted. Rejection returns exit 2 without starting the baseline; the run summary
+is incomplete after cleanup. An authorized metrics sidecar can describe completed
+target discovery and cleanup, with no completed preflight or execution stages.
+Existing metrics destination protections remain enforced before admission.
+
 ## Baseline restoration and result reuse in 0.13.0
 
 After a successful baseline, hoimin restores the worker to its preflight snapshot

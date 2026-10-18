@@ -16,16 +16,12 @@ resolver = "3"
 [dependencies]
 blake3 = "1.8"
 hoimin-core = { path = "../crates/hoimin-core" }
+hoimin-python = { path = "../crates/hoimin-python" }
 libfuzzer-sys = "0.4"
 camino = "1.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", features = ["raw_value"] }
 thiserror = "2.0"
-num-bigint = "0.5.0"
-num-traits = "0.2.19"
-ruff_python_parser = { version = "0.6.2", package = "littrs-ruff-python-parser" }
-ruff_python_ast = { version = "0.6.2", package = "littrs-ruff-python-ast" }
-ruff_text_size = { version = "0.6.2", package = "littrs-ruff-text-size" }
 
 # The analyzer targets must use the same parser patch as the shipping workspace.
 [patch.crates-io]

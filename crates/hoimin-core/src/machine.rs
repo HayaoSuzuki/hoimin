@@ -1,4 +1,10 @@
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+mod selection;
+#[cfg(test)]
+mod stop_tests;
+use selection::OrderedCandidatePhase;
+pub use selection::{RunSelection, RunSelectionError};
+
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 
 use thiserror::Error;
 
@@ -13,9 +19,8 @@ use crate::{
     ProcessOutputState, ProcessTermination, ReadCandidate, ReservationId, ResetWorker,
     ResolveTargets, ResumeDecision, ReusedMutationStatus, RunBudgets, RunConfig, RunEffect,
     RunEvent, RunFingerprint, RunProcess, RunStarted, RunSummary, SessionDiagnostic, TargetSlice,
-    VerificationSelection, VerificationSelectionMode, VerifyOriginals, WorkspaceCopyGrant,
-    auto_mutant_timeout, contract_ensure, exit_code_for, project_top_budget,
-    release_workspace_copy, reserve_workspace_copy,
+    VerifyOriginals, WorkspaceCopyGrant, auto_mutant_timeout, contract_ensure, exit_code_for,
+    project_top_budget, release_workspace_copy, reserve_workspace_copy,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -201,42 +206,6 @@ struct CleanupFlags {
 }
 
 #[derive(Clone, Debug)]
-struct OrderedCandidateState {
-    ids: Vec<String>,
-    phase: OrderedCandidatePhase,
-}
-
-#[derive(Clone, Debug)]
-enum OrderedCandidatePhase {
-    Collecting {
-        discovered: BTreeMap<String, MutationCandidate>,
-    },
-    Ready {
-        remaining: VecDeque<MutationCandidate>,
-    },
-}
-
-impl OrderedCandidateState {
-    /// Transfers only owned candidates in request order, ending collection even
-    /// when stopped before EOF. Undiscovered requested IDs have no result to emit.
-    fn take_remaining(&mut self) -> VecDeque<MutationCandidate> {
-        match std::mem::replace(
-            &mut self.phase,
-            OrderedCandidatePhase::Ready {
-                remaining: VecDeque::new(),
-            },
-        ) {
-            OrderedCandidatePhase::Collecting { mut discovered } => self
-                .ids
-                .iter()
-                .filter_map(|id| discovered.remove(id))
-                .collect(),
-            OrderedCandidatePhase::Ready { remaining } => remaining,
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
 pub struct RunState {
     run_id: String,
     config: RunConfig,
@@ -264,10 +233,7 @@ pub struct RunState {
     pending_failure: Option<EffectFailed>,
     flags: RunFlags,
     stopped_candidates: VecDeque<StoppedCandidate>,
-    candidate_filter: Option<BTreeSet<String>>,
-    matched_candidate_ids: BTreeSet<String>,
-    ordered_candidates: Option<Box<OrderedCandidateState>>,
-    verification_selection: Option<VerificationSelection>,
+    selection: RunSelection,
     analysis_diagnostics: VecDeque<AnalysisDiagnostic>,
     pending_analysis: Option<AnalysisFinished>,
 }
@@ -277,6 +243,16 @@ impl RunState {
     pub fn new(
         run_id: impl Into<String>,
         config: RunConfig,
+        resource_control: crate::ResourceControl,
+    ) -> Self {
+        Self::with_selection(run_id, config, RunSelection::all(), resource_control)
+    }
+
+    /// Initializes execution with checked membership, ordering and provenance.
+    pub fn with_selection(
+        run_id: impl Into<String>,
+        config: RunConfig,
+        selection: RunSelection,
         resource_control: crate::ResourceControl,
     ) -> Self {
         let budgets = RunBudgets {
@@ -335,70 +311,10 @@ impl RunState {
                 },
             },
             stopped_candidates: VecDeque::new(),
-            candidate_filter: None,
-            matched_candidate_ids: BTreeSet::new(),
-            ordered_candidates: None,
-            verification_selection: None,
+            selection,
             analysis_diagnostics: VecDeque::new(),
             pending_analysis: None,
         }
-    }
-
-    /// Creates a state that executes only candidates whose IDs are explicitly selected.
-    #[must_use]
-    pub fn with_candidate_filter(
-        run_id: impl Into<String>,
-        config: RunConfig,
-        candidate_ids: BTreeSet<String>,
-        resource_control: crate::ResourceControl,
-    ) -> Self {
-        let mut state = Self::new(run_id, config, resource_control);
-        state.candidate_filter = Some(candidate_ids);
-        state
-    }
-
-    /// Creates a state that executes selected candidates in the supplied order.
-    ///
-    /// Duplicate candidate IDs are ignored after their first occurrence, preserving
-    /// the requested order of unique IDs.
-    #[must_use]
-    pub fn with_ordered_candidate_filter(
-        run_id: impl Into<String>,
-        config: RunConfig,
-        ordered_candidate_ids: Vec<String>,
-        resource_control: crate::ResourceControl,
-    ) -> Self {
-        let mut state = Self::new(run_id, config, resource_control);
-        let mut candidate_filter = BTreeSet::new();
-        let ordered_candidate_ids = ordered_candidate_ids
-            .into_iter()
-            .filter(|candidate_id| candidate_filter.insert(candidate_id.clone()))
-            .collect();
-        state.candidate_filter = Some(candidate_filter);
-        state.ordered_candidates = Some(Box::new(OrderedCandidateState {
-            ids: ordered_candidate_ids,
-            phase: OrderedCandidatePhase::Collecting {
-                discovered: BTreeMap::new(),
-            },
-        }));
-        state
-    }
-
-    #[must_use]
-    pub fn with_verification_selection(mut self, selection: VerificationSelection) -> Self {
-        self.verification_selection = Some(selection);
-        self
-    }
-
-    fn is_ordered_verification(&self) -> bool {
-        self.verification_selection
-            .as_ref()
-            .is_some_and(|selection| {
-                matches!(
-                    selection.mode(),
-                    VerificationSelectionMode::Top | VerificationSelectionMode::Sample
-                )
-            })
     }
 
     #[must_use]
@@ -664,7 +580,7 @@ impl RunState {
         &mut self,
         value: AnalysisFinished,
     ) -> Result<Vec<RunEffect>, MachineError> {
-        if self.candidate_filter.is_some() {
+        if self.selection.candidate_ids().is_some() {
             self.flags.outcome.incomplete |= value.truncated;
             match value.spool {
                 None if !value.truncated && !self.targets.is_empty() => self.analyze_next(),
@@ -779,9 +695,7 @@ impl RunState {
             RunStarted::minimal(self.run_id.clone(), sequence, self.resource_control.clone());
         run_started.normalized_config = Some(self.config.clone());
         run_started.resume = self.resume_outcome;
-        run_started
-            .verification_selection
-            .clone_from(&self.verification_selection);
+        run_started.verification_selection = self.selection.verification_selection().cloned();
         let output = EmitOutput {
             id,
             event: OutputEvent::RunStarted(run_started),
@@ -891,8 +805,8 @@ impl RunState {
     }
 
     fn schedule_read_or_finalize(&mut self) -> Result<Vec<RunEffect>, MachineError> {
-        if self.ordered_candidates.is_some() {
-            if self.ordered_candidates.as_ref().is_some_and(|ordered| {
+        if self.selection.ordered_state().is_some() {
+            if self.selection.ordered_state().is_some_and(|ordered| {
                 matches!(ordered.phase, OrderedCandidatePhase::Collecting { .. })
             }) {
                 if !self.candidate_read_pending()
@@ -905,14 +819,12 @@ impl RunState {
 
             let mut effects = Vec::new();
             while let Some(worker) = self.idle_worker() {
-                let Some(candidate) =
-                    self.ordered_candidates
-                        .as_mut()
-                        .and_then(|ordered| match &mut ordered.phase {
-                            OrderedCandidatePhase::Ready { remaining } => remaining.pop_front(),
-                            OrderedCandidatePhase::Collecting { .. } => None,
-                        })
-                else {
+                let Some(candidate) = self.selection.ordered_state_mut().and_then(|ordered| {
+                    match &mut ordered.phase {
+                        OrderedCandidatePhase::Ready { remaining } => remaining.pop_front(),
+                        OrderedCandidatePhase::Collecting { .. } => None,
+                    }
+                }) else {
                     break;
                 };
                 *self.worker_mut(worker)? = WorkerState::Ready(candidate);
@@ -928,7 +840,7 @@ impl RunState {
                     effects.extend(self.candidate_effects(worker)?);
                 }
             }
-            if self.ordered_candidates.as_ref().is_some_and(|ordered| {
+            if self.selection.ordered_state().is_some_and(|ordered| {
                 matches!(
                     &ordered.phase,
                     OrderedCandidatePhase::Ready { remaining } if remaining.is_empty()
@@ -970,13 +882,13 @@ impl RunState {
         *self.worker_mut(worker)? = WorkerState::default();
         if let Some(candidate) = candidate {
             if self
-                .candidate_filter
-                .as_ref()
+                .selection
+                .candidate_ids()
                 .is_some_and(|filter| filter.contains(&candidate.id))
             {
                 let ordered = self
-                    .ordered_candidates
-                    .as_mut()
+                    .selection
+                    .ordered_state_mut()
                     .expect("ordered collection requires ordered state");
                 let OrderedCandidatePhase::Collecting { discovered } = &mut ordered.phase else {
                     unreachable!("ordered collection requires the collecting phase");
@@ -988,8 +900,8 @@ impl RunState {
 
         self.ensure_selected_candidates_discovered()?;
         let ordered = self
-            .ordered_candidates
-            .as_mut()
+            .selection
+            .ordered_state_mut()
             .expect("ordered collection requires ordered state");
         ordered.phase = OrderedCandidatePhase::Ready {
             remaining: ordered.take_remaining(),
@@ -998,21 +910,7 @@ impl RunState {
     }
 
     fn ensure_selected_candidates_discovered(&self) -> Result<(), MachineError> {
-        let missing = if let Some(ordered) = &self.ordered_candidates {
-            match &ordered.phase {
-                OrderedCandidatePhase::Collecting { discovered } => ordered
-                    .ids
-                    .iter()
-                    .find(|candidate_id| !discovered.contains_key(*candidate_id)),
-                OrderedCandidatePhase::Ready { .. } => None,
-            }
-        } else {
-            self.candidate_filter.as_ref().and_then(|candidate_filter| {
-                candidate_filter
-                    .iter()
-                    .find(|candidate_id| !self.matched_candidate_ids.contains(*candidate_id))
-            })
-        };
+        let missing = self.selection.missing_id();
         if let Some(candidate_id) = missing {
             return Err(MachineError::SelectedCandidateMissing(candidate_id.clone()));
         }
@@ -1195,7 +1093,7 @@ impl RunState {
                 stopped.push(candidate);
             }
         }
-        if let Some(ordered) = self.ordered_candidates.as_mut() {
+        if let Some(ordered) = self.selection.ordered_state_mut() {
             stopped.extend(
                 ordered
                     .take_remaining()
@@ -1204,7 +1102,21 @@ impl RunState {
             );
             self.flags.scheduling.candidate_exhausted = true;
         }
+        // The selection owns request order; borrow one temporary index for this merge.
+        let requested_ranks: Option<HashMap<&str, usize>> =
+            self.selection.ordered_ids().map(|ids| {
+                ids.iter()
+                    .enumerate()
+                    .map(|(rank, id)| {
+                        #[cfg(test)]
+                        stop_tests::record_requested_id_visit();
+                        (id.as_str(), rank)
+                    })
+                    .collect()
+            });
         stopped.sort_by_key(|candidate| {
+            #[cfg(test)]
+            stop_tests::record_rank_query();
             let candidate = match candidate {
                 StoppedCandidate::NotStarted(candidate)
                 | StoppedCandidate::SyntheticNotStarted(candidate, _)
@@ -1212,9 +1124,9 @@ impl RunState {
                 | StoppedCandidate::SyntheticFinished(candidate, _) => candidate,
                 StoppedCandidate::Finished(result) => &result.candidate,
             };
-            self.ordered_candidates
+            requested_ranks
                 .as_ref()
-                .and_then(|ordered| ordered.ids.iter().position(|id| id == &candidate.id))
+                .and_then(|ranks| ranks.get(candidate.id.as_str()).copied())
                 .unwrap_or_else(|| usize::try_from(candidate.sequence).unwrap_or(usize::MAX))
         });
         self.stopped_candidates = stopped.into();
@@ -1286,7 +1198,7 @@ impl RunState {
                 complete: self.complete(),
                 exit_code: self.exit_code(),
                 disk: self.disk_summary.clone(),
-                verification_selection: self.verification_selection.clone(),
+                verification_selection: self.selection.verification_selection().cloned(),
             }),
         };
         Ok(vec![
@@ -1555,8 +1467,8 @@ pub fn transition(
         }
         RunEvent::RemainingBudgetObserved(value) if state.phase == RunPhase::BudgetCheck => {
             let selection = state
-                .verification_selection
-                .as_ref()
+                .selection
+                .verification_selection()
                 .ok_or(MachineError::WrongPhase { phase: state.phase })?;
             let projection = project_top_budget(
                 selection.selected(),
@@ -1614,7 +1526,7 @@ pub fn transition(
             }
             let worker = value.worker;
             state.candidate_cursor = value.next_cursor;
-            if state.ordered_candidates.as_ref().is_some_and(|ordered| {
+            if state.selection.ordered_state().is_some_and(|ordered| {
                 matches!(ordered.phase, OrderedCandidatePhase::Collecting { .. })
             }) {
                 state.collect_ordered_candidate(worker, value.candidate)?
@@ -1622,12 +1534,10 @@ pub fn transition(
                 if value.candidate.is_none() {
                     state.ensure_selected_candidates_discovered()?;
                 }
-                let selected = value.candidate.as_ref().is_none_or(|candidate| {
-                    state.candidate_filter.as_ref().is_none_or(|filter| {
-                        filter.contains(&candidate.id)
-                            && state.matched_candidate_ids.insert(candidate.id.clone())
-                    })
-                });
+                let selected = value
+                    .candidate
+                    .as_ref()
+                    .is_none_or(|candidate| state.selection.select_streamed(&candidate.id));
                 if !selected {
                     *state.worker_mut(worker)? = WorkerState::default();
                     state.schedule_read_or_finalize()?
@@ -1848,7 +1758,7 @@ pub fn transition(
                 return Err(MachineError::UnknownWorker(value.worker));
             }
             *state.worker_mut(value.worker)? = WorkerState::Idle;
-            if state.is_ordered_verification() {
+            if state.selection.ordered_state().is_some() {
                 state.phase = RunPhase::BudgetCheck;
                 let id = state.allocate_id()?;
                 vec![RunEffect::ObserveRemainingBudget(ObserveRemainingBudget {

@@ -21,7 +21,7 @@ from hypothesis import given, settings  # noqa: E402
 from hypothesis import strategies as st  # noqa: E402
 
 
-@given(st.permutations(range(3)), st.permutations(range(4)))
+@given(st.permutations(range(4)), st.permutations(range(5)))
 @settings(max_examples=100, deadline=None)
 def test_graph_order_does_not_change_validation(
     components: list[int],

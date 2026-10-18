@@ -6,6 +6,8 @@ use hoimin_cli::{
 };
 use serde_json::{Value, json};
 
+#[path = "support/candidate_identity.rs"]
+mod candidate_identity;
 #[path = "support/heap_tracking.rs"]
 mod heap_tracking;
 
@@ -191,11 +193,11 @@ fn large_report(count: usize) -> Value {
         .map(|index| {
             let mut mutant = template.clone();
             mutant["sequence"] = json!(index + 4);
-            mutant["candidate"]["id"] = json!(format!("mutant-{index}"));
             mutant["candidate"]["sequence"] = json!(index);
             mutant["candidate"]["span"]["start"] = json!(index);
             mutant["candidate"]["original"] = json!(format!("original-{index}"));
             mutant["candidate"]["replacement"] = json!(format!("replacement-{index}"));
+            candidate_identity::assign_id(&mut mutant["candidate"]);
             mutant["outcome"]["executed"]["output"]["token"] =
                 json!(format!("mutant-output-{index}"));
             mutant

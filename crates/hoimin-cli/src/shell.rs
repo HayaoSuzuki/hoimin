@@ -1387,7 +1387,8 @@ fn prepare_shell_setup_sync_in(
     )
     .with_import_roots(config.import_roots.clone())
     .with_managed_root(Arc::clone(&execution_root))
-    .with_max_owned_bytes(config.limits.max_workspace_size.get());
+    .with_max_owned_bytes(config.limits.max_workspace_size.get())
+    .with_max_copy_bytes(config.limits.max_copy_size.get());
     boundary(ShellSetupBoundary::WorkspaceCreated);
     let backend = resource_backend(&config).map_err(|error| error.to_string())?;
     boundary(ShellSetupBoundary::BackendCreated);
@@ -2407,16 +2408,10 @@ where
         stdout,
         stderr,
         control,
-        CandidateSelection::All,
+        hoimin_core::RunSelection::all(),
         None,
     )
     .await
-}
-
-enum CandidateSelection {
-    All,
-    Explicit(BTreeSet<String>, hoimin_core::VerificationSelection),
-    Ordered(Vec<String>, hoimin_core::VerificationSelection),
 }
 
 pub(crate) async fn run_verified<Stdout, Stderr>(
@@ -2434,14 +2429,6 @@ where
         crate::write_terminal_error(error.clone(), stderr).await;
         return Err(error);
     }
-    let selection = match verified.selection {
-        crate::plan::ResolvedVerifySelection::ExplicitCandidates(ids) => {
-            CandidateSelection::Explicit(ids, verified.verification_selection)
-        }
-        crate::plan::ResolvedVerifySelection::RankedCandidates(ids) => {
-            CandidateSelection::Ordered(ids, verified.verification_selection)
-        }
-    };
     let control = RunControl::new();
     let mut context = prepare_loop_context(&verified.config, stdout, stderr, &control).await?;
     context.metrics_protected_inputs = verified.manifest_inputs;
@@ -2449,7 +2436,7 @@ where
         verified.config,
         context,
         control,
-        selection,
+        verified.selection,
         Some(verified.fingerprint_copy_inputs),
     ))
     .await
@@ -2460,7 +2447,7 @@ async fn run_loop_prepared<Stdout, Stderr>(
     stdout: Stdout,
     stderr: Stderr,
     control: RunControl,
-    candidate_selection: CandidateSelection,
+    candidate_selection: hoimin_core::RunSelection,
     fingerprint_copy_inputs: Option<BTreeSet<Utf8PathBuf>>,
 ) -> Result<i32, String>
 where
@@ -2517,7 +2504,7 @@ async fn run_loop_context(
     config: RunConfig,
     mut context: ShellContext,
     control: RunControl,
-    candidate_selection: CandidateSelection,
+    candidate_selection: hoimin_core::RunSelection,
     fingerprint_copy_inputs: Option<BTreeSet<Utf8PathBuf>>,
 ) -> Result<i32, String> {
     let metrics_requested = config.output.metrics.is_some();
@@ -2564,31 +2551,12 @@ async fn run_loop_context(
     let mut disk_lifecycle = ShellDiskLifecycle::new([DiskRootId::Execution, DiskRootId::Delivery])
         .map_err(|error| format!("disk lifecycle initialization failed: {error}"))?;
     let run_result = async {
-        let mut state = Box::new(match candidate_selection {
-            CandidateSelection::Explicit(candidate_ids, verification_selection) => {
-                RunState::with_candidate_filter(
-                    initial_run_id.clone(),
-                    config,
-                    candidate_ids,
-                    context.process.resource_control(),
-                )
-                .with_verification_selection(verification_selection)
-            }
-            CandidateSelection::Ordered(candidate_ids, verification_selection) => {
-                RunState::with_ordered_candidate_filter(
-                    initial_run_id.clone(),
-                    config,
-                    candidate_ids,
-                    context.process.resource_control(),
-                )
-                .with_verification_selection(verification_selection)
-            }
-            CandidateSelection::All => RunState::new(
-                initial_run_id.clone(),
-                config,
-                context.process.resource_control(),
-            ),
-        });
+        let mut state = Box::new(RunState::with_selection(
+            initial_run_id.clone(),
+            config,
+            candidate_selection,
+            context.process.resource_control(),
+        ));
         let (next, initial) = transition(*state, RunEvent::StartRequested(StartRequested))
             .map_err(|error| error.to_string())?;
         *state = next;
@@ -5422,10 +5390,11 @@ mod tests {
             .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
             .unwrap();
         std::fs::write(project.path().join("target.py"), source).unwrap();
-        let selection = CandidateSelection::Explicit(
+        let selection = hoimin_core::RunSelection::explicit(
             BTreeSet::from([missing_id.to_owned()]),
             hoimin_core::VerificationSelection::candidate_ids(1, 1, false).unwrap(),
-        );
+        )
+        .unwrap();
         let stdout = CollectingWriter::default();
         let stderr = CollectingWriter::default();
         let error = run_loop_prepared(
@@ -7526,6 +7495,34 @@ mod tests {
                 "boundary {selected:?} leaked managed roots: {residual:?}"
             );
         }
+    }
+
+    #[test]
+    fn shell_setup_passes_copy_cap_to_workspace_admission() {
+        // Arrange: this bypasses the final core reservation to test early admission.
+        let project = tempfile::tempdir().unwrap();
+        let managed_parent = tempfile::tempdir().unwrap();
+        let parent = Utf8Path::from_path(managed_parent.path()).unwrap();
+        let mut config = shell_setup_test_config(&project)
+            .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
+            .unwrap();
+        config.limits.jobs = std::num::NonZeroUsize::new(1).unwrap();
+        config.limits.max_copy_size = std::num::NonZeroU64::new(1).unwrap();
+        let mut prepared = prepare_shell_setup_sync_in(config, parent, &|_| {}).unwrap();
+
+        // Act.
+        let result = prepared
+            .workspace
+            .handle_preflight(Preflight { id: EffectId(1) });
+
+        // Assert: the source fixture contains ten bytes and there is one worker.
+        assert!(matches!(
+            result.unwrap_err().failure,
+            hoimin_core::EffectFailure::CopyLimit {
+                requested: 10,
+                allowance: 1
+            }
+        ));
     }
 
     #[test]

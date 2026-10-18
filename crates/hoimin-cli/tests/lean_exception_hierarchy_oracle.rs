@@ -1,4 +1,4 @@
-#[path = "support/exception_hierarchy_oracle.rs"]
+#[path = "../../hoimin-python/tests/support/exception_hierarchy_oracle.rs"]
 mod corpus;
 use corpus::Observation;
 use hoimin_cli::cli::parse_config_from as parse_config;

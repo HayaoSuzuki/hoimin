@@ -1,7 +1,7 @@
 //! Project inputs shared by hierarchy analysis and fingerprint revalidation.
-use super::rust::exception_hierarchy::{ExceptionIndex, MAX_SUMMARY_ENTRIES};
 use camino::{Utf8Path, Utf8PathBuf};
 use hoimin_core::{MutationOperator, RunConfig, Selection};
+use hoimin_python::{ExceptionIndex, MAX_SUMMARY_ENTRIES};
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
@@ -244,21 +244,26 @@ mod tests {
         crate::fingerprint_inputs::recheck_config(&config, &config.selection.root).unwrap();
         let replacements = result
             .map(|index| {
-                let parsed = ruff_python_parser::parse_module(service).unwrap();
-                let mut replacements = Vec::new();
-                index
-                    .collect(
-                        Utf8Path::new("service.py"),
-                        parsed.syntax(),
-                        100,
-                        &|| false,
-                        |_, replacement| {
-                            replacements.push(replacement);
-                            Ok(())
-                        },
-                    )
-                    .unwrap();
-                replacements
+                let operators = serde_json::from_str("[\"exception_hierarchy\"]").unwrap();
+                hoimin_python::analyze_source_with_exceptions(
+                    &hoimin_python::AnalyzeRequest {
+                        payload: hoimin_python::payload::PayloadBudget::default(),
+                        path: Utf8Path::new("service.py"),
+                        lines: &[],
+                        symbols: &[],
+                        operators: &operators,
+                        profile: hoimin_core::MutationProfile::Full,
+                        max_candidates: 100,
+                    },
+                    service,
+                    &|| false,
+                    Some(&index),
+                )
+                .unwrap()
+                .candidates
+                .into_iter()
+                .map(|candidate| candidate.value.replacement)
+                .collect::<Vec<_>>()
             })
             .unwrap_or_default();
 

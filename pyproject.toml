@@ -27,6 +27,33 @@ Changelog = "https://github.com/HayaoSuzuki/hoimin/releases"
 [tool.maturin]
 bindings = "bin"
 manifest-path = "crates/hoimin-cli/Cargo.toml"
+# Keep the vendored build/provenance inputs explicit; exclude caches and outputs.
+include = [
+    { path = "vendor/ruff_python_parser/Cargo.toml", format = "sdist" },
+    { path = "vendor/ruff_python_parser/LICENSE", format = "sdist" },
+    { path = "vendor/ruff_python_parser/README.hoimin.md", format = "sdist" },
+    { path = "vendor/ruff_python_parser/src/ast_cleanup.rs", format = "sdist" },
+    { path = "vendor/ruff_python_parser/src/error.rs", format = "sdist" },
+    { path = "vendor/ruff_python_parser/src/lexer.rs", format = "sdist" },
+    { path = "vendor/ruff_python_parser/src/lexer/cursor.rs", format = "sdist" },
+    { path = "vendor/ruff_python_parser/src/lexer/indentation.rs", format = "sdist" },
+    { path = "vendor/ruff_python_parser/src/lexer/interpolated_string.rs", format = "sdist" },
+    { path = "vendor/ruff_python_parser/src/lib.rs", format = "sdist" },
+    { path = "vendor/ruff_python_parser/src/parser/expression.rs", format = "sdist" },
+    { path = "vendor/ruff_python_parser/src/parser/helpers.rs", format = "sdist" },
+    { path = "vendor/ruff_python_parser/src/parser/mod.rs", format = "sdist" },
+    { path = "vendor/ruff_python_parser/src/parser/options.rs", format = "sdist" },
+    { path = "vendor/ruff_python_parser/src/parser/pattern.rs", format = "sdist" },
+    { path = "vendor/ruff_python_parser/src/parser/progress.rs", format = "sdist" },
+    { path = "vendor/ruff_python_parser/src/parser/recovery.rs", format = "sdist" },
+    { path = "vendor/ruff_python_parser/src/parser/statement.rs", format = "sdist" },
+    { path = "vendor/ruff_python_parser/src/semantic_errors.rs", format = "sdist" },
+    { path = "vendor/ruff_python_parser/src/string.rs", format = "sdist" },
+    { path = "vendor/ruff_python_parser/src/token.rs", format = "sdist" },
+    { path = "vendor/ruff_python_parser/src/token_set.rs", format = "sdist" },
+    { path = "vendor/ruff_python_parser/src/token_source.rs", format = "sdist" },
+    { path = "vendor/ruff_python_parser/src/typing.rs", format = "sdist" },
+]
 
 [dependency-groups]
 dev = [

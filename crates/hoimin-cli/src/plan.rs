@@ -5,20 +5,21 @@ use std::path::{Path, PathBuf};
 use camino::{Utf8Path, Utf8PathBuf};
 use hoimin_core::{
     CandidateDescriptor, CandidateValidationContext, FingerprintInputFile, MutationCandidate,
-    OutputConfig, PlanConfig, RunConfig, TargetSlice, VerificationSelection, VerificationTopPolicy,
-    normalized_relative_path, validate_candidate_with_context,
+    OutputConfig, PlanConfig, RunConfig, RunSelection, TargetSlice, VerificationSelection,
+    VerificationTopPolicy, normalized_relative_path, validate_candidate_with_context,
 };
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::analyzer::Discovery;
 #[cfg(test)]
 use crate::analyzer::DiscoveryControl;
-use crate::analyzer::{AnalyzerDiagnostic, AnalyzerDiagnosticCode, Discovery};
 use crate::cli::{OutputFormat, TopSelectionPolicy, VerifySelection};
 use crate::fingerprint_inputs;
 use crate::resource::{self, ResourceError};
 use crate::shell;
 use crate::target::TargetHandler;
+use hoimin_python::{AnalyzerDiagnostic, AnalyzerDiagnosticCode};
 
 mod preview;
 pub use preview::VerifyPreview;
@@ -159,8 +160,7 @@ pub struct VerifiedPlan {
     preview: VerifyPreview,
     config: RunConfig,
     fingerprint_copy_inputs: BTreeSet<Utf8PathBuf>,
-    selection: ResolvedVerifySelection,
-    verification_selection: VerificationSelection,
+    selection: RunSelection,
 }
 
 impl VerifiedPlan {
@@ -172,14 +172,8 @@ impl VerifiedPlan {
 
     /// Candidate membership or ordered dispatch IDs; no mutable access is exposed.
     #[must_use]
-    pub const fn selection(&self) -> &ResolvedVerifySelection {
+    pub const fn selection(&self) -> &RunSelection {
         &self.selection
-    }
-
-    /// Selection provenance, including scope and whether the source plan was truncated.
-    #[must_use]
-    pub const fn verification_selection(&self) -> &VerificationSelection {
-        &self.verification_selection
     }
 
     /// Preview prepared from the same checked selection that execution consumes.
@@ -219,7 +213,6 @@ impl VerifiedPlan {
             config: self.config,
             fingerprint_copy_inputs: self.fingerprint_copy_inputs,
             selection: self.selection,
-            verification_selection: self.verification_selection,
         }
     }
 }
@@ -227,16 +220,9 @@ impl VerifiedPlan {
 /// One owned handoff keeps checked selection, configuration and protected inputs together.
 pub(crate) struct VerifiedExecution {
     pub config: RunConfig,
-    pub selection: ResolvedVerifySelection,
-    pub verification_selection: VerificationSelection,
+    pub selection: RunSelection,
     pub manifest_inputs: Vec<PathBuf>,
     pub fingerprint_copy_inputs: BTreeSet<Utf8PathBuf>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ResolvedVerifySelection {
-    ExplicitCandidates(BTreeSet<String>),
-    RankedCandidates(Vec<String>),
 }
 
 #[derive(Debug, Error)]
@@ -490,14 +476,10 @@ async fn prepare_verify_selection_inner(
     validate_header(&manifest)?;
     validate_current_fingerprint_env(&manifest.normalized_config)?;
 
-    let (selection, verification_selection) =
-        resolve_verify_selection(&manifest, requested_selection)?;
-    let candidate_ids = match &selection {
-        ResolvedVerifySelection::ExplicitCandidates(candidate_ids) => candidate_ids.clone(),
-        ResolvedVerifySelection::RankedCandidates(candidate_ids) => {
-            candidate_ids.iter().cloned().collect()
-        }
-    };
+    let selection = resolve_verify_selection(&manifest, requested_selection)?;
+    let candidate_ids = selection
+        .candidate_ids()
+        .expect("verified selection has membership");
     let mut config = manifest
         .normalized_config
         .clone()
@@ -539,7 +521,7 @@ async fn prepare_verify_selection_inner(
         .collect();
     let discovered_ids = validate_requested_candidates(
         &manifest,
-        &candidate_ids,
+        candidate_ids,
         &config,
         &targets,
         #[cfg(test)]
@@ -549,20 +531,13 @@ async fn prepare_verify_selection_inner(
     )
     .await?;
 
-    let preview = VerifyPreview::new(
-        &manifest,
-        requested_selection,
-        &selection,
-        &discovered_ids,
-        verification_selection.clone(),
-    );
+    let preview = VerifyPreview::new(&manifest, requested_selection, &selection, &discovered_ids);
     Ok(VerifiedPlan {
         manifest_inputs,
         preview,
         config,
         fingerprint_copy_inputs,
         selection,
-        verification_selection,
     })
 }
 
@@ -581,16 +556,15 @@ fn validate_current_fingerprint_env(config: &hoimin_core::PlanConfig) -> Result<
 fn resolve_verify_selection(
     manifest: &PlanManifest,
     requested_selection: &VerifySelection,
-) -> Result<(ResolvedVerifySelection, VerificationSelection), PlanError> {
+) -> Result<RunSelection, PlanError> {
     let max_mutants = manifest.normalized_config.limits.max_mutants.get();
-    let (selection, metadata) = match requested_selection {
+    let selection = match requested_selection {
         VerifySelection::Sample { count, seed } => {
             let sample = resolve_sample(manifest, count.get(), *seed)?;
             let ids = sample.selected_ids().to_vec();
-            (
-                ResolvedVerifySelection::RankedCandidates(ids),
-                VerificationSelection::sample(count.get(), sample),
-            )
+            let metadata = VerificationSelection::sample(count.get(), sample)
+                .map_err(|error| PlanError::CandidateInvalid(error.to_string()))?;
+            RunSelection::ordered(ids, metadata)
         }
         VerifySelection::CandidateIds(requested_ids) => {
             let ids = normalize_requested_ids(requested_ids, max_mutants)?;
@@ -599,7 +573,10 @@ fn resolve_verify_selection(
                 ids.len(),
                 manifest.truncated,
             );
-            (ResolvedVerifySelection::ExplicitCandidates(ids), metadata)
+            RunSelection::explicit(
+                ids,
+                metadata.map_err(|error| PlanError::CandidateInvalid(error.to_string()))?,
+            )
         }
         VerifySelection::Top {
             count,
@@ -641,14 +618,13 @@ fn resolve_verify_selection(
                 policy,
                 manifest.truncated,
             );
-            (
-                ResolvedVerifySelection::RankedCandidates(candidate_ids),
-                metadata,
+            RunSelection::ordered(
+                candidate_ids,
+                metadata.map_err(|error| PlanError::CandidateInvalid(error.to_string()))?,
             )
         }
     };
-    let metadata = metadata.map_err(|error| PlanError::CandidateInvalid(error.to_string()))?;
-    Ok((selection, metadata))
+    selection.map_err(|error| PlanError::CandidateInvalid(error.to_string()))
 }
 
 fn resolve_sample(
@@ -1129,7 +1105,7 @@ mod tests {
 
     #[test]
     fn analyzer_diagnostics_preserve_plan_names_and_structured_fields() {
-        use crate::analyzer::{AnalyzerDiagnostic, AnalyzerDiagnosticCode};
+        use hoimin_python::{AnalyzerDiagnostic, AnalyzerDiagnosticCode};
 
         let cases = [
             (AnalyzerDiagnosticCode::InvalidSyntax, "invalid_syntax"),
@@ -1172,7 +1148,7 @@ mod tests {
 
     #[test]
     fn analyzer_diagnostic_preserves_plan_custom_message_without_location() {
-        use crate::analyzer::{AnalyzerDiagnostic, AnalyzerDiagnosticCode};
+        use hoimin_python::{AnalyzerDiagnostic, AnalyzerDiagnosticCode};
 
         let diagnostic = AnalyzerDiagnostic {
             code: AnalyzerDiagnosticCode::InvalidSyntax,

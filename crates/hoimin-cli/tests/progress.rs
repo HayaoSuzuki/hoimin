@@ -1,3 +1,5 @@
+#[path = "support/candidate_identity.rs"]
+mod candidate_identity;
 #[path = "support/collecting_writer.rs"]
 mod collecting_writer;
 #[path = "support/mutation_outcome.rs"]
@@ -154,7 +156,12 @@ fn input_dispatch_preserves_reordered_jsonl_headers() {
             panic!("usable JSONL")
         };
         assert_eq!(actual.mutants.len(), 1);
-        assert_eq!(actual.mutants[0].candidate.id, "mutant-1");
+        assert_eq!(
+            actual.mutants[0].candidate.id,
+            valid_report()["mutants"][0]["candidate"]["id"]
+                .as_str()
+                .unwrap()
+        );
         keys.rotate_left(1);
     }
 }
@@ -625,7 +632,8 @@ fn input_rejects_every_summary_mutant_consistency_mismatch() {
     let mut extra = valid_report();
     let mut duplicate = extra["mutants"][0].clone();
     duplicate["sequence"] = json!(4);
-    duplicate["candidate"]["id"] = json!("mutant-2");
+    duplicate["candidate"]["span"]["start"] = json!(2);
+    candidate_identity::assign_id(&mut duplicate["candidate"]);
     duplicate["candidate"]["sequence"] = json!(2);
     extra["mutants"].as_array_mut().unwrap().push(duplicate);
     extra["summary"]["sequence"] = json!(5);
@@ -1538,10 +1546,11 @@ async fn output_labels_the_intersection_score_as_comparable() {
     before["mutants"][0]["outcome"]["executed"]["termination"] = json!({ "Exit": 0 });
     let mut added = before["mutants"][0].clone();
     added["sequence"] = json!(4);
-    added["candidate"]["id"] = json!("mutant-2");
+
     added["candidate"]["sequence"] = json!(2);
     added["candidate"]["span"]["start"] = json!(2);
     added["candidate"]["original"] = json!("2");
+    candidate_identity::assign_id(&mut added["candidate"]);
     added["outcome"]["executed"]["termination"] = json!({ "Exit": 1 });
     before["summary"]["exit_code"] = json!(1);
     before["summary"]["counts"] = json!({
@@ -1646,7 +1655,8 @@ async fn output_defers_mixed_history_rendering_until_all_reports_are_valid() {
     let missing_baseline = write_json(&fixture, "missing-baseline.json", &missing_baseline);
     let before = write_json(&fixture, "before.json", &valid_report());
     let mut different = valid_report();
-    different["mutants"][0]["candidate"]["id"] = json!("different-id");
+    different["mutants"][0]["candidate"]["file_hash"] = json!("different-id");
+    candidate_identity::assign_id(&mut different["mutants"][0]["candidate"]);
     let different = write_json(&fixture, "different.json", &different);
     let mut incomplete = valid_report();
     incomplete["summary"]["complete"] = json!(false);
@@ -1894,7 +1904,8 @@ async fn output_warns_when_candidate_id_sets_differ() {
     let fixture = tempfile::tempdir().unwrap();
     let before = valid_report();
     let mut after = valid_report();
-    after["mutants"][0]["candidate"]["id"] = json!("different-id");
+    after["mutants"][0]["candidate"]["file_hash"] = json!("different-id");
+    candidate_identity::assign_id(&mut after["mutants"][0]["candidate"]);
     let reports = vec![
         write_json(&fixture, "before.json", &before),
         write_json(&fixture, "after.json", &after),
@@ -1921,13 +1932,15 @@ async fn output_ambiguity_is_structured_and_warned_on_stderr() {
     let first_mutant = ambiguous["mutants"][0].clone();
     let mut duplicate_mutant = first_mutant.clone();
     duplicate_mutant["sequence"] = json!(4);
-    duplicate_mutant["candidate"]["id"] = json!("mutant-2");
+    duplicate_mutant["candidate"]["span"]["start"] = json!(2);
+    candidate_identity::assign_id(&mut duplicate_mutant["candidate"]);
     duplicate_mutant["candidate"]["sequence"] = json!(2);
     ambiguous["mutants"] = json!([first_mutant, duplicate_mutant]);
     ambiguous["summary"]["sequence"] = json!(5);
     ambiguous["summary"]["counts"]["killed"] = json!(2);
     let mut different_ids = ambiguous.clone();
-    different_ids["mutants"][1]["candidate"]["id"] = json!("mutant-3");
+    different_ids["mutants"][1]["candidate"]["span"]["start"] = json!(3);
+    candidate_identity::assign_id(&mut different_ids["mutants"][1]["candidate"]);
     let reports = vec![
         write_json(&fixture, "before.json", &ambiguous),
         write_json(&fixture, "after.json", &different_ids),
@@ -2899,8 +2912,218 @@ fn instance_has_type(instance: &Value, kind: &str) -> bool {
     }
 }
 
+macro_rules! inconsistent_identity_test {
+    ($name:ident, $jsonl:literal, $pointer:literal, $value:expr) => {
+        #[tokio::test]
+        async fn $name() {
+            // Arrange: use a published real candidate, retaining its ID after tampering.
+            let fixture = tempfile::tempdir().unwrap();
+            let candidates: Value =
+                serde_json::from_str(include_str!("fixtures/method-replacements/candidates.json"))
+                    .unwrap();
+            let mut document = valid_report();
+            document["mutants"][0]["candidate"] = candidates[0].clone();
+            *document["mutants"][0]["candidate"]
+                .pointer_mut($pointer)
+                .unwrap() = $value;
+            let path = if $jsonl {
+                write_jsonl(&fixture, &jsonl_events(&document))
+            } else {
+                write_json(&fixture, "inconsistent.json", &document)
+            };
+            // Act
+            let (code, stdout, stderr) = run_progress(&[path.clone(), path.clone()], "json").await;
+            // Assert: reject before either regression or saturation can be rendered.
+            assert_eq!(code, 2, "{}", String::from_utf8_lossy(&stderr));
+            assert!(stdout.is_empty());
+            let stderr = String::from_utf8(stderr).unwrap();
+            assert!(stderr.contains(path.to_str().unwrap()));
+            assert!(stderr.contains("candidate identity conflict"), "{stderr}");
+        }
+    };
+}
+inconsistent_identity_test!(
+    identity_json_replacement,
+    false,
+    "/replacement",
+    json!("obj.extend([(item)])")
+);
+inconsistent_identity_test!(
+    identity_jsonl_replacement,
+    true,
+    "/replacement",
+    json!("obj.extend([(item)])")
+);
+inconsistent_identity_test!(identity_json_operator, false, "/operator", json!("other"));
+inconsistent_identity_test!(identity_jsonl_operator, true, "/operator", json!("other"));
+inconsistent_identity_test!(identity_json_path, false, "/path", json!("other.py"));
+inconsistent_identity_test!(identity_jsonl_path, true, "/path", json!("other.py"));
+inconsistent_identity_test!(identity_json_hash, false, "/file_hash", json!("different"));
+inconsistent_identity_test!(identity_jsonl_hash, true, "/file_hash", json!("different"));
+inconsistent_identity_test!(identity_json_span_start, false, "/span/start", json!(33));
+inconsistent_identity_test!(identity_jsonl_span_start, true, "/span/start", json!(33));
+inconsistent_identity_test!(identity_json_span_length, false, "/span/length", json!(19));
+inconsistent_identity_test!(identity_jsonl_span_length, true, "/span/length", json!(19));
+
+macro_rules! identity_display_test {
+    ($name:ident, $jsonl:literal, $field:literal, $value:expr) => {
+        #[tokio::test]
+        async fn $name() {
+            // Arrange: display metadata changes while the stable mutation stays fixed.
+            let fixture = tempfile::tempdir().unwrap();
+            let mut after = detail_report(&[("a", MutationStatus::Killed)]);
+            after["mutants"][0]["candidate"][$field] = $value;
+            let before = write_json(
+                &fixture,
+                "before.json",
+                &detail_report(&[("a", MutationStatus::Killed)]),
+            );
+            let after = if $jsonl {
+                write_jsonl(&fixture, &jsonl_events(&after))
+            } else {
+                write_json(&fixture, "after.json", &after)
+            };
+            // Act
+            let (code, stdout, stderr) = run_progress(&[before, after], "json").await;
+            // Assert
+            assert_eq!(code, 0, "{}", String::from_utf8_lossy(&stderr));
+            let value: Value = serde_json::from_slice(&stdout).unwrap();
+            assert_eq!(value["latest"]["state"], "stalled");
+        }
+    };
+}
+identity_display_test!(identity_json_accepts_line, false, "line", json!(99));
+identity_display_test!(identity_jsonl_accepts_line, true, "line", json!(99));
+identity_display_test!(identity_json_accepts_column, false, "column", json!(99));
+identity_display_test!(identity_jsonl_accepts_column, true, "column", json!(99));
+identity_display_test!(
+    identity_json_accepts_symbol,
+    false,
+    "symbol",
+    json!("different")
+);
+identity_display_test!(
+    identity_jsonl_accepts_symbol,
+    true,
+    "symbol",
+    json!("different")
+);
+identity_display_test!(
+    identity_json_accepts_original,
+    false,
+    "original",
+    json!("different")
+);
+identity_display_test!(
+    identity_jsonl_accepts_original,
+    true,
+    "original",
+    json!("different")
+);
+identity_display_test!(identity_json_accepts_sequence, false, "sequence", json!(99));
+identity_display_test!(identity_jsonl_accepts_sequence, true, "sequence", json!(99));
+
+macro_rules! stolen_identity_test {
+    ($name:ident, $jsonl:literal) => {
+        #[tokio::test]
+        async fn $name() {
+            // Arrange: separate real mutations from the same append call, killed -> survived.
+            let fixture = tempfile::tempdir().unwrap();
+            let candidates: Value =
+                serde_json::from_str(include_str!("fixtures/method-replacements/candidates.json"))
+                    .unwrap();
+            let mut before = detail_report(&[("a", MutationStatus::Killed)]);
+            before["mutants"][0]["candidate"] = candidates[0].clone();
+            let mut after = detail_report(&[("a", MutationStatus::Survived)]);
+            after["mutants"][0]["candidate"] = candidates[1].clone();
+            after["mutants"][0]["candidate"]["id"] = candidates[0]["id"].clone();
+            let before = write_json(&fixture, "before.json", &before);
+            let after = if $jsonl {
+                write_jsonl(&fixture, &jsonl_events(&after))
+            } else {
+                write_json(&fixture, "after.json", &after)
+            };
+            // Act
+            let (code, stdout, stderr) =
+                progress_with_gate(&[before, after.clone()], "json", true, true).await;
+            // Assert
+            assert_eq!(code, 2);
+            assert!(stdout.is_empty());
+            let diagnostic = String::from_utf8(stderr).unwrap();
+            assert!(diagnostic.contains(after.to_str().unwrap()));
+            assert!(diagnostic.contains("candidate identity conflict"));
+        }
+    };
+}
+stolen_identity_test!(identity_json_rejects_stolen_id_before_regression, false);
+stolen_identity_test!(identity_jsonl_rejects_stolen_id_before_regression, true);
+
+macro_rules! identity_status_test {
+    ($name:ident, $jsonl:literal) => {
+        #[tokio::test]
+        async fn $name() {
+            // Arrange: a legitimate same-ID status transition remains a regression.
+            let fixture = tempfile::tempdir().unwrap();
+            let before = write_json(
+                &fixture,
+                "before.json",
+                &detail_report(&[("a", MutationStatus::Killed)]),
+            );
+            let after = detail_report(&[("a", MutationStatus::Survived)]);
+            let after = if $jsonl {
+                write_jsonl(&fixture, &jsonl_events(&after))
+            } else {
+                write_json(&fixture, "after.json", &after)
+            };
+            // Act
+            let (code, stdout, stderr) =
+                progress_with_gate(&[before, after], "json", true, true).await;
+            // Assert
+            assert_eq!(code, 1, "{}", String::from_utf8_lossy(&stderr));
+            let result: Value = serde_json::from_slice(&stdout).unwrap();
+            assert_eq!(result["latest"]["state"], "regressing");
+            assert_eq!(result["comparisons"][0]["regressions"], 1);
+        }
+    };
+}
+identity_status_test!(identity_json_accepts_status_change, false);
+identity_status_test!(identity_jsonl_accepts_status_change, true);
+
+macro_rules! identity_order_test {
+    ($name:ident, $jsonl:literal) => {
+        #[tokio::test]
+        async fn $name() {
+            // Arrange: two independently discovered orders of the same genuine identities.
+            let fixture = tempfile::tempdir().unwrap();
+            let before =
+                detail_report(&[("a", MutationStatus::Killed), ("b", MutationStatus::Killed)]);
+            let after = detail_report(&[
+                ("b", MutationStatus::Survived),
+                ("a", MutationStatus::Survived),
+            ]);
+            let before = write_json(&fixture, "before.json", &before);
+            let after = if $jsonl {
+                write_jsonl(&fixture, &jsonl_events(&after))
+            } else {
+                write_json(&fixture, "after.json", &after)
+            };
+            // Act
+            let (code, stdout, stderr) =
+                progress_with_gate(&[before, after], "json", true, true).await;
+            // Assert
+            assert_eq!(code, 1, "{}", String::from_utf8_lossy(&stderr));
+            let result: Value = serde_json::from_slice(&stdout).unwrap();
+            assert_eq!(result["details"]["eligibility"], "matching");
+            assert_eq!(result["comparisons"][0]["common"], 2);
+            assert_eq!(result["comparisons"][0]["regressions"], 2);
+        }
+    };
+}
+identity_order_test!(identity_json_accepts_independent_discovery_order, false);
+identity_order_test!(identity_jsonl_accepts_independent_discovery_order, true);
+
 fn valid_report() -> Value {
-    json!({
+    let mut document = json!({
         "schema_version": REPORT_SCHEMA_VERSION,
         "run": {
             "kind": "run_started",
@@ -2962,7 +3185,9 @@ fn valid_report() -> Value {
             "exit_code": 0,
             "disk": serde_json::to_value(hoimin_core::DiskRunSummary::unmeasured(8, 10)).unwrap()
         }
-    })
+    });
+    candidate_identity::assign_id(&mut document["mutants"][0]["candidate"]);
+    document
 }
 
 fn result_report(close_timeout: bool) -> Value {
@@ -3083,7 +3308,12 @@ async fn jsonl_and_document_inputs_have_identical_progress() {
         panic!("completed JSONL must be usable");
     };
     assert_eq!(actual.mutants.len(), 1);
-    assert_eq!(actual.mutants[0].candidate.id, "mutant-1");
+    assert_eq!(
+        actual.mutants[0].candidate.id,
+        valid_report()["mutants"][0]["candidate"]["id"]
+            .as_str()
+            .unwrap()
+    );
     let (expected_code, expected, _) = run_progress(&[json.clone(), json.clone()], "json").await;
     let (actual_code, actual, errors) = run_progress(&[json, jsonl], "json").await;
     assert_eq!(actual_code, expected_code, "{errors:?}");
@@ -3450,6 +3680,13 @@ async fn progress_details(reports: &[PathBuf], format: &str, limit: usize) -> Va
     }
 }
 
+fn detail_id(key: &str) -> String {
+    detail_report(&[(key, MutationStatus::Killed)])["mutants"][0]["candidate"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
 fn detail_report(statuses: &[(&str, MutationStatus)]) -> Value {
     let mut report = valid_report();
     let template = report["mutants"][0].clone();
@@ -3461,7 +3698,8 @@ fn detail_report(statuses: &[(&str, MutationStatus)]) -> Value {
                 let mut event = template.clone();
                 event["sequence"] = json!(index + 3);
                 event["candidate"]["sequence"] = json!(index + 1);
-                event["candidate"]["id"] = json!(id);
+                event["candidate"]["file_hash"] = json!(id);
+                candidate_identity::assign_id(&mut event["candidate"]);
                 event["candidate"]["original"] = json!(id);
                 event["outcome"] =
                     serde_json::to_value(mutation_outcome::executed(*status)).unwrap();
@@ -3516,7 +3754,7 @@ async fn details_identify_both_directions_and_preserve_default_schema() {
     assert_eq!(detail["unidentified"], 0);
     assert_eq!(
         detail["transitions"][0],
-        json!({"id":"a", "path":"src/example.py", "line":1,
+        json!({"id":detail_id("a"), "path":"src/example.py", "line":1,
         "column":0, "previous_path":"src/example.py", "previous_line":1, "previous_column":0,
         "operator":"integer_literal", "classification":"regression", "previous_status":"killed", "current_status":"survived"})
     );
@@ -3575,7 +3813,9 @@ async fn details_cap_and_order_do_not_change_aggregate_counts() {
             .iter()
             .map(|entry| entry["id"].as_str().unwrap())
             .collect();
-        assert_eq!(ids, ["10", "2", "a"][..limit.min(3)]);
+        let mut expected = [detail_id("10"), detail_id("2"), detail_id("a")];
+        expected.sort();
+        assert_eq!(ids, expected[..limit.min(3)]);
         assert_eq!(detailed["details"]["omitted"], 3 - limit.min(3));
     }
 }
@@ -3585,7 +3825,8 @@ async fn details_do_not_identify_content_only_matches_or_stale_pairs() {
     let fixture = tempfile::tempdir().unwrap();
     let before_doc = detail_report(&[("a", MutationStatus::Killed)]);
     let mut after_doc = detail_report(&[("a", MutationStatus::Survived)]);
-    after_doc["mutants"][0]["candidate"]["id"] = json!("different");
+    after_doc["mutants"][0]["candidate"]["file_hash"] = json!("different");
+    candidate_identity::assign_id(&mut after_doc["mutants"][0]["candidate"]);
     let before = write_json(&fixture, "before.json", &before_doc);
     let after = write_json(&fixture, "after.json", &after_doc);
     let mut unusable = before_doc.clone();
@@ -3618,6 +3859,7 @@ async fn details_schema_jsonl_and_quoted_locations_are_consistent() {
     before_doc["mutants"][0]["candidate"]["line"] = json!(9);
     for doc in [&mut before_doc, &mut after_doc] {
         doc["mutants"][0]["candidate"]["path"] = json!("src/a\n\"b.py");
+        candidate_identity::assign_id(&mut doc["mutants"][0]["candidate"]);
     }
     let before = write_json(&fixture, "before.json", &before_doc);
     let after = write_json(&fixture, "after.json", &after_doc);
@@ -3725,7 +3967,9 @@ async fn details_default_cap_and_partial_sets_are_explicit() {
         value["details"]["transitions"].as_array().unwrap().len(),
         100
     );
-    assert_eq!(value["details"]["transitions"][99]["id"], "id-099");
+    let mut expected_ids: Vec<_> = ids.iter().map(|id| detail_id(id)).collect();
+    expected_ids.sort();
+    assert_eq!(value["details"]["transitions"][99]["id"], expected_ids[99]);
     let after = write_json(
         &fixture,
         "partial.json",
@@ -3733,7 +3977,10 @@ async fn details_default_cap_and_partial_sets_are_explicit() {
     );
     let value = progress_details(&[before, after], "json", 100).await;
     assert_eq!(value["details"]["eligibility"], "different");
-    assert_eq!(value["details"]["transitions"][0]["id"], "id-000");
+    assert_eq!(
+        value["details"]["transitions"][0]["id"],
+        detail_id("id-000")
+    );
     assert_eq!(value["latest"]["state"], "indeterminate");
 }
 
@@ -3794,7 +4041,8 @@ async fn regression_exit_uses_latest_state_and_preserves_all_output() {
     gap_doc["summary"]["exit_code"] = json!(4);
     let gap = write_json(&fixture, "gap.json", &gap_doc);
     let mut different_doc = detail_report(&[("a", MutationStatus::Survived)]);
-    different_doc["mutants"][0]["candidate"]["id"] = json!("different");
+    different_doc["mutants"][0]["candidate"]["file_hash"] = json!("different");
+    candidate_identity::assign_id(&mut different_doc["mutants"][0]["candidate"]);
     let different = write_json(&fixture, "different.json", &different_doc);
     for (reports, state, expected_exit) in [
         (vec![killed.clone(), survived.clone()], "regressing", 1),

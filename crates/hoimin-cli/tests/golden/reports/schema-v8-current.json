@@ -20,7 +20,7 @@
       "candidate": {
         "column": 17,
         "file_hash": "golden-file-hash",
-        "id": "golden-mutant",
+        "id": "m1_63f473859defdf5000569a31547ed4fe17073b5f690c73ef61297f257307075b",
         "line": 2,
         "operator": "binary_add_sub",
         "original": "+",

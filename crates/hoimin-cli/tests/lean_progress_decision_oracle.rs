@@ -1,3 +1,5 @@
+#[path = "support/candidate_identity.rs"]
+mod candidate_identity;
 #[path = "support/mutation_outcome.rs"]
 mod mutation_outcome;
 use std::collections::BTreeSet;
@@ -340,11 +342,34 @@ fn write_reports(fixture: &tempfile::TempDir, item: &OracleCase) -> Vec<PathBuf>
         .enumerate()
         .map(|(index, report)| {
             let path = fixture.path().join(format!("report-{index}.json"));
-            let document = build_report(&item.id, index, report);
+            let mut document = build_report(&item.id, index, report);
+            for (event, mutant) in document["mutants"]
+                .as_array_mut()
+                .unwrap()
+                .iter_mut()
+                .zip(&report.mutants)
+            {
+                // Source hashes distinguish ID roles without changing comparison content.
+                event["candidate"]["file_hash"] =
+                    json!(format!("hash-role-{}", mutant.candidate_id));
+                candidate_identity::assign_id(&mut event["candidate"]);
+            }
             std::fs::write(&path, serde_json::to_vec(&document).unwrap()).unwrap();
             path
         })
         .collect()
+}
+
+fn expected_public_candidate_id(candidate_id: u64, content_key: u64) -> &'static str {
+    // Independently framed BLAKE3 vectors for the public fixture identities.
+    // Role 0/content 0 sorts before both role 1 IDs, preserving Lean's details limit.
+    match (candidate_id, content_key) {
+        (0, 0) => "m1_2c2055e30f88c0ec193c5215b1d151fe2a79bfd3ce69ee58c75f7615f5a95051",
+        (0, 1) => "m1_b3172ab446f6eebd2f9469d899b1bedb3387dc86f5720ea9e34aab51d5c050ad",
+        (1, 0) => "m1_9df37b4764ae8cf1b7f1119cb70e3fc14ef7b921eb7de323557ab2703128a682",
+        (1, 1) => "m1_3b54500a8bd009b7009007ba1032a9a8bf29688fba1800916f10b5d2de588840",
+        _ => unreachable!("validated candidate and content roles"),
+    }
 }
 
 async fn public_output(
@@ -696,9 +721,14 @@ async fn public_progress_details_match_generated_latest_pair_expectations() {
         let entries = detail["transitions"].as_array().unwrap();
         assert_eq!(entries.len(), expected.transitions.len(), "{}", item.id);
         for (entry, transition) in entries.iter().zip(&expected.transitions) {
+            let mutant = item.reports[expected.current_input]
+                .mutants
+                .iter()
+                .find(|mutant| mutant.candidate_id == transition.candidate_id)
+                .expect("expected transition must identify a current mutant");
             assert_eq!(
                 entry["id"],
-                format!("candidate-{}", transition.candidate_id),
+                expected_public_candidate_id(transition.candidate_id, mutant.content_key),
                 "{}",
                 item.id
             );

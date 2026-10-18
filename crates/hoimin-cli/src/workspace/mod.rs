@@ -816,7 +816,7 @@ pub struct WorkspaceHandler {
     plan: Option<Arc<WorkspacePlan>>,
     workers: BTreeMap<u32, WorkerSlot>,
     managed_root: Option<Arc<ManagedRunRoot>>,
-    max_owned_bytes: Option<u64>,
+    preflight_limits: copy::PreflightLimits,
     #[cfg(test)]
     materialization_pause: Option<MaterializationPause>,
     #[cfg(test)]
@@ -1028,7 +1028,10 @@ impl WorkspaceHandler {
             plan: None,
             workers: BTreeMap::new(),
             managed_root: None,
-            max_owned_bytes: None,
+            preflight_limits: copy::PreflightLimits {
+                copy: None,
+                owned: None,
+            },
             #[cfg(test)]
             materialization_pause: None,
             #[cfg(test)]
@@ -1050,7 +1053,13 @@ impl WorkspaceHandler {
 
     #[must_use]
     pub(crate) const fn with_max_owned_bytes(mut self, limit: u64) -> Self {
-        self.max_owned_bytes = Some(limit);
+        self.preflight_limits.owned = Some(limit);
+        self
+    }
+
+    #[must_use]
+    pub(crate) const fn with_max_copy_bytes(mut self, limit: u64) -> Self {
+        self.preflight_limits.copy = Some(limit);
         self
     }
 
@@ -1085,7 +1094,7 @@ impl WorkspaceHandler {
             self.requested_workers,
             self.options.clone(),
             self.managed_root.clone(),
-            self.max_owned_bytes,
+            self.preflight_limits,
             |_, _| Ok::<_, std::convert::Infallible>(()),
         )
         .map_err(|error| match error {
@@ -1122,7 +1131,7 @@ impl WorkspaceHandler {
             self.requested_workers,
             self.options.clone(),
             self.managed_root.clone(),
-            self.max_owned_bytes,
+            self.preflight_limits,
             validate,
         ) {
             Ok(plan) => {

@@ -1,4 +1,6 @@
-use super::super::rust::exception_hierarchy::oracle_corpus as corpus;
+#[path = "../../../hoimin-python/tests/support/exception_hierarchy_oracle.rs"]
+#[allow(dead_code)]
+mod corpus;
 use super::ExceptionProject;
 use crate::cli::parse_config_from as parse_config;
 use camino::Utf8Path;
@@ -10,7 +12,7 @@ fn replay_snapshot_actions(
     path: &std::path::Path,
     original: &str,
 ) -> (
-    Option<std::sync::Arc<super::super::rust::exception_hierarchy::ExceptionIndex>>,
+    Option<std::sync::Arc<hoimin_python::ExceptionIndex>>,
     &'static str,
     Vec<String>,
 ) {
@@ -77,21 +79,27 @@ fn lean_exception_hierarchy_snapshot_correspondence() {
         );
         let pairs = cached
             .map(|index| {
-                let mut pairs = Vec::new();
-                let parsed = ruff_python_parser::parse_module(service).unwrap();
-                index
-                    .collect(
-                        Utf8Path::new("service.py"),
-                        parsed.syntax(),
-                        case.max_candidates,
-                        &|| false,
-                        |range, replacement| {
-                            pairs.push((service[range].to_owned(), replacement));
-                            Ok(())
-                        },
-                    )
-                    .unwrap();
-                pairs
+                let operators = serde_json::from_str("[\"exception_hierarchy\"]").unwrap();
+                let output = hoimin_python::analyze_source_with_exceptions(
+                    &hoimin_python::AnalyzeRequest {
+                        payload: hoimin_python::payload::PayloadBudget::default(),
+                        path: Utf8Path::new("service.py"),
+                        lines: &[],
+                        symbols: &[],
+                        operators: &operators,
+                        profile: hoimin_core::MutationProfile::Full,
+                        max_candidates: case.max_candidates,
+                    },
+                    service,
+                    &|| false,
+                    Some(&index),
+                )
+                .unwrap();
+                output
+                    .candidates
+                    .into_iter()
+                    .map(|candidate| (candidate.value.original, candidate.value.replacement))
+                    .collect()
             })
             .unwrap_or_default();
         let recheck = crate::fingerprint_inputs::recheck_config(&config, &config.selection.root);

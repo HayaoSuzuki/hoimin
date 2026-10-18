@@ -671,6 +671,13 @@ struct WalkFrame {
     display_path: Utf8PathBuf,
 }
 
+fn meter_entry_display(parent: &Utf8Path, name: &std::ffi::OsStr) -> Utf8PathBuf {
+    // Diagnostic text must never become the authority for descriptor-relative I/O.
+    let display = parent.join(name.to_string_lossy().as_ref());
+    let (bounded, _) = super::truncate_diagnostic_detail(display.into_string());
+    Utf8PathBuf::from(bounded)
+}
+
 fn measure_owned_tree(
     root: &RootCapability,
     started: Instant,
@@ -752,11 +759,7 @@ fn measure_owned_tree_with_hooks(
         }
         record_entry(state)?;
         let name_os = std::ffi::OsStr::from_bytes(name.to_bytes());
-        let display = frame.display_path.join(
-            name_os
-                .to_str()
-                .ok_or_else(|| io::Error::other("non-UTF-8 workspace entry"))?,
-        );
+        let display = meter_entry_display(&frame.display_path, name_os);
         let directory = frame.entries.fd().map_err(io::Error::from)?;
         let metadata_result = rustix::fs::statat(directory, name, AtFlags::SYMLINK_NOFOLLOW);
         check_scan_deadline(elapsed)?;
@@ -957,10 +960,7 @@ fn measure_owned_tree_with_hooks(
         let attributes = entry.file_attributes();
         let entry_file_id = entry.file_id();
         let name = entry.into_name();
-        let display = frame.display_path.join(
-            name.to_str()
-                .ok_or_else(|| io::Error::other("non-UTF-8 workspace entry"))?,
-        );
+        let display = meter_entry_display(&frame.display_path, &name);
         if attributes & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
             continue;
         }
@@ -1144,6 +1144,9 @@ fn should_count_unix_stat(metadata: &rustix::fs::Stat, state: &mut WalkState) ->
 
 #[cfg(test)]
 mod stats_tests;
+
+#[cfg(test)]
+mod native_name_tests;
 
 #[cfg(test)]
 mod tests {

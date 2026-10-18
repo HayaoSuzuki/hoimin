@@ -36,7 +36,7 @@ pub enum StoreError {
 }
 
 pub struct CandidateStore {
-    payload: super::rust::payload::PayloadBudget,
+    payload: hoimin_python::payload::PayloadBudget,
     file: NamedTempFile,
     count: u64,
     max_candidates: u64,
@@ -71,14 +71,14 @@ impl CandidateStore {
 
     fn with_file(max_candidates: u64, file: NamedTempFile) -> Self {
         Self {
-            payload: super::rust::payload::PayloadBudget::default(),
+            payload: hoimin_python::payload::PayloadBudget::default(),
             file,
             count: 0,
             max_candidates,
         }
     }
 
-    pub(crate) fn with_payload(mut self, payload: super::rust::payload::PayloadBudget) -> Self {
+    pub(crate) fn with_payload(mut self, payload: hoimin_python::payload::PayloadBudget) -> Self {
         self.payload = payload;
         self
     }
@@ -130,7 +130,7 @@ impl CandidateStore {
         }
         let record_size = Self::record_size(candidate)?;
         let _encoded = self.payload.reserve([record_size]).map_err(|error| {
-            let super::rust::AnalysisError::PayloadLimit { limit } = error else {
+            let hoimin_python::AnalysisError::PayloadLimit { limit } = error else {
                 unreachable!()
             };
             StoreError::PayloadLimit { limit }

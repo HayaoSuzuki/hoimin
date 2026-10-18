@@ -109,7 +109,7 @@ fn validate_symbols(selection: &Selection, targets: &[TargetSlice]) -> Result<()
             .map_err(|error| failure(error.to_string()))?;
         let source = hoimin_core::decode_python_source(&bytes)
             .map_err(|error| failure(error.to_string()))?;
-        let definitions = crate::analyzer::definition_names(source.text()).map_err(failure)?;
+        let definitions = hoimin_python::definition_names(source.text()).map_err(failure)?;
         for qualname in &target.symbols {
             if !definitions.contains(qualname) {
                 let requested = selectors[qualname.as_str()].join(", ");

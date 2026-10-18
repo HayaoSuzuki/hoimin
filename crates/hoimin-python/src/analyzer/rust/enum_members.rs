@@ -1,5 +1,5 @@
 //! Static, conservative identity and value index for same-module enums.
-use crate::analyzer::visitor::{self, Visitor};
+use crate::visitor::{self, Visitor};
 use std::collections::HashMap;
 
 use ruff_python_ast::{Expr, ExprContext, ModModule, Number, Stmt, StmtClassDef, UnaryOp};

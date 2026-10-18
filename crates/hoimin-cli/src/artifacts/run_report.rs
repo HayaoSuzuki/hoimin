@@ -426,6 +426,20 @@ fn validate_structure<C>(
         }
         previous_sequence = Some(event.sequence());
     }
+    // Keep structural diagnostics first, then guarantee identity for every consumer.
+    for event in &document.mutants {
+        let OutputEvent::MutantFinished(mutant) = event else {
+            unreachable!("mutant event kinds were validated above");
+        };
+        if !hoimin_core::CandidateIdentityRef::from(&mutant.candidate)
+            .matches_id(&mutant.candidate.id)
+        {
+            return Err(invalid_structure(
+                path,
+                "candidate identity conflict: stable ID does not match identity fields",
+            ));
+        }
+    }
     Ok(())
 }
 

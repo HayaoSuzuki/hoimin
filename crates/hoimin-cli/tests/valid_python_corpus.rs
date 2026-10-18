@@ -1,17 +1,4 @@
-#![allow(dead_code)]
-
-#[path = "../src/analyzer/types.rs"]
-mod types;
-pub use types::{AnalyzerCandidate, AnalyzerDiagnostic, AnalyzerDiagnosticCode};
-#[path = "../src/analyzer/visitor.rs"]
-pub(crate) mod visitor;
-
-mod analyzer {
-    pub use crate::types::AnalyzerDiagnosticCode;
-    pub(crate) use crate::visitor;
-}
-#[path = "../src/analyzer/rust.rs"]
-mod rust;
+use hoimin_python::AnalyzerCandidate;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
@@ -475,9 +462,9 @@ async fn corpus_correspondence(
                 expected.sort();
                 let truncated = expected.len() > cap;
                 expected.truncate(cap);
-                let output = rust::analyze_source(
-                    &rust::AnalyzeRequest {
-                        payload: rust::payload::PayloadBudget::default(),
+                let output = analyze(
+                    &hoimin_python::AnalyzeRequest {
+                        payload: hoimin_python::payload::PayloadBudget::default(),
                         path: Utf8Path::new("subject.py"),
                         lines: &lines,
                         symbols: &symbols,
@@ -490,7 +477,7 @@ async fn corpus_correspondence(
                 let candidates = output
                     .candidates
                     .into_iter()
-                    .map(rust::payload::Charged::into_untracked)
+                    .map(hoimin_python::payload::Charged::into_untracked)
                     .collect::<Vec<_>>();
                 check_eligibility(&case, &candidates, &expected);
                 assert_eq!(output.truncated, truncated);
@@ -624,9 +611,9 @@ fn full_lf_candidates(case: &Case) -> Vec<AnalyzerCandidate> {
         }
     }
     operators.include(MutationOperatorSelection::parse_selector(&case.operator).unwrap()[0]);
-    rust::analyze_source(
-        &rust::AnalyzeRequest {
-            payload: rust::payload::PayloadBudget::default(),
+    analyze(
+        &hoimin_python::AnalyzeRequest {
+            payload: hoimin_python::payload::PayloadBudget::default(),
             path: Utf8Path::new("subject.py"),
             lines: &[],
             symbols: &[],
@@ -638,7 +625,7 @@ fn full_lf_candidates(case: &Case) -> Vec<AnalyzerCandidate> {
     )
     .candidates
     .into_iter()
-    .map(rust::payload::Charged::into_untracked)
+    .map(hoimin_python::payload::Charged::into_untracked)
     .collect()
 }
 
@@ -859,4 +846,11 @@ async fn slice_tuple_import_only_run_does_not_count_syntax_error_as_killed() {
         std::fs::read_to_string(root.path().join("subject.py")).unwrap(),
         source
     );
+}
+
+fn analyze(
+    request: &hoimin_python::AnalyzeRequest<'_>,
+    source: &str,
+) -> hoimin_python::AnalyzerOutput {
+    hoimin_python::analyze_source_cancellable(request, source, || false).unwrap()
 }

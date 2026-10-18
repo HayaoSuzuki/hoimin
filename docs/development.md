@@ -89,6 +89,14 @@ rejection stays with the caller. This does not bound general filesystem I/O.
 Read-only plan validation builds one borrowed source-path/hash index after header
 validation and checks candidate identity before source membership.
 
+The internal `hoimin-python` crate owns pure source analysis, charged candidate
+results and the exception index. The CLI acquires filesystem inputs, fingerprints
+projects, converts validated candidates and writes spools. Dedicated heap/corpus
+tests and the Python fuzz target use the same Cargo API; private semantic and
+oracle tests run only in `hoimin-python`. Its `test-support` feature provides
+logical payload observations to CLI dev-dependencies and is absent from normal
+builds. The separate fuzz workspace keeps its parser patch at its own root.
+
 The analyzer owns an internal 16 MiB retained-payload budget shared across
 producers, conversion and files. Keep reservations beside the allocations they
 cover; move leases with their data and release them only when that data drops.
@@ -241,9 +249,12 @@ scope; it supplements this procedure rather than owning another update checklist
 
 Select the process backend before constructing `RunState`. Pass its
 `ProcessHandler::resource_control()` description as the final argument to
-`RunState::new`, `with_candidate_filter`, or
-`with_ordered_candidate_filter`. `RunStarted::minimal` also requires an explicit
-`ResourceControl` as its final argument. Rust callers using the older constructor
+`RunState::new` or `RunState::with_selection`. Construct `RunSelection` with
+`all`, `explicit`, or `ordered`; the checked constructors couple execution IDs
+with verification mode, count and Sample order. Pass a verified plan through
+`plan.selection()` and inspect its provenance with
+`plan.selection().verification_selection()`. `RunStarted::minimal` also
+requires an explicit `ResourceControl` as its final argument. Rust callers using the older constructor
 signatures must supply this argument; there is no inferred or default backend.
 Tests that supply a policy exercise core reporting, not native OS enforcement.
 The report schema retains its existing `mode` and singular `mechanism` fields.
@@ -463,8 +474,8 @@ whole-slice equality, and one-shot hashes. They are finite tests, not proofs.
 ## Coverage-guided fuzzing
 
 `fuzz/` is a separate Cargo workspace with its own committed lockfile. It depends
-on `hoimin-core` by path; libFuzzer does not enter the shipping workspace or the
-ordinary `cargo test --workspace` run. The targets supplement proptest:
+on `hoimin-core` and the pure `hoimin-python` analyzer by path. libFuzzer does
+not enter the shipping workspace or the ordinary `cargo test --workspace` run. The targets supplement proptest:
 
 - `source_encoding`: arbitrary bytes exercise encoding declarations and malformed
   input. Successful decodes must preserve bytes on re-encoding and match scalar
@@ -492,11 +503,11 @@ ordinary `cargo test --workspace` run. The targets supplement proptest:
 - `sampling`: checks sample size, uniqueness, index bounds, and seeded prefix
   consistency, with populations bounded to 4096 elements.
 
-The Python analyzer target compiles production analyzer and shared result-type
-modules directly using `#[path]`, so no fuzz-only API is added to the shipping
-crate. Keep its dependency declarations in `fuzz/Cargo.toml` aligned with
-`crates/hoimin-cli/Cargo.toml` and retain the root workspace's vendored Ruff
-parser patch in the fuzz workspace.
+The Python analyzer target uses the same `hoimin-python` Cargo API as the CLI
+and dedicated corpus tests. Results keep their charged payload leases across
+that boundary. CLI modules retain source reads, project acquisition and candidate
+spools. Keep the root workspace's vendored Ruff parser patch in the separate
+fuzz workspace because Cargo patches are scoped to a workspace root.
 These are in-memory checks; filesystem discovery, file I/O, subprocesses, and
 mutation execution are outside their scope. The four structured targets reject
 inputs larger than 4096 bytes to bound per-input work, including during artifact
@@ -709,7 +720,12 @@ value has a static type; runtime checks are still needed where data enters typed
 code. Mutation fixture projects are excluded because some deliberately contain
 type errors, and their acceptance tests run their own checker configuration.
 
-Pytest uses strict mode and collects from `tests/`, excluding fixture projects.
+Pytest uses strict mode and collects from `tests/`, excluding fixture projects. The
+source-distribution tests invoke the declared Maturin module and Cargo metadata
+to build one temporary archive. They check copied source bytes and excluded
+vendor outputs. The `hoimin-python/Cargo.toml` check permits Maturin's CRLF-to-LF
+normalization while preserving the rest of the text; copied parser files remain
+byte-exact. No Rust compilation is performed by that fixture.
 Tests use module-level functions, plain `assert`, `pytest.raises`, and
 `pytest.mark.parametrize` for independent cases. Use `tmp_path` and fixtures for
 test setup. Use the `mocker` fixture from [pytest-mock](
@@ -1397,12 +1413,12 @@ candidate/replacement assertions alongside this parse-preservation check.
 Run focused analyzer tests while changing these rules:
 
 ```console
-cargo test -p hoimin-cli --lib analyzer::rust::rust_tests::shadowed_collection_builtins_are_not_mutated_as_calls -- --exact
-cargo test -p hoimin-cli --lib analyzer::rust::rust_tests::collection_calls_and_literals_emit_exact_parseable_candidates -- --exact
-cargo test -p hoimin-cli --lib analyzer::rust::rust_tests::structure_calls_emit_exact_parseable_candidates -- --exact
-cargo test -p hoimin-cli --lib analyzer::rust::rust_tests::structure_index_neighbor_mutates_decimal_load_indices_only -- --exact
-cargo test -p hoimin-cli --lib analyzer::rust::rust_tests::structure_slice_neighbor_mutates_decimal_bounds_without_zero_steps -- --exact
-cargo test -p hoimin-cli --lib analyzer::rust::rust_tests
+cargo test -p hoimin-python --lib rust::rust_tests::shadowed_collection_builtins_are_not_mutated_as_calls -- --exact
+cargo test -p hoimin-python --lib rust::rust_tests::collection_calls_and_literals_emit_exact_parseable_candidates -- --exact
+cargo test -p hoimin-python --lib rust::rust_tests::structure_calls_emit_exact_parseable_candidates -- --exact
+cargo test -p hoimin-python --lib rust::rust_tests::structure_index_neighbor_mutates_decimal_load_indices_only -- --exact
+cargo test -p hoimin-python --lib rust::rust_tests::structure_slice_neighbor_mutates_decimal_bounds_without_zero_steps -- --exact
+cargo test -p hoimin-python --lib rust::rust_tests
 ```
 
 ## Extending Python exception mutations
@@ -1459,12 +1475,12 @@ to `apply_candidate_and_reparse` checks. Run the focused tests before the full
 analyzer module:
 
 ```console
-cargo test -p hoimin-cli --lib analyzer::rust::rust_tests::exception_type_pair_candidates_are_curated_and_syntax_directed -- --exact
-cargo test -p hoimin-cli --lib analyzer::rust::rust_tests::raise_exception_type_pair_candidates_preserve_the_primary_expression -- --exact
-cargo test -p hoimin-cli --lib analyzer::rust::rust_tests::raise_exception_type_pairs_use_scope_aware_source_and_destination_resolution -- --exact
-cargo test -p hoimin-cli --lib analyzer::rust::rust_tests::exception_risky_candidates_require_explicit_selection_and_reparse -- --exact
-cargo test -p hoimin-cli --lib analyzer::rust::rust_tests::sibling_bindings_do_not_suppress_builtin_or_exception_pairs -- --exact
-cargo test -p hoimin-cli --lib analyzer::rust::rust_tests::comprehension_exception_target_and_wildcard_boundaries_are_conservative -- --exact
+cargo test -p hoimin-python --lib rust::rust_tests::exception_type_pair_candidates_are_curated_and_syntax_directed -- --exact
+cargo test -p hoimin-python --lib rust::rust_tests::raise_exception_type_pair_candidates_preserve_the_primary_expression -- --exact
+cargo test -p hoimin-python --lib rust::rust_tests::raise_exception_type_pairs_use_scope_aware_source_and_destination_resolution -- --exact
+cargo test -p hoimin-python --lib rust::rust_tests::exception_risky_candidates_require_explicit_selection_and_reparse -- --exact
+cargo test -p hoimin-python --lib rust::rust_tests::sibling_bindings_do_not_suppress_builtin_or_exception_pairs -- --exact
+cargo test -p hoimin-python --lib rust::rust_tests::comprehension_exception_target_and_wildcard_boundaries_are_conservative -- --exact
 ```
 
 ## Extending plan ranking

@@ -2,10 +2,10 @@ use std::collections::BTreeMap;
 use std::io::Write;
 
 use camino::Utf8PathBuf;
-use hoimin_core::VerificationSelection;
+use hoimin_core::{RunSelection, VerificationSelection};
 use serde::Serialize;
 
-use super::{PlanManifest, ResolvedVerifySelection};
+use super::PlanManifest;
 use crate::cli::{OutputFormat, VerifySelection};
 
 /// Validated selection metadata, independent of execution reports and outcomes.
@@ -38,14 +38,14 @@ impl VerifyPreview {
     pub(super) fn new(
         manifest: &PlanManifest,
         requested: &VerifySelection,
-        resolved: &ResolvedVerifySelection,
+        resolved: &RunSelection,
         discovered_ids: &[String],
-        verification_selection: VerificationSelection,
     ) -> Self {
-        let ids = match resolved {
-            ResolvedVerifySelection::ExplicitCandidates(_) => discovered_ids,
-            ResolvedVerifySelection::RankedCandidates(ids) => ids,
-        };
+        let ids = resolved.ordered_ids().unwrap_or(discovered_ids);
+        let verification_selection = resolved
+            .verification_selection()
+            .expect("verified preview requires selection provenance")
+            .clone();
         let by_id = manifest
             .candidates
             .iter()

@@ -11,7 +11,7 @@ cargo deny --manifest-path fuzz/Cargo.toml --workspace --all-features --locked -
 
 Both lockfiles are checked without updating them. With no target filter, the
 graph includes other OS/architecture dependencies, normal/build/dev dependencies
-and all features. The first graph includes the shipping core and CLI; the second
+and all features. The first graph includes the core, pure Python analyzer and CLI; the second
 is the separate development-only fuzz harness. The local vendored parser patch
 is included in both. These are Cargo graphs, not assertions that every crate
 ships in every archive. Python dependencies remain covered by uv audit and are
@@ -26,8 +26,8 @@ than another project's policy. crates.io is the only allowed registry; there
 are no git-source exceptions. Local paths are reviewed in repository diffs;
 the source check does not prove their origin or safety.
 
-The repository's Elastic-2.0 license is allowed only for `hoimin-core` and
-`hoimin-cli` in the 0.12 series and the private `hoimin-fuzz` 0.0.0 harness. The
+The repository's Elastic-2.0 license is allowed only for `hoimin-core`,
+`hoimin-python` and `hoimin-cli` in the 0.13 series and the private `hoimin-fuzz` 0.0.0 harness. The
 harness declares the license that already governs repository code. This does
 not allow unrelated ELv2 dependencies. `libfuzzer-sys` 0.4.13 has a scoped NCSA
 allowance for its bundled libFuzzer. Update these bounded exceptions explicitly

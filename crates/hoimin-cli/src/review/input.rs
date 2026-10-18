@@ -51,12 +51,6 @@ pub(crate) fn load_report(
     }
     for mutant in &report.mutants {
         let descriptor = CandidateDescriptor::from(&mutant.candidate);
-        let id = hoimin_core::stable_mutant_id(&hoimin_core::CandidateIdentity::from(&descriptor));
-        if id.as_str() != mutant.candidate.id {
-            return Err(ReviewError::Invalid(
-                "report candidate identity conflict".into(),
-            ));
-        }
         #[cfg(test)]
         super::JOIN_WORK.with_borrow_mut(|work| work.plan_probes += 1);
         if let Some(planned) = planned.get(mutant.candidate.id.as_str())
@@ -194,9 +188,7 @@ fn validate_source_state(
     let descriptor = CandidateDescriptor::from(candidate);
     validate_candidate_with_context(context, &descriptor)
         .map_err(|error| ReviewError::Invalid(error.to_string()))?;
-    if hoimin_core::stable_mutant_id(&hoimin_core::CandidateIdentity::from(&descriptor)).as_str()
-        != candidate.id
-    {
+    if !hoimin_core::CandidateIdentityRef::from(candidate).matches_id(&candidate.id) {
         return Err(ReviewError::Invalid("candidate identity conflict".into()));
     }
     Ok(SourceState::Fresh)

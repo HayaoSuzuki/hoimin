@@ -5,6 +5,21 @@ description: OS別の資源制限と、プロセス終了・一時ファイル�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-994-controlled-metrics
+  resource: ../../../crates/hoimin-cli/tests/metrics_destinations.rs
+  revision: 7ea07bbf15c2fd76e126adbf1f0c55320c19fa1b
+  working_tree: clean
+  sha256: 6b69a54c2db954486edfdfad8d0b731af91b5ccece6dae3c1415db59808ecd38
+- id: issue-993-native
+  resource: ../../../crates/hoimin-cli/src/workspace/disk.rs
+  revision: 50b9c089ca73aeca2205636a2a9e1823cd244d39
+  working_tree: clean
+  sha256: ba430a7c74473ce0235dc4f6464a57eab4de8fd1a39f4e9ec03aef15f4102a37
+- id: issue-994-admission
+  resource: ../../../crates/hoimin-cli/src/workspace/copy.rs
+  revision: 50b9c089ca73aeca2205636a2a9e1823cd244d39
+  working_tree: clean
+  sha256: 0f8c519144c57122847a66a1becc3cba88c6d6f3f1d94e686ba963854e08cbf0
 - id: issue-967-windows
   resource: ../../../crates/hoimin-cli/src/resource/windows.rs
   revision: 229ce38535142958ab75aa1b0462d8be37dbf77e
@@ -281,6 +296,31 @@ sources:
   sha256: 7c4907d6190fa9019c36eb65207a3b5685ebc6da4737612022cb9aead5739ee6
 
 ---
+
+# Native names and early copy admission (Issues #993 and #994)
+
+Disk traversal retains native OsStr/UTF-16 names as descriptor-relative I/O
+authority and renders separate diagnostic strings. Native-name entries remain
+accounted; no-follow, identity, mount and traversal bounds still apply. Linux
+invalid-byte fixtures and Windows accepted lone-surrogate fixtures need native
+execution. APFS host tests cannot establish Linux name acceptance; the Windows
+manual CI step exposes any fixture-admission SKIP in its output.[^issue-993-native]
+
+Preflight inventories unique logical bytes when either immutable copy or owned
+limit is configured. Checked multiplication by requested workers rejects known
+copy exhaustion before snapshot content writes; the snapshot writer checks the
+initial size and each chunk for growth. Copy equality is accepted, while owned
+workspace equality keeps its existing rejection. `BudgetLedger` remains the only
+mutable reservation authority; the CLI shares core arithmetic and does not grant
+a second allowance. Source verification keeps the normal two content passes.
+Known budget exhaustion may precede content errors.[^issue-994-admission]
+
+A copy-admission refusal is a modeled run failure: exit 2, no baseline or mutant
+work, and an incomplete run summary after cleanup. An authorized metrics sidecar
+may record completed target discovery and cleanup while omitting preflight and
+execution stages. Destination collision checks still precede admission and
+protect selected sources, session databases and ownership locks. Genuine outer
+transition errors retain `metrics.incomplete` and withhold the sidecar.[^issue-994-controlled-metrics]
 
 # 制限する資源とディスク監視の範囲
 
@@ -910,3 +950,8 @@ restoration, interruption of blocking I/O or native Windows/Linux behavior.
 [^issue-984-restoration]
 
 [^issue-984-restoration]: [Restoration design, transition checks and verification](../../maintenance/2026-10-19-issue-984-baseline-restoration.md).
+
+[^issue-993-native]: [crates/hoimin-cli/src/workspace/disk.rs](../../../crates/hoimin-cli/src/workspace/disk.rs).
+[^issue-994-admission]: [crates/hoimin-cli/src/workspace/copy.rs](../../../crates/hoimin-cli/src/workspace/copy.rs).
+
+[^issue-994-controlled-metrics]: [Controlled-failure metrics and destination guards](../../../crates/hoimin-cli/tests/metrics_destinations.rs).

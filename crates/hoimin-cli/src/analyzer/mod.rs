@@ -49,27 +49,22 @@
 
 pub(crate) mod exception_project;
 use exception_project::ExceptionProject;
-#[allow(dead_code)]
-mod rust;
 mod store;
-mod types;
-mod visitor;
 
 #[cfg(test)]
 mod payload_probes;
 #[cfg(test)]
 mod payload_tests;
 
-pub(crate) use rust::definition_names;
-use rust::payload::{Charged, PayloadBudget};
+use hoimin_python::payload::{Charged, PayloadBudget};
 
 use std::fmt::Write as _;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::Duration;
 
+use hoimin_python::{AnalyzerCandidate, AnalyzerDiagnostic, AnalyzerDiagnosticCode};
 pub use store::*;
-pub use types::{AnalyzerCandidate, AnalyzerDiagnostic, AnalyzerDiagnosticCode};
 
 use camino::{Utf8Path, Utf8PathBuf};
 use hoimin_core::{
@@ -469,8 +464,8 @@ fn discover_targets_blocking(work: DiscoveryWork) -> Result<Discovery, EffectFai
             }
             (control.before_analysis)();
         }
-        let output = rust::analyze_source_with_exceptions(
-            &rust::AnalyzeRequest {
+        let output = hoimin_python::analyze_source_with_exceptions(
+            &hoimin_python::AnalyzeRequest {
                 payload: payload.clone(),
                 path: &target.path,
                 lines: &target.lines,
@@ -727,8 +722,8 @@ fn analyze_and_store(
         .map(|p| p.load(&|| cancellation.is_cancelled()))
         .transpose()
         .map_err(|e| EffectFailed::other(id, "analyzer.exception_hierarchy", e))?;
-    let output = rust::analyze_source_with_exceptions(
-        &rust::AnalyzeRequest {
+    let output = hoimin_python::analyze_source_with_exceptions(
+        &hoimin_python::AnalyzeRequest {
             payload: payload.clone(),
             path: &request.target.path,
             lines: &request.target.lines,
@@ -833,17 +828,18 @@ fn map_analyzer_diagnostic(diagnostic: AnalyzerDiagnostic) -> RunAnalysisDiagnos
 fn analysis_failure(
     id: EffectId,
     path: &camino::Utf8Path,
-    error: rust::AnalysisError,
+    error: hoimin_python::AnalysisError,
 ) -> EffectFailed {
     match error {
-        rust::AnalysisError::Cancelled => cancelled(id),
-        rust::AnalysisError::PayloadLimit { .. } => {
+        hoimin_python::AnalysisError::Cancelled => cancelled(id),
+        hoimin_python::AnalysisError::PayloadLimit { .. } => {
             EffectFailed::other(id, "analyzer.payload_limit", format!("{path}: {error}"))
         }
-        rust::AnalysisError::HierarchyLimit | rust::AnalysisError::HierarchySourceChanged => {
+        hoimin_python::AnalysisError::HierarchyLimit
+        | hoimin_python::AnalysisError::HierarchySourceChanged => {
             EffectFailed::other(id, "analyzer.exception_hierarchy", error.to_string())
         }
-        rust::AnalysisError::DepthExceeded { .. } => {
+        hoimin_python::AnalysisError::DepthExceeded { .. } => {
             EffectFailed::other(id, "analyzer.depth", format!("{path}: {error}"))
         }
     }
@@ -862,7 +858,7 @@ fn candidate_store_error(
         return analysis_failure(
             id,
             &candidate.path,
-            rust::AnalysisError::PayloadLimit { limit: *limit },
+            hoimin_python::AnalysisError::PayloadLimit { limit: *limit },
         );
     }
     EffectFailed::other(

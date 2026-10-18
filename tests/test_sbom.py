@@ -76,6 +76,7 @@ def test_sbom_preserves_transitive_graph_and_binds_artifact(tmp_path: Path) -> N
     assert props["hoimin:commit"] == COMMIT
     assert {c["name"] for c in data["components"]} == {
         "hoimin-core",
+        "hoimin-python",
         "littrs-ruff-python-parser",
         "stacker",
     }
@@ -238,6 +239,10 @@ def cargo_capture(monkeypatch: pytest.MonkeyPatch) -> Callable[[Path, bytes], No
             path = root / "crates/hoimin-cli/hoimin-release-sbom.json"
             path.parent.mkdir(parents=True)
             path.write_text(json.dumps(raw_bom()))
+            for member in ("hoimin-core", "hoimin-python"):
+                sidecar = root / "crates" / member / "hoimin-release-sbom.json"
+                sidecar.parent.mkdir(parents=True)
+                sidecar.write_text("generated sidecar")
             (root / "Cargo.lock").write_bytes(lock_contents)
             return "rustc fixture"
 
@@ -286,3 +291,61 @@ def test_capture_rejects_and_restores_changed_lock(
 
     assert not output.exists()
     assert (tmp_path / "Cargo.lock").read_bytes() == before
+
+
+@pytest.mark.parametrize("changed_lock", [False, True])
+def test_capture_removes_workspace_sidecars(
+    tmp_path: Path,
+    cargo_capture: Callable[[Path, bytes], None],
+    *,
+    changed_lock: bool,
+) -> None:
+    source_tree(tmp_path)
+    before = (tmp_path / "Cargo.lock").read_bytes()
+    cargo_capture(tmp_path, b"changed" if changed_lock else before)
+    output = tmp_path / "result.json"
+
+    if changed_lock:
+        with pytest.raises(ValueError, match=r"changed Cargo\.lock"):
+            capture_sbom.capture(tmp_path, "x86_64-unknown-linux-gnu", output)
+    else:
+        capture_sbom.capture(tmp_path, "x86_64-unknown-linux-gnu", output)
+
+    assert not list(tmp_path.glob("crates/*/hoimin-release-sbom.json"))
+
+
+@pytest.mark.parametrize("corruption", ["missing", "duplicate", "version"])
+def test_python_repository_component_requires_one_matching_version(
+    tmp_path: Path, corruption: str
+) -> None:
+    source_tree(tmp_path)
+    asset = tmp_path / "archive.tar.gz"
+    asset.write_bytes(b"archive")
+    path = sbom.finalize(
+        tmp_path,
+        capture_file(tmp_path, "x86_64-unknown-linux-gnu"),
+        asset,
+        "linux-x86_64",
+        "standalone",
+        "1.2.3",
+        COMMIT,
+    )
+    data = json.loads(path.read_text())
+    component = next(c for c in data["components"] if c["name"] == "hoimin-python")
+    if corruption == "missing":
+        data["components"].remove(component)
+        data["dependencies"] = [
+            node for node in data["dependencies"] if node["ref"] != "hoimin-python"
+        ]
+        data["dependencies"][0]["dependsOn"].remove("hoimin-python")
+        data["dependencies"][0]["dependsOn"].append("littrs-ruff-python-parser")
+    elif corruption == "duplicate":
+        data["components"].append({**component, "bom-ref": "python-duplicate"})
+        data["dependencies"].append({"ref": "python-duplicate", "dependsOn": []})
+        data["dependencies"][0]["dependsOn"].append("python-duplicate")
+    else:
+        component["version"] = "9.9.9"
+    path.write_text(json.dumps(data))
+
+    with pytest.raises(ValueError, match="wrong hoimin-python version"):
+        sbom.validate(path, asset, "linux-x86_64", "standalone", "1.2.3", COMMIT)

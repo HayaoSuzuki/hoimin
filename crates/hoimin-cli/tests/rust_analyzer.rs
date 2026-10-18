@@ -1,20 +1,4 @@
-#![allow(dead_code)]
-
-#[path = "../src/analyzer/types.rs"]
-mod types;
-
-pub use types::{AnalyzerCandidate, AnalyzerDiagnostic, AnalyzerDiagnosticCode};
-
-#[path = "../src/analyzer/visitor.rs"]
-pub(crate) mod visitor;
-
-mod analyzer {
-    pub use crate::types::AnalyzerDiagnosticCode;
-    pub(crate) use crate::visitor;
-}
-
-#[path = "../src/analyzer/rust.rs"]
-mod rust;
+use hoimin_python::AnalyzerDiagnosticCode;
 
 use camino::Utf8Path;
 use hoimin_core::{MutationOperator, MutationOperatorSelection, MutationProfile};
@@ -34,9 +18,9 @@ fn typing_import_rebinding_inventory_is_site_aware() {
     operators.include(MutationOperator::TypeListSequence);
     assert_eq!(operators.names(), vec!["type_list_sequence"]);
 
-    let output = rust::analyze_source(
-        &rust::AnalyzeRequest {
-            payload: rust::payload::PayloadBudget::default(),
+    let output = analyze(
+        &hoimin_python::AnalyzeRequest {
+            payload: hoimin_python::payload::PayloadBudget::default(),
             path: Utf8Path::new("pkg/typing_rebinding.py"),
             lines: &[],
             symbols: &[],
@@ -60,6 +44,10 @@ fn typing_import_rebinding_inventory_is_site_aware() {
     }
 }
 
+#[allow(
+    dead_code,
+    reason = "shared allocator also supports peak measurements in other tests"
+)]
 mod heap {
     include!("support/heap_tracking.rs");
     pub fn live() -> usize {
@@ -114,8 +102,8 @@ fn depth_cleanup_child_fixture() {
             .stack_size(2 * 1024 * 1024)
             .spawn(|| {
                 let operators = hoimin_core::MutationOperatorSelection::default();
-                let request = rust::AnalyzeRequest {
-                    payload: rust::payload::PayloadBudget::default(),
+                let request = hoimin_python::AnalyzeRequest {
+                    payload: hoimin_python::payload::PayloadBudget::default(),
                     path: camino::Utf8Path::new("calc.py"),
                     lines: &[],
                     symbols: &[],
@@ -132,14 +120,17 @@ fn depth_cleanup_child_fixture() {
                 ];
                 // Warm parser thread-local state before checking retained allocations.
                 for source in &sources {
-                    assert!(rust::analyze_source_cancellable(&request, source, || false).is_err());
+                    assert!(
+                        hoimin_python::analyze_source_cancellable(&request, source, || false)
+                            .is_err()
+                    );
                 }
                 let baseline = heap::live();
                 for _ in 0..20 {
                     for source in &sources {
                         assert!(matches!(
-                            rust::analyze_source_cancellable(&request, source, || false),
-                            Err(rust::AnalysisError::DepthExceeded { limit: 128 })
+                            hoimin_python::analyze_source_cancellable(&request, source, || false),
+                            Err(hoimin_python::AnalysisError::DepthExceeded { limit: 128 })
                         ));
                         assert!(
                             heap::live() <= baseline + 1024,
@@ -159,12 +150,13 @@ fn depth_cleanup_child_fixture() {
                     format!("match x:\n case (a{} as y)(): pass\n", ".b".repeat(25_000)),
                 ];
                 for source in &recovered {
-                    let _ = rust::analyze_source_cancellable(&request, source, || false);
+                    let _ = hoimin_python::analyze_source_cancellable(&request, source, || false);
                 }
                 let baseline = heap::live();
                 for _ in 0..10 {
                     for source in &recovered {
-                        let _ = rust::analyze_source_cancellable(&request, source, || false);
+                        let _ =
+                            hoimin_python::analyze_source_cancellable(&request, source, || false);
                         assert!(
                             heap::live() <= baseline + 1024,
                             "parser recovery retained AST memory"
@@ -205,9 +197,9 @@ fn foreign_middle_token_in_a_format_spec_is_invalid_syntax() {
             "{source:?} is invalid Python"
         );
         for profile in [MutationProfile::Full, MutationProfile::Focused] {
-            let output = rust::analyze_source(
-                &rust::AnalyzeRequest {
-                    payload: rust::payload::PayloadBudget::default(),
+            let output = analyze(
+                &hoimin_python::AnalyzeRequest {
+                    payload: hoimin_python::payload::PayloadBudget::default(),
                     path: Utf8Path::new("pkg/format_spec.py"),
                     lines: &[],
                     symbols: &[],
@@ -242,8 +234,8 @@ fn statement_deletion_obeys_selection_prefix_and_cancellation() {
         }
     }
     operators.include(MutationOperator::from_name("statement_delete").unwrap());
-    let mut request = rust::AnalyzeRequest {
-        payload: rust::payload::PayloadBudget::default(),
+    let mut request = hoimin_python::AnalyzeRequest {
+        payload: hoimin_python::payload::PayloadBudget::default(),
         path: Utf8Path::new("subject.py"),
         lines: &[],
         symbols: &[],
@@ -251,20 +243,20 @@ fn statement_deletion_obeys_selection_prefix_and_cancellation() {
         profile: MutationProfile::Full,
         max_candidates: 1,
     };
-    let limited = rust::analyze_source(&request, source);
+    let limited = analyze(&request, source);
     assert!(limited.truncated);
     assert_eq!(limited.candidates.len(), 1);
     assert_eq!(limited.candidates[0].original, "a()");
     request.max_candidates = 10;
     request.lines = &[LineRange { start: 4, end: 4 }];
-    let selected = rust::analyze_source(&request, source);
+    let selected = analyze(&request, source);
     assert_eq!(selected.candidates.len(), 1);
     assert_eq!(selected.candidates[0].original, "b()");
     request.lines = &[];
     let symbols = ["second".to_owned()];
     request.symbols = &symbols;
-    assert_eq!(rust::analyze_source(&request, source).candidates.len(), 2);
-    assert!(rust::analyze_source_cancellable(&request, source, || true).is_err());
+    assert_eq!(analyze(&request, source).candidates.len(), 2);
+    assert!(hoimin_python::analyze_source_cancellable(&request, source, || true).is_err());
 }
 
 #[test]
@@ -279,8 +271,8 @@ fn integer_neighbors_are_default_and_keep_a_bounded_prefix() {
     }
     operators.include(operator);
     let source = "def f():\n    return -3\n";
-    let request = rust::AnalyzeRequest {
-        payload: rust::payload::PayloadBudget::default(),
+    let request = hoimin_python::AnalyzeRequest {
+        payload: hoimin_python::payload::PayloadBudget::default(),
         path: Utf8Path::new("subject.py"),
         lines: &[],
         symbols: &[],
@@ -288,11 +280,11 @@ fn integer_neighbors_are_default_and_keep_a_bounded_prefix() {
         profile: MutationProfile::Full,
         max_candidates: 1,
     };
-    let output = rust::analyze_source(&request, source);
+    let output = analyze(&request, source);
     assert_eq!(output.candidates.len(), 1);
     assert!(output.truncated);
     assert_eq!(output.candidates[0].original, "-3");
-    assert!(rust::analyze_source_cancellable(&request, source, || true).is_err());
+    assert!(hoimin_python::analyze_source_cancellable(&request, source, || true).is_err());
     operators.exclude(operator);
     assert!(!operators.contains(operator));
 }
@@ -309,8 +301,8 @@ fn condition_constants_respect_focused_guards_and_limits() {
     }
     operators.include(operator);
     let source = "if __name__ == '__main__':\n    run()\n";
-    let mut request = rust::AnalyzeRequest {
-        payload: rust::payload::PayloadBudget::default(),
+    let mut request = hoimin_python::AnalyzeRequest {
+        payload: hoimin_python::payload::PayloadBudget::default(),
         path: Utf8Path::new("subject.py"),
         lines: &[],
         symbols: &[],
@@ -318,15 +310,12 @@ fn condition_constants_respect_focused_guards_and_limits() {
         profile: MutationProfile::Full,
         max_candidates: 1,
     };
-    let output = rust::analyze_source(&request, source);
+    let output = analyze(&request, source);
     assert_eq!(output.candidates.len(), 1);
     assert!(output.truncated);
     request.profile = MutationProfile::Focused;
-    assert_eq!(
-        rust::analyze_source(&request, source).candidates,
-        Vec::new()
-    );
-    assert!(rust::analyze_source_cancellable(&request, source, || true).is_err());
+    assert_eq!(analyze(&request, source).candidates, Vec::new());
+    assert!(hoimin_python::analyze_source_cancellable(&request, source, || true).is_err());
 }
 
 #[test]
@@ -341,8 +330,8 @@ fn body_erasure_anchors_first_erased_line_and_owning_function() {
     }
     operators.include(operator);
     let source = "def outer():\n    'doc'\n    def inner():\n        return 1\n    call()\n";
-    let mut request = rust::AnalyzeRequest {
-        payload: rust::payload::PayloadBudget::default(),
+    let mut request = hoimin_python::AnalyzeRequest {
+        payload: hoimin_python::payload::PayloadBudget::default(),
         path: Utf8Path::new("subject.py"),
         lines: &[hoimin_core::LineRange { start: 5, end: 5 }],
         symbols: &[],
@@ -350,22 +339,16 @@ fn body_erasure_anchors_first_erased_line_and_owning_function() {
         profile: MutationProfile::Full,
         max_candidates: 10,
     };
-    assert_eq!(
-        rust::analyze_source(&request, source).candidates,
-        Vec::new()
-    );
+    assert_eq!(analyze(&request, source).candidates, Vec::new());
     request.lines = &[hoimin_core::LineRange { start: 3, end: 3 }];
-    let output = rust::analyze_source(&request, source);
+    let output = analyze(&request, source);
     assert_eq!(output.candidates.len(), 1);
     assert_eq!(output.candidates[0].symbol.as_deref(), Some("outer"));
     let symbols = ["outer.inner".to_owned()];
     request.symbols = &symbols;
     request.lines = &[];
-    assert_eq!(
-        rust::analyze_source(&request, source).candidates,
-        Vec::new()
-    );
-    assert!(rust::analyze_source_cancellable(&request, source, || true).is_err());
+    assert_eq!(analyze(&request, source).candidates, Vec::new());
+    assert!(hoimin_python::analyze_source_cancellable(&request, source, || true).is_err());
 }
 
 #[test]
@@ -380,8 +363,8 @@ fn enum_replacement_is_opt_in_bounded_selected_and_cancellable() {
     }
     operators.include(operator);
     let source = "from enum import Enum\nclass Status(Enum):\n    A=1; B=2; C=3\ndef choose():\n    return Status.A\nx=Status.B\n";
-    let mut request = rust::AnalyzeRequest {
-        payload: rust::payload::PayloadBudget::default(),
+    let mut request = hoimin_python::AnalyzeRequest {
+        payload: hoimin_python::payload::PayloadBudget::default(),
         path: Utf8Path::new("subject.py"),
         lines: &[],
         symbols: &[],
@@ -389,18 +372,18 @@ fn enum_replacement_is_opt_in_bounded_selected_and_cancellable() {
         profile: MutationProfile::Full,
         max_candidates: 1,
     };
-    let limited = rust::analyze_source(&request, source);
+    let limited = analyze(&request, source);
     assert_eq!(limited.candidates.len(), 1);
     assert!(limited.truncated);
     assert_eq!(limited.candidates[0].replacement, "B");
     request.max_candidates = 10;
     request.lines = &[hoimin_core::LineRange { start: 6, end: 6 }];
-    assert_eq!(rust::analyze_source(&request, source).candidates.len(), 2);
+    assert_eq!(analyze(&request, source).candidates.len(), 2);
     request.lines = &[];
     let symbols = ["choose".to_owned()];
     request.symbols = &symbols;
-    assert_eq!(rust::analyze_source(&request, source).candidates.len(), 2);
-    assert!(rust::analyze_source_cancellable(&request, source, || true).is_err());
+    assert_eq!(analyze(&request, source).candidates.len(), 2);
+    assert!(hoimin_python::analyze_source_cancellable(&request, source, || true).is_err());
     operators.exclude(operator);
     assert!(!operators.contains(operator));
 }
@@ -417,8 +400,8 @@ fn augmented_assignment_is_default_selected_bounded_and_cancellable() {
     }
     operators.include(operator);
     let source = "def first(x):\n    x += 1\ndef second(x):\n    x *= 2\n";
-    let mut request = rust::AnalyzeRequest {
-        payload: rust::payload::PayloadBudget::default(),
+    let mut request = hoimin_python::AnalyzeRequest {
+        payload: hoimin_python::payload::PayloadBudget::default(),
         path: Utf8Path::new("subject.py"),
         lines: &[],
         symbols: &[],
@@ -426,20 +409,20 @@ fn augmented_assignment_is_default_selected_bounded_and_cancellable() {
         profile: MutationProfile::Full,
         max_candidates: 1,
     };
-    let output = rust::analyze_source(&request, source);
+    let output = analyze(&request, source);
     assert!(output.truncated);
     assert_eq!(output.candidates.len(), 1);
     assert_eq!(output.candidates[0].original, "+=");
     request.max_candidates = 10;
     request.lines = &[hoimin_core::LineRange { start: 4, end: 4 }];
-    let output = rust::analyze_source(&request, source);
+    let output = analyze(&request, source);
     assert_eq!(output.candidates.len(), 1);
     assert_eq!(output.candidates[0].original, "*=");
     request.lines = &[];
     let symbols = ["second".to_owned()];
     request.symbols = &symbols;
-    assert_eq!(rust::analyze_source(&request, source).candidates.len(), 1);
-    assert!(rust::analyze_source_cancellable(&request, source, || true).is_err());
+    assert_eq!(analyze(&request, source).candidates.len(), 1);
+    assert!(hoimin_python::analyze_source_cancellable(&request, source, || true).is_err());
     operators.exclude(operator);
     assert!(!operators.contains(operator));
 }
@@ -456,8 +439,8 @@ fn return_tuple_swap_is_default_selected_bounded_and_cancellable() {
     }
     operators.include(operator);
     let source = "def first(): return 1, 2\ndef second(): return 3, 4\n";
-    let mut request = rust::AnalyzeRequest {
-        payload: rust::payload::PayloadBudget::default(),
+    let mut request = hoimin_python::AnalyzeRequest {
+        payload: hoimin_python::payload::PayloadBudget::default(),
         path: Utf8Path::new("subject.py"),
         lines: &[],
         symbols: &[],
@@ -465,21 +448,18 @@ fn return_tuple_swap_is_default_selected_bounded_and_cancellable() {
         profile: MutationProfile::Full,
         max_candidates: 1,
     };
-    let output = rust::analyze_source(&request, source);
+    let output = analyze(&request, source);
     assert!(output.truncated);
     assert_eq!(output.candidates.len(), 1);
     assert_eq!(output.candidates[0].replacement, "2, 1");
     request.max_candidates = 10;
     request.lines = &[hoimin_core::LineRange { start: 2, end: 2 }];
-    assert_eq!(
-        rust::analyze_source(&request, source).candidates[0].replacement,
-        "4, 3"
-    );
+    assert_eq!(analyze(&request, source).candidates[0].replacement, "4, 3");
     request.lines = &[];
     let symbols = ["second".to_owned()];
     request.symbols = &symbols;
-    assert_eq!(rust::analyze_source(&request, source).candidates.len(), 1);
-    assert!(rust::analyze_source_cancellable(&request, source, || true).is_err());
+    assert_eq!(analyze(&request, source).candidates.len(), 1);
+    assert!(hoimin_python::analyze_source_cancellable(&request, source, || true).is_err());
     operators.exclude(operator);
     assert!(!operators.contains(operator));
 }
@@ -496,8 +476,8 @@ fn string_empty_is_default_selected_bounded_and_cancellable() {
     }
     operators.include(operator);
     let source = "'doc'\ndef first(): return 'first'\ndef second(): return 'second'\n";
-    let mut request = rust::AnalyzeRequest {
-        payload: rust::payload::PayloadBudget::default(),
+    let mut request = hoimin_python::AnalyzeRequest {
+        payload: hoimin_python::payload::PayloadBudget::default(),
         path: Utf8Path::new("subject.py"),
         lines: &[],
         symbols: &[],
@@ -505,21 +485,18 @@ fn string_empty_is_default_selected_bounded_and_cancellable() {
         profile: MutationProfile::Full,
         max_candidates: 1,
     };
-    let output = rust::analyze_source(&request, source);
+    let output = analyze(&request, source);
     assert!(output.truncated);
     assert_eq!(output.candidates.len(), 1);
     assert_eq!(output.candidates[0].original, "'first'");
     request.max_candidates = 10;
     request.lines = &[hoimin_core::LineRange { start: 3, end: 3 }];
-    assert_eq!(
-        rust::analyze_source(&request, source).candidates[0].original,
-        "'second'"
-    );
+    assert_eq!(analyze(&request, source).candidates[0].original, "'second'");
     request.lines = &[];
     let symbols = ["second".to_owned()];
     request.symbols = &symbols;
-    assert_eq!(rust::analyze_source(&request, source).candidates.len(), 1);
-    assert!(rust::analyze_source_cancellable(&request, source, || true).is_err());
+    assert_eq!(analyze(&request, source).candidates.len(), 1);
+    assert!(hoimin_python::analyze_source_cancellable(&request, source, || true).is_err());
     operators.exclude(operator);
     assert!(!operators.contains(operator));
 }
@@ -536,8 +513,8 @@ fn while_false_is_default_selected_bounded_and_cancellable() {
     }
     operators.include(operator);
     let source = "def first():\n    while first_ready: break\ndef second():\n    while second_ready: break\n";
-    let mut request = rust::AnalyzeRequest {
-        payload: rust::payload::PayloadBudget::default(),
+    let mut request = hoimin_python::AnalyzeRequest {
+        payload: hoimin_python::payload::PayloadBudget::default(),
         path: Utf8Path::new("subject.py"),
         lines: &[],
         symbols: &[],
@@ -545,21 +522,21 @@ fn while_false_is_default_selected_bounded_and_cancellable() {
         profile: MutationProfile::Full,
         max_candidates: 1,
     };
-    let output = rust::analyze_source(&request, source);
+    let output = analyze(&request, source);
     assert!(output.truncated);
     assert_eq!(output.candidates.len(), 1);
     assert_eq!(output.candidates[0].original, "first_ready");
     request.max_candidates = 10;
     request.lines = &[hoimin_core::LineRange { start: 4, end: 4 }];
     assert_eq!(
-        rust::analyze_source(&request, source).candidates[0].original,
+        analyze(&request, source).candidates[0].original,
         "second_ready"
     );
     request.lines = &[];
     let symbols = ["second".to_owned()];
     request.symbols = &symbols;
-    assert_eq!(rust::analyze_source(&request, source).candidates.len(), 1);
-    assert!(rust::analyze_source_cancellable(&request, source, || true).is_err());
+    assert_eq!(analyze(&request, source).candidates.len(), 1);
+    assert!(hoimin_python::analyze_source_cancellable(&request, source, || true).is_err());
     operators.exclude(operator);
     assert!(!operators.contains(operator));
 }
@@ -576,8 +553,8 @@ fn clause_delete_is_opt_in_selected_bounded_and_cancellable() {
     }
     operators.include(operator);
     let source = "def first():\n    if first_ready and allowed: pass\ndef second():\n    if second_ready or allowed: pass\n";
-    let mut request = rust::AnalyzeRequest {
-        payload: rust::payload::PayloadBudget::default(),
+    let mut request = hoimin_python::AnalyzeRequest {
+        payload: hoimin_python::payload::PayloadBudget::default(),
         path: Utf8Path::new("subject.py"),
         lines: &[],
         symbols: &[],
@@ -585,21 +562,21 @@ fn clause_delete_is_opt_in_selected_bounded_and_cancellable() {
         profile: MutationProfile::Full,
         max_candidates: 1,
     };
-    let output = rust::analyze_source(&request, source);
+    let output = analyze(&request, source);
     assert!(output.truncated);
     assert_eq!(output.candidates.len(), 1);
     assert_eq!(output.candidates[0].original, "first_ready and allowed");
     request.max_candidates = 10;
     request.lines = &[hoimin_core::LineRange { start: 4, end: 4 }];
     assert_eq!(
-        rust::analyze_source(&request, source).candidates[0].original,
+        analyze(&request, source).candidates[0].original,
         "second_ready or allowed"
     );
     request.lines = &[];
     let symbols = ["second".to_owned()];
     request.symbols = &symbols;
-    assert_eq!(rust::analyze_source(&request, source).candidates.len(), 2);
-    assert!(rust::analyze_source_cancellable(&request, source, || true).is_err());
+    assert_eq!(analyze(&request, source).candidates.len(), 2);
+    assert!(hoimin_python::analyze_source_cancellable(&request, source, || true).is_err());
     operators.exclude(operator);
     assert!(!operators.contains(operator));
 }
@@ -614,8 +591,8 @@ fn repeated_clauses_are_deduplicated_before_bounded_generation() {
     }
     operators.include(MutationOperator::from_name("condition_clause_delete").unwrap());
     let source = format!("if {}: pass\n", vec!["a"; 4096].join(" and "));
-    let request = rust::AnalyzeRequest {
-        payload: rust::payload::PayloadBudget::default(),
+    let request = hoimin_python::AnalyzeRequest {
+        payload: hoimin_python::payload::PayloadBudget::default(),
         path: Utf8Path::new("subject.py"),
         lines: &[],
         symbols: &[],
@@ -623,7 +600,7 @@ fn repeated_clauses_are_deduplicated_before_bounded_generation() {
         profile: MutationProfile::Full,
         max_candidates: 1,
     };
-    let output = rust::analyze_source(&request, &source);
+    let output = analyze(&request, &source);
     assert_eq!(output.candidates.len(), 1);
     assert!(!output.truncated);
     assert_eq!(
@@ -644,8 +621,8 @@ fn container_delete_is_opt_in_selected_bounded_and_cancellable() {
     }
     operators.include(operator);
     let source = "def first():\n    return [1]\ndef second():\n    return [2]\n";
-    let mut request = rust::AnalyzeRequest {
-        payload: rust::payload::PayloadBudget::default(),
+    let mut request = hoimin_python::AnalyzeRequest {
+        payload: hoimin_python::payload::PayloadBudget::default(),
         path: Utf8Path::new("subject.py"),
         lines: &[],
         symbols: &[],
@@ -653,21 +630,18 @@ fn container_delete_is_opt_in_selected_bounded_and_cancellable() {
         profile: MutationProfile::Full,
         max_candidates: 1,
     };
-    let output = rust::analyze_source(&request, source);
+    let output = analyze(&request, source);
     assert!(output.truncated);
     assert_eq!(output.candidates.len(), 1);
     assert_eq!(output.candidates[0].original, "[1]");
     request.max_candidates = 10;
     request.lines = &[hoimin_core::LineRange { start: 4, end: 4 }];
-    assert_eq!(
-        rust::analyze_source(&request, source).candidates[0].original,
-        "[2]"
-    );
+    assert_eq!(analyze(&request, source).candidates[0].original, "[2]");
     request.lines = &[];
     let symbols = ["second".to_owned()];
     request.symbols = &symbols;
-    assert_eq!(rust::analyze_source(&request, source).candidates.len(), 1);
-    assert!(rust::analyze_source_cancellable(&request, source, || true).is_err());
+    assert_eq!(analyze(&request, source).candidates.len(), 1);
+    assert!(hoimin_python::analyze_source_cancellable(&request, source, || true).is_err());
     operators.exclude(operator);
     assert!(!operators.contains(operator));
 }
@@ -682,8 +656,8 @@ fn repeated_container_elements_are_deduplicated_before_bounded_generation() {
     }
     operators.include(MutationOperator::from_name("container_element_delete").unwrap());
     let source = format!("value = [{}]\n", vec!["a"; 4096].join(","));
-    let request = rust::AnalyzeRequest {
-        payload: rust::payload::PayloadBudget::default(),
+    let request = hoimin_python::AnalyzeRequest {
+        payload: hoimin_python::payload::PayloadBudget::default(),
         path: Utf8Path::new("subject.py"),
         lines: &[],
         symbols: &[],
@@ -691,7 +665,7 @@ fn repeated_container_elements_are_deduplicated_before_bounded_generation() {
         profile: MutationProfile::Full,
         max_candidates: 1,
     };
-    let output = rust::analyze_source(&request, &source);
+    let output = analyze(&request, &source);
     assert_eq!(output.candidates.len(), 1);
     assert!(!output.truncated);
     assert_eq!(
@@ -712,8 +686,8 @@ fn conversion_remove_is_default_selected_bounded_and_cancellable() {
     }
     operators.include(operator);
     let source = "def first():\n    return int(1)\ndef second():\n    return int(2)\n";
-    let mut request = rust::AnalyzeRequest {
-        payload: rust::payload::PayloadBudget::default(),
+    let mut request = hoimin_python::AnalyzeRequest {
+        payload: hoimin_python::payload::PayloadBudget::default(),
         path: Utf8Path::new("subject.py"),
         lines: &[],
         symbols: &[],
@@ -721,21 +695,18 @@ fn conversion_remove_is_default_selected_bounded_and_cancellable() {
         profile: MutationProfile::Full,
         max_candidates: 1,
     };
-    let output = rust::analyze_source(&request, source);
+    let output = analyze(&request, source);
     assert!(output.truncated);
     assert_eq!(output.candidates.len(), 1);
     assert_eq!(output.candidates[0].original, "int(1)");
     request.max_candidates = 10;
     request.lines = &[hoimin_core::LineRange { start: 4, end: 4 }];
-    assert_eq!(
-        rust::analyze_source(&request, source).candidates[0].original,
-        "int(2)"
-    );
+    assert_eq!(analyze(&request, source).candidates[0].original, "int(2)");
     request.lines = &[];
     let symbols = ["second".to_owned()];
     request.symbols = &symbols;
-    assert_eq!(rust::analyze_source(&request, source).candidates.len(), 1);
-    assert!(rust::analyze_source_cancellable(&request, source, || true).is_err());
+    assert_eq!(analyze(&request, source).candidates.len(), 1);
+    assert!(hoimin_python::analyze_source_cancellable(&request, source, || true).is_err());
     operators.exclude(operator);
     assert!(!operators.contains(operator));
 }
@@ -752,8 +723,8 @@ fn optional_keyword_is_opt_in_selected_bounded_and_cancellable() {
     }
     operators.include(operator);
     let source = "def target(*, flag=True): return flag\ndef first(): return target(flag=False)\ndef second(): return target(flag=0)\n";
-    let mut request = rust::AnalyzeRequest {
-        payload: rust::payload::PayloadBudget::default(),
+    let mut request = hoimin_python::AnalyzeRequest {
+        payload: hoimin_python::payload::PayloadBudget::default(),
         path: Utf8Path::new("subject.py"),
         lines: &[],
         symbols: &[],
@@ -761,21 +732,21 @@ fn optional_keyword_is_opt_in_selected_bounded_and_cancellable() {
         profile: MutationProfile::Full,
         max_candidates: 1,
     };
-    let output = rust::analyze_source(&request, source);
+    let output = analyze(&request, source);
     assert!(output.truncated);
     assert_eq!(output.candidates.len(), 1);
     assert_eq!(output.candidates[0].original, "target(flag=False)");
     request.max_candidates = 10;
     request.lines = &[hoimin_core::LineRange { start: 3, end: 3 }];
     assert_eq!(
-        rust::analyze_source(&request, source).candidates[0].original,
+        analyze(&request, source).candidates[0].original,
         "target(flag=0)"
     );
     request.lines = &[];
     let symbols = ["second".to_owned()];
     request.symbols = &symbols;
-    assert_eq!(rust::analyze_source(&request, source).candidates.len(), 1);
-    assert!(rust::analyze_source_cancellable(&request, source, || true).is_err());
+    assert_eq!(analyze(&request, source).candidates.len(), 1);
+    assert!(hoimin_python::analyze_source_cancellable(&request, source, || true).is_err());
     operators.exclude(operator);
     assert!(!operators.contains(operator));
 }
@@ -788,8 +759,8 @@ fn promoted_defaults_keep_profile_filtering_before_bounded_prefix_selection() {
         (MutationProfile::Full, true),
         (MutationProfile::Focused, false),
     ] {
-        let mut request = rust::AnalyzeRequest {
-            payload: rust::payload::PayloadBudget::default(),
+        let mut request = hoimin_python::AnalyzeRequest {
+            payload: hoimin_python::payload::PayloadBudget::default(),
             path: Utf8Path::new("subject.py"),
             lines: &[],
             symbols: &[],
@@ -797,7 +768,7 @@ fn promoted_defaults_keep_profile_filtering_before_bounded_prefix_selection() {
             profile,
             max_candidates: 1000,
         };
-        let full = rust::analyze_source(&request, source);
+        let full = analyze(&request, source);
         assert!(!full.truncated);
         assert!(full.candidates.len() > 3);
         assert_eq!(
@@ -810,10 +781,10 @@ fn promoted_defaults_keep_profile_filtering_before_bounded_prefix_selection() {
             includes_first_line
         );
         request.max_candidates = 3;
-        let bounded = rust::analyze_source(&request, source);
+        let bounded = analyze(&request, source);
         assert_eq!(bounded.candidates, full.candidates[..3]);
         assert!(bounded.truncated);
-        assert!(rust::analyze_source_cancellable(&request, source, || true).is_err());
+        assert!(hoimin_python::analyze_source_cancellable(&request, source, || true).is_err());
     }
 }
 
@@ -829,8 +800,8 @@ fn method_remove_is_opt_out_selected_bounded_and_cancellable() {
     }
     operators.include(operator);
     let source = "def first():\n    return first_value.clean()\ndef second():\n    return second_value.clean()\n";
-    let mut request = rust::AnalyzeRequest {
-        payload: rust::payload::PayloadBudget::default(),
+    let mut request = hoimin_python::AnalyzeRequest {
+        payload: hoimin_python::payload::PayloadBudget::default(),
         path: Utf8Path::new("subject.py"),
         lines: &[],
         symbols: &[],
@@ -838,21 +809,21 @@ fn method_remove_is_opt_out_selected_bounded_and_cancellable() {
         profile: MutationProfile::Full,
         max_candidates: 1,
     };
-    let output = rust::analyze_source(&request, source);
+    let output = analyze(&request, source);
     assert!(output.truncated);
     assert_eq!(output.candidates.len(), 1);
     assert_eq!(output.candidates[0].original, "first_value.clean()");
     request.max_candidates = 10;
     request.lines = &[hoimin_core::LineRange { start: 4, end: 4 }];
     assert_eq!(
-        rust::analyze_source(&request, source).candidates[0].original,
+        analyze(&request, source).candidates[0].original,
         "second_value.clean()"
     );
     request.lines = &[];
     let symbols = ["second".to_owned()];
     request.symbols = &symbols;
-    assert_eq!(rust::analyze_source(&request, source).candidates.len(), 1);
-    assert!(rust::analyze_source_cancellable(&request, source, || true).is_err());
+    assert_eq!(analyze(&request, source).candidates.len(), 1);
+    assert!(hoimin_python::analyze_source_cancellable(&request, source, || true).is_err());
     operators.exclude(operator);
     assert!(!operators.contains(operator));
 }
@@ -869,8 +840,8 @@ fn return_constant_preserves_scope_selection_profile_prefix_and_cancellation() {
     }
     operators.include(operator);
     let source = "def outer() -> int:\n    'doc'\n    def inner(): return 1\n    return 2\n";
-    let mut request = rust::AnalyzeRequest {
-        payload: rust::payload::PayloadBudget::default(),
+    let mut request = hoimin_python::AnalyzeRequest {
+        payload: hoimin_python::payload::PayloadBudget::default(),
         path: Utf8Path::new("subject.py"),
         lines: &[],
         symbols: &[],
@@ -878,7 +849,7 @@ fn return_constant_preserves_scope_selection_profile_prefix_and_cancellation() {
         profile: MutationProfile::Full,
         max_candidates: 10,
     };
-    let full = rust::analyze_source(&request, source);
+    let full = analyze(&request, source);
     assert_eq!(full.candidates.len(), 2);
     assert!(
         full.candidates
@@ -886,33 +857,31 @@ fn return_constant_preserves_scope_selection_profile_prefix_and_cancellation() {
             .all(|c| c.line == 3 && c.symbol.as_deref() == Some("outer"))
     );
     request.max_candidates = 1;
-    let bounded = rust::analyze_source(&request, source);
+    let bounded = analyze(&request, source);
     assert!(bounded.truncated);
     assert_eq!(bounded.candidates, full.candidates[..1]);
     request.max_candidates = 10;
     request.lines = &[hoimin_core::LineRange { start: 4, end: 4 }];
-    assert_eq!(
-        rust::analyze_source(&request, source).candidates,
-        Vec::new()
-    );
+    assert_eq!(analyze(&request, source).candidates, Vec::new());
     request.lines = &[hoimin_core::LineRange { start: 3, end: 3 }];
-    assert_eq!(rust::analyze_source(&request, source).candidates.len(), 2);
+    assert_eq!(analyze(&request, source).candidates.len(), 2);
     request.lines = &[];
     let symbols = ["outer.inner".to_owned()];
     request.symbols = &symbols;
-    assert_eq!(
-        rust::analyze_source(&request, source).candidates,
-        Vec::new()
-    );
+    assert_eq!(analyze(&request, source).candidates, Vec::new());
     request.symbols = &[];
     let guarded = "if __name__ == '__main__':\n    def f(x) -> int: return x\n";
-    assert_eq!(rust::analyze_source(&request, guarded).candidates.len(), 2);
+    assert_eq!(analyze(&request, guarded).candidates.len(), 2);
     request.profile = MutationProfile::Focused;
-    assert_eq!(
-        rust::analyze_source(&request, guarded).candidates,
-        Vec::new()
-    );
-    assert!(rust::analyze_source_cancellable(&request, source, || true).is_err());
+    assert_eq!(analyze(&request, guarded).candidates, Vec::new());
+    assert!(hoimin_python::analyze_source_cancellable(&request, source, || true).is_err());
     operators.exclude(operator);
     assert!(!operators.contains(operator));
+}
+
+fn analyze(
+    request: &hoimin_python::AnalyzeRequest<'_>,
+    source: &str,
+) -> hoimin_python::AnalyzerOutput {
+    hoimin_python::analyze_source_cancellable(request, source, || false).unwrap()
 }
