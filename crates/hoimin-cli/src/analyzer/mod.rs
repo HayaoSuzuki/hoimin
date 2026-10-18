@@ -1124,9 +1124,9 @@ mod tests {
         }
     }
 
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[tokio::test(start_paused = true)]
     async fn discovery_deadline_is_shared_across_targets() {
-        // Arrange: the first target consumes most of the one-second allowance.
+        // Arrange: handshakes keep virtual time fixed while the worker reaches each target.
         let directory = tempfile::tempdir().unwrap();
         let root = Utf8PathBuf::from_path_buf(directory.path().to_owned()).unwrap();
         let targets = ["first.py", "second.py"].map(|name| {
@@ -1139,15 +1139,9 @@ mod tests {
         });
         let (entered_tx, entered_rx) = mpsc::sync_channel(1);
         let (release_tx, release_rx) = mpsc::sync_channel(1);
-        let mut target_index = 0;
         let control = DiscoveryControl::new(Arc::new(tempfile::tempdir().unwrap()), move || {
-            target_index += 1;
-            if target_index == 1 {
-                std::thread::sleep(Duration::from_millis(750));
-            } else {
-                entered_tx.send(()).unwrap();
-                release_rx.recv_timeout(Duration::from_secs(2)).unwrap();
-            }
+            entered_tx.send(()).unwrap();
+            release_rx.recv_timeout(Duration::from_secs(5)).unwrap();
         });
         let operation = tokio::spawn(async move {
             discover_targets_with_control(
@@ -1161,18 +1155,18 @@ mod tests {
             )
             .await
         });
-        tokio::task::spawn_blocking(move || entered_rx.recv_timeout(Duration::from_secs(2)))
-            .await
-            .unwrap()
-            .expect("second target must begin before the shared deadline");
-        // Act: a reset at target two would postpone expiry by a full second.
-        let result = tokio::time::timeout(Duration::from_millis(500), operation).await;
+        wait_for_discovery_entry(&entered_rx).await.unwrap();
+        tokio::time::advance(Duration::from_millis(750)).await;
+        release_tx.send(()).unwrap();
+        // Yield without advancing time until target two reaches its handshake.
+        wait_for_discovery_entry(&entered_rx).await.unwrap();
+        // Act: expire the original deadline while the second target remains paused.
+        // A reset at target two would still have 750 ms left on this frozen clock.
+        tokio::time::advance(Duration::from_millis(250)).await;
+        let result = operation.await;
         release_tx.send(()).unwrap();
         // Assert.
-        let error = result
-            .expect("deadline restarted at the second target")
-            .unwrap()
-            .unwrap_err();
+        let error = result.unwrap().unwrap_err();
         assert_eq!(error.failure.code(), "analyzer.timeout");
     }
 

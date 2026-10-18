@@ -1044,30 +1044,31 @@ fn captured_snapshot_names_and_digest_both_change_compatibility() {
 }
 
 #[test]
-fn schema_12_execution_fingerprint_has_stable_bytes() {
-    // Arrange: fixed inputs cover both environment variants in the new encoding.
-    for (environment, expected) in [
-        (
-            hoimin_core::EnvironmentSnapshot::Untracked,
-            [
-                84, 66, 95, 225, 171, 2, 182, 209, 253, 154, 140, 151, 197, 165, 2, 54, 247, 234,
-                24, 14, 3, 199, 197, 88, 6, 54, 215, 75, 92, 69, 10, 27,
-            ],
-        ),
-        (
-            hoimin_core::EnvironmentSnapshot::captured(vec!["FLAG".into()], "a".repeat(64))
-                .unwrap(),
-            [
-                174, 60, 124, 72, 87, 11, 81, 69, 117, 208, 160, 134, 123, 204, 27, 140, 254, 234,
-                220, 106, 82, 227, 167, 166, 77, 101, 96, 33, 163, 56, 166, 138,
-            ],
-        ),
-    ] {
-        let mut input = fixture_input();
-        input.environment = environment;
-        // Act.
-        let actual = fingerprint(&input);
-        // Assert.
-        assert_eq!(*actual.as_bytes(), expected);
-    }
+fn schema_12_execution_fingerprint_has_stable_untracked_bytes() {
+    // Arrange.
+    let input = fixture_input();
+    let expected = [
+        84, 66, 95, 225, 171, 2, 182, 209, 253, 154, 140, 151, 197, 165, 2, 54, 247, 234, 24, 14,
+        3, 199, 197, 88, 6, 54, 215, 75, 92, 69, 10, 27,
+    ];
+    // Act.
+    let actual = fingerprint(&input);
+    // Assert.
+    assert_eq!(*actual.as_bytes(), expected);
+}
+
+#[test]
+fn schema_12_execution_fingerprint_has_stable_captured_bytes() {
+    // Arrange.
+    let mut input = fixture_input();
+    input.environment =
+        hoimin_core::EnvironmentSnapshot::captured(vec!["FLAG".into()], "a".repeat(64)).unwrap();
+    let expected = [
+        174, 60, 124, 72, 87, 11, 81, 69, 117, 208, 160, 134, 123, 204, 27, 140, 254, 234, 220,
+        106, 82, 227, 167, 166, 77, 101, 96, 33, 163, 56, 166, 138,
+    ];
+    // Act.
+    let actual = fingerprint(&input);
+    // Assert.
+    assert_eq!(*actual.as_bytes(), expected);
 }

@@ -1941,21 +1941,28 @@ fn run_resume_requires_a_session() {
     );
 }
 
+fn assert_run_rejects_plan_only_analyzer_timeout(options: &[&str]) {
+    // Arrange.
+    let mut argv = vec!["hoimin", "run", "--file", "src/calc.py"];
+    argv.extend_from_slice(options);
+    argv.extend(["--", "python"]);
+    // Act.
+    let result = parse_from(argv);
+    // Assert.
+    assert!(
+        result.is_err(),
+        "run accepted discovery-only option {options:?}"
+    );
+}
+
 #[test]
-fn run_rejects_plan_only_analyzer_timeout() {
-    // Arrange: both Clap spellings must remain plan-only.
-    for options in [
-        vec!["--analyzer-timeout", "19s"],
-        vec!["--analyzer-timeout=19s"],
-    ] {
-        let mut argv = vec!["hoimin", "run", "--file", "src/calc.py"];
-        argv.extend(options);
-        argv.extend(["--", "python"]);
-        // Act.
-        let result = parse_from(argv);
-        // Assert.
-        assert!(result.is_err(), "run accepted discovery-only timeout");
-    }
+fn run_rejects_plan_only_analyzer_timeout_separate_tokens() {
+    assert_run_rejects_plan_only_analyzer_timeout(&["--analyzer-timeout", "19s"]);
+}
+
+#[test]
+fn run_rejects_plan_only_analyzer_timeout_equals_spelling() {
+    assert_run_rejects_plan_only_analyzer_timeout(&["--analyzer-timeout=19s"]);
 }
 
 #[test]
@@ -1986,31 +1993,43 @@ fn plan_normalizes_its_discovery_timeout_separately_from_execution() {
     assert!(execution["limits"].get("analyzer_timeout").is_none());
 }
 
-#[test]
-fn plan_rejects_invalid_discovery_timeout_with_flag_attribution() {
+fn assert_plan_rejects_discovery_timeout_with_flag_attribution(value: &str) {
     // Arrange.
-    for value in ["nonsense", "0s", "10000000000s"] {
-        let ParsedCommand::Plan(plan) = parse_from([
-            "hoimin",
-            "plan",
-            "--file",
-            "calc.py",
-            "--analyzer-timeout",
-            value,
-            "--",
-            "python",
-        ])
-        .unwrap() else {
-            panic!("expected plan")
-        };
-        // Act.
-        let error = plan.into_configs().unwrap_err();
-        // Assert.
-        assert!(
-            error.to_string().contains("--analyzer-timeout"),
-            "{value}: {error}"
-        );
-    }
+    let ParsedCommand::Plan(plan) = parse_from([
+        "hoimin",
+        "plan",
+        "--file",
+        "calc.py",
+        "--analyzer-timeout",
+        value,
+        "--",
+        "python",
+    ])
+    .unwrap() else {
+        panic!("expected plan")
+    };
+    // Act.
+    let error = plan.into_configs().unwrap_err();
+    // Assert.
+    assert!(
+        error.to_string().contains("--analyzer-timeout"),
+        "{value}: {error}"
+    );
+}
+
+#[test]
+fn plan_rejects_malformed_discovery_timeout_with_flag_attribution() {
+    assert_plan_rejects_discovery_timeout_with_flag_attribution("nonsense");
+}
+
+#[test]
+fn plan_rejects_zero_discovery_timeout_with_flag_attribution() {
+    assert_plan_rejects_discovery_timeout_with_flag_attribution("0s");
+}
+
+#[test]
+fn plan_rejects_oversized_discovery_timeout_with_flag_attribution() {
+    assert_plan_rejects_discovery_timeout_with_flag_attribution("10000000000s");
 }
 
 #[test]

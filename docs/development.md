@@ -1771,9 +1771,11 @@ was also a valid current untracked encoding. Plan schema 10/report schema 8 requ
 the explicit snapshot and reject the older representation rather than adapting it.
 Regenerate older plans; retain old reports with their producing binary.
 
-Fingerprint schema 12 retains the original field-13 name/digest framing. Exact
-untracked and captured pre-refactor digest goldens verify byte compatibility.
-SQLite schema 4 and budget selection are unchanged. Verify captures the same saved
+Fingerprint schema 12 retains the original field-13 environment name/digest
+framing, but removing discovery timeout changes the complete execution fingerprint.
+Schema-11 digest goldens verify that the old fingerprints differ; separate exact
+untracked and captured vectors freeze schema-12 bytes. SQLite schema 5 and budget
+selection are unchanged. Verify captures the same saved
 name set and compares the complete snapshot before project work or the baseline.
 Captured plaintext is not added to persistence or output; digests do not guarantee
 secrecy for low-entropy values.
