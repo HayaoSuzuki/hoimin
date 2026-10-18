@@ -5,6 +5,16 @@ description: 保存・復旧の権限、スキーマ移行、結果の生成側�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-992-identity
+  resource: ../../../crates/hoimin-core/src/candidate.rs
+  revision: 50b9c089ca73aeca2205636a2a9e1823cd244d39
+  working_tree: clean
+  sha256: 0bec0dbf0fa391f301a1bec2f41b783732ac4248676adb055113f7370affa54f
+- id: issue-992-reader
+  resource: ../../../crates/hoimin-cli/src/artifacts/run_report.rs
+  revision: 50b9c089ca73aeca2205636a2a9e1823cd244d39
+  working_tree: clean
+  sha256: 1de6d012acebb98f0e26abcc19a5b372c2cd20751f4f988a9e9c2a4518c26dba
 - id: issue-940-policy
   resource: ../../../crates/hoimin-core/src/resume.rs
   revision: 465ff928c1f2ceb9f9b8f8084465475e45799ee8
@@ -229,6 +239,17 @@ sources:
   sha256: 7c4907d6190fa9019c36eb65207a3b5685ebc6da4737612022cb9aead5739ee6
 
 ---
+
+# Current report identity validation (Issue #992)
+
+The common current JSON/JSONL reader checks each candidate's saved ID against
+`CandidateIdentityRef` after structural validation. Progress and review consume
+this guarantee and reject mismatches with exit 2. Progress requires no source
+workspace access; review retains its additional checked-plan and source checks.
+The identity uses schema, source hash, canonical path, span, operator and
+replacement, excluding display line, column, symbol and discovery order.
+Both borrowed and owned projections use one hash encoder, preserving mutant-ID
+v1 bytes and valid schema-8 writer output.[^issue-992-identity][^issue-992-reader]
 
 # Single project root in saved reports (Issue #949)
 
@@ -600,3 +621,6 @@ child on regression. The record reports macOS tests and leaves other platform
 execution explicit.[^issue-985-admission]
 
 [^issue-985-admission]: [Regular-file admission and verification record](../../maintenance/2026-10-18-issue-985.md).
+
+[^issue-992-identity]: [crates/hoimin-core/src/candidate.rs](../../../crates/hoimin-core/src/candidate.rs).
+[^issue-992-reader]: [crates/hoimin-cli/src/artifacts/run_report.rs](../../../crates/hoimin-cli/src/artifacts/run_report.rs).

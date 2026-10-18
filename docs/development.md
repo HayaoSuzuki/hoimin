@@ -249,9 +249,12 @@ scope; it supplements this procedure rather than owning another update checklist
 
 Select the process backend before constructing `RunState`. Pass its
 `ProcessHandler::resource_control()` description as the final argument to
-`RunState::new`, `with_candidate_filter`, or
-`with_ordered_candidate_filter`. `RunStarted::minimal` also requires an explicit
-`ResourceControl` as its final argument. Rust callers using the older constructor
+`RunState::new` or `RunState::with_selection`. Construct `RunSelection` with
+`all`, `explicit`, or `ordered`; the checked constructors couple execution IDs
+with verification mode, count and Sample order. Pass a verified plan through
+`plan.selection()` and inspect its provenance with
+`plan.selection().verification_selection()`. `RunStarted::minimal` also
+requires an explicit `ResourceControl` as its final argument. Rust callers using the older constructor
 signatures must supply this argument; there is no inferred or default backend.
 Tests that supply a policy exercise core reporting, not native OS enforcement.
 The report schema retains its existing `mode` and singular `mechanism` fields.
@@ -471,8 +474,8 @@ whole-slice equality, and one-shot hashes. They are finite tests, not proofs.
 ## Coverage-guided fuzzing
 
 `fuzz/` is a separate Cargo workspace with its own committed lockfile. It depends
-on `hoimin-core` by path; libFuzzer does not enter the shipping workspace or the
-ordinary `cargo test --workspace` run. The targets supplement proptest:
+on `hoimin-core` and the pure `hoimin-python` analyzer by path. libFuzzer does
+not enter the shipping workspace or the ordinary `cargo test --workspace` run. The targets supplement proptest:
 
 - `source_encoding`: arbitrary bytes exercise encoding declarations and malformed
   input. Successful decodes must preserve bytes on re-encoding and match scalar
@@ -500,11 +503,11 @@ ordinary `cargo test --workspace` run. The targets supplement proptest:
 - `sampling`: checks sample size, uniqueness, index bounds, and seeded prefix
   consistency, with populations bounded to 4096 elements.
 
-The Python analyzer target compiles production analyzer and shared result-type
-modules directly using `#[path]`, so no fuzz-only API is added to the shipping
-crate. Keep its dependency declarations in `fuzz/Cargo.toml` aligned with
-`crates/hoimin-cli/Cargo.toml` and retain the root workspace's vendored Ruff
-parser patch in the fuzz workspace.
+The Python analyzer target uses the same `hoimin-python` Cargo API as the CLI
+and dedicated corpus tests. Results keep their charged payload leases across
+that boundary. CLI modules retain source reads, project acquisition and candidate
+spools. Keep the root workspace's vendored Ruff parser patch in the separate
+fuzz workspace because Cargo patches are scoped to a workspace root.
 These are in-memory checks; filesystem discovery, file I/O, subprocesses, and
 mutation execution are outside their scope. The four structured targets reject
 inputs larger than 4096 bytes to bound per-input work, including during artifact
@@ -717,7 +720,10 @@ value has a static type; runtime checks are still needed where data enters typed
 code. Mutation fixture projects are excluded because some deliberately contain
 type errors, and their acceptance tests run their own checker configuration.
 
-Pytest uses strict mode and collects from `tests/`, excluding fixture projects.
+Pytest uses strict mode and collects from `tests/`, excluding fixture projects. The
+source-distribution tests invoke the declared Maturin module and Cargo metadata
+to build one temporary archive. They check preserved source bytes and excluded
+vendor outputs; no Rust compilation is performed by that fixture.
 Tests use module-level functions, plain `assert`, `pytest.raises`, and
 `pytest.mark.parametrize` for independent cases. Use `tmp_path` and fixtures for
 test setup. Use the `mocker` fixture from [pytest-mock](

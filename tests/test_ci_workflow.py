@@ -1736,7 +1736,12 @@ def test_manual_non_linux_jobs_are_complete_and_independent() -> None:
             for step in job_steps(workflow_jobs(automatic)[job_name])
         ]
 
-        assert job_steps(job) == automatic_steps, job_name
+        manual_steps = [
+            step
+            for step in job_steps(job)
+            if step.get("name") != "Show native Windows disk-name acceptance"
+        ]
+        assert manual_steps == automatic_steps, job_name
 
     for job_name, expected_os in MANUAL_NON_LINUX_MATRIX_JOBS.items():
         job = jobs[job_name]
@@ -1758,7 +1763,10 @@ def test_manual_non_linux_step_conditions(*, upload: bool) -> None:
     jobs = workflow_jobs(
         workflow_document(NON_LINUX_CI_WORKFLOW.read_text(encoding="utf-8"))
     )
-    expected_conditions = {True: {(True, "always()")}, False: {(False, None)}}
+    expected_conditions = {
+        True: {(True, "always()")},
+        False: {(False, None), (True, "runner.os == 'Windows'")},
+    }
     steps = [
         step
         for job in jobs.values()
@@ -2443,3 +2451,31 @@ def test_release_sbom_proof_step_supplies_valid_guard_arguments(
     assert arguments.rss_limit_mib == 2048
     assert arguments.sample_ms == 250
     assert arguments.command == ["lake", "env", "lean", "--run", "ReleaseSbom.lean"]
+
+
+def test_manual_windows_native_name_step_exposes_fixture_admission() -> None:
+    jobs = workflow_jobs(
+        workflow_document(NON_LINUX_CI_WORKFLOW.read_text(encoding="utf-8"))
+    )
+
+    steps = [
+        step
+        for step in job_steps(jobs["rust"])
+        if step.get("name") == "Show native Windows disk-name acceptance"
+    ]
+
+    assert steps == [
+        {
+            "name": "Show native Windows disk-name acceptance",
+            "if": "runner.os == 'Windows'",
+            "env": {
+                "CARGO_BUILD_JOBS": "2",
+                "CARGO_INCREMENTAL": "0",
+                "RUST_TEST_THREADS": "2",
+            },
+            "run": (
+                "cargo test --locked -p hoimin-cli --lib "
+                "workspace::disk::native_name_tests -- --nocapture"
+            ),
+        }
+    ]

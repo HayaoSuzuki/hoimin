@@ -5,6 +5,11 @@ description: docs/superpowers/specs内の全Markdownを先頭見出しと出典�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issues-992-998-design
+  resource: ../../superpowers/specs/2026-10-19-issues-992-998-design.md
+  revision: 50b9c089ca73aeca2205636a2a9e1823cd244d39
+  working_tree: clean
+  sha256: 29677e6b0cd078fa46815c7359faf10b6060701bf77ac3fb06dede98ef9b5233
 - id: issue-897-design
   resource: ../../superpowers/specs/2026-10-15-issue-897-worker-state-design.md
   revision: 175486b7cb30a665bdf39c1ac7897eb96d9966f7
@@ -1035,6 +1040,7 @@ sources:
 
 | 原文 | 先頭見出し | 作成時の状態 |
 | --- | --- | --- |
+| [2026-10-19-issues-992-998-design.md](../../superpowers/specs/2026-10-19-issues-992-998-design.md) | Issues 992–998: checked reports, reusable Python analysis, and resource admission [^issues-992-998-design] | 追跡済み（50b9c089、参照時点） |
 | [2026-10-15-issue-896-typed-session-design.md](../../superpowers/specs/2026-10-15-issue-896-typed-session-design.md) | 正規化済みセッションモード [^issue-896-typed-session-design] | 未追跡（参照時点） |
 | [2026-10-12-issue-749-documentation-pages-design.md](../../superpowers/specs/2026-10-12-issue-749-documentation-pages-design.md) | Automatic documentation publication (#749) [^issue-749-documentation-pages-design] | 追跡済み（9eb8ed0） |
 | [2026-10-05-exception-scope-outcomes.md](../../superpowers/specs/2026-10-05-exception-scope-outcomes.md) | Exception hierarchy: scope identity and analysis outcomes [^issue-692-exception-scope-outcomes] | 追跡済み（fae3ce3） |
@@ -1750,3 +1756,5 @@ LF・CRLF・CRが混在する入力でも、解析器の行選択と候補検証
 [^issue-899-changed-selection-design]: [Design](../../superpowers/specs/2026-10-15-issue-899-design.md). Typed changed selection, strict saved-shape rejection and the 0.8.0 public-schema floor.
 
 [^issue-896-typed-session-design]: [正規化済みセッションモード](../../superpowers/specs/2026-10-15-issue-896-typed-session-design.md).
+
+[^issues-992-998-design]: [Issues 992–998 design](../../superpowers/specs/2026-10-19-issues-992-998-design.md).

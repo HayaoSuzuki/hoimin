@@ -115,8 +115,12 @@ def validate_graph(data: dict[str, Any], version: str, commit: str) -> None:
             reached.add(ref)
             pending.extend(graph[ref])
     require(reached == set(refs), "unreachable component")
-    cores = [c for c in components if c["name"] == "hoimin-core"]
-    require(len(cores) == 1 and cores[0]["version"] == version, "wrong core version")
+    for member in ("hoimin-core", "hoimin-python"):
+        matches = [c for c in components if c["name"] == member]
+        require(
+            len(matches) == 1 and matches[0]["version"] == version,
+            f"wrong {member} version",
+        )
     parsers = [c for c in components if c["name"] == PARSER]
     require(len(parsers) == 1, "missing or duplicate vendored parser")
     parser = parsers[0]

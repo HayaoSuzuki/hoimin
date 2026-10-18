@@ -5,6 +5,16 @@ description: 構文・名前解決・変更するバイト範囲・候補保持�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issues-995-996-python
+  resource: ../../../crates/hoimin-python/src/lib.rs
+  revision: 50b9c089ca73aeca2205636a2a9e1823cd244d39
+  working_tree: clean
+  sha256: 07cb1fee8759b7b20d738e9533998c06e1c5679e744061265d5da4394a40be3e
+- id: issue-995-index
+  resource: ../../../crates/hoimin-python/src/analyzer/exception_hierarchy.rs
+  revision: 50b9c089ca73aeca2205636a2a9e1823cd244d39
+  working_tree: clean
+  sha256: b3b0ddfd0bcd07fef271c6682c62ddf9d3c70ae24d02922a81e55a84f80378c2
 - id: issue-943-record
   resource: ../../maintenance/2026-10-16-issue-943.md
   revision: ee5f5c653244537aa1bbd02bbb073403146a55ca
@@ -534,6 +544,25 @@ sources:
   sha256: ee20d80550468bc2bb6e9e1f69631efedbf7a311d35f97479010d6f5d375d227
 
 ---
+
+# Shared pure Python analysis (Issues #995 and #996)
+
+The internal `hoimin-python` crate owns pure analysis, charged candidate results
+and the exception index. CLI, dedicated heap/corpus tests and fuzz consume its
+Cargo API. CLI owns filesystem reads, project acquisition/fingerprinting and
+candidate spools. Moving results preserves their payload leases and the 16 MiB
+logical retained-payload contract; it does not establish a process RSS bound.
+The `test-support` feature is limited to development observations.[^issues-995-996-python]
+
+Visibility lookup uses ordered exact/prefix queries over loaded modules and
+indexed paths. It retains loaded descendants, alias offsets, ambiguity rules,
+cancellation and the 65,536-entry ceiling. Test-only operation counts measure
+visited entries; they exclude ordered-map comparisons and make no wall-time
+claim. Earlier source paths in this concept describe their recorded revisions;
+current pure analyzer sources are under `crates/hoimin-python`. For a moved
+historical file, use `git show REVISION:REPOSITORY_PATH` with its recorded
+revision. A source marked modified or untracked also depends on the recorded
+snapshot/hash; its baseline commit alone does not reproduce that snapshot.[^issue-995-index]
 
 # 構文と名前解決の契約
 
@@ -1340,3 +1369,6 @@ The dated record separates operation/state-count gates from wall-time samples
 and independent semantic controls.[^issue-987-evidence]
 
 [^issue-987-evidence]: [Finally work, cancellation and verification evidence](../../maintenance/2026-10-19-issue-987-finally-work.md).
+
+[^issues-995-996-python]: [crates/hoimin-python/src/lib.rs](../../../crates/hoimin-python/src/lib.rs).
+[^issue-995-index]: [crates/hoimin-python/src/analyzer/exception_hierarchy.rs](../../../crates/hoimin-python/src/analyzer/exception_hierarchy.rs).

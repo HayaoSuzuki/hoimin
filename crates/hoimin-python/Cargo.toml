@@ -1,5 +1,6 @@
 [package]
 name = "hoimin-python"
+description = "Pure Python mutation analysis for hoimin"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

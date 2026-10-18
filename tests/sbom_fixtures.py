@@ -44,13 +44,18 @@ def raw_bom() -> dict[str, Any]:
                 ("hoimin-core", "1.2.3"),
                 ("littrs-ruff-python-parser", "0.6.2"),
                 ("stacker", "0.1.25"),
+                ("hoimin-python", "1.2.3"),
             ]
         ],
         "dependencies": [
-            {"ref": "root", "dependsOn": ["hoimin-core", "littrs-ruff-python-parser"]},
+            {"ref": "root", "dependsOn": ["hoimin-core", "hoimin-python"]},
             {"ref": "hoimin-core", "dependsOn": []},
             {"ref": "littrs-ruff-python-parser", "dependsOn": ["stacker"]},
             {"ref": "stacker", "dependsOn": []},
+            {
+                "ref": "hoimin-python",
+                "dependsOn": ["hoimin-core", "littrs-ruff-python-parser"],
+            },
         ],
     }
 

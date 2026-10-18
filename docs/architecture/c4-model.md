@@ -119,7 +119,7 @@ assert that every command touches every store. `cwd` is a process's working
 directory; JSONL is one JSON record per line; SQLite is embedded, not a database
 server.
 
-`hoimin-core` and `hoimin-cli` are linked code in the CLI container. Tokio tasks,
+`hoimin-core`, `hoimin-python` and `hoimin-cli` are linked code in the CLI container. Tokio tasks,
 blocking worker threads, the disk monitor and session dispatcher share that
 process. The test command creates external process trees. Linux resource setup
 can invoke a private launcher mode of the same executable; it is not an
@@ -157,7 +157,8 @@ flowchart LR
         SH["Shell coordinator<br/>[Component: Rust / Tokio]<br/>shell: effects, completions and ownership"]
         CORE["Execution policy<br/>[Component: Rust]<br/>hoimin-core: transitions, budgets and admission"]
         TARGET["Target discovery<br/>[Component: Rust]<br/>target: filesystem and Git selectors"]
-        ANA["Candidate analysis<br/>[Component: Rust / Ruff]<br/>analyzer: candidates and spool"]
+        ANA["Candidate acquisition<br/>[Component: Rust]<br/>CLI analyzer: source reads and spool"]
+        PY["Pure Python analysis<br/>[Component: Rust / Ruff]<br/>hoimin-python: candidates, payload leases and exception index"]
         WS["Workspace ownership<br/>[Component: Rust / filesystem]<br/>workspace: copies, mutation and cleanup"]
         PROC["Process execution<br/>[Component: Rust / Tokio]<br/>process: commands, output and drain"]
         RES["Platform resource control<br/>[Component: Rust / OS APIs]<br/>resource: backend selection and control"]
@@ -169,6 +170,7 @@ flowchart LR
     CORE -->|Return state, requested effects and admission decisions| SH
     SH -->|Resolve target requests| TARGET
     SH -->|Analyze source and replay candidate requests| ANA
+    ANA -->|Pass source and retain charged results| PY
     SH -->|Perform workspace effects and owned-root cleanup| WS
     SH -->|Dispatch baseline/mutant requests and await drain| PROC
     SH -->|Initialize and close the selected backend| RES
@@ -198,7 +200,8 @@ Sources: [pure transition](../../crates/hoimin-core/src/machine.rs),
 [disk lifecycle](../../crates/hoimin-core/src/disk.rs),
 [shell module contract](../../crates/hoimin-cli/src/shell.rs),
 [target](../../crates/hoimin-cli/src/target/mod.rs),
-[analyzer](../../crates/hoimin-cli/src/analyzer/mod.rs),
+[CLI analyzer acquisition](../../crates/hoimin-cli/src/analyzer/mod.rs),
+[pure Python API](../../crates/hoimin-python/src/lib.rs),
 [workspace](../../crates/hoimin-cli/src/workspace/mod.rs),
 [process](../../crates/hoimin-cli/src/process/mod.rs),
 [resource](../../crates/hoimin-cli/src/resource/mod.rs),
@@ -212,7 +215,7 @@ These are branches of the same CLI application, not additional containers.
 | Command | Main path | Test processes / persistent effects |
 | --- | --- | --- |
 | `run` | CLI config → shell → core/effect handlers | Runs baseline and mutants; optional session and metrics |
-| `plan` | `plan::create` → target discovery → Rust analysis → ranking | Writes a plan to stdout; does not run baseline/mutant tests |
+| `plan` | `plan::create` → target discovery → `hoimin-python` analysis → ranking | Writes a plan to stdout; does not run baseline/mutant tests |
 | `verify` | `prepare_verify_selection` → `VerifiedPlan` → shell | Rechecks plan/current inputs, then executes the selected candidates |
 | `verify --dry-run` | Checked plan → preview | Writes a preview without baseline/mutant execution |
 | `progress` | Validated saved reports → comparison → rendering | Reads reports; no mutation test execution |
