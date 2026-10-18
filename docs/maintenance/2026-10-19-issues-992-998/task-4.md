@@ -70,3 +70,123 @@ cross-platform filesystem claims.
 - `cargo test --offline -p hoimin-cli --lib shell_setup_passes_copy_cap_to_workspace_admission` — 1 passed. Log: `task-4-shell.log`.
 - Focused CLI integration total: 47 passed (disk 3, empty directories 6, handler 36, stream 2).
 - `cargo fmt --all` and `git diff --check` succeeded. Repository hooks run on the scoped commit; their result is recorded in the task report.
+
+## Integration follow-up: controlled admission failure metrics
+
+Task 8's all-features run found one stale integration scenario:
+`metrics_retains_incomplete_warning_after_later_preflight_budget_failure`.
+Its 32-byte source and `--max-copy-size 1B` now reject during immutable
+inventory admission. Previously preflight succeeded and the final
+`reserve_workspace_copy` rejected inside the core transition, producing
+`MachineError::Budget` and an outer Rust `Err`. That outer error caused
+`metrics.incomplete` and withheld the sidecar. Admission now emits the existing
+`EffectFailed(CopyLimit)` event; the run completes its controlled failure
+report and cleanup, returning exit 2 with `summary.complete = false`.
+
+This is an intended consequence of #994, not a successful mutation run or an
+output-safety defect. Metrics describe the completed portions of a controlled
+failure: targets and cleanup, zero candidates/executions, no worker process,
+and the same run ID as the failure report. The rejected preflight is omitted
+from completed stage timings. The issue 484 destination design explicitly
+preserves authorized metrics for modeled failures. No product code, final
+reservation authority, output authorization, or lifecycle semantics changed.
+
+The integration test now checks those outcomes, the copy-limit diagnostic,
+absence of misleading metrics warnings, original bytes, and no baseline
+marker. Three additional public CLI scenarios pair the same copy cap with
+metrics destinations colliding with selected source, an unopened session DB,
+and an existing session ownership lock. Each confirms collision rejection,
+byte/hash preservation, no baseline, and clean execution-root cleanup; the
+lock case also proves no session DB was created. Destination inspection occurs
+before inventory and grants no finalizer capability after collision.
+
+Genuine outer-error coverage remains in
+`metrics::tests::failed_run_skips_the_sidecar_and_queues_an_explicit_diagnostic`;
+it supplies an authorized output and a transition error, then asserts no file
+and the exact `metrics.incomplete` warning while preserving earlier warnings.
+`expired_shutdown_skips_metrics_with_an_incomplete_warning` also remains intact.
+Both executed in the focused all-features library run.
+
+### Requirements self-review (five passes)
+
+1. Compared the earlier admission policy with the stale late-reservation trigger;
+   retained exit 2, zero baseline work, and the copy-limit diagnostic.
+2. Distinguished report `complete = false` from successful completion of failure
+   reporting/cleanup; metrics must never imply a completed preflight or mutation.
+3. Checked issue 484's explicit requirement to preserve authorized modeled-failure
+   metrics; restoring outer errors would contradict that requirement.
+4. Enumerated concrete early-finalization overwrite risks: source, session DB,
+   and session lock; each has a separate acceptance guard under the same cap.
+5. Kept BudgetLedger as sole reservation authority and preserved source/session
+   protection; no compatibility adapter, new option, or broad audit was needed.
+
+### Design self-review (five passes)
+
+1. Traced destination validation, preflight completion transfer, core transition,
+   cleanup, and finalization; the changed outcome originates at admission.
+2. Verified the retained parent/entry capability is obtained before inventory;
+   collision returns no Ready destination, closing the finalizer write gate.
+3. Reused existing fixture/run/collision helpers; introduced no new production
+   abstraction or duplicated allowance state.
+4. Chose separate public behavior tests for each protected resource rather than
+   fixture timing, source mutation races, or artificial outer failures.
+5. Reviewed scope using software-design-philosophy: 10/10 for the reviewed
+   boundary, all eight diagnostics satisfied, no failed rows requiring change.
+   Existing modules retain their responsibility and hide output authorization.
+
+### Implementation self-review (five passes)
+
+1. Confirmed only the metrics integration test and this durable record are
+   deliverables; production admission and finalization remain untouched.
+2. Checked failure JSON parsing and typed RunMetrics validation together, including
+   shared run identity and literal zero-work expectations.
+3. Checked completed stage assertions: cleanup/targets are present; preflight,
+   baseline, copy, analysis and mutants are never reported as completed.
+4. Checked session sentinel is intentionally unopened, so any attempted recovery
+   or overwrite cannot be masked by SQLite behavior; owned-lock contents remain.
+5. Snapshotted all 20 pre-existing Task 8 dirty files by SHA-256 before work and
+   verified unchanged after formatting and around commit hooks. Only two intended
+   files are staged; the ignored scratch report is never staged.
+
+### Test self-review (five passes)
+
+1. Reproduced the original failure unchanged at the expected `!metrics.exists()`
+   assertion; no product fix was written against an unverified hypothesis.
+2. Named observable breaks: suppressing valid failure metrics, publishing false
+   stage/work counts, skipping collision checks, overwriting protected entries,
+   running baseline after rejection, or omitting cleanup.
+3. Used literal expected values and actual CLI files/reports, without mocks,
+   implementation-derived expected totals, or timing thresholds.
+4. Retained genuine incomplete-warning tests and ran them with all features;
+   did not manufacture a replacement failure solely to preserve the old name.
+5. Ran the entire metrics destination target, including existing alias, missing
+   parent, safe-link, and parent-replacement controls; full workspace rerun stays
+   assigned to Task 8 under the agreed single-validation-process resource policy.
+
+### Follow-up validation
+
+All Cargo commands used the prescribed target directory, two build jobs,
+disabled incremental/debug info, two test threads, offline mode, plus
+`PREK_CONCURRENCY=1` and `CARGO_NET_OFFLINE=true` for hooks.
+
+- Original RED: `cargo test --offline -p hoimin-cli --all-features --test metrics_destinations metrics_retains_incomplete_warning_after_later_preflight_budget_failure -- --exact`
+  — one expected failure at the stale sidecar-absence assertion. Evidence:
+  `/tmp/hoimin-issues-992-998/task-4-integration-red.log`.
+- `cargo test --offline -p hoimin-cli --all-features --test metrics_destinations`
+  — 29 passed, including the three new protected-output cases. Evidence:
+  `/tmp/hoimin-issues-992-998/task-4-integration-metrics.log`.
+- `cargo test --offline -p hoimin-cli --all-features --lib metrics`
+  — 29 passed, including transition-error and expired-shutdown incomplete-warning
+  coverage. Evidence: `/tmp/hoimin-issues-992-998/task-4-integration-metrics-unit.log`.
+- `cargo fmt --all` and `git diff --check` passed. The 20 unrelated files retained
+  their original SHA-256 values. Repository commit hooks are required and their
+  actual outcome is recorded in the integration fix report.
+
+No unresolved product defect was found. Native integration evidence is macOS;
+no additional cross-platform claim is made by this follow-up.
+
+The first commit hook run rejected the new `assert!(workers.is_empty())` under
+Clippy's `assert_is_empty` lint. Changed it to `assert_eq!(workers, Vec::new())`
+so failures print the worker list, then reran the full destination target (29
+passed) and all commit hooks. The original 20 unrelated file hashes remained
+unchanged after the rejected hook run.

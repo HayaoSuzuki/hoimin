@@ -523,14 +523,118 @@ async fn metrics_non_directory_path_component_retains_late_warning() {
 }
 
 #[tokio::test]
-async fn metrics_retains_incomplete_warning_after_later_preflight_budget_failure() {
+async fn metrics_records_controlled_copy_admission_failure_without_starting_work() {
     let (temp, root) = fixture();
     let metrics = temp.path().join("metrics.json");
     let output = run(&root, &metrics, &["--max-copy-size", "1B"]).await;
-    assert!(!output.status.success());
+
+    assert_eq!(output.status.code(), Some(2));
     assert!(!temp.path().join("baseline-marker").exists());
-    assert!(!metrics.exists());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("metrics.incomplete"));
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(report["baseline"].is_null());
+    assert_eq!(report["summary"]["complete"], false);
+    assert_eq!(report["summary"]["exit_code"], 2);
+    assert!(
+        report["summary"]["disk"]["cleanup"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|entry| entry["root_id"] == "execution" && entry["status"] == "clean")
+    );
+    let diagnostics: Vec<serde_json::Value> = String::from_utf8(output.stderr)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert!(
+        diagnostics
+            .iter()
+            .any(|entry| entry["code"] == "workspace.copy.limit")
+    );
+    assert!(!diagnostics.iter().any(|entry| {
+        matches!(
+            entry["code"].as_str(),
+            Some("metrics.incomplete" | "metrics.state" | "metrics.write")
+        )
+    }));
+    // Admission is a handled failure, so its completed cleanup can be measured.
+    // It does not imply that the rejected preflight or mutation run completed.
+    let metrics: hoimin_core::RunMetrics =
+        serde_json::from_slice(&std::fs::read(metrics).unwrap()).unwrap();
+    metrics.validate().unwrap();
+    assert_eq!(metrics.run_id, report["run"]["run_id"].as_str().unwrap());
+    assert_eq!(metrics.discovered, 0);
+    assert_eq!(metrics.executed, 0);
+    assert_eq!(metrics.workers, Vec::new());
+    assert_eq!(
+        metrics
+            .stages
+            .iter()
+            .map(|stage| stage.name.as_str())
+            .collect::<Vec<_>>(),
+        ["cleanup", "targets"]
+    );
+    assert_eq!(std::fs::read(root.join("calc.py")).unwrap(), SOURCE);
+}
+
+#[tokio::test]
+async fn metrics_collision_preserves_source_when_copy_admission_would_reject() {
+    let (temp, root) = fixture();
+    let source = root.join("calc.py");
+
+    let output = run(&root, &source, &["--max-copy-size", "1B"]).await;
+
+    assert_collision(&output, temp.path(), &source, SOURCE);
+}
+
+#[tokio::test]
+async fn metrics_collision_preserves_session_when_copy_admission_would_reject() {
+    let (temp, root) = fixture();
+    let database = temp.path().join("session.db");
+    let bytes = b"unopened session sentinel\n";
+    std::fs::write(&database, bytes).unwrap();
+
+    let output = run(
+        &root,
+        &database,
+        &[
+            "--session",
+            database.to_str().unwrap(),
+            "--max-copy-size",
+            "1B",
+        ],
+    )
+    .await;
+
+    assert_collision(&output, temp.path(), &database, bytes);
+    assert_eq!(std::fs::read(root.join("calc.py")).unwrap(), SOURCE);
+}
+
+#[tokio::test]
+async fn metrics_collision_preserves_owned_lock_when_copy_admission_would_reject() {
+    let (temp, root) = fixture();
+    let database = temp.path().join("session.db");
+    let locks = temp.path().join(".session.db.hoimin-locks");
+    std::fs::create_dir(&locks).unwrap();
+    let lock = locks.join("owned.lock");
+    let bytes = b"owned lock sentinel\n";
+    std::fs::write(&lock, bytes).unwrap();
+
+    let output = run(
+        &root,
+        &lock,
+        &[
+            "--session",
+            database.to_str().unwrap(),
+            "--max-copy-size",
+            "1B",
+        ],
+    )
+    .await;
+
+    assert_collision(&output, temp.path(), &lock, bytes);
+    assert!(!database.exists());
+    assert_eq!(std::fs::read_dir(locks).unwrap().count(), 1);
     assert_eq!(std::fs::read(root.join("calc.py")).unwrap(), SOURCE);
 }
 
