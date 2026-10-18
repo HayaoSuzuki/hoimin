@@ -1,0 +1,1157 @@
+{
+  "base_revision": "c74410f56c8389ef246567318ddcade724dbe3f7",
+  "finding": "Task10 review: pre-existing current preview schema 1 statement disagreed with emitter schema 2 (Minor).",
+  "change": "Current statement now schema 2 with a clean source citation; original Issue #599 schema-1 provenance retained as history.",
+  "historical_audit": "okf-audit.json remains the original 17-source snapshot; this supplemental audit includes the new current-preview source.",
+  "checks": [
+    {
+      "command": ".venv/bin/python docs/maintenance/2026-10-18-issues-971-979/probes/check-okf.py",
+      "environment": "shared read-only .venv; no dependency changes",
+      "exit": 1,
+      "elapsed_seconds": 0.347,
+      "log": "/tmp/hoimin-design-audit-5d3aee95/task-10-fix1-okf.log",
+      "audit": {
+        "pages": 49,
+        "sources": 962,
+        "local_links": 1686,
+        "reachable": 49,
+        "new_source_hashes_and_clean_revision_blobs": 18,
+        "errors": [
+          [
+            "docs/knowledge/references/audit-documents.md",
+            "source-footnote missing",
+            [
+              "annotation-followup-correspondence",
+              "annotation-followup-deferred",
+              "annotation-followup-report",
+              "annotation-followup-set",
+              "evaluation-order-bug",
+              "evaluation-order-correspondence",
+              "evaluation-order-perf",
+              "evaluation-order-report",
+              "with-finally-bug",
+              "with-finally-correspondence",
+              "with-finally-performance",
+              "with-finally-report"
+            ]
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-09-25-issue-623-stream-fingerprint-design.md"
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-09-25-issue-627-source-discovery-design.md"
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-09-25-issue-608-borrowed-ranking-design.md"
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-09-25-issue-630-progress-regression-exit-design.md"
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-09-25-issue-632-changed-context-design.md"
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-10-12-philosophy-followup-design.md"
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-09-25-issue-618-manifest-buffer-design.md"
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-09-25-issue-619-missing-source-design.md"
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-09-25-issue-624-resume-budget-design.md"
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-09-25-issue-621-excluded-git-paths-design.md"
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-09-25-issue-614-resume-diagnostics-design.md"
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-09-25-issue-625-progress-dispatch-design.md"
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-09-25-issue-622-source-order-design.md"
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-09-25-issue-615-latin1-positions-design.md"
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-09-25-issue-620-scoped-git-diff-design.md"
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-09-25-issue-612-python-changed-lines-design.md"
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-09-25-issue-616-empty-directories-design.md"
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-09-25-issue-604-preview-details-design.md"
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-09-25-issue-629-stream-workspace-design.md"
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-09-25-issue-628-fingerprint-env-design.md"
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-09-25-issue-605-prepared-annotation-imports-design.md"
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-09-25-issue-611-private-annotation-imports-design.md"
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-09-25-issue-606-manifest-metrics-design.md"
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-09-25-issue-607-stale-plan-details-design.md"
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-09-25-issue-631-offset-allocation-design.md"
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-09-25-issue-609-progress-keys-design.md"
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-09-25-issue-613-buffer-diagnostics-design.md"
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-09-25-issue-610-duplicate-progress-inputs-design.md"
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-09-25-issue-617-glob-exclusion-design.md"
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-09-25-issue-626-progress-details-design.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/2026-09-25-issue-623-stream-fingerprint.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/2026-09-25-issue-615-latin1-positions.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/2026-09-25-issue-614-resume-diagnostics.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/2026-09-25-issue-624-resume-budget.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/2026-09-25-issue-619-missing-source.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/2026-09-25-issue-622-source-order.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/2026-09-25-issue-621-excluded-git-paths.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/2026-09-25-issue-612-python-changed-lines.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/2026-09-25-issue-631-offset-allocation.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/2026-09-25-issue-614-lean-oracle.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/2026-09-25-issue-611-private-annotation-imports.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/2026-09-25-issue-616-empty-directories.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/2026-09-25-issue-617-glob-exclusion.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/2026-09-25-issue-632-implementation-review.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/2026-09-25-issue-632-lean-context.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/2026-09-25-issue-620-scoped-git-diff.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/2026-09-25-issue-605-prepared-annotation-imports.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/issue-697/plan.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/issue-697/design.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/issue-699/plan.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/issue-699/design.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/issue-698/plan.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/issue-698/design.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/issue-696/plan.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/issue-696/design.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/recent-analyzer-defaults/plan.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/recent-analyzer-defaults/design.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/recent-analyzer-defaults/review.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/recent-analyzer-defaults/formal-audit.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/issue-705/plan.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/issue-705/design.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/issue-702/plan.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/issue-702/design.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/method-call-remove/assessment.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/method-call-remove/plan.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/method-call-remove/design.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/method-call-remove/review.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/issue-703/plan.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/issue-703/design.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/issue-704/plan.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/issue-704/design.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/function-body-return-constant/assessment.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/function-body-return-constant/plan.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/function-body-return-constant/design.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/function-body-return-constant/review.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/issue-708/plan.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/issue-708/design.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/issue-701/plan.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/issue-701/design.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/issue-706/plan.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/issue-706/design.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/issue-707/plan.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/issue-707/design.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/issue-700/plan.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/issue-700/design.md"
+          ]
+        ]
+      },
+      "failure_cause": "Checker compared in-memory tuples to JSON lists; serialized audit equals all 86 baseline findings exactly."
+    },
+    {
+      "command": ".venv/bin/python docs/maintenance/2026-10-18-issues-971-979/probes/check-okf.py",
+      "environment": "shared read-only .venv; no dependency changes",
+      "exit": 0,
+      "elapsed_seconds": 0.324,
+      "log": "/tmp/hoimin-design-audit-5d3aee95/task-10-fix1-okf-green.log",
+      "audit": {
+        "pages": 49,
+        "sources": 962,
+        "local_links": 1686,
+        "reachable": 49,
+        "new_source_hashes_and_clean_revision_blobs": 18,
+        "errors": [
+          [
+            "docs/knowledge/references/audit-documents.md",
+            "source-footnote missing",
+            [
+              "annotation-followup-correspondence",
+              "annotation-followup-deferred",
+              "annotation-followup-report",
+              "annotation-followup-set",
+              "evaluation-order-bug",
+              "evaluation-order-correspondence",
+              "evaluation-order-perf",
+              "evaluation-order-report",
+              "with-finally-bug",
+              "with-finally-correspondence",
+              "with-finally-performance",
+              "with-finally-report"
+            ]
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-09-25-issue-623-stream-fingerprint-design.md"
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-09-25-issue-627-source-discovery-design.md"
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-09-25-issue-608-borrowed-ranking-design.md"
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-09-25-issue-630-progress-regression-exit-design.md"
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-09-25-issue-632-changed-context-design.md"
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-10-12-philosophy-followup-design.md"
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-09-25-issue-618-manifest-buffer-design.md"
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-09-25-issue-619-missing-source-design.md"
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-09-25-issue-624-resume-budget-design.md"
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-09-25-issue-621-excluded-git-paths-design.md"
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-09-25-issue-614-resume-diagnostics-design.md"
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-09-25-issue-625-progress-dispatch-design.md"
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-09-25-issue-622-source-order-design.md"
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-09-25-issue-615-latin1-positions-design.md"
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-09-25-issue-620-scoped-git-diff-design.md"
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-09-25-issue-612-python-changed-lines-design.md"
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-09-25-issue-616-empty-directories-design.md"
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-09-25-issue-604-preview-details-design.md"
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-09-25-issue-629-stream-workspace-design.md"
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-09-25-issue-628-fingerprint-env-design.md"
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-09-25-issue-605-prepared-annotation-imports-design.md"
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-09-25-issue-611-private-annotation-imports-design.md"
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-09-25-issue-606-manifest-metrics-design.md"
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-09-25-issue-607-stale-plan-details-design.md"
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-09-25-issue-631-offset-allocation-design.md"
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-09-25-issue-609-progress-keys-design.md"
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-09-25-issue-613-buffer-diagnostics-design.md"
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-09-25-issue-610-duplicate-progress-inputs-design.md"
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-09-25-issue-617-glob-exclusion-design.md"
+          ],
+          [
+            "design-documents.md",
+            "catalog missing",
+            "docs/superpowers/specs/2026-09-25-issue-626-progress-details-design.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/2026-09-25-issue-623-stream-fingerprint.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/2026-09-25-issue-615-latin1-positions.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/2026-09-25-issue-614-resume-diagnostics.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/2026-09-25-issue-624-resume-budget.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/2026-09-25-issue-619-missing-source.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/2026-09-25-issue-622-source-order.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/2026-09-25-issue-621-excluded-git-paths.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/2026-09-25-issue-612-python-changed-lines.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/2026-09-25-issue-631-offset-allocation.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/2026-09-25-issue-614-lean-oracle.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/2026-09-25-issue-611-private-annotation-imports.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/2026-09-25-issue-616-empty-directories.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/2026-09-25-issue-617-glob-exclusion.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/2026-09-25-issue-632-implementation-review.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/2026-09-25-issue-632-lean-context.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/2026-09-25-issue-620-scoped-git-diff.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/2026-09-25-issue-605-prepared-annotation-imports.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/issue-697/plan.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/issue-697/design.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/issue-699/plan.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/issue-699/design.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/issue-698/plan.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/issue-698/design.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/issue-696/plan.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/issue-696/design.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/recent-analyzer-defaults/plan.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/recent-analyzer-defaults/design.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/recent-analyzer-defaults/review.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/recent-analyzer-defaults/formal-audit.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/issue-705/plan.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/issue-705/design.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/issue-702/plan.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/issue-702/design.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/method-call-remove/assessment.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/method-call-remove/plan.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/method-call-remove/design.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/method-call-remove/review.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/issue-703/plan.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/issue-703/design.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/issue-704/plan.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/issue-704/design.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/function-body-return-constant/assessment.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/function-body-return-constant/plan.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/function-body-return-constant/design.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/function-body-return-constant/review.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/issue-708/plan.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/issue-708/design.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/issue-701/plan.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/issue-701/design.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/issue-706/plan.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/issue-706/design.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/issue-707/plan.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/issue-707/design.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/issue-700/plan.md"
+          ],
+          [
+            "audit-documents.md",
+            "catalog missing",
+            "docs/superpowers/reports/issue-700/design.md"
+          ]
+        ]
+      }
+    },
+    {
+      "command": ".venv/bin/python -m tools.docs_site --output site",
+      "environment": "shared read-only .venv; no dependency changes",
+      "exit": 0,
+      "elapsed_seconds": 0.572,
+      "log": "/tmp/hoimin-design-audit-5d3aee95/task-10-fix1-site.log"
+    },
+    {
+      "command": [
+        ".venv/bin/python",
+        "tests/wheel_smoke.py"
+      ],
+      "environment": {
+        "UV_CACHE_DIR": "/tmp/hoimin-design-audit-5d3aee95/task-10-uv-cache",
+        "PIP_CACHE_DIR": "/tmp/hoimin-design-audit-5d3aee95/task-10-pip-cache",
+        "HOIMIN_WHEEL": "/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-971-979-cli-analyzer-resource-safety/target/wheels/hoimin-0.12.0-py3-none-macosx_11_0_arm64.whl",
+        "HOIMIN_SMOKE_REPORT": "/tmp/hoimin-design-audit-5d3aee95/task-10-fix1-wheel-smoke.json"
+      },
+      "exit": 0,
+      "elapsed_seconds": 3.421,
+      "log": "/tmp/hoimin-design-audit-5d3aee95/task-10-fix1-wheel-smoke.log",
+      "reason": "Initial silent smoke log has no recoverable actual process exit receipt; validate once with subprocess.run.returncode."
+    },
+    {
+      "command": "CARGO_BUILD_JOBS=2 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 CARGO_NET_OFFLINE=true prek run --all-files",
+      "exit": 2,
+      "log": "/tmp/hoimin-design-audit-5d3aee95/task-10-fix1-hooks.log",
+      "result": "Sandbox denied existing prek cache log; no hooks ran."
+    },
+    {
+      "command": "CARGO_BUILD_JOBS=2 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 CARGO_NET_OFFLINE=true prek run --all-files",
+      "exit": 0,
+      "sandbox": "require_escalated",
+      "log": "/tmp/hoimin-design-audit-5d3aee95/task-10-fix1-hooks-escalated.log",
+      "result": "All four required fmt/Clippy hooks passed."
+    },
+    {
+      "command": ".venv/bin/python docs/maintenance/2026-10-18-issues-971-979/probes/check-okf.py",
+      "exit": 0,
+      "elapsed_seconds": 0.35,
+      "log": "/tmp/hoimin-design-audit-5d3aee95/task-10-fix1-okf-final.log",
+      "reason": "Final changed evidence/summary content after full manual receipt audit."
+    },
+    {
+      "command": ".venv/bin/python -m tools.docs_site --output site",
+      "exit": 0,
+      "elapsed_seconds": 0.624,
+      "log": "/tmp/hoimin-design-audit-5d3aee95/task-10-fix1-site-final.log",
+      "reason": "Final changed evidence/summary content after full manual receipt audit."
+    }
+  ],
+  "correction": "Normalize outer finding tuples to lists for comparison; retain every finding and its order.",
+  "prior_receipt_correction": {
+    "supersedes": "integration-gates.json other_checks entry for check-okf.py and initial task-10-report.md exit-0 claim",
+    "finding": "The earlier maintained/final/precommit raw logs already end in the same AssertionError. No earlier checker success is established. task-10-finalize-evidence.py line 15 hard-coded exit: 0 while composing the receipt; this was an evidence-recording error, not a regression after an earlier successful run.",
+    "precise_assertion": "assert errors == baseline['errors'], 'new or changed reference/catalog finding'",
+    "type_mismatch": "errors contains tuples; JSON baseline contains lists. Normalize each outer tuple to a list, preserving complete ordered contents and nested IDs.",
+    "preserved_logs": [
+      {
+        "path": "observations/task-10-okf-maintained.log",
+        "sha256": "dcad910eb0c3ed573750ec88f608f32a2d8bf3d26c77a010a0d7df9eac92a7ee"
+      },
+      {
+        "path": "observations/task-10-okf-precommit.log",
+        "sha256": "dcad910eb0c3ed573750ec88f608f32a2d8bf3d26c77a010a0d7df9eac92a7ee"
+      },
+      {
+        "path": "observations/task-10-okf-final.log",
+        "sha256": "2bf9c6b4bffebf25cecb66ab916f04ac7cf70f1c0c9167c7323ad727f561b43b"
+      },
+      {
+        "path": "observations/task-10-fix1-okf.log",
+        "sha256": "0caf528288b8a7c5a50af76fe5073c3dc44b8018629a580877fb66d55a4de825"
+      }
+    ],
+    "historical_artifacts": "Original integration-gates.json bytes are preserved as observations/task-10-integration-gates-original.json; current integration-gates.json now points to corrected actual receipts. okf-audit.json remains unchanged."
+  },
+  "manual_other_checks_audit": {
+    "rows": 11,
+    "attempts": 12,
+    "results": [
+      {
+        "row": 0,
+        "command": ".venv/bin/ruff format --check .",
+        "original_exit": 0,
+        "log": "task-10-ruff-format.log",
+        "sha256": "d6618aac860f8215745a8e56a5cc32d7f88af148570217bf95dcb18d3ed520d1",
+        "status": "match",
+        "exit_evidence": "Recorded subprocess.call return value in task-10-python-gates.json; raw terminal output agrees.",
+        "actual_exit": 0,
+        "terminal_excerpt": "55 files already formatted\n"
+      },
+      {
+        "row": 1,
+        "command": ".venv/bin/ruff check --no-fix .",
+        "original_exit": 0,
+        "log": "task-10-ruff-check.log",
+        "sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18",
+        "status": "match",
+        "exit_evidence": "Recorded subprocess.call return value in task-10-python-gates.json; raw terminal output agrees.",
+        "actual_exit": 0,
+        "terminal_excerpt": "All checks passed!\n"
+      },
+      {
+        "row": 2,
+        "command": ".venv/bin/ty check",
+        "original_exit": 1,
+        "log": "task-10-ty.log",
+        "sha256": "634274ecbb26a6350ae78801f8dace04ac5afdc27150d1315e788fc4f312429b",
+        "status": "match",
+        "exit_evidence": "Recorded subprocess.call return value in task-10-python-gates.json; raw terminal output agrees.",
+        "actual_exit": 1,
+        "terminal_excerpt": "hoimin/.venv/lib/python3.14/site-packages (site-packages)\ninfo: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment\n\nerror[dynamic-function-decorator-return]: Decorator returns `Unknown`\n  --> tools/hypothesmith_corpus.py:72:5\n   |\n72 |     @given(source_strategy)\n   |     ^^^^^^^^^^^^^^^^^^^^^^^\n73 |     def collect(source: str) -> None:\n   |         ------- Signature of `collect` will be obscured by the decorator\n\nFound 2 diagnostics\n"
+      },
+      {
+        "row": 3,
+        "command": "UV_CACHE_DIR=/tmp/hoimin-design-audit-5d3aee95/task-10-uv-cache uv pip install --target /tmp/hoimin-design-audit-5d3aee95/task-10-python-extras --python .venv/bin/python hypothesmith==0.3.3 hypothesis==6.169.1 lark==1.3.1",
+        "original_exit": 2,
+        "log": "task-10-python-extras.log",
+        "sha256": "48202bf78328406596751dea16dddfa3a60b541aeec055bc19572c5d1748d8fb",
+        "status": "terminal_outcome_matches",
+        "exit_evidence": "Terminal output agrees with recorded success/failure; exact original numeric process exit not independently persisted.",
+        "actual_exit": null,
+        "terminal_excerpt": "Using CPython 3.14.7 interpreter at: .venv/bin/python\nerror: Request failed after 3 retries in 5.4s\n  cause: Failed to fetch: https://pypi.org/simple/hypothesmith/\n  cause: error sending request for url (https://pypi.org/simple/hypothesmith/)\n  cause: client error (Connect)\n  cause: dns error\n  cause: failed to lookup address information: nodename nor servname provided, or not known\n"
+      },
+      {
+        "row": 3,
+        "command": "UV_CACHE_DIR=/tmp/hoimin-design-audit-5d3aee95/task-10-uv-cache uv pip install --target /tmp/hoimin-design-audit-5d3aee95/task-10-python-extras --python .venv/bin/python hypothesmith==0.3.3 hypothesis==6.169.1 lark==1.3.1",
+        "original_exit": 0,
+        "log": "task-10-python-extras-network.log",
+        "sha256": "06ac9b53e4b88e568eaeaef46380f71cadd1625bcda626402bc53e881e469cfb",
+        "status": "terminal_outcome_matches",
+        "exit_evidence": "Terminal output agrees with recorded success/failure; exact original numeric process exit not independently persisted.",
+        "actual_exit": null,
+        "terminal_excerpt": "Using CPython 3.14.7 interpreter at: .venv/bin/python\nResolved 6 packages in 719ms\nDownloading libcst (1.9MiB)\n Downloaded libcst\nPrepared 6 packages in 136ms\nInstalled 6 packages in 6ms\n + hypothesis==6.169.1\n + hypothesmith==0.3.3\n + lark==1.3.1\n + libcst==1.9.0\n + pyyaml==6.0.3\n + sortedcontainers==2.4.0\n"
+      },
+      {
+        "row": 4,
+        "command": ".venv/bin/ty check --extra-search-path /tmp/hoimin-design-audit-5d3aee95/task-10-python-extras",
+        "original_exit": 0,
+        "log": "task-10-ty-extras.log",
+        "sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18",
+        "status": "terminal_outcome_matches",
+        "exit_evidence": "Terminal output agrees with recorded success/failure; exact original numeric process exit not independently persisted.",
+        "actual_exit": null,
+        "terminal_excerpt": "All checks passed!\n"
+      },
+      {
+        "row": 5,
+        "command": ".venv/bin/pytest",
+        "original_exit": 1,
+        "log": "task-10-pytest.log",
+        "sha256": "d16fdd424e191e43537c3fbbb227840bf96ac9a69eff32c0178c7968e6b8d761",
+        "status": "terminal_outcome_matches",
+        "exit_evidence": "Terminal output agrees with recorded success/failure; exact original numeric process exit not independently persisted.",
+        "actual_exit": null,
+        "counts": {
+          "passed": 1054,
+          "failed": 6,
+          "skipped": 11
+        },
+        "terminal_excerpt": "ion\nFAILED tests/test_release.py::test_release_preparation_uses_reserved_tag - As...\nFAILED tests/test_lean_resource_guard.py::test_terminates_process_group_at_rss_limit\nFAILED tests/test_lean_resource_guard.py::test_propagates_normal_child_exit\nFAILED tests/test_lean_resource_guard.py::test_terminates_process_group_at_timeout\nFAILED tests/test_lean_resource_guard.py::test_rejects_root_exit_that_leaves_a_descendant\n================= 6 failed, 1054 passed, 11 skipped in 32.17s ==================\n"
+      },
+      {
+        "row": 6,
+        "command": "UV_CACHE_DIR=/tmp/hoimin-design-audit-5d3aee95/task-10-uv-cache PYTHONPATH=/tmp/hoimin-design-audit-5d3aee95/task-10-python-extras .venv/bin/pytest tests/test_release.py::test_skipped_reservation_prevents_preparation tests/test_release.py::test_release_preparation_uses_reserved_tag tests/test_lean_resource_guard.py::test_terminates_process_group_at_rss_limit tests/test_lean_resource_guard.py::test_propagates_normal_child_exit tests/test_lean_resource_guard.py::test_terminates_process_group_at_timeout tests/test_lean_resource_guard.py::test_rejects_root_exit_that_leaves_a_descendant tests/test_hypothesmith_corpus.py -ra",
+        "original_exit": 1,
+        "log": "task-10-pytest-environment.log",
+        "sha256": "dbaaf7244aaaf10ccc5220084a0bea58fd8491d1d41309dd4a1542b4d5e13efc",
+        "status": "terminal_outcome_matches",
+        "exit_evidence": "Terminal output agrees with recorded success/failure; exact original numeric process exit not independently persisted.",
+        "actual_exit": null,
+        "counts": {
+          "passed": 24,
+          "failed": 1,
+          "skipped": 0
+        },
+        "terminal_excerpt": "'/Users/hayao/RustroverProject...ional_depe0/corpus\", \"oversize\": 0, \"python\": \"3.14.7\", \"seed\": 0, \"strategy\": \"grammar\", \"written\": 94}\\n', stderr='').returncode\n\ntests/test_hypothesmith_corpus.py:115: AssertionError\n=========================== short test summary info ============================\nFAILED tests/test_hypothesmith_corpus.py::test_cli_without_optional_dependencies[options1-2-install fuzz dependencies]\n======================== 1 failed, 24 passed in 23.39s =========================\n"
+      },
+      {
+        "row": 7,
+        "command": ".venv/bin/pytest tests/test_hypothesmith_corpus.py::test_cli_without_optional_dependencies -ra",
+        "original_exit": 0,
+        "log": "task-10-pytest-no-extras.log",
+        "sha256": "14e172e459ee826d5411d5903702f661dec4d495c741e2bd55d742152aee5631",
+        "status": "terminal_outcome_matches",
+        "exit_evidence": "Terminal output agrees with recorded success/failure; exact original numeric process exit not independently persisted.",
+        "actual_exit": null,
+        "counts": {
+          "passed": 2,
+          "failed": 0,
+          "skipped": 0
+        },
+        "terminal_excerpt": " darwin -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0\nUsing --randomly-seed=3846275721\nrootdir: /Users/hayao/RustroverProjects/hoimin/.worktrees/issue-971-979-cli-analyzer-resource-safety\nconfigfile: pyproject.toml\nplugins: platformdirs-4.12.4, hypothesis-6.169.1, returns-0.29.0, mock-3.16.0, randomly-5.0.0, cov-7.1.0\ncollected 2 items\n\ntests/test_hypothesmith_corpus.py ..                                     [100%]\n\n============================== 2 passed in 0.26s ===============================\n"
+      },
+      {
+        "row": 8,
+        "command": ".venv/bin/python docs/maintenance/2026-10-18-issues-971-979/probes/check-okf.py",
+        "original_exit": 0,
+        "log": "task-10-okf-maintained.log",
+        "sha256": "dcad910eb0c3ed573750ec88f608f32a2d8bf3d26c77a010a0d7df9eac92a7ee",
+        "status": "contradiction_corrected",
+        "exit_evidence": "Raw log ends in AssertionError; original exit 0 was hard-coded incorrectly. Exact original process status was not persisted.",
+        "actual_exit": null,
+        "terminal_excerpt": "ts.md\",\n      \"catalog missing\",\n      \"docs/superpowers/reports/issue-700/design.md\"\n    ]\n  ]\n}\nTraceback (most recent call last):\n  File \"/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-971-979-cli-analyzer-resource-safety/docs/maintenance/2026-10-18-issues-971-979/probes/check-okf.py\", line 50, in <module>\n    assert errors == baseline['errors'], 'new or changed reference/catalog finding'\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: new or changed reference/catalog finding\n"
+      },
+      {
+        "row": 9,
+        "command": ".venv/bin/python -m tools.docs_site --output site",
+        "original_exit": 0,
+        "log": "task-10-docs-site-maintained.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "status": "original_unknown_revalidated",
+        "exit_evidence": "Original log is silent and no actual process exit receipt was recovered; fix-round subprocess.run.returncode captured instead.",
+        "actual_exit": null,
+        "terminal_excerpt": ""
+      },
+      {
+        "row": 10,
+        "command": "UV_CACHE_DIR=/tmp/hoimin-design-audit-5d3aee95/task-10-uv-cache PIP_CACHE_DIR=/tmp/hoimin-design-audit-5d3aee95/task-10-pip-cache HOIMIN_WHEEL=/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-971-979-cli-analyzer-resource-safety/target/wheels/hoimin-0.12.0-py3-none-macosx_11_0_arm64.whl HOIMIN_SMOKE_REPORT=/tmp/hoimin-design-audit-5d3aee95/task-10-wheel-smoke.json .venv/bin/python tests/wheel_smoke.py",
+        "original_exit": 0,
+        "log": "task-10-wheel-smoke.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "status": "original_unknown_revalidated",
+        "exit_evidence": "Original log is silent and no actual process exit receipt was recovered; fix-round subprocess.run.returncode captured instead.",
+        "actual_exit": null,
+        "terminal_excerpt": ""
+      }
+    ],
+    "no_test_suite_reruns": true
+  }
+}

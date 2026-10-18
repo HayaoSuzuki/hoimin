@@ -19,7 +19,7 @@ for p in pages:
   if u.scheme or resource.startswith('/') or '*' in resource:continue
   target=(p.parent/unquote(u.path)).resolve()
   if not target.exists():errors.append((str(p.relative_to(repo)),'missing source',resource))
-  if source.get('revision')=='4ebed4457519920e9a28f8f653d8ce96985acdad' or '/2026-10-18-issues-971-979/' in resource:
+  if source.get('revision') in {'4ebed4457519920e9a28f8f653d8ce96985acdad', 'c74410f56c8389ef246567318ddcade724dbe3f7'} or '/2026-10-18-issues-971-979/' in resource:
    newchecks+=1;assert hashlib.sha256(target.read_bytes()).hexdigest()==source['sha256'],(p,resource)
    if source['working_tree']=='clean':
     blob=subprocess.check_output(['git','show',f"{source['revision']}:{target.relative_to(repo)}"]);assert hashlib.sha256(blob).hexdigest()==source['sha256']
@@ -47,5 +47,5 @@ for cat,dirs in [('design-documents.md',['docs/superpowers/specs']),('audit-docu
    if rel not in text:errors.append((cat,'catalog missing',str(p)))
 print(json.dumps(dict(pages=len(pages),sources=sources,local_links=count,reachable=len(seen),new_source_hashes_and_clean_revision_blobs=newchecks,errors=errors),indent=2))
 baseline=json.loads(Path('docs/maintenance/2026-10-18-issues-971-979/okf-audit.json').read_text())['baseline']
-assert errors == baseline['errors'], 'new or changed reference/catalog finding'
+assert [list(error) for error in errors] == baseline['errors'], 'new or changed reference/catalog finding'
 print('Structure, local targets, navigation, new-source provenance and no-new-reference-findings checks passed; baseline catalog findings retained.')

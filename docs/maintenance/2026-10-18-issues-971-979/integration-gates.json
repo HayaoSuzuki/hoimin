@@ -244,18 +244,30 @@
       "command": ".venv/bin/ruff format --check .",
       "exit": 0,
       "result": "55 files already formatted",
-      "log": "task-10-ruff-format.log"
+      "log": "task-10-ruff-format.log",
+      "fix1_audit_rows": [
+        0
+      ],
+      "exit_evidence": "Recorded subprocess.call return value in task-10-python-gates.json; raw terminal output agrees."
     },
     {
       "command": ".venv/bin/ruff check --no-fix .",
       "exit": 0,
-      "log": "task-10-ruff-check.log"
+      "log": "task-10-ruff-check.log",
+      "fix1_audit_rows": [
+        1
+      ],
+      "exit_evidence": "Recorded subprocess.call return value in task-10-python-gates.json; raw terminal output agrees."
     },
     {
       "command": ".venv/bin/ty check",
       "exit": 1,
       "result": "missing optional hypothesmith dependency; 2 diagnostics",
-      "log": "task-10-ty.log"
+      "log": "task-10-ty.log",
+      "fix1_audit_rows": [
+        2
+      ],
+      "exit_evidence": "Recorded subprocess.call return value in task-10-python-gates.json; raw terminal output agrees."
     },
     {
       "command": "UV_CACHE_DIR=/tmp/hoimin-design-audit-5d3aee95/task-10-uv-cache uv pip install --target /tmp/hoimin-design-audit-5d3aee95/task-10-python-extras --python .venv/bin/python hypothesmith==0.3.3 hypothesis==6.169.1 lark==1.3.1",
@@ -270,12 +282,21 @@
           "log": "task-10-python-extras-network.log",
           "sandbox": "require_escalated"
         }
-      ]
+      ],
+      "fix1_audit_rows": [
+        3,
+        4
+      ],
+      "exit_evidence": "Terminal output agrees with recorded success/failure; exact original numeric process exit not independently persisted.; Terminal output agrees with recorded success/failure; exact original numeric process exit not independently persisted."
     },
     {
       "command": ".venv/bin/ty check --extra-search-path /tmp/hoimin-design-audit-5d3aee95/task-10-python-extras",
       "exit": 0,
-      "log": "task-10-ty-extras.log"
+      "log": "task-10-ty-extras.log",
+      "fix1_audit_rows": [
+        5
+      ],
+      "exit_evidence": "Terminal output agrees with recorded success/failure; exact original numeric process exit not independently persisted."
     },
     {
       "command": ".venv/bin/pytest",
@@ -283,7 +304,11 @@
       "passed": 1054,
       "failed": 6,
       "skipped": 11,
-      "log": "task-10-pytest.log"
+      "log": "task-10-pytest.log",
+      "fix1_audit_rows": [
+        6
+      ],
+      "exit_evidence": "Terminal output agrees with recorded success/failure; exact original numeric process exit not independently persisted."
     },
     {
       "command": "UV_CACHE_DIR=/tmp/hoimin-design-audit-5d3aee95/task-10-uv-cache PYTHONPATH=/tmp/hoimin-design-audit-5d3aee95/task-10-python-extras .venv/bin/pytest tests/test_release.py::test_skipped_reservation_prevents_preparation tests/test_release.py::test_release_preparation_uses_reserved_tag tests/test_lean_resource_guard.py::test_terminates_process_group_at_rss_limit tests/test_lean_resource_guard.py::test_propagates_normal_child_exit tests/test_lean_resource_guard.py::test_terminates_process_group_at_timeout tests/test_lean_resource_guard.py::test_rejects_root_exit_that_leaves_a_descendant tests/test_hypothesmith_corpus.py -ra",
@@ -293,30 +318,50 @@
       "skipped": 0,
       "sandbox": "require_escalated",
       "result": "all six original failures and all three optional cases pass; overlay invalidated -S negative-case setup",
-      "log": "task-10-pytest-environment.log"
+      "log": "task-10-pytest-environment.log",
+      "fix1_audit_rows": [
+        7
+      ],
+      "exit_evidence": "Terminal output agrees with recorded success/failure; exact original numeric process exit not independently persisted."
     },
     {
       "command": ".venv/bin/pytest tests/test_hypothesmith_corpus.py::test_cli_without_optional_dependencies -ra",
       "exit": 0,
       "passed": 2,
-      "log": "task-10-pytest-no-extras.log"
+      "log": "task-10-pytest-no-extras.log",
+      "fix1_audit_rows": [
+        8
+      ],
+      "exit_evidence": "Terminal output agrees with recorded success/failure; exact original numeric process exit not independently persisted."
     },
     {
       "command": ".venv/bin/python docs/maintenance/2026-10-18-issues-971-979/probes/check-okf.py",
       "exit": 0,
-      "result": "49 pages, 961 sources, 1685 local targets, 17 new source hashes; exact 86 baseline findings retained",
-      "log": "task-10-okf-maintained.log"
+      "result": "Corrected checker: 49 pages, 962 sources, 1686 local links, 49 reachable, 18 new source hashes; exact 86 baseline findings retained.",
+      "log": "task-10-fix1-okf-green.log",
+      "fix1_audit_rows": [
+        9
+      ],
+      "exit_evidence": "subprocess.run.returncode; task-10-fix1.json; prior false exit-0 receipt preserved in historical original"
     },
     {
       "command": ".venv/bin/python -m tools.docs_site --output site",
       "exit": 0,
-      "log": "task-10-docs-site-maintained.log"
+      "log": "task-10-fix1-site.log",
+      "fix1_audit_rows": [
+        10
+      ],
+      "exit_evidence": "fix-round subprocess.run.returncode; original silent receipt not independently established"
     },
     {
-      "command": "UV_CACHE_DIR=/tmp/hoimin-design-audit-5d3aee95/task-10-uv-cache PIP_CACHE_DIR=/tmp/hoimin-design-audit-5d3aee95/task-10-pip-cache HOIMIN_WHEEL=/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-971-979-cli-analyzer-resource-safety/target/wheels/hoimin-0.12.0-py3-none-macosx_11_0_arm64.whl HOIMIN_SMOKE_REPORT=/tmp/hoimin-design-audit-5d3aee95/task-10-wheel-smoke.json .venv/bin/python tests/wheel_smoke.py",
+      "command": "UV_CACHE_DIR=/tmp/hoimin-design-audit-5d3aee95/task-10-uv-cache PIP_CACHE_DIR=/tmp/hoimin-design-audit-5d3aee95/task-10-pip-cache HOIMIN_WHEEL=/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-971-979-cli-analyzer-resource-safety/target/wheels/hoimin-0.12.0-py3-none-macosx_11_0_arm64.whl HOIMIN_SMOKE_REPORT=/tmp/hoimin-design-audit-5d3aee95/task-10-fix1-wheel-smoke.json .venv/bin/python tests/wheel_smoke.py",
       "exit": 0,
       "sandbox": "require_escalated",
-      "log": "task-10-wheel-smoke.log"
+      "log": "task-10-fix1-wheel-smoke.log",
+      "fix1_audit_rows": [
+        11
+      ],
+      "exit_evidence": "fix-round subprocess.run.returncode; original silent receipt not independently established"
     }
   ],
   "python_distinct_coverage": {
@@ -3433,5 +3478,10 @@
       "",
       ""
     ]
+  },
+  "fix1_correction": {
+    "historical_original": "observations/task-10-integration-gates-original.json",
+    "audit": "task-10-fix1.json",
+    "summary": "Corrected false OKF exit-0 receipt; recaptured silent site/wheel exits. Other recorded terminal outcomes and pytest counts match; exact earlier numeric exits not recovered are explicitly identified in the audit."
   }
 }

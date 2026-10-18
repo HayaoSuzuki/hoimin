@@ -28,3 +28,10 @@ new-source hashes/revision blobs, then compares catalog findings with the exact
 recorded baseline. It does not hide those pre-existing findings or claim complete
 catalog coverage; `okf-audit.json` retains their individual identities. Content
 review remains separate from this mechanical check.
+
+`task-10-fix1.json` audits all manually assembled check rows and explains the
+correction to the initial checker-success receipt. Current `integration-gates.json`
+uses the corrected receipts; `observations/task-10-integration-gates-original.json`
+preserves the original bytes as historical evidence. The original checker logs are preserved in
+`observations/`; they already failed the tuple/list baseline comparison. The fix
+normalizes only representation and records the successful 18-source check.

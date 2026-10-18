@@ -1,0 +1,16 @@
+{
+  "command": [
+    ".venv/bin/python",
+    "tests/wheel_smoke.py"
+  ],
+  "environment": {
+    "UV_CACHE_DIR": "/tmp/hoimin-design-audit-5d3aee95/task-10-uv-cache",
+    "PIP_CACHE_DIR": "/tmp/hoimin-design-audit-5d3aee95/task-10-pip-cache",
+    "HOIMIN_WHEEL": "/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-971-979-cli-analyzer-resource-safety/target/wheels/hoimin-0.12.0-py3-none-macosx_11_0_arm64.whl",
+    "HOIMIN_SMOKE_REPORT": "/tmp/hoimin-design-audit-5d3aee95/task-10-fix1-wheel-smoke.json"
+  },
+  "exit": 0,
+  "elapsed_seconds": 3.421,
+  "log": "/tmp/hoimin-design-audit-5d3aee95/task-10-fix1-wheel-smoke.log",
+  "reason": "Initial silent smoke log has no recoverable actual process exit receipt; validate once with subprocess.run.returncode."
+}
