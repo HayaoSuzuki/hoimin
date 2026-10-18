@@ -630,7 +630,6 @@ impl RunState {
             id,
             target,
             final_target,
-            max_candidates: self.config.limits.max_candidates.get() as u64,
         })])
     }
 

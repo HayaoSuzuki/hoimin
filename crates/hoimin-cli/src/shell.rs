@@ -1393,9 +1393,14 @@ fn prepare_shell_setup_sync_in(
     boundary(ShellSetupBoundary::BackendCreated);
     let process = Arc::new(ProcessHandler::new(backend, spool_path.join("process")));
     boundary(ShellSetupBoundary::ProcessCreated);
-    let analyzer = AnalyzerHandler::new(config.selection.root.clone())
-        .with_managed_candidate_spool_owner(Arc::clone(&execution_spool))
-        .with_exception_project(&config);
+    let analyzer = AnalyzerHandler::new(
+        config.selection.root.clone(),
+        config.operators.clone(),
+        config.profile,
+        config.limits.max_candidates,
+    )
+    .with_managed_candidate_spool_owner(Arc::clone(&execution_spool))
+    .with_exception_project(&config);
     boundary(ShellSetupBoundary::AnalyzerCreated);
     let report = PreparedReport::new(config.output.format, delivery_spool.path())
         .map_err(|error| error.to_string())?;
@@ -2118,12 +2123,7 @@ async fn execute_effect_with_cancellation(
         }
         RunEffect::AnalyzeFile(request) => context
             .analyzer
-            .handle_with_cancellation(
-                request,
-                &context.config.operators,
-                context.config.profile,
-                cancellation.clone(),
-            )
+            .handle_with_cancellation(request, cancellation.clone())
             .await
             .map(RunEvent::AnalysisFinished),
         RunEffect::RunMutant(request) => {

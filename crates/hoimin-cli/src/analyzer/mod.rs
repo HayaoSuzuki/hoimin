@@ -3,13 +3,10 @@
 //!
 //! # Handler session contract
 //!
-//! For callers of [`AnalyzerHandler`], a session is the serial sequence of requests
-//! contributing to one candidate spool. Keep the root, operators, profile, and
-//! positive `AnalyzeFile::max_candidates` limit consistent throughout a session.
-//! The handler does not validate configuration consistency between requests.
-//! The first request creates the store with that limit; each request subtracts
-//! the accumulated count from its own limit to set the analysis budget. Changing
-//! the limit mid-session does not resize the store.
+//! A session is the serial sequence of requests contributing to one candidate
+//! spool. The handler owns its root, operators, profile, and positive candidate
+//! limit, fixed at construction. Every file uses the remaining capacity of that
+//! same limit. Different settings require a new handler.
 //!
 //! Accepted candidates have contiguous, one-based sequences across requests.
 //! A successful non-final, non-truncated request returns `spool: None`: candidates
@@ -17,8 +14,8 @@
 //! `final_target` or truncation finalizes the entire accumulated spool (including
 //! an empty spool), then removes the store from the handler. Truncation can end a
 //! session before the final target. A subsequent request starts a fresh store and
-//! sequence; it does not append to a returned spool. Diagnostics belong to each
-//! request's result rather than to the accumulated spool.
+//! sequence with the same fixed settings; it does not append to a returned spool.
+//! Diagnostics belong to each request's result rather than to the accumulated spool.
 //!
 //! # Interruption and ownership
 //!
@@ -60,6 +57,7 @@ mod types;
 pub(crate) use rust::definition_names;
 
 use std::fmt::Write as _;
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -103,6 +101,9 @@ impl CandidateSpoolOwner {
 /// spool cleanup responsibilities. Use one handler for one active session.
 pub struct AnalyzerHandler {
     root_path: Utf8PathBuf,
+    operators: MutationOperatorSelection,
+    profile: MutationProfile,
+    max_candidates: NonZeroUsize,
     exception_project: Option<ExceptionProject>,
     root: Option<PortableFileReader>,
     store: Option<CandidateStore>,
@@ -509,15 +510,23 @@ fn discovery_cancelled() -> EffectFailed {
 }
 
 impl AnalyzerHandler {
-    /// Creates a handler without accessing the project or allocating a candidate store.
+    /// Fixes the settings for every session without project I/O or store allocation.
     ///
     /// Source access and candidate-store creation are deferred until analysis; failures
     /// are reported by the operation that performs them.
     #[must_use]
-    pub fn new(root: Utf8PathBuf) -> Self {
+    pub fn new(
+        root: Utf8PathBuf,
+        operators: MutationOperatorSelection,
+        profile: MutationProfile,
+        max_candidates: NonZeroUsize,
+    ) -> Self {
         Self {
             exception_project: None,
             root_path: root,
+            operators,
+            profile,
+            max_candidates,
             root: None,
             store: None,
             candidate_spool_owner: None,
@@ -549,8 +558,7 @@ impl AnalyzerHandler {
 
     /// Analyzes one target and either retains candidates or finalizes the session spool.
     ///
-    /// Keep `operators`, `profile`, and `request.max_candidates` consistent with
-    /// earlier requests. `spool: None` on success means accumulation continues;
+    /// Uses the constructor settings. `spool: None` means accumulation continues;
     /// `request.final_target` or truncation returns the full spool and ends it.
     /// See the [module contract](self) before retrying after an interruption or
     /// dropping this future: blocking work and spool cleanup have separate lifetimes.
@@ -559,13 +567,8 @@ impl AnalyzerHandler {
     ///
     /// Returns an error when analysis is cancelled, the source cannot be read or decoded, a
     /// generated candidate is invalid, or the candidate store fails.
-    pub async fn handle(
-        &mut self,
-        request: AnalyzeFile,
-        operators: &MutationOperatorSelection,
-        profile: MutationProfile,
-    ) -> Result<AnalysisFinished, EffectFailed> {
-        self.handle_with_cancellation(request, operators, profile, ProcessCancellation::new())
+    pub async fn handle(&mut self, request: AnalyzeFile) -> Result<AnalysisFinished, EffectFailed> {
+        self.handle_with_cancellation(request, ProcessCancellation::new())
             .await
     }
 
@@ -573,15 +576,14 @@ impl AnalyzerHandler {
     pub(crate) async fn handle_with_cancellation(
         &mut self,
         request: AnalyzeFile,
-        operators: &MutationOperatorSelection,
-        profile: MutationProfile,
         cancellation: ProcessCancellation,
     ) -> Result<AnalysisFinished, EffectFailed> {
         let id = request.id;
+        let candidate_limit = self.max_candidates.get() as u64;
         if self.store.is_none() {
             let store = self.candidate_spool_owner.as_ref().map_or_else(
-                || CandidateStore::new(request.max_candidates),
-                |owner| CandidateStore::new_in(request.max_candidates, owner.path()),
+                || CandidateStore::new(candidate_limit),
+                |owner| CandidateStore::new_in(candidate_limit, owner.path()),
             );
             self.store =
                 Some(store.map_err(|error| {
@@ -597,15 +599,18 @@ impl AnalyzerHandler {
                 .map_err(|error| EffectFailed::other(id, "analyzer.source.read", error.to_string()))?,
         };
         if self.exception_project.is_none()
-            && operators.contains(hoimin_core::MutationOperator::ExceptionHierarchy)
+            && self
+                .operators
+                .contains(hoimin_core::MutationOperator::ExceptionHierarchy)
         {
             self.exception_project = Some(ExceptionProject::new(&self.root_path));
         }
         let exception_project = self.exception_project.clone();
         let store = self.store.take().expect("store initialized");
-        let remaining = request.max_candidates.saturating_sub(store.count());
+        let remaining = candidate_limit.saturating_sub(store.count());
         let max_candidates = usize::try_from(remaining).unwrap_or(usize::MAX);
-        let operators = operators.clone();
+        let operators = self.operators.clone();
+        let profile = self.profile;
         let task_cancellation = cancellation.clone();
         #[cfg(test)]
         let analysis_hook = self.analysis_hook.clone();
@@ -928,7 +933,6 @@ mod tests {
                 symbols: Vec::new(),
             },
             final_target: true,
-            max_candidates: 10,
         }
     }
 
@@ -1353,28 +1357,32 @@ mod tests {
         )
         .unwrap();
         let root = Utf8PathBuf::from_path_buf(directory.path().to_owned()).unwrap();
-        let mut handler = AnalyzerHandler::new(root);
-        let operators = MutationOperatorSelection::default();
+        let mut handler = AnalyzerHandler::new(
+            root,
+            MutationOperatorSelection::default(),
+            MutationProfile::Full,
+            NonZeroUsize::new(10).unwrap(),
+        );
+        let mut first = request(81);
+        first.final_target = false;
+        handler.handle(first).await.unwrap();
         let cancellation = ProcessCancellation::new();
         cancellation.cancel();
 
         let cancelled = handler
-            .handle_with_cancellation(request(82), &operators, MutationProfile::Full, cancellation)
+            .handle_with_cancellation(request(82), cancellation)
             .await;
 
         assert!(matches!(
             cancelled,
             Err(error) if error.id == EffectId(82) && error.failure.code() == "analyzer.cancelled"
         ));
-        assert_eq!(handler.store.as_ref().unwrap().count(), 0);
+        assert_eq!(handler.store.as_ref().unwrap().count(), 1);
 
-        let finished = handler
-            .handle(request(83), &operators, MutationProfile::Full)
-            .await
-            .unwrap();
+        let finished = handler.handle(request(83)).await.unwrap();
         let spool = finished.spool.unwrap();
 
-        assert_eq!(spool.records, 1);
+        assert_eq!(spool.records, 2);
         assert!(handler.store.is_none());
     }
 
@@ -1388,13 +1396,15 @@ mod tests {
         let root = Utf8PathBuf::from_path_buf(directory.path().to_owned()).unwrap();
         let owner = Arc::new(tempfile::tempdir().unwrap());
         let spool_path = owner.path().to_owned();
-        let mut handler = AnalyzerHandler::new(root).with_candidate_spool_owner(owner.clone());
-        let operators = MutationOperatorSelection::default();
+        let mut handler = AnalyzerHandler::new(
+            root,
+            MutationOperatorSelection::default(),
+            MutationProfile::Full,
+            NonZeroUsize::new(10).unwrap(),
+        )
+        .with_candidate_spool_owner(owner.clone());
         for id in 100..103 {
-            let error = handler
-                .handle(request(id), &operators, MutationProfile::Full)
-                .await
-                .unwrap_err();
+            let error = handler.handle(request(id)).await.unwrap_err();
             assert_eq!(error.id, EffectId(id));
             assert_eq!(error.failure.code(), "analyzer.depth");
             assert!(handler.store.is_none());
@@ -1402,10 +1412,7 @@ mod tests {
             assert_eq!(std::fs::read_to_string(&source_path).unwrap(), source);
         }
         std::fs::write(&source_path, "value = 1 + 2\n").unwrap();
-        let output = handler
-            .handle(request(103), &operators, MutationProfile::Full)
-            .await
-            .unwrap();
+        let output = handler.handle(request(103)).await.unwrap();
         assert!(output.spool.unwrap().records > 0);
         drop(handler);
         drop(owner);
@@ -1429,23 +1436,22 @@ mod tests {
         let hook_entered = entered.clone();
         let spool_owner = Arc::new(tempfile::tempdir().unwrap());
         let spool_path = spool_owner.path().to_owned();
-        let mut handler =
-            AnalyzerHandler::new(root).with_candidate_spool_owner(spool_owner.clone());
+        let mut handler = AnalyzerHandler::new(
+            root,
+            MutationOperatorSelection::default(),
+            MutationProfile::Full,
+            NonZeroUsize::new(10).unwrap(),
+        )
+        .with_candidate_spool_owner(spool_owner.clone());
         handler.analysis_hook = Some(Arc::new(move || {
             hook_entered.wait();
             std::thread::sleep(Duration::from_millis(500));
         }));
-        let operators = MutationOperatorSelection::default();
         let cancellation = ProcessCancellation::new();
         let task_cancellation = cancellation.clone();
         let task = tokio::spawn(async move {
             handler
-                .handle_with_cancellation(
-                    request(84),
-                    &operators,
-                    MutationProfile::Full,
-                    task_cancellation,
-                )
+                .handle_with_cancellation(request(84), task_cancellation)
                 .await
         });
         entered.wait();

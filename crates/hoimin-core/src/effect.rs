@@ -25,11 +25,11 @@ macro_rules! effect_request {
 effect_request!(Preflight, ObserveRemainingBudget);
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AnalyzeFile {
     pub id: EffectId,
     pub target: TargetSlice,
     pub final_target: bool,
-    pub max_candidates: u64,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
