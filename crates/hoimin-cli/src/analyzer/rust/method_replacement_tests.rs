@@ -230,6 +230,30 @@ fn unselected_parent_keeps_selected_method_in_receiver_and_argument() {
 }
 
 #[test]
+fn subscript_payload_failure_stops_before_mapping_builder() {
+    let budget = payload::PayloadBudget::new(1);
+    let mut operators = only(MutationOperator::StructureIndexNeighbor);
+    operators.include(MutationOperator::StructureMappingGetSubscript);
+    let request = AnalyzeRequest {
+        payload: budget.clone(),
+        path: Utf8Path::new("subject.py"),
+        lines: &[],
+        symbols: &[],
+        operators: &operators,
+        profile: MutationProfile::Full,
+        max_candidates: 100,
+    };
+    reset();
+
+    let result = analyze_source_cancellable(&request, "x = items[1]\n", || false);
+
+    assert_eq!(result.err(), Some(AnalysisError::PayloadLimit { limit: 1 }));
+    assert_eq!(budget.snapshot().used, 0);
+    assert_eq!(budget.snapshot().generated, 1);
+    assert_eq!(work(), ([0; 7], 0));
+}
+
+#[test]
 fn unselected_mapping_helper_preserves_index_neighbors() {
     reset();
     let output = analyze("obj[1]", MutationOperator::StructureIndexNeighbor, 10);

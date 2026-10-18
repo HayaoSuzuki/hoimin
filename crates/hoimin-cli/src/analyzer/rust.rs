@@ -3587,6 +3587,9 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             Expr::Slice(slice) => self.collect_slice_neighbors(slice),
             expression => self.collect_index_neighbors(expression),
         }
+        if self.candidates.failure.is_some() {
+            return;
+        }
         if !self
             .request
             .operators
