@@ -171,6 +171,7 @@ impl MutationFile {
     }
 
     pub(crate) fn into_writable(mut self, path: &Utf8Path) -> Result<File, WorkspaceError> {
+        reject_shared_mutation_target(&self.file, path)?;
         make_file_writable(&self.file, path)?;
         #[cfg(windows)]
         if let Some((parent, name)) = self.reopen {
@@ -207,8 +208,30 @@ impl MutationFile {
             }
             self.file = file;
         }
+        reject_shared_mutation_target(&self.file, path)?;
         Ok(self.file)
     }
+}
+
+fn reject_shared_mutation_target(file: &File, path: &Utf8Path) -> Result<(), WorkspaceError> {
+    #[cfg(unix)]
+    let links = {
+        use std::os::unix::fs::MetadataExt;
+
+        file.metadata()
+            .map_err(|error| WorkspaceError::io("inspect mutation target links", path, error))?
+            .nlink()
+    };
+    #[cfg(windows)]
+    let links = windows::file_link_count(file)
+        .map_err(|error| WorkspaceError::io("inspect mutation target links", path, error))?;
+
+    if links > 1 {
+        return Err(WorkspaceError::MutationTargetShared {
+            path: path.to_owned(),
+        });
+    }
+    Ok(())
 }
 
 #[allow(dead_code)]
@@ -481,6 +504,8 @@ impl WorkerRoot {
         }
         #[cfg(unix)]
         {
+            use std::os::unix::fs::MetadataExt;
+
             Self::reject_link(&parent, &name, path, "remove worker file")?;
             make_directory_writable(&parent, path)?;
             let mut options = cap_primitives::fs::OpenOptions::new();
@@ -490,16 +515,18 @@ impl WorkerRoot {
                 .custom_flags(libc::O_NONBLOCK);
             let file = cap_primitives::fs::open(&parent, Path::new(&name), &options)
                 .map_err(|error| Self::map_entry_error("remove worker file", path, error))?;
-            if !file
+            let metadata = file
                 .metadata()
-                .map_err(|error| WorkspaceError::io("inspect worker file", path, error))?
-                .is_file()
-            {
+                .map_err(|error| WorkspaceError::io("inspect worker file", path, error))?;
+            if !metadata.is_file() {
                 return Err(WorkspaceError::InvalidPath {
                     path: path.to_owned(),
                 });
             }
-            make_file_writable(&file, path)?;
+            // Unlink needs parent permissions; chmod would affect every hard link.
+            if metadata.nlink() <= 1 {
+                make_file_writable(&file, path)?;
+            }
             drop(file);
             cap_primitives::fs::remove_file(&parent, Path::new(&name))
                 .map_err(|error| Self::map_entry_error("remove worker file", path, error))

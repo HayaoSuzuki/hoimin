@@ -133,6 +133,8 @@ pub enum WorkspaceError {
     MutationTargetMissing { path: Utf8PathBuf },
     #[error("mutation target hash does not match: {path}")]
     MutationHashMismatch { path: Utf8PathBuf },
+    #[error("mutation target shares its file with another hard link: {path}")]
+    MutationTargetShared { path: Utf8PathBuf },
     #[error("mutation span is invalid: {path}")]
     MutationSpanInvalid { path: Utf8PathBuf },
     #[error("mutation original bytes do not match: {path}")]
@@ -193,6 +195,7 @@ impl WorkspaceError {
             Self::ReservationMismatch { .. } => "workspace.grant.invalid",
             Self::OriginalChanged { .. } => "workspace.original.changed",
             Self::WorkspaceRestore { .. } => "workspace.restore",
+            Self::MutationTargetShared { .. } => "workspace.mutation.shared",
             Self::MutationTargetMissing { .. }
             | Self::MutationHashMismatch { .. }
             | Self::MutationSpanInvalid { .. }
@@ -1568,6 +1571,7 @@ fn effect_failed(id: EffectId, error: WorkspaceError) -> EffectFailed {
         WorkspaceError::InvalidPath { path } => EffectFailure::InvalidWorkspacePath { path },
         WorkspaceError::MutationTargetMissing { path }
         | WorkspaceError::MutationHashMismatch { path }
+        | WorkspaceError::MutationTargetShared { path }
         | WorkspaceError::MutationSpanInvalid { path }
         | WorkspaceError::MutationOriginalMismatch { path } => EffectFailure::InvalidMutation {
             code,
