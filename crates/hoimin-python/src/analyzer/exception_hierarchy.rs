@@ -1,5 +1,6 @@
 //! Conservative lexical identities for project-local Python exception classes.
 use std::collections::{BTreeMap, BTreeSet};
+use std::ops::Bound::{Included, Unbounded};
 
 use crate::visitor::{self, Visitor};
 use camino::{Utf8Path, Utf8PathBuf};
@@ -1255,13 +1256,24 @@ impl ExceptionIndex {
                     ..
                 } = &binding.kind
                 {
-                    for (module_name, module_path) in &self.module_paths {
-                        if (module_name != imported
-                            && !module_name.starts_with(&format!("{imported}.")))
-                            || !module.loaded.contains_key(module_name)
-                        {
-                            continue;
+                    // Exact and descendant names are ordered as in module_paths,
+                    // but only explicitly loaded modules can expose class spellings.
+                    let prefix = format!("{imported}.");
+                    let loaded = module.loaded.get_key_value(imported).into_iter().chain(
+                        module
+                            .loaded
+                            .range::<str, _>((Included(prefix.as_str()), Unbounded))
+                            .take_while(|(name, _)| name.starts_with(&prefix)),
+                    );
+                    for (module_name, loaded_end) in loaded {
+                        #[cfg(test)]
+                        visibility_tests::record_module_visit();
+                        if cancelled() {
+                            return Err(AnalysisError::Cancelled);
                         }
+                        let Some(module_path) = self.module_paths.get(module_name) else {
+                            continue;
+                        };
                         if let Some(target) = self.modules.get(module_path) {
                             for member in target.bindings.keys() {
                                 if cancelled() {
@@ -1276,10 +1288,10 @@ impl ExceptionIndex {
                                     remaining = remaining
                                         .checked_sub(1)
                                         .ok_or(AnalysisError::HierarchyLimit)?;
-                                    visible.entry(id).or_default().push((
-                                        spelling,
-                                        binding.end.max(module.loaded[module_name]),
-                                    ));
+                                    visible
+                                        .entry(id)
+                                        .or_default()
+                                        .push((spelling, binding.end.max(*loaded_end)));
                                 }
                             }
                         }
@@ -1647,3 +1659,7 @@ mod checked_parse_tests {
             .unwrap();
     }
 }
+
+#[cfg(test)]
+#[path = "exception_visibility_tests.rs"]
+mod visibility_tests;

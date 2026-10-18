@@ -1050,6 +1050,22 @@
         "--",
         "--exact"
       ]
+    },
+    {
+      "id": "hierarchy-loaded-module-lookups",
+      "status": "active",
+      "metric": "operations",
+      "related_issue": 995,
+      "scope": "N=32/64/128/256 auxiliary modules, 32 external imports each, and a real target hierarchy: module import visibility visits at most 32*N loaded names; member import control visits zero. Counts production-path module visits, excluding ordered-map comparison/allocation costs; no wall-time or whole-analysis bound.",
+      "args": [
+        "test",
+        "-p",
+        "hoimin-python",
+        "--lib",
+        "rust::exception_hierarchy::visibility_tests::external_import_visibility_work_tracks_imports_not_project_mappings",
+        "--",
+        "--exact"
+      ]
     }
   ],
   "lean": {
