@@ -2,7 +2,7 @@
 use std::cell::Cell;
 use std::fmt;
 
-use camino::Utf8PathBuf;
+use camino::{Utf8Path, Utf8PathBuf};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -41,6 +41,69 @@ pub struct CandidateIdentity {
     pub span: ByteSpan,
     pub operator: String,
     pub replacement: String,
+}
+
+/// Borrowed stable identity fields; display metadata and discovery order are excluded.
+#[derive(Clone, Copy, Debug)]
+pub struct CandidateIdentityRef<'a> {
+    pub schema_version: u32,
+    pub file_hash: &'a str,
+    pub path: &'a Utf8Path,
+    pub span: ByteSpan,
+    pub operator: &'a str,
+    pub replacement: &'a str,
+}
+
+impl CandidateIdentityRef<'_> {
+    /// Checks internal identity consistency without reading source or copying payload strings.
+    #[must_use]
+    pub fn matches_id(self, id: &str) -> bool {
+        self.stable_mutant_id().as_str() == id
+    }
+
+    #[must_use]
+    pub fn stable_mutant_id(self) -> MutantId {
+        hash_identity(self)
+    }
+}
+
+impl<'a> From<&'a CandidateIdentity> for CandidateIdentityRef<'a> {
+    fn from(identity: &'a CandidateIdentity) -> Self {
+        Self {
+            schema_version: identity.schema_version,
+            file_hash: &identity.file_hash,
+            path: &identity.path,
+            span: identity.span,
+            operator: &identity.operator,
+            replacement: &identity.replacement,
+        }
+    }
+}
+
+impl<'a> From<&'a CandidateDescriptor> for CandidateIdentityRef<'a> {
+    fn from(candidate: &'a CandidateDescriptor) -> Self {
+        Self {
+            schema_version: candidate.schema_version,
+            file_hash: &candidate.file_hash,
+            path: &candidate.path,
+            span: candidate.span,
+            operator: &candidate.operator,
+            replacement: &candidate.replacement,
+        }
+    }
+}
+
+impl<'a> From<&'a MutationCandidate> for CandidateIdentityRef<'a> {
+    fn from(candidate: &'a MutationCandidate) -> Self {
+        Self {
+            schema_version: CANDIDATE_SCHEMA_VERSION,
+            file_hash: &candidate.file_hash,
+            path: &candidate.path,
+            span: candidate.span,
+            operator: &candidate.operator,
+            replacement: &candidate.replacement,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -393,6 +456,10 @@ pub fn python_source_column(source: &str, line_start: usize, offset: usize) -> O
 
 #[must_use]
 pub fn stable_mutant_id(identity: &CandidateIdentity) -> MutantId {
+    CandidateIdentityRef::from(identity).stable_mutant_id()
+}
+
+fn hash_identity(identity: CandidateIdentityRef<'_>) -> MutantId {
     let mut hasher = blake3::Hasher::new();
     hasher.update(MUTANT_ID_DOMAIN);
     framed(
@@ -443,7 +510,7 @@ pub fn validate_candidate(
 /// Conservative logical bytes of temporary owned strings/buffers during validation.
 ///
 /// Includes both Latin-1 encoding buffers (UTF-8 lengths bound their byte lengths),
-/// the identity's replacement/path/operator/hash copies, lowercase hash, both path
+/// conservative headroom for the former owned identity copies, lowercase hash, both path
 /// normalization strings and the returned 67-byte ID while a caller copies it.
 /// Source decoding/indexes, diagnostics and allocation capacity are excluded.
 /// Keep this bound beside the allocations in validation and `stable_mutant_id`.
@@ -532,7 +599,7 @@ pub fn validate_candidate_with_context(
     if candidate.line != line || candidate.column != column {
         return Err(CandidateValidationError::LocationMismatch);
     }
-    Ok(stable_mutant_id(&CandidateIdentity::from(candidate)))
+    Ok(CandidateIdentityRef::from(candidate).stable_mutant_id())
 }
 
 #[must_use]

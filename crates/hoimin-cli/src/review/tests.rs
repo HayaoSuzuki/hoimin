@@ -976,30 +976,55 @@ async fn matching_review_command_joins_once_and_keeps_plan_display_order() {
 }
 
 #[tokio::test]
-async fn report_project_error_precedes_identity_and_identity_precedes_descriptor() {
+async fn common_reader_rejects_report_identity_before_review_project_checks() {
+    // Arrange
     let (_dir, path, report_path) = report_fixture().await;
     let mut plan = super::input::load_plan(&path).unwrap();
     let mut value: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&report_path).unwrap()).unwrap();
     value["mutants"][0]["candidate"]["replacement"] = "forged".into();
     std::fs::write(&report_path, serde_json::to_vec(&value).unwrap()).unwrap();
-    let project = plan.project.clone();
     plan.project = camino::Utf8PathBuf::from("another-project");
+    // Act
     let error = super::input::load_report(&report_path, &plan, &super::input::index_plan(&plan))
         .err()
         .unwrap();
+    // Assert
+    assert!(error.to_string().contains("candidate identity conflict"));
+    assert!(error.to_string().contains(report_path.to_str().unwrap()));
+}
+
+#[tokio::test]
+async fn review_rejects_valid_identity_from_another_project() {
+    // Arrange
+    let (_dir, path, report_path) = report_fixture().await;
+    let mut plan = super::input::load_plan(&path).unwrap();
+    plan.project = camino::Utf8PathBuf::from("another-project");
+    // Act
+    let error = super::input::load_report(&report_path, &plan, &super::input::index_plan(&plan))
+        .err()
+        .unwrap();
+    // Assert
     assert_eq!(
         error.to_string(),
         "invalid review input: report belongs to another project"
     );
-    plan.project = project;
-    plan.manifest.candidates[0].candidate.original = "also different".into();
+}
+
+#[tokio::test]
+async fn review_retains_plan_descriptor_check_for_display_only_difference() {
+    // Arrange: original text does not participate in the stable ID.
+    let (_dir, path, report_path) = report_fixture().await;
+    let mut plan = super::input::load_plan(&path).unwrap();
+    plan.manifest.candidates[0].candidate.original = "different".into();
+    // Act
     let error = super::input::load_report(&report_path, &plan, &super::input::index_plan(&plan))
         .err()
         .unwrap();
+    // Assert
     assert_eq!(
         error.to_string(),
-        "invalid review input: report candidate identity conflict"
+        "invalid review input: report candidate descriptor differs from plan"
     );
 }
 

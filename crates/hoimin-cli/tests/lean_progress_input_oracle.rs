@@ -1,3 +1,5 @@
+#[path = "support/candidate_identity.rs"]
+mod candidate_identity;
 #[path = "support/mutation_outcome.rs"]
 mod mutation_outcome;
 use std::{collections::BTreeSet, process::Stdio, time::Duration};
@@ -108,9 +110,9 @@ fn report_json_from_lean_case(case: &LeanOracleCase) -> Value {
             .map(|(index, status)| {
                 let mut event = template.clone();
                 event["sequence"] = json!(index + 3);
-                event["candidate"]["id"] = json!(format!("mutant-{index}"));
                 event["candidate"]["sequence"] = json!(index);
                 event["candidate"]["span"]["start"] = json!(index);
+                candidate_identity::assign_id(&mut event["candidate"]);
                 let status: hoimin_core::MutationStatus =
                     serde_json::from_value(json!(status)).unwrap();
                 event["outcome"] =

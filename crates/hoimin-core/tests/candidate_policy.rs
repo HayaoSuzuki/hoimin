@@ -1,8 +1,9 @@
 use camino::Utf8PathBuf;
 use hoimin_core::{
     ByteSpan, CANDIDATE_SCHEMA_VERSION, CandidateDescriptor, CandidateIdentity,
-    CandidateValidationContext, CandidateValidationError, MutationCandidate, PythonSourceIndex,
-    python_source_column, stable_mutant_id, validate_candidate, validate_candidate_with_context,
+    CandidateIdentityRef, CandidateValidationContext, CandidateValidationError, MutationCandidate,
+    PythonSourceIndex, python_source_column, stable_mutant_id, validate_candidate,
+    validate_candidate_with_context,
 };
 use proptest::prelude::*;
 
@@ -492,5 +493,85 @@ fn python_physical_line_starts_count_crlf_once_and_keep_empty_lines() {
             expected,
             "{source:?}"
         );
+    }
+}
+
+#[test]
+fn borrowed_candidate_identity_preserves_published_id_vector() {
+    // Arrange: this checked-in ID predates the borrowed identity projection.
+    let candidates: Vec<MutationCandidate> = serde_json::from_str(include_str!(
+        "../../hoimin-cli/tests/fixtures/method-replacements/candidates.json"
+    ))
+    .unwrap();
+    let candidate = &candidates[0];
+    let expected = "m1_3faeba4770789066e291b3ecd51b9b44ba6301f757a68a2ff7e8bde823ca82ab";
+    // Act
+    let actual = CandidateIdentityRef::from(candidate).stable_mutant_id();
+    // Assert
+    assert_eq!(actual.as_str(), expected);
+    assert!(CandidateIdentityRef::from(candidate).matches_id(expected));
+}
+
+#[test]
+fn borrowed_descriptor_identity_preserves_canonical_path_and_hash_case() {
+    // Arrange
+    let candidates: Vec<MutationCandidate> = serde_json::from_str(include_str!(
+        "../../hoimin-cli/tests/fixtures/method-replacements/candidates.json"
+    ))
+    .unwrap();
+    let mut descriptor = CandidateDescriptor::from(&candidates[0]);
+    descriptor.path = "./subject.py".into();
+    descriptor.file_hash = descriptor.file_hash.to_ascii_uppercase();
+    // Act
+    let actual = CandidateIdentityRef::from(&descriptor).stable_mutant_id();
+    // Assert
+    assert_eq!(
+        actual.as_str(),
+        "m1_3faeba4770789066e291b3ecd51b9b44ba6301f757a68a2ff7e8bde823ca82ab"
+    );
+}
+
+#[test]
+fn borrowed_descriptor_identity_includes_candidate_schema() {
+    // Arrange
+    let candidates: Vec<MutationCandidate> = serde_json::from_str(include_str!(
+        "../../hoimin-cli/tests/fixtures/method-replacements/candidates.json"
+    ))
+    .unwrap();
+    let mut descriptor = CandidateDescriptor::from(&candidates[0]);
+    descriptor.schema_version += 1;
+    // Act
+    let matches = CandidateIdentityRef::from(&descriptor).matches_id(&candidates[0].id);
+    // Assert
+    assert!(!matches);
+}
+
+proptest! {
+    #[test]
+    fn borrowed_projections_preserve_published_vectors_despite_display_metadata(
+        mut candidate in proptest::sample::select(
+            serde_json::from_str::<Vec<MutationCandidate>>(include_str!(
+                "../../hoimin-cli/tests/fixtures/method-replacements/candidates.json"
+            )).unwrap()
+        ),
+        original in any::<String>(),
+        symbol in proptest::option::of(any::<String>()),
+        line in any::<u32>(),
+        column in any::<u32>(),
+        sequence in any::<u64>(),
+    ) {
+        // Arrange: preserve the published ID and vary every excluded field.
+        candidate.original = original;
+        candidate.symbol = symbol;
+        candidate.line = line;
+        candidate.column = column;
+        candidate.sequence = sequence;
+        let descriptor = CandidateDescriptor::from(&candidate);
+        // Act
+        let mutation_id = CandidateIdentityRef::from(&candidate).stable_mutant_id();
+        let descriptor_id = CandidateIdentityRef::from(&descriptor).stable_mutant_id();
+        // Assert: expected IDs were recorded before this implementation.
+        prop_assert_eq!(mutation_id.as_str(), candidate.id.as_str());
+        prop_assert_eq!(descriptor_id.as_str(), candidate.id.as_str());
     }
 }

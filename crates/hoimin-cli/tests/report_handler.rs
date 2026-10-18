@@ -349,8 +349,8 @@ fn all_optional_report_events_at(current: bool, version: u32) -> Vec<OutputEvent
     started
         .verification_selection
         .clone_from(&verification_selection);
-    let candidate = MutationCandidate {
-        id: "golden-mutant".to_owned(),
+    let mut candidate = MutationCandidate {
+        id: String::new(),
         sequence: 0,
         path: "src/example.py".into(),
         span: ByteSpan {
@@ -365,6 +365,10 @@ fn all_optional_report_events_at(current: bool, version: u32) -> Vec<OutputEvent
         symbol: Some("calculate".to_owned()),
         file_hash: "golden-file-hash".to_owned(),
     };
+    candidate.id = hoimin_core::CandidateIdentityRef::from(&candidate)
+        .stable_mutant_id()
+        .to_string();
+    let id = candidate.id.clone();
     vec![
         OutputEvent::RunStarted(started),
         OutputEvent::BaselineFinished(BaselineFinished {
@@ -380,7 +384,7 @@ fn all_optional_report_events_at(current: bool, version: u32) -> Vec<OutputEvent
                 observed: 34,
             },
         }),
-        OutputEvent::MutantStarted(MutantStarted::new(run_id, 3, "golden-mutant", 0)),
+        OutputEvent::MutantStarted(MutantStarted::new(run_id, 3, id, 0)),
         OutputEvent::MutantFinished(MutantFinished {
             schema_version: REPORT_SCHEMA_VERSION,
             sequence: 4,
