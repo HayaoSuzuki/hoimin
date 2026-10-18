@@ -517,6 +517,21 @@ sources:
   resource: ../../maintenance/2026-10-18-issues-971-979/task-9-report.md
   working_tree: untracked
   sha256: d9fd8051886a76403ff07084d186e237c9bf8a43848e735238152c5164b146a9
+- id: issue-986-walker
+  resource: ../../../crates/hoimin-cli/src/analyzer/visitor.rs
+  revision: 2ec902ae2353c38f2da1a74cbf6552785387e42d
+  working_tree: clean
+  sha256: e7e0f607c3b8dce98dd93ac4a340ca4f92f3cec59a5500debec9df1506ff291b
+- id: issue-986-evidence
+  resource: ../../maintenance/2026-10-18-issue-986-visitation.md
+  revision: 2ec902ae2353c38f2da1a74cbf6552785387e42d
+  working_tree: clean
+  sha256: 14cf1ba2a5f6a3cb83837730bdcc40e08d8f060571ba830f4038ede363debbdd
+- id: issue-987-evidence
+  resource: ../../maintenance/2026-10-19-issue-987-finally-work.md
+  revision: 7bf4cd3b6b9537539911a8c43ee29529bf92a230
+  working_tree: clean
+  sha256: ee20d80550468bc2bb6e9e1f69631efedbf7a311d35f97479010d6f5d375d227
 
 ---
 
@@ -1260,3 +1275,68 @@ source revision.[^issue-978-evidence]
 [^issue-977-evidence]: [Selection construction counters and verification](../../maintenance/2026-10-18-issues-971-979/task-8-report.md).
 [^issue-978-payload]: [Shared logical payload owner](../../../crates/hoimin-cli/src/analyzer/payload.rs).
 [^issue-978-evidence]: [Accounting, charged peaks, release comparison and early-stop fix](../../maintenance/2026-10-18-issues-971-979/task-9-report.md).
+
+# Single if/elif visitation (Issue #986)
+
+The analyzer's shared ordinary statement walker visits the initial if condition
+and body, then each elif/else clause once in upstream order. It corrects the
+pinned Ruff walker's extra elif-condition visit while delegating other statement
+kinds upstream and preserving existing suite callbacks and scope-specific
+behavior. It does not remove the duplicate-not assertion or deduplicate visits
+afterward.[^issue-986-walker][^issue-986-evidence]
+
+The re-exported upstream `Visitor` still has its original default `visit_stmt`.
+Visitors that can enter statements must explicitly route that method through the
+local walker. Expression-only visitors retain their narrower entry points;
+`SourceOrderVisitor`, used by depth traversal, is a separate unchanged path.
+Recheck this routing when adding a visitor or updating Ruff.[^issue-986-walker][^issue-986-evidence]
+
+Independent tests count ordered node names and source positions, vary elif/not
+forms and delegated suites, and check public plan descriptors, IDs and order.
+Debug and release regressions both passed on macOS. The confirmed original
+panic was in debug; these observations establish neither historical release
+candidate loss nor a universal AST proof.[^issue-986-evidence]
+
+[^issue-986-walker]: [Shared statement traversal boundary](../../../crates/hoimin-cli/src/analyzer/visitor.rs).
+[^issue-986-evidence]: [Visitation design, self-reviews and test evidence](../../maintenance/2026-10-18-issue-986-visitation.md).
+
+# Multi-exit finally work (Issue #987)
+
+Finally transfer keeps normal continuation, break, continue, successful return,
+explicit raise and implicit exception routing distinct. Exact same-category
+normalization removes repeated import environments without intersecting distinct
+explicit states. It retains last-occurrence order so the last contributor to each
+category, and residual imports observed by subsequent unreachable annotations,
+remain unchanged. A separate, single-entry transfer cache inside one `apply_finally`
+call avoids replaying an equivalent finalbody for different exit categories.
+Both optimizations require the absence of an enclosing `ClassContext`; existing
+class-fallback behavior and observable test-hook paths remain uncached.
+[^issue-987-evidence]
+
+The cache lifetime fixes the body, enclosing scope, qualified name, implicit
+exception tracking and transfer-only observation mode. Only exact `KnownImports`
+equality varies within that lifetime. A hit restores the collector's residual
+imports as well as returning its exits; annotation recording remains a separate
+traversal. On a miss the old slot is dropped before recursive work starts, and
+cancelled transfers are never admitted. Moving this cache to a wider lifetime
+would invalidate those context assumptions.[^issue-987-evidence]
+
+Cancellation is checked at suite, statement, finally-entry and loop-transfer
+boundaries, including cache hits. The production boundary reports cancellation
+instead of accepting partially collected candidates; lexical context and flag
+restoration still run. Annotation-free and transfer-only traversals therefore
+observe cancellation independently of annotation callbacks. This does not make
+synchronous parsing or every expression helper forcibly interruptible.
+[^issue-987-evidence]
+
+The measured homogeneous multi-exit nesting family has linear transfer-only and
+quadratic recording-enabled statement work after this change, with bounded
+same-category state multiplicity. Distinct environments can still require more
+work: stable vector deduplication compares up to quadratically many pairs, and
+class-context paths retain their prior traversal. One cache slot per active
+finally frame bounds the number of slots by nesting depth, not their bytes or
+process RSS. No state or candidate is discarded to enforce a resource cap.
+The dated record separates operation/state-count gates from wall-time samples
+and independent semantic controls.[^issue-987-evidence]
+
+[^issue-987-evidence]: [Finally work, cancellation and verification evidence](../../maintenance/2026-10-19-issue-987-finally-work.md).

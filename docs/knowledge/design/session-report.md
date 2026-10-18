@@ -210,6 +210,23 @@ sources:
   resource: ../../maintenance/2026-10-18-issues-971-979/task-4-report.md
   working_tree: untracked
   sha256: 7734e75cb40e9041460b3c816ebf2b8f5b56d72f4a63e8db5ee8f7d0cf74236f
+- id: issue-985-admission
+  resource: ../../maintenance/2026-10-18-issue-985.md
+  revision: c293cf62325f2e39e07760770adeba4a592bea9d
+  working_tree: clean
+  sha256: d9584be78df3b4d8810d1c52e6188d09cabfbc6156769d7c85b7cf8049a5f305
+
+- id: issue-984-compatibility
+  resource: ../../compatibility.md
+  revision: c4078e0dadc58bdbc7953b6d5a23cd76160d6ecf
+  working_tree: modified
+  sha256: 881f774b6a135f3d50f3acca3e379a0c8f0742349fd84964d526caa4073c421a
+
+- id: issue-984-evidence
+  resource: ../../maintenance/2026-10-19-issue-984-baseline-restoration.md
+  revision: d0d2472ed6797fcc07b286af3056e19dccbedc98
+  working_tree: clean
+  sha256: 7c4907d6190fa9019c36eb65207a3b5685ebc6da4737612022cb9aead5739ee6
 
 ---
 
@@ -226,12 +243,32 @@ Older report versions require their producing binary or a rerun; changing a
 schema number cannot convert old reports.[^issue-949-reader][^issue-949-record]
 
 That change raised the floor to 0.11.0 and retained fingerprint 11 and session 5.
-Issue #979 now requires floor 0.12.0, report/event schema 8 and fingerprint 12;
+Issue #979 introduced floor 0.12.0, report/event schema 8 and fingerprint 12;
 runtime configuration and execution fingerprints omit discovery timeout.
+Issue #984 raises the current floor to 0.13.0 and fingerprint to 13 so incomplete
+sessions cannot reuse conclusive results produced before baseline restoration.
 Session schema 5 remains. Different ample plan timeouts produce the same current
-execution fingerprint when discovery results agree; schema-11 fingerprint bytes
-are incompatible. The environment field-13 framing alone remains unchanged.
-Earlier sections retain their historical versions.[^issue-949-record][^issue-979-compatibility]
+execution fingerprint when discovery results agree; historical schema-11 and
+schema-12 fingerprint bytes are incompatible. The environment field-13 framing
+remains unchanged. Earlier sections retain their historical versions.[^issue-949-record][^issue-979-compatibility][^issue-984-compatibility]
+
+A new successful baseline and restoration do not recompute a reused `killed` or
+`survived` result. The fingerprint version therefore owns this execution-policy
+boundary. When no compatible current incomplete run exists, an older latest
+incomplete fingerprint can produce `session.resume.incompatible`. Users can keep
+the DB and choose a new path or a deliberate non-resume run. Compatible current
+history still wins, and completed old history retains fresh-run behavior; no
+conversion or deletion is performed.[^issue-984-compatibility]
+
+The historical-session regression uses genuine frozen schema-12 input/digest
+and a stored executed failure. Reverting only the epoch makes that fixture
+incorrectly resumable; restoring schema 13 rejects it and preserves its rows.
+Current reuse, completed-old fresh behavior and current-compatible preference
+remain positive controls. This is a typed SQLite fixture and executed handler
+check, not a rebuilt historical binary.[^issue-984-evidence]
+
+[^issue-984-compatibility]: [Baseline restoration and result reuse](../../compatibility.md#baseline-restoration-and-result-reuse-in-0130).
+[^issue-984-evidence]: [Resume compatibility checks and limits](../../maintenance/2026-10-19-issue-984-baseline-restoration.md).
 
 [^issue-949-reader]: [Shared report readers](../../../crates/hoimin-cli/src/artifacts/run_report.rs).
 [^issue-949-record]: [Issue #949 design, self-reviews and verification](../../maintenance/2026-10-16-issue-949.md).
@@ -546,3 +583,20 @@ does not begin a session. No compatibility constructor remains.[^issue-973-evide
 
 [^issue-979-compatibility]: [Current format and fingerprint migration](../../compatibility.md).
 [^issue-973-evidence]: [Fingerprint-flow characterization and constructor removal](../../maintenance/2026-10-18-issues-971-979/task-4-report.md).
+
+# Regular-file report inputs (Issue #985)
+
+Progress opens reports through the shared regular-file admission helper and
+parses the validated descriptor. On Unix, nonblocking open followed by descriptor
+metadata validation rejects writerless FIFOs, including symlink paths, without
+waiting for a writer. Regular-file symlinks,
+JSON/JSONL parsing and caller-specific errors retain their behavior; review's
+64 MiB input cap is not applied to progress. This admission rule does not bound
+all filesystem operation times or process RSS.[^issue-985-admission]
+
+The public CLI tests independently exercise the file kinds, both report formats
+and an input exceeding review's cap. Their deadline guard kills and reaps the
+child on regression. The record reports macOS tests and leaves other platform
+execution explicit.[^issue-985-admission]
+
+[^issue-985-admission]: [Regular-file admission and verification record](../../maintenance/2026-10-18-issue-985.md).

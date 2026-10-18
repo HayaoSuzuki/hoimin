@@ -274,6 +274,12 @@ sources:
   working_tree: untracked
   sha256: 94720f53dfcc7c8db649b2dc5a456e09c2b2f357e6962b300b4d183b3343489b
 
+- id: issue-984-restoration
+  resource: ../../maintenance/2026-10-19-issue-984-baseline-restoration.md
+  revision: d0d2472ed6797fcc07b286af3056e19dccbedc98
+  working_tree: clean
+  sha256: 7c4907d6190fa9019c36eb65207a3b5685ebc6da4737612022cb9aead5739ee6
+
 ---
 
 # 制限する資源とディスク監視の範囲
@@ -743,9 +749,11 @@ The run-finished stop guard derives its condition from pending output ownership.
 Failure handling captures that condition before completion acceptance, preserving
 terminal handling when another outstanding effect fails. Report-started history
 and stop-after-start control remain separate flags. Baseline output ACK produces
-no new work: analysis or finalization was already requested alongside the output.
-Worker output continuations retain only worker identity; synthetic outcomes remain
-owned by the worker until finished-output ACK.[^issue-955-machine]
+no new work. Since Issue #984, successful baseline output is requested alongside
+worker restoration; only the restoration ACK permits the next execution phase.
+Baseline failure retains finalization. Worker output continuations retain only
+worker identity; synthetic outcomes remain owned by the worker until
+finished-output ACK.[^issue-955-machine][^issue-984-restoration]
 
 The [implementation record](../../maintenance/2026-10-16-issue-955.md) distinguishes
 new-API compile-red from preserved-behavior tests and records the validation
@@ -866,3 +874,39 @@ separate accounting lifetime.[^issue-972-lifetime]
 [^issue-974-boundary]: [Descriptor mutation and cleanup checks](../../../crates/hoimin-cli/src/workspace/root.rs).
 [^issue-974-evidence]: [Shared-inode protection and native limitations](../../maintenance/2026-10-18-issues-971-979/task-1-report.md).
 [^issue-972-lifetime]: [Fixed settings, interruption and managed-owner verification](../../maintenance/2026-10-18-issues-971-979/task-7-report.md).
+
+
+# Baseline restoration gates dispatch (Issue #984)
+
+A successful baseline enters `RunPhase::BaselineRestoration` with worker 0 in
+`Resetting`. The existing owned reset operation restores the preflight snapshot,
+including files created or changed by the baseline. The matching `WorkerReset`
+completion alone permits the normal analysis or ordered-candidate budget check.
+Baseline output acknowledgement remains independent, so neither its arrival order
+nor a second clean flag determines whether mutation may start.[^issue-984-restoration]
+
+Baseline failure skips this reset; success still resets when discovery will find
+no candidates. Failure, cancellation and deadline expiry during restoration
+retire pending work. Late, duplicate or wrong completion events cannot restart
+dispatch. Stop handling preserves original-file verification before cleanup, and
+owned blocking work must still finish before its resources are removed.
+The restoration phase belongs to the baseline metrics stage; the reported
+baseline process duration remains the process duration.[^issue-984-restoration]
+
+Restoration does not authorize writes through a shared inode. When contents and
+permissions already match, reset can retain the existing file; mutation admission
+must still reject a multiply linked file before writing. This preserves the
+shared-inode boundary above and does not sandbox the external test command.
+The [compatibility notice](../../compatibility.md#baseline-restoration-and-result-reuse-in-0130)
+explains why pre-fix saved results also need a new fingerprint epoch.
+[^issue-984-restoration]
+
+The changed Lean model, proofs and generated corpus passed their scoped checks;
+all 22 strict state-machine scenarios agree with Rust. The adapter explicitly
+completes original verification when mapping a restoration stop to the model's
+cleanup boundary. Core and public CLI regressions cover the gate and observed
+file contamination on macOS. This model comparison does not prove filesystem
+restoration, interruption of blocking I/O or native Windows/Linux behavior.
+[^issue-984-restoration]
+
+[^issue-984-restoration]: [Restoration design, transition checks and verification](../../maintenance/2026-10-19-issue-984-baseline-restoration.md).

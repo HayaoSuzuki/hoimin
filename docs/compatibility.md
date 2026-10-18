@@ -4,6 +4,33 @@ hoimin is currently a 0.x CLI. This policy describes how maintainers classify
 changes and tell users what to update. A patch release can fix incorrect
 behavior; it does not promise identical mutation candidates or scores.
 
+## Baseline restoration and result reuse in 0.13.0
+
+After a successful baseline, hoimin restores the worker to its preflight snapshot
+before dispatching any mutant. Files created by the baseline are removed and
+modified files are restored. Restoration failure stops execution. Previously,
+the first mutant could inherit baseline changes and receive a different result
+from later mutants or a separate verify invocation. Correcting that behavior can
+change reported mutation scores.
+
+Fingerprint schema 13 prevents results produced under the previous baseline
+policy from being reused. A fresh baseline alone would not repair a stored
+`killed` or `survived` result: compatible resume skips its execution. If no
+compatible incomplete run exists and the latest incomplete history uses an old
+fingerprint schema, `--resume` returns `session.resume.incompatible`. Use a new
+`--session PATH`, or deliberately start a new run without `--resume`. Existing
+databases and outcomes are retained without conversion or deletion. A compatible
+current run still takes precedence; completed old history retains fresh-run
+behavior.
+
+The package compatibility floor is 0.13.0 because published v0.12.0 used
+fingerprint schema 12. Plan schema 10, report/event schema 8, SQLite session
+schema 5, ranking rule 4, candidate schema 1 and mutant-ID v1 remain unchanged.
+Existing valid plans need no regeneration for this change. The fingerprint
+field framing is unchanged apart from its version byte; discovery timeout
+remains outside execution compatibility. This notice supersedes older current
+fingerprint-version and release-floor statements below.
+
 ## Discovery timeout ownership in 0.12.0
 
 `--analyzer-timeout` is now a `plan` option. Remove it from direct `run`
@@ -311,6 +338,21 @@ For example, with a highest tag of `v0.3.9`, a floor of `0.3.0` yields
 that floor yields the next patch in that series. Merely updating the floor
 does not migrate saved data. Never rewrite published tags or replace published
 files to repair a release.
+
+## Current operator selection API
+
+The internal Rust helper `MutationOperatorSelection::all_legacy()` is removed.
+Callers use `MutationOperatorSelection::default()` for the current defaults, or
+specify the exact operators they intend to select in configuration. The current
+default remains the same 54 operators; serialized explicit subsets do not gain
+operators automatically. Selector families and the full operator catalog retain
+their separate meanings.
+
+This internal source migration adds no compatibility adapter and requires no
+independent version-floor increase. The combined release floor is 0.13.0 for
+the baseline restoration change above. CLI defaults, saved formats, fingerprints
+and candidate identities are unchanged by this API cleanup.
+Existing valid plans need no regeneration for this change.
 
 ## Owned Rust writer APIs
 

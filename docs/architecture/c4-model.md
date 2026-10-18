@@ -332,6 +332,12 @@ sequenceDiagram
     Process->>Tests: Spawn with worker cwd and environment
     Tests-->>Process: Exit status and captured output
     Process-->>Shell: Baseline completion and accounting
+    Shell->>Core: Accept successful BaselineFinished
+    Core-->>Shell: Baseline output and ResetWorker(0)
+    Shell->>Workspace: Restore preflight snapshot
+    Workspace-->>Shell: WorkerReset
+    Shell->>Core: Accept matching restoration completion
+    Core-->>Shell: Continue discovery
     Shell->>Inputs: Analyze selected Python sources
     Inputs-->>Shell: Candidate spool and diagnostics
     loop Selected mutants with available budget
@@ -358,6 +364,10 @@ Legend: solid arrows are requests, dashed arrows are results, and the loop group
 repeated work rather than requiring serial execution of all workers. Workspace
 ownership includes managed-root cleanup invoked by the shell. This sequence
 does not substitute for the state machine or enumerate every event.
+
+Baseline output acknowledgement is independent of restoration. Only the accepted
+worker reset permits discovery or, for preselected candidates, the ordered budget
+check. Cancellation or failure during restoration prevents mutant dispatch.
 
 On cancellation, timeout or fatal failure, the first shutdown cause and absolute
 deadline stay fixed through draining and outer finalization. Recovering a queued

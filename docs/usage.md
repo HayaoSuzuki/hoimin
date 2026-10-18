@@ -256,7 +256,13 @@ The default total timeout is five minutes. Give a large candidate selection enou
 when creating the plan, or split it into stable batches across multiple `verify` invocations.
 On macOS, `--max-memory` is accepted for plan compatibility but is not enforced. Hoimin still enforces monotonic wall-clock deadlines. On timeout or cancellation, while it owns a live root, it terminates that process group and reaps the root; descendants left after the root exits naturally are not guaranteed to be cleaned up. Pass `--allow-best-effort-memory` to `plan` when this memory policy is acceptable. `verify` does not provide that option.
 
-`plan` discovers candidates but does not run a baseline or test command, copy a worker, or create or reuse a session. A manifest with `truncated` set to `true` contains only a partial candidate set, and `plan` exits 4; it cannot establish full coverage of the selected targets. On such a plan, `--top N` means the top N among retained candidates, not among candidates that discovery did not retain. `verify` still runs the retained selection, but its report remains incomplete and exits 4 because discovery was truncated. `verify` rejects a changed target or fingerprint input before its baseline runs. Each `verify` command runs a fresh baseline and does not use a session. Plan manifests are trusted local invocation data, not a security boundary.
+`plan` discovers candidates but does not run a baseline or test command, copy a worker, or create or reuse a session. A manifest with `truncated` set to `true` contains only a partial candidate set, and `plan` exits 4; it cannot establish full coverage of the selected targets. On such a plan, `--top N` means the top N among retained candidates, not among candidates that discovery did not retain. `verify` still runs the retained selection, but its report remains incomplete and exits 4 because discovery was truncated. `verify` rejects a changed target or fingerprint input before its baseline runs. Each `verify` command runs a fresh baseline and does not use a session. After a successful baseline, the worker is restored to the preflight snapshot before any mutant runs; baseline-created files and changes to existing files do not carry into the first mutant. A restoration failure stops execution. Plan manifests are trusted local invocation data, not a security boundary.
+
+`verify` reads a plan from a regular file and accepts symlinks to regular files.
+Directories, missing paths and nonregular inputs are errors. On Unix, writerless
+FIFOs and symlinks to them are rejected without waiting for a writer. This does
+not promise a deadline for every filesystem operation or add review's 64 MiB
+input limit to `verify`.
 
 Use a narrower selector to check one symbol:
 
@@ -1062,6 +1068,11 @@ When a baseline fails or reaches its process timeout, `run` and `verify` copy it
 
 The final summary's `complete` is `false` when any mutant is inconclusive or the run fails or is interrupted. It is `true` only when every selected mutant is `killed` or `survived` and no run-level failure occurred; a successful run with no candidates is also complete. Therefore, an exit code of `4` always has `complete: false`.
 
+`progress` accepts JSON and JSONL reports from regular files, including symlinks
+to regular files. It rejects directories, missing paths and nonregular inputs;
+on Unix this includes writerless FIFOs without waiting for a writer. Review's
+64 MiB input limit does not apply to `progress`.
+
 Run `hoimin progress --details before.json after.json` to identify improvements and
 regressions in the **final adjacent input pair**. Details include candidate ID,
 operator, previous/current status and source positions (one-based lines, zero-based
@@ -1151,6 +1162,9 @@ Run JSON/JSONL emit schema 8; consumers validating the closed schema must update
 
 A compatible incomplete run always wins, even if newer runs are incompatible. If an eligible row appears only during the later history inspection, `candidate_changed` takes precedence. Otherwise reasons use this precedence: `budget_decreased` (matching incomplete runs require a higher `--max-mutants`), `matching_run_complete`, `fingerprint_mismatch` (other incomplete history), `no_incomplete_run` (only nonmatching complete history), then `no_prior_run`. `candidate_changed` means session history changed during resume selection. These codes describe observed history, not which configuration field or file changed. Existing old-schema, corrupt-data, database-read, and ownership errors remain errors.
 
+A successful baseline is followed by restoration to the preflight snapshot before
+the first mutant runs. If restoration fails or the run is cancelled during it,
+no mutant starts.
 
 No database is created by default. `--session PATH` stores a run in SQLite and commits each mutant result independently. `--resume` requires `--session` and looks up the newest compatible incomplete run. Compatibility includes ordered import roots and source roots, source and configuration fingerprints, test argv, verdict-affecting limits, resource policy, and the operator set. Profile selection is part of session compatibility, so a focused run never resumes results from a full run and vice versa. `--jobs` and `--max-output` are operational settings and may change when resuming; reports record their current values, and reused results do not import output retained under the earlier limit. Completed `killed` and `survived` results can be reused; `timeout`, `out_of_memory`, `process_limit`, `error`, and `not_run` are run again under the current settings. An incompatible or already complete run is not silently mixed with new results.
 
@@ -1217,11 +1231,12 @@ Report schema 8 records typed changed selection and session intent, and retains 
 environment snapshot introduced in schema 5 in place of the independent
 `fingerprint_env` / `fingerprint_env_hash` fields. Update strict report consumers
 to schema 8; read schema-7 and older reports with their producing binary, or rerun
-with this version. The release floor is 0.12.0. Files are not automatically converted
-or deleted. Fingerprint schema 12 removes discovery timeout from execution compatibility.
-An older incomplete fingerprint history can return `session.resume.incompatible`;
-choose a new `--session PATH`. Completed history retains fresh-run behavior.
-Fingerprint schema version 12
+with this version. The release floor is 0.13.0. Files are not automatically converted
+or deleted. Fingerprint schema 13 excludes reuse of results produced before the
+baseline restoration fix. Discovery timeout remains outside execution compatibility,
+as introduced in schema 12. See the [0.13.0 compatibility notice](compatibility.md#baseline-restoration-and-result-reuse-in-0130).
+Completed old history retains fresh-run behavior.
+Fingerprint schema version 13
 includes ordered import roots and source roots and the ordered `--include` / `--exclude` copy
 patterns, including empty lists for default invocations. Changing source-root order or either copy
 pattern list starts a new run even when explicit fingerprint-file bytes match.
