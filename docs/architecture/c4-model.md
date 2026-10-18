@@ -366,8 +366,9 @@ ownership includes managed-root cleanup invoked by the shell. This sequence
 does not substitute for the state machine or enumerate every event.
 
 Baseline output acknowledgement is independent of restoration. Only the accepted
-worker reset permits discovery or, for preselected candidates, the ordered budget
-check. Cancellation or failure during restoration prevents mutant dispatch.
+worker reset permits discovery or the budget check for ordered verification.
+Explicit candidate-ID verification skips this budget observation. Cancellation
+or failure during restoration prevents mutant dispatch.
 
 On cancellation, timeout or fatal failure, the first shutdown cause and absolute
 deadline stay fixed through draining and outer finalization. Recovering a queued

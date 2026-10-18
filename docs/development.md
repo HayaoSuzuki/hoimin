@@ -63,8 +63,9 @@ See the [Issue #959 record](maintenance/2026-10-16-issue-959.md).
 
 A successful baseline enters `RunPhase::BaselineRestoration` and requests the
 existing owned `ResetWorker(0)` operation. Only its accepted `WorkerReset`
-completion permits analysis or the preselected-candidate budget check. Baseline
-output acknowledgement is independent. Keep failure and stop retirement at this
+completion permits analysis or the budget check for ordered verification.
+Explicit candidate-ID verification skips this budget observation. Baseline output
+acknowledgement is independent. Keep failure and stop retirement at this
 boundary so a late reset cannot dispatch a mutant; preserve original verification
 and cleanup ownership when extending the state machine.
 

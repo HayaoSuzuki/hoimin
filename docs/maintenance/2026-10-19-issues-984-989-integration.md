@@ -19,6 +19,8 @@ Each task records five distinct self-review passes for requirements/design, plan
 
 The first #987 review found an observable residual-import regression: first-occurrence normalization changed a return-state sequence A/B/A into A/B. An unreachable annotation could then lose import provenance. The fix preserves stable last-occurrence order; its reproduction, residual-state checks and differential coverage are recorded with the task. Scoped re-review accepted the fix and found no new breakage. No task findings remain open or parked.
 
+The whole-branch review at `e808dda124f8fdc7fd08ed2a49cb352bca90155e` found no Critical or Important findings and one Minor wording issue. The final documentation correction limits the post-restoration budget check to ordered verification in the architecture knowledge page, C4 view and development guide. Explicit candidate-ID verification skips this budget observation; the implementation is unchanged.
+
 ## Integration verification
 
 The final production code is commit `7bf4cd3b6b9537539911a8c43ee29529bf92a230`; the subsequent integration commit changes documentation only. Cargo-capable checks use the isolated target and two build jobs. Full subprocess suites use two test threads.
@@ -53,6 +55,7 @@ The strict documentation-site build and emitted-link validation passed. The firs
 6. Baseline restoration also invalidates pre-fix incomplete-session results with fingerprint epoch 13 and a 0.13.0 minimum package version. Published 0.12.0 used epoch 12; a fresh baseline alone would still reuse stored false verdicts. Old incompatible incomplete history requires a new session path or an explicit fresh run. Databases are preserved, with no adapters; other format versions are unchanged.
 7. Deep generated fixtures use Python AST validation after a bytecode-compilation attempt over several depths failed with MemoryError. The exact failing case and peak RSS were not captured; an earlier depth20 attribution was not established. The expensive attempt was not repeated. Rust depth20 work/state checks still apply, while successful Python bytecode compilation within that deep family is evidenced only for the depth12/13 release fixtures.
 8. The residual-import review finding required stable last-occurrence normalization instead of first-occurrence normalization. Internal vector order is subordinate to preserving the last contributor to each output category and subsequent residual imports. If this reasoning is wrong, annotation provenance or candidate behavior could regress; the fix requires direct, generated and disabled-reference comparisons.
+9. Retain the explicit limits reviewed for this branch: no universal work, total-memory/RSS or all-filesystem-I/O deadline guarantee; no sandbox guarantee for arbitrary external test commands or cleanup guarantee for all escaped descendants; and no guarantee of successful deep CPython bytecode generation at every depth. These are approved scope exclusions, not waived findings. Behavior outside these boundaries remains uncertified; guaranteeing it would require a separate design.
 
 ## Integration self-review
 
