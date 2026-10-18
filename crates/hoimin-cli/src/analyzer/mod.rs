@@ -133,16 +133,13 @@ struct DiscoveryWork {
 #[cfg(test)]
 pub(crate) struct DiscoveryControl {
     _owner: Arc<TempDir>,
-    before_analysis: Box<dyn FnOnce() + Send>,
+    before_analysis: Box<dyn FnMut() + Send>,
     deadline_arm: Option<tokio::sync::oneshot::Sender<tokio::time::Instant>>,
 }
 
 #[cfg(test)]
 impl DiscoveryControl {
-    pub(crate) fn new(
-        owner: Arc<TempDir>,
-        before_analysis: impl FnOnce() + Send + 'static,
-    ) -> Self {
+    pub(crate) fn new(owner: Arc<TempDir>, before_analysis: impl FnMut() + Send + 'static) -> Self {
         Self {
             _owner: owner,
             before_analysis: Box::new(before_analysis),
@@ -232,6 +229,7 @@ pub(crate) async fn discover_targets_with_control(
 
 pub(crate) async fn discover_config_targets(
     config: &hoimin_core::RunConfig,
+    discovery: &hoimin_core::DiscoveryConfig,
     targets: &[TargetSlice],
     #[cfg(test)] control: Option<DiscoveryControl>,
 ) -> Result<Discovery, EffectFailed> {
@@ -242,7 +240,7 @@ pub(crate) async fn discover_config_targets(
         &config.operators,
         config.profile,
         config.limits.max_candidates.get(),
-        config.limits.analyzer_timeout.get(),
+        discovery.analyzer_timeout.get(),
         #[cfg(test)]
         control,
     )
@@ -452,7 +450,7 @@ fn discover_targets_blocking(work: DiscoveryWork) -> Result<Discovery, EffectFai
             .expect("source was decoded")
             .text();
         #[cfg(test)]
-        if let Some(mut control) = control.take() {
+        if let Some(control) = control.as_mut() {
             if let Some(deadline_arm) = control.deadline_arm.take() {
                 let _ = deadline_arm.send(tokio::time::Instant::now());
             }
@@ -1124,6 +1122,58 @@ mod tests {
                 Err(error) => return Err(error),
             }
         }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn discovery_deadline_is_shared_across_targets() {
+        // Arrange: the first target consumes most of the one-second allowance.
+        let directory = tempfile::tempdir().unwrap();
+        let root = Utf8PathBuf::from_path_buf(directory.path().to_owned()).unwrap();
+        let targets = ["first.py", "second.py"].map(|name| {
+            std::fs::write(root.join(name), "result = left + right\n").unwrap();
+            TargetSlice {
+                path: name.into(),
+                lines: Vec::new(),
+                symbols: Vec::new(),
+            }
+        });
+        let (entered_tx, entered_rx) = mpsc::sync_channel(1);
+        let (release_tx, release_rx) = mpsc::sync_channel(1);
+        let mut target_index = 0;
+        let control = DiscoveryControl::new(Arc::new(tempfile::tempdir().unwrap()), move || {
+            target_index += 1;
+            if target_index == 1 {
+                std::thread::sleep(Duration::from_millis(750));
+            } else {
+                entered_tx.send(()).unwrap();
+                release_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+            }
+        });
+        let operation = tokio::spawn(async move {
+            discover_targets_with_control(
+                &root,
+                &targets,
+                &MutationOperatorSelection::default(),
+                MutationProfile::Full,
+                100,
+                Duration::from_secs(1),
+                Some(control),
+            )
+            .await
+        });
+        tokio::task::spawn_blocking(move || entered_rx.recv_timeout(Duration::from_secs(2)))
+            .await
+            .unwrap()
+            .expect("second target must begin before the shared deadline");
+        // Act: a reset at target two would postpone expiry by a full second.
+        let result = tokio::time::timeout(Duration::from_millis(500), operation).await;
+        release_tx.send(()).unwrap();
+        // Assert.
+        let error = result
+            .expect("deadline restarted at the second target")
+            .unwrap()
+            .unwrap_err();
+        assert_eq!(error.failure.code(), "analyzer.timeout");
     }
 
     #[test]

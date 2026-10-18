@@ -73,7 +73,7 @@ private def printStats : IO UInt32 := do
   | .error code => return code
   | .ok () =>
       IO.println s!"fixed_cases={cases.length}"
-      IO.println s!"strict_cases={(cases.filter fun item => item.mode == "strict").length}"
+      IO.println s!"strict_cases={(cases.filter fun item => item.mode == "plan").length}"
       IO.println s!"maximum_ns={maximum}"
       IO.println s!"sensitivity_zero={zeroSensitivity}"
       IO.println s!"sensitivity_inclusive={inclusiveSensitivity}"

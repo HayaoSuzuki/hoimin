@@ -185,7 +185,7 @@ fn measure_eager_history(path: &Path, history: usize, streamed: &Value) -> usize
 
 fn large_report(count: usize) -> Value {
     let mut document: Value =
-        serde_json::from_str(include_str!("golden/reports/schema-v7-current.json")).unwrap();
+        serde_json::from_str(include_str!("golden/reports/schema-v8-current.json")).unwrap();
     let template = document["mutants"][0].clone();
     let mutants = (0..count)
         .map(|index| {

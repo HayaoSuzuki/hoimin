@@ -966,7 +966,14 @@ semantics; abstract lifecycle oracles alone cannot do so.
 
 ## Analyzer timeout invariants
 
-Plan creation and verification rediscovery apply the normalized
+`DiscoveryConfig` owns the positive, bounded plan-only timeout. Plans require
+`normalized_config.discovery.analyzer_timeout`, and verify reads it before
+converting to execution-only configuration. `RawRunLimits`, `RunLimits` and
+execution fingerprints omit it; both limit types reject unknown saved fields.
+The raw-plan timeout oracle composes discovery validation with shared run
+normalization.
+
+Plan creation and verification rediscovery apply the saved
 `--analyzer-timeout` as one absolute deadline for the complete discovery phase;
 the deadline is not restarted for each target. Both plan entry points report
 the same `plan.discovery: analyzer.timeout` diagnostic and exit 2. Plan
@@ -1371,7 +1378,7 @@ cargo test -p hoimin-cli --lib analyzer::rust::rust_tests::comprehension_excepti
 
 ## Extending plan ranking
 
-Plan manifests use schema version 9 and ranking rule version 4. The schema
+Plan manifests use schema version 10 and ranking rule version 4. The schema
 version describes the manifest's serialized shape; the ranking rule version
 describes the category and scoring semantics used to order its candidates.
 Change the ranking rule version whenever those semantics change, even when the
@@ -1537,8 +1544,8 @@ working-directory and fingerprint consumers use that same field. Worker
 fingerprint rechecks replace the root on a cloned config, leaving the prepared
 configuration intact. Keep all other selection and configuration validation.
 
-Plan schema 9 and report schema 7 reject the former outer root in typed readers.
-See the [0.11.0 migration notice](compatibility.md#single-normalized-project-root-in-0110)
+Plan schema 10 and report schema 8 reject the former outer root in typed readers.
+See the [0.12.0 migration notice](compatibility.md#discovery-timeout-ownership-in-0120)
 and [implementation evidence](maintenance/2026-10-16-issue-949.md). Progress's
 opaque configuration contract is unchanged; strict review reads the one root
 from the decoded selection. Existing Lean oracle comparisons cover retained
@@ -1555,11 +1562,11 @@ or null arrays fail decoding in typed configuration/event readers and review;
 verify rejects affected plans before baseline execution. Progress retains its
 opaque `normalized_config` object/null contract. See the
 [0.9.0 compatibility notice](compatibility.md#required-saved-configuration-arrays-in-090)
-for older inputs missing an array. Plan schema 9 stores fingerprint input records
+for older inputs missing an array. Plan schema 10 stores fingerprint input records
 only in `normalized_config.fingerprint_inputs`; the top-level duplicate is
-rejected. Regenerate schema-8 and older plans before verify or review; see the
-[0.11.0 compatibility notice](compatibility.md#single-normalized-project-root-in-0110). Fingerprint schema
-11 frames the ordered import roots under field tag 9, the ordered include/exclude
+rejected. Regenerate schema-9 and older plans before verify or review; see the
+[0.12.0 compatibility notice](compatibility.md#discovery-timeout-ownership-in-0120). Fingerprint schema
+12 frames the ordered import roots under field tag 9, the ordered include/exclude
 copy patterns under tags 10/11, and configured source roots under tag 12,
 preventing old-session reuse. Source file hashes retain their set semantics;
 source-root order separately captures worker Python import precedence. Patterns retain
@@ -1675,7 +1682,7 @@ existing UTF-8 Lean/source-index proofs do not establish codec correspondence.
 
 ## Resume budget compatibility
 
-Fingerprint schema 11 omits `max_mutants` from verdict compatibility; this
+Fingerprint schema 12 omits `max_mutants` from verdict compatibility; this
 budget rule was introduced in schema 10. SQLite schema 5 persists each run's
 accepted limit as a positive eight-byte big-endian unsigned value. Newly created
 DBs enforce NOT NULL as well as the BLOB type, length and positivity constraints.
@@ -1760,11 +1767,11 @@ The captured constructor and deserializer reject empty, duplicate, unsorted, or
 noncanonical name sets and digests outside 64 lowercase hexadecimal characters.
 No `prepared` mode or separate optional hash exists. Reports and plans write an
 explicit `environment` object with a `state` tag; omission in the prior writer
-was also a valid current untracked encoding. Plan schema 9/report schema 7 require
+was also a valid current untracked encoding. Plan schema 10/report schema 8 require
 the explicit snapshot and reject the older representation rather than adapting it.
 Regenerate older plans; retain old reports with their producing binary.
 
-Fingerprint schema 11 retains the original field-13 name/digest framing. Exact
+Fingerprint schema 12 retains the original field-13 name/digest framing. Exact
 untracked and captured pre-refactor digest goldens verify byte compatibility.
 SQLite schema 4 and budget selection are unchanged. Verify captures the same saved
 name set and compares the complete snapshot before project work or the baseline.
@@ -1961,7 +1968,7 @@ status, elapsed time, and optional output through the outcome's domain methods.
 Keep diagnostics independent, and never reconstruct output state from a code.
 `ProcessFinished` JSON requires explicit `output_state`; no legacy default applies.
 
-Report schema 7 and session schema 5 replace the flat result format. Update strict
+Report schema 8 and session schema 5 replace the flat result format. Update strict
 consumers and start a different session path for older databases; no conversion
 adapter is provided. Preserve historical golden files when adding current ones.
 Read the [outcome design](superpowers/reports/issue-895/design.md),
@@ -2032,7 +2039,7 @@ shared selection validator still requires a source for changed selection and
 keeps file, line, and symbol selectors available for intersection. Ranking
 uses the presence of the changed value, including selected context lines.
 
-Plan schema 9 and report schema 7 encode disabled state as `"changed": null` and enabled state
+Plan schema 10 and report schema 8 encode disabled state as `"changed": null` and enabled state
 as `"changed": {"context": 2, "diff_base": "main"}`. The enabled object's
 `context` is required; `diff_base` can be null or omitted. Selection rejects
 unknown fields, including the obsolete sibling `changed_context` and

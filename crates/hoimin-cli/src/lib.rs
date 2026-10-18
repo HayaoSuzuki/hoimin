@@ -89,8 +89,8 @@ where
         }
         Ok(cli::ParsedCommand::Plan(args)) => {
             let result = async {
-                let config = args.into_run_config().map_err(|error| error.to_string())?;
-                let output = plan::create(config)
+                let (config, discovery) = args.into_configs().map_err(|error| error.to_string())?;
+                let output = plan::create(config, discovery)
                     .await
                     .map_err(|error| error.to_string())?;
                 serde_json::to_writer(&mut stdout, &output.manifest)

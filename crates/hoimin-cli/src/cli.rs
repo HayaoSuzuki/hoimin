@@ -16,7 +16,7 @@ use hoimin_core::{
     name = "hoimin",
     version,
     about = "Bounded mutation testing for focused Python changes",
-    after_help = "Run contract:\n  hoimin run [TARGETS] [SAFETY/OUTPUT/SESSION OPTIONS] -- <TEST_ARGV>...\n\nTarget selectors:\n  --root --source --file --line --symbol --changed --changed-context --diff-base\nCopy options:\n  --include --exclude\nMutation options:\n  --operators --exclude-operators --profile\nSafety options:\n  --jobs --max-mutants --max-candidates --analyzer-timeout\n  --baseline-timeout --mutant-timeout --total-timeout --max-memory\n  --max-output --max-copy-size --max-workspace-size --min-free-space\n  --max-processes --allow-best-effort-memory\nOutput/session options:\n  --format <json|jsonl|human> --metrics <PATH> --session --resume"
+    after_help = "Run contract:\n  hoimin run [TARGETS] [SAFETY/OUTPUT/SESSION OPTIONS] -- <TEST_ARGV>...\n\nTarget selectors:\n  --root --source --file --line --symbol --changed --changed-context --diff-base\nCopy options:\n  --include --exclude\nMutation options:\n  --operators --exclude-operators --profile\nSafety options:\n  --jobs --max-mutants --max-candidates\n  --baseline-timeout --mutant-timeout --total-timeout --max-memory\n  --max-output --max-copy-size --max-workspace-size --min-free-space\n  --max-processes --allow-best-effort-memory\nOutput/session options:\n  --format <json|jsonl|human> --metrics <PATH> --session --resume"
 )]
 struct RootCli {
     #[command(subcommand)]
@@ -228,10 +228,6 @@ struct RawMutationArgs {
     #[arg(long, default_value_t = 10_000)]
     max_candidates: usize,
 
-    /// Per-analyzer-process timeout.
-    #[arg(long, default_value = "30s", value_name = "DURATION")]
-    analyzer_timeout: String,
-
     /// Baseline test timeout.
     #[arg(long, default_value = "60s", value_name = "DURATION")]
     baseline_timeout: String,
@@ -301,6 +297,10 @@ pub struct RunArgs {
 
 #[derive(Debug, Args)]
 struct RawPlanArgs {
+    /// Cooperative deadline for discovery across all selected targets, inherited by verify.
+    #[arg(long, default_value = "30s", value_name = "DURATION")]
+    analyzer_timeout: String,
+
     #[command(flatten)]
     mutation: RawMutationArgs,
 
@@ -418,19 +418,32 @@ pub struct ProgressArgs {
 
 #[derive(Debug)]
 pub struct PlanArgs {
+    analyzer_timeout: String,
     run_args: RunArgs,
 }
 
 impl PlanArgs {
-    /// Converts planning arguments into the normalized configuration used to create a manifest.
+    /// Normalizes the execution template and the separately owned discovery settings.
     ///
     /// Planning always uses JSON output and does not retain a session or resume state.
     ///
     /// # Errors
     ///
-    /// Returns an error when the shared mutation arguments are invalid.
-    pub fn into_run_config(self) -> Result<RunConfig<hoimin_core::EnvironmentRequest>, CliError> {
-        run_config_from_args(self.run_args)
+    /// Returns an error when the shared mutation arguments or discovery timeout are invalid.
+    pub fn into_configs(
+        self,
+    ) -> Result<
+        (
+            RunConfig<hoimin_core::EnvironmentRequest>,
+            hoimin_core::DiscoveryConfig,
+        ),
+        CliError,
+    > {
+        let discovery = hoimin_core::DiscoveryConfig::new(parse_duration(
+            &self.analyzer_timeout,
+            "--analyzer-timeout",
+        )?)?;
+        Ok((run_config_from_args(self.run_args)?, discovery))
     }
 }
 
@@ -564,6 +577,7 @@ impl TryFrom<Command> for ParsedCommand {
             Command::Plan(raw) => {
                 validate_mutation_inputs(&raw.mutation, &raw.test_argv)?;
                 Ok(Self::Plan(PlanArgs {
+                    analyzer_timeout: raw.analyzer_timeout,
                     run_args: RunArgs {
                         mutation: raw.mutation,
                         test_argv: raw.test_argv,
@@ -729,7 +743,6 @@ fn raw_config(args: RunArgs) -> Result<RawRunConfig, CliError> {
         jobs: args.jobs,
         max_mutants: args.max_mutants,
         max_candidates: args.max_candidates,
-        analyzer_timeout: parse_duration(&args.analyzer_timeout, "--analyzer-timeout")?,
         baseline_timeout: parse_duration(&args.baseline_timeout, "--baseline-timeout")?,
         mutant_timeout: if args.mutant_timeout == "auto" {
             None

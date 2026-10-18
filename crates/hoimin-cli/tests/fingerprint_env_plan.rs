@@ -111,7 +111,7 @@ async fn plan_tracks_environment_without_plaintext_and_verify_checks_before_base
     ] {
         let fixture = Fixture::new();
         let manifest = fixture.plan(true, OsStr::new(secret)).await;
-        assert_eq!(manifest["schema_version"], 9);
+        assert_eq!(manifest["schema_version"], 10);
         assert_eq!(
             manifest["normalized_config"]["environment"]["names"],
             json!([FLAG])

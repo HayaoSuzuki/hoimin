@@ -20,7 +20,7 @@ const CONFIG_PARSERS: [(&str, ConfigParser); 2] = [
         let ParsedCommand::Plan(plan) = parse_from(args.iter().copied())? else {
             panic!("expected plan");
         };
-        plan.into_run_config()
+        plan.into_configs().map(|(config, _)| config)
     }),
 ];
 
@@ -37,7 +37,7 @@ fn native_mutation_config(
         let ParsedCommand::Plan(plan) = parse_from(args)? else {
             panic!("expected plan");
         };
-        plan.into_run_config()
+        plan.into_configs().map(|(config, _)| config)
     }
 }
 
@@ -386,7 +386,7 @@ fn plan_normalizes_selection_with_json_output_and_disabled_session() {
     .unwrap() else {
         panic!("expected plan");
     };
-    let config = args.into_run_config().unwrap();
+    let config = args.into_configs().unwrap().0;
     assert_eq!(config.output.format, hoimin_core::OutputFormat::Json);
     assert_eq!(config.session, hoimin_core::SessionMode::Disabled);
     assert_eq!(config.fingerprint_includes, ["pyproject.toml"]);
@@ -736,7 +736,7 @@ fn run_and_plan_apply_mandatory_disk_safety_defaults() {
     else {
         panic!("expected plan");
     };
-    let plan = plan.into_run_config().unwrap();
+    let plan = plan.into_configs().unwrap().0;
 
     for limits in [&run.limits, &plan.limits] {
         assert_eq!(limits.max_workspace_size.get(), 8 * 1024 * 1024 * 1024);
@@ -774,7 +774,7 @@ fn run_and_plan_parse_explicit_disk_safety_limits() {
     .unwrap() else {
         panic!("expected plan");
     };
-    let plan = plan.into_run_config().unwrap();
+    let plan = plan.into_configs().unwrap().0;
 
     for limits in [&run.limits, &plan.limits] {
         assert_eq!(limits.max_workspace_size.get(), 768 * 1024 * 1024);
@@ -902,7 +902,6 @@ fn documented_defaults_are_applied() {
     assert_eq!(config.limits.jobs.get(), 1);
     assert_eq!(config.limits.max_mutants.get(), 100);
     assert_eq!(config.limits.max_candidates.get(), 10_000);
-    assert_eq!(config.limits.analyzer_timeout.get().as_secs(), 30);
     assert_eq!(config.limits.baseline_timeout.get().as_secs(), 60);
     assert_eq!(
         config.limits.mutant_timeout,
@@ -1812,8 +1811,6 @@ fn run_and_plan_normalize_all_shared_options_equally() {
         "12",
         "--max-candidates",
         "200",
-        "--analyzer-timeout",
-        "19s",
         "--baseline-timeout",
         "21s",
         "--mutant-timeout",
@@ -1848,10 +1845,9 @@ fn run_and_plan_normalize_all_shared_options_equally() {
     let ParsedCommand::Plan(plan) = parse_from(plan_args).unwrap() else {
         panic!("expected plan");
     };
-    let plan = plan.into_run_config().unwrap();
+    let plan = plan.into_configs().unwrap().0;
 
     assert_eq!(run, plan);
-    assert_eq!(run.limits.analyzer_timeout.get().as_secs(), 19);
     assert_eq!(run.limits.max_output.get(), 2 * 1024 * 1024);
     assert_eq!(run.operators.names(), ["compare_eq_ne"]);
     assert_eq!(run.profile, MutationProfile::Focused);
@@ -1888,12 +1884,7 @@ fn selected_mutation_command_requires_test_argv() {
 #[test]
 fn common_duration_diagnostics_name_the_invalid_option() {
     for (command, parse_config) in CONFIG_PARSERS {
-        for option in [
-            "--analyzer-timeout",
-            "--baseline-timeout",
-            "--mutant-timeout",
-            "--total-timeout",
-        ] {
+        for option in ["--baseline-timeout", "--mutant-timeout", "--total-timeout"] {
             let args = [
                 "hoimin", command, "--file", "pkg/a.py", option, "nonsense", "--", "python",
             ];
@@ -1948,4 +1939,92 @@ fn run_resume_requires_a_session() {
         error.config_error(),
         Some(&hoimin_core::ConfigError::ResumeRequiresSession)
     );
+}
+
+#[test]
+fn run_rejects_plan_only_analyzer_timeout() {
+    // Arrange: both Clap spellings must remain plan-only.
+    for options in [
+        vec!["--analyzer-timeout", "19s"],
+        vec!["--analyzer-timeout=19s"],
+    ] {
+        let mut argv = vec!["hoimin", "run", "--file", "src/calc.py"];
+        argv.extend(options);
+        argv.extend(["--", "python"]);
+        // Act.
+        let result = parse_from(argv);
+        // Assert.
+        assert!(result.is_err(), "run accepted discovery-only timeout");
+    }
+}
+
+#[test]
+fn plan_normalizes_its_discovery_timeout_separately_from_execution() {
+    // Arrange.
+    let ParsedCommand::Plan(plan) = parse_from([
+        "hoimin",
+        "plan",
+        "--file",
+        "calc.py",
+        "--analyzer-timeout",
+        "19s",
+        "--",
+        "python",
+    ])
+    .unwrap() else {
+        panic!("expected plan")
+    };
+    // Act.
+    let (execution, discovery) = plan.into_configs().unwrap();
+    let execution = serde_json::to_value(execution).unwrap();
+    // Assert.
+    assert_eq!(
+        discovery.analyzer_timeout.get(),
+        std::time::Duration::from_secs(19)
+    );
+    assert!(execution.get("discovery").is_none());
+    assert!(execution["limits"].get("analyzer_timeout").is_none());
+}
+
+#[test]
+fn plan_rejects_invalid_discovery_timeout_with_flag_attribution() {
+    // Arrange.
+    for value in ["nonsense", "0s", "10000000000s"] {
+        let ParsedCommand::Plan(plan) = parse_from([
+            "hoimin",
+            "plan",
+            "--file",
+            "calc.py",
+            "--analyzer-timeout",
+            value,
+            "--",
+            "python",
+        ])
+        .unwrap() else {
+            panic!("expected plan")
+        };
+        // Act.
+        let error = plan.into_configs().unwrap_err();
+        // Assert.
+        assert!(
+            error.to_string().contains("--analyzer-timeout"),
+            "{value}: {error}"
+        );
+    }
+}
+
+#[test]
+fn help_limits_discovery_timeout_to_plan() {
+    // Arrange: root describes run, while verify inherits the saved plan.
+    for (argv, advertised) in [
+        (vec!["hoimin", "--help"], false),
+        (vec!["hoimin", "run", "--help"], false),
+        (vec!["hoimin", "plan", "--help"], true),
+        (vec!["hoimin", "verify", "--help"], false),
+    ] {
+        // Act.
+        let help = parse_from(argv.clone()).unwrap_err().to_string();
+        // Assert.
+        assert_eq!(help.contains("--analyzer-timeout"), advertised, "{argv:?}");
+    }
 }

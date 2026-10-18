@@ -12,11 +12,11 @@ pub const MAX_JOBS: usize = 256;
 pub const MAX_TIMEOUT: Duration = Duration::from_hours(100 * 365 * 24);
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RawRunLimits {
     pub jobs: usize,
     pub max_mutants: usize,
     pub max_candidates: usize,
-    pub analyzer_timeout: Duration,
     pub baseline_timeout: Duration,
     pub mutant_timeout: Option<Duration>,
     pub total_timeout: Duration,
@@ -34,7 +34,6 @@ impl Default for RawRunLimits {
             jobs: 1,
             max_mutants: 100,
             max_candidates: 10_000,
-            analyzer_timeout: Duration::from_secs(30),
             baseline_timeout: Duration::from_secs(60),
             mutant_timeout: None,
             total_timeout: Duration::from_mins(5),
@@ -529,11 +528,11 @@ pub enum MutantTimeout {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RunLimits {
     pub jobs: NonZeroUsize,
     pub max_mutants: NonZeroUsize,
     pub max_candidates: NonZeroUsize,
-    pub analyzer_timeout: NonZeroDuration,
     pub baseline_timeout: NonZeroDuration,
     pub mutant_timeout: MutantTimeout,
     pub total_timeout: NonZeroDuration,
@@ -571,6 +570,7 @@ pub struct RunConfig<E = crate::EnvironmentSnapshot> {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PlanConfig {
+    pub discovery: DiscoveryConfig,
     pub selection: Selection,
     pub import_roots: Vec<Utf8PathBuf>,
     pub limits: RunLimits,
@@ -605,8 +605,9 @@ impl<E> RunConfig<E> {
 
 impl RunConfig {
     #[must_use]
-    pub fn into_plan_config(self) -> PlanConfig {
+    pub fn into_plan_config(self, discovery: DiscoveryConfig) -> PlanConfig {
         PlanConfig {
+            discovery,
             selection: self.selection,
             import_roots: self.import_roots,
             limits: self.limits,
@@ -661,6 +662,36 @@ impl RunConfig<crate::EnvironmentRequest> {
     }
 }
 
+/// Settings for cooperative discovery across the complete selected target set.
+/// These are saved in plans and discarded before execution or fingerprinting.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DiscoveryConfig {
+    pub analyzer_timeout: NonZeroDuration,
+}
+
+impl DiscoveryConfig {
+    /// Creates a positive discovery deadline bounded by [`MAX_TIMEOUT`].
+    ///
+    /// # Errors
+    /// Returns [`ConfigError`] for zero or oversized timeouts.
+    pub fn new(analyzer_timeout: Duration) -> Result<Self, ConfigError> {
+        let config = Self {
+            analyzer_timeout: NonZeroDuration::new(analyzer_timeout, "analyzer_timeout")?,
+        };
+        config.validate()?;
+        Ok(config)
+    }
+
+    /// Validates the discovery deadline after deserialization.
+    ///
+    /// # Errors
+    /// Returns [`ConfigError`] when the timeout exceeds [`MAX_TIMEOUT`].
+    pub fn validate(&self) -> Result<(), ConfigError> {
+        validate_timeout("analyzer_timeout", self.analyzer_timeout.get())
+    }
+}
+
 impl PlanConfig {
     /// Validates normalized persisted plan semantics.
     ///
@@ -669,6 +700,7 @@ impl PlanConfig {
     /// Returns [`ConfigError`] when selection, mutation operators, the test command, or limits are
     /// invalid.
     pub fn validate(&self) -> Result<(), ConfigError> {
+        self.discovery.validate()?;
         validate_selection(&self.selection)?;
         validate_import_roots(&self.import_roots)?;
         validate_operators(&self.operators)?;
@@ -803,7 +835,6 @@ impl TryFrom<&RawRunLimits> for RunLimits {
             jobs: nonzero_usize(raw.jobs, "jobs")?,
             max_mutants: nonzero_usize(raw.max_mutants, "max_mutants")?,
             max_candidates: nonzero_usize(raw.max_candidates, "max_candidates")?,
-            analyzer_timeout: NonZeroDuration::new(raw.analyzer_timeout, "analyzer_timeout")?,
             baseline_timeout: NonZeroDuration::new(raw.baseline_timeout, "baseline_timeout")?,
             mutant_timeout: match raw.mutant_timeout {
                 Some(value) => MutantTimeout::Fixed(NonZeroDuration::new(value, "mutant_timeout")?),
@@ -928,7 +959,6 @@ fn validate_limits(limits: &RunLimits) -> Result<(), ConfigError> {
         });
     }
     for (name, duration) in [
-        ("analyzer_timeout", limits.analyzer_timeout.get()),
         ("baseline_timeout", limits.baseline_timeout.get()),
         ("total_timeout", limits.total_timeout.get()),
     ] {

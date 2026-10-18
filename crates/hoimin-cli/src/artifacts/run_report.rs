@@ -522,7 +522,7 @@ mod tests {
 
     fn current_report_json() -> String {
         let document: serde_json::Value = serde_json::from_str(include_str!(
-            "../../tests/golden/reports/schema-v7-current.json"
+            "../../tests/golden/reports/schema-v8-current.json"
         ))
         .unwrap();
         serde_json::to_string(&document).unwrap()
@@ -591,7 +591,7 @@ mod tests {
             (r#""jobs":1"#, r#""jobs":1,"jobs":1"#),
             (r#""jobs":1"#, r#""jobs":1,"jobs":2"#),
             (r#""jobs":1"#, r#""jobs":2,"jobs":1"#),
-            (r#""secs":30}"#, r#""secs":30,"secs":31}"#),
+            (r#""secs":60}"#, r#""secs":60,"secs":61}"#),
             (
                 r#""metrics":"metrics.json""#,
                 r#""metrics":null,"metrics":null"#,

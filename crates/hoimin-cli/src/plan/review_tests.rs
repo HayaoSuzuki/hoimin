@@ -25,10 +25,12 @@ fn manifest(
     unused_sources: usize,
 ) -> PlanManifest {
     let config = project
-        .config("30s")
+        .config()
         .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
         .unwrap()
-        .into_plan_config();
+        .into_plan_config(
+            hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap(),
+        );
     let hash = "1".repeat(64);
     let candidates = (0..candidate_count)
         .map(|index| {

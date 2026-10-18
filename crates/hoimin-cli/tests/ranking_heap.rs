@@ -52,9 +52,8 @@ fn ranking_validation_heap_does_not_scale_with_valid_candidate_bodies() {
             .enable_all()
             .build()
             .unwrap();
-        let output = runtime
-            .block_on(plan::create(command.into_run_config().unwrap()))
-            .unwrap();
+        let (config, discovery) = command.into_configs().unwrap();
+        let output = runtime.block_on(plan::create(config, discovery)).unwrap();
         assert_eq!(output.exit_code, 0);
         let manifest = output.manifest;
         assert_eq!(manifest.ranking_rule_version, ranking::RANKING_RULE_VERSION);

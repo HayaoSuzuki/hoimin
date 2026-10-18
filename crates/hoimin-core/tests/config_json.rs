@@ -67,7 +67,9 @@ fn plan_config_round_trips_canonical_names_and_rejects_legacy_names() {
         CommandArg::Windows(vec![112, 121]),
         Some(Duration::from_secs(7)),
     )
-    .into_plan_config();
+    .into_plan_config(
+        hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap(),
+    );
     let canonical = serde_json::to_value(&expected).unwrap();
 
     assert_eq!(
@@ -245,9 +247,11 @@ fn saved_configs_reject_zero_durations_before_semantic_validation() {
         Some(Duration::from_secs(7)),
     );
     let run = serde_json::to_value(&config).unwrap();
-    let plan = serde_json::to_value(config.into_plan_config()).unwrap();
+    let plan = serde_json::to_value(config.into_plan_config(
+        hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap(),
+    ))
+    .unwrap();
     for (field, variant) in [
-        ("analyzer_timeout", ""),
         ("baseline_timeout", ""),
         ("total_timeout", ""),
         ("mutant_timeout", "fixed"),
@@ -299,4 +303,31 @@ fn run_started_rejects_absent_import_roots() {
             "accepted absent import_roots in typed event"
         );
     }
+}
+
+#[test]
+fn runtime_limits_reject_obsolete_discovery_timeout() {
+    // Arrange.
+    let mut value =
+        serde_json::to_value(config(CommandArg::Unix(b"python".to_vec()), None)).unwrap();
+    value["limits"]["analyzer_timeout"] = serde_json::json!({"secs": 19, "nanos": 0});
+    // Act.
+    let result = serde_json::from_value::<RunConfig>(value);
+    // Assert.
+    assert!(result.is_err(), "obsolete discovery timeout was accepted");
+}
+
+#[test]
+fn raw_runtime_limits_reject_obsolete_discovery_timeout() {
+    // Arrange.
+    let mut value = serde_json::to_value(RawRunLimits::default()).unwrap();
+    value["analyzer_timeout"] = serde_json::json!({"secs": 30, "nanos": 0});
+    // Act.
+    let error = serde_json::from_value::<RawRunLimits>(value).unwrap_err();
+    // Assert.
+    assert!(
+        error
+            .to_string()
+            .contains("unknown field `analyzer_timeout`")
+    );
 }

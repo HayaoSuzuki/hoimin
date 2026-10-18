@@ -216,9 +216,8 @@ async fn plan_fixture_with_source(source: &str) -> (tempfile::TempDir, std::path
     let crate::cli::ParsedCommand::Plan(args) = args else {
         panic!("plan")
     };
-    let output = crate::plan::create(args.into_run_config().unwrap())
-        .await
-        .unwrap();
+    let (config, discovery) = args.into_configs().unwrap();
+    let output = crate::plan::create(config, discovery).await.unwrap();
     assert_ne!(output.manifest.candidates.len(), 0);
     let path = dir.path().join("plan.json");
     std::fs::write(&path, serde_json::to_vec(&output.manifest).unwrap()).unwrap();
@@ -560,7 +559,7 @@ async fn report_fixture() -> (tempfile::TempDir, std::path::PathBuf, std::path::
     let (dir, path) = plan_fixture().await;
     let plan = super::input::load_plan(&path).unwrap();
     let mut report: serde_json::Value = serde_json::from_str(include_str!(
-        "../../tests/golden/reports/schema-v7-current.json"
+        "../../tests/golden/reports/schema-v8-current.json"
     ))
     .unwrap();
     let config = plan
@@ -847,7 +846,7 @@ fn write_matching_report(
     candidates: &[&hoimin_core::MutationCandidate],
 ) {
     let mut report: serde_json::Value = serde_json::from_str(include_str!(
-        "../../tests/golden/reports/schema-v7-current.json"
+        "../../tests/golden/reports/schema-v8-current.json"
     ))
     .unwrap();
     report["run"]["normalized_config"] = serde_json::to_value(

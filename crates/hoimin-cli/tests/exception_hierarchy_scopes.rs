@@ -149,7 +149,12 @@ async fn hierarchy_scoped_writes_distinguish_local_bindings_and_escaping_aliases
             ruff_python_parser::parse_module(source).unwrap();
             std::fs::write(dir.path().join(path), source).unwrap();
         }
-        let plan = hoimin_cli::plan::create(config(dir.path())).await.unwrap();
+        let plan = hoimin_cli::plan::create(
+            config(dir.path()),
+            hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap(),
+        )
+        .await
+        .unwrap();
         let pairs: Vec<_> = plan
             .manifest
             .candidates
@@ -173,7 +178,12 @@ async fn hierarchy_local_parameter_renaming_preserves_module_candidates() {
             "class Root(Exception): pass\nclass Child(Root): pass\ndef unrelated({parameter}):\n    other = {parameter}\n    other.tag = 1\ndef target():\n    raise Child()\n"
         );
         std::fs::write(dir.path().join("service.py"), source).unwrap();
-        let plan = hoimin_cli::plan::create(config(dir.path())).await.unwrap();
+        let plan = hoimin_cli::plan::create(
+            config(dir.path()),
+            hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap(),
+        )
+        .await
+        .unwrap();
         assert_eq!(plan.manifest.candidates.len(), 1, "{parameter}");
         assert_eq!(plan.manifest.candidates[0].candidate.replacement, "Root");
     }
@@ -206,7 +216,12 @@ async fn hierarchy_other_local_declarations_and_comprehensions_preserve_candidat
         let source =
             format!("import errors as e\ndef patch():\n    {declaration}\n    e.Root = object\n");
         std::fs::write(dir.path().join("patcher.py"), source).unwrap();
-        let plan = hoimin_cli::plan::create(config(dir.path())).await.unwrap();
+        let plan = hoimin_cli::plan::create(
+            config(dir.path()),
+            hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap(),
+        )
+        .await
+        .unwrap();
         assert_eq!(plan.manifest.candidates.len(), 1, "{declaration}");
     }
     for expression in [
@@ -220,7 +235,12 @@ async fn hierarchy_other_local_declarations_and_comprehensions_preserve_candidat
             format!("import errors as e\nvalues = {expression}\n"),
         )
         .unwrap();
-        let plan = hoimin_cli::plan::create(config(dir.path())).await.unwrap();
+        let plan = hoimin_cli::plan::create(
+            config(dir.path()),
+            hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap(),
+        )
+        .await
+        .unwrap();
         assert_eq!(plan.manifest.candidates.len(), 1, "{expression}");
     }
 }
@@ -239,7 +259,12 @@ async fn hierarchy_implicit_scope_bindings_do_not_hide_module_classes() {
             format!("class Root(Exception): pass\nclass Child(Root): pass\n{body}"),
         )
         .unwrap();
-        let plan = hoimin_cli::plan::create(config(dir.path())).await.unwrap();
+        let plan = hoimin_cli::plan::create(
+            config(dir.path()),
+            hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap(),
+        )
+        .await
+        .unwrap();
         assert_eq!(plan.manifest.candidates.len(), 1, "{body}");
         assert_eq!(plan.manifest.candidates[0].candidate.replacement, "Root");
     }
@@ -278,7 +303,12 @@ async fn hierarchy_implicit_class_cell_writes_invalidate_owning_class() {
             "__class__ = object()\nclass Root(Exception): pass\nclass Child(Root):\n    {method}\ndef target():\n    raise Root()\n"
         );
         std::fs::write(dir.path().join("service.py"), source).unwrap();
-        let plan = hoimin_cli::plan::create(config(dir.path())).await.unwrap();
+        let plan = hoimin_cli::plan::create(
+            config(dir.path()),
+            hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap(),
+        )
+        .await
+        .unwrap();
         assert_eq!(plan.manifest.candidates.len(), expected, "{method}");
         for candidate in &plan.manifest.candidates {
             assert_eq!(candidate.candidate.replacement, "Child");

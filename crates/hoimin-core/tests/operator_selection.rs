@@ -290,7 +290,9 @@ fn persisted_plan_config_rejects_an_empty_operator_selection() {
         .unwrap()
         .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
         .unwrap()
-        .into_plan_config();
+        .into_plan_config(
+            hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap(),
+        );
     let mut value = serde_json::to_value(plan).unwrap();
     value["operators"] = serde_json::json!([]);
     let plan: PlanConfig = serde_json::from_value(value).unwrap();
@@ -408,7 +410,9 @@ fn stored_legacy_plan_selection_is_not_expanded_on_reload() {
         .unwrap()
         .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
         .unwrap()
-        .into_plan_config();
+        .into_plan_config(
+            hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap(),
+        );
     let json = serde_json::to_vec(&plan).unwrap();
     let restored: PlanConfig = serde_json::from_slice(&json).unwrap();
     restored.validate().unwrap();
