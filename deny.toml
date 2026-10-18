@@ -23,6 +23,11 @@ version = ">=0.13.0, <0.14.0"
 allow = ["Elastic-2.0"]
 
 [[licenses.exceptions]]
+name = "hoimin-python"
+version = ">=0.13.0, <0.14.0"
+allow = ["Elastic-2.0"]
+
+[[licenses.exceptions]]
 name = "hoimin-cli"
 version = ">=0.13.0, <0.14.0"
 allow = ["Elastic-2.0"]

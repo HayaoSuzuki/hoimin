@@ -205,6 +205,11 @@ def set_version(root: Path, version: str) -> None:
             version,
         ),
         (
+            "Cargo.lock",
+            r'(\[\[package\]\]\nname = "hoimin-python"\nversion = ")[^"]+("\n)',
+            version,
+        ),
+        (
             "uv.lock",
             r'(\[\[package\]\]\nname = "hoimin"\nversion = ")[^"]+("\n)',
             python_version,

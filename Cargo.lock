@@ -637,14 +637,12 @@ dependencies = [
  "crc32fast",
  "fs2",
  "hoimin-core",
+ "hoimin-python",
  "humantime",
  "ignore",
  "libc",
  "littrs-ruff-python-ast",
  "littrs-ruff-python-parser",
- "littrs-ruff-text-size",
- "num-bigint",
- "num-traits",
  "proptest",
  "rusqlite",
  "rustix",
@@ -669,6 +667,25 @@ dependencies = [
  "proptest",
  "serde",
  "serde_json",
+ "thiserror",
+]
+
+[[package]]
+name = "hoimin-python"
+version = "0.13.0"
+dependencies = [
+ "blake3",
+ "camino",
+ "hoimin-core",
+ "littrs-ruff-python-ast",
+ "littrs-ruff-python-parser",
+ "littrs-ruff-text-size",
+ "num-bigint",
+ "num-traits",
+ "proptest",
+ "serde",
+ "serde_json",
+ "tempfile",
  "thiserror",
 ]
 

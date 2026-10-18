@@ -8,24 +8,24 @@ use std::sync::{Arc, Mutex};
 
 use super::{AnalysisError, AnalyzerCandidate};
 
-pub(crate) const DEFAULT_LIMIT: usize = 16 * 1024 * 1024;
+pub const DEFAULT_LIMIT: usize = 16 * 1024 * 1024;
 
 #[derive(Clone, Debug)]
-pub(crate) struct PayloadBudget(Arc<Mutex<State>>);
+pub struct PayloadBudget(Arc<Mutex<State>>);
 
 #[derive(Debug)]
 struct State {
     limit: usize,
     used: usize,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     peak: usize,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     reservations: usize,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     releases: usize,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     admissions: usize,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     generated: usize,
 }
 
@@ -36,31 +36,43 @@ impl Default for PayloadBudget {
 }
 
 impl PayloadBudget {
-    pub(crate) fn new(limit: usize) -> Self {
+    #[must_use]
+    pub fn new(limit: usize) -> Self {
         Self(Arc::new(Mutex::new(State {
             limit,
             used: 0,
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             peak: 0,
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             reservations: 0,
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             releases: 0,
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             admissions: 0,
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             generated: 0,
         })))
     }
 
-    pub(crate) fn exceeded(&self) -> AnalysisError {
+    /// Returns the limit error for caller-side checked arithmetic.
+    ///
+    /// # Panics
+    /// Panics if another holder poisoned the shared accounting mutex.
+    #[must_use]
+    pub fn exceeded(&self) -> AnalysisError {
         AnalysisError::PayloadLimit {
             limit: self.0.lock().unwrap().limit,
         }
     }
 
     /// Reserves a checked sum atomically. Failure leaves existing leases intact.
-    pub(crate) fn reserve(
+    ///
+    /// # Errors
+    /// Returns `PayloadLimit` on sum overflow or insufficient remaining bytes.
+    ///
+    /// # Panics
+    /// Panics if another holder poisoned the shared accounting mutex.
+    pub fn reserve(
         &self,
         lengths: impl IntoIterator<Item = usize>,
     ) -> Result<PayloadLease, AnalysisError> {
@@ -75,7 +87,7 @@ impl PayloadBudget {
             .filter(|used| *used <= state.limit)
             .ok_or(AnalysisError::PayloadLimit { limit: state.limit })?;
         state.used = used;
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         {
             state.peak = state.peak.max(used);
             state.reservations += 1;
@@ -86,7 +98,11 @@ impl PayloadBudget {
         })
     }
 
-    pub(crate) fn retain(
+    /// Charges owned candidate strings before retaining the candidate.
+    ///
+    /// # Errors
+    /// Returns `PayloadLimit` if the candidate cannot fit in the shared budget.
+    pub fn retain(
         &self,
         value: AnalyzerCandidate,
     ) -> Result<Charged<AnalyzerCandidate>, AnalysisError> {
@@ -99,18 +115,23 @@ impl PayloadBudget {
         Ok(Charged { value, lease })
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn generated(&self) {
         self.0.lock().unwrap().generated += 1;
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn admitted(&self) {
         self.0.lock().unwrap().admissions += 1;
     }
 
-    #[cfg(test)]
-    pub(crate) fn snapshot(&self) -> Snapshot {
+    #[cfg(any(test, feature = "test-support"))]
+    /// Observes logical accounting for development tests and probes.
+    ///
+    /// # Panics
+    /// Panics if another holder poisoned the shared accounting mutex.
+    #[must_use]
+    pub fn snapshot(&self) -> Snapshot {
         let state = self.0.lock().unwrap();
         Snapshot {
             used: state.used,
@@ -123,9 +144,9 @@ impl PayloadBudget {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct Snapshot {
+pub struct Snapshot {
     pub used: usize,
     pub peak: usize,
     pub reservations: usize,
@@ -136,20 +157,22 @@ pub(crate) struct Snapshot {
 
 /// Non-Clone ownership of a reservation. Move it with the strings it covers.
 #[derive(Debug)]
-pub(crate) struct PayloadLease {
+pub struct PayloadLease {
     budget: PayloadBudget,
     bytes: usize,
 }
 
 impl PayloadLease {
-    pub(crate) fn budget(&self) -> &PayloadBudget {
+    #[must_use]
+    pub fn budget(&self) -> &PayloadBudget {
         &self.budget
     }
 
-    pub(crate) fn grow(
-        &mut self,
-        lengths: impl IntoIterator<Item = usize>,
-    ) -> Result<(), AnalysisError> {
+    /// Reserves additional strings while retaining this lease.
+    ///
+    /// # Errors
+    /// Returns `PayloadLimit` on overflow or insufficient shared capacity.
+    pub fn grow(&mut self, lengths: impl IntoIterator<Item = usize>) -> Result<(), AnalysisError> {
         let mut extra = self.budget.reserve(lengths)?;
         // Both reservations coexist within one checked limit, so their sum fits.
         self.bytes += extra.bytes;
@@ -162,7 +185,7 @@ impl Drop for PayloadLease {
     fn drop(&mut self) {
         let mut state = self.budget.0.lock().unwrap();
         state.used -= self.bytes;
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         {
             state.releases += 1;
         }
@@ -171,7 +194,7 @@ impl Drop for PayloadLease {
 
 /// Fields drop in declaration order: payload must die before its reservation.
 #[derive(Debug)]
-pub(crate) struct Charged<T> {
+pub struct Charged<T> {
     pub value: T,
     pub lease: PayloadLease,
 }
@@ -193,7 +216,7 @@ impl<T: Eq> Eq for Charged<T> {}
 
 impl<T> Charged<T> {
     /// Terminal handoff only: no later producer may reuse this accounting owner.
-    pub(crate) fn into_untracked(self) -> T {
+    pub fn into_untracked(self) -> T {
         self.value
     }
 }

@@ -28,10 +28,9 @@ camino = "1.1"
 crc32fast = "1.4"
 fs2 = "0.4.3"
 hoimin-core = { path = "../hoimin-core" }
+hoimin-python = { path = "../hoimin-python" }
 humantime = "2.2"
 ignore = "0.4"
-num-bigint = "0.5.0"
-num-traits = "0.2.19"
 rusqlite = { version = "0.40.2", default-features = false, features = ["bundled"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -41,9 +40,6 @@ tokio = { version = "1.47", features = ["fs", "io-util", "macros", "process", "r
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 uuid = { version = "1.17", features = ["v4"] }
-ruff_python_parser = { version = "0.6.2", package = "littrs-ruff-python-parser" }
-ruff_python_ast = { version = "0.6.2", package = "littrs-ruff-python-ast" }
-ruff_text_size = { version = "0.6.2", package = "littrs-ruff-text-size" }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61.2", features = ["Wdk_Foundation", "Wdk_Storage_FileSystem", "Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_System_Diagnostics_ToolHelp", "Win32_System_IO", "Win32_System_JobObjects", "Win32_System_SystemInformation", "Win32_System_SystemServices", "Win32_System_Threading"] }
@@ -53,5 +49,8 @@ libc = "0.2"
 rustix = { version = "1.1", features = ["fs"] }
 
 [dev-dependencies]
+ruff_python_ast = { version = "0.6.2", package = "littrs-ruff-python-ast" }
+hoimin-python = { path = "../hoimin-python", features = ["test-support"] }
+ruff_python_parser = { version = "0.6.2", package = "littrs-ruff-python-parser" }
 proptest = "1.7"
 tokio = { version = "1.47", features = ["test-util"] }

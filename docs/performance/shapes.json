@@ -465,9 +465,9 @@
       "args": [
         "test",
         "-p",
-        "hoimin-cli",
+        "hoimin-python",
         "--lib",
-        "analyzer::rust::rust_tests::candidate_punctuation_queries_are_range_bounded",
+        "rust::rust_tests::candidate_punctuation_queries_are_range_bounded",
         "--",
         "--exact"
       ]
@@ -479,9 +479,9 @@
       "args": [
         "test",
         "-p",
-        "hoimin-cli",
+        "hoimin-python",
         "--lib",
-        "analyzer::rust::rust_tests::bounded_collection_preserves_the_exact_full_output_prefix_and_retention_bounds",
+        "rust::rust_tests::bounded_collection_preserves_the_exact_full_output_prefix_and_retention_bounds",
         "--",
         "--exact"
       ]
@@ -493,9 +493,9 @@
       "args": [
         "test",
         "-p",
-        "hoimin-cli",
+        "hoimin-python",
         "--lib",
-        "analyzer::rust::rust_tests::bounded_collection_with_zero_limit_keeps_only_an_overflow_probe",
+        "rust::rust_tests::bounded_collection_with_zero_limit_keeps_only_an_overflow_probe",
         "--",
         "--exact"
       ]
@@ -669,9 +669,9 @@
       "args": [
         "test",
         "-p",
-        "hoimin-cli",
+        "hoimin-python",
         "--lib",
-        "analyzer::rust::rust_tests::unselected_collection_literals_build_no_large_candidate_strings",
+        "rust::rust_tests::unselected_collection_literals_build_no_large_candidate_strings",
         "--",
         "--exact"
       ]
@@ -782,9 +782,9 @@
       "args": [
         "test",
         "-p",
-        "hoimin-cli",
+        "hoimin-python",
         "--lib",
-        "analyzer::rust::rust_tests::annotation_import_snapshots_are_not_retained_per_site",
+        "rust::rust_tests::annotation_import_snapshots_are_not_retained_per_site",
         "--",
         "--exact"
       ]
@@ -798,9 +798,9 @@
       "args": [
         "test",
         "-p",
-        "hoimin-cli",
+        "hoimin-python",
         "--lib",
-        "analyzer::rust::ordered_history_tests::preprocessing_and_monotonic_lookups_have_bounded_work",
+        "rust::ordered_history_tests::preprocessing_and_monotonic_lookups_have_bounded_work",
         "--",
         "--exact"
       ]
@@ -814,9 +814,9 @@
       "args": [
         "test",
         "-p",
-        "hoimin-cli",
+        "hoimin-python",
         "--lib",
-        "analyzer::rust::ordered_history_tests::alternating_offsets_still_have_logarithmic_lookups",
+        "rust::ordered_history_tests::alternating_offsets_still_have_logarithmic_lookups",
         "--",
         "--exact"
       ]
@@ -828,9 +828,9 @@
       "args": [
         "test",
         "-p",
-        "hoimin-cli",
+        "hoimin-python",
         "--lib",
-        "analyzer::rust::performance_cost_tests::real_operation_counters_match_lean_cost_corpus",
+        "rust::performance_cost_tests::real_operation_counters_match_lean_cost_corpus",
         "--",
         "--exact"
       ]
@@ -842,9 +842,9 @@
       "args": [
         "test",
         "-p",
-        "hoimin-cli",
+        "hoimin-python",
         "--lib",
-        "analyzer::rust::performance_cost_tests::real_broken_cost_variants_are_detected_without_semantic_changes",
+        "rust::performance_cost_tests::real_broken_cost_variants_are_detected_without_semantic_changes",
         "--",
         "--exact"
       ]
@@ -856,9 +856,9 @@
       "args": [
         "test",
         "-p",
-        "hoimin-cli",
+        "hoimin-python",
         "--lib",
-        "analyzer::rust::performance_cost_tests::actual_import_clone_counts_entries_at_the_clone_boundary",
+        "rust::performance_cost_tests::actual_import_clone_counts_entries_at_the_clone_boundary",
         "--",
         "--exact"
       ]
@@ -870,9 +870,9 @@
       "args": [
         "test",
         "-p",
-        "hoimin-cli",
+        "hoimin-python",
         "--lib",
-        "analyzer::rust::performance_cost_tests::replacement_counter_observes_direct_builder_calls",
+        "rust::performance_cost_tests::replacement_counter_observes_direct_builder_calls",
         "--",
         "--exact"
       ]
@@ -901,9 +901,9 @@
       "args": [
         "test",
         "-p",
-        "hoimin-cli",
+        "hoimin-python",
         "--lib",
-        "analyzer::rust::performance_cost_tests::straight_line_import_transfer_copy_cost_is_independent_of_annotations",
+        "rust::performance_cost_tests::straight_line_import_transfer_copy_cost_is_independent_of_annotations",
         "--",
         "--exact"
       ]
@@ -917,9 +917,9 @@
       "args": [
         "test",
         "-p",
-        "hoimin-cli",
+        "hoimin-python",
         "--lib",
-        "analyzer::rust::rust_tests::straight_line_import_transfer_preserves_selected_candidates_and_skips_unselected",
+        "rust::rust_tests::straight_line_import_transfer_preserves_selected_candidates_and_skips_unselected",
         "--",
         "--exact"
       ]
@@ -941,9 +941,9 @@
       "args": [
         "test",
         "-p",
-        "hoimin-cli",
+        "hoimin-python",
         "--lib",
-        "analyzer::rust::nested_loop_transfer_tests::nested_loops_bound_actual_statement_and_annotation_visits",
+        "rust::nested_loop_transfer_tests::nested_loops_bound_actual_statement_and_annotation_visits",
         "--",
         "--exact"
       ]
@@ -960,9 +960,9 @@
       "args": [
         "test",
         "-p",
-        "hoimin-cli",
+        "hoimin-python",
         "--lib",
-        "analyzer::rust::nested_loop_transfer_tests::nested_loop_old_replay_exceeds_bound_with_identical_candidates",
+        "rust::nested_loop_transfer_tests::nested_loop_old_replay_exceeds_bound_with_identical_candidates",
         "--",
         "--exact"
       ]
@@ -984,9 +984,9 @@
       "args": [
         "test",
         "-p",
-        "hoimin-cli",
+        "hoimin-python",
         "--lib",
-        "analyzer::rust::nested_loop_transfer_tests::nested_class_loops_bound_actual_statement_and_annotation_visits",
+        "rust::nested_loop_transfer_tests::nested_class_loops_bound_actual_statement_and_annotation_visits",
         "--",
         "--exact"
       ]
@@ -1000,9 +1000,9 @@
       "args": [
         "test",
         "-p",
-        "hoimin-cli",
+        "hoimin-python",
         "--lib",
-        "analyzer::rust::nested_loop_transfer_tests::archived_audit_nested_loops_bound_visits",
+        "rust::nested_loop_transfer_tests::archived_audit_nested_loops_bound_visits",
         "--",
         "--exact"
       ]
@@ -1016,9 +1016,9 @@
       "args": [
         "test",
         "-p",
-        "hoimin-cli",
+        "hoimin-python",
         "--lib",
-        "analyzer::rust::nested_loop_transfer_tests::archived_audit_import_annotations_bound_clone_cost",
+        "rust::nested_loop_transfer_tests::archived_audit_import_annotations_bound_clone_cost",
         "--",
         "--exact"
       ]
@@ -1044,9 +1044,9 @@
       "args": [
         "test",
         "-p",
-        "hoimin-cli",
+        "hoimin-python",
         "--lib",
-        "analyzer::rust::nested_finally_transfer_tests::nested_finally_bounds_actual_statement_and_annotation_visits",
+        "rust::nested_finally_transfer_tests::nested_finally_bounds_actual_statement_and_annotation_visits",
         "--",
         "--exact"
       ]
@@ -1070,7 +1070,7 @@
       "proofs": "formal/HoiminOracle/HoiminOracle/PerformanceCostProofs.lean",
       "cases": "formal/HoiminOracle/HoiminOracle/PerformanceCostCases.lean",
       "corpus": "formal/HoiminOracle/corpus/performance-cost.jsonl",
-      "adapter": "crates/hoimin-cli/src/analyzer/rust.rs#performance_cost_tests",
+      "adapter": "crates/hoimin-python/src/analyzer/rust.rs#performance_cost_tests",
       "worksheet": "docs/superpowers/reports/2026-09-14-issue-491-cost-correspondence-worksheet.md",
       "generator": "generate_performance_cost",
       "mode": "internal-fixture",

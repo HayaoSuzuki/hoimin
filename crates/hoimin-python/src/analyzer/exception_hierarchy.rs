@@ -1,7 +1,7 @@
 //! Conservative lexical identities for project-local Python exception classes.
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::analyzer::visitor::{self, Visitor};
+use crate::visitor::{self, Visitor};
 use camino::{Utf8Path, Utf8PathBuf};
 use ruff_python_ast::{Expr, ExprContext, ModModule, Pattern, Stmt};
 use ruff_text_size::{Ranged, TextRange};
@@ -9,7 +9,7 @@ use ruff_text_size::{Ranged, TextRange};
 use super::{AnalysisCancelled, AnalysisError, depth};
 
 const MAX_STEPS: usize = 256;
-pub(crate) const MAX_SUMMARY_ENTRIES: usize = 65_536;
+pub const MAX_SUMMARY_ENTRIES: usize = 65_536;
 type ClassId = (Utf8PathBuf, String);
 #[path = "exception_scopes.rs"]
 mod scopes;
@@ -132,7 +132,7 @@ struct Class {
 
 /// Only compact summaries survive project parsing. No target module is executed.
 #[derive(Default)]
-pub(crate) struct ExceptionIndex {
+pub struct ExceptionIndex {
     modules: BTreeMap<Utf8PathBuf, Module>,
     source_hashes: BTreeMap<Utf8PathBuf, blake3::Hash>,
     module_paths: BTreeMap<String, Utf8PathBuf>,
@@ -829,7 +829,11 @@ impl ExceptionIndex {
         Self::from_sources_with_inputs(sources, roots, &[], cancelled)
     }
 
-    pub(crate) fn from_sources_with_inputs(
+    /// Builds a bounded index from acquired decoded sources and reserved input paths.
+    ///
+    /// # Errors
+    /// Returns an error on cancellation, excessive AST depth or hierarchy bounds.
+    pub fn from_sources_with_inputs(
         sources: &[(Utf8PathBuf, String)],
         roots: &[Utf8PathBuf],
         inputs: &[Utf8PathBuf],

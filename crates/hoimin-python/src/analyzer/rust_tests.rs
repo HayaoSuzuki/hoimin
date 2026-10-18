@@ -8,7 +8,7 @@ use super::{
     binding_flow_test_snapshot, candidate_work_stats, name_resolution_test_snapshot,
     reset_annotation_retention_stats, reset_candidate_work_stats,
 };
-use crate::analyzer::AnalyzerDiagnosticCode;
+use crate::AnalyzerDiagnosticCode;
 use camino::Utf8Path;
 use hoimin_core::{
     ByteSpan, LineRange, MutationOperator, MutationOperatorSelection, MutationProfile,

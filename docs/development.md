@@ -89,6 +89,14 @@ rejection stays with the caller. This does not bound general filesystem I/O.
 Read-only plan validation builds one borrowed source-path/hash index after header
 validation and checks candidate identity before source membership.
 
+The internal `hoimin-python` crate owns pure source analysis, charged candidate
+results and the exception index. The CLI acquires filesystem inputs, fingerprints
+projects, converts validated candidates and writes spools. Dedicated heap/corpus
+tests and the Python fuzz target use the same Cargo API; private semantic and
+oracle tests run only in `hoimin-python`. Its `test-support` feature provides
+logical payload observations to CLI dev-dependencies and is absent from normal
+builds. The separate fuzz workspace keeps its parser patch at its own root.
+
 The analyzer owns an internal 16 MiB retained-payload budget shared across
 producers, conversion and files. Keep reservations beside the allocations they
 cover; move leases with their data and release them only when that data drops.
@@ -1397,12 +1405,12 @@ candidate/replacement assertions alongside this parse-preservation check.
 Run focused analyzer tests while changing these rules:
 
 ```console
-cargo test -p hoimin-cli --lib analyzer::rust::rust_tests::shadowed_collection_builtins_are_not_mutated_as_calls -- --exact
-cargo test -p hoimin-cli --lib analyzer::rust::rust_tests::collection_calls_and_literals_emit_exact_parseable_candidates -- --exact
-cargo test -p hoimin-cli --lib analyzer::rust::rust_tests::structure_calls_emit_exact_parseable_candidates -- --exact
-cargo test -p hoimin-cli --lib analyzer::rust::rust_tests::structure_index_neighbor_mutates_decimal_load_indices_only -- --exact
-cargo test -p hoimin-cli --lib analyzer::rust::rust_tests::structure_slice_neighbor_mutates_decimal_bounds_without_zero_steps -- --exact
-cargo test -p hoimin-cli --lib analyzer::rust::rust_tests
+cargo test -p hoimin-python --lib rust::rust_tests::shadowed_collection_builtins_are_not_mutated_as_calls -- --exact
+cargo test -p hoimin-python --lib rust::rust_tests::collection_calls_and_literals_emit_exact_parseable_candidates -- --exact
+cargo test -p hoimin-python --lib rust::rust_tests::structure_calls_emit_exact_parseable_candidates -- --exact
+cargo test -p hoimin-python --lib rust::rust_tests::structure_index_neighbor_mutates_decimal_load_indices_only -- --exact
+cargo test -p hoimin-python --lib rust::rust_tests::structure_slice_neighbor_mutates_decimal_bounds_without_zero_steps -- --exact
+cargo test -p hoimin-python --lib rust::rust_tests
 ```
 
 ## Extending Python exception mutations
@@ -1459,12 +1467,12 @@ to `apply_candidate_and_reparse` checks. Run the focused tests before the full
 analyzer module:
 
 ```console
-cargo test -p hoimin-cli --lib analyzer::rust::rust_tests::exception_type_pair_candidates_are_curated_and_syntax_directed -- --exact
-cargo test -p hoimin-cli --lib analyzer::rust::rust_tests::raise_exception_type_pair_candidates_preserve_the_primary_expression -- --exact
-cargo test -p hoimin-cli --lib analyzer::rust::rust_tests::raise_exception_type_pairs_use_scope_aware_source_and_destination_resolution -- --exact
-cargo test -p hoimin-cli --lib analyzer::rust::rust_tests::exception_risky_candidates_require_explicit_selection_and_reparse -- --exact
-cargo test -p hoimin-cli --lib analyzer::rust::rust_tests::sibling_bindings_do_not_suppress_builtin_or_exception_pairs -- --exact
-cargo test -p hoimin-cli --lib analyzer::rust::rust_tests::comprehension_exception_target_and_wildcard_boundaries_are_conservative -- --exact
+cargo test -p hoimin-python --lib rust::rust_tests::exception_type_pair_candidates_are_curated_and_syntax_directed -- --exact
+cargo test -p hoimin-python --lib rust::rust_tests::raise_exception_type_pair_candidates_preserve_the_primary_expression -- --exact
+cargo test -p hoimin-python --lib rust::rust_tests::raise_exception_type_pairs_use_scope_aware_source_and_destination_resolution -- --exact
+cargo test -p hoimin-python --lib rust::rust_tests::exception_risky_candidates_require_explicit_selection_and_reparse -- --exact
+cargo test -p hoimin-python --lib rust::rust_tests::sibling_bindings_do_not_suppress_builtin_or_exception_pairs -- --exact
+cargo test -p hoimin-python --lib rust::rust_tests::comprehension_exception_target_and_wildcard_boundaries_are_conservative -- --exact
 ```
 
 ## Extending plan ranking

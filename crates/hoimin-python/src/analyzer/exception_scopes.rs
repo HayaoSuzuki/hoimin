@@ -1,6 +1,6 @@
 //! Bounded lexical identities for the project summary (not a runtime value analysis).
 use super::{MAX_SUMMARY_ENTRIES, mangled_name};
-use crate::analyzer::visitor::{self, Visitor};
+use crate::visitor::{self, Visitor};
 use ruff_python_ast::{Comprehension, Expr, ExprContext, Parameters, Pattern, Stmt};
 use std::collections::BTreeSet;
 

@@ -11,14 +11,15 @@ use hoimin_core::{
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::analyzer::Discovery;
 #[cfg(test)]
 use crate::analyzer::DiscoveryControl;
-use crate::analyzer::{AnalyzerDiagnostic, AnalyzerDiagnosticCode, Discovery};
 use crate::cli::{OutputFormat, TopSelectionPolicy, VerifySelection};
 use crate::fingerprint_inputs;
 use crate::resource::{self, ResourceError};
 use crate::shell;
 use crate::target::TargetHandler;
+use hoimin_python::{AnalyzerDiagnostic, AnalyzerDiagnosticCode};
 
 mod preview;
 pub use preview::VerifyPreview;
@@ -1129,7 +1130,7 @@ mod tests {
 
     #[test]
     fn analyzer_diagnostics_preserve_plan_names_and_structured_fields() {
-        use crate::analyzer::{AnalyzerDiagnostic, AnalyzerDiagnosticCode};
+        use hoimin_python::{AnalyzerDiagnostic, AnalyzerDiagnosticCode};
 
         let cases = [
             (AnalyzerDiagnosticCode::InvalidSyntax, "invalid_syntax"),
@@ -1172,7 +1173,7 @@ mod tests {
 
     #[test]
     fn analyzer_diagnostic_preserves_plan_custom_message_without_location() {
-        use crate::analyzer::{AnalyzerDiagnostic, AnalyzerDiagnosticCode};
+        use hoimin_python::{AnalyzerDiagnostic, AnalyzerDiagnosticCode};
 
         let diagnostic = AnalyzerDiagnostic {
             code: AnalyzerDiagnosticCode::InvalidSyntax,

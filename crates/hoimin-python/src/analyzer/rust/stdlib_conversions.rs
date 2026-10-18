@@ -5,7 +5,7 @@
 //! another alias. This scan deliberately rejects even uncertain possible aliases;
 //! external monkey patching and import-path shadowing remain outside the model.
 use super::{AnalysisCancelled, callable_imports::CallableImports};
-use crate::analyzer::visitor::{self, Visitor};
+use crate::visitor::{self, Visitor};
 use ruff_python_ast::{Expr, ExprContext, ModModule, Stmt};
 
 const MODULES: &[&str] = &[
