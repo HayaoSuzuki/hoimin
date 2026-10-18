@@ -110,3 +110,51 @@ script is local evidence only; it is not a product helper. Current documentation
 claims were separately read against the test and observed archive behavior.
 Final documentation checks and commit/hook outcome are recorded in the local
 `ci-fix-report.md` handoff. Native rerun evidence remains controller-owned.
+
+## Controller review and original-head hosted evidence
+
+The focused independent review covered `12e80440..1162dc74` and found no Critical, Important or Minor issues. It did not repeat the already completed whole-branch review. The original runtime head passed [Linux CI](https://github.com/HayaoSuzuki/hoimin/actions/runs/39161512147), [three-OS package builds and archive smoke](https://github.com/HayaoSuzuki/hoimin/actions/runs/39161512080), [dependency audit](https://github.com/HayaoSuzuki/hoimin/actions/runs/39161512215) and [documentation](https://github.com/HayaoSuzuki/hoimin/actions/runs/39161512246). Linux Rust job117775889077 explicitly passed invalid-UTF8 regular-file, nested-directory and symlink meter tests, plus the public CLI generated-file/cleanup test. This evidence predates the test-only newline correction; updated-head hosted outcomes will be recorded on PR1000.
+
+# Focused CI follow-up review
+
+Reviewed base `12e80440c1daec46c0e92895b123f34ef098f913` through head `1162dc741734327a3f31492277f0c5ba3988c62f`, restricted to the workspace-manifest newline correction and affected documentation/source metadata. Read the brief, implementer report, prepared diff, actual Git diff, complete surrounding archive tests, native failure evidence, local RED/GREEN logs and commit-hook log. The checkout was reviewed read-only; no tests were rerun and no agents were dispatched.
+
+### Strengths
+
+- `tests/test_sdist.py:73` isolates CRLF/LF equivalence to the generated workspace manifest. Its assertion changes only CRLF sequences, preserving all other content differences without TOML reserialization, trimming or broad whitespace normalization.
+- `tests/test_sdist.py:81` preserves the exactly-one-member and readable-member guards. The copied API, vendored Cargo manifest, Rust, README and license comparisons remain byte-exact (`tests/test_sdist.py:36`), and the real-archive fixture and untracked-output exclusion check are unchanged.
+- The parametrized cases compare independently read real archive content with checkout-derived expectations and retain one case per execution. The separate isolated CRLF reproduction addresses the checkout/build condition that the parametrization alone does not recreate.
+- The supplied logs show the native newline mismatch at byte 9; local reproduction shows one failure and 26 passes before correction, then 28 passes in both normal and explicitly CRLF checkouts afterward. No new native Windows success is claimed.
+- Current development/release guidance and the knowledge page accurately describe the limited exception. The refreshed source hash matches `tests/test_sdist.py` (`7c0957d23274130c5b4083a9421cb6a0cdd5d0f84c2585562459f9658dfd116c`), its relative link/footnote resolves, and its base-revision plus modified-working-tree provenance is consistent with this change. Historical records remain intact.
+
+### Issues
+
+#### Critical (Must Fix)
+
+None.
+
+#### Important (Should Fix)
+
+None.
+
+#### Minor (Nice to Have)
+
+None.
+
+### Recommendations
+
+No additional changes are required by this focused review.
+
+### Declined to judge
+
+- The seven original issue implementations and whole-branch runtime behavior: explicitly outside this follow-up review and already independently reviewed.
+- Whether the corrected revision passes a new hosted Windows run: that execution remains controller-owned and pending; the local CRLF evidence is sufficient to assess this correction but is not hosted-run evidence.
+- Future Maturin behavior beyond this observed newline rewrite: no new packaging/runtime policy is introduced, and the existing exact-content assertions will expose additional transformations.
+
+### Assessment
+
+**Ready to merge? Yes**, for the scoped CI correction.
+
+**Reasoning:** The change directly addresses the demonstrated CRLF/LF mismatch while preserving the required archive membership, copied-file byte integrity and exclusion guarantees. The documentation matches the implemented contract, and the recorded real-artifact RED/GREEN evidence supports the correction without implying a native rerun result.
+
+Controller dispositions for the review scope exclusions: the completed whole-branch review remains the evidence for the unchanged runtime; a new hosted Windows execution is required and will be performed after push; future Maturin transformations remain subject to the existing exact-content regression assertions and require investigation if they fail. No finding is deferred.
