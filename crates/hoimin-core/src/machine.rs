@@ -1,8 +1,10 @@
 mod selection;
+#[cfg(test)]
+mod stop_tests;
 use selection::OrderedCandidatePhase;
 pub use selection::{RunSelection, RunSelectionError};
 
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 
 use thiserror::Error;
 
@@ -1100,7 +1102,21 @@ impl RunState {
             );
             self.flags.scheduling.candidate_exhausted = true;
         }
+        // The selection owns request order; borrow one temporary index for this merge.
+        let requested_ranks: Option<HashMap<&str, usize>> =
+            self.selection.ordered_ids().map(|ids| {
+                ids.iter()
+                    .enumerate()
+                    .map(|(rank, id)| {
+                        #[cfg(test)]
+                        stop_tests::record_requested_id_visit();
+                        (id.as_str(), rank)
+                    })
+                    .collect()
+            });
         stopped.sort_by_key(|candidate| {
+            #[cfg(test)]
+            stop_tests::record_rank_query();
             let candidate = match candidate {
                 StoppedCandidate::NotStarted(candidate)
                 | StoppedCandidate::SyntheticNotStarted(candidate, _)
@@ -1108,9 +1124,9 @@ impl RunState {
                 | StoppedCandidate::SyntheticFinished(candidate, _) => candidate,
                 StoppedCandidate::Finished(result) => &result.candidate,
             };
-            self.selection
-                .ordered_state()
-                .and_then(|ordered| ordered.ids.iter().position(|id| id == &candidate.id))
+            requested_ranks
+                .as_ref()
+                .and_then(|ranks| ranks.get(candidate.id.as_str()).copied())
                 .unwrap_or_else(|| usize::try_from(candidate.sequence).unwrap_or(usize::MAX))
         });
         self.stopped_candidates = stopped.into();

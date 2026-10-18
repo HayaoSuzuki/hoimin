@@ -1066,6 +1066,74 @@
         "--",
         "--exact"
       ]
+    },
+    {
+      "id": "ordered-stop-rank-initial-2000",
+      "status": "active",
+      "metric": "operations",
+      "related_issue": 997,
+      "scope": "N=2000, 64-byte IDs, worker plus queued remainder; no existing stopped. Actual production stop transition visits requested IDs exactly N times to prepare ranks; at most 4*N sort-key queries on this sorted/rotated shape. Hash byte/comparison/collision costs, allocations, sorting and Collecting transfer costs excluded; no wall-time or whole-CLI bound.",
+      "args": [
+        "test",
+        "-p",
+        "hoimin-core",
+        "--lib",
+        "machine::stop_tests::ordered_stop_rank_work_initial_2000",
+        "--",
+        "--exact",
+        "--nocapture"
+      ]
+    },
+    {
+      "id": "ordered-stop-rank-initial-4000",
+      "status": "active",
+      "metric": "operations",
+      "related_issue": 997,
+      "scope": "N=4000, 64-byte IDs, worker plus queued remainder; no existing stopped. Actual production stop transition visits requested IDs exactly N times to prepare ranks; at most 4*N sort-key queries on this sorted/rotated shape. Hash byte/comparison/collision costs, allocations, sorting and Collecting transfer costs excluded; no wall-time or whole-CLI bound.",
+      "args": [
+        "test",
+        "-p",
+        "hoimin-core",
+        "--lib",
+        "machine::stop_tests::ordered_stop_rank_work_initial_4000",
+        "--",
+        "--exact",
+        "--nocapture"
+      ]
+    },
+    {
+      "id": "ordered-stop-rank-repeated-2000",
+      "status": "active",
+      "metric": "operations",
+      "related_issue": 997,
+      "scope": "N=2000, 64-byte IDs, worker plus existing stopped; no queued remainder. Actual production stop transition visits requested IDs exactly N times to prepare ranks; at most 4*N sort-key queries on this sorted/rotated shape. Hash byte/comparison/collision costs, allocations, sorting and Collecting transfer costs excluded; no wall-time or whole-CLI bound.",
+      "args": [
+        "test",
+        "-p",
+        "hoimin-core",
+        "--lib",
+        "machine::stop_tests::ordered_stop_rank_work_repeated_2000",
+        "--",
+        "--exact",
+        "--nocapture"
+      ]
+    },
+    {
+      "id": "ordered-stop-rank-repeated-4000",
+      "status": "active",
+      "metric": "operations",
+      "related_issue": 997,
+      "scope": "N=4000, 64-byte IDs, worker plus existing stopped; no queued remainder. Actual production stop transition visits requested IDs exactly N times to prepare ranks; at most 4*N sort-key queries on this sorted/rotated shape. Hash byte/comparison/collision costs, allocations, sorting and Collecting transfer costs excluded; no wall-time or whole-CLI bound.",
+      "args": [
+        "test",
+        "-p",
+        "hoimin-core",
+        "--lib",
+        "machine::stop_tests::ordered_stop_rank_work_repeated_4000",
+        "--",
+        "--exact",
+        "--nocapture"
+      ]
     }
   ],
   "lean": {
