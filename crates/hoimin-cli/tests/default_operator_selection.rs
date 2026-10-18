@@ -6,9 +6,8 @@ use std::ffi::OsString;
 use std::path::Path;
 
 use hoimin_cli::plan::PlanManifest;
-use hoimin_core::MutationOperatorSelection;
 
-const PROMOTED: [&str; 11] = [
+const OPT_OUT_OPERATORS: [&str; 11] = [
     "statement_delete",
     "integer_literal_neighbor",
     "augmented_to_assignment",
@@ -68,7 +67,7 @@ async fn plan(root: &Path, selection: &[&str]) -> serde_json::Value {
 }
 
 #[tokio::test]
-async fn default_candidates_are_opt_out_and_saved_legacy_plans_stay_legacy() {
+async fn current_default_candidates_are_individually_excludable() {
     let root = tempfile::tempdir().unwrap();
     let source = "from decimal import Decimal\nfrom http import HTTPStatus\ndef amount(x): return Decimal(x)\ndef factory(x): return Decimal.from_float(x)\ndef status(x): return HTTPStatus(x)\ndef f(x, y):\n    print('message')\n    x += 3\n    while x < y:\n        x += 1\n    z = int(x)\n    return x, y\ndef recent(text) -> str:\n    return text.strip()\ndef segment(x):\n    return f'prefix:{x}'\n";
     std::fs::write(root.path().join("subject.py"), source).unwrap();
@@ -84,7 +83,7 @@ async fn default_candidates_are_opt_out_and_saved_legacy_plans_stay_legacy() {
                     && c["original"] == original)
         );
     }
-    for operator in PROMOTED {
+    for operator in OPT_OUT_OPERATORS {
         assert!(
             candidates.iter().any(|c| c["operator"] == operator),
             "missing {operator}"
@@ -112,42 +111,6 @@ async fn default_candidates_are_opt_out_and_saved_legacy_plans_stay_legacy() {
             descriptors(&expected)
         );
     }
-    let names = manifest.normalized_config.operators.names().join(",");
-    let explicit = plan(root.path(), &["--operators", &names]).await;
-    assert_eq!(explicit["candidates"], default["candidates"]);
-    let legacy = plan(
-        root.path(),
-        &[
-            "--operators",
-            &MutationOperatorSelection::all_legacy().names().join(","),
-        ],
-    )
-    .await;
-    let excluded = plan(root.path(), &["--exclude-operators", &PROMOTED.join(",")]).await;
-    assert_eq!(excluded["candidates"], legacy["candidates"]);
-    assert!(legacy["candidates"].as_array().unwrap().len() < candidates.len());
-    let only_strings = plan(root.path(), &["--operators", "string_literal_empty"]).await;
-    assert_eq!(only_strings["candidates"].as_array().unwrap().len(), 1);
-    assert_eq!(
-        only_strings["candidates"][0]["operator"],
-        "string_literal_empty"
-    );
-
-    // Simulate a pre-promotion plan: explicit serialized legacy selection, no new IDs.
-    let path = root.path().join("legacy-plan.json");
-    std::fs::write(&path, serde_json::to_vec(&legacy).unwrap()).unwrap();
-    let report = cli(vec![
-        "hoimin".into(),
-        "verify".into(),
-        path.into_os_string(),
-        "--top".into(),
-        "1".into(),
-        "--format".into(),
-        "json".into(),
-    ])
-    .await;
-    assert_eq!(report["baseline"]["termination"]["Exit"], 0);
-    assert_eq!(report["summary"]["counts"]["survived"], 1);
     assert_eq!(
         std::fs::read_to_string(root.path().join("subject.py")).unwrap(),
         source
@@ -155,63 +118,61 @@ async fn default_candidates_are_opt_out_and_saved_legacy_plans_stay_legacy() {
 }
 
 #[tokio::test]
-async fn excluding_recent_defaults_recovers_and_verifies_previous_fifty_selection() {
+async fn explicit_subset_exclusions_do_not_add_default_candidates() {
     let root = tempfile::tempdir().unwrap();
-    let source = "def clean(text) -> str:\n    return text.strip() + \"!\"\n";
-    std::fs::write(root.path().join("subject.py"), source).unwrap();
-    let mut previous = MutationOperatorSelection::all_legacy().names();
-    previous.extend(PROMOTED[..7].iter().map(ToString::to_string));
-    assert_eq!(previous.len(), 50);
-    let old = plan(root.path(), &["--operators", &previous.join(",")]).await;
-    let opt_out = plan(
+    std::fs::write(root.path().join("subject.py"), "value = left == 'text'\n").unwrap();
+
+    let selected = plan(
         root.path(),
         &[
+            "--operators",
+            "compare_eq_ne,string_literal_empty",
             "--exclude-operators",
-            "method_call_remove,function_body_return_constant,string_segment_empty,stdlib_conversion_call_remove",
+            "string_literal_empty",
         ],
     )
     .await;
+
     assert_eq!(
-        old["normalized_config"]["operators"],
-        opt_out["normalized_config"]["operators"]
+        selected["normalized_config"]["operators"],
+        serde_json::json!(["compare_eq_ne"])
     );
-    assert_eq!(old["candidates"], opt_out["candidates"]);
-    let current = plan(root.path(), &[]).await;
-    for name in ["method_call_remove", "function_body_return_constant"] {
-        assert!(
-            current["candidates"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|c| c["operator"] == name)
-        );
-        assert!(
-            !old["candidates"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|c| c["operator"] == name)
-        );
-    }
-    // Observe the prepared configuration as well as execution compatibility.
-    let path = root.path().join("previous-plan.json");
-    std::fs::write(&path, serde_json::to_vec(&old).unwrap()).unwrap();
+    let candidates = selected["candidates"].as_array().unwrap();
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0]["operator"], "compare_eq_ne");
+    assert_eq!(candidates[0]["original"], "==");
+    assert_eq!(candidates[0]["replacement"], "!=");
+}
+
+#[tokio::test]
+async fn saved_explicit_subset_prepares_and_verifies_without_expansion() {
+    let root = tempfile::tempdir().unwrap();
+    let source = "def clean(text) -> str:\n    return text.strip() + \"!\"\n";
+    std::fs::write(root.path().join("subject.py"), source).unwrap();
+    let selected = plan(
+        root.path(),
+        &["--operators", "method_call_remove,binary_add_sub"],
+    )
+    .await;
+    assert_eq!(
+        selected["normalized_config"]["operators"],
+        serde_json::json!(["binary_add_sub", "method_call_remove"])
+    );
+    assert_eq!(selected["candidates"].as_array().unwrap().len(), 2);
+    let path = root.path().join("selected-plan.json");
+    std::fs::write(&path, serde_json::to_vec(&selected).unwrap()).unwrap();
+
     let prepared = hoimin_cli::plan::prepare_verify(
         &path,
-        &[old["candidates"][0]["id"].as_str().unwrap().to_owned()],
+        &[selected["candidates"][0]["id"].as_str().unwrap().to_owned()],
         hoimin_cli::cli::OutputFormat::Json,
     )
     .await
     .unwrap();
-    let expected: std::collections::BTreeSet<_> = previous.into_iter().collect();
+
     assert_eq!(
-        prepared
-            .config()
-            .operators
-            .names()
-            .into_iter()
-            .collect::<std::collections::BTreeSet<_>>(),
-        expected
+        prepared.config().operators.names(),
+        ["binary_add_sub", "method_call_remove"]
     );
     let report = cli(vec![
         "hoimin".into(),
