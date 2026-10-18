@@ -10,8 +10,8 @@ use hoimin_core::{
     PreflightCompleted, ProcessFinished, ProcessOutputState, ProcessTermination, RawRunConfig,
     RawRunLimits, ReadCandidate, RemainingBudgetObserved, ReportSequence, ReservationId,
     ResourceMode, ResultPersisted, RunConfig, RunEffect, RunEvent, RunFingerprint, RunPhase,
-    RunState, SessionFinished, SessionLoadOutcome, SessionLoaded, SessionResumeRef, SessionStarted,
-    StartRequested, StoredResult, StoredResultLoaded, TargetSlice, TargetsResolved,
+    RunSelection, RunState, SessionFinished, SessionLoadOutcome, SessionLoaded, SessionResumeRef,
+    SessionStarted, StartRequested, StoredResult, StoredResultLoaded, TargetSlice, TargetsResolved,
     VerificationSelection, WorkerCreated, WorkerReset, transition,
 };
 use proptest::prelude::*;
@@ -284,11 +284,12 @@ fn baseline_success_requests_restoration_without_performing_io() {
 
 #[test]
 fn top_verification_observes_budget_after_baseline_restoration() {
-    let initial_state = RunState::new("run-1", fixture_config(), test_resource_control())
-        .with_verification_selection(
-            VerificationSelection::top(30, 30, hoimin_core::VerificationTopPolicy::Strict, false)
-                .unwrap(),
-        );
+    let initial_state = RunState::with_selection(
+        "run-1",
+        fixture_config(),
+        ordered_selection((1..=30).map(|id| format!("m{id}")).collect()),
+        test_resource_control(),
+    );
     let (state, effects) = waiting_for_baseline_from(initial_state);
     let baseline_id = effect_id(find_effect(&effects, |effect| {
         matches!(effect, RunEffect::RunBaseline(_))
@@ -321,8 +322,12 @@ fn top_verification_observes_budget_after_baseline_restoration() {
 
 #[test]
 fn explicit_verification_skips_budget_observation() {
-    let initial_state = RunState::new("run-1", fixture_config(), test_resource_control())
-        .with_verification_selection(VerificationSelection::candidate_ids(30, 30, false).unwrap());
+    let initial_state = RunState::with_selection(
+        "run-1",
+        fixture_config(),
+        explicit_selection((1..=30).map(|id| format!("m{id}"))),
+        test_resource_control(),
+    );
     let (state, effects) = waiting_for_baseline_from(initial_state);
     let baseline_id = effect_id(find_effect(&effects, |effect| {
         matches!(effect, RunEffect::RunBaseline(_))
@@ -4065,10 +4070,10 @@ fn multiple_target_files_are_analyzed_in_order_before_candidate_replay() {
 #[test]
 fn filtered_analysis_advances_across_nonfinal_targets_before_receiving_a_spool() {
     let (state, effects) = transition(
-        RunState::with_candidate_filter(
+        RunState::with_selection(
             "run-1",
             fixture_config(),
-            BTreeSet::from(["m1_selected".to_owned()]),
+            explicit_selection(BTreeSet::from(["m1_selected".to_owned()])),
             test_resource_control(),
         ),
         RunEvent::StartRequested(StartRequested),
@@ -4454,6 +4459,7 @@ enum ScheduleFilter {
     All,
     Explicit,
     Ordered,
+    Sample,
 }
 
 #[derive(Debug)]
@@ -4554,21 +4560,21 @@ impl ScheduleHarness {
             .rev()
             .map(|candidate| candidate.id.clone())
             .collect();
-        let state = match filter {
-            ScheduleFilter::All => RunState::new("schedule-run", config, resource_control),
-            ScheduleFilter::Explicit => RunState::with_candidate_filter(
-                "schedule-run",
-                config,
-                candidate_ids.iter().cloned().collect(),
-                resource_control,
-            ),
-            ScheduleFilter::Ordered => RunState::with_ordered_candidate_filter(
-                "schedule-run",
-                config,
-                candidate_ids,
-                resource_control,
-            ),
+        let selection = match filter {
+            ScheduleFilter::All => RunSelection::all(),
+            ScheduleFilter::Explicit => explicit_selection(candidate_ids),
+            ScheduleFilter::Ordered => ordered_selection(candidate_ids),
+            ScheduleFilter::Sample => RunSelection::ordered(
+                candidate_ids.clone(),
+                VerificationSelection::sample(
+                    candidate_count,
+                    hoimin_core::VerificationSampling::new(100, 42, candidate_ids).unwrap(),
+                )
+                .unwrap(),
+            )
+            .unwrap(),
         };
+        let state = RunState::with_selection("schedule-run", config, selection, resource_control);
         let (state, effects) = transition(state, RunEvent::StartRequested(StartRequested)).unwrap();
         let mut harness = Self {
             state,
@@ -5507,11 +5513,12 @@ fn waiting_for_baseline_from(initial_state: RunState) -> (RunState, Vec<RunEffec
 }
 
 fn waiting_for_top_budget_observation() -> (RunState, Vec<RunEffect>) {
-    let initial_state = RunState::new("run-1", fixture_config(), test_resource_control())
-        .with_verification_selection(
-            VerificationSelection::top(30, 30, hoimin_core::VerificationTopPolicy::Strict, false)
-                .unwrap(),
-        );
+    let initial_state = RunState::with_selection(
+        "run-1",
+        fixture_config(),
+        ordered_selection((1..=30).map(|id| format!("m{id}")).collect()),
+        test_resource_control(),
+    );
     let (state, effects) = waiting_for_baseline_from(initial_state);
     let baseline_id = effect_id(find_effect(&effects, |effect| {
         matches!(effect, RunEffect::RunBaseline(_))
@@ -5826,20 +5833,20 @@ fn waiting_for_successful_cleanup() -> (RunState, hoimin_core::Cleanup) {
 }
 
 fn waiting_for_filtered_analysis(candidate_ids: BTreeSet<String>) -> (RunState, Vec<RunEffect>) {
-    let initial_state = RunState::with_candidate_filter(
+    let initial_state = RunState::with_selection(
         "run-1",
         fixture_config(),
-        candidate_ids,
+        explicit_selection(candidate_ids),
         test_resource_control(),
     );
     waiting_for_selected_analysis(initial_state, 1)
 }
 
 fn waiting_for_ordered_analysis(candidate_ids: Vec<String>) -> (RunState, Vec<RunEffect>) {
-    let initial_state = RunState::with_ordered_candidate_filter(
+    let initial_state = RunState::with_selection(
         "run-1",
         fixture_config(),
-        candidate_ids,
+        ordered_selection(candidate_ids),
         test_resource_control(),
     );
     waiting_for_selected_analysis(initial_state, 1)
@@ -5851,13 +5858,13 @@ fn waiting_for_ordered_analysis_with_jobs(
 ) -> (RunState, Vec<RunEffect>) {
     let mut raw = fixture_raw_config();
     raw.limits.jobs = usize::try_from(jobs).unwrap();
-    let initial_state = RunState::with_ordered_candidate_filter(
+    let initial_state = RunState::with_selection(
         "run-1",
         RunConfig::try_from(raw)
             .unwrap()
             .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
             .unwrap(),
-        candidate_ids,
+        ordered_selection(candidate_ids),
         test_resource_control(),
     );
     waiting_for_selected_analysis(initial_state, jobs)
@@ -5938,7 +5945,22 @@ fn waiting_for_selected_analysis(
     )
     .unwrap();
     assert_eq!(emitted, Vec::new());
-    complete_baseline_restoration(state, &effects)
+    let (state, effects) = complete_baseline_restoration(state, &effects);
+    if let Some(RunEffect::ObserveRemainingBudget(observe)) = effects
+        .iter()
+        .find(|effect| matches!(effect, RunEffect::ObserveRemainingBudget(_)))
+    {
+        transition(
+            state,
+            RunEvent::RemainingBudgetObserved(RemainingBudgetObserved {
+                id: observe.id,
+                remaining: Duration::from_hours(24),
+            }),
+        )
+        .unwrap()
+    } else {
+        (state, effects)
+    }
 }
 
 fn waiting_for_session_candidate(resume: bool) -> (RunState, Vec<RunEffect>) {
@@ -6285,41 +6307,66 @@ fn test_resource_control() -> hoimin_core::ResourceControl {
     }
 }
 
-#[test]
-fn sample_cancellation_and_deadline_keep_provenance_and_incomplete_results() {
-    for event in [RunEvent::CancellationRequested, RunEvent::DeadlineReached] {
-        let selection = VerificationSelection::sample(
-            2,
-            hoimin_core::VerificationSampling::new(100, 42, vec!["m2".into(), "m1".into()])
-                .unwrap(),
-        )
-        .unwrap();
-        let mut harness = ScheduleHarness::new(2, 1, ScheduleFilter::Ordered, false, vec![0]);
-        harness.state = harness.state.with_verification_selection(selection.clone());
-        harness.complete_until(|effect| matches!(effect, RunEffect::ApplyMutation(_)));
-        harness.stop(event);
-        let harness = harness.finish(&[]);
-        let summary = harness
-            .output_events
-            .iter()
-            .find_map(|(_, event)| match event {
-                OutputEvent::RunFinished(summary) => Some(summary),
-                _ => None,
-            })
+macro_rules! sample_stop_provenance {
+    ($name:ident, $event:expr, $exit:literal) => {
+        #[test]
+        fn $name() {
+            // Arrange: the sample is checked before StartRequested in the harness.
+            let selection = VerificationSelection::sample(
+                2,
+                hoimin_core::VerificationSampling::new(100, 42, vec!["m2".into(), "m1".into()])
+                    .unwrap(),
+            )
             .unwrap();
-        assert!(!summary.complete);
-        assert_ne!(summary.exit_code, 0);
-        assert_eq!(summary.counts.killed, 0);
-        assert_eq!(summary.counts.not_run, 2);
-        assert_eq!(summary.verification_selection.as_ref(), Some(&selection));
-        assert!(
-            harness
-                .ledger
-                .values()
-                .all(|status| *status == MutationStatus::NotRun)
-        );
-    }
+            let mut harness = ScheduleHarness::new(2, 1, ScheduleFilter::Sample, false, vec![0]);
+            harness.complete_until(|effect| matches!(effect, RunEffect::ApplyMutation(_)));
+
+            // Act.
+            harness.stop($event);
+            let harness = harness.finish(&[]);
+
+            // Assert: stopping cannot replace the original sample or omit its owned results.
+            let summary = harness
+                .output_events
+                .iter()
+                .find_map(|(_, event)| match event {
+                    OutputEvent::RunFinished(summary) => Some(summary),
+                    _ => None,
+                })
+                .unwrap();
+            let started = harness
+                .output_events
+                .iter()
+                .find_map(|(_, event)| match event {
+                    OutputEvent::RunStarted(started) => Some(started),
+                    _ => None,
+                })
+                .unwrap();
+            assert!(!summary.complete);
+            assert_eq!(summary.exit_code, $exit);
+            assert_eq!(summary.counts.killed, 0);
+            assert_eq!(summary.counts.not_run, 2);
+            assert_eq!(started.verification_selection.as_ref(), Some(&selection));
+            assert_eq!(summary.verification_selection.as_ref(), Some(&selection));
+            assert!(
+                harness
+                    .ledger
+                    .values()
+                    .all(|status| *status == MutationStatus::NotRun)
+            );
+        }
+    };
 }
+sample_stop_provenance!(
+    sample_cancellation_preserves_provenance,
+    RunEvent::CancellationRequested,
+    130
+);
+sample_stop_provenance!(
+    sample_deadline_preserves_provenance,
+    RunEvent::DeadlineReached,
+    4
+);
 
 fn complete_baseline_restoration(
     state: RunState,
@@ -6547,4 +6594,161 @@ fn baseline_restoration_precedes_empty_analysis_finalization() {
         effects.as_slice(),
         [RunEffect::VerifyOriginals(_)]
     ));
+}
+
+// Fixtures enter the same checked boundary as production and derive counts from
+// their selected IDs; tests can no longer attach provenance after starting.
+fn explicit_selection(ids: impl IntoIterator<Item = String>) -> RunSelection {
+    let ids: BTreeSet<_> = ids.into_iter().collect();
+    let metadata =
+        VerificationSelection::candidate_ids(ids.len().max(1), ids.len(), false).unwrap();
+    RunSelection::explicit(ids, metadata).unwrap()
+}
+
+fn ordered_selection(ids: Vec<String>) -> RunSelection {
+    let count = ids.iter().collect::<BTreeSet<_>>().len();
+    let metadata = VerificationSelection::top(
+        count.max(1),
+        count,
+        hoimin_core::VerificationTopPolicy::Strict,
+        false,
+    )
+    .unwrap();
+    RunSelection::ordered(ids, metadata).unwrap()
+}
+
+macro_rules! completed_selection_provenance {
+    ($name:ident, $filter:ident, $mode:expr, [$first:literal, $second:literal]) => {
+        #[test]
+        fn $name() {
+            // Arrange.
+            let harness = ScheduleHarness::new(2, 1, ScheduleFilter::$filter, false, vec![0]);
+            // Act.
+            let harness = harness.finish(&[]);
+            // Assert: report provenance agrees with actual dispatch, including streaming order.
+            let ids: Vec<_> = harness
+                .output_events
+                .iter()
+                .filter_map(|(_, event)| match event {
+                    OutputEvent::MutantStarted(started) => Some(started.mutant_id.as_str()),
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(ids, [$first, $second]);
+            let started = harness
+                .output_events
+                .iter()
+                .find_map(|(_, event)| match event {
+                    OutputEvent::RunStarted(started) => Some(&started.verification_selection),
+                    _ => None,
+                })
+                .unwrap();
+            let summary = harness
+                .output_events
+                .iter()
+                .find_map(|(_, event)| match event {
+                    OutputEvent::RunFinished(summary) => Some(summary),
+                    _ => None,
+                })
+                .unwrap();
+            assert_eq!(started.as_ref().map(VerificationSelection::mode), $mode);
+            assert_eq!(started, &summary.verification_selection);
+            assert_eq!(summary.counts.killed, 2);
+            assert_eq!(summary.counts.not_run, 0);
+        }
+    };
+}
+completed_selection_provenance!(all_dispatch_matches_report, All, None, ["m1", "m2"]);
+completed_selection_provenance!(
+    explicit_dispatch_matches_report,
+    Explicit,
+    Some(hoimin_core::VerificationSelectionMode::CandidateIds),
+    ["m1", "m2"]
+);
+completed_selection_provenance!(
+    top_dispatch_matches_report,
+    Ordered,
+    Some(hoimin_core::VerificationSelectionMode::Top),
+    ["m2", "m1"]
+);
+completed_selection_provenance!(
+    sample_dispatch_matches_report,
+    Sample,
+    Some(hoimin_core::VerificationSelectionMode::Sample),
+    ["m2", "m1"]
+);
+
+#[test]
+fn explicit_streaming_ignores_a_repeated_discovered_id() {
+    // Arrange: the same spool ID appears after both unique selected candidates.
+    let mut harness = ScheduleHarness::new(2, 1, ScheduleFilter::Explicit, false, vec![0]);
+    harness.candidates.push(harness.candidates[0].clone());
+
+    // Act.
+    let harness = harness.finish(&[]);
+
+    // Assert: matched history prevents duplicate execution and duplicate counts.
+    let ids: Vec<_> = harness
+        .output_events
+        .iter()
+        .filter_map(|(_, event)| match event {
+            OutputEvent::MutantStarted(started) => Some(started.mutant_id.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(ids, ["m1", "m2"]);
+    assert_eq!(harness.state.summary().killed, 2);
+}
+
+#[test]
+fn sample_observes_budget_only_after_baseline_restoration() {
+    // Arrange.
+    let selection = RunSelection::ordered(
+        vec!["m2".into(), "m1".into()],
+        VerificationSelection::sample(
+            2,
+            hoimin_core::VerificationSampling::new(100, 42, vec!["m2".into(), "m1".into()])
+                .unwrap(),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let initial = RunState::with_selection(
+        "run-1",
+        fixture_config(),
+        selection,
+        test_resource_control(),
+    );
+    let (state, effects) = waiting_for_baseline_from(initial);
+    let baseline_id = effect_id(find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::RunBaseline(_))
+    }));
+
+    // Act.
+    let (state, effects) = transition(
+        state,
+        RunEvent::BaselineFinished(process_finished(baseline_id, ProcessTermination::Exit(0))),
+    )
+    .unwrap();
+
+    // Assert: no observation is issued while the baseline workspace still needs reset.
+    assert_eq!(state.phase(), RunPhase::BaselineRestoration);
+    assert!(
+        !effects
+            .iter()
+            .any(|effect| matches!(effect, RunEffect::ObserveRemainingBudget(_)))
+    );
+    let (_, restored) = complete_baseline_restoration(state, &effects);
+    assert_eq!(
+        restored
+            .iter()
+            .filter(|effect| matches!(effect, RunEffect::ObserveRemainingBudget(_)))
+            .count(),
+        1
+    );
+    assert!(
+        !restored
+            .iter()
+            .any(|effect| matches!(effect, RunEffect::AnalyzeFile(_)))
+    );
 }

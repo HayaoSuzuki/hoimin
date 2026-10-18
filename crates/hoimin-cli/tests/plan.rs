@@ -16,10 +16,7 @@ use hoimin_cli::target::git::{ResolveGitChanges, handle_git};
 use hoimin_cli::{
     analyzer::discover_targets,
     cli::{OutputFormat, ParsedCommand, TopSelectionPolicy, VerifySelection, parse_from},
-    plan::{
-        PlanManifest, RankedPlanCandidate, ResolvedVerifySelection, create, prepare_verify,
-        prepare_verify_selection,
-    },
+    plan::{PlanManifest, RankedPlanCandidate, create, prepare_verify, prepare_verify_selection},
     shell,
     target::TargetHandler,
 };
@@ -340,8 +337,8 @@ async fn plans_for_new_operator_families_pass_verify() {
         .unwrap_or_else(|error| panic!("{selector} plan failed verification: {error}"));
 
         assert_eq!(
-            verified.selection().clone(),
-            ResolvedVerifySelection::ExplicitCandidates(BTreeSet::from([candidate_id]))
+            verified.selection().candidate_ids(),
+            Some(&BTreeSet::from([candidate_id]))
         );
         assert!(!marker.exists());
     }
@@ -1366,8 +1363,7 @@ macro_rules! verify_reordered_schema {
             let verified = prepare_verify(&path, std::slice::from_ref(&id), OutputFormat::Json)
                 .await.unwrap();
 
-            assert_eq!(verified.selection(),
-                &ResolvedVerifySelection::ExplicitCandidates(BTreeSet::from([id])));
+            assert_eq!(verified.selection().candidate_ids(), Some(&BTreeSet::from([id])));
             assert!(!marker.exists());
         })*
     };
@@ -1466,7 +1462,11 @@ async fn verified_metrics_override_preserves_checked_execution_and_preview() {
     .unwrap();
     let mut expected_config = verified.config().clone();
     let expected_selection = verified.selection().clone();
-    let expected_metadata = verified.verification_selection().clone();
+    let expected_metadata = verified
+        .selection()
+        .verification_selection()
+        .unwrap()
+        .clone();
     let expected_preview = verified.preview().clone();
     let destination =
         camino::Utf8PathBuf::from_path_buf(project.path.join("metrics.json")).unwrap();
@@ -1476,7 +1476,10 @@ async fn verified_metrics_override_preserves_checked_execution_and_preview() {
 
     assert_eq!(updated.config(), &expected_config);
     assert_eq!(updated.selection(), &expected_selection);
-    assert_eq!(updated.verification_selection(), &expected_metadata);
+    assert_eq!(
+        updated.selection().verification_selection().unwrap(),
+        &expected_metadata
+    );
     assert_eq!(updated.preview(), &expected_preview);
     assert!(!marker.exists());
 }
@@ -1766,8 +1769,8 @@ async fn verify_deduplicates_requested_ids_and_rejects_max_mutants_overflow() {
         .await
         .unwrap();
     assert_eq!(
-        verified.selection().clone(),
-        ResolvedVerifySelection::ExplicitCandidates(BTreeSet::from([first.clone()]))
+        verified.selection().candidate_ids(),
+        Some(&BTreeSet::from([first.clone()]))
     );
     assert_eq!(verified.config().output.format, CoreOutputFormat::Human);
     assert_eq!(
@@ -1797,8 +1800,8 @@ async fn truncated_plan_accepts_a_contained_candidate() {
         .unwrap();
 
     assert!(matches!(
-        verified.selection().clone(),
-        ResolvedVerifySelection::ExplicitCandidates(ref ids) if ids.len() == 1
+        verified.selection().candidate_ids(),
+        Some(ids) if ids.len() == 1
     ));
     assert_eq!(verified.config().output.format, CoreOutputFormat::Jsonl);
     assert!(!marker.exists());
@@ -1830,7 +1833,13 @@ async fn truncated_plan_accepts_a_retained_candidate_from_a_later_file() {
     .await
     .unwrap();
 
-    assert!(verified.verification_selection().plan_truncated());
+    assert!(
+        verified
+            .selection()
+            .verification_selection()
+            .unwrap()
+            .plan_truncated()
+    );
     assert!(!marker.exists());
 }
 
@@ -1860,8 +1869,8 @@ async fn verify_accepts_a_requested_candidate_from_a_later_file() {
     .unwrap();
 
     assert_eq!(
-        verified.selection().clone(),
-        ResolvedVerifySelection::ExplicitCandidates(BTreeSet::from([candidate.id.clone()]))
+        verified.selection().candidate_ids(),
+        Some(&BTreeSet::from([candidate.id.clone()]))
     );
     assert!(!marker.exists());
 }
@@ -1974,14 +1983,24 @@ async fn verify_top_resolves_the_saved_rank_prefix_and_retained_scope() {
     .unwrap();
 
     assert_eq!(
-        verified.selection().clone(),
-        ResolvedVerifySelection::RankedCandidates(expected)
+        verified.selection().ordered_ids(),
+        Some(expected.as_slice())
     );
     assert_eq!(
-        verified.verification_selection().scope(),
+        verified
+            .selection()
+            .verification_selection()
+            .unwrap()
+            .scope(),
         VerifySelectionScope::RetainedCandidates
     );
-    assert!(!verified.verification_selection().plan_truncated());
+    assert!(
+        !verified
+            .selection()
+            .verification_selection()
+            .unwrap()
+            .plan_truncated()
+    );
     assert!(!marker.exists());
 }
 
@@ -2009,14 +2028,24 @@ async fn verify_top_above_a_truncated_plan_selects_every_retained_candidate() {
     .unwrap();
 
     assert_eq!(
-        verified.selection().clone(),
-        ResolvedVerifySelection::RankedCandidates(expected)
+        verified.selection().ordered_ids(),
+        Some(expected.as_slice())
     );
     assert_eq!(
-        verified.verification_selection().scope(),
+        verified
+            .selection()
+            .verification_selection()
+            .unwrap()
+            .scope(),
         VerifySelectionScope::RetainedCandidates
     );
-    assert!(verified.verification_selection().plan_truncated());
+    assert!(
+        verified
+            .selection()
+            .verification_selection()
+            .unwrap()
+            .plan_truncated()
+    );
     assert!(!marker.exists());
 }
 
@@ -2078,11 +2107,15 @@ async fn verify_top_diverse_round_robins_equal_score_candidates_without_mutating
     .unwrap();
 
     assert_eq!(
-        verified.selection().clone(),
-        ResolvedVerifySelection::RankedCandidates(expected)
+        verified.selection().ordered_ids(),
+        Some(expected.as_slice())
     );
     assert_eq!(
-        verified.verification_selection().policy(),
+        verified
+            .selection()
+            .verification_selection()
+            .unwrap()
+            .policy(),
         VerificationSelectionPolicy::FileRoundRobinV1
     );
     assert_eq!(std::fs::read(&path).unwrap(), before);
@@ -2131,11 +2164,15 @@ async fn verify_top_diverse_does_not_cross_score_tiers() {
     .unwrap();
 
     assert_eq!(
-        verified.selection().clone(),
-        ResolvedVerifySelection::RankedCandidates(expected)
+        verified.selection().ordered_ids(),
+        Some(expected.as_slice())
     );
     assert_eq!(
-        verified.verification_selection().policy(),
+        verified
+            .selection()
+            .verification_selection()
+            .unwrap()
+            .policy(),
         VerificationSelectionPolicy::FileRoundRobinV1
     );
     assert_eq!(std::fs::read(&path).unwrap(), before);
@@ -3320,10 +3357,7 @@ async fn fixed_batch_partition_covers_120_candidates_without_overriding_limits()
                 .await
                 .unwrap();
             assert_eq!(verified.config().limits, manifest.normalized_config.limits);
-            let ResolvedVerifySelection::RankedCandidates(ids) = verified.selection().clone()
-            else {
-                panic!("ranked selection");
-            };
+            let ids = verified.selection().ordered_ids().unwrap().to_vec();
             assert_eq!(ids.len(), count.parse::<usize>().unwrap());
             batches.push(ids);
         }
@@ -3367,9 +3401,29 @@ async fn fixed_batch_bounds_preserve_truncation_and_reject_invalid_ranges() {
     let suffix = prepare_verify_selection(&path, &selection(usize::MAX, 1), OutputFormat::Json)
         .await
         .unwrap();
-    assert!(suffix.verification_selection().plan_truncated());
-    assert_eq!(suffix.verification_selection().requested(), usize::MAX);
-    assert_eq!(suffix.verification_selection().selected(), 1);
+    assert!(
+        suffix
+            .selection()
+            .verification_selection()
+            .unwrap()
+            .plan_truncated()
+    );
+    assert_eq!(
+        suffix
+            .selection()
+            .verification_selection()
+            .unwrap()
+            .requested(),
+        usize::MAX
+    );
+    assert_eq!(
+        suffix
+            .selection()
+            .verification_selection()
+            .unwrap()
+            .selected(),
+        1
+    );
     assert_eq!(suffix.config().limits, manifest.normalized_config.limits);
     for offset in [2, 3, usize::MAX] {
         let error = prepare_verify_selection(&path, &selection(1, offset), OutputFormat::Json)
