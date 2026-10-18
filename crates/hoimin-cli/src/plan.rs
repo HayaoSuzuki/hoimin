@@ -25,6 +25,8 @@ pub use preview::VerifyPreview;
 mod ranking;
 #[cfg(test)]
 mod ranking_tests;
+#[cfg(test)]
+mod review_tests;
 mod sampling;
 mod selection;
 #[cfg(test)]
@@ -60,6 +62,18 @@ pub(crate) fn read_for_review(path: &Path) -> Result<ReadOnlyPlan, PlanError> {
         })?;
     let manifest = decode_manifest(&bytes)?;
     validate_header(&manifest)?;
+    // Header validation rejects duplicate paths before this borrowed index is built.
+    #[cfg(test)]
+    review_tests::SOURCE_WORK.with_borrow_mut(|work| work.index_builds += 1);
+    let sources: BTreeMap<&Utf8Path, &str> = manifest
+        .sources
+        .iter()
+        .map(|source| {
+            #[cfg(test)]
+            review_tests::SOURCE_WORK.with_borrow_mut(|work| work.source_visits += 1);
+            (source.path.as_path(), source.hash.as_str())
+        })
+        .collect();
     let project = std::fs::canonicalize(&manifest.normalized_config.selection.root)
         .map_err(|error| invalid(error.to_string()))?;
     let project = Utf8PathBuf::from_path_buf(project)
@@ -70,11 +84,9 @@ pub(crate) fn read_for_review(path: &Path) -> Result<ReadOnlyPlan, PlanError> {
         if id.as_str() != candidate.id {
             return Err(invalid("candidate id does not match its descriptor".into()));
         }
-        if !manifest
-            .sources
-            .iter()
-            .any(|source| source.path == candidate.path && source.hash == candidate.file_hash)
-        {
+        #[cfg(test)]
+        review_tests::SOURCE_WORK.with_borrow_mut(|work| work.membership_queries += 1);
+        if sources.get(candidate.path.as_path()).copied() != Some(candidate.file_hash.as_str()) {
             return Err(invalid(
                 "candidate source record is missing or inconsistent".into(),
             ));
