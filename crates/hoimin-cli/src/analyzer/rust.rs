@@ -3012,11 +3012,25 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         signed
     }
 
+    // Match candidate admission at the expression start, without pruning child walks.
+    fn expression_selected(&self, expression: &Expr) -> bool {
+        if self.request.lines.is_empty() && self.request.symbols.is_empty() {
+            return true;
+        }
+        let start = usize::from(expression.start());
+        let (line, _) = self.line_index.line_and_column(self.source, start);
+        let symbol = self.facts.scope_at(start);
+        selected(self.request, line, symbol.as_deref())
+    }
+
     fn collect_condition_clause_delete(&mut self, condition: &Expr) {
         let Expr::BoolOp(boolean) = condition else {
             return;
         };
-        if boolean.values.len() < 2 || !deletion::can_remove(condition, self.cancelled) {
+        if boolean.values.len() < 2
+            || !self.expression_selected(condition)
+            || !deletion::can_remove(condition, self.cancelled)
+        {
             return;
         }
         let separator = match boolean.op {
@@ -3061,6 +3075,11 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                 replacement.push(')');
             }
             replacement.push(')');
+            #[cfg(test)]
+            whole_expression_selection_tests::record_replacement(
+                MutationOperator::ConditionClauseDelete,
+                &replacement,
+            );
             self.add_candidate(
                 condition.range(),
                 replacement,
@@ -3973,6 +3992,7 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
                 && self.runtime_role == RuntimeRole::Value
                 && !self.in_pattern
                 && !self.string_exclusions.contains_alias(expression.range())
+                && self.expression_selected(expression)
             {
                 container_elements::emit(
                     expression,
@@ -8384,3 +8404,7 @@ mod nested_loop_transfer_tests;
 #[cfg(test)]
 #[path = "rust/finally_transfer_tests.rs"]
 mod nested_finally_transfer_tests;
+
+#[cfg(test)]
+#[path = "rust/whole_expression_selection_tests.rs"]
+mod whole_expression_selection_tests;

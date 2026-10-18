@@ -81,6 +81,11 @@ pub(super) fn emit(
             }
         }
         replacement.push(close);
+        #[cfg(test)]
+        super::whole_expression_selection_tests::record_replacement(
+            super::MutationOperator::ContainerElementDelete,
+            &replacement,
+        );
         candidate(replacement);
     }
 }
