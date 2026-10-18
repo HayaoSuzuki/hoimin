@@ -65,6 +65,14 @@ The strict documentation-site build and emitted-link validation passed. The firs
 4. Execution and limits: inspected the logs and distinguished setup failures, genuine RED tests, successful reruns and platform exclusions. Corrected baseline totals from 3,306 printed successes to 3,304 top-level cases because two nested child summaries were duplicated. Recorded the Python bytecode MemoryError without attributing it to an unobserved exact depth or claiming a peak RSS. Cargo remains serialized and the scratch output is isolated.
 5. Documents and deliverables: reconciled canonical guides, C4 and six knowledge concepts against committed evidence. Checked 49 knowledge Markdown structures, 15 new source hashes, unique references, 404 local links, the three new anchors and existing inbound links. Existing concept indexes already reach the updated pages. The strict site build passed; the PR draft states the migration and separates local checks from pending platform CI.
 
+## CI follow-up: own-package license exceptions
+
+PR #990 dependency-policy CI rejected `Elastic-2.0` for the repository's 0.13.0 packages because their exceptions still ended at `<0.13.0`. Only the `hoimin-core` and `hoimin-cli` exception ranges changed from `>=0.12.0, <0.13.0` to `>=0.13.0, <0.14.0`. Their names and license allowlists, every other exception, source policy, dependencies and lockfiles remain unchanged; `Elastic-2.0` is still absent from the global allowlist.
+
+With the CI-pinned `cargo-deny 0.20.2`, both `Cargo.toml` and `fuzz/Cargo.toml` reproduced the failure before the change (exit 4: `licenses FAILED, sources ok`) and passed afterward (exit 0: `licenses ok, sources ok`). Each invocation used `--workspace --all-features --locked --config deny.toml check --deny warnings licenses sources`, with no target filter. No compilation or broad test-suite rerun was needed for this configuration correction.
+
+Five self-review passes checked the reproduced cause and package versions, stable version boundaries, the complete parsed policy diff, exact RED/GREEN commands and results, and the final diff/documentation/hooks. The parsed TOML comparison permits only the two version-field changes; 0.13.x stable releases are included and 0.12.x/0.14.0 are excluded. The four normal Rust hooks skip these policy/documentation paths under their existing file filters.
+
 ## Limits
 
 Local execution was on macOS. Linux cgroup and native Windows behavior require their platform jobs. Lean correspondence covers the modeled lifecycle transitions, not filesystem or operating-system correctness. Candidate allocation measurements are not a process RSS bound. Finally work bounds apply to the measured homogeneous input family; distinct environments and class contexts can require more work. Cancellation remains cooperative.
