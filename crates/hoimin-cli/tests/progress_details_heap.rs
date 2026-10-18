@@ -1,3 +1,6 @@
+#[path = "support/candidate_identity.rs"]
+mod candidate_identity;
+
 use hoimin_cli::{
     cli::{ProgressArgs, ProgressOutputFormat},
     progress,
@@ -58,10 +61,11 @@ fn detail_allocations_do_not_scale_with_candidate_body_size() {
                     .map(|index| {
                         let mut event = template.clone();
                         event["sequence"] = json!(index + 4);
-                        event["candidate"]["id"] = json!(format!("candidate-{index:02}"));
                         event["candidate"]["sequence"] = json!(index + 1);
+                        event["candidate"]["span"]["start"] = json!(index);
                         event["candidate"]["original"] = json!("a".repeat(size));
                         event["candidate"]["replacement"] = json!("b".repeat(size));
+                        candidate_identity::assign_id(&mut event["candidate"]);
                         event["outcome"]["executed"]["termination"] = json!({"Exit": exit_code});
                         event
                     })

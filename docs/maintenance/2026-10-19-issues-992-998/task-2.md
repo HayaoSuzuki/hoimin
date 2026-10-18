@@ -213,3 +213,96 @@ All Cargo and hook commands use `CARGO_TARGET_DIR=/tmp/hoimin-issues-992-998/tar
 
 Task 8 owns resumed workspace integration. This follow-up makes no claim about
 tests beyond the focused target or Task 8's later integration work.
+
+## Second integration follow-up: public-reader heap fixtures
+
+Task 8's completed all-features workspace run exposed two remaining valid-input
+fixtures with synthetic IDs:
+`progress_details_heap::detail_allocations_do_not_scale_with_candidate_body_size`
+and `progress_heap::progress_heap_peak_is_independent_of_history_length`.
+Both failed with the common reader's identity-conflict diagnostic. RED evidence:
+`/tmp/hoimin-issues-992-998/task8-workspace-all-features.log`, lines 2113–2147.
+Task 8 reported 2,879 passed, 2 failed and 33 ignored across 167 summaries;
+the other targets completed successfully.
+
+Both fixture builders now call the existing genuine-ID helper after arranging
+their candidate identity fields. The details fixture gives its twelve
+otherwise identical candidates distinct span starts; before/after reports
+retain matching ID sets and twelve killed-to-survived regressions. The history
+fixture already varies span and replacement by index. It now hashes those fields
+instead of fabricating `mutant-N`. Helper payload copies occur during fixture
+setup, before either allocator window; the history fixture still drops its
+document before measurement.
+
+The measurement boundaries, twelve-candidate body sizes (32 and 262,144 bytes),
+history fixture sizes (500, 1,000 and 2,000 mutants), history lengths
+(2, 4, 8 and 16), details limits, output assertions and memory ceilings retain
+their existing values. Production code has no changes in this follow-up.
+
+### Requirements second follow-up review (five passes)
+
+1. Read both named failures in the completed workspace log and traced each
+   synthetic ID to the corresponding fixture builder.
+2. Rechecked #992's shared-reader contract; valid memory probes must use genuine
+   IDs rather than bypassing identity validation.
+3. Preserved the details probe's twelve regressions, two retained transitions
+   and ten omitted transitions for both body sizes.
+4. Preserved history lengths, mutant counts, saturation expectations, duplicate
+   path warnings and the eager-retention control.
+5. Kept the follow-up to two fixtures and this durable record; Task 8 retains
+   ownership of its unstaged and untracked integration files.
+
+### Design second follow-up review (five passes)
+
+1. Reused `candidate_identity::assign_id` as a setup utility; no production
+   identity or reader API needs changes.
+2. Distinguished details candidates by span start, an identity field excluded
+   from content comparison; payload sizes and content remain the same.
+3. Kept the same candidate index-to-identity mapping in both details reports,
+   ensuring status changes still compare through matching IDs.
+4. Located all new hashing and helper cloning before `ACTIVE` or heap tracking
+   starts; measured public reads and comparisons retain their boundaries.
+5. Retained independent numeric ceilings (64 KiB details overhead, 512 KiB
+   history growth) and the eager control's assertion against that same bound.
+
+### Implementation second follow-up review (five passes)
+
+1. Read the two diffs and confirmed they only import the helper, distinguish
+   details spans and assign IDs after identity fields are final.
+2. Checked that outcome termination changes follow hashing, since status is
+   outside candidate identity and both reports must share IDs.
+3. Checked the history fixture still serializes and drops the setup document
+   before measured reads, including the eager-control read path.
+4. Inspected the named heap-helper risk: `progress_jsonl_heap` clears mutants,
+   `progress_compare_heap` injects comparison-only inputs, and `report_heap`
+   exercises a writer rather than the public reader. None needs this repair.
+5. Confirmed allocator helpers, production files, fixture sizes, memory bounds
+   and semantic assertions have no changes; no unrelated refactor was added.
+
+### Tests second follow-up review (five passes)
+
+1. Used the two existing RED tests as regressions; retained their finite size
+   parameterization and arrange/measure/assert structure.
+2. Ran both complete test targets with all features enabled and captured
+   allocation output with `--nocapture`.
+3. Checked details overhead is 3,906 bytes at both body sizes, below the
+   unchanged 65,536-byte ceiling, with all transition assertions passing.
+4. Checked the 2,000-mutant history peaks: 6,018,330 bytes at history 2 and
+   6,021,032 bytes at history 16. Details history 16 passed the same bound;
+   the eager history-8 control reached 17,544,726 bytes and exceeded it.
+5. Checked the saved all-features run for the neighboring heap targets' success.
+   With only test fixtures changed, this follow-up requires no workspace rerun.
+
+### Second follow-up verification
+
+Cargo and hooks use the same bounded offline environment listed above,
+including `PREK_CONCURRENCY=1` and `CARGO_NET_OFFLINE=true`.
+
+- `cargo test --offline -p hoimin-cli --all-features --test progress_details_heap
+  --test progress_heap -- --nocapture`: both targets passed (1 + 1 tests),
+  0 failed, 0 ignored. Log:
+  `/tmp/hoimin-issues-992-998/task-2-integration-heap-fix.log`.
+- `cargo fmt --all -- --check`: passed. Log:
+  `/tmp/hoimin-issues-992-998/task-2-integration-heap-fmt.log`.
+- Commit hooks remain enabled. Task 8 owns final integration evidence; this
+  follow-up does not repeat the completed full workspace run.
