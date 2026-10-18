@@ -73,6 +73,21 @@ With the CI-pinned `cargo-deny 0.20.2`, both `Cargo.toml` and `fuzz/Cargo.toml` 
 
 Five self-review passes checked the reproduced cause and package versions, stable version boundaries, the complete parsed policy diff, exact RED/GREEN commands and results, and the final diff/documentation/hooks. The parsed TOML comparison permits only the two version-field changes; 0.13.x stable releases are included and 0.12.x/0.14.0 are excluded. The four normal Rust hooks skip these policy/documentation paths under their existing file filters.
 
+## CI follow-up: standalone Fuzz analyzer wiring
+
+PR #990's bounded Fuzz job failed with `E0432`: its standalone analyzer binary included shipping `rust.rs` without the `crate::analyzer::visitor` namespace required by the corrected walker. A local all-target build reproduced that error; supplying the shared visitor then exposed `E0599` for the remaining `all_legacy()` call. Both failures were observed before their respective fixes. The target now uses the same small visitor namespace as the existing analyzer integration tests, directly loading shipping `types.rs`, `visitor.rs` and `rust.rs`. It starts from current defaults before the unchanged explicit inclusion of every valid selector. Shipping implementation, dependencies, default policy and saved explicit selections are unchanged.
+
+With `cargo-fuzz 0.13.2` and `nightly-2026-10-08`, `cargo fuzz build` passed for all seven binaries with default AddressSanitizer, debug assertions and overflow checks. Four syntax-validated if/elif and finally fixtures passed individual replays across Full and Focused profiles. A fixed-seed, 1,024-run analyzer smoke passed using existing seeds and those fixtures, retaining cancellation, candidate validation/order/limit and bounded-prefix assertions. Inputs, generated corpus, artifacts and the 501 MiB target stayed in the owned scratch directory. The smoke produced no crash artifacts; macOS `atos` symbolization warnings limited coverage-symbol display but did not report an AddressSanitizer failure. Fuzz formatting and diff checks passed. Existing normal Rust hooks exclude Fuzz paths; no shipping-suite rebuild was needed for this standalone-source correction.
+
+Five distinct self-review passes were completed at each stage:
+
+| Stage | Pass 1 | Pass 2 | Pass 3 | Pass 4 | Pass 5 |
+| --- | --- | --- | --- | --- | --- |
+| Requirements/design | Trace all shipping visitor imports | Compare existing standalone analyzer consumers | Check current default and selector semantics | Audit all seven Fuzz targets and parser patch | Read every cancellation/candidate/prefix assertion |
+| Planning | Limit edits to the Fuzz consumer | Check relative paths and namespace resolution | Match pinned all-binary ASan build | Check offline resources and normal hook filters | Bound smoke runs and cover both fixture profiles |
+| Implementation | Compare the complete callback with the base | Resolve all three includes to shipping sources | Check one shared visitor and no runtime imports | Confirm removed API absent from every target | Check source-only diff and unchanged manifests/locks |
+| Verification | Inspect both genuine compiler REDs | Confirm final all-binary build and seven executables | Check valid fixtures and four successful replays | Inspect 1,024-run completion and empty artifact directory | Check formatting, final diff, resource size and diagnostic limits |
+
 ## Limits
 
 Local execution was on macOS. Linux cgroup and native Windows behavior require their platform jobs. Lean correspondence covers the modeled lifecycle transitions, not filesystem or operating-system correctness. Candidate allocation measurements are not a process RSS bound. Finally work bounds apply to the measured homogeneous input family; distinct environments and class contexts can require more work. Cancellation remains cooperative.
