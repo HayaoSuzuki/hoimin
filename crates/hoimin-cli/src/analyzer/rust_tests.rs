@@ -21,6 +21,42 @@ const BINDING_FLOW_CORPUS: &str =
     include_str!("../../../../formal/HoiminOracle/corpus/binding-flow-joins.jsonl");
 
 #[test]
+fn elif_named_binding_preserves_local_builtin_shadowing() {
+    let source = "def selected(flag, values, replacement):\n    if flag:\n        pass\n    elif not (list := replacement):\n        pass\n    return list(values)\n";
+
+    let snapshot = name_resolution_test_snapshot(source, "list(values)", "list").unwrap();
+
+    assert_eq!(snapshot.resolution, "shadowed");
+    assert_eq!(snapshot.start, source.find("list(values)").unwrap());
+}
+
+#[test]
+fn elif_not_forms_analyze_without_unselected_candidates() {
+    for clauses in 0..=4 {
+        for first_not in ["", "not "] {
+            for elif_not in ["", "not "] {
+                for nested in [false, true] {
+                    let mut source = format!("if {first_not}first:\n    pass\n");
+                    for clause in 0..clauses {
+                        writeln!(source, "elif {elif_not}condition{clause}:\n    pass").unwrap();
+                    }
+                    if nested {
+                        source.push_str("else:\n    if inner:\n        pass\n    elif not other:\n        pass\n");
+                    }
+
+                    let output =
+                        analyze_with_only_operator(&source, MutationOperator::BooleanLiteral);
+
+                    assert!(output.candidates.is_empty(), "{source}");
+                    assert!(output.diagnostics.is_empty(), "{source}");
+                    assert!(!output.truncated, "{source}");
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn string_segments_respect_candidate_caps_and_target_selection() {
     let source =
         "def first(x):\n return f'prefix:{x}:suffix'\ndef second(x):\n return 'prefix' 'suffix'\n";

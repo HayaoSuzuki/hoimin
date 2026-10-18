@@ -3,8 +3,12 @@
 #[path = "../src/analyzer/types.rs"]
 mod types;
 pub use types::{AnalyzerCandidate, AnalyzerDiagnostic, AnalyzerDiagnosticCode};
+#[path = "../src/analyzer/visitor.rs"]
+pub(crate) mod visitor;
+
 mod analyzer {
     pub use crate::types::AnalyzerDiagnosticCode;
+    pub(crate) use crate::visitor;
 }
 #[path = "../src/analyzer/rust.rs"]
 mod rust;

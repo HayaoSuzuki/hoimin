@@ -33,6 +33,98 @@ use hoimin_core::{
 const TEST_MIN_FREE_SPACE: &str = "1B";
 
 #[tokio::test]
+async fn plan_accepts_elif_not_without_selected_candidates() {
+    let project = Project::new();
+    std::fs::write(
+        project.path.join("src/calc.py"),
+        "if a:\n    pass\nelif not b:\n    pass\n",
+    )
+    .unwrap();
+    let marker = project.path.join("baseline-ran");
+    let args = plan_args(
+        &project,
+        ["--file", "src/calc.py", "--operators", "boolean_literal"],
+        &marker,
+    );
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
+
+    let exit = hoimin_cli::run_with_writers(args, stdout.clone(), stderr.clone()).await;
+
+    assert_eq!(exit, 0, "{}", String::from_utf8_lossy(&stderr.snapshot()));
+    let manifest: PlanManifest = serde_json::from_slice(&stdout.snapshot()).unwrap();
+    assert_eq!(manifest.candidates, []);
+    assert!(!marker.exists());
+}
+
+#[tokio::test]
+async fn elif_plan_preserves_boolean_descriptors_ids_and_source_order() {
+    let source =
+        "if a:\n    first = True\nelif not b:\n    second = False\nelse:\n    last = True\n";
+    let project = Project::new_with_source(source);
+    let file_hash = blake3::hash(source.as_bytes()).to_hex().to_string();
+    let expected: Vec<_> = [
+        ("True", "False", 2_u32, 12_u32),
+        ("False", "True", 4, 13),
+        ("True", "False", 6, 11),
+    ]
+    .into_iter()
+    .map(|(original, replacement, line, column)| {
+        let start: usize = source
+            .split_inclusive('\n')
+            .take(usize::try_from(line - 1).unwrap())
+            .map(str::len)
+            .sum::<usize>()
+            + usize::try_from(column).unwrap();
+        hoimin_core::CandidateDescriptor {
+            schema_version: hoimin_core::CANDIDATE_SCHEMA_VERSION,
+            path: "src/calc.py".into(),
+            span: hoimin_core::ByteSpan {
+                start: u64::try_from(start).unwrap(),
+                length: u64::try_from(original.len()).unwrap(),
+            },
+            original: original.to_owned(),
+            replacement: replacement.to_owned(),
+            operator: "boolean_literal".to_owned(),
+            line,
+            column,
+            symbol: None,
+            file_hash: file_hash.clone(),
+        }
+    })
+    .collect();
+
+    let (_, manifest, marker) = write_plan_manifest(
+        &project,
+        &["--file", "src/calc.py", "--operators", "boolean_literal"],
+    )
+    .await;
+
+    let actual: Vec<_> = manifest
+        .candidates
+        .iter()
+        .map(|ranked| hoimin_core::CandidateDescriptor::from(&ranked.candidate))
+        .collect();
+
+    assert_eq!(actual, expected);
+    for (ranked, descriptor) in manifest.candidates.iter().zip(&expected) {
+        assert_eq!(
+            ranked.id,
+            hoimin_core::stable_mutant_id(&hoimin_core::CandidateIdentity::from(descriptor))
+                .as_str()
+        );
+        let mut mutated = source.to_owned();
+        let start = usize::try_from(descriptor.span.start).unwrap();
+        mutated.replace_range(
+            start..start + usize::try_from(descriptor.span.length).unwrap(),
+            &descriptor.replacement,
+        );
+        assert!(ruff_python_parser::parse_module(&mutated).is_ok());
+    }
+    assert!(!marker.exists());
+}
+
+#[tokio::test]
 async fn source_scoped_plan_preserves_candidates_as_unrelated_files_grow() {
     let mut candidates = Vec::new();
     for count in [0, 1_000, 5_000] {

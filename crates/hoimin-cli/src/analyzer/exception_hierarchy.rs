@@ -1,8 +1,8 @@
 //! Conservative lexical identities for project-local Python exception classes.
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::analyzer::visitor::{self, Visitor};
 use camino::{Utf8Path, Utf8PathBuf};
-use ruff_python_ast::visitor::{self, Visitor};
 use ruff_python_ast::{Expr, ExprContext, ModModule, Pattern, Stmt};
 use ruff_text_size::{Ranged, TextRange};
 

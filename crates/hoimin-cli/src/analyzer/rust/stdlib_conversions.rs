@@ -5,7 +5,7 @@
 //! another alias. This scan deliberately rejects even uncertain possible aliases;
 //! external monkey patching and import-path shadowing remain outside the model.
 use super::{AnalysisCancelled, callable_imports::CallableImports};
-use ruff_python_ast::visitor::{self, Visitor};
+use crate::analyzer::visitor::{self, Visitor};
 use ruff_python_ast::{Expr, ExprContext, ModModule, Stmt};
 
 const MODULES: &[&str] = &[
@@ -111,6 +111,10 @@ struct FactorySafetyScan<'a, F> {
 }
 
 impl<'ast, F: Fn() -> bool> Visitor<'ast> for FactorySafetyScan<'_, F> {
+    fn visit_stmt(&mut self, statement: &'ast Stmt) {
+        visitor::walk_stmt(self, statement);
+    }
+
     fn visit_body(&mut self, body: &'ast [Stmt]) {
         for statement in body {
             if self.cancelled_observed || (self.cancelled)() {
@@ -143,5 +147,36 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for FactorySafetyScan<'_, F> {
             }
         }
         visitor::walk_expr(self, expression);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::Cell;
+
+    #[test]
+    fn factory_scan_does_not_repeat_elif_cancellation_work_in_nested_suites() {
+        let source =
+            "while outer:\n    if first:\n        pass\n    elif not second:\n        pass\n";
+        let parsed = ruff_python_parser::parse_module(source).unwrap();
+        let imports = CallableImports::build(parsed.syntax(), &|| false, MODULES).unwrap();
+        let calls = Cell::new(0);
+        let cancelled = || {
+            calls.set(calls.get() + 1);
+            calls.get() > 8
+        };
+        let mut scan = FactorySafetyScan {
+            imports: &imports,
+            cancelled: &cancelled,
+            cancelled_observed: false,
+            escaped_classes: [false; 2],
+        };
+
+        scan.visit_body(&parsed.syntax().body);
+
+        // Four suite statements and four expressions (including unary not).
+        assert_eq!(calls.get(), 8);
+        assert!(!scan.cancelled_observed);
     }
 }

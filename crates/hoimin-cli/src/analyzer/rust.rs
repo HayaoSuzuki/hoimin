@@ -4,6 +4,7 @@ use std::cmp::Ordering;
 use std::collections::{BTreeSet, BinaryHeap, HashMap, HashSet};
 use std::ops::Range;
 
+use crate::analyzer::visitor::{self, Visitor};
 use camino::Utf8Path;
 use hoimin_core::{
     ByteSpan, LineRange, MutationOperator, MutationOperatorSelection, MutationProfile,
@@ -11,10 +12,9 @@ use hoimin_core::{
 };
 use ruff_python_ast::identifier;
 use ruff_python_ast::token::TokenKind;
-use ruff_python_ast::visitor::Visitor;
 use ruff_python_ast::{
     CmpOp, Expr, ExprBinOp, ExprCall, ExprContext, ExprList, ExprSlice, ExprSubscript, ExprTuple,
-    ModModule, Number, Operator, Pattern, Singleton, Stmt, TypeParam, TypeParams, UnaryOp, visitor,
+    ModModule, Number, Operator, Pattern, Singleton, Stmt, TypeParam, TypeParams, UnaryOp,
 };
 #[cfg(test)]
 use ruff_python_parser::{parse_module, parse_unchecked_source};
@@ -5596,6 +5596,10 @@ impl<'imports> NamedBindingInvalidator<'imports> {
 }
 
 impl<'ast> Visitor<'ast> for NamedBindingInvalidator<'_> {
+    fn visit_stmt(&mut self, statement: &'ast Stmt) {
+        visitor::walk_stmt(self, statement);
+    }
+
     fn visit_expr(&mut self, expression: &'ast Expr) {
         match expression {
             Expr::Lambda(lambda) => {

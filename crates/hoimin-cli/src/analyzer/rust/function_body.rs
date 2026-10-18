@@ -1,8 +1,6 @@
 //! Own-scope eligibility and source spans for whole-function body mutations.
-use ruff_python_ast::{
-    Expr, Number, Stmt, StmtFunctionDef,
-    visitor::{self, Visitor},
-};
+use crate::analyzer::visitor::{self, Visitor};
+use ruff_python_ast::{Expr, Number, Stmt, StmtFunctionDef};
 use ruff_text_size::{Ranged, TextRange};
 
 pub(super) fn erased_range<F: Fn() -> bool>(

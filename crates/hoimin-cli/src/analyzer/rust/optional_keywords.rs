@@ -1,9 +1,7 @@
 //! Conservative same-module signatures and optional-keyword call edits.
 use super::{AnalysisCancelled, NameResolutionIndex, deletion, source_text};
-use ruff_python_ast::{
-    Expr, ExprCall, ExprContext, ModModule, Stmt,
-    visitor::{self, Visitor},
-};
+use crate::analyzer::visitor::{self, Visitor};
+use ruff_python_ast::{Expr, ExprCall, ExprContext, ModModule, Stmt};
 use ruff_text_size::{Ranged, TextRange};
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
