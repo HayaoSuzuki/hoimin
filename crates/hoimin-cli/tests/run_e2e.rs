@@ -2949,6 +2949,82 @@ impl Write for SharedBuffer {
     }
 }
 
+#[tokio::test]
+async fn baseline_generated_file_is_restored_before_mutation_and_cleaned_up() {
+    assert_baseline_generated_file_lifecycle("'generated'").await;
+}
+
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn baseline_generated_invalid_utf8_file_reaches_mutation_and_cleanup() {
+    assert_baseline_generated_file_lifecycle(r"b'g\x80'").await;
+}
+
+async fn assert_baseline_generated_file_lifecycle(python_name: &str) {
+    let project = tempfile::tempdir().unwrap();
+    let coordinator = tempfile::tempdir().unwrap();
+    let records = coordinator.path().join("records.jsonl");
+    let original = b"enabled = True\n";
+    std::fs::write(project.path().join("target.py"), original).unwrap();
+    let script = format!(
+        "import json,os; from pathlib import Path; name={python_name}; assert not os.path.lexists(name), 'baseline output was not restored'; open(name,'wb').write(b'x'); record={{'root':str(Path.cwd()),'mutant':'HOIMIN_MUTANT_ID' in os.environ}}; open({:?},'a').write(json.dumps(record)+'\\n'); from target import enabled; assert enabled",
+        records.to_string_lossy(),
+    );
+
+    let output = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
+        .args(["run", "--root"])
+        .arg(project.path())
+        .args([
+            "--file",
+            "target.py",
+            "--operators",
+            "boolean_literal",
+            "--jobs",
+            "1",
+            "--min-free-space",
+            TEST_MIN_FREE_SPACE,
+            "--allow-best-effort-memory",
+            "--",
+        ])
+        .arg(python_executable())
+        .args(["-c", &script])
+        .kill_on_drop(true)
+        .output()
+        .await
+        .unwrap();
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(0), "{stderr}");
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["baseline"]["termination"]["Exit"], 0, "{stderr}");
+    assert_eq!(report["mutants"].as_array().unwrap().len(), 1);
+    assert_eq!(mutation_outcome::status(&report["mutants"][0]), "killed");
+    assert_eq!(report["summary"]["complete"], true);
+    assert!(!stderr.contains("disk.measurement.failed"), "{stderr}");
+    assert_eq!(
+        std::fs::read(project.path().join("target.py")).unwrap(),
+        original
+    );
+    assert_eq!(std::fs::read_dir(project.path()).unwrap().count(), 1);
+    let records: Vec<serde_json::Value> = std::fs::read_to_string(records)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(records.len(), 2);
+    assert_eq!(records[0]["mutant"], false);
+    assert_eq!(records[1]["mutant"], true);
+    for record in records {
+        let root = Path::new(record["root"].as_str().unwrap());
+        assert!(!root.exists(), "owned workspace leaked: {}", root.display());
+        assert!(
+            !root.parent().unwrap().exists(),
+            "owned wrapper leaked: {}",
+            root.display()
+        );
+    }
+}
+
 #[cfg(unix)]
 #[tokio::test]
 async fn baseline_and_mutants_can_read_colon_named_workspace_fixtures() {
