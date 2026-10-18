@@ -368,6 +368,34 @@ impl CopyAllowance {
     }
 }
 
+/// Immutable admission limits; reservations remain owned by the core ledger.
+#[derive(Clone, Copy, Debug, Default)]
+pub(super) struct PreflightLimits {
+    pub(super) copy: Option<u64>,
+    pub(super) owned: Option<u64>,
+}
+
+impl PreflightLimits {
+    fn check(self, logical_bytes: u64, workers: u32) -> Result<u64, WorkspaceError> {
+        let aggregate = hoimin_core::check_workspace_copy(
+            logical_bytes,
+            workers,
+            self.copy.unwrap_or(u64::MAX),
+        )
+        .map_err(|error| match error {
+            hoimin_core::WorkspaceBudgetError::Reserve(
+                hoimin_core::ReserveError::LimitReached(limit),
+            ) => WorkspaceError::CopyAllowanceExceeded {
+                observed: limit.requested,
+                allowance: limit.available,
+            },
+            _ => WorkspaceError::CopySizeOverflow,
+        })?;
+        enforce_owned_limit(logical_bytes, u64::from(workers) + 1, self.owned)?;
+        Ok(aggregate)
+    }
+}
+
 impl WorkspacePlan {
     /// Builds a copy plan after validating the source workspace and requested capacity.
     ///
@@ -403,18 +431,18 @@ impl WorkspacePlan {
             requested_workers,
             options,
             None,
-            None,
+            PreflightLimits::default(),
             validate,
         )
     }
 
-    pub(crate) fn preflight_validated_in<E>(
+    pub(super) fn preflight_validated_in<E>(
         root: &Utf8Path,
         preflight_id: EffectId,
         requested_workers: u32,
         options: CopyOptions,
         managed_root: Option<Arc<ManagedRunRoot>>,
-        max_owned_bytes: Option<u64>,
+        limits: PreflightLimits,
         validate: impl FnOnce(&Utf8Path, &WorkspaceManifest) -> Result<(), E>,
     ) -> Result<Self, ValidatedPreflightError<E>> {
         if requested_workers == 0 {
@@ -424,18 +452,15 @@ impl WorkspacePlan {
             .map_err(|error| WorkspaceError::io("canonicalize root", root, error))?;
         let original_root =
             Utf8PathBuf::from_path_buf(canonical).map_err(|_| WorkspaceError::NonUtf8Path)?;
-        let owned_copies = u64::from(requested_workers)
-            .checked_add(1)
-            .ok_or(WorkspaceError::CopySizeOverflow)?;
-        if let Some(limit) = max_owned_bytes {
+        if limits.copy.is_some() || limits.owned.is_some() {
             let inventory_bytes = inventory_logical_bytes(&original_root, &options)?;
-            enforce_owned_limit(inventory_bytes, owned_copies, Some(limit))?;
+            limits.check(inventory_bytes, requested_workers)?;
         }
         let (manifest, diagnostics, snapshot) = create_pending_disk_snapshot(
             &original_root,
             &options,
-            owned_copies,
-            max_owned_bytes,
+            requested_workers,
+            limits,
             managed_root.as_ref(),
         )?;
         validate(&original_root, &manifest).map_err(ValidatedPreflightError::Validation)?;
@@ -448,10 +473,7 @@ impl WorkspacePlan {
             }
             .into());
         }
-        let aggregate_bytes = manifest
-            .logical_bytes()
-            .checked_mul(u64::from(requested_workers))
-            .ok_or(WorkspaceError::CopySizeOverflow)?;
+        let aggregate_bytes = limits.check(manifest.logical_bytes(), requested_workers)?;
         let snapshot = Arc::new(snapshot.finish());
         Ok(Self {
             preflight_id,
@@ -753,8 +775,8 @@ struct SnapshotWriter<'a> {
     #[cfg(test)]
     original_root: &'a Utf8Path,
     snapshot_root: &'a Utf8Path,
-    owned_copies: u64,
-    max_owned_bytes: Option<u64>,
+    requested_workers: u32,
+    limits: PreflightLimits,
     logical_bytes: u64,
     first_entries: BTreeMap<Utf8PathBuf, super::ManifestEntry>,
     files: BTreeMap<Utf8PathBuf, SnapshotFile>,
@@ -764,8 +786,8 @@ impl<'a> SnapshotWriter<'a> {
     fn new(
         original_root: &'a Utf8Path,
         snapshot_root: &'a Utf8Path,
-        owned_copies: u64,
-        max_owned_bytes: Option<u64>,
+        requested_workers: u32,
+        limits: PreflightLimits,
     ) -> Self {
         #[cfg(not(test))]
         let _ = original_root;
@@ -773,8 +795,8 @@ impl<'a> SnapshotWriter<'a> {
             #[cfg(test)]
             original_root,
             snapshot_root,
-            owned_copies,
-            max_owned_bytes,
+            requested_workers,
+            limits,
             logical_bytes: 0,
             first_entries: BTreeMap::new(),
             files: BTreeMap::new(),
@@ -814,7 +836,7 @@ impl<'a> SnapshotWriter<'a> {
             .logical_bytes
             .checked_add(initial_size)
             .ok_or(WorkspaceError::CopySizeOverflow)?;
-        enforce_owned_limit(planned, self.owned_copies, self.max_owned_bytes)?;
+        self.limits.check(planned, self.requested_workers)?;
         let destination = self.snapshot_root.join(path);
         if let Some(parent) = destination.parent() {
             fs::create_dir_all(parent).map_err(|error| {
@@ -839,16 +861,17 @@ impl<'a> SnapshotWriter<'a> {
             next_bytes = next_bytes
                 .checked_add(bytes.len() as u64)
                 .ok_or(WorkspaceError::CopySizeOverflow)?;
-            enforce_owned_limit(next_bytes, self.owned_copies, self.max_owned_bytes)?;
+            self.limits.check(next_bytes, self.requested_workers)?;
             output
                 .write_all(bytes)
-                .map_err(|error| WorkspaceError::io("write shared snapshot", path, error))
+                .map_err(|error| WorkspaceError::io("write shared snapshot", path, error))?;
+            #[cfg(test)]
+            SNAPSHOT_WRITE_METRICS.with(|metrics| {
+                let (writes, written_bytes) = metrics.get();
+                metrics.set((writes + 1, written_bytes + bytes.len() as u64));
+            });
+            Ok(())
         })?;
-        #[cfg(test)]
-        SNAPSHOT_WRITE_METRICS.with(|metrics| {
-            let (writes, written_bytes) = metrics.get();
-            metrics.set((writes + 1, written_bytes + entry.size));
-        });
         self.logical_bytes = next_bytes;
         self.first_entries.insert(path.to_owned(), entry.clone());
         self.files
@@ -878,8 +901,8 @@ impl<'a> SnapshotWriter<'a> {
 fn create_pending_disk_snapshot(
     original_root: &Utf8Path,
     options: &CopyOptions,
-    owned_copies: u64,
-    max_owned_bytes: Option<u64>,
+    requested_workers: u32,
+    limits: PreflightLimits,
     managed_root: Option<&Arc<ManagedRunRoot>>,
 ) -> Result<
     (
@@ -919,7 +942,7 @@ fn create_pending_disk_snapshot(
     }
     let root =
         Utf8PathBuf::from_path_buf(canonical_root).map_err(|_| WorkspaceError::NonUtf8Path)?;
-    let mut writer = SnapshotWriter::new(original_root, &root, owned_copies, max_owned_bytes);
+    let mut writer = SnapshotWriter::new(original_root, &root, requested_workers, limits);
 
     let (manifest, diagnostics) =
         build_manifest_with_contents(original_root, options, |path, file| {
@@ -949,6 +972,8 @@ fn create_pending_disk_snapshot(
     ))
 }
 
+#[cfg(test)]
+mod admission_tests;
 #[cfg(test)]
 mod grant_tests;
 
@@ -1047,7 +1072,10 @@ mod tests {
             1,
             CopyOptions::default(),
             Some(Arc::clone(&root)),
-            Some(10),
+            PreflightLimits {
+                owned: Some(10),
+                ..PreflightLimits::default()
+            },
             |_, _| Ok::<_, Infallible>(()),
         )
         .unwrap_err();
@@ -1100,8 +1128,11 @@ mod tests {
         let error = create_pending_disk_snapshot(
             source_root,
             &CopyOptions::default(),
-            2,
-            Some(10),
+            1,
+            PreflightLimits {
+                owned: Some(10),
+                ..PreflightLimits::default()
+            },
             Some(&root),
         )
         .unwrap_err();
@@ -1142,8 +1173,11 @@ mod tests {
             let error = create_pending_disk_snapshot(
                 source_root,
                 &CopyOptions::default(),
-                2,
-                Some(10),
+                1,
+                PreflightLimits {
+                    owned: Some(10),
+                    ..PreflightLimits::default()
+                },
                 Some(&root),
             )
             .unwrap_err();
@@ -1177,9 +1211,17 @@ mod tests {
         );
         fs::write(source.path().join("target.py"), b"123").unwrap();
 
-        let (manifest, _, snapshot) =
-            create_pending_disk_snapshot(source_root, &CopyOptions::default(), 2, Some(12), None)
-                .unwrap();
+        let (manifest, _, snapshot) = create_pending_disk_snapshot(
+            source_root,
+            &CopyOptions::default(),
+            1,
+            PreflightLimits {
+                owned: Some(12),
+                ..PreflightLimits::default()
+            },
+            None,
+        )
+        .unwrap();
 
         assert_eq!(manifest.logical_bytes(), 3);
         assert_eq!(fs::read(snapshot.root.join("target.py")).unwrap(), b"123");
@@ -1198,7 +1240,15 @@ mod tests {
             .unwrap()
             .permissions();
         let limit = 2 * (block as u64 + 1);
-        let mut writer = SnapshotWriter::new(source_root, snapshot_root, 2, Some(limit));
+        let mut writer = SnapshotWriter::new(
+            source_root,
+            snapshot_root,
+            1,
+            PreflightLimits {
+                owned: Some(limit),
+                ..PreflightLimits::default()
+            },
+        );
         let error = writer
             .write_reader(
                 Utf8Path::new("data"),
@@ -1277,7 +1327,10 @@ mod tests {
             1,
             CopyOptions::default(),
             Some(Arc::clone(&root)),
-            Some(limit),
+            PreflightLimits {
+                owned: Some(limit),
+                ..PreflightLimits::default()
+            },
             |_, _| {
                 validation_called.set(true);
                 Ok::<_, Infallible>(())
@@ -1338,7 +1391,10 @@ mod tests {
             1,
             CopyOptions::default(),
             Some(Arc::clone(&root)),
-            Some(1_024),
+            PreflightLimits {
+                owned: Some(1_024),
+                ..PreflightLimits::default()
+            },
             |_, _| Ok::<_, Infallible>(()),
         )
         .unwrap();
@@ -1520,7 +1576,15 @@ mod tests {
             blake3: blake3::hash(bytes),
         };
         reset_snapshot_write_metrics();
-        let mut writer = SnapshotWriter::new(source_root, snapshot_root, 2, None);
+        let mut writer = SnapshotWriter::new(
+            source_root,
+            snapshot_root,
+            1,
+            PreflightLimits {
+                owned: None,
+                ..PreflightLimits::default()
+            },
+        );
 
         writer.write(&entry(first_bytes), first_bytes).unwrap();
         fs::write(source.path().join("target.py"), second_bytes).unwrap();
@@ -1555,7 +1619,15 @@ mod tests {
             size: u64::try_from(bytes.len()).unwrap(),
             blake3: blake3::hash(bytes),
         };
-        let mut writer = SnapshotWriter::new(&source_root, snapshot_root, 1, None);
+        let mut writer = SnapshotWriter::new(
+            &source_root,
+            snapshot_root,
+            0,
+            PreflightLimits {
+                owned: None,
+                ..PreflightLimits::default()
+            },
+        );
         writer.write(&entry("TARGET.py"), bytes).unwrap();
 
         let error = writer.write(&entry("target.py"), bytes).unwrap_err();
@@ -1636,7 +1708,10 @@ mod tests {
             1,
             CopyOptions::default(),
             Some(Arc::clone(&root)),
-            Some(1_024),
+            PreflightLimits {
+                owned: Some(1_024),
+                ..PreflightLimits::default()
+            },
             |_, _| {
                 let snapshot = fs::read_dir(root.path())
                     .unwrap()
@@ -1690,7 +1765,10 @@ mod tests {
             1,
             CopyOptions::default(),
             Some(Arc::clone(&root)),
-            Some(1_024),
+            PreflightLimits {
+                owned: Some(1_024),
+                ..PreflightLimits::default()
+            },
             |source, _| fs::write(source.join("target.py"), b"second\n"),
         )
         .unwrap_err();
@@ -1732,7 +1810,10 @@ mod tests {
                 1,
                 CopyOptions::default(),
                 Some(Arc::clone(&root)),
-                Some(1_024),
+                PreflightLimits {
+                    owned: Some(1_024),
+                    ..PreflightLimits::default()
+                },
                 |source, _| {
                     mutate(source);
                     Ok::<_, Infallible>(())
@@ -1772,7 +1853,10 @@ mod tests {
             1,
             CopyOptions::default(),
             Some(Arc::clone(&root)),
-            Some(1_024),
+            PreflightLimits {
+                owned: Some(1_024),
+                ..PreflightLimits::default()
+            },
             |_, _| Ok::<_, Infallible>(()),
         )
         .unwrap();

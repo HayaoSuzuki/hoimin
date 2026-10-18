@@ -1387,7 +1387,8 @@ fn prepare_shell_setup_sync_in(
     )
     .with_import_roots(config.import_roots.clone())
     .with_managed_root(Arc::clone(&execution_root))
-    .with_max_owned_bytes(config.limits.max_workspace_size.get());
+    .with_max_owned_bytes(config.limits.max_workspace_size.get())
+    .with_max_copy_bytes(config.limits.max_copy_size.get());
     boundary(ShellSetupBoundary::WorkspaceCreated);
     let backend = resource_backend(&config).map_err(|error| error.to_string())?;
     boundary(ShellSetupBoundary::BackendCreated);
@@ -7526,6 +7527,34 @@ mod tests {
                 "boundary {selected:?} leaked managed roots: {residual:?}"
             );
         }
+    }
+
+    #[test]
+    fn shell_setup_passes_copy_cap_to_workspace_admission() {
+        // Arrange: this bypasses the final core reservation to test early admission.
+        let project = tempfile::tempdir().unwrap();
+        let managed_parent = tempfile::tempdir().unwrap();
+        let parent = Utf8Path::from_path(managed_parent.path()).unwrap();
+        let mut config = shell_setup_test_config(&project)
+            .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
+            .unwrap();
+        config.limits.jobs = std::num::NonZeroUsize::new(1).unwrap();
+        config.limits.max_copy_size = std::num::NonZeroU64::new(1).unwrap();
+        let mut prepared = prepare_shell_setup_sync_in(config, parent, &|_| {}).unwrap();
+
+        // Act.
+        let result = prepared
+            .workspace
+            .handle_preflight(Preflight { id: EffectId(1) });
+
+        // Assert: the source fixture contains ten bytes and there is one worker.
+        assert!(matches!(
+            result.unwrap_err().failure,
+            hoimin_core::EffectFailure::CopyLimit {
+                requested: 10,
+                allowance: 1
+            }
+        ));
     }
 
     #[test]

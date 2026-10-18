@@ -218,3 +218,96 @@ fn grant_can_release_a_reserved_preflight_even_before_any_worker_is_created() {
     release_workspace_copy(&mut ledger, &completed).unwrap();
     assert_eq!(ledger.reserved(BudgetKind::Copy), 0);
 }
+
+macro_rules! copy_admission_boundary {
+    ($name:ident, $bytes:expr, $workers:expr, $cap:expr, $want:expr) => {
+        #[test]
+        fn $name() {
+            // Arrange: expected values are literal boundary calculations.
+            let mut ledger = BudgetLedger::new(budgets($cap));
+            let preflight = PreflightCompleted {
+                id: EffectId(1),
+                per_worker_logical_bytes: $bytes,
+                requested_workers: $workers,
+                aggregate_logical_bytes: $want,
+                fingerprint: None,
+            };
+
+            // Act.
+            let admitted = hoimin_core::check_workspace_copy($bytes, $workers, $cap);
+            let grant = reserve_workspace_copy(&mut ledger, &preflight);
+
+            // Assert.
+            assert_eq!(admitted, Ok($want));
+            assert_eq!(grant.unwrap().granted_allowance(), $want);
+            assert_eq!(ledger.reserved(BudgetKind::Copy), $want);
+        }
+    };
+}
+
+copy_admission_boundary!(copy_admission_matches_grant_at_equality, 5, 3, 15, 15);
+copy_admission_boundary!(copy_admission_matches_grant_below_cap, 5, 3, 16, 15);
+copy_admission_boundary!(
+    copy_admission_matches_grant_at_u64_boundary,
+    u64::MAX,
+    1,
+    u64::MAX,
+    u64::MAX
+);
+
+#[test]
+fn copy_admission_and_grant_reject_overflow_without_reserving() {
+    // Arrange.
+    let mut ledger = BudgetLedger::new(budgets(u64::MAX));
+    let preflight = PreflightCompleted {
+        id: EffectId(1),
+        per_worker_logical_bytes: u64::MAX / 2 + 1,
+        requested_workers: 2,
+        aggregate_logical_bytes: 0,
+        fingerprint: None,
+    };
+
+    // Act.
+    let admitted = hoimin_core::check_workspace_copy(u64::MAX / 2 + 1, 2, u64::MAX);
+    let grant = reserve_workspace_copy(&mut ledger, &preflight);
+
+    // Assert.
+    assert_eq!(
+        admitted,
+        Err(hoimin_core::WorkspaceBudgetError::AggregateOverflow)
+    );
+    assert_eq!(
+        grant,
+        Err(hoimin_core::WorkspaceBudgetError::AggregateOverflow)
+    );
+    assert_eq!(ledger.reserved(BudgetKind::Copy), 0);
+}
+
+#[test]
+fn copy_admission_and_grant_reject_one_byte_over_cap() {
+    // Arrange.
+    let mut ledger = BudgetLedger::new(budgets(14));
+    let preflight = PreflightCompleted {
+        id: EffectId(1),
+        per_worker_logical_bytes: 5,
+        requested_workers: 3,
+        aggregate_logical_bytes: 15,
+        fingerprint: None,
+    };
+    let expected = hoimin_core::WorkspaceBudgetError::Reserve(ReserveError::LimitReached(
+        hoimin_core::LimitReached {
+            kind: BudgetKind::Copy,
+            requested: 15,
+            available: 14,
+        },
+    ));
+
+    // Act.
+    let admitted = hoimin_core::check_workspace_copy(5, 3, 14);
+    let grant = reserve_workspace_copy(&mut ledger, &preflight);
+
+    // Assert.
+    assert_eq!(admitted, Err(expected.clone()));
+    assert_eq!(grant, Err(expected));
+    assert_eq!(ledger.reserved(BudgetKind::Copy), 0);
+}
