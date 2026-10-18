@@ -218,10 +218,16 @@ pub(crate) fn read_report_with_fingerprint(
 }
 
 fn open_report(path: &Path) -> Result<File, ProgressError> {
-    File::open(path).map_err(|source| ProgressError::Read {
-        path: path.to_path_buf(),
-        source,
-    })
+    crate::artifacts::open_regular_file(path)
+        .and_then(|file| {
+            file.ok_or_else(|| {
+                io::Error::new(io::ErrorKind::InvalidInput, "input is not a regular file")
+            })
+        })
+        .map_err(|source| ProgressError::Read {
+            path: path.to_path_buf(),
+            source,
+        })
 }
 
 fn read_buffered_report(

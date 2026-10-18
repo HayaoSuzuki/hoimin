@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use camino::{Utf8Path, Utf8PathBuf};
@@ -460,7 +461,15 @@ fn read_manifest(path: &Path) -> Result<(Vec<PathBuf>, Vec<u8>), PlanError> {
     // the file read through it. Keep invocation paths out of the saved config.
     (|| -> std::io::Result<_> {
         let inputs = vec![std::path::absolute(path)?, std::fs::canonicalize(path)?];
-        Ok((inputs, std::fs::read(path)?))
+        let mut file = crate::artifacts::open_regular_file(path)?.ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "input is not a regular file",
+            )
+        })?;
+        let mut bytes = Vec::new();
+        file.read_to_end(&mut bytes)?;
+        Ok((inputs, bytes))
     })()
     .map_err(|error| PlanError::ManifestInvalid(format!("{}: {error}", path.display())))
 }
