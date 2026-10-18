@@ -501,7 +501,7 @@
       ]
     },
     {
-      "id": "lean-target-reads",
+      "id": "lean-target-reads-complete",
       "status": "active",
       "metric": "operations",
       "args": [
@@ -510,7 +510,22 @@
         "hoimin-cli",
         "--test",
         "lean_bounded_candidate_discovery_oracle",
-        "ordered_target_spools_match_the_lean_terminal_cases",
+        "complete_two_target_spool_matches_the_lean_terminal_case",
+        "--",
+        "--exact"
+      ]
+    },
+    {
+      "id": "lean-target-reads-truncated",
+      "status": "active",
+      "metric": "operations",
+      "args": [
+        "test",
+        "-p",
+        "hoimin-cli",
+        "--test",
+        "lean_bounded_candidate_discovery_oracle",
+        "truncated_non_final_target_spool_matches_the_lean_terminal_case",
         "--",
         "--exact"
       ]

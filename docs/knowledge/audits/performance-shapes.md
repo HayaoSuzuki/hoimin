@@ -44,12 +44,14 @@ sources:
   sha256: e11e40961e7b00a5e7781f87b0bec36123798830da6d9ebc3e2731a64cd62fce
 - id: guide
   resource: ../../performance/README.md
+  revision: 111244cf1f75b215e04580e38fbba797995f77cc
   working_tree: modified
-  sha256: 0715bf9cf5fd7b8b9e14abf4cb43a8a1e28583d3898d8b54a9b9f436075e9be8
+  sha256: a13a4f5a3174cee4a89aadc94d3857c36d3226a84939e2d0d5d2d64e6f1892c8
 - id: registry
   resource: ../../performance/shapes.json
+  revision: 111244cf1f75b215e04580e38fbba797995f77cc
   working_tree: modified
-  sha256: 91c428c662cb1b1c1d3fe25b6d7b41bd2e7567707701202a05c2b5db9db82272
+  sha256: 5202677e1fd0ec86be5be529b170045260096dccac9b2a0a4fa00e4029439ee5
 - id: design
   resource: ../../superpowers/specs/2026-09-14-issue-491-performance-shapes-design.md
   working_tree: modified

@@ -13,7 +13,7 @@
 | Output | Independently increase mutant record count and length | Report/progress allocator peaks, #463 write counts, and progress gates with 500/1,000/2,000 entries per report × 2/4/8 history lengths |
 | Workspace | Independently increase files, bytes, and workers | Separate post-creation retained-heap and preflight allocator-peak gates |
 
-The documented branch runs 26 active gates. These do not cover every performance regression shape. Register pending fixes as pending and exclude them from successful counts. After integrating a fix, check actual test names and counter locations, run the specified `args`, then mark the gate active. Relabeling alone is not verification.
+The registry declares the active gates. These do not cover every performance regression shape. Register pending fixes as pending and exclude them from successful counts. After integrating a fix, check actual test names and counter locations, run the specified `args`, then mark the gate active. Relabeling alone is not verification.
 
 ## Ordinary gates
 
@@ -43,7 +43,7 @@ The GitHub Actions `Performance measurements` workflow is manual-only. It releas
 
 ## Lean evidence
 
-The inventory's `lean` entries link existing models, proofs, generated corpora, and Rust adapters. Build the generator, run `--sensitivity`, and run `--check` sequentially with resource guards, then compare actual target reads through `lean-target-reads`. Define cases in Lean rather than editing JSONL. Existing 0/1/limit/overflow cases check prefixes and order, without guaranteeing constant memory for the entire CLI or native-stack bounds. The additional 56-case `lean.cost` corpus compares binding indexes, whole-state clones inside annotation callbacks, and actual replacement-builder counts/bytes. It covers 0/1, 7/8/9, 8/16/32 and deliberately broken paths that perform full scans, clones, and builds before filtering. Counter observations require internal seams, so these are internal fixtures; details are in the [correspondence worksheet](../superpowers/reports/2026-09-14-issue-491-cost-correspondence-worksheet.md).
+The inventory's `lean` entries link existing models, proofs, generated corpora, and Rust adapters. Build the generator, run `--sensitivity`, and run `--check` sequentially with resource guards, then compare actual target reads through the separate `lean-target-reads-complete` and `lean-target-reads-truncated` gates. Define cases in Lean rather than editing JSONL. Existing 0/1/limit/overflow cases check prefixes and order, without guaranteeing constant memory for the entire CLI or native-stack bounds. The additional 56-case `lean.cost` corpus compares binding indexes, whole-state clones inside annotation callbacks, and actual replacement-builder counts/bytes. It covers 0/1, 7/8/9, 8/16/32 and deliberately broken paths that perform full scans, clones, and builds before filtering. Counter observations require internal seams, so these are internal fixtures; details are in the [correspondence worksheet](../superpowers/reports/2026-09-14-issue-491-cost-correspondence-worksheet.md).
 
 ## Combined fix validation
 

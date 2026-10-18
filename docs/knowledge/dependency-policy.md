@@ -22,14 +22,14 @@ sources:
   sha256: 730c6d8e081922bc008daf2c52845a69ab7fe8d6447c0ee4ad4495ab9dc2c694
 - id: policy
   resource: ../dependency-policy.md
-  revision: 35c21145ccdfb6a044f9ae1dad2a5e4ff90deece
+  revision: 111244cf1f75b215e04580e38fbba797995f77cc
   working_tree: modified
-  sha256: b61ed313f9198e8095dda3c6a6f90e5aeddc52cef7b00d574a5bde68eccda713
+  sha256: da34328db07cf972ebe6e1afedfcf79f9357448db4a36c63d65eb6dd34b9f921
 - id: config
   resource: ../../deny.toml
-  revision: 35c21145ccdfb6a044f9ae1dad2a5e4ff90deece
+  revision: 111244cf1f75b215e04580e38fbba797995f77cc
   working_tree: modified
-  sha256: 40e3dab710b1c340ce7710a823dabce195330660cdfaf6f52a3bcff4f338b319
+  sha256: 39503920fe526c409ffc8bb506c4ebc8dcbfb4e686c90b5c05b5254815f071ee
 - id: workflow
   resource: ../../.github/workflows/dependency-audit.yml
   revision: 79b6bde29b05e9904c8efff59e02d0c45377d7f7
@@ -45,7 +45,7 @@ This includes normal, build, development, and other-OS dependencies; it does not
 # Allowances and exceptions
 
 Reject unapproved licenses and unknown registry/git sources.
-Limit ELv2 to `hoimin-core` and `hoimin-cli` versions `>=0.11.0, <0.12.0`,
+Limit ELv2 to `hoimin-core` and `hoimin-cli` versions `>=0.12.0, <0.13.0`,
 plus the `hoimin-fuzz` 0.0.0 harness. NCSA remains limited to libfuzzer-sys 0.4.13.
 Review local paths through repository diffs; passing automated checks does not establish safety or fulfillment of license obligations.[^policy][^config]
 

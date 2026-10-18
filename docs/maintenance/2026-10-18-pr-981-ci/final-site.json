@@ -1,0 +1,9 @@
+{
+  "command": ".venv/bin/python -m tools.docs_site --output site",
+  "reason": "Revalidate final appended follow-up report and archived review links.",
+  "chunk_id": "fcd05a",
+  "wall_time_seconds": 0.564190833,
+  "exit_code": 0,
+  "original_token_count": 0,
+  "output": ""
+}
