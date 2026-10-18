@@ -39,15 +39,33 @@ pub(crate) enum ArtifactReadError {
     Invalid(String),
 }
 
+/// Open without waiting for a FIFO writer, then validate the obtained descriptor.
+/// Input symlinks are followed; callers own any separate no-symlink policy.
+pub(crate) fn open_regular_file(path: &Path) -> std::io::Result<Option<File>> {
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        // Inspecting the path before opening would leave a replacement race.
+        options.custom_flags(libc::O_NONBLOCK);
+    }
+    let file = options.open(path)?;
+    Ok(file.metadata()?.is_file().then_some(file))
+}
+
 /// Read a regular file, bounding both the initial size and growth during reading.
 /// The caller owns format validation and its command's error presentation.
 pub(crate) fn bounded_read(path: &Path, limit: u64) -> Result<Vec<u8>, ArtifactReadError> {
-    let file = File::open(path)?;
-    if !file.metadata()?.is_file() || file.metadata()?.len() > limit {
-        return Err(ArtifactReadError::Invalid(format!(
+    let invalid = || {
+        ArtifactReadError::Invalid(format!(
             "input exceeds size limit or is not a file: {}",
             path.display()
-        )));
+        ))
+    };
+    let file = open_regular_file(path)?.ok_or_else(invalid)?;
+    if file.metadata()?.len() > limit {
+        return Err(invalid());
     }
     let mut bytes = Vec::new();
     file.take(limit + 1).read_to_end(&mut bytes)?;
@@ -77,6 +95,23 @@ mod tests {
 
             prop_assert_eq!(actual, bytes);
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn regular_file_symlink_preserves_bytes() {
+        // Arrange
+        let directory = tempfile::tempdir().unwrap();
+        let target = directory.path().join("target");
+        let link = directory.path().join("link");
+        std::fs::write(&target, b"1\xff\0").unwrap();
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+
+        // Act
+        let bytes = bounded_read(&link, 3).unwrap();
+
+        // Assert
+        assert_eq!(bytes, b"1\xff\0");
     }
 
     #[test]

@@ -11,7 +11,7 @@ use hoimin_core::{
 use super::ReviewError;
 use super::model::{ArtifactReference, ReportReference, ReviewKey, SourceState};
 use crate::artifacts::run_report::ReviewReport;
-use crate::artifacts::{READ_ONLY_ARTIFACT_LIMIT, bounded_read};
+use crate::artifacts::{READ_ONLY_ARTIFACT_LIMIT, bounded_read, open_regular_file};
 use crate::plan::ReadOnlyPlan;
 
 pub(crate) fn load_plan(path: &Path) -> Result<ReadOnlyPlan, ReviewError> {
@@ -233,7 +233,12 @@ fn validate_destination_entry(
             "store must be a regular file, not a symlink".into(),
         ));
     }
-    let store_id = file_identity(&File::open(store)?)?;
+    let Some(store_file) = open_regular_file(store)? else {
+        return Err(ReviewError::Invalid(
+            "store must be a regular file, not a symlink".into(),
+        ));
+    };
+    let store_id = file_identity(&store_file)?;
     let mut protected = vec![plan.canonical_path.clone()];
     if let Some(path) = report {
         protected.push(path.to_path_buf());
@@ -252,12 +257,14 @@ fn validate_destination_entry(
             .map(|source| plan.project.join(&source.path).into_std_path_buf()),
     );
     for path in protected {
-        match File::open(path) {
-            Ok(file) if file_identity(&file)? == store_id => {
+        match open_regular_file(&path) {
+            Ok(Some(file)) if file_identity(&file)? == store_id => {
                 return Err(ReviewError::Invalid(
                     "store aliases a protected input".into(),
                 ));
             }
+            // Nonregular protected inputs cannot alias a regular store. Source
+            // freshness separately represents them as unavailable.
             Ok(_) => (),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
             Err(error) => return Err(error.into()),

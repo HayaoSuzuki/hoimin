@@ -1570,3 +1570,33 @@ fn persisted_report_rejects_legacy_flat_artifact() {
     // Assert
     assert!(result.is_err());
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn store_destination_protects_a_symlinked_fingerprint_input() {
+    // Arrange
+    let (dir, path) = plan_fixture().await;
+    let destination = dir.path().join("reviews.sqlite3");
+    let original = b"setting = true\n";
+    std::fs::write(&destination, original).unwrap();
+    std::os::unix::fs::symlink(&destination, dir.path().join("config.toml")).unwrap();
+    let mut value: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    value["normalized_config"]["fingerprint_inputs"] = serde_json::json!([{
+        "path": "config.toml", "hash": blake3::hash(original).to_hex().to_string()
+    }]);
+    std::fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
+    let plan = super::input::load_plan(&path).unwrap();
+
+    // Act
+    let result = super::input::validate_store_destination(&destination, &plan, None);
+
+    // Assert
+    assert!(
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("store aliases a protected input")
+    );
+    assert_eq!(std::fs::read(&destination).unwrap(), original);
+}
