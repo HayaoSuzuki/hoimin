@@ -201,7 +201,7 @@ scope; it supplements this procedure rather than owning another update checklist
 
 Select the process backend before constructing `RunState`. Pass its
 `ProcessHandler::resource_control()` description as the final argument to
-`RunState::new`, `with_fingerprint`, `with_candidate_filter`, or
+`RunState::new`, `with_candidate_filter`, or
 `with_ordered_candidate_filter`. `RunStarted::minimal` also requires an explicit
 `ResourceControl` as its final argument. Rust callers using the older constructor
 signatures must supply this argument; there is no inferred or default backend.
