@@ -77,8 +77,10 @@ Source distributions include an explicit list of vendored parser build and
 provenance files from `pyproject.toml`. Keep that list synchronized when adding
 or moving vendored Rust modules; build/cache directories and scratch outputs
 must stay outside the archive. `tests/test_sdist.py` builds a real archive and
-checks the internal Python API and parser bytes, including exclusion of
-untracked outputs. It uses the declared Maturin development dependency and
+checks the internal Python API and copied parser files byte-for-byte, including
+exclusion of untracked outputs. Its `hoimin-python/Cargo.toml` check compares
+text after CRLF-to-LF normalization because Maturin normalizes that workspace
+manifest in the archive. It uses the declared Maturin development dependency and
 Cargo metadata without compiling Rust.
 
 Before reserving a new tag, CI checks that the commit descends from the

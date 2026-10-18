@@ -11,9 +11,9 @@ sources:
   sha256: dd6497bf51656c0a7cd813409a976cbe1be97a0e86f7f754a1aacce2fddf8f96
 - id: issues-992-998-sdist-archive
   resource: ../../tests/test_sdist.py
-  revision: 60dab172af34dc929edc2fb87f27b7724b7d8542
-  working_tree: untracked
-  sha256: e7f987d7b0e99373912b43a95462cb4eecf5540c5a24d99ad0fcc79adafb0e6e
+  revision: 12e80440c1daec46c0e92895b123f34ef098f913
+  working_tree: modified
+  sha256: 7c0957d23274130c5b4083a9421cb6a0cdd5d0f84c2585562459f9658dfd116c
 - id: issues-992-998-sbom-validator
   resource: ../../tools/sbom.py
   revision: 50b9c089ca73aeca2205636a2a9e1823cd244d39
@@ -68,9 +68,12 @@ For the vendored parser, record its upstream package and VCS revision, Ruff patc
 
 Source distributions explicitly include the tracked vendored parser manifest,
 Rust sources, provenance README and license required by the root Cargo patch.
-Real-archive tests compare internal Python API/parser bytes with their source
-inputs and exclude untracked build/cache/scratch outputs. The include inventory
-must be updated when vendored Rust modules are added or moved.[^issues-992-998-sdist-config][^issues-992-998-sdist-archive]
+Real-archive tests compare internal Python API and copied parser files with
+their source bytes, and exclude untracked build/cache/scratch outputs. The
+`hoimin-python/Cargo.toml` check compares text after CRLF-to-LF normalization,
+matching Maturin's archive normalization of that workspace manifest. The copied
+vendored manifest, Rust sources, README and license retain raw byte checks.
+The include inventory must be updated when vendored Rust modules are added or moved.[^issues-992-998-sdist-config][^issues-992-998-sdist-archive]
 
 # Evidence and recheck conditions
 

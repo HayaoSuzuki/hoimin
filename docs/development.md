@@ -722,8 +722,10 @@ type errors, and their acceptance tests run their own checker configuration.
 
 Pytest uses strict mode and collects from `tests/`, excluding fixture projects. The
 source-distribution tests invoke the declared Maturin module and Cargo metadata
-to build one temporary archive. They check preserved source bytes and excluded
-vendor outputs; no Rust compilation is performed by that fixture.
+to build one temporary archive. They check copied source bytes and excluded
+vendor outputs. The `hoimin-python/Cargo.toml` check permits Maturin's CRLF-to-LF
+normalization while preserving the rest of the text; copied parser files remain
+byte-exact. No Rust compilation is performed by that fixture.
 Tests use module-level functions, plain `assert`, `pytest.raises`, and
 `pytest.mark.parametrize` for independent cases. Use `tmp_path` and fixtures for
 test setup. Use the `mocker` fixture from [pytest-mock](

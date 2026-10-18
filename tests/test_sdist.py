@@ -36,7 +36,6 @@ def source_archive(tmp_path_factory: pytest.TempPathFactory) -> Path:
 @pytest.mark.parametrize(
     "member",
     [
-        "crates/hoimin-python/Cargo.toml",
         "crates/hoimin-python/src/lib.rs",
         "vendor/ruff_python_parser/Cargo.toml",
         "vendor/ruff_python_parser/README.hoimin.md",
@@ -69,3 +68,22 @@ def test_sdist_excludes_untracked_vendor_build_and_cache_outputs(
         names = archive.getnames()
 
     assert not any("/hoimin-sdist-excluded-" in name for name in names)
+
+
+@pytest.mark.parametrize("line_ending", [b"\n", b"\r\n"], ids=["lf", "crlf"])
+def test_sdist_retains_workspace_manifest_text(
+    source_archive: Path, line_ending: bytes
+) -> None:
+    member = "crates/hoimin-python/Cargo.toml"
+    expected_lf = (ROOT / member).read_bytes().replace(b"\r\n", b"\n")
+    expected = expected_lf.replace(b"\n", line_ending)
+
+    with tarfile.open(source_archive) as archive:
+        matches = [name for name in archive.getnames() if name.endswith("/" + member)]
+        assert len(matches) == 1, f"missing or duplicate sdist member: {member}"
+        source = archive.extractfile(matches[0])
+        assert source is not None
+        actual = source.read()
+
+    # Maturin rewrites workspace manifests with LF, including CRLF checkouts.
+    assert actual.replace(b"\r\n", b"\n") == expected.replace(b"\r\n", b"\n")
