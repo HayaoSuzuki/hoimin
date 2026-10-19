@@ -209,7 +209,7 @@ def test_proof_status_rejects_incomplete_targets(
     proof_project: tuple[Path, dict[str, Any]], damage: str
 ) -> None:
     root, manifest = proof_project
-    log = (EVIDENCE / "proof.log").read_text()
+    log = (EVIDENCE / "proof.log").read_text(encoding="utf-8")
     if damage == "missing_goal":
         log = log.replace("  Goal vc_project_top_budget: ✔ (1)\n", "", 1)
     elif damage == "unproved":
@@ -231,10 +231,9 @@ def test_successful_alternative_may_recover_solver_timeout(
     proof_project: tuple[Path, dict[str, Any]],
 ) -> None:
     root, manifest = proof_project
-    log = (
-        "Z3 attempt timed out; CVC5 alternative succeeded\n"
-        + (EVIDENCE / "proof.log").read_text()
-    )
+    log = "Z3 attempt timed out; CVC5 alternative succeeded\n" + (
+        EVIDENCE / "proof.log"
+    ).read_text(encoding="utf-8")
 
     result = verify_creusot.check_proof_status(root, manifest, log)
 
@@ -242,6 +241,7 @@ def test_successful_alternative_may_recover_solver_timeout(
     assert result["goals"] == 59
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX process groups required")
 def test_command_enforces_overall_deadline(tmp_path: Path) -> None:
     deadline = time.monotonic() + 0.05
 
@@ -320,6 +320,7 @@ def test_deadline_kills_child_in_separate_process_group(tmp_path: Path) -> None:
     assert not state_file.exists() or state_file.read_text().split(") ", 1)[1][0] == "Z"
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Linux session ownership required")
 def test_session_cleanup_stops_command_group_before_solver_groups(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -374,14 +375,16 @@ def test_runner_requires_three_fresh_target_results(
             for path in (cwd / "verif").rglob("*.coma"):
                 os.utime(path, None)
         elif "--only=prove" in command:
-            text = (EVIDENCE.parents[1] / target / "first" / "proof.log").read_text()
+            text = (EVIDENCE.parents[1] / target / "first" / "proof.log").read_text(
+                encoding="utf-8"
+            )
             if target == unresolved_target:
                 text = text.replace(
                     "  Goal vc_project_top_budget: ✔ (1)",
                     "  Goal vc_project_top_budget: ✘ (0)",
                     1,
                 )
-            log_path.write_text(text)
+            log_path.write_text(text, encoding="utf-8")
         else:
             log_path.write_text("fixture subprocess completed\n")
         return {"command": command, "elapsed_seconds": 0.01, "log": str(log_path)}

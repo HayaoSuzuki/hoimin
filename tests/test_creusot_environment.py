@@ -25,6 +25,9 @@ NAMES = (
     "timeout",
     "prlimit",
 )
+POSIX_SHELL = pytest.mark.skipif(
+    os.name == "nt", reason="fake proof tools are POSIX shell executables"
+)
 
 
 @pytest.fixture
@@ -123,6 +126,7 @@ def test_requires_project_root_for_proof_check(environment: Path) -> None:
     assert "project-root" in result.stderr
 
 
+@POSIX_SHELL
 def test_installation_only_check_does_not_need_a_project(environment: Path) -> None:
     (environment.parent / "project" / "why3find.json").unlink()
 
@@ -143,11 +147,13 @@ def test_installation_only_check_does_not_need_a_project(environment: Path) -> N
     assert result.returncode == 0, result.stderr
 
 
+@POSIX_SHELL
 def test_accepts_matching_executables_and_configuration(environment: Path) -> None:
     result = check(environment)
     assert result.returncode == 0, result.stderr
 
 
+@POSIX_SHELL
 @pytest.mark.parametrize(
     ("field", "value"),
     [
@@ -170,6 +176,7 @@ def test_rejects_selected_project_configuration_drift(
     assert "why3find.json" in result.stderr
 
 
+@POSIX_SHELL
 def test_rejects_missing_selected_project_configuration(environment: Path) -> None:
     (environment.parent / "project" / "why3find.json").unlink()
 
@@ -189,6 +196,7 @@ def test_rejects_missing_required_executable(environment: Path, name: str) -> No
     assert name in result.stderr
 
 
+@POSIX_SHELL
 @pytest.mark.parametrize("response", ["wrong 1.0", "approved 1.00", ""])
 def test_rejects_wrong_version_even_with_matching_binary_hash(
     environment: Path, response: str
@@ -274,6 +282,7 @@ def test_rejects_invalid_manifest_fields(
     assert "manifest" in result.stderr
 
 
+@POSIX_SHELL
 def test_rejects_failed_tool_printing_correct_version(environment: Path) -> None:
     tool = environment.parent / "z3"
     tool.write_text(tool.read_text() + "exit 1\n")
@@ -297,6 +306,7 @@ def test_rejects_changed_manifest_against_build_receipt(environment: Path) -> No
     assert "manifest hash mismatch" in result.stderr
 
 
+@POSIX_SHELL
 def test_rejects_executable_absent_from_receipt(environment: Path) -> None:
     receipt_path = environment.parent / "receipt.json"
     receipt = json.loads(receipt_path.read_text())
@@ -320,6 +330,7 @@ def test_rejects_environment_selecting_different_configuration(
     assert "CREUSOT_DATA_HOME" in result.stderr
 
 
+@POSIX_SHELL
 def test_rejects_path_selecting_different_executable(environment: Path) -> None:
     different = environment.parent / "different" / "z3"
     different.parent.mkdir()
