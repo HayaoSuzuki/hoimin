@@ -116,7 +116,7 @@ proptest::proptest! {
         }).unwrap().with_environment(hoimin_core::EnvironmentSnapshot::Untracked).unwrap();
         let saved = serde_json::to_value(config.into_plan_config(hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap())).unwrap();
         let plan: hoimin_core::PlanConfig = serde_json::from_value(saved).unwrap();
-        let selection = plan.into_run_config(hoimin_core::OutputConfig::default()).selection;
+        let selection = plan.into_run_config(hoimin_core::OutputConfig::default()).unwrap().into_data().selection;
 
         let files = hoimin_cli::target::fs::discover_explicit(&selection).unwrap();
 

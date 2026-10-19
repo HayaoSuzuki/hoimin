@@ -1,0 +1,16 @@
+[
+  "rustc",
+  "--edition=2024",
+  "-O",
+  "-C",
+  "lto=thin",
+  "-L",
+  "dependency=/tmp/hoimin-priority-six-target/release/deps",
+  "--extern",
+  "hoimin_python=/tmp/hoimin-priority-six-target/release/libhoimin_python.rlib",
+  "--extern",
+  "camino=/tmp/hoimin-priority-six-target/release/deps/libcamino-f91f8d14b22abb98.rlib",
+  "/tmp/hoimin-priority-six-task6/heap_probe.rs",
+  "-o",
+  "/tmp/hoimin-priority-six-task6/baseline-heap"
+]

@@ -1,0 +1,255 @@
+Historical task 5 log excerpt.
+Original: /tmp/hoimin-priority-six-task5-red-core.log
+Original SHA-256: 8ac61537c3f704e9e1127345e8ee57d5ac2737d42c34e2683817e3b3b25f8de2
+Command, base, RED/GREEN meaning and limits: task-5-report.md.
+Only recorded command information is authoritative; no missing argv/head was inferred.
+
+000001:    Compiling hoimin-core v0.14.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles/crates/hoimin-core)
+000002:     Finished `test` profile [unoptimized + debuginfo] target(s) in 1.88s
+000003:      Running tests/report_status.rs (/tmp/hoimin-priority-six-target/debug/deps/report_status-f9e071c621dde7b3)
+000004:
+000005: running 31 tests
+000006: test cancelled ... FAILED
+000007: test cancelled_close_timeout ... FAILED
+000008: test arbitrary_exit_projection_respects_output_collection ... FAILED
+000009: test duplicate_conflicting_status ... FAILED
+000010: test exit_one ... FAILED
+000011: test duplicate_equal_status ... FAILED
+000012: test exit_one_close_timeout ... FAILED
+000013: test exit_zero ... FAILED
+000014: test exit_zero_close_timeout ... FAILED
+000015: test matching_status_does_not_open_unknown_fields ... FAILED
+000016: test missing_status_is_rejected ... FAILED
+000017: test negative_exit ... FAILED
+000018: test negative_exit_close_timeout ... FAILED
+000019: test not_run ... FAILED
+000020: test oom ... FAILED
+000021: test oom_close_timeout ... FAILED
+000022: test process_limit ... FAILED
+000023: test process_limit_close_timeout ... FAILED
+000024: test reject_error ... FAILED
+000025: test reject_not_run ... FAILED
+000026: test reject_null_status ... FAILED
+000027: test reject_numeric_status ... FAILED
+000028: test reject_oom ... FAILED
+000029: test reject_process_limit ... FAILED
+000030: test reject_survived ... FAILED
+000031: test reject_timeout ... FAILED
+000032: test reject_unknown_status ... FAILED
+000033: test reused_killed ... FAILED
+000034: test reused_survived ... FAILED
+000035: test timeout ... FAILED
+000036: test timeout_close_timeout ... FAILED
+000037:
+000038: failures:
+000039:
+000040: ---- cancelled stdout ----
+000041:
+000042: thread 'cancelled' (55969362) panicked at crates/hoimin-core/tests/report_status.rs:65:1:
+000043: assertion `left == right` failed
+000044:   left: Null
+000045:  right: "not_run"
+000046: note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+000047:
+000048: ---- cancelled_close_timeout stdout ----
+000049:
+000050: thread 'cancelled_close_timeout' (55969363) panicked at crates/hoimin-core/tests/report_status.rs:65:1:
+000051: assertion `left == right` failed
+000052:   left: Null
+000053:  right: "error"
+000054:
+000055: ---- arbitrary_exit_projection_respects_output_collection stdout ----
+000056:
+000057: thread 'arbitrary_exit_projection_respects_output_collection' (55969361) panicked at crates/hoimin-core/tests/report_status.rs:144:1:
+000058: Test failed: assertion failed: `(left == right)`
+000059:   left: `Null`,
+000060:  right: `String("survived")` at crates/hoimin-core/tests/report_status.rs:156.
+000061: minimal failing input: code = 0, partial = false
+000062: 	successes: 0
+000063: 	local rejects: 0
+000068:
+000069: thread 'duplicate_conflicting_status' (55969364) panicked at crates/hoimin-core/tests/report_status.rs:130:1:
+000070: unknown field `status`, expected one of `schema_version`, `sequence`, `run_id`, `candidate`, `outcome`, `resource_mode`, `diagnostics` at line 1 column 449
+000071:
+000072: ---- exit_one stdout ----
+000073:
+000074: thread 'exit_one' (55969366) panicked at crates/hoimin-core/tests/report_status.rs:60:1:
+000075: assertion `left == right` failed
+000076:   left: Null
+000077:  right: "killed"
+000078:
+000079: ---- duplicate_equal_status stdout ----
+000080:
+000081: thread 'duplicate_equal_status' (55969365) panicked at crates/hoimin-core/tests/report_status.rs:129:1:
+000082: unknown field `status`, expected one of `schema_version`, `sequence`, `run_id`, `candidate`, `outcome`, `resource_mode`, `diagnostics` at line 1 column 449
+000083:
+000084: ---- exit_one_close_timeout stdout ----
+000085:
+000086: thread 'exit_one_close_timeout' (55969367) panicked at crates/hoimin-core/tests/report_status.rs:60:1:
+000087: assertion `left == right` failed
+000088:   left: Null
+000089:  right: "error"
+000090:
+000091: ---- exit_zero stdout ----
+000092:
+000093: thread 'exit_zero' (55969368) panicked at crates/hoimin-core/tests/report_status.rs:59:1:
+000094: assertion `left == right` failed
+000095:   left: Null
+000096:  right: "survived"
+000097:
+000098: ---- exit_zero_close_timeout stdout ----
+000099:
+000100: thread 'exit_zero_close_timeout' (55969369) panicked at crates/hoimin-core/tests/report_status.rs:59:1:
+000101: assertion `left == right` failed
+000102:   left: Null
+000103:  right: "error"
+000104:
+000105: ---- matching_status_does_not_open_unknown_fields stdout ----
+000106:
+000107: thread 'matching_status_does_not_open_unknown_fields' (55969370) panicked at crates/hoimin-core/tests/report_status.rs:136:5:
+000108: assertion failed: serde_json::from_value::<MutantFinished>(wire.clone()).is_ok()
+000109:
+000110: ---- missing_status_is_rejected stdout ----
+000111:
+000112: thread 'missing_status_is_rejected' (55969371) panicked at crates/hoimin-core/tests/report_status.rs:84:5:
+000113: assertion failed: result.is_err()
+000114:
+000115: ---- negative_exit stdout ----
+000116:
+000117: thread 'negative_exit' (55969372) panicked at crates/hoimin-core/tests/report_status.rs:61:1:
+000118: assertion `left == right` failed
+000119:   left: Null
+000120:  right: "killed"
+000121:
+000122: ---- negative_exit_close_timeout stdout ----
+000123:
+000124: thread 'negative_exit_close_timeout' (55969373) panicked at crates/hoimin-core/tests/report_status.rs:61:1:
+000125: assertion `left == right` failed
+000126:   left: Null
+000127:  right: "error"
+000128:
+000129: ---- not_run stdout ----
+000130:
+000131: thread 'not_run' (55969374) panicked at crates/hoimin-core/tests/report_status.rs:68:1:
+000132: assertion `left == right` failed
+000133:   left: Null
+000134:  right: "not_run"
+000135:
+000136: ---- oom stdout ----
+000137:
+000138: thread 'oom' (55969375) panicked at crates/hoimin-core/tests/report_status.rs:63:1:
+000139: assertion `left == right` failed
+000140:   left: Null
+000141:  right: "out_of_memory"
+000142:
+000143: ---- oom_close_timeout stdout ----
+000144:
+000145: thread 'oom_close_timeout' (55969376) panicked at crates/hoimin-core/tests/report_status.rs:63:1:
+000146: assertion `left == right` failed
+000147:   left: Null
+000148:  right: "error"
+000149:
+000150: ---- process_limit stdout ----
+000151:
+000152: thread 'process_limit' (55969377) panicked at crates/hoimin-core/tests/report_status.rs:64:1:
+000153: assertion `left == right` failed
+000154:   left: Null
+000155:  right: "process_limit"
+000156:
+000157: ---- process_limit_close_timeout stdout ----
+000158:
+000159: thread 'process_limit_close_timeout' (55969378) panicked at crates/hoimin-core/tests/report_status.rs:64:1:
+000160: assertion `left == right` failed
+000161:   left: Null
+000162:  right: "error"
+000163:
+000164: ---- reject_error stdout ----
+000165:
+000166: thread 'reject_error' (55969379) panicked at crates/hoimin-core/tests/report_status.rs:106:1:
+000167: assertion failed: serde_json::from_value::<MutantFinished>(wire.clone()).is_ok()
+000168:
+000169: ---- reject_not_run stdout ----
+000170:
+000171: thread 'reject_not_run' (55969380) panicked at crates/hoimin-core/tests/report_status.rs:107:1:
+000172: assertion failed: serde_json::from_value::<MutantFinished>(wire.clone()).is_ok()
+000173:
+000174: ---- reject_null_status stdout ----
+000175:
+000176: thread 'reject_null_status' (55969381) panicked at crates/hoimin-core/tests/report_status.rs:109:1:
+000177: assertion failed: serde_json::from_value::<MutantFinished>(wire.clone()).is_ok()
+000178:
+000179: ---- reject_numeric_status stdout ----
+000180:
+000181: thread 'reject_numeric_status' (55969382) panicked at crates/hoimin-core/tests/report_status.rs:110:1:
+000182: assertion failed: serde_json::from_value::<MutantFinished>(wire.clone()).is_ok()
+000183:
+000184: ---- reject_oom stdout ----
+000185:
+000186: thread 'reject_oom' (55969383) panicked at crates/hoimin-core/tests/report_status.rs:104:1:
+000187: assertion failed: serde_json::from_value::<MutantFinished>(wire.clone()).is_ok()
+000188:
+000189: ---- reject_process_limit stdout ----
+000190:
+000191: thread 'reject_process_limit' (55969384) panicked at crates/hoimin-core/tests/report_status.rs:105:1:
+000192: assertion failed: serde_json::from_value::<MutantFinished>(wire.clone()).is_ok()
+000193:
+000194: ---- reject_survived stdout ----
+000195:
+000196: thread 'reject_survived' (55969385) panicked at crates/hoimin-core/tests/report_status.rs:102:1:
+000197: assertion failed: serde_json::from_value::<MutantFinished>(wire.clone()).is_ok()
+000198:
+000199: ---- reject_timeout stdout ----
+000200:
+000201: thread 'reject_timeout' (55969386) panicked at crates/hoimin-core/tests/report_status.rs:103:1:
+000202: assertion failed: serde_json::from_value::<MutantFinished>(wire.clone()).is_ok()
+000203:
+000204: ---- reject_unknown_status stdout ----
+000205:
+000206: thread 'reject_unknown_status' (55969387) panicked at crates/hoimin-core/tests/report_status.rs:108:1:
+000207: assertion failed: serde_json::from_value::<MutantFinished>(wire.clone()).is_ok()
+000208:
+000209: ---- reused_killed stdout ----
+000210:
+000211: thread 'reused_killed' (55969388) panicked at crates/hoimin-core/tests/report_status.rs:66:1:
+000212: assertion `left == right` failed
+000213:   left: Null
+000214:  right: "killed"
+000215:
+000216: ---- reused_survived stdout ----
+000217:
+000218: thread 'reused_survived' (55969389) panicked at crates/hoimin-core/tests/report_status.rs:67:1:
+000219: assertion `left == right` failed
+000220:   left: Null
+000221:  right: "survived"
+000222:
+000223: ---- timeout stdout ----
+000224:
+000225: thread 'timeout' (55969390) panicked at crates/hoimin-core/tests/report_status.rs:62:1:
+000226: assertion `left == right` failed
+000227:   left: Null
+000228:  right: "timeout"
+000229:
+000230: ---- timeout_close_timeout stdout ----
+000231:
+000232: thread 'timeout_close_timeout' (55969391) panicked at crates/hoimin-core/tests/report_status.rs:62:1:
+000233: assertion `left == right` failed
+000234:   left: Null
+000235:  right: "error"
+000236:
+000237:
+000238: failures:
+000239:     arbitrary_exit_projection_respects_output_collection
+000240:     cancelled
+000241:     cancelled_close_timeout
+000262:     reject_process_limit
+000263:     reject_survived
+000264:     reject_timeout
+000265:     reject_unknown_status
+000266:     reused_killed
+000267:     reused_survived
+000268:     timeout
+000269:     timeout_close_timeout
+000270:
+000271: test result: FAILED. 0 passed; 31 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+000272:
+000273: error: test failed, to rerun pass `-p hoimin-core --test report_status`

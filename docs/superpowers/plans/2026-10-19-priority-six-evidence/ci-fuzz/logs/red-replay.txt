@@ -1,0 +1,25 @@
+Original: /tmp/hoimin-priority-six-ci-fuzz/red-replay.log
+SHA256: 3a618e9404a4827883b743b8210abca11f66c551c65c94f727e9c864b834a5cd
+Command/environment/exit/limits: ../red-replay.json
+Numbered decisive lines (trailing whitespace omitted):
+91:      Running `/tmp/hoimin-priority-six-target/aarch64-apple-darwin/release/report_sequence -artifact_prefix=/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles/fuzz/artifacts/report_sequence/ -runs=1 -seed=588562252 -max_len=4096 -timeout=5 -rss_limit_mb=1024 -artifact_prefix=/tmp/hoimin-priority-six-ci-fuzz/ /tmp/hoimin-priority-six-ci-fuzz/artifact/hoimin/hoimin/fuzz/artifacts/report_sequence/crash-8e2c47d3f36cc9629e5922bc73d3eddf23a2a93a`
+92: INFO: Running with entropic power schedule (0xFF, 100).
+93: INFO: Seed: 588562252
+94: INFO: Loaded 1 modules   (99876 inline 8-bit counters): 99876 [0x1015f1d50, 0x10160a374),
+95: INFO: Loaded 1 PC tables (99876 PCs): 99876 [0x10160a378,0x1017905b8),
+96: /tmp/hoimin-priority-six-target/aarch64-apple-darwin/release/report_sequence: Running 1 inputs 1 time(s) each.
+97: Running: /tmp/hoimin-priority-six-ci-fuzz/artifact/hoimin/hoimin/fuzz/artifacts/report_sequence/crash-8e2c47d3f36cc9629e5922bc73d3eddf23a2a93a
+98:
+99: thread '<unnamed>' (56390413) panicked at fuzz_targets/report_sequence.rs:172:5:
+100: assertion failed: serde_json::from_slice::<OutputEvent>(&encoded).is_err()
+101: note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+102: ==28729== ERROR: libFuzzer: deadly signal
+103: ==28729==WARNING: external symbolizer didn't start up correctly!
+104: ==28729==WARNING: Can't read from symbolizer at fd 3
+105: ==28729==WARNING: atos failed to symbolize address "0x10233f654"
+106: ==28729==WARNING: Can't read from symbolizer at fd 3
+107: ==28729==WARNING: atos failed to symbolize address "0x1011be13c"
+108: ==28729==WARNING: Can't read from symbolizer at fd 3
+182: SUMMARY: libFuzzer: deadly signal
+184: 0x7b,0x5d,0x9,
+188: Error: Fuzz target exited with exit status: 77

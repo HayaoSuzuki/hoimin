@@ -1,0 +1,32 @@
+Command: ["cargo", "test", "-p", "hoimin-core", "--test", "janitor_report"]
+Source head: 4254936ca33240e2f69f6d612fbb408d92090c8a
+Tested diff SHA-256: 517e8a656887c2f2ef05818a55afd6e02c5dce00a9ec771483a6e8550db55ea4
+Exit: 101
+Original log: /tmp/hoimin-priority-six-final-fix/red-core.log
+Original log SHA-256: affffc11f49f4512dd63dbd822e7f3f1df8b58f8ed3d0e8b14f95bbdf51db261
+
+000001:    Compiling hoimin-core v0.14.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles/crates/hoimin-core)
+000002:     Finished `test` profile [unoptimized + debuginfo] target(s) in 1.05s
+000003:      Running tests/janitor_report.rs (/tmp/hoimin-priority-six-target/debug/deps/janitor_report-19180791678cff50)
+000004:
+000005: running 4 tests
+000006: test disk_summary_accepts_explicit_null_janitor ... ok
+000007: test disk_summary_requires_janitor_observation_even_when_unmeasured ... ok
+000008: test disk_summary_rejects_retired_count_beside_current_janitor ... FAILED
+000009: test unmeasured_disk_summary_emits_explicit_null_janitor ... ok
+000010:
+000011: failures:
+000012:
+000013: ---- disk_summary_rejects_retired_count_beside_current_janitor stdout ----
+000014:
+000015: thread 'disk_summary_rejects_retired_count_beside_current_janitor' (56334232) panicked at crates/hoimin-core/tests/janitor_report.rs:35:64:
+000016: called `Result::unwrap_err()` on an `Ok` value: DiskRunSummary { configured_max_owned_bytes: 10, configured_min_free_bytes: 1, peak_owned_bytes: 0, minimum_available_bytes: None, filesystems: [], sample_count: 0, maximum_measurement_ms: 0, enforcement: [], stop: None, cleanup: [], removed_logical_bytes: None, janitor: None }
+000017: note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+000018:
+000019:
+000020: failures:
+000021:     disk_summary_rejects_retired_count_beside_current_janitor
+000022:
+000023: test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+000024:
+000025: error: test failed, to rerun pass `-p hoimin-core --test janitor_report`

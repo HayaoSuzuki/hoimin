@@ -36,6 +36,7 @@ mod schema_tests;
 mod selection;
 #[cfg(test)]
 mod selection_tests;
+mod source;
 #[cfg(test)]
 mod validation_tests;
 
@@ -186,7 +187,9 @@ impl VerifiedPlan {
     /// Candidate order, execution limits and protected inputs are unchanged.
     #[must_use]
     pub fn with_metrics(mut self, destination: Option<Utf8PathBuf>) -> Self {
-        self.config.output.metrics = destination;
+        let mut output = self.config.output.clone();
+        output.metrics = destination;
+        self.config = self.config.with_output(output);
         self
     }
 
@@ -199,12 +202,13 @@ impl VerifiedPlan {
         self,
         stdout: Stdout,
         stderr: Stderr,
+        presentation: crate::report::ReportPresentation,
     ) -> Result<i32, String>
     where
         Stdout: std::io::Write + Send + 'static,
         Stderr: std::io::Write + Send + 'static,
     {
-        shell::run_verified(self, stdout, stderr).await
+        shell::run_verified(self, stdout, stderr, presentation).await
     }
 
     pub(crate) fn into_execution(self) -> VerifiedExecution {
@@ -483,7 +487,8 @@ async fn prepare_verify_selection_inner(
     let mut config = manifest
         .normalized_config
         .clone()
-        .into_run_config(output_config(format));
+        .into_run_config(output_config(format))
+        .map_err(|error| PlanError::ManifestInvalid(error.to_string()))?;
     let targets = TargetHandler::resolve(&config.selection)
         .await
         .map_err(|error| PlanError::SourceChanged(error.to_string()))?;
@@ -504,7 +509,7 @@ async fn prepare_verify_selection_inner(
         &manifest.candidates,
     )
     .map_err(PlanError::ManifestInvalid)?;
-    config.fingerprint_inputs = current_inputs;
+    config = config.with_fingerprint_inputs(current_inputs);
     let copy_options = crate::workspace::CopyOptions {
         includes: config.selection.includes.clone(),
         excludes: config.selection.excludes.clone(),
@@ -666,16 +671,15 @@ async fn source_records(
     targets: &[TargetSlice],
 ) -> Result<Vec<FingerprintInputFile>, PlanError> {
     let mut records = BTreeMap::new();
+    let mut reader = source::SourceReader::new(root);
     for target in targets {
         let path = target.path.clone();
-        let bytes = tokio::fs::read(root.join(&path))
-            .await
-            .map_err(|error| PlanError::SourceRead(format!("{path}: {error}")))?;
+        let hash = reader.hash(&path).await.map_err(PlanError::SourceRead)?;
         records.insert(
             path.clone(),
             FingerprintInputFile {
                 path,
-                hash: blake3::hash(&bytes).to_hex().to_string(),
+                hash: hash.to_hex().to_string(),
             },
         );
     }
@@ -992,6 +996,7 @@ async fn validate_requested_descriptors(
         .collect();
     let mut requested_paths = BTreeSet::new();
     let mut results = BTreeMap::new();
+    let mut reader = source::SourceReader::new(&config.selection.root);
     for candidate_id in requested_ids {
         let candidate = candidates.get(candidate_id.as_str()).ok_or_else(|| {
             PlanError::CandidateInvalid(format!("candidate id is not in the plan: {candidate_id}"))
@@ -1008,11 +1013,10 @@ async fn validate_requested_descriptors(
         }
         requested_paths.insert(candidate.path.clone());
         if let Some(file_candidates) = by_path.remove(candidate.path.as_path()) {
-            let source = tokio::fs::read(config.selection.root.join(&candidate.path))
+            let source = reader
+                .read(&candidate.path)
                 .await
-                .map_err(|error| {
-                    PlanError::CandidateInvalid(format!("{}: {error}", candidate.path))
-                })?;
+                .map_err(PlanError::CandidateInvalid)?;
             #[cfg(test)]
             if let Some(stats) = stats.as_deref_mut() {
                 stats.contexts += 1;
@@ -1440,8 +1444,9 @@ mod tests {
     async fn create_rejects_oversized_saved_discovery_before_project_work() {
         // Arrange: deserialization checks positivity; semantic validation owns the ceiling.
         let project = Project::new();
-        let mut config = project.config();
+        let mut config = project.config().into_data();
         config.selection.root = project.root.join("missing");
+        let config = RunConfig::try_from(config).unwrap();
         let discovery = serde_json::from_value(serde_json::json!({
             "analyzer_timeout": {"secs": hoimin_core::MAX_TIMEOUT.as_secs(), "nanos": 1}
         }))

@@ -1,0 +1,8 @@
+Reports: all seven full reports, six initial independent reviews and three scoped re-reviews match their source bytes
+Self-reviews: seven tasks x three stages x five distinct numbered passes = 105 indexed entries; fix appendices retained
+Rulings: R1 through R13 retained verbatim with reason/cost text
+Checks: 16 successful command receipts, 40 passed registered gates, original log hashes and selected excerpt hashes verified
+Measurements: 24 existing tracked Task 6 artifacts match the manifest; no measurement directory duplicated
+Scope: companion links resolve; Task 7 changes no product, test, manifest, workflow or proof input
+Archive: 63 file hashes verified; manifest excludes its own content hash
+Limits: Task 7 independent review, final whole-branch review, publication and native CI are still pending; no workspace/artifact cleanup performed

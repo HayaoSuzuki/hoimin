@@ -1,0 +1,22 @@
+Historical task 4 log excerpt.
+Original: /tmp/hoimin-priority-six-task4-presentation-final.log
+Original SHA-256: ef89a9041a8c00e8580c1d6b56135cad84c99195dd11cecd509f8122d7293473
+Command, base, RED/GREEN meaning and limits: task-4-report.md.
+Only recorded command information is authoritative; no missing argv/head was inferred.
+
+000001:    Compiling hoimin-cli v0.14.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles/crates/hoimin-cli)
+000002:     Finished `test` profile [unoptimized + debuginfo] target(s) in 4.23s
+000003:      Running tests/report_handler.rs (/tmp/hoimin-priority-six-target/debug/deps/report_handler-d11c78eef9aa30a0)
+000004:
+000005: running 8 tests
+000006: test janitor_human_verbose ... ok
+000007: test janitor_human_default ... ok
+000008: test janitor_json_verbose ... ok
+000009: test janitor_json_default ... ok
+000010: test janitor_jsonl_default ... ok
+000011: test janitor_jsonl_verbose ... ok
+000012: test janitor_schema_accepts_explicit_null ... ok
+000013: test janitor_schema_rejects_missing_field ... ok
+000014:
+000015: test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 135 filtered out; finished in 0.02s
+000016:

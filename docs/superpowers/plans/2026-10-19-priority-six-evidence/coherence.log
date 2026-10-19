@@ -1,0 +1,17 @@
+Cargo.toml: package floor 0.14.0
+pyproject.toml: package floor 0.14.0
+Cargo.lock: shipping local packages [('hoimin-budget-math', '0.14.0'), ('hoimin-cli', '0.14.0'), ('hoimin-core', '0.14.0'), ('hoimin-python', '0.14.0')]
+fuzz/Cargo.lock: shipping local packages [('hoimin-budget-math', '0.14.0'), ('hoimin-core', '0.14.0'), ('hoimin-python', '0.14.0')]
+uv.lock: shipping local packages [('hoimin', '0.14.0')]
+Unpublished separate hoimin-fuzz harness retains its 0.0.0 placeholder
+REPORT_SCHEMA_VERSION=9: crates/hoimin-core/src/report.rs
+PLAN_SCHEMA_VERSION=10: crates/hoimin-cli/src/plan.rs
+FINGERPRINT_SCHEMA_VERSION=13: crates/hoimin-core/src/resume.rs
+SCHEMA_VERSION=5: crates/hoimin-cli/src/session/schema.rs
+RANKING_RULE_VERSION=4: crates/hoimin-cli/src/plan/ranking.rs
+CANDIDATE_SCHEMA_VERSION=1: crates/hoimin-core/src/candidate.rs
+Both published schemas route schema9 and require projected status
+Protected #999 proof/tooling/workflows/math and separate fuzz target/harness sources unchanged
+Only schema-v9 positive goldens changed; earlier golden bytes preserved
+No original-source catalog inputs added/moved/deleted; plans/maintenance remain outside those catalogs
+Limits: static consistency only; no local proof rerun, fuzz run or Linux/Windows execution

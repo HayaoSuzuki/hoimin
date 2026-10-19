@@ -1,0 +1,27 @@
+Original: /tmp/hoimin-priority-six-ci-fuzz/fuzz-fmt.log
+SHA256: a672065c46ce4ec2bc126f705ea38119e7d60178ec39ff15f5f3901609ebd0ea
+Command/environment/exit/limits: ../fuzz-fmt.json
+Numbered decisive lines (trailing whitespace omitted):
+1: Diff in /Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles/fuzz/fuzz_targets/python_analyzer.rs:5:
+2:      CandidateDescriptor, CandidateValidationContext, MutationOperatorSelection, MutationProfile,
+3:      validate_candidate_with_context,
+4:  };
+5: -use libfuzzer_sys::fuzz_target;
+6:  use hoimin_python::{AnalysisError, AnalyzeRequest, analyze_source_cancellable};
+7: +use libfuzzer_sys::fuzz_target;
+8:
+9:  fuzz_target!(|source: &str| {
+10:      if source.len() > 4096 {
+11: Diff in /Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles/fuzz/fuzz_targets/report_sequence.rs:2:
+12:
+13:  use hoimin_core::{
+14:      BaselineFinished, ByteSpan, Diagnostic, DiskRunSummary, MutantFinished, MutantStarted,
+15: -    MutationCandidate, MutationOutcome, MutationStatus, OutputEvent, OutputSpoolRef, ProcessOutputState,
+16: -    ProcessTermination, ReportSequence, ResourceControl, ResourceMode, ReusedMutationStatus,
+17: -    RunStarted, RunSummary, summarize,
+18: +    MutationCandidate, MutationOutcome, MutationStatus, OutputEvent, OutputSpoolRef,
+19: +    ProcessOutputState, ProcessTermination, ReportSequence, ResourceControl, ResourceMode,
+20: +    ReusedMutationStatus, RunStarted, RunSummary, summarize,
+21:  };
+22:  use libfuzzer_sys::fuzz_target;
+23:

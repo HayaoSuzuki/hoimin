@@ -1,0 +1,19 @@
+{
+  "commit": "be67c007d539842ad0e796e26eb2f54df18cab4e",
+  "parent": "7c100e67086b5d8683f2959db40d876e662dce4c",
+  "changed_files": [
+    "fuzz/fuzz_targets/report_sequence.rs",
+    "fuzz/seeds/report_sequence/error-status-close-timeout-regression"
+  ],
+  "status_porcelain": "",
+  "source_sha256": "fa3a0770fef601e569748c676d1c4d7e22efd6cf502a62765d70adb620c6184f",
+  "seed_sha256": "626c48424fa4331745a35d1cfe93fce1f85b4f6299422c9a6ddf68dcbc5e960c",
+  "fuzz_binary_sha256": "401d9eecff27c938701f73e9fa746a0e6dc8d296a96512775ca868de62658c47",
+  "commit_hook_log_sha256": "dc05d30ebd3a1c009cc7e1a4a59c0d0b1c2523e3bbbff24efc0a8dc2a24c8b04",
+  "hooks": "Normal hooks enabled; all four skipped by configured fuzz exclusion, no bypass",
+  "target_paths": {
+    "root_exists": false,
+    "fuzz_exists": false
+  },
+  "original_artifacts": "hashes unchanged"
+}

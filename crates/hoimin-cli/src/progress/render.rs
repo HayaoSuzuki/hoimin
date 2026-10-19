@@ -3,6 +3,7 @@ use std::io::Write;
 use serde::Serialize;
 
 use crate::cli::ProgressOutputFormat;
+use crate::human_text::HumanText;
 
 use super::compare::CandidateSetEligibility;
 use super::details::Details;
@@ -139,7 +140,7 @@ where
             writeln!(
                 stderr,
                 "warning: unusable progress report {}: {}",
-                input.source.display(),
+                HumanText(&input.source.to_string_lossy()),
                 unusable_reason_label(reason)
             )
             .map_err(write_error)?;
@@ -179,9 +180,9 @@ where
                 stderr,
                 "warning: progress input {} ({}) repeats input {} ({}): {}; comparisons are unchanged",
                 index + 1,
-                input.source.display(),
+                HumanText(&input.source.to_string_lossy()),
                 duplicate.previous + 1,
-                inputs[duplicate.previous].source.display(),
+                HumanText(&inputs[duplicate.previous].source.to_string_lossy()),
                 duplicate.reason.label(),
             )
             .map_err(write_error)?;

@@ -1,0 +1,49 @@
+Command: ["cargo", "test", "-p", "hoimin-cli", "--lib", "workspace::owned::"]
+Source head: 4254936ca33240e2f69f6d612fbb408d92090c8a
+Tested diff SHA-256: 7dd4c5702ef594179096ebfbe60ab45043c9954bf05f9f6d262b4188c5ca1e1e
+Exit: 101
+Original log: /tmp/hoimin-priority-six-final-fix/green-owned.log
+Original log SHA-256: 19ce18507f24e94195dbf3a2c93aff96bde9c4d28ba3e51a06435246abcc6251
+
+000001:    Compiling hoimin-core v0.14.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles/crates/hoimin-core)
+000002:    Compiling hoimin-python v0.14.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles/crates/hoimin-python)
+000003:    Compiling hoimin-cli v0.14.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles/crates/hoimin-cli)
+000004:     Finished `test` profile [unoptimized + debuginfo] target(s) in 10.11s
+000005:      Running unittests src/lib.rs (/tmp/hoimin-priority-six-target/debug/deps/hoimin_cli-364ef5e82ff81ad1)
+000006:
+000007: running 84 tests
+000008: test workspace::owned::janitor::boundary_tests::cleanup_deadline_reports_selected_but_uninspected_roots ... ok
+000009: test workspace::owned::janitor::boundary_tests::owner_deferred_slice_preserves_nested_acknowledgements ... ok
+000010: test workspace::owned::janitor::boundary_tests::exact_selection_limit_does_not_invent_omissions ... ok
+000011: test workspace::owned::janitor::boundary_tests::slice_failure_retains_deleted_markers_from_nested_operation ... ok
+000012: test workspace::owned::janitor::tests::acknowledged_root_stays_reclaimed_after_unlock_failure ... ok
+000034: test workspace::owned::tests::empty_staging_root_from_a_pre_lease_crash_is_reclaimed_after_a_day ... ok
+000035: test workspace::owned::tests::empty_staging_with_unreadable_age_is_unresolved ... FAILED
+000036: test workspace::owned::tests::every_child_constructor_failure_removes_the_new_directory ... ok
+000037: test workspace::owned::tests::every_root_constructor_failure_rolls_back_or_is_immediately_reclaimable ... ok
+000038: test workspace::owned::tests::failed_empty_staging_inspection_retains_issue_detail ... ok
+000088:
+000089: test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 802 filtered out; finished in 0.02s
+000090:
+000091: test workspace::owned::tests::fresh_process_bootstrap_barrier_child ... ok
+000092:
+000093: test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 802 filtered out; finished in 0.03s
+000094:
+000095: test workspace::owned::tests::two_fresh_processes_bootstrap_one_complete_coordinator ... ok
+000096: test workspace::owned::tests::unlocked_lease_with_a_heartbeat_at_least_twenty_four_hours_old_is_reclaimed ... ok
+000104:
+000105: failures:
+000106:
+000107: ---- workspace::owned::tests::empty_staging_with_unreadable_age_is_unresolved stdout ----
+000108:
+000109: thread 'workspace::owned::tests::empty_staging_with_unreadable_age_is_unresolved' (56339833) panicked at crates/hoimin-cli/src/workspace/owned.rs:2797:9:
+000110: JanitorSummary { inspected_roots: 1, reclaimed_roots: 0, absent_roots: 0, preserved_roots: 0, preserved_by_reason: {}, unresolved_roots: 1, unresolved_by_reason: {CandidateInspectionFailed: 1}, examined_entries: 0, removed_entries: 0, scan: JanitorScan { directory_scan_complete: true, observed_matching_entries: 1, selected_roots: 1, uninspected_selected_roots: 0, selection_omitted_observed_entries: 0, selection_limited: false, cursor_deferred: false, stop_reason: None }, details: [JanitorDetail { reason: CandidateInspectionFailed, message: "open candidate /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/.tmpPFslN9/hoimin-workspaces-v1/.staging-657aff10-e105-490f-bb58-e37fbc612aca: Permission denied (os error 13)" }], detail_omissions: JanitorDetailOmissions { normal_details: 0, issue_details: 0, truncated_details: 0, suppressed_normal_details: 0 } }
+000111: note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+000112:
+000113:
+000114: failures:
+000115:     workspace::owned::tests::empty_staging_with_unreadable_age_is_unresolved
+000116:
+000117: test result: FAILED. 80 passed; 1 failed; 3 ignored; 0 measured; 719 filtered out; finished in 5.65s
+000118:
+000119: error: test failed, to rerun pass `-p hoimin-cli --lib`

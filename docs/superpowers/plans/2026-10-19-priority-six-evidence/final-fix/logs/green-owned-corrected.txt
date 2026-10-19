@@ -1,0 +1,38 @@
+Command: ["cargo", "test", "-p", "hoimin-cli", "--lib", "workspace::owned::"]
+Source head: 4254936ca33240e2f69f6d612fbb408d92090c8a
+Tested diff SHA-256: 6ee975a1ef98d07defdbb1d4af23ef1b7be1d17556d04f0153c7f0e4f654c250
+Exit: 0
+Original log: /tmp/hoimin-priority-six-final-fix/green-owned-corrected.log
+Original log SHA-256: 55d0c98bb282747924075b30ae065fa41ab867c04848a9bd24385b4716a81b81
+
+000001:    Compiling hoimin-cli v0.14.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles/crates/hoimin-cli)
+000002:     Finished `test` profile [unoptimized + debuginfo] target(s) in 6.00s
+000003:      Running unittests src/lib.rs (/tmp/hoimin-priority-six-target/debug/deps/hoimin_cli-364ef5e82ff81ad1)
+000004:
+000005: running 85 tests
+000006: test workspace::owned::janitor::boundary_tests::cleanup_deadline_reports_selected_but_uninspected_roots ... ok
+000007: test workspace::owned::janitor::boundary_tests::owner_deferred_slice_preserves_nested_acknowledgements ... ok
+000008: test workspace::owned::janitor::boundary_tests::exact_selection_limit_does_not_invent_omissions ... ok
+000009: test workspace::owned::janitor::boundary_tests::slice_failure_retains_deleted_markers_from_nested_operation ... ok
+000010: test workspace::owned::janitor::tests::acknowledged_root_stays_reclaimed_after_unlock_failure ... ok
+000011: test workspace::owned::janitor::boundary_tests::selection_limit_reports_observed_extra_entry ... ok
+000012: test workspace::owned::janitor::tests::late_failure_evicts_an_ordinary_detail_at_capacity ... ok
+000087:
+000088: test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 803 filtered out; finished in 0.01s
+000089:
+000090: test workspace::owned::tests::fresh_process_bootstrap_barrier_child ... ok
+000091:
+000092: test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 803 filtered out; finished in 0.02s
+000093:
+000094: test workspace::owned::tests::two_fresh_processes_bootstrap_one_complete_coordinator ... ok
+000095: test workspace::owned::tests::unlocked_lease_with_a_heartbeat_at_least_twenty_four_hours_old_is_reclaimed ... ok
+000096: test workspace::owned::tests::young_deleting_root_without_cleanup_ready_is_preserved ... ok
+000097: test workspace::owned::tests::young_nonempty_staging_without_lease_is_unresolved ... ok
+000098: test workspace::owned::tests::young_pre_lease_staging_default_suppresses_normal_detail ... ok
+000099: test workspace::owned::tests::young_pre_lease_staging_verbose_retains_normal_detail ... ok
+000100: test workspace::owned::tests::young_staging_with_directory_lease_is_unresolved ... ok
+000101: test workspace::owned::tests::young_unlocked_lease_is_preserved ... ok
+000102: test workspace::owned::tests::janitor_cursor_reaches_the_two_hundred_fifty_seventh_root ... ok
+000103:
+000104: test result: ok. 82 passed; 0 failed; 3 ignored; 0 measured; 719 filtered out; finished in 4.47s
+000105:

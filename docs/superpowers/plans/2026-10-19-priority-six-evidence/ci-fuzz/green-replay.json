@@ -1,0 +1,35 @@
+{
+  "argv": [
+    "cargo",
+    "+nightly-2026-10-08",
+    "fuzz",
+    "run",
+    "--target-dir",
+    "/tmp/hoimin-priority-six-target",
+    "--codegen-units",
+    "16",
+    "report_sequence",
+    "/tmp/hoimin-priority-six-ci-fuzz/artifact/hoimin/hoimin/fuzz/artifacts/report_sequence/crash-8e2c47d3f36cc9629e5922bc73d3eddf23a2a93a",
+    "--",
+    "-runs=1",
+    "-seed=588562252",
+    "-max_len=4096",
+    "-timeout=5",
+    "-rss_limit_mb=1024",
+    "-artifact_prefix=/tmp/hoimin-priority-six-ci-fuzz/"
+  ],
+  "cwd": "/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles",
+  "timeout_seconds": 180,
+  "env": {
+    "CARGO_BUILD_JOBS": "2",
+    "CARGO_TARGET_DIR": "/tmp/hoimin-priority-six-target",
+    "RUST_TEST_THREADS": "2",
+    "PREK_NO_CONCURRENCY": "1",
+    "UV_PROJECT_ENVIRONMENT": "/tmp/hoimin-priority-six-venv",
+    "UV_CACHE_DIR": "/tmp/hoimin-priority-six-uv-cache",
+    "PATH": "/tmp/hoimin-priority-six-venv/bin:/Users/hayao/.elan/bin:/Library/Frameworks/Python.framework/Versions/3.12/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/opt/homebrew/Caskroom/codex/0.162.1/codex-path:/Users/hayao/.codex/tmp/arg0/codex-arg0IGseZF:/Users/hayao/.rd/bin:/opt/homebrew/opt/mariadb-connector-c/bin:/Users/hayao/.nvm/versions/node/v22.14.0/bin:/Users/hayao/.local/bin:/Users/hayao/.elan/bin:/Library/Frameworks/Python.framework/Versions/3.12/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/Users/hayao/.cargo/bin:/Users/hayao/Library/Application Support/JetBrains/Toolbox/scripts:/Users/hayao/Library/Application Support/JetBrains/Toolbox/scripts"
+  },
+  "returncode": 0,
+  "elapsed_seconds": 7.294927375158295,
+  "log_sha256": "42e63d6ce84e8b4a91306b4f4c8ffadfefb44346d1a54c44b1c5368e8c692fee"
+}

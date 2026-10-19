@@ -9,6 +9,9 @@ use ruff_text_size::{Ranged, TextRange};
 
 use super::{AnalysisCancelled, AnalysisError, depth};
 
+#[path = "exception_import_graph.rs"]
+mod import_graph;
+
 const MAX_STEPS: usize = 256;
 pub const MAX_SUMMARY_ENTRIES: usize = 65_536;
 type ClassId = (Utf8PathBuf, String);
@@ -641,12 +644,6 @@ impl<'a> Visitor<'a> for Escapes {
 }
 
 impl Module {
-    fn eager_imports(&self) -> impl Iterator<Item = &String> {
-        self.dependencies
-            .iter()
-            .filter(|((_, level), usage)| *level == 0 && usage.eager)
-            .map(|((name, _), _)| name)
-    }
     fn possible_imports(&self) -> impl Iterator<Item = &String> {
         self.dependencies
             .keys()
@@ -1081,36 +1078,7 @@ impl ExceptionIndex {
         &mut self,
         cancelled: &impl Fn() -> bool,
     ) -> Result<(), AnalysisCancelled> {
-        let mut rejected = BTreeSet::new();
-        for start in self.modules.keys() {
-            let mut pending = vec![(start.clone(), 0usize)];
-            let mut visited = BTreeSet::new();
-            while let Some((path, depth)) = pending.pop() {
-                if cancelled() {
-                    return Err(AnalysisCancelled);
-                }
-                if depth >= MAX_STEPS {
-                    rejected.insert(start.clone());
-                    break;
-                }
-                if !visited.insert(path.clone()) {
-                    continue;
-                }
-                for module in self.modules[&path].eager_imports() {
-                    if let Some(next) = self.module_paths.get(module) {
-                        if next == start {
-                            rejected.insert(start.clone());
-                        } else if self.modules.contains_key(next) {
-                            pending.push((next.clone(), depth + 1));
-                        }
-                    }
-                }
-            }
-        }
-        for path in rejected {
-            self.modules.get_mut(&path).unwrap().dynamic = true;
-        }
-        Ok(())
+        import_graph::exclude(&mut self.modules, &self.module_paths, cancelled)
     }
 
     fn binding_id(&self, path: &Utf8Path, name: &str, before: usize) -> Option<ClassId> {
@@ -1663,3 +1631,7 @@ mod checked_parse_tests {
 #[cfg(test)]
 #[path = "exception_visibility_tests.rs"]
 mod visibility_tests;
+
+#[cfg(test)]
+#[path = "exception_import_graph_tests.rs"]
+mod exception_import_graph_tests;

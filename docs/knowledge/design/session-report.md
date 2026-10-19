@@ -5,6 +5,51 @@ description: 保存・復旧の権限、スキーマ移行、結果の生成側�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-1010-wire
+  resource: ../../../crates/hoimin-core/src/report.rs
+  revision: 6ea967d6b1682596d6a2c0dda3d1c458f9ce5e6a
+  working_tree: modified
+  sha256: b000930d1bd41fe60dd9dc9e459c3947cb667711ceec450c0d8673c95904f993
+- id: issue-1010-human
+  resource: ../../../crates/hoimin-cli/src/report/human.rs
+  revision: 6ea967d6b1682596d6a2c0dda3d1c458f9ce5e6a
+  working_tree: modified
+  sha256: bc69723f31cb4e44a565471939a52377f48b25c3faf807e461509679675945dd
+- id: issue-1015-wire
+  resource: ../../../crates/hoimin-core/src/report.rs
+  revision: 8720b41a0d08f375d98bda7cfa6202be779f3226
+  working_tree: modified
+  sha256: c89bddbf335142d9586ecbc3e155893c273af3718fb223e3975e66e97954a013
+- id: issue-1015-compatibility
+  resource: ../../compatibility.md
+  revision: 8720b41a0d08f375d98bda7cfa6202be779f3226
+  working_tree: modified
+  sha256: 5e7c0deae74941aa9651590a7b1e6d7465a75fa8e2063090b7398c30214aafa9
+- id: issue-1004-reader
+  resource: ../../../crates/hoimin-cli/src/artifacts/run_report.rs
+  revision: 6d78789eca05fad577b2a8dcce83077f9389ee06
+  working_tree: modified
+  sha256: 55fc1aab381c73d4adbb1de145d6402cb7e1fc0d0c6f3124cede9d8fe3d61fd3
+- id: issue-1004-config
+  resource: ../../../crates/hoimin-core/src/config.rs
+  revision: 6d78789eca05fad577b2a8dcce83077f9389ee06
+  working_tree: modified
+  sha256: 6c0aa32efc26a872a6f5c3aaf32c7b9cfad9cb5ae58d4aa83a9ce5c26461fba4
+- id: issue-1002-human-text
+  resource: ../../../crates/hoimin-cli/src/human_text.rs
+  revision: b02ee7d51709de664ee88db68abca34025db3487
+  working_tree: untracked
+  sha256: 00322fd04c933a8ee575787e2f65bbb641059fd043a8493d76beca57a6ccf357
+- id: issue-1002-human-report
+  resource: ../../../crates/hoimin-cli/src/report/human.rs
+  revision: b02ee7d51709de664ee88db68abca34025db3487
+  working_tree: modified
+  sha256: 996c546875b4f7563cb35df742d4cd23aad5dc6e83f4c8d5a6aa69aedad3d4c1
+- id: issue-1002-human-tests
+  resource: ../../../crates/hoimin-cli/tests/report_handler.rs
+  revision: 3d9e33d178a451e39e182495f4a5bb3a4c5ebfa0
+  working_tree: modified
+  sha256: af99502af3e8b1dab50efbd3ce2c9b0e4ae1db4dfebe4a5692f407ceec524c93
 - id: issue-992-identity
   resource: ../../../crates/hoimin-core/src/candidate.rs
   revision: 50b9c089ca73aeca2205636a2a9e1823cd244d39
@@ -238,7 +283,21 @@ sources:
   working_tree: clean
   sha256: 7c4907d6190fa9019c36eb65207a3b5685ebc6da4737612022cb9aead5739ee6
 
+- id: priority-six-compatibility
+  resource: ../../compatibility.md
+  revision: 3aaf82b0d5b695a548dda33ea248ceaa1dd68219
+  working_tree: modified
+  sha256: 6dc4ae3fda223f4b3a2a0654042d98eac38f1fe010e267f79321d282388f0eb2
+
 ---
+
+# 導出したstatusの送受信（Issue #1010）
+
+report schema 9では、JSONの`mutants[]`とJSONLの`mutant_finished`に必須の`status`を出力する。reportの直列化処理は`MutationOutcome::status()`から値を計算する。読取り処理は受け取った値とoutcomeの分類を照合し、矛盾を拒否した後にstatusを破棄する。実行状態、集計、progress、resumeの分類根拠はoutcomeのままである。`Exit(1)`でも出力回収が`close_timed_out`なら`error`となる。[^issue-1010-wire]
+
+JSON Schemaはstatusの必須性と七つの値を検査する。outcomeとの意味上の一致はRustのstrict readerが検査するため、汎用のschema検証だけでは一致を確認できない。旧schemaの番号だけを書き換えても現行reportにはならない。[^issue-1010-wire]
+
+humanの完了行には、候補ID、位置、演算子、引用符付きの元の式と置換後の式、判定をまとめる。共通の`HumanText`で各外部文字列を一度escapeするため、制御文字を含む場合も完了行は一行を保つ。並列実行の完了順が開始順と異なっても、候補IDを開始行で探す必要はない。[^issue-1010-human]
 
 # Current report identity validation (Issue #992)
 
@@ -253,7 +312,7 @@ v1 bytes and valid schema-8 writer output.[^issue-992-identity][^issue-992-reade
 
 # Single project root in saved reports (Issue #949)
 
-Issue #949 introduced the single root in report schema 7. Current schema 8
+Issue #949 introduced the single root in report schema 7. Current schema 9
 stores it only in
 `run.normalized_config.selection.root` for JSON and
 `normalized_config.selection.root` for `run_started` JSONL. Typed configuration
@@ -266,12 +325,14 @@ schema number cannot convert old reports.[^issue-949-reader][^issue-949-record]
 That change raised the floor to 0.11.0 and retained fingerprint 11 and session 5.
 Issue #979 introduced floor 0.12.0, report/event schema 8 and fingerprint 12;
 runtime configuration and execution fingerprints omit discovery timeout.
-Issue #984 raises the current floor to 0.13.0 and fingerprint to 13 so incomplete
+Issue #984 raised the floor to 0.13.0 and fingerprint to 13 so incomplete
 sessions cannot reuse conclusive results produced before baseline restoration.
 Session schema 5 remains. Different ample plan timeouts produce the same current
 execution fingerprint when discovery results agree; historical schema-11 and
 schema-12 fingerprint bytes are incompatible. The environment field-13 framing
-remains unchanged. Earlier sections retain their historical versions.[^issue-949-record][^issue-979-compatibility][^issue-984-compatibility]
+remains unchanged. The combined schema-9 cleanup/status change raises the package
+floor to 0.14.0 while retaining fingerprint 13. Earlier sections retain their
+historical versions.[^issue-949-record][^issue-979-compatibility][^issue-984-compatibility][^priority-six-compatibility]
 
 A new successful baseline and restoration do not recompute a reused `killed` or
 `survived` result. The fingerprint version therefore owns this execution-policy
@@ -340,7 +401,7 @@ SQLiteのWAL実装や実際のクラッシュを証明するものではない�
 
 JSON Schemaは結果の構造を定める元資料として保持する。ただし、構造上正しいJSONにも、値どうしが矛盾した結果は入り得るため、読取り処理で意味上の整合性も検査する。現在のprogress読取り処理は、件数検査後に `validate_summary_coherence` を呼び、完了状態と終了コードが整合するか確認する。[^schema][^reader]
 
-この集計値の検査の詳細は[progress入力の後続修正](../audits/progress-input.md)を参照する。Issue #460 の設計は、個々の結果の検証を `MutantFinished::validate_result` にまとめ、生成側の `ReportSequence` とprogress読取りで共有する。終了理由がある場合は出力状態も含めてstatusを照合し、矛盾した入力は比較処理へ渡す前に拒否する。この旧検証はIssue #895のtyped outcomeへ置き換わり、独立したstatusやnullable実行証拠を現行形式では受理しない。[^issue-460]
+この集計値の検査の詳細は[progress入力の後続修正](../audits/progress-input.md)を参照する。Issue #460 の設計は、個々の結果の検証を `MutantFinished::validate_result` にまとめ、生成側の `ReportSequence` とprogress読取りで共有する。終了理由がある場合は出力状態も含めてstatusを照合し、矛盾した入力は比較処理へ渡す前に拒否する。この旧検証はIssue #895のtyped outcomeへ置き換わり、独立した可変statusやnullable実行証拠は受理しない。schema 9のstatusは、outcomeと照合して破棄する表示値である。[^issue-460]
 
 # progressのレポート入力スキーマ
 
@@ -404,6 +465,17 @@ macOSで、並列数1・2、root内外の別名、大小文字の別名、実際
 [^issue-516]: [Issue 516: Share active session ownership-tree identities](../../superpowers/specs/2026-09-12-issue-516-session-ownership-identities-design.md)。
 
 ## Environment metadata and report readers (Issue #887)
+
+Issue #1004 adds semantic acceptance to strict review's typed `RunConfig`
+deserializer. Invalid selectors, operators, argv, limits, and non-normalized
+import roots fail before project-root canonicalization. The deserializer reads
+the original configuration object before checking it, preserving duplicate-key
+rejection. Progress still selects an opaque configuration type and accepts an
+object or null without these semantic or filesystem checks. The saved report
+shape remains unchanged.[^issue-1004-reader][^issue-1004-config]
+
+[^issue-1004-reader]: [Shared reader and regressions](../../../crates/hoimin-cli/src/artifacts/run_report.rs).
+[^issue-1004-config]: [Checked configuration boundary](../../../crates/hoimin-core/src/config.rs).
 
 Report schema 6 retains the validated `environment` snapshot introduced in schema
 5 in place of separate names and an optional hash. Progress and review consume
@@ -624,3 +696,54 @@ execution explicit.[^issue-985-admission]
 
 [^issue-992-identity]: [crates/hoimin-core/src/candidate.rs](../../../crates/hoimin-core/src/candidate.rs).
 [^issue-992-reader]: [crates/hoimin-cli/src/artifacts/run_report.rs](../../../crates/hoimin-cli/src/artifacts/run_report.rs).
+
+
+# External strings in human reports (Issue #1002)
+
+Human run events, fingerprint provenance, session diagnostics and ordinary event
+diagnostics share the `HumanText` presentation policy with preview, review and
+progress. External fields escape controls and line separators while preserving
+ordinary Unicode. Renderer-owned separators remain actual newlines. Machine
+serializers continue to receive the original strings.[^issue-1002-human-text][^issue-1002-human-report]
+
+The `baseline.output` diagnostic body alone uses an explicit multiline projection:
+LF/TAB remain readable, other controls are escaped, and existing textual escapes
+are preserved once. Its code and level still use ordinary single-line projection.
+This preserves the separate child-output streaming contract without changing
+capture, chunking or JSON/JSONL messages.[^issue-1002-human-report][^issue-1002-human-tests]
+
+Parameterized renderer tests cover C0/C1 controls, Unicode, literal backslashes,
+and baseline layout. Property tests require single-line human fields to contain
+no control characters or Unicode line separators. JSON/JSONL tests compare the
+original candidate and diagnostic values after parsing. These are native macOS
+results, not evidence of native Linux/Windows execution or of Unicode visual
+spoofing prevention.[^issue-1002-human-tests]
+
+[^issue-1002-human-text]: [Shared human text projection](../../../crates/hoimin-cli/src/human_text.rs).
+[^issue-1002-human-report]: [Human event and diagnostic rendering](../../../crates/hoimin-cli/src/report/human.rs).
+[^issue-1002-human-tests]: [Human and machine report regression tests](../../../crates/hoimin-cli/tests/report_handler.rs).
+
+## Janitor report schema 9 (Issue #1015)
+
+Report/event schema 9 replaces `disk.stale_roots_reclaimed` with required nullable
+`disk.janitor`. Rust decoding rejects a missing field; explicit null means no
+observation. Non-null summaries distinguish inspected, reclaimed, already absent,
+preserved and unresolved roots, acknowledged deleted entries, and scan/detail
+omissions. Readers reject older report versions instead of adapting their shapes.
+[^issue-1015-wire]
+
+The 0.14.0 package floor carries this report change. Plan schema 10, session schema
+5, fingerprint 13 and candidate identities do not change. CLI `--verbose` is passed
+as runtime ReportPresentation, outside checked/saved RunConfig and PlanConfig.
+Default and verbose output share factual counts and exit policy; only ordinary
+retention details and their presentation-suppression count differ. This section
+supersedes earlier current report-version and floor statements, without changing
+historical verification evidence.[^issue-1015-compatibility]
+
+[^issue-1015-wire]: [Core report types and required-nullable decoder](../../../crates/hoimin-core/src/report.rs).
+[^issue-1015-compatibility]: [Schema 9 compatibility notice](../../compatibility.md#structured-startup-cleanup-in-0140).
+
+[^issue-1010-wire]: [MutantFinishedの直列化と検査](../../../crates/hoimin-core/src/report.rs)。
+[^issue-1010-human]: [humanの完了行](../../../crates/hoimin-cli/src/report/human.rs)。
+
+[^priority-six-compatibility]: [Current combined schema-9 notice](../../compatibility.md#structured-startup-cleanup-in-0140).

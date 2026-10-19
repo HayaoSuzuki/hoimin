@@ -231,7 +231,7 @@ fn validate_delta(id: &str, delta: Option<&ExpectedDelta>) -> Result<(), String>
 }
 
 fn base_report() -> Value {
-    serde_json::from_str(include_str!("golden/reports/schema-v8-current.json"))
+    serde_json::from_str(include_str!("golden/reports/schema-v9-current.json"))
         .expect("owned current-schema golden report must remain valid JSON")
 }
 
@@ -268,6 +268,7 @@ fn build_report(case_id: &str, report_index: usize, input: &OracleReport) -> Val
                     "file_hash": format!("hash-{content}")
                 },
                 "outcome": mutation_outcome::executed(serde_json::from_value(json!(mutant.status)).unwrap()),
+                "status": mutant.status,
                 "resource_mode": "hard"
             })
         })

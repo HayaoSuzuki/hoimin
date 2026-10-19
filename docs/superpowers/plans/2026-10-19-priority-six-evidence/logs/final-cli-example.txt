@@ -1,0 +1,22 @@
+Final check excerpt
+Command: ["cargo", "test", "--locked", "-p", "hoimin-cli", "--example", "generate_cli_reference", "--", "--test-threads=2"]
+Head: 3aaf82b0d5b695a548dda33ea248ceaa1dd68219
+Exit: 0
+Original: /tmp/hoimin-priority-six-task7/cli-example.log
+Original SHA-256: 39d1075f6d61e239537c55dc97246d9b5696801fd1f326b92b4349bd844c8de3
+
+000001:    Compiling hoimin-cli v0.14.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles/crates/hoimin-cli)
+000002:     Finished `test` profile [unoptimized + debuginfo] target(s) in 0.93s
+000003:      Running unittests examples/generate_cli_reference.rs (/tmp/hoimin-priority-six-target/debug/examples/generate_cli_reference-9d7cd44a486352bc)
+000004:
+000005: running 7 tests
+000006: test tests::changed_help_defaults_and_new_options_make_reference_stale ... ok
+000007: test tests::check_detects_staleness_without_writing_and_accepts_checkout_newlines ... ok
+000008: test tests::excludes_hidden_items_and_keeps_nested_commands ... ok
+000009: test tests::help_with_markdown_fences_stays_inside_code_block ... ok
+000010: test tests::reflects_help_defaults_values_and_constraints ... ok
+000011: test tests::rendering_is_repeatable_and_plain_text ... ok
+000012: test tests::actual_reference_is_current_and_covers_public_commands ... ok
+000013:
+000014: test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+000015:

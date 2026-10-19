@@ -94,7 +94,7 @@ fn parse_lean_oracle_cases() -> Vec<LeanOracleCase> {
 
 fn report_json_from_lean_case(case: &LeanOracleCase) -> Value {
     let mut doc: Value =
-        serde_json::from_str(include_str!("golden/reports/schema-v8-current.json")).unwrap();
+        serde_json::from_str(include_str!("golden/reports/schema-v9-current.json")).unwrap();
     doc["run"]["normalized_config"] = Value::Null;
     match case.baseline.as_str() {
         "passed" => doc["baseline"]["termination"] = json!({"Exit": 0}),
@@ -117,6 +117,7 @@ fn report_json_from_lean_case(case: &LeanOracleCase) -> Value {
                     serde_json::from_value(json!(status)).unwrap();
                 event["outcome"] =
                     serde_json::to_value(mutation_outcome::executed(status)).unwrap();
+                event["status"] = serde_json::to_value(status).unwrap();
                 if let Some(fields) = &case.result_fields {
                     event["outcome"]["executed"]["termination"] = fields.termination.clone();
                     event["outcome"]["executed"]["output_state"] = json!(fields.output_state);
@@ -376,7 +377,7 @@ fn shared_reader_fixture_encodings_preserve_fields_and_projection_premises() {
             document["summary"]["counts"]
         );
         for (event, original) in mutants.iter().zip(document["mutants"].as_array().unwrap()) {
-            for field in ["candidate", "outcome", "diagnostics"] {
+            for field in ["candidate", "outcome", "status", "diagnostics"] {
                 assert_eq!(event[field], original[field], "{} {field}", case.id);
             }
         }

@@ -1,0 +1,42 @@
+{
+  "native_run": 39243290107,
+  "native_head": "2712291daf85d91ddbff2b166b23ba16fbab6924",
+  "checked_head": "be67c007d539842ad0e796e26eb2f54df18cab4e",
+  "unchanged_native_input_paths": [
+    ".github",
+    "Cargo.toml",
+    "Cargo.lock",
+    "fuzz/Cargo.toml",
+    "fuzz/Cargo.lock",
+    "crates",
+    "vendor",
+    "tests",
+    "tools",
+    "pyproject.toml",
+    "uv.lock"
+  ],
+  "diff_exit": 0,
+  "changed_files": [
+    "deny.toml",
+    "docs/superpowers/plans/2026-10-19-priority-six-evidence/archive-manifest.json",
+    "docs/superpowers/plans/2026-10-19-priority-six-evidence/ci-policy-report.md",
+    "docs/superpowers/plans/2026-10-19-priority-six-evidence/ci-policy-review.md",
+    "docs/superpowers/plans/2026-10-19-priority-six-evidence/ci-policy/commit-receipt.json",
+    "docs/superpowers/plans/2026-10-19-priority-six-evidence/ci-policy/green-fuzz.log",
+    "docs/superpowers/plans/2026-10-19-priority-six-evidence/ci-policy/green-root.log",
+    "docs/superpowers/plans/2026-10-19-priority-six-evidence/ci-policy/red-fuzz.log",
+    "docs/superpowers/plans/2026-10-19-priority-six-evidence/ci-policy/red-root.log",
+    "docs/superpowers/plans/2026-10-19-priority-six-evidence/ci-policy/scope-receipt.json",
+    "docs/superpowers/plans/2026-10-19-priority-six-evidence/controller-rulings.md",
+    "docs/superpowers/plans/2026-10-19-priority-six-execution.md",
+    "fuzz/fuzz_targets/report_sequence.rs",
+    "fuzz/seeds/report_sequence/error-status-close-timeout-regression"
+  ],
+  "basis": [
+    "Root workspace explicit four members excludes separate fuzz workspace.",
+    "Native workflow root Cargo/pytest/wheel/performance jobs never build report_sequence or read seed.",
+    "tests/test_ci_fuzz.py fake_fuzz_root copies only unchanged fuzz/Cargo.toml; seed paths are argument strings tested against fake tools.",
+    "Native workflow and all its Rust/Python test/build inputs remain byte-identical."
+  ],
+  "limit": "Native execution remains attributed only to2712291; this correspondence is not a new native run."
+}

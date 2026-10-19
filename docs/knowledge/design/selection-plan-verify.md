@@ -5,6 +5,31 @@ description: 候補発見と実行の分離、ランキング、部分集合、�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-1004-config
+  resource: ../../../crates/hoimin-core/src/config.rs
+  revision: 6d78789eca05fad577b2a8dcce83077f9389ee06
+  working_tree: modified
+  sha256: 6c0aa32efc26a872a6f5c3aaf32c7b9cfad9cb5ae58d4aa83a9ce5c26461fba4
+- id: issue-1004-preparation-tests
+  resource: ../../../crates/hoimin-cli/tests/checked_config.rs
+  revision: 6d78789eca05fad577b2a8dcce83077f9389ee06
+  working_tree: untracked
+  sha256: 5b5f8758c22e950dcbab0dd95a4058a81aee0f95ece51f58760436fbfb15339e
+- id: issue-1002-human-text
+  resource: ../../../crates/hoimin-cli/src/human_text.rs
+  revision: b02ee7d51709de664ee88db68abca34025db3487
+  working_tree: untracked
+  sha256: 00322fd04c933a8ee575787e2f65bbb641059fd043a8493d76beca57a6ccf357
+- id: issue-1002-preview
+  resource: ../../../crates/hoimin-cli/src/plan/preview.rs
+  revision: b02ee7d51709de664ee88db68abca34025db3487
+  working_tree: modified
+  sha256: 12c88134f0d9dc3ec5b184e0e656376efa44bc2aabafc7bbcd4d79e751ec3956
+- id: issue-1002-preview-tests
+  resource: ../../../crates/hoimin-cli/tests/plan.rs
+  revision: 3d9e33d178a451e39e182495f4a5bb3a4c5ebfa0
+  working_tree: modified
+  sha256: 19dd709bc3460827f3884558d6924b39fe6d877404558de8a7fe7128002a9ffb
 - id: issue-998-selection
   resource: ../../../crates/hoimin-core/src/machine/selection.rs
   revision: 50b9c089ca73aeca2205636a2a9e1823cd244d39
@@ -397,7 +422,42 @@ sources:
   working_tree: modified
   sha256: 881f774b6a135f3d50f3acca3e379a0c8f0742349fd84964d526caa4073c421a
 
+- id: issue-1003-source-acquisition
+  resource: ../../../crates/hoimin-cli/src/plan/source.rs
+  working_tree: untracked
+  sha256: c6e684a074211c3c85618b02063003408ca4af1e80196666057593ac2e49d65b
+- id: issue-1003-source-safety-tests
+  resource: ../../../crates/hoimin-cli/src/plan/validation_tests.rs
+  revision: ccef1941710e20cff8d391283cc21bcfbd7650aa
+  working_tree: modified
+  sha256: acac0b4024130ac6bdd91d68ec7805eefc2414e0b2123e9e138b8b00f24b288c
+- id: issue-1003-source-heap
+  resource: ../../../crates/hoimin-cli/tests/plan_source_heap.rs
+  working_tree: untracked
+  sha256: a41daec552a0ef497201a3876589934ac5271a825a41e70c7d3c864a84f1c905
 ---
+
+# Checked normalized settings (Issue #1004)
+
+`RunConfig<E>` now owns accepted normalized settings behind an immutable view.
+Raw conversion, normalized construction data, and typed serde acceptance share
+the semantic validators for selection, import roots, operators, argv, and limits.
+Callers consume `into_data()` to edit fields and must pass the result through
+`TryFrom` before execution. `PlanConfig` remains persisted data, with fallible
+conversion to execution settings. Header validation still precedes source and
+fingerprint work; `VerifiedPlan` retains selected candidates and protected inputs
+with the accepted config.
+
+The request-to-snapshot environment transition still checks the exact requested
+names. Configuration acceptance performs no filesystem work and does not establish
+freshness or destination safety. Preparation owns those checks. These changes
+preserve plan, report, and fingerprint representations. See the
+[Rust caller migration](../../development.md#checked-execution-configuration).[^issue-1004-config][^issue-1004-preparation-tests]
+Historical source revisions and verification records below retain their original
+scope; local macOS checks do not establish native Linux or Windows results.
+
+[^issue-1004-config]: [Checked configuration implementation](../../../crates/hoimin-core/src/config.rs).
+[^issue-1004-preparation-tests]: [Preparation boundary regressions](../../../crates/hoimin-cli/tests/checked_config.rs).
 
 # Checked execution selection (Issues #997 and #998)
 
@@ -897,7 +957,7 @@ Cancellation can return before a blocking worker exits; the worker retains its
 resources until it stops. Synchronous reads and parsing are not forcibly
 interruptible. Runtime total/baseline/mutant deadlines remain separate.
 Issue #979 introduced plan 10/report 8/fingerprint 12 and floor 0.12.0.
-Issue #984 keeps these plan/report shapes and raises fingerprint to 13 and the
+Issue #984 kept these plan/report shapes and raised fingerprint to 13 and the
 floor to 0.13.0 to exclude pre-restoration results from resume. SQLite session 5,
 ranking 4 and candidate schema 1/ID v1 stay unchanged; current plans need no
 regeneration for that execution fix. See the [discovery migration notice](../../compatibility.md#discovery-timeout-ownership-in-0120)
@@ -978,3 +1038,53 @@ allocator overhead or an I/O deadline.[^issue-988-evidence]
 
 [^issue-998-selection]: [crates/hoimin-core/src/machine/selection.rs](../../../crates/hoimin-core/src/machine/selection.rs).
 [^issue-997-stop]: [crates/hoimin-core/src/machine.rs](../../../crates/hoimin-core/src/machine.rs).
+
+
+# Capability-relative project source acquisition (Issue #1003)
+
+Plan source hashing and requested-candidate byte validation share one lazy
+PortableFileReader per operation. Root opening and file acquisition run on the
+blocking pool. Hashing reuses WorkerRoot's streaming hash from the safely opened
+descriptor; candidate validation keeps one file's bytes and context at a time.
+Requested-ID diagnostic ordering, source record sorting, hashes and identities
+remain unchanged. A missing source now uses the shared reader's not-found wording
+while preserving the source path and PlanError category.[^issue-1003-source-acquisition]
+
+Native macOS tests synchronize after target resolution and before acquisition,
+then replace the ordinary source with a writerless FIFO, a symlink to a regular
+file or a symlink to a FIFO. Both consumers reject those replacements; a watchdog
+bounds and reaps a regressed child. Existing WorkerRoot parent-replacement tests
+cover retained capability access.[^issue-1003-source-safety-tests]
+
+A public plan-creation allocation test observes only the source stage, excluding
+analyzer allocations. Its 1, 16 and 64 MiB sources stay below 256 KiB of additional
+requested live heap; restoring whole-source reading exceeds that bound. This
+measures requested live allocation, not RSS, allocator overhead, all plan memory
+or an I/O deadline. Native Linux/Windows results are not established by these
+macOS checks. A started blocking operation can continue after its caller is
+cancelled.[^issue-1003-source-heap]
+
+[^issue-1003-source-acquisition]: [Plan source acquisition](../../../crates/hoimin-cli/src/plan/source.rs).
+[^issue-1003-source-safety-tests]: [Synchronized source and descriptor regressions](../../../crates/hoimin-cli/src/plan/validation_tests.rs).
+[^issue-1003-source-heap]: [Production source-stage allocation gate](../../../crates/hoimin-cli/tests/plan_source_heap.rs).
+
+
+# Human display boundaries (Issue #1002)
+
+Preview projects each external string through `HumanText` at rendering time.
+C0/C1 controls, including ESC, CR, LF and TAB, and Unicode line separators
+U+2028/U+2029 become visible escapes. Ordinary Unicode remains readable, and each
+candidate occupies one renderer-generated line. Quoted mutation text uses the
+same policy with quote/backslash escaping; logical paths, candidate IDs and
+JSON/JSONL strings remain unchanged.[^issue-1002-human-text][^issue-1002-preview]
+
+Native macOS public-binary tests create actual ESC-, CR-, LF- and TAB-bearing
+filenames and a Japanese filename. They exercise all preview formats, compare
+logical path/ID values, and check the command marker remains absent and the plan
+unchanged. These checks do not establish native Linux/Windows behavior or permit
+NUL in a native filename. The issue concerns terminal presentation; it does not
+establish arbitrary code execution.[^issue-1002-preview-tests]
+
+[^issue-1002-human-text]: [Shared human text projection](../../../crates/hoimin-cli/src/human_text.rs).
+[^issue-1002-preview]: [Preview rendering boundary](../../../crates/hoimin-cli/src/plan/preview.rs).
+[^issue-1002-preview-tests]: [Public preview and diagnostic regressions](../../../crates/hoimin-cli/tests/plan.rs).

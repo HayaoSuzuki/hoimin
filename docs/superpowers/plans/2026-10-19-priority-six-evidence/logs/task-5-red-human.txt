@@ -1,0 +1,128 @@
+Historical task 5 log excerpt.
+Original: /tmp/hoimin-priority-six-task5-red-human.log
+Original SHA-256: 6f9a62d242b70f4c8845d43eae890e9cbcca8aa14fa6a1ab48e5305f383681c4
+Command, base, RED/GREEN meaning and limits: task-5-report.md.
+Only recorded command information is authoritative; no missing argv/head was inferred.
+
+000001:    Compiling hoimin-cli v0.14.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles/crates/hoimin-cli)
+000002:     Finished `test` profile [unoptimized + debuginfo] target(s) in 3.60s
+000003:      Running tests/report_handler.rs (/tmp/hoimin-priority-six-target/debug/deps/report_handler-d11c78eef9aa30a0)
+000004:
+000005: running 12 tests
+000006: test human_format_escapes_external_candidate_fields::del ... FAILED
+000007: test human_format_escapes_external_candidate_fields::cr ... FAILED
+000008: test human_format_escapes_external_candidate_fields::esc ... FAILED
+000009: test human_format_escapes_external_candidate_fields::lf ... FAILED
+000010: test human_format_escapes_external_candidate_fields::line_separator ... FAILED
+000011: test human_format_escapes_external_candidate_fields::literal_backslash ... FAILED
+000012: test human_format_escapes_external_candidate_fields::nel ... FAILED
+000013: test human_format_escapes_external_candidate_fields::nul ... FAILED
+000014: test human_format_escapes_external_candidate_fields::paragraph_separator ... FAILED
+000015: test human_format_escapes_external_candidate_fields::plain ... FAILED
+000016: test human_format_escapes_external_candidate_fields::tab ... FAILED
+000017: test human_format_escapes_external_candidate_fields::unicode ... FAILED
+000018:
+000019: failures:
+000020:
+000021: ---- human_format_escapes_external_candidate_fields::del stdout ----
+000022:
+000023: thread 'human_format_escapes_external_candidate_fields::del' (55970770) panicked at crates/hoimin-cli/tests/report_handler.rs:2588:5:
+000024: assertion `left == right` failed: "calc\u{7f}.py"
+000025:   left: "mutant finished: calc\\u{7f}.py:1:0 calc\\u{7f}.py \"+\" -> \"-\" killed\n"
+000026:  right: "mutant finished: calc\\u{7f}.py calc\\u{7f}.py:1:0 calc\\u{7f}.py \"+\" -> \"-\" killed\n"
+000027: note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+000028:
+000029: ---- human_format_escapes_external_candidate_fields::cr stdout ----
+000030:
+000031: thread 'human_format_escapes_external_candidate_fields::cr' (55970769) panicked at crates/hoimin-cli/tests/report_handler.rs:2588:5:
+000032: assertion `left == right` failed: "calc\r.py"
+000033:   left: "mutant finished: calc\\r.py:1:0 calc\\r.py \"+\" -> \"-\" killed\n"
+000034:  right: "mutant finished: calc\\r.py calc\\r.py:1:0 calc\\r.py \"+\" -> \"-\" killed\n"
+000035:
+000036: ---- human_format_escapes_external_candidate_fields::esc stdout ----
+000037:
+000038: thread 'human_format_escapes_external_candidate_fields::esc' (55970771) panicked at crates/hoimin-cli/tests/report_handler.rs:2588:5:
+000039: assertion `left == right` failed: "calc\u{1b}[31m.py"
+000040:   left: "mutant finished: calc\\u{1b}[31m.py:1:0 calc\\u{1b}[31m.py \"+\" -> \"-\" killed\n"
+000041:  right: "mutant finished: calc\\u{1b}[31m.py calc\\u{1b}[31m.py:1:0 calc\\u{1b}[31m.py \"+\" -> \"-\" killed\n"
+000042:
+000043: ---- human_format_escapes_external_candidate_fields::lf stdout ----
+000044:
+000045: thread 'human_format_escapes_external_candidate_fields::lf' (55970772) panicked at crates/hoimin-cli/tests/report_handler.rs:2588:5:
+000046: assertion `left == right` failed: "calc\n.py"
+000047:   left: "mutant finished: calc\\n.py:1:0 calc\\n.py \"+\" -> \"-\" killed\n"
+000048:  right: "mutant finished: calc\\n.py calc\\n.py:1:0 calc\\n.py \"+\" -> \"-\" killed\n"
+000049:
+000050: ---- human_format_escapes_external_candidate_fields::line_separator stdout ----
+000051:
+000052: thread 'human_format_escapes_external_candidate_fields::line_separator' (55970773) panicked at crates/hoimin-cli/tests/report_handler.rs:2588:5:
+000053: assertion `left == right` failed: "calc\u{2028}.py"
+000054:   left: "mutant finished: calc\\u{2028}.py:1:0 calc\\u{2028}.py \"+\" -> \"-\" killed\n"
+000055:  right: "mutant finished: calc\\u{2028}.py calc\\u{2028}.py:1:0 calc\\u{2028}.py \"+\" -> \"-\" killed\n"
+000056:
+000057: ---- human_format_escapes_external_candidate_fields::literal_backslash stdout ----
+000058:
+000059: thread 'human_format_escapes_external_candidate_fields::literal_backslash' (55970774) panicked at crates/hoimin-cli/tests/report_handler.rs:2588:5:
+000060: assertion `left == right` failed: "literal\\n.py"
+000061:   left: "mutant finished: literal\\n.py:1:0 literal\\n.py \"+\" -> \"-\" killed\n"
+000062:  right: "mutant finished: literal\\n.py literal\\n.py:1:0 literal\\n.py \"+\" -> \"-\" killed\n"
+000063:
+000064: ---- human_format_escapes_external_candidate_fields::nel stdout ----
+000065:
+000066: thread 'human_format_escapes_external_candidate_fields::nel' (55970775) panicked at crates/hoimin-cli/tests/report_handler.rs:2588:5:
+000067: assertion `left == right` failed: "calc\u{85}.py"
+000068:   left: "mutant finished: calc\\u{85}.py:1:0 calc\\u{85}.py \"+\" -> \"-\" killed\n"
+000069:  right: "mutant finished: calc\\u{85}.py calc\\u{85}.py:1:0 calc\\u{85}.py \"+\" -> \"-\" killed\n"
+000070:
+000071: ---- human_format_escapes_external_candidate_fields::nul stdout ----
+000072:
+000073: thread 'human_format_escapes_external_candidate_fields::nul' (55970776) panicked at crates/hoimin-cli/tests/report_handler.rs:2588:5:
+000074: assertion `left == right` failed: "calc\0.py"
+000075:   left: "mutant finished: calc\\0.py:1:0 calc\\0.py \"+\" -> \"-\" killed\n"
+000076:  right: "mutant finished: calc\\0.py calc\\0.py:1:0 calc\\0.py \"+\" -> \"-\" killed\n"
+000077:
+000078: ---- human_format_escapes_external_candidate_fields::paragraph_separator stdout ----
+000079:
+000080: thread 'human_format_escapes_external_candidate_fields::paragraph_separator' (55970777) panicked at crates/hoimin-cli/tests/report_handler.rs:2588:5:
+000081: assertion `left == right` failed: "calc\u{2029}.py"
+000082:   left: "mutant finished: calc\\u{2029}.py:1:0 calc\\u{2029}.py \"+\" -> \"-\" killed\n"
+000083:  right: "mutant finished: calc\\u{2029}.py calc\\u{2029}.py:1:0 calc\\u{2029}.py \"+\" -> \"-\" killed\n"
+000084:
+000085: ---- human_format_escapes_external_candidate_fields::plain stdout ----
+000086:
+000087: thread 'human_format_escapes_external_candidate_fields::plain' (55970778) panicked at crates/hoimin-cli/tests/report_handler.rs:2588:5:
+000088: assertion `left == right` failed: "plain.py"
+000089:   left: "mutant finished: plain.py:1:0 plain.py \"+\" -> \"-\" killed\n"
+000090:  right: "mutant finished: plain.py plain.py:1:0 plain.py \"+\" -> \"-\" killed\n"
+000091:
+000092: ---- human_format_escapes_external_candidate_fields::tab stdout ----
+000093:
+000094: thread 'human_format_escapes_external_candidate_fields::tab' (55970779) panicked at crates/hoimin-cli/tests/report_handler.rs:2588:5:
+000095: assertion `left == right` failed: "calc\t.py"
+000096:   left: "mutant finished: calc\\t.py:1:0 calc\\t.py \"+\" -> \"-\" killed\n"
+000097:  right: "mutant finished: calc\\t.py calc\\t.py:1:0 calc\\t.py \"+\" -> \"-\" killed\n"
+000098:
+000099: ---- human_format_escapes_external_candidate_fields::unicode stdout ----
+000100:
+000101: thread 'human_format_escapes_external_candidate_fields::unicode' (55970780) panicked at crates/hoimin-cli/tests/report_handler.rs:2588:5:
+000102: assertion `left == right` failed: "日本語🦀.py"
+000103:   left: "mutant finished: 日本語🦀.py:1:0 日本語🦀.py \"+\" -> \"-\" killed\n"
+000104:  right: "mutant finished: 日本語🦀.py 日本語🦀.py:1:0 日本語🦀.py \"+\" -> \"-\" killed\n"
+000105:
+000106:
+000107: failures:
+000108:     human_format_escapes_external_candidate_fields::cr
+000109:     human_format_escapes_external_candidate_fields::del
+000110:     human_format_escapes_external_candidate_fields::esc
+000112:     human_format_escapes_external_candidate_fields::line_separator
+000113:     human_format_escapes_external_candidate_fields::literal_backslash
+000114:     human_format_escapes_external_candidate_fields::nel
+000115:     human_format_escapes_external_candidate_fields::nul
+000116:     human_format_escapes_external_candidate_fields::paragraph_separator
+000117:     human_format_escapes_external_candidate_fields::plain
+000118:     human_format_escapes_external_candidate_fields::tab
+000119:     human_format_escapes_external_candidate_fields::unicode
+000120:
+000121: test result: FAILED. 0 passed; 12 failed; 0 ignored; 0 measured; 131 filtered out; finished in 0.00s
+000122:
+000123: error: test failed, to rerun pass `-p hoimin-cli --test report_handler`

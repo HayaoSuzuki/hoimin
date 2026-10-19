@@ -1460,7 +1460,7 @@ async fn verified_metrics_override_preserves_checked_execution_and_preview() {
     )
     .await
     .unwrap();
-    let mut expected_config = verified.config().clone();
+    let mut expected_config = verified.config().clone().into_data();
     let expected_selection = verified.selection().clone();
     let expected_metadata = verified
         .selection()
@@ -1471,6 +1471,7 @@ async fn verified_metrics_override_preserves_checked_execution_and_preview() {
     let destination =
         camino::Utf8PathBuf::from_path_buf(project.path.join("metrics.json")).unwrap();
     expected_config.output.metrics = Some(destination.clone());
+    let expected_config = hoimin_core::RunConfig::try_from(expected_config).unwrap();
 
     let updated = verified.with_metrics(Some(destination));
 
@@ -1498,7 +1499,11 @@ async fn verify_rejects_fingerprint_input_deleted_after_preparation_before_execu
     let stderr = CollectingWriter::default();
 
     let exit = verified
-        .execute(stdout.clone(), stderr.clone())
+        .execute(
+            stdout.clone(),
+            stderr.clone(),
+            hoimin_cli::report::ReportPresentation::default(),
+        )
         .await
         .unwrap();
 
@@ -5556,7 +5561,8 @@ async fn discovery_timeout_changes_saved_plan_without_changing_execution_identit
         let config = manifest
             .normalized_config
             .clone()
-            .into_run_config(hoimin_core::OutputConfig::default());
+            .into_run_config(hoimin_core::OutputConfig::default())
+            .unwrap();
         let sources = manifest
             .sources
             .iter()
@@ -5711,4 +5717,255 @@ async fn baseline_contamination_plan(
         [OsString::from("--format"), "json".into()],
     );
     (args, manifest, plan_path)
+}
+
+#[cfg(unix)]
+async fn assert_preview_filename(name: &str, escaped: &str, format: &str) {
+    // Arrange: real native filenames and a command with an observable side effect.
+    let project = Project::new_with_sources(&[(name, "value = 1 + 2\n")]);
+    let (path, manifest, marker) =
+        write_plan_manifest(&project, &["--operators", "binary_add_sub"]).await;
+    let before = std::fs::read(&path).unwrap();
+    assert_eq!(manifest.candidates.len(), 1);
+    let candidate = &manifest.candidates[0];
+    assert_eq!(candidate.path.as_str(), format!("src/{name}"));
+    let temporary = tempfile::tempdir().unwrap();
+
+    // Act.
+    let output = preview_cli(
+        &path,
+        &["--top", "1", "--dry-run", "--format", format],
+        temporary.path(),
+    )
+    .await;
+
+    // Assert: only the human projection changes; dry-run never executes the command.
+    assert!(output.status.success(), "{name:?}: {output:?}");
+    assert!(!marker.exists(), "{name:?}: {format}");
+    assert_eq!(std::fs::read(&path).unwrap(), before);
+    assert_eq!(std::fs::read_dir(temporary.path()).unwrap().count(), 0);
+    if format == "human" {
+        let text = String::from_utf8(output.stdout).unwrap();
+        assert_eq!(text.lines().count(), 2, "{name:?}: {text:?}");
+        assert!(
+            text.contains(&format!(
+                "1: {} rank=1 src/{escaped}:1:10 operator=binary_add_sub \"+\" -> \"-\"\n",
+                candidate.id
+            )),
+            "{name:?}: {text:?}"
+        );
+        assert!(
+            !text.chars().any(|c| c.is_control() && c != '\n'),
+            "{name:?}: {text:?}"
+        );
+    } else {
+        let preview: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(preview["candidates"][0]["path"], format!("src/{name}"));
+        assert_eq!(preview["candidates"][0]["id"], candidate.id);
+        assert_eq!(preview["candidates"][0]["original"], "+");
+        assert_eq!(preview["candidates"][0]["replacement"], "-");
+    }
+}
+
+#[cfg(unix)]
+macro_rules! preview_filename_case {
+    ($case:ident, $name:expr, $escaped:expr) => {
+        mod $case {
+            #[tokio::test]
+            async fn human() {
+                super::assert_preview_filename($name, $escaped, "human").await;
+            }
+            #[tokio::test]
+            async fn json() {
+                super::assert_preview_filename($name, $escaped, "json").await;
+            }
+            #[tokio::test]
+            async fn jsonl() {
+                super::assert_preview_filename($name, $escaped, "jsonl").await;
+            }
+        }
+    };
+}
+
+#[cfg(unix)]
+mod verify_preview_external_filenames {
+    use super::assert_preview_filename;
+    preview_filename_case!(esc, "calc\x1b[31m.py", r"calc\u{1b}[31m.py");
+    preview_filename_case!(cr, "calc\r.py", r"calc\r.py");
+    preview_filename_case!(lf, "calc\n.py", r"calc\n.py");
+    preview_filename_case!(tab, "calc\t.py", r"calc\t.py");
+    preview_filename_case!(unicode, "日本語🦀.py", "日本語🦀.py");
+}
+
+#[tokio::test]
+async fn verify_preparation_diagnostic_escapes_external_manifest_path() {
+    let temporary = tempfile::tempdir().unwrap();
+    let path = temporary.path().join("missing\x1b[31m\r\n\t.json");
+
+    let output = preview_cli(&path, &["--top", "1", "--dry-run"], temporary.path()).await;
+
+    assert_eq!(output.status.code(), Some(2));
+    let text = String::from_utf8(output.stderr).unwrap();
+    assert_eq!(text.lines().count(), 1, "{text:?}");
+    assert!(text.contains(r"missing\u{1b}[31m\r\n\t.json"), "{text:?}");
+    assert!(
+        !text.chars().any(|c| c.is_control() && c != '\n'),
+        "{text:?}"
+    );
+}
+
+async fn assert_malformed_diagnostic(args: &[&str], expected: &str, layout: &str) {
+    // Arrange.
+    let stdout = CollectingWriter::default();
+    let stderr = CollectingWriter::default();
+
+    // Act.
+    let code =
+        hoimin_cli::run_with_writers(args.iter().copied(), stdout.clone(), stderr.clone()).await;
+
+    // Assert.
+    assert_eq!(code, 2);
+    let text = String::from_utf8(stderr.snapshot()).unwrap();
+    assert!(
+        !text.chars().any(|c| c.is_control() && c != '\n'),
+        "{text:?}"
+    );
+    assert!(text.contains(expected), "{text:?}");
+    assert!(text.contains(layout), "{text:?}");
+    assert!(text.contains("\n\nFor more information,"), "{text:?}");
+    assert_eq!(stdout.snapshot(), [] as [u8; 0]);
+}
+
+macro_rules! malformed_argument_case {
+    ($case:ident, $args:expr, $expected:expr, $layout:expr) => {
+        #[tokio::test]
+        async fn $case() {
+            assert_malformed_diagnostic($args, $expected, $layout).await;
+        }
+    };
+}
+
+mod malformed_argument_diagnostics {
+    use super::assert_malformed_diagnostic;
+    malformed_argument_case!(
+        unknown_argument,
+        &["hoimin", "verify", "plan.json", "--bad\x1b[31m\r\n\t"],
+        r"bad\u{1b}[31m\r\n\t",
+        "\n\nUsage: "
+    );
+    malformed_argument_case!(
+        invalid_format,
+        &[
+            "hoimin",
+            "verify",
+            "plan.json",
+            "--top",
+            "1",
+            "--format",
+            "bad\x1b[31m\r\n\t"
+        ],
+        r"bad\u{1b}[31m\r\n\t",
+        "\n  [possible values:"
+    );
+    malformed_argument_case!(
+        unknown_subcommand,
+        &["hoimin", "bad\x1b[31m\r\n\t"],
+        r"bad\u{1b}[31m\r\n\t",
+        "\n\nUsage: "
+    );
+    malformed_argument_case!(lf_subcommand, &["hoimin", "\n"], r"\n", "\n\nUsage: ");
+    malformed_argument_case!(tab_subcommand, &["hoimin", "\t"], r"\t", "\n\nUsage: ");
+    malformed_argument_case!(
+        lf_format,
+        &[
+            "hoimin",
+            "verify",
+            "plan.json",
+            "--top",
+            "1",
+            "--format",
+            "\n"
+        ],
+        r"\n",
+        "\n  [possible values:"
+    );
+    malformed_argument_case!(
+        tab_format,
+        &[
+            "hoimin",
+            "verify",
+            "plan.json",
+            "--top",
+            "1",
+            "--format",
+            "\t"
+        ],
+        r"\t",
+        "\n  [possible values:"
+    );
+}
+
+#[cfg(unix)]
+async fn assert_trusted_executable_usage(argv0: &str, argument: &str, expected_code: i32) {
+    use std::os::unix::process::CommandExt;
+    // Arrange: use the public binary with an independently supplied executable name.
+    let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"));
+    command.as_std_mut().arg0(argv0);
+    command.arg(argument).kill_on_drop(true);
+
+    // Act.
+    let output = tokio::time::timeout(std::time::Duration::from_secs(15), command.output())
+        .await
+        .expect("CLI executable-name deadline")
+        .unwrap();
+
+    // Assert: trusted Usage keeps its real separators on error and help routes.
+    assert_eq!(output.status.code(), Some(expected_code));
+    let text = if expected_code == 0 {
+        assert_eq!(output.stderr, [] as [u8; 0]);
+        String::from_utf8(output.stdout).unwrap()
+    } else {
+        assert_eq!(output.stdout, [] as [u8; 0]);
+        String::from_utf8(output.stderr).unwrap()
+    };
+    assert!(text.contains("Usage: hoimin <COMMAND>\n"), "{text:?}");
+    assert!(
+        !text.chars().any(|c| c.is_control() && c != '\n'),
+        "{text:?}"
+    );
+    if expected_code == 0 {
+        assert!(text.contains("Bounded mutation testing"), "{text:?}");
+    } else {
+        assert!(
+            text.contains("unrecognized subcommand 'bad'\n\nUsage:"),
+            "{text:?}"
+        );
+    }
+}
+
+#[cfg(unix)]
+macro_rules! hostile_executable_case {
+    ($case:ident, $argv0:expr) => {
+        mod $case {
+            #[tokio::test]
+            async fn error() {
+                super::assert_trusted_executable_usage($argv0, "bad", 2).await;
+            }
+            #[tokio::test]
+            async fn help() {
+                super::assert_trusted_executable_usage($argv0, "--help", 0).await;
+            }
+        }
+    };
+}
+
+#[cfg(unix)]
+mod hostile_executable_names {
+    use super::assert_trusted_executable_usage;
+    hostile_executable_case!(esc, "hoimin\x1b[31m");
+    hostile_executable_case!(cr, "hoimin\r");
+    hostile_executable_case!(lf, "hoimin\n");
+    hostile_executable_case!(tab, "hoimin\t");
+    hostile_executable_case!(mixed, "hoimin\x1b[31m\r\n\t");
+    hostile_executable_case!(unicode_alias, "別名🦀");
 }

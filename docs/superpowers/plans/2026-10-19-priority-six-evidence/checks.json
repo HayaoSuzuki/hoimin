@@ -1,0 +1,539 @@
+{
+  "scope": "native macOS integration; exact checked heads/dirty hashes retained; no CI/proof/wheel/fuzz inference",
+  "source_receipts": [
+    {
+      "source": "/tmp/hoimin-priority-six-task7/checks.json",
+      "sha256": "eca39c1ca4f6b826bfb0cc95bee6d149bef77b2c177d9854a0e76bb7f876b397"
+    },
+    {
+      "source": "/tmp/hoimin-priority-six-task7/static-checks.json",
+      "sha256": "a4a9d62fa974322e3db7dbc65c7f08e2dfd87042fafbaea2a1f59e93254be99f"
+    }
+  ],
+  "checks": [
+    {
+      "name": "fmt",
+      "argv": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "cwd": "/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles",
+      "head": "3aaf82b0d5b695a548dda33ea248ceaa1dd68219",
+      "git_status": "M docs/compatibility.md\n M docs/knowledge/compatibility.md\n M docs/knowledge/design/session-report.md",
+      "tracked_diff_sha256": "317625d1c9f1039e59e74b52ec351e1767a6217ca63df23f8043b08a57855c97",
+      "environment": {
+        "CARGO_BUILD_JOBS": "2",
+        "CARGO_TARGET_DIR": "/tmp/hoimin-priority-six-target",
+        "RUST_TEST_THREADS": "2",
+        "UV_PROJECT_ENVIRONMENT": "/tmp/hoimin-priority-six-venv",
+        "UV_CACHE_DIR": "/tmp/hoimin-priority-six-uv-cache"
+      },
+      "path_prefix": "/tmp/hoimin-priority-six-venv/bin",
+      "started_unix": 1792404864.182871,
+      "elapsed_seconds": 1.1473510265350342,
+      "exit_code": 0,
+      "log": "/tmp/hoimin-priority-six-task7/fmt.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "excerpt": "logs/final-fmt.txt",
+      "excerpt_sha256": "960a3211714092ba235b265440b2a196f2830c043283b6c2e2af245d98df01b6"
+    },
+    {
+      "name": "fmt-vendor",
+      "argv": [
+        "cargo",
+        "fmt",
+        "--manifest-path",
+        "vendor/ruff_python_parser/Cargo.toml",
+        "--",
+        "--check"
+      ],
+      "cwd": "/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles",
+      "head": "3aaf82b0d5b695a548dda33ea248ceaa1dd68219",
+      "git_status": "M docs/compatibility.md\n M docs/knowledge/compatibility.md\n M docs/knowledge/design/session-report.md",
+      "tracked_diff_sha256": "317625d1c9f1039e59e74b52ec351e1767a6217ca63df23f8043b08a57855c97",
+      "environment": {
+        "CARGO_BUILD_JOBS": "2",
+        "CARGO_TARGET_DIR": "/tmp/hoimin-priority-six-target",
+        "RUST_TEST_THREADS": "2",
+        "UV_PROJECT_ENVIRONMENT": "/tmp/hoimin-priority-six-venv",
+        "UV_CACHE_DIR": "/tmp/hoimin-priority-six-uv-cache"
+      },
+      "path_prefix": "/tmp/hoimin-priority-six-venv/bin",
+      "started_unix": 1792404865.364415,
+      "elapsed_seconds": 0.11390113830566406,
+      "exit_code": 0,
+      "log": "/tmp/hoimin-priority-six-task7/fmt-vendor.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "excerpt": "logs/final-fmt-vendor.txt",
+      "excerpt_sha256": "f84512827c001e69e0aeb592deb54749e286ac3477ea838cf35512f002f05a49"
+    },
+    {
+      "name": "clippy",
+      "argv": [
+        "cargo",
+        "clippy",
+        "--workspace",
+        "--all-targets",
+        "--all-features",
+        "--locked",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "cwd": "/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles",
+      "head": "3aaf82b0d5b695a548dda33ea248ceaa1dd68219",
+      "git_status": "M docs/compatibility.md\n M docs/knowledge/compatibility.md\n M docs/knowledge/design/session-report.md",
+      "tracked_diff_sha256": "317625d1c9f1039e59e74b52ec351e1767a6217ca63df23f8043b08a57855c97",
+      "environment": {
+        "CARGO_BUILD_JOBS": "2",
+        "CARGO_TARGET_DIR": "/tmp/hoimin-priority-six-target",
+        "RUST_TEST_THREADS": "2",
+        "UV_PROJECT_ENVIRONMENT": "/tmp/hoimin-priority-six-venv",
+        "UV_CACHE_DIR": "/tmp/hoimin-priority-six-uv-cache"
+      },
+      "path_prefix": "/tmp/hoimin-priority-six-venv/bin",
+      "started_unix": 1792404865.510327,
+      "elapsed_seconds": 0.4107167720794678,
+      "exit_code": 0,
+      "log": "/tmp/hoimin-priority-six-task7/clippy.log",
+      "log_sha256": "8b1fd2394f7b6f177ede882431154a419bd9f404f00add314c912e91a7fc0ec0",
+      "excerpt": "logs/final-clippy.txt",
+      "excerpt_sha256": "243838797a7862523930c3a01d91fe3a21324cd9e3c7ab89f9ebebdceefd08fa"
+    },
+    {
+      "name": "clippy-vendor",
+      "argv": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "-p",
+        "littrs-ruff-python-parser",
+        "--lib",
+        "--no-deps",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "cwd": "/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles",
+      "head": "3aaf82b0d5b695a548dda33ea248ceaa1dd68219",
+      "git_status": "M docs/compatibility.md\n M docs/knowledge/compatibility.md\n M docs/knowledge/design/session-report.md",
+      "tracked_diff_sha256": "317625d1c9f1039e59e74b52ec351e1767a6217ca63df23f8043b08a57855c97",
+      "environment": {
+        "CARGO_BUILD_JOBS": "2",
+        "CARGO_TARGET_DIR": "/tmp/hoimin-priority-six-target",
+        "RUST_TEST_THREADS": "2",
+        "UV_PROJECT_ENVIRONMENT": "/tmp/hoimin-priority-six-venv",
+        "UV_CACHE_DIR": "/tmp/hoimin-priority-six-uv-cache"
+      },
+      "path_prefix": "/tmp/hoimin-priority-six-venv/bin",
+      "started_unix": 1792404865.953772,
+      "elapsed_seconds": 0.10260200500488281,
+      "exit_code": 0,
+      "log": "/tmp/hoimin-priority-six-task7/clippy-vendor.log",
+      "log_sha256": "02db5a66fa0c60ca8618bd08aac556eac4f3ec863e8630a0d353dba6a0f6e126",
+      "excerpt": "logs/final-clippy-vendor.txt",
+      "excerpt_sha256": "fbf8eeb358e11f4c969c149577ba0e9911a42fbaa5c76175c3b6d8b0c7a050dc"
+    },
+    {
+      "name": "workspace",
+      "argv": [
+        "cargo",
+        "test",
+        "--workspace",
+        "--locked",
+        "--",
+        "--test-threads=2"
+      ],
+      "cwd": "/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles",
+      "head": "3aaf82b0d5b695a548dda33ea248ceaa1dd68219",
+      "git_status": "M docs/compatibility.md\n M docs/knowledge/compatibility.md\n M docs/knowledge/design/session-report.md",
+      "tracked_diff_sha256": "317625d1c9f1039e59e74b52ec351e1767a6217ca63df23f8043b08a57855c97",
+      "environment": {
+        "CARGO_BUILD_JOBS": "2",
+        "CARGO_TARGET_DIR": "/tmp/hoimin-priority-six-target",
+        "RUST_TEST_THREADS": "2",
+        "UV_PROJECT_ENVIRONMENT": "/tmp/hoimin-priority-six-venv",
+        "UV_CACHE_DIR": "/tmp/hoimin-priority-six-uv-cache"
+      },
+      "path_prefix": "/tmp/hoimin-priority-six-venv/bin",
+      "started_unix": 1792404866.0877829,
+      "elapsed_seconds": 447.05276918411255,
+      "exit_code": 0,
+      "log": "/tmp/hoimin-priority-six-task7/workspace.log",
+      "log_sha256": "12bda8a5a7b5f03760c60284162a823e13ea4c26144bba1ad53cf6d40d92c7c8",
+      "top_level_summary": {
+        "harnesses": 174,
+        "passed": 3334,
+        "failed": 0,
+        "ignored": 33,
+        "excluded_successful_one_test_cli_helpers": 2,
+        "method": "last result per Running/Doc-tests segment; earlier one-test child summaries in hoimin_cli library excluded"
+      },
+      "excerpt": "logs/final-workspace.txt",
+      "excerpt_sha256": "ee26a138553448b21bca42c855c1c3e81adc9f19798866d8f237b25626596afd"
+    },
+    {
+      "name": "contracts-core",
+      "argv": [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "hoimin-core",
+        "--features",
+        "contracts",
+        "--",
+        "--test-threads=2"
+      ],
+      "cwd": "/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles",
+      "head": "3aaf82b0d5b695a548dda33ea248ceaa1dd68219",
+      "git_status": "M docs/compatibility.md\n M docs/knowledge/compatibility.md\n M docs/knowledge/design/selection-plan-verify.md\n M docs/knowledge/design/session-report.md\n?? docs/superpowers/plans/2026-10-19-priority-six-evidence/",
+      "tracked_diff_sha256": "4ab347546f1af3890eeaec3fedc12a816b139a819b5bf81e66d5c2003664a9ee",
+      "environment": {
+        "CARGO_BUILD_JOBS": "2",
+        "CARGO_TARGET_DIR": "/tmp/hoimin-priority-six-target",
+        "RUST_TEST_THREADS": "2",
+        "UV_PROJECT_ENVIRONMENT": "/tmp/hoimin-priority-six-venv",
+        "UV_CACHE_DIR": "/tmp/hoimin-priority-six-uv-cache"
+      },
+      "path_prefix": "/tmp/hoimin-priority-six-venv/bin",
+      "started_unix": 1792405313.195761,
+      "elapsed_seconds": 34.53885197639465,
+      "exit_code": 0,
+      "log": "/tmp/hoimin-priority-six-task7/contracts-core.log",
+      "log_sha256": "33c19ff45fae39ada150dfff4f17d47756ca1f9669e7b1395639495dc7daa220",
+      "top_level_summary": {
+        "harnesses": 40,
+        "passed": 688,
+        "failed": 0,
+        "ignored": 2,
+        "excluded_successful_one_test_cli_helpers": 0,
+        "method": "last result per Running/Doc-tests segment; earlier one-test child summaries in hoimin_cli library excluded"
+      },
+      "excerpt": "logs/final-contracts-core.txt",
+      "excerpt_sha256": "17877b119ed17969096fc1a97da6dfa7874efdfe4f3773d41d3058612d6262c3"
+    },
+    {
+      "name": "contracts-cli",
+      "argv": [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "hoimin-cli",
+        "--features",
+        "contracts",
+        "--",
+        "--test-threads=2"
+      ],
+      "cwd": "/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles",
+      "head": "3aaf82b0d5b695a548dda33ea248ceaa1dd68219",
+      "git_status": "M docs/compatibility.md\n M docs/knowledge/compatibility.md\n M docs/knowledge/design/selection-plan-verify.md\n M docs/knowledge/design/session-report.md\n?? docs/superpowers/plans/2026-10-19-priority-six-evidence/",
+      "tracked_diff_sha256": "4ab347546f1af3890eeaec3fedc12a816b139a819b5bf81e66d5c2003664a9ee",
+      "environment": {
+        "CARGO_BUILD_JOBS": "2",
+        "CARGO_TARGET_DIR": "/tmp/hoimin-priority-six-target",
+        "RUST_TEST_THREADS": "2",
+        "UV_PROJECT_ENVIRONMENT": "/tmp/hoimin-priority-six-venv",
+        "UV_CACHE_DIR": "/tmp/hoimin-priority-six-uv-cache"
+      },
+      "path_prefix": "/tmp/hoimin-priority-six-venv/bin",
+      "started_unix": 1792405347.808521,
+      "elapsed_seconds": 439.9500961303711,
+      "exit_code": 0,
+      "log": "/tmp/hoimin-priority-six-task7/contracts-cli.log",
+      "log_sha256": "848b8c962e59b589168b44099984b010353823af066459ee77c46c5ee7a43169",
+      "top_level_summary": {
+        "harnesses": 128,
+        "passed": 2183,
+        "failed": 0,
+        "ignored": 28,
+        "excluded_successful_one_test_cli_helpers": 2,
+        "method": "last result per Running/Doc-tests segment; earlier one-test child summaries in hoimin_cli library excluded"
+      },
+      "excerpt": "logs/final-contracts-cli.txt",
+      "excerpt_sha256": "5a093217139ceaf6148e5cbd65ba6dbfc23be0d258d8ed9afa11ca0ca88cd55c"
+    },
+    {
+      "name": "cli-example",
+      "argv": [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "hoimin-cli",
+        "--example",
+        "generate_cli_reference",
+        "--",
+        "--test-threads=2"
+      ],
+      "cwd": "/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles",
+      "head": "3aaf82b0d5b695a548dda33ea248ceaa1dd68219",
+      "git_status": "M docs/compatibility.md\n M docs/knowledge/compatibility.md\n M docs/knowledge/design/analyzer.md\n M docs/knowledge/design/selection-plan-verify.md\n M docs/knowledge/design/session-report.md\n M docs/superpowers/plans/2026-10-19-priority-six.md\n?? docs/superpowers/plans/2026-10-19-priority-six-evidence/\n?? docs/superpowers/plans/2026-10-19-priority-six-execution.md",
+      "tracked_diff_sha256": "679bfe49f29a96ad4c19fa2576242050a9991d556aada3759dfc848f72c60274",
+      "environment": {
+        "CARGO_BUILD_JOBS": "2",
+        "CARGO_TARGET_DIR": "/tmp/hoimin-priority-six-target",
+        "RUST_TEST_THREADS": "2",
+        "UV_PROJECT_ENVIRONMENT": "/tmp/hoimin-priority-six-venv",
+        "UV_CACHE_DIR": "/tmp/hoimin-priority-six-uv-cache"
+      },
+      "path_prefix": "/tmp/hoimin-priority-six-venv/bin",
+      "started_unix": 1792405787.811234,
+      "elapsed_seconds": 1.182481050491333,
+      "exit_code": 0,
+      "log": "/tmp/hoimin-priority-six-task7/cli-example.log",
+      "log_sha256": "39d1075f6d61e239537c55dc97246d9b5696801fd1f326b92b4349bd844c8de3",
+      "top_level_summary": {
+        "harnesses": 1,
+        "passed": 7,
+        "failed": 0,
+        "ignored": 0,
+        "excluded_successful_one_test_cli_helpers": 0,
+        "method": "last result per Running/Doc-tests segment; earlier one-test child summaries in hoimin_cli library excluded"
+      },
+      "excerpt": "logs/final-cli-example.txt",
+      "excerpt_sha256": "4c19673a3c4557dcf0666f44982f8b53566f5567a3324f0f6b5b9b16f9c98242"
+    },
+    {
+      "name": "cli-reference",
+      "argv": [
+        "cargo",
+        "run",
+        "--locked",
+        "-p",
+        "hoimin-cli",
+        "--example",
+        "generate_cli_reference",
+        "--",
+        "--check"
+      ],
+      "cwd": "/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles",
+      "head": "3aaf82b0d5b695a548dda33ea248ceaa1dd68219",
+      "git_status": "M docs/compatibility.md\n M docs/knowledge/compatibility.md\n M docs/knowledge/design/analyzer.md\n M docs/knowledge/design/selection-plan-verify.md\n M docs/knowledge/design/session-report.md\n M docs/superpowers/plans/2026-10-19-priority-six.md\n?? docs/superpowers/plans/2026-10-19-priority-six-evidence/\n?? docs/superpowers/plans/2026-10-19-priority-six-execution.md",
+      "tracked_diff_sha256": "679bfe49f29a96ad4c19fa2576242050a9991d556aada3759dfc848f72c60274",
+      "environment": {
+        "CARGO_BUILD_JOBS": "2",
+        "CARGO_TARGET_DIR": "/tmp/hoimin-priority-six-target",
+        "RUST_TEST_THREADS": "2",
+        "UV_PROJECT_ENVIRONMENT": "/tmp/hoimin-priority-six-venv",
+        "UV_CACHE_DIR": "/tmp/hoimin-priority-six-uv-cache"
+      },
+      "path_prefix": "/tmp/hoimin-priority-six-venv/bin",
+      "started_unix": 1792405789.038829,
+      "elapsed_seconds": 0.2949650287628174,
+      "exit_code": 0,
+      "log": "/tmp/hoimin-priority-six-task7/cli-reference.log",
+      "log_sha256": "a0a11016269ae7c7275ce91a509ea26f1c24c37cd9478bae1c5b1ce40b08a291",
+      "excerpt": "logs/final-cli-reference.txt",
+      "excerpt_sha256": "2565cefa96aa32a7c17df6f369bf3b1a2c1f43f77c35aa45c0b76b73e7b38198"
+    },
+    {
+      "name": "python-format",
+      "argv": [
+        "uv",
+        "run",
+        "--frozen",
+        "--no-sync",
+        "ruff",
+        "format",
+        "--check",
+        "."
+      ],
+      "cwd": "/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles",
+      "head": "3aaf82b0d5b695a548dda33ea248ceaa1dd68219",
+      "git_status": "M docs/compatibility.md\n M docs/knowledge/compatibility.md\n M docs/knowledge/design/analyzer.md\n M docs/knowledge/design/selection-plan-verify.md\n M docs/knowledge/design/session-report.md\n M docs/superpowers/plans/2026-10-19-priority-six.md\n?? docs/superpowers/plans/2026-10-19-priority-six-evidence/\n?? docs/superpowers/plans/2026-10-19-priority-six-execution.md",
+      "tracked_diff_sha256": "679bfe49f29a96ad4c19fa2576242050a9991d556aada3759dfc848f72c60274",
+      "environment": {
+        "CARGO_BUILD_JOBS": "2",
+        "CARGO_TARGET_DIR": "/tmp/hoimin-priority-six-target",
+        "RUST_TEST_THREADS": "2",
+        "UV_PROJECT_ENVIRONMENT": "/tmp/hoimin-priority-six-venv",
+        "UV_CACHE_DIR": "/tmp/hoimin-priority-six-uv-cache"
+      },
+      "path_prefix": "/tmp/hoimin-priority-six-venv/bin",
+      "started_unix": 1792405805.59576,
+      "elapsed_seconds": 0.09118175506591797,
+      "exit_code": 0,
+      "log": "/tmp/hoimin-priority-six-task7/python-format.log",
+      "log_sha256": "87bf6ae342b9d4cf8926374754d47ba335ed8007815b00218638906a349271dc",
+      "excerpt": "logs/final-python-format.txt",
+      "excerpt_sha256": "fca80ef1d61acd55b3164cb6306e7b59da5277dc285dc335ed6761be1d8c5503"
+    },
+    {
+      "name": "python-lint",
+      "argv": [
+        "uv",
+        "run",
+        "--frozen",
+        "--no-sync",
+        "ruff",
+        "check",
+        "--no-fix",
+        "."
+      ],
+      "cwd": "/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles",
+      "head": "3aaf82b0d5b695a548dda33ea248ceaa1dd68219",
+      "git_status": "M docs/compatibility.md\n M docs/knowledge/compatibility.md\n M docs/knowledge/design/analyzer.md\n M docs/knowledge/design/selection-plan-verify.md\n M docs/knowledge/design/session-report.md\n M docs/superpowers/plans/2026-10-19-priority-six.md\n?? docs/superpowers/plans/2026-10-19-priority-six-evidence/\n?? docs/superpowers/plans/2026-10-19-priority-six-execution.md",
+      "tracked_diff_sha256": "679bfe49f29a96ad4c19fa2576242050a9991d556aada3759dfc848f72c60274",
+      "environment": {
+        "CARGO_BUILD_JOBS": "2",
+        "CARGO_TARGET_DIR": "/tmp/hoimin-priority-six-target",
+        "RUST_TEST_THREADS": "2",
+        "UV_PROJECT_ENVIRONMENT": "/tmp/hoimin-priority-six-venv",
+        "UV_CACHE_DIR": "/tmp/hoimin-priority-six-uv-cache"
+      },
+      "path_prefix": "/tmp/hoimin-priority-six-venv/bin",
+      "started_unix": 1792405805.722511,
+      "elapsed_seconds": 0.03633594512939453,
+      "exit_code": 0,
+      "log": "/tmp/hoimin-priority-six-task7/python-lint.log",
+      "log_sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18",
+      "excerpt": "logs/final-python-lint.txt",
+      "excerpt_sha256": "1b6b8e23c3739b596c2b0e91054dcbcc81a491835df68da55ef09eec59abfbc7"
+    },
+    {
+      "name": "python-types",
+      "argv": [
+        "uv",
+        "run",
+        "--frozen",
+        "--no-sync",
+        "ty",
+        "check"
+      ],
+      "cwd": "/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles",
+      "head": "3aaf82b0d5b695a548dda33ea248ceaa1dd68219",
+      "git_status": "M docs/compatibility.md\n M docs/knowledge/compatibility.md\n M docs/knowledge/design/analyzer.md\n M docs/knowledge/design/selection-plan-verify.md\n M docs/knowledge/design/session-report.md\n M docs/superpowers/plans/2026-10-19-priority-six.md\n?? docs/superpowers/plans/2026-10-19-priority-six-evidence/\n?? docs/superpowers/plans/2026-10-19-priority-six-execution.md",
+      "tracked_diff_sha256": "679bfe49f29a96ad4c19fa2576242050a9991d556aada3759dfc848f72c60274",
+      "environment": {
+        "CARGO_BUILD_JOBS": "2",
+        "CARGO_TARGET_DIR": "/tmp/hoimin-priority-six-target",
+        "RUST_TEST_THREADS": "2",
+        "UV_PROJECT_ENVIRONMENT": "/tmp/hoimin-priority-six-venv",
+        "UV_CACHE_DIR": "/tmp/hoimin-priority-six-uv-cache"
+      },
+      "path_prefix": "/tmp/hoimin-priority-six-venv/bin",
+      "started_unix": 1792405805.792665,
+      "elapsed_seconds": 0.1385328769683838,
+      "exit_code": 0,
+      "log": "/tmp/hoimin-priority-six-task7/python-types.log",
+      "log_sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18",
+      "excerpt": "logs/final-python-types.txt",
+      "excerpt_sha256": "d91484a521cd9c1653d8bed674be7baa1e46b52cf9cfe1265e45ca3e3e3aa65c"
+    },
+    {
+      "name": "python-tests",
+      "argv": [
+        "uv",
+        "run",
+        "--frozen",
+        "--no-sync",
+        "pytest",
+        "-q"
+      ],
+      "cwd": "/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles",
+      "head": "3aaf82b0d5b695a548dda33ea248ceaa1dd68219",
+      "git_status": "M docs/compatibility.md\n M docs/knowledge/compatibility.md\n M docs/knowledge/design/analyzer.md\n M docs/knowledge/design/selection-plan-verify.md\n M docs/knowledge/design/session-report.md\n M docs/superpowers/plans/2026-10-19-priority-six.md\n?? docs/superpowers/plans/2026-10-19-priority-six-evidence/\n?? docs/superpowers/plans/2026-10-19-priority-six-execution.md",
+      "tracked_diff_sha256": "679bfe49f29a96ad4c19fa2576242050a9991d556aada3759dfc848f72c60274",
+      "environment": {
+        "CARGO_BUILD_JOBS": "2",
+        "CARGO_TARGET_DIR": "/tmp/hoimin-priority-six-target",
+        "RUST_TEST_THREADS": "2",
+        "UV_PROJECT_ENVIRONMENT": "/tmp/hoimin-priority-six-venv",
+        "UV_CACHE_DIR": "/tmp/hoimin-priority-six-uv-cache"
+      },
+      "path_prefix": "/tmp/hoimin-priority-six-venv/bin",
+      "started_unix": 1792405805.965408,
+      "elapsed_seconds": 60.639440059661865,
+      "exit_code": 0,
+      "log": "/tmp/hoimin-priority-six-task7/python-tests.log",
+      "log_sha256": "5a85cc11a0a0253a3e3697f599ad359519b6716b72f7e32171639a2e3efb01d8",
+      "excerpt": "logs/final-python-tests.txt",
+      "excerpt_sha256": "f4f8d0cc2b37685757a3537c94d269f3636fa503ca89eed8cfd728231ff6ff57"
+    },
+    {
+      "name": "performance-gates",
+      "argv": [
+        "uv",
+        "run",
+        "--frozen",
+        "--no-sync",
+        "python",
+        "tools/performance_shapes.py",
+        "gate",
+        "--output",
+        "/tmp/hoimin-priority-six-task7/performance-gates"
+      ],
+      "cwd": "/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles",
+      "head": "3aaf82b0d5b695a548dda33ea248ceaa1dd68219",
+      "git_status": "M docs/compatibility.md\n M docs/knowledge/compatibility.md\n M docs/knowledge/design/analyzer.md\n M docs/knowledge/design/selection-plan-verify.md\n M docs/knowledge/design/session-report.md\n M docs/superpowers/plans/2026-10-19-priority-six.md\n?? docs/superpowers/plans/2026-10-19-priority-six-evidence/\n?? docs/superpowers/plans/2026-10-19-priority-six-execution.md",
+      "tracked_diff_sha256": "679bfe49f29a96ad4c19fa2576242050a9991d556aada3759dfc848f72c60274",
+      "environment": {
+        "CARGO_BUILD_JOBS": "2",
+        "CARGO_TARGET_DIR": "/tmp/hoimin-priority-six-target",
+        "RUST_TEST_THREADS": "2",
+        "UV_PROJECT_ENVIRONMENT": "/tmp/hoimin-priority-six-venv",
+        "UV_CACHE_DIR": "/tmp/hoimin-priority-six-uv-cache"
+      },
+      "path_prefix": "/tmp/hoimin-priority-six-venv/bin",
+      "started_unix": 1792405866.662231,
+      "elapsed_seconds": 20.695971250534058,
+      "exit_code": 0,
+      "log": "/tmp/hoimin-priority-six-task7/performance-gates.log",
+      "log_sha256": "ca5cbbb69e2e2a87d57ee153ef3dcfe503edebd97aec3b1dec8bdf2f3bd90bca",
+      "excerpt": "logs/final-performance-gates.txt",
+      "excerpt_sha256": "4c9e5276870881fda482adae7a9b32059ec467bf656eaad0577c8aa67422fd8d"
+    },
+    {
+      "name": "coherence",
+      "argv": [
+        "uv",
+        "run",
+        "--frozen",
+        "--no-sync",
+        "python",
+        ".superpowers/sdd/2026-10-19-priority-six/validate-task7-coherence.py"
+      ],
+      "head": "3aaf82b0d5b695a548dda33ea248ceaa1dd68219",
+      "script_sha256": "b451e6946971399fdf98977d148830e4b9c15f5d4b8e4f36bab268f90f9046c8",
+      "exit_code": 0,
+      "elapsed_seconds": 0.15102934837341309,
+      "log": "/tmp/hoimin-priority-six-task7/coherence.log",
+      "log_sha256": "cf1d58f389cc0632ea27b3251b227f8e3d73a450264af90eef8c19320cd1a4a6",
+      "excerpt": "logs/final-coherence.txt",
+      "excerpt_sha256": "0784c309171c67b81b9d8549a4f6731ed12572cce2dfc5ad83727aff042a9cc3"
+    },
+    {
+      "name": "okf",
+      "argv": [
+        "uv",
+        "run",
+        "--frozen",
+        "--no-sync",
+        "python",
+        ".superpowers/sdd/2026-10-19-priority-six/validate-task7-okf.py"
+      ],
+      "head": "3aaf82b0d5b695a548dda33ea248ceaa1dd68219",
+      "script_sha256": "b3a4f0afd3f0c7826c6500050934ec5197ae2ae38ed47738ccd927922487bb62",
+      "inputs_sha256": {
+        "docs/compatibility.md": "6dc4ae3fda223f4b3a2a0654042d98eac38f1fe010e267f79321d282388f0eb2",
+        "docs/knowledge/compatibility.md": "aeef73fa99e8f66c4fb8484697618e1ea2c0f0577beef62d3fe094175e6b8317",
+        "docs/knowledge/design/analyzer.md": "8afbc112a81e255444aecd6c533ee3a3c4f8fd77ec71cd8df72def0f9ce7b6ac",
+        "docs/knowledge/design/json-report-spool.md": "3431fb2fc5ca52d094b6190b1509f84ae965a08879cfdae9ba9d4375e0367d11",
+        "docs/knowledge/design/runtime-lifecycle.md": "dfafc7853f5da079dbd0c5e322aa6f5afb58d785e65048ce164ad286c704fc5b",
+        "docs/knowledge/design/selection-plan-verify.md": "60c2b8b39ed6931b3eae70464be59ec437307cdab411f143d4b2724a81426851",
+        "docs/knowledge/design/session-report.md": "9495301cb90376c8ef9be32d5a9ed5ff901d9095a418530d5317a98799fdeab7"
+      },
+      "exit_code": 0,
+      "elapsed_seconds": 2.8006677627563477,
+      "log": "/tmp/hoimin-priority-six-task7/okf.log",
+      "log_sha256": "4714c34ff28f5bed36a498ac2cf056c91ce83e9c15b5723614bc67fe143eaaa9",
+      "excerpt": "logs/final-okf.txt",
+      "excerpt_sha256": "c7f36dc97142373b261d01f37b69e82f4f70a18d8788f5d4c0e4740505b8508a"
+    }
+  ]
+}

@@ -587,7 +587,7 @@ fn membership_failure_records(
 }
 
 fn membership_failure_message(
-    project: &super::tests::Project,
+    _project: &super::tests::Project,
     id: &str,
     path: &str,
     failure: MembershipFailure,
@@ -595,10 +595,7 @@ fn membership_failure_message(
     match failure.name {
         "unknown" => format!("plan.candidate.invalid: candidate id is not in the plan: {id}"),
         "unselected" => format!("plan.candidate.invalid: candidate target is not selected: {path}"),
-        "read" => format!(
-            "plan.candidate.invalid: {path}: {}",
-            std::fs::read(project.root.join(path)).unwrap_err()
-        ),
+        "read" => format!("plan.candidate.invalid: {path}: root-relative file was not found"),
         "descriptor" => {
             "plan.candidate.invalid: candidate original text does not match the source span".into()
         }
@@ -715,4 +712,243 @@ async fn target_membership_preserves_errors_between_cached_file_results() {
             assert_eq!(stats.contexts, 1 + middle_failure.contexts);
         }
     }
+}
+
+// A separate process gives a regressed blocking FIFO open a bounded watchdog.
+// stdin/stdout provide the synchronization; elapsed time is only a failure guard.
+#[cfg(unix)]
+fn assert_resolved_source_swap_rejected(consumer: &str, replacement: &str) {
+    use std::io::{BufRead, Write};
+    use std::process::{Command, Stdio};
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    let project = super::tests::Project::new();
+    let (source, _) = candidates("src/calc.py", 1, 0);
+    std::fs::write(project.root.join("src/calc.py"), source).unwrap();
+    let mut child = Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "plan::validation_tests::safe_source_swap_probe",
+            "--nocapture",
+            "--test-threads=1",
+        ])
+        .env("HOIMIN_SOURCE_SWAP_ROOT", &project.root)
+        .env("HOIMIN_SOURCE_SWAP_CONSUMER", consumer)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let pid = child.id();
+    let stdout = child.stdout.take().unwrap();
+    let (ready_tx, ready_rx) = mpsc::sync_channel(1);
+    let output_reader = std::thread::spawn(move || {
+        for line in std::io::BufReader::new(stdout).lines() {
+            let line = line.unwrap();
+            if line.contains("HOIMIN_TARGET_RESOLVED") {
+                ready_tx.send(()).unwrap();
+            }
+        }
+    });
+    let mut stdin = child.stdin.take().unwrap();
+    let (done_tx, done_rx) = mpsc::sync_channel(1);
+    let waiter =
+        std::thread::spawn(move || done_tx.send(child.wait_with_output().unwrap()).unwrap());
+    let ready = ready_rx.recv_timeout(Duration::from_secs(10));
+    if ready.is_ok() {
+        let path = project.root.join("src/calc.py");
+        std::fs::remove_file(&path).unwrap();
+        match replacement {
+            "fifo" => assert!(
+                Command::new("mkfifo")
+                    .arg(&path)
+                    .status()
+                    .unwrap()
+                    .success()
+            ),
+            "symlink_fifo" => {
+                let fifo = project.root.join("fifo.py");
+                assert!(
+                    Command::new("mkfifo")
+                        .arg(&fifo)
+                        .status()
+                        .unwrap()
+                        .success()
+                );
+                std::os::unix::fs::symlink(&fifo, &path).unwrap();
+            }
+            "symlink" => {
+                // Even a regular-file target must not be followed after resolution.
+                std::fs::write(project.root.join("outside.py"), "x = 1 + 2\n").unwrap();
+                std::os::unix::fs::symlink(project.root.join("outside.py"), &path).unwrap();
+            }
+            _ => unreachable!(),
+        }
+        stdin.write_all(b"resume\n").unwrap();
+    }
+    drop(stdin);
+    let output = match done_rx.recv_timeout(Duration::from_secs(10)) {
+        Ok(output) => output,
+        Err(error) => {
+            // SAFETY: pid belongs to this test's live child and is not reaped yet.
+            unsafe {
+                libc::kill(i32::try_from(pid).unwrap(), libc::SIGKILL);
+            }
+            let output = done_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+            waiter.join().unwrap();
+            output_reader.join().unwrap();
+            panic!(
+                "{consumer}/{replacement} did not reject the resolved swap: {error}; {:?}",
+                output.status
+            );
+        }
+    };
+    waiter.join().unwrap();
+    output_reader.join().unwrap();
+    assert!(ready.is_ok(), "child did not resolve target: {ready:?}");
+    assert!(
+        output.status.success(),
+        "{consumer}/{replacement}: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[cfg(unix)]
+macro_rules! resolved_swap_cases {
+    ($($name:ident: $consumer:literal, $replacement:literal;)*) => {
+        $(#[test] fn $name() { assert_resolved_source_swap_rejected($consumer, $replacement); })*
+    };
+}
+
+#[cfg(unix)]
+resolved_swap_cases! {
+    source_hash_rejects_resolved_fifo_swap: "hash", "fifo";
+    source_hash_rejects_resolved_symlink_swap: "hash", "symlink";
+    source_hash_rejects_resolved_symlink_fifo_swap: "hash", "symlink_fifo";
+    descriptor_validation_rejects_resolved_fifo_swap: "validate", "fifo";
+    descriptor_validation_rejects_resolved_symlink_swap: "validate", "symlink";
+    descriptor_validation_rejects_resolved_symlink_fifo_swap: "validate", "symlink_fifo";
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn safe_source_swap_probe() {
+    use std::io::{BufRead, Write};
+    let Ok(root) = std::env::var("HOIMIN_SOURCE_SWAP_ROOT") else {
+        return;
+    };
+    let config = hoimin_core::RunConfig::try_from(hoimin_core::RawRunConfig {
+        root: root.into(),
+        files: vec!["src/calc.py".into()],
+        test_argv: vec![hoimin_core::CommandArg::Unix(b"unused".to_vec())],
+        ..hoimin_core::RawRunConfig::default()
+    })
+    .unwrap()
+    .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
+    .unwrap();
+    let (_, records) = candidates("src/calc.py", 1, 0);
+    let targets = crate::target::TargetHandler::resolve(&config.selection)
+        .await
+        .unwrap();
+    println!("HOIMIN_TARGET_RESOLVED");
+    std::io::stdout().flush().unwrap();
+    let mut resume = String::new();
+    std::io::stdin().lock().read_line(&mut resume).unwrap();
+    assert_eq!(resume, "resume\n");
+
+    let error = if std::env::var("HOIMIN_SOURCE_SWAP_CONSUMER").unwrap() == "hash" {
+        super::source_records(&config.selection.root, &targets)
+            .await
+            .unwrap_err()
+    } else {
+        let map = records.iter().map(|c| (c.id.as_str(), c)).collect();
+        let ids = records.iter().map(|c| c.id.clone()).collect();
+        validate_requested_descriptors(&map, &ids, &config, &targets, None)
+            .await
+            .unwrap_err()
+    };
+
+    assert!(matches!(
+        error,
+        PlanError::SourceRead(_) | PlanError::CandidateInvalid(_)
+    ));
+    assert!(error.to_string().contains("src/calc.py"), "{error}");
+}
+
+#[tokio::test]
+async fn source_records_preserve_sorted_hashes_and_duplicate_paths() {
+    let project = super::tests::Project::new();
+    std::fs::write(project.root.join("src/a.py"), b"a\n").unwrap();
+    std::fs::write(project.root.join("src/z.py"), b"z\n").unwrap();
+    let targets = ["src/z.py", "src/a.py", "src/z.py"].map(|path| TargetSlice {
+        path: path.into(),
+        lines: vec![],
+        symbols: vec![],
+    });
+
+    let records = super::source_records(&project.root, &targets)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        records,
+        fingerprint_records(&[
+            ("src/a.py", &blake3::hash(b"a\n").to_hex()),
+            ("src/z.py", &blake3::hash(b"z\n").to_hex()),
+        ])
+    );
+}
+
+#[tokio::test]
+async fn descriptor_validation_rejects_source_changed_after_hashing() {
+    let project = super::tests::Project::new();
+    let (source, records) = candidates("src/calc.py", 1, 0);
+    std::fs::write(project.root.join("src/calc.py"), source).unwrap();
+    let targets = [TargetSlice {
+        path: "src/calc.py".into(),
+        lines: vec![],
+        symbols: vec![],
+    }];
+    super::source_records(&project.root, &targets)
+        .await
+        .unwrap();
+    std::fs::write(project.root.join("src/calc.py"), b"x = 1 + 3\n").unwrap();
+
+    let error = check(&project, &records, &mut ValidationStats::default())
+        .await
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "plan.candidate.invalid: candidate file hash does not match the source"
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn source_reader_reuses_its_root_capability_for_hash_and_bytes() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = Utf8PathBuf::from_path_buf(directory.path().join("root")).unwrap();
+    std::fs::create_dir(&root).unwrap();
+    std::fs::write(root.join("first.py"), b"first\n").unwrap();
+    std::fs::write(root.join("second.py"), b"original\n").unwrap();
+    let mut reader = super::source::SourceReader::new(&root);
+    assert_eq!(
+        reader
+            .hash(camino::Utf8Path::new("first.py"))
+            .await
+            .unwrap(),
+        blake3::hash(b"first\n")
+    );
+    std::fs::rename(&root, directory.path().join("held")).unwrap();
+    std::fs::create_dir(&root).unwrap();
+    std::fs::write(root.join("second.py"), b"replacement\n").unwrap();
+
+    let source = reader
+        .read(camino::Utf8Path::new("second.py"))
+        .await
+        .unwrap();
+
+    assert_eq!(source, b"original\n");
 }

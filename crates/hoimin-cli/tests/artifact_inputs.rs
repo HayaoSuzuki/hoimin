@@ -210,11 +210,11 @@ fn report(root: &Path, golden: &str) -> PathBuf {
 }
 
 fn json_report(root: &Path) -> PathBuf {
-    report(root, "reports/schema-v8-current.json")
+    report(root, "reports/schema-v9-current.json")
 }
 
 fn jsonl_report(root: &Path) -> PathBuf {
-    report(root, "events/schema-v8-current.jsonl")
+    report(root, "events/schema-v9-current.jsonl")
 }
 
 #[cfg(unix)]

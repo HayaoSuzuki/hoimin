@@ -1,0 +1,498 @@
+{
+  "base": "1e6200d71237c6e445f337babf02f5f0354b610f",
+  "historical_unavailable": [
+    {
+      "document": "docs/knowledge/compatibility.md",
+      "source_id": "issue-899-changed-selection",
+      "revision": "7b6cb19ba0181759f6b5726f985c5fd7700d313e",
+      "baseline_document_blob": "667f0fb024c9238a7ae930f6a7788b771ce3a55b",
+      "unchanged_source_entry_at_base": true,
+      "commit_object_unavailable_locally": true
+    },
+    {
+      "document": "docs/knowledge/compatibility.md",
+      "source_id": "issue-899-changed-review",
+      "revision": "ad65b8ce55b0dabc59712775e362d5d614b27559",
+      "baseline_document_blob": "667f0fb024c9238a7ae930f6a7788b771ce3a55b",
+      "unchanged_source_entry_at_base": true,
+      "commit_object_unavailable_locally": true
+    },
+    {
+      "document": "docs/knowledge/design/analyzer.md",
+      "source_id": "issue-871-evidence",
+      "revision": "6f5ce7e61ea43cf76b795570ecc403080888a092",
+      "baseline_document_blob": "4c79f12a0fd69d240740ca60c3aad1ff664bd7b3",
+      "unchanged_source_entry_at_base": true,
+      "commit_object_unavailable_locally": true
+    },
+    {
+      "document": "docs/knowledge/design/analyzer.md",
+      "source_id": "issue-873-decoder",
+      "revision": "30d9d9a0066cea85dfb89c68eb0a4db083a55f58",
+      "baseline_document_blob": "4c79f12a0fd69d240740ca60c3aad1ff664bd7b3",
+      "unchanged_source_entry_at_base": true,
+      "commit_object_unavailable_locally": true
+    },
+    {
+      "document": "docs/knowledge/design/analyzer.md",
+      "source_id": "issue-873-candidates",
+      "revision": "30d9d9a0066cea85dfb89c68eb0a4db083a55f58",
+      "baseline_document_blob": "4c79f12a0fd69d240740ca60c3aad1ff664bd7b3",
+      "unchanged_source_entry_at_base": true,
+      "commit_object_unavailable_locally": true
+    },
+    {
+      "document": "docs/knowledge/design/runtime-lifecycle.md",
+      "source_id": "issue-897-machine",
+      "revision": "175486b7cb30a665bdf39c1ac7897eb96d9966f7",
+      "baseline_document_blob": "1f43e00660661cd30c6408b6a61a68f4cff41155",
+      "unchanged_source_entry_at_base": true,
+      "commit_object_unavailable_locally": true
+    },
+    {
+      "document": "docs/knowledge/design/runtime-lifecycle.md",
+      "source_id": "issue-897-design",
+      "revision": "175486b7cb30a665bdf39c1ac7897eb96d9966f7",
+      "baseline_document_blob": "1f43e00660661cd30c6408b6a61a68f4cff41155",
+      "unchanged_source_entry_at_base": true,
+      "commit_object_unavailable_locally": true
+    },
+    {
+      "document": "docs/knowledge/design/runtime-lifecycle.md",
+      "source_id": "issue-897-review",
+      "revision": "0a148fcf5ca511b6ccca489feda2ccbc2429008f",
+      "baseline_document_blob": "1f43e00660661cd30c6408b6a61a68f4cff41155",
+      "unchanged_source_entry_at_base": true,
+      "commit_object_unavailable_locally": true
+    },
+    {
+      "document": "docs/knowledge/design/runtime-lifecycle.md",
+      "source_id": "issue-901-core",
+      "revision": "48ae4c0e565656ddf3f0a83dcc8a840bd6b4fec8",
+      "baseline_document_blob": "1f43e00660661cd30c6408b6a61a68f4cff41155",
+      "unchanged_source_entry_at_base": true,
+      "commit_object_unavailable_locally": true
+    },
+    {
+      "document": "docs/knowledge/design/runtime-lifecycle.md",
+      "source_id": "issue-901-oracle",
+      "revision": "48ae4c0e565656ddf3f0a83dcc8a840bd6b4fec8",
+      "baseline_document_blob": "1f43e00660661cd30c6408b6a61a68f4cff41155",
+      "unchanged_source_entry_at_base": true,
+      "commit_object_unavailable_locally": true
+    },
+    {
+      "document": "docs/knowledge/design/runtime-lifecycle.md",
+      "source_id": "readme",
+      "revision": "2831bde6adf75facf0a379b8a915267c278d8511",
+      "baseline_document_blob": "1f43e00660661cd30c6408b6a61a68f4cff41155",
+      "unchanged_source_entry_at_base": true,
+      "commit_object_unavailable_locally": true
+    },
+    {
+      "document": "docs/knowledge/design/runtime-lifecycle.md",
+      "source_id": "issue-898-design",
+      "revision": "51c9e26b9d0006cac150b3833cb797a59349bac1",
+      "baseline_document_blob": "1f43e00660661cd30c6408b6a61a68f4cff41155",
+      "unchanged_source_entry_at_base": true,
+      "commit_object_unavailable_locally": true
+    },
+    {
+      "document": "docs/knowledge/design/runtime-lifecycle.md",
+      "source_id": "issue-898-review",
+      "revision": "51c9e26b9d0006cac150b3833cb797a59349bac1",
+      "baseline_document_blob": "1f43e00660661cd30c6408b6a61a68f4cff41155",
+      "unchanged_source_entry_at_base": true,
+      "commit_object_unavailable_locally": true
+    },
+    {
+      "document": "docs/knowledge/design/selection-plan-verify.md",
+      "source_id": "issue-899-changed-selection",
+      "revision": "7b6cb19ba0181759f6b5726f985c5fd7700d313e",
+      "baseline_document_blob": "af45b24850d021cceee3b02941da081b91d4beb1",
+      "unchanged_source_entry_at_base": true,
+      "commit_object_unavailable_locally": true
+    },
+    {
+      "document": "docs/knowledge/design/selection-plan-verify.md",
+      "source_id": "issue-899-changed-review",
+      "revision": "ad65b8ce55b0dabc59712775e362d5d614b27559",
+      "baseline_document_blob": "af45b24850d021cceee3b02941da081b91d4beb1",
+      "unchanged_source_entry_at_base": true,
+      "commit_object_unavailable_locally": true
+    },
+    {
+      "document": "docs/knowledge/design/selection-plan-verify.md",
+      "source_id": "issue-888-canonical-enums",
+      "revision": "5c0215cb65e57d2758c4ec1708cd50d96b1bcdfd",
+      "baseline_document_blob": "af45b24850d021cceee3b02941da081b91d4beb1",
+      "unchanged_source_entry_at_base": true,
+      "commit_object_unavailable_locally": true
+    },
+    {
+      "document": "docs/knowledge/design/session-report.md",
+      "source_id": "issue-899-changed-selection",
+      "revision": "7b6cb19ba0181759f6b5726f985c5fd7700d313e",
+      "baseline_document_blob": "7c07feb54abb1ffaa3d2380034f471958dd5beb8",
+      "unchanged_source_entry_at_base": true,
+      "commit_object_unavailable_locally": true
+    },
+    {
+      "document": "docs/knowledge/design/session-report.md",
+      "source_id": "issue-899-changed-review",
+      "revision": "ad65b8ce55b0dabc59712775e362d5d614b27559",
+      "baseline_document_blob": "7c07feb54abb1ffaa3d2380034f471958dd5beb8",
+      "unchanged_source_entry_at_base": true,
+      "commit_object_unavailable_locally": true
+    },
+    {
+      "document": "docs/knowledge/design/session-report.md",
+      "source_id": "issue-896-config",
+      "revision": "e7e3cae8c4e048ee77d2bf644b47da1792211cbe",
+      "baseline_document_blob": "7c07feb54abb1ffaa3d2380034f471958dd5beb8",
+      "unchanged_source_entry_at_base": true,
+      "commit_object_unavailable_locally": true
+    },
+    {
+      "document": "docs/knowledge/design/session-report.md",
+      "source_id": "issue-896-design",
+      "revision": "e7e3cae8c4e048ee77d2bf644b47da1792211cbe",
+      "baseline_document_blob": "7c07feb54abb1ffaa3d2380034f471958dd5beb8",
+      "unchanged_source_entry_at_base": true,
+      "commit_object_unavailable_locally": true
+    },
+    {
+      "document": "docs/knowledge/design/session-report.md",
+      "source_id": "issue-896-review",
+      "revision": "e7e3cae8c4e048ee77d2bf644b47da1792211cbe",
+      "baseline_document_blob": "7c07feb54abb1ffaa3d2380034f471958dd5beb8",
+      "unchanged_source_entry_at_base": true,
+      "commit_object_unavailable_locally": true
+    },
+    {
+      "document": "docs/knowledge/design/session-report.md",
+      "source_id": "tracing-readme",
+      "revision": "e7e3cae8c4e048ee77d2bf644b47da1792211cbe",
+      "baseline_document_blob": "7c07feb54abb1ffaa3d2380034f471958dd5beb8",
+      "unchanged_source_entry_at_base": true,
+      "commit_object_unavailable_locally": true
+    }
+  ],
+  "inherited_missing": [
+    {
+      "document": "docs/knowledge/design/analyzer.md",
+      "source_id_or_body_link": "issue-935-bindings",
+      "repository_target": "crates/hoimin-cli/src/analyzer/rust.rs",
+      "baseline_document_blob": "4c79f12a0fd69d240740ca60c3aad1ff664bd7b3",
+      "reference_present_at_base": true,
+      "target_absent_at_base": true,
+      "target_absent_now": true
+    },
+    {
+      "document": "docs/knowledge/design/analyzer.md",
+      "source_id_or_body_link": "issue-935-tests",
+      "repository_target": "crates/hoimin-cli/src/analyzer/known_imports_tests.rs",
+      "baseline_document_blob": "4c79f12a0fd69d240740ca60c3aad1ff664bd7b3",
+      "reference_present_at_base": true,
+      "target_absent_at_base": true,
+      "target_absent_now": true
+    },
+    {
+      "document": "docs/knowledge/design/analyzer.md",
+      "source_id_or_body_link": "issue-929-live-codes",
+      "repository_target": "crates/hoimin-cli/src/analyzer/types.rs",
+      "baseline_document_blob": "4c79f12a0fd69d240740ca60c3aad1ff664bd7b3",
+      "reference_present_at_base": true,
+      "target_absent_at_base": true,
+      "target_absent_now": true
+    },
+    {
+      "document": "docs/knowledge/design/analyzer.md",
+      "source_id_or_body_link": "issue-914-class-context",
+      "repository_target": "crates/hoimin-cli/src/analyzer/rust.rs",
+      "baseline_document_blob": "4c79f12a0fd69d240740ca60c3aad1ff664bd7b3",
+      "reference_present_at_base": true,
+      "target_absent_at_base": true,
+      "target_absent_now": true
+    },
+    {
+      "document": "docs/knowledge/design/analyzer.md",
+      "source_id_or_body_link": "issue-871-acquisition",
+      "repository_target": "crates/hoimin-cli/src/analyzer/rust/depth.rs",
+      "baseline_document_blob": "4c79f12a0fd69d240740ca60c3aad1ff664bd7b3",
+      "reference_present_at_base": true,
+      "target_absent_at_base": true,
+      "target_absent_now": true
+    },
+    {
+      "document": "docs/knowledge/design/analyzer.md",
+      "source_id_or_body_link": "string-segment-implementation",
+      "repository_target": "crates/hoimin-cli/src/analyzer/rust/string_segments.rs",
+      "baseline_document_blob": "4c79f12a0fd69d240740ca60c3aad1ff664bd7b3",
+      "reference_present_at_base": true,
+      "target_absent_at_base": true,
+      "target_absent_now": true
+    },
+    {
+      "document": "docs/knowledge/design/analyzer.md",
+      "source_id_or_body_link": "string-segment-exclusions",
+      "repository_target": "crates/hoimin-cli/src/analyzer/rust/string_literals.rs",
+      "baseline_document_blob": "4c79f12a0fd69d240740ca60c3aad1ff664bd7b3",
+      "reference_present_at_base": true,
+      "target_absent_at_base": true,
+      "target_absent_now": true
+    },
+    {
+      "document": "docs/knowledge/design/analyzer.md",
+      "source_id_or_body_link": "issue-560-code",
+      "repository_target": "crates/hoimin-cli/src/analyzer/rust.rs",
+      "baseline_document_blob": "4c79f12a0fd69d240740ca60c3aad1ff664bd7b3",
+      "reference_present_at_base": true,
+      "target_absent_at_base": true,
+      "target_absent_now": true
+    },
+    {
+      "document": "docs/knowledge/design/analyzer.md",
+      "source_id_or_body_link": "issue-564-code",
+      "repository_target": "crates/hoimin-cli/src/analyzer/rust.rs",
+      "baseline_document_blob": "4c79f12a0fd69d240740ca60c3aad1ff664bd7b3",
+      "reference_present_at_base": true,
+      "target_absent_at_base": true,
+      "target_absent_now": true
+    },
+    {
+      "document": "docs/knowledge/design/analyzer.md",
+      "source_id_or_body_link": "implementation",
+      "repository_target": "crates/hoimin-cli/src/analyzer/rust.rs",
+      "baseline_document_blob": "4c79f12a0fd69d240740ca60c3aad1ff664bd7b3",
+      "reference_present_at_base": true,
+      "target_absent_at_base": true,
+      "target_absent_now": true
+    },
+    {
+      "document": "docs/knowledge/design/analyzer.md",
+      "source_id_or_body_link": "issue-930-token-operators",
+      "repository_target": "crates/hoimin-cli/src/analyzer/rust.rs",
+      "baseline_document_blob": "4c79f12a0fd69d240740ca60c3aad1ff664bd7b3",
+      "reference_present_at_base": true,
+      "target_absent_at_base": true,
+      "target_absent_now": true
+    },
+    {
+      "document": "docs/knowledge/design/analyzer.md",
+      "source_id_or_body_link": "issue-950-candidate",
+      "repository_target": "crates/hoimin-cli/src/analyzer/types.rs",
+      "baseline_document_blob": "4c79f12a0fd69d240740ca60c3aad1ff664bd7b3",
+      "reference_present_at_base": true,
+      "target_absent_at_base": true,
+      "target_absent_now": true
+    },
+    {
+      "document": "docs/knowledge/design/analyzer.md",
+      "source_id_or_body_link": "issue-950-retention",
+      "repository_target": "crates/hoimin-cli/src/analyzer/rust.rs",
+      "baseline_document_blob": "4c79f12a0fd69d240740ca60c3aad1ff664bd7b3",
+      "reference_present_at_base": true,
+      "target_absent_at_base": true,
+      "target_absent_now": true
+    },
+    {
+      "document": "docs/knowledge/design/analyzer.md",
+      "source_id_or_body_link": "issue-950-tests",
+      "repository_target": "crates/hoimin-cli/src/analyzer/rust_tests.rs",
+      "baseline_document_blob": "4c79f12a0fd69d240740ca60c3aad1ff664bd7b3",
+      "reference_present_at_base": true,
+      "target_absent_at_base": true,
+      "target_absent_now": true
+    },
+    {
+      "document": "docs/knowledge/design/analyzer.md",
+      "source_id_or_body_link": "issue-978-payload",
+      "repository_target": "crates/hoimin-cli/src/analyzer/payload.rs",
+      "baseline_document_blob": "4c79f12a0fd69d240740ca60c3aad1ff664bd7b3",
+      "reference_present_at_base": true,
+      "target_absent_at_base": true,
+      "target_absent_now": true
+    },
+    {
+      "document": "docs/knowledge/design/analyzer.md",
+      "source_id_or_body_link": "issue-986-walker",
+      "repository_target": "crates/hoimin-cli/src/analyzer/visitor.rs",
+      "baseline_document_blob": "4c79f12a0fd69d240740ca60c3aad1ff664bd7b3",
+      "reference_present_at_base": true,
+      "target_absent_at_base": true,
+      "target_absent_now": true
+    },
+    {
+      "document": "docs/knowledge/design/analyzer.md",
+      "source_id_or_body_link": "body-link",
+      "repository_target": "crates/hoimin-cli/src/analyzer/rust/depth.rs",
+      "baseline_document_blob": "4c79f12a0fd69d240740ca60c3aad1ff664bd7b3",
+      "reference_present_at_base": true,
+      "target_absent_at_base": true,
+      "target_absent_now": true
+    },
+    {
+      "document": "docs/knowledge/design/analyzer.md",
+      "source_id_or_body_link": "body-link",
+      "repository_target": "crates/hoimin-cli/src/analyzer/rust.rs",
+      "baseline_document_blob": "4c79f12a0fd69d240740ca60c3aad1ff664bd7b3",
+      "reference_present_at_base": true,
+      "target_absent_at_base": true,
+      "target_absent_now": true
+    },
+    {
+      "document": "docs/knowledge/design/analyzer.md",
+      "source_id_or_body_link": "body-link",
+      "repository_target": "crates/hoimin-cli/src/analyzer/rust.rs",
+      "baseline_document_blob": "4c79f12a0fd69d240740ca60c3aad1ff664bd7b3",
+      "reference_present_at_base": true,
+      "target_absent_at_base": true,
+      "target_absent_now": true
+    },
+    {
+      "document": "docs/knowledge/design/analyzer.md",
+      "source_id_or_body_link": "body-link",
+      "repository_target": "crates/hoimin-cli/src/analyzer/rust.rs",
+      "baseline_document_blob": "4c79f12a0fd69d240740ca60c3aad1ff664bd7b3",
+      "reference_present_at_base": true,
+      "target_absent_at_base": true,
+      "target_absent_now": true
+    },
+    {
+      "document": "docs/knowledge/design/analyzer.md",
+      "source_id_or_body_link": "body-link",
+      "repository_target": "crates/hoimin-cli/src/analyzer/rust/string_literals.rs",
+      "baseline_document_blob": "4c79f12a0fd69d240740ca60c3aad1ff664bd7b3",
+      "reference_present_at_base": true,
+      "target_absent_at_base": true,
+      "target_absent_now": true
+    },
+    {
+      "document": "docs/knowledge/design/analyzer.md",
+      "source_id_or_body_link": "body-link",
+      "repository_target": "crates/hoimin-cli/src/analyzer/rust/string_segments.rs",
+      "baseline_document_blob": "4c79f12a0fd69d240740ca60c3aad1ff664bd7b3",
+      "reference_present_at_base": true,
+      "target_absent_at_base": true,
+      "target_absent_now": true
+    },
+    {
+      "document": "docs/knowledge/design/analyzer.md",
+      "source_id_or_body_link": "body-link",
+      "repository_target": "crates/hoimin-cli/src/analyzer/rust/string_literals.rs",
+      "baseline_document_blob": "4c79f12a0fd69d240740ca60c3aad1ff664bd7b3",
+      "reference_present_at_base": true,
+      "target_absent_at_base": true,
+      "target_absent_now": true
+    },
+    {
+      "document": "docs/knowledge/design/analyzer.md",
+      "source_id_or_body_link": "body-link",
+      "repository_target": "crates/hoimin-cli/src/analyzer/types.rs",
+      "baseline_document_blob": "4c79f12a0fd69d240740ca60c3aad1ff664bd7b3",
+      "reference_present_at_base": true,
+      "target_absent_at_base": true,
+      "target_absent_now": true
+    },
+    {
+      "document": "docs/knowledge/design/analyzer.md",
+      "source_id_or_body_link": "body-link",
+      "repository_target": "crates/hoimin-cli/src/analyzer/rust.rs",
+      "baseline_document_blob": "4c79f12a0fd69d240740ca60c3aad1ff664bd7b3",
+      "reference_present_at_base": true,
+      "target_absent_at_base": true,
+      "target_absent_now": true
+    },
+    {
+      "document": "docs/knowledge/design/analyzer.md",
+      "source_id_or_body_link": "body-link",
+      "repository_target": "crates/hoimin-cli/src/analyzer/rust.rs",
+      "baseline_document_blob": "4c79f12a0fd69d240740ca60c3aad1ff664bd7b3",
+      "reference_present_at_base": true,
+      "target_absent_at_base": true,
+      "target_absent_now": true
+    },
+    {
+      "document": "docs/knowledge/design/analyzer.md",
+      "source_id_or_body_link": "body-link",
+      "repository_target": "crates/hoimin-cli/src/analyzer/rust.rs",
+      "baseline_document_blob": "4c79f12a0fd69d240740ca60c3aad1ff664bd7b3",
+      "reference_present_at_base": true,
+      "target_absent_at_base": true,
+      "target_absent_now": true
+    },
+    {
+      "document": "docs/knowledge/design/analyzer.md",
+      "source_id_or_body_link": "body-link",
+      "repository_target": "crates/hoimin-cli/src/analyzer/known_imports_tests.rs",
+      "baseline_document_blob": "4c79f12a0fd69d240740ca60c3aad1ff664bd7b3",
+      "reference_present_at_base": true,
+      "target_absent_at_base": true,
+      "target_absent_now": true
+    },
+    {
+      "document": "docs/knowledge/design/analyzer.md",
+      "source_id_or_body_link": "body-link",
+      "repository_target": "crates/hoimin-cli/src/analyzer/types.rs",
+      "baseline_document_blob": "4c79f12a0fd69d240740ca60c3aad1ff664bd7b3",
+      "reference_present_at_base": true,
+      "target_absent_at_base": true,
+      "target_absent_now": true
+    },
+    {
+      "document": "docs/knowledge/design/analyzer.md",
+      "source_id_or_body_link": "body-link",
+      "repository_target": "crates/hoimin-cli/src/analyzer/rust.rs",
+      "baseline_document_blob": "4c79f12a0fd69d240740ca60c3aad1ff664bd7b3",
+      "reference_present_at_base": true,
+      "target_absent_at_base": true,
+      "target_absent_now": true
+    },
+    {
+      "document": "docs/knowledge/design/analyzer.md",
+      "source_id_or_body_link": "body-link",
+      "repository_target": "crates/hoimin-cli/src/analyzer/rust_tests.rs",
+      "baseline_document_blob": "4c79f12a0fd69d240740ca60c3aad1ff664bd7b3",
+      "reference_present_at_base": true,
+      "target_absent_at_base": true,
+      "target_absent_now": true
+    },
+    {
+      "document": "docs/knowledge/design/analyzer.md",
+      "source_id_or_body_link": "body-link",
+      "repository_target": "crates/hoimin-cli/src/analyzer/payload.rs",
+      "baseline_document_blob": "4c79f12a0fd69d240740ca60c3aad1ff664bd7b3",
+      "reference_present_at_base": true,
+      "target_absent_at_base": true,
+      "target_absent_now": true
+    },
+    {
+      "document": "docs/knowledge/design/analyzer.md",
+      "source_id_or_body_link": "body-link",
+      "repository_target": "crates/hoimin-cli/src/analyzer/visitor.rs",
+      "baseline_document_blob": "4c79f12a0fd69d240740ca60c3aad1ff664bd7b3",
+      "reference_present_at_base": true,
+      "target_absent_at_base": true,
+      "target_absent_now": true
+    },
+    {
+      "document": "docs/knowledge/design/selection-plan-verify.md",
+      "source_id_or_body_link": "issue-476-analyzer",
+      "repository_target": "crates/hoimin-cli/src/analyzer/rust.rs",
+      "baseline_document_blob": "af45b24850d021cceee3b02941da081b91d4beb1",
+      "reference_present_at_base": true,
+      "target_absent_at_base": true,
+      "target_absent_now": true
+    },
+    {
+      "document": "docs/knowledge/design/selection-plan-verify.md",
+      "source_id_or_body_link": "body-link",
+      "repository_target": "crates/hoimin-cli/src/analyzer/rust.rs",
+      "baseline_document_blob": "af45b24850d021cceee3b02941da081b91d4beb1",
+      "reference_present_at_base": true,
+      "target_absent_at_base": true,
+      "target_absent_now": true
+    }
+  ]
+}

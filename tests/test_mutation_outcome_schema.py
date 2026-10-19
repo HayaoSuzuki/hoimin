@@ -62,3 +62,52 @@ def test_elapsed_rejects_unknown_fields() -> None:
     errors = list(VALIDATOR.iter_errors(elapsed))
     # Assert
     assert errors
+
+
+@pytest.mark.parametrize("status", [None, "unknown", 1])
+def test_mutant_status_rejects_noncanonical_values(status: object) -> None:
+    # Arrange
+    report = json.loads(
+        (
+            ROOT / "crates/hoimin-cli/tests/golden/reports/schema-v9-original.json"
+        ).read_text(encoding="utf-8")
+    )
+    event = report["mutants"][0]
+    event["status"] = status
+    # Act
+    errors = list(Draft202012Validator(SCHEMA).iter_errors(event))
+    # Assert
+    assert errors
+
+
+def test_mutant_status_is_required_even_with_complete_outcome() -> None:
+    # Arrange
+    report = json.loads(
+        (
+            ROOT / "crates/hoimin-cli/tests/golden/reports/schema-v9-original.json"
+        ).read_text(encoding="utf-8")
+    )
+    event = report["mutants"][0]
+    event.pop("status", None)
+    # Act
+    errors = list(Draft202012Validator(SCHEMA).iter_errors(event))
+    # Assert
+    assert errors
+
+
+@pytest.mark.parametrize("status", ["killed", "survived"])
+def test_mutant_status_schema_checks_shape_without_semantic_agreement(
+    status: str,
+) -> None:
+    # Arrange: the fixture's Exit(7)/complete outcome remains killed in both cases.
+    report = json.loads(
+        (
+            ROOT / "crates/hoimin-cli/tests/golden/reports/schema-v9-original.json"
+        ).read_text(encoding="utf-8")
+    )
+    event = report["mutants"][0]
+    event["status"] = status
+    # Act
+    errors = list(Draft202012Validator(SCHEMA).iter_errors(event))
+    # Assert: strict Rust readers, rather than generic Schema, enforce agreement.
+    assert errors == []

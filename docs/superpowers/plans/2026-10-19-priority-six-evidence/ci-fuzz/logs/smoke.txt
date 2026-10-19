@@ -1,0 +1,17 @@
+Original: /tmp/hoimin-priority-six-ci-fuzz/smoke.log
+SHA256: 0cb7035f48e487b24e79b524fff18f8162670779236795d09f80e1085a9b7b7b
+Command/environment/exit/limits: ../smoke.json
+Numbered decisive lines (trailing whitespace omitted):
+1:     Finished `release` profile [optimized + debuginfo] target(s) in 0.03s
+2:     Finished `release` profile [optimized + debuginfo] target(s) in 0.03s
+3:      Running `/tmp/hoimin-priority-six-target/aarch64-apple-darwin/release/report_sequence -artifact_prefix=/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles/fuzz/artifacts/report_sequence/ -max_total_time=10 -runs=10000 -seed=588562252 -max_len=4096 -timeout=5 -rss_limit_mb=1024 -artifact_prefix=/tmp/hoimin-priority-six-ci-fuzz/ /tmp/hoimin-priority-six-ci-fuzz/smoke-corpus fuzz/seeds/report_sequence /tmp/hoimin-priority-six-ci-fuzz/cases`
+4: INFO: Running with entropic power schedule (0xFF, 100).
+5: INFO: Seed: 588562252
+6: INFO: Loaded 1 modules   (99876 inline 8-bit counters): 99876 [0x1050d5cb0, 0x1050ee2d4),
+7: INFO: Loaded 1 PC tables (99876 PCs): 99876 [0x1050ee2d8,0x105274518),
+8: INFO:        0 files found in /tmp/hoimin-priority-six-ci-fuzz/smoke-corpus
+9: INFO:        6 files found in fuzz/seeds/report_sequence
+10: INFO:       48 files found in /tmp/hoimin-priority-six-ci-fuzz/cases
+16: ==29920==WARNING: atos failed to symbolize address "0x104a0b800"
+577: #10000	DONE   cov: 3937 ft: 6475 corp: 387/51Kb lim: 299 exec/s: 3333 rss: 450Mb
+620: Done 10000 runs in 3 second(s)

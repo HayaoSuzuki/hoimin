@@ -1,0 +1,37 @@
+Historical task 4 log excerpt.
+Original: /tmp/hoimin-priority-six-task4-red-core.log
+Original SHA-256: 37c4532cfba38ee84aa8e2cc8ee26beaecdd38f82d60357d55ec1c69415c0f8a
+Command, base, RED/GREEN meaning and limits: task-4-report.md.
+Only recorded command information is authoritative; no missing argv/head was inferred.
+
+000001:    Compiling hoimin-core v0.13.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles/crates/hoimin-core)
+000002:     Finished `test` profile [unoptimized + debuginfo] target(s) in 1.16s
+000003:      Running tests/janitor_report.rs (/tmp/hoimin-priority-six-target/debug/deps/janitor_report-e9abfe2db0ffb638)
+000004:
+000005: running 2 tests
+000006: test disk_summary_requires_janitor_observation_even_when_unmeasured ... FAILED
+000007: test unmeasured_disk_summary_emits_explicit_null_janitor ... FAILED
+000008:
+000009: failures:
+000010:
+000011: ---- disk_summary_requires_janitor_observation_even_when_unmeasured stdout ----
+000012:
+000013: thread 'disk_summary_requires_janitor_observation_even_when_unmeasured' (55911436) panicked at crates/hoimin-core/tests/janitor_report.rs:13:5:
+000014: missing janitor must be rejected
+000015:
+000016: ---- unmeasured_disk_summary_emits_explicit_null_janitor stdout ----
+000017:
+000018: thread 'unmeasured_disk_summary_emits_explicit_null_janitor' (55911437) panicked at crates/hoimin-core/tests/janitor_report.rs:25:5:
+000019: assertion `left == right` failed
+000020:   left: None
+000021:  right: Some(Null)
+000022: note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+000023:
+000024:
+000025: failures:
+000026:     disk_summary_requires_janitor_observation_even_when_unmeasured
+000027:     unmeasured_disk_summary_emits_explicit_null_janitor
+000028:
+000029: test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+000030:
+000031: error: test failed, to rerun pass `-p hoimin-core --test janitor_report`

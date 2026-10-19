@@ -1,0 +1,116 @@
+{
+  "base": "4254936ca33240e2f69f6d612fbb408d92090c8a",
+  "final_product_head": "fcb11b946e2730f75c54d4408b5132ff6b57e41a",
+  "receipts": [
+    {
+      "receipt": "red-core.json",
+      "classification": "expected pre-fix behavioral RED",
+      "exit": 101,
+      "excerpt": "logs/red-core.txt",
+      "excerpt_sha256": "39fb89d8d0c2e36f9a146aac8531ad5aff5eadab6e3e478c1d764dae32d30e31",
+      "snapshot_sha256": "517e8a656887c2f2ef05818a55afd6e02c5dce00a9ec771483a6e8550db55ea4"
+    },
+    {
+      "receipt": "red-public.json",
+      "classification": "expected pre-fix behavioral RED",
+      "exit": 101,
+      "excerpt": "logs/red-public.txt",
+      "excerpt_sha256": "fb7bab1c5b71cd987c6073912510e8dbd68a0e41cd3f8feec3b1e6eac891fcf8",
+      "snapshot_sha256": "517e8a656887c2f2ef05818a55afd6e02c5dce00a9ec771483a6e8550db55ea4"
+    },
+    {
+      "receipt": "red-owned.json",
+      "classification": "expected pre-fix behavioral RED",
+      "exit": 101,
+      "excerpt": "logs/red-owned.txt",
+      "excerpt_sha256": "a35ba18ac93d6c832e69a9da774dccbcdc1d01cdcc549a0ad9203558a11fac0d",
+      "snapshot_sha256": "517e8a656887c2f2ef05818a55afd6e02c5dce00a9ec771483a6e8550db55ea4"
+    },
+    {
+      "receipt": "green-core.json",
+      "classification": "success",
+      "exit": 0,
+      "excerpt": "logs/green-core.txt",
+      "excerpt_sha256": "accec0e1ba8183918cf3fa8fbb21d932581254bb62cee2c700ce4972408d8cd2",
+      "snapshot_sha256": "7dd4c5702ef594179096ebfbe60ab45043c9954bf05f9f6d262b4188c5ca1e1e"
+    },
+    {
+      "receipt": "green-owned.json",
+      "classification": "resolved permission-fixture failure",
+      "exit": 101,
+      "excerpt": "logs/green-owned.txt",
+      "excerpt_sha256": "175b944a79711caf562f9811ba1029f71bb01760f6853952a7c4ece154725856",
+      "snapshot_sha256": "7dd4c5702ef594179096ebfbe60ab45043c9954bf05f9f6d262b4188c5ca1e1e"
+    },
+    {
+      "receipt": "green-owned-corrected.json",
+      "classification": "success",
+      "exit": 0,
+      "excerpt": "logs/green-owned-corrected.txt",
+      "excerpt_sha256": "fa2aa2636b81f4ec43491a61748c6cfbf0e556ebcbf30c17d517fc87680aeabf",
+      "snapshot_sha256": "6ee975a1ef98d07defdbb1d4af23ef1b7be1d17556d04f0153c7f0e4f654c250"
+    },
+    {
+      "receipt": "green-public-report.json",
+      "classification": "success",
+      "exit": 0,
+      "excerpt": "logs/green-public-report.txt",
+      "excerpt_sha256": "e1fe784883a365d4327af356fea78e9cbc56403df229fd12f4ab0b8970b28ecf",
+      "snapshot_sha256": "6ee975a1ef98d07defdbb1d4af23ef1b7be1d17556d04f0153c7f0e4f654c250"
+    },
+    {
+      "receipt": "public-staging.json",
+      "classification": "success",
+      "exit": 0,
+      "excerpt": "logs/public-staging.txt",
+      "excerpt_sha256": "d100952510800aef55ec8e0971e8ef6c65b2081e58e5850c9bb7e03412e0784f",
+      "snapshot_sha256": "6ee975a1ef98d07defdbb1d4af23ef1b7be1d17556d04f0153c7f0e4f654c250"
+    },
+    {
+      "receipt": "commit-hooks.json",
+      "classification": "success",
+      "exit": 0,
+      "excerpt": "logs/commit-hooks.txt",
+      "excerpt_sha256": "59c39cb832f2624fb6f9a26b4aa4e533ba17e182ea08403e124cfc9e1681291d",
+      "snapshot_sha256": "6ee975a1ef98d07defdbb1d4af23ef1b7be1d17556d04f0153c7f0e4f654c250"
+    }
+  ],
+  "snapshots": {
+    "517e8a656887c2f2ef05818a55afd6e02c5dce00a9ec771483a6e8550db55ea4": {
+      "path": "snapshots/517e8a656887c2f2ef05818a55afd6e02c5dce00a9ec771483a6e8550db55ea4.diff.gz",
+      "source_paths": [
+        "/tmp/hoimin-priority-six-final-fix/red-core.diff",
+        "/tmp/hoimin-priority-six-final-fix/red-public.diff",
+        "/tmp/hoimin-priority-six-final-fix/red-owned.diff"
+      ],
+      "compression": "gzip"
+    },
+    "7dd4c5702ef594179096ebfbe60ab45043c9954bf05f9f6d262b4188c5ca1e1e": {
+      "path": "snapshots/7dd4c5702ef594179096ebfbe60ab45043c9954bf05f9f6d262b4188c5ca1e1e.diff.gz",
+      "source_paths": [
+        "/tmp/hoimin-priority-six-final-fix/green-core.diff",
+        "/tmp/hoimin-priority-six-final-fix/green-owned.diff"
+      ],
+      "compression": "gzip"
+    },
+    "6ee975a1ef98d07defdbb1d4af23ef1b7be1d17556d04f0153c7f0e4f654c250": {
+      "path": "snapshots/6ee975a1ef98d07defdbb1d4af23ef1b7be1d17556d04f0153c7f0e4f654c250.diff.gz",
+      "source_paths": [
+        "/tmp/hoimin-priority-six-final-fix/green-owned-corrected.diff",
+        "/tmp/hoimin-priority-six-final-fix/green-public-report.diff",
+        "/tmp/hoimin-priority-six-final-fix/public-staging.diff",
+        "/tmp/hoimin-priority-six-final-fix/commit-hooks.diff"
+      ],
+      "compression": "gzip"
+    }
+  },
+  "source_inventory": "source-manifest.json",
+  "source_inventory_verified_files": 46,
+  "focused_successes": {
+    "passed": 527,
+    "ignored": 3,
+    "public_staging_scenarios": 4,
+    "mandatory_hooks": 4
+  },
+  "retention": "Full nine command receipts; three distinct tested snapshots once each; numbered decisive log excerpts with whitespace trimming; full probe receipt/script. No repeated build logs, duplicate snapshots or fixture trees. Source-head-plus-diff provenance retained; not postcommit test reruns. Diff snapshots use deterministic gzip; decompressed bytes retain their exact receipt hashes."
+}

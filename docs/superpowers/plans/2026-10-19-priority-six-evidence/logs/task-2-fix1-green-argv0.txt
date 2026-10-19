@@ -1,0 +1,26 @@
+Historical task 2 log excerpt.
+Original: /tmp/hoimin-priority-six-task2-fix1-green-argv0.log
+Original SHA-256: 76cf6249ae2cc21d91509cb2688f116a35d9af6cc76a16fb69ed318ead63f90b
+Command, base, RED/GREEN meaning and limits: task-2-report.md.
+Only recorded command information is authoritative; no missing argv/head was inferred.
+
+000001:    Compiling hoimin-cli v0.13.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles/crates/hoimin-cli)
+000002:     Finished `test` profile [unoptimized + debuginfo] target(s) in 5.01s
+000003:      Running tests/plan.rs (/tmp/hoimin-priority-six-target/debug/deps/plan-cff1b2201fff23df)
+000004:
+000005: running 12 tests
+000006: test hostile_executable_names::cr::help ... ok
+000007: test hostile_executable_names::cr::error ... ok
+000008: test hostile_executable_names::esc::error ... ok
+000009: test hostile_executable_names::esc::help ... ok
+000010: test hostile_executable_names::lf::error ... ok
+000011: test hostile_executable_names::lf::help ... ok
+000012: test hostile_executable_names::mixed::error ... ok
+000013: test hostile_executable_names::mixed::help ... ok
+000014: test hostile_executable_names::tab::error ... ok
+000015: test hostile_executable_names::tab::help ... ok
+000016: test hostile_executable_names::unicode_alias::error ... ok
+000017: test hostile_executable_names::unicode_alias::help ... ok
+000018:
+000019: test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 138 filtered out; finished in 0.47s
+000020:

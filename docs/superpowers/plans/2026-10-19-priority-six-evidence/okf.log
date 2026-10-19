@@ -1,0 +1,93 @@
+Structure: YAML/type/reserved-file checks passed for 50 Markdown files
+References: 6 changed concepts, 339 sources and 415 local link paths inspected; new/changed references valid
+New/changed source metadata: 27 exact hashes verified against current bytes or accepted task snapshots
+  verified source: docs/knowledge/compatibility.md / priority-six-compatibility / current working-tree bytes
+  verified source: docs/knowledge/compatibility.md / priority-six-graph-evidence / current working-tree bytes
+  verified source: docs/knowledge/design/analyzer.md / issue-1005-graph / current working-tree bytes
+  verified source: docs/knowledge/design/analyzer.md / issue-1005-tests / current working-tree bytes
+  verified source: docs/knowledge/design/analyzer.md / issue-1005-properties / current working-tree bytes
+  verified source: docs/knowledge/design/analyzer.md / issue-1005-evidence / current working-tree bytes
+  verified source: docs/knowledge/design/json-report-spool.md / issue-1010-wire / current working-tree bytes
+  verified source: docs/knowledge/design/runtime-lifecycle.md / issue-1015-owned / b199e83d:crates/hoimin-cli/src/workspace/owned.rs
+  verified source: docs/knowledge/design/runtime-lifecycle.md / issue-1015-report / current working-tree bytes
+  verified source: docs/knowledge/design/selection-plan-verify.md / issue-1004-config / current working-tree bytes
+  verified source: docs/knowledge/design/selection-plan-verify.md / issue-1004-preparation-tests / current working-tree bytes
+  verified source: docs/knowledge/design/selection-plan-verify.md / issue-1002-human-text / current working-tree bytes
+  verified source: docs/knowledge/design/selection-plan-verify.md / issue-1002-preview / current working-tree bytes
+  verified source: docs/knowledge/design/selection-plan-verify.md / issue-1002-preview-tests / 6d78789e:crates/hoimin-cli/tests/plan.rs
+  verified source: docs/knowledge/design/selection-plan-verify.md / issue-1003-source-acquisition / current working-tree bytes
+  verified source: docs/knowledge/design/selection-plan-verify.md / issue-1003-source-safety-tests / current working-tree bytes
+  verified source: docs/knowledge/design/selection-plan-verify.md / issue-1003-source-heap / current working-tree bytes
+  verified source: docs/knowledge/design/session-report.md / issue-1010-wire / current working-tree bytes
+  verified source: docs/knowledge/design/session-report.md / issue-1010-human / current working-tree bytes
+  verified source: docs/knowledge/design/session-report.md / issue-1015-wire / b199e83d:crates/hoimin-core/src/report.rs
+  verified source: docs/knowledge/design/session-report.md / issue-1015-compatibility / b199e83d:docs/compatibility.md
+  verified source: docs/knowledge/design/session-report.md / issue-1004-reader / 8720b41a:crates/hoimin-cli/src/artifacts/run_report.rs
+  verified source: docs/knowledge/design/session-report.md / issue-1004-config / current working-tree bytes
+  verified source: docs/knowledge/design/session-report.md / issue-1002-human-text / current working-tree bytes
+  verified source: docs/knowledge/design/session-report.md / issue-1002-human-report / 3d9e33d1:crates/hoimin-cli/src/report/human.rs
+  verified source: docs/knowledge/design/session-report.md / issue-1002-human-tests / 6d78789e:crates/hoimin-cli/tests/report_handler.rs
+  verified source: docs/knowledge/design/session-report.md / priority-six-compatibility / current working-tree bytes
+Historical metadata: preserved 103 read-time hashes differing from current source bytes; no historical execution refreshed
+Historical revisions: 22 source entries reference commit objects unavailable locally; these revisions were not verified or refreshed
+  unavailable: docs/knowledge/compatibility.md / issue-899-changed-selection / 7b6cb19ba0181759f6b5726f985c5fd7700d313e
+  unavailable: docs/knowledge/compatibility.md / issue-899-changed-review / ad65b8ce55b0dabc59712775e362d5d614b27559
+  unavailable: docs/knowledge/design/analyzer.md / issue-871-evidence / 6f5ce7e61ea43cf76b795570ecc403080888a092
+  unavailable: docs/knowledge/design/analyzer.md / issue-873-decoder / 30d9d9a0066cea85dfb89c68eb0a4db083a55f58
+  unavailable: docs/knowledge/design/analyzer.md / issue-873-candidates / 30d9d9a0066cea85dfb89c68eb0a4db083a55f58
+  unavailable: docs/knowledge/design/runtime-lifecycle.md / issue-897-machine / 175486b7cb30a665bdf39c1ac7897eb96d9966f7
+  unavailable: docs/knowledge/design/runtime-lifecycle.md / issue-897-design / 175486b7cb30a665bdf39c1ac7897eb96d9966f7
+  unavailable: docs/knowledge/design/runtime-lifecycle.md / issue-897-review / 0a148fcf5ca511b6ccca489feda2ccbc2429008f
+  unavailable: docs/knowledge/design/runtime-lifecycle.md / issue-901-core / 48ae4c0e565656ddf3f0a83dcc8a840bd6b4fec8
+  unavailable: docs/knowledge/design/runtime-lifecycle.md / issue-901-oracle / 48ae4c0e565656ddf3f0a83dcc8a840bd6b4fec8
+  unavailable: docs/knowledge/design/runtime-lifecycle.md / readme / 2831bde6adf75facf0a379b8a915267c278d8511
+  unavailable: docs/knowledge/design/runtime-lifecycle.md / issue-898-design / 51c9e26b9d0006cac150b3833cb797a59349bac1
+  unavailable: docs/knowledge/design/runtime-lifecycle.md / issue-898-review / 51c9e26b9d0006cac150b3833cb797a59349bac1
+  unavailable: docs/knowledge/design/selection-plan-verify.md / issue-899-changed-selection / 7b6cb19ba0181759f6b5726f985c5fd7700d313e
+  unavailable: docs/knowledge/design/selection-plan-verify.md / issue-899-changed-review / ad65b8ce55b0dabc59712775e362d5d614b27559
+  unavailable: docs/knowledge/design/selection-plan-verify.md / issue-888-canonical-enums / 5c0215cb65e57d2758c4ec1708cd50d96b1bcdfd
+  unavailable: docs/knowledge/design/session-report.md / issue-899-changed-selection / 7b6cb19ba0181759f6b5726f985c5fd7700d313e
+  unavailable: docs/knowledge/design/session-report.md / issue-899-changed-review / ad65b8ce55b0dabc59712775e362d5d614b27559
+  unavailable: docs/knowledge/design/session-report.md / issue-896-config / e7e3cae8c4e048ee77d2bf644b47da1792211cbe
+  unavailable: docs/knowledge/design/session-report.md / issue-896-design / e7e3cae8c4e048ee77d2bf644b47da1792211cbe
+  unavailable: docs/knowledge/design/session-report.md / issue-896-review / e7e3cae8c4e048ee77d2bf644b47da1792211cbe
+  unavailable: docs/knowledge/design/session-report.md / tracing-readme / e7e3cae8c4e048ee77d2bf644b47da1792211cbe
+Inherited missing paths: 35 source/body references already missing at the original base; not claimed as valid
+  inherited missing: docs/knowledge/design/analyzer.md / issue-935-bindings / crates/hoimin-cli/src/analyzer/rust.rs
+  inherited missing: docs/knowledge/design/analyzer.md / issue-935-tests / crates/hoimin-cli/src/analyzer/known_imports_tests.rs
+  inherited missing: docs/knowledge/design/analyzer.md / issue-929-live-codes / crates/hoimin-cli/src/analyzer/types.rs
+  inherited missing: docs/knowledge/design/analyzer.md / issue-914-class-context / crates/hoimin-cli/src/analyzer/rust.rs
+  inherited missing: docs/knowledge/design/analyzer.md / issue-871-acquisition / crates/hoimin-cli/src/analyzer/rust/depth.rs
+  inherited missing: docs/knowledge/design/analyzer.md / string-segment-implementation / crates/hoimin-cli/src/analyzer/rust/string_segments.rs
+  inherited missing: docs/knowledge/design/analyzer.md / string-segment-exclusions / crates/hoimin-cli/src/analyzer/rust/string_literals.rs
+  inherited missing: docs/knowledge/design/analyzer.md / issue-560-code / crates/hoimin-cli/src/analyzer/rust.rs
+  inherited missing: docs/knowledge/design/analyzer.md / issue-564-code / crates/hoimin-cli/src/analyzer/rust.rs
+  inherited missing: docs/knowledge/design/analyzer.md / implementation / crates/hoimin-cli/src/analyzer/rust.rs
+  inherited missing: docs/knowledge/design/analyzer.md / issue-930-token-operators / crates/hoimin-cli/src/analyzer/rust.rs
+  inherited missing: docs/knowledge/design/analyzer.md / issue-950-candidate / crates/hoimin-cli/src/analyzer/types.rs
+  inherited missing: docs/knowledge/design/analyzer.md / issue-950-retention / crates/hoimin-cli/src/analyzer/rust.rs
+  inherited missing: docs/knowledge/design/analyzer.md / issue-950-tests / crates/hoimin-cli/src/analyzer/rust_tests.rs
+  inherited missing: docs/knowledge/design/analyzer.md / issue-978-payload / crates/hoimin-cli/src/analyzer/payload.rs
+  inherited missing: docs/knowledge/design/analyzer.md / issue-986-walker / crates/hoimin-cli/src/analyzer/visitor.rs
+  inherited missing: docs/knowledge/design/analyzer.md / body-link / crates/hoimin-cli/src/analyzer/rust/depth.rs
+  inherited missing: docs/knowledge/design/analyzer.md / body-link / crates/hoimin-cli/src/analyzer/rust.rs
+  inherited missing: docs/knowledge/design/analyzer.md / body-link / crates/hoimin-cli/src/analyzer/rust.rs
+  inherited missing: docs/knowledge/design/analyzer.md / body-link / crates/hoimin-cli/src/analyzer/rust.rs
+  inherited missing: docs/knowledge/design/analyzer.md / body-link / crates/hoimin-cli/src/analyzer/rust/string_literals.rs
+  inherited missing: docs/knowledge/design/analyzer.md / body-link / crates/hoimin-cli/src/analyzer/rust/string_segments.rs
+  inherited missing: docs/knowledge/design/analyzer.md / body-link / crates/hoimin-cli/src/analyzer/rust/string_literals.rs
+  inherited missing: docs/knowledge/design/analyzer.md / body-link / crates/hoimin-cli/src/analyzer/types.rs
+  inherited missing: docs/knowledge/design/analyzer.md / body-link / crates/hoimin-cli/src/analyzer/rust.rs
+  inherited missing: docs/knowledge/design/analyzer.md / body-link / crates/hoimin-cli/src/analyzer/rust.rs
+  inherited missing: docs/knowledge/design/analyzer.md / body-link / crates/hoimin-cli/src/analyzer/rust.rs
+  inherited missing: docs/knowledge/design/analyzer.md / body-link / crates/hoimin-cli/src/analyzer/known_imports_tests.rs
+  inherited missing: docs/knowledge/design/analyzer.md / body-link / crates/hoimin-cli/src/analyzer/types.rs
+  inherited missing: docs/knowledge/design/analyzer.md / body-link / crates/hoimin-cli/src/analyzer/rust.rs
+  inherited missing: docs/knowledge/design/analyzer.md / body-link / crates/hoimin-cli/src/analyzer/rust_tests.rs
+  inherited missing: docs/knowledge/design/analyzer.md / body-link / crates/hoimin-cli/src/analyzer/payload.rs
+  inherited missing: docs/knowledge/design/analyzer.md / body-link / crates/hoimin-cli/src/analyzer/visitor.rs
+  inherited missing: docs/knowledge/design/selection-plan-verify.md / issue-476-analyzer / crates/hoimin-cli/src/analyzer/rust.rs
+  inherited missing: docs/knowledge/design/selection-plan-verify.md / body-link / crates/hoimin-cli/src/analyzer/rust.rs
+Reachability: all changed concepts reachable from docs/knowledge/index.md
+Catalog inputs: no added/moved/deleted originals in specs/reports/audits; plans/maintenance remain outside source catalogs
+Limits: local path checks do not validate URL availability or heading fragments; manual claim/evidence review is recorded in task-7-report.md

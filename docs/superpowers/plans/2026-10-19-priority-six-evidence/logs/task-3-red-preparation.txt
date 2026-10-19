@@ -1,0 +1,65 @@
+Historical task 3 log excerpt.
+Original: /tmp/hoimin-priority-six-task3-red-preparation.log
+Original SHA-256: e655a226c1b5055f92b599a46ad8755432c6e304f693d31e2ee07e526a108c97
+Command, base, RED/GREEN meaning and limits: task-3-report.md.
+Only recorded command information is authoritative; no missing argv/head was inferred.
+
+000001:    Compiling hoimin-core v0.13.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles/crates/hoimin-core)
+000002:    Compiling hoimin-python v0.13.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles/crates/hoimin-python)
+000003:    Compiling hoimin-cli v0.13.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles/crates/hoimin-cli)
+000004:     Finished `test` profile [unoptimized + debuginfo] target(s) in 4.92s
+000005:      Running tests/checked_config.rs (/tmp/hoimin-priority-six-target/debug/deps/checked_config-81fa6f7b7474fb30)
+000006:
+000007: running 7 tests
+000008: test valid_configuration_reaches_fingerprint_resolution ... ok
+000009: test rejects_empty_operators ... FAILED
+000010: test rejects_escaping_import_root ... FAILED
+000011: test rejects_empty_required_selector ... FAILED
+000012: test rejects_empty_test_argv ... FAILED
+000013: test rejects_jobs_above_process_cap ... FAILED
+000014: test rejects_jobs_above_absolute_cap ... FAILED
+000015:
+000016: failures:
+000017:
+000018: ---- rejects_empty_operators stdout ----
+000019:
+000020: thread 'rejects_empty_operators' (55861998) panicked at crates/hoimin-cli/tests/checked_config.rs:33:5:
+000021: fingerprint.file.not_found: missing-fingerprint.txt
+000022:
+000023: ---- rejects_escaping_import_root stdout ----
+000024:
+000025: thread 'rejects_escaping_import_root' (55862001) panicked at crates/hoimin-cli/tests/checked_config.rs:33:5:
+000026: fingerprint.file.not_found: missing-fingerprint.txt
+000027:
+000028: ---- rejects_empty_required_selector stdout ----
+000029:
+000030: thread 'rejects_empty_required_selector' (55861999) panicked at crates/hoimin-cli/tests/checked_config.rs:33:5:
+000031: fingerprint.file.not_found: missing-fingerprint.txt
+000032:
+000033: ---- rejects_empty_test_argv stdout ----
+000034:
+000035: thread 'rejects_empty_test_argv' (55862000) panicked at crates/hoimin-cli/tests/checked_config.rs:33:5:
+000036: fingerprint.file.not_found: missing-fingerprint.txt
+000037:
+000038: ---- rejects_jobs_above_process_cap stdout ----
+000039:
+000040: thread 'rejects_jobs_above_process_cap' (55862003) panicked at crates/hoimin-cli/tests/checked_config.rs:33:5:
+000041: fingerprint.file.not_found: missing-fingerprint.txt
+000042: note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+000043:
+000045:
+000046: thread 'rejects_jobs_above_absolute_cap' (55862002) panicked at crates/hoimin-cli/tests/checked_config.rs:33:5:
+000047: fingerprint.file.not_found: missing-fingerprint.txt
+000048:
+000049:
+000050: failures:
+000051:     rejects_empty_operators
+000052:     rejects_empty_required_selector
+000053:     rejects_empty_test_argv
+000054:     rejects_escaping_import_root
+000055:     rejects_jobs_above_absolute_cap
+000056:     rejects_jobs_above_process_cap
+000057:
+000058: test result: FAILED. 1 passed; 6 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+000059:
+000060: error: test failed, to rerun pass `-p hoimin-cli --test checked_config`

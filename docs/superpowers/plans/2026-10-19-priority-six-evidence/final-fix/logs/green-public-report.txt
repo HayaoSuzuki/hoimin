@@ -1,0 +1,36 @@
+Command: ["cargo", "test", "-p", "hoimin-cli", "--test", "progress", "--test", "report_handler"]
+Source head: 4254936ca33240e2f69f6d612fbb408d92090c8a
+Tested diff SHA-256: 6ee975a1ef98d07defdbb1d4af23ef1b7be1d17556d04f0153c7f0e4f654c250
+Exit: 0
+Original log: /tmp/hoimin-priority-six-final-fix/green-public-report.log
+Original log SHA-256: 6e84e33c1ac4d96ce1ada1580bbbb387df81250133404f2e08819f85ebd1aa39
+
+000001:    Compiling hoimin-cli v0.14.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles/crates/hoimin-cli)
+000002:     Finished `test` profile [unoptimized + debuginfo] target(s) in 8.01s
+000003:      Running tests/progress.rs (/tmp/hoimin-priority-six-target/debug/deps/progress-a27504b087077f1c)
+000004:
+000005: running 144 tests
+000006: test compare_a_usable_unusable_usable_history_has_no_cross_gap_comparison ... ok
+000007: test compare_an_empty_common_set_breaks_the_stall_chain ... ok
+000008: test changing_candidate_id_sets_break_the_stall_chain ... ok
+000009: test compare_an_improvement_resets_prior_stalls ... ok
+000010: test compare_counts_added_and_removed_mutants ... ok
+000011: test compare_excludes_duplicate_keys_from_the_common_set ... ok
+000012: test compare_improvement_and_regression_break_the_stall_chain ... ok
+000150:
+000151: test result: ok. 144 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.26s
+000152:
+000153:      Running tests/report_handler.rs (/tmp/hoimin-priority-six-target/debug/deps/report_handler-d11c78eef9aa30a0)
+000154:
+000293: test public_resume_reports_validate_current_schema_in_json_and_jsonl ... ok
+000294: test published_resume_schema_accepts_producer_reasons_and_rejects_retired_fallback ... ok
+000295: test raw_goldens_reject_duplicate_known_fields_before_value_parsing ... ok
+000296: test raw_goldens_reject_unknown_fields_before_typed_comparison ... ok
+000297: test report_errors_are_typed_and_echo_the_effect_id ... ok
+000298: test report_event_goldens_are_typed_complete_sequences ... ok
+000299: test documentation_contract ... ok
+000300: test zero_progress_mutant_spool_write_fails_before_ack_and_poisons_report ... ok
+000301: test sample_public_reports_and_previews_match_current_schemas ... ok
+000302:
+000303: test result: ok. 146 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.84s
+000304:

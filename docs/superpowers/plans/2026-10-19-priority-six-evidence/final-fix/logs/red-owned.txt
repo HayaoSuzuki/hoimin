@@ -1,0 +1,41 @@
+Command: ["cargo", "test", "-p", "hoimin-cli", "--lib", "pre_lease"]
+Source head: 4254936ca33240e2f69f6d612fbb408d92090c8a
+Tested diff SHA-256: 517e8a656887c2f2ef05818a55afd6e02c5dce00a9ec771483a6e8550db55ea4
+Exit: 101
+Original log: /tmp/hoimin-priority-six-final-fix/red-owned.log
+Original log SHA-256: f5a193eec5dadf7c6437f45f38cac877c119fe99acdf0b594cc47fe5d6f57d50
+
+000001:    Compiling hoimin-cli v0.14.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles/crates/hoimin-cli)
+000002:     Finished `test` profile [unoptimized + debuginfo] target(s) in 9.30s
+000003:      Running unittests src/lib.rs (/tmp/hoimin-priority-six-target/debug/deps/hoimin_cli-364ef5e82ff81ad1)
+000004:
+000005: running 3 tests
+000006: test workspace::owned::tests::empty_staging_root_from_a_pre_lease_crash_is_reclaimed_after_a_day ... ok
+000007: test workspace::owned::tests::young_pre_lease_staging_default_suppresses_normal_detail ... FAILED
+000008: test workspace::owned::tests::young_pre_lease_staging_verbose_retains_normal_detail ... FAILED
+000009:
+000010: failures:
+000011:
+000012: ---- workspace::owned::tests::young_pre_lease_staging_default_suppresses_normal_detail stdout ----
+000013:
+000014: thread 'workspace::owned::tests::young_pre_lease_staging_default_suppresses_normal_detail' (56336429) panicked at crates/hoimin-cli/src/workspace/owned.rs:2696:5:
+000015: assertion `left == right` failed: JanitorSummary { inspected_roots: 1, reclaimed_roots: 0, absent_roots: 0, preserved_roots: 0, preserved_by_reason: {}, unresolved_roots: 1, unresolved_by_reason: {LeaseInvalid: 1}, examined_entries: 0, removed_entries: 0, scan: JanitorScan { directory_scan_complete: true, observed_matching_entries: 1, selected_roots: 1, uninspected_selected_roots: 0, selection_omitted_observed_entries: 0, selection_limited: false, cursor_deferred: false, stop_reason: None }, details: [JanitorDetail { reason: LeaseInvalid, message: "inspect lease for /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/.tmpMFoJn4/hoimin-workspaces-v1/.staging-e9294606-4c63-4c97-94a0-38f79c8a3c7a: No such file or directory (os error 2)" }], detail_omissions: JanitorDetailOmissions { normal_details: 0, issue_details: 0, truncated_details: 0, suppressed_normal_details: 0 } }
+000016:   left: 0
+000017:  right: 1
+000018: note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+000019:
+000020: ---- workspace::owned::tests::young_pre_lease_staging_verbose_retains_normal_detail stdout ----
+000021:
+000022: thread 'workspace::owned::tests::young_pre_lease_staging_verbose_retains_normal_detail' (56336430) panicked at crates/hoimin-cli/src/workspace/owned.rs:2702:5:
+000023: assertion `left == right` failed: JanitorSummary { inspected_roots: 1, reclaimed_roots: 0, absent_roots: 0, preserved_roots: 0, preserved_by_reason: {}, unresolved_roots: 1, unresolved_by_reason: {LeaseInvalid: 1}, examined_entries: 0, removed_entries: 0, scan: JanitorScan { directory_scan_complete: true, observed_matching_entries: 1, selected_roots: 1, uninspected_selected_roots: 0, selection_omitted_observed_entries: 0, selection_limited: false, cursor_deferred: false, stop_reason: None }, details: [JanitorDetail { reason: LeaseInvalid, message: "inspect lease for /private/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/.tmpgbJgFD/hoimin-workspaces-v1/.staging-40066d2c-5878-42c2-953d-86c712e88110: No such file or directory (os error 2)" }], detail_omissions: JanitorDetailOmissions { normal_details: 0, issue_details: 0, truncated_details: 0, suppressed_normal_details: 0 } }
+000024:   left: 0
+000025:  right: 1
+000026:
+000027:
+000028: failures:
+000029:     workspace::owned::tests::young_pre_lease_staging_default_suppresses_normal_detail
+000030:     workspace::owned::tests::young_pre_lease_staging_verbose_retains_normal_detail
+000031:
+000032: test result: FAILED. 1 passed; 2 failed; 0 ignored; 0 measured; 798 filtered out; finished in 0.06s
+000033:
+000034: error: test failed, to rerun pass `-p hoimin-cli --lib`

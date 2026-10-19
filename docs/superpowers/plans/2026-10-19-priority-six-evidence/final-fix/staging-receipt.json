@@ -1,0 +1,229 @@
+{
+  "source_head": "4254936ca33240e2f69f6d612fbb408d92090c8a",
+  "binary_sha256": "e9808acbf8114c114c2f4d43e62883491c039cc739caf9ea49386e432dde02f0",
+  "TMPDIR": "/tmp/hoimin-priority-six-final-fix/staging/tmp",
+  "staging": "/tmp/hoimin-priority-six-final-fix/staging/tmp/hoimin-workspaces-v1/.staging-48e78d1c-8b50-4db8-b9d7-99c3e6b85ade",
+  "young_mtime_ns": [
+    1792407656879318761,
+    1792407656879318761,
+    1792407656879318761
+  ],
+  "young_entries": [],
+  "stale_after_exists": false,
+  "records": [
+    {
+      "case": "control",
+      "command": [
+        "/tmp/hoimin-priority-six-target/debug/hoimin",
+        "run",
+        "--root",
+        "/tmp/hoimin-priority-six-final-fix/staging/project",
+        "--file",
+        "calc.py",
+        "--operators",
+        "binary_add_sub",
+        "--min-free-space",
+        "1MiB",
+        "--allow-best-effort-memory",
+        "--format",
+        "json",
+        "--",
+        "/usr/bin/true"
+      ],
+      "exit": 1,
+      "janitor": {
+        "inspected_roots": 0,
+        "reclaimed_roots": 0,
+        "absent_roots": 0,
+        "preserved_roots": 0,
+        "preserved_by_reason": {},
+        "unresolved_roots": 0,
+        "unresolved_by_reason": {},
+        "examined_entries": 0,
+        "removed_entries": 0,
+        "scan": {
+          "directory_scan_complete": true,
+          "observed_matching_entries": 0,
+          "selected_roots": 0,
+          "uninspected_selected_roots": 0,
+          "selection_omitted_observed_entries": 0,
+          "selection_limited": false,
+          "cursor_deferred": false,
+          "stop_reason": null
+        },
+        "details": [],
+        "detail_omissions": {
+          "normal_details": 0,
+          "issue_details": 0,
+          "truncated_details": 0,
+          "suppressed_normal_details": 0
+        }
+      },
+      "stdout_sha256": "80784d2163ec430c1d874e32da50c0904bf1cc711efa9885900cf670bcf4cac2",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "case": "young_default",
+      "command": [
+        "/tmp/hoimin-priority-six-target/debug/hoimin",
+        "run",
+        "--root",
+        "/tmp/hoimin-priority-six-final-fix/staging/project",
+        "--file",
+        "calc.py",
+        "--operators",
+        "binary_add_sub",
+        "--min-free-space",
+        "1MiB",
+        "--allow-best-effort-memory",
+        "--format",
+        "json",
+        "--",
+        "/usr/bin/true"
+      ],
+      "exit": 1,
+      "janitor": {
+        "inspected_roots": 1,
+        "reclaimed_roots": 0,
+        "absent_roots": 0,
+        "preserved_roots": 1,
+        "preserved_by_reason": {
+          "young": 1
+        },
+        "unresolved_roots": 0,
+        "unresolved_by_reason": {},
+        "examined_entries": 0,
+        "removed_entries": 0,
+        "scan": {
+          "directory_scan_complete": true,
+          "observed_matching_entries": 1,
+          "selected_roots": 1,
+          "uninspected_selected_roots": 0,
+          "selection_omitted_observed_entries": 0,
+          "selection_limited": false,
+          "cursor_deferred": false,
+          "stop_reason": null
+        },
+        "details": [],
+        "detail_omissions": {
+          "normal_details": 0,
+          "issue_details": 0,
+          "truncated_details": 0,
+          "suppressed_normal_details": 1
+        }
+      },
+      "stdout_sha256": "e69ec382a9522c6dc28f91f4fa20818c07e3c3594986dd2e6d0644bb6080fd6b",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "case": "young_verbose",
+      "command": [
+        "/tmp/hoimin-priority-six-target/debug/hoimin",
+        "run",
+        "--root",
+        "/tmp/hoimin-priority-six-final-fix/staging/project",
+        "--file",
+        "calc.py",
+        "--operators",
+        "binary_add_sub",
+        "--min-free-space",
+        "1MiB",
+        "--allow-best-effort-memory",
+        "--format",
+        "json",
+        "--verbose",
+        "--",
+        "/usr/bin/true"
+      ],
+      "exit": 1,
+      "janitor": {
+        "inspected_roots": 1,
+        "reclaimed_roots": 0,
+        "absent_roots": 0,
+        "preserved_roots": 1,
+        "preserved_by_reason": {
+          "young": 1
+        },
+        "unresolved_roots": 0,
+        "unresolved_by_reason": {},
+        "examined_entries": 0,
+        "removed_entries": 0,
+        "scan": {
+          "directory_scan_complete": true,
+          "observed_matching_entries": 1,
+          "selected_roots": 1,
+          "uninspected_selected_roots": 0,
+          "selection_omitted_observed_entries": 0,
+          "selection_limited": false,
+          "cursor_deferred": false,
+          "stop_reason": null
+        },
+        "details": [
+          {
+            "reason": "young",
+            "message": "staging age for /private/tmp/hoimin-priority-six-final-fix/staging/tmp/hoimin-workspaces-v1/.staging-48e78d1c-8b50-4db8-b9d7-99c3e6b85ade: stale threshold not reached"
+          }
+        ],
+        "detail_omissions": {
+          "normal_details": 0,
+          "issue_details": 0,
+          "truncated_details": 0,
+          "suppressed_normal_details": 0
+        }
+      },
+      "stdout_sha256": "fe8186095b4157ffe941833fa9f61b32e24a945ad92465163c08156eeb94f081",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "case": "stale_control",
+      "command": [
+        "/tmp/hoimin-priority-six-target/debug/hoimin",
+        "run",
+        "--root",
+        "/tmp/hoimin-priority-six-final-fix/staging/project",
+        "--file",
+        "calc.py",
+        "--operators",
+        "binary_add_sub",
+        "--min-free-space",
+        "1MiB",
+        "--allow-best-effort-memory",
+        "--format",
+        "json",
+        "--",
+        "/usr/bin/true"
+      ],
+      "exit": 1,
+      "janitor": {
+        "inspected_roots": 1,
+        "reclaimed_roots": 1,
+        "absent_roots": 0,
+        "preserved_roots": 0,
+        "preserved_by_reason": {},
+        "unresolved_roots": 0,
+        "unresolved_by_reason": {},
+        "examined_entries": 0,
+        "removed_entries": 1,
+        "scan": {
+          "directory_scan_complete": true,
+          "observed_matching_entries": 1,
+          "selected_roots": 1,
+          "uninspected_selected_roots": 0,
+          "selection_omitted_observed_entries": 0,
+          "selection_limited": false,
+          "cursor_deferred": false,
+          "stop_reason": null
+        },
+        "details": [],
+        "detail_omissions": {
+          "normal_details": 0,
+          "issue_details": 0,
+          "truncated_details": 0,
+          "suppressed_normal_details": 0
+        }
+      },
+      "stdout_sha256": "0b35e253a37bc6f72bd83646be190b4f65c305cd13c04518663dec6a5d01cd94",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ]
+}

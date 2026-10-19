@@ -1,0 +1,8 @@
+Final check excerpt
+Command: ["uv", "run", "--frozen", "--no-sync", "python", "tools/performance_shapes.py", "gate", "--output", "/tmp/hoimin-priority-six-task7/performance-gates"]
+Head: 3aaf82b0d5b695a548dda33ea248ceaa1dd68219
+Exit: 0
+Original: /tmp/hoimin-priority-six-task7/performance-gates.log
+Original SHA-256: ca5cbbb69e2e2a87d57ee153ef3dcfe503edebd97aec3b1dec8bdf2f3bd90bca
+
+000001: {"status": "passed", "artifact": "/tmp/hoimin-priority-six-task7/performance-gates/result.json"}

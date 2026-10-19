@@ -866,7 +866,7 @@ impl BlockingEffect {
                 id,
                 mut workspace,
                 request,
-                mut config,
+                config,
                 copied_at_start,
                 metrics_protected_inputs,
                 targets,
@@ -874,15 +874,17 @@ impl BlockingEffect {
             } => {
                 let mut run_fingerprint = None;
                 let mut metrics_destination = None;
+                let mut resolved_session_path = None;
                 let validation =
                     validate_metrics_destination(&config, &targets, &metrics_protected_inputs, id)
                         .map(|value| {
                             metrics_destination = Some(value);
                         });
                 let preflight = validation.and_then(|()| {
-                    prepare_session_artifacts(&mut config)
+                    prepare_session_artifacts(&config)
                         .map_err(|error| EffectFailed::other(id, "session.path", error))
-                        .and_then(|exclusions| {
+                        .and_then(|(exclusions, session_path)| {
+                            resolved_session_path = session_path;
                             workspace.set_literal_exclusions(exclusions);
                             workspace.handle_preflight_validated(request, |root, manifest| {
                                 recheck_fingerprint_inputs(
@@ -906,10 +908,7 @@ impl BlockingEffect {
                 let (event, session_path) = match preflight {
                     Ok(mut value) => {
                         value.fingerprint = run_fingerprint;
-                        (
-                            RunEvent::PreflightCompleted(value),
-                            config.session.config().map(|session| session.path.clone()),
-                        )
+                        (RunEvent::PreflightCompleted(value), resolved_session_path)
                     }
                     Err(error) => (RunEvent::EffectFailed(error), None),
                 };
@@ -986,10 +985,11 @@ fn is_blocking_io_effect(effect: &RunEffect) -> bool {
 }
 
 fn prepare_session_artifacts(
-    config: &mut RunConfig,
-) -> Result<Vec<crate::workspace::LiteralExclusion>, String> {
+    config: &RunConfig,
+) -> Result<(Vec<crate::workspace::LiteralExclusion>, Option<Utf8PathBuf>), String> {
     let mut literal_exclusions = Vec::new();
-    if let Some(session) = config.session.config_mut() {
+    let mut resolved_path = None;
+    if let Some(session) = config.session.config() {
         let artifacts =
             SessionArtifacts::resolve(&session.path).map_err(|error| error.to_string())?;
         let root =
@@ -1014,10 +1014,12 @@ fn prepare_session_artifacts(
                 });
             }
         }
-        session.path = Utf8PathBuf::from_path_buf(artifacts.database().to_owned())
-            .map_err(|_| "session database path is not UTF-8".to_owned())?;
+        resolved_path = Some(
+            Utf8PathBuf::from_path_buf(artifacts.database().to_owned())
+                .map_err(|_| "session database path is not UTF-8".to_owned())?,
+        );
     }
-    Ok(literal_exclusions)
+    Ok((literal_exclusions, resolved_path))
 }
 
 fn prepare_blocking_effect(
@@ -1836,9 +1838,8 @@ fn disk_secondary_matches_primary(
 fn apply_execution_cleanup_evidence(
     report: &mut hoimin_core::DiskCleanupReport,
     cleanup: Option<&CleanupRecord>,
-    startup_reclaim: &ReclaimReport,
 ) {
-    let mut evidence = match cleanup {
+    let evidence = match cleanup {
         Some(cleanup) => {
             report.status = cleanup.disposition.report_status();
             cleanup.evidence.clone()
@@ -1851,7 +1852,6 @@ fn apply_execution_cleanup_evidence(
             remaining_root: report.remaining_root.as_ref().map(Utf8PathBuf::from),
         },
     };
-    startup_reclaim.append_to_cleanup(&mut evidence);
     report.examined_entries = evidence.examined_entries;
     report.removed_entries = evidence.removed_entries;
     report.details = evidence.details;
@@ -1911,13 +1911,19 @@ impl ShellContext {
         stderr: Stderr,
     ) -> Result<Self, String> {
         let prepared = prepare_shell_setup(config.clone(), Box::new(|| {})).await?;
-        Ok(Self::from_prepared(prepared, stdout, stderr))
+        Ok(Self::from_prepared(
+            prepared,
+            stdout,
+            stderr,
+            crate::report::ReportPresentation::default(),
+        ))
     }
 
     fn from_prepared<Stdout: Write + Send + 'static, Stderr: Write + Send + 'static>(
         prepared: PreparedShellSetup,
         stdout: Stdout,
         stderr: Stderr,
+        presentation: crate::report::ReportPresentation,
     ) -> Self {
         let PreparedShellSetup {
             workspace,
@@ -1940,7 +1946,12 @@ impl ShellContext {
             workspace: Some(workspace),
             analyzer,
             process,
-            report: ReportDelivery::new(report.attach(stdout, stderr), delivery_owner),
+            report: ReportDelivery::new(
+                report
+                    .attach(stdout, stderr)
+                    .with_presentation(presentation),
+                delivery_owner,
+            ),
             session: None,
             session_path,
             spool_dir,
@@ -1972,7 +1983,12 @@ impl ShellContext {
         temporary_parent: Utf8PathBuf,
     ) -> Result<Self, String> {
         let prepared = prepare_shell_setup_in(config.clone(), temporary_parent).await?;
-        Ok(Self::from_prepared(prepared, stdout, stderr))
+        Ok(Self::from_prepared(
+            prepared,
+            stdout,
+            stderr,
+            crate::report::ReportPresentation::default(),
+        ))
     }
 
     fn workspace(&self) -> &WorkspaceHandler {
@@ -2347,7 +2363,9 @@ pub enum PrepareRunConfigError {
     File(#[from] crate::fingerprint_inputs::FingerprintInputError),
 }
 
-/// Resolves declared filesystem and inherited-environment fingerprint inputs.
+/// Resolves fingerprint inputs for semantically checked request settings.
+/// Invalid normalized settings cannot enter this boundary; checked construction
+/// and deserialization run before environment capture or filesystem resolution.
 ///
 /// # Errors
 ///
@@ -2356,9 +2374,9 @@ pub fn prepare_run_config(
     config: RunConfig<hoimin_core::EnvironmentRequest>,
 ) -> Result<RunConfig, PrepareRunConfigError> {
     let environment = crate::fingerprint_env::capture(&config.environment)?;
-    let mut config = config.with_environment(environment)?;
-    config.fingerprint_inputs = crate::fingerprint_inputs::resolve_config(&config)?;
-    Ok(config)
+    let config = config.with_environment(environment)?;
+    let inputs = crate::fingerprint_inputs::resolve_config(&config)?;
+    Ok(config.with_fingerprint_inputs(inputs))
 }
 
 /// Captures the request once, then runs its validated snapshot with owned output writers.
@@ -2370,12 +2388,13 @@ pub async fn run_loop<Stdout, Stderr>(
     config: RunConfig<hoimin_core::EnvironmentRequest>,
     stdout: Stdout,
     stderr: Stderr,
+    presentation: crate::report::ReportPresentation,
 ) -> Result<i32, String>
 where
     Stdout: Write + Send + 'static,
     Stderr: Write + Send + 'static,
 {
-    run_loop_with_control(config, stdout, stderr, RunControl::new()).await
+    run_loop_with_control(config, stdout, stderr, RunControl::new(), presentation).await
 }
 
 /// Runs with caller-controlled cancellation and owned output writers.
@@ -2389,6 +2408,7 @@ pub async fn run_loop_with_control<Stdout, Stderr>(
     stdout: Stdout,
     stderr: Stderr,
     control: RunControl,
+    presentation: crate::report::ReportPresentation,
 ) -> Result<i32, String>
 where
     Stdout: Write + Send + 'static,
@@ -2410,6 +2430,7 @@ where
         control,
         hoimin_core::RunSelection::all(),
         None,
+        presentation,
     )
     .await
 }
@@ -2418,6 +2439,7 @@ pub(crate) async fn run_verified<Stdout, Stderr>(
     verified: crate::plan::VerifiedPlan,
     stdout: Stdout,
     stderr: Stderr,
+    presentation: crate::report::ReportPresentation,
 ) -> Result<i32, String>
 where
     Stdout: Write + Send + 'static,
@@ -2430,7 +2452,8 @@ where
         return Err(error);
     }
     let control = RunControl::new();
-    let mut context = prepare_loop_context(&verified.config, stdout, stderr, &control).await?;
+    let mut context =
+        prepare_loop_context(&verified.config, stdout, stderr, &control, presentation).await?;
     context.metrics_protected_inputs = verified.manifest_inputs;
     Box::pin(run_loop_context(
         verified.config,
@@ -2449,12 +2472,13 @@ async fn run_loop_prepared<Stdout, Stderr>(
     control: RunControl,
     candidate_selection: hoimin_core::RunSelection,
     fingerprint_copy_inputs: Option<BTreeSet<Utf8PathBuf>>,
+    presentation: crate::report::ReportPresentation,
 ) -> Result<i32, String>
 where
     Stdout: Write + Send + 'static,
     Stderr: Write + Send + 'static,
 {
-    let context = prepare_loop_context(&config, stdout, stderr, &control).await?;
+    let context = prepare_loop_context(&config, stdout, stderr, &control, presentation).await?;
     Box::pin(run_loop_context(
         config,
         context,
@@ -2470,6 +2494,7 @@ async fn prepare_loop_context<Stdout, Stderr>(
     stdout: Stdout,
     stderr: Stderr,
     control: &RunControl,
+    presentation: crate::report::ReportPresentation,
 ) -> Result<ShellContext, String>
 where
     Stdout: Write + Send + 'static,
@@ -2487,7 +2512,12 @@ where
     )
     .await;
     match prepared {
-        Ok(prepared) => Ok(ShellContext::from_prepared(prepared, stdout, stderr)),
+        Ok(prepared) => Ok(ShellContext::from_prepared(
+            prepared,
+            stdout,
+            stderr,
+            presentation,
+        )),
         Err(error) => {
             crate::write_terminal_error(error.clone(), stderr).await;
             Err(error)
@@ -3019,8 +3049,7 @@ async fn run_loop_context(
                             summary.disk.maximum_measurement_ms =
                                 u64::try_from(disk_stats.maximum_measurement.as_millis())
                                     .unwrap_or(u64::MAX);
-                            summary.disk.stale_roots_reclaimed =
-                                context.spool_dir.startup_reclaim.reclaimed_roots;
+                            summary.disk.janitor = Some(context.spool_dir.startup_reclaim.clone());
                             summary.disk.removed_logical_bytes = (execution_cleanup == CleanupProgress::Cleaned)
                                 .then(|| execution_preclean.as_ref().map(|value| value.owned_bytes))
                                 .flatten();
@@ -3052,7 +3081,6 @@ async fn run_loop_context(
                                 apply_execution_cleanup_evidence(
                                     report,
                                     execution_cleanup_record.as_ref(),
-                                    &context.spool_dir.startup_reclaim,
                                 );
                             }
                             let latest_stop = {
@@ -5404,6 +5432,7 @@ mod tests {
             RunControl::new(),
             selection,
             Some(BTreeSet::new()),
+            crate::report::ReportPresentation::default(),
         )
         .await
         .unwrap_err();
@@ -5450,9 +5479,15 @@ mod tests {
         }));
         let observed = control.clone();
 
-        let exit = run_loop_with_control(config, Vec::new(), Vec::new(), control)
-            .await
-            .expect("a typed disk stop must complete through the normal run state machine");
+        let exit = run_loop_with_control(
+            config,
+            Vec::new(),
+            Vec::new(),
+            control,
+            crate::report::ReportPresentation::default(),
+        )
+        .await
+        .expect("a typed disk stop must complete through the normal run state machine");
 
         assert_ne!(exit, 0);
         assert_eq!(observed.dispatched_effect_count(), 0);
@@ -5483,9 +5518,15 @@ mod tests {
         let observed = control.clone();
         let stdout = CollectingWriter::default();
 
-        let exit = run_loop_with_control(config, stdout.clone(), Vec::new(), control)
-            .await
-            .expect("initial threshold must use the typed stop lifecycle");
+        let exit = run_loop_with_control(
+            config,
+            stdout.clone(),
+            Vec::new(),
+            control,
+            crate::report::ReportPresentation::default(),
+        )
+        .await
+        .expect("initial threshold must use the typed stop lifecycle");
 
         assert_ne!(exit, 0);
         assert_eq!(observed.dispatched_effect_count(), 0);
@@ -5518,9 +5559,15 @@ mod tests {
         let observed = control.clone();
         let stdout = CollectingWriter::default();
 
-        let exit = run_loop_with_control(config, stdout.clone(), Vec::new(), control)
-            .await
-            .expect("initial measurement failure must use the typed stop lifecycle");
+        let exit = run_loop_with_control(
+            config,
+            stdout.clone(),
+            Vec::new(),
+            control,
+            crate::report::ReportPresentation::default(),
+        )
+        .await
+        .expect("initial measurement failure must use the typed stop lifecycle");
 
         assert_ne!(exit, 0);
         assert_eq!(observed.dispatched_effect_count(), 0);
@@ -5555,9 +5602,15 @@ mod tests {
         );
         let observed = control.clone();
 
-        let exit = run_loop_with_control(config, Vec::new(), Vec::new(), control)
-            .await
-            .expect("a pre-dispatch disk stop must finish through the run state machine");
+        let exit = run_loop_with_control(
+            config,
+            Vec::new(),
+            Vec::new(),
+            control,
+            crate::report::ReportPresentation::default(),
+        )
+        .await
+        .expect("a pre-dispatch disk stop must finish through the run state machine");
 
         assert_ne!(exit, 0);
         assert_eq!(observed.dispatched_effect_count(), 0);
@@ -5626,6 +5679,7 @@ mod tests {
             Vec::new(),
             Vec::new(),
             control,
+            crate::report::ReportPresentation::default(),
         ));
         wait_for_live_process(&mut run, || observed.max_process_tasks() != 0)
             .await
@@ -5704,6 +5758,7 @@ mod tests {
             Vec::new(),
             Vec::new(),
             control,
+            crate::report::ReportPresentation::default(),
         ));
 
         wait_for_live_process(&mut run, || {
@@ -5797,9 +5852,15 @@ mod tests {
         });
         let stdout = CollectingWriter::default();
 
-        let exit = run_loop_with_control(config, stdout.clone(), Vec::new(), control)
-            .await
-            .expect("disk stop should complete through the typed state machine");
+        let exit = run_loop_with_control(
+            config,
+            stdout.clone(),
+            Vec::new(),
+            control,
+            crate::report::ReportPresentation::default(),
+        )
+        .await
+        .expect("disk stop should complete through the typed state machine");
 
         assert_ne!(exit, 0);
         let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
@@ -5852,9 +5913,15 @@ mod tests {
         let control = RunControl::with_disk_meter_and_interval(meter, Duration::from_secs(60));
         let stdout = CollectingWriter::default();
 
-        let exit = run_loop_with_control(config, stdout.clone(), Vec::new(), control)
-            .await
-            .expect("monitor stop should complete through the typed state machine");
+        let exit = run_loop_with_control(
+            config,
+            stdout.clone(),
+            Vec::new(),
+            control,
+            crate::report::ReportPresentation::default(),
+        )
+        .await
+        .expect("monitor stop should complete through the typed state machine");
 
         assert_ne!(exit, 0);
         let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
@@ -5995,7 +6062,14 @@ mod tests {
             Ok::<bool, String>(runtime_was_responsive)
         });
 
-        let result = run_loop_with_control(config, Vec::new(), Vec::new(), control).await;
+        let result = run_loop_with_control(
+            config,
+            Vec::new(),
+            Vec::new(),
+            control,
+            crate::report::ReportPresentation::default(),
+        )
+        .await;
         probe.await.expect("runtime responsiveness probe joined");
         let runtime_was_responsive = observer
             .join()
@@ -6047,9 +6121,15 @@ mod tests {
                 .map_err(|error| format!("release final measurement pause: {error}"))
         });
 
-        let error = run_loop_with_control(config, stdout.clone(), Vec::new(), control)
-            .await
-            .expect_err("expired final measurement must defer recursive cleanup");
+        let error = run_loop_with_control(
+            config,
+            stdout.clone(),
+            Vec::new(),
+            control,
+            crate::report::ReportPresentation::default(),
+        )
+        .await
+        .expect_err("expired final measurement must defer recursive cleanup");
         let release_result = release
             .join()
             .expect("final measurement pause releaser joined");
@@ -6103,9 +6183,15 @@ mod tests {
         let observed = control.clone();
         let stdout = CollectingWriter::default();
 
-        let error = run_loop_with_control(config, stdout.clone(), Vec::new(), control)
-            .await
-            .expect_err("unproven process reap must leave cleanup incomplete");
+        let error = run_loop_with_control(
+            config,
+            stdout.clone(),
+            Vec::new(),
+            control,
+            crate::report::ReportPresentation::default(),
+        )
+        .await
+        .expect_err("unproven process reap must leave cleanup incomplete");
 
         assert!(
             error.contains(hoimin_core::WORKSPACE_CLEANUP_DEFERRED),
@@ -6156,9 +6242,15 @@ mod tests {
         control.inject_process_reap_failure();
         let stdout = CollectingWriter::default();
 
-        let error = run_loop_with_control(config, stdout.clone(), Vec::new(), control)
-            .await
-            .expect_err("disk stop plus unproven reap must remain incomplete");
+        let error = run_loop_with_control(
+            config,
+            stdout.clone(),
+            Vec::new(),
+            control,
+            crate::report::ReportPresentation::default(),
+        )
+        .await
+        .expect_err("disk stop plus unproven reap must remain incomplete");
 
         assert!(
             error.contains(hoimin_core::WORKSPACE_CLEANUP_DEFERRED),
@@ -6227,9 +6319,15 @@ mod tests {
         let observed = control.clone();
         let stdout = CollectingWriter::default();
 
-        let error = run_loop_with_control(config, stdout.clone(), Vec::new(), control)
-            .await
-            .expect_err("deferred execution cleanup must keep the run incomplete");
+        let error = run_loop_with_control(
+            config,
+            stdout.clone(),
+            Vec::new(),
+            control,
+            crate::report::ReportPresentation::default(),
+        )
+        .await
+        .expect_err("deferred execution cleanup must keep the run incomplete");
 
         assert!(error.contains("workspace.cleanup.deferred"), "{error}");
         assert!(
@@ -6261,14 +6359,10 @@ mod tests {
             report["summary"]["disk"]["filesystems"][0]["available_bytes_change"],
             -500
         );
-        assert!(
-            execution_cleanup["details"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|detail| detail == "startup janitor preserved 1 managed roots"),
-            "{execution_cleanup}"
-        );
+        let janitor = &report["summary"]["disk"]["janitor"];
+        assert_eq!(janitor["preserved_roots"], 1);
+        assert_eq!(janitor["preserved_by_reason"]["young"], 1);
+        assert_eq!(janitor["details"], serde_json::json!([]));
     }
 
     #[tokio::test]
@@ -6308,9 +6402,15 @@ mod tests {
         let observed = control.clone();
         let stdout = CollectingWriter::default();
 
-        let error = run_loop_with_control(config, stdout.clone(), Vec::new(), control)
-            .await
-            .expect_err("an unjoined monitor must keep the run incomplete");
+        let error = run_loop_with_control(
+            config,
+            stdout.clone(),
+            Vec::new(),
+            control,
+            crate::report::ReportPresentation::default(),
+        )
+        .await
+        .expect_err("an unjoined monitor must keep the run incomplete");
 
         assert!(error.contains("disk.measurement.failed"), "{error}");
         let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
@@ -6383,11 +6483,7 @@ mod tests {
                 remaining_root: None,
             };
 
-            apply_execution_cleanup_evidence(
-                &mut report,
-                Some(&cleanup),
-                &ReclaimReport::default(),
-            );
+            apply_execution_cleanup_evidence(&mut report, Some(&cleanup));
 
             assert_eq!(report.status, expected);
         }
@@ -6441,23 +6537,13 @@ mod tests {
                 omitted_detail_count: 2,
                 remaining_root: Some("known-root".to_owned()),
             };
-            let reclaim = ReclaimReport {
-                preserved_roots: 1,
-                ..ReclaimReport::default()
-            };
 
-            apply_execution_cleanup_evidence(&mut report, None, &reclaim);
+            apply_execution_cleanup_evidence(&mut report, None);
 
             assert_eq!(report.status, status);
             assert_eq!((report.examined_entries, report.removed_entries), (8, 3));
             assert_eq!(report.remaining_root.as_deref(), Some("known-root"));
-            assert_eq!(
-                report.details,
-                [
-                    "delivery pending",
-                    "startup janitor preserved 1 managed roots"
-                ]
-            );
+            assert_eq!(report.details, ["delivery pending"]);
             assert_eq!(report.omitted_detail_count, 2);
         }
     }
@@ -6531,7 +6617,7 @@ mod tests {
                 };
 
                 let actual = outcome.disk_outcome();
-                apply_execution_cleanup_evidence(&mut report, Some(&outcome.record), &ReclaimReport::default());
+                apply_execution_cleanup_evidence(&mut report, Some(&outcome.record));
 
                 proptest::prop_assert_eq!(actual, disk);
                 proptest::prop_assert_eq!(report.status, status);
@@ -6713,7 +6799,14 @@ mod tests {
         let observed = control.clone();
         let stdout = CollectingWriter::default();
 
-        let _result = run_loop_with_control(config, stdout.clone(), Vec::new(), control).await;
+        let _result = run_loop_with_control(
+            config,
+            stdout.clone(),
+            Vec::new(),
+            control,
+            crate::report::ReportPresentation::default(),
+        )
+        .await;
 
         let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
         let execution_cleanup = report["summary"]["disk"]["cleanup"]
@@ -6734,13 +6827,14 @@ mod tests {
             report["summary"]["disk"]["filesystems"][0]["available_bytes_change"],
             -500
         );
-        assert!(
-            execution_cleanup["details"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|detail| detail == "startup janitor preserved 1 managed roots"),
-            "{execution_cleanup}"
+        assert_eq!(report["summary"]["disk"]["janitor"]["preserved_roots"], 1);
+        assert_eq!(
+            report["summary"]["disk"]["janitor"]["preserved_by_reason"]["young"],
+            1
+        );
+        assert_eq!(
+            report["summary"]["disk"]["janitor"]["details"],
+            serde_json::json!([])
         );
     }
 
@@ -6765,9 +6859,15 @@ mod tests {
         control.inject_duplicate_execution_cleanup_request();
         let observed = control.clone();
 
-        let error = run_loop_with_control(config, Vec::new(), Vec::new(), control)
-            .await
-            .expect_err("duplicate cleanup request must be rejected by the runtime lifecycle");
+        let error = run_loop_with_control(
+            config,
+            Vec::new(),
+            Vec::new(),
+            control,
+            crate::report::ReportPresentation::default(),
+        )
+        .await
+        .expect_err("duplicate cleanup request must be rejected by the runtime lifecycle");
 
         assert!(
             error.contains("disk lifecycle rejected execution cleanup request"),
@@ -6795,9 +6895,15 @@ mod tests {
         let control = RunControl::new();
         let observed = control.clone();
 
-        let exit = run_loop_with_control(config, Vec::new(), Vec::new(), control)
-            .await
-            .unwrap();
+        let exit = run_loop_with_control(
+            config,
+            Vec::new(),
+            Vec::new(),
+            control,
+            crate::report::ReportPresentation::default(),
+        )
+        .await
+        .unwrap();
 
         assert_eq!(exit, 0);
         let roots = observed.managed_root_paths();
@@ -6828,9 +6934,15 @@ mod tests {
         let observed = control.clone();
 
         assert_eq!(
-            run_loop_with_control(config, Vec::new(), Vec::new(), control)
-                .await
-                .unwrap(),
+            run_loop_with_control(
+                config,
+                Vec::new(),
+                Vec::new(),
+                control,
+                crate::report::ReportPresentation::default()
+            )
+            .await
+            .unwrap(),
             0
         );
 
@@ -6866,9 +6978,15 @@ mod tests {
         let stdout = CollectingWriter::default();
 
         assert_eq!(
-            run_loop_with_control(config, stdout.clone(), Vec::new(), RunControl::new())
-                .await
-                .unwrap(),
+            run_loop_with_control(
+                config,
+                stdout.clone(),
+                Vec::new(),
+                RunControl::new(),
+                crate::report::ReportPresentation::default()
+            )
+            .await
+            .unwrap(),
             0
         );
 
@@ -6931,9 +7049,15 @@ mod tests {
         let stdout = CollectingWriter::default();
 
         assert_eq!(
-            run_loop_with_control(config, stdout.clone(), Vec::new(), control)
-                .await
-                .unwrap(),
+            run_loop_with_control(
+                config,
+                stdout.clone(),
+                Vec::new(),
+                control,
+                crate::report::ReportPresentation::default()
+            )
+            .await
+            .unwrap(),
             0
         );
         let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
@@ -6966,9 +7090,15 @@ mod tests {
         let observed = control.clone();
         let stdout = CollectingWriter::default();
 
-        let error = run_loop_with_control(config, stdout.clone(), Vec::new(), control)
-            .await
-            .expect_err("required end-free evidence failure must keep the run incomplete");
+        let error = run_loop_with_control(
+            config,
+            stdout.clone(),
+            Vec::new(),
+            control,
+            crate::report::ReportPresentation::default(),
+        )
+        .await
+        .expect_err("required end-free evidence failure must keep the run incomplete");
 
         assert!(error.contains("disk.measurement.failed"), "{error}");
         let report: serde_json::Value = serde_json::from_slice(&stdout.snapshot()).unwrap();
@@ -7054,7 +7184,13 @@ mod tests {
             };
             let diagnostics = SharedDiagnosticCapture::default();
             let captured = diagnostics.clone();
-            let mut run = Box::pin(run_loop_with_control(config, writer, diagnostics, control));
+            let mut run = Box::pin(run_loop_with_control(
+                config,
+                writer,
+                diagnostics,
+                control,
+                crate::report::ReportPresentation::default(),
+            ));
             tokio::select! {
                 result = &mut run => panic!(
                     "run finished before report pause: {result:?}; stderr={}",
@@ -7123,9 +7259,15 @@ mod tests {
             let control = RunControl::new();
             let observed = control.clone();
             assert_eq!(
-                run_loop_with_control(config, AlwaysFailingWriter, Vec::new(), control)
-                    .await
-                    .unwrap_or(2),
+                run_loop_with_control(
+                    config,
+                    AlwaysFailingWriter,
+                    Vec::new(),
+                    control,
+                    crate::report::ReportPresentation::default()
+                )
+                .await
+                .unwrap_or(2),
                 2
             );
             assert!(
@@ -7165,9 +7307,15 @@ mod tests {
         let control = RunControl::new();
         let observed = control.clone();
 
-        let error = run_loop_with_control(config, AlwaysFailingWriter, Vec::new(), control)
-            .await
-            .expect_err("report write failure must not be acknowledged");
+        let error = run_loop_with_control(
+            config,
+            AlwaysFailingWriter,
+            Vec::new(),
+            control,
+            crate::report::ReportPresentation::default(),
+        )
+        .await
+        .expect_err("report write failure must not be acknowledged");
 
         assert!(error.contains("report"), "{error}");
         let roots = observed.managed_root_paths();
@@ -7206,9 +7354,15 @@ mod tests {
         let observed = control.clone();
         let stdout = CollectingWriter::default();
 
-        let error = run_loop_with_control(config, stdout.clone(), Vec::new(), control)
-            .await
-            .expect_err("delivery cleanup failure must not be acknowledged");
+        let error = run_loop_with_control(
+            config,
+            stdout.clone(),
+            Vec::new(),
+            control,
+            crate::report::ReportPresentation::default(),
+        )
+        .await
+        .expect_err("delivery cleanup failure must not be acknowledged");
 
         assert!(
             error.contains(hoimin_core::WORKSPACE_CLEANUP_FAILED),
@@ -7241,9 +7395,15 @@ mod tests {
             let control = RunControl::new();
             let observed = control.clone();
 
-            let error = run_loop_with_control(config, AlwaysFailingWriter, Vec::new(), control)
-                .await
-                .expect_err("report write failure must not be acknowledged");
+            let error = run_loop_with_control(
+                config,
+                AlwaysFailingWriter,
+                Vec::new(),
+                control,
+                crate::report::ReportPresentation::default(),
+            )
+            .await
+            .expect_err("report write failure must not be acknowledged");
 
             assert!(error.contains("report"), "format={format}: {error}");
             assert!(
@@ -7266,9 +7426,15 @@ mod tests {
             control.inject_delivery_cleanup_identity_failure();
             let observed = control.clone();
 
-            let error = run_loop_with_control(config, Vec::new(), Vec::new(), control)
-                .await
-                .expect_err("delivery cleanup failure must not be acknowledged");
+            let error = run_loop_with_control(
+                config,
+                Vec::new(),
+                Vec::new(),
+                control,
+                crate::report::ReportPresentation::default(),
+            )
+            .await
+            .expect_err("delivery cleanup failure must not be acknowledged");
 
             assert!(
                 error.contains(hoimin_core::WORKSPACE_CLEANUP_FAILED),
@@ -7414,7 +7580,7 @@ mod tests {
     }
 
     #[test]
-    fn startup_janitor_diagnostics_reach_the_execution_cleanup_report() {
+    fn execution_cleanup_projection_retains_only_its_own_evidence() {
         let cleanup = CleanupRecord {
             disposition: CleanupDisposition::Clean,
             evidence: CleanupEvidence {
@@ -7424,13 +7590,6 @@ mod tests {
                 omitted_detail_count: 0,
                 remaining_root: None,
             },
-        };
-        let reclaim = ReclaimReport {
-            reclaimed_roots: 1,
-            preserved_roots: 1,
-            details: vec!["startup janitor enumeration failed".to_owned()],
-            omitted_detail_count: 0,
-            truncated_detail_count: 0,
         };
         let mut report = hoimin_core::DiskCleanupReport {
             root_id: "execution".to_owned(),
@@ -7443,19 +7602,12 @@ mod tests {
             remaining_root: Some("stale".to_owned()),
         };
 
-        apply_execution_cleanup_evidence(&mut report, Some(&cleanup), &reclaim);
+        apply_execution_cleanup_evidence(&mut report, Some(&cleanup));
 
         assert_eq!(report.status, hoimin_core::DiskCleanupStatus::Clean);
         assert_eq!(report.examined_entries, 4);
         assert_eq!(report.removed_entries, 3);
-        assert_eq!(
-            report.details,
-            [
-                "execution cleanup detail",
-                "startup janitor preserved 1 managed roots",
-                "startup janitor enumeration failed",
-            ]
-        );
+        assert_eq!(report.details, ["execution cleanup detail"]);
         assert_eq!(report.remaining_root, None);
     }
 
@@ -7503,11 +7655,13 @@ mod tests {
         let project = tempfile::tempdir().unwrap();
         let managed_parent = tempfile::tempdir().unwrap();
         let parent = Utf8Path::from_path(managed_parent.path()).unwrap();
-        let mut config = shell_setup_test_config(&project)
+        let config = shell_setup_test_config(&project)
             .with_environment(hoimin_core::EnvironmentSnapshot::Untracked)
             .unwrap();
+        let mut config = config.into_data();
         config.limits.jobs = std::num::NonZeroUsize::new(1).unwrap();
         config.limits.max_copy_size = std::num::NonZeroU64::new(1).unwrap();
+        let config = RunConfig::try_from(config).unwrap();
         let mut prepared = prepare_shell_setup_sync_in(config, parent, &|_| {}).unwrap();
 
         // Act.
@@ -7870,7 +8024,13 @@ mod tests {
 
         let exit = tokio::time::timeout(
             Duration::from_secs(10),
-            run_loop_with_control(config, stdout.clone(), stderr.clone(), control),
+            run_loop_with_control(
+                config,
+                stdout.clone(),
+                stderr.clone(),
+                control,
+                crate::report::ReportPresentation::default(),
+            ),
         )
         .await
         .expect("final report dispatch must not stall")
@@ -9125,9 +9285,15 @@ mod tests {
         let stdout = CollectingWriter::default();
         let stderr = CollectingWriter::default();
 
-        let exit = run_loop_with_control(config, stdout.clone(), stderr.clone(), control)
-            .await
-            .unwrap();
+        let exit = run_loop_with_control(
+            config,
+            stdout.clone(),
+            stderr.clone(),
+            control,
+            crate::report::ReportPresentation::default(),
+        )
+        .await
+        .unwrap();
         mutation.await.unwrap();
 
         assert_ne!(exit, 0);
@@ -9185,6 +9351,7 @@ mod tests {
             Vec::new(),
             Vec::new(),
             control,
+            crate::report::ReportPresentation::default(),
         ));
         tokio::select! {
             result = &mut run => panic!("run finished before materialization paused: {result:?}"),
@@ -9237,6 +9404,7 @@ mod tests {
             Vec::new(),
             Vec::new(),
             control,
+            crate::report::ReportPresentation::default(),
         ));
         tokio::select! {
             result = &mut run => panic!("run finished before materialization paused: {result:?}"),
@@ -9288,6 +9456,7 @@ mod tests {
             Vec::new(),
             Vec::new(),
             control,
+            crate::report::ReportPresentation::default(),
         ));
         tokio::select! {
             result = &mut run => panic!("run finished before materialization paused: {result:?}"),

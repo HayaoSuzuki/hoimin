@@ -1,0 +1,232 @@
+[
+  {
+    "path": "commit-hooks.diff",
+    "bytes": 18657,
+    "sha256": "6ee975a1ef98d07defdbb1d4af23ef1b7be1d17556d04f0153c7f0e4f654c250"
+  },
+  {
+    "path": "commit-hooks.json",
+    "bytes": 1656,
+    "sha256": "6069fbfb970cd699f3c2bcc4a9cdfe1c80aadcd6ae3a1b73993ac65b793e201f"
+  },
+  {
+    "path": "commit-hooks.log",
+    "bytes": 535,
+    "sha256": "1f39002dde7315aba794919b111b38a2314a6b7235e7cb36377898c8e662d6d4"
+  },
+  {
+    "path": "design-reviews.md",
+    "bytes": 1481,
+    "sha256": "80747a8df7db308225cca9a0cf89050f26a89c61094f47fad14a35cde1c67dd9"
+  },
+  {
+    "path": "final-state.json",
+    "bytes": 394,
+    "sha256": "7385e7f588b1f399023ff2aa55aa404308e38784e575736be438d3c59cc241de"
+  },
+  {
+    "path": "final.diff",
+    "bytes": 18657,
+    "sha256": "6ee975a1ef98d07defdbb1d4af23ef1b7be1d17556d04f0153c7f0e4f654c250"
+  },
+  {
+    "path": "finish_report.py",
+    "bytes": 9919,
+    "sha256": "637043c5a2c4781f01d5f0abd0a531616ac170c23bbd473c1aa244af2fd27b24"
+  },
+  {
+    "path": "green-core.diff",
+    "bytes": 17345,
+    "sha256": "7dd4c5702ef594179096ebfbe60ab45043c9954bf05f9f6d262b4188c5ca1e1e"
+  },
+  {
+    "path": "green-core.json",
+    "bytes": 1673,
+    "sha256": "6954066aa6832a171caa35803268b0a85b413698d0edf2a6fd69da6795f92f34"
+  },
+  {
+    "path": "green-core.log",
+    "bytes": 9445,
+    "sha256": "555829ed0809c5031d0f2a3a69f64d3e3c28fc704e4d3bd15a022e69abb73fb8"
+  },
+  {
+    "path": "green-owned-corrected.diff",
+    "bytes": 18657,
+    "sha256": "6ee975a1ef98d07defdbb1d4af23ef1b7be1d17556d04f0153c7f0e4f654c250"
+  },
+  {
+    "path": "green-owned-corrected.json",
+    "bytes": 1606,
+    "sha256": "4c79ca3a2e4278e6441594054c8fcfd25fb96181d7f90f79db20b29fbc5f94a2"
+  },
+  {
+    "path": "green-owned-corrected.log",
+    "bytes": 9155,
+    "sha256": "55d0c98bb282747924075b30ae065fa41ab867c04848a9bd24385b4716a81b81"
+  },
+  {
+    "path": "green-owned.diff",
+    "bytes": 17345,
+    "sha256": "7dd4c5702ef594179096ebfbe60ab45043c9954bf05f9f6d262b4188c5ca1e1e"
+  },
+  {
+    "path": "green-owned.json",
+    "bytes": 1606,
+    "sha256": "09ddb6bd3bab0193e2452d228a579779a8d0aeda217182a6b649f609ab2e56b5"
+  },
+  {
+    "path": "green-owned.log",
+    "bytes": 10808,
+    "sha256": "19ce18507f24e94195dbf3a2c93aff96bde9c4d28ba3e51a06435246abcc6251"
+  },
+  {
+    "path": "green-public-report.diff",
+    "bytes": 18657,
+    "sha256": "6ee975a1ef98d07defdbb1d4af23ef1b7be1d17556d04f0153c7f0e4f654c250"
+  },
+  {
+    "path": "green-public-report.json",
+    "bytes": 1633,
+    "sha256": "e4f163cce3b4467abf8eaf82d90f7275514df8395688100f02f214a28ac7a5d8"
+  },
+  {
+    "path": "green-public-report.log",
+    "bytes": 17855,
+    "sha256": "6e84e33c1ac4d96ce1ada1580bbbb387df81250133404f2e08819f85ebd1aa39"
+  },
+  {
+    "path": "implementation-reviews.md",
+    "bytes": 1463,
+    "sha256": "bf205f8fabbdaeea5f85c22ae3a1b8cee51fe92b8564e8e5cd5428c297ee3311"
+  },
+  {
+    "path": "public-staging.diff",
+    "bytes": 18657,
+    "sha256": "6ee975a1ef98d07defdbb1d4af23ef1b7be1d17556d04f0153c7f0e4f654c250"
+  },
+  {
+    "path": "public-staging.json",
+    "bytes": 1589,
+    "sha256": "94c38d67b9bd68672a40409af44843b2c53195966d3c0fa4d348f7c2aaf35c92"
+  },
+  {
+    "path": "public-staging.log",
+    "bytes": 93,
+    "sha256": "7b01e0592b2600fd8119a0be735635e7a6ae44f1c845ed49db2325540e56cdd2"
+  },
+  {
+    "path": "red-core.diff",
+    "bytes": 10966,
+    "sha256": "517e8a656887c2f2ef05818a55afd6e02c5dce00a9ec771483a6e8550db55ea4"
+  },
+  {
+    "path": "red-core.json",
+    "bytes": 1606,
+    "sha256": "413917e1b5e000498b54e70d231a933b3a5f900cd85fcb9eeefe6ccc0bf63a20"
+  },
+  {
+    "path": "red-core.log",
+    "bytes": 1538,
+    "sha256": "affffc11f49f4512dd63dbd822e7f3f1df8b58f8ed3d0e8b14f95bbdf51db261"
+  },
+  {
+    "path": "red-owned.diff",
+    "bytes": 10966,
+    "sha256": "517e8a656887c2f2ef05818a55afd6e02c5dce00a9ec771483a6e8550db55ea4"
+  },
+  {
+    "path": "red-owned.json",
+    "bytes": 1599,
+    "sha256": "80dff462ad7ff88ea9cd402795e0dadd2b9e99c20c0fc01493ce7739a7b3c423"
+  },
+  {
+    "path": "red-owned.log",
+    "bytes": 3444,
+    "sha256": "f5a193eec5dadf7c6437f45f38cac877c119fe99acdf0b594cc47fe5d6f57d50"
+  },
+  {
+    "path": "red-public.diff",
+    "bytes": 10966,
+    "sha256": "517e8a656887c2f2ef05818a55afd6e02c5dce00a9ec771483a6e8550db55ea4"
+  },
+  {
+    "path": "red-public.json",
+    "bytes": 1611,
+    "sha256": "08b8275e231086744c1004f2f60611bbf82690347fd81541b6548c62395815ee"
+  },
+  {
+    "path": "red-public.log",
+    "bytes": 2032,
+    "sha256": "bcb2e2802ed8c424e2880cf2beb6c3827b2cac61c8628af4e8698a65be9b1dc9"
+  },
+  {
+    "path": "run.py",
+    "bytes": 1309,
+    "sha256": "eeb23c9441a02c31dd67b3ca80257ef136e850ae7fb4362422fcff89adb2e7d6"
+  },
+  {
+    "path": "staging/control.stderr",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": "staging/control.stdout",
+    "bytes": 3692,
+    "sha256": "80784d2163ec430c1d874e32da50c0904bf1cc711efa9885900cf670bcf4cac2"
+  },
+  {
+    "path": "staging/project/calc.py",
+    "bytes": 32,
+    "sha256": "ba1a531f581d2e6094e978ed6f7aca7a8d92eeb62c6e7ad73ee692f7f18bc772"
+  },
+  {
+    "path": "staging/receipt.json",
+    "bytes": 6900,
+    "sha256": "9c7d08aef53b3796773be6c0a670c2f323bb06bcfbe824918337fd1593920d17"
+  },
+  {
+    "path": "staging/stale_control.stderr",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": "staging/stale_control.stdout",
+    "bytes": 3688,
+    "sha256": "0b35e253a37bc6f72bd83646be190b4f65c305cd13c04518663dec6a5d01cd94"
+  },
+  {
+    "path": "staging/tmp/hoimin-workspaces-v1/.hoimin-coordinator",
+    "bytes": 1025,
+    "sha256": "05bbc78601a041fb02267fcf4e09c956d7b5dd4483135d6ff4dca74e75b41b80"
+  },
+  {
+    "path": "staging/young_default.stderr",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": "staging/young_default.stdout",
+    "bytes": 3701,
+    "sha256": "e69ec382a9522c6dc28f91f4fa20818c07e3c3594986dd2e6d0644bb6080fd6b"
+  },
+  {
+    "path": "staging/young_verbose.stderr",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": "staging/young_verbose.stdout",
+    "bytes": 3898,
+    "sha256": "fe8186095b4157ffe941833fa9f61b32e24a945ad92465163c08156eeb94f081"
+  },
+  {
+    "path": "staging_probe.py",
+    "bytes": 2945,
+    "sha256": "001527823f265289647bc3d65a1903fa38b99783babc43598ba112decc6f2a31"
+  },
+  {
+    "path": "validation-reviews.md",
+    "bytes": 2095,
+    "sha256": "0c93309cbe5cf03d736e888ea75fad721623628a9b1575ec3acc92c8763fa186"
+  }
+]

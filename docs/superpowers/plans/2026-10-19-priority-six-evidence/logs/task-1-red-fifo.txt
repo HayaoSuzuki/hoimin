@@ -1,0 +1,29 @@
+Historical task 1 log excerpt.
+Original: /tmp/hoimin-priority-six-task1-red-fifo.log
+Original SHA-256: d6564ac0dd00b2c58acb0a18c2b633827759877f4325be6e5ca66e1ebde0a501
+Command, base, RED/GREEN meaning and limits: task-1-report.md.
+Only recorded command information is authoritative; no missing argv/head was inferred.
+
+000001:     Finished `test` profile [unoptimized + debuginfo] target(s) in 0.20s
+000002:      Running unittests src/lib.rs (/tmp/hoimin-priority-six-target/debug/deps/hoimin_cli-93cff9ce867fc646)
+000003:
+000004: running 2 tests
+000005:
+000006: thread 'plan::validation_tests::descriptor_validation_rejects_resolved_fifo_swap' (55751069) panicked at crates/hoimin-cli/src/plan/validation_tests.rs:776:13:
+000007: validate/fifo did not reject the resolved swap: timed out waiting on channel; ExitStatus(unix_wait_status(9))
+000008: note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+000009: test plan::validation_tests::descriptor_validation_rejects_resolved_fifo_swap ... FAILED
+000010:
+000011: thread 'plan::validation_tests::source_hash_rejects_resolved_fifo_swap' (55751070) panicked at crates/hoimin-cli/src/plan/validation_tests.rs:776:13:
+000012: hash/fifo did not reject the resolved swap: timed out waiting on channel; ExitStatus(unix_wait_status(9))
+000013: test plan::validation_tests::source_hash_rejects_resolved_fifo_swap ... FAILED
+000014:
+000015: failures:
+000016:
+000017: failures:
+000018:     plan::validation_tests::descriptor_validation_rejects_resolved_fifo_swap
+000019:     plan::validation_tests::source_hash_rejects_resolved_fifo_swap
+000020:
+000021: test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 761 filtered out; finished in 10.02s
+000022:
+000023: error: test failed, to rerun pass `-p hoimin-cli --lib`

@@ -1,0 +1,14 @@
+{
+  "/tmp/hoimin-priority-six-ci-fuzz/artifact/_temp/fuzz-report/report_sequence.log": {
+    "sha256": "fa10188c20dc713263040475f4cb468eedfe2e4c85f0b030a74c8387e4dd3cc5",
+    "size": 7586
+  },
+  "/tmp/hoimin-priority-six-ci-fuzz/artifact/_temp/fuzz-report/summary.json": {
+    "sha256": "e7da97af6fc2cdb525d15191a864fb8fd9d5182158d56e3715a86b6f39fd48a4",
+    "size": 5051
+  },
+  "/tmp/hoimin-priority-six-ci-fuzz/artifact/hoimin/hoimin/fuzz/artifacts/report_sequence/crash-8e2c47d3f36cc9629e5922bc73d3eddf23a2a93a": {
+    "sha256": "626c48424fa4331745a35d1cfe93fce1f85b4f6299422c9a6ddf68dcbc5e960c",
+    "size": 3
+  }
+}

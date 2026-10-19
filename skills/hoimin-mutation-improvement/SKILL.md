@@ -81,6 +81,14 @@ python3 -c 'import shutil, sys; limit = 10 * 1024**3; sys.exit(0 if all(shutil.d
 
 1. Read a candidate ID from `PLAN.json` and verify it. Preserve the report.
 
+   Use the derived `status` in schema-9 JSON `mutants[]` or JSONL
+   `mutant_finished` for its verdict. A nonzero termination alone does not establish
+   killed: `close_timed_out` output makes `Exit(1)` an `error`. Strict readers reject
+   status/outcome disagreement with exit 2; JSON Schema alone checks only shape.
+   Reused killed/survived results retain their saved provenance, and `not_run` can
+   include cancellation after a process started. Diagnose those incomplete/error
+   cases before continuing the improvement loop.
+
 ```console
 hoimin verify "$plan_path" --candidate '<ID_FROM_PLAN_JSON>' --format json \
   > "$temp_dir/verify-001.json"

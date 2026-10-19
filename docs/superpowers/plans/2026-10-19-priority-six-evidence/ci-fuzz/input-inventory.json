@@ -1,0 +1,591 @@
+{
+  "scope": "57 actual independently replayed inputs; labels are explanatory, not a second asserted classifier",
+  "inputs": [
+    {
+      "input": "/tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-0-selector-0-survived",
+      "size": 3,
+      "sha256": "709e80c88487a2411e1ee4dfb9f22a861492d20c4765150c0c794abd70f8147c",
+      "bytes": [
+        0,
+        0,
+        0
+      ],
+      "explanatory_status_label": "survived"
+    },
+    {
+      "input": "/tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-0-selector-1-error",
+      "size": 3,
+      "sha256": "cf7605ed1bc735f6c825554154627467e1cac9df54cee8699218ed434603c568",
+      "bytes": [
+        0,
+        0,
+        1
+      ],
+      "explanatory_status_label": "error"
+    },
+    {
+      "input": "/tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-0-selector-2-killed",
+      "size": 3,
+      "sha256": "65d27a48dfef406db8f5f437423bfa5f9c83d77bfc12f8a14b8ce3ede5892fb5",
+      "bytes": [
+        0,
+        0,
+        2
+      ],
+      "explanatory_status_label": "killed"
+    },
+    {
+      "input": "/tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-0-selector-3-not_run",
+      "size": 3,
+      "sha256": "f31b2b6ef48dff580eca633d0a0cfb15adb7c3bdbc2a1d966a1e10eaaefad3c4",
+      "bytes": [
+        0,
+        0,
+        3
+      ],
+      "explanatory_status_label": "not_run"
+    },
+    {
+      "input": "/tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-1-selector-0-killed",
+      "size": 3,
+      "sha256": "faee935763044f124d7526755a5058a33f9402a595994d59eddd4be8546ff201",
+      "bytes": [
+        0,
+        1,
+        0
+      ],
+      "explanatory_status_label": "killed"
+    },
+    {
+      "input": "/tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-1-selector-1-error",
+      "size": 3,
+      "sha256": "fbb59ed10e9cd4ff45a12c5bb92cbd80df984ba1fe60f26a30febf218e2f0f5e",
+      "bytes": [
+        0,
+        1,
+        1
+      ],
+      "explanatory_status_label": "error"
+    },
+    {
+      "input": "/tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-1-selector-2-killed",
+      "size": 3,
+      "sha256": "ae4b3280e56e2faf83f414a6e3dabe9d5fbe18976544c05fed121accb85b53fc",
+      "bytes": [
+        0,
+        1,
+        2
+      ],
+      "explanatory_status_label": "killed"
+    },
+    {
+      "input": "/tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-1-selector-3-not_run",
+      "size": 3,
+      "sha256": "b744d600fbe3853702978ec726c166d26274fe7b09b2c600ddf2d7d895667b24",
+      "bytes": [
+        0,
+        1,
+        3
+      ],
+      "explanatory_status_label": "not_run"
+    },
+    {
+      "input": "/tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-2-selector-0-timeout",
+      "size": 3,
+      "sha256": "dbbc7025e89eb9b1ec9e8e2c7a2db6869dbb50fba21bf374c86529dc311cede9",
+      "bytes": [
+        0,
+        2,
+        0
+      ],
+      "explanatory_status_label": "timeout"
+    },
+    {
+      "input": "/tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-2-selector-1-error",
+      "size": 3,
+      "sha256": "8d9fe7317f066deaca4fdb6c313194e5bb5d2269ecf672f1af9fc790a2205991",
+      "bytes": [
+        0,
+        2,
+        1
+      ],
+      "explanatory_status_label": "error"
+    },
+    {
+      "input": "/tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-2-selector-2-killed",
+      "size": 3,
+      "sha256": "65fde13cf1e4ea4206c293082657037684ee456e40041c816509b63e1b89d387",
+      "bytes": [
+        0,
+        2,
+        2
+      ],
+      "explanatory_status_label": "killed"
+    },
+    {
+      "input": "/tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-2-selector-3-not_run",
+      "size": 3,
+      "sha256": "e9969bdc67747c3797d62fd1c3e4277269a0945fdb999e8ccc6c7bfb4eeb06bd",
+      "bytes": [
+        0,
+        2,
+        3
+      ],
+      "explanatory_status_label": "not_run"
+    },
+    {
+      "input": "/tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-3-selector-0-out_of_memory",
+      "size": 3,
+      "sha256": "5787fe825530f21ff116ce01966a36410b00f4b319bf3d3d757297b93797f921",
+      "bytes": [
+        0,
+        3,
+        0
+      ],
+      "explanatory_status_label": "out_of_memory"
+    },
+    {
+      "input": "/tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-3-selector-1-error",
+      "size": 3,
+      "sha256": "911b9fdacf0e0f4004b19e97739fb93d3a4e49f2a2544fdcb5134c76822c931f",
+      "bytes": [
+        0,
+        3,
+        1
+      ],
+      "explanatory_status_label": "error"
+    },
+    {
+      "input": "/tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-3-selector-2-killed",
+      "size": 3,
+      "sha256": "ca175b7b97e4180ff4b1dc13271f897a7d711d6da53ddd112d60bf4ac100e23e",
+      "bytes": [
+        0,
+        3,
+        2
+      ],
+      "explanatory_status_label": "killed"
+    },
+    {
+      "input": "/tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-3-selector-3-not_run",
+      "size": 3,
+      "sha256": "f01151afb20e9e4564838ef8075846449287597a4cdd7f598aff8b36231792b1",
+      "bytes": [
+        0,
+        3,
+        3
+      ],
+      "explanatory_status_label": "not_run"
+    },
+    {
+      "input": "/tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-4-selector-0-process_limit",
+      "size": 3,
+      "sha256": "37223cf78c709774ca15609b06d0fc02331a00cbcf5ed63521399e5a9c0066d9",
+      "bytes": [
+        0,
+        4,
+        0
+      ],
+      "explanatory_status_label": "process_limit"
+    },
+    {
+      "input": "/tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-4-selector-1-error",
+      "size": 3,
+      "sha256": "9dec3d780618fdf2096090894e4e177b39ac0ec96060ad903402409f65bc76bb",
+      "bytes": [
+        0,
+        4,
+        1
+      ],
+      "explanatory_status_label": "error"
+    },
+    {
+      "input": "/tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-4-selector-2-killed",
+      "size": 3,
+      "sha256": "db77c5ace8727f8329c6dd8a4c46e76e4cf2344debe6928a9182ba6ee0393a1b",
+      "bytes": [
+        0,
+        4,
+        2
+      ],
+      "explanatory_status_label": "killed"
+    },
+    {
+      "input": "/tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-4-selector-3-not_run",
+      "size": 3,
+      "sha256": "d1459a0f26064bb97df6278f39a0834afa0d35561928dff20f4cd18ad0370caf",
+      "bytes": [
+        0,
+        4,
+        3
+      ],
+      "explanatory_status_label": "not_run"
+    },
+    {
+      "input": "/tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-5-selector-0-not_run",
+      "size": 3,
+      "sha256": "89e54931541ad02b0fea03f7e45e21f01244a2dce81c970da88985a68b32bed9",
+      "bytes": [
+        0,
+        5,
+        0
+      ],
+      "explanatory_status_label": "not_run"
+    },
+    {
+      "input": "/tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-5-selector-1-error",
+      "size": 3,
+      "sha256": "b7dd5d3d381f6976747c2484f23c96776d19d68be031cbe2d41d75bc029493ee",
+      "bytes": [
+        0,
+        5,
+        1
+      ],
+      "explanatory_status_label": "error"
+    },
+    {
+      "input": "/tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-5-selector-2-killed",
+      "size": 3,
+      "sha256": "af62f0d8245cf11628b51a2d9e200a0213b9ce998116a1efa110449fcd106dbf",
+      "bytes": [
+        0,
+        5,
+        2
+      ],
+      "explanatory_status_label": "killed"
+    },
+    {
+      "input": "/tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-5-selector-3-not_run",
+      "size": 3,
+      "sha256": "338bee4cfc29c929f6bb888a17ebcde97a4aed8479a946c18f30070ea469ce63",
+      "bytes": [
+        0,
+        5,
+        3
+      ],
+      "explanatory_status_label": "not_run"
+    },
+    {
+      "input": "/tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-0-selector-0-survived",
+      "size": 3,
+      "sha256": "fb50dc0717ff266cf9baf82b1ce7a1c2ef6d9247859680b11a19fb7077f5f222",
+      "bytes": [
+        1,
+        0,
+        0
+      ],
+      "explanatory_status_label": "survived"
+    },
+    {
+      "input": "/tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-0-selector-1-error",
+      "size": 3,
+      "sha256": "85f90dfea1d8027e1463e5ca971a250110a20df0119d204a74220bc63516d15b",
+      "bytes": [
+        1,
+        0,
+        1
+      ],
+      "explanatory_status_label": "error"
+    },
+    {
+      "input": "/tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-0-selector-2-survived",
+      "size": 3,
+      "sha256": "16305a6b2292e931665a34089864ee3fcc24171c81551f152cf4d1db0dd6122d",
+      "bytes": [
+        1,
+        0,
+        2
+      ],
+      "explanatory_status_label": "survived"
+    },
+    {
+      "input": "/tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-0-selector-3-not_run",
+      "size": 3,
+      "sha256": "a143e7ffd81147f136f921fef88760c46c7a05f15b81995f9c5cfed2a737a3f1",
+      "bytes": [
+        1,
+        0,
+        3
+      ],
+      "explanatory_status_label": "not_run"
+    },
+    {
+      "input": "/tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-1-selector-0-killed",
+      "size": 3,
+      "sha256": "9f44ac6acb8a37b00b615dc89259d306035be82dee7db2b472e4c48326195440",
+      "bytes": [
+        1,
+        1,
+        0
+      ],
+      "explanatory_status_label": "killed"
+    },
+    {
+      "input": "/tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-1-selector-1-error",
+      "size": 3,
+      "sha256": "75c8fd04ad916aec3e3d5cb76a452b116b3d4d0912a0a485e9fb8e3d240e210c",
+      "bytes": [
+        1,
+        1,
+        1
+      ],
+      "explanatory_status_label": "error"
+    },
+    {
+      "input": "/tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-1-selector-2-survived",
+      "size": 3,
+      "sha256": "5e98aaa886032724db1ffd795b2f63b93a1d90f236e77eabfcc2913e4dd6e1d6",
+      "bytes": [
+        1,
+        1,
+        2
+      ],
+      "explanatory_status_label": "survived"
+    },
+    {
+      "input": "/tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-1-selector-3-not_run",
+      "size": 3,
+      "sha256": "45c04f355207740cd6f585aecad426ffa81de2fbd52b226114f3afd541d9ab83",
+      "bytes": [
+        1,
+        1,
+        3
+      ],
+      "explanatory_status_label": "not_run"
+    },
+    {
+      "input": "/tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-2-selector-0-timeout",
+      "size": 3,
+      "sha256": "d7b3d4012540102c40a23acdeee417e06a42a74a5d66c7efe59f4e4aa0537c5c",
+      "bytes": [
+        1,
+        2,
+        0
+      ],
+      "explanatory_status_label": "timeout"
+    },
+    {
+      "input": "/tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-2-selector-1-error",
+      "size": 3,
+      "sha256": "4912326e465b6efb1d5b1b276e321709d99a506e230a31f3c158c976d4a8a4e8",
+      "bytes": [
+        1,
+        2,
+        1
+      ],
+      "explanatory_status_label": "error"
+    },
+    {
+      "input": "/tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-2-selector-2-survived",
+      "size": 3,
+      "sha256": "615e3707ec89c64aae711255756bc974879d32df8b962975795848a84e0d5af2",
+      "bytes": [
+        1,
+        2,
+        2
+      ],
+      "explanatory_status_label": "survived"
+    },
+    {
+      "input": "/tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-2-selector-3-not_run",
+      "size": 3,
+      "sha256": "039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81",
+      "bytes": [
+        1,
+        2,
+        3
+      ],
+      "explanatory_status_label": "not_run"
+    },
+    {
+      "input": "/tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-3-selector-0-out_of_memory",
+      "size": 3,
+      "sha256": "58e09f6f516c8f737ea3b05eedc4e57691b2cadcca1b05420a7148b623338772",
+      "bytes": [
+        1,
+        3,
+        0
+      ],
+      "explanatory_status_label": "out_of_memory"
+    },
+    {
+      "input": "/tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-3-selector-1-error",
+      "size": 3,
+      "sha256": "1f1fdd26dd39e5e186f918aacc35c39a4dd577536f4e1dbef7971df0977ad59a",
+      "bytes": [
+        1,
+        3,
+        1
+      ],
+      "explanatory_status_label": "error"
+    },
+    {
+      "input": "/tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-3-selector-2-survived",
+      "size": 3,
+      "sha256": "185100950fe805b4d21deeb00f250056beb17a478249bf2405b60a632c66245c",
+      "bytes": [
+        1,
+        3,
+        2
+      ],
+      "explanatory_status_label": "survived"
+    },
+    {
+      "input": "/tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-3-selector-3-not_run",
+      "size": 3,
+      "sha256": "50ec7fa7916881c3a4300dada80851ee0a0e4d17006ba678fb53158d224dbcb6",
+      "bytes": [
+        1,
+        3,
+        3
+      ],
+      "explanatory_status_label": "not_run"
+    },
+    {
+      "input": "/tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-4-selector-0-process_limit",
+      "size": 3,
+      "sha256": "55e3787d6a9434a3eca44186565ffe1a4054127f0fbd3555dc1559d0771ab952",
+      "bytes": [
+        1,
+        4,
+        0
+      ],
+      "explanatory_status_label": "process_limit"
+    },
+    {
+      "input": "/tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-4-selector-1-error",
+      "size": 3,
+      "sha256": "8c976f1fa59e7dba031b8f4502a80d6a1ed100437c186ef93c15e6ca3ff40679",
+      "bytes": [
+        1,
+        4,
+        1
+      ],
+      "explanatory_status_label": "error"
+    },
+    {
+      "input": "/tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-4-selector-2-survived",
+      "size": 3,
+      "sha256": "fe31000de0804b37875147569ca0847bd74d5aebf27c31adb500c4f728d79623",
+      "bytes": [
+        1,
+        4,
+        2
+      ],
+      "explanatory_status_label": "survived"
+    },
+    {
+      "input": "/tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-4-selector-3-not_run",
+      "size": 3,
+      "sha256": "913c718856e85ed1fe7ba4c253295d34f7e7777f2e36cc7db071235eef6dac14",
+      "bytes": [
+        1,
+        4,
+        3
+      ],
+      "explanatory_status_label": "not_run"
+    },
+    {
+      "input": "/tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-5-selector-0-not_run",
+      "size": 3,
+      "sha256": "a28b839c8ba1f1cd68ff3e9078a1048dd813888e092e07a8acdcea0001dc5118",
+      "bytes": [
+        1,
+        5,
+        0
+      ],
+      "explanatory_status_label": "not_run"
+    },
+    {
+      "input": "/tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-5-selector-1-error",
+      "size": 3,
+      "sha256": "cccf6121efa5d90e210d86739af2f778c4fe50194cd39e4994d16c51393c5b8d",
+      "bytes": [
+        1,
+        5,
+        1
+      ],
+      "explanatory_status_label": "error"
+    },
+    {
+      "input": "/tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-5-selector-2-survived",
+      "size": 3,
+      "sha256": "449a54806f6e28f88fbb9fc47e544c61bebe57c5c4dd49109dcb77efb49055ac",
+      "bytes": [
+        1,
+        5,
+        2
+      ],
+      "explanatory_status_label": "survived"
+    },
+    {
+      "input": "/tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-5-selector-3-not_run",
+      "size": 3,
+      "sha256": "9b8bb43ee0cda4ab291beb5bf084e7f16d4578d930cb620e52e1f20a927bcc52",
+      "bytes": [
+        1,
+        5,
+        3
+      ],
+      "explanatory_status_label": "not_run"
+    },
+    {
+      "input": "fuzz/seeds/report_sequence/diagnostic-before-run",
+      "size": 116,
+      "sha256": "0c7fa89801e4687e8d28f26ff5776ad50fae1f6936321bf562e7b3d860aa0f5f",
+      "base64": "eyJraW5kIjoiZGlhZ25vc3RpYyIsInNjaGVtYV92ZXJzaW9uIjo4LCJzZXF1ZW5jZSI6MiwicnVuX2lkIjoic2VlZCIsImxldmVsIjoiaW5mbyIsImNvZGUiOiJzZWVkIiwibWVzc2FnZSI6InNlZWQifQo="
+    },
+    {
+      "input": "fuzz/seeds/report_sequence/diagnostic-run-id-mismatch",
+      "size": 299,
+      "sha256": "e9050e11635a021c49764a103e99206d319c5d8dbc176ac90bf11bf507234601",
+      "base64": "eyJraW5kIjoicnVuX3N0YXJ0ZWQiLCJzY2hlbWFfdmVyc2lvbiI6OCwic2VxdWVuY2UiOjEsInJ1bl9pZCI6InNlZWQiLCJub3JtYWxpemVkX2NvbmZpZyI6bnVsbCwidmVyc2lvbnMiOnsib3MiOiIiLCJob2ltaW4iOiIifSwicmVzb3VyY2VfY29udHJvbCI6eyJtb2RlIjoiaGFyZCIsIm1lY2hhbmlzbSI6InNlZWQifX0KeyJraW5kIjoiZGlhZ25vc3RpYyIsInNjaGVtYV92ZXJzaW9uIjo4LCJzZXF1ZW5jZSI6MiwicnVuX2lkIjoic2V1ZCIsImxldmVsIjoiaW5mbyIsImNvZGUiOiJzZWVkIiwibWVzc2FnZSI6InNlZWQifQo="
+    },
+    {
+      "input": "fuzz/seeds/report_sequence/error-status-close-timeout-regression",
+      "size": 3,
+      "sha256": "626c48424fa4331745a35d1cfe93fce1f85b4f6299422c9a6ddf68dcbc5e960c",
+      "bytes": [
+        123,
+        93,
+        9
+      ]
+    },
+    {
+      "input": "fuzz/seeds/report_sequence/run-started",
+      "size": 190,
+      "sha256": "3e78475d7d8d6c541c68e5aaff0709ebf5ac76a4f528603bcd87f41693463c59",
+      "base64": "eyJraW5kIjoicnVuX3N0YXJ0ZWQiLCJzY2hlbWFfdmVyc2lvbiI6OCwic2VxdWVuY2UiOjEsInJ1bl9pZCI6InNlZWQiLCJub3JtYWxpemVkX2NvbmZpZyI6bnVsbCwidmVyc2lvbnMiOnsib3MiOiIiLCJob2ltaW4iOiIifSwicmVzb3VyY2VfY29udHJvbCI6eyJtb2RlIjoiYmVzdF9lZmZvcnQiLCJtZWNoYW5pc20iOiJzZWVkIn19Cg=="
+    },
+    {
+      "input": "fuzz/seeds/report_sequence/run-with-diagnostic",
+      "size": 299,
+      "sha256": "11f2cc0765d4740d66e1b5b8001ed20267ff9d15f1abbabbed83ba27a12acff2",
+      "base64": "eyJraW5kIjoicnVuX3N0YXJ0ZWQiLCJzY2hlbWFfdmVyc2lvbiI6OCwic2VxdWVuY2UiOjEsInJ1bl9pZCI6InNlZWQiLCJub3JtYWxpemVkX2NvbmZpZyI6bnVsbCwidmVyc2lvbnMiOnsib3MiOiIiLCJob2ltaW4iOiIifSwicmVzb3VyY2VfY29udHJvbCI6eyJtb2RlIjoiaGFyZCIsIm1lY2hhbmlzbSI6InNlZWQifX0KeyJraW5kIjoiZGlhZ25vc3RpYyIsInNjaGVtYV92ZXJzaW9uIjo4LCJzZXF1ZW5jZSI6MiwicnVuX2lkIjoic2VlZCIsImxldmVsIjoiaW5mbyIsImNvZGUiOiJzZWVkIiwibWVzc2FnZSI6InNlZWQifQo="
+    },
+    {
+      "input": "fuzz/seeds/report_sequence/unsupported-schema",
+      "size": 185,
+      "sha256": "e03688f63473571bdf21d154d80a7ae104164f11b183c4f71372ea5de213d14f",
+      "base64": "eyJraW5kIjoicnVuX3N0YXJ0ZWQiLCJzY2hlbWFfdmVyc2lvbiI6OTk5LCJzZXF1ZW5jZSI6MSwicnVuX2lkIjoic2VlZCIsIm5vcm1hbGl6ZWRfY29uZmlnIjpudWxsLCJ2ZXJzaW9ucyI6eyJvcyI6IiIsImhvaW1pbiI6IiJ9LCJyZXNvdXJjZV9jb250cm9sIjp7Im1vZGUiOiJoYXJkIiwibWVjaGFuaXNtIjoic2VlZCJ9fQo="
+    },
+    {
+      "input": "/tmp/hoimin-priority-six-ci-fuzz/boundary-cases/empty",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": []
+    },
+    {
+      "input": "/tmp/hoimin-priority-six-ci-fuzz/boundary-cases/max-length-4096",
+      "size": 4096,
+      "sha256": "6896d9ea3f73a4434f5832bc65714e7d066f177373f36f34dc8a6f735daa41b1",
+      "repeated_byte": 65
+    },
+    {
+      "input": "/tmp/hoimin-priority-six-ci-fuzz/boundary-cases/oversized-4097",
+      "size": 4097,
+      "sha256": "225e68d4d9603bdfca93fe3896ba95ab8a10e6505172d8a386af21c5525b950a",
+      "repeated_byte": 65
+    }
+  ]
+}

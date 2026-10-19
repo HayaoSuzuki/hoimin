@@ -7,6 +7,7 @@ use serde::Serialize;
 
 use super::PlanManifest;
 use crate::cli::{OutputFormat, VerifySelection};
+use crate::human_text::HumanText;
 
 /// Validated selection metadata, independent of execution reports and outcomes.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -126,14 +127,14 @@ impl VerifyPreview {
                 writer,
                 "{}: {} rank={} {}:{}:{} operator={} {:?} -> {:?}",
                 candidate.selection_order,
-                candidate.id,
+                HumanText(&candidate.id),
                 candidate.rank,
-                candidate.path,
+                HumanText(candidate.path.as_str()),
                 candidate.line,
                 candidate.column,
-                candidate.operator,
-                candidate.original,
-                candidate.replacement
+                HumanText(&candidate.operator),
+                HumanText(&candidate.original),
+                HumanText(&candidate.replacement)
             )?;
         }
         Ok(())

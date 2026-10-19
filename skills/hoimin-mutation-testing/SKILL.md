@@ -28,6 +28,14 @@ cancelled, error, and not-run results distinct from conclusive outcomes. Do not
 silently relax limits or retry an unchanged resource-exhausting run. Consult the
 user before increasing agreed resource consumption or accepting weaker enforcement.
 
+In schema-9 JSON `mutants[]` and JSONL `mutant_finished`, read the derived `status`
+for the candidate verdict. Do not infer killed from a nonzero exit alone:
+`Exit(1)` with `outcome.executed.output_state: "close_timed_out"` is `error`.
+Strict readers reject status/outcome disagreement with exit 2; generic JSON Schema
+validation checks shape, not that semantic agreement. Reused killed/survived
+outcomes describe saved evidence, and `not_run` can include a started process
+cancelled before classified completion.
+
 ## Obtain hoimin
 
 When using hoimin on another project, install from PyPI:

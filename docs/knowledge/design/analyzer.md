@@ -5,6 +5,26 @@ description: 構文・名前解決・変更するバイト範囲・候補保持�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: issue-1005-graph
+  resource: ../../../crates/hoimin-python/src/analyzer/exception_import_graph.rs
+  revision: faff6415d6a54f71ad881df97e521cc83ac19894
+  working_tree: untracked
+  sha256: ee7f8325a25d15e912ab75cf1e118d0829d6e2564444d85a248e7e48593fffe9
+- id: issue-1005-tests
+  resource: ../../../crates/hoimin-python/src/analyzer/exception_import_graph_tests.rs
+  revision: faff6415d6a54f71ad881df97e521cc83ac19894
+  working_tree: untracked
+  sha256: 864b49faeeacd93ae8984a83f79ea295f5e6120c562e6a8b9a18a1aa67bd1536
+- id: issue-1005-properties
+  resource: ../../../crates/hoimin-python/src/analyzer/exception_import_graph_properties.rs
+  revision: faff6415d6a54f71ad881df97e521cc83ac19894
+  working_tree: untracked
+  sha256: bb82ef574585c4b10a2e10c76b8dc1d50d5da0b2a7f905624ef5e649faff4be6
+- id: issue-1005-evidence
+  resource: ../../maintenance/2026-10-19-issue-1005/report.md
+  revision: 3aaf82b0d5b695a548dda33ea248ceaa1dd68219
+  working_tree: clean
+  sha256: f00dd5b9e1daa9f50c1289a0b3a1f2f684be377ce954a8ceae19ed1e55c247f0
 - id: issues-995-996-python
   resource: ../../../crates/hoimin-python/src/lib.rs
   revision: 50b9c089ca73aeca2205636a2a9e1823cd244d39
@@ -563,6 +583,46 @@ current pure analyzer sources are under `crates/hoimin-python`. For a moved
 historical file, use `git show REVISION:REPOSITORY_PATH` with its recorded
 revision. A source marked modified or untracked also depends on the recorded
 snapshot/hash; its baseline commit alone does not reproduce that snapshot.[^issue-995-index]
+
+# Shared eager-import graph (Issue #1005)
+
+The exception index constructs a graph of parsed source paths once from normalized,
+absolute eager dependencies whose mapped destinations are present. Already dynamic
+modules remain vertices; lazy or missing destinations add no edge. Iterative SCC
+analysis excludes cycle members, and a finite SCC-weighted depth bound excludes
+other modules only at 256. For component C, `H(C) = min(256, max(terminal(C),
+max(C -> D, w(C) + H(D))))`, where w is module count and terminal is w for a
+cyclic component, zero otherwise. This is exact longest edge depth on a DAG and a
+conservative bound through cycles. A one-edge prefix into cycle(254) stays
+eligible; into cycle(255) it does not. Existing dynamic flags and the separate
+class-ancestry limit remain unchanged.[^issue-1005-graph]
+
+The former per-start traversal could accept or exclude the same joined DAG under
+different module names. The approved deterministic rule preserves old module
+exclusions while permitting additional conservative exclusions, including prefixes
+into sufficiently large branching SCCs. It does not mark every cyclic ancestor
+dynamic. Literal real-bound source tests and independent transitive-closure/path
+properties cover cycle membership, prefix candidates, diagnostics, lazy/dynamic
+edges, renaming, old-exclusion containment and cancellation.[^issue-1005-tests][^issue-1005-properties]
+
+Graph visits and scratch storage are O(V+E); construction also examines D raw
+dependencies and pays ordered name/path lookup and string comparison costs.
+Node/dependency/edge cancellation checks include skipped entries. Allocation and
+scratch destruction are cooperative-cleanup limits, not a fixed interruption
+latency. Scratch is released before class/visibility construction; no new input
+cap or runtime counter is introduced.[^issue-1005-graph]
+
+The dated native macOS record preserves a clean Task 5 baseline, exact release
+artifacts, fixed issue fixtures and five-run before/after/control matrices at
+N=16/32/64/128. It separates old stack-pop counts from new all-phase graph events,
+normal CLI wall time from an instrumented pure-index allocation probe, and sampled
+RSS from requested heap bytes. Requested heap peaks were unchanged; allocation
+traffic and the observed dense-DAG CLI times decreased. These observations are
+neither a universal speed/memory guarantee nor native Linux/Windows evidence.
+The report preserves the exact timed runner in `measured-runner.py.txt`; later
+formatting and type-only tool changes have separate provenance.
+No historical formal proof was extended or relabeled as fresh execution.
+[^issue-1005-evidence]
 
 # 構文と名前解決の契約
 
@@ -1372,3 +1432,8 @@ and independent semantic controls.[^issue-987-evidence]
 
 [^issues-995-996-python]: [crates/hoimin-python/src/lib.rs](../../../crates/hoimin-python/src/lib.rs).
 [^issue-995-index]: [crates/hoimin-python/src/analyzer/exception_hierarchy.rs](../../../crates/hoimin-python/src/analyzer/exception_hierarchy.rs).
+
+[^issue-1005-graph]: [Shared graph implementation](../../../crates/hoimin-python/src/analyzer/exception_import_graph.rs).
+[^issue-1005-tests]: [Source, boundary, work and cancellation tests](../../../crates/hoimin-python/src/analyzer/exception_import_graph_tests.rs).
+[^issue-1005-properties]: [Independent graph reference and properties](../../../crates/hoimin-python/src/analyzer/exception_import_graph_properties.rs).
+[^issue-1005-evidence]: [Issue #1005 evidence and limits](../../maintenance/2026-10-19-issue-1005/report.md).

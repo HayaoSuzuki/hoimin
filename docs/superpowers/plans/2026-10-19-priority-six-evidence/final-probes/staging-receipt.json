@@ -1,0 +1,170 @@
+{
+  "before": {
+    "exists": true,
+    "entries": [],
+    "mtime": 1792407033.6574764
+  },
+  "after": {
+    "exists": true,
+    "entries": [],
+    "mtime": 1792407033.6574764
+  },
+  "staging": "/tmp/hoimin-priority-six-final-review/staging/tmp/hoimin-workspaces-v1/.staging-e2d7b0be-7354-4caf-80b2-e9d017d0c624",
+  "records": [
+    {
+      "case": "control",
+      "command": [
+        "/tmp/hoimin-priority-six-target/debug/hoimin",
+        "run",
+        "--root",
+        "/tmp/hoimin-priority-six-final-review/staging/project",
+        "--file",
+        "calc.py",
+        "--operators",
+        "binary_add_sub",
+        "--min-free-space",
+        "1MiB",
+        "--allow-best-effort-memory",
+        "--",
+        "/usr/bin/true"
+      ],
+      "TMPDIR": "/tmp/hoimin-priority-six-final-review/staging/tmp",
+      "exit": 1,
+      "janitor": {
+        "inspected_roots": 0,
+        "reclaimed_roots": 0,
+        "absent_roots": 0,
+        "preserved_roots": 0,
+        "preserved_by_reason": {},
+        "unresolved_roots": 0,
+        "unresolved_by_reason": {},
+        "examined_entries": 0,
+        "removed_entries": 0,
+        "scan": {
+          "directory_scan_complete": true,
+          "observed_matching_entries": 0,
+          "selected_roots": 0,
+          "uninspected_selected_roots": 0,
+          "selection_omitted_observed_entries": 0,
+          "selection_limited": false,
+          "cursor_deferred": false,
+          "stop_reason": null
+        },
+        "details": [],
+        "detail_omissions": {
+          "normal_details": 0,
+          "issue_details": 0,
+          "truncated_details": 0,
+          "suppressed_normal_details": 0
+        }
+      },
+      "stderr": ""
+    },
+    {
+      "case": "young_empty_staging",
+      "command": [
+        "/tmp/hoimin-priority-six-target/debug/hoimin",
+        "run",
+        "--root",
+        "/tmp/hoimin-priority-six-final-review/staging/project",
+        "--file",
+        "calc.py",
+        "--operators",
+        "binary_add_sub",
+        "--min-free-space",
+        "1MiB",
+        "--allow-best-effort-memory",
+        "--",
+        "/usr/bin/true"
+      ],
+      "TMPDIR": "/tmp/hoimin-priority-six-final-review/staging/tmp",
+      "exit": 1,
+      "janitor": {
+        "inspected_roots": 1,
+        "reclaimed_roots": 0,
+        "absent_roots": 0,
+        "preserved_roots": 0,
+        "preserved_by_reason": {},
+        "unresolved_roots": 1,
+        "unresolved_by_reason": {
+          "lease_invalid": 1
+        },
+        "examined_entries": 0,
+        "removed_entries": 0,
+        "scan": {
+          "directory_scan_complete": true,
+          "observed_matching_entries": 1,
+          "selected_roots": 1,
+          "uninspected_selected_roots": 0,
+          "selection_omitted_observed_entries": 0,
+          "selection_limited": false,
+          "cursor_deferred": false,
+          "stop_reason": null
+        },
+        "details": [
+          {
+            "reason": "lease_invalid",
+            "message": "inspect lease for /private/tmp/hoimin-priority-six-final-review/staging/tmp/hoimin-workspaces-v1/.staging-e2d7b0be-7354-4caf-80b2-e9d017d0c624: No such file or directory (os error 2)"
+          }
+        ],
+        "detail_omissions": {
+          "normal_details": 0,
+          "issue_details": 0,
+          "truncated_details": 0,
+          "suppressed_normal_details": 0
+        }
+      },
+      "stderr": ""
+    }
+  ],
+  "age_control": {
+    "mtime_shift_hours": 25,
+    "command": [
+      "/tmp/hoimin-priority-six-target/debug/hoimin",
+      "run",
+      "--root",
+      "/tmp/hoimin-priority-six-final-review/staging/project",
+      "--file",
+      "calc.py",
+      "--operators",
+      "binary_add_sub",
+      "--min-free-space",
+      "1MiB",
+      "--allow-best-effort-memory",
+      "--",
+      "/usr/bin/true"
+    ],
+    "TMPDIR": "/tmp/hoimin-priority-six-final-review/staging/tmp",
+    "exit": 1,
+    "janitor": {
+      "inspected_roots": 1,
+      "reclaimed_roots": 1,
+      "absent_roots": 0,
+      "preserved_roots": 0,
+      "preserved_by_reason": {},
+      "unresolved_roots": 0,
+      "unresolved_by_reason": {},
+      "examined_entries": 0,
+      "removed_entries": 1,
+      "scan": {
+        "directory_scan_complete": true,
+        "observed_matching_entries": 1,
+        "selected_roots": 1,
+        "uninspected_selected_roots": 0,
+        "selection_omitted_observed_entries": 0,
+        "selection_limited": false,
+        "cursor_deferred": false,
+        "stop_reason": null
+      },
+      "details": [],
+      "detail_omissions": {
+        "normal_details": 0,
+        "issue_details": 0,
+        "truncated_details": 0,
+        "suppressed_normal_details": 0
+      }
+    },
+    "after_exists": false,
+    "stderr": ""
+  }
+}

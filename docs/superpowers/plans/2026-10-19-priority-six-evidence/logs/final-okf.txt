@@ -1,0 +1,27 @@
+Final check excerpt
+Command: ["uv", "run", "--frozen", "--no-sync", "python", ".superpowers/sdd/2026-10-19-priority-six/validate-task7-okf.py"]
+Head: 3aaf82b0d5b695a548dda33ea248ceaa1dd68219
+Exit: 0
+Original: /tmp/hoimin-priority-six-task7/okf.log
+Original SHA-256: 4714c34ff28f5bed36a498ac2cf056c91ce83e9c15b5723614bc67fe143eaaa9
+
+000001: Structure: YAML/type/reserved-file checks passed for 50 Markdown files
+000002: References: 6 changed concepts, 339 sources and 415 local link paths inspected; new/changed references valid
+000003: New/changed source metadata: 27 exact hashes verified against current bytes or accepted task snapshots
+000004:   verified source: docs/knowledge/compatibility.md / priority-six-compatibility / current working-tree bytes
+000005:   verified source: docs/knowledge/compatibility.md / priority-six-graph-evidence / current working-tree bytes
+000006:   verified source: docs/knowledge/design/analyzer.md / issue-1005-graph / current working-tree bytes
+000007:   verified source: docs/knowledge/design/analyzer.md / issue-1005-tests / current working-tree bytes
+000008:   verified source: docs/knowledge/design/analyzer.md / issue-1005-properties / current working-tree bytes
+000009:   verified source: docs/knowledge/design/analyzer.md / issue-1005-evidence / current working-tree bytes
+000010:   verified source: docs/knowledge/design/json-report-spool.md / issue-1010-wire / current working-tree bytes
+000084:   inherited missing: docs/knowledge/design/analyzer.md / body-link / crates/hoimin-cli/src/analyzer/types.rs
+000085:   inherited missing: docs/knowledge/design/analyzer.md / body-link / crates/hoimin-cli/src/analyzer/rust.rs
+000086:   inherited missing: docs/knowledge/design/analyzer.md / body-link / crates/hoimin-cli/src/analyzer/rust_tests.rs
+000087:   inherited missing: docs/knowledge/design/analyzer.md / body-link / crates/hoimin-cli/src/analyzer/payload.rs
+000088:   inherited missing: docs/knowledge/design/analyzer.md / body-link / crates/hoimin-cli/src/analyzer/visitor.rs
+000089:   inherited missing: docs/knowledge/design/selection-plan-verify.md / issue-476-analyzer / crates/hoimin-cli/src/analyzer/rust.rs
+000090:   inherited missing: docs/knowledge/design/selection-plan-verify.md / body-link / crates/hoimin-cli/src/analyzer/rust.rs
+000091: Reachability: all changed concepts reachable from docs/knowledge/index.md
+000092: Catalog inputs: no added/moved/deleted originals in specs/reports/audits; plans/maintenance remain outside source catalogs
+000093: Limits: local path checks do not validate URL availability or heading fragments; manual claim/evidence review is recorded in task-7-report.md

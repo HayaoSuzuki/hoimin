@@ -4,7 +4,63 @@ hoimin is currently a 0.x CLI. This policy describes how maintainers classify
 changes and tell users what to update. A patch release can fix incorrect
 behavior; it does not promise identical mutation candidates or scores.
 
-## Current report identities and internal Rust callers
+## Structured startup cleanup in 0.14.0
+
+The package floor is 0.14.0 and JSON/JSONL reports use schema 9. The required
+nullable `disk.janitor` field replaces `disk.stale_roots_reclaimed`. A null means
+no janitor observation is available; it is different from an observed empty scan.
+Read schema-8 reports with their producing binary or rerun with this version.
+Changing only a saved report's version number does not convert it.
+
+Schema 9 also requires derived `status` on JSON `mutants[]` records and JSONL
+`mutant_finished` events. Consumers can read the seven canonical verdicts without
+reclassifying process termination. Strict Rust readers check that status agrees
+with `outcome`, discard the received projection, and return exit 2 on a mismatch.
+An `Exit(1)` with `close_timed_out` output is `error`, not `killed`. JSON Schema
+validates status presence and enum membership; generic schema-only validation
+does not establish its semantic consistency with outcome. Update custom report
+producers to include the matching field. Human completion rows now include the
+full candidate ID together with location, operator, expressions and verdict.
+
+`run --verbose` and `verify --verbose` include bounded details for ordinary
+startup retention (young roots, active leases and retain markers). Default output
+keeps the structured summary and failure/incomplete-cleanup diagnostics. Both
+modes preserve counts, cleanup classifications and exit codes. Verbosity is a
+runtime presentation option: plan schema 10, session schema 5, fingerprint 13,
+candidate schema 1 and mutant-ID v1 are unchanged.
+
+Janitor reports inspected, reclaimed, already absent, preserved and unresolved
+roots separately. Deleted-entry counts include acknowledged marker, child and
+root deletions even before a later failure. On Windows an acknowledgement may
+still be delete-pending. These numbers do not measure freed physical bytes or the
+population remaining in the workspace directory. Selection is bounded to 256
+candidates; scan interruption, postponed observed entries, uninspected selected
+roots and bounded-detail loss are reported separately. Unknown scan tails stay
+unknown. This notice supersedes earlier current report-version and package-floor
+statements below.
+
+Rust execution callers pass a nonserialized `ReportPresentation` argument to
+`run_loop`, `run_loop_with_control` and `VerifiedPlan::execute`. Migrate callers
+directly; no saved configuration field or compatibility overload is provided.
+
+Rust callers construct or edit `RunConfigData`, then use `RunConfig::try_from`
+to obtain immutable checked execution settings. Shared reads remain available;
+semantic edits consume `into_data()` and require checking again.
+`PlanConfig::into_run_config` now returns a `Result`. The checked type guarantees
+the existing semantic rules, including cross-field limits and normalized import
+roots; filesystem freshness and destination safety remain preparation concerns.
+Strict review rejects invalid settings before project I/O, while progress keeps
+its opaque configuration contract.
+
+New exception-hierarchy analysis excludes eager-import cycle members and applies
+a deterministic SCC-weighted depth bound of 256 to other modules. This can
+exclude candidates that the previous name-order-dependent traversal missed,
+including conservative bounds through large cyclic components. The separate
+class-ancestry limit is unchanged. Existing plan, fingerprint and candidate-ID
+formats are retained; saved-plan verification does not recompute candidates under
+the new graph rule. Regenerate a plan to analyze its sources with the new rule.
+
+## Report identity validation introduced before 0.14.0
 
 Current JSON and JSONL report readers reject a candidate whose saved ID disagrees
 with its identity fields, including path, source hash, operator, span and
@@ -297,7 +353,7 @@ schemas 1–4 remain rejected; this change does not restore legacy migration pat
 | Interface | Maintenance rule | User action when it changes |
 | --- | --- | --- |
 | CLI arguments, defaults and exit codes | Preserve documented usage within a minor series, except documented bug fixes. Removing or changing a supported contract needs a minor-version floor increase. | Update invocation and CI conditions using the release notice. |
-| JSON and JSONL reports | Treat documented schemas as public. Progress accepts only report schema 8, matching the writer; review accepts current-schema JSON. Adding a field may still affect strict readers. | Read old reports with their producing binary, or rerun with the intended version. Plan regeneration alone cannot reconstruct past reports. Files are not automatically converted. |
+| JSON and JSONL reports | Treat documented schemas as public. Progress accepts only report schema 9, matching the writer; review accepts current-schema JSON. Adding a field may still affect strict readers. | Read old reports with their producing binary, or rerun with the intended version. Plan regeneration alone cannot reconstruct past reports. Files are not automatically converted. |
 | Saved plan, ranking and candidate IDs | These are checked execution inputs, not timeless interchange formats. Changes to schema, ranking, identity, source or fingerprints can invalidate a plan. | Regenerate the plan with the intended version and inputs. Do not hand-edit versions or IDs to bypass validation. |
 | Session database and resume | Resume is allowed only under the implementation's schema and fingerprint checks. Migration support must be stated explicitly. | Keep the old database and binary if needed; start a new session when compatibility is not supported. |
 | Default operators, profiles and selection | Changes can alter candidate count, runtime and the population behind a score. Default expansion is an observable compatibility change. | Review the operator set and budget; use matching candidates and validation settings for comparisons. |

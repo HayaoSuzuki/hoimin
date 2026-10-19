@@ -37,7 +37,7 @@ const TEST_MIN_FREE_SPACE: &str = "1B";
 fn input_rejects_historical_report_goldens() {
     let root = repo_root().join("crates/hoimin-cli/tests/golden");
     for (format, extension) in [("reports", "json"), ("events", "jsonl")] {
-        for version in [2, 3, 4, 5, 6, 7] {
+        for version in [2, 3, 4, 5, 6, 7, 8] {
             for era in ["original", "current"] {
                 let path = root
                     .join(format)
@@ -55,7 +55,7 @@ fn input_rejects_historical_report_goldens() {
 #[test]
 fn input_rejects_every_noncurrent_schema_in_json_and_jsonl() {
     let fixture = tempfile::tempdir().unwrap();
-    for version in [0, 1, 2, 3, 4, 5, 6, 7, REPORT_SCHEMA_VERSION + 1] {
+    for version in [0, 1, 2, 3, 4, 5, 6, 7, 8, REPORT_SCHEMA_VERSION + 1] {
         let mut document = valid_report();
         document["schema_version"] = json!(version);
         for key in ["run", "baseline", "summary"] {
@@ -93,7 +93,7 @@ fn input_rejects_every_noncurrent_schema_in_json_and_jsonl() {
 #[test]
 fn input_dispatch_preserves_document_field_orders_and_opaque_config() {
     let fixture = tempfile::tempdir().unwrap();
-    let golden = "schema-v8-current.json";
+    let golden = "schema-v9-current.json";
     let source = repo_root()
         .join("crates/hoimin-cli/tests/golden/reports")
         .join(golden);
@@ -623,6 +623,7 @@ fn input_rejects_every_summary_mutant_consistency_mismatch() {
 
     let mut status = valid_report();
     status["mutants"][0]["outcome"]["executed"]["termination"] = json!({"Exit":0});
+    status["mutants"][0]["status"] = json!("survived");
     cases.push(("status", status));
 
     let mut missing = valid_report();
@@ -665,6 +666,7 @@ fn input_accepts_a_canonical_null_score_summary() {
     let fixture = tempfile::tempdir().unwrap();
     let mut document = valid_report();
     document["mutants"][0]["outcome"]["executed"]["termination"] = json!("Timeout");
+    document["mutants"][0]["status"] = json!("timeout");
     document["summary"]["complete"] = json!(false);
     document["summary"]["exit_code"] = json!(4);
     document["summary"]["counts"] = json!({
@@ -694,6 +696,7 @@ fn input_rejects_a_non_null_score_without_decidable_mutants() {
     let fixture = tempfile::tempdir().unwrap();
     let mut document = valid_report();
     document["mutants"][0]["outcome"]["executed"]["termination"] = json!("Timeout");
+    document["mutants"][0]["status"] = json!("timeout");
     document["summary"]["counts"] = json!({
         "killed": 0,
         "survived": 0,
@@ -1409,6 +1412,7 @@ async fn duplicate_input_detection_distinguishes_independent_and_resumed_reports
     incomplete["summary"]["exit_code"] = json!(4);
     let mut changed_result = original.clone();
     changed_result["mutants"][0]["outcome"]["executed"]["termination"] = json!({"Exit": 0});
+    changed_result["mutants"][0]["status"] = json!("survived");
     changed_result["summary"]["counts"]["killed"] = json!(0);
     changed_result["summary"]["counts"]["survived"] = json!(1);
     changed_result["summary"]["counts"]["score"] = json!(0.0);
@@ -1544,6 +1548,7 @@ async fn output_labels_the_intersection_score_as_comparable() {
     let fixture = tempfile::tempdir().unwrap();
     let mut before = valid_report();
     before["mutants"][0]["outcome"]["executed"]["termination"] = json!({ "Exit": 0 });
+    before["mutants"][0]["status"] = json!("survived");
     let mut added = before["mutants"][0].clone();
     added["sequence"] = json!(4);
 
@@ -1552,6 +1557,7 @@ async fn output_labels_the_intersection_score_as_comparable() {
     added["candidate"]["original"] = json!("2");
     candidate_identity::assign_id(&mut added["candidate"]);
     added["outcome"]["executed"]["termination"] = json!({ "Exit": 1 });
+    added["status"] = json!("killed");
     before["summary"]["exit_code"] = json!(1);
     before["summary"]["counts"] = json!({
         "killed": 0,
@@ -1604,6 +1610,7 @@ async fn output_human_omits_stale_comparison_fields_after_an_unusable_report() {
     let fixture = tempfile::tempdir().unwrap();
     let mut before = valid_report();
     before["mutants"][0]["outcome"]["executed"]["termination"] = json!({ "Exit": 0 });
+    before["mutants"][0]["status"] = json!("survived");
     before["summary"]["counts"]["killed"] = json!(0);
     before["summary"]["counts"]["survived"] = json!(1);
     before["summary"]["counts"]["score"] = json!(0.0);
@@ -3163,7 +3170,8 @@ fn valid_report() -> Value {
                 "file_hash": "hash"
             },
             "outcome": { "executed": { "termination": {"Exit":1}, "output_state":"complete", "elapsed":{"secs":0,"nanos":1_000_000}, "output":{"token":"mutant-1","retained":0,"observed":0} } },
-            "resource_mode": "hard"
+            "resource_mode": "hard",
+            "status": "killed"
         }],
         "summary": {
             "kind": "run_finished",
@@ -3196,6 +3204,7 @@ fn result_report(close_timeout: bool) -> Value {
         let mutant = &mut document["mutants"][0];
         mutant["outcome"]["executed"]["termination"] = json!({"Exit": 0});
         mutant["outcome"]["executed"]["output_state"] = json!("close_timed_out");
+        mutant["status"] = json!("error");
         mutant["outcome"]["executed"]["output"] =
             json!({"token":"partial","retained":0,"observed":0});
         mutant["diagnostics"] = json!([{
@@ -3285,6 +3294,263 @@ fn jsonl_events(document: &Value) -> Vec<Value> {
     }
     events
 }
+
+macro_rules! disk_public_wire_case {
+    ($name:ident, $jsonl:expr, $defect:literal, $exit:literal, $error:literal) => {
+        #[tokio::test]
+        async fn $name() {
+            // Arrange: the current golden has explicit-null janitor and valid event ordering.
+            let fixture = tempfile::tempdir().unwrap();
+            let source = repo_root().join(if $jsonl {
+                "crates/hoimin-cli/tests/golden/events/schema-v9-current.jsonl"
+            } else {
+                "crates/hoimin-cli/tests/golden/reports/schema-v9-current.json"
+            });
+            let source = std::fs::read_to_string(source).unwrap();
+            let mut values: Vec<Value> = if $jsonl {
+                source
+                    .lines()
+                    .map(|line| serde_json::from_str(line).unwrap())
+                    .collect()
+            } else {
+                vec![serde_json::from_str(&source).unwrap()]
+            };
+            let disk = if $jsonl {
+                &mut values
+                    .iter_mut()
+                    .find(|event| event["kind"] == "run_finished")
+                    .unwrap()["disk"]
+            } else {
+                &mut values[0]["summary"]["disk"]
+            };
+            assert_eq!(disk.get("janitor"), Some(&Value::Null));
+            match $defect {
+                "retired" => disk["stale_roots_reclaimed"] = json!(999),
+                "missing" => {
+                    disk.as_object_mut().unwrap().remove("janitor");
+                }
+                "current" => {}
+                _ => unreachable!(),
+            }
+            let path = if $jsonl {
+                write_jsonl(&fixture, &values)
+            } else {
+                write_json(&fixture, "disk.json", &values[0])
+            };
+
+            // Act: each generated case invokes the actual public reader independently.
+            let output = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
+                .arg("progress")
+                .arg(&path)
+                .arg(&path)
+                .args(["--format", "json"])
+                .output()
+                .await
+                .unwrap();
+
+            // Assert.
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            assert_eq!(output.status.code(), Some($exit), "{stderr}");
+            if $exit == 0 {
+                let result: Value = serde_json::from_slice(&output.stdout).unwrap();
+                assert!(
+                    result["inputs"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .all(|input| input["usable"] == true)
+                );
+            } else {
+                assert!(stderr.contains($error), "{stderr}");
+                assert!(output.stdout.is_empty());
+            }
+        }
+    };
+}
+disk_public_wire_case!(
+    public_json_disk_rejects_retired_member,
+    false,
+    "retired",
+    2,
+    "unknown field `stale_roots_reclaimed`"
+);
+disk_public_wire_case!(
+    public_jsonl_disk_rejects_retired_member,
+    true,
+    "retired",
+    2,
+    "unknown field `stale_roots_reclaimed`"
+);
+disk_public_wire_case!(
+    public_json_disk_accepts_current_null,
+    false,
+    "current",
+    0,
+    ""
+);
+disk_public_wire_case!(
+    public_jsonl_disk_accepts_current_null,
+    true,
+    "current",
+    0,
+    ""
+);
+disk_public_wire_case!(
+    public_json_disk_requires_janitor,
+    false,
+    "missing",
+    2,
+    "missing field `janitor`"
+);
+disk_public_wire_case!(
+    public_jsonl_disk_requires_janitor,
+    true,
+    "missing",
+    2,
+    "missing field `janitor`"
+);
+
+macro_rules! status_public_rejection_case {
+    ($name:ident, $jsonl:expr) => {
+        #[tokio::test]
+        async fn $name() {
+            // Arrange: valid identities, janitor and summary isolate the status projection.
+            let fixture = tempfile::tempdir().unwrap();
+            let mut document = valid_report();
+            document["mutants"][0]["status"] = json!("killed");
+            let valid = if $jsonl {
+                write_jsonl(&fixture, &jsonl_events(&document))
+            } else {
+                write_json(&fixture, "status.json", &document)
+            };
+            assert!(matches!(read_report(&valid), Ok(InputReport::Usable(_))));
+            document["mutants"][0]["status"] = json!("survived");
+            let path = if $jsonl {
+                write_jsonl(&fixture, &jsonl_events(&document))
+            } else {
+                write_json(&fixture, "status.json", &document)
+            };
+            // Act: exercise the real executable, including public error mapping.
+            let output = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
+                .arg("progress")
+                .arg(&path)
+                .arg(&path)
+                .output()
+                .await
+                .unwrap();
+            // Assert.
+            assert_eq!(output.status.code(), Some(2));
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            assert!(
+                stderr.contains("status survived does not match outcome status killed"),
+                "{stderr}"
+            );
+        }
+    };
+}
+status_public_rejection_case!(public_json_rejects_contradictory_status, false);
+status_public_rejection_case!(public_jsonl_rejects_contradictory_status, true);
+
+macro_rules! status_reader_rejection_case {
+    ($name:ident, $jsonl:expr, $defect:literal, $expected:literal) => {
+        #[test]
+        fn $name() {
+            // Arrange: raw edits preserve duplicate-key evidence at the public file boundary.
+            let fixture = tempfile::tempdir().unwrap();
+            let document = valid_report();
+            let path = if $jsonl {
+                write_jsonl(&fixture, &jsonl_events(&document))
+            } else {
+                write_json(&fixture, "status-reader.json", &document)
+            };
+            assert!(matches!(read_report(&path), Ok(InputReport::Usable(_))));
+            let wire = std::fs::read_to_string(&path).unwrap();
+            let mut parsed = document.clone();
+            parsed["mutants"][0]
+                .as_object_mut()
+                .unwrap()
+                .remove("status");
+            let changed = if $defect == "missing" {
+                if $jsonl {
+                    jsonl_events(&parsed)
+                        .iter()
+                        .map(Value::to_string)
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                } else {
+                    serde_json::to_string_pretty(&parsed).unwrap()
+                }
+            } else {
+                // Both serializers use this compact field representation in event payloads.
+                let compact = if $jsonl {
+                    wire
+                } else {
+                    serde_json::to_string(&document).unwrap()
+                };
+                let replacement = match $defect {
+                    "equal" => "\"status\":\"killed\",\"status\":\"killed\"",
+                    "conflicting" => "\"status\":\"killed\",\"status\":\"survived\"",
+                    "unknown" => "\"status\":\"future_status\"",
+                    _ => unreachable!(),
+                };
+                compact.replacen("\"status\":\"killed\"", replacement, 1)
+            };
+            std::fs::write(&path, changed).unwrap();
+            // Act.
+            let error = read_report(&path).unwrap_err();
+            // Assert.
+            assert!(error.to_string().contains($expected), "{error}");
+        }
+    };
+}
+status_reader_rejection_case!(
+    json_requires_status,
+    false,
+    "missing",
+    "missing field `status`"
+);
+status_reader_rejection_case!(
+    jsonl_requires_status,
+    true,
+    "missing",
+    "missing field `status`"
+);
+status_reader_rejection_case!(
+    json_rejects_equal_status_keys,
+    false,
+    "equal",
+    "duplicate field `status`"
+);
+status_reader_rejection_case!(
+    jsonl_rejects_equal_status_keys,
+    true,
+    "equal",
+    "duplicate field `status`"
+);
+status_reader_rejection_case!(
+    json_rejects_conflicting_status_keys,
+    false,
+    "conflicting",
+    "duplicate field `status`"
+);
+status_reader_rejection_case!(
+    jsonl_rejects_conflicting_status_keys,
+    true,
+    "conflicting",
+    "duplicate field `status`"
+);
+status_reader_rejection_case!(
+    json_rejects_unknown_status,
+    false,
+    "unknown",
+    "unknown variant `future_status`"
+);
+status_reader_rejection_case!(
+    jsonl_rejects_unknown_status,
+    true,
+    "unknown",
+    "unknown variant `future_status`"
+);
 
 fn write_jsonl(fixture: &tempfile::TempDir, events: &[Value]) -> PathBuf {
     let path = fixture.path().join("events.report");
@@ -3628,6 +3894,7 @@ fn jsonl_not_run_requires_start_and_preceding_baseline() {
     let fixture = tempfile::tempdir().unwrap();
     let mut document = valid_report();
     document["mutants"][0]["outcome"] = json!("not_run");
+    document["mutants"][0]["status"] = json!("not_run");
     document["summary"]["counts"] =
         serde_json::to_value(hoimin_core::summarize(&[MutationStatus::NotRun])).unwrap();
     document["summary"]["complete"] = json!(false);
@@ -3703,6 +3970,7 @@ fn detail_report(statuses: &[(&str, MutationStatus)]) -> Value {
                 event["candidate"]["original"] = json!(id);
                 event["outcome"] =
                     serde_json::to_value(mutation_outcome::executed(*status)).unwrap();
+                event["status"] = serde_json::to_value(status).unwrap();
                 event
             })
             .collect(),
@@ -4234,4 +4502,29 @@ fn assert_human_regression_state(bytes: &[u8], state: &str) {
 fn assert_json_regression_state(bytes: &[u8], state: &str) {
     let doc: Value = serde_json::from_slice(bytes).unwrap();
     assert_eq!(doc["latest"]["state"], state);
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn progress_diagnostics_escape_external_report_paths() {
+    let fixture = tempfile::tempdir().unwrap();
+    let mut document = valid_report();
+    document["baseline"] = Value::Null;
+    let path = write_json(&fixture, "report\x1b[31m\r\n\t日本語.json", &document);
+
+    let (code, out, err) = run_progress(&[path.clone(), path.clone()], "json").await;
+
+    assert_eq!(code, 0);
+    let result: Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(result["inputs"][0]["source"], path.to_str().unwrap());
+    let text = String::from_utf8(err).unwrap();
+    assert_eq!(text.lines().count(), 3, "{text:?}");
+    assert!(
+        text.contains(r"report\u{1b}[31m\r\n\t日本語.json"),
+        "{text:?}"
+    );
+    assert!(
+        !text.chars().any(|c| c.is_control() && c != '\n'),
+        "{text:?}"
+    );
 }

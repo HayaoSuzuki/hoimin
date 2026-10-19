@@ -1,0 +1,29 @@
+Historical task 3 log excerpt.
+Original: /tmp/hoimin-priority-six-task3-red-doc.log
+Original SHA-256: 708af6885f0a840e3822428386673da17d5f521f1c57f8a2f85e76505c463764
+Command, base, RED/GREEN meaning and limits: task-3-report.md.
+Only recorded command information is authoritative; no missing argv/head was inferred.
+
+000001:    Compiling hoimin-core v0.13.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles/crates/hoimin-core)
+000002:     Finished `test` profile [unoptimized + debuginfo] target(s) in 2.68s
+000003:    Doc-tests hoimin_core
+000004:
+000005: running 3 tests
+000006: test crates/hoimin-core/src/config.rs - config::RunConfig<crate::EnvironmentRequest>::with_environment (line 597) - compile fail ... ok
+000007: test crates/hoimin-core/src/config.rs - config::RunConfig (line 512) - compile fail ... FAILED
+000008: test crates/hoimin-core/src/config.rs - config::RunConfig (line 506) - compile fail ... FAILED
+000009:
+000010: failures:
+000011:
+000012: ---- crates/hoimin-core/src/config.rs - config::RunConfig (line 512) stdout ----
+000013: Test compiled successfully, but it's marked `compile_fail`.
+000014: ---- crates/hoimin-core/src/config.rs - config::RunConfig (line 506) stdout ----
+000015: Test compiled successfully, but it's marked `compile_fail`.
+000016:
+000017: failures:
+000018:     crates/hoimin-core/src/config.rs - config::RunConfig (line 506)
+000019:     crates/hoimin-core/src/config.rs - config::RunConfig (line 512)
+000020:
+000021: test result: FAILED. 1 passed; 2 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.12s
+000022:
+000023: error: doctest failed, to rerun pass `-p hoimin-core --doc`

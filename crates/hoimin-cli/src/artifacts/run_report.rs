@@ -523,6 +523,34 @@ impl<R: Read> Read for FingerprintReader<R> {
 
 #[cfg(test)]
 mod tests {
+    macro_rules! required_janitor_case {
+        ($name:ident, $present:expr) => {
+            #[test]
+            fn $name() {
+                // Arrange: exercise the actual shared JSON artifact decoder.
+                let mut document: serde_json::Value = serde_json::from_str(include_str!(
+                    "../../tests/golden/reports/schema-v9-current.json"
+                ))
+                .unwrap();
+                if !$present {
+                    document["summary"]["disk"]
+                        .as_object_mut()
+                        .unwrap()
+                        .remove("janitor");
+                }
+                let dir = tempfile::tempdir().unwrap();
+                let path = dir.path().join("report.json");
+                std::fs::write(&path, serde_json::to_vec(&document).unwrap()).unwrap();
+                // Act.
+                let result = super::read_report(&path);
+                // Assert.
+                assert_eq!(result.is_ok(), $present, "{result:?}");
+            }
+        };
+    }
+    required_janitor_case!(artifact_reader_rejects_missing_janitor, false);
+    required_janitor_case!(artifact_reader_accepts_explicit_null_janitor, true);
+
     use super::*;
 
     #[test]
@@ -542,10 +570,79 @@ mod tests {
 
     fn current_report_json() -> String {
         let document: serde_json::Value = serde_json::from_str(include_str!(
-            "../../tests/golden/reports/schema-v8-current.json"
+            "../../tests/golden/reports/schema-v9-current.json"
         ))
         .unwrap();
         serde_json::to_string(&document).unwrap()
+    }
+
+    fn reject_config_before_root_read(change: fn(&mut serde_json::Value), expected: &str) {
+        // Arrange: the valid control reaches canonicalization and fails there.
+        let project = tempfile::tempdir().unwrap();
+        let mut document: serde_json::Value = serde_json::from_str(&current_report_json()).unwrap();
+        document["run"]["normalized_config"]["selection"]["root"] =
+            serde_json::json!(project.path().join("missing-project"));
+        change(&mut document["run"]["normalized_config"]);
+
+        // Act
+        let result = read_review_json(
+            Path::new("report.json"),
+            &serde_json::to_vec(&document).unwrap(),
+        );
+
+        // Assert
+        let error = result.err().expect("invalid config must fail");
+        assert!(matches!(error, ProgressError::Parse { .. }), "{error}");
+        assert!(error.to_string().contains(expected), "{error}");
+    }
+
+    macro_rules! invalid_review_config_cases {
+        ($($name:ident: $change:expr => $expected:literal;)*) => {
+            $(#[test]
+            fn $name() {
+                reject_config_before_root_read($change, $expected);
+            })*
+        };
+    }
+
+    invalid_review_config_cases! {
+        review_rejects_jobs_above_absolute_cap: |config| {
+            config["limits"]["jobs"] = serde_json::json!(257);
+            config["limits"]["max_processes"] = serde_json::json!(300);
+        } => "--jobs 257 exceeds the supported maximum 256";
+        review_rejects_jobs_above_process_cap: |config| config["limits"]["jobs"] = serde_json::json!(65)
+            => "--jobs 65 exceeds --max-processes 64";
+        review_rejects_empty_selector: |config| {
+            config["selection"]["sources"] = serde_json::json!([]);
+            config["selection"]["files"] = serde_json::json!([]);
+            config["selection"]["lines"] = serde_json::json!([]);
+            config["selection"]["symbols"] = serde_json::json!([]);
+            config["selection"]["changed"] = serde_json::Value::Null;
+        } => "at least one target selector is required";
+        review_rejects_empty_operators: |config| config["operators"] = serde_json::json!([])
+            => "mutation operator selection is empty";
+        review_rejects_empty_test_argv: |config| config["test_argv"] = serde_json::json!([])
+            => "at least one test argv element is required";
+        review_rejects_escaping_import_root: |config| config["import_roots"] = serde_json::json!(["../escape"])
+            => "invalid --import-root ../escape";
+    }
+
+    #[test]
+    fn review_valid_config_reaches_project_root_read() {
+        // Arrange
+        let project = tempfile::tempdir().unwrap();
+        let mut document: serde_json::Value = serde_json::from_str(&current_report_json()).unwrap();
+        document["run"]["normalized_config"]["selection"]["root"] =
+            serde_json::json!(project.path().join("missing-project"));
+
+        // Act
+        let result = read_review_json(
+            Path::new("report.json"),
+            &serde_json::to_vec(&document).unwrap(),
+        );
+
+        // Assert
+        assert!(matches!(result, Err(ProgressError::Read { .. })));
     }
 
     #[test]
@@ -653,7 +750,8 @@ mod tests {
                 (r#""jobs""#, r#""\u006aobs""#)
             };
             let duplicate = format!("{first_key}:{first},{whitespace}{second_key}:{second}");
-            let raw = current_report_json().replacen(r#""jobs":1"#, &duplicate, 1);
+            let original = current_report_json().replace(r#""max_processes":64"#, r#""max_processes":256"#);
+            let raw = original.replacen(r#""jobs":1"#, &duplicate, 1);
 
             // Act
             let result = read_review_json(Path::new("report.json"), raw.as_bytes());

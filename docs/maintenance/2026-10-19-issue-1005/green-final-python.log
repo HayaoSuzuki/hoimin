@@ -1,0 +1,95 @@
+   Compiling hoimin-python v0.14.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles/crates/hoimin-python)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.68s
+     Running unittests src/lib.rs (/tmp/hoimin-priority-six-target/debug/deps/hoimin_python-2bfcb59dd3432230)
+
+running 77 tests
+test rust::exception_hierarchy::alias_oracle_tests::hierarchy_direct_write_roots_have_an_independent_limit ... ok
+test rust::exception_hierarchy::alias_oracle_tests::hierarchy_scope_count_has_an_independent_limit ... ok
+exception hierarchy alias extraction: internal-fixture=45
+test rust::exception_hierarchy::alias_oracle_tests::lean_exception_hierarchy_alias_extraction_correspondence ... ok
+test rust::exception_hierarchy::checked_parse_tests::invalid_partial_module_is_skipped_while_valid_neighbor_is_indexed ... ok
+test rust::exception_hierarchy::exception_import_graph_tests::aliases_to_same_path_share_vertex_identity ... ok
+test rust::exception_hierarchy::exception_import_graph_tests::already_cancelled_empty_graph_returns_error ... ok
+test rust::exception_hierarchy::exception_import_graph_tests::cancel_all_lazy_dependency_scan ... ok
+test rust::exception_hierarchy::exception_import_graph_tests::cancel_during_dependency_scan ... ok
+test rust::exception_hierarchy::exception_import_graph_tests::cancel_during_depth_fanout ... ok
+test rust::exception_hierarchy::exception_import_graph_tests::cancel_during_edge_construction ... ok
+test rust::exception_hierarchy::exception_import_graph_tests::cancel_during_final_application ... ok
+test rust::exception_hierarchy::exception_import_graph_tests::cancel_during_forward_fanout ... ok
+test rust::exception_hierarchy::exception_import_graph_tests::cancel_during_node_initialization ... ok
+test rust::exception_hierarchy::exception_import_graph_tests::cancel_during_reverse_fanin ... ok
+test rust::exception_hierarchy::exception_import_graph_tests::cancel_zero_edge_components ... ok
+test rust::exception_hierarchy::exception_import_graph_tests::joined_depth_long_branch_first_rejects ... ok
+test rust::exception_hierarchy::exception_import_graph_tests::joined_depth_short_branch_first_rejects ... ok
+test rust::exception_hierarchy::alias_oracle_tests::hierarchy_declarations_bound_each_scope_and_total_names ... ok
+N=16 missing=true work=[147, 512, 0, 49, 49, 49, 49, 0, 49, 49, 0, 49, 49] total=1051
+test rust::exception_hierarchy::exception_import_graph_tests::layered_control_16 ... ok
+N=32 missing=true work=[291, 2048, 0, 97, 97, 97, 97, 0, 97, 97, 0, 97, 97] total=3115
+test rust::exception_hierarchy::exception_import_graph_tests::layered_control_32 ... ok
+N=128 missing=true work=[1155, 32768, 0, 385, 385, 385, 385, 0, 385, 385, 0, 385, 385] total=37003
+test rust::exception_hierarchy::exception_import_graph_tests::layered_control_128 ... ok
+N=64 missing=true work=[579, 8192, 0, 193, 193, 193, 193, 0, 193, 193, 0, 193, 193] total=10315
+test rust::exception_hierarchy::exception_import_graph_tests::layered_control_64 ... ok
+N=16 missing=false work=[147, 512, 512, 49, 561, 49, 49, 512, 49, 49, 512, 49, 49] total=3099
+test rust::exception_hierarchy::exception_import_graph_tests::layered_dag_16 ... ok
+N=32 missing=false work=[291, 2048, 2048, 97, 2145, 97, 97, 2048, 97, 97, 2048, 97, 97] total=11307
+test rust::exception_hierarchy::exception_import_graph_tests::layered_dag_32 ... ok
+N=64 missing=false work=[579, 8192, 8192, 193, 8385, 193, 193, 8192, 193, 193, 8192, 193, 193] total=43083
+test rust::exception_hierarchy::exception_import_graph_tests::layered_dag_64 ... ok
+test rust::exception_hierarchy::exception_import_graph_tests::normalized_relative_cycle_excludes_only_its_members ... ok
+test rust::exception_hierarchy::exception_import_graph_tests::source_cycle_prefix_keeps_local_candidate ... ok
+test rust::exception_hierarchy::exception_import_graph_tests::source_dag_keeps_local_candidate ... ok
+test rust::exception_hierarchy::exception_import_graph_tests::source_depth_255_keeps_candidate ... ok
+test rust::exception_hierarchy::exception_import_graph_tests::source_depth_256_excludes_candidate ... ok
+test rust::exception_hierarchy::exception_import_graph_tests::source_diamond_keeps_local_candidate ... ok
+test rust::exception_hierarchy::exception_import_graph_tests::source_dynamic_module_stays_untrusted ... ok
+test rust::exception_hierarchy::exception_import_graph_tests::source_dynamic_vertex_still_participates_in_cycle ... ok
+test rust::exception_hierarchy::exception_import_graph_tests::source_imported_cycle_class_remains_unresolved ... ok
+test rust::exception_hierarchy::exception_import_graph_tests::source_lazy_back_edge_is_not_cycle ... ok
+test rust::exception_hierarchy::exception_import_graph_tests::source_missing_import_has_no_graph_edge ... ok
+test rust::exception_hierarchy::exception_import_graph_tests::source_mutual_cycle_skips_untrusted_module ... ok
+test rust::exception_hierarchy::exception_import_graph_tests::source_prefix_into_254_cycle_keeps_candidate ... ok
+test rust::exception_hierarchy::exception_import_graph_tests::source_prefix_into_255_cycle_excludes_candidate ... ok
+test rust::exception_hierarchy::exception_import_graph_tests::source_relative_cycle_prefix_keeps_local_candidate ... ok
+test rust::exception_hierarchy::exception_import_graph_tests::source_self_cycle_skips_untrusted_module ... ok
+test rust::exception_hierarchy::exception_import_graph_tests::source_unparsed_destination_has_no_graph_edge ... ok
+test rust::exception_hierarchy::import_graph::properties::branching_large_component_can_conservatively_exclude_prefix ... ok
+test rust::exception_hierarchy::import_graph::properties::cyclic_outgoing_tail_counts_toward_depth ... ok
+test rust::exception_hierarchy::import_graph::properties::dag_depth_equals_enumerated_edge_paths ... ok
+test rust::exception_hierarchy::import_graph::properties::depth_255_is_eligible ... ok
+test rust::exception_hierarchy::import_graph::properties::depth_256_is_excluded ... ok
+test rust::exception_hierarchy::import_graph::properties::diamond_is_not_cycle ... ok
+test rust::exception_hierarchy::import_graph::properties::disconnected_cycles ... ok
+test rust::exception_hierarchy::import_graph::properties::empty_graph ... ok
+test rust::exception_hierarchy::import_graph::properties::every_old_exclusion_remains_excluded ... ok
+test rust::exception_hierarchy::import_graph::properties::isolated_vertex ... ok
+test rust::exception_hierarchy::import_graph::properties::long_chain_uses_bounded_stack ... ok
+test rust::exception_hierarchy::import_graph::properties::mutual_cycle ... ok
+test rust::exception_hierarchy::import_graph::properties::parallel_edges_do_not_invent_cycle ... ok
+test rust::exception_hierarchy::import_graph::properties::prefix_into_254_cycle_is_eligible ... ok
+test rust::exception_hierarchy::import_graph::properties::prefix_into_255_cycle_is_excluded ... ok
+test rust::exception_hierarchy::import_graph::properties::prefix_is_not_cycle_member ... ok
+test rust::exception_hierarchy::import_graph::properties::renaming_vertices_and_reversing_edges_preserves_exclusions ... ok
+test rust::exception_hierarchy::import_graph::properties::self_cycle ... ok
+test rust::exception_hierarchy::import_graph::properties::shared_graph_matches_independent_path_reference ... ok
+module visibility module visits at N=32/64/128/256: [1024, 2048, 4096, 8192]
+N=128 missing=false work=[1155, 32768, 32768, 385, 33153, 385, 385, 32768, 385, 385, 32768, 385, 385] total=168075
+test rust::exception_hierarchy::exception_import_graph_tests::layered_dag_128 ... ok
+test rust::exception_hierarchy::visibility_tests::loaded_descendant_classes_keep_package_and_exact_alias_spellings_in_order ... ok
+test rust::exception_hierarchy::visibility_tests::visibility_cancels_while_visiting_loaded_modules_with_no_members ... ok
+test rust::rust_tests::exception_hierarchy_audit_mangled_bindings_shadow_module_aliases ... ok
+test rust::rust_tests::exception_hierarchy_audit_mangled_spelling_without_local_binding_remains_eligible ... ok
+test rust::rust_tests::exception_hierarchy_cross_module_and_relative_imports ... ok
+test rust::rust_tests::exception_hierarchy_custom_constructors_are_handler_only ... ok
+test rust::rust_tests::exception_hierarchy_is_conservative_at_definition_and_constructor_boundaries ... ok
+test rust::rust_tests::exception_hierarchy_mutates_local_handlers_and_raises ... ok
+test rust::rust_tests::exception_hierarchy_preserves_alias_identity_and_scope ... ok
+test rust::rust_tests::exception_hierarchy_rejects_definition_header_rebinding_and_builtin_attributes ... ok
+test rust::rust_tests::exception_hierarchy_rejects_import_cycles_and_unloaded_submodules ... ok
+test rust::rust_tests::exception_hierarchy_rejects_shadowed_and_unsupported_classes ... ok
+test rust::rust_tests::exception_hierarchy_respects_candidate_prefix_selection_and_cancellation ... ok
+test rust::rust_tests::exception_hierarchy_respects_implicit_class_cells_and_private_names ... ok
+member visibility module visits at N=32/64/128/256: [0, 0, 0, 0]
+test rust::exception_hierarchy::visibility_tests::external_import_visibility_work_tracks_imports_not_project_mappings ... ok
+
+test result: ok. 77 passed; 0 failed; 0 ignored; 0 measured; 349 filtered out; finished in 2.17s

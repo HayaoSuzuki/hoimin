@@ -496,13 +496,52 @@ pub struct RunLimits {
     pub max_processes: NonZeroUsize,
 }
 
+/// Semantically checked execution settings, immutable after acceptance.
+/// Construction and deserialization check selection, normalized import roots,
+/// operators, argv, and limits without filesystem access. Environment request and
+/// snapshot types own their metadata invariants. This does not establish input
+/// freshness or output-destination safety; preparation owns those checks.
+/// Read fields through the shared view. Consume into construction data and use
+/// `TryFrom` for arbitrary edits.
+///
+/// Accepted configuration cannot be invalidated by a field write:
+/// ```compile_fail
+/// fn change_jobs(mut config: hoimin_core::RunConfig) {
+///     config.limits.jobs = std::num::NonZeroUsize::new(257).unwrap();
+/// }
+/// ```
+/// Nested collection mutation also requires checked reconstruction:
+/// ```compile_fail
+/// fn remove_command(mut config: hoimin_core::RunConfig) {
+///     config.test_argv.clear();
+/// }
+/// ```
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(transparent)]
+pub struct RunConfig<E = crate::EnvironmentSnapshot>(RunConfigData<E>);
+
+/// Owned normalized construction data, not accepted execution settings.
+/// Fields may be edited before `RunConfig::try_from` checks their semantics.
+/// The project root belongs to `selection`. Saved arrays remain required;
+/// an explicit empty array means no configured entries where the field permits it.
+///
+/// Execution does not accept construction data:
+/// ```compile_fail
+/// fn execute(data: hoimin_core::RunConfigData, control: hoimin_core::ResourceControl) {
+///     hoimin_core::RunState::new("run", data, control);
+/// }
+/// ```
+/// Fingerprint generation also requires the checked owner:
+/// ```compile_fail
+/// fn fingerprint(data: hoimin_core::RunConfigData) {
+///     hoimin_core::FingerprintInput::from_config(
+///         &data, vec![], vec![], hoimin_core::ResourceMode::Hard,
+///     );
+/// }
+/// ```
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-/// Normalized invocation with a canonical capture request before preparation.
-/// The default environment state is a validated snapshot consumed by execution.
-/// The project root is owned solely by `selection`.
-/// Saved array fields are required; an explicit empty array means no configured entries.
 #[serde(deny_unknown_fields)]
-pub struct RunConfig<E = crate::EnvironmentSnapshot> {
+pub struct RunConfigData<E = crate::EnvironmentSnapshot> {
     pub selection: Selection,
     pub import_roots: Vec<Utf8PathBuf>,
     pub fingerprint_includes: Vec<String>,
@@ -519,6 +558,8 @@ pub struct RunConfig<E = crate::EnvironmentSnapshot> {
     pub profile: MutationProfile,
 }
 
+/// Persisted plan data; `validate` checks header semantics and
+/// `into_run_config` accepts execution settings through checked construction.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PlanConfig {
@@ -538,7 +579,7 @@ pub struct PlanConfig {
     pub fingerprint_inputs: Vec<FingerprintInputFile>,
 }
 
-impl<E> RunConfig<E> {
+impl<E> RunConfigData<E> {
     /// Validates common normalized run fields.
     /// Environment constructors and deserialization own their state invariants.
     ///
@@ -555,23 +596,73 @@ impl<E> RunConfig<E> {
     }
 }
 
+impl<E> TryFrom<RunConfigData<E>> for RunConfig<E> {
+    type Error = ConfigError;
+
+    fn try_from(data: RunConfigData<E>) -> Result<Self, Self::Error> {
+        data.validate()?;
+        Ok(Self(data))
+    }
+}
+
+impl<'de, E: Deserialize<'de>> Deserialize<'de> for RunConfig<E> {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        // Decode the original map so duplicate known keys are still visible.
+        let data = RunConfigData::<E>::deserialize(deserializer)?;
+        Self::try_from(data).map_err(serde::de::Error::custom)
+    }
+}
+
+impl<E> std::ops::Deref for RunConfig<E> {
+    type Target = RunConfigData<E>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<E> RunConfig<E> {
+    /// Gives up the checked owner for editing; execution requires checking again.
+    #[must_use]
+    pub fn into_data(self) -> RunConfigData<E> {
+        self.0
+    }
+
+    /// Replaces presentation settings while preserving normalized semantics.
+    /// Execution still checks metrics destination safety.
+    #[must_use]
+    pub fn with_output(mut self, output: OutputConfig) -> Self {
+        self.0.output = output;
+        self
+    }
+
+    /// Attaches resolved records without certifying their filesystem freshness.
+    /// Preparation and verification retain ownership of record checks.
+    #[must_use]
+    pub fn with_fingerprint_inputs(mut self, inputs: Vec<FingerprintInputFile>) -> Self {
+        self.0.fingerprint_inputs = inputs;
+        self
+    }
+}
+
 impl RunConfig {
     #[must_use]
     pub fn into_plan_config(self, discovery: DiscoveryConfig) -> PlanConfig {
+        let data = self.into_data();
         PlanConfig {
             discovery,
-            selection: self.selection,
-            import_roots: self.import_roots,
-            limits: self.limits,
-            test_argv: self.test_argv,
-            output: self.output,
-            operators: self.operators,
-            allow_best_effort_memory: self.allow_best_effort_memory,
-            profile: self.profile,
-            fingerprint_includes: self.fingerprint_includes,
-            fingerprint_files: self.fingerprint_files,
-            environment: self.environment,
-            fingerprint_inputs: self.fingerprint_inputs,
+            selection: data.selection,
+            import_roots: data.import_roots,
+            limits: data.limits,
+            test_argv: data.test_argv,
+            output: data.output,
+            operators: data.operators,
+            allow_best_effort_memory: data.allow_best_effort_memory,
+            profile: data.profile,
+            fingerprint_includes: data.fingerprint_includes,
+            fingerprint_files: data.fingerprint_files,
+            environment: data.environment,
+            fingerprint_inputs: data.fingerprint_inputs,
         }
     }
 }
@@ -596,21 +687,24 @@ impl RunConfig<crate::EnvironmentRequest> {
         if self.environment.names() != environment.names() {
             return Err(ConfigError::FingerprintEnvSnapshotMismatch);
         }
-        Ok(RunConfig {
-            selection: self.selection,
-            import_roots: self.import_roots,
-            fingerprint_includes: self.fingerprint_includes,
-            fingerprint_files: self.fingerprint_files,
+        let data = self.into_data();
+        // Only the typed environment changes; the shared normalized fields keep
+        // the validity established when this request configuration was accepted.
+        Ok(RunConfig(RunConfigData {
+            selection: data.selection,
+            import_roots: data.import_roots,
+            fingerprint_includes: data.fingerprint_includes,
+            fingerprint_files: data.fingerprint_files,
             environment,
-            fingerprint_inputs: self.fingerprint_inputs,
-            limits: self.limits,
-            test_argv: self.test_argv,
-            output: self.output,
-            session: self.session,
-            operators: self.operators,
-            allow_best_effort_memory: self.allow_best_effort_memory,
-            profile: self.profile,
-        })
+            fingerprint_inputs: data.fingerprint_inputs,
+            limits: data.limits,
+            test_argv: data.test_argv,
+            output: data.output,
+            session: data.session,
+            operators: data.operators,
+            allow_best_effort_memory: data.allow_best_effort_memory,
+            profile: data.profile,
+        }))
     }
 }
 
@@ -661,9 +755,14 @@ impl PlanConfig {
         validate_limits(&self.limits)
     }
 
-    #[must_use]
-    pub fn into_run_config(self, output: OutputConfig) -> RunConfig {
-        RunConfig {
+    /// Accepts persisted settings for execution, with sessions disabled.
+    ///
+    /// # Errors
+    /// Rejects invalid discovery or normalized execution semantics even when the
+    /// caller has not validated a plan header.
+    pub fn into_run_config(self, output: OutputConfig) -> Result<RunConfig, ConfigError> {
+        self.discovery.validate()?;
+        RunConfig::try_from(RunConfigData {
             selection: self.selection,
             import_roots: self.import_roots,
             fingerprint_includes: self.fingerprint_includes,
@@ -677,7 +776,7 @@ impl PlanConfig {
             operators: self.operators,
             allow_best_effort_memory: self.allow_best_effort_memory,
             profile: self.profile,
-        }
+        })
     }
 }
 
@@ -1001,7 +1100,7 @@ impl TryFrom<RawRunConfig> for RunConfig<crate::EnvironmentRequest> {
         validate_operators(&operators)?;
         let limits = RunLimits::try_from(&raw.limits)?;
         validate_limits(&limits)?;
-        Ok(Self {
+        Self::try_from(RunConfigData {
             selection,
             import_roots: normalize_import_roots(&raw.import_roots)?,
             fingerprint_includes: raw.fingerprint_includes,

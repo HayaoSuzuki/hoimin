@@ -1,0 +1,92 @@
+Historical task 2 log excerpt.
+Original: /tmp/hoimin-priority-six-task2-fix1-red-argv0.log
+Original SHA-256: 6f75abd0bfdd99d9b2ae4c64aaf210b09a60e27f16c5e097d1374a170c7263d4
+Command, base, RED/GREEN meaning and limits: task-2-report.md.
+Only recorded command information is authoritative; no missing argv/head was inferred.
+
+000001:    Compiling hoimin-cli v0.13.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles/crates/hoimin-cli)
+000002:     Finished `test` profile [unoptimized + debuginfo] target(s) in 2.77s
+000003:      Running tests/plan.rs (/tmp/hoimin-priority-six-target/debug/deps/plan-cff1b2201fff23df)
+000004:
+000005: running 12 tests
+000006: test hostile_executable_names::cr::help ... FAILED
+000007: test hostile_executable_names::cr::error ... FAILED
+000008: test hostile_executable_names::esc::error ... ok
+000009: test hostile_executable_names::esc::help ... ok
+000010: test hostile_executable_names::lf::error ... FAILED
+000011: test hostile_executable_names::lf::help ... FAILED
+000012: test hostile_executable_names::mixed::error ... FAILED
+000013: test hostile_executable_names::mixed::help ... FAILED
+000014: test hostile_executable_names::tab::error ... FAILED
+000015: test hostile_executable_names::tab::help ... FAILED
+000016: test hostile_executable_names::unicode_alias::error ... FAILED
+000017: test hostile_executable_names::unicode_alias::help ... FAILED
+000018:
+000019: failures:
+000020:
+000021: ---- hostile_executable_names::cr::help stdout ----
+000022:
+000023: thread 'hostile_executable_names::cr::help' (55839000) panicked at crates/hoimin-cli/tests/plan.rs:5877:5:
+000024: "Bounded mutation testing for focused Python changes\n\nUsage: hoimin\r <COMMAND>\n\nCommands:\n  run          Run mutation tests for an explicitly selected target\n  plan         Discover mutation candidates without executing tests\n  verify       Execute one or more candidates using settings from a previously generated plan\n  progress     Compare chronologically ordered mutation run reports\n  review       Record and inspect human assessments independently of test outcomes\n  completions  Generate shell completion scripts\n  help         Print this message or the help of the given subcommand(s)\n\nOptions:\n  -h, --help     Print help\n  -V, --version  Print version\n\nRun contract:\n  hoimin run [TARGETS] [SAFETY/OUTPUT/SESSION OPTIONS] -- <TEST_ARGV>...\n\nTarget selectors:\n  --root --source --file --line --symbol --changed --changed-context --diff-base\nCopy options:\n  --include --exclude\nMutation options:\n  --operators --exclude-operators --profile\nSafety options:\n  --jobs --max-mutants --max-candidates\n  --baseline-timeout --mutant-timeout --total-timeout --max-memory\n  --max-output --max-copy-size --max-workspace-size --min-free-space\n  --max-processes --allow-best-effort-memory\nOutput/session options:\n  --format <json|jsonl|human> --metrics <PATH> --session --resume\n"
+000025:
+000026: ---- hostile_executable_names::cr::error stdout ----
+000027:
+000028: thread 'hostile_executable_names::cr::error' (55838999) panicked at crates/hoimin-cli/tests/plan.rs:5877:5:
+000029: "error: unrecognized subcommand 'bad'\n\nUsage: hoimin\r <COMMAND>\n\nFor more information, try '--help'.\n"
+000030: note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+000031:
+000033:
+000034: thread 'hostile_executable_names::lf::error' (55839062) panicked at crates/hoimin-cli/tests/plan.rs:5877:5:
+000035: "error: unrecognized subcommand 'bad'\n\nUsage: hoimin\n <COMMAND>\n\nFor more information, try '--help'.\n"
+000036:
+000037: ---- hostile_executable_names::lf::help stdout ----
+000038:
+000039: thread 'hostile_executable_names::lf::help' (55839064) panicked at crates/hoimin-cli/tests/plan.rs:5877:5:
+000040: "Bounded mutation testing for focused Python changes\n\nUsage: hoimin\n <COMMAND>\n\nCommands:\n  run          Run mutation tests for an explicitly selected target\n  plan         Discover mutation candidates without executing tests\n  verify       Execute one or more candidates using settings from a previously generated plan\n  progress     Compare chronologically ordered mutation run reports\n  review       Record and inspect human assessments independently of test outcomes\n  completions  Generate shell completion scripts\n  help         Print this message or the help of the given subcommand(s)\n\nOptions:\n  -h, --help     Print help\n  -V, --version  Print version\n\nRun contract:\n  hoimin run [TARGETS] [SAFETY/OUTPUT/SESSION OPTIONS] -- <TEST_ARGV>...\n\nTarget selectors:\n  --root --source --file --line --symbol --changed --changed-context --diff-base\nCopy options:\n  --include --exclude\nMutation options:\n  --operators --exclude-operators --profile\nSafety options:\n  --jobs --max-mutants --max-candidates\n  --baseline-timeout --mutant-timeout --total-timeout --max-memory\n  --max-output --max-copy-size --max-workspace-size --min-free-space\n  --max-processes --allow-best-effort-memory\nOutput/session options:\n  --format <json|jsonl|human> --metrics <PATH> --session --resume\n"
+000041:
+000042: ---- hostile_executable_names::mixed::error stdout ----
+000043:
+000044: thread 'hostile_executable_names::mixed::error' (55839092) panicked at crates/hoimin-cli/tests/plan.rs:5877:5:
+000045: "error: unrecognized subcommand 'bad'\n\nUsage: hoimin\r\n\t <COMMAND>\n\nFor more information, try '--help'.\n"
+000046:
+000047: ---- hostile_executable_names::mixed::help stdout ----
+000048:
+000049: thread 'hostile_executable_names::mixed::help' (55839094) panicked at crates/hoimin-cli/tests/plan.rs:5877:5:
+000050: "Bounded mutation testing for focused Python changes\n\nUsage: hoimin\r\n\t <COMMAND>\n\nCommands:\n  run          Run mutation tests for an explicitly selected target\n  plan         Discover mutation candidates without executing tests\n  verify       Execute one or more candidates using settings from a previously generated plan\n  progress     Compare chronologically ordered mutation run reports\n  review       Record and inspect human assessments independently of test outcomes\n  completions  Generate shell completion scripts\n  help         Print this message or the help of the given subcommand(s)\n\nOptions:\n  -h, --help     Print help\n  -V, --version  Print version\n\nRun contract:\n  hoimin run [TARGETS] [SAFETY/OUTPUT/SESSION OPTIONS] -- <TEST_ARGV>...\n\nTarget selectors:\n  --root --source --file --line --symbol --changed --changed-context --diff-base\nCopy options:\n  --include --exclude\nMutation options:\n  --operators --exclude-operators --profile\nSafety options:\n  --jobs --max-mutants --max-candidates\n  --baseline-timeout --mutant-timeout --total-timeout --max-memory\n  --max-output --max-copy-size --max-workspace-size --min-free-space\n  --max-processes --allow-best-effort-memory\nOutput/session options:\n  --format <json|jsonl|human> --metrics <PATH> --session --resume\n"
+000051:
+000052: ---- hostile_executable_names::tab::error stdout ----
+000053:
+000054: thread 'hostile_executable_names::tab::error' (55839122) panicked at crates/hoimin-cli/tests/plan.rs:5877:5:
+000055: "error: unrecognized subcommand 'bad'\n\nUsage: hoimin\t <COMMAND>\n\nFor more information, try '--help'.\n"
+000056:
+000057: ---- hostile_executable_names::tab::help stdout ----
+000058:
+000059: thread 'hostile_executable_names::tab::help' (55839124) panicked at crates/hoimin-cli/tests/plan.rs:5877:5:
+000060: "Bounded mutation testing for focused Python changes\n\nUsage: hoimin\t <COMMAND>\n\nCommands:\n  run          Run mutation tests for an explicitly selected target\n  plan         Discover mutation candidates without executing tests\n  verify       Execute one or more candidates using settings from a previously generated plan\n  progress     Compare chronologically ordered mutation run reports\n  review       Record and inspect human assessments independently of test outcomes\n  completions  Generate shell completion scripts\n  help         Print this message or the help of the given subcommand(s)\n\nOptions:\n  -h, --help     Print help\n  -V, --version  Print version\n\nRun contract:\n  hoimin run [TARGETS] [SAFETY/OUTPUT/SESSION OPTIONS] -- <TEST_ARGV>...\n\nTarget selectors:\n  --root --source --file --line --symbol --changed --changed-context --diff-base\nCopy options:\n  --include --exclude\nMutation options:\n  --operators --exclude-operators --profile\nSafety options:\n  --jobs --max-mutants --max-candidates\n  --baseline-timeout --mutant-timeout --total-timeout --max-memory\n  --max-output --max-copy-size --max-workspace-size --min-free-space\n  --max-processes --allow-best-effort-memory\nOutput/session options:\n  --format <json|jsonl|human> --metrics <PATH> --session --resume\n"
+000061:
+000062: ---- hostile_executable_names::unicode_alias::error stdout ----
+000063:
+000064: thread 'hostile_executable_names::unicode_alias::error' (55839152) panicked at crates/hoimin-cli/tests/plan.rs:5877:5:
+000065: "error: unrecognized subcommand 'bad'\n\nUsage: 別名🦀 <COMMAND>\n\nFor more information, try '--help'.\n"
+000066:
+000067: ---- hostile_executable_names::unicode_alias::help stdout ----
+000068:
+000069: thread 'hostile_executable_names::unicode_alias::help' (55839154) panicked at crates/hoimin-cli/tests/plan.rs:5877:5:
+000070: "Bounded mutation testing for focused Python changes\n\nUsage: 別名🦀 <COMMAND>\n\nCommands:\n  run          Run mutation tests for an explicitly selected target\n  plan         Discover mutation candidates without executing tests\n  verify       Execute one or more candidates using settings from a previously generated plan\n  progress     Compare chronologically ordered mutation run reports\n  review       Record and inspect human assessments independently of test outcomes\n  completions  Generate shell completion scripts\n  help         Print this message or the help of the given subcommand(s)\n\nOptions:\n  -h, --help     Print help\n  -V, --version  Print version\n\nRun contract:\n  hoimin run [TARGETS] [SAFETY/OUTPUT/SESSION OPTIONS] -- <TEST_ARGV>...\n\nTarget selectors:\n  --root --source --file --line --symbol --changed --changed-context --diff-base\nCopy options:\n  --include --exclude\nMutation options:\n  --operators --exclude-operators --profile\nSafety options:\n  --jobs --max-mutants --max-candidates\n  --baseline-timeout --mutant-timeout --total-timeout --max-memory\n  --max-output --max-copy-size --max-workspace-size --min-free-space\n  --max-processes --allow-best-effort-memory\nOutput/session options:\n  --format <json|jsonl|human> --metrics <PATH> --session --resume\n"
+000071:
+000072:
+000073: failures:
+000074:     hostile_executable_names::cr::error
+000075:     hostile_executable_names::cr::help
+000076:     hostile_executable_names::lf::error
+000077:     hostile_executable_names::lf::help
+000078:     hostile_executable_names::mixed::error
+000079:     hostile_executable_names::mixed::help
+000080:     hostile_executable_names::tab::error
+000081:     hostile_executable_names::tab::help
+000082:     hostile_executable_names::unicode_alias::error
+000083:     hostile_executable_names::unicode_alias::help
+000084:
+000085: test result: FAILED. 2 passed; 10 failed; 0 ignored; 0 measured; 118 filtered out; finished in 0.47s
+000086:
+000087: error: test failed, to rerun pass `-p hoimin-cli --test plan`

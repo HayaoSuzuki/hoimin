@@ -1,0 +1,30 @@
+Historical task 4 log excerpt.
+Original: /tmp/hoimin-priority-six-task4-red-owner-progress.log
+Original SHA-256: 3fdf2233b612cfaad0d23e9ec2d9d3f362463f4388340d7a14ab33f5bdcfb58d
+Command, base, RED/GREEN meaning and limits: task-4-report.md.
+Only recorded command information is authoritative; no missing argv/head was inferred.
+
+000001:    Compiling hoimin-cli v0.14.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles/crates/hoimin-cli)
+000002:     Finished `test` profile [unoptimized + debuginfo] target(s) in 10.19s
+000003:      Running unittests src/lib.rs (/tmp/hoimin-priority-six-target/debug/deps/hoimin_cli-364ef5e82ff81ad1)
+000004:
+000005: running 1 test
+000006: test workspace::owned::janitor::boundary_tests::owner_deferred_slice_preserves_nested_acknowledgements ... FAILED
+000007:
+000008: failures:
+000009:
+000010: ---- workspace::owned::janitor::boundary_tests::owner_deferred_slice_preserves_nested_acknowledgements stdout ----
+000011:
+000012: thread 'workspace::owned::janitor::boundary_tests::owner_deferred_slice_preserves_nested_acknowledgements' (55948319) panicked at crates/hoimin-cli/src/workspace/owned/janitor.rs:320:9:
+000013: assertion `left == right` failed
+000014:   left: 1
+000015:  right: 2
+000016: note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+000017:
+000018:
+000019: failures:
+000020:     workspace::owned::janitor::boundary_tests::owner_deferred_slice_preserves_nested_acknowledgements
+000021:
+000022: test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 793 filtered out; finished in 0.05s
+000023:
+000024: error: test failed, to rerun pass `-p hoimin-cli --lib`

@@ -1,0 +1,127 @@
+Original: /tmp/hoimin-priority-six-ci-fuzz/deterministic-cases.log
+SHA256: 7ffe2b8894cf6cf75b51fca84130a2188638b5330241c162a5c4649f259de919
+Command/environment/exit/limits: ../deterministic-cases.json
+Numbered decisive lines (trailing whitespace omitted):
+5: INFO: Running with entropic power schedule (0xFF, 100).
+6: INFO: Seed: 588562252
+7: INFO: Loaded 1 modules   (99876 inline 8-bit counters): 99876 [0x105199cb0, 0x1051b22d4),
+8: INFO: Loaded 1 PC tables (99876 PCs): 99876 [0x1051b22d8,0x105338518),
+9: /tmp/hoimin-priority-six-target/aarch64-apple-darwin/release/report_sequence: Running 57 inputs 1 time(s) each.
+10: Running: /tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-0-selector-0-survived
+11: Executed /tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-0-selector-0-survived in 1 ms
+12: Running: /tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-0-selector-1-error
+13: Executed /tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-0-selector-1-error in 0 ms
+14: Running: /tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-0-selector-2-killed
+15: Executed /tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-0-selector-2-killed in 0 ms
+16: Running: /tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-0-selector-3-not_run
+17: Executed /tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-0-selector-3-not_run in 0 ms
+18: Running: /tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-1-selector-0-killed
+19: Executed /tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-1-selector-0-killed in 0 ms
+20: Running: /tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-1-selector-1-error
+21: Executed /tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-1-selector-1-error in 0 ms
+22: Running: /tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-1-selector-2-killed
+23: Executed /tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-1-selector-2-killed in 0 ms
+24: Running: /tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-1-selector-3-not_run
+25: Executed /tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-1-selector-3-not_run in 0 ms
+26: Running: /tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-2-selector-0-timeout
+27: Executed /tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-2-selector-0-timeout in 0 ms
+28: Running: /tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-2-selector-1-error
+29: Executed /tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-2-selector-1-error in 0 ms
+30: Running: /tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-2-selector-2-killed
+31: Executed /tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-2-selector-2-killed in 0 ms
+32: Running: /tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-2-selector-3-not_run
+33: Executed /tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-2-selector-3-not_run in 0 ms
+34: Running: /tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-3-selector-0-out_of_memory
+35: Executed /tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-3-selector-0-out_of_memory in 0 ms
+36: Running: /tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-3-selector-1-error
+37: Executed /tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-3-selector-1-error in 0 ms
+38: Running: /tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-3-selector-2-killed
+39: Executed /tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-3-selector-2-killed in 0 ms
+40: Running: /tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-3-selector-3-not_run
+41: Executed /tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-3-selector-3-not_run in 0 ms
+42: Running: /tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-4-selector-0-process_limit
+43: Executed /tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-4-selector-0-process_limit in 0 ms
+44: Running: /tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-4-selector-1-error
+45: Executed /tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-4-selector-1-error in 0 ms
+46: Running: /tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-4-selector-2-killed
+47: Executed /tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-4-selector-2-killed in 0 ms
+48: Running: /tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-4-selector-3-not_run
+49: Executed /tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-4-selector-3-not_run in 0 ms
+50: Running: /tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-5-selector-0-not_run
+51: Executed /tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-5-selector-0-not_run in 0 ms
+52: Running: /tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-5-selector-1-error
+53: Executed /tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-5-selector-1-error in 0 ms
+54: Running: /tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-5-selector-2-killed
+55: Executed /tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-5-selector-2-killed in 0 ms
+56: Running: /tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-5-selector-3-not_run
+57: Executed /tmp/hoimin-priority-six-ci-fuzz/cases/first-0-termination-5-selector-3-not_run in 0 ms
+58: Running: /tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-0-selector-0-survived
+59: Executed /tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-0-selector-0-survived in 0 ms
+60: Running: /tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-0-selector-1-error
+61: Executed /tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-0-selector-1-error in 0 ms
+62: Running: /tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-0-selector-2-survived
+63: Executed /tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-0-selector-2-survived in 0 ms
+64: Running: /tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-0-selector-3-not_run
+65: Executed /tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-0-selector-3-not_run in 0 ms
+66: Running: /tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-1-selector-0-killed
+67: Executed /tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-1-selector-0-killed in 0 ms
+68: Running: /tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-1-selector-1-error
+69: Executed /tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-1-selector-1-error in 0 ms
+70: Running: /tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-1-selector-2-survived
+71: Executed /tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-1-selector-2-survived in 0 ms
+72: Running: /tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-1-selector-3-not_run
+73: Executed /tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-1-selector-3-not_run in 0 ms
+74: Running: /tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-2-selector-0-timeout
+75: Executed /tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-2-selector-0-timeout in 0 ms
+76: Running: /tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-2-selector-1-error
+77: Executed /tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-2-selector-1-error in 0 ms
+78: Running: /tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-2-selector-2-survived
+79: Executed /tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-2-selector-2-survived in 0 ms
+80: Running: /tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-2-selector-3-not_run
+81: Executed /tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-2-selector-3-not_run in 0 ms
+82: Running: /tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-3-selector-0-out_of_memory
+83: Executed /tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-3-selector-0-out_of_memory in 0 ms
+84: Running: /tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-3-selector-1-error
+85: Executed /tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-3-selector-1-error in 0 ms
+86: Running: /tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-3-selector-2-survived
+87: Executed /tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-3-selector-2-survived in 0 ms
+88: Running: /tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-3-selector-3-not_run
+89: Executed /tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-3-selector-3-not_run in 0 ms
+90: Running: /tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-4-selector-0-process_limit
+91: Executed /tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-4-selector-0-process_limit in 0 ms
+92: Running: /tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-4-selector-1-error
+93: Executed /tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-4-selector-1-error in 0 ms
+94: Running: /tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-4-selector-2-survived
+95: Executed /tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-4-selector-2-survived in 0 ms
+96: Running: /tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-4-selector-3-not_run
+97: Executed /tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-4-selector-3-not_run in 0 ms
+98: Running: /tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-5-selector-0-not_run
+99: Executed /tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-5-selector-0-not_run in 0 ms
+100: Running: /tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-5-selector-1-error
+101: Executed /tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-5-selector-1-error in 0 ms
+102: Running: /tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-5-selector-2-survived
+103: Executed /tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-5-selector-2-survived in 0 ms
+104: Running: /tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-5-selector-3-not_run
+105: Executed /tmp/hoimin-priority-six-ci-fuzz/cases/first-1-termination-5-selector-3-not_run in 0 ms
+106: Running: fuzz/seeds/report_sequence/diagnostic-before-run
+107: Executed fuzz/seeds/report_sequence/diagnostic-before-run in 0 ms
+108: Running: fuzz/seeds/report_sequence/diagnostic-run-id-mismatch
+109: Executed fuzz/seeds/report_sequence/diagnostic-run-id-mismatch in 0 ms
+110: Running: fuzz/seeds/report_sequence/error-status-close-timeout-regression
+111: Executed fuzz/seeds/report_sequence/error-status-close-timeout-regression in 0 ms
+112: Running: fuzz/seeds/report_sequence/run-started
+113: Executed fuzz/seeds/report_sequence/run-started in 0 ms
+114: Running: fuzz/seeds/report_sequence/run-with-diagnostic
+115: Executed fuzz/seeds/report_sequence/run-with-diagnostic in 0 ms
+116: Running: fuzz/seeds/report_sequence/unsupported-schema
+117: Executed fuzz/seeds/report_sequence/unsupported-schema in 0 ms
+118: Running: /tmp/hoimin-priority-six-ci-fuzz/boundary-cases/empty
+119: Executed /tmp/hoimin-priority-six-ci-fuzz/boundary-cases/empty in 0 ms
+120: Running: /tmp/hoimin-priority-six-ci-fuzz/boundary-cases/max-length-4096
+121: Executed /tmp/hoimin-priority-six-ci-fuzz/boundary-cases/max-length-4096 in 0 ms
+122: Running: /tmp/hoimin-priority-six-ci-fuzz/boundary-cases/oversized-4097
+123: Executed /tmp/hoimin-priority-six-ci-fuzz/boundary-cases/oversized-4097 in 0 ms
+124: ***
+125: *** NOTE: fuzzing was not performed, you have only
+126: ***       executed the target code on a fixed set of inputs.
+127: ***

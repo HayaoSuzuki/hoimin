@@ -1,0 +1,188 @@
+{
+  "binary": "/tmp/hoimin-priority-six-target/debug/hoimin",
+  "binary_sha256": "18ff52a217a59d8838cf12c5267565afca3476ecb9e2f1516040c12fde37bbbc",
+  "version": "hoimin 0.14.0",
+  "source_head": "4254936ca33240e2f69f6d612fbb408d92090c8a",
+  "initial_argument_control": [
+    {
+      "case": "valid",
+      "format": "json",
+      "command": [
+        "/tmp/hoimin-priority-six-target/debug/hoimin",
+        "progress",
+        "/tmp/hoimin-priority-six-final-review/valid.json",
+        "--format",
+        "json"
+      ],
+      "exit": 2,
+      "stdout": "",
+      "stderr": "error: 2 values required by '<REPORT> <REPORT>...'; only 1 was provided\n\nUsage: hoimin progress [OPTIONS] <REPORT> <REPORT>...\n\nFor more information, try '--help'.\n"
+    },
+    {
+      "case": "valid",
+      "format": "jsonl",
+      "command": [
+        "/tmp/hoimin-priority-six-target/debug/hoimin",
+        "progress",
+        "/tmp/hoimin-priority-six-final-review/valid.jsonl",
+        "--format",
+        "json"
+      ],
+      "exit": 2,
+      "stdout": "",
+      "stderr": "error: 2 values required by '<REPORT> <REPORT>...'; only 1 was provided\n\nUsage: hoimin progress [OPTIONS] <REPORT> <REPORT>...\n\nFor more information, try '--help'.\n"
+    },
+    {
+      "case": "retired_field",
+      "format": "json",
+      "command": [
+        "/tmp/hoimin-priority-six-target/debug/hoimin",
+        "progress",
+        "/tmp/hoimin-priority-six-final-review/retired_field.json",
+        "--format",
+        "json"
+      ],
+      "exit": 2,
+      "stdout": "",
+      "stderr": "error: 2 values required by '<REPORT> <REPORT>...'; only 1 was provided\n\nUsage: hoimin progress [OPTIONS] <REPORT> <REPORT>...\n\nFor more information, try '--help'.\n"
+    },
+    {
+      "case": "retired_field",
+      "format": "jsonl",
+      "command": [
+        "/tmp/hoimin-priority-six-target/debug/hoimin",
+        "progress",
+        "/tmp/hoimin-priority-six-final-review/retired_field.jsonl",
+        "--format",
+        "json"
+      ],
+      "exit": 2,
+      "stdout": "",
+      "stderr": "error: 2 values required by '<REPORT> <REPORT>...'; only 1 was provided\n\nUsage: hoimin progress [OPTIONS] <REPORT> <REPORT>...\n\nFor more information, try '--help'.\n"
+    }
+  ],
+  "initial_jsonl_fixture_control": [
+    {
+      "case": "valid",
+      "format": "json",
+      "command": [
+        "/tmp/hoimin-priority-six-target/debug/hoimin",
+        "progress",
+        "/tmp/hoimin-priority-six-final-review/valid.json",
+        "/tmp/hoimin-priority-six-final-review/valid.json",
+        "--format",
+        "json"
+      ],
+      "exit": 0,
+      "stdout": "{\"schema_version\":1,\"patience\":3,\"consecutive_stalls\":1,\"latest\":{\"state\":\"stalled\",\"consecutive_stalls\":1,\"patience\":3,\"saturated\":false},\"inputs\":[{\"source\":\"/tmp/hoimin-priority-six-final-review/valid.json\",\"usable\":true,\"reason\":null},{\"source\":\"/tmp/hoimin-priority-six-final-review/valid.json\",\"usable\":true,\"reason\":null}],\"comparisons\":[{\"common\":1,\"added\":0,\"removed\":0,\"ambiguous\":0,\"inconclusive\":0,\"improvements\":0,\"regressions\":0,\"carried_survivors\":0,\"previous_score\":1.0,\"current_score\":1.0,\"score_delta\":0.0,\"state\":\"stalled\"}]}\n",
+      "stderr": "warning: progress input 2 (/tmp/hoimin-priority-six-final-review/valid.json) repeats input 1 (/tmp/hoimin-priority-six-final-review/valid.json): same path; comparisons are unchanged\n"
+    },
+    {
+      "case": "valid",
+      "format": "jsonl",
+      "command": [
+        "/tmp/hoimin-priority-six-target/debug/hoimin",
+        "progress",
+        "/tmp/hoimin-priority-six-final-review/valid.jsonl",
+        "/tmp/hoimin-priority-six-final-review/valid.jsonl",
+        "--format",
+        "json"
+      ],
+      "exit": 2,
+      "stdout": "",
+      "stderr": "invalid structure in progress report /tmp/hoimin-priority-six-final-review/valid.jsonl: mutant m1_63f473859defdf5000569a31547ed4fe17073b5f690c73ef61297f257307075b sequence 0 finished before it started\n"
+    },
+    {
+      "case": "retired_field",
+      "format": "json",
+      "command": [
+        "/tmp/hoimin-priority-six-target/debug/hoimin",
+        "progress",
+        "/tmp/hoimin-priority-six-final-review/valid.json",
+        "/tmp/hoimin-priority-six-final-review/retired_field.json",
+        "--format",
+        "json"
+      ],
+      "exit": 0,
+      "stdout": "{\"schema_version\":1,\"patience\":3,\"consecutive_stalls\":1,\"latest\":{\"state\":\"stalled\",\"consecutive_stalls\":1,\"patience\":3,\"saturated\":false},\"inputs\":[{\"source\":\"/tmp/hoimin-priority-six-final-review/valid.json\",\"usable\":true,\"reason\":null},{\"source\":\"/tmp/hoimin-priority-six-final-review/retired_field.json\",\"usable\":true,\"reason\":null}],\"comparisons\":[{\"common\":1,\"added\":0,\"removed\":0,\"ambiguous\":0,\"inconclusive\":0,\"improvements\":0,\"regressions\":0,\"carried_survivors\":0,\"previous_score\":1.0,\"current_score\":1.0,\"score_delta\":0.0,\"state\":\"stalled\"}]}\n",
+      "stderr": ""
+    },
+    {
+      "case": "retired_field",
+      "format": "jsonl",
+      "command": [
+        "/tmp/hoimin-priority-six-target/debug/hoimin",
+        "progress",
+        "/tmp/hoimin-priority-six-final-review/valid.jsonl",
+        "/tmp/hoimin-priority-six-final-review/retired_field.jsonl",
+        "--format",
+        "json"
+      ],
+      "exit": 2,
+      "stdout": "",
+      "stderr": "invalid structure in progress report /tmp/hoimin-priority-six-final-review/valid.jsonl: mutant m1_63f473859defdf5000569a31547ed4fe17073b5f690c73ef61297f257307075b sequence 0 finished before it started\n"
+    }
+  ],
+  "records": [
+    {
+      "case": "valid",
+      "format": "json",
+      "command": [
+        "/tmp/hoimin-priority-six-target/debug/hoimin",
+        "progress",
+        "/tmp/hoimin-priority-six-final-review/valid.json",
+        "/tmp/hoimin-priority-six-final-review/valid.json",
+        "--format",
+        "json"
+      ],
+      "exit": 0,
+      "stdout": "{\"schema_version\":1,\"patience\":3,\"consecutive_stalls\":1,\"latest\":{\"state\":\"stalled\",\"consecutive_stalls\":1,\"patience\":3,\"saturated\":false},\"inputs\":[{\"source\":\"/tmp/hoimin-priority-six-final-review/valid.json\",\"usable\":true,\"reason\":null},{\"source\":\"/tmp/hoimin-priority-six-final-review/valid.json\",\"usable\":true,\"reason\":null}],\"comparisons\":[{\"common\":1,\"added\":0,\"removed\":0,\"ambiguous\":0,\"inconclusive\":0,\"improvements\":0,\"regressions\":0,\"carried_survivors\":0,\"previous_score\":1.0,\"current_score\":1.0,\"score_delta\":0.0,\"state\":\"stalled\"}]}\n",
+      "stderr": "warning: progress input 2 (/tmp/hoimin-priority-six-final-review/valid.json) repeats input 1 (/tmp/hoimin-priority-six-final-review/valid.json): same path; comparisons are unchanged\n"
+    },
+    {
+      "case": "valid",
+      "format": "jsonl",
+      "command": [
+        "/tmp/hoimin-priority-six-target/debug/hoimin",
+        "progress",
+        "/tmp/hoimin-priority-six-final-review/valid.jsonl",
+        "/tmp/hoimin-priority-six-final-review/valid.jsonl",
+        "--format",
+        "json"
+      ],
+      "exit": 0,
+      "stdout": "{\"schema_version\":1,\"patience\":3,\"consecutive_stalls\":1,\"latest\":{\"state\":\"stalled\",\"consecutive_stalls\":1,\"patience\":3,\"saturated\":false},\"inputs\":[{\"source\":\"/tmp/hoimin-priority-six-final-review/valid.jsonl\",\"usable\":true,\"reason\":null},{\"source\":\"/tmp/hoimin-priority-six-final-review/valid.jsonl\",\"usable\":true,\"reason\":null}],\"comparisons\":[{\"common\":1,\"added\":0,\"removed\":0,\"ambiguous\":0,\"inconclusive\":0,\"improvements\":0,\"regressions\":0,\"carried_survivors\":0,\"previous_score\":1.0,\"current_score\":1.0,\"score_delta\":0.0,\"state\":\"stalled\"}]}\n",
+      "stderr": "warning: progress input 2 (/tmp/hoimin-priority-six-final-review/valid.jsonl) repeats input 1 (/tmp/hoimin-priority-six-final-review/valid.jsonl): same path; comparisons are unchanged\n"
+    },
+    {
+      "case": "retired_field",
+      "format": "json",
+      "command": [
+        "/tmp/hoimin-priority-six-target/debug/hoimin",
+        "progress",
+        "/tmp/hoimin-priority-six-final-review/valid.json",
+        "/tmp/hoimin-priority-six-final-review/retired_field.json",
+        "--format",
+        "json"
+      ],
+      "exit": 0,
+      "stdout": "{\"schema_version\":1,\"patience\":3,\"consecutive_stalls\":1,\"latest\":{\"state\":\"stalled\",\"consecutive_stalls\":1,\"patience\":3,\"saturated\":false},\"inputs\":[{\"source\":\"/tmp/hoimin-priority-six-final-review/valid.json\",\"usable\":true,\"reason\":null},{\"source\":\"/tmp/hoimin-priority-six-final-review/retired_field.json\",\"usable\":true,\"reason\":null}],\"comparisons\":[{\"common\":1,\"added\":0,\"removed\":0,\"ambiguous\":0,\"inconclusive\":0,\"improvements\":0,\"regressions\":0,\"carried_survivors\":0,\"previous_score\":1.0,\"current_score\":1.0,\"score_delta\":0.0,\"state\":\"stalled\"}]}\n",
+      "stderr": ""
+    },
+    {
+      "case": "retired_field",
+      "format": "jsonl",
+      "command": [
+        "/tmp/hoimin-priority-six-target/debug/hoimin",
+        "progress",
+        "/tmp/hoimin-priority-six-final-review/valid.jsonl",
+        "/tmp/hoimin-priority-six-final-review/retired_field.jsonl",
+        "--format",
+        "json"
+      ],
+      "exit": 0,
+      "stdout": "{\"schema_version\":1,\"patience\":3,\"consecutive_stalls\":1,\"latest\":{\"state\":\"stalled\",\"consecutive_stalls\":1,\"patience\":3,\"saturated\":false},\"inputs\":[{\"source\":\"/tmp/hoimin-priority-six-final-review/valid.jsonl\",\"usable\":true,\"reason\":null},{\"source\":\"/tmp/hoimin-priority-six-final-review/retired_field.jsonl\",\"usable\":true,\"reason\":null}],\"comparisons\":[{\"common\":1,\"added\":0,\"removed\":0,\"ambiguous\":0,\"inconclusive\":0,\"improvements\":0,\"regressions\":0,\"carried_survivors\":0,\"previous_score\":1.0,\"current_score\":1.0,\"score_delta\":0.0,\"state\":\"stalled\"}]}\n",
+      "stderr": ""
+    }
+  ]
+}

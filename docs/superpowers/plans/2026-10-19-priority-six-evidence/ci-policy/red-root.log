@@ -1,0 +1,58 @@
+error[rejected]: failed to satisfy license requirements
+  ┌─ path+file:///Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles/crates/hoimin-budget-math#0.14.0-synthesized.toml:4:12
+  │
+4 │ license = "Elastic-2.0"
+  │            ━━━━━━━━━━━
+  │            │
+  │            rejected: license is not explicitly allowed
+  │
+  ├ Elastic-2.0 - Elastic License 2.0:
+  ├   - No additional metadata available for license
+  ├ hoimin-budget-math v0.14.0
+    ├── hoimin-cli v0.14.0
+    └── hoimin-core v0.14.0
+        ├── hoimin-cli v0.14.0 (*)
+        └── hoimin-python v0.14.0
+            └── (dev) hoimin-cli v0.14.0 (*)
+
+error[rejected]: failed to satisfy license requirements
+  ┌─ path+file:///Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles/crates/hoimin-cli#0.14.0-synthesized.toml:4:12
+  │
+4 │ license = "Elastic-2.0"
+  │            ━━━━━━━━━━━
+  │            │
+  │            rejected: license is not explicitly allowed
+  │
+  ├ Elastic-2.0 - Elastic License 2.0:
+  ├   - No additional metadata available for license
+  ├ hoimin-cli v0.14.0
+
+error[rejected]: failed to satisfy license requirements
+  ┌─ path+file:///Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles/crates/hoimin-core#0.14.0-synthesized.toml:4:12
+  │
+4 │ license = "Elastic-2.0"
+  │            ━━━━━━━━━━━
+  │            │
+  │            rejected: license is not explicitly allowed
+  │
+  ├ Elastic-2.0 - Elastic License 2.0:
+  ├   - No additional metadata available for license
+  ├ hoimin-core v0.14.0
+    ├── hoimin-cli v0.14.0
+    └── hoimin-python v0.14.0
+        └── (dev) hoimin-cli v0.14.0 (*)
+
+error[rejected]: failed to satisfy license requirements
+  ┌─ path+file:///Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles/crates/hoimin-python#0.14.0-synthesized.toml:4:12
+  │
+4 │ license = "Elastic-2.0"
+  │            ━━━━━━━━━━━
+  │            │
+  │            rejected: license is not explicitly allowed
+  │
+  ├ Elastic-2.0 - Elastic License 2.0:
+  ├   - No additional metadata available for license
+  ├ hoimin-python v0.14.0
+    └── (dev) hoimin-cli v0.14.0
+
+licenses FAILED, sources ok

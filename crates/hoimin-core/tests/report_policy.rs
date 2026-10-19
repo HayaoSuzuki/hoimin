@@ -215,7 +215,7 @@ fn disk_summary_serializes_primary_stop_and_cleanup_independently() {
             remaining_root: Some("lease:execution".into()),
         }],
         removed_logical_bytes: None,
-        stale_roots_reclaimed: 0,
+        janitor: None,
     };
 
     let value = serde_json::to_value(summary).unwrap();

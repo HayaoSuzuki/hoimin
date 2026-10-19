@@ -258,6 +258,13 @@ On macOS, `--max-memory` is accepted for plan compatibility but is not enforced.
 
 `plan` discovers candidates but does not run a baseline or test command, copy a worker, or create or reuse a session. A manifest with `truncated` set to `true` contains only a partial candidate set, and `plan` exits 4; it cannot establish full coverage of the selected targets. On such a plan, `--top N` means the top N among retained candidates, not among candidates that discovery did not retain. `verify` still runs the retained selection, but its report remains incomplete and exits 4 because discovery was truncated. `verify` rejects a changed target or fingerprint input before its baseline runs. Each `verify` command runs a fresh baseline and does not use a session. After a successful baseline, the worker is restored to the preflight snapshot before any mutant runs; baseline-created files and changes to existing files do not carry into the first mutant. A restoration failure stops execution. Plan manifests are trusted local invocation data, not a security boundary.
 
+`plan` source hashing and `verify` candidate validation read project sources
+through the same root-relative regular-file reader. Source hashing streams bytes
+without retaining the whole file; candidate validation retains the bytes it
+needs for one source at a time. Symlinks and nonregular sources introduced after
+target resolution are rejected. This source policy does not impose a hard
+deadline on all filesystem I/O.
+
 `verify` reads a plan from a regular file and accepts symlinks to regular files.
 Directories, missing paths and nonregular inputs are errors. On Unix, writerless
 FIFOs and symlinks to them are rejected without waiting for a writer. This does
@@ -718,6 +725,15 @@ project files; such changes are not guaranteed to suppress affected candidates.
 The operator does not guarantee that every replacement denotes an exception class
 at runtime. See [the implementation boundaries](development.md#user-defined-exception-hierarchies).
 
+Eager import cycles exclude their member modules, while a module that merely
+imports a cycle can remain eligible. Import depth uses a name-order-independent
+conservative bound with a limit of 256: on an acyclic graph it is the longest
+import path in edges; through a cycle it counts the component's module count.
+A bound of 255 is allowed and 256 is excluded. This can suppress additional
+candidates compared with the former order-dependent traversal, particularly for
+joined long paths or large cyclic components; it does not restore modules that
+the old cycle/depth check excluded. Lazy imports do not add eager graph edges.
+
 Boundary operators recognize ASCII decimal digits with an optional unary minus,
 including grouped or multiline spellings such as `items[(-1)]` and `items[-(1)]`.
 `items[-1]` and `items[:-1]` produce `0` and `-2`; `items[::-1]` produces only
@@ -1029,6 +1045,12 @@ Details come from the same validated plan candidate. Rank, line and batch select
 order start at 1; column is the plan's 0-based Python source column. Human rows
 show `path:line:column operator=NAME "original" -> "replacement"`; mutation text
 is quoted and escaped so newlines, tabs, quotes and backslashes stay within one row.
+Paths and other external human fields escape controls, including ESC, CR, LF and
+TAB; ordinary Unicode such as Japanese remains readable. This same display policy
+covers run results, review, progress warnings and command diagnostics. Candidate
+paths, IDs and JSON/JSONL string values retain their logical values. Baseline child
+transcripts keep their separate streamed-output policy, including readable newlines
+and tabs; dry-run never executes baseline or test commands.
 
 The closed version-1 preview schema does not accept these added fields. Clients
 that accept only preview version 1 must update to version 2; the CLI emits version 2
@@ -1065,6 +1087,19 @@ accounting for the union of candidate IDs selected from the plan.
 When a baseline fails or reaches its process timeout, `run` and `verify` copy its retained combined stdout/stderr to stderr before execution cleanup. Redirect stderr to save these diagnostics, for example `hoimin run ... --format json > result.json 2> baseline.log`. Machine-readable formats keep stdout unchanged and encode stderr diagnostics as JSON Lines (`baseline.output`). The header records retained/observed byte counts and truncation; `--max-output` limits the retained tail. Output is streamed in 16 KiB chunks, preserving split UTF-8 characters; invalid bytes become U+FFFD and terminal control characters other than newline/tab are escaped. Chunk offsets refer to retained raw bytes. Successful baselines stay quiet. Read failures produce `baseline.output.read`; cancellation or a blocked diagnostic sink can stop export at the existing total timeout and shutdown grace, so interrupted export may be partial.
 
 `--format json` emits one document. `--format jsonl` emits flushed lifecycle events; diagnostics are JSON Lines on stderr. Public JSON contracts are versioned in [`run-result.schema.json`](json-schema/run-result.schema.json) and [`run-event.schema.json`](json-schema/run-event.schema.json). Event kinds are `run_started`, `baseline_finished`, `mutant_started`, `mutant_finished`, `diagnostic`, and `run_finished`. Parallel events are emitted in completion order; candidate sequence numbers allow stable reordering.
+
+Report schema 9 requires `status` in each JSON `mutants[]` record and JSONL
+`mutant_finished` event. Read this field for the candidate's verdict, for example
+`{"status":"not_run","outcome":"not_run"}`. The writer computes it from
+`outcome`; strict progress/review readers reject a disagreement with exit 2.
+JSON Schema checks the required field and its seven allowed values; only the
+strict reader checks equality with the outcome. Summary, progress and resume
+continue to derive their classifications from outcome evidence.
+
+Human completion rows include the full candidate ID, `path:line:column`, operator,
+quoted original and replacement expressions, and verdict on one line. Control
+characters and Unicode line separators in those fields are escaped, so each row
+can be read on its own when parallel workers finish in a different order.
 
 The final summary's `complete` is `false` when any mutant is inconclusive or the run fails or is interrupted. It is `true` only when every selected mutant is `killed` or `survived` and no run-level failure occurred; a successful run with no candidates is also complete. Therefore, an exit code of `4` always has `complete: false`.
 
@@ -1116,13 +1151,13 @@ The schema validates the document structure, schema version, and nonnegative int
 
 Mutant statuses are:
 
-- `killed`: the mutant test process exited nonzero;
-- `survived`: it exited zero;
+- `killed`: the mutant test process exited nonzero and output collection completed, or a saved killed result was reused;
+- `survived`: it exited zero and output collection completed, or a saved survived result was reused;
 - `timeout`: its deadline elapsed;
 - `out_of_memory`: the kernel reported an OOM kill in the supervised root cgroup subtree;
 - `process_limit`: the root tree's process limit stopped it (Linux cgroup also counts threads);
-- `error`: infrastructure could not produce a valid result;
-- `not_run`: it was discovered but not executed, including cancellation or a run-wide limit.
+- `error`: infrastructure could not produce a valid result; output collection's `close_timed_out` overrides the termination, including `Exit(1)`;
+- `not_run`: no classified completion is available, including cancellation or a run-wide limit; a process may have started before cancellation.
 
 The score is `killed / (killed + survived)`. Inconclusive statuses are excluded. If no killed or survived mutant exists, `score` is `null`.
 

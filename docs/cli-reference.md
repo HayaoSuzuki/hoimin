@@ -78,6 +78,9 @@ Arguments:
           Path to a version-5 plan manifest
 
 Options:
+      --verbose
+          Include bounded details for ordinary startup cleanup holds
+
       --candidate <ID>
           Candidate ID to execute; repeat for multiple planned candidates
 
@@ -121,6 +124,11 @@ Execution and resource settings come from PLAN and cannot be overridden. Disk sa
 Argument constraints:
 
 ```text
+--verbose
+  required: false
+  arity: 0
+  repeatable: false
+  default: false
 manifest
   required: true
   arity: 1
@@ -581,6 +589,9 @@ Arguments:
           Test executable and arguments, passed directly without a shell
 
 Options:
+      --verbose
+          Include bounded details for ordinary startup cleanup holds
+
       --root <DIR>
           Project root used to resolve relative paths
 
@@ -747,6 +758,11 @@ Mutation operator IDs and selector families:
 Argument constraints:
 
 ```text
+--verbose
+  required: false
+  arity: 0
+  repeatable: false
+  default: false
 --root
   required: false
   arity: 1

@@ -7,6 +7,7 @@ pub mod cli;
 mod copy_policy;
 mod fingerprint_env;
 pub mod fingerprint_inputs;
+mod human_text;
 mod interrupt;
 mod live_progress;
 mod metrics;
@@ -68,6 +69,9 @@ where
 {
     match command {
         Ok(cli::ParsedCommand::Run(args)) => {
+            let presentation = report::ReportPresentation {
+                verbose: args.verbose,
+            };
             let config = match cli::run_config_from_args(args) {
                 Ok(config) => config,
                 Err(error) => {
@@ -75,7 +79,9 @@ where
                     return 2;
                 }
             };
-            shell::run_loop(config, stdout, stderr).await.unwrap_or(2)
+            shell::run_loop(config, stdout, stderr, presentation)
+                .await
+                .unwrap_or(2)
         }
         Ok(cli::ParsedCommand::Progress(args)) => {
             command_result(progress::run(args, &mut stdout, &mut stderr), &mut stderr)
@@ -123,12 +129,19 @@ where
             } else {
                 verified
                     .with_metrics(args.metrics)
-                    .execute(stdout, stderr)
+                    .execute(
+                        stdout,
+                        stderr,
+                        report::ReportPresentation {
+                            verbose: args.verbose,
+                        },
+                    )
                     .await
                     .unwrap_or(2)
             }
         }
-        Err(cli::CliError::Clap(error)) => {
+        Err(cli::CliError::Clap(mut error)) => {
+            human_text::escape_clap_context(&mut error);
             let exit_code = error.exit_code();
             if exit_code == 0 {
                 let _ = write!(stdout, "{error}");
@@ -148,7 +161,7 @@ where
     Stderr: std::io::Write + Send + 'static,
 {
     let diagnostic = tokio::task::spawn_blocking(move || {
-        let _ = writeln!(stderr, "{error}");
+        let _ = writeln!(stderr, "{}", human_text::HumanText(&error));
     });
     let _ = tokio::time::timeout(std::time::Duration::from_secs(2), diagnostic).await;
 }
@@ -160,7 +173,7 @@ fn command_result(
     match result {
         Ok(code) => code,
         Err(error) => {
-            let _ = writeln!(stderr, "{error}");
+            let _ = writeln!(stderr, "{}", human_text::HumanText(&error.to_string()));
             2
         }
     }

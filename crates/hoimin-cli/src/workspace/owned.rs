@@ -7,9 +7,60 @@ mod tests {
     #[cfg(windows)]
     use super::{CLEANUP_READY_FILE, RETAIN_FILE};
     use super::{
-        COORDINATOR_FILE, CleanupDisposition, CleanupEvidence, MANAGED_DIR, MAX_MANAGED_CHILDREN,
-        ManagedRootCoordinator, ManagedRunRoot, OwnerKind, ensure_direct_child_capacity,
+        COORDINATOR_FILE, MANAGED_DIR, MAX_MANAGED_CHILDREN, ManagedRootCoordinator,
+        ManagedRunRoot, OwnerKind, ensure_direct_child_capacity,
     };
+
+    #[test]
+    fn janitor_counts_active_holds_without_claiming_remaining_population() {
+        // Arrange.
+        let parent = tempfile::tempdir().unwrap();
+        let coordinator =
+            ManagedRootCoordinator::open(Utf8Path::from_path(parent.path()).unwrap()).unwrap();
+        let roots = (0..3)
+            .map(|_| ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap())
+            .collect::<Vec<_>>();
+
+        // Act.
+        let report = ManagedRunRoot::reclaim_abandoned(&coordinator, std::time::SystemTime::now());
+
+        // Assert.
+        assert_eq!(report.inspected_roots, 3);
+        assert_eq!(report.preserved_roots, 3);
+        #[cfg(unix)]
+        let reason = hoimin_core::JanitorReason::ActiveLease;
+        #[cfg(windows)]
+        let reason = hoimin_core::JanitorReason::MutationBarrierActive;
+        assert_eq!(report.preserved_by_reason[&reason], 3);
+        assert_eq!(report.removed_entries, 0);
+        assert!(roots.iter().all(|root| root.path().exists()));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn marker_failure_preserves_acknowledged_earlier_deletion() {
+        // Arrange: retain is removed before heartbeat fails as a directory.
+        let parent = tempfile::tempdir().unwrap();
+        let dir = cap_std::fs::Dir::open_ambient_dir(parent.path(), cap_std::ambient_authority())
+            .unwrap();
+        dir.write(super::RETAIN_FILE, b"retained").unwrap();
+        dir.create_dir(super::HEARTBEAT_FILE).unwrap();
+        let mut capabilities = super::CleanupCapabilities::default();
+
+        // Act.
+        let result = super::remove_root_control_markers(
+            &dir,
+            std::time::Instant::now(),
+            std::time::Duration::from_secs(5),
+            &mut capabilities,
+        );
+
+        // Assert.
+        assert!(result.is_err());
+        assert!(!dir.exists(super::RETAIN_FILE));
+        assert!(dir.exists(super::HEARTBEAT_FILE));
+        assert_eq!(capabilities.progress.removed_entries, 1);
+    }
 
     fn create_test_owned_directory_entry(
         parent: &cap_std::fs::Dir,
@@ -193,52 +244,23 @@ mod tests {
 
     #[test]
     fn diagnostic_details_have_count_and_utf8_byte_caps() {
-        let mut report = super::ReclaimReport::default();
+        // Arrange.
+        let mut ledger = super::ReclaimLedger::default();
+        // Act.
         for _ in 0..=super::MAX_DIAGNOSTIC_DETAILS {
-            super::push_reclaim_detail(&mut report, "é".repeat(3_000));
+            ledger.detail(hoimin_core::JanitorReason::DeleteFailed, "é".repeat(3_000));
         }
-
-        assert_eq!(report.details.len(), super::MAX_DIAGNOSTIC_DETAILS);
+        let report = ledger.finish();
+        // Assert.
+        assert_eq!(report.details.len(), 256);
         assert!(
             report
                 .details
                 .iter()
-                .all(|detail| detail.len() <= super::MAX_DIAGNOSTIC_DETAIL_BYTES)
+                .all(|detail| detail.message.len() <= 4096)
         );
-        assert_eq!(report.truncated_detail_count, 256);
-        assert_eq!(report.omitted_detail_count, 1);
-    }
-
-    #[test]
-    fn startup_reclaim_diagnostics_merge_into_bounded_cleanup_evidence() {
-        let reclaim = super::ReclaimReport {
-            reclaimed_roots: 2,
-            preserved_roots: 3,
-            details: vec!["enumerate managed roots failed: EBADF".to_owned()],
-            omitted_detail_count: 2,
-            truncated_detail_count: 1,
-        };
-        let mut cleanup = super::CleanupRecord {
-            disposition: CleanupDisposition::Clean,
-            evidence: CleanupEvidence {
-                examined_entries: 4,
-                removed_entries: 4,
-                details: Vec::new(),
-                omitted_detail_count: 0,
-                remaining_root: None,
-            },
-        };
-
-        reclaim.append_to_cleanup(&mut cleanup.evidence);
-
-        assert_eq!(
-            cleanup.evidence.details,
-            [
-                "startup janitor preserved 3 managed roots",
-                "enumerate managed roots failed: EBADF",
-            ]
-        );
-        assert_eq!(cleanup.evidence.omitted_detail_count, 3);
+        assert_eq!(report.detail_omissions.truncated_details, 256);
+        assert_eq!(report.detail_omissions.issue_details, 1);
     }
 
     #[test]
@@ -254,8 +276,10 @@ mod tests {
         let base = std::time::Instant::now();
         let crossed = std::cell::Cell::new(false);
 
+        let mut scan = hoimin_core::JanitorScan::default();
         let error = super::select_reclaim_candidates_locked_with_hooks(
             &coordinator,
+            &mut scan,
             std::time::Duration::from_secs(5),
             &|| [base, base + std::time::Duration::from_secs(6)][usize::from(crossed.get())],
             &|| crossed.set(true),
@@ -263,6 +287,12 @@ mod tests {
         .unwrap_err();
 
         assert!(error.to_string().contains("deadline"), "{error}");
+        assert!(scan.directory_scan_complete);
+        assert_eq!(
+            scan.stop_reason,
+            Some(hoimin_core::JanitorReason::SelectionDeadline)
+        );
+        assert_eq!(scan.selected_roots, 0);
         let after = super::read_coordinator_state(
             &coordinator.file,
             &coordinator.path.join(COORDINATOR_FILE),
@@ -1512,6 +1542,7 @@ mod tests {
             super::windows::create_relative_managed_directory(parent, std::ffi::OsStr::new(name))
                 .unwrap();
         super::CleanupCapabilities {
+            progress: super::DeletionProgress::default(),
             lease_guard: None,
             root_authority: super::RootCleanupAuthority::Pinned(cap_std::fs::Dir::from_std_file(
                 root,
@@ -1836,7 +1867,7 @@ mod tests {
             hoimin_core::DiskCleanupStatus::Deferred
         );
         assert_eq!(reclaim.reclaimed_roots, 0);
-        assert_ne!(reclaim.details, Vec::<String>::new());
+        assert_ne!(reclaim.details, Vec::<hoimin_core::JanitorDetail>::new());
         assert!(started.elapsed() < std::time::Duration::from_secs(1));
         drop(held);
         assert_eq!(
@@ -2247,7 +2278,11 @@ mod tests {
         let report = ManagedRunRoot::reclaim_abandoned(&coordinator, future);
 
         assert_eq!(report.reclaimed_roots, 0);
-        assert_eq!(report.preserved_roots, 1);
+        assert_eq!(report.preserved_roots, 0);
+        assert_eq!(
+            report.unresolved_by_reason[&hoimin_core::JanitorReason::HeartbeatInvalid],
+            1
+        );
         assert!(published.exists());
     }
 
@@ -2616,6 +2651,221 @@ mod tests {
         assert!(coordinator.dir.symlink_metadata(&staging).is_err());
     }
 
+    macro_rules! young_pre_lease_projection_case {
+        ($name:ident, $verbose:expr, $details:literal, $suppressed:literal) => {
+            #[test]
+            fn $name() {
+                // Arrange: a crash after mkdir but before lease creation.
+                let parent = tempfile::tempdir().unwrap();
+                let coordinator =
+                    ManagedRootCoordinator::open(Utf8Path::from_path(parent.path()).unwrap())
+                        .unwrap();
+                let staging = format!("{}{}", super::STAGING_PREFIX, uuid::Uuid::new_v4());
+                drop(super::create_owned_directory(&coordinator.dir, &staging).unwrap());
+
+                // Act.
+                let mut report =
+                    ManagedRunRoot::reclaim_abandoned(&coordinator, std::time::SystemTime::now());
+                report.project_details($verbose);
+
+                // Assert: the same ordinary hold is retained in either projection.
+                assert_eq!(report.inspected_roots, 1);
+                assert_eq!(report.preserved_roots, 1, "{report:?}");
+                assert_eq!(
+                    report.preserved_by_reason,
+                    std::collections::BTreeMap::from([(hoimin_core::JanitorReason::Young, 1)])
+                );
+                assert_eq!(report.unresolved_roots, 0);
+                assert!(report.unresolved_by_reason.is_empty());
+                assert_eq!(report.reclaimed_roots, 0);
+                assert_eq!(report.removed_entries, 0);
+                assert_eq!(report.details.len(), $details);
+                assert_eq!(
+                    report.detail_omissions.suppressed_normal_details,
+                    $suppressed
+                );
+                if $verbose {
+                    assert_eq!(report.details[0].reason, hoimin_core::JanitorReason::Young);
+                    assert!(report.details[0].message.contains(&staging));
+                }
+                let candidate = super::open_owned_directory(&coordinator.dir, &staging).unwrap();
+                assert!(super::inspect_empty_directory(&candidate).unwrap());
+            }
+        };
+    }
+    young_pre_lease_projection_case!(
+        young_pre_lease_staging_default_suppresses_normal_detail,
+        false,
+        0,
+        1
+    );
+    young_pre_lease_projection_case!(
+        young_pre_lease_staging_verbose_retains_normal_detail,
+        true,
+        1,
+        0
+    );
+
+    macro_rules! invalid_pre_lease_case {
+        ($name:ident, $prefix:expr, $entry:expr, $hours:expr) => {
+            #[test]
+            fn $name() {
+                // Arrange: absent or malformed lease outside the recognized empty staging state.
+                let parent = tempfile::tempdir().unwrap();
+                let coordinator =
+                    ManagedRootCoordinator::open(Utf8Path::from_path(parent.path()).unwrap())
+                        .unwrap();
+                let name = format!("{}{}", $prefix, uuid::Uuid::new_v4());
+                let candidate = super::create_owned_directory(&coordinator.dir, &name).unwrap();
+                if let Some(entry) = $entry {
+                    candidate.create_dir(entry).unwrap();
+                }
+                drop(candidate);
+                let now = std::time::SystemTime::now() + std::time::Duration::from_hours($hours);
+
+                // Act.
+                let mut report = ManagedRunRoot::reclaim_abandoned(&coordinator, now);
+                report.project_details(false);
+
+                // Assert: still unresolved and visible by default; no deletion.
+                assert_eq!(report.inspected_roots, 1);
+                assert_eq!(report.preserved_roots, 0);
+                assert_eq!(report.unresolved_roots, 1, "{report:?}");
+                assert_eq!(
+                    report.unresolved_by_reason[&hoimin_core::JanitorReason::LeaseInvalid],
+                    1
+                );
+                assert_eq!(report.reclaimed_roots, 0);
+                assert_eq!(report.removed_entries, 0);
+                assert!(report.details.iter().any(|detail| detail.reason
+                    == hoimin_core::JanitorReason::LeaseInvalid
+                    && detail.message.contains(&name)));
+                assert!(coordinator.dir.symlink_metadata(&name).is_ok());
+            }
+        };
+    }
+    invalid_pre_lease_case!(
+        young_nonempty_staging_without_lease_is_unresolved,
+        super::STAGING_PREFIX,
+        Some("payload"),
+        0
+    );
+    invalid_pre_lease_case!(
+        stale_nonempty_staging_without_lease_is_unresolved,
+        super::STAGING_PREFIX,
+        Some("payload"),
+        25
+    );
+    invalid_pre_lease_case!(
+        empty_active_root_without_lease_is_unresolved,
+        super::ACTIVE_PREFIX,
+        None::<&str>,
+        0
+    );
+    invalid_pre_lease_case!(
+        young_staging_with_directory_lease_is_unresolved,
+        super::STAGING_PREFIX,
+        Some(super::LEASE_FILE),
+        0
+    );
+
+    #[cfg(unix)]
+    #[test]
+    fn inaccessible_empty_staging_is_unresolved() {
+        use std::os::unix::fs::PermissionsExt;
+        // Arrange: directory search permission is required to acquire the candidate.
+        let parent = tempfile::tempdir().unwrap();
+        let coordinator =
+            ManagedRootCoordinator::open(Utf8Path::from_path(parent.path()).unwrap()).unwrap();
+        let staging = format!("{}{}", super::STAGING_PREFIX, uuid::Uuid::new_v4());
+        drop(super::create_owned_directory(&coordinator.dir, &staging).unwrap());
+        let path = coordinator.path.join(&staging);
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+
+        // Act.
+        let mut report =
+            ManagedRunRoot::reclaim_abandoned(&coordinator, std::time::SystemTime::now());
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
+        report.project_details(false);
+
+        // Assert: failed candidate inspection cannot masquerade as Young.
+        assert_eq!(report.preserved_roots, 0, "{report:?}");
+        assert_eq!(report.unresolved_roots, 1);
+        assert_eq!(report.reclaimed_roots, 0);
+        assert_eq!(report.removed_entries, 0);
+        assert!(
+            report.details.iter().any(
+                |detail| detail.reason == hoimin_core::JanitorReason::CandidateInspectionFailed
+            ),
+            "{report:?}"
+        );
+        assert!(path.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn failed_staging_age_inspection_retains_typed_failure() {
+        use std::os::unix::fs::PermissionsExt;
+        // Arrange: retain a capability acquired before search permission is removed.
+        let parent = tempfile::tempdir().unwrap();
+        let candidate =
+            cap_std::fs::Dir::open_ambient_dir(parent.path(), cap_std::ambient_authority())
+                .unwrap();
+        let path = Utf8Path::from_path(parent.path()).unwrap();
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        let mut ledger = super::ReclaimLedger::default();
+
+        // Act.
+        let result = super::directory_timestamp_is_stale(
+            &candidate,
+            std::time::SystemTime::now(),
+            &mut ledger,
+            path,
+        );
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let mut report = ledger.finish();
+        report.project_details(false);
+
+        // Assert: callers receive the failure, and default output retains its cause.
+        assert_eq!(
+            result.err().unwrap().reason,
+            hoimin_core::JanitorReason::AgeUnverifiable
+        );
+        assert_eq!(report.details.len(), 1);
+        assert_eq!(
+            report.details[0].reason,
+            hoimin_core::JanitorReason::AgeUnverifiable
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn failed_empty_staging_inspection_retains_issue_detail() {
+        use std::os::unix::fs::PermissionsExt;
+        // Arrange: keep the opened capability while removing directory read access.
+        let parent = tempfile::tempdir().unwrap();
+        let candidate =
+            cap_std::fs::Dir::open_ambient_dir(parent.path(), cap_std::ambient_authority())
+                .unwrap();
+        let path = Utf8Path::from_path(parent.path()).unwrap();
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o100)).unwrap();
+        let mut ledger = super::ReclaimLedger::default();
+
+        // Act.
+        let empty = super::janitor_empty_probe(&candidate, &mut ledger, path);
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let mut report = ledger.finish();
+        report.project_details(false);
+
+        // Assert: no positive empty evidence, and the failure survives default projection.
+        assert!(!empty);
+        assert_eq!(report.details.len(), 1);
+        assert_eq!(
+            report.details[0].reason,
+            hoimin_core::JanitorReason::CandidateInspectionFailed
+        );
+    }
+
     #[test]
     fn empty_staging_root_from_a_pre_lease_crash_is_reclaimed_after_a_day() {
         let parent = tempfile::tempdir().unwrap();
@@ -2724,7 +2974,11 @@ use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 
 use super::WorkspaceError;
-use hoimin_core::DiskCleanupStatus;
+use hoimin_core::{DiskCleanupStatus, JanitorReason, JanitorScan};
+#[path = "owned/janitor.rs"]
+mod janitor;
+use janitor::{DeletionProgress, ReclaimLedger};
+pub(crate) type ReclaimReport = hoimin_core::JanitorSummary;
 
 #[cfg(unix)]
 struct OwnedDirectoryEntries(rustix::fs::Dir);
@@ -4184,33 +4438,6 @@ impl CleanupEvidence {
     }
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub(crate) struct ReclaimReport {
-    pub(crate) reclaimed_roots: u64,
-    pub(crate) preserved_roots: u64,
-    pub(crate) details: Vec<String>,
-    pub(crate) omitted_detail_count: u64,
-    pub(crate) truncated_detail_count: u64,
-}
-
-impl ReclaimReport {
-    pub(crate) fn append_to_cleanup(&self, cleanup: &mut CleanupEvidence) {
-        if self.preserved_roots != 0 {
-            cleanup.push_detail(format!(
-                "startup janitor preserved {} managed roots",
-                self.preserved_roots
-            ));
-        }
-        for detail in &self.details {
-            cleanup.push_detail(detail.clone());
-        }
-        cleanup.omitted_detail_count = cleanup
-            .omitted_detail_count
-            .saturating_add(self.omitted_detail_count)
-            .saturating_add(self.truncated_detail_count);
-    }
-}
-
 impl ManagedRunRoot {
     pub(crate) fn create(
         coordinator: &ManagedRootCoordinator,
@@ -5199,6 +5426,7 @@ impl ManagedRunRoot {
                 return Ok(CleanupCapabilities {
                     lease_guard: None,
                     root_authority: RootCleanupAuthority::Pinned(root_pin),
+                    progress: DeletionProgress::default(),
                 });
             };
             Ok(CleanupCapabilities::claimed(root_pin, lease_guard))
@@ -5415,24 +5643,32 @@ impl ManagedRunRoot {
             budget.saturating_sub(started.elapsed()),
             &mut capabilities,
         );
+        self.finish_owner_removal(record, capabilities, &deleting_name, removal)
+    }
+
+    fn finish_owner_removal(
+        &self,
+        mut record: CleanupRecord,
+        capabilities: CleanupCapabilities,
+        deleting_name: &str,
+        removal: std::io::Result<RemovalSlice>,
+    ) -> CleanupRecord {
+        record.evidence.examined_entries = capabilities.progress.examined_entries;
+        record.evidence.removed_entries = capabilities.progress.removed_entries;
         match removal {
             Ok(slice)
-                if slice.complete && entry_is_absent(&self.coordinator_dir, &deleting_name) =>
+                if slice.complete && entry_is_absent(&self.coordinator_dir, deleting_name) =>
             {
                 NamespaceLifecycle::Complete.store(&self.namespace);
                 record.disposition = CleanupDisposition::Clean;
-                record.evidence.examined_entries = slice.examined;
-                record.evidence.removed_entries = slice.removed;
                 record.evidence.remaining_root = None;
             }
-            Ok(slice) => {
+            Ok(_) => {
                 record.disposition = CleanupDisposition::Deferred(None);
-                record.evidence.examined_entries = slice.examined;
-                record.evidence.removed_entries = slice.removed;
                 self.restore_owner_cleanup_capabilities(capabilities);
             }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                if entry_is_absent(&self.coordinator_dir, &deleting_name) {
+                if entry_is_absent(&self.coordinator_dir, deleting_name) {
                     NamespaceLifecycle::Complete.store(&self.namespace);
                     record.disposition = CleanupDisposition::Clean;
                     record.evidence.remaining_root = None;
@@ -5545,32 +5781,50 @@ impl ManagedRunRoot {
         record
     }
 
-    #[allow(
-        clippy::too_many_lines,
-        reason = "janitor validation and claim order is kept explicit for security review"
-    )]
     pub(crate) fn reclaim_abandoned(
         coordinator: &ManagedRootCoordinator,
         now: SystemTime,
     ) -> ReclaimReport {
-        let mut report = ReclaimReport::default();
+        Self::reclaim_abandoned_with_clock(coordinator, now, &|started| started.elapsed())
+    }
+
+    #[allow(
+        clippy::too_many_lines,
+        reason = "janitor validation and claim order stays explicit"
+    )]
+    fn reclaim_abandoned_with_clock(
+        coordinator: &ManagedRootCoordinator,
+        now: SystemTime,
+        elapsed: &impl Fn(std::time::Instant) -> Duration,
+    ) -> ReclaimReport {
+        let mut report = ReclaimLedger::default();
         let mut pending_cleanup = VecDeque::new();
         let cleanup_started = std::time::Instant::now();
-        let (candidates, cursor_error) = match select_reclaim_candidates(coordinator) {
-            Ok(selection) => selection,
-            Err(error) => {
-                push_reclaim_detail(&mut report, error.to_string());
-                return report;
-            }
-        };
+        let (candidates, cursor_error) =
+            match select_reclaim_candidates(coordinator, &mut report.report.scan) {
+                Ok(selection) => selection,
+                Err(error) => {
+                    let reason = *report
+                        .report
+                        .scan
+                        .stop_reason
+                        .get_or_insert(JanitorReason::SelectionFailed);
+                    report.detail(reason, error.to_string());
+                    return report.finish();
+                }
+            };
+        report.report.scan.selected_roots = candidates.len() as u64;
         if let Some(error) = cursor_error {
-            push_reclaim_detail(&mut report, error);
+            report.detail(JanitorReason::CursorPersistenceFailed, error);
         }
         for name in candidates {
-            if cleanup_started.elapsed() >= JANITOR_CLEANUP_BUDGET {
+            if elapsed(cleanup_started) >= JANITOR_CLEANUP_BUDGET {
+                report.report.scan.stop_reason = Some(JanitorReason::CleanupIncomplete);
                 break;
             }
+            let index = report.begin();
             let name = name.as_str();
+            let path = coordinator.path.join(name);
             let run_id = if let Some(run_id) = name.strip_prefix(ACTIVE_PREFIX) {
                 run_id
             } else if let Some(run_id) = name.strip_prefix(DELETING_PREFIX) {
@@ -5578,45 +5832,60 @@ impl ManagedRunRoot {
             } else if let Some(run_id) = name.strip_prefix(STAGING_PREFIX) {
                 run_id
             } else {
+                report.hold(
+                    index,
+                    JanitorReason::InvalidCandidate,
+                    format!("invalid managed name: {path}"),
+                );
                 continue;
             };
             let staging = name.starts_with(STAGING_PREFIX);
             let deleting = name.starts_with(DELETING_PREFIX);
             if uuid::Uuid::parse_str(run_id).is_err() {
-                report.preserved_roots += 1;
+                report.hold(
+                    index,
+                    JanitorReason::InvalidCandidate,
+                    format!("invalid managed UUID: {path}"),
+                );
                 continue;
             }
             #[cfg(windows)]
-            let mutation_barrier = windows::root_mutation_barrier_exists(run_id);
-            #[cfg(windows)]
-            match mutation_barrier {
+            match windows::root_mutation_barrier_exists(run_id) {
                 Ok(true) => {
-                    report.preserved_roots += 1;
+                    report.hold(
+                        index,
+                        JanitorReason::MutationBarrierActive,
+                        format!("active mutation barrier: {path}"),
+                    );
                     continue;
                 }
                 Ok(false) => {}
                 Err(error) => {
-                    report.preserved_roots += 1;
-                    push_reclaim_detail(
-                        &mut report,
-                        format!("inspect managed-root mutation barrier failed: {error}"),
+                    report.hold(
+                        index,
+                        JanitorReason::MutationBarrierFailed,
+                        format!("inspect managed-root mutation barrier failed for {path}: {error}"),
                     );
                     continue;
                 }
             }
-            // A Windows directory cannot be renamed while another process has any descendant
-            // marker open. Acquire the coordinator before opening marker handles so the
-            // owner's close/rename/reopen handoff is actually exclusive across processes.
             #[cfg(windows)]
             let mut coordinator_guard = match CoordinatorLockGuard::try_acquire(coordinator) {
                 Ok(Some(guard)) => Some(guard),
                 Ok(None) => {
-                    report.preserved_roots += 1;
+                    report.hold(
+                        index,
+                        JanitorReason::CoordinatorBusy,
+                        format!("coordinator busy: {path}"),
+                    );
                     continue;
                 }
                 Err(error) => {
-                    report.preserved_roots += 1;
-                    push_reclaim_detail(&mut report, error.to_string());
+                    report.hold(
+                        index,
+                        JanitorReason::CoordinatorFailed,
+                        format!("{path}: {error}"),
+                    );
                     continue;
                 }
             };
@@ -5624,20 +5893,39 @@ impl ManagedRunRoot {
             let candidate = open_owned_directory(&coordinator.dir, name);
             #[cfg(windows)]
             let candidate = open_owned_directory_for_rename(&coordinator.dir, name);
-            let Ok(candidate) = candidate else {
-                report.preserved_roots += 1;
-                continue;
+            let candidate = match candidate {
+                Ok(candidate) => candidate,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    report.absent(index);
+                    continue;
+                }
+                Err(error) => {
+                    report.hold(
+                        index,
+                        JanitorReason::CandidateInspectionFailed,
+                        format!("open candidate {path}: {error}"),
+                    );
+                    continue;
+                }
             };
-            let Ok(candidate_identity) = directory_identity(&candidate) else {
-                report.preserved_roots += 1;
-                continue;
+            let candidate_identity = match directory_identity(&candidate) {
+                Ok(identity) => identity,
+                Err(error) => {
+                    report.hold(
+                        index,
+                        JanitorReason::IdentityInspectionFailed,
+                        format!("identify candidate {path}: {error}"),
+                    );
+                    continue;
+                }
             };
             let lease_metadata = candidate.symlink_metadata(LEASE_FILE);
-            let unmarked_staging_is_reclaimable = staging
-                && staging_is_empty(&candidate)
-                && directory_timestamp_is_stale(&candidate, now);
+            let empty_staging_age = (staging
+                && janitor_empty_probe(&candidate, &mut report, &path))
+            .then(|| directory_timestamp_is_stale(&candidate, now, &mut report, &path));
+            let unmarked_staging_is_reclaimable = matches!(empty_staging_age, Some(Ok(())));
             let empty_deleting_is_resumable =
-                name.starts_with(DELETING_PREFIX) && staging_is_empty(&candidate);
+                deleting && janitor_empty_probe(&candidate, &mut report, &path);
             if matches!(&lease_metadata, Err(error) if error.kind() == std::io::ErrorKind::NotFound)
                 && (unmarked_staging_is_reclaimable || empty_deleting_is_resumable)
             {
@@ -5645,19 +5933,27 @@ impl ManagedRunRoot {
                 let coordinator_guard = match CoordinatorLockGuard::try_acquire(coordinator) {
                     Ok(Some(guard)) => guard,
                     Ok(None) => {
-                        report.preserved_roots += 1;
+                        report.hold(
+                            index,
+                            JanitorReason::CoordinatorBusy,
+                            format!("coordinator busy: {path}"),
+                        );
                         continue;
                     }
                     Err(error) => {
-                        report.preserved_roots += 1;
-                        push_reclaim_detail(&mut report, error.to_string());
+                        report.hold(
+                            index,
+                            JanitorReason::CoordinatorFailed,
+                            format!("{path}: {error}"),
+                        );
                         continue;
                     }
                 };
                 #[cfg(windows)]
                 let coordinator_guard = coordinator_guard
                     .take()
-                    .expect("Windows janitor acquired the coordinator before opening a marker");
+                    .expect("coordinator acquired before opening marker");
+                let mut progress = DeletionProgress::default();
                 let removal = remove_empty_unmarked_directory(
                     &coordinator.dir,
                     name,
@@ -5665,68 +5961,140 @@ impl ManagedRunRoot {
                     candidate_identity,
                     cleanup_started,
                     JANITOR_CLEANUP_BUDGET,
+                    &mut progress,
                 );
                 let unlock = coordinator_guard.unlock(&coordinator.path);
                 match (removal, unlock) {
-                    (Ok(()), Ok(())) => report.reclaimed_roots += 1,
-                    (Err(error), _) => {
-                        report.preserved_roots += 1;
-                        push_reclaim_detail(
-                            &mut report,
-                            format!("empty unmarked-root cleanup failed for {name}: {error}"),
-                        );
-                    }
-                    (_, Err(error)) => {
-                        report.preserved_roots += 1;
-                        push_reclaim_detail(
-                            &mut report,
-                            format!("empty unmarked-root cleanup failed for {name}: {error}"),
-                        );
-                    }
+                    (Ok(()), Ok(())) => {}
+                    (Err(error), _) => report.hold(
+                        index,
+                        JanitorReason::DeleteFailed,
+                        format!("empty unmarked-root cleanup failed for {path}: {error}"),
+                    ),
+                    (_, Err(error)) => report.hold(
+                        index,
+                        JanitorReason::CoordinatorFailed,
+                        format!("coordinator unlock failed for {path}: {error}"),
+                    ),
                 }
+                report.removal(index, progress, false);
+                continue;
+            }
+            // A pre-lease crash can leave an empty staging directory. Its positive
+            // age evidence is an ordinary hold; failed inspection still falls through.
+            if matches!(&lease_metadata, Err(error) if error.kind() == std::io::ErrorKind::NotFound)
+                && let Some(Err(failure)) = &empty_staging_age
+                && failure.reason == JanitorReason::Young
+            {
+                report.hold(
+                    index,
+                    failure.reason,
+                    format!("staging age for {path}: {}", failure.cause),
+                );
                 continue;
             }
             let lease = match lease_metadata {
                 Ok(metadata) if metadata.is_file() && !metadata.file_type().is_symlink() => {
-                    let Ok(lease) = open_regular_file_nofollow(&candidate, LEASE_FILE) else {
-                        report.preserved_roots += 1;
-                        continue;
-                    };
-                    lease
+                    match open_regular_file_nofollow(&candidate, LEASE_FILE) {
+                        Ok(lease) => lease,
+                        Err(error) => {
+                            report.hold(
+                                index,
+                                JanitorReason::LeaseInvalid,
+                                format!("open lease for {path}: {error}"),
+                            );
+                            continue;
+                        }
+                    }
                 }
-                Ok(_) | Err(_) => {
-                    report.preserved_roots += 1;
+                Ok(_) => {
+                    report.hold(
+                        index,
+                        JanitorReason::LeaseInvalid,
+                        format!("lease is not a regular non-symlink file: {path}"),
+                    );
+                    continue;
+                }
+                Err(error) => {
+                    report.hold(
+                        index,
+                        JanitorReason::LeaseInvalid,
+                        format!("inspect lease for {path}: {error}"),
+                    );
                     continue;
                 }
             };
             if let Err(error) = FileExt::try_lock_exclusive(&lease) {
-                report.preserved_roots += 1;
-                if !lock_error_is_busy(&error) {
-                    push_reclaim_detail(&mut report, format!("lease lock failed: {error}"));
-                }
+                let reason = if lock_error_is_busy(&error) {
+                    JanitorReason::ActiveLease
+                } else {
+                    JanitorReason::LeaseLockFailed
+                };
+                report.hold(index, reason, format!("lease lock for {path}: {error}"));
                 continue;
             }
-            let Some(marker) = read_marker_file(&lease) else {
-                report.preserved_roots += 1;
-                continue;
+            let marker = match read_json_file_checked::<LeaseMarker>(&lease) {
+                Ok(marker) => marker,
+                Err(error) => {
+                    report.hold(
+                        index,
+                        JanitorReason::MarkerInvalid,
+                        format!("lease marker for {path}: {error}"),
+                    );
+                    continue;
+                }
             };
             if marker.schema != LEASE_SCHEMA || marker.run_id != run_id {
-                report.preserved_roots += 1;
+                report.hold(
+                    index,
+                    JanitorReason::MarkerInvalid,
+                    format!("lease marker schema or identity mismatch: {path}"),
+                );
                 continue;
             }
-            if candidate.symlink_metadata(RETAIN_FILE).is_ok()
-                || (staging && !staging_contents_are_safe(&candidate))
-                || if staging {
-                    !staging_candidate_is_stale(&candidate, &marker, now)
-                } else {
-                    !(deleting && deleting_has_only_lease(&candidate)
-                        || candidate_is_reclaimable(&candidate, &marker, &lease, now))
+            // Keep the original short-circuit order and fallback observations.
+            let retained = match candidate.symlink_metadata(RETAIN_FILE) {
+                Ok(_) => true,
+                Err(error) => {
+                    if error.kind() != std::io::ErrorKind::NotFound {
+                        report.detail(
+                            JanitorReason::CandidateInspectionFailed,
+                            format!("retain marker for {path}: {error}"),
+                        );
+                    }
+                    false
                 }
+            };
+            let hold = if retained {
+                Some(EligibilityFailure::new(
+                    JanitorReason::RetainMarker,
+                    "retain marker exists",
+                ))
+            } else if staging {
+                staging_contents_are_safe(&candidate)
+                    .and_then(|()| staging_candidate_is_stale(&candidate, &marker, now))
+                    .err()
+            } else if deleting
+                && inspect_deleting_contents(&candidate).unwrap_or_else(|error| {
+                    report.detail(
+                        JanitorReason::CandidateInspectionFailed,
+                        format!("inspect deleting root {path}: {error}"),
+                    );
+                    false
+                })
             {
-                report.preserved_roots += 1;
-                push_reclaim_detail(
-                    &mut report,
-                    format!("managed root is not yet reclaimable: {name}"),
+                None
+            } else {
+                candidate_is_reclaimable(&candidate, &marker, &lease, now, &mut report, &path).err()
+            };
+            if let Some(failure) = hold {
+                report.hold(
+                    index,
+                    failure.reason,
+                    format!(
+                        "managed root is not yet reclaimable: {path}: {}",
+                        failure.cause
+                    ),
                 );
                 continue;
             }
@@ -5734,19 +6102,26 @@ impl ManagedRunRoot {
             let coordinator_guard = match CoordinatorLockGuard::try_acquire(coordinator) {
                 Ok(Some(guard)) => guard,
                 Ok(None) => {
-                    report.preserved_roots += 1;
+                    report.hold(
+                        index,
+                        JanitorReason::CoordinatorBusy,
+                        format!("coordinator busy: {path}"),
+                    );
                     continue;
                 }
                 Err(error) => {
-                    report.preserved_roots += 1;
-                    push_reclaim_detail(&mut report, error.to_string());
+                    report.hold(
+                        index,
+                        JanitorReason::CoordinatorFailed,
+                        format!("{path}: {error}"),
+                    );
                     continue;
                 }
             };
             #[cfg(windows)]
             let coordinator_guard = coordinator_guard
                 .take()
-                .expect("Windows janitor acquired the coordinator before opening a marker");
+                .expect("coordinator acquired before opening marker");
             let deleting_name = format!("{DELETING_PREFIX}{run_id}");
             let mut lease = Some(lease);
             let claim = claim_managed_child(
@@ -5761,7 +6136,7 @@ impl ManagedRunRoot {
                 &mut lease,
                 &|| {},
                 &|| {
-                    if cleanup_started.elapsed() < JANITOR_CLEANUP_BUDGET {
+                    if elapsed(cleanup_started) < JANITOR_CLEANUP_BUDGET {
                         Ok(())
                     } else {
                         Err(WorkspaceError::io(
@@ -5777,19 +6152,36 @@ impl ManagedRunRoot {
             );
             let unlock = coordinator_guard.unlock(&coordinator.path);
             if let Err(error) = unlock {
-                report.preserved_roots += 1;
-                push_reclaim_detail(&mut report, format!("coordinator unlock failed: {error}"));
+                report.hold(
+                    index,
+                    JanitorReason::CoordinatorFailed,
+                    format!("coordinator unlock failed for {path}: {error}"),
+                );
                 continue;
             }
-            if claim != Ok(ClaimResult::Claimed) {
-                report.preserved_roots += 1;
-                continue;
+            match claim {
+                Ok(ClaimResult::Claimed) => {}
+                Ok(ClaimResult::Absent) => {
+                    report.absent(index);
+                    continue;
+                }
+                Err(error) => {
+                    report.hold(
+                        index,
+                        JanitorReason::ClaimFailed,
+                        format!("claim {path}: {error}"),
+                    );
+                    continue;
+                }
             }
             let Some(lease) = lease else {
-                report.preserved_roots += 1;
-                push_reclaim_detail(
-                    &mut report,
-                    format!("claimed root lease could not be reopened: {deleting_name}"),
+                report.hold(
+                    index,
+                    JanitorReason::ClaimedLeaseUnavailable,
+                    format!(
+                        "claimed root lease could not be reopened: {}",
+                        coordinator.path.join(&deleting_name)
+                    ),
                 );
                 continue;
             };
@@ -5808,13 +6200,14 @@ impl ManagedRunRoot {
                 candidate_identity,
                 capabilities,
                 cleanup_started,
+                index,
             );
         }
-        while !pending_cleanup.is_empty() && cleanup_started.elapsed() < JANITOR_CLEANUP_BUDGET {
+        while !pending_cleanup.is_empty() && elapsed(cleanup_started) < JANITOR_CLEANUP_BUDGET {
             let round_len = pending_cleanup.len();
             let mut round_removed = 0_u64;
             for _ in 0..round_len {
-                if cleanup_started.elapsed() >= JANITOR_CLEANUP_BUDGET {
+                if elapsed(cleanup_started) >= JANITOR_CLEANUP_BUDGET {
                     break;
                 }
                 let Some(mut pending) = pending_cleanup.pop_front() else {
@@ -5828,18 +6221,23 @@ impl ManagedRunRoot {
                     &mut pending.capabilities,
                 ) {
                     ReclaimRemoval::Complete => {
-                        report.reclaimed_roots += 1;
+                        report.removal(pending.index, pending.capabilities.progress, true);
                     }
                     ReclaimRemoval::Deferred { removed } => {
+                        // Scheduling uses ONLY deferred-slice progress, as before.
                         round_removed = round_removed.saturating_add(removed);
                         pending_cleanup.push_back(pending);
                     }
                     ReclaimRemoval::Failed(error) => {
-                        report.preserved_roots += 1;
-                        push_reclaim_detail(
-                            &mut report,
-                            format!("cleanup failed for {}: {error}", pending.deleting_name),
+                        report.hold(
+                            pending.index,
+                            JanitorReason::DeleteFailed,
+                            format!(
+                                "cleanup failed for {}: {error}",
+                                coordinator.path.join(&pending.deleting_name)
+                            ),
                         );
+                        report.removal(pending.index, pending.capabilities.progress, false);
                     }
                 }
             }
@@ -5848,26 +6246,18 @@ impl ManagedRunRoot {
             }
         }
         for pending in pending_cleanup {
-            report.preserved_roots += 1;
-            push_reclaim_detail(
-                &mut report,
-                format!("cleanup deferred for {}", pending.deleting_name),
+            report.hold(
+                pending.index,
+                JanitorReason::CleanupIncomplete,
+                format!(
+                    "cleanup deferred for {}",
+                    coordinator.path.join(&pending.deleting_name)
+                ),
             );
+            report.removal(pending.index, pending.capabilities.progress, false);
         }
-        report
+        report.finish()
     }
-}
-
-fn push_reclaim_detail(report: &mut ReclaimReport, detail: String) {
-    if report.details.len() >= MAX_DIAGNOSTIC_DETAILS {
-        report.omitted_detail_count = report.omitted_detail_count.saturating_add(1);
-        return;
-    }
-    let (detail, truncated) = truncate_diagnostic_detail(detail);
-    if truncated {
-        report.truncated_detail_count = report.truncated_detail_count.saturating_add(1);
-    }
-    report.details.push(detail);
 }
 
 pub(crate) fn truncate_diagnostic_detail(mut detail: String) -> (String, bool) {
@@ -5889,19 +6279,25 @@ enum ReclaimRemoval {
 }
 
 struct PendingCleanup {
+    index: usize,
     deleting_name: String,
     expected_identity: (u64, u64),
     capabilities: CleanupCapabilities,
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "first slice binds the root evidence index to its deletion capabilities before queueing"
+)]
 fn record_or_queue_reclaim_removal(
-    report: &mut ReclaimReport,
+    report: &mut ReclaimLedger,
     pending_cleanup: &mut VecDeque<PendingCleanup>,
     coordinator: &ManagedRootCoordinator,
     deleting_name: &str,
     expected_identity: (u64, u64),
     mut capabilities: CleanupCapabilities,
     cleanup_started: std::time::Instant,
+    index: usize,
 ) {
     match reclaim_removal(
         coordinator,
@@ -5910,20 +6306,25 @@ fn record_or_queue_reclaim_removal(
         cleanup_started,
         &mut capabilities,
     ) {
-        ReclaimRemoval::Complete => report.reclaimed_roots += 1,
+        ReclaimRemoval::Complete => report.removal(index, capabilities.progress, true),
         ReclaimRemoval::Deferred { .. } => {
             pending_cleanup.push_back(PendingCleanup {
+                index,
                 deleting_name: deleting_name.to_owned(),
                 expected_identity,
                 capabilities,
             });
         }
         ReclaimRemoval::Failed(error) => {
-            report.preserved_roots += 1;
-            push_reclaim_detail(
-                report,
-                format!("cleanup failed for {deleting_name}: {error}"),
+            report.hold(
+                index,
+                JanitorReason::DeleteFailed,
+                format!(
+                    "cleanup failed for {}: {error}",
+                    coordinator.path.join(deleting_name)
+                ),
             );
+            report.removal(index, capabilities.progress, false);
         }
     }
 }
@@ -6152,9 +6553,10 @@ fn write_cleanup_ready_marker_for_identity(
 
 fn select_reclaim_candidates(
     coordinator: &ManagedRootCoordinator,
+    scan: &mut JanitorScan,
 ) -> Result<(Vec<String>, Option<String>), WorkspaceError> {
     let guard = CoordinatorLockGuard::acquire(coordinator)?;
-    let selection = select_reclaim_candidates_locked(coordinator);
+    let selection = select_reclaim_candidates_locked(coordinator, scan);
     let unlock = guard.unlock(&coordinator.path);
     match (selection, unlock) {
         (Ok(selection), Ok(())) => Ok(selection),
@@ -6164,9 +6566,11 @@ fn select_reclaim_candidates(
 
 fn select_reclaim_candidates_locked(
     coordinator: &ManagedRootCoordinator,
+    scan: &mut JanitorScan,
 ) -> Result<(Vec<String>, Option<String>), WorkspaceError> {
     select_reclaim_candidates_locked_with_hooks(
         coordinator,
+        scan,
         JANITOR_SELECTION_BUDGET,
         &std::time::Instant::now,
         &|| {},
@@ -6175,6 +6579,7 @@ fn select_reclaim_candidates_locked(
 
 fn select_reclaim_candidates_locked_with_hooks(
     coordinator: &ManagedRootCoordinator,
+    scan: &mut JanitorScan,
     budget: Duration,
     now: &impl Fn() -> std::time::Instant,
     after_enumeration: &impl Fn(),
@@ -6187,20 +6592,20 @@ fn select_reclaim_candidates_locked_with_hooks(
             "selection deadline overflow",
         )
     })?;
-    ensure_selection_deadline(coordinator, deadline, now)?;
+    ensure_selection_deadline(coordinator, scan, deadline, now)?;
     let coordinator_path = coordinator.path.join(COORDINATOR_FILE);
     let (active_slot, state) = read_coordinator_state(&coordinator.file, &coordinator_path)?;
-    ensure_selection_deadline(coordinator, deadline, now)?;
+    ensure_selection_deadline(coordinator, scan, deadline, now)?;
     let mut entries = owned_directory_entries(&coordinator.dir)
         .map_err(|error| WorkspaceError::io("enumerate managed roots", &coordinator.path, error))?;
-    ensure_selection_deadline(coordinator, deadline, now)?;
+    ensure_selection_deadline(coordinator, scan, deadline, now)?;
     let mut examined = 0_usize;
     let mut after = BTreeSet::new();
     let mut wrapped = BTreeSet::new();
     loop {
-        ensure_selection_deadline(coordinator, deadline, now)?;
+        ensure_selection_deadline(coordinator, scan, deadline, now)?;
         let entry = entries.next();
-        ensure_selection_deadline(coordinator, deadline, now)?;
+        ensure_selection_deadline(coordinator, scan, deadline, now)?;
         let Some(entry) = entry else {
             break;
         };
@@ -6211,6 +6616,7 @@ fn select_reclaim_candidates_locked_with_hooks(
             .checked_add(1)
             .ok_or(WorkspaceError::CopySizeOverflow)?;
         if examined > MAX_MANAGED_CHILDREN {
+            scan.stop_reason = Some(JanitorReason::SelectionChildLimit);
             return Err(WorkspaceError::io(
                 "select abandoned workspaces",
                 &coordinator.path,
@@ -6227,18 +6633,23 @@ fn select_reclaim_candidates_locked_with_hooks(
         {
             continue;
         }
+        scan.observed_matching_entries += 1;
         if name.as_str() > state.cursor.as_str() {
+            scan.selection_limited |= after.len() >= MAX_RECLAIM_CANDIDATES;
             insert_bounded_name(&mut after, name);
         } else {
+            scan.selection_limited |= wrapped.len() >= MAX_RECLAIM_CANDIDATES;
             insert_bounded_name(&mut wrapped, name);
         }
     }
+    scan.directory_scan_complete = true;
     after_enumeration();
-    ensure_selection_deadline(coordinator, deadline, now)?;
+    ensure_selection_deadline(coordinator, scan, deadline, now)?;
+    scan.cursor_deferred = !after.is_empty() && !wrapped.is_empty();
     let candidates = if after.is_empty() { wrapped } else { after }
         .into_iter()
         .collect::<Vec<_>>();
-    ensure_selection_deadline(coordinator, deadline, now)?;
+    ensure_selection_deadline(coordinator, scan, deadline, now)?;
     let cursor_error = candidates.last().and_then(|cursor| {
         persist_coordinator_cursor(
             &coordinator.file,
@@ -6255,12 +6666,14 @@ fn select_reclaim_candidates_locked_with_hooks(
 
 fn ensure_selection_deadline(
     coordinator: &ManagedRootCoordinator,
+    scan: &mut JanitorScan,
     deadline: std::time::Instant,
     now: &impl Fn() -> std::time::Instant,
 ) -> Result<(), WorkspaceError> {
     if now() < deadline {
         Ok(())
     } else {
+        scan.stop_reason = Some(JanitorReason::SelectionDeadline);
         Err(WorkspaceError::io(
             "select abandoned workspaces",
             &coordinator.path,
@@ -6289,6 +6702,7 @@ fn remove_empty_unmarked_directory(
     expected_identity: (u64, u64),
     started: std::time::Instant,
     budget: Duration,
+    progress: &mut DeletionProgress,
 ) -> std::io::Result<()> {
     ensure_cleanup_deadline(started, budget)?;
     if directory_identity(&candidate)? != expected_identity || !staging_is_empty(&candidate) {
@@ -6307,7 +6721,10 @@ fn remove_empty_unmarked_directory(
             expected_identity,
             started,
             budget,
-        )
+        )?;
+        progress.removed_entries += 1;
+        progress.root_removed = true;
+        Ok(())
     }
     #[cfg(windows)]
     {
@@ -6315,6 +6732,8 @@ fn remove_empty_unmarked_directory(
         super::root::windows::remove_open_entry_io_with_guard(&candidate, &|| {
             ensure_cleanup_deadline(started, budget)
         })?;
+        progress.removed_entries += 1;
+        progress.root_removed = true;
         drop(candidate);
         match parent.symlink_metadata(name) {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -6501,57 +6920,106 @@ fn claim_managed_child(
     Ok(ClaimResult::Claimed)
 }
 
+struct EligibilityFailure {
+    reason: JanitorReason,
+    cause: String,
+}
+
+impl EligibilityFailure {
+    fn new(reason: JanitorReason, cause: impl std::fmt::Display) -> Self {
+        Self {
+            reason,
+            cause: cause.to_string(),
+        }
+    }
+}
+
 fn candidate_is_stale(
     candidate: &cap_std::fs::Dir,
     lease_marker: &LeaseMarker,
     now: SystemTime,
-) -> bool {
-    let Ok(heartbeat) = open_regular_file_nofollow(candidate, HEARTBEAT_FILE) else {
-        return false;
-    };
-    let Some(heartbeat_marker) = read_json_file::<LeaseMarker>(&heartbeat) else {
-        return false;
-    };
+) -> Result<(), EligibilityFailure> {
+    let heartbeat = open_regular_file_nofollow(candidate, HEARTBEAT_FILE)
+        .map_err(|error| EligibilityFailure::new(JanitorReason::HeartbeatInvalid, error))?;
+    let heartbeat_marker = read_json_file_checked::<LeaseMarker>(&heartbeat)
+        .map_err(|error| EligibilityFailure::new(JanitorReason::HeartbeatInvalid, error))?;
     if lease_marker.schema != LEASE_SCHEMA
         || heartbeat_marker.schema != LEASE_SCHEMA
         || heartbeat_marker.run_id != lease_marker.run_id
         || heartbeat_marker.owner != lease_marker.owner
     {
-        return false;
+        return Err(EligibilityFailure::new(
+            JanitorReason::HeartbeatInvalid,
+            "heartbeat schema or identity mismatch",
+        ));
     }
-    let Ok(metadata) = heartbeat.metadata() else {
-        return false;
-    };
-    let Ok(modified) = metadata.modified() else {
-        return false;
-    };
-    modified
-        .checked_add(STALE_AFTER)
-        .is_some_and(|stale_at| now >= stale_at)
+    let metadata = heartbeat
+        .metadata()
+        .map_err(|error| EligibilityFailure::new(JanitorReason::AgeUnverifiable, error))?;
+    let modified = metadata
+        .modified()
+        .map_err(|error| EligibilityFailure::new(JanitorReason::AgeUnverifiable, error))?;
+    stale_timestamp(modified.checked_add(STALE_AFTER), now)
+}
+
+fn stale_timestamp(
+    stale_at: Option<SystemTime>,
+    now: SystemTime,
+) -> Result<(), EligibilityFailure> {
+    match stale_at {
+        Some(stale_at) if now >= stale_at => Ok(()),
+        Some(_) => Err(EligibilityFailure::new(
+            JanitorReason::Young,
+            "stale threshold not reached",
+        )),
+        None => Err(EligibilityFailure::new(
+            JanitorReason::AgeUnverifiable,
+            "stale timestamp overflow",
+        )),
+    }
 }
 
 fn staging_candidate_is_stale(
     candidate: &cap_std::fs::Dir,
     marker: &LeaseMarker,
     now: SystemTime,
-) -> bool {
+) -> Result<(), EligibilityFailure> {
     match candidate.symlink_metadata(HEARTBEAT_FILE) {
         Ok(_) => candidate_is_stale(candidate, marker, now),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => UNIX_EPOCH
-            .checked_add(Duration::from_secs(marker.created_unix_seconds))
-            .and_then(|created| created.checked_add(STALE_AFTER))
-            .is_some_and(|stale_at| now >= stale_at),
-        Err(_) => false,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => stale_timestamp(
+            UNIX_EPOCH
+                .checked_add(Duration::from_secs(marker.created_unix_seconds))
+                .and_then(|created| created.checked_add(STALE_AFTER)),
+            now,
+        ),
+        Err(error) => Err(EligibilityFailure::new(
+            JanitorReason::HeartbeatInvalid,
+            error,
+        )),
     }
 }
 
-fn directory_timestamp_is_stale(candidate: &cap_std::fs::Dir, now: SystemTime) -> bool {
-    candidate
+fn directory_timestamp_is_stale(
+    candidate: &cap_std::fs::Dir,
+    now: SystemTime,
+    report: &mut ReclaimLedger,
+    path: &Utf8Path,
+) -> Result<(), EligibilityFailure> {
+    let timestamp = candidate
         .metadata(".")
-        .ok()
-        .and_then(|metadata| metadata.modified().ok())
-        .and_then(|modified| modified.into_std().checked_add(STALE_AFTER))
-        .is_some_and(|stale_at| now >= stale_at)
+        .and_then(|metadata| metadata.modified());
+    let result = timestamp
+        .map_err(|error| EligibilityFailure::new(JanitorReason::AgeUnverifiable, error))
+        .and_then(|modified| stale_timestamp(modified.into_std().checked_add(STALE_AFTER), now));
+    if let Err(failure) = &result
+        && failure.reason != JanitorReason::Young
+    {
+        report.detail(
+            failure.reason,
+            format!("staging age for {path}: {}", failure.cause),
+        );
+    }
+    result
 }
 
 fn candidate_is_reclaimable(
@@ -6559,49 +7027,116 @@ fn candidate_is_reclaimable(
     marker: &LeaseMarker,
     lease: &File,
     now: SystemTime,
-) -> bool {
-    if let Some(ready) = read_cleanup_ready_marker(candidate)
-        && let Ok((lease_device, lease_inode)) = file_identity(lease)
-        && ready.schema == LEASE_SCHEMA
-        && ready.run_id == marker.run_id
-        && ready.owner == marker.owner
-        && ready.lease_device == lease_device
-        && ready.lease_inode == lease_inode
-    {
-        return true;
+    report: &mut ReclaimLedger,
+    path: &Utf8Path,
+) -> Result<(), EligibilityFailure> {
+    // An absent optional ready marker is ordinary. Invalid evidence still falls
+    // back to heartbeat age, exactly as before, while retaining its typed cause.
+    let ready = match inspect_regular_file_nofollow(candidate, CLEANUP_READY_FILE) {
+        Ok(file) => match read_json_file_checked::<CleanupReadyMarker>(&file) {
+            Ok(ready) => Some(ready),
+            Err(error) => {
+                report.detail(
+                    JanitorReason::MarkerInvalid,
+                    format!("cleanup-ready marker for {path}: {error}"),
+                );
+                None
+            }
+        },
+        Err(error) if error.absent => None,
+        Err(error) => {
+            report.detail(
+                JanitorReason::MarkerInvalid,
+                format!("cleanup-ready marker for {path}: {}", error.error),
+            );
+            None
+        }
+    };
+    if let Some(ready) = ready {
+        match file_identity(lease) {
+            Ok((lease_device, lease_inode)) => {
+                if ready.schema == LEASE_SCHEMA
+                    && ready.run_id == marker.run_id
+                    && ready.owner == marker.owner
+                    && ready.lease_device == lease_device
+                    && ready.lease_inode == lease_inode
+                {
+                    return Ok(());
+                }
+                report.detail(
+                    JanitorReason::MarkerInvalid,
+                    format!("cleanup-ready marker identity mismatch: {path}"),
+                );
+            }
+            Err(error) => report.detail(
+                JanitorReason::IdentityInspectionFailed,
+                format!("cleanup-ready lease identity for {path}: {error}"),
+            ),
+        }
     }
     candidate_is_stale(candidate, marker, now)
 }
 
-fn staging_contents_are_safe(candidate: &cap_std::fs::Dir) -> bool {
-    let Ok(entries) = owned_directory_entries(candidate) else {
-        return false;
-    };
+fn staging_contents_are_safe(candidate: &cap_std::fs::Dir) -> Result<(), EligibilityFailure> {
+    let entries = owned_directory_entries(candidate)
+        .map_err(|error| EligibilityFailure::new(JanitorReason::UnsafeStaging, error))?;
     for entry in entries {
-        let Ok(entry) = entry else {
-            return false;
-        };
+        let entry =
+            entry.map_err(|error| EligibilityFailure::new(JanitorReason::UnsafeStaging, error))?;
         let Some(name) = entry.to_str().map(str::to_owned) else {
-            return false;
+            return Err(EligibilityFailure::new(
+                JanitorReason::UnsafeStaging,
+                "non-UTF8 staging entry",
+            ));
         };
         if name != LEASE_FILE && name != HEARTBEAT_FILE {
-            return false;
+            return Err(EligibilityFailure::new(
+                JanitorReason::UnsafeStaging,
+                format!("unexpected staging entry {name}"),
+            ));
         }
     }
-    true
+    Ok(())
+}
+
+fn inspect_empty_directory(candidate: &cap_std::fs::Dir) -> std::io::Result<bool> {
+    let mut entries = owned_directory_entries(candidate)?;
+    match entries.next() {
+        None => Ok(true),
+        Some(Ok(_)) => Ok(false),
+        Some(Err(error)) => Err(error),
+    }
 }
 
 fn staging_is_empty(candidate: &cap_std::fs::Dir) -> bool {
-    owned_directory_entries(candidate).is_ok_and(|mut entries| entries.next().is_none())
+    inspect_empty_directory(candidate).unwrap_or(false)
 }
 
+fn janitor_empty_probe(
+    candidate: &cap_std::fs::Dir,
+    report: &mut ReclaimLedger,
+    path: &Utf8Path,
+) -> bool {
+    inspect_empty_directory(candidate).unwrap_or_else(|error| {
+        report.detail(
+            JanitorReason::CandidateInspectionFailed,
+            format!("inspect empty root {path}: {error}"),
+        );
+        false
+    })
+}
+
+#[cfg(test)]
 fn deleting_has_only_lease(candidate: &cap_std::fs::Dir) -> bool {
-    let Ok(mut entries) = owned_directory_entries(candidate) else {
-        return false;
-    };
-    entries
-        .next()
-        .is_some_and(|entry| entry.is_ok_and(|name| name == LEASE_FILE) && entries.next().is_none())
+    inspect_deleting_contents(candidate).unwrap_or(false)
+}
+
+fn inspect_deleting_contents(candidate: &cap_std::fs::Dir) -> std::io::Result<bool> {
+    let mut entries = owned_directory_entries(candidate)?;
+    match entries.next().transpose()? {
+        Some(name) if name == LEASE_FILE => Ok(entries.next().transpose()?.is_none()),
+        _ => Ok(false),
+    }
 }
 
 fn read_cleanup_ready_marker(candidate: &cap_std::fs::Dir) -> Option<CleanupReadyMarker> {
@@ -6684,27 +7219,52 @@ fn reopen_published_markers(
 }
 
 fn read_json_file<T: serde::de::DeserializeOwned>(file: &File) -> Option<T> {
-    let mut file = file.try_clone().ok()?;
-    file.seek(SeekFrom::Start(0)).ok()?;
+    read_json_file_checked(file).ok()
+}
+
+fn read_json_file_checked<T: serde::de::DeserializeOwned>(file: &File) -> std::io::Result<T> {
+    let mut file = file.try_clone()?;
+    file.seek(SeekFrom::Start(0))?;
     let mut bytes = Vec::new();
-    file.take(MAX_MARKER_BYTES + 1)
-        .read_to_end(&mut bytes)
-        .ok()?;
-    if u64::try_from(bytes.len()).ok()? > MAX_MARKER_BYTES {
-        return None;
+    file.take(MAX_MARKER_BYTES + 1).read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > MAX_MARKER_BYTES {
+        return Err(std::io::Error::other("marker exceeds 64 KiB"));
     }
-    serde_json::from_slice(&bytes).ok()
+    serde_json::from_slice(&bytes).map_err(std::io::Error::other)
+}
+
+struct MarkerOpenError {
+    error: WorkspaceError,
+    absent: bool,
+}
+impl From<WorkspaceError> for MarkerOpenError {
+    fn from(error: WorkspaceError) -> Self {
+        Self {
+            error,
+            absent: false,
+        }
+    }
+}
+fn open_regular_file_nofollow(dir: &cap_std::fs::Dir, name: &str) -> Result<File, WorkspaceError> {
+    inspect_regular_file_nofollow(dir, name).map_err(|issue| issue.error)
 }
 
 #[cfg(unix)]
-fn open_regular_file_nofollow(dir: &cap_std::fs::Dir, name: &str) -> Result<File, WorkspaceError> {
+fn inspect_regular_file_nofollow(
+    dir: &cap_std::fs::Dir,
+    name: &str,
+) -> Result<File, MarkerOpenError> {
     let expected = dir
         .symlink_metadata(name)
-        .map_err(|error| WorkspaceError::io("inspect cleanup lease", Utf8Path::new(name), error))?;
+        .map_err(|error| MarkerOpenError {
+            absent: error.kind() == std::io::ErrorKind::NotFound,
+            error: WorkspaceError::io("inspect cleanup lease", Utf8Path::new(name), error),
+        })?;
     if !expected.is_file() || expected.file_type().is_symlink() {
         return Err(WorkspaceError::InvalidPath {
             path: Utf8PathBuf::from(name),
-        });
+        }
+        .into());
     }
     let expected_identity = metadata_identity(&expected);
     let mut options = cap_std::fs::OpenOptions::new();
@@ -6724,7 +7284,8 @@ fn open_regular_file_nofollow(dir: &cap_std::fs::Dir, name: &str) -> Result<File
     {
         return Err(WorkspaceError::InvalidPath {
             path: Utf8PathBuf::from(name),
-        });
+        }
+        .into());
     }
     verify_current_user_owned_file(&file).map_err(|error| {
         WorkspaceError::io("verify cleanup lease owner", Utf8Path::new(name), error)
@@ -6733,9 +7294,15 @@ fn open_regular_file_nofollow(dir: &cap_std::fs::Dir, name: &str) -> Result<File
 }
 
 #[cfg(windows)]
-fn open_regular_file_nofollow(dir: &cap_std::fs::Dir, name: &str) -> Result<File, WorkspaceError> {
+fn inspect_regular_file_nofollow(
+    dir: &cap_std::fs::Dir,
+    name: &str,
+) -> Result<File, MarkerOpenError> {
     let file = super::root::windows::open_regular_file_shared(dir, std::ffi::OsStr::new(name))
-        .map_err(|error| WorkspaceError::io("open cleanup lease", Utf8Path::new(name), error))?;
+        .map_err(|error| MarkerOpenError {
+            absent: error.kind() == std::io::ErrorKind::NotFound,
+            error: WorkspaceError::io("open cleanup lease", Utf8Path::new(name), error),
+        })?;
     verify_current_user_owned_file(&file).map_err(|error| {
         WorkspaceError::io("verify cleanup lease owner", Utf8Path::new(name), error)
     })?;
@@ -6857,6 +7424,7 @@ struct RemovalSlice {
 
 #[derive(Default)]
 struct CleanupCapabilities {
+    progress: DeletionProgress,
     lease_guard: Option<File>,
     #[cfg(windows)]
     root_authority: RootCleanupAuthority,
@@ -6877,7 +7445,10 @@ enum RootCleanupAuthority {
 impl CleanupCapabilities {
     #[cfg(unix)]
     fn with_lease(lease_guard: Option<File>) -> Self {
-        Self { lease_guard }
+        Self {
+            lease_guard,
+            progress: DeletionProgress::default(),
+        }
     }
 
     #[cfg(windows)]
@@ -6885,6 +7456,7 @@ impl CleanupCapabilities {
         Self {
             lease_guard: Some(lease_guard),
             root_authority: RootCleanupAuthority::Pinned(root_pin),
+            progress: DeletionProgress::default(),
         }
     }
 }
@@ -7072,6 +7644,7 @@ fn remove_one_claimed_entry_with_capabilities(
             }
             match entries.next() {
                 Some(Ok(entry)) => {
+                    capabilities.progress.examined_entries += 1;
                     examined = examined
                         .checked_add(1)
                         .ok_or_else(|| std::io::Error::other("cleanup entry count overflow"))?;
@@ -7147,6 +7720,7 @@ fn remove_one_claimed_entry_with_capabilities(
                 started,
                 budget,
             )?;
+            capabilities.progress.removed_entries += 1;
             return Ok(RemovalSlice {
                 complete: false,
                 examined,
@@ -7192,6 +7766,7 @@ fn remove_one_claimed_entry_with_capabilities(
                 started,
                 budget,
             )?;
+            capabilities.progress.removed_entries += 1;
             return Ok(RemovalSlice {
                 complete: false,
                 examined,
@@ -7251,6 +7826,7 @@ fn remove_root_control_markers(
             budget,
         ) {
             Ok(()) => {
+                capabilities.progress.removed_entries += 1;
                 if marker == LEASE_FILE {
                     drop(capabilities.lease_guard.take());
                 }
@@ -7312,6 +7888,7 @@ fn remove_pinned_cleanup_lease(
         capabilities.lease_guard = Some(lease);
         return Err(error);
     }
+    capabilities.progress.removed_entries += 1;
     drop(lease);
     match root.symlink_metadata(LEASE_FILE) {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(true),
@@ -7760,6 +8337,8 @@ fn remove_cleanup_root_checked(
                 RootCleanupAuthority::Pinned(cap_std::fs::Dir::from_std_file(root));
             return Err(error);
         }
+        capabilities.progress.removed_entries += 1;
+        capabilities.progress.root_removed = true;
         drop(root);
         // Successful deletion consumes authority even if the absence check fails.
         return match parent.symlink_metadata(name) {
@@ -7770,8 +8349,6 @@ fn remove_cleanup_root_checked(
             )),
         };
     }
-    #[cfg(unix)]
-    let _ = capabilities;
     remove_cleanup_directory_checked(
         parent,
         name,
@@ -7779,7 +8356,10 @@ fn remove_cleanup_root_checked(
         expected_identity,
         started,
         budget,
-    )
+    )?;
+    capabilities.progress.removed_entries += 1;
+    capabilities.progress.root_removed = true;
+    Ok(())
 }
 
 fn metadata_identity(metadata: &cap_std::fs::Metadata) -> (u64, u64) {

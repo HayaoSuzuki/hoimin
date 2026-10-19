@@ -1,0 +1,20 @@
+Original log: /tmp/hoimin-priority-six-ci-fuzz/artifact/_temp/fuzz-report/report_sequence.log
+SHA256: fa10188c20dc713263040475f4cb468eedfe2e4c85f0b030a74c8387e4dd3cc5
+Numbered decisive lines (trailing whitespace omitted):
+1:     Finished `release` profile [optimized + debuginfo] target(s) in 0.05s
+2:     Finished `release` profile [optimized + debuginfo] target(s) in 0.05s
+3:      Running `fuzz/target/x86_64-unknown-linux-gnu/release/report_sequence -artifact_prefix=/home/runner/work/hoimin/hoimin/fuzz/artifacts/report_sequence/ -max_total_time=58 -seed=588562252 -max_len=4096 -timeout=5 -rss_limit_mb=1024 fuzz/corpus/report_sequence fuzz/seeds/report_sequence`
+4: INFO: Running with entropic power schedule (0xFF, 100).
+5: INFO: Seed: 588562252
+6: INFO: Loaded 1 modules   (64694 inline 8-bit counters): 64694 [0x55a15be0b580, 0x55a15be1b236),
+7: INFO: Loaded 1 PC tables (64694 PCs): 64694 [0x55a15be1b238,0x55a15bf17d98),
+8: INFO:     2938 files found in fuzz/corpus/report_sequence
+9: INFO:        5 files found in fuzz/seeds/report_sequence
+10: INFO: seed corpus: files: 2943 min: 1b max: 334b total: 357907b rss: 55Mb
+11:
+12: thread '<unnamed>' (5358) panicked at fuzz_targets/report_sequence.rs:172:5:
+13: assertion failed: serde_json::from_slice::<OutputEvent>(&encoded).is_err()
+49: SUMMARY: libFuzzer: deadly signal
+51: 0x7b,0x5d,0x9,
+53: artifact_prefix='/home/runner/work/hoimin/hoimin/fuzz/artifacts/report_sequence/'; Test unit written to /home/runner/work/hoimin/hoimin/fuzz/artifacts/report_sequence/crash-8e2c47d3f36cc9629e5922bc73d3eddf23a2a93a
+54: Base64: e10J

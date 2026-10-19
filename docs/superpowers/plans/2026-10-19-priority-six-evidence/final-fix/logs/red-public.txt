@@ -1,0 +1,47 @@
+Command: ["cargo", "test", "-p", "hoimin-cli", "--test", "progress", "disk_"]
+Source head: 4254936ca33240e2f69f6d612fbb408d92090c8a
+Tested diff SHA-256: 517e8a656887c2f2ef05818a55afd6e02c5dce00a9ec771483a6e8550db55ea4
+Exit: 101
+Original log: /tmp/hoimin-priority-six-final-fix/red-public.log
+Original log SHA-256: bcb2e2802ed8c424e2880cf2beb6c3827b2cac61c8628af4e8698a65be9b1dc9
+
+000001:    Compiling hoimin-cli v0.14.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles/crates/hoimin-cli)
+000002:     Finished `test` profile [unoptimized + debuginfo] target(s) in 4.59s
+000003:      Running tests/progress.rs (/tmp/hoimin-priority-six-target/debug/deps/progress-a27504b087077f1c)
+000004:
+000005: running 7 tests
+000006: test current_report_requires_disk_summary ... ok
+000007: test public_json_disk_accepts_current_null ... ok
+000008: test public_json_disk_rejects_retired_member ... FAILED
+000009: test public_json_disk_requires_janitor ... ok
+000010: test public_jsonl_disk_accepts_current_null ... ok
+000011: test public_jsonl_disk_requires_janitor ... ok
+000012: test public_jsonl_disk_rejects_retired_member ... FAILED
+000013:
+000014: failures:
+000015:
+000016: ---- public_json_disk_rejects_retired_member stdout ----
+000017:
+000018: thread 'public_json_disk_rejects_retired_member' (56335392) panicked at crates/hoimin-cli/tests/progress.rs:3370:1:
+000019: assertion `left == right` failed: warning: progress input 2 (/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/.tmpKR8CiK/disk.json) repeats input 1 (/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/.tmpKR8CiK/disk.json): same path; comparisons are unchanged
+000020:
+000021:   left: Some(0)
+000022:  right: Some(2)
+000023: note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+000024:
+000025: ---- public_jsonl_disk_rejects_retired_member stdout ----
+000026:
+000027: thread 'public_jsonl_disk_rejects_retired_member' (56335454) panicked at crates/hoimin-cli/tests/progress.rs:3377:1:
+000028: assertion `left == right` failed: warning: progress input 2 (/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/.tmp7uTUqg/events.report) repeats input 1 (/var/folders/f0/ldy1m0vn1f1g4w873rm313xr0000gn/T/.tmp7uTUqg/events.report): same path; comparisons are unchanged
+000029:
+000030:   left: Some(0)
+000031:  right: Some(2)
+000032:
+000033:
+000034: failures:
+000035:     public_json_disk_rejects_retired_member
+000036:     public_jsonl_disk_rejects_retired_member
+000037:
+000038: test result: FAILED. 5 passed; 2 failed; 0 ignored; 0 measured; 137 filtered out; finished in 0.47s
+000039:
+000040: error: test failed, to rerun pass `-p hoimin-cli --test progress`

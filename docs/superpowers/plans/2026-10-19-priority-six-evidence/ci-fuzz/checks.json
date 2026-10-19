@@ -1,0 +1,68 @@
+[
+  {
+    "label": "red-replay",
+    "returncode": 1,
+    "elapsed_seconds": 61.83119237492792,
+    "log_sha256": "3a618e9404a4827883b743b8210abca11f66c551c65c94f727e9c864b834a5cd"
+  },
+  {
+    "label": "green-replay",
+    "returncode": 0,
+    "elapsed_seconds": 7.294927375158295,
+    "log_sha256": "42e63d6ce84e8b4a91306b4f4c8ffadfefb44346d1a54c44b1c5368e8c692fee"
+  },
+  {
+    "label": "fuzz-fmt",
+    "returncode": 1,
+    "elapsed_seconds": 0.2660131671000272,
+    "log_sha256": "a672065c46ce4ec2bc126f705ea38119e7d60178ec39ff15f5f3901609ebd0ea"
+  },
+  {
+    "label": "format-target",
+    "returncode": 0,
+    "elapsed_seconds": 0.04986133403144777,
+    "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "label": "fuzz-clippy",
+    "returncode": 0,
+    "elapsed_seconds": 18.90765337483026,
+    "log_sha256": "fa1f409dfbdd345fd1ffec58237fca0dbaf0da38d3ec67889ef0ba398b086fe4"
+  },
+  {
+    "label": "deterministic-cases",
+    "returncode": 0,
+    "elapsed_seconds": 7.483774040825665,
+    "log_sha256": "7ffe2b8894cf6cf75b51fca84130a2188638b5330241c162a5c4649f259de919"
+  },
+  {
+    "label": "smoke",
+    "returncode": 0,
+    "elapsed_seconds": 3.6841172091662884,
+    "log_sha256": "0cb7035f48e487b24e79b524fff18f8162670779236795d09f80e1085a9b7b7b"
+  },
+  {
+    "label": "report-status",
+    "returncode": 0,
+    "elapsed_seconds": 0.4332180831115693,
+    "log_sha256": "507bc538ebd96ce6706d2beb5234df1cf96ddb23affc1f601a0ff151864c19c8"
+  },
+  {
+    "label": "target-fmt-check",
+    "returncode": 0,
+    "elapsed_seconds": 0.0804068751167506,
+    "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "label": "final-fuzz-fmt",
+    "returncode": 1,
+    "elapsed_seconds": 0.26416262495331466,
+    "log_sha256": "20ece4b4ddec150f0c4cff75ce70ef9a2f68337b951a5f40707f9bdbe09666ee"
+  },
+  {
+    "label": "commit",
+    "returncode": 0,
+    "elapsed_seconds": 0.09029099997133017,
+    "log_sha256": "dc05d30ebd3a1c009cc7e1a4a59c0d0b1c2523e3bbbff24efc0a8dc2a24c8b04"
+  }
+]

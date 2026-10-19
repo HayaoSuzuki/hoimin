@@ -1,0 +1,9 @@
+{
+  "crates/hoimin-core/src/model.rs": "53f31970033b05f5761d5c5a5fc232f59116898a1a7ffcecbe27fbe501644b08",
+  "crates/hoimin-core/src/resume.rs": "e9dbe6cb9c51513ab99c14ef02b8aa5585280b9a9ec433dbd169bc90cc36d003",
+  "crates/hoimin-core/src/report.rs": "41687f03e082861122604fbd69787032c85a86ef26b0b9501eaabe7f2195de30",
+  "fuzz/Cargo.toml": "a8dd3dd6e0fa545e1f2eff6b84467c8f0bf90d11bcbf3c642e54f5b30c838f51",
+  "fuzz/Cargo.lock": "558c1aeaa5f63f976cefeb85b4793f2b30fe1d5276f2f5dd96dd1cd79a6d924b",
+  "rust-toolchain.toml": "b2c19d86958ed6810741488db5cd352856f303c53bcf0ea774e72f94ee4d201e",
+  "prek.toml": "df3526822beba703596ff2cacdaed4826cc7a2800ef0c4bf8ccec920d2e90f4b"
+}

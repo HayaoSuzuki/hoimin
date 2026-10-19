@@ -48,12 +48,12 @@ fn detail_allocations_do_not_scale_with_candidate_body_size() {
         fixture.path().join("after.json"),
     ];
     for size in [32, 256 * 1024] {
-        for (path, (_status, killed, survived, score, exit_code)) in paths
+        for (path, (status, killed, survived, score, exit_code)) in paths
             .iter()
             .zip([("killed", 12, 0, 1.0, 1), ("survived", 0, 12, 0.0, 0)])
         {
             let mut doc: Value =
-                serde_json::from_str(include_str!("golden/reports/schema-v8-current.json"))
+                serde_json::from_str(include_str!("golden/reports/schema-v9-current.json"))
                     .unwrap();
             let template = doc["mutants"][0].clone();
             doc["mutants"] = Value::Array(
@@ -67,6 +67,7 @@ fn detail_allocations_do_not_scale_with_candidate_body_size() {
                         event["candidate"]["replacement"] = json!("b".repeat(size));
                         candidate_identity::assign_id(&mut event["candidate"]);
                         event["outcome"]["executed"]["termination"] = json!({"Exit": exit_code});
+                        event["status"] = json!(status);
                         event
                     })
                     .collect(),

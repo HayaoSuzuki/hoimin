@@ -1,0 +1,19 @@
+Original: /tmp/hoimin-priority-six-ci-fuzz/green-replay.log
+SHA256: 42e63d6ce84e8b4a91306b4f4c8ffadfefb44346d1a54c44b1c5368e8c692fee
+Command/environment/exit/limits: ../green-replay.json
+Numbered decisive lines (trailing whitespace omitted):
+1:    Compiling hoimin-fuzz v0.0.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles/fuzz)
+2:     Finished `release` profile [optimized + debuginfo] target(s) in 6.76s
+3:     Finished `release` profile [optimized + debuginfo] target(s) in 0.10s
+4:      Running `/tmp/hoimin-priority-six-target/aarch64-apple-darwin/release/report_sequence -artifact_prefix=/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles/fuzz/artifacts/report_sequence/ -runs=1 -seed=588562252 -max_len=4096 -timeout=5 -rss_limit_mb=1024 -artifact_prefix=/tmp/hoimin-priority-six-ci-fuzz/ /tmp/hoimin-priority-six-ci-fuzz/artifact/hoimin/hoimin/fuzz/artifacts/report_sequence/crash-8e2c47d3f36cc9629e5922bc73d3eddf23a2a93a`
+5: INFO: Running with entropic power schedule (0xFF, 100).
+6: INFO: Seed: 588562252
+7: INFO: Loaded 1 modules   (99876 inline 8-bit counters): 99876 [0x102f89cb0, 0x102fa22d4),
+8: INFO: Loaded 1 PC tables (99876 PCs): 99876 [0x102fa22d8,0x103128518),
+9: /tmp/hoimin-priority-six-target/aarch64-apple-darwin/release/report_sequence: Running 1 inputs 1 time(s) each.
+10: Running: /tmp/hoimin-priority-six-ci-fuzz/artifact/hoimin/hoimin/fuzz/artifacts/report_sequence/crash-8e2c47d3f36cc9629e5922bc73d3eddf23a2a93a
+11: Executed /tmp/hoimin-priority-six-ci-fuzz/artifact/hoimin/hoimin/fuzz/artifacts/report_sequence/crash-8e2c47d3f36cc9629e5922bc73d3eddf23a2a93a in 1 ms
+12: ***
+13: *** NOTE: fuzzing was not performed, you have only
+14: ***       executed the target code on a fixed set of inputs.
+15: ***

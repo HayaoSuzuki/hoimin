@@ -76,9 +76,9 @@ proptest! {
         let plan = RunConfig::try_from(raw).unwrap().with_environment(hoimin_core::EnvironmentSnapshot::Untracked).unwrap().into_plan_config(hoimin_core::DiscoveryConfig::new(std::time::Duration::from_secs(30)).unwrap());
         // Act.
         let restored: PlanConfig = serde_json::from_value(serde_json::to_value(plan).unwrap()).unwrap();
-        let run = restored.into_run_config(OutputConfig { format: OutputFormat::Json, metrics: None });
+        let run = restored.into_run_config(OutputConfig { format: OutputFormat::Json, metrics: None }).unwrap();
         // Assert.
-        let changed = run.selection.changed.unwrap();
+        let changed = run.selection.changed.as_ref().unwrap();
         prop_assert_eq!(changed.context(), context);
         prop_assert_eq!(changed.diff_base(), base.as_deref());
     }
