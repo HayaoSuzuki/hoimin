@@ -29,10 +29,10 @@
     },
     {
       "path": "controller-rulings.md",
-      "sha256": "059a54e6b5d25805077ab22794a1bdfd8c0732fd64df9d554f693ebb26bf772e",
+      "sha256": "da4611d5f1fd11353e0576d9d35bbf9c4289590c348e480140e22035e3b43075",
       "kind": "verbatim ruling/shared-interface sections selected from ledger and brief",
       "source": ".superpowers/sdd/2026-10-19-priority-six/progress.md",
-      "source_sha256": "d373c8836fb9e59a6624bac24d69a32211a7c24bfbbddb2717adf002b70d7a3d"
+      "source_sha256": "f6ef13aa5d72c956f6c1eff4ff3c5c435adfce6102d581bdf7b3d61c91ab5567"
     },
     {
       "path": "depth-facts.md",
@@ -47,6 +47,214 @@
       "kind": "verbatim copy",
       "source": "/tmp/hoimin-priority-six-task7/environment.json",
       "source_sha256": "32a15166e7e41b71d172213f4a8c241257201ceefc08734e94cfd629c3374976"
+    },
+    {
+      "path": "final-archive-verification.log",
+      "kind": "derived focused excerpt/index",
+      "sha256": "fde3874d217e588caa542ccaf51ca77bfd0365eb8db9df52f131b57ee740dada"
+    },
+    {
+      "path": "final-fix-report.md",
+      "kind": "verbatim copy",
+      "sha256": "4b90ac4c4a20d59329e70e50d89e3c91bbeba84c7a3e1a48b50729110ec2335a",
+      "source": ".superpowers/sdd/2026-10-19-priority-six/final-fix-report.md",
+      "source_sha256": "4b90ac4c4a20d59329e70e50d89e3c91bbeba84c7a3e1a48b50729110ec2335a"
+    },
+    {
+      "path": "final-fix/commit-hooks.json",
+      "kind": "verbatim copy",
+      "sha256": "6069fbfb970cd699f3c2bcc4a9cdfe1c80aadcd6ae3a1b73993ac65b793e201f",
+      "source": "/tmp/hoimin-priority-six-final-fix/commit-hooks.json",
+      "source_sha256": "6069fbfb970cd699f3c2bcc4a9cdfe1c80aadcd6ae3a1b73993ac65b793e201f"
+    },
+    {
+      "path": "final-fix/final-state.json",
+      "kind": "verbatim copy",
+      "sha256": "7385e7f588b1f399023ff2aa55aa404308e38784e575736be438d3c59cc241de",
+      "source": "/tmp/hoimin-priority-six-final-fix/final-state.json",
+      "source_sha256": "7385e7f588b1f399023ff2aa55aa404308e38784e575736be438d3c59cc241de"
+    },
+    {
+      "path": "final-fix/green-core.json",
+      "kind": "verbatim copy",
+      "sha256": "6954066aa6832a171caa35803268b0a85b413698d0edf2a6fd69da6795f92f34",
+      "source": "/tmp/hoimin-priority-six-final-fix/green-core.json",
+      "source_sha256": "6954066aa6832a171caa35803268b0a85b413698d0edf2a6fd69da6795f92f34"
+    },
+    {
+      "path": "final-fix/green-owned-corrected.json",
+      "kind": "verbatim copy",
+      "sha256": "4c79ca3a2e4278e6441594054c8fcfd25fb96181d7f90f79db20b29fbc5f94a2",
+      "source": "/tmp/hoimin-priority-six-final-fix/green-owned-corrected.json",
+      "source_sha256": "4c79ca3a2e4278e6441594054c8fcfd25fb96181d7f90f79db20b29fbc5f94a2"
+    },
+    {
+      "path": "final-fix/green-owned.json",
+      "kind": "verbatim copy",
+      "sha256": "09ddb6bd3bab0193e2452d228a579779a8d0aeda217182a6b649f609ab2e56b5",
+      "source": "/tmp/hoimin-priority-six-final-fix/green-owned.json",
+      "source_sha256": "09ddb6bd3bab0193e2452d228a579779a8d0aeda217182a6b649f609ab2e56b5"
+    },
+    {
+      "path": "final-fix/green-public-report.json",
+      "kind": "verbatim copy",
+      "sha256": "e4f163cce3b4467abf8eaf82d90f7275514df8395688100f02f214a28ac7a5d8",
+      "source": "/tmp/hoimin-priority-six-final-fix/green-public-report.json",
+      "source_sha256": "e4f163cce3b4467abf8eaf82d90f7275514df8395688100f02f214a28ac7a5d8"
+    },
+    {
+      "path": "final-fix/index.json",
+      "kind": "derived focused excerpt/index",
+      "sha256": "c5e631a68d5e1477fb56f659aa07b8669967fe6a5d923af26448001be529e490"
+    },
+    {
+      "path": "final-fix/logs/commit-hooks.txt",
+      "kind": "derived focused excerpt/index",
+      "sha256": "59c39cb832f2624fb6f9a26b4aa4e533ba17e182ea08403e124cfc9e1681291d"
+    },
+    {
+      "path": "final-fix/logs/green-core.txt",
+      "kind": "derived focused excerpt/index",
+      "sha256": "accec0e1ba8183918cf3fa8fbb21d932581254bb62cee2c700ce4972408d8cd2"
+    },
+    {
+      "path": "final-fix/logs/green-owned-corrected.txt",
+      "kind": "derived focused excerpt/index",
+      "sha256": "fa2aa2636b81f4ec43491a61748c6cfbf0e556ebcbf30c17d517fc87680aeabf"
+    },
+    {
+      "path": "final-fix/logs/green-owned.txt",
+      "kind": "derived focused excerpt/index",
+      "sha256": "175b944a79711caf562f9811ba1029f71bb01760f6853952a7c4ece154725856"
+    },
+    {
+      "path": "final-fix/logs/green-public-report.txt",
+      "kind": "derived focused excerpt/index",
+      "sha256": "e1fe784883a365d4327af356fea78e9cbc56403df229fd12f4ab0b8970b28ecf"
+    },
+    {
+      "path": "final-fix/logs/public-staging.txt",
+      "kind": "derived focused excerpt/index",
+      "sha256": "d100952510800aef55ec8e0971e8ef6c65b2081e58e5850c9bb7e03412e0784f"
+    },
+    {
+      "path": "final-fix/logs/red-core.txt",
+      "kind": "derived focused excerpt/index",
+      "sha256": "39fb89d8d0c2e36f9a146aac8531ad5aff5eadab6e3e478c1d764dae32d30e31"
+    },
+    {
+      "path": "final-fix/logs/red-owned.txt",
+      "kind": "derived focused excerpt/index",
+      "sha256": "a35ba18ac93d6c832e69a9da774dccbcdc1d01cdcc549a0ad9203558a11fac0d"
+    },
+    {
+      "path": "final-fix/logs/red-public.txt",
+      "kind": "derived focused excerpt/index",
+      "sha256": "fb7bab1c5b71cd987c6073912510e8dbd68a0e41cd3f8feec3b1e6eac891fcf8"
+    },
+    {
+      "path": "final-fix/public-staging.json",
+      "kind": "verbatim copy",
+      "sha256": "94c38d67b9bd68672a40409af44843b2c53195966d3c0fa4d348f7c2aaf35c92",
+      "source": "/tmp/hoimin-priority-six-final-fix/public-staging.json",
+      "source_sha256": "94c38d67b9bd68672a40409af44843b2c53195966d3c0fa4d348f7c2aaf35c92"
+    },
+    {
+      "path": "final-fix/red-core.json",
+      "kind": "verbatim copy",
+      "sha256": "413917e1b5e000498b54e70d231a933b3a5f900cd85fcb9eeefe6ccc0bf63a20",
+      "source": "/tmp/hoimin-priority-six-final-fix/red-core.json",
+      "source_sha256": "413917e1b5e000498b54e70d231a933b3a5f900cd85fcb9eeefe6ccc0bf63a20"
+    },
+    {
+      "path": "final-fix/red-owned.json",
+      "kind": "verbatim copy",
+      "sha256": "80dff462ad7ff88ea9cd402795e0dadd2b9e99c20c0fc01493ce7739a7b3c423",
+      "source": "/tmp/hoimin-priority-six-final-fix/red-owned.json",
+      "source_sha256": "80dff462ad7ff88ea9cd402795e0dadd2b9e99c20c0fc01493ce7739a7b3c423"
+    },
+    {
+      "path": "final-fix/red-public.json",
+      "kind": "verbatim copy",
+      "sha256": "08b8275e231086744c1004f2f60611bbf82690347fd81541b6548c62395815ee",
+      "source": "/tmp/hoimin-priority-six-final-fix/red-public.json",
+      "source_sha256": "08b8275e231086744c1004f2f60611bbf82690347fd81541b6548c62395815ee"
+    },
+    {
+      "path": "final-fix/snapshots/517e8a656887c2f2ef05818a55afd6e02c5dce00a9ec771483a6e8550db55ea4.diff.gz",
+      "kind": "gzip-preserved tested snapshot",
+      "sha256": "8873eb2ee6b2810311d5998f5f70548468661ad0c765ddc7f84232c9a927d856",
+      "source": "/tmp/hoimin-priority-six-final-fix/red-core.diff",
+      "source_sha256": "517e8a656887c2f2ef05818a55afd6e02c5dce00a9ec771483a6e8550db55ea4",
+      "payload_sha256": "517e8a656887c2f2ef05818a55afd6e02c5dce00a9ec771483a6e8550db55ea4",
+      "compression": "gzip"
+    },
+    {
+      "path": "final-fix/snapshots/6ee975a1ef98d07defdbb1d4af23ef1b7be1d17556d04f0153c7f0e4f654c250.diff.gz",
+      "kind": "gzip-preserved tested snapshot",
+      "sha256": "b50e7efb3e1f1949ad0d5341b1c1397e3e0b70cf0b0872d247b43091f672ce27",
+      "source": "/tmp/hoimin-priority-six-final-fix/green-owned-corrected.diff",
+      "source_sha256": "6ee975a1ef98d07defdbb1d4af23ef1b7be1d17556d04f0153c7f0e4f654c250",
+      "payload_sha256": "6ee975a1ef98d07defdbb1d4af23ef1b7be1d17556d04f0153c7f0e4f654c250",
+      "compression": "gzip"
+    },
+    {
+      "path": "final-fix/snapshots/7dd4c5702ef594179096ebfbe60ab45043c9954bf05f9f6d262b4188c5ca1e1e.diff.gz",
+      "kind": "gzip-preserved tested snapshot",
+      "sha256": "18f90120bf1b4531eb292cefa0704473aeb9301219b481be7d2aca4dd1686944",
+      "source": "/tmp/hoimin-priority-six-final-fix/green-core.diff",
+      "source_sha256": "7dd4c5702ef594179096ebfbe60ab45043c9954bf05f9f6d262b4188c5ca1e1e",
+      "payload_sha256": "7dd4c5702ef594179096ebfbe60ab45043c9954bf05f9f6d262b4188c5ca1e1e",
+      "compression": "gzip"
+    },
+    {
+      "path": "final-fix/source-manifest.json",
+      "kind": "verbatim copy",
+      "sha256": "c6bd6c723d6a236048e56e5db933b039cc89f53c1e8c57d09e0f83ca65d81891",
+      "source": "/tmp/hoimin-priority-six-final-fix/manifest.json",
+      "source_sha256": "c6bd6c723d6a236048e56e5db933b039cc89f53c1e8c57d09e0f83ca65d81891"
+    },
+    {
+      "path": "final-fix/staging-probe.py",
+      "kind": "verbatim copy",
+      "sha256": "001527823f265289647bc3d65a1903fa38b99783babc43598ba112decc6f2a31",
+      "source": "/tmp/hoimin-priority-six-final-fix/staging_probe.py",
+      "source_sha256": "001527823f265289647bc3d65a1903fa38b99783babc43598ba112decc6f2a31"
+    },
+    {
+      "path": "final-fix/staging-receipt.json",
+      "kind": "verbatim copy",
+      "sha256": "9c7d08aef53b3796773be6c0a670c2f323bb06bcfbe824918337fd1593920d17",
+      "source": "/tmp/hoimin-priority-six-final-fix/staging/receipt.json",
+      "source_sha256": "9c7d08aef53b3796773be6c0a670c2f323bb06bcfbe824918337fd1593920d17"
+    },
+    {
+      "path": "final-probes/retired-field-receipt.json",
+      "kind": "verbatim copy",
+      "sha256": "0fb7511e68976ee30dfe7b17ed666b9e8c567b6ecca22fb90ffa852e1c8d18a0",
+      "source": "/tmp/hoimin-priority-six-final-review/retired-field-receipt.json",
+      "source_sha256": "0fb7511e68976ee30dfe7b17ed666b9e8c567b6ecca22fb90ffa852e1c8d18a0"
+    },
+    {
+      "path": "final-probes/staging-receipt.json",
+      "kind": "verbatim copy",
+      "sha256": "e5c55337a6cdcd448364d20e086729957c452686aba05d4a0dc86879e237359c",
+      "source": "/tmp/hoimin-priority-six-final-review/staging/receipt.json",
+      "source_sha256": "e5c55337a6cdcd448364d20e086729957c452686aba05d4a0dc86879e237359c"
+    },
+    {
+      "path": "final-rereview.md",
+      "kind": "verbatim copy",
+      "sha256": "b44ccc141ef460910166ee8c27961008e573f6a7ee593db4180edd20ce8f8dbe",
+      "source": ".superpowers/sdd/2026-10-19-priority-six/final-rereview.md",
+      "source_sha256": "b44ccc141ef460910166ee8c27961008e573f6a7ee593db4180edd20ce8f8dbe"
+    },
+    {
+      "path": "final-review.md",
+      "kind": "verbatim copy",
+      "sha256": "1ed2e42a04c86bcb9311ab8d532578bde6b4be15ca1dcde34ab43ffa3e8d8a81",
+      "source": ".superpowers/sdd/2026-10-19-priority-six/final-review.md",
+      "source_sha256": "1ed2e42a04c86bcb9311ab8d532578bde6b4be15ca1dcde34ab43ffa3e8d8a81"
     },
     {
       "path": "historical-log-index.json",
@@ -340,11 +548,25 @@
       "source_sha256": "ee4b4baf5920772b9386f6e67e62d589d0aa08f5a4ee1a16d17344dac1c68cf8"
     },
     {
+      "path": "task-7-commit-receipt.json",
+      "kind": "verbatim copy",
+      "sha256": "f78feb91b9a208e78166e171d132c1b504cb5d24a5e18988be27322cd6bec4ba",
+      "source": ".superpowers/sdd/2026-10-19-priority-six/task-7-commit-receipt.json",
+      "source_sha256": "f78feb91b9a208e78166e171d132c1b504cb5d24a5e18988be27322cd6bec4ba"
+    },
+    {
       "path": "task-7-report.md",
       "sha256": "8bc1a43a58e8afec630b893b17350d88d0ca4eb5ea8bbea10dc5d076d0aa3d20",
       "kind": "verbatim copy",
       "source": ".superpowers/sdd/2026-10-19-priority-six/task-7-report.md",
       "source_sha256": "8bc1a43a58e8afec630b893b17350d88d0ca4eb5ea8bbea10dc5d076d0aa3d20"
+    },
+    {
+      "path": "task-7-review.md",
+      "kind": "verbatim copy",
+      "sha256": "b63149dbd49ea1907f107ac5976e6b7611b0105af173b57960e4d9e800e4a981",
+      "source": ".superpowers/sdd/2026-10-19-priority-six/task-7-review.md",
+      "source_sha256": "b63149dbd49ea1907f107ac5976e6b7611b0105af173b57960e4d9e800e4a981"
     },
     {
       "path": "tools/run-checks.py",
@@ -502,8 +724,22 @@
     "Cargo targets, caches, venvs, saved executables, repeated raw plan output"
   ],
   "pending": [
-    "Task7 scoped independent review",
-    "final whole-branch review and any scoped re-review",
-    "PR publication and automatic/R12 native CI"
-  ]
+    "PR publication",
+    "automatic PR CI and R12 manual native CI"
+  ],
+  "reviewed_integration_head": "4254936ca33240e2f69f6d612fbb408d92090c8a",
+  "final_product_head": "fcb11b946e2730f75c54d4408b5132ff6b57e41a",
+  "review_stage_counts": {
+    "original_seven_task_minimum": 105,
+    "single_final_fix": 15,
+    "indexed_minimum": 120
+  },
+  "product_findings": "none open after scoped final re-review",
+  "final_fix_retention": {
+    "verified_original_inventory_files": 46,
+    "command_receipts": 9,
+    "unique_tested_snapshots": 3,
+    "location": "final-fix/index.json",
+    "scope": "Focused receipts/snapshots/excerpts/probe evidence; original checkpoint reports/checks unchanged; no suite rerun."
+  }
 }

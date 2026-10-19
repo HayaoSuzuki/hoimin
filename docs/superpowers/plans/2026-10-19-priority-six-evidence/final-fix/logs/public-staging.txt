@@ -1,0 +1,8 @@
+Command: ["python3", "/tmp/hoimin-priority-six-final-fix/staging_probe.py"]
+Source head: 4254936ca33240e2f69f6d612fbb408d92090c8a
+Tested diff SHA-256: 6ee975a1ef98d07defdbb1d4af23ef1b7be1d17556d04f0153c7f0e4f654c250
+Exit: 0
+Original log: /tmp/hoimin-priority-six-final-fix/public-staging.log
+Original log SHA-256: 7b01e0592b2600fd8119a0be735635e7a6ae44f1c845ed49db2325540e56cdd2
+
+000001: control, young default, young verbose, stale control passed; all exit 1 for surviving mutant

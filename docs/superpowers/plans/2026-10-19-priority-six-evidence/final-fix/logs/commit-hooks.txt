@@ -1,0 +1,13 @@
+Command: ["git", "commit", "-m", "fix: reject mixed disk reports and classify pre-lease staging holds"]
+Source head: 4254936ca33240e2f69f6d612fbb408d92090c8a
+Tested diff SHA-256: 6ee975a1ef98d07defdbb1d4af23ef1b7be1d17556d04f0153c7f0e4f654c250
+Exit: 0
+Original log: /tmp/hoimin-priority-six-final-fix/commit-hooks.log
+Original log SHA-256: 1f39002dde7315aba794919b111b38a2314a6b7235e7cb36377898c8e662d6d4
+
+000001: cargo fmt (workspace)....................................................Passed
+000002: cargo fmt (vendored parser)..............................................Passed
+000003: cargo clippy (workspace).................................................Passed
+000004: cargo clippy (vendored parser)...........................................Passed
+000005: [issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles fcb11b94] fix: reject mixed disk reports and classify pre-lease staging holds
+000006:  4 files changed, 387 insertions(+), 15 deletions(-)

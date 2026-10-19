@@ -1,0 +1,24 @@
+{
+  "implementation_base": "3aaf82b0d5b695a548dda33ea248ceaa1dd68219",
+  "integration_commit": "4254936ca33240e2f69f6d612fbb408d92090c8a",
+  "post_commit_git_status": "",
+  "commit_log": "/tmp/hoimin-priority-six-task7/commit.log",
+  "commit_log_sha256": "ef8c593c31e055b1a0f3322f1e37a220d751967b72f7ebaf56ba54c3479269bf",
+  "commit_environment": {
+    "CARGO_BUILD_JOBS": "2",
+    "CARGO_TARGET_DIR": "/tmp/hoimin-priority-six-target",
+    "RUST_TEST_THREADS": "2",
+    "UV_PROJECT_ENVIRONMENT": "/tmp/hoimin-priority-six-venv",
+    "UV_CACHE_DIR": "/tmp/hoimin-priority-six-uv-cache",
+    "PATH_prefix": "/tmp/hoimin-priority-six-venv/bin"
+  },
+  "hooks": "Normal mandatory hooks invoked; all four Rust hooks skipped by configured no-files filter for documentation-only commit. No hooks bypassed. Explicit final fmt/clippy checks passed earlier.",
+  "report": "task-7-report.md",
+  "durable_record": "docs/superpowers/plans/2026-10-19-priority-six-execution.md",
+  "pending": [
+    "Task7 scoped independent gate",
+    "final whole-branch review",
+    "PR publication",
+    "automatic PR CI and R12 manual native CI"
+  ]
+}

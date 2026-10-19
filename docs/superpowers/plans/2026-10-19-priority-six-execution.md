@@ -3,8 +3,10 @@
 This record accompanies the [implementation plan](2026-10-19-priority-six.md)
 from base `1e6200d71237c6e445f337babf02f5f0354b610f`. The issue branch is
 `issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles`.
-The six issue-scoped gates passed. Task 7's independent gate, the final branch
-review, PR publication and native CI remain controller-owned followups.
+All seven task gates passed. The whole-branch review of `4254936c` found two
+Important defects; the single fix wave at `fcb11b94` addressed both, and its
+scoped re-review found no new or out-of-scope findings. No product finding remains
+open. PR publication and native CI remain controller-owned followups.
 
 | Task | Implementation and fixes | Independent gate |
 | --- | --- | --- |
@@ -14,7 +16,7 @@ review, PR publication and native CI remain controller-owned followups.
 | 4, #1015: janitor observations | `b199e83d`, `6ea967d6` | [Initial finding](2026-10-19-priority-six-evidence/task-4-review.md), [fix1 approved](2026-10-19-priority-six-evidence/task-4-rereview-1.md) |
 | 5, #1010: derived status and human IDs | `b2b01195`, `faff6415` | [Initial finding](2026-10-19-priority-six-evidence/task-5-review.md), [fix1 approved](2026-10-19-priority-six-evidence/task-5-rereview-1.md) |
 | 6, #1005: shared import graph | `3aaf82b0` | [Approved](2026-10-19-priority-six-evidence/task-6-review.md) |
-| 7: integration, documentation and archive | Documentation/evidence work after `3aaf82b0` | Pending independent review |
+| 7: integration, documentation and archive | `4254936c` | [Approved](2026-10-19-priority-six-evidence/task-7-review.md) |
 
 The [acceptance matrix](2026-10-19-priority-six-evidence/acceptance-matrix.md)
 maps each issue to its behavioral evidence. The [issue snapshot](2026-10-19-priority-six-evidence/issue-snapshot.json)
@@ -48,6 +50,12 @@ R13 preserves and itemizes inherited historical-reference limits. The original
 [depth investigation](2026-10-19-priority-six-evidence/depth-facts.md) retains the
 earlier model observations separately from Task 6's Rust and release evidence.
 
+R14 corrects the historical Task 4 blanket missing-lease statement for a
+successfully inspected, positively young, empty pre-lease staging root. The
+[final fix report](2026-10-19-priority-six-evidence/final-fix-report.md#changes-and-correction-to-the-historical-task-4-statement)
+contains that correction and current evidence. Original task reports, reviews
+and their past claims remain unchanged.
+
 Task 6's [measurement report](../../maintenance/2026-10-19-issue-1005/report.md)
 and adjacent reproducible scripts, raw time/heap/RSS results, fixtures and source
 provenance already exist in the repository. This archive references and hashes
@@ -56,7 +64,7 @@ instrumented requested allocations, operation counts and sampled RSS describe
 different quantities. Peak requested heap did not decrease. The exact measured
 runner snapshot remains distinct from later tool formatting/type changes.
 
-The [Task 7 report](2026-10-19-priority-six-evidence/task-7-report.md) records
+The [Task 7 checkpoint report](2026-10-19-priority-six-evidence/task-7-report.md) records
 final native commands/results, current documentation changes, OKF content review
 and pending CI. [Check receipts](2026-10-19-priority-six-evidence/checks.json)
 record exact argv, checked head, environment, exit and original log hashes.
@@ -84,11 +92,49 @@ with baseline-presence checks in the retained checker. No new/changed reference
 uses those exceptions. Plans and maintenance records remain outside the
 original-source catalogs under `docs/superpowers/specs`, `reports` and `docs/audits`.
 
+## Final whole-branch review and single fix wave
+
+The [initial final review](2026-10-19-priority-six-evidence/final-review.md)
+inspected `4254936ca33240e2f69f6d612fbb408d92090c8a` and found two Important
+defects: acceptance of the retired disk member and classification of young empty
+pre-lease staging roots. Its [retired-field probe](2026-10-19-priority-six-evidence/final-probes/retired-field-receipt.json)
+and [staging probe](2026-10-19-priority-six-evidence/final-probes/staging-receipt.json)
+retain the existing-binary identity, valid controls and observed behavior.
+Initial probe setup failures remain labeled separately from decisive results.
+
+The [single final fix report](2026-10-19-priority-six-evidence/final-fix-report.md)
+records commit `fcb11b946e2730f75c54d4408b5132ff6b57e41a` and the R14 correction.
+The [scoped re-review](2026-10-19-priority-six-evidence/final-rereview.md) marks
+both findings ADDRESSED, with no new breakage or out-of-scope findings.
+Its additional stages contain five passes each, bringing the indexed minimum to
+120 while preserving the original seven-task/105-pass index above:
+
+| Final fix stage | Five passes |
+| --- | --- |
+| Requirements/design | [Five passes](2026-10-19-priority-six-evidence/final-fix-report.md#five-requirementsdesign-self-review-passes) |
+| Implementation | [Five passes](2026-10-19-priority-six-evidence/final-fix-report.md#five-implementation-self-review-passes) |
+| Validation | [Five passes](2026-10-19-priority-six-evidence/final-fix-report.md#five-validation-self-review-passes) |
+
+The [focused evidence index](2026-10-19-priority-six-evidence/final-fix/index.json)
+retains nine command receipts, decisive excerpts and three unique tested diff
+snapshots, plus the four-scenario staging probe receipt/script. The 46-file source
+inventory was checked before selecting these artifacts; repeated build logs and
+fixture trees are omitted. The initial owned-test permission-fixture failure
+remains in the record with its correction.
+
+Focused GREEN evidence is 527 passed / 3 ignored, four public staging scenarios
+and four passed mandatory hooks. Receipts identify base `4254936c` plus tested
+working-tree snapshots. The final snapshot hash matches the committed fix at
+`fcb11b94`; these are not postcommit reruns. The earlier broad native checks and
+16 receipts retain their original head `3aaf82b0` and documented dirty snapshots.
+The [Task 7 commit receipt](2026-10-19-priority-six-evidence/task-7-commit-receipt.json)
+also remains an unchanged checkpoint record. No broad suite or proof tool was
+rerun for this archival followup.
+
 ## Controller followup
 
-Archive the Task 7 independent review and final whole-branch review before push;
-retain any scoped final re-review and justified fix evidence. Publish the issue
-branch and PR without merging or releasing. Run automatic PR CI and the R12
+Task 7, whole-branch and scoped final reviews, their fix evidence and all fourteen
+rulings are archived. Publish the issue branch and PR without merging or releasing. Run automatic PR CI and the R12
 manual non-Linux workflow on the final head, then record actual head/run URLs and
 outcomes in the PR body and final response. Do not create a post-CI documentation
 commit merely to record that the previous head passed. No temporary evidence or

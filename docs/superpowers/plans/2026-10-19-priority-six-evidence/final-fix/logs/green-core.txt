@@ -1,0 +1,38 @@
+Command: ["cargo", "test", "-p", "hoimin-core", "--test", "janitor_report", "--test", "report_status", "--test", "report_policy"]
+Source head: 4254936ca33240e2f69f6d612fbb408d92090c8a
+Tested diff SHA-256: 7dd4c5702ef594179096ebfbe60ab45043c9954bf05f9f6d262b4188c5ca1e1e
+Exit: 0
+Original log: /tmp/hoimin-priority-six-final-fix/green-core.log
+Original log SHA-256: 555829ed0809c5031d0f2a3a69f64d3e3c28fc704e4d3bd15a022e69abb73fb8
+
+000001:    Compiling hoimin-core v0.14.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1003-safe-reads-1002-escape-1004-config-1015-cleanup-1010-status-1005-cycles/crates/hoimin-core)
+000002:     Finished `test` profile [unoptimized + debuginfo] target(s) in 2.54s
+000003:      Running tests/janitor_report.rs (/tmp/hoimin-priority-six-target/debug/deps/janitor_report-19180791678cff50)
+000004:
+000005: running 4 tests
+000006: test disk_summary_accepts_explicit_null_janitor ... ok
+000007: test disk_summary_rejects_retired_count_beside_current_janitor ... ok
+000008: test disk_summary_requires_janitor_observation_even_when_unmeasured ... ok
+000009: test unmeasured_disk_summary_emits_explicit_null_janitor ... ok
+000010:
+000011: test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+000012:
+000013:      Running tests/report_policy.rs (/tmp/hoimin-priority-six-target/debug/deps/report_policy-863dc3d438029b9f)
+000014:
+000048:
+000049: test result: ok. 32 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+000050:
+000051:      Running tests/report_status.rs (/tmp/hoimin-priority-six-target/debug/deps/report_status-f9e071c621dde7b3)
+000052:
+000164: test timeout::matching_direct_decode ... ok
+000165: test timeout::tagged_projection ... ok
+000166: test timeout::matching_tagged_decode ... ok
+000167: test timeout_close_timeout::contradictory_direct_rejection ... ok
+000168: test timeout_close_timeout::direct_projection ... ok
+000169: test timeout_close_timeout::contradictory_tagged_rejection ... ok
+000170: test timeout_close_timeout::matching_direct_decode ... ok
+000171: test timeout_close_timeout::tagged_projection ... ok
+000172: test timeout_close_timeout::matching_tagged_decode ... ok
+000173:
+000174: test result: ok. 119 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+000175:

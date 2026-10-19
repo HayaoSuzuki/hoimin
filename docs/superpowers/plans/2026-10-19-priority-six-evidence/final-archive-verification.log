@@ -1,0 +1,5 @@
+Historical checkpoint: all seven reports and prior check files unchanged; original archive/rulings prefix retained
+Final fix: 46 source-inventory files, nine receipt/log/snapshot pairs, numbered excerpts, three unique snapshots and four probe stdout/stderr pairs verified
+Index/links: 24 five-pass sections = 120 minimum indexed passes; original 105 index unchanged; all fourteen rulings and declined-to-judge adjudication retained
+Archive: 97 hashes/membership verified; actual final product head recorded; no product/CI change or suite rerun
+Open product findings: none after scoped approval. Remaining: publication, automatic PR CI and R12 native CI. No cleanup performed.

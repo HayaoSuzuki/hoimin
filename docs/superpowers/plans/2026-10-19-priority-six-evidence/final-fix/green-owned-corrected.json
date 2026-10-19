@@ -1,0 +1,23 @@
+{
+  "command": [
+    "cargo",
+    "test",
+    "-p",
+    "hoimin-cli",
+    "--lib",
+    "workspace::owned::"
+  ],
+  "head": "4254936ca33240e2f69f6d612fbb408d92090c8a",
+  "diff_sha256": "6ee975a1ef98d07defdbb1d4af23ef1b7be1d17556d04f0153c7f0e4f654c250",
+  "log_sha256": "55d0c98bb282747924075b30ae065fa41ab867c04848a9bd24385b4716a81b81",
+  "exit": 0,
+  "elapsed_seconds": 11.225528955459595,
+  "env": {
+    "CARGO_BUILD_JOBS": "2",
+    "CARGO_TARGET_DIR": "/tmp/hoimin-priority-six-target",
+    "RUST_TEST_THREADS": "2",
+    "UV_PROJECT_ENVIRONMENT": "/tmp/hoimin-priority-six-venv",
+    "UV_CACHE_DIR": "/tmp/hoimin-priority-six-uv-cache",
+    "PATH": "/tmp/hoimin-priority-six-venv/bin:/Users/hayao/.elan/bin:/Library/Frameworks/Python.framework/Versions/3.12/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/opt/homebrew/Caskroom/codex/0.162.1/codex-path:/Users/hayao/.codex/tmp/arg0/codex-arg0IGseZF:/Users/hayao/.rd/bin:/opt/homebrew/opt/mariadb-connector-c/bin:/Users/hayao/.nvm/versions/node/v22.14.0/bin:/Users/hayao/.local/bin:/Users/hayao/.elan/bin:/Library/Frameworks/Python.framework/Versions/3.12/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/Users/hayao/.cargo/bin:/Users/hayao/Library/Application Support/JetBrains/Toolbox/scripts:/Users/hayao/Library/Application Support/JetBrains/Toolbox/scripts"
+  }
+}
