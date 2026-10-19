@@ -1,0 +1,40 @@
+{
+  "command": [
+    "rustc",
+    "--edition=2024",
+    "-O",
+    "-C",
+    "lto=thin",
+    "-C",
+    "embed-bitcode=yes",
+    "/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1006-line-selection-index-1007-shared-manifest-1008-source-index/docs/maintenance/2026-10-20-issue-1008/probe.rs",
+    "-L",
+    "dependency=/tmp/hoimin-perf-three-target/release/deps",
+    "--extern",
+    "camino=/tmp/hoimin-perf-three-target/release/deps/libcamino-f91f8d14b22abb98.rlib",
+    "--extern",
+    "hoimin_core=/tmp/hoimin-perf-three-target/release/deps/libhoimin_core-e36060db195214e8.rlib",
+    "--extern",
+    "hoimin_python=/tmp/hoimin-perf-three-target/release/deps/libhoimin_python-f46ed673dcee7a84.rlib",
+    "--extern",
+    "hoimin_cli=/tmp/hoimin-perf-three-target/release/deps/libhoimin_cli-ae6165566be2bc32.rlib",
+    "--extern",
+    "blake3=/tmp/hoimin-perf-three-target/release/deps/libblake3-6eec682d57919d01.rlib",
+    "--extern",
+    "serde_json=/tmp/hoimin-perf-three-target/release/deps/libserde_json-249d5adfc4d88833.rlib",
+    "--extern",
+    "tokio=/tmp/hoimin-perf-three-target/release/deps/libtokio-71a583f173241733.rlib",
+    "-o",
+    "/tmp/hoimin-perf-three-task3/probe-instrument-eager"
+  ],
+  "hashes": {
+    "/tmp/hoimin-perf-three-target/release/deps/libcamino-f91f8d14b22abb98.rlib": "50bd1c1fbaa4e55cb41d2994f39dd3a8b6186451472f26a32227892a9b8cf89d",
+    "/tmp/hoimin-perf-three-target/release/deps/libhoimin_core-e36060db195214e8.rlib": "1d5527199630d020ebe86f67e7335a31b6e6e3d1272fb2f4359f4b66704020c6",
+    "/tmp/hoimin-perf-three-target/release/deps/libhoimin_python-f46ed673dcee7a84.rlib": "eb4c288a4fdebc768a71ec3e274cac5653e93384bfd50163b13744fa3875e869",
+    "/tmp/hoimin-perf-three-target/release/deps/libhoimin_cli-ae6165566be2bc32.rlib": "68593fda6e9fae3b6a9b6d3afb5db3df729c1fd8144de06f44d6bbce452fb00f",
+    "/tmp/hoimin-perf-three-target/release/deps/libblake3-6eec682d57919d01.rlib": "77bbf4441e08619dbd1da40d1a80051d518b0965c6d32f9d175d21ba78c522ea",
+    "/tmp/hoimin-perf-three-target/release/deps/libserde_json-249d5adfc4d88833.rlib": "a0a1371046ff40474374c94abd6eb2c1d758d6584bf63d2e847629fe843cafeb",
+    "/tmp/hoimin-perf-three-target/release/deps/libtokio-71a583f173241733.rlib": "106bf59b4d7c80f3648266380b31ecbb3837dde75570351e8f6618077e1cb8c7",
+    "/tmp/hoimin-perf-three-task3/probe-instrument-eager": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9"
+  }
+}

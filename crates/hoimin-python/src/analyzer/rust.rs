@@ -637,7 +637,7 @@ pub fn analyze_source_with_exceptions(
         .into_iter()
         .collect();
     if let Some((range, message)) = hierarchy_report.diagnostic() {
-        let (line, column) = line_index.line_and_column(source, usize::from(range.start()));
+        let (line, column) = line_index.line_and_column(usize::from(range.start()));
         diagnostics.push(AnalyzerDiagnostic {
             code: AnalyzerDiagnosticCode::UnsupportedExceptionHierarchy,
             path: Some(request.path.to_owned()),
@@ -647,7 +647,7 @@ pub fn analyze_source_with_exceptions(
         });
     }
     for (range, message) in enum_diagnostics {
-        let (line, column) = line_index.line_and_column(source, usize::from(range.start()));
+        let (line, column) = line_index.line_and_column(usize::from(range.start()));
         diagnostics.push(AnalyzerDiagnostic {
             code: AnalyzerDiagnosticCode::UnsupportedEnumDefinition,
             path: Some(request.path.to_owned()),
@@ -713,7 +713,7 @@ fn make_candidate(
     }
     let start = u64::try_from(range.start).ok()?;
     let length = u64::try_from(range.len()).ok()?;
-    let (line, column) = line_index.line_and_column(source, range.start);
+    let (line, column) = line_index.line_and_column(range.start);
     if !selection.includes(line, symbol.as_deref()) {
         return None;
     }
@@ -822,7 +822,7 @@ impl LineIndex {
         clippy::cast_possible_truncation,
         reason = "Ruff TextSize offsets cap parsed source at u32::MAX bytes, and code-point counts cannot exceed byte counts."
     )]
-    fn line_and_column(&self, _source: &str, offset: usize) -> (u32, u32) {
+    fn line_and_column(&self, offset: usize) -> (u32, u32) {
         self.source
             .line_and_column(offset)
             .expect("Ruff source offsets are valid UTF-8 boundaries within a u32-sized source")
@@ -3117,7 +3117,7 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             return true;
         }
         let start = usize::from(expression.start());
-        let (line, _) = self.line_index.line_and_column(self.source, start);
+        let (line, _) = self.line_index.line_and_column(start);
         let symbol = self.facts.scope_at(start);
         self.selection.includes(line, symbol.as_deref())
     }

@@ -1238,6 +1238,24 @@
         "--exact",
         "--nocapture"
       ]
+    },
+    {
+      "id": "source-index-unicode-discovery-peak",
+      "status": "active",
+      "metric": "peak_heap",
+      "related_issue": 1008,
+      "scope": "N=262144/524288/1048576 non-ASCII comment scalars with exactly one boolean candidate/max1. Unused context requested peak <1KiB; actual CLI discovery requested peak <=12N+256KiB including file read. Additional retained real Unicode index must exceed the same bound. One test owns allocator windows; excludes RSS, timing, total allocation and payload-budget guarantees.",
+      "args": [
+        "test",
+        "-p",
+        "hoimin-cli",
+        "--test",
+        "source_index_heap",
+        "unicode_context_and_cli_discovery_avoid_overlapping_location_indexes",
+        "--",
+        "--exact",
+        "--nocapture"
+      ]
     }
   ],
   "lean": {

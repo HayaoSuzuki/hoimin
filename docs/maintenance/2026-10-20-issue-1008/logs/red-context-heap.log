@@ -1,0 +1,6 @@
+{"command": ["/tmp/hoimin-perf-three-task3/probe-before", "/tmp/hoimin-perf-three-task3/fixture-262144", "context", "262144"], "measurement": {"candidates": 0, "context_stack_bytes": 160, "digest": "5abb4174a572b48bfefa97234b38c7b2e7332902d800d7c6a6d1f36b14f96540", "mode": "context", "n": 262144, "ns": 2210000, "requested_live_delta": 2097232, "requested_peak_delta": 2097232}}
+Traceback (most recent call last):
+  File "/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1006-line-selection-index-1007-shared-manifest-1008-source-index/docs/maintenance/2026-10-20-issue-1008/context_gate.py", line 11, in <module>
+    assert row['requested_peak_delta'] < 1024, row
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: {'candidates': 0, 'context_stack_bytes': 160, 'digest': '5abb4174a572b48bfefa97234b38c7b2e7332902d800d7c6a6d1f36b14f96540', 'mode': 'context', 'n': 262144, 'ns': 2210000, 'requested_live_delta': 2097232, 'requested_peak_delta': 2097232}

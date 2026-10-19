@@ -1,0 +1,7 @@
+{
+  "mode": "lazy",
+  "product_base": "e5e33603a4ed6a269d4131fbb6dbe99a409de05c",
+  "original_source_sha256": "bb98588e81434a8236204694cef02eec8f41123d90d65557d83123e5e76c753d",
+  "instrumented_source_sha256": "476924e504491168cc570e843f83586e55f26ca65a1cf4db172a0fba95a311d1",
+  "scope": "Only candidate.rs instrumented. Eager uses task3-base file; rest of working tree includes Task1/2 and current task3 private location argument removal. Not pristine original. Constructor logs after allocation; Drop logs at real ownership end. Global atomics include all threads; observe one fixture/process."
+}

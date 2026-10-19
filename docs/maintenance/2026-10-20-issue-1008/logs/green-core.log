@@ -1,0 +1,47 @@
+   Compiling hoimin-core v0.14.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1006-line-selection-index-1007-shared-manifest-1008-source-index/crates/hoimin-core)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.33s
+     Running unittests src/lib.rs (/tmp/hoimin-perf-three-target/debug/deps/hoimin_core-8f88fc31ca3bf84d)
+
+running 21 tests
+test candidate::lazy_tests::hash_precedes_span_without_building ... ok
+test candidate::lazy_tests::invalid_decoding_is_retained_without_building ... ok
+test candidate::lazy_tests::length_check_accepts_the_largest_raw_or_decoded_source ... ok
+test candidate::lazy_tests::length_check_rejects_decoded_expansion_beyond_the_raw_limit ... ok
+test candidate::lazy_tests::mutation_precedes_span_without_building ... ok
+test candidate::lazy_tests::original_mismatch_precedes_invalid_decoding_without_building ... ok
+test candidate::lazy_tests::original_precedes_location_without_building ... ok
+test candidate::lazy_tests::path_precedes_hash_without_building ... ok
+test candidate::lazy_tests::replacement_encoding_precedes_location_without_building ... ok
+test candidate::lazy_tests::repeated_validation_reuses_one_materialization ... ok
+test candidate::lazy_tests::schema_precedes_location_without_building ... ok
+test candidate::lazy_tests::span_precedes_original_without_building ... ok
+test candidate::lazy_tests::unused_context_does_not_materialize_locations ... ok
+test candidate::tests::decoding_classification_is_independent_of_diagnostic_labels ... ok
+test candidate::tests::indexed_lookup_work_scales_with_queries_times_log_lines ... ok
+test candidate::tests::line_index_accepts_the_largest_representable_offset ... ok
+test candidate::tests::line_index_preserves_empty_and_trailing_newline_sources ... ok
+test candidate::tests::one_based_line_overflow_is_rejected ... ok
+test candidate::tests::oversized_source_is_rejected_before_scanning_newlines ... ok
+test candidate::tests::oversized_source_without_newlines_is_rejected ... ok
+test candidate::tests::ascii_source_uses_no_unicode_correction_entries ... ok
+
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 39 filtered out; finished in 0.02s
+
+     Running tests/candidate_policy.rs (/tmp/hoimin-perf-three-target/debug/deps/candidate_policy-76aa7028866be4f8)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 25 filtered out; finished in 0.00s
+
+     Running tests/source_encoding.rs (/tmp/hoimin-perf-three-target/debug/deps/source_encoding-3ca723a6eb30a75e)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.00s
+
+     Running tests/source_encoding_properties.rs (/tmp/hoimin-perf-three-target/debug/deps/source_encoding_properties-d6d951dec9126d8d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+

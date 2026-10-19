@@ -1,0 +1,35 @@
+--- candidate.rs uninstrumented lazy
++++ candidate.rs instrumented lazy
+@@ -212,6 +212,7 @@
+         check_source_length(decoded.text().len())?;
+         #[cfg(test)]
+         VALIDATION_INDEX_BUILDS.with(|builds| builds.set(builds.get() + 1));
++        eprintln!("INDEX_EVENT validation bytes={}", source.len());
+         if decoded.encoding() == PythonSourceEncoding::Latin1 {
+             Ok(Self::Latin1(python_line_starts(source)?))
+         } else {
+@@ -284,6 +285,14 @@
+     unicode_comparisons: Cell<usize>,
+ }
+ 
++static OBS_INDEX_BUILDS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
++static OBS_INDEX_LIVE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
++impl Drop for PythonSourceIndex {
++    fn drop(&mut self) {
++        let live = OBS_INDEX_LIVE.fetch_sub(1, std::sync::atomic::Ordering::SeqCst) - 1;
++        eprintln!("INDEX_EVENT drop live={live}");
++    }
++}
+ impl PythonSourceIndex {
+     /// Builds an index without changing the source bytes.
+     ///
+@@ -311,6 +320,9 @@
+                 ));
+             }
+         }
++        let build = OBS_INDEX_BUILDS.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
++        let live = OBS_INDEX_LIVE.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
++        eprintln!("INDEX_EVENT build count={build} live={live} bytes={}", source.len());
+         Self {
+             source_len: u32::try_from(source.len())
+                 .expect("source length was checked before index construction"),

@@ -1,0 +1,2612 @@
+[
+  {
+    "label": "262144",
+    "mode": "context",
+    "sample": 0,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-262144",
+      "context",
+      "262144"
+    ],
+    "command_sha256": "540e26724edc8a5b0883960e48c196ca0bb320c68d678846f53bb08f899f9cf4",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=524302",
+      "INDEX_EVENT build count=1 live=1 bytes=524302",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 1,
+    "drops": 1,
+    "max_live": 1,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 0,
+      "context_stack_bytes": 160,
+      "digest": "5abb4174a572b48bfefa97234b38c7b2e7332902d800d7c6a6d1f36b14f96540",
+      "mode": "context",
+      "n": 262144,
+      "ns": 1489709,
+      "requested_live_delta": 2097296,
+      "requested_peak_delta": 2097296
+    }
+  },
+  {
+    "label": "262144",
+    "mode": "context",
+    "sample": 1,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-262144",
+      "context",
+      "262144"
+    ],
+    "command_sha256": "540e26724edc8a5b0883960e48c196ca0bb320c68d678846f53bb08f899f9cf4",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=524302",
+      "INDEX_EVENT build count=1 live=1 bytes=524302",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 1,
+    "drops": 1,
+    "max_live": 1,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 0,
+      "context_stack_bytes": 160,
+      "digest": "5abb4174a572b48bfefa97234b38c7b2e7332902d800d7c6a6d1f36b14f96540",
+      "mode": "context",
+      "n": 262144,
+      "ns": 1478875,
+      "requested_live_delta": 2097296,
+      "requested_peak_delta": 2097296
+    }
+  },
+  {
+    "label": "262144",
+    "mode": "context",
+    "sample": 2,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-262144",
+      "context",
+      "262144"
+    ],
+    "command_sha256": "540e26724edc8a5b0883960e48c196ca0bb320c68d678846f53bb08f899f9cf4",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=524302",
+      "INDEX_EVENT build count=1 live=1 bytes=524302",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 1,
+    "drops": 1,
+    "max_live": 1,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 0,
+      "context_stack_bytes": 160,
+      "digest": "5abb4174a572b48bfefa97234b38c7b2e7332902d800d7c6a6d1f36b14f96540",
+      "mode": "context",
+      "n": 262144,
+      "ns": 1442291,
+      "requested_live_delta": 2097296,
+      "requested_peak_delta": 2097296
+    }
+  },
+  {
+    "label": "262144",
+    "mode": "pipeline",
+    "sample": 0,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-262144",
+      "pipeline",
+      "262144"
+    ],
+    "command_sha256": "6f3f183f8e0faa2bbeb2f81426dcee27d8bce41bb2835534c0344d5080bb2c7b",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=524302",
+      "INDEX_EVENT build count=1 live=1 bytes=524302",
+      "INDEX_EVENT build count=2 live=2 bytes=524302",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 2,
+    "drops": 2,
+    "max_live": 2,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 1,
+      "context_stack_bytes": 160,
+      "digest": "m1_17bfe3195a4257755f1349869d53a75d7713c2220fe565b67cc4f826d1034d89",
+      "mode": "pipeline",
+      "n": 262144,
+      "ns": 2784416,
+      "requested_live_delta": 2098118,
+      "requested_peak_delta": 4196795
+    }
+  },
+  {
+    "label": "262144",
+    "mode": "pipeline",
+    "sample": 1,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-262144",
+      "pipeline",
+      "262144"
+    ],
+    "command_sha256": "6f3f183f8e0faa2bbeb2f81426dcee27d8bce41bb2835534c0344d5080bb2c7b",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=524302",
+      "INDEX_EVENT build count=1 live=1 bytes=524302",
+      "INDEX_EVENT build count=2 live=2 bytes=524302",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 2,
+    "drops": 2,
+    "max_live": 2,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 1,
+      "context_stack_bytes": 160,
+      "digest": "m1_17bfe3195a4257755f1349869d53a75d7713c2220fe565b67cc4f826d1034d89",
+      "mode": "pipeline",
+      "n": 262144,
+      "ns": 2333750,
+      "requested_live_delta": 2098118,
+      "requested_peak_delta": 4196795
+    }
+  },
+  {
+    "label": "262144",
+    "mode": "pipeline",
+    "sample": 2,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-262144",
+      "pipeline",
+      "262144"
+    ],
+    "command_sha256": "6f3f183f8e0faa2bbeb2f81426dcee27d8bce41bb2835534c0344d5080bb2c7b",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=524302",
+      "INDEX_EVENT build count=1 live=1 bytes=524302",
+      "INDEX_EVENT build count=2 live=2 bytes=524302",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 2,
+    "drops": 2,
+    "max_live": 2,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 1,
+      "context_stack_bytes": 160,
+      "digest": "m1_17bfe3195a4257755f1349869d53a75d7713c2220fe565b67cc4f826d1034d89",
+      "mode": "pipeline",
+      "n": 262144,
+      "ns": 2195584,
+      "requested_live_delta": 2098118,
+      "requested_peak_delta": 4196795
+    }
+  },
+  {
+    "label": "262144",
+    "mode": "discover",
+    "sample": 0,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-262144",
+      "discover",
+      "262144"
+    ],
+    "command_sha256": "8060873d3e9875fcb3e477963b6d75bce2afff4ef3743c487827ab9b4447a10c",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=524302",
+      "INDEX_EVENT build count=1 live=1 bytes=524302",
+      "INDEX_EVENT build count=2 live=2 bytes=524302",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 2,
+    "drops": 2,
+    "max_live": 2,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 1,
+      "context_stack_bytes": 160,
+      "digest": "m1_17bfe3195a4257755f1349869d53a75d7713c2220fe565b67cc4f826d1034d89",
+      "mode": "discover",
+      "n": 262144,
+      "ns": 2909084,
+      "requested_live_delta": 1678,
+      "requested_peak_delta": 4722411
+    }
+  },
+  {
+    "label": "262144",
+    "mode": "discover",
+    "sample": 1,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-262144",
+      "discover",
+      "262144"
+    ],
+    "command_sha256": "8060873d3e9875fcb3e477963b6d75bce2afff4ef3743c487827ab9b4447a10c",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=524302",
+      "INDEX_EVENT build count=1 live=1 bytes=524302",
+      "INDEX_EVENT build count=2 live=2 bytes=524302",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 2,
+    "drops": 2,
+    "max_live": 2,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 1,
+      "context_stack_bytes": 160,
+      "digest": "m1_17bfe3195a4257755f1349869d53a75d7713c2220fe565b67cc4f826d1034d89",
+      "mode": "discover",
+      "n": 262144,
+      "ns": 2471458,
+      "requested_live_delta": 1678,
+      "requested_peak_delta": 4722411
+    }
+  },
+  {
+    "label": "262144",
+    "mode": "discover",
+    "sample": 2,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-262144",
+      "discover",
+      "262144"
+    ],
+    "command_sha256": "8060873d3e9875fcb3e477963b6d75bce2afff4ef3743c487827ab9b4447a10c",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=524302",
+      "INDEX_EVENT build count=1 live=1 bytes=524302",
+      "INDEX_EVENT build count=2 live=2 bytes=524302",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 2,
+    "drops": 2,
+    "max_live": 2,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 1,
+      "context_stack_bytes": 160,
+      "digest": "m1_17bfe3195a4257755f1349869d53a75d7713c2220fe565b67cc4f826d1034d89",
+      "mode": "discover",
+      "n": 262144,
+      "ns": 2540417,
+      "requested_live_delta": 1678,
+      "requested_peak_delta": 4722411
+    }
+  },
+  {
+    "label": "262144",
+    "mode": "plan",
+    "sample": 0,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-262144",
+      "plan",
+      "262144"
+    ],
+    "command_sha256": "2a13208e7b8cd6a00bc178a82edaecfc67d2c9977c5a7361dfeca543509d35ce",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=524302",
+      "INDEX_EVENT build count=1 live=1 bytes=524302",
+      "INDEX_EVENT build count=2 live=2 bytes=524302",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 2,
+    "drops": 2,
+    "max_live": 2,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 1,
+      "digest": "m1_17bfe3195a4257755f1349869d53a75d7713c2220fe565b67cc4f826d1034d89",
+      "mode": "plan",
+      "n": 262144,
+      "ns": 5764208,
+      "requested_live_delta": 27078,
+      "requested_peak_delta": 4754161
+    }
+  },
+  {
+    "label": "262144",
+    "mode": "plan",
+    "sample": 1,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-262144",
+      "plan",
+      "262144"
+    ],
+    "command_sha256": "2a13208e7b8cd6a00bc178a82edaecfc67d2c9977c5a7361dfeca543509d35ce",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=524302",
+      "INDEX_EVENT build count=1 live=1 bytes=524302",
+      "INDEX_EVENT build count=2 live=2 bytes=524302",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 2,
+    "drops": 2,
+    "max_live": 2,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 1,
+      "digest": "m1_17bfe3195a4257755f1349869d53a75d7713c2220fe565b67cc4f826d1034d89",
+      "mode": "plan",
+      "n": 262144,
+      "ns": 3612917,
+      "requested_live_delta": 27078,
+      "requested_peak_delta": 4754161
+    }
+  },
+  {
+    "label": "262144",
+    "mode": "plan",
+    "sample": 2,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-262144",
+      "plan",
+      "262144"
+    ],
+    "command_sha256": "2a13208e7b8cd6a00bc178a82edaecfc67d2c9977c5a7361dfeca543509d35ce",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=524302",
+      "INDEX_EVENT build count=1 live=1 bytes=524302",
+      "INDEX_EVENT build count=2 live=2 bytes=524302",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 2,
+    "drops": 2,
+    "max_live": 2,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 1,
+      "digest": "m1_17bfe3195a4257755f1349869d53a75d7713c2220fe565b67cc4f826d1034d89",
+      "mode": "plan",
+      "n": 262144,
+      "ns": 3649000,
+      "requested_live_delta": 27078,
+      "requested_peak_delta": 4754161
+    }
+  },
+  {
+    "label": "262144",
+    "mode": "run",
+    "sample": 0,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-262144",
+      "run",
+      "262144"
+    ],
+    "command_sha256": "1231accc7618894ea7039629a1a47dfb6b8e48a885eba76b52061fabaedac87b",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=524302",
+      "INDEX_EVENT build count=1 live=1 bytes=524302",
+      "INDEX_EVENT build count=2 live=2 bytes=524302",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0",
+      "INDEX_EVENT validation bytes=524302",
+      "INDEX_EVENT build count=3 live=1 bytes=524302",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 3,
+    "drops": 3,
+    "max_live": 2,
+    "validation_materializations": 2,
+    "output": {
+      "candidates": 1,
+      "digest": "m1_17bfe3195a4257755f1349869d53a75d7713c2220fe565b67cc4f826d1034d89",
+      "mode": "run",
+      "n": 262144,
+      "ns": 100357958,
+      "requested_live_delta": 103475,
+      "requested_peak_delta": 4894587
+    }
+  },
+  {
+    "label": "262144",
+    "mode": "run",
+    "sample": 1,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-262144",
+      "run",
+      "262144"
+    ],
+    "command_sha256": "1231accc7618894ea7039629a1a47dfb6b8e48a885eba76b52061fabaedac87b",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=524302",
+      "INDEX_EVENT build count=1 live=1 bytes=524302",
+      "INDEX_EVENT build count=2 live=2 bytes=524302",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0",
+      "INDEX_EVENT validation bytes=524302",
+      "INDEX_EVENT build count=3 live=1 bytes=524302",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 3,
+    "drops": 3,
+    "max_live": 2,
+    "validation_materializations": 2,
+    "output": {
+      "candidates": 1,
+      "digest": "m1_17bfe3195a4257755f1349869d53a75d7713c2220fe565b67cc4f826d1034d89",
+      "mode": "run",
+      "n": 262144,
+      "ns": 58418416,
+      "requested_live_delta": 51539,
+      "requested_peak_delta": 4822851
+    }
+  },
+  {
+    "label": "262144",
+    "mode": "run",
+    "sample": 2,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-262144",
+      "run",
+      "262144"
+    ],
+    "command_sha256": "1231accc7618894ea7039629a1a47dfb6b8e48a885eba76b52061fabaedac87b",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=524302",
+      "INDEX_EVENT build count=1 live=1 bytes=524302",
+      "INDEX_EVENT build count=2 live=2 bytes=524302",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0",
+      "INDEX_EVENT validation bytes=524302",
+      "INDEX_EVENT build count=3 live=1 bytes=524302",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 3,
+    "drops": 3,
+    "max_live": 2,
+    "validation_materializations": 2,
+    "output": {
+      "candidates": 1,
+      "digest": "m1_17bfe3195a4257755f1349869d53a75d7713c2220fe565b67cc4f826d1034d89",
+      "mode": "run",
+      "n": 262144,
+      "ns": 68538583,
+      "requested_live_delta": 103475,
+      "requested_peak_delta": 4894715
+    }
+  },
+  {
+    "label": "524288",
+    "mode": "context",
+    "sample": 0,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-524288",
+      "context",
+      "524288"
+    ],
+    "command_sha256": "bcb2921dc3120cdbe556f75b8ab1728dd2ac3e177218d588df0dffcdf08efbfc",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=1048590",
+      "INDEX_EVENT build count=1 live=1 bytes=1048590",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 1,
+    "drops": 1,
+    "max_live": 1,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 0,
+      "context_stack_bytes": 160,
+      "digest": "7b7bd521ee0336c6e14f314e6e6f220a4aa6a6811c310a8d2150d2c0b83a85b4",
+      "mode": "context",
+      "n": 524288,
+      "ns": 2894250,
+      "requested_live_delta": 4194448,
+      "requested_peak_delta": 4194448
+    }
+  },
+  {
+    "label": "524288",
+    "mode": "context",
+    "sample": 1,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-524288",
+      "context",
+      "524288"
+    ],
+    "command_sha256": "bcb2921dc3120cdbe556f75b8ab1728dd2ac3e177218d588df0dffcdf08efbfc",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=1048590",
+      "INDEX_EVENT build count=1 live=1 bytes=1048590",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 1,
+    "drops": 1,
+    "max_live": 1,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 0,
+      "context_stack_bytes": 160,
+      "digest": "7b7bd521ee0336c6e14f314e6e6f220a4aa6a6811c310a8d2150d2c0b83a85b4",
+      "mode": "context",
+      "n": 524288,
+      "ns": 3100916,
+      "requested_live_delta": 4194448,
+      "requested_peak_delta": 4194448
+    }
+  },
+  {
+    "label": "524288",
+    "mode": "context",
+    "sample": 2,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-524288",
+      "context",
+      "524288"
+    ],
+    "command_sha256": "bcb2921dc3120cdbe556f75b8ab1728dd2ac3e177218d588df0dffcdf08efbfc",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=1048590",
+      "INDEX_EVENT build count=1 live=1 bytes=1048590",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 1,
+    "drops": 1,
+    "max_live": 1,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 0,
+      "context_stack_bytes": 160,
+      "digest": "7b7bd521ee0336c6e14f314e6e6f220a4aa6a6811c310a8d2150d2c0b83a85b4",
+      "mode": "context",
+      "n": 524288,
+      "ns": 2824791,
+      "requested_live_delta": 4194448,
+      "requested_peak_delta": 4194448
+    }
+  },
+  {
+    "label": "524288",
+    "mode": "pipeline",
+    "sample": 0,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-524288",
+      "pipeline",
+      "524288"
+    ],
+    "command_sha256": "b5a109df2a4852531a0a21defdf480aee36c0d7b99eba300ef6a366e90cffc30",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=1048590",
+      "INDEX_EVENT build count=1 live=1 bytes=1048590",
+      "INDEX_EVENT build count=2 live=2 bytes=1048590",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 2,
+    "drops": 2,
+    "max_live": 2,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 1,
+      "context_stack_bytes": 160,
+      "digest": "m1_3c542f965d09cfa15e1cb9cb59a200662a107c41e668cefc2952389e3cc22ac5",
+      "mode": "pipeline",
+      "n": 524288,
+      "ns": 4804875,
+      "requested_live_delta": 4195270,
+      "requested_peak_delta": 8391099
+    }
+  },
+  {
+    "label": "524288",
+    "mode": "pipeline",
+    "sample": 1,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-524288",
+      "pipeline",
+      "524288"
+    ],
+    "command_sha256": "b5a109df2a4852531a0a21defdf480aee36c0d7b99eba300ef6a366e90cffc30",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=1048590",
+      "INDEX_EVENT build count=1 live=1 bytes=1048590",
+      "INDEX_EVENT build count=2 live=2 bytes=1048590",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 2,
+    "drops": 2,
+    "max_live": 2,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 1,
+      "context_stack_bytes": 160,
+      "digest": "m1_3c542f965d09cfa15e1cb9cb59a200662a107c41e668cefc2952389e3cc22ac5",
+      "mode": "pipeline",
+      "n": 524288,
+      "ns": 4651667,
+      "requested_live_delta": 4195270,
+      "requested_peak_delta": 8391099
+    }
+  },
+  {
+    "label": "524288",
+    "mode": "pipeline",
+    "sample": 2,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-524288",
+      "pipeline",
+      "524288"
+    ],
+    "command_sha256": "b5a109df2a4852531a0a21defdf480aee36c0d7b99eba300ef6a366e90cffc30",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=1048590",
+      "INDEX_EVENT build count=1 live=1 bytes=1048590",
+      "INDEX_EVENT build count=2 live=2 bytes=1048590",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 2,
+    "drops": 2,
+    "max_live": 2,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 1,
+      "context_stack_bytes": 160,
+      "digest": "m1_3c542f965d09cfa15e1cb9cb59a200662a107c41e668cefc2952389e3cc22ac5",
+      "mode": "pipeline",
+      "n": 524288,
+      "ns": 4301500,
+      "requested_live_delta": 4195270,
+      "requested_peak_delta": 8391099
+    }
+  },
+  {
+    "label": "524288",
+    "mode": "discover",
+    "sample": 0,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-524288",
+      "discover",
+      "524288"
+    ],
+    "command_sha256": "1b2df18f09a9e75a4b0b8e88e222f5a136d8295ff7d488d8a74c519d1d612a28",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=1048590",
+      "INDEX_EVENT build count=1 live=1 bytes=1048590",
+      "INDEX_EVENT build count=2 live=2 bytes=1048590",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 2,
+    "drops": 2,
+    "max_live": 2,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 1,
+      "context_stack_bytes": 160,
+      "digest": "m1_3c542f965d09cfa15e1cb9cb59a200662a107c41e668cefc2952389e3cc22ac5",
+      "mode": "discover",
+      "n": 524288,
+      "ns": 5005667,
+      "requested_live_delta": 1678,
+      "requested_peak_delta": 9441003
+    }
+  },
+  {
+    "label": "524288",
+    "mode": "discover",
+    "sample": 1,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-524288",
+      "discover",
+      "524288"
+    ],
+    "command_sha256": "1b2df18f09a9e75a4b0b8e88e222f5a136d8295ff7d488d8a74c519d1d612a28",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=1048590",
+      "INDEX_EVENT build count=1 live=1 bytes=1048590",
+      "INDEX_EVENT build count=2 live=2 bytes=1048590",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 2,
+    "drops": 2,
+    "max_live": 2,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 1,
+      "context_stack_bytes": 160,
+      "digest": "m1_3c542f965d09cfa15e1cb9cb59a200662a107c41e668cefc2952389e3cc22ac5",
+      "mode": "discover",
+      "n": 524288,
+      "ns": 4763417,
+      "requested_live_delta": 1678,
+      "requested_peak_delta": 9441003
+    }
+  },
+  {
+    "label": "524288",
+    "mode": "discover",
+    "sample": 2,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-524288",
+      "discover",
+      "524288"
+    ],
+    "command_sha256": "1b2df18f09a9e75a4b0b8e88e222f5a136d8295ff7d488d8a74c519d1d612a28",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=1048590",
+      "INDEX_EVENT build count=1 live=1 bytes=1048590",
+      "INDEX_EVENT build count=2 live=2 bytes=1048590",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 2,
+    "drops": 2,
+    "max_live": 2,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 1,
+      "context_stack_bytes": 160,
+      "digest": "m1_3c542f965d09cfa15e1cb9cb59a200662a107c41e668cefc2952389e3cc22ac5",
+      "mode": "discover",
+      "n": 524288,
+      "ns": 5013917,
+      "requested_live_delta": 1678,
+      "requested_peak_delta": 9441003
+    }
+  },
+  {
+    "label": "524288",
+    "mode": "plan",
+    "sample": 0,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-524288",
+      "plan",
+      "524288"
+    ],
+    "command_sha256": "f8939b483567a4369941306b2a7c5116df3644430a4897f2883214fc1bfa466c",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=1048590",
+      "INDEX_EVENT build count=1 live=1 bytes=1048590",
+      "INDEX_EVENT build count=2 live=2 bytes=1048590",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 2,
+    "drops": 2,
+    "max_live": 2,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 1,
+      "digest": "m1_3c542f965d09cfa15e1cb9cb59a200662a107c41e668cefc2952389e3cc22ac5",
+      "mode": "plan",
+      "n": 524288,
+      "ns": 6353166,
+      "requested_live_delta": 27078,
+      "requested_peak_delta": 9472753
+    }
+  },
+  {
+    "label": "524288",
+    "mode": "plan",
+    "sample": 1,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-524288",
+      "plan",
+      "524288"
+    ],
+    "command_sha256": "f8939b483567a4369941306b2a7c5116df3644430a4897f2883214fc1bfa466c",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=1048590",
+      "INDEX_EVENT build count=1 live=1 bytes=1048590",
+      "INDEX_EVENT build count=2 live=2 bytes=1048590",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 2,
+    "drops": 2,
+    "max_live": 2,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 1,
+      "digest": "m1_3c542f965d09cfa15e1cb9cb59a200662a107c41e668cefc2952389e3cc22ac5",
+      "mode": "plan",
+      "n": 524288,
+      "ns": 6358292,
+      "requested_live_delta": 27078,
+      "requested_peak_delta": 9472753
+    }
+  },
+  {
+    "label": "524288",
+    "mode": "plan",
+    "sample": 2,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-524288",
+      "plan",
+      "524288"
+    ],
+    "command_sha256": "f8939b483567a4369941306b2a7c5116df3644430a4897f2883214fc1bfa466c",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=1048590",
+      "INDEX_EVENT build count=1 live=1 bytes=1048590",
+      "INDEX_EVENT build count=2 live=2 bytes=1048590",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 2,
+    "drops": 2,
+    "max_live": 2,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 1,
+      "digest": "m1_3c542f965d09cfa15e1cb9cb59a200662a107c41e668cefc2952389e3cc22ac5",
+      "mode": "plan",
+      "n": 524288,
+      "ns": 6061125,
+      "requested_live_delta": 27078,
+      "requested_peak_delta": 9472753
+    }
+  },
+  {
+    "label": "524288",
+    "mode": "run",
+    "sample": 0,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-524288",
+      "run",
+      "524288"
+    ],
+    "command_sha256": "8a5cb942f240acbeed81de37c5447a576b71b5ad8538d9ef49210c5bfacc1931",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=1048590",
+      "INDEX_EVENT build count=1 live=1 bytes=1048590",
+      "INDEX_EVENT build count=2 live=2 bytes=1048590",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0",
+      "INDEX_EVENT validation bytes=1048590",
+      "INDEX_EVENT build count=3 live=1 bytes=1048590",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 3,
+    "drops": 3,
+    "max_live": 2,
+    "validation_materializations": 2,
+    "output": {
+      "candidates": 1,
+      "digest": "m1_3c542f965d09cfa15e1cb9cb59a200662a107c41e668cefc2952389e3cc22ac5",
+      "mode": "run",
+      "n": 524288,
+      "ns": 65612125,
+      "requested_live_delta": 51539,
+      "requested_peak_delta": 9541507
+    }
+  },
+  {
+    "label": "524288",
+    "mode": "run",
+    "sample": 1,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-524288",
+      "run",
+      "524288"
+    ],
+    "command_sha256": "8a5cb942f240acbeed81de37c5447a576b71b5ad8538d9ef49210c5bfacc1931",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=1048590",
+      "INDEX_EVENT build count=1 live=1 bytes=1048590",
+      "INDEX_EVENT build count=2 live=2 bytes=1048590",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0",
+      "INDEX_EVENT validation bytes=1048590",
+      "INDEX_EVENT build count=3 live=1 bytes=1048590",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 3,
+    "drops": 3,
+    "max_live": 2,
+    "validation_materializations": 2,
+    "output": {
+      "candidates": 1,
+      "digest": "m1_3c542f965d09cfa15e1cb9cb59a200662a107c41e668cefc2952389e3cc22ac5",
+      "mode": "run",
+      "n": 524288,
+      "ns": 69687917,
+      "requested_live_delta": 103475,
+      "requested_peak_delta": 9613243
+    }
+  },
+  {
+    "label": "524288",
+    "mode": "run",
+    "sample": 2,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-524288",
+      "run",
+      "524288"
+    ],
+    "command_sha256": "8a5cb942f240acbeed81de37c5447a576b71b5ad8538d9ef49210c5bfacc1931",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=1048590",
+      "INDEX_EVENT build count=1 live=1 bytes=1048590",
+      "INDEX_EVENT build count=2 live=2 bytes=1048590",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0",
+      "INDEX_EVENT validation bytes=1048590",
+      "INDEX_EVENT build count=3 live=1 bytes=1048590",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 3,
+    "drops": 3,
+    "max_live": 2,
+    "validation_materializations": 2,
+    "output": {
+      "candidates": 1,
+      "digest": "m1_3c542f965d09cfa15e1cb9cb59a200662a107c41e668cefc2952389e3cc22ac5",
+      "mode": "run",
+      "n": 524288,
+      "ns": 58614083,
+      "requested_live_delta": 51539,
+      "requested_peak_delta": 9541443
+    }
+  },
+  {
+    "label": "1048576",
+    "mode": "context",
+    "sample": 0,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-1048576",
+      "context",
+      "1048576"
+    ],
+    "command_sha256": "a4a4a70393628b6a2b809ac5b20af568f056346b872dc9da789523079709aeaf",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=2097166",
+      "INDEX_EVENT build count=1 live=1 bytes=2097166",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 1,
+    "drops": 1,
+    "max_live": 1,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 0,
+      "context_stack_bytes": 160,
+      "digest": "311cc406da3d523ac50c29e879d255dee86d49fe51330968af3b38f36169e0eb",
+      "mode": "context",
+      "n": 1048576,
+      "ns": 5933959,
+      "requested_live_delta": 8388752,
+      "requested_peak_delta": 8388752
+    }
+  },
+  {
+    "label": "1048576",
+    "mode": "context",
+    "sample": 1,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-1048576",
+      "context",
+      "1048576"
+    ],
+    "command_sha256": "a4a4a70393628b6a2b809ac5b20af568f056346b872dc9da789523079709aeaf",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=2097166",
+      "INDEX_EVENT build count=1 live=1 bytes=2097166",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 1,
+    "drops": 1,
+    "max_live": 1,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 0,
+      "context_stack_bytes": 160,
+      "digest": "311cc406da3d523ac50c29e879d255dee86d49fe51330968af3b38f36169e0eb",
+      "mode": "context",
+      "n": 1048576,
+      "ns": 5722750,
+      "requested_live_delta": 8388752,
+      "requested_peak_delta": 8388752
+    }
+  },
+  {
+    "label": "1048576",
+    "mode": "context",
+    "sample": 2,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-1048576",
+      "context",
+      "1048576"
+    ],
+    "command_sha256": "a4a4a70393628b6a2b809ac5b20af568f056346b872dc9da789523079709aeaf",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=2097166",
+      "INDEX_EVENT build count=1 live=1 bytes=2097166",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 1,
+    "drops": 1,
+    "max_live": 1,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 0,
+      "context_stack_bytes": 160,
+      "digest": "311cc406da3d523ac50c29e879d255dee86d49fe51330968af3b38f36169e0eb",
+      "mode": "context",
+      "n": 1048576,
+      "ns": 5872583,
+      "requested_live_delta": 8388752,
+      "requested_peak_delta": 8388752
+    }
+  },
+  {
+    "label": "1048576",
+    "mode": "pipeline",
+    "sample": 0,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-1048576",
+      "pipeline",
+      "1048576"
+    ],
+    "command_sha256": "9fb5ee21ede46429a3fa92e9689bd8ad74e61317c212843803f6251b949b841f",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=2097166",
+      "INDEX_EVENT build count=1 live=1 bytes=2097166",
+      "INDEX_EVENT build count=2 live=2 bytes=2097166",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 2,
+    "drops": 2,
+    "max_live": 2,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 1,
+      "context_stack_bytes": 160,
+      "digest": "m1_3bf21d1acbd53be17a48a82affbcc3a28adcd2c1037c7d07fad858a54c9397e1",
+      "mode": "pipeline",
+      "n": 1048576,
+      "ns": 8211375,
+      "requested_live_delta": 8389574,
+      "requested_peak_delta": 16779707
+    }
+  },
+  {
+    "label": "1048576",
+    "mode": "pipeline",
+    "sample": 1,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-1048576",
+      "pipeline",
+      "1048576"
+    ],
+    "command_sha256": "9fb5ee21ede46429a3fa92e9689bd8ad74e61317c212843803f6251b949b841f",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=2097166",
+      "INDEX_EVENT build count=1 live=1 bytes=2097166",
+      "INDEX_EVENT build count=2 live=2 bytes=2097166",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 2,
+    "drops": 2,
+    "max_live": 2,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 1,
+      "context_stack_bytes": 160,
+      "digest": "m1_3bf21d1acbd53be17a48a82affbcc3a28adcd2c1037c7d07fad858a54c9397e1",
+      "mode": "pipeline",
+      "n": 1048576,
+      "ns": 8915375,
+      "requested_live_delta": 8389574,
+      "requested_peak_delta": 16779707
+    }
+  },
+  {
+    "label": "1048576",
+    "mode": "pipeline",
+    "sample": 2,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-1048576",
+      "pipeline",
+      "1048576"
+    ],
+    "command_sha256": "9fb5ee21ede46429a3fa92e9689bd8ad74e61317c212843803f6251b949b841f",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=2097166",
+      "INDEX_EVENT build count=1 live=1 bytes=2097166",
+      "INDEX_EVENT build count=2 live=2 bytes=2097166",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 2,
+    "drops": 2,
+    "max_live": 2,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 1,
+      "context_stack_bytes": 160,
+      "digest": "m1_3bf21d1acbd53be17a48a82affbcc3a28adcd2c1037c7d07fad858a54c9397e1",
+      "mode": "pipeline",
+      "n": 1048576,
+      "ns": 8931125,
+      "requested_live_delta": 8389574,
+      "requested_peak_delta": 16779707
+    }
+  },
+  {
+    "label": "1048576",
+    "mode": "discover",
+    "sample": 0,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-1048576",
+      "discover",
+      "1048576"
+    ],
+    "command_sha256": "c32a1ecbe05b79936addbf8265770fe51db99bfa65dee0fe0d799e8f9bd4b7cd",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=2097166",
+      "INDEX_EVENT build count=1 live=1 bytes=2097166",
+      "INDEX_EVENT build count=2 live=2 bytes=2097166",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 2,
+    "drops": 2,
+    "max_live": 2,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 1,
+      "context_stack_bytes": 160,
+      "digest": "m1_3bf21d1acbd53be17a48a82affbcc3a28adcd2c1037c7d07fad858a54c9397e1",
+      "mode": "discover",
+      "n": 1048576,
+      "ns": 9350500,
+      "requested_live_delta": 1678,
+      "requested_peak_delta": 18878189
+    }
+  },
+  {
+    "label": "1048576",
+    "mode": "discover",
+    "sample": 1,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-1048576",
+      "discover",
+      "1048576"
+    ],
+    "command_sha256": "c32a1ecbe05b79936addbf8265770fe51db99bfa65dee0fe0d799e8f9bd4b7cd",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=2097166",
+      "INDEX_EVENT build count=1 live=1 bytes=2097166",
+      "INDEX_EVENT build count=2 live=2 bytes=2097166",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 2,
+    "drops": 2,
+    "max_live": 2,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 1,
+      "context_stack_bytes": 160,
+      "digest": "m1_3bf21d1acbd53be17a48a82affbcc3a28adcd2c1037c7d07fad858a54c9397e1",
+      "mode": "discover",
+      "n": 1048576,
+      "ns": 9459542,
+      "requested_live_delta": 1678,
+      "requested_peak_delta": 18878189
+    }
+  },
+  {
+    "label": "1048576",
+    "mode": "discover",
+    "sample": 2,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-1048576",
+      "discover",
+      "1048576"
+    ],
+    "command_sha256": "c32a1ecbe05b79936addbf8265770fe51db99bfa65dee0fe0d799e8f9bd4b7cd",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=2097166",
+      "INDEX_EVENT build count=1 live=1 bytes=2097166",
+      "INDEX_EVENT build count=2 live=2 bytes=2097166",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 2,
+    "drops": 2,
+    "max_live": 2,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 1,
+      "context_stack_bytes": 160,
+      "digest": "m1_3bf21d1acbd53be17a48a82affbcc3a28adcd2c1037c7d07fad858a54c9397e1",
+      "mode": "discover",
+      "n": 1048576,
+      "ns": 9145875,
+      "requested_live_delta": 1678,
+      "requested_peak_delta": 18878189
+    }
+  },
+  {
+    "label": "1048576",
+    "mode": "plan",
+    "sample": 0,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-1048576",
+      "plan",
+      "1048576"
+    ],
+    "command_sha256": "306f6655f6de0e79fbb67fc457f3ac0a831ed0ab451eb6926a2067363f7a7dbe",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=2097166",
+      "INDEX_EVENT build count=1 live=1 bytes=2097166",
+      "INDEX_EVENT build count=2 live=2 bytes=2097166",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 2,
+    "drops": 2,
+    "max_live": 2,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 1,
+      "digest": "m1_3bf21d1acbd53be17a48a82affbcc3a28adcd2c1037c7d07fad858a54c9397e1",
+      "mode": "plan",
+      "n": 1048576,
+      "ns": 11314459,
+      "requested_live_delta": 27077,
+      "requested_peak_delta": 18909939
+    }
+  },
+  {
+    "label": "1048576",
+    "mode": "plan",
+    "sample": 1,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-1048576",
+      "plan",
+      "1048576"
+    ],
+    "command_sha256": "306f6655f6de0e79fbb67fc457f3ac0a831ed0ab451eb6926a2067363f7a7dbe",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=2097166",
+      "INDEX_EVENT build count=1 live=1 bytes=2097166",
+      "INDEX_EVENT build count=2 live=2 bytes=2097166",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 2,
+    "drops": 2,
+    "max_live": 2,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 1,
+      "digest": "m1_3bf21d1acbd53be17a48a82affbcc3a28adcd2c1037c7d07fad858a54c9397e1",
+      "mode": "plan",
+      "n": 1048576,
+      "ns": 10843250,
+      "requested_live_delta": 27077,
+      "requested_peak_delta": 18909939
+    }
+  },
+  {
+    "label": "1048576",
+    "mode": "plan",
+    "sample": 2,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-1048576",
+      "plan",
+      "1048576"
+    ],
+    "command_sha256": "306f6655f6de0e79fbb67fc457f3ac0a831ed0ab451eb6926a2067363f7a7dbe",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=2097166",
+      "INDEX_EVENT build count=1 live=1 bytes=2097166",
+      "INDEX_EVENT build count=2 live=2 bytes=2097166",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 2,
+    "drops": 2,
+    "max_live": 2,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 1,
+      "digest": "m1_3bf21d1acbd53be17a48a82affbcc3a28adcd2c1037c7d07fad858a54c9397e1",
+      "mode": "plan",
+      "n": 1048576,
+      "ns": 10915000,
+      "requested_live_delta": 27077,
+      "requested_peak_delta": 18909939
+    }
+  },
+  {
+    "label": "1048576",
+    "mode": "run",
+    "sample": 0,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-1048576",
+      "run",
+      "1048576"
+    ],
+    "command_sha256": "ce0971d32211e98e7077265d7784ce1f9d1fe3d0d4ee73af9d8d52fbd8be9139",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=2097166",
+      "INDEX_EVENT build count=1 live=1 bytes=2097166",
+      "INDEX_EVENT build count=2 live=2 bytes=2097166",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0",
+      "INDEX_EVENT validation bytes=2097166",
+      "INDEX_EVENT build count=3 live=1 bytes=2097166",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 3,
+    "drops": 3,
+    "max_live": 2,
+    "validation_materializations": 2,
+    "output": {
+      "candidates": 1,
+      "digest": "m1_3bf21d1acbd53be17a48a82affbcc3a28adcd2c1037c7d07fad858a54c9397e1",
+      "mode": "run",
+      "n": 1048576,
+      "ns": 89919458,
+      "requested_live_delta": 103538,
+      "requested_peak_delta": 19050432
+    }
+  },
+  {
+    "label": "1048576",
+    "mode": "run",
+    "sample": 1,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-1048576",
+      "run",
+      "1048576"
+    ],
+    "command_sha256": "ce0971d32211e98e7077265d7784ce1f9d1fe3d0d4ee73af9d8d52fbd8be9139",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=2097166",
+      "INDEX_EVENT build count=1 live=1 bytes=2097166",
+      "INDEX_EVENT build count=2 live=2 bytes=2097166",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0",
+      "INDEX_EVENT validation bytes=2097166",
+      "INDEX_EVENT build count=3 live=1 bytes=2097166",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 3,
+    "drops": 3,
+    "max_live": 2,
+    "validation_materializations": 2,
+    "output": {
+      "candidates": 1,
+      "digest": "m1_3bf21d1acbd53be17a48a82affbcc3a28adcd2c1037c7d07fad858a54c9397e1",
+      "mode": "run",
+      "n": 1048576,
+      "ns": 74433875,
+      "requested_live_delta": 51554,
+      "requested_peak_delta": 18978696
+    }
+  },
+  {
+    "label": "1048576",
+    "mode": "run",
+    "sample": 2,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-1048576",
+      "run",
+      "1048576"
+    ],
+    "command_sha256": "ce0971d32211e98e7077265d7784ce1f9d1fe3d0d4ee73af9d8d52fbd8be9139",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=2097166",
+      "INDEX_EVENT build count=1 live=1 bytes=2097166",
+      "INDEX_EVENT build count=2 live=2 bytes=2097166",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0",
+      "INDEX_EVENT validation bytes=2097166",
+      "INDEX_EVENT build count=3 live=1 bytes=2097166",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 3,
+    "drops": 3,
+    "max_live": 2,
+    "validation_materializations": 2,
+    "output": {
+      "candidates": 1,
+      "digest": "m1_3bf21d1acbd53be17a48a82affbcc3a28adcd2c1037c7d07fad858a54c9397e1",
+      "mode": "run",
+      "n": 1048576,
+      "ns": 85540000,
+      "requested_live_delta": 103538,
+      "requested_peak_delta": 19050560
+    }
+  },
+  {
+    "label": "tiny",
+    "mode": "context",
+    "sample": 0,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-tiny",
+      "context",
+      "0"
+    ],
+    "command_sha256": "b24b4ebb9cf4b2f2e09dcc24f9002410e9da592344ff9edaee88125109f44797",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=12",
+      "INDEX_EVENT build count=1 live=1 bytes=12",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 1,
+    "drops": 1,
+    "max_live": 1,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 0,
+      "context_stack_bytes": 160,
+      "digest": "8e3e54441554aa203c80ac0b00b4c483798847f8a819df761d357f269aa962e0",
+      "mode": "context",
+      "n": 0,
+      "ns": 34917,
+      "requested_live_delta": 144,
+      "requested_peak_delta": 144
+    }
+  },
+  {
+    "label": "tiny",
+    "mode": "context",
+    "sample": 1,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-tiny",
+      "context",
+      "0"
+    ],
+    "command_sha256": "b24b4ebb9cf4b2f2e09dcc24f9002410e9da592344ff9edaee88125109f44797",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=12",
+      "INDEX_EVENT build count=1 live=1 bytes=12",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 1,
+    "drops": 1,
+    "max_live": 1,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 0,
+      "context_stack_bytes": 160,
+      "digest": "8e3e54441554aa203c80ac0b00b4c483798847f8a819df761d357f269aa962e0",
+      "mode": "context",
+      "n": 0,
+      "ns": 35416,
+      "requested_live_delta": 144,
+      "requested_peak_delta": 144
+    }
+  },
+  {
+    "label": "tiny",
+    "mode": "context",
+    "sample": 2,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-tiny",
+      "context",
+      "0"
+    ],
+    "command_sha256": "b24b4ebb9cf4b2f2e09dcc24f9002410e9da592344ff9edaee88125109f44797",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=12",
+      "INDEX_EVENT build count=1 live=1 bytes=12",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 1,
+    "drops": 1,
+    "max_live": 1,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 0,
+      "context_stack_bytes": 160,
+      "digest": "8e3e54441554aa203c80ac0b00b4c483798847f8a819df761d357f269aa962e0",
+      "mode": "context",
+      "n": 0,
+      "ns": 36666,
+      "requested_live_delta": 144,
+      "requested_peak_delta": 144
+    }
+  },
+  {
+    "label": "tiny",
+    "mode": "pipeline",
+    "sample": 0,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-tiny",
+      "pipeline",
+      "0"
+    ],
+    "command_sha256": "1cf94bd58e6c4f4bc5b6ba46f99aeedfc745de83917f061712a0cc58f88dd89d",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=12",
+      "INDEX_EVENT build count=1 live=1 bytes=12",
+      "INDEX_EVENT build count=2 live=2 bytes=12",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 2,
+    "drops": 2,
+    "max_live": 2,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 1,
+      "context_stack_bytes": 160,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "mode": "pipeline",
+      "n": 0,
+      "ns": 241708,
+      "requested_live_delta": 966,
+      "requested_peak_delta": 2475
+    }
+  },
+  {
+    "label": "tiny",
+    "mode": "pipeline",
+    "sample": 1,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-tiny",
+      "pipeline",
+      "0"
+    ],
+    "command_sha256": "1cf94bd58e6c4f4bc5b6ba46f99aeedfc745de83917f061712a0cc58f88dd89d",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=12",
+      "INDEX_EVENT build count=1 live=1 bytes=12",
+      "INDEX_EVENT build count=2 live=2 bytes=12",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 2,
+    "drops": 2,
+    "max_live": 2,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 1,
+      "context_stack_bytes": 160,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "mode": "pipeline",
+      "n": 0,
+      "ns": 218000,
+      "requested_live_delta": 966,
+      "requested_peak_delta": 2475
+    }
+  },
+  {
+    "label": "tiny",
+    "mode": "pipeline",
+    "sample": 2,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-tiny",
+      "pipeline",
+      "0"
+    ],
+    "command_sha256": "1cf94bd58e6c4f4bc5b6ba46f99aeedfc745de83917f061712a0cc58f88dd89d",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=12",
+      "INDEX_EVENT build count=1 live=1 bytes=12",
+      "INDEX_EVENT build count=2 live=2 bytes=12",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 2,
+    "drops": 2,
+    "max_live": 2,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 1,
+      "context_stack_bytes": 160,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "mode": "pipeline",
+      "n": 0,
+      "ns": 213500,
+      "requested_live_delta": 966,
+      "requested_peak_delta": 2475
+    }
+  },
+  {
+    "label": "tiny",
+    "mode": "discover",
+    "sample": 0,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-tiny",
+      "discover",
+      "0"
+    ],
+    "command_sha256": "12377fb39f6877ff71bb1feb928cc96e28f82dfdfebad13caa4d9dcf290d204c",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=12",
+      "INDEX_EVENT build count=1 live=1 bytes=12",
+      "INDEX_EVENT build count=2 live=2 bytes=12",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 2,
+    "drops": 2,
+    "max_live": 2,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 1,
+      "context_stack_bytes": 160,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "mode": "discover",
+      "n": 0,
+      "ns": 449625,
+      "requested_live_delta": 1678,
+      "requested_peak_delta": 3797
+    }
+  },
+  {
+    "label": "tiny",
+    "mode": "discover",
+    "sample": 1,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-tiny",
+      "discover",
+      "0"
+    ],
+    "command_sha256": "12377fb39f6877ff71bb1feb928cc96e28f82dfdfebad13caa4d9dcf290d204c",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=12",
+      "INDEX_EVENT build count=1 live=1 bytes=12",
+      "INDEX_EVENT build count=2 live=2 bytes=12",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 2,
+    "drops": 2,
+    "max_live": 2,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 1,
+      "context_stack_bytes": 160,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "mode": "discover",
+      "n": 0,
+      "ns": 485334,
+      "requested_live_delta": 1678,
+      "requested_peak_delta": 3797
+    }
+  },
+  {
+    "label": "tiny",
+    "mode": "discover",
+    "sample": 2,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-tiny",
+      "discover",
+      "0"
+    ],
+    "command_sha256": "12377fb39f6877ff71bb1feb928cc96e28f82dfdfebad13caa4d9dcf290d204c",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=12",
+      "INDEX_EVENT build count=1 live=1 bytes=12",
+      "INDEX_EVENT build count=2 live=2 bytes=12",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 2,
+    "drops": 2,
+    "max_live": 2,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 1,
+      "context_stack_bytes": 160,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "mode": "discover",
+      "n": 0,
+      "ns": 438875,
+      "requested_live_delta": 1678,
+      "requested_peak_delta": 3797
+    }
+  },
+  {
+    "label": "tiny",
+    "mode": "plan",
+    "sample": 0,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-tiny",
+      "plan",
+      "0"
+    ],
+    "command_sha256": "b0ee3e18faff3cff48fc33dee5ec865ab45d6eaa6a0a304a3230cc8699aecd65",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=12",
+      "INDEX_EVENT build count=1 live=1 bytes=12",
+      "INDEX_EVENT build count=2 live=2 bytes=12",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 2,
+    "drops": 2,
+    "max_live": 2,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 1,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "mode": "plan",
+      "n": 0,
+      "ns": 1443792,
+      "requested_live_delta": 27080,
+      "requested_peak_delta": 165860
+    }
+  },
+  {
+    "label": "tiny",
+    "mode": "plan",
+    "sample": 1,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-tiny",
+      "plan",
+      "0"
+    ],
+    "command_sha256": "b0ee3e18faff3cff48fc33dee5ec865ab45d6eaa6a0a304a3230cc8699aecd65",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=12",
+      "INDEX_EVENT build count=1 live=1 bytes=12",
+      "INDEX_EVENT build count=2 live=2 bytes=12",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 2,
+    "drops": 2,
+    "max_live": 2,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 1,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "mode": "plan",
+      "n": 0,
+      "ns": 1311709,
+      "requested_live_delta": 27080,
+      "requested_peak_delta": 165860
+    }
+  },
+  {
+    "label": "tiny",
+    "mode": "plan",
+    "sample": 2,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-tiny",
+      "plan",
+      "0"
+    ],
+    "command_sha256": "b0ee3e18faff3cff48fc33dee5ec865ab45d6eaa6a0a304a3230cc8699aecd65",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=12",
+      "INDEX_EVENT build count=1 live=1 bytes=12",
+      "INDEX_EVENT build count=2 live=2 bytes=12",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 2,
+    "drops": 2,
+    "max_live": 2,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 1,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "mode": "plan",
+      "n": 0,
+      "ns": 1252334,
+      "requested_live_delta": 27080,
+      "requested_peak_delta": 165860
+    }
+  },
+  {
+    "label": "tiny",
+    "mode": "run",
+    "sample": 0,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-tiny",
+      "run",
+      "0"
+    ],
+    "command_sha256": "bf33d7cd52f3a043a5a02fa2d1912f36025f17b23e919070f6871d7cfaaade75",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=12",
+      "INDEX_EVENT build count=1 live=1 bytes=12",
+      "INDEX_EVENT build count=2 live=2 bytes=12",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0",
+      "INDEX_EVENT validation bytes=12",
+      "INDEX_EVENT build count=3 live=1 bytes=12",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 3,
+    "drops": 3,
+    "max_live": 2,
+    "validation_materializations": 2,
+    "output": {
+      "candidates": 1,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "mode": "run",
+      "n": 0,
+      "ns": 50897917,
+      "requested_live_delta": 51509,
+      "requested_peak_delta": 229551
+    }
+  },
+  {
+    "label": "tiny",
+    "mode": "run",
+    "sample": 1,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-tiny",
+      "run",
+      "0"
+    ],
+    "command_sha256": "bf33d7cd52f3a043a5a02fa2d1912f36025f17b23e919070f6871d7cfaaade75",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=12",
+      "INDEX_EVENT build count=1 live=1 bytes=12",
+      "INDEX_EVENT build count=2 live=2 bytes=12",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0",
+      "INDEX_EVENT validation bytes=12",
+      "INDEX_EVENT build count=3 live=1 bytes=12",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 3,
+    "drops": 3,
+    "max_live": 2,
+    "validation_materializations": 2,
+    "output": {
+      "candidates": 1,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "mode": "run",
+      "n": 0,
+      "ns": 61578542,
+      "requested_live_delta": 103349,
+      "requested_peak_delta": 301351
+    }
+  },
+  {
+    "label": "tiny",
+    "mode": "run",
+    "sample": 2,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-tiny",
+      "run",
+      "0"
+    ],
+    "command_sha256": "bf33d7cd52f3a043a5a02fa2d1912f36025f17b23e919070f6871d7cfaaade75",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=12",
+      "INDEX_EVENT build count=1 live=1 bytes=12",
+      "INDEX_EVENT build count=2 live=2 bytes=12",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0",
+      "INDEX_EVENT validation bytes=12",
+      "INDEX_EVENT build count=3 live=1 bytes=12",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 3,
+    "drops": 3,
+    "max_live": 2,
+    "validation_materializations": 2,
+    "output": {
+      "candidates": 1,
+      "digest": "m1_c188ecf92a4dfb7504b61677ec0d1150c1955fa0f730b54e5854635ad13dffcf",
+      "mode": "run",
+      "n": 0,
+      "ns": 49603292,
+      "requested_live_delta": 51509,
+      "requested_peak_delta": 229679
+    }
+  },
+  {
+    "label": "small",
+    "mode": "context",
+    "sample": 0,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-small",
+      "context",
+      "128"
+    ],
+    "command_sha256": "c0ac8b97208f77f833783a34d18be714ff430823f05ba5725db8077139fb5dc7",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=1771",
+      "INDEX_EVENT build count=1 live=1 bytes=1771",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 1,
+    "drops": 1,
+    "max_live": 1,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 0,
+      "context_stack_bytes": 160,
+      "digest": "a7c6d489d8cf51e322b0fa5f08f7aefa8ebb5eb112ad2666695d93d40ad68d3c",
+      "mode": "context",
+      "n": 128,
+      "ns": 52292,
+      "requested_live_delta": 640,
+      "requested_peak_delta": 640
+    }
+  },
+  {
+    "label": "small",
+    "mode": "context",
+    "sample": 1,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-small",
+      "context",
+      "128"
+    ],
+    "command_sha256": "c0ac8b97208f77f833783a34d18be714ff430823f05ba5725db8077139fb5dc7",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=1771",
+      "INDEX_EVENT build count=1 live=1 bytes=1771",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 1,
+    "drops": 1,
+    "max_live": 1,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 0,
+      "context_stack_bytes": 160,
+      "digest": "a7c6d489d8cf51e322b0fa5f08f7aefa8ebb5eb112ad2666695d93d40ad68d3c",
+      "mode": "context",
+      "n": 128,
+      "ns": 43875,
+      "requested_live_delta": 640,
+      "requested_peak_delta": 640
+    }
+  },
+  {
+    "label": "small",
+    "mode": "context",
+    "sample": 2,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-small",
+      "context",
+      "128"
+    ],
+    "command_sha256": "c0ac8b97208f77f833783a34d18be714ff430823f05ba5725db8077139fb5dc7",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=1771",
+      "INDEX_EVENT build count=1 live=1 bytes=1771",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 1,
+    "drops": 1,
+    "max_live": 1,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 0,
+      "context_stack_bytes": 160,
+      "digest": "a7c6d489d8cf51e322b0fa5f08f7aefa8ebb5eb112ad2666695d93d40ad68d3c",
+      "mode": "context",
+      "n": 128,
+      "ns": 39750,
+      "requested_live_delta": 640,
+      "requested_peak_delta": 640
+    }
+  },
+  {
+    "label": "small",
+    "mode": "pipeline",
+    "sample": 0,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-small",
+      "pipeline",
+      "128"
+    ],
+    "command_sha256": "949c808b19c53a821065c41512fd0c8d0cb280fb6745e8c5ae77e6ea5cfce8c6",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=1771",
+      "INDEX_EVENT build count=1 live=1 bytes=1771",
+      "INDEX_EVENT build count=2 live=2 bytes=1771",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 2,
+    "drops": 2,
+    "max_live": 2,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 1,
+      "context_stack_bytes": 160,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "mode": "pipeline",
+      "n": 128,
+      "ns": 350542,
+      "requested_live_delta": 1462,
+      "requested_peak_delta": 67574
+    }
+  },
+  {
+    "label": "small",
+    "mode": "pipeline",
+    "sample": 1,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-small",
+      "pipeline",
+      "128"
+    ],
+    "command_sha256": "949c808b19c53a821065c41512fd0c8d0cb280fb6745e8c5ae77e6ea5cfce8c6",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=1771",
+      "INDEX_EVENT build count=1 live=1 bytes=1771",
+      "INDEX_EVENT build count=2 live=2 bytes=1771",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 2,
+    "drops": 2,
+    "max_live": 2,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 1,
+      "context_stack_bytes": 160,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "mode": "pipeline",
+      "n": 128,
+      "ns": 295875,
+      "requested_live_delta": 1462,
+      "requested_peak_delta": 67574
+    }
+  },
+  {
+    "label": "small",
+    "mode": "pipeline",
+    "sample": 2,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-small",
+      "pipeline",
+      "128"
+    ],
+    "command_sha256": "949c808b19c53a821065c41512fd0c8d0cb280fb6745e8c5ae77e6ea5cfce8c6",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=1771",
+      "INDEX_EVENT build count=1 live=1 bytes=1771",
+      "INDEX_EVENT build count=2 live=2 bytes=1771",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 2,
+    "drops": 2,
+    "max_live": 2,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 1,
+      "context_stack_bytes": 160,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "mode": "pipeline",
+      "n": 128,
+      "ns": 311708,
+      "requested_live_delta": 1462,
+      "requested_peak_delta": 67574
+    }
+  },
+  {
+    "label": "small",
+    "mode": "discover",
+    "sample": 0,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-small",
+      "discover",
+      "128"
+    ],
+    "command_sha256": "679c9890749b21633d757d757966df030e50027cfdb42bc9ad63e144a5ad21b0",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=1771",
+      "INDEX_EVENT build count=1 live=1 bytes=1771",
+      "INDEX_EVENT build count=2 live=2 bytes=1771",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 2,
+    "drops": 2,
+    "max_live": 2,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 1,
+      "context_stack_bytes": 160,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "mode": "discover",
+      "n": 128,
+      "ns": 566917,
+      "requested_live_delta": 1678,
+      "requested_peak_delta": 70657
+    }
+  },
+  {
+    "label": "small",
+    "mode": "discover",
+    "sample": 1,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-small",
+      "discover",
+      "128"
+    ],
+    "command_sha256": "679c9890749b21633d757d757966df030e50027cfdb42bc9ad63e144a5ad21b0",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=1771",
+      "INDEX_EVENT build count=1 live=1 bytes=1771",
+      "INDEX_EVENT build count=2 live=2 bytes=1771",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 2,
+    "drops": 2,
+    "max_live": 2,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 1,
+      "context_stack_bytes": 160,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "mode": "discover",
+      "n": 128,
+      "ns": 537541,
+      "requested_live_delta": 1678,
+      "requested_peak_delta": 70657
+    }
+  },
+  {
+    "label": "small",
+    "mode": "discover",
+    "sample": 2,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-small",
+      "discover",
+      "128"
+    ],
+    "command_sha256": "679c9890749b21633d757d757966df030e50027cfdb42bc9ad63e144a5ad21b0",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=1771",
+      "INDEX_EVENT build count=1 live=1 bytes=1771",
+      "INDEX_EVENT build count=2 live=2 bytes=1771",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 2,
+    "drops": 2,
+    "max_live": 2,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 1,
+      "context_stack_bytes": 160,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "mode": "discover",
+      "n": 128,
+      "ns": 524500,
+      "requested_live_delta": 1678,
+      "requested_peak_delta": 70657
+    }
+  },
+  {
+    "label": "small",
+    "mode": "plan",
+    "sample": 0,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-small",
+      "plan",
+      "128"
+    ],
+    "command_sha256": "6ceec2ff6a89ff0bf20d57a6878a38ce7f1fef3bad3c388ad928d136877fce61",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=1771",
+      "INDEX_EVENT build count=1 live=1 bytes=1771",
+      "INDEX_EVENT build count=2 live=2 bytes=1771",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 2,
+    "drops": 2,
+    "max_live": 2,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 1,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "mode": "plan",
+      "n": 128,
+      "ns": 1516875,
+      "requested_live_delta": 27079,
+      "requested_peak_delta": 165862
+    }
+  },
+  {
+    "label": "small",
+    "mode": "plan",
+    "sample": 1,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-small",
+      "plan",
+      "128"
+    ],
+    "command_sha256": "6ceec2ff6a89ff0bf20d57a6878a38ce7f1fef3bad3c388ad928d136877fce61",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=1771",
+      "INDEX_EVENT build count=1 live=1 bytes=1771",
+      "INDEX_EVENT build count=2 live=2 bytes=1771",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 2,
+    "drops": 2,
+    "max_live": 2,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 1,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "mode": "plan",
+      "n": 128,
+      "ns": 1453458,
+      "requested_live_delta": 27079,
+      "requested_peak_delta": 165862
+    }
+  },
+  {
+    "label": "small",
+    "mode": "plan",
+    "sample": 2,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-small",
+      "plan",
+      "128"
+    ],
+    "command_sha256": "6ceec2ff6a89ff0bf20d57a6878a38ce7f1fef3bad3c388ad928d136877fce61",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=1771",
+      "INDEX_EVENT build count=1 live=1 bytes=1771",
+      "INDEX_EVENT build count=2 live=2 bytes=1771",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 2,
+    "drops": 2,
+    "max_live": 2,
+    "validation_materializations": 1,
+    "output": {
+      "candidates": 1,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "mode": "plan",
+      "n": 128,
+      "ns": 1459333,
+      "requested_live_delta": 27079,
+      "requested_peak_delta": 165862
+    }
+  },
+  {
+    "label": "small",
+    "mode": "run",
+    "sample": 0,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-small",
+      "run",
+      "128"
+    ],
+    "command_sha256": "20aa83e21c87689e86713cfc0a5a283f8ce4820f22881d45f0fe3a3753cb9360",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=1771",
+      "INDEX_EVENT build count=1 live=1 bytes=1771",
+      "INDEX_EVENT build count=2 live=2 bytes=1771",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0",
+      "INDEX_EVENT validation bytes=1771",
+      "INDEX_EVENT build count=3 live=1 bytes=1771",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 3,
+    "drops": 3,
+    "max_live": 2,
+    "validation_materializations": 2,
+    "output": {
+      "candidates": 1,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "mode": "run",
+      "n": 128,
+      "ns": 62891375,
+      "requested_live_delta": 103412,
+      "requested_peak_delta": 301547
+    }
+  },
+  {
+    "label": "small",
+    "mode": "run",
+    "sample": 1,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-small",
+      "run",
+      "128"
+    ],
+    "command_sha256": "20aa83e21c87689e86713cfc0a5a283f8ce4820f22881d45f0fe3a3753cb9360",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=1771",
+      "INDEX_EVENT build count=1 live=1 bytes=1771",
+      "INDEX_EVENT build count=2 live=2 bytes=1771",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0",
+      "INDEX_EVENT validation bytes=1771",
+      "INDEX_EVENT build count=3 live=1 bytes=1771",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 3,
+    "drops": 3,
+    "max_live": 2,
+    "validation_materializations": 2,
+    "output": {
+      "candidates": 1,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "mode": "run",
+      "n": 128,
+      "ns": 47638375,
+      "requested_live_delta": 51524,
+      "requested_peak_delta": 229619
+    }
+  },
+  {
+    "label": "small",
+    "mode": "run",
+    "sample": 2,
+    "variant": "eager",
+    "command": [
+      "/tmp/hoimin-perf-three-task3/probe-instrument-eager",
+      "/tmp/hoimin-perf-three-task3/fixture-small",
+      "run",
+      "128"
+    ],
+    "command_sha256": "20aa83e21c87689e86713cfc0a5a283f8ce4820f22881d45f0fe3a3753cb9360",
+    "probe_sha256": "99050e788ec9137394c0cfae28b260500cd759c53e660f7dcbe3a9f4e7b717a9",
+    "events": [
+      "INDEX_EVENT validation bytes=1771",
+      "INDEX_EVENT build count=1 live=1 bytes=1771",
+      "INDEX_EVENT build count=2 live=2 bytes=1771",
+      "INDEX_EVENT drop live=1",
+      "INDEX_EVENT drop live=0",
+      "INDEX_EVENT validation bytes=1771",
+      "INDEX_EVENT build count=3 live=1 bytes=1771",
+      "INDEX_EVENT drop live=0"
+    ],
+    "builds": 3,
+    "drops": 3,
+    "max_live": 2,
+    "validation_materializations": 2,
+    "output": {
+      "candidates": 1,
+      "digest": "m1_be95908b6619ef863f61ef72dbba7a397f82c24d8dce098e9f96bc1f5c5b4810",
+      "mode": "run",
+      "n": 128,
+      "ns": 56575833,
+      "requested_live_delta": 103412,
+      "requested_peak_delta": 301483
+    }
+  }
+]

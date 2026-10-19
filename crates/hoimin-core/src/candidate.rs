@@ -1,6 +1,7 @@
 #[cfg(test)]
 use std::cell::Cell;
 use std::fmt;
+use std::sync::OnceLock;
 
 use camino::{Utf8Path, Utf8PathBuf};
 use serde::{Deserialize, Serialize};
@@ -176,12 +177,18 @@ pub enum CandidateValidationError {
 }
 
 /// Source-derived facts reused while validating candidates from one immutable file.
+///
+/// Raw bytes remain borrowed; decoding, raw/decoded size checks and the raw hash
+/// are eager. Location indexes are built only after a candidate passes the other
+/// checks, so analysis can release its own index first. The private index is
+/// always derived from this context's source: Unicode locations use decoded
+/// offsets, while Latin-1 locations use raw offsets (one scalar per raw byte).
 #[derive(Debug)]
 pub struct CandidateValidationContext<'source> {
     source: &'source [u8],
     decoded: Result<DecodedPythonSource<'source>, SourceEncodingError>,
     file_hash: String,
-    source_index: Option<CandidateSourceIndex>,
+    source_index: OnceLock<Result<CandidateSourceIndex, CandidateValidationError>>,
 }
 
 #[derive(Debug)]
@@ -191,14 +198,20 @@ enum CandidateSourceIndex {
     Latin1(Vec<u32>),
 }
 
+#[cfg(test)]
+thread_local! {
+    static VALIDATION_INDEX_BUILDS: Cell<usize> = const { Cell::new(0) };
+}
+
 impl CandidateSourceIndex {
     fn new(
         source: &[u8],
         decoded: &DecodedPythonSource<'_>,
     ) -> Result<Self, CandidateValidationError> {
         // Preserve the decoded-size limit previously enforced by PythonSourceIndex.
-        u32::try_from(decoded.text().len())
-            .map_err(|_| CandidateValidationError::SourceTooLarge)?;
+        check_source_length(decoded.text().len())?;
+        #[cfg(test)]
+        VALIDATION_INDEX_BUILDS.with(|builds| builds.set(builds.get() + 1));
         if decoded.encoding() == PythonSourceEncoding::Latin1 {
             Ok(Self::Latin1(python_line_starts(source)?))
         } else {
@@ -221,20 +234,18 @@ impl CandidateSourceIndex {
 impl<'source> CandidateValidationContext<'source> {
     /// # Errors
     ///
-    /// Returns [`CandidateValidationError::SourceTooLarge`] when the source exceeds `u32::MAX` bytes.
+    /// Returns [`CandidateValidationError::SourceTooLarge`] when the raw or decoded source exceeds `u32::MAX` bytes.
     pub fn new(source: &'source [u8]) -> Result<Self, CandidateValidationError> {
-        u32::try_from(source.len()).map_err(|_| CandidateValidationError::SourceTooLarge)?;
+        check_source_length(source.len())?;
         let decoded = decode_python_source(source);
-        let source_index = decoded
-            .as_ref()
-            .ok()
-            .map(|decoded| CandidateSourceIndex::new(source, decoded))
-            .transpose()?;
+        if let Ok(decoded) = &decoded {
+            check_source_length(decoded.text().len())?;
+        }
         Ok(Self {
             source,
             decoded,
             file_hash: blake3::hash(source).to_hex().to_string(),
-            source_index,
+            source_index: OnceLock::new(),
         })
     }
 
@@ -423,11 +434,17 @@ pub fn python_line_starts(source: &[u8]) -> Result<Vec<u32>, CandidateValidation
     )
 }
 
+fn check_source_length(length: usize) -> Result<(), CandidateValidationError> {
+    u32::try_from(length)
+        .map(|_| ())
+        .map_err(|_| CandidateValidationError::SourceTooLarge)
+}
+
 fn source_line_starts(
     source_len: usize,
     newline_ends: impl Iterator<Item = usize>,
 ) -> Result<Vec<u32>, CandidateValidationError> {
-    u32::try_from(source_len).map_err(|_| CandidateValidationError::SourceTooLarge)?;
+    check_source_length(source_len)?;
     let mut line_starts = vec![0];
     for offset in newline_ends {
         line_starts
@@ -593,8 +610,10 @@ pub fn validate_candidate_with_context(
         .map_err(|error| CandidateValidationError::InvalidEncoding(error.to_string()))?;
     let (line, column) = context
         .source_index
+        .get_or_init(|| CandidateSourceIndex::new(context.source, decoded))
         .as_ref()
-        .and_then(|index| index.line_and_column(start, decoded_start))
+        .map_err(Clone::clone)?
+        .line_and_column(start, decoded_start)
         .ok_or(CandidateValidationError::LocationMismatch)?;
     if candidate.line != line || candidate.column != column {
         return Err(CandidateValidationError::LocationMismatch);
@@ -758,3 +777,7 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "candidate_lazy_tests.rs"]
+mod lazy_tests;

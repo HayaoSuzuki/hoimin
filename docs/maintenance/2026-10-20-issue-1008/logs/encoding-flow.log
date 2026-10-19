@@ -1,0 +1,32 @@
+   Compiling hoimin-cli v0.14.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1006-line-selection-index-1007-shared-manifest-1008-source-index/crates/hoimin-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.58s
+     Running tests/source_encoding.rs (/tmp/hoimin-perf-three-target/debug/deps/source_encoding-8ae688b6aff31ecd)
+
+running 6 tests
+test accepted_cookie_placements_preserve_original_plan_hashes ... ok
+test encoding_diagnostics_include_path_and_declaration ... ok
+test latin1_plan_run_verify_preserve_raw_spans_ids_and_worker_bytes ... ok
+test dense_latin1_plan_run_verify_preserve_all_python_line_endings ... ok
+test latin1_symbol_selection_uses_shared_decoding_in_plan_run_and_verify ... ok
+test supported_codec_cookie_boundaries_match_cpython_compilation ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.28s
+
+     Running tests/source_index_encoding_flow.rs (/tmp/hoimin-perf-three-target/debug/deps/source_index_encoding_flow-aac3ac8f4f093336)
+
+running 12 tests
+test ascii_cr ... ok
+test ascii_crlf ... ok
+test ascii_lf ... ok
+test bom_cr ... ok
+test bom_crlf ... ok
+test bom_lf ... ok
+test latin1_cr ... ok
+test latin1_crlf ... ok
+test latin1_lf ... ok
+test utf8_cr ... ok
+test utf8_crlf ... ok
+test utf8_lf ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.35s
+

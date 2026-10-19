@@ -1,0 +1,63 @@
+cargo fmt (workspace)....................................................Passed
+cargo fmt (vendored parser)..............................................Passed
+cargo clippy (workspace).................................................Failed
+- hook id: cargo-clippy
+- exit code: 101
+
+  Checking hoimin-python v0.14.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1006-line-selection-index-1007-shared-manifest-1008-source-index/crates/hoimin-python)
+      Checking hoimin-cli v0.14.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1006-line-selection-index-1007-shared-manifest-1008-source-index/crates/hoimin-cli)
+  error[E0061]: this method takes 1 argument but 2 arguments were supplied
+     --> crates/hoimin-python/src/analyzer/rust_tests.rs:277:26
+      |
+  277 |         assert_eq!(index.line_and_column(source, offset), expected);
+      |                          ^^^^^^^^^^^^^^^ ------ unexpected argument #1 of type `&str`
+      |
+  note: method defined here
+     --> crates/hoimin-python/src/analyzer/rust.rs:825:8
+      |
+  825 |     fn line_and_column(&self, offset: usize) -> (u32, u32) {
+      |        ^^^^^^^^^^^^^^^
+  help: remove the extra argument
+      |
+  277 -         assert_eq!(index.line_and_column(source, offset), expected);
+  277 +         assert_eq!(index.line_and_column(offset), expected);
+      |
+
+  error[E0061]: this method takes 1 argument but 2 arguments were supplied
+      --> crates/hoimin-python/src/analyzer/rust_tests.rs:4811:24
+       |
+  4811 |             line_index.line_and_column(source, offset),
+       |                        ^^^^^^^^^^^^^^^ ------ unexpected argument #1 of type `&str`
+       |
+  note: method defined here
+      --> crates/hoimin-python/src/analyzer/rust.rs:825:8
+       |
+   825 |     fn line_and_column(&self, offset: usize) -> (u32, u32) {
+       |        ^^^^^^^^^^^^^^^
+  help: remove the extra argument
+       |
+  4811 -             line_index.line_and_column(source, offset),
+  4811 +             line_index.line_and_column(offset),
+       |
+
+  error[E0061]: this method takes 1 argument but 2 arguments were supplied
+      --> crates/hoimin-python/src/analyzer/rust_tests.rs:4832:24
+       |
+  4832 |             line_index.line_and_column(source, offset),
+       |                        ^^^^^^^^^^^^^^^ ------ unexpected argument #1 of type `&str`
+       |
+  note: method defined here
+      --> crates/hoimin-python/src/analyzer/rust.rs:825:8
+       |
+   825 |     fn line_and_column(&self, offset: usize) -> (u32, u32) {
+       |        ^^^^^^^^^^^^^^^
+  help: remove the extra argument
+       |
+  4832 -             line_index.line_and_column(source, offset),
+  4832 +             line_index.line_and_column(offset),
+       |
+
+  For more information about this error, try `rustc --explain E0061`.
+  error: could not compile `hoimin-python` (lib test) due to 3 previous errors
+  warning: build failed, waiting for other jobs to finish...
+cargo clippy (vendored parser)...........................................Passed

@@ -1,0 +1,38 @@
+   Compiling syn v3.0.5
+   Compiling num-traits v0.2.19
+   Compiling memchr v2.8.3
+   Compiling serde_derive v1.0.229
+   Compiling thiserror-impl v2.0.21
+   Compiling proptest v1.12.0
+   Compiling serde v1.0.229
+   Compiling hoimin-budget-math v0.14.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1006-line-selection-index-1007-shared-manifest-1008-source-index/crates/hoimin-budget-math)
+   Compiling serde_json v1.0.154
+   Compiling thiserror v2.0.21
+   Compiling hoimin-core v0.14.0 (/Users/hayao/RustroverProjects/hoimin/.worktrees/issue-1006-line-selection-index-1007-shared-manifest-1008-source-index/crates/hoimin-core)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 6.20s
+     Running unittests src/lib.rs (/tmp/hoimin-perf-three-target/debug/deps/hoimin_core-8f88fc31ca3bf84d)
+
+running 2 tests
+
+thread 'candidate::lazy_tests::unused_context_does_not_materialize_locations' (56596920) panicked at crates/hoimin-core/src/candidate_lazy_tests.rs:18:5:
+assertion `left == right` failed
+  left: 1
+ right: 0
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+thread 'candidate::lazy_tests::repeated_validation_reuses_one_materialization' (56596919) panicked at crates/hoimin-core/src/candidate_lazy_tests.rs:30:5:
+assertion `left == right` failed
+  left: 0
+ right: 1
+test candidate::lazy_tests::unused_context_does_not_materialize_locations ... FAILED
+test candidate::lazy_tests::repeated_validation_reuses_one_materialization ... FAILED
+
+failures:
+
+failures:
+    candidate::lazy_tests::repeated_validation_reuses_one_materialization
+    candidate::lazy_tests::unused_context_does_not_materialize_locations
+
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 47 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p hoimin-core --lib`
