@@ -1,0 +1,82 @@
+(* #"crates/hoimin-budget-math/src/duration.rs" 80 9 80 14 *)
+
+(* <duration::MutantTimeout as std::clone::Clone> *)
+
+let%span sduration = "crates/hoimin-budget-math/src/duration.rs" 80 9 80 14
+let%span sduration'0 = "crates/hoimin-budget-math/src/duration.rs" 43 20 43 29
+let%span sduration'1 = "crates/hoimin-budget-math/src/duration.rs" 25 20 25 27
+let%span sinvariant = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/invariant.rs" 90 8 90 18
+let%span sord = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/logic/ord.rs" 22 8 22 20
+let%span sord'0 = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/logic/ord.rs" 34 8 34 21
+let%span stime = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/std/time.rs" 13 14 13 77
+let%span stime'0 = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/std/time.rs" 44 4 44 24
+
+use creusot.prelude.Any
+use creusot.int.UInt64
+use int.Int
+
+type t_Duration
+
+type t_NonZeroDuration = { f0: t_Duration }
+
+type t_MutantTimeout = Auto | Fixed t_NonZeroDuration
+
+predicate gt_log_Int [@inline:trivial] (self: int) (other: int) = [%#sord] other < self
+
+meta "rewrite_def" predicate gt_log_Int
+
+predicate ge_log_Int [@inline:trivial] (self: int) (other: int) = [%#sord'0] other <= self
+
+meta "rewrite_def" predicate ge_log_Int
+
+function secs_to_nanos (secs: int) : int = [%#stime'0] secs * 1000000000
+
+constant const_MAX: UInt64.t = (18446744073709551615: UInt64.t)
+
+function view_Duration (self: t_Duration) : int
+
+axiom view_Duration_spec: forall self: t_Duration [view_Duration self]. [%#stime] ge_log_Int (view_Duration self) 0
+    /\ view_Duration self <= secs_to_nanos (UInt64.t'int const_MAX) + 999999999
+
+function view_NonZeroDuration [#"crates/hoimin-budget-math/src/duration.rs" 24 4 24 24] (self: t_NonZeroDuration) : int
+ = [%#sduration'1] view_Duration self.f0
+
+predicate invariant_NonZeroDuration [#"crates/hoimin-budget-math/src/duration.rs" 42 4 42 30] (self: t_NonZeroDuration) =
+  [%#sduration'0] gt_log_Int (view_NonZeroDuration self) 0
+
+predicate inv_Duration (_1: t_Duration)
+
+predicate inv_NonZeroDuration (_1: t_NonZeroDuration)
+
+axiom inv_axiom [@rewrite]: forall _1: t_NonZeroDuration [inv_NonZeroDuration _1]. inv_NonZeroDuration _1
+    = (invariant_NonZeroDuration _1 /\ inv_Duration _1.f0)
+
+predicate inv_MutantTimeout (_1: t_MutantTimeout)
+
+axiom inv_axiom'0 [@rewrite]: forall _1: t_MutantTimeout [inv_MutantTimeout _1]. inv_MutantTimeout _1
+    = match _1 with
+      | Auto -> true
+      | Fixed f0'0 -> inv_NonZeroDuration f0'0
+      end
+
+predicate invariant_ref_MutantTimeout [@inline:trivial] (self: t_MutantTimeout) = [%#sinvariant] inv_MutantTimeout self
+
+meta "rewrite_def" predicate invariant_ref_MutantTimeout
+
+predicate inv_ref_MutantTimeout [@inline:trivial] (_1: t_MutantTimeout) = invariant_ref_MutantTimeout _1
+
+meta "rewrite_def" predicate inv_ref_MutantTimeout
+
+meta "compute_max_steps" 1000000
+
+meta "select_lsinst" "all"
+
+let clone_MutantTimeout [#"crates/hoimin-budget-math/src/duration.rs" 80 9 80 14] (self: t_MutantTimeout)
+  (return (x: t_MutantTimeout)) =
+{[@stop_split] [@expl:clone 'self' type invariant] [%#sduration] inv_ref_MutantTimeout self}
+  (! bb0
+  [ bb0 = s0 [ s0 = [ &_ret <- self ] s1 | s1 = return {_ret} ] ]
+  [ & _ret: t_MutantTimeout = Any.any_l () | & self: t_MutantTimeout = self ])
+  [ return (result: t_MutantTimeout) ->
+  {[@stop_split] [@expl:clone result type invariant] [%#sduration] inv_MutantTimeout result}
+    (! return {result}) ]

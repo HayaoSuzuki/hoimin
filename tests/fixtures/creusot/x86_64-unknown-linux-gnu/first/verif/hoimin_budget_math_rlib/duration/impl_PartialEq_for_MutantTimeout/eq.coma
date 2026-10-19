@@ -1,0 +1,170 @@
+(* #"crates/hoimin-budget-math/src/duration.rs" 91 4 91 38 *)
+
+(* <duration::MutantTimeout as std::cmp::PartialEq> *)
+
+let%span sduration = "crates/hoimin-budget-math/src/duration.rs" 94 55 94 68
+let%span sduration'0 = "crates/hoimin-budget-math/src/duration.rs" 95 17 95 22
+let%span sduration'1 = "crates/hoimin-budget-math/src/duration.rs" 93 40 93 44
+let%span sduration'2 = "crates/hoimin-budget-math/src/duration.rs" 91 11 91 15
+let%span sduration'3 = "crates/hoimin-budget-math/src/duration.rs" 91 17 91 22
+let%span sduration'4 = "crates/hoimin-budget-math/src/duration.rs" 90 32 90 83
+let%span sduration'5 = "crates/hoimin-budget-math/src/duration.rs" 81 27 81 58
+let%span sduration'6 = "crates/hoimin-budget-math/src/duration.rs" 35 20 35 25
+let%span sduration'7 = "crates/hoimin-budget-math/src/duration.rs" 25 20 25 27
+let%span sduration'8 = "crates/hoimin-budget-math/src/duration.rs" 43 20 43 29
+let%span sinvariant = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/invariant.rs" 90 8 90 18
+let%span sord = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/logic/ord.rs" 34 8 34 21
+let%span sord'0 = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/logic/ord.rs" 22 8 22 20
+let%span stime = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/std/time.rs" 13 14 13 77
+let%span stime'0 = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/std/time.rs" 44 4 44 24
+let%span scmp = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/std/cmp.rs" 14 26 14 75
+let%span smodel = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/model.rs" 37 8 37 28
+
+use creusot.int.UInt64
+use creusot.prelude.Any
+use int.Int
+
+type t_Duration
+
+type t_NonZeroDuration = { f0: t_Duration }
+
+type t_MutantTimeout = Auto | Fixed t_NonZeroDuration
+
+type tup2_ref_MutantTimeout_ref_MutantTimeout = { f0'0: t_MutantTimeout; f1'0: t_MutantTimeout }
+
+let elim_Fixed (_x: t_MutantTimeout) (return (f0'1: t_NonZeroDuration)) = any
+  [ _k (f0'1: t_NonZeroDuration) -> {Fixed f0'1 = _x} (! return {f0'1})
+  | _chk -> (! {[@expl:elim Fixed] match _x with
+      | Fixed _ -> true
+      | _ -> false
+      end}
+    any) ]
+
+predicate gt_log_Int [@inline:trivial] (self: int) (other: int) = [%#sord'0] other < self
+
+meta "rewrite_def" predicate gt_log_Int
+
+predicate ge_log_Int [@inline:trivial] (self: int) (other: int) = [%#sord] other <= self
+
+meta "rewrite_def" predicate ge_log_Int
+
+function secs_to_nanos (secs: int) : int = [%#stime'0] secs * 1000000000
+
+constant const_MAX: UInt64.t = (18446744073709551615: UInt64.t)
+
+function view_Duration (self: t_Duration) : int
+
+axiom view_Duration_spec: forall self: t_Duration [view_Duration self]. [%#stime] ge_log_Int (view_Duration self) 0
+    /\ view_Duration self <= secs_to_nanos (UInt64.t'int const_MAX) + 999999999
+
+function view_NonZeroDuration [#"crates/hoimin-budget-math/src/duration.rs" 24 4 24 24] (self: t_NonZeroDuration) : int
+ = [%#sduration'7] view_Duration self.f0
+
+predicate invariant_NonZeroDuration [#"crates/hoimin-budget-math/src/duration.rs" 42 4 42 30] (self: t_NonZeroDuration) =
+  [%#sduration'8] gt_log_Int (view_NonZeroDuration self) 0
+
+predicate inv_Duration (_1: t_Duration)
+
+predicate inv_NonZeroDuration (_1: t_NonZeroDuration)
+
+axiom inv_axiom [@rewrite]: forall _1: t_NonZeroDuration [inv_NonZeroDuration _1]. inv_NonZeroDuration _1
+    = (invariant_NonZeroDuration _1 /\ inv_Duration _1.f0)
+
+predicate invariant_ref_NonZeroDuration [@inline:trivial] (self: t_NonZeroDuration) =
+  [%#sinvariant] inv_NonZeroDuration self
+
+meta "rewrite_def" predicate invariant_ref_NonZeroDuration
+
+predicate inv_ref_NonZeroDuration [@inline:trivial] (_1: t_NonZeroDuration) = invariant_ref_NonZeroDuration _1
+
+meta "rewrite_def" predicate inv_ref_NonZeroDuration
+
+predicate invariant_ref_ref_NonZeroDuration [@inline:trivial] (self: t_NonZeroDuration) =
+  [%#sinvariant] inv_ref_NonZeroDuration self
+
+meta "rewrite_def" predicate invariant_ref_ref_NonZeroDuration
+
+predicate inv_ref_ref_NonZeroDuration [@inline:trivial] (_1: t_NonZeroDuration) = invariant_ref_ref_NonZeroDuration _1
+
+meta "rewrite_def" predicate inv_ref_ref_NonZeroDuration
+
+function deep_model_NonZeroDuration [#"crates/hoimin-budget-math/src/duration.rs" 34 4 34 30] (self: t_NonZeroDuration) : int
+ = [%#sduration'6] view_NonZeroDuration self
+
+function deep_model_ref_NonZeroDuration [@inline:trivial] (self: t_NonZeroDuration) : int =
+  [%#smodel] deep_model_NonZeroDuration self
+
+meta "rewrite_def" function deep_model_ref_NonZeroDuration
+
+function deep_model_ref_ref_NonZeroDuration [@inline:trivial] (self: t_NonZeroDuration) : int =
+  [%#smodel] deep_model_ref_NonZeroDuration self
+
+meta "rewrite_def" function deep_model_ref_ref_NonZeroDuration
+
+let eq_ref_NonZeroDuration (self: t_NonZeroDuration) (other: t_NonZeroDuration) (return (x: bool)) =
+{[@stop_split] [@expl:eq_ref_NonZeroDuration requires] ([@stop_split] [@expl:eq 'self' type invariant] inv_ref_ref_NonZeroDuration self)
+  /\ ([@stop_split] [@expl:eq 'other' type invariant] inv_ref_ref_NonZeroDuration other)}
+  any
+  [ return (result: bool) -> {[@stop_split] [@expl:eq ensures] [%#scmp] result
+    = (deep_model_ref_ref_NonZeroDuration self = deep_model_ref_ref_NonZeroDuration other)}
+    (! return {result}) ]
+
+predicate inv_MutantTimeout (_1: t_MutantTimeout)
+
+axiom inv_axiom'0 [@rewrite]: forall _1: t_MutantTimeout [inv_MutantTimeout _1]. inv_MutantTimeout _1
+    = match _1 with
+      | Auto -> true
+      | Fixed f0'1 -> inv_NonZeroDuration f0'1
+      end
+
+predicate invariant_ref_MutantTimeout [@inline:trivial] (self: t_MutantTimeout) = [%#sinvariant] inv_MutantTimeout self
+
+meta "rewrite_def" predicate invariant_ref_MutantTimeout
+
+predicate inv_ref_MutantTimeout [@inline:trivial] (_1: t_MutantTimeout) = invariant_ref_MutantTimeout _1
+
+meta "rewrite_def" predicate inv_ref_MutantTimeout
+
+type t_MutantTimeoutDeepModel = Auto'0 | Fixed'0 int
+
+function deep_model_MutantTimeout [#"crates/hoimin-budget-math/src/duration.rs" 81 27 81 58] (self: t_MutantTimeout) : t_MutantTimeoutDeepModel
+ = [%#sduration'5] match self with
+    | Auto -> Auto'0
+    | Fixed v0_1 -> Fixed'0 (deep_model_NonZeroDuration v0_1)
+    end
+
+function deep_model_ref_MutantTimeout [@inline:trivial] (self: t_MutantTimeout) : t_MutantTimeoutDeepModel =
+  [%#smodel] deep_model_MutantTimeout self
+
+meta "rewrite_def" function deep_model_ref_MutantTimeout
+
+meta "compute_max_steps" 1000000
+
+meta "select_lsinst" "all"
+
+let eq_MutantTimeout [#"crates/hoimin-budget-math/src/duration.rs" 91 4 91 38] (self: t_MutantTimeout)
+  (other: t_MutantTimeout) (return (x: bool)) =
+{[@stop_split] [@expl:eq_MutantTimeout requires] ([@stop_split] [@expl:eq 'self' type invariant] [%#sduration'2] inv_ref_MutantTimeout self)
+  /\ ([@stop_split] [@expl:eq 'other' type invariant] [%#sduration'3] inv_ref_MutantTimeout other)}
+  (! bb0
+  [ bb0 = s0
+    [ s0 = [ &_6 <- { f0'0 = self; f1'0 = other } ] s1
+    | s1 = any [ br0 -> {_6.f0'0 = Auto} (! bb2) | br1 (x0: t_NonZeroDuration) -> {_6.f0'0 = Fixed x0} (! bb4) ] ]
+  | bb4 = any [ br0 -> {_6.f1'0 = Auto} (! bb1) | br1 (x0: t_NonZeroDuration) -> {_6.f1'0 = Fixed x0} (! bb6) ]
+  | bb6 = s0
+    [ s0 = elim_Fixed {_6.f0'0} (fun (r0: t_NonZeroDuration) -> [ &left <- r0 ] s1)
+    | s1 = elim_Fixed {_6.f1'0} (fun (r0: t_NonZeroDuration) -> [ &right <- r0 ] s2)
+    | s2 = eq_ref_NonZeroDuration [%#sduration] {left} {right} (fun (_x: bool) -> [ &_ret <- _x ] s3)
+    | s3 = return {_ret} ]
+  | bb2 = any [ br0 -> {_6.f1'0 = Auto} (! bb7) | br1 (x0: t_NonZeroDuration) -> {_6.f1'0 = Fixed x0} (! bb1) ]
+  | bb1 = s0 [ s0 = [ &_ret <- [%#sduration'0] false ] s1 | s1 = return {_ret} ]
+  | bb7 = s0 [ s0 = [ &_ret <- [%#sduration'1] true ] s1 | s1 = return {_ret} ] ]
+  [ & _ret: bool = Any.any_l ()
+  | & self: t_MutantTimeout = self
+  | & other: t_MutantTimeout = other
+  | & _6: tup2_ref_MutantTimeout_ref_MutantTimeout = Any.any_l ()
+  | & left: t_NonZeroDuration = Any.any_l ()
+  | & right: t_NonZeroDuration = Any.any_l () ])
+  [ return (result: bool) -> {[@stop_split] [@expl:eq ensures] [%#sduration'4] result
+    = (deep_model_ref_MutantTimeout self = deep_model_ref_MutantTimeout other)}
+    (! return {result}) ]

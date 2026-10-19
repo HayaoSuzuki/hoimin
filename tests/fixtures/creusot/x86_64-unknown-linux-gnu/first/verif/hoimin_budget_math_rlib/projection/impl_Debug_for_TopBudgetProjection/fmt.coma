@@ -1,0 +1,193 @@
+(* #"crates/hoimin-budget-math/src/projection.rs" 13 22 13 27 *)
+
+(* <projection::TopBudgetProjection as std::fmt::Debug> *)
+
+let%span sinvariant = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/invariant.rs" 98 20 98 44
+let%span sinvariant'0 = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/invariant.rs" 90 8 90 18
+let%span sprojection = "crates/hoimin-budget-math/src/projection.rs" 17 4 17 19
+let%span sprojection'0 = "crates/hoimin-budget-math/src/projection.rs" 18 4 18 39
+let%span sprojection'1 = "crates/hoimin-budget-math/src/projection.rs" 19 4 19 26
+let%span sprojection'2 = "crates/hoimin-budget-math/src/projection.rs" 20 4 20 42
+let%span sprojection'3 = "crates/hoimin-budget-math/src/projection.rs" 21 4 21 27
+let%span sprojection'4 = "crates/hoimin-budget-math/src/projection.rs" 22 4 22 20
+let%span sprojection'5 = "crates/hoimin-budget-math/src/projection.rs" 23 4 23 36
+let%span sprojection'6 = "crates/hoimin-budget-math/src/projection.rs" 16 4 16 23
+let%span sprojection'7 = "crates/hoimin-budget-math/src/projection.rs" 13 22 13 27
+
+use creusot.slice.Slice64
+use creusot.prelude.Any
+use creusot.int.UInt64
+use creusot.prelude.MutBorrow
+
+type t_Duration
+
+type t_TopBudgetProjection = {
+  selected: UInt64.t;
+  jobs: UInt64.t;
+  planned_total_timeout: t_Duration;
+  baseline: t_Duration;
+  effective_mutant_timeout: t_Duration;
+  remaining: t_Duration;
+  waves: UInt64.t;
+  projected_capacity: t_Duration }
+
+type dyn_Debug
+
+function dyn_Debug_of_usize (x: UInt64.t) : dyn_Debug
+
+function dyn_Debug_of_Duration (x: t_Duration) : dyn_Debug
+
+function dyn_Debug_of_ref_Duration (x: t_Duration) : dyn_Debug
+
+type t_Formatter
+
+predicate inv_Formatter (_1: t_Formatter)
+
+type t_Result_unit_Error = Ok () | Err ()
+
+predicate invariant_refmut_Formatter [@inline:trivial] (self: MutBorrow.t t_Formatter) =
+  [%#sinvariant] inv_Formatter self.current /\ inv_Formatter self.final
+
+meta "rewrite_def" predicate invariant_refmut_Formatter
+
+predicate inv_refmut_Formatter [@inline:trivial] (_1: MutBorrow.t t_Formatter) = invariant_refmut_Formatter _1
+
+meta "rewrite_def" predicate inv_refmut_Formatter
+
+let debug_struct_fields_finish (self: MutBorrow.t t_Formatter) (name: string) (names: Slice64.slice string)
+  (values: Slice64.slice dyn_Debug) (return (x: t_Result_unit_Error)) =
+{[@stop_split] [@expl:debug_struct_fields_finish 'self' type invariant] inv_refmut_Formatter self}
+  any [ return (result: t_Result_unit_Error) -> (! return {result}) ]
+
+predicate resolve_refmut_Formatter [@inline:trivial] (_1: MutBorrow.t t_Formatter) = _1.final = _1.current
+
+meta "rewrite_def" predicate resolve_refmut_Formatter
+
+predicate inv_Duration (_1: t_Duration)
+
+predicate inv_TopBudgetProjection (_1: t_TopBudgetProjection)
+
+axiom inv_axiom [@rewrite]: forall _1: t_TopBudgetProjection [inv_TopBudgetProjection _1]. inv_TopBudgetProjection _1
+    = (inv_Duration _1.planned_total_timeout
+    /\ inv_Duration _1.baseline
+    /\ inv_Duration _1.effective_mutant_timeout /\ inv_Duration _1.remaining /\ inv_Duration _1.projected_capacity)
+
+predicate invariant_ref_TopBudgetProjection [@inline:trivial] (self: t_TopBudgetProjection) =
+  [%#sinvariant'0] inv_TopBudgetProjection self
+
+meta "rewrite_def" predicate invariant_ref_TopBudgetProjection
+
+predicate inv_ref_TopBudgetProjection [@inline:trivial] (_1: t_TopBudgetProjection) =
+  invariant_ref_TopBudgetProjection _1
+
+meta "rewrite_def" predicate inv_ref_TopBudgetProjection
+
+meta "compute_max_steps" 1000000
+
+meta "select_lsinst" "all"
+
+let fmt_TopBudgetProjection [#"crates/hoimin-budget-math/src/projection.rs" 13 22 13 27] (self: t_TopBudgetProjection)
+  (f: MutBorrow.t t_Formatter) (return (x: t_Result_unit_Error)) =
+{[@stop_split] [@expl:fmt_TopBudgetProjection requires] ([@stop_split] [@expl:fmt 'self' type invariant] [%#sprojection'7] inv_ref_TopBudgetProjection self)
+  /\ ([@stop_split] [@expl:fmt 'f' type invariant] [%#sprojection'7] inv_refmut_Formatter f)}
+  (! bb0
+  [ bb0 = s0
+    [ s0 = bb0'0
+      [ bb0'0 = s0'0
+        [ s0'0 = [ &_3 <- [%#sprojection] "jobs" ] s1'0
+        | s1'0 = [ &_5 <- [%#sprojection'0] "planned_total_timeout" ] s2'0
+        | s2'0 = [ &_7 <- [%#sprojection'1] "baseline" ] s3'0
+        | s3'0 = [ &_9 <- [%#sprojection'2] "effective_mutant_timeout" ] s4'0
+        | s4'0 = [ &_11 <- [%#sprojection'3] "remaining" ] s5'0
+        | s5'0 = [ &_13 <- [%#sprojection'4] "waves" ] s6'0
+        | s6'0 = [ &_15 <- [%#sprojection'5] "projected_capacity" ] s7'0
+        | s7'0 = any
+          [ any_ (__arr_temp: Slice64.array string) -> (! -{Seq.get __arr_temp.Slice64.elts 0
+              = ([%#sprojection'6] "selected")
+            /\ Seq.get __arr_temp.Slice64.elts 1 = _3
+            /\ Seq.get __arr_temp.Slice64.elts 2 = _5
+            /\ Seq.get __arr_temp.Slice64.elts 3 = _7
+            /\ Seq.get __arr_temp.Slice64.elts 4 = _9
+            /\ Seq.get __arr_temp.Slice64.elts 5 = _11
+            /\ Seq.get __arr_temp.Slice64.elts 6 = _13
+            /\ Seq.get __arr_temp.Slice64.elts 7 = _15 /\ Seq.length __arr_temp.Slice64.elts = 8}-
+            [ &_1 <- __arr_temp ] s8'0) ]
+        | s8'0 = [ &_ret'0 <- _1 ] s9'0
+        | s9'0 = _const_ret {_ret'0} ] ]
+      [ & _ret'0: Slice64.array string = Any.any_l ()
+      | & _1: Slice64.array string = Any.any_l ()
+      | & _3: string = Any.any_l ()
+      | & _5: string = Any.any_l ()
+      | & _7: string = Any.any_l ()
+      | & _9: string = Any.any_l ()
+      | & _11: string = Any.any_l ()
+      | & _13: string = Any.any_l ()
+      | & _15: string = Any.any_l () ] [ _const_ret (_const: Slice64.array string) -> [ &_55 <- _const ] s1 ]
+    | s1 = [ &_4 <- _55 ] s2
+    | s2 = [ &names <- _4 ] s3
+    | s3 = [ &_26 <- self.selected ] s4
+    | s4 = [ &_24 <- dyn_Debug_of_usize _26 ] s5
+    | s5 = [ &_29 <- self.jobs ] s6
+    | s6 = [ &_27 <- dyn_Debug_of_usize _29 ] s7
+    | s7 = [ &_32 <- self.planned_total_timeout ] s8
+    | s8 = [ &_30 <- dyn_Debug_of_Duration _32 ] s9
+    | s9 = [ &_35 <- self.baseline ] s10
+    | s10 = [ &_33 <- dyn_Debug_of_Duration _35 ] s11
+    | s11 = [ &_38 <- self.effective_mutant_timeout ] s12
+    | s12 = [ &_36 <- dyn_Debug_of_Duration _38 ] s13
+    | s13 = [ &_41 <- self.remaining ] s14
+    | s14 = [ &_39 <- dyn_Debug_of_Duration _41 ] s15
+    | s15 = [ &_44 <- self.waves ] s16
+    | s16 = [ &_42 <- dyn_Debug_of_usize _44 ] s17
+    | s17 = [ &_47 <- self.projected_capacity ] s18
+    | s18 = [ &_45 <- dyn_Debug_of_ref_Duration _47 ] s19
+    | s19 = any
+      [ any_ (__arr_temp: Slice64.array dyn_Debug) -> (! -{Seq.get __arr_temp.Slice64.elts 0 = _24
+        /\ Seq.get __arr_temp.Slice64.elts 1 = _27
+        /\ Seq.get __arr_temp.Slice64.elts 2 = _30
+        /\ Seq.get __arr_temp.Slice64.elts 3 = _33
+        /\ Seq.get __arr_temp.Slice64.elts 4 = _36
+        /\ Seq.get __arr_temp.Slice64.elts 5 = _39
+        /\ Seq.get __arr_temp.Slice64.elts 6 = _42
+        /\ Seq.get __arr_temp.Slice64.elts 7 = _45 /\ Seq.length __arr_temp.Slice64.elts = 8}-
+        [ &_23 <- __arr_temp ] s20) ]
+    | s20 = [ &_22 <- _23 ] s21
+    | s21 = [ &values <- _22 ] s22
+    | s22 = [ &_51 <- [%#sprojection'7] "TopBudgetProjection" ] s23
+    | s23 = MutBorrow.borrow_final <t_Formatter> {f.current} {MutBorrow.get_id f}
+        (fun (_bor: MutBorrow.t t_Formatter) ->
+          [ &_49 <- _bor ] -{inv_Formatter _bor.final}-
+          [ &f <- { f with current = _bor.final } ] s24)
+      [ _ck -> (! {[@expl:type invariant] inv_Formatter f.current} any) ]
+    | s24 = debug_struct_fields_finish [%#sprojection'7] {_49} {_51} {names} {values}
+        (fun (_x: t_Result_unit_Error) -> [ &_ret <- _x ] s25)
+    | s25 = s26 [ _ck -> (! {[@expl:type invariant] inv_refmut_Formatter f} any) ]
+    | s26 = -{resolve_refmut_Formatter f}- s27
+    | s27 = return {_ret} ] ]
+  [ & _ret: t_Result_unit_Error = Any.any_l ()
+  | & self: t_TopBudgetProjection = self
+  | & f: MutBorrow.t t_Formatter = f
+  | & names: Slice64.array string = Any.any_l ()
+  | & _4: Slice64.array string = Any.any_l ()
+  | & values: Slice64.slice dyn_Debug = Any.any_l ()
+  | & _22: Slice64.array dyn_Debug = Any.any_l ()
+  | & _23: Slice64.array dyn_Debug = Any.any_l ()
+  | & _24: dyn_Debug = Any.any_l ()
+  | & _26: UInt64.t = Any.any_l ()
+  | & _27: dyn_Debug = Any.any_l ()
+  | & _29: UInt64.t = Any.any_l ()
+  | & _30: dyn_Debug = Any.any_l ()
+  | & _32: t_Duration = Any.any_l ()
+  | & _33: dyn_Debug = Any.any_l ()
+  | & _35: t_Duration = Any.any_l ()
+  | & _36: dyn_Debug = Any.any_l ()
+  | & _38: t_Duration = Any.any_l ()
+  | & _39: dyn_Debug = Any.any_l ()
+  | & _41: t_Duration = Any.any_l ()
+  | & _42: dyn_Debug = Any.any_l ()
+  | & _44: UInt64.t = Any.any_l ()
+  | & _45: dyn_Debug = Any.any_l ()
+  | & _47: t_Duration = Any.any_l ()
+  | & _49: MutBorrow.t t_Formatter = Any.any_l ()
+  | & _51: string = Any.any_l ()
+  | & _55: Slice64.array string = Any.any_l () ]) [ return (result: t_Result_unit_Error) -> (! return {result}) ]

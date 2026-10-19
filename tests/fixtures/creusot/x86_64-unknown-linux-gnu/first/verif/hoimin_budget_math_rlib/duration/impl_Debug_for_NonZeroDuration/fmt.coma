@@ -1,0 +1,119 @@
+(* #"crates/hoimin-budget-math/src/duration.rs" 8 22 8 27 *)
+
+(* <duration::NonZeroDuration as std::fmt::Debug> *)
+
+let%span sduration = "crates/hoimin-budget-math/src/duration.rs" 8 22 8 27
+let%span sduration'0 = "crates/hoimin-budget-math/src/duration.rs" 43 20 43 29
+let%span sduration'1 = "crates/hoimin-budget-math/src/duration.rs" 25 20 25 27
+let%span sinvariant = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/invariant.rs" 98 20 98 44
+let%span sinvariant'0 = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/invariant.rs" 90 8 90 18
+let%span sord = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/logic/ord.rs" 22 8 22 20
+let%span sord'0 = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/logic/ord.rs" 34 8 34 21
+let%span stime = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/std/time.rs" 13 14 13 77
+let%span stime'0 = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/std/time.rs" 44 4 44 24
+
+use creusot.prelude.MutBorrow
+use creusot.prelude.Any
+use creusot.int.UInt64
+use int.Int
+
+type t_Duration
+
+type t_NonZeroDuration = { f0: t_Duration }
+
+type dyn_Debug
+
+function dyn_Debug_of_ref_Duration (x: t_Duration) : dyn_Debug
+
+type t_Formatter
+
+predicate inv_Formatter (_1: t_Formatter)
+
+type t_Result_unit_Error = Ok () | Err ()
+
+predicate invariant_refmut_Formatter [@inline:trivial] (self: MutBorrow.t t_Formatter) =
+  [%#sinvariant] inv_Formatter self.current /\ inv_Formatter self.final
+
+meta "rewrite_def" predicate invariant_refmut_Formatter
+
+predicate inv_refmut_Formatter [@inline:trivial] (_1: MutBorrow.t t_Formatter) = invariant_refmut_Formatter _1
+
+meta "rewrite_def" predicate inv_refmut_Formatter
+
+let debug_tuple_field1_finish (self: MutBorrow.t t_Formatter) (name: string) (value1: dyn_Debug)
+  (return (x: t_Result_unit_Error)) =
+{[@stop_split] [@expl:debug_tuple_field1_finish 'self' type invariant] inv_refmut_Formatter self}
+  any [ return (result: t_Result_unit_Error) -> (! return {result}) ]
+
+predicate resolve_refmut_Formatter [@inline:trivial] (_1: MutBorrow.t t_Formatter) = _1.final = _1.current
+
+meta "rewrite_def" predicate resolve_refmut_Formatter
+
+predicate gt_log_Int [@inline:trivial] (self: int) (other: int) = [%#sord] other < self
+
+meta "rewrite_def" predicate gt_log_Int
+
+predicate ge_log_Int [@inline:trivial] (self: int) (other: int) = [%#sord'0] other <= self
+
+meta "rewrite_def" predicate ge_log_Int
+
+function secs_to_nanos (secs: int) : int = [%#stime'0] secs * 1000000000
+
+constant const_MAX: UInt64.t = (18446744073709551615: UInt64.t)
+
+function view_Duration (self: t_Duration) : int
+
+axiom view_Duration_spec: forall self: t_Duration [view_Duration self]. [%#stime] ge_log_Int (view_Duration self) 0
+    /\ view_Duration self <= secs_to_nanos (UInt64.t'int const_MAX) + 999999999
+
+function view_NonZeroDuration [#"crates/hoimin-budget-math/src/duration.rs" 24 4 24 24] (self: t_NonZeroDuration) : int
+ = [%#sduration'1] view_Duration self.f0
+
+predicate invariant_NonZeroDuration [#"crates/hoimin-budget-math/src/duration.rs" 42 4 42 30] (self: t_NonZeroDuration) =
+  [%#sduration'0] gt_log_Int (view_NonZeroDuration self) 0
+
+predicate inv_Duration (_1: t_Duration)
+
+predicate inv_NonZeroDuration (_1: t_NonZeroDuration)
+
+axiom inv_axiom [@rewrite]: forall _1: t_NonZeroDuration [inv_NonZeroDuration _1]. inv_NonZeroDuration _1
+    = (invariant_NonZeroDuration _1 /\ inv_Duration _1.f0)
+
+predicate invariant_ref_NonZeroDuration [@inline:trivial] (self: t_NonZeroDuration) =
+  [%#sinvariant'0] inv_NonZeroDuration self
+
+meta "rewrite_def" predicate invariant_ref_NonZeroDuration
+
+predicate inv_ref_NonZeroDuration [@inline:trivial] (_1: t_NonZeroDuration) = invariant_ref_NonZeroDuration _1
+
+meta "rewrite_def" predicate inv_ref_NonZeroDuration
+
+meta "compute_max_steps" 1000000
+
+meta "select_lsinst" "all"
+
+let fmt_NonZeroDuration [#"crates/hoimin-budget-math/src/duration.rs" 8 22 8 27] (self: t_NonZeroDuration)
+  (f: MutBorrow.t t_Formatter) (return (x: t_Result_unit_Error)) =
+{[@stop_split] [@expl:fmt_NonZeroDuration requires] ([@stop_split] [@expl:fmt 'self' type invariant] [%#sduration] inv_ref_NonZeroDuration self)
+  /\ ([@stop_split] [@expl:fmt 'f' type invariant] [%#sduration] inv_refmut_Formatter f)}
+  (! bb0
+  [ bb0 = s0
+    [ s0 = [ &_5 <- [%#sduration] "NonZeroDuration" ] s1
+    | s1 = [ &_8 <- self.f0 ] s2
+    | s2 = [ &_6 <- dyn_Debug_of_ref_Duration _8 ] s3
+    | s3 = MutBorrow.borrow_final <t_Formatter> {f.current} {MutBorrow.get_id f}
+        (fun (_bor: MutBorrow.t t_Formatter) ->
+          [ &_3 <- _bor ] -{inv_Formatter _bor.final}-
+          [ &f <- { f with current = _bor.final } ] s4)
+      [ _ck -> (! {[@expl:type invariant] inv_Formatter f.current} any) ]
+    | s4 = debug_tuple_field1_finish [%#sduration] {_3} {_5} {_6} (fun (_x: t_Result_unit_Error) -> [ &_ret <- _x ] s5)
+    | s5 = s6 [ _ck -> (! {[@expl:type invariant] inv_refmut_Formatter f} any) ]
+    | s6 = -{resolve_refmut_Formatter f}- s7
+    | s7 = return {_ret} ] ]
+  [ & _ret: t_Result_unit_Error = Any.any_l ()
+  | & self: t_NonZeroDuration = self
+  | & f: MutBorrow.t t_Formatter = f
+  | & _3: MutBorrow.t t_Formatter = Any.any_l ()
+  | & _5: string = Any.any_l ()
+  | & _6: dyn_Debug = Any.any_l ()
+  | & _8: t_Duration = Any.any_l () ]) [ return (result: t_Result_unit_Error) -> (! return {result}) ]

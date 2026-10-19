@@ -1,0 +1,158 @@
+(* #"crates/hoimin-budget-math/src/duration.rs" 80 22 80 27 *)
+
+(* <duration::MutantTimeout as std::fmt::Debug> *)
+
+let%span sduration = "crates/hoimin-budget-math/src/duration.rs" 80 22 80 27
+let%span sduration'0 = "crates/hoimin-budget-math/src/duration.rs" 43 20 43 29
+let%span sduration'1 = "crates/hoimin-budget-math/src/duration.rs" 25 20 25 27
+let%span sinvariant = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/invariant.rs" 98 20 98 44
+let%span sinvariant'0 = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/invariant.rs" 90 8 90 18
+let%span sord = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/logic/ord.rs" 22 8 22 20
+let%span sord'0 = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/logic/ord.rs" 34 8 34 21
+let%span stime = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/std/time.rs" 13 14 13 77
+let%span stime'0 = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/std/time.rs" 44 4 44 24
+
+use creusot.prelude.MutBorrow
+use creusot.prelude.Any
+use creusot.int.UInt64
+use int.Int
+
+type t_Duration
+
+type t_NonZeroDuration = { f0: t_Duration }
+
+type t_MutantTimeout = Auto | Fixed t_NonZeroDuration
+
+let elim_Fixed (_x: t_MutantTimeout) (return (f0'0: t_NonZeroDuration)) = any
+  [ _k (f0'0: t_NonZeroDuration) -> {Fixed f0'0 = _x} (! return {f0'0})
+  | _chk -> (! {[@expl:elim Fixed] match _x with
+      | Fixed _ -> true
+      | _ -> false
+      end}
+    any) ]
+
+type dyn_Debug
+
+function dyn_Debug_of_ref_NonZeroDuration (x: t_NonZeroDuration) : dyn_Debug
+
+type t_Formatter
+
+predicate inv_Formatter (_1: t_Formatter)
+
+type t_Result_unit_Error = Ok () | Err ()
+
+predicate invariant_refmut_Formatter [@inline:trivial] (self: MutBorrow.t t_Formatter) =
+  [%#sinvariant] inv_Formatter self.current /\ inv_Formatter self.final
+
+meta "rewrite_def" predicate invariant_refmut_Formatter
+
+predicate inv_refmut_Formatter [@inline:trivial] (_1: MutBorrow.t t_Formatter) = invariant_refmut_Formatter _1
+
+meta "rewrite_def" predicate inv_refmut_Formatter
+
+let debug_tuple_field1_finish (self: MutBorrow.t t_Formatter) (name: string) (value1: dyn_Debug)
+  (return (x: t_Result_unit_Error)) =
+{[@stop_split] [@expl:debug_tuple_field1_finish 'self' type invariant] inv_refmut_Formatter self}
+  any [ return (result: t_Result_unit_Error) -> (! return {result}) ]
+
+predicate resolve_refmut_Formatter [@inline:trivial] (_1: MutBorrow.t t_Formatter) = _1.final = _1.current
+
+meta "rewrite_def" predicate resolve_refmut_Formatter
+
+let write_str (self: MutBorrow.t t_Formatter) (data: string) (return (x: t_Result_unit_Error)) =
+{[@stop_split] [@expl:write_str 'self' type invariant] inv_refmut_Formatter self}
+  any [ return (result: t_Result_unit_Error) -> (! return {result}) ]
+
+predicate gt_log_Int [@inline:trivial] (self: int) (other: int) = [%#sord] other < self
+
+meta "rewrite_def" predicate gt_log_Int
+
+predicate ge_log_Int [@inline:trivial] (self: int) (other: int) = [%#sord'0] other <= self
+
+meta "rewrite_def" predicate ge_log_Int
+
+function secs_to_nanos (secs: int) : int = [%#stime'0] secs * 1000000000
+
+constant const_MAX: UInt64.t = (18446744073709551615: UInt64.t)
+
+function view_Duration (self: t_Duration) : int
+
+axiom view_Duration_spec: forall self: t_Duration [view_Duration self]. [%#stime] ge_log_Int (view_Duration self) 0
+    /\ view_Duration self <= secs_to_nanos (UInt64.t'int const_MAX) + 999999999
+
+function view_NonZeroDuration [#"crates/hoimin-budget-math/src/duration.rs" 24 4 24 24] (self: t_NonZeroDuration) : int
+ = [%#sduration'1] view_Duration self.f0
+
+predicate invariant_NonZeroDuration [#"crates/hoimin-budget-math/src/duration.rs" 42 4 42 30] (self: t_NonZeroDuration) =
+  [%#sduration'0] gt_log_Int (view_NonZeroDuration self) 0
+
+predicate inv_Duration (_1: t_Duration)
+
+predicate inv_NonZeroDuration (_1: t_NonZeroDuration)
+
+axiom inv_axiom [@rewrite]: forall _1: t_NonZeroDuration [inv_NonZeroDuration _1]. inv_NonZeroDuration _1
+    = (invariant_NonZeroDuration _1 /\ inv_Duration _1.f0)
+
+predicate inv_MutantTimeout (_1: t_MutantTimeout)
+
+axiom inv_axiom'0 [@rewrite]: forall _1: t_MutantTimeout [inv_MutantTimeout _1]. inv_MutantTimeout _1
+    = match _1 with
+      | Auto -> true
+      | Fixed f0'0 -> inv_NonZeroDuration f0'0
+      end
+
+predicate invariant_ref_MutantTimeout [@inline:trivial] (self: t_MutantTimeout) =
+  [%#sinvariant'0] inv_MutantTimeout self
+
+meta "rewrite_def" predicate invariant_ref_MutantTimeout
+
+predicate inv_ref_MutantTimeout [@inline:trivial] (_1: t_MutantTimeout) = invariant_ref_MutantTimeout _1
+
+meta "rewrite_def" predicate inv_ref_MutantTimeout
+
+meta "compute_max_steps" 1000000
+
+meta "select_lsinst" "all"
+
+let fmt_MutantTimeout [#"crates/hoimin-budget-math/src/duration.rs" 80 22 80 27] (self: t_MutantTimeout)
+  (f: MutBorrow.t t_Formatter) (return (x: t_Result_unit_Error)) =
+{[@stop_split] [@expl:fmt_MutantTimeout requires] ([@stop_split] [@expl:fmt 'self' type invariant] [%#sduration] inv_ref_MutantTimeout self)
+  /\ ([@stop_split] [@expl:fmt 'f' type invariant] [%#sduration] inv_refmut_Formatter f)}
+  (! bb0
+  [ bb0 = any [ br0 -> {self = Auto} (! bb4) | br1 (x0: t_NonZeroDuration) -> {self = Fixed x0} (! bb3) ]
+  | bb3 = s0
+    [ s0 = elim_Fixed {self} (fun (r0: t_NonZeroDuration) -> [ &__self_0 <- r0 ] s1)
+    | s1 = [ &_10 <- [%#sduration] "Fixed" ] s2
+    | s2 = [ &_13 <- __self_0 ] s3
+    | s3 = [ &_11 <- dyn_Debug_of_ref_NonZeroDuration _13 ] s4
+    | s4 = MutBorrow.borrow_final <t_Formatter> {f.current} {MutBorrow.get_id f}
+        (fun (_bor: MutBorrow.t t_Formatter) ->
+          [ &_8 <- _bor ] -{inv_Formatter _bor.final}-
+          [ &f <- { f with current = _bor.final } ] s5)
+      [ _ck -> (! {[@expl:type invariant] inv_Formatter f.current} any) ]
+    | s5 = debug_tuple_field1_finish [%#sduration] {_8} {_10} {_11}
+        (fun (_x: t_Result_unit_Error) -> [ &_ret <- _x ] s6)
+    | s6 = s7 [ _ck -> (! {[@expl:type invariant] inv_refmut_Formatter f} any) ]
+    | s7 = -{resolve_refmut_Formatter f}- s8
+    | s8 = return {_ret} ]
+  | bb4 = s0
+    [ s0 = [ &_6 <- [%#sduration] "Auto" ] s1
+    | s1 = MutBorrow.borrow_final <t_Formatter> {f.current} {MutBorrow.get_id f}
+        (fun (_bor: MutBorrow.t t_Formatter) ->
+          [ &_4 <- _bor ] -{inv_Formatter _bor.final}-
+          [ &f <- { f with current = _bor.final } ] s2)
+      [ _ck -> (! {[@expl:type invariant] inv_Formatter f.current} any) ]
+    | s2 = write_str [%#sduration] {_4} {_6} (fun (_x: t_Result_unit_Error) -> [ &_ret <- _x ] s3)
+    | s3 = s4 [ _ck -> (! {[@expl:type invariant] inv_refmut_Formatter f} any) ]
+    | s4 = -{resolve_refmut_Formatter f}- s5
+    | s5 = return {_ret} ] ]
+  [ & _ret: t_Result_unit_Error = Any.any_l ()
+  | & self: t_MutantTimeout = self
+  | & f: MutBorrow.t t_Formatter = f
+  | & _4: MutBorrow.t t_Formatter = Any.any_l ()
+  | & _6: string = Any.any_l ()
+  | & __self_0: t_NonZeroDuration = Any.any_l ()
+  | & _8: MutBorrow.t t_Formatter = Any.any_l ()
+  | & _10: string = Any.any_l ()
+  | & _11: dyn_Debug = Any.any_l ()
+  | & _13: t_NonZeroDuration = Any.any_l () ]) [ return (result: t_Result_unit_Error) -> (! return {result}) ]

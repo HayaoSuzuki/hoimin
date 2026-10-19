@@ -1,0 +1,92 @@
+(* #"crates/hoimin-budget-math/src/projection.rs" 102 0 102 47 *)
+
+let%span sduration = "crates/hoimin-budget-math/src/duration.rs" 103 16 103 55
+let%span sord = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/logic/ord.rs" 34 8 34 21
+let%span stime = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/std/time.rs" 72 19 72 61
+let%span stime'0 = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/std/time.rs" 73 18 73 58
+let%span stime'1 = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/std/time.rs" 13 14 13 77
+let%span stime'2 = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/std/time.rs" 39 4 39 25
+let%span stime'3 = "../opt/creusot/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/creusot-std-0.14.0/src/std/time.rs" 44 4 44 24
+let%span sprojection = "crates/hoimin-budget-math/src/projection.rs" 107 27 107 43
+let%span sprojection'0 = "crates/hoimin-budget-math/src/projection.rs" 107 18 107 44
+let%span sprojection'1 = "crates/hoimin-budget-math/src/projection.rs" 108 32 108 48
+let%span sprojection'2 = "crates/hoimin-budget-math/src/projection.rs" 108 23 108 49
+let%span sprojection'3 = "crates/hoimin-budget-math/src/projection.rs" 109 4 109 40
+let%span sprojection'4 = "crates/hoimin-budget-math/src/projection.rs" 100 29 100 59
+let%span sprojection'5 = "crates/hoimin-budget-math/src/projection.rs" 102 39 102 47
+let%span sprojection'6 = "crates/hoimin-budget-math/src/projection.rs" 101 28 101 45
+let%span sprojection'7 = "crates/hoimin-budget-math/src/projection.rs" 102 0 102 47
+
+use creusot.int.UInt128
+use creusot.int.UInt64
+use creusot.int.UInt32
+use int.ComputerDivision
+use creusot.prelude.Any
+use int.Int
+
+constant const_NANOS_PER_SECOND: UInt128.t = [%#sprojection'7] (1000000000: UInt128.t)
+
+type t_Duration
+
+function nanos_to_secs (nanos: int) : int = [%#stime'2] ComputerDivision.div nanos 1000000000
+
+constant const_MAX: UInt64.t = (18446744073709551615: UInt64.t)
+
+predicate inv_Duration (_1: t_Duration)
+
+predicate ge_log_Int [@inline:trivial] (self: int) (other: int) = [%#sord] other <= self
+
+meta "rewrite_def" predicate ge_log_Int
+
+function secs_to_nanos (secs: int) : int = [%#stime'3] secs * 1000000000
+
+function view_Duration (self: t_Duration) : int
+
+axiom view_Duration_spec: forall self: t_Duration [view_Duration self]. [%#stime'1] ge_log_Int (view_Duration self) 0
+    /\ view_Duration self <= secs_to_nanos (UInt64.t'int const_MAX) + 999999999
+
+let new (secs: UInt64.t) (nanos: UInt32.t) (return (x: t_Duration)) =
+{[@stop_split] [@expl:new requires] [%#stime] UInt64.t'int secs + nanos_to_secs (UInt32.t'int nanos)
+  <= UInt64.t'int const_MAX}
+  any
+  [ return (result: t_Duration) ->
+  {[@stop_split] [@expl:new ensures] ([@stop_split] [@expl:new result type invariant] inv_Duration result)
+    /\ ([@stop_split] [@expl:new ensures] [%#stime'0] view_Duration result
+    = secs_to_nanos (UInt64.t'int secs) + UInt32.t'int nanos)}
+    (! return {result}) ]
+
+constant duration_max_nanos: int = [%#sduration] UInt64.t'int const_MAX * 1000000000 + 999999999
+
+meta "compute_max_steps" 1000000
+
+meta "select_lsinst" "all"
+
+let duration_from_nanos [#"crates/hoimin-budget-math/src/projection.rs" 102 0 102 47] (nanos: UInt128.t)
+  (return (x: t_Duration)) = {[@stop_split] [@expl:duration_from_nanos requires] [%#sprojection'4] UInt128.t'int nanos
+  <= duration_max_nanos}
+  (! bb0
+  [ bb0 = s0
+    [ s0 = [ &_9 <- ([%#sprojection] const_NANOS_PER_SECOND) = ([%#sprojection'0] (0: UInt128.t)) ] s1
+    | s1 = {[@expl:division by zero] [%#sprojection'0] not _9} s2
+    | s2 = UInt128.div [%#sprojection'0] {nanos} {[%#sprojection] const_NANOS_PER_SECOND}
+        (fun (_x: UInt128.t) -> [ &_7 <- _x ] s3)
+    | s3 = [ &seconds <- UInt64.of_int (UInt128.t'int _7) ] s4
+    | s4 = [ &_13 <- ([%#sprojection'1] const_NANOS_PER_SECOND) = ([%#sprojection'2] (0: UInt128.t)) ] s5
+    | s5 = {[@expl:remainder by zero] [%#sprojection'2] not _13} s6
+    | s6 = UInt128.rem [%#sprojection'2] {nanos} {[%#sprojection'1] const_NANOS_PER_SECOND}
+        (fun (_x: UInt128.t) -> [ &_11 <- _x ] s7)
+    | s7 = [ &subsec_nanos <- UInt32.of_int (UInt128.t'int _11) ] s8
+    | s8 = new [%#sprojection'3] {seconds} {subsec_nanos} (fun (_x: t_Duration) -> [ &_ret <- _x ] s9)
+    | s9 = return {_ret} ] ]
+  [ & _ret: t_Duration = Any.any_l ()
+  | & nanos: UInt128.t = nanos
+  | & seconds: UInt64.t = Any.any_l ()
+  | & _7: UInt128.t = Any.any_l ()
+  | & _9: bool = Any.any_l ()
+  | & subsec_nanos: UInt32.t = Any.any_l ()
+  | & _11: UInt128.t = Any.any_l ()
+  | & _13: bool = Any.any_l () ])
+  [ return (result: t_Duration) ->
+  {[@stop_split] [@expl:duration_from_nanos ensures] ([@stop_split] [@expl:duration_from_nanos result type invariant] [%#sprojection'5] inv_Duration result)
+    /\ ([@stop_split] [@expl:duration_from_nanos ensures] [%#sprojection'6] view_Duration result = UInt128.t'int nanos)}
+    (! return {result}) ]

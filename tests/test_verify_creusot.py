@@ -15,11 +15,7 @@ import pytest
 from tools import verify_creusot
 
 ROOT = Path(__file__).resolve().parents[1]
-EVIDENCE = (
-    ROOT
-    / ".superpowers/sdd/2026-10-19-issue-999-creusot-adoption/task-3-evidence/final"
-    / "x86_64-unknown-linux-gnu/first"
-)
+EVIDENCE = ROOT / "tests/fixtures/creusot" / "x86_64-unknown-linux-gnu/first"
 
 
 @pytest.fixture
@@ -367,8 +363,7 @@ def test_runner_requires_three_fresh_target_results(
         calls.append(command)
         target = log_path.parent.name
         if "--only=coma" in command:
-            fixture = EVIDENCE.parents[1] / target / "first" / "verif"
-            shutil.copytree(fixture, cwd / "verif", dirs_exist_ok=True)
+            shutil.copytree(EVIDENCE / "verif", cwd / "verif", dirs_exist_ok=True)
             for path in (cwd / "verif").rglob("*.coma"):
                 os.utime(path, None)
         elif "--only=prove" in command:
