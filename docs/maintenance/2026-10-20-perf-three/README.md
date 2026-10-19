@@ -69,3 +69,16 @@ External URL/fragment checks and historical content-hash refresh are excluded. E
 they are not added to final integration counts. Native Windows/Linux results
 are not established by these macOS checks. URL and fragment checks are outside
 the local reference audit.
+
+## Final review checkpoint
+
+The independent [Task4 review](reports/task-4-review.md) and
+[whole-branch review](reports/final-review.md) are preserved here.
+The controller ledger records the reviewed commit and disposition of every
+remaining observation. The Task4 report now includes its actual commit, normal
+hook and clean-tree handoff. This final archival commit changes evidence only;
+production source and test inputs remain those of the frozen integration run.
+PR publication and final automatic/native CI follow this archive; their actual
+run links and final commit results are recorded in the PR body without changing
+the tested branch merely to append CI metadata. Task-owned scratch cleanup
+follows evidence preservation and CI; the PR worktree/branch are retained.

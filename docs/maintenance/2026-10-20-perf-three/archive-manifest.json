@@ -1,16 +1,16 @@
 {
   "source_head": "f72134d76d28d87cd728305ed224f298df41af4a",
-  "scope": "All archive files except this manifest; generated before normal documentation commit. Original per-issue raw measurement collections remain linked rather than duplicated. Controller adds later Task4/whole-branch reviews before cleanup.",
+  "scope": "All archive files except this manifest; final review and Task4 handoff receipts included before publication. Original per-issue raw measurements remain linked. Product source stays at frozen integration head; PR body records later CI and cleanup outcomes.",
   "files": [
     {
       "path": "README.md",
-      "bytes": 5376,
-      "sha256": "5f422b6184f00f01c2c491d0cf3f8ed35b9f94c8177a23bec793e8f75ad3ffac"
+      "bytes": 6153,
+      "sha256": "02af2120492ab3b7b218fa034dce929d702cb20fec6c5876eebcfa0441bc7f1a"
     },
     {
       "path": "controller-ledger.md",
-      "bytes": 19696,
-      "sha256": "db9b67ab5b441ceedd127e1b6398b80fca6324f17475e900d2b6d7a2074335d0"
+      "bytes": 22215,
+      "sha256": "37d37be8a498c6b392e8cad82d478d0f67d3c6787a1eaba456c1e27c2b2dfeeb"
     },
     {
       "path": "receipts/baseline-preserved.json",
@@ -453,6 +453,16 @@
       "sha256": "cc4952943a622fb0ab068fb5c2869bee7527783c96e9493848d69328f0d0e146"
     },
     {
+      "path": "receipts/task-4-commit-hooks.log",
+      "bytes": 11620,
+      "sha256": "ece9509f22ae25253314f3e3fcbd3f6b5f16d7a9831c81900ebbb81d15433118"
+    },
+    {
+      "path": "receipts/task-4-commit-hooks.receipt.json",
+      "bytes": 1568,
+      "sha256": "75f46e23f44de3c1afd6e72a7c88d3637971264040a853bda1abaf576aca242d"
+    },
+    {
       "path": "receipts/tools.json",
       "bytes": 1690,
       "sha256": "fe75801f23ecab723f517d9bfc6e2efcdcb5987fcf7717b5a3921d1bf5c92eee"
@@ -461,6 +471,11 @@
       "path": "receipts/workspace.receipt.json",
       "bytes": 2061,
       "sha256": "cf9f32c0b20a64b717fef4bea964faa9750b27c400e5bfcf2dc55af6d5e52c08"
+    },
+    {
+      "path": "records/final-review-brief.md",
+      "bytes": 4546,
+      "sha256": "c7610b3cccd3043f0c7ad5c1ba4c54e97e313ac8bc47130c71ad5ab7afccc01f"
     },
     {
       "path": "records/issue-1006.json",
@@ -513,6 +528,11 @@
       "sha256": "2a6da5d6814958cd29aaaf0c22f070155e3ab5c594fa44d4f30c2d09d88aca97"
     },
     {
+      "path": "reports/final-review.md",
+      "bytes": 11771,
+      "sha256": "af69a1b1fdec0e6e4b31814ea08e93502ed38012e78c77b741b9c8c78ebe62e8"
+    },
+    {
       "path": "reports/task-1-report.md",
       "bytes": 12844,
       "sha256": "75fc567fa70abc46768048ef10db4faac0554348c2d4e1691fe44082e0c3d27b"
@@ -559,13 +579,19 @@
     },
     {
       "path": "reports/task-4-report.md",
-      "bytes": 12304,
-      "sha256": "ed0c58f4cb660a37655211ac09e10048cdaa8367e52a1a7326e7f3c9c43e58b2"
+      "bytes": 14130,
+      "sha256": "5967e85b510ceb0b6437997776ae69ebb38b7ae084ec86a913599c56e61a0a7b"
+    },
+    {
+      "path": "reports/task-4-review.md",
+      "bytes": 5708,
+      "sha256": "085e84b4bbcf2fce337aba2a2c93153f28876a73d6ed7dbf93430ffb6819a943"
     },
     {
       "path": "self-review-index.md",
       "bytes": 15582,
       "sha256": "73b27248e547c491fb21bbe21ca9f428d8a09ebe5b5ee1e89c88c07d443736c5"
     }
-  ]
+  ],
+  "reviewed_head": "1dc37bbbfdf2e9b8c00db8fe51667fa0348e5a92"
 }
