@@ -14,6 +14,7 @@ pub use janitor::*;
 pub const REPORT_SCHEMA_VERSION: u32 = 9;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DiskRunSummary {
     pub configured_max_owned_bytes: u64,
     pub configured_min_free_bytes: u64,

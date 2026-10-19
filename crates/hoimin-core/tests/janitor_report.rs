@@ -24,3 +24,33 @@ fn unmeasured_disk_summary_emits_explicit_null_janitor() {
     // Assert.
     assert_eq!(wire.get("janitor"), Some(&serde_json::Value::Null));
 }
+
+#[test]
+fn disk_summary_rejects_retired_count_beside_current_janitor() {
+    // Arrange: a partially migrated producer must not silently lose its old count.
+    let mut wire = serde_json::to_value(DiskRunSummary::unmeasured(10, 1)).unwrap();
+    wire["stale_roots_reclaimed"] = serde_json::json!(999);
+
+    // Act.
+    let error = serde_json::from_value::<DiskRunSummary>(wire).unwrap_err();
+
+    // Assert.
+    assert!(
+        error
+            .to_string()
+            .contains("unknown field `stale_roots_reclaimed`")
+    );
+}
+
+#[test]
+fn disk_summary_accepts_explicit_null_janitor() {
+    // Arrange.
+    let disk = DiskRunSummary::unmeasured(10, 1);
+    let wire = serde_json::to_value(&disk).unwrap();
+
+    // Act.
+    let decoded = serde_json::from_value::<DiskRunSummary>(wire).unwrap();
+
+    // Assert.
+    assert_eq!(decoded, disk);
+}

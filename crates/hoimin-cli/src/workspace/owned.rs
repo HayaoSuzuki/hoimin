@@ -2651,6 +2651,221 @@ mod tests {
         assert!(coordinator.dir.symlink_metadata(&staging).is_err());
     }
 
+    macro_rules! young_pre_lease_projection_case {
+        ($name:ident, $verbose:expr, $details:literal, $suppressed:literal) => {
+            #[test]
+            fn $name() {
+                // Arrange: a crash after mkdir but before lease creation.
+                let parent = tempfile::tempdir().unwrap();
+                let coordinator =
+                    ManagedRootCoordinator::open(Utf8Path::from_path(parent.path()).unwrap())
+                        .unwrap();
+                let staging = format!("{}{}", super::STAGING_PREFIX, uuid::Uuid::new_v4());
+                drop(super::create_owned_directory(&coordinator.dir, &staging).unwrap());
+
+                // Act.
+                let mut report =
+                    ManagedRunRoot::reclaim_abandoned(&coordinator, std::time::SystemTime::now());
+                report.project_details($verbose);
+
+                // Assert: the same ordinary hold is retained in either projection.
+                assert_eq!(report.inspected_roots, 1);
+                assert_eq!(report.preserved_roots, 1, "{report:?}");
+                assert_eq!(
+                    report.preserved_by_reason,
+                    std::collections::BTreeMap::from([(hoimin_core::JanitorReason::Young, 1)])
+                );
+                assert_eq!(report.unresolved_roots, 0);
+                assert!(report.unresolved_by_reason.is_empty());
+                assert_eq!(report.reclaimed_roots, 0);
+                assert_eq!(report.removed_entries, 0);
+                assert_eq!(report.details.len(), $details);
+                assert_eq!(
+                    report.detail_omissions.suppressed_normal_details,
+                    $suppressed
+                );
+                if $verbose {
+                    assert_eq!(report.details[0].reason, hoimin_core::JanitorReason::Young);
+                    assert!(report.details[0].message.contains(&staging));
+                }
+                let candidate = super::open_owned_directory(&coordinator.dir, &staging).unwrap();
+                assert!(super::inspect_empty_directory(&candidate).unwrap());
+            }
+        };
+    }
+    young_pre_lease_projection_case!(
+        young_pre_lease_staging_default_suppresses_normal_detail,
+        false,
+        0,
+        1
+    );
+    young_pre_lease_projection_case!(
+        young_pre_lease_staging_verbose_retains_normal_detail,
+        true,
+        1,
+        0
+    );
+
+    macro_rules! invalid_pre_lease_case {
+        ($name:ident, $prefix:expr, $entry:expr, $hours:expr) => {
+            #[test]
+            fn $name() {
+                // Arrange: absent or malformed lease outside the recognized empty staging state.
+                let parent = tempfile::tempdir().unwrap();
+                let coordinator =
+                    ManagedRootCoordinator::open(Utf8Path::from_path(parent.path()).unwrap())
+                        .unwrap();
+                let name = format!("{}{}", $prefix, uuid::Uuid::new_v4());
+                let candidate = super::create_owned_directory(&coordinator.dir, &name).unwrap();
+                if let Some(entry) = $entry {
+                    candidate.create_dir(entry).unwrap();
+                }
+                drop(candidate);
+                let now = std::time::SystemTime::now() + std::time::Duration::from_hours($hours);
+
+                // Act.
+                let mut report = ManagedRunRoot::reclaim_abandoned(&coordinator, now);
+                report.project_details(false);
+
+                // Assert: still unresolved and visible by default; no deletion.
+                assert_eq!(report.inspected_roots, 1);
+                assert_eq!(report.preserved_roots, 0);
+                assert_eq!(report.unresolved_roots, 1, "{report:?}");
+                assert_eq!(
+                    report.unresolved_by_reason[&hoimin_core::JanitorReason::LeaseInvalid],
+                    1
+                );
+                assert_eq!(report.reclaimed_roots, 0);
+                assert_eq!(report.removed_entries, 0);
+                assert!(report.details.iter().any(|detail| detail.reason
+                    == hoimin_core::JanitorReason::LeaseInvalid
+                    && detail.message.contains(&name)));
+                assert!(coordinator.dir.symlink_metadata(&name).is_ok());
+            }
+        };
+    }
+    invalid_pre_lease_case!(
+        young_nonempty_staging_without_lease_is_unresolved,
+        super::STAGING_PREFIX,
+        Some("payload"),
+        0
+    );
+    invalid_pre_lease_case!(
+        stale_nonempty_staging_without_lease_is_unresolved,
+        super::STAGING_PREFIX,
+        Some("payload"),
+        25
+    );
+    invalid_pre_lease_case!(
+        empty_active_root_without_lease_is_unresolved,
+        super::ACTIVE_PREFIX,
+        None::<&str>,
+        0
+    );
+    invalid_pre_lease_case!(
+        young_staging_with_directory_lease_is_unresolved,
+        super::STAGING_PREFIX,
+        Some(super::LEASE_FILE),
+        0
+    );
+
+    #[cfg(unix)]
+    #[test]
+    fn inaccessible_empty_staging_is_unresolved() {
+        use std::os::unix::fs::PermissionsExt;
+        // Arrange: directory search permission is required to acquire the candidate.
+        let parent = tempfile::tempdir().unwrap();
+        let coordinator =
+            ManagedRootCoordinator::open(Utf8Path::from_path(parent.path()).unwrap()).unwrap();
+        let staging = format!("{}{}", super::STAGING_PREFIX, uuid::Uuid::new_v4());
+        drop(super::create_owned_directory(&coordinator.dir, &staging).unwrap());
+        let path = coordinator.path.join(&staging);
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+
+        // Act.
+        let mut report =
+            ManagedRunRoot::reclaim_abandoned(&coordinator, std::time::SystemTime::now());
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
+        report.project_details(false);
+
+        // Assert: failed candidate inspection cannot masquerade as Young.
+        assert_eq!(report.preserved_roots, 0, "{report:?}");
+        assert_eq!(report.unresolved_roots, 1);
+        assert_eq!(report.reclaimed_roots, 0);
+        assert_eq!(report.removed_entries, 0);
+        assert!(
+            report.details.iter().any(
+                |detail| detail.reason == hoimin_core::JanitorReason::CandidateInspectionFailed
+            ),
+            "{report:?}"
+        );
+        assert!(path.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn failed_staging_age_inspection_retains_typed_failure() {
+        use std::os::unix::fs::PermissionsExt;
+        // Arrange: retain a capability acquired before search permission is removed.
+        let parent = tempfile::tempdir().unwrap();
+        let candidate =
+            cap_std::fs::Dir::open_ambient_dir(parent.path(), cap_std::ambient_authority())
+                .unwrap();
+        let path = Utf8Path::from_path(parent.path()).unwrap();
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        let mut ledger = super::ReclaimLedger::default();
+
+        // Act.
+        let result = super::directory_timestamp_is_stale(
+            &candidate,
+            std::time::SystemTime::now(),
+            &mut ledger,
+            path,
+        );
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let mut report = ledger.finish();
+        report.project_details(false);
+
+        // Assert: callers receive the failure, and default output retains its cause.
+        assert_eq!(
+            result.err().unwrap().reason,
+            hoimin_core::JanitorReason::AgeUnverifiable
+        );
+        assert_eq!(report.details.len(), 1);
+        assert_eq!(
+            report.details[0].reason,
+            hoimin_core::JanitorReason::AgeUnverifiable
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn failed_empty_staging_inspection_retains_issue_detail() {
+        use std::os::unix::fs::PermissionsExt;
+        // Arrange: keep the opened capability while removing directory read access.
+        let parent = tempfile::tempdir().unwrap();
+        let candidate =
+            cap_std::fs::Dir::open_ambient_dir(parent.path(), cap_std::ambient_authority())
+                .unwrap();
+        let path = Utf8Path::from_path(parent.path()).unwrap();
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o100)).unwrap();
+        let mut ledger = super::ReclaimLedger::default();
+
+        // Act.
+        let empty = super::janitor_empty_probe(&candidate, &mut ledger, path);
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let mut report = ledger.finish();
+        report.project_details(false);
+
+        // Assert: no positive empty evidence, and the failure survives default projection.
+        assert!(!empty);
+        assert_eq!(report.details.len(), 1);
+        assert_eq!(
+            report.details[0].reason,
+            hoimin_core::JanitorReason::CandidateInspectionFailed
+        );
+    }
+
     #[test]
     fn empty_staging_root_from_a_pre_lease_crash_is_reclaimed_after_a_day() {
         let parent = tempfile::tempdir().unwrap();
@@ -5705,9 +5920,10 @@ impl ManagedRunRoot {
                 }
             };
             let lease_metadata = candidate.symlink_metadata(LEASE_FILE);
-            let unmarked_staging_is_reclaimable = staging
-                && janitor_empty_probe(&candidate, &mut report, &path)
-                && directory_timestamp_is_stale(&candidate, now, &mut report, &path);
+            let empty_staging_age = (staging
+                && janitor_empty_probe(&candidate, &mut report, &path))
+            .then(|| directory_timestamp_is_stale(&candidate, now, &mut report, &path));
+            let unmarked_staging_is_reclaimable = matches!(empty_staging_age, Some(Ok(())));
             let empty_deleting_is_resumable =
                 deleting && janitor_empty_probe(&candidate, &mut report, &path);
             if matches!(&lease_metadata, Err(error) if error.kind() == std::io::ErrorKind::NotFound)
@@ -5762,6 +5978,19 @@ impl ManagedRunRoot {
                     ),
                 }
                 report.removal(index, progress, false);
+                continue;
+            }
+            // A pre-lease crash can leave an empty staging directory. Its positive
+            // age evidence is an ordinary hold; failed inspection still falls through.
+            if matches!(&lease_metadata, Err(error) if error.kind() == std::io::ErrorKind::NotFound)
+                && let Some(Err(failure)) = &empty_staging_age
+                && failure.reason == JanitorReason::Young
+            {
+                report.hold(
+                    index,
+                    failure.reason,
+                    format!("staging age for {path}: {}", failure.cause),
+                );
                 continue;
             }
             let lease = match lease_metadata {
@@ -6775,25 +7004,22 @@ fn directory_timestamp_is_stale(
     now: SystemTime,
     report: &mut ReclaimLedger,
     path: &Utf8Path,
-) -> bool {
+) -> Result<(), EligibilityFailure> {
     let timestamp = candidate
         .metadata(".")
         .and_then(|metadata| metadata.modified());
     let result = timestamp
         .map_err(|error| EligibilityFailure::new(JanitorReason::AgeUnverifiable, error))
         .and_then(|modified| stale_timestamp(modified.into_std().checked_add(STALE_AFTER), now));
-    match result {
-        Ok(()) => true,
-        Err(failure) => {
-            if failure.reason != JanitorReason::Young {
-                report.detail(
-                    failure.reason,
-                    format!("staging age for {path}: {}", failure.cause),
-                );
-            }
-            false
-        }
+    if let Err(failure) = &result
+        && failure.reason != JanitorReason::Young
+    {
+        report.detail(
+            failure.reason,
+            format!("staging age for {path}: {}", failure.cause),
+        );
     }
+    result
 }
 
 fn candidate_is_reclaimable(

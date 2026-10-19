@@ -3295,6 +3295,121 @@ fn jsonl_events(document: &Value) -> Vec<Value> {
     events
 }
 
+macro_rules! disk_public_wire_case {
+    ($name:ident, $jsonl:expr, $defect:literal, $exit:literal, $error:literal) => {
+        #[tokio::test]
+        async fn $name() {
+            // Arrange: the current golden has explicit-null janitor and valid event ordering.
+            let fixture = tempfile::tempdir().unwrap();
+            let source = repo_root().join(if $jsonl {
+                "crates/hoimin-cli/tests/golden/events/schema-v9-current.jsonl"
+            } else {
+                "crates/hoimin-cli/tests/golden/reports/schema-v9-current.json"
+            });
+            let source = std::fs::read_to_string(source).unwrap();
+            let mut values: Vec<Value> = if $jsonl {
+                source
+                    .lines()
+                    .map(|line| serde_json::from_str(line).unwrap())
+                    .collect()
+            } else {
+                vec![serde_json::from_str(&source).unwrap()]
+            };
+            let disk = if $jsonl {
+                &mut values
+                    .iter_mut()
+                    .find(|event| event["kind"] == "run_finished")
+                    .unwrap()["disk"]
+            } else {
+                &mut values[0]["summary"]["disk"]
+            };
+            assert_eq!(disk.get("janitor"), Some(&Value::Null));
+            match $defect {
+                "retired" => disk["stale_roots_reclaimed"] = json!(999),
+                "missing" => {
+                    disk.as_object_mut().unwrap().remove("janitor");
+                }
+                "current" => {}
+                _ => unreachable!(),
+            }
+            let path = if $jsonl {
+                write_jsonl(&fixture, &values)
+            } else {
+                write_json(&fixture, "disk.json", &values[0])
+            };
+
+            // Act: each generated case invokes the actual public reader independently.
+            let output = tokio::process::Command::new(env!("CARGO_BIN_EXE_hoimin"))
+                .arg("progress")
+                .arg(&path)
+                .arg(&path)
+                .args(["--format", "json"])
+                .output()
+                .await
+                .unwrap();
+
+            // Assert.
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            assert_eq!(output.status.code(), Some($exit), "{stderr}");
+            if $exit == 0 {
+                let result: Value = serde_json::from_slice(&output.stdout).unwrap();
+                assert!(
+                    result["inputs"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .all(|input| input["usable"] == true)
+                );
+            } else {
+                assert!(stderr.contains($error), "{stderr}");
+                assert!(output.stdout.is_empty());
+            }
+        }
+    };
+}
+disk_public_wire_case!(
+    public_json_disk_rejects_retired_member,
+    false,
+    "retired",
+    2,
+    "unknown field `stale_roots_reclaimed`"
+);
+disk_public_wire_case!(
+    public_jsonl_disk_rejects_retired_member,
+    true,
+    "retired",
+    2,
+    "unknown field `stale_roots_reclaimed`"
+);
+disk_public_wire_case!(
+    public_json_disk_accepts_current_null,
+    false,
+    "current",
+    0,
+    ""
+);
+disk_public_wire_case!(
+    public_jsonl_disk_accepts_current_null,
+    true,
+    "current",
+    0,
+    ""
+);
+disk_public_wire_case!(
+    public_json_disk_requires_janitor,
+    false,
+    "missing",
+    2,
+    "missing field `janitor`"
+);
+disk_public_wire_case!(
+    public_jsonl_disk_requires_janitor,
+    true,
+    "missing",
+    2,
+    "missing field `janitor`"
+);
+
 macro_rules! status_public_rejection_case {
     ($name:ident, $jsonl:expr) => {
         #[tokio::test]
