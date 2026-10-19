@@ -1202,6 +1202,42 @@
         "--exact",
         "--nocapture"
       ]
+    },
+    {
+      "id": "workspace-manifest-clone-retained",
+      "status": "active",
+      "metric": "retained_heap",
+      "related_issue": 1007,
+      "scope": "4000 empty files in 40 directories; 16 retained standalone clones <=16KiB requested-live allocation. Preallocated handles and setup excluded; meter checks live/realloc/peak/release. Not RSS or timing.",
+      "args": [
+        "test",
+        "-p",
+        "hoimin-cli",
+        "--test",
+        "workspace_manifest_heap",
+        "retained_manifest_clones_do_not_multiply_metadata",
+        "--",
+        "--exact",
+        "--nocapture"
+      ]
+    },
+    {
+      "id": "workspace-worker-metadata-retained",
+      "status": "active",
+      "metric": "retained_heap",
+      "related_issue": 1007,
+      "scope": "1000 empty files in 40 directories; four actual workers <=256KiB+8KiB/worker requested-live allocation with retained handles. Setup, requests and Vec capacities excluded; filesystem/charge checks outside observation. Not RSS or timing.",
+      "args": [
+        "test",
+        "-p",
+        "hoimin-cli",
+        "--test",
+        "workspace_worker_metadata_heap",
+        "retained_worker_metadata_does_not_multiply_file_inventory",
+        "--",
+        "--exact",
+        "--nocapture"
+      ]
     }
   ],
   "lean": {

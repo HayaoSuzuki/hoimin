@@ -3,6 +3,7 @@ use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
+use std::sync::Arc;
 
 use camino::{Utf8Path, Utf8PathBuf};
 use ignore::overrides::OverrideBuilder;
@@ -88,8 +89,17 @@ pub struct ManifestEntry {
     pub blake3: blake3::Hash,
 }
 
+/// Immutable selected-file metadata. Clones cheaply share the same snapshot data.
+///
+/// Metadata remains valid while any handle lives, independently of filesystem owners.
+/// It contains no worker root, copy reservation, charge, or cleanup authority.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WorkspaceManifest {
+    storage: Arc<ManifestStorage>,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+struct ManifestStorage {
     entries: Vec<ManifestEntry>,
     directories: Vec<Utf8PathBuf>,
     logical_bytes: u64,
@@ -99,34 +109,36 @@ impl WorkspaceManifest {
     /// Selected directories, including the ancestors of copied files and directories.
     #[must_use]
     pub fn directories(&self) -> &[Utf8PathBuf] {
-        &self.directories
+        &self.storage.directories
     }
 
     #[must_use]
     pub fn entries(&self) -> &[ManifestEntry] {
-        &self.entries
+        &self.storage.entries
     }
 
     #[must_use]
-    pub const fn logical_bytes(&self) -> u64 {
-        self.logical_bytes
+    pub fn logical_bytes(&self) -> u64 {
+        self.storage.logical_bytes
     }
 
     #[must_use]
     pub fn entry(&self, path: &Utf8Path) -> Option<&ManifestEntry> {
-        self.entries
+        self.storage
+            .entries
             .binary_search_by(|entry| entry.path.as_path().cmp(path))
             .ok()
-            .map(|index| &self.entries[index])
+            .map(|index| &self.storage.entries[index])
     }
 
     pub(crate) fn content_matches(&self, other: &Self) -> bool {
-        self.directories == other.directories
-            && self.entries.len() == other.entries.len()
+        self.storage.directories == other.storage.directories
+            && self.storage.entries.len() == other.storage.entries.len()
             && self
+                .storage
                 .entries
                 .iter()
-                .zip(&other.entries)
+                .zip(&other.storage.entries)
                 .all(|(left, right)| {
                     left.path == right.path
                         && left.size == right.size
@@ -135,18 +147,20 @@ impl WorkspaceManifest {
     }
 
     pub(crate) fn first_content_difference(&self, other: &Self) -> Option<Utf8PathBuf> {
-        let left_dirs = self.directories.iter().collect::<BTreeSet<_>>();
-        let right_dirs = other.directories.iter().collect::<BTreeSet<_>>();
+        let left_dirs = self.storage.directories.iter().collect::<BTreeSet<_>>();
+        let right_dirs = other.storage.directories.iter().collect::<BTreeSet<_>>();
         if let Some(path) = left_dirs.symmetric_difference(&right_dirs).next() {
             return Some((*path).clone());
         }
 
         let left = self
+            .storage
             .entries
             .iter()
             .map(|entry| (&entry.path, entry))
             .collect::<BTreeMap<_, _>>();
         let right = other
+            .storage
             .entries
             .iter()
             .map(|entry| (&entry.path, entry))
@@ -220,9 +234,11 @@ pub(crate) fn build_manifest_with_contents(
     })?;
     Ok((
         WorkspaceManifest {
-            entries: entries.into_values().collect(),
-            directories: directories.into_iter().collect(),
-            logical_bytes,
+            storage: Arc::new(ManifestStorage {
+                entries: entries.into_values().collect(),
+                directories: directories.into_iter().collect(),
+                logical_bytes,
+            }),
         },
         symlinks
             .into_iter()
@@ -433,4 +449,229 @@ pub fn relative_utf8(root: &Utf8Path, path: &Path) -> Result<Utf8PathBuf, Worksp
             path: Utf8PathBuf::from(error.into_value()),
         })?;
     Ok(Utf8PathBuf::from(relative.into_owned()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    use crate::workspace::{MaterializationPause, WorkspacePlan};
+    use hoimin_core::{
+        BudgetLedger, EffectId, RunBudgets, WorkspaceCopyGrant, reserve_workspace_copy,
+    };
+    use std::time::Duration;
+
+    fn prepared_plan() -> (tempfile::TempDir, WorkspacePlan, WorkspaceCopyGrant) {
+        let source = tempfile::tempdir().unwrap();
+        fs::write(source.path().join("a.py"), b"original\n").unwrap();
+        let root = Utf8Path::from_path(source.path()).unwrap();
+        let plan = WorkspacePlan::preflight(root, EffectId(1), 1, CopyOptions::default()).unwrap();
+        let mut ledger = BudgetLedger::new(RunBudgets {
+            memory: 1,
+            copy: plan.aggregate_bytes(),
+            processes: 1,
+        });
+        let grant = reserve_workspace_copy(&mut ledger, &plan.completed()).unwrap();
+        (source, plan, grant)
+    }
+
+    #[test]
+    fn last_manifest_handle_releases_metadata_after_filesystem_owners_drop() {
+        // Arrange: observe metadata privately without giving production a Weak API.
+        let (source, plan, grant) = prepared_plan();
+        let worker = plan
+            .create_worker(&grant.create_worker(EffectId(2), 0).unwrap())
+            .unwrap();
+        let handle = plan.manifest().clone();
+        let metadata = Arc::downgrade(&handle.storage);
+
+        // Act: retain just standalone metadata, independently of disk/snapshot owners.
+        drop(worker);
+        drop(plan);
+        drop(source);
+
+        // Assert: data survives, then its allocation is released with the final handle.
+        assert_eq!(handle.entries()[0].path, "a.py");
+        assert_eq!(handle.entries()[0].size, 9);
+        assert_eq!(handle.entries()[0].blake3, blake3::hash(b"original\n"));
+        assert_eq!(metadata.strong_count(), 1);
+        drop(handle);
+        assert!(metadata.upgrade().is_none());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn cancelled_waiter_leaves_manifest_owned_by_paused_materialization() {
+        // Arrange: real materialization owns the final plan while its awaiter is cancelled.
+        let (_source, plan, grant) = prepared_plan();
+        let metadata = Arc::downgrade(&plan.manifest().storage);
+        let (pause, mut controller) = MaterializationPause::new(0);
+        let plan = plan.with_materialization_pause(Some(pause));
+        let request = grant.create_worker(EffectId(2), 0).unwrap();
+        let (sent, received) = tokio::sync::oneshot::channel();
+        let blocking = tokio::task::spawn_blocking(move || {
+            let worker = plan.create_worker(&request).unwrap();
+            drop(plan);
+            sent.send(worker).unwrap();
+        });
+        let waiting = tokio::spawn(async move { blocking.await.unwrap() });
+        controller
+            .wait_until_entered(Duration::from_secs(5))
+            .unwrap();
+        let release = controller.release_guard();
+
+        // Act: aborting the awaiter detaches an already running blocking copy.
+        waiting.abort();
+        assert!(waiting.await.unwrap_err().is_cancelled());
+
+        // Assert: metadata survives both detached copy and resulting worker, then releases.
+        assert_eq!(metadata.strong_count(), 1);
+        drop(release);
+        let worker = tokio::time::timeout(Duration::from_secs(5), received)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(worker.read("a.py").unwrap(), b"original\n");
+        assert_eq!(
+            worker.manifest().entries()[0].blake3,
+            blake3::hash(b"original\n")
+        );
+        drop(worker);
+        assert!(metadata.upgrade().is_none());
+    }
+
+    fn assert_handle_views(
+        files: &[(&str, &[u8])],
+        directories: &[&str],
+        drop_original_first: bool,
+    ) {
+        // Arrange: literal contents and a selected empty directory.
+        let source = tempfile::tempdir().unwrap();
+        fs::create_dir(source.path().join("empty")).unwrap();
+        for (path, bytes) in files {
+            let path = source.path().join(path);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, bytes).unwrap();
+        }
+        let root = Utf8Path::from_path(source.path()).unwrap();
+        let (manifest, _) = build_manifest(root, &CopyOptions::default()).unwrap();
+        let (independent, _) = build_manifest(root, &CopyOptions::default()).unwrap();
+        let clone = manifest.clone();
+
+        // Act: either handle may be the last remaining snapshot metadata owner.
+        let surviving = if drop_original_first {
+            drop(manifest);
+            clone
+        } else {
+            drop(clone);
+            manifest
+        };
+        drop(source);
+
+        // Assert: structural equality, sorted paths, sizes, hashes and empty directories.
+        assert_eq!(surviving, independent);
+        assert_eq!(surviving.entries().len(), files.len());
+        assert_eq!(
+            surviving.directories(),
+            directories
+                .iter()
+                .map(|path| Utf8PathBuf::from(*path))
+                .collect::<Vec<_>>()
+        );
+        let mut expected = files.to_vec();
+        expected.sort_by_key(|(path, _)| *path);
+        for (entry, (path, bytes)) in surviving.entries().iter().zip(expected) {
+            assert_eq!(entry.path, path);
+            assert_eq!(entry.size, bytes.len() as u64);
+            assert_eq!(entry.blake3, blake3::hash(bytes));
+            assert_eq!(surviving.entry(Utf8Path::new(path)), Some(entry));
+        }
+        assert_eq!(surviving.entry(Utf8Path::new("missing.py")), None);
+        assert_eq!(
+            surviving.logical_bytes(),
+            files
+                .iter()
+                .map(|(_, bytes)| bytes.len() as u64)
+                .sum::<u64>()
+        );
+    }
+
+    #[test]
+    fn empty_manifest_handle_survives_original_drop() {
+        assert_handle_views(&[], &["empty"], true);
+    }
+
+    #[test]
+    fn empty_file_manifest_survives_clone_drop() {
+        assert_handle_views(&[("empty.py", b"")], &["empty"], false);
+    }
+
+    #[test]
+    fn nested_manifest_survives_original_drop() {
+        assert_handle_views(
+            &[("pkg/z.py", b"abc"), ("a.py", b"\0\xff")],
+            &["empty", "pkg"],
+            true,
+        );
+    }
+
+    #[test]
+    fn nested_manifest_survives_clone_drop() {
+        assert_handle_views(
+            &[("pkg/z.py", b"abc"), ("a.py", b"\0\xff")],
+            &["empty", "pkg"],
+            false,
+        );
+    }
+
+    #[test]
+    fn independent_manifest_equality_detects_same_size_content_change() {
+        // Arrange.
+        let source = tempfile::tempdir().unwrap();
+        fs::write(source.path().join("a.py"), b"before").unwrap();
+        let root = Utf8Path::from_path(source.path()).unwrap();
+        let (before, _) = build_manifest(root, &CopyOptions::default()).unwrap();
+        fs::write(source.path().join("a.py"), b"after!").unwrap();
+
+        // Act.
+        let (after, _) = build_manifest(root, &CopyOptions::default()).unwrap();
+
+        // Assert: comparison reads contents, independently of handle identity.
+        assert_ne!(before, after);
+        assert!(!before.content_matches(&after));
+        assert_eq!(
+            before.first_content_difference(&after),
+            Some(Utf8PathBuf::from("a.py"))
+        );
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(24))]
+        #[test]
+        fn generated_manifest_matches_file_data(data in prop::collection::vec(prop::collection::vec(any::<u8>(), 0..65), 0..9)) {
+            // Arrange: bounded real files, with independent expected byte sequences.
+            let source = tempfile::tempdir().unwrap();
+            fs::create_dir(source.path().join("pkg")).unwrap();
+            for (index, bytes) in data.iter().enumerate() {
+                fs::write(source.path().join(format!("pkg/file_{index}.py")), bytes).unwrap();
+            }
+            let root = Utf8Path::from_path(source.path()).unwrap();
+
+            // Act.
+            let (manifest, _) = build_manifest(root, &CopyOptions::default()).unwrap();
+            let retained = manifest.clone();
+            drop(manifest);
+            drop(source);
+
+            // Assert: file count, ordering, sizes, hashes and totals come from input data.
+            prop_assert_eq!(retained.entries().len(), data.len());
+            prop_assert_eq!(retained.directories(), &[Utf8PathBuf::from("pkg")]);
+            prop_assert_eq!(retained.logical_bytes(), data.iter().map(|bytes| bytes.len() as u64).sum::<u64>());
+            for (index, (entry, bytes)) in retained.entries().iter().zip(&data).enumerate() {
+                prop_assert_eq!(&entry.path, &Utf8PathBuf::from(format!("pkg/file_{index}.py")));
+                prop_assert_eq!(entry.size, bytes.len() as u64);
+                prop_assert_eq!(entry.blake3, blake3::hash(bytes));
+            }
+        }
+    }
 }

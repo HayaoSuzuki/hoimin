@@ -1,0 +1,4139 @@
+{
+  "observations": [
+    {
+      "mode": "clone",
+      "files": 1000,
+      "handles": 1,
+      "payload_bytes": 0,
+      "retained": 118400,
+      "peak": 118400,
+      "elapsed_ns": 14334,
+      "digest": "a652b72d81a5fd3dfb273f3857207b032d93696ce531da89b913febd29d0fc13",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "before",
+      "pair": 0,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "clone",
+        "1000",
+        "1",
+        "0"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 1000,
+      "handles": 1,
+      "payload_bytes": 0,
+      "retained": 0,
+      "peak": 0,
+      "elapsed_ns": 3708,
+      "digest": "a652b72d81a5fd3dfb273f3857207b032d93696ce531da89b913febd29d0fc13",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "after",
+      "pair": 0,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "clone",
+        "1000",
+        "1",
+        "0"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 1000,
+      "handles": 1,
+      "payload_bytes": 0,
+      "retained": 0,
+      "peak": 0,
+      "elapsed_ns": 41,
+      "digest": "a652b72d81a5fd3dfb273f3857207b032d93696ce531da89b913febd29d0fc13",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "after",
+      "pair": 1,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "clone",
+        "1000",
+        "1",
+        "0"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 1000,
+      "handles": 1,
+      "payload_bytes": 0,
+      "retained": 118400,
+      "peak": 118400,
+      "elapsed_ns": 13916,
+      "digest": "a652b72d81a5fd3dfb273f3857207b032d93696ce531da89b913febd29d0fc13",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "before",
+      "pair": 1,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "clone",
+        "1000",
+        "1",
+        "0"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 1000,
+      "handles": 1,
+      "payload_bytes": 0,
+      "retained": 118400,
+      "peak": 118400,
+      "elapsed_ns": 16750,
+      "digest": "a652b72d81a5fd3dfb273f3857207b032d93696ce531da89b913febd29d0fc13",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "before",
+      "pair": 2,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "clone",
+        "1000",
+        "1",
+        "0"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 1000,
+      "handles": 1,
+      "payload_bytes": 0,
+      "retained": 0,
+      "peak": 0,
+      "elapsed_ns": 0,
+      "digest": "a652b72d81a5fd3dfb273f3857207b032d93696ce531da89b913febd29d0fc13",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "after",
+      "pair": 2,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "clone",
+        "1000",
+        "1",
+        "0"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 1000,
+      "handles": 4,
+      "payload_bytes": 0,
+      "retained": 473600,
+      "peak": 473600,
+      "elapsed_ns": 69833,
+      "digest": "a652b72d81a5fd3dfb273f3857207b032d93696ce531da89b913febd29d0fc13",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "before",
+      "pair": 0,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "clone",
+        "1000",
+        "4",
+        "0"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 1000,
+      "handles": 4,
+      "payload_bytes": 0,
+      "retained": 0,
+      "peak": 0,
+      "elapsed_ns": 0,
+      "digest": "a652b72d81a5fd3dfb273f3857207b032d93696ce531da89b913febd29d0fc13",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "after",
+      "pair": 0,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "clone",
+        "1000",
+        "4",
+        "0"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 1000,
+      "handles": 4,
+      "payload_bytes": 0,
+      "retained": 0,
+      "peak": 0,
+      "elapsed_ns": 0,
+      "digest": "a652b72d81a5fd3dfb273f3857207b032d93696ce531da89b913febd29d0fc13",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "after",
+      "pair": 1,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "clone",
+        "1000",
+        "4",
+        "0"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 1000,
+      "handles": 4,
+      "payload_bytes": 0,
+      "retained": 473600,
+      "peak": 473600,
+      "elapsed_ns": 63417,
+      "digest": "a652b72d81a5fd3dfb273f3857207b032d93696ce531da89b913febd29d0fc13",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "before",
+      "pair": 1,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "clone",
+        "1000",
+        "4",
+        "0"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 1000,
+      "handles": 4,
+      "payload_bytes": 0,
+      "retained": 473600,
+      "peak": 473600,
+      "elapsed_ns": 65666,
+      "digest": "a652b72d81a5fd3dfb273f3857207b032d93696ce531da89b913febd29d0fc13",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "before",
+      "pair": 2,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "clone",
+        "1000",
+        "4",
+        "0"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 1000,
+      "handles": 4,
+      "payload_bytes": 0,
+      "retained": 0,
+      "peak": 0,
+      "elapsed_ns": 83,
+      "digest": "a652b72d81a5fd3dfb273f3857207b032d93696ce531da89b913febd29d0fc13",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "after",
+      "pair": 2,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "clone",
+        "1000",
+        "4",
+        "0"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 1000,
+      "handles": 16,
+      "payload_bytes": 0,
+      "retained": 1894400,
+      "peak": 1894400,
+      "elapsed_ns": 258041,
+      "digest": "a652b72d81a5fd3dfb273f3857207b032d93696ce531da89b913febd29d0fc13",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "before",
+      "pair": 0,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "clone",
+        "1000",
+        "16",
+        "0"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 1000,
+      "handles": 16,
+      "payload_bytes": 0,
+      "retained": 0,
+      "peak": 0,
+      "elapsed_ns": 42,
+      "digest": "a652b72d81a5fd3dfb273f3857207b032d93696ce531da89b913febd29d0fc13",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "after",
+      "pair": 0,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "clone",
+        "1000",
+        "16",
+        "0"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 1000,
+      "handles": 16,
+      "payload_bytes": 0,
+      "retained": 0,
+      "peak": 0,
+      "elapsed_ns": 958,
+      "digest": "a652b72d81a5fd3dfb273f3857207b032d93696ce531da89b913febd29d0fc13",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "after",
+      "pair": 1,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "clone",
+        "1000",
+        "16",
+        "0"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 1000,
+      "handles": 16,
+      "payload_bytes": 0,
+      "retained": 1894400,
+      "peak": 1894400,
+      "elapsed_ns": 257958,
+      "digest": "a652b72d81a5fd3dfb273f3857207b032d93696ce531da89b913febd29d0fc13",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "before",
+      "pair": 1,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "clone",
+        "1000",
+        "16",
+        "0"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 1000,
+      "handles": 16,
+      "payload_bytes": 0,
+      "retained": 1894400,
+      "peak": 1894400,
+      "elapsed_ns": 235791,
+      "digest": "a652b72d81a5fd3dfb273f3857207b032d93696ce531da89b913febd29d0fc13",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "before",
+      "pair": 2,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "clone",
+        "1000",
+        "16",
+        "0"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 1000,
+      "handles": 16,
+      "payload_bytes": 0,
+      "retained": 0,
+      "peak": 0,
+      "elapsed_ns": 83,
+      "digest": "a652b72d81a5fd3dfb273f3857207b032d93696ce531da89b913febd29d0fc13",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "after",
+      "pair": 2,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "clone",
+        "1000",
+        "16",
+        "0"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 1000,
+      "handles": 1,
+      "payload_bytes": 0,
+      "retained": 118668,
+      "peak": 118806,
+      "elapsed_ns": 102920208,
+      "digest": "a652b72d81a5fd3dfb273f3857207b032d93696ce531da89b913febd29d0fc13",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "before",
+      "pair": 0,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "worker",
+        "1000",
+        "1",
+        "0"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 1000,
+      "handles": 1,
+      "payload_bytes": 0,
+      "retained": 268,
+      "peak": 65983,
+      "elapsed_ns": 105351375,
+      "digest": "a652b72d81a5fd3dfb273f3857207b032d93696ce531da89b913febd29d0fc13",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "after",
+      "pair": 0,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "worker",
+        "1000",
+        "1",
+        "0"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 1000,
+      "handles": 1,
+      "payload_bytes": 0,
+      "retained": 268,
+      "peak": 65983,
+      "elapsed_ns": 103488083,
+      "digest": "a652b72d81a5fd3dfb273f3857207b032d93696ce531da89b913febd29d0fc13",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "after",
+      "pair": 1,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "worker",
+        "1000",
+        "1",
+        "0"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 1000,
+      "handles": 1,
+      "payload_bytes": 0,
+      "retained": 118668,
+      "peak": 118806,
+      "elapsed_ns": 100734333,
+      "digest": "a652b72d81a5fd3dfb273f3857207b032d93696ce531da89b913febd29d0fc13",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "before",
+      "pair": 1,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "worker",
+        "1000",
+        "1",
+        "0"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 1000,
+      "handles": 1,
+      "payload_bytes": 0,
+      "retained": 118668,
+      "peak": 118806,
+      "elapsed_ns": 102327500,
+      "digest": "a652b72d81a5fd3dfb273f3857207b032d93696ce531da89b913febd29d0fc13",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "before",
+      "pair": 2,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "worker",
+        "1000",
+        "1",
+        "0"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 1000,
+      "handles": 1,
+      "payload_bytes": 0,
+      "retained": 268,
+      "peak": 65983,
+      "elapsed_ns": 99326334,
+      "digest": "a652b72d81a5fd3dfb273f3857207b032d93696ce531da89b913febd29d0fc13",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "after",
+      "pair": 2,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "worker",
+        "1000",
+        "1",
+        "0"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 1000,
+      "handles": 4,
+      "payload_bytes": 0,
+      "retained": 474312,
+      "peak": 474450,
+      "elapsed_ns": 396830292,
+      "digest": "a652b72d81a5fd3dfb273f3857207b032d93696ce531da89b913febd29d0fc13",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "before",
+      "pair": 0,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "worker",
+        "1000",
+        "4",
+        "0"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 1000,
+      "handles": 4,
+      "payload_bytes": 0,
+      "retained": 712,
+      "peak": 66427,
+      "elapsed_ns": 397820000,
+      "digest": "a652b72d81a5fd3dfb273f3857207b032d93696ce531da89b913febd29d0fc13",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "after",
+      "pair": 0,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "worker",
+        "1000",
+        "4",
+        "0"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 1000,
+      "handles": 4,
+      "payload_bytes": 0,
+      "retained": 712,
+      "peak": 66427,
+      "elapsed_ns": 396892333,
+      "digest": "a652b72d81a5fd3dfb273f3857207b032d93696ce531da89b913febd29d0fc13",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "after",
+      "pair": 1,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "worker",
+        "1000",
+        "4",
+        "0"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 1000,
+      "handles": 4,
+      "payload_bytes": 0,
+      "retained": 474312,
+      "peak": 474450,
+      "elapsed_ns": 398214292,
+      "digest": "a652b72d81a5fd3dfb273f3857207b032d93696ce531da89b913febd29d0fc13",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "before",
+      "pair": 1,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "worker",
+        "1000",
+        "4",
+        "0"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 1000,
+      "handles": 4,
+      "payload_bytes": 0,
+      "retained": 474312,
+      "peak": 474450,
+      "elapsed_ns": 397053375,
+      "digest": "a652b72d81a5fd3dfb273f3857207b032d93696ce531da89b913febd29d0fc13",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "before",
+      "pair": 2,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "worker",
+        "1000",
+        "4",
+        "0"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 1000,
+      "handles": 4,
+      "payload_bytes": 0,
+      "retained": 712,
+      "peak": 66427,
+      "elapsed_ns": 408154500,
+      "digest": "a652b72d81a5fd3dfb273f3857207b032d93696ce531da89b913febd29d0fc13",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "after",
+      "pair": 2,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "worker",
+        "1000",
+        "4",
+        "0"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 1000,
+      "handles": 16,
+      "payload_bytes": 0,
+      "retained": 1897096,
+      "peak": 1897234,
+      "elapsed_ns": 1833198542,
+      "digest": "a652b72d81a5fd3dfb273f3857207b032d93696ce531da89b913febd29d0fc13",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "before",
+      "pair": 0,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "worker",
+        "1000",
+        "16",
+        "0"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 1000,
+      "handles": 16,
+      "payload_bytes": 0,
+      "retained": 2696,
+      "peak": 68411,
+      "elapsed_ns": 1798045792,
+      "digest": "a652b72d81a5fd3dfb273f3857207b032d93696ce531da89b913febd29d0fc13",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "after",
+      "pair": 0,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "worker",
+        "1000",
+        "16",
+        "0"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 1000,
+      "handles": 16,
+      "payload_bytes": 0,
+      "retained": 2696,
+      "peak": 68411,
+      "elapsed_ns": 1735129917,
+      "digest": "a652b72d81a5fd3dfb273f3857207b032d93696ce531da89b913febd29d0fc13",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "after",
+      "pair": 1,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "worker",
+        "1000",
+        "16",
+        "0"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 1000,
+      "handles": 16,
+      "payload_bytes": 0,
+      "retained": 1897096,
+      "peak": 1897234,
+      "elapsed_ns": 1672644417,
+      "digest": "a652b72d81a5fd3dfb273f3857207b032d93696ce531da89b913febd29d0fc13",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "before",
+      "pair": 1,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "worker",
+        "1000",
+        "16",
+        "0"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 1000,
+      "handles": 16,
+      "payload_bytes": 0,
+      "retained": 1897096,
+      "peak": 1897234,
+      "elapsed_ns": 1711187417,
+      "digest": "a652b72d81a5fd3dfb273f3857207b032d93696ce531da89b913febd29d0fc13",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "before",
+      "pair": 2,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "worker",
+        "1000",
+        "16",
+        "0"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 1000,
+      "handles": 16,
+      "payload_bytes": 0,
+      "retained": 2696,
+      "peak": 68411,
+      "elapsed_ns": 1673861917,
+      "digest": "a652b72d81a5fd3dfb273f3857207b032d93696ce531da89b913febd29d0fc13",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "after",
+      "pair": 2,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "worker",
+        "1000",
+        "16",
+        "0"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 1000,
+      "handles": 1,
+      "payload_bytes": 64,
+      "retained": 118400,
+      "peak": 118400,
+      "elapsed_ns": 15417,
+      "digest": "7d843df2632de077a480bec485f3ea81305d3c0abd72e72815714019378784a3",
+      "logical_bytes": 64000,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 64000,
+      "revision": "before",
+      "pair": 0,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "clone",
+        "1000",
+        "1",
+        "64"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 1000,
+      "handles": 1,
+      "payload_bytes": 64,
+      "retained": 0,
+      "peak": 0,
+      "elapsed_ns": 41,
+      "digest": "7d843df2632de077a480bec485f3ea81305d3c0abd72e72815714019378784a3",
+      "logical_bytes": 64000,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 64000,
+      "revision": "after",
+      "pair": 0,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "clone",
+        "1000",
+        "1",
+        "64"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 1000,
+      "handles": 1,
+      "payload_bytes": 64,
+      "retained": 0,
+      "peak": 0,
+      "elapsed_ns": 83,
+      "digest": "7d843df2632de077a480bec485f3ea81305d3c0abd72e72815714019378784a3",
+      "logical_bytes": 64000,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 64000,
+      "revision": "after",
+      "pair": 1,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "clone",
+        "1000",
+        "1",
+        "64"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 1000,
+      "handles": 1,
+      "payload_bytes": 64,
+      "retained": 118400,
+      "peak": 118400,
+      "elapsed_ns": 17125,
+      "digest": "7d843df2632de077a480bec485f3ea81305d3c0abd72e72815714019378784a3",
+      "logical_bytes": 64000,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 64000,
+      "revision": "before",
+      "pair": 1,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "clone",
+        "1000",
+        "1",
+        "64"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 1000,
+      "handles": 1,
+      "payload_bytes": 64,
+      "retained": 118400,
+      "peak": 118400,
+      "elapsed_ns": 18125,
+      "digest": "7d843df2632de077a480bec485f3ea81305d3c0abd72e72815714019378784a3",
+      "logical_bytes": 64000,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 64000,
+      "revision": "before",
+      "pair": 2,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "clone",
+        "1000",
+        "1",
+        "64"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 1000,
+      "handles": 1,
+      "payload_bytes": 64,
+      "retained": 0,
+      "peak": 0,
+      "elapsed_ns": 83,
+      "digest": "7d843df2632de077a480bec485f3ea81305d3c0abd72e72815714019378784a3",
+      "logical_bytes": 64000,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 64000,
+      "revision": "after",
+      "pair": 2,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "clone",
+        "1000",
+        "1",
+        "64"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 1000,
+      "handles": 4,
+      "payload_bytes": 64,
+      "retained": 473600,
+      "peak": 473600,
+      "elapsed_ns": 76041,
+      "digest": "7d843df2632de077a480bec485f3ea81305d3c0abd72e72815714019378784a3",
+      "logical_bytes": 64000,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 64000,
+      "revision": "before",
+      "pair": 0,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "clone",
+        "1000",
+        "4",
+        "64"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 1000,
+      "handles": 4,
+      "payload_bytes": 64,
+      "retained": 0,
+      "peak": 0,
+      "elapsed_ns": 42,
+      "digest": "7d843df2632de077a480bec485f3ea81305d3c0abd72e72815714019378784a3",
+      "logical_bytes": 64000,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 64000,
+      "revision": "after",
+      "pair": 0,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "clone",
+        "1000",
+        "4",
+        "64"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 1000,
+      "handles": 4,
+      "payload_bytes": 64,
+      "retained": 0,
+      "peak": 0,
+      "elapsed_ns": 41,
+      "digest": "7d843df2632de077a480bec485f3ea81305d3c0abd72e72815714019378784a3",
+      "logical_bytes": 64000,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 64000,
+      "revision": "after",
+      "pair": 1,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "clone",
+        "1000",
+        "4",
+        "64"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 1000,
+      "handles": 4,
+      "payload_bytes": 64,
+      "retained": 473600,
+      "peak": 473600,
+      "elapsed_ns": 99208,
+      "digest": "7d843df2632de077a480bec485f3ea81305d3c0abd72e72815714019378784a3",
+      "logical_bytes": 64000,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 64000,
+      "revision": "before",
+      "pair": 1,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "clone",
+        "1000",
+        "4",
+        "64"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 1000,
+      "handles": 4,
+      "payload_bytes": 64,
+      "retained": 473600,
+      "peak": 473600,
+      "elapsed_ns": 72625,
+      "digest": "7d843df2632de077a480bec485f3ea81305d3c0abd72e72815714019378784a3",
+      "logical_bytes": 64000,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 64000,
+      "revision": "before",
+      "pair": 2,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "clone",
+        "1000",
+        "4",
+        "64"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 1000,
+      "handles": 4,
+      "payload_bytes": 64,
+      "retained": 0,
+      "peak": 0,
+      "elapsed_ns": 250,
+      "digest": "7d843df2632de077a480bec485f3ea81305d3c0abd72e72815714019378784a3",
+      "logical_bytes": 64000,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 64000,
+      "revision": "after",
+      "pair": 2,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "clone",
+        "1000",
+        "4",
+        "64"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 1000,
+      "handles": 16,
+      "payload_bytes": 64,
+      "retained": 1894400,
+      "peak": 1894400,
+      "elapsed_ns": 281917,
+      "digest": "7d843df2632de077a480bec485f3ea81305d3c0abd72e72815714019378784a3",
+      "logical_bytes": 64000,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 64000,
+      "revision": "before",
+      "pair": 0,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "clone",
+        "1000",
+        "16",
+        "64"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 1000,
+      "handles": 16,
+      "payload_bytes": 64,
+      "retained": 0,
+      "peak": 0,
+      "elapsed_ns": 167,
+      "digest": "7d843df2632de077a480bec485f3ea81305d3c0abd72e72815714019378784a3",
+      "logical_bytes": 64000,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 64000,
+      "revision": "after",
+      "pair": 0,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "clone",
+        "1000",
+        "16",
+        "64"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 1000,
+      "handles": 16,
+      "payload_bytes": 64,
+      "retained": 0,
+      "peak": 0,
+      "elapsed_ns": 208,
+      "digest": "7d843df2632de077a480bec485f3ea81305d3c0abd72e72815714019378784a3",
+      "logical_bytes": 64000,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 64000,
+      "revision": "after",
+      "pair": 1,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "clone",
+        "1000",
+        "16",
+        "64"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 1000,
+      "handles": 16,
+      "payload_bytes": 64,
+      "retained": 1894400,
+      "peak": 1894400,
+      "elapsed_ns": 309416,
+      "digest": "7d843df2632de077a480bec485f3ea81305d3c0abd72e72815714019378784a3",
+      "logical_bytes": 64000,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 64000,
+      "revision": "before",
+      "pair": 1,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "clone",
+        "1000",
+        "16",
+        "64"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 1000,
+      "handles": 16,
+      "payload_bytes": 64,
+      "retained": 1894400,
+      "peak": 1894400,
+      "elapsed_ns": 248125,
+      "digest": "7d843df2632de077a480bec485f3ea81305d3c0abd72e72815714019378784a3",
+      "logical_bytes": 64000,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 64000,
+      "revision": "before",
+      "pair": 2,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "clone",
+        "1000",
+        "16",
+        "64"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 1000,
+      "handles": 16,
+      "payload_bytes": 64,
+      "retained": 0,
+      "peak": 0,
+      "elapsed_ns": 0,
+      "digest": "7d843df2632de077a480bec485f3ea81305d3c0abd72e72815714019378784a3",
+      "logical_bytes": 64000,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 64000,
+      "revision": "after",
+      "pair": 2,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "clone",
+        "1000",
+        "16",
+        "64"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 1000,
+      "handles": 1,
+      "payload_bytes": 64,
+      "retained": 118668,
+      "peak": 118806,
+      "elapsed_ns": 153731166,
+      "digest": "7d843df2632de077a480bec485f3ea81305d3c0abd72e72815714019378784a3",
+      "logical_bytes": 64000,
+      "worker_charge": 64000,
+      "snapshot_plus_worker_payload_bytes": 128000,
+      "revision": "before",
+      "pair": 0,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "worker",
+        "1000",
+        "1",
+        "64"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 1000,
+      "handles": 1,
+      "payload_bytes": 64,
+      "retained": 268,
+      "peak": 65983,
+      "elapsed_ns": 128461583,
+      "digest": "7d843df2632de077a480bec485f3ea81305d3c0abd72e72815714019378784a3",
+      "logical_bytes": 64000,
+      "worker_charge": 64000,
+      "snapshot_plus_worker_payload_bytes": 128000,
+      "revision": "after",
+      "pair": 0,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "worker",
+        "1000",
+        "1",
+        "64"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 1000,
+      "handles": 1,
+      "payload_bytes": 64,
+      "retained": 268,
+      "peak": 65983,
+      "elapsed_ns": 133177292,
+      "digest": "7d843df2632de077a480bec485f3ea81305d3c0abd72e72815714019378784a3",
+      "logical_bytes": 64000,
+      "worker_charge": 64000,
+      "snapshot_plus_worker_payload_bytes": 128000,
+      "revision": "after",
+      "pair": 1,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "worker",
+        "1000",
+        "1",
+        "64"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 1000,
+      "handles": 1,
+      "payload_bytes": 64,
+      "retained": 118668,
+      "peak": 118806,
+      "elapsed_ns": 128708917,
+      "digest": "7d843df2632de077a480bec485f3ea81305d3c0abd72e72815714019378784a3",
+      "logical_bytes": 64000,
+      "worker_charge": 64000,
+      "snapshot_plus_worker_payload_bytes": 128000,
+      "revision": "before",
+      "pair": 1,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "worker",
+        "1000",
+        "1",
+        "64"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 1000,
+      "handles": 1,
+      "payload_bytes": 64,
+      "retained": 118668,
+      "peak": 118806,
+      "elapsed_ns": 123500459,
+      "digest": "7d843df2632de077a480bec485f3ea81305d3c0abd72e72815714019378784a3",
+      "logical_bytes": 64000,
+      "worker_charge": 64000,
+      "snapshot_plus_worker_payload_bytes": 128000,
+      "revision": "before",
+      "pair": 2,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "worker",
+        "1000",
+        "1",
+        "64"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 1000,
+      "handles": 1,
+      "payload_bytes": 64,
+      "retained": 268,
+      "peak": 65983,
+      "elapsed_ns": 119689209,
+      "digest": "7d843df2632de077a480bec485f3ea81305d3c0abd72e72815714019378784a3",
+      "logical_bytes": 64000,
+      "worker_charge": 64000,
+      "snapshot_plus_worker_payload_bytes": 128000,
+      "revision": "after",
+      "pair": 2,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "worker",
+        "1000",
+        "1",
+        "64"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 1000,
+      "handles": 4,
+      "payload_bytes": 64,
+      "retained": 474312,
+      "peak": 474450,
+      "elapsed_ns": 477098667,
+      "digest": "7d843df2632de077a480bec485f3ea81305d3c0abd72e72815714019378784a3",
+      "logical_bytes": 64000,
+      "worker_charge": 256000,
+      "snapshot_plus_worker_payload_bytes": 320000,
+      "revision": "before",
+      "pair": 0,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "worker",
+        "1000",
+        "4",
+        "64"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 1000,
+      "handles": 4,
+      "payload_bytes": 64,
+      "retained": 712,
+      "peak": 66427,
+      "elapsed_ns": 535094792,
+      "digest": "7d843df2632de077a480bec485f3ea81305d3c0abd72e72815714019378784a3",
+      "logical_bytes": 64000,
+      "worker_charge": 256000,
+      "snapshot_plus_worker_payload_bytes": 320000,
+      "revision": "after",
+      "pair": 0,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "worker",
+        "1000",
+        "4",
+        "64"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 1000,
+      "handles": 4,
+      "payload_bytes": 64,
+      "retained": 712,
+      "peak": 66427,
+      "elapsed_ns": 481007375,
+      "digest": "7d843df2632de077a480bec485f3ea81305d3c0abd72e72815714019378784a3",
+      "logical_bytes": 64000,
+      "worker_charge": 256000,
+      "snapshot_plus_worker_payload_bytes": 320000,
+      "revision": "after",
+      "pair": 1,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "worker",
+        "1000",
+        "4",
+        "64"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 1000,
+      "handles": 4,
+      "payload_bytes": 64,
+      "retained": 474312,
+      "peak": 474450,
+      "elapsed_ns": 481461750,
+      "digest": "7d843df2632de077a480bec485f3ea81305d3c0abd72e72815714019378784a3",
+      "logical_bytes": 64000,
+      "worker_charge": 256000,
+      "snapshot_plus_worker_payload_bytes": 320000,
+      "revision": "before",
+      "pair": 1,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "worker",
+        "1000",
+        "4",
+        "64"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 1000,
+      "handles": 4,
+      "payload_bytes": 64,
+      "retained": 474312,
+      "peak": 474450,
+      "elapsed_ns": 488513875,
+      "digest": "7d843df2632de077a480bec485f3ea81305d3c0abd72e72815714019378784a3",
+      "logical_bytes": 64000,
+      "worker_charge": 256000,
+      "snapshot_plus_worker_payload_bytes": 320000,
+      "revision": "before",
+      "pair": 2,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "worker",
+        "1000",
+        "4",
+        "64"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 1000,
+      "handles": 4,
+      "payload_bytes": 64,
+      "retained": 712,
+      "peak": 66427,
+      "elapsed_ns": 483623167,
+      "digest": "7d843df2632de077a480bec485f3ea81305d3c0abd72e72815714019378784a3",
+      "logical_bytes": 64000,
+      "worker_charge": 256000,
+      "snapshot_plus_worker_payload_bytes": 320000,
+      "revision": "after",
+      "pair": 2,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "worker",
+        "1000",
+        "4",
+        "64"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 1000,
+      "handles": 16,
+      "payload_bytes": 64,
+      "retained": 1897096,
+      "peak": 1897234,
+      "elapsed_ns": 1981664666,
+      "digest": "7d843df2632de077a480bec485f3ea81305d3c0abd72e72815714019378784a3",
+      "logical_bytes": 64000,
+      "worker_charge": 1024000,
+      "snapshot_plus_worker_payload_bytes": 1088000,
+      "revision": "before",
+      "pair": 0,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "worker",
+        "1000",
+        "16",
+        "64"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 1000,
+      "handles": 16,
+      "payload_bytes": 64,
+      "retained": 2696,
+      "peak": 68411,
+      "elapsed_ns": 1963355250,
+      "digest": "7d843df2632de077a480bec485f3ea81305d3c0abd72e72815714019378784a3",
+      "logical_bytes": 64000,
+      "worker_charge": 1024000,
+      "snapshot_plus_worker_payload_bytes": 1088000,
+      "revision": "after",
+      "pair": 0,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "worker",
+        "1000",
+        "16",
+        "64"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 1000,
+      "handles": 16,
+      "payload_bytes": 64,
+      "retained": 2696,
+      "peak": 68411,
+      "elapsed_ns": 1964959958,
+      "digest": "7d843df2632de077a480bec485f3ea81305d3c0abd72e72815714019378784a3",
+      "logical_bytes": 64000,
+      "worker_charge": 1024000,
+      "snapshot_plus_worker_payload_bytes": 1088000,
+      "revision": "after",
+      "pair": 1,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "worker",
+        "1000",
+        "16",
+        "64"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 1000,
+      "handles": 16,
+      "payload_bytes": 64,
+      "retained": 1897096,
+      "peak": 1897234,
+      "elapsed_ns": 1957868750,
+      "digest": "7d843df2632de077a480bec485f3ea81305d3c0abd72e72815714019378784a3",
+      "logical_bytes": 64000,
+      "worker_charge": 1024000,
+      "snapshot_plus_worker_payload_bytes": 1088000,
+      "revision": "before",
+      "pair": 1,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "worker",
+        "1000",
+        "16",
+        "64"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 1000,
+      "handles": 16,
+      "payload_bytes": 64,
+      "retained": 1897096,
+      "peak": 1897234,
+      "elapsed_ns": 1914568041,
+      "digest": "7d843df2632de077a480bec485f3ea81305d3c0abd72e72815714019378784a3",
+      "logical_bytes": 64000,
+      "worker_charge": 1024000,
+      "snapshot_plus_worker_payload_bytes": 1088000,
+      "revision": "before",
+      "pair": 2,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "worker",
+        "1000",
+        "16",
+        "64"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 1000,
+      "handles": 16,
+      "payload_bytes": 64,
+      "retained": 2696,
+      "peak": 68411,
+      "elapsed_ns": 1941655541,
+      "digest": "7d843df2632de077a480bec485f3ea81305d3c0abd72e72815714019378784a3",
+      "logical_bytes": 64000,
+      "worker_charge": 1024000,
+      "snapshot_plus_worker_payload_bytes": 1088000,
+      "revision": "after",
+      "pair": 2,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "worker",
+        "1000",
+        "16",
+        "64"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 4000,
+      "handles": 1,
+      "payload_bytes": 0,
+      "retained": 469400,
+      "peak": 469400,
+      "elapsed_ns": 75334,
+      "digest": "16da457a549341e1d003770ba55d6a04cd56f9786faca87009219cf66f08f9dd",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "before",
+      "pair": 0,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "clone",
+        "4000",
+        "1",
+        "0"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 4000,
+      "handles": 1,
+      "payload_bytes": 0,
+      "retained": 0,
+      "peak": 0,
+      "elapsed_ns": 41,
+      "digest": "16da457a549341e1d003770ba55d6a04cd56f9786faca87009219cf66f08f9dd",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "after",
+      "pair": 0,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "clone",
+        "4000",
+        "1",
+        "0"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 4000,
+      "handles": 1,
+      "payload_bytes": 0,
+      "retained": 0,
+      "peak": 0,
+      "elapsed_ns": 42,
+      "digest": "16da457a549341e1d003770ba55d6a04cd56f9786faca87009219cf66f08f9dd",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "after",
+      "pair": 1,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "clone",
+        "4000",
+        "1",
+        "0"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 4000,
+      "handles": 1,
+      "payload_bytes": 0,
+      "retained": 469400,
+      "peak": 469400,
+      "elapsed_ns": 57333,
+      "digest": "16da457a549341e1d003770ba55d6a04cd56f9786faca87009219cf66f08f9dd",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "before",
+      "pair": 1,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "clone",
+        "4000",
+        "1",
+        "0"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 4000,
+      "handles": 1,
+      "payload_bytes": 0,
+      "retained": 469400,
+      "peak": 469400,
+      "elapsed_ns": 92042,
+      "digest": "16da457a549341e1d003770ba55d6a04cd56f9786faca87009219cf66f08f9dd",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "before",
+      "pair": 2,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "clone",
+        "4000",
+        "1",
+        "0"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 4000,
+      "handles": 1,
+      "payload_bytes": 0,
+      "retained": 0,
+      "peak": 0,
+      "elapsed_ns": 42,
+      "digest": "16da457a549341e1d003770ba55d6a04cd56f9786faca87009219cf66f08f9dd",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "after",
+      "pair": 2,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "clone",
+        "4000",
+        "1",
+        "0"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 4000,
+      "handles": 4,
+      "payload_bytes": 0,
+      "retained": 1877600,
+      "peak": 1877600,
+      "elapsed_ns": 343625,
+      "digest": "16da457a549341e1d003770ba55d6a04cd56f9786faca87009219cf66f08f9dd",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "before",
+      "pair": 0,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "clone",
+        "4000",
+        "4",
+        "0"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 4000,
+      "handles": 4,
+      "payload_bytes": 0,
+      "retained": 0,
+      "peak": 0,
+      "elapsed_ns": 41,
+      "digest": "16da457a549341e1d003770ba55d6a04cd56f9786faca87009219cf66f08f9dd",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "after",
+      "pair": 0,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "clone",
+        "4000",
+        "4",
+        "0"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 4000,
+      "handles": 4,
+      "payload_bytes": 0,
+      "retained": 0,
+      "peak": 0,
+      "elapsed_ns": 0,
+      "digest": "16da457a549341e1d003770ba55d6a04cd56f9786faca87009219cf66f08f9dd",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "after",
+      "pair": 1,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "clone",
+        "4000",
+        "4",
+        "0"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 4000,
+      "handles": 4,
+      "payload_bytes": 0,
+      "retained": 1877600,
+      "peak": 1877600,
+      "elapsed_ns": 354833,
+      "digest": "16da457a549341e1d003770ba55d6a04cd56f9786faca87009219cf66f08f9dd",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "before",
+      "pair": 1,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "clone",
+        "4000",
+        "4",
+        "0"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 4000,
+      "handles": 4,
+      "payload_bytes": 0,
+      "retained": 1877600,
+      "peak": 1877600,
+      "elapsed_ns": 307334,
+      "digest": "16da457a549341e1d003770ba55d6a04cd56f9786faca87009219cf66f08f9dd",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "before",
+      "pair": 2,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "clone",
+        "4000",
+        "4",
+        "0"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 4000,
+      "handles": 4,
+      "payload_bytes": 0,
+      "retained": 0,
+      "peak": 0,
+      "elapsed_ns": 42,
+      "digest": "16da457a549341e1d003770ba55d6a04cd56f9786faca87009219cf66f08f9dd",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "after",
+      "pair": 2,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "clone",
+        "4000",
+        "4",
+        "0"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 4000,
+      "handles": 16,
+      "payload_bytes": 0,
+      "retained": 7510400,
+      "peak": 7510400,
+      "elapsed_ns": 1187125,
+      "digest": "16da457a549341e1d003770ba55d6a04cd56f9786faca87009219cf66f08f9dd",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "before",
+      "pair": 0,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "clone",
+        "4000",
+        "16",
+        "0"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 4000,
+      "handles": 16,
+      "payload_bytes": 0,
+      "retained": 0,
+      "peak": 0,
+      "elapsed_ns": 291,
+      "digest": "16da457a549341e1d003770ba55d6a04cd56f9786faca87009219cf66f08f9dd",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "after",
+      "pair": 0,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "clone",
+        "4000",
+        "16",
+        "0"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 4000,
+      "handles": 16,
+      "payload_bytes": 0,
+      "retained": 0,
+      "peak": 0,
+      "elapsed_ns": 42,
+      "digest": "16da457a549341e1d003770ba55d6a04cd56f9786faca87009219cf66f08f9dd",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "after",
+      "pair": 1,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "clone",
+        "4000",
+        "16",
+        "0"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 4000,
+      "handles": 16,
+      "payload_bytes": 0,
+      "retained": 7510400,
+      "peak": 7510400,
+      "elapsed_ns": 1087292,
+      "digest": "16da457a549341e1d003770ba55d6a04cd56f9786faca87009219cf66f08f9dd",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "before",
+      "pair": 1,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "clone",
+        "4000",
+        "16",
+        "0"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 4000,
+      "handles": 16,
+      "payload_bytes": 0,
+      "retained": 7510400,
+      "peak": 7510400,
+      "elapsed_ns": 1166209,
+      "digest": "16da457a549341e1d003770ba55d6a04cd56f9786faca87009219cf66f08f9dd",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "before",
+      "pair": 2,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "clone",
+        "4000",
+        "16",
+        "0"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 4000,
+      "handles": 16,
+      "payload_bytes": 0,
+      "retained": 0,
+      "peak": 0,
+      "elapsed_ns": 0,
+      "digest": "16da457a549341e1d003770ba55d6a04cd56f9786faca87009219cf66f08f9dd",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "after",
+      "pair": 2,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "clone",
+        "4000",
+        "16",
+        "0"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 4000,
+      "handles": 1,
+      "payload_bytes": 0,
+      "retained": 469668,
+      "peak": 469806,
+      "elapsed_ns": 432244875,
+      "digest": "16da457a549341e1d003770ba55d6a04cd56f9786faca87009219cf66f08f9dd",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "before",
+      "pair": 0,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "worker",
+        "4000",
+        "1",
+        "0"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 4000,
+      "handles": 1,
+      "payload_bytes": 0,
+      "retained": 268,
+      "peak": 65983,
+      "elapsed_ns": 434229750,
+      "digest": "16da457a549341e1d003770ba55d6a04cd56f9786faca87009219cf66f08f9dd",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "after",
+      "pair": 0,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "worker",
+        "4000",
+        "1",
+        "0"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 4000,
+      "handles": 1,
+      "payload_bytes": 0,
+      "retained": 268,
+      "peak": 65983,
+      "elapsed_ns": 435988125,
+      "digest": "16da457a549341e1d003770ba55d6a04cd56f9786faca87009219cf66f08f9dd",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "after",
+      "pair": 1,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "worker",
+        "4000",
+        "1",
+        "0"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 4000,
+      "handles": 1,
+      "payload_bytes": 0,
+      "retained": 469668,
+      "peak": 469806,
+      "elapsed_ns": 417559917,
+      "digest": "16da457a549341e1d003770ba55d6a04cd56f9786faca87009219cf66f08f9dd",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "before",
+      "pair": 1,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "worker",
+        "4000",
+        "1",
+        "0"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 4000,
+      "handles": 1,
+      "payload_bytes": 0,
+      "retained": 469668,
+      "peak": 469806,
+      "elapsed_ns": 443499166,
+      "digest": "16da457a549341e1d003770ba55d6a04cd56f9786faca87009219cf66f08f9dd",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "before",
+      "pair": 2,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "worker",
+        "4000",
+        "1",
+        "0"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 4000,
+      "handles": 1,
+      "payload_bytes": 0,
+      "retained": 268,
+      "peak": 65983,
+      "elapsed_ns": 456804000,
+      "digest": "16da457a549341e1d003770ba55d6a04cd56f9786faca87009219cf66f08f9dd",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "after",
+      "pair": 2,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "worker",
+        "4000",
+        "1",
+        "0"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 4000,
+      "handles": 4,
+      "payload_bytes": 0,
+      "retained": 1878312,
+      "peak": 1878450,
+      "elapsed_ns": 1668403041,
+      "digest": "16da457a549341e1d003770ba55d6a04cd56f9786faca87009219cf66f08f9dd",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "before",
+      "pair": 0,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "worker",
+        "4000",
+        "4",
+        "0"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 4000,
+      "handles": 4,
+      "payload_bytes": 0,
+      "retained": 712,
+      "peak": 66427,
+      "elapsed_ns": 1714480083,
+      "digest": "16da457a549341e1d003770ba55d6a04cd56f9786faca87009219cf66f08f9dd",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "after",
+      "pair": 0,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "worker",
+        "4000",
+        "4",
+        "0"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 4000,
+      "handles": 4,
+      "payload_bytes": 0,
+      "retained": 712,
+      "peak": 66427,
+      "elapsed_ns": 1792621667,
+      "digest": "16da457a549341e1d003770ba55d6a04cd56f9786faca87009219cf66f08f9dd",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "after",
+      "pair": 1,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "worker",
+        "4000",
+        "4",
+        "0"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 4000,
+      "handles": 4,
+      "payload_bytes": 0,
+      "retained": 1878312,
+      "peak": 1878450,
+      "elapsed_ns": 1713645583,
+      "digest": "16da457a549341e1d003770ba55d6a04cd56f9786faca87009219cf66f08f9dd",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "before",
+      "pair": 1,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "worker",
+        "4000",
+        "4",
+        "0"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 4000,
+      "handles": 4,
+      "payload_bytes": 0,
+      "retained": 1878312,
+      "peak": 1878450,
+      "elapsed_ns": 1679788833,
+      "digest": "16da457a549341e1d003770ba55d6a04cd56f9786faca87009219cf66f08f9dd",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "before",
+      "pair": 2,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "worker",
+        "4000",
+        "4",
+        "0"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 4000,
+      "handles": 4,
+      "payload_bytes": 0,
+      "retained": 712,
+      "peak": 66427,
+      "elapsed_ns": 1688218458,
+      "digest": "16da457a549341e1d003770ba55d6a04cd56f9786faca87009219cf66f08f9dd",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "after",
+      "pair": 2,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "worker",
+        "4000",
+        "4",
+        "0"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 4000,
+      "handles": 16,
+      "payload_bytes": 0,
+      "retained": 7513096,
+      "peak": 7513234,
+      "elapsed_ns": 6642805417,
+      "digest": "16da457a549341e1d003770ba55d6a04cd56f9786faca87009219cf66f08f9dd",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "before",
+      "pair": 0,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "worker",
+        "4000",
+        "16",
+        "0"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 4000,
+      "handles": 16,
+      "payload_bytes": 0,
+      "retained": 2696,
+      "peak": 68411,
+      "elapsed_ns": 6688566000,
+      "digest": "16da457a549341e1d003770ba55d6a04cd56f9786faca87009219cf66f08f9dd",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "after",
+      "pair": 0,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "worker",
+        "4000",
+        "16",
+        "0"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 4000,
+      "handles": 16,
+      "payload_bytes": 0,
+      "retained": 2696,
+      "peak": 68411,
+      "elapsed_ns": 7199263291,
+      "digest": "16da457a549341e1d003770ba55d6a04cd56f9786faca87009219cf66f08f9dd",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "after",
+      "pair": 1,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "worker",
+        "4000",
+        "16",
+        "0"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 4000,
+      "handles": 16,
+      "payload_bytes": 0,
+      "retained": 7513096,
+      "peak": 7513234,
+      "elapsed_ns": 6973261333,
+      "digest": "16da457a549341e1d003770ba55d6a04cd56f9786faca87009219cf66f08f9dd",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "before",
+      "pair": 1,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "worker",
+        "4000",
+        "16",
+        "0"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 4000,
+      "handles": 16,
+      "payload_bytes": 0,
+      "retained": 7513096,
+      "peak": 7513234,
+      "elapsed_ns": 7804501709,
+      "digest": "16da457a549341e1d003770ba55d6a04cd56f9786faca87009219cf66f08f9dd",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "before",
+      "pair": 2,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "worker",
+        "4000",
+        "16",
+        "0"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 4000,
+      "handles": 16,
+      "payload_bytes": 0,
+      "retained": 2696,
+      "peak": 68411,
+      "elapsed_ns": 6666620500,
+      "digest": "16da457a549341e1d003770ba55d6a04cd56f9786faca87009219cf66f08f9dd",
+      "logical_bytes": 0,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 0,
+      "revision": "after",
+      "pair": 2,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "worker",
+        "4000",
+        "16",
+        "0"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 4000,
+      "handles": 1,
+      "payload_bytes": 64,
+      "retained": 469400,
+      "peak": 469400,
+      "elapsed_ns": 69916,
+      "digest": "66c7625360d7c8a42153678ce88c3eb3510535400dfbbfe3aa5e732fc6937d62",
+      "logical_bytes": 256000,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 256000,
+      "revision": "before",
+      "pair": 0,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "clone",
+        "4000",
+        "1",
+        "64"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 4000,
+      "handles": 1,
+      "payload_bytes": 64,
+      "retained": 0,
+      "peak": 0,
+      "elapsed_ns": 125,
+      "digest": "66c7625360d7c8a42153678ce88c3eb3510535400dfbbfe3aa5e732fc6937d62",
+      "logical_bytes": 256000,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 256000,
+      "revision": "after",
+      "pair": 0,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "clone",
+        "4000",
+        "1",
+        "64"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 4000,
+      "handles": 1,
+      "payload_bytes": 64,
+      "retained": 0,
+      "peak": 0,
+      "elapsed_ns": 0,
+      "digest": "66c7625360d7c8a42153678ce88c3eb3510535400dfbbfe3aa5e732fc6937d62",
+      "logical_bytes": 256000,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 256000,
+      "revision": "after",
+      "pair": 1,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "clone",
+        "4000",
+        "1",
+        "64"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 4000,
+      "handles": 1,
+      "payload_bytes": 64,
+      "retained": 469400,
+      "peak": 469400,
+      "elapsed_ns": 82584,
+      "digest": "66c7625360d7c8a42153678ce88c3eb3510535400dfbbfe3aa5e732fc6937d62",
+      "logical_bytes": 256000,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 256000,
+      "revision": "before",
+      "pair": 1,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "clone",
+        "4000",
+        "1",
+        "64"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 4000,
+      "handles": 1,
+      "payload_bytes": 64,
+      "retained": 469400,
+      "peak": 469400,
+      "elapsed_ns": 46125,
+      "digest": "66c7625360d7c8a42153678ce88c3eb3510535400dfbbfe3aa5e732fc6937d62",
+      "logical_bytes": 256000,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 256000,
+      "revision": "before",
+      "pair": 2,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "clone",
+        "4000",
+        "1",
+        "64"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 4000,
+      "handles": 1,
+      "payload_bytes": 64,
+      "retained": 0,
+      "peak": 0,
+      "elapsed_ns": 0,
+      "digest": "66c7625360d7c8a42153678ce88c3eb3510535400dfbbfe3aa5e732fc6937d62",
+      "logical_bytes": 256000,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 256000,
+      "revision": "after",
+      "pair": 2,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "clone",
+        "4000",
+        "1",
+        "64"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 4000,
+      "handles": 4,
+      "payload_bytes": 64,
+      "retained": 1877600,
+      "peak": 1877600,
+      "elapsed_ns": 334250,
+      "digest": "66c7625360d7c8a42153678ce88c3eb3510535400dfbbfe3aa5e732fc6937d62",
+      "logical_bytes": 256000,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 256000,
+      "revision": "before",
+      "pair": 0,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "clone",
+        "4000",
+        "4",
+        "64"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 4000,
+      "handles": 4,
+      "payload_bytes": 64,
+      "retained": 0,
+      "peak": 0,
+      "elapsed_ns": 0,
+      "digest": "66c7625360d7c8a42153678ce88c3eb3510535400dfbbfe3aa5e732fc6937d62",
+      "logical_bytes": 256000,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 256000,
+      "revision": "after",
+      "pair": 0,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "clone",
+        "4000",
+        "4",
+        "64"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 4000,
+      "handles": 4,
+      "payload_bytes": 64,
+      "retained": 0,
+      "peak": 0,
+      "elapsed_ns": 0,
+      "digest": "66c7625360d7c8a42153678ce88c3eb3510535400dfbbfe3aa5e732fc6937d62",
+      "logical_bytes": 256000,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 256000,
+      "revision": "after",
+      "pair": 1,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "clone",
+        "4000",
+        "4",
+        "64"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 4000,
+      "handles": 4,
+      "payload_bytes": 64,
+      "retained": 1877600,
+      "peak": 1877600,
+      "elapsed_ns": 277750,
+      "digest": "66c7625360d7c8a42153678ce88c3eb3510535400dfbbfe3aa5e732fc6937d62",
+      "logical_bytes": 256000,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 256000,
+      "revision": "before",
+      "pair": 1,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "clone",
+        "4000",
+        "4",
+        "64"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 4000,
+      "handles": 4,
+      "payload_bytes": 64,
+      "retained": 1877600,
+      "peak": 1877600,
+      "elapsed_ns": 266167,
+      "digest": "66c7625360d7c8a42153678ce88c3eb3510535400dfbbfe3aa5e732fc6937d62",
+      "logical_bytes": 256000,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 256000,
+      "revision": "before",
+      "pair": 2,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "clone",
+        "4000",
+        "4",
+        "64"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 4000,
+      "handles": 4,
+      "payload_bytes": 64,
+      "retained": 0,
+      "peak": 0,
+      "elapsed_ns": 83,
+      "digest": "66c7625360d7c8a42153678ce88c3eb3510535400dfbbfe3aa5e732fc6937d62",
+      "logical_bytes": 256000,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 256000,
+      "revision": "after",
+      "pair": 2,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "clone",
+        "4000",
+        "4",
+        "64"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 4000,
+      "handles": 16,
+      "payload_bytes": 64,
+      "retained": 7510400,
+      "peak": 7510400,
+      "elapsed_ns": 1162791,
+      "digest": "66c7625360d7c8a42153678ce88c3eb3510535400dfbbfe3aa5e732fc6937d62",
+      "logical_bytes": 256000,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 256000,
+      "revision": "before",
+      "pair": 0,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "clone",
+        "4000",
+        "16",
+        "64"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 4000,
+      "handles": 16,
+      "payload_bytes": 64,
+      "retained": 0,
+      "peak": 0,
+      "elapsed_ns": 42,
+      "digest": "66c7625360d7c8a42153678ce88c3eb3510535400dfbbfe3aa5e732fc6937d62",
+      "logical_bytes": 256000,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 256000,
+      "revision": "after",
+      "pair": 0,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "clone",
+        "4000",
+        "16",
+        "64"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 4000,
+      "handles": 16,
+      "payload_bytes": 64,
+      "retained": 0,
+      "peak": 0,
+      "elapsed_ns": 208,
+      "digest": "66c7625360d7c8a42153678ce88c3eb3510535400dfbbfe3aa5e732fc6937d62",
+      "logical_bytes": 256000,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 256000,
+      "revision": "after",
+      "pair": 1,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "clone",
+        "4000",
+        "16",
+        "64"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 4000,
+      "handles": 16,
+      "payload_bytes": 64,
+      "retained": 7510400,
+      "peak": 7510400,
+      "elapsed_ns": 1114125,
+      "digest": "66c7625360d7c8a42153678ce88c3eb3510535400dfbbfe3aa5e732fc6937d62",
+      "logical_bytes": 256000,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 256000,
+      "revision": "before",
+      "pair": 1,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "clone",
+        "4000",
+        "16",
+        "64"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 4000,
+      "handles": 16,
+      "payload_bytes": 64,
+      "retained": 7510400,
+      "peak": 7510400,
+      "elapsed_ns": 1189333,
+      "digest": "66c7625360d7c8a42153678ce88c3eb3510535400dfbbfe3aa5e732fc6937d62",
+      "logical_bytes": 256000,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 256000,
+      "revision": "before",
+      "pair": 2,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "clone",
+        "4000",
+        "16",
+        "64"
+      ]
+    },
+    {
+      "mode": "clone",
+      "files": 4000,
+      "handles": 16,
+      "payload_bytes": 64,
+      "retained": 0,
+      "peak": 0,
+      "elapsed_ns": 84,
+      "digest": "66c7625360d7c8a42153678ce88c3eb3510535400dfbbfe3aa5e732fc6937d62",
+      "logical_bytes": 256000,
+      "worker_charge": 0,
+      "snapshot_plus_worker_payload_bytes": 256000,
+      "revision": "after",
+      "pair": 2,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "clone",
+        "4000",
+        "16",
+        "64"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 4000,
+      "handles": 1,
+      "payload_bytes": 64,
+      "retained": 469668,
+      "peak": 469806,
+      "elapsed_ns": 479723417,
+      "digest": "66c7625360d7c8a42153678ce88c3eb3510535400dfbbfe3aa5e732fc6937d62",
+      "logical_bytes": 256000,
+      "worker_charge": 256000,
+      "snapshot_plus_worker_payload_bytes": 512000,
+      "revision": "before",
+      "pair": 0,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "worker",
+        "4000",
+        "1",
+        "64"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 4000,
+      "handles": 1,
+      "payload_bytes": 64,
+      "retained": 268,
+      "peak": 65983,
+      "elapsed_ns": 464606833,
+      "digest": "66c7625360d7c8a42153678ce88c3eb3510535400dfbbfe3aa5e732fc6937d62",
+      "logical_bytes": 256000,
+      "worker_charge": 256000,
+      "snapshot_plus_worker_payload_bytes": 512000,
+      "revision": "after",
+      "pair": 0,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "worker",
+        "4000",
+        "1",
+        "64"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 4000,
+      "handles": 1,
+      "payload_bytes": 64,
+      "retained": 268,
+      "peak": 65983,
+      "elapsed_ns": 658946541,
+      "digest": "66c7625360d7c8a42153678ce88c3eb3510535400dfbbfe3aa5e732fc6937d62",
+      "logical_bytes": 256000,
+      "worker_charge": 256000,
+      "snapshot_plus_worker_payload_bytes": 512000,
+      "revision": "after",
+      "pair": 1,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "worker",
+        "4000",
+        "1",
+        "64"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 4000,
+      "handles": 1,
+      "payload_bytes": 64,
+      "retained": 469668,
+      "peak": 469806,
+      "elapsed_ns": 456840708,
+      "digest": "66c7625360d7c8a42153678ce88c3eb3510535400dfbbfe3aa5e732fc6937d62",
+      "logical_bytes": 256000,
+      "worker_charge": 256000,
+      "snapshot_plus_worker_payload_bytes": 512000,
+      "revision": "before",
+      "pair": 1,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "worker",
+        "4000",
+        "1",
+        "64"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 4000,
+      "handles": 1,
+      "payload_bytes": 64,
+      "retained": 469668,
+      "peak": 469806,
+      "elapsed_ns": 506924333,
+      "digest": "66c7625360d7c8a42153678ce88c3eb3510535400dfbbfe3aa5e732fc6937d62",
+      "logical_bytes": 256000,
+      "worker_charge": 256000,
+      "snapshot_plus_worker_payload_bytes": 512000,
+      "revision": "before",
+      "pair": 2,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "worker",
+        "4000",
+        "1",
+        "64"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 4000,
+      "handles": 1,
+      "payload_bytes": 64,
+      "retained": 268,
+      "peak": 65983,
+      "elapsed_ns": 476351584,
+      "digest": "66c7625360d7c8a42153678ce88c3eb3510535400dfbbfe3aa5e732fc6937d62",
+      "logical_bytes": 256000,
+      "worker_charge": 256000,
+      "snapshot_plus_worker_payload_bytes": 512000,
+      "revision": "after",
+      "pair": 2,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "worker",
+        "4000",
+        "1",
+        "64"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 4000,
+      "handles": 4,
+      "payload_bytes": 64,
+      "retained": 1878312,
+      "peak": 1878450,
+      "elapsed_ns": 2071601291,
+      "digest": "66c7625360d7c8a42153678ce88c3eb3510535400dfbbfe3aa5e732fc6937d62",
+      "logical_bytes": 256000,
+      "worker_charge": 1024000,
+      "snapshot_plus_worker_payload_bytes": 1280000,
+      "revision": "before",
+      "pair": 0,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "worker",
+        "4000",
+        "4",
+        "64"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 4000,
+      "handles": 4,
+      "payload_bytes": 64,
+      "retained": 712,
+      "peak": 66427,
+      "elapsed_ns": 1913121792,
+      "digest": "66c7625360d7c8a42153678ce88c3eb3510535400dfbbfe3aa5e732fc6937d62",
+      "logical_bytes": 256000,
+      "worker_charge": 1024000,
+      "snapshot_plus_worker_payload_bytes": 1280000,
+      "revision": "after",
+      "pair": 0,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "worker",
+        "4000",
+        "4",
+        "64"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 4000,
+      "handles": 4,
+      "payload_bytes": 64,
+      "retained": 712,
+      "peak": 66427,
+      "elapsed_ns": 2035308792,
+      "digest": "66c7625360d7c8a42153678ce88c3eb3510535400dfbbfe3aa5e732fc6937d62",
+      "logical_bytes": 256000,
+      "worker_charge": 1024000,
+      "snapshot_plus_worker_payload_bytes": 1280000,
+      "revision": "after",
+      "pair": 1,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "worker",
+        "4000",
+        "4",
+        "64"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 4000,
+      "handles": 4,
+      "payload_bytes": 64,
+      "retained": 1878312,
+      "peak": 1878450,
+      "elapsed_ns": 1959924250,
+      "digest": "66c7625360d7c8a42153678ce88c3eb3510535400dfbbfe3aa5e732fc6937d62",
+      "logical_bytes": 256000,
+      "worker_charge": 1024000,
+      "snapshot_plus_worker_payload_bytes": 1280000,
+      "revision": "before",
+      "pair": 1,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "worker",
+        "4000",
+        "4",
+        "64"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 4000,
+      "handles": 4,
+      "payload_bytes": 64,
+      "retained": 1878312,
+      "peak": 1878450,
+      "elapsed_ns": 2113676375,
+      "digest": "66c7625360d7c8a42153678ce88c3eb3510535400dfbbfe3aa5e732fc6937d62",
+      "logical_bytes": 256000,
+      "worker_charge": 1024000,
+      "snapshot_plus_worker_payload_bytes": 1280000,
+      "revision": "before",
+      "pair": 2,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "worker",
+        "4000",
+        "4",
+        "64"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 4000,
+      "handles": 4,
+      "payload_bytes": 64,
+      "retained": 712,
+      "peak": 66427,
+      "elapsed_ns": 2007736458,
+      "digest": "66c7625360d7c8a42153678ce88c3eb3510535400dfbbfe3aa5e732fc6937d62",
+      "logical_bytes": 256000,
+      "worker_charge": 1024000,
+      "snapshot_plus_worker_payload_bytes": 1280000,
+      "revision": "after",
+      "pair": 2,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "worker",
+        "4000",
+        "4",
+        "64"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 4000,
+      "handles": 16,
+      "payload_bytes": 64,
+      "retained": 7513096,
+      "peak": 7513234,
+      "elapsed_ns": 7721293208,
+      "digest": "66c7625360d7c8a42153678ce88c3eb3510535400dfbbfe3aa5e732fc6937d62",
+      "logical_bytes": 256000,
+      "worker_charge": 4096000,
+      "snapshot_plus_worker_payload_bytes": 4352000,
+      "revision": "before",
+      "pair": 0,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "worker",
+        "4000",
+        "16",
+        "64"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 4000,
+      "handles": 16,
+      "payload_bytes": 64,
+      "retained": 2696,
+      "peak": 68411,
+      "elapsed_ns": 7732422333,
+      "digest": "66c7625360d7c8a42153678ce88c3eb3510535400dfbbfe3aa5e732fc6937d62",
+      "logical_bytes": 256000,
+      "worker_charge": 4096000,
+      "snapshot_plus_worker_payload_bytes": 4352000,
+      "revision": "after",
+      "pair": 0,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "worker",
+        "4000",
+        "16",
+        "64"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 4000,
+      "handles": 16,
+      "payload_bytes": 64,
+      "retained": 2696,
+      "peak": 68411,
+      "elapsed_ns": 7866152667,
+      "digest": "66c7625360d7c8a42153678ce88c3eb3510535400dfbbfe3aa5e732fc6937d62",
+      "logical_bytes": 256000,
+      "worker_charge": 4096000,
+      "snapshot_plus_worker_payload_bytes": 4352000,
+      "revision": "after",
+      "pair": 1,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "worker",
+        "4000",
+        "16",
+        "64"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 4000,
+      "handles": 16,
+      "payload_bytes": 64,
+      "retained": 7513096,
+      "peak": 7513234,
+      "elapsed_ns": 8276319750,
+      "digest": "66c7625360d7c8a42153678ce88c3eb3510535400dfbbfe3aa5e732fc6937d62",
+      "logical_bytes": 256000,
+      "worker_charge": 4096000,
+      "snapshot_plus_worker_payload_bytes": 4352000,
+      "revision": "before",
+      "pair": 1,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "worker",
+        "4000",
+        "16",
+        "64"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 4000,
+      "handles": 16,
+      "payload_bytes": 64,
+      "retained": 7513096,
+      "peak": 7513234,
+      "elapsed_ns": 8195393458,
+      "digest": "66c7625360d7c8a42153678ce88c3eb3510535400dfbbfe3aa5e732fc6937d62",
+      "logical_bytes": 256000,
+      "worker_charge": 4096000,
+      "snapshot_plus_worker_payload_bytes": 4352000,
+      "revision": "before",
+      "pair": 2,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-before",
+        "worker",
+        "4000",
+        "16",
+        "64"
+      ]
+    },
+    {
+      "mode": "worker",
+      "files": 4000,
+      "handles": 16,
+      "payload_bytes": 64,
+      "retained": 2696,
+      "peak": 68411,
+      "elapsed_ns": 8181120500,
+      "digest": "66c7625360d7c8a42153678ce88c3eb3510535400dfbbfe3aa5e732fc6937d62",
+      "logical_bytes": 256000,
+      "worker_charge": 4096000,
+      "snapshot_plus_worker_payload_bytes": 4352000,
+      "revision": "after",
+      "pair": 2,
+      "command": [
+        "/tmp/hoimin-perf-three-task2/probe-after",
+        "worker",
+        "4000",
+        "16",
+        "64"
+      ]
+    }
+  ],
+  "summary": [
+    {
+      "files": 1000,
+      "payload_bytes": 0,
+      "mode": "clone",
+      "handles": 1,
+      "before": {
+        "retained": {
+          "median": 118400,
+          "min": 118400,
+          "max": 118400
+        },
+        "peak": {
+          "median": 118400,
+          "min": 118400,
+          "max": 118400
+        },
+        "elapsed_ns": {
+          "median": 14334,
+          "min": 13916,
+          "max": 16750
+        }
+      },
+      "after": {
+        "retained": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "peak": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "elapsed_ns": {
+          "median": 41,
+          "min": 0,
+          "max": 3708
+        }
+      }
+    },
+    {
+      "files": 1000,
+      "payload_bytes": 0,
+      "mode": "clone",
+      "handles": 4,
+      "before": {
+        "retained": {
+          "median": 473600,
+          "min": 473600,
+          "max": 473600
+        },
+        "peak": {
+          "median": 473600,
+          "min": 473600,
+          "max": 473600
+        },
+        "elapsed_ns": {
+          "median": 65666,
+          "min": 63417,
+          "max": 69833
+        }
+      },
+      "after": {
+        "retained": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "peak": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "elapsed_ns": {
+          "median": 0,
+          "min": 0,
+          "max": 83
+        }
+      }
+    },
+    {
+      "files": 1000,
+      "payload_bytes": 0,
+      "mode": "clone",
+      "handles": 16,
+      "before": {
+        "retained": {
+          "median": 1894400,
+          "min": 1894400,
+          "max": 1894400
+        },
+        "peak": {
+          "median": 1894400,
+          "min": 1894400,
+          "max": 1894400
+        },
+        "elapsed_ns": {
+          "median": 257958,
+          "min": 235791,
+          "max": 258041
+        }
+      },
+      "after": {
+        "retained": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "peak": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "elapsed_ns": {
+          "median": 83,
+          "min": 42,
+          "max": 958
+        }
+      }
+    },
+    {
+      "files": 1000,
+      "payload_bytes": 0,
+      "mode": "worker",
+      "handles": 1,
+      "before": {
+        "retained": {
+          "median": 118668,
+          "min": 118668,
+          "max": 118668
+        },
+        "peak": {
+          "median": 118806,
+          "min": 118806,
+          "max": 118806
+        },
+        "elapsed_ns": {
+          "median": 102327500,
+          "min": 100734333,
+          "max": 102920208
+        }
+      },
+      "after": {
+        "retained": {
+          "median": 268,
+          "min": 268,
+          "max": 268
+        },
+        "peak": {
+          "median": 65983,
+          "min": 65983,
+          "max": 65983
+        },
+        "elapsed_ns": {
+          "median": 103488083,
+          "min": 99326334,
+          "max": 105351375
+        }
+      }
+    },
+    {
+      "files": 1000,
+      "payload_bytes": 0,
+      "mode": "worker",
+      "handles": 4,
+      "before": {
+        "retained": {
+          "median": 474312,
+          "min": 474312,
+          "max": 474312
+        },
+        "peak": {
+          "median": 474450,
+          "min": 474450,
+          "max": 474450
+        },
+        "elapsed_ns": {
+          "median": 397053375,
+          "min": 396830292,
+          "max": 398214292
+        }
+      },
+      "after": {
+        "retained": {
+          "median": 712,
+          "min": 712,
+          "max": 712
+        },
+        "peak": {
+          "median": 66427,
+          "min": 66427,
+          "max": 66427
+        },
+        "elapsed_ns": {
+          "median": 397820000,
+          "min": 396892333,
+          "max": 408154500
+        }
+      }
+    },
+    {
+      "files": 1000,
+      "payload_bytes": 0,
+      "mode": "worker",
+      "handles": 16,
+      "before": {
+        "retained": {
+          "median": 1897096,
+          "min": 1897096,
+          "max": 1897096
+        },
+        "peak": {
+          "median": 1897234,
+          "min": 1897234,
+          "max": 1897234
+        },
+        "elapsed_ns": {
+          "median": 1711187417,
+          "min": 1672644417,
+          "max": 1833198542
+        }
+      },
+      "after": {
+        "retained": {
+          "median": 2696,
+          "min": 2696,
+          "max": 2696
+        },
+        "peak": {
+          "median": 68411,
+          "min": 68411,
+          "max": 68411
+        },
+        "elapsed_ns": {
+          "median": 1735129917,
+          "min": 1673861917,
+          "max": 1798045792
+        }
+      }
+    },
+    {
+      "files": 1000,
+      "payload_bytes": 64,
+      "mode": "clone",
+      "handles": 1,
+      "before": {
+        "retained": {
+          "median": 118400,
+          "min": 118400,
+          "max": 118400
+        },
+        "peak": {
+          "median": 118400,
+          "min": 118400,
+          "max": 118400
+        },
+        "elapsed_ns": {
+          "median": 17125,
+          "min": 15417,
+          "max": 18125
+        }
+      },
+      "after": {
+        "retained": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "peak": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "elapsed_ns": {
+          "median": 83,
+          "min": 41,
+          "max": 83
+        }
+      }
+    },
+    {
+      "files": 1000,
+      "payload_bytes": 64,
+      "mode": "clone",
+      "handles": 4,
+      "before": {
+        "retained": {
+          "median": 473600,
+          "min": 473600,
+          "max": 473600
+        },
+        "peak": {
+          "median": 473600,
+          "min": 473600,
+          "max": 473600
+        },
+        "elapsed_ns": {
+          "median": 76041,
+          "min": 72625,
+          "max": 99208
+        }
+      },
+      "after": {
+        "retained": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "peak": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "elapsed_ns": {
+          "median": 42,
+          "min": 41,
+          "max": 250
+        }
+      }
+    },
+    {
+      "files": 1000,
+      "payload_bytes": 64,
+      "mode": "clone",
+      "handles": 16,
+      "before": {
+        "retained": {
+          "median": 1894400,
+          "min": 1894400,
+          "max": 1894400
+        },
+        "peak": {
+          "median": 1894400,
+          "min": 1894400,
+          "max": 1894400
+        },
+        "elapsed_ns": {
+          "median": 281917,
+          "min": 248125,
+          "max": 309416
+        }
+      },
+      "after": {
+        "retained": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "peak": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "elapsed_ns": {
+          "median": 167,
+          "min": 0,
+          "max": 208
+        }
+      }
+    },
+    {
+      "files": 1000,
+      "payload_bytes": 64,
+      "mode": "worker",
+      "handles": 1,
+      "before": {
+        "retained": {
+          "median": 118668,
+          "min": 118668,
+          "max": 118668
+        },
+        "peak": {
+          "median": 118806,
+          "min": 118806,
+          "max": 118806
+        },
+        "elapsed_ns": {
+          "median": 128708917,
+          "min": 123500459,
+          "max": 153731166
+        }
+      },
+      "after": {
+        "retained": {
+          "median": 268,
+          "min": 268,
+          "max": 268
+        },
+        "peak": {
+          "median": 65983,
+          "min": 65983,
+          "max": 65983
+        },
+        "elapsed_ns": {
+          "median": 128461583,
+          "min": 119689209,
+          "max": 133177292
+        }
+      }
+    },
+    {
+      "files": 1000,
+      "payload_bytes": 64,
+      "mode": "worker",
+      "handles": 4,
+      "before": {
+        "retained": {
+          "median": 474312,
+          "min": 474312,
+          "max": 474312
+        },
+        "peak": {
+          "median": 474450,
+          "min": 474450,
+          "max": 474450
+        },
+        "elapsed_ns": {
+          "median": 481461750,
+          "min": 477098667,
+          "max": 488513875
+        }
+      },
+      "after": {
+        "retained": {
+          "median": 712,
+          "min": 712,
+          "max": 712
+        },
+        "peak": {
+          "median": 66427,
+          "min": 66427,
+          "max": 66427
+        },
+        "elapsed_ns": {
+          "median": 483623167,
+          "min": 481007375,
+          "max": 535094792
+        }
+      }
+    },
+    {
+      "files": 1000,
+      "payload_bytes": 64,
+      "mode": "worker",
+      "handles": 16,
+      "before": {
+        "retained": {
+          "median": 1897096,
+          "min": 1897096,
+          "max": 1897096
+        },
+        "peak": {
+          "median": 1897234,
+          "min": 1897234,
+          "max": 1897234
+        },
+        "elapsed_ns": {
+          "median": 1957868750,
+          "min": 1914568041,
+          "max": 1981664666
+        }
+      },
+      "after": {
+        "retained": {
+          "median": 2696,
+          "min": 2696,
+          "max": 2696
+        },
+        "peak": {
+          "median": 68411,
+          "min": 68411,
+          "max": 68411
+        },
+        "elapsed_ns": {
+          "median": 1963355250,
+          "min": 1941655541,
+          "max": 1964959958
+        }
+      }
+    },
+    {
+      "files": 4000,
+      "payload_bytes": 0,
+      "mode": "clone",
+      "handles": 1,
+      "before": {
+        "retained": {
+          "median": 469400,
+          "min": 469400,
+          "max": 469400
+        },
+        "peak": {
+          "median": 469400,
+          "min": 469400,
+          "max": 469400
+        },
+        "elapsed_ns": {
+          "median": 75334,
+          "min": 57333,
+          "max": 92042
+        }
+      },
+      "after": {
+        "retained": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "peak": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "elapsed_ns": {
+          "median": 42,
+          "min": 41,
+          "max": 42
+        }
+      }
+    },
+    {
+      "files": 4000,
+      "payload_bytes": 0,
+      "mode": "clone",
+      "handles": 4,
+      "before": {
+        "retained": {
+          "median": 1877600,
+          "min": 1877600,
+          "max": 1877600
+        },
+        "peak": {
+          "median": 1877600,
+          "min": 1877600,
+          "max": 1877600
+        },
+        "elapsed_ns": {
+          "median": 343625,
+          "min": 307334,
+          "max": 354833
+        }
+      },
+      "after": {
+        "retained": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "peak": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "elapsed_ns": {
+          "median": 41,
+          "min": 0,
+          "max": 42
+        }
+      }
+    },
+    {
+      "files": 4000,
+      "payload_bytes": 0,
+      "mode": "clone",
+      "handles": 16,
+      "before": {
+        "retained": {
+          "median": 7510400,
+          "min": 7510400,
+          "max": 7510400
+        },
+        "peak": {
+          "median": 7510400,
+          "min": 7510400,
+          "max": 7510400
+        },
+        "elapsed_ns": {
+          "median": 1166209,
+          "min": 1087292,
+          "max": 1187125
+        }
+      },
+      "after": {
+        "retained": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "peak": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "elapsed_ns": {
+          "median": 42,
+          "min": 0,
+          "max": 291
+        }
+      }
+    },
+    {
+      "files": 4000,
+      "payload_bytes": 0,
+      "mode": "worker",
+      "handles": 1,
+      "before": {
+        "retained": {
+          "median": 469668,
+          "min": 469668,
+          "max": 469668
+        },
+        "peak": {
+          "median": 469806,
+          "min": 469806,
+          "max": 469806
+        },
+        "elapsed_ns": {
+          "median": 432244875,
+          "min": 417559917,
+          "max": 443499166
+        }
+      },
+      "after": {
+        "retained": {
+          "median": 268,
+          "min": 268,
+          "max": 268
+        },
+        "peak": {
+          "median": 65983,
+          "min": 65983,
+          "max": 65983
+        },
+        "elapsed_ns": {
+          "median": 435988125,
+          "min": 434229750,
+          "max": 456804000
+        }
+      }
+    },
+    {
+      "files": 4000,
+      "payload_bytes": 0,
+      "mode": "worker",
+      "handles": 4,
+      "before": {
+        "retained": {
+          "median": 1878312,
+          "min": 1878312,
+          "max": 1878312
+        },
+        "peak": {
+          "median": 1878450,
+          "min": 1878450,
+          "max": 1878450
+        },
+        "elapsed_ns": {
+          "median": 1679788833,
+          "min": 1668403041,
+          "max": 1713645583
+        }
+      },
+      "after": {
+        "retained": {
+          "median": 712,
+          "min": 712,
+          "max": 712
+        },
+        "peak": {
+          "median": 66427,
+          "min": 66427,
+          "max": 66427
+        },
+        "elapsed_ns": {
+          "median": 1714480083,
+          "min": 1688218458,
+          "max": 1792621667
+        }
+      }
+    },
+    {
+      "files": 4000,
+      "payload_bytes": 0,
+      "mode": "worker",
+      "handles": 16,
+      "before": {
+        "retained": {
+          "median": 7513096,
+          "min": 7513096,
+          "max": 7513096
+        },
+        "peak": {
+          "median": 7513234,
+          "min": 7513234,
+          "max": 7513234
+        },
+        "elapsed_ns": {
+          "median": 6973261333,
+          "min": 6642805417,
+          "max": 7804501709
+        }
+      },
+      "after": {
+        "retained": {
+          "median": 2696,
+          "min": 2696,
+          "max": 2696
+        },
+        "peak": {
+          "median": 68411,
+          "min": 68411,
+          "max": 68411
+        },
+        "elapsed_ns": {
+          "median": 6688566000,
+          "min": 6666620500,
+          "max": 7199263291
+        }
+      }
+    },
+    {
+      "files": 4000,
+      "payload_bytes": 64,
+      "mode": "clone",
+      "handles": 1,
+      "before": {
+        "retained": {
+          "median": 469400,
+          "min": 469400,
+          "max": 469400
+        },
+        "peak": {
+          "median": 469400,
+          "min": 469400,
+          "max": 469400
+        },
+        "elapsed_ns": {
+          "median": 69916,
+          "min": 46125,
+          "max": 82584
+        }
+      },
+      "after": {
+        "retained": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "peak": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "elapsed_ns": {
+          "median": 0,
+          "min": 0,
+          "max": 125
+        }
+      }
+    },
+    {
+      "files": 4000,
+      "payload_bytes": 64,
+      "mode": "clone",
+      "handles": 4,
+      "before": {
+        "retained": {
+          "median": 1877600,
+          "min": 1877600,
+          "max": 1877600
+        },
+        "peak": {
+          "median": 1877600,
+          "min": 1877600,
+          "max": 1877600
+        },
+        "elapsed_ns": {
+          "median": 277750,
+          "min": 266167,
+          "max": 334250
+        }
+      },
+      "after": {
+        "retained": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "peak": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "elapsed_ns": {
+          "median": 0,
+          "min": 0,
+          "max": 83
+        }
+      }
+    },
+    {
+      "files": 4000,
+      "payload_bytes": 64,
+      "mode": "clone",
+      "handles": 16,
+      "before": {
+        "retained": {
+          "median": 7510400,
+          "min": 7510400,
+          "max": 7510400
+        },
+        "peak": {
+          "median": 7510400,
+          "min": 7510400,
+          "max": 7510400
+        },
+        "elapsed_ns": {
+          "median": 1162791,
+          "min": 1114125,
+          "max": 1189333
+        }
+      },
+      "after": {
+        "retained": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "peak": {
+          "median": 0,
+          "min": 0,
+          "max": 0
+        },
+        "elapsed_ns": {
+          "median": 84,
+          "min": 42,
+          "max": 208
+        }
+      }
+    },
+    {
+      "files": 4000,
+      "payload_bytes": 64,
+      "mode": "worker",
+      "handles": 1,
+      "before": {
+        "retained": {
+          "median": 469668,
+          "min": 469668,
+          "max": 469668
+        },
+        "peak": {
+          "median": 469806,
+          "min": 469806,
+          "max": 469806
+        },
+        "elapsed_ns": {
+          "median": 479723417,
+          "min": 456840708,
+          "max": 506924333
+        }
+      },
+      "after": {
+        "retained": {
+          "median": 268,
+          "min": 268,
+          "max": 268
+        },
+        "peak": {
+          "median": 65983,
+          "min": 65983,
+          "max": 65983
+        },
+        "elapsed_ns": {
+          "median": 476351584,
+          "min": 464606833,
+          "max": 658946541
+        }
+      }
+    },
+    {
+      "files": 4000,
+      "payload_bytes": 64,
+      "mode": "worker",
+      "handles": 4,
+      "before": {
+        "retained": {
+          "median": 1878312,
+          "min": 1878312,
+          "max": 1878312
+        },
+        "peak": {
+          "median": 1878450,
+          "min": 1878450,
+          "max": 1878450
+        },
+        "elapsed_ns": {
+          "median": 2071601291,
+          "min": 1959924250,
+          "max": 2113676375
+        }
+      },
+      "after": {
+        "retained": {
+          "median": 712,
+          "min": 712,
+          "max": 712
+        },
+        "peak": {
+          "median": 66427,
+          "min": 66427,
+          "max": 66427
+        },
+        "elapsed_ns": {
+          "median": 2007736458,
+          "min": 1913121792,
+          "max": 2035308792
+        }
+      }
+    },
+    {
+      "files": 4000,
+      "payload_bytes": 64,
+      "mode": "worker",
+      "handles": 16,
+      "before": {
+        "retained": {
+          "median": 7513096,
+          "min": 7513096,
+          "max": 7513096
+        },
+        "peak": {
+          "median": 7513234,
+          "min": 7513234,
+          "max": 7513234
+        },
+        "elapsed_ns": {
+          "median": 8195393458,
+          "min": 7721293208,
+          "max": 8276319750
+        }
+      },
+      "after": {
+        "retained": {
+          "median": 2696,
+          "min": 2696,
+          "max": 2696
+        },
+        "peak": {
+          "median": 68411,
+          "min": 68411,
+          "max": 68411
+        },
+        "elapsed_ns": {
+          "median": 7866152667,
+          "min": 7732422333,
+          "max": 8181120500
+        }
+      }
+    }
+  ],
+  "elapsed_seconds": 368.75730595900677,
+  "binary_sha256": {
+    "/tmp/hoimin-perf-three-task2/probe-before": "b7655daab2f39a05933dcded7a4ec6a58643e171e077161cff6f3724890f25f8",
+    "/tmp/hoimin-perf-three-task2/probe-after": "021e5dedb76c5dee4d28e274cb26bfae07179c9134002e09388c71ccd6ea01d4"
+  }
+}
