@@ -113,6 +113,8 @@
 
 **Files:** `crates/hoimin-python/src/analyzer/exception_hierarchy.rs` and a focused graph module if warranted, hierarchy test/property/performance fixtures, minimal development measurement notes. Do not mix #1006 line selection or #1008 visibility indexing into this work. Consult analyzer OKF contract and current hierarchy limits/cancellation.
 
+**User-confirmed depth policy (Q1, 2026-10-19):** Use a name-order-independent conservative SCC-weighted bound, saturated at 256; keep all previous exclusions and allow additional exclusions. For SCC C, H(C) = max(cyclic(C) ? size(C) : 0, max(C→D) [size(C) + H(D)]). Reject acyclic modules at H >= 256 and cycle members unconditionally. Small-cycle prefixes remain eligible; document additional exclusions. The separate class ancestry limit is unchanged.
+
 **Required behavior:** Build the eager-import graph once; replace per-module whole reachable traversal with shared SCC/cycle analysis and shared depth-limit reasoning. Mark cycle members, not every prefix reaching a cycle. Explicitly preserve conservative candidate/diagnostic/visibility behavior for DAG, self cycle, multi-node cycle, diamond, noncycle prefix, lazy imports, dynamic modules and depth boundaries. Keep cancellation checks during construction and traversal. Operation counts and release time/heap measurements demonstrate improvement; no timing-only regression assertions.
 
 **Work:**
