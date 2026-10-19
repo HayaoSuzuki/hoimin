@@ -178,3 +178,14 @@ source-triggered warm regeneration. Source/tool pins, resource limits,
 production math and required targets are unchanged. This overlay validation
 reused the already verified tool image; native x86_64 full-job acceptance
 remains Task 4.
+
+## Task 2 independent review completion
+
+The independent scoped review found that the original environment preflight
+checked the installed Why3find template but not the selected project file.
+Fix `09226fa8` requires the actual project root for proof preflight and rejects
+missing or changed configuration. The scoped re-review found the issue
+addressed and no new Critical/Important problems. The controller inspected
+the actual project rejection log and all six first/fresh-warm sample proof
+results. Task 2 is complete; production arithmetic proofs and native Linux
+x86_64 cold/warm acceptance remain Tasks 3 and 4, respectively.
